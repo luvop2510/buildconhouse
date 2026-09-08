@@ -43,6 +43,9 @@ class ProductRow:
     image_page: Optional[int] = None
     specs: dict[str, Any] = field(default_factory=dict)     # freeform key/value spec extras
     tags: list[str] = field(default_factory=list)
+    must_buy_concealed: bool = False
+    concealed_sku: Optional[str] = None
+    concealed_skus: list[str] = field(default_factory=list)
     confidence: float = 1.0
     issues: list[str] = field(default_factory=list)
     status: str = "pending"         # pending | accepted | rejected
@@ -59,6 +62,9 @@ class ProductRow:
             "images": self.images, "image_meta": self.image_meta,
             "image_quality": self.image_quality, "image_page": self.image_page,
             "specs": self.specs, "tags": self.tags,
+            "must_buy_concealed": self.must_buy_concealed,
+            "concealed_sku": self.concealed_sku,
+            "concealed_skus": self.concealed_skus,
             "confidence": self.confidence, "issues": self.issues, "status": self.status,
         }
 

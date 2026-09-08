@@ -371,6 +371,12 @@ class Product(TimestampedModel):
     images: list[str] = []
     image_meta: list[dict] = []             # per-image {width,height,quality,source_format}
     image_quality: Optional[str] = None     # aggregate: excellent|good|acceptable|poor|missing
+    # A trimset marked this way cannot be installed on its own.  Keep the
+    # supplier's required in-wall/concealed article number as structured data
+    # instead of hiding it in a description or a free-form tag.
+    must_buy_concealed: bool = False
+    concealed_sku: Optional[str] = None
+    concealed_skus: list[str] = []          # plural when a trimset needs more than one rough-in
     # NEW media architecture (Iteration 2A). These fields are populated from
     # the `product_media` collection at query-time so business code stays
     # decoupled from storage. Never write directly to these fields.
@@ -416,6 +422,9 @@ class ProductCreate(BaseModel):
     stock: int = 0
     images: list[str] = []
     tags: list[str] = []
+    must_buy_concealed: bool = False
+    concealed_sku: Optional[str] = None
+    concealed_skus: list[str] = []
     is_custom: bool = False
 
 
@@ -441,6 +450,9 @@ class ProductPatch(BaseModel):
     mrp: Optional[float] = None
     price: Optional[float] = None
     specs: Optional[dict] = None
+    must_buy_concealed: Optional[bool] = None
+    concealed_sku: Optional[str] = None
+    concealed_skus: Optional[list[str]] = None
 
 
 class SizeVariantResolution(BaseModel):

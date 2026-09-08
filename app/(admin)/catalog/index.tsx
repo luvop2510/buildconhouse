@@ -46,6 +46,9 @@ type Product = {
   subcategory?: string | null; series?: string | null;
   price: number; mrp: number; finish?: string | null; images: string[]; stock: number;
   image_quality?: string | null;
+  must_buy_concealed?: boolean;
+  concealed_sku?: string | null;
+  concealed_skus?: string[];
   hero_image_url?: string | null;
   gallery?: { url: string; role?: string; source_type?: string; quality?: string; family_key?: string | null; width?: number | null; height?: number | null; is_primary?: boolean }[] | null;
   family_key?: string | null;
@@ -709,6 +712,11 @@ function ProductCard({ product: p, brandName, onPress }: { product: Product; bra
         </View>
         <Text numberOfLines={2} style={styles.title}>{p.name}</Text>
         <Text style={type.caption} numberOfLines={1}>{p.sku}{p.finish ? ` · ${p.finish}` : ""}</Text>
+        {p.must_buy_concealed && (p.concealed_skus?.length || p.concealed_sku) ? (
+          <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: "700", color: "#B45309" }}>
+            Must Buy Concealed · {(p.concealed_skus?.length ? p.concealed_skus : [p.concealed_sku]).filter(Boolean).join(", ")}
+          </Text>
+        ) : null}
         <View style={{ marginTop: 6 }}>
           <PriceTag price={p.price} mrp={p.mrp} size="md" />
         </View>

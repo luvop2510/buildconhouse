@@ -46,6 +46,9 @@ type Product = {
   family_name?: string | null; variant_label?: string | null;
   finish_code?: string | null; colour?: string | null;
   image_quality?: string | null;
+  must_buy_concealed?: boolean;
+  concealed_sku?: string | null;
+  concealed_skus?: string[];
   hero_image_url?: string | null;
   gallery?: { url: string; role?: string; source_type?: string; quality?: string; family_key?: string | null; width?: number | null; height?: number | null; is_primary?: boolean }[];
   specs?: Record<string, any>;
@@ -385,6 +388,14 @@ export default function ProductDetail() {
       ) : null}
 
       {/* Description */}
+      {p.must_buy_concealed && (p.concealed_skus?.length || p.concealed_sku) ? (
+        <View style={[styles.poorHint, { borderColor: "#D97706", backgroundColor: "#FFF7ED" }]}>
+          <Feather name="alert-triangle" size={14} color="#B45309" />
+          <Text style={{ flex: 1, fontSize: 12, fontWeight: "700", color: "#92400E", lineHeight: 17 }}>
+            Must Buy Concealed · {(p.concealed_skus?.length ? p.concealed_skus : [p.concealed_sku]).filter(Boolean).join(", ")}
+          </Text>
+        </View>
+      ) : null}
       {p.description ? (
         <Text style={[type.body, { color: colors.onSurfaceSecondary, lineHeight: 22 }]}>{p.description}</Text>
       ) : null}

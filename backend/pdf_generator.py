@@ -51,7 +51,7 @@ BRAND_PARTNERS = [
 def brand_partners_table(base_cell_style: ParagraphStyle, col_width_mm: float = 44.5, grid_color=None) -> Table:
     """The original 2x6 partner grid used on quotation page 1."""
     partner_style = ParagraphStyle("partner", parent=base_cell_style, fontSize=6.6, leading=8, alignment=1)
-    rows = [[Paragraph(f"<b>{name}</b><br/><font size='5.4'><i>{tagline}</i></font>", partner_style) for name, tagline in row] for row in BRAND_PARTNERS]
+    rows = [[Paragraph(f"<b>{name}</b><br/><font size='6.5'><i>{tagline}</i></font>", partner_style) for name, tagline in row] for row in BRAND_PARTNERS]
     table = Table(rows, colWidths=[col_width_mm * mm] * 6, rowHeights=[12 * mm, 12 * mm])
     table.setStyle(TableStyle([
         ("GRID", (0, 0), (-1, -1), 0.35, grid_color or GRID),
@@ -61,35 +61,37 @@ def brand_partners_table(base_cell_style: ParagraphStyle, col_width_mm: float = 
     return table
 
 # --- Dynamic pagination geometry (item/product table, pages 2+) -----------
-# Page size + margins are unchanged (preserving the exact print template),
-# but rows now render only for real content — no fixed 16-row block padded
-# with blank filler rows. `_max_item_rows_per_page` derives the true capacity
-# from real geometry so it automatically adapts if row height/typography
-# ever changes, instead of a hardcoded magic number.
+# Page size + margins are unchanged (preserving the exact print template).
+# Detail pages deliberately favour a legible catalogue over an artificially
+# high row count: the previous 17-row layout left just 5.2 pt for product
+# copy and consumed the whole frame.  Every page below reserves a physical
+# buffer above the footer and leaves spare white space for small selections.
 PAGE_H_MM = 210.0  # A4 landscape
 TOP_MARGIN_MM = 13.0
 BOTTOM_MARGIN_MM = 22.0
 AREA_HEADER_BLOCK_MM = 25.75    # brand/area title block + rule + spacers above the table
 ITEM_HEADER_ROW_MM = 10.0
-# A sanitary bathroom detail page can hold up to seventeen products. The
-# available table height is shared by only the real rows on a page, so an
-# eight- or ten-product sheet fills the page without blank product rows.
-MAX_ITEM_ROWS_PER_PAGE = 17
-PRODUCT_IMAGE_ASPECT_RATIO = 16 / 10
-STANDARD_PRODUCT_IMAGE_WIDTH_MM = 16.0
-STANDARD_PRODUCT_IMAGE_HEIGHT_MM = STANDARD_PRODUCT_IMAGE_WIDTH_MM / PRODUCT_IMAGE_ASPECT_RATIO
-# Sparse detail pages use compact rows instead of expanding one or two
-# products into a full-page table. Their image column must not follow the
-# remaining white space: a two-item page would otherwise turn a 14 mm-wide
-# image frame into a ~65 mm tall crop, leaving landscape products as an
-# unrecognisable sliver. This is a display cap, not a pagination constraint.
-MAX_SPARSE_PAGE_IMAGE_HEIGHT_MM = 18.0
-COMPACT_SPARSE_ITEM_LIMIT = 5
-COMPACT_SPARSE_ITEM_ROW_MM = 24.0
-# This is the minimum row height used for capacity calculation.  Actual rows
-# are expanded per page to occupy all usable space.
-ITEM_ROW_MM = 14.0
 ITEM_TOTAL_ROW_MM = 8.0
+DETAIL_BOTTOM_SAFETY_MM = 8.0
+# Six items keeps a clear, consistent product frame and at least 6.5 pt
+# wrapped copy. Seven, seventeen and eighteen products intentionally exercise the
+# continuation-page path instead of shrinking into an unreadable grid.
+MAX_ITEM_ROWS_PER_PAGE = 6
+PRODUCT_IMAGE_ASPECT_RATIO = 16 / 10
+PRODUCT_IMAGE_FRAME_WIDTH_MM = 23.0
+PRODUCT_IMAGE_FRAME_HEIGHT_MM = 18.0
+STANDARD_PRODUCT_IMAGE_WIDTH_MM = PRODUCT_IMAGE_FRAME_WIDTH_MM
+STANDARD_PRODUCT_IMAGE_HEIGHT_MM = PRODUCT_IMAGE_FRAME_HEIGHT_MM
+# Sparse rooms retain the same generous identification frame. They are not
+# inflated to fill the page, so product photography remains consistent across
+# one-product and six-product rooms.
+MAX_SPARSE_PAGE_IMAGE_HEIGHT_MM = PRODUCT_IMAGE_FRAME_HEIGHT_MM
+COMPACT_SPARSE_ITEM_LIMIT = 5
+COMPACT_SPARSE_ITEM_ROW_MM = 25.0
+# This is a print-safety lower bound.  Actual rows use the space available
+# after the footer buffer but are never allowed below it.
+ITEM_ROW_MM = 20.0
+MIN_DETAIL_FONT_SIZE_PT = 6.5
 SUMMARY_HEADER_ROW_MM = 7.0
 SUMMARY_ROW_MM = 5.6
 SUMMARY_TOTAL_ROW_MM = 6.2
@@ -103,10 +105,13 @@ def _max_item_rows_per_page() -> int:
 
 def _item_row_height_mm(item_count: int) -> float:
     """Height assigned to each real product row on one sanitary detail page."""
-    usable = PAGE_H_MM - TOP_MARGIN_MM - BOTTOM_MARGIN_MM - AREA_HEADER_BLOCK_MM - ITEM_HEADER_ROW_MM - ITEM_TOTAL_ROW_MM
+    usable = (
+        PAGE_H_MM - TOP_MARGIN_MM - BOTTOM_MARGIN_MM - DETAIL_BOTTOM_SAFETY_MM
+        - AREA_HEADER_BLOCK_MM - ITEM_HEADER_ROW_MM - ITEM_TOTAL_ROW_MM
+    )
     if item_count <= COMPACT_SPARSE_ITEM_LIMIT:
         return COMPACT_SPARSE_ITEM_ROW_MM
-    return usable / item_count
+    return max(ITEM_ROW_MM, usable / item_count)
 
 
 def _money(value: float) -> str:
@@ -234,15 +239,48 @@ class _ProductImageFrame(Flowable):
         return self.width, self.height
 
     def draw(self):
+        # A white, finely outlined frame makes every cell look consistent
+        # even when a supplier asset has a non-white background.  The source
+        # pixels remain untouched: this is strictly a contain fit.
+        self.canv.saveState()
+        self.canv.setFillColor(WHITE)
+        self.canv.setStrokeColor(colors.HexColor("#B8C1C9"))
+        self.canv.setLineWidth(0.35)
+        self.canv.roundRect(0, 0, self.width, self.height, 1.2 * mm, fill=1, stroke=1)
         if self.source_width <= 0 or self.source_height <= 0:
+            self.canv.restoreState()
             return
         x, y, drawn_width, drawn_height = contain_box(
-            self.source_width, self.source_height, self.width, self.height,
+            self.source_width, self.source_height, self.width, self.height, inset=1.5 * mm,
         )
         self.canv.drawImage(
             self.reader, x, y,
             width=drawn_width, height=drawn_height, mask="auto",
         )
+        self.canv.restoreState()
+
+
+class _ImageUnavailableFrame(Flowable):
+    """A clean, same-size fallback for missing, broken, or blocked media."""
+
+    def __init__(self, width_mm: float, height_mm: float):
+        super().__init__()
+        self.width = self.drawWidth = width_mm * mm
+        self.height = self.drawHeight = height_mm * mm
+
+    def wrap(self, avail_width, avail_height):
+        return self.width, self.height
+
+    def draw(self):
+        self.canv.saveState()
+        self.canv.setFillColor(colors.HexColor("#FAFAFA"))
+        self.canv.setStrokeColor(colors.HexColor("#B8C1C9"))
+        self.canv.setLineWidth(0.35)
+        self.canv.roundRect(0, 0, self.width, self.height, 1.2 * mm, fill=1, stroke=1)
+        self.canv.setFillColor(GREY)
+        self.canv.setFont("Helvetica-Oblique", MIN_DETAIL_FONT_SIZE_PT)
+        self.canv.drawCentredString(self.width / 2, (self.height - MIN_DETAIL_FONT_SIZE_PT) / 2, "Image unavailable")
+        self.canv.restoreState()
 
 
 # Backwards-compatible name for integrations that imported the previous
@@ -271,7 +309,7 @@ def _img(
                 return _ProductImageFrame(prepared, width_mm, height_mm)
             except Exception:
                 pass
-    return Paragraph("<i><font color='#999999' size='7'>[image]</font></i>", ParagraphStyle("image-placeholder", alignment=1, leading=8))
+    return _ImageUnavailableFrame(width_mm, height_mm)
 
 
 def _draw_footer(cv, doc, branding: dict | None = None) -> None:
@@ -423,10 +461,12 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
         "label": ParagraphStyle("label", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=6.8, leading=8, textColor=INK),
         "body": ParagraphStyle("body", parent=base["Normal"], fontName="Helvetica", fontSize=8.4, leading=11.5, textColor=INK),
         "small": ParagraphStyle("small", parent=base["Normal"], fontName="Helvetica", fontSize=6.7, leading=8, textColor=INK),
-        "terms": ParagraphStyle("terms", parent=base["Normal"], fontName="Helvetica", fontSize=6.1, leading=7.0, textColor=INK),
+        "terms": ParagraphStyle("terms", parent=base["Normal"], fontName="Helvetica", fontSize=MIN_DETAIL_FONT_SIZE_PT, leading=7.4, textColor=INK),
         "tiny": ParagraphStyle("tiny", parent=base["Normal"], fontName="Helvetica", fontSize=7.2, leading=8.8, textColor=INK, alignment=1),
-        "itemText": ParagraphStyle("itemText", parent=base["Normal"], fontName="Helvetica", fontSize=5.2, leading=5.2, textColor=INK, alignment=1),
-        "itemCenter": ParagraphStyle("itemCenter", parent=base["Normal"], fontName="Helvetica", fontSize=5.4, leading=5.4, textColor=INK, alignment=1),
+        "itemDescription": ParagraphStyle("itemDescription", parent=base["Normal"], fontName="Helvetica", fontSize=6.6, leading=7.15, textColor=INK, alignment=0, wordWrap="CJK"),
+        "itemSku": ParagraphStyle("itemSku", parent=base["Normal"], fontName="Helvetica", fontSize=MIN_DETAIL_FONT_SIZE_PT, leading=6.9, textColor=INK, alignment=1, wordWrap="CJK"),
+        "itemMoney": ParagraphStyle("itemMoney", parent=base["Normal"], fontName="Helvetica", fontSize=MIN_DETAIL_FONT_SIZE_PT, leading=7.1, textColor=INK, alignment=2),
+        "itemQty": ParagraphStyle("itemQty", parent=base["Normal"], fontName="Helvetica", fontSize=MIN_DETAIL_FONT_SIZE_PT, leading=7.1, textColor=INK, alignment=1),
         "section": ParagraphStyle("section", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=10, leading=12, textColor=INK),
         "cell": ParagraphStyle("cell", parent=base["Normal"], fontName="Helvetica", fontSize=7.4, leading=9, textColor=INK, alignment=1),
         "cellRight": ParagraphStyle("cellRight", parent=base["Normal"], fontName="Helvetica", fontSize=7.4, leading=9, textColor=INK, alignment=2),
@@ -604,7 +644,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
             Paragraph("MRP<br/>TOTAL (Rs.)", styles["tableHead"]),
             Paragraph("OFFER<br/>RATE", styles["tableHead"]), Paragraph("OFFER<br/>TOTAL (Rs.)", styles["tableHead"]),
         ]
-        item_widths = [12 * mm, 20 * mm, 36 * mm, 88 * mm, 24 * mm, 12 * mm, 25 * mm, 25 * mm, 25 * mm]
+        item_widths = [12 * mm, 25 * mm, 40 * mm, 77 * mm, 24 * mm, 12 * mm, 25 * mm, 26 * mm, 26 * mm]
     else:
         item_header = [
             Paragraph("SR.<br/>NO.", styles["tableHead"]), Paragraph("PRODUCT IMAGE", styles["tableHead"]),
@@ -612,7 +652,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
             Paragraph("RATE<br/>(Rs.)", styles["tableHead"]), Paragraph("QTY", styles["tableHead"]),
             Paragraph("TOTAL<br/>(Rs.)", styles["tableHead"]),
         ]
-        item_widths = [12 * mm, 20 * mm, 38 * mm, 117 * mm, 28 * mm, 12 * mm, 40 * mm]
+        item_widths = [12 * mm, 25 * mm, 40 * mm, 110 * mm, 28 * mm, 12 * mm, 40 * mm]
     max_rows = _max_item_rows_per_page()
     for area_index, room in enumerate(room_order, 1):
         room_items = grouped.get(room, [])
@@ -620,27 +660,21 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
         sr_offset = 0
         for block_index, block in enumerate(blocks):
             story.append(PageBreak())
-            # The large area title has a fixed vertical band above a 17-row
-            # table; one line is required to retain that capacity.
-            area_label = f"AREA {area_index}: <u>{_ellipsize(room, 24)}</u>"
+            # The large area title has a fixed vertical band above a readable
+            # six-row table; one line retains that capacity.
+            area_label = f"AREA {area_index}: <u>{_ellipsize(room, 58)}</u>"
             if block_index:
                 area_label += " <font size='9'>(continued)</font>"
             story.append(_brand_header(area_label, styles, style_key="areaTitle"))
             story.extend([Spacer(1, 4 * mm), HRFlowable(width="100%", thickness=1.25, color=BLUE), Spacer(1, 3 * mm)])
             n_data_rows = len(block)
             item_row_mm = _item_row_height_mm(n_data_rows)
-            # Reserve only a 1 mm gutter on either side of the image column.
-            # The image itself uses the full remaining column width; `_img`
-            # applies an aspect-preserving contain formula, never a crop.
-            image_width_mm = item_widths[1] / mm - 2
-            # Keep the entire product visible and centre it inside a bounded
-            # frame.  The old `cover=True` frame grew with sparse rows, which
-            # aggressively cropped both portrait and landscape products when
-            # an area had only two or three selections.
-            image_height_mm = min(
-                MAX_SPARSE_PAGE_IMAGE_HEIGHT_MM,
-                max(2.0, item_row_mm - 1.0),
-            )
+            # The product image always gets the same explicit frame.  This is
+            # intentionally independent of the number of products in a room:
+            # a single selected faucet must not look unlike the same faucet in
+            # a six-product bathroom.
+            image_width_mm = PRODUCT_IMAGE_FRAME_WIDTH_MM
+            image_height_mm = PRODUCT_IMAGE_FRAME_HEIGHT_MM
             rows: list[list[object]] = [item_header]
             for offset_in_block, item in enumerate(block):
                 sr_no = sr_offset + offset_in_block + 1
@@ -650,10 +684,15 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
                 offer_rate = base_rate * (1 - pct / 100)   # discounted per-unit rate
                 line_total = qty * offer_rate
                 listed_mrp = float(item.get("mrp") or base_rate)
-                description = _ellipsize(item.get("description") or item.get("name"), 40)
+                # Normal selections wrap naturally; caps are deliberately
+                # high enough that ellipsis is a true final safeguard against
+                # unbounded pasted catalogue copy, not the normal rendering.
+                description = _ellipsize(item.get("description") or item.get("name"), 175)
                 finish = item.get("finish") or item.get("colour") or ""
                 if finish:
-                    description += f"<br/><font color='#737373'>Finish: {_ellipsize(finish, 12)}</font>"
+                    description = _ellipsize(
+                        f"{item.get('description') or item.get('name') or ''} | Finish: {finish}", 210,
+                    )
                 if has_discount:
                     rows.append([
                         Paragraph(str(sr_no), styles["cellCenter"]), _img(
@@ -661,19 +700,19 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
                             width_mm=image_width_mm, height_mm=image_height_mm,
                             cover=False,
                         ),
-                        Paragraph(_ellipsize(item.get("sku"), 20), styles["itemCenter"]), Paragraph(description, styles["itemText"]),
-                        Paragraph(_money(listed_mrp), styles["itemCenter"]), Paragraph(f"{qty:g}", styles["itemCenter"]),
-                        Paragraph(_money(qty * listed_mrp), styles["itemCenter"]),
-                        Paragraph(_money(offer_rate), styles["itemCenter"]), Paragraph(_money(line_total), styles["itemCenter"]),
+                        Paragraph(_ellipsize(item.get("sku"), 80), styles["itemSku"]), Paragraph(description, styles["itemDescription"]),
+                        Paragraph(_money(listed_mrp), styles["itemMoney"]), Paragraph(f"{qty:g}", styles["itemQty"]),
+                        Paragraph(_money(qty * listed_mrp), styles["itemMoney"]),
+                        Paragraph(_money(offer_rate), styles["itemMoney"]), Paragraph(_money(line_total), styles["itemMoney"]),
                     ])
                 else:
                     rows.append([
                         Paragraph(str(sr_no), styles["cellCenter"]), _img(
                             item.get("image"), width_mm=image_width_mm, height_mm=image_height_mm, cover=False,
                         ),
-                        Paragraph(_ellipsize(item.get("sku"), 20), styles["itemCenter"]), Paragraph(description, styles["itemText"]),
-                        Paragraph(_money(base_rate), styles["itemCenter"]), Paragraph(f"{qty:g}", styles["itemCenter"]),
-                        Paragraph(_money(qty * base_rate), styles["itemCenter"]),
+                        Paragraph(_ellipsize(item.get("sku"), 80), styles["itemSku"]), Paragraph(description, styles["itemDescription"]),
+                        Paragraph(_money(base_rate), styles["itemMoney"]), Paragraph(f"{qty:g}", styles["itemQty"]),
+                        Paragraph(_money(qty * base_rate), styles["itemMoney"]),
                     ])
             block_net = sum(
                 float(item.get("qty") or 0) * float(item.get("unit_price") or 0) * (1 - float(item.get("discount_pct") or 0) / 100)
@@ -683,18 +722,17 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
             last_col = len(item_header) - 1
             total_row: list[object] = ["" for _ in item_header]
             total_row[total_label_col] = Paragraph("<b>TOTAL</b>", styles["cellCenter"])
-            total_row[last_col] = Paragraph(f"<b>{_money(block_net)}</b>", styles["cellCenter"])
+            total_row[last_col] = Paragraph(f"<b>{_money(block_net)}</b>", styles["itemMoney"])
             rows.append(total_row)
             # A detail page has no filler product rows. Very sparse pages use
             # compact rows, retaining ordinary image frames and white space
             # below the table; larger selections use the available height
-            # while the eighteenth item starts a continuation.
+            # while the seventh item starts a continuation.
             row_heights = [ITEM_HEADER_ROW_MM * mm] + [item_row_mm * mm] * n_data_rows + [ITEM_TOTAL_ROW_MM * mm]
-            numeric_col_start = 4  # MRP/RATE column onward — center-aligned per the print spec
             item_style_cmds = [
                 ("GRID", (0, 0), (-1, -1), 0.3, GRID), ("BACKGROUND", (0, 0), (-1, 0), HEADER_GREY),
                 ("BACKGROUND", (0, -1), (-1, -1), HEADER_GREY), ("ALIGN", (0, 1), (0, -1), "CENTER"),
-                ("ALIGN", (numeric_col_start, 1), (-1, -1), "CENTER"), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
                 ("LEFTPADDING", (1, 1), (1, -2), 1), ("RIGHTPADDING", (1, 1), (1, -2), 1),
                 ("TOPPADDING", (0, 1), (-1, -2), 0.5 * mm), ("BOTTOMPADDING", (0, 1), (-1, -2), 0.5 * mm),

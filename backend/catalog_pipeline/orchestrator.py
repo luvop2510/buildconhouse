@@ -264,6 +264,9 @@ async def import_accepted(job: dict, user_id: str, blob_map: dict[str, str] | No
                 "image_meta": [],
                 "image_quality": image_quality,
                 "specs": specs if isinstance(specs, dict) else {},
+                "must_buy_concealed": bool(r.get("must_buy_concealed")),
+                "concealed_sku": _clean(r.get("concealed_sku")),
+                "concealed_skus": [str(sku) for sku in (r.get("concealed_skus") or []) if sku],
                 "tags": r.get("tags") or [
                     cat["name"].lower(), supplier.lower(),
                     (finish or "").lower(),
