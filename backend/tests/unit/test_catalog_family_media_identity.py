@@ -64,6 +64,16 @@ def test_variant_hydration_never_crosses_a_floor_or_catalog_namespace():
     assert [variant["id"] for variant in hydrated["family_variants"]] == ["a", "b"]
 
 
+def test_hydrated_product_uses_its_actual_hero_quality_not_stale_import_metadata():
+    product = _product("a")
+    product["image_quality"] = "poor"
+    snapshot = _build_snapshot([product], [_media("a")], [], [], [])
+
+    hydrated = hydrate_product(product, snapshot)
+
+    assert hydrated["image_quality"] == "good"
+
+
 def test_same_supplier_key_does_not_merge_family_cards_across_floor_brand_or_category(monkeypatch):
     products = [
         _product("floor-a"), _product("floor-b", floor_id="ground-floor"),

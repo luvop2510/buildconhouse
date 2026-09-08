@@ -1,6 +1,10 @@
 """Regression contracts for GROHE concealed-installation requirements."""
 from __future__ import annotations
 
+from io import BytesIO
+
+from pypdf import PdfWriter
+from catalog_pipeline.adapters.grohe import GroheAdapter
 from catalog_pipeline.base import ProductRow
 from models import Product
 
@@ -25,3 +29,17 @@ def test_product_model_preserves_multiple_concealed_requirements():
     )
     assert product.must_buy_concealed is True
     assert product.concealed_skus == ["26483000", "26484000"]
+
+
+def test_grohe_adapter_can_open_a_pdf_source():
+    """Regression: the adapter needs io.BytesIO to read every price-book PDF."""
+    source = BytesIO()
+    writer = PdfWriter()
+    writer.add_blank_page(width=595, height=842)
+    writer.write(source)
+
+    rows, report = GroheAdapter().extract(source.getvalue(), "grohe.pdf")
+
+    assert rows == []
+    assert report.pages == 1
+    assert not any("io" in warning.lower() for warning in report.warnings)

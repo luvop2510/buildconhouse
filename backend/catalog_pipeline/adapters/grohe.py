@@ -4,6 +4,7 @@ Prices: ₹ followed by a large number.
 Product name usually contains series + size (M-Size / L-Size / XL-Size) + finish description.
 """
 from __future__ import annotations
+import io
 import logging
 import re
 

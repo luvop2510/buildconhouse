@@ -1,6 +1,6 @@
 # backend/tests/unit/test_image_extractor_optimize_flag.py
-"""The pipeline always resizes-to-1024px + recompresses (JPEG q=82 / WebP
-q=80) any image over 60KB or with alpha (image_extractor.py::_optimize,
+"""The pipeline retains a 2048px master and recompresses (JPEG/WebP q=90)
+images over 60KB or with alpha (image_extractor.py::_optimize,
 called unconditionally from _decode_supplier_image). Qutone's explicit
 requirement is "preserve original quality, do not compress, do not
 resize" — this proves the new opt-out actually bypasses that step, and
@@ -27,15 +27,25 @@ def _decode_data_url(data_url: str) -> bytes:
     return base64.b64decode(b64)
 
 
-def test_optimize_true_resizes_and_recompresses_large_images():
+def test_optimize_true_retains_a_2048px_master_and_recompresses_large_images():
     raw = _make_large_jpeg_bytes()
     result = _decode_supplier_image(raw, "jpeg", optimize=True)
     assert result is not None
     assert max(result.width, result.height) == 2000  # probed dims always describe the SOURCE, pre-optimize
     stored = _decode_data_url(result.data_url)
     stored_im = Image.open(io.BytesIO(stored))
-    assert max(stored_im.size) <= 1024
+    assert max(stored_im.size) == 2000
     assert len(stored) < len(raw)
+
+
+def test_optimize_true_caps_oversized_source_at_2048px():
+    raw = _make_large_jpeg_bytes((4096, 2048))
+    result = _decode_supplier_image(raw, "jpeg", optimize=True)
+
+    assert result is not None
+    stored = _decode_data_url(result.data_url)
+    stored_im = Image.open(io.BytesIO(stored))
+    assert max(stored_im.size) == 2048
 
 
 def test_optimize_false_preserves_original_bytes_exactly():

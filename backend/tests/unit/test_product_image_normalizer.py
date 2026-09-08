@@ -56,6 +56,13 @@ def test_non_image_media_is_not_modified():
     assert normalize_product_image(source, "application/pdf") == (source, "application/pdf")
 
 
+def test_media_quality_uses_the_longest_edge_for_portrait_photography():
+    """A usable tall image is not a thumbnail merely because it is narrow."""
+    _width, _height, quality = media_service._detect_dims_and_quality(_image_bytes((240, 720)), "image/png")
+
+    assert quality == "good"
+
+
 def test_media_service_stores_normalized_bytes_and_dimensions(monkeypatch):
     class ProductMediaCollection:
         async def find_one(self, *_args, **_kwargs):

@@ -49,6 +49,8 @@ assert.deepEqual(productImageList({
 const productImageSource = readFileSync(new URL("../src/components/ProductImage.tsx", import.meta.url), "utf8");
 assert.match(productImageSource, /storage\/v1\/render\/image\/public/);
 assert.match(productImageSource, /resize=contain/);
+assert.match(productImageSource, /requestedWidth <= 1600 \? 1600 : 2048/);
+assert.match(productImageSource, /const quality = width >= 1024 \? 90 : 85/);
 assert.doesNotMatch(productImageSource, /resize=fill/);
 assert.doesNotMatch(productImageSource, /scaleX:\s*-1/);
 assert.doesNotMatch(productImageSource, /rotate:\s*rotation/);

@@ -1,5 +1,5 @@
 {
-  "mode": "import",
+  "mode": "dry-run",
   "source_file": "MODULO 2026.xlsx",
   "extraction": {
     "rows": 73,
@@ -71,78 +71,5 @@
     "overall_score": 97.8,
     "production_ready": true
   },
-  "runtime_s": 18.1,
-  "batch_result": "SUCCESS",
-  "categories_created_on_ground_floor": [],
-  "products_imported": 73,
-  "products_updated": 0,
-  "products_skipped": 0,
-  "products_failed": 0,
-  "duplicates_skipped": 0,
-  "import_errors": [],
-  "images_uploaded": 73,
-  "missing_images_final": 0,
-  "pre_import_snapshot": "backups/20260804_175421",
-  "post_import_snapshot": "backups/20260804_175737",
-  "integrity_guard": {
-    "total_products": 4363,
-    "total_media": 4235,
-    "total_brands": 10,
-    "total_categories": 42,
-    "same_brand_duplicate_skus": [],
-    "cross_brand_sku_collisions": [
-      {
-        "sku": "26455000",
-        "products": [
-          {
-            "id": "03907bd4-3ad3-4a46-b87f-6b922755659a",
-            "brand_id": "9b72519c-bfb4-4576-9e79-e85072ab4216",
-            "name": "HG FixFit Square wall outlet DN15 ch.NRV"
-          },
-          {
-            "id": "b6627afc-dd37-488d-9c18-f3675dfe2567",
-            "brand_id": "94292e11-6b64-41b4-8151-f30d66c674ad",
-            "name": "ChromeEuphoria260SmartControlheadshower"
-          }
-        ]
-      },
-      {
-        "sku": "27704000",
-        "products": [
-          {
-            "id": "4e049e87-6a05-4de3-b49e-a8faf53dd7c3",
-            "brand_id": "9b72519c-bfb4-4576-9e79-e85072ab4216",
-            "name": "HG Wall bar Unica Reno 720mm chrome"
-          },
-          {
-            "id": "dfe8bf4b-81af-424b-95f8-9fdc55d1c53d",
-            "brand_id": "94292e11-6b64-41b4-8151-f30d66c674ad",
-            "name": "EuphoriaCube wall union"
-          }
-        ]
-      },
-      {
-        "sku": "27477000",
-        "products": [
-          {
-            "id": "ed7f30ba-08d0-406a-975f-c6fcd3a2cdd2",
-            "brand_id": "9b72519c-bfb4-4576-9e79-e85072ab4216",
-            "name": "HG Raindance Air ov.shower 240mm ceiling"
-          },
-          {
-            "id": "d8d876b8-229d-4092-9a32-8be7818cea62",
-            "brand_id": "94292e11-6b64-41b4-8151-f30d66c674ad",
-            "name": "Rainshower Cosmopolitan 310 Headshower"
-          }
-        ]
-      }
-    ],
-    "invalid_brand_refs": [],
-    "invalid_category_refs": [],
-    "orphaned_media": [],
-    "media_brand_mismatches": [],
-    "missing_images": 136,
-    "unexpected_modifications": [],
-    "ok": true
-  }
+  "runtime_s": 0.2
 }

@@ -19,7 +19,7 @@ Key improvements (Iteration 1):
 *   For each anchor we prefer the highest-quality candidate (raster ≥1024px,
     then rasterized vector, then any other) — so if the row also carries a
     vector alternative it wins over a 200px thumbnail.
-*   Post-decode optimisation: images >≈ 1MB are re-encoded to WebP quality 82,
+*   Post-decode optimisation: images >≈ 1MB are re-encoded at quality 90,
     which typically saves 30-60% while preserving perceived quality.
 
 The extractor **never fabricates** or upscales images. If the supplier only
@@ -145,10 +145,12 @@ def _optimize(raw: bytes, mime: str) -> tuple[bytes, str]:
     """Optimize a decoded raster for storage.
 
     Strategy:
-      * Cap longest edge at 1024px (Retina-quality on a 3.5-inch product card
-        at 3x density, and 3× the density of Vitra's median 320px raster).
-      * Re-encode photographic content as JPEG q=82 (~5-10× smaller than raw
-        rasterized-vector PNG for the same visual quality).
+      * Retain a 2048px master: enough genuine source detail for desktop
+        galleries, high-density native displays and customer PDFs. Delivery
+        views request smaller Supabase derivatives as needed.
+      * Re-encode photographic content as JPEG q=90. This keeps a useful
+        storage saving without introducing a second visible compression pass
+        on supplier photography.
       * Preserve transparency: PNGs with an alpha channel stay PNG at cap.
       * If the re-encoded output is not smaller than the input, keep the input.
 
@@ -167,22 +169,23 @@ def _optimize(raw: bytes, mime: str) -> tuple[bytes, str]:
         return raw, mime
 
     try:
-        # Cap longest edge at 1024
+        # Keep a real 2048px master. Never upscale a smaller source: this is
+        # a ceiling, not an enhancement operation.
         w, h = im.size
         longest = max(w, h)
-        if longest > 1024:
-            scale = 1024 / longest
+        if longest > 2048:
+            scale = 2048 / longest
             im = im.resize((max(1, int(w * scale)), max(1, int(h * scale))), _PIL_Image.LANCZOS)
 
         buf = BytesIO()
         if has_alpha:
-            # Keep transparency → WebP q=80 (better than PNG for photos with alpha)
-            im.save(buf, format="WEBP", quality=80, method=6)
+            # Keep transparency → WebP q=90 (better than PNG for photos with alpha)
+            im.save(buf, format="WEBP", quality=90, method=6)
             out_mime = "image/webp"
         else:
             if im.mode != "RGB":
                 im = im.convert("RGB")
-            im.save(buf, format="JPEG", quality=82, optimize=True, progressive=True)
+            im.save(buf, format="JPEG", quality=90, optimize=True, progressive=True)
             out_mime = "image/jpeg"
         candidate = buf.getvalue()
         if len(candidate) < len(raw):
@@ -327,8 +330,8 @@ def _decode_supplier_image(raw: bytes, ext: str, *, optimize: bool = True) -> Op
     longest = max(w, h)
     quality = classify_quality(longest, source_format)
 
-    # Optimise: cap huge photos to 1600px WebP for storage without perceptible
-    # quality loss. Never changes the reported width/height above — those still
+    # Optimise: retain a 2048px master for storage/delivery. Never changes the
+    # reported width/height above — those still
     # describe the source. Callers that need byte-for-byte original quality
     # (e.g. the Qutone tiles adapter) pass optimize=False.
     if optimize:

@@ -68,9 +68,10 @@ async def _canonicalize_item_images(items) -> list[dict]:
     media_rows = await db.product_media.find(
         {"product_id": {"$in": list(product_ids)}, "public_url": {"$nin": [None, ""]}},
         {"_id": 0, "product_id": 1, "public_url": 1, "is_primary": 1,
-         "role": 1, "sort_order": 1, "source_type": 1},
+         "role": 1, "sort_order": 1, "source_type": 1, "quality": 1},
     ).to_list(max(len(product_ids) * 8, 100))
     priority = {"manufacturer": 0, "supplier": 1, "internal": 2}
+    quality_rank = {"excellent": 4, "good": 3, "acceptable": 2, "poor": 1, "missing": 0}
     grouped: dict[str, list[dict]] = {}
     for row in media_rows:
         grouped.setdefault(str(row.get("product_id")), []).append(row)
@@ -81,9 +82,32 @@ async def _canonicalize_item_images(items) -> list[dict]:
             priority.get(row.get("source_type"), 3),
             int(row.get("sort_order", 100) or 100),
         ))
+
+    def best_current_media(rows: list[dict]) -> dict:
+        """Prefer real detail over an outdated low-resolution primary image.
+
+        The explicit primary/hero remains authoritative when it is at least as
+        detailed as its alternatives. A better current image from the same
+        product is safer for a customer-facing PDF than enlarging a thumbnail.
+        """
+        preferred = rows[0]
+        best = max(
+            rows,
+            key=lambda row: (
+                quality_rank.get(str(row.get("quality") or "missing").lower(), 0),
+                1 if row.get("is_primary") else 0,
+                1 if row.get("role") == "hero" else 0,
+                -priority.get(row.get("source_type"), 3),
+                -int(row.get("sort_order", 100) or 100),
+            ),
+        )
+        preferred_quality = quality_rank.get(str(preferred.get("quality") or "missing").lower(), 0)
+        best_quality = quality_rank.get(str(best.get("quality") or "missing").lower(), 0)
+        return best if best_quality > preferred_quality else preferred
+
     return [
         {**item, "image": (
-            grouped.get(str(item.get("product_id")), [{}])[0].get("public_url")
+            best_current_media(grouped[str(item.get("product_id"))]).get("public_url")
             if grouped.get(str(item.get("product_id")))
             else item.get("image")
         )}

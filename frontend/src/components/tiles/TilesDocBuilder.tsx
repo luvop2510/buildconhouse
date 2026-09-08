@@ -224,7 +224,7 @@ function quantityUnitLabel(unit: TileRow["quantityUnit"]): "Box" | "Piece" {
 // ---------------------------------------------------------------------------
 // Document state + persistence
 // ---------------------------------------------------------------------------
-function useTilesDoc(docType: TilesDocType) {
+function useTilesDoc(docType: TilesDocType, initialProductId?: string | null) {
   const router = useRouter();
   const { id: routeId } = useLocalSearchParams<{ id?: string }>();
   const [docId, setDocId] = useState<string | null>(null);
@@ -251,6 +251,7 @@ function useTilesDoc(docType: TilesDocType) {
   const persistRef = useRef<() => Promise<string | null>>(async () => null);
   const persistQueue = useRef<Promise<string | null>>(Promise.resolve(null));
   const persistedIdRef = useRef<string | null>(null);
+  const seededProductRef = useRef<string | null>(null);
 
   useEffect(() => {
     api.get<Customer[]>("/customers", { floorId: TILES_FLOOR_ID }).then(setCustomers).catch(() => {});
@@ -456,6 +457,24 @@ function useTilesDoc(docType: TilesDocType) {
     // this canonical endpoint also covers catalog pages that omit it.
     if (!validTileSizes(product.available_sizes).length) void loadRowSizes(key, product.id);
   }, [markDirty, customerId, loadRowSizes]);
+
+  // Catalog's Ground Floor CTA deep-links here with a concrete product. Seed
+  // only an unsaved document: an existing document URL always remains the
+  // source of truth, even if a stale productId query parameter is present.
+  const initialEmptyRowKey = rows.find((row) => !row.productId)?.key || rows[0]?.key;
+  useEffect(() => {
+    if (!initialProductId || routeId || !initialEmptyRowKey || seededProductRef.current === initialProductId) return;
+    seededProductRef.current = initialProductId;
+    let alive = true;
+    api.get<Product>(`/products/${initialProductId}`, { floorId: TILES_FLOOR_ID })
+      .then((product) => {
+        if (alive) applyProduct(initialEmptyRowKey, product);
+      })
+      .catch((error: any) => {
+        if (alive) toast.error(error?.detail || "Couldn't add this tile to the quotation");
+      });
+    return () => { alive = false; };
+  }, [applyProduct, initialEmptyRowKey, initialProductId, routeId]);
 
   const selectRowSize = useCallback(async (key: string, size: string) => {
     const row = rows.find((item) => item.key === key);
@@ -1927,9 +1946,9 @@ const mobileStyles = StyleSheet.create({
 // ---------------------------------------------------------------------------
 // Page shell — topbar with the action buttons + scrollable paper
 // ---------------------------------------------------------------------------
-export function TilesDocBuilder({ docType }: { docType: TilesDocType }) {
+export function TilesDocBuilder({ docType, initialProductId }: { docType: TilesDocType; initialProductId?: string | null }) {
   const router = useRouter();
-  const doc = useTilesDoc(docType);
+  const doc = useTilesDoc(docType, initialProductId);
   const { isPhone, isTablet } = useBp();
   const [workspaceWidth, setWorkspaceWidth] = useState(0);
   const isSelection = docType === "tiles_selection";

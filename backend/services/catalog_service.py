@@ -276,6 +276,7 @@ def _apply_media(product: dict, snapshot: CatalogSnapshot) -> None:
 
     gallery: list[dict] = []
     hero_url: Optional[str] = None
+    hero_quality: Optional[str] = None
     for media in rows:
         if not media.public_url:
             continue
@@ -292,8 +293,10 @@ def _apply_media(product: dict, snapshot: CatalogSnapshot) -> None:
         })
         if not hero_url and (media.is_primary or media.role == "hero"):
             hero_url = media.public_url
+            hero_quality = media.quality
     if not hero_url and gallery:
         hero_url = gallery[0]["url"]
+        hero_quality = gallery[0].get("quality")
 
     if not gallery and product.get("images"):
         legacy = product.get("images") or []
@@ -309,12 +312,17 @@ def _apply_media(product: dict, snapshot: CatalogSnapshot) -> None:
             hero_url = legacy[0]
             summary["supplier"] = len(gallery)
             best_quality = product.get("image_quality") or best_quality
+            hero_quality = best_quality
 
     product["media_summary"] = {
         **summary, "best_quality": best_quality, "total": sum(summary.values()),
     }
     product["hero_image_url"] = hero_url
     product["gallery"] = gallery
+    # Product-level importer metadata can be stale after a media repair or a
+    # manual replacement. The actual selected hero is authoritative for every
+    # consumer of a hydrated product (PDP, cards, quotations and PDFs).
+    product["image_quality"] = hero_quality or best_quality
     if gallery:
         product["images"] = [item["url"] for item in gallery if item.get("url")]
     elif hero_url:

@@ -55,10 +55,18 @@ const SUPABASE_PUBLIC_OBJECT = "/storage/v1/object/public/";
 
 export function supabaseSizedImageUrl(uri: string, requestedWidth: number): string | null {
   if (!uri.startsWith("http") || !uri.includes(SUPABASE_PUBLIC_OBJECT)) return null;
-  const width = requestedWidth <= 320 ? 320 : 640;
+  // Preserve the bandwidth savings of Supabase transforms for thumbnails,
+  // without forcing a soft 640px derivative into a desktop product gallery.
+  // The value is the physical display width (CSS width × device pixel ratio),
+  // rounded to a small set of cache-friendly transform sizes.
+  const width = requestedWidth <= 320 ? 320
+    : requestedWidth <= 640 ? 640
+      : requestedWidth <= 1024 ? 1024
+        : requestedWidth <= 1600 ? 1600 : 2048;
+  const quality = width >= 1024 ? 90 : 85;
   const rendered = uri.replace(SUPABASE_PUBLIC_OBJECT, "/storage/v1/render/image/public/");
   const separator = rendered.includes("?") ? "&" : "?";
-  return `${rendered}${separator}width=${width}&resize=contain&quality=82`;
+  return `${rendered}${separator}width=${width}&resize=contain&quality=${quality}`;
 }
 
 export function ProductImage({

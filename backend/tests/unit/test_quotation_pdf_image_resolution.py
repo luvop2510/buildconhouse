@@ -50,6 +50,19 @@ def test_pdf_image_resolution_prefers_current_primary_media(monkeypatch):
     assert resolved[0]["image"] == "https://cdn.example.test/current.jpg"
 
 
+def test_pdf_image_resolution_prefers_a_higher_quality_current_image(monkeypatch):
+    monkeypatch.setattr(quotation_routes, "db", _Db([
+        {"product_id": "p1", "public_url": "https://cdn.example.test/thumbnail.jpg", "is_primary": True, "quality": "poor"},
+        {"product_id": "p1", "public_url": "https://cdn.example.test/original.jpg", "is_primary": False, "quality": "excellent"},
+    ]))
+
+    resolved = asyncio.run(quotation_routes._canonicalize_item_images([
+        {"product_id": "p1", "image": "https://cdn.example.test/snapshot.jpg"},
+    ]))
+
+    assert resolved[0]["image"] == "https://cdn.example.test/original.jpg"
+
+
 def test_pdf_image_resolution_keeps_the_selected_variant_not_family_representative(monkeypatch):
     monkeypatch.setattr(quotation_routes, "db", _Db([
         {"product_id": "representative-a", "public_url": "https://cdn.example.test/a.jpg", "is_primary": True},

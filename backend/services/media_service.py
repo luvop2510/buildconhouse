@@ -19,6 +19,7 @@ from media_storage import get_media_storage, StorageError
 from media_storage.factory import public_bucket, private_bucket
 from models import ProductMedia, MediaSourceType, MediaRole, MediaQuality, UserPublic
 from services.activity_log import log_event
+from services.media_quality import quality_from_dimensions
 from services.product_image_normalizer import normalize_product_image
 
 logger = logging.getLogger("forge.media_service")
@@ -41,16 +42,7 @@ def _detect_dims_and_quality(data: bytes, mime: str) -> tuple[Optional[int], Opt
     try:
         img = Image.open(io.BytesIO(data))
         w, h = img.size
-        m = min(w, h)
-        if m >= 1024:
-            q: MediaQuality = "excellent"
-        elif m >= 640:
-            q = "good"
-        elif m >= 320:
-            q = "acceptable"
-        else:
-            q = "poor"
-        return w, h, q
+        return w, h, quality_from_dimensions(w, h, mime)  # type: ignore[return-value]
     except Exception as e:  # noqa: BLE001
         logger.warning("image inspect failed: %s", e)
         return None, None, "acceptable"

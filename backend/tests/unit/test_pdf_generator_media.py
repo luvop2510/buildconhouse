@@ -64,6 +64,15 @@ def test_standard_item_tables_fill_the_landscape_printable_width():
     assert "item_widths = [12 * mm, 25 * mm, 40 * mm, 110 * mm, 28 * mm, 12 * mm, 40 * mm]" in source
 
 
+def test_sanitary_item_text_columns_are_center_aligned():
+    """Article, description, rate and total must share the table's center axis."""
+    source = Path(pdf_generator.__file__).read_text()
+
+    assert '"itemDescription", parent=base["Normal"], fontName="Helvetica", fontSize=6.6, leading=7.15, textColor=INK, alignment=1' in source
+    assert '"itemSku", parent=base["Normal"], fontName="Helvetica", fontSize=MIN_DETAIL_FONT_SIZE_PT, leading=6.9, textColor=INK, alignment=1' in source
+    assert '"itemMoney", parent=base["Normal"], fontName="Helvetica", fontSize=MIN_DETAIL_FONT_SIZE_PT, leading=7.1, textColor=INK, alignment=1' in source
+
+
 def test_standard_pdf_keeps_supplied_terms_enquiries_and_signature_on_page_one():
     quotation = {
         "customer_name": "Page One Contract",
