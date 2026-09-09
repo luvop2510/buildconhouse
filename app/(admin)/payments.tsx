@@ -6,7 +6,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView,
   StyleSheet, Text, TextInput, View,
@@ -65,7 +65,7 @@ type OrderDetail = {
   customer_name: string; confirmed_at: string; notes?: string | null;
   project_name?: string | null;
   floor_id: string; mrp: number; discounted_rate: number;
-  quotation_total: number; manual_extra_amount: number; grand_total: number;
+  quotation_total: number; manual_extra_amount: number; manual_extra_name?: string | null; grand_total: number;
   paid: number; outstanding: number; percent_collected: number;
   payment_status: "paid" | "partial" | "due";
   payments: PaymentEntry[];
@@ -185,7 +185,11 @@ export default function PaymentsScreen() {
   const [reference, setReference] = useState("");
   const [saving, setSaving] = useState(false);
   const [manualExtra, setManualExtra] = useState("");
+  const [manualExtraName, setManualExtraName] = useState("");
   const [savingManualExtra, setSavingManualExtra] = useState(false);
+  const collectionsScrollRef = useRef<ScrollView>(null);
+  const detailTopRef = useRef(0);
+  const shouldFocusDetailRef = useRef(false);
 
   // ── Payment History state ────────────────────────────────────────────────
   const [floors, setFloors] = useState<FloorOpt[]>([]);
@@ -231,6 +235,7 @@ export default function PaymentsScreen() {
       setDetail(d);
       setAmount(d.outstanding > 0 ? String(Math.round(d.outstanding)) : "");
       setManualExtra(d.manual_extra_amount ? String(d.manual_extra_amount) : "");
+      setManualExtraName(d.manual_extra_name || "");
     } catch (e: any) {
       toast.error(e?.detail || "Could not load order details");
       setDetail(null);
@@ -248,6 +253,17 @@ export default function PaymentsScreen() {
     return () => clearTimeout(t);
   }, [q, loadOrders, selectedFloorId]);
   useEffect(() => { if (selectedId) loadDetail(selectedId); }, [selectedId, loadDetail]);
+
+  // On a phone the customer queue precedes its detail panel. Bring the chosen
+  // order into view immediately instead of leaving the collector below it.
+  useEffect(() => {
+    if (!isPhone || !detail || !shouldFocusDetailRef.current) return;
+    const timer = setTimeout(() => {
+      collectionsScrollRef.current?.scrollTo({ y: detailTopRef.current, animated: true });
+      shouldFocusDetailRef.current = false;
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [detail, isPhone]);
 
   const customerCollections = useMemo<CustomerCollection[]>(() => {
     const grouped = new Map<string, CustomerCollection>();
@@ -271,6 +287,7 @@ export default function PaymentsScreen() {
     || null;
 
   const selectCustomer = useCallback((customer: CustomerCollection) => {
+    shouldFocusDetailRef.current = true;
     setSelectedCustomerId(customer.id);
     setSelectedId(customer.orders[0]?.id || null);
   }, []);
@@ -303,10 +320,15 @@ export default function PaymentsScreen() {
       toast.error("Enter a valid extra cost");
       return;
     }
+    const name = manualExtraName.trim();
+    if (parsed > 0 && !name) {
+      toast.error("Name the additional cost");
+      return;
+    }
     setSavingManualExtra(true);
     try {
-      const updated = await api.patch<{ quotation_total: number; manual_extra_amount: number; grand_total: number }>(
-        `/payments/orders/${detail.id}/manual-extra`, { amount: parsed || 0 },
+      const updated = await api.patch<{ quotation_total: number; manual_extra_amount: number; manual_extra_name?: string | null; grand_total: number }>(
+        `/payments/orders/${detail.id}/manual-extra`, { amount: parsed || 0, name: name || null },
       );
       setDetail((current) => current ? {
         ...current,
@@ -318,6 +340,7 @@ export default function PaymentsScreen() {
           ? "paid" : current.paid > 0 ? "partial" : "due",
       } : current);
       setManualExtra(updated.manual_extra_amount ? String(updated.manual_extra_amount) : "");
+      setManualExtraName(updated.manual_extra_name || "");
       toast.success("Extra cost updated");
       await Promise.all([loadStats(), loadOrders(q)]);
     } catch (e: any) {
@@ -457,7 +480,7 @@ export default function PaymentsScreen() {
       </View>
 
       {tab === "collections" ? (
-      <ScrollView contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, gap: spacing.lg, paddingBottom: isPhone ? 132 : spacing.xxxl }}>
+      <ScrollView ref={collectionsScrollRef} contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, gap: spacing.lg, paddingBottom: isPhone ? 132 : spacing.xxxl }}>
         {/* Hero — white card with brand icon tile */}
         <HeroCard
           overline="THIS MONTH"
@@ -527,7 +550,10 @@ export default function PaymentsScreen() {
           </View>
 
           {/* Right — detail */}
-          <View style={{ flex: 1, gap: spacing.lg, minWidth: 0, width: isDesktop ? undefined : "100%" }}>
+          <View
+            onLayout={(event) => { detailTopRef.current = event.nativeEvent.layout.y; }}
+            style={{ flex: 1, gap: spacing.lg, minWidth: 0, width: isDesktop ? undefined : "100%" }}
+          >
             {loadingDetail || !detail ? (
               <Card>
                 <EmptyState
@@ -565,6 +591,55 @@ export default function PaymentsScreen() {
                   </View>
                 </Panel>
 
+                {/* Collection actions precede the ledger so they are usable immediately on a phone. */}
+                {detail.outstanding > 0 ? (
+                  <Button
+                    testID="open-record-payment"
+                    label="Record Payment"
+                    icon="plus"
+                    variant="primary"
+                    size="lg"
+                    fullWidth
+                    onPress={() => setShowRecord(true)}
+                  />
+                ) : (
+                  <UIAlert tone="success" title="Order fully paid"
+                    description="Every rupee collected — this order is closed." />
+                )}
+
+                {isGroundFloorOrder ? (
+                  <Panel title="Additional cost" overline="GROUND FLOOR" padding={spacing.lg}>
+                    <Text style={[type.body, { color: colors.onSurfaceMuted, marginBottom: spacing.md }]}>Name the expense and update its amount whenever the agreed price changes. The original quotation price remains unchanged.</Text>
+                    <View style={{ flexDirection: isPhone ? "column" : "row", gap: spacing.sm, alignItems: isPhone ? "stretch" : "flex-end" }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[type.caption, { marginBottom: 6 }]}>Cost name</Text>
+                        <TextInput
+                          testID="ground-floor-manual-extra-name"
+                          value={manualExtraName}
+                          onChangeText={setManualExtraName}
+                          placeholder="e.g. Labour cost"
+                          placeholderTextColor={colors.onSurfaceMuted}
+                          style={styles.dateInput}
+                        />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[type.caption, { marginBottom: 6 }]}>Amount (₹)</Text>
+                        <TextInput
+                          testID="ground-floor-manual-extra"
+                          value={manualExtra}
+                          onChangeText={setManualExtra}
+                          keyboardType="decimal-pad"
+                          placeholder="0"
+                          placeholderTextColor={colors.onSurfaceMuted}
+                          style={styles.dateInput}
+                        />
+                      </View>
+                      <Button label="Update total" icon="plus" variant="secondary" loading={savingManualExtra}
+                        onPress={saveManualExtra} testID="save-ground-floor-manual-extra" />
+                    </View>
+                  </Panel>
+                ) : null}
+
                 {selectedCustomer && selectedCustomer.orders.length > 1 ? (
                   <Panel title="Outstanding customer orders" overline="SELECT AN ORDER" padding={spacing.md}>
                     <View style={{ gap: spacing.sm }}>
@@ -573,7 +648,10 @@ export default function PaymentsScreen() {
                           key={order.id}
                           accessibilityRole="button"
                           accessibilityLabel={`Select ${order.number}`}
-                          onPress={() => setSelectedId(order.id)}
+                          onPress={() => {
+                            shouldFocusDetailRef.current = true;
+                            setSelectedId(order.id);
+                          }}
                           style={({ pressed }) => [{
                             padding: spacing.md, borderRadius: radius.md, borderWidth: 1,
                             borderColor: order.id === detail.id ? colors.brand : colors.border,
@@ -609,7 +687,7 @@ export default function PaymentsScreen() {
                   )}
                   {isGroundFloorOrder && detail.manual_extra_amount > 0 ? (
                     <StatTile dense label="Additional cost" value={money(detail.manual_extra_amount)}
-                      sub="Labour or other cost" tone="neutral" />
+                      sub={detail.manual_extra_name || "Additional cost"} tone="neutral" />
                   ) : null}
                   <StatTile dense label="Paid" value={money(detail.paid)}
                     sub={`${detail.percent_collected}% of order`} tone="success" />
@@ -617,28 +695,6 @@ export default function PaymentsScreen() {
                     sub={detail.outstanding > 0 ? "Remaining balance" : "Fully paid"}
                     tone={detail.outstanding > 0 ? "danger" : "success"} />
                 </View>
-
-                {isGroundFloorOrder ? (
-                  <Panel title="Additional cost" overline="GROUND FLOOR" padding={spacing.lg}>
-                    <Text style={[type.body, { color: colors.onSurfaceMuted, marginBottom: spacing.md }]}>Add labour or other agreed costs to the payment total. The original quotation price remains unchanged.</Text>
-                    <View style={{ flexDirection: isPhone ? "column" : "row", gap: spacing.sm, alignItems: isPhone ? "stretch" : "flex-end" }}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[type.caption, { marginBottom: 6 }]}>Extra cost (₹)</Text>
-                        <TextInput
-                          testID="ground-floor-manual-extra"
-                          value={manualExtra}
-                          onChangeText={setManualExtra}
-                          keyboardType="decimal-pad"
-                          placeholder="0"
-                          placeholderTextColor={colors.onSurfaceMuted}
-                          style={styles.dateInput}
-                        />
-                      </View>
-                      <Button label="Update total" icon="plus" variant="secondary" loading={savingManualExtra}
-                        onPress={saveManualExtra} testID="save-ground-floor-manual-extra" />
-                    </View>
-                  </Panel>
-                ) : null}
 
                 {/* Progress */}
                 <Panel padding={spacing.lg}>
@@ -667,7 +723,7 @@ export default function PaymentsScreen() {
                     <UIAlert
                       tone="error"
                       title={`${money(detail.outstanding)} still outstanding`}
-                      description="No payments recorded yet. Send a WhatsApp reminder or record the first payment below."
+                      description="No payments recorded yet. Send a WhatsApp reminder or use Record Payment above."
                     />
                   ) : detail.payments.length === 0 ? (
                     <EmptyState icon="check-circle" title="Fully paid"
@@ -690,21 +746,6 @@ export default function PaymentsScreen() {
                   )}
                 </Panel>
 
-                {/* CTA */}
-                {detail.outstanding > 0 ? (
-                  <Button
-                    testID="open-record-payment"
-                    label="Record Payment"
-                    icon="plus"
-                    variant="primary"
-                    size="lg"
-                    fullWidth
-                    onPress={() => setShowRecord(true)}
-                  />
-                ) : (
-                  <UIAlert tone="success" title="Order fully paid"
-                    description="Every rupee collected — this order is closed." />
-                )}
               </>
             )}
           </View>

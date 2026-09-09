@@ -48,22 +48,28 @@ assert.deepEqual(productImageList({
 // a single assertion.
 const productImageSource = readFileSync(new URL("../src/components/ProductImage.tsx", import.meta.url), "utf8");
 assert.match(productImageSource, /storage\/v1\/render\/image\/public/);
-assert.match(productImageSource, /forceLandscape/);
 assert.match(productImageSource, /resize=contain/);
+assert.match(productImageSource, /requestedWidth <= 1600 \? 1600 : 2048/);
+assert.match(productImageSource, /const quality = width >= 1024 \? 90 : 85/);
 assert.doesNotMatch(productImageSource, /resize=fill/);
-assert.match(productImageSource, /contentFit=\{forceLandscape \? "cover" : contentFit\}/);
-assert.match(productImageSource, /rotation\?: "0deg" \| "90deg" \| "270deg"/);
+assert.doesNotMatch(productImageSource, /scaleX:\s*-1/);
+assert.doesNotMatch(productImageSource, /rotate:\s*rotation/);
+assert.match(productImageSource, /contentFit=\{contentFit\}/);
 
-// Tile document images are mandatory landscape presentation assets. Older
-// portrait source images and portrait tile dimensions are rotated in the UI.
+// Tile document frames are horizontal, but source media must remain upright
+// and fully visible instead of being mirrored, rotated, or cropped.
 const tilesDocBuilderSource = readFileSync(new URL("../src/components/tiles/TilesDocBuilder.tsx", import.meta.url), "utf8");
-assert.match(tilesDocBuilderSource, /function tileNeedsLandscapeRotation/);
-assert.match(tilesDocBuilderSource, /forceLandscape/);
-assert.match(tilesDocBuilderSource, /rotation=\{tileNeedsLandscapeRotation\(size\) \? "90deg" : "0deg"\}/);
-assert.match(tilesDocBuilderSource, /function TileImageCell\(\{ uri, size \}/);
-assert.match(tilesDocBuilderSource, /contentFit="cover"/);
+assert.match(tilesDocBuilderSource, /function TileImageCell\(\{ uri \}/);
+assert.match(tilesDocBuilderSource, /contentFit="contain"/);
+assert.doesNotMatch(tilesDocBuilderSource, /forceLandscape|tileNeedsLandscapeRotation|rotation=\{/);
+const lineRowSource = readFileSync(new URL("../src/components/quotation/canvas/LineRow.tsx", import.meta.url), "utf8");
+assert.doesNotMatch(lineRowSource, /<ProductImage source=\{l\.image\} mirror/);
 assert.match(tilesDocBuilderSource, /This product has no image\. Add a product image before including it in a tile selection\./);
 assert.match(tilesDocBuilderSource, /Every selected tile needs a product image before generating the PDF\./);
+// Phone and tablet both use MobileTilesEditor. Keep downloading explicit in
+// its persistent action bar rather than hiding it behind the overflow menu.
+assert.match(tilesDocBuilderSource, /label="Download PDF" icon="download" onPress=\{doc\.generatePdf\}/);
+assert.match(tilesDocBuilderSource, /testID="tiles-mobile-download-pdf"/);
 const tilesStageSource = readFileSync(new URL("../src/components/tiles/tilesStage.ts", import.meta.url), "utf8");
 assert.match(tilesStageSource, /if \(docType === "tiles_selection"\) return false/);
 

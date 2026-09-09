@@ -25,7 +25,7 @@ export function QuotationBuilder({
   const router = useRouter();
 
   if (mode === "tiles_selection" || mode === "tiles_quotation") {
-    return <TilesDocBuilder docType={mode} />;
+    return <TilesDocBuilder docType={mode} initialProductId={initialProductId || null} />;
   }
 
   return (

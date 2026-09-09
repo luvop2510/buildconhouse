@@ -46,8 +46,12 @@ const TOP_N = 10;
  * formatter through each one.
  */
 function useCellMoney() {
-  const { isPhone } = useBp();
-  return (value: number) => (isPhone ? fmtMoneyCompact(value) : `₹${fmtMoney(value)}`);
+  const { isPhone, isTabletPortrait } = useBp();
+  // A portrait tablet has the same constrained content column as a phone
+  // once the admin rail and page gutters are accounted for. Compact amounts
+  // keep the record cards readable without making the page horizontally
+  // scrollable; landscape tablets retain exact values in the table.
+  return (value: number) => (isPhone || isTabletPortrait ? fmtMoneyCompact(value) : `₹${fmtMoney(value)}`);
 }
 
 function shortDate(iso: string | null): string {
@@ -76,8 +80,9 @@ export default function SalesDataIndex() {
   const { staff } = useAuth();
   const { floors } = useFloorAccess();
   const cellMoney = useCellMoney();
-  const { isPhone } = useBp();
+  const { isPhone, isTabletPortrait } = useBp();
   const router = useRouter();
+  const useCompactRows = isPhone || isTabletPortrait;
 
   // The KPI row used to give each card its own minWidth (160 / 140 / 180),
   // which wrapped into a ragged 2-then-1 block at narrow widths — two
@@ -88,6 +93,8 @@ export default function SalesDataIndex() {
   const kpiGap = spacing.md;
   const kpiCardStyle = isPhone
     ? { width: "100%" as const }
+    : isTabletPortrait
+      ? { flexBasis: "48%" as const, flexGrow: 1, minWidth: 0 }
     : { flex: 1, minWidth: 200, flexBasis: 0 };
 
   // Matches SalesSection, so the one hand-rolled Card on this page breathes
@@ -362,7 +369,7 @@ export default function SalesDataIndex() {
         onRetry={load}
         emptyTitle="No brand revenue in this period"
       >
-        {(rows) => isPhone ? (
+        {(rows) => useCompactRows ? (
           <MobileRows>{rows.map((row) => (
             <MobileRow key={row.brand_id} testID={`sales-brand-row-${row.brand_id}`} title={row.name} value={cellMoney(row.revenue)} detail={`${row.quantity} sold`} badge={row.is_unlinked ? "Unmatched" : undefined} />
           ))}</MobileRows>
@@ -407,7 +414,7 @@ export default function SalesDataIndex() {
           ) : null
         }
       >
-        {(rows) => isPhone ? (
+        {(rows) => useCompactRows ? (
           <MobileRows>{rows.slice(0, TOP_N).map((row) => (
             <MobileRow key={row.customer_id || row.name} testID={`sales-customer-row-${row.customer_id}`} title={row.name} value={cellMoney(row.revenue)} detail={`${row.orders} ${row.orders === 1 ? "order" : "orders"}`} onPress={row.customer_id ? () => router.push(`/(admin)/customers/${row.customer_id}` as never) : undefined} />
           ))}</MobileRows>
@@ -464,7 +471,7 @@ export default function SalesDataIndex() {
         onRetry={load}
         emptyTitle="No products sold in this period"
       >
-        {(rows) => isPhone ? (
+        {(rows) => useCompactRows ? (
           <MobileRows>{rows.map((row) => (
             <MobileRow key={row.product_id} testID={`sales-product-row-${row.product_id}`} title={row.name} value={cellMoney(row.revenue)} detail={`${row.quantity} sold${row.brand_name ? ` · ${row.brand_name}` : ""}`} />
           ))}</MobileRows>
@@ -511,7 +518,7 @@ export default function SalesDataIndex() {
           ) : null
         }
       >
-        {(rows) => isPhone ? (
+        {(rows) => useCompactRows ? (
           <MobileRows>{rows.map((row) => (
             <MobileRow key={row.id} testID={`sales-order-row-${row.id}`} title={row.customer_name} value={cellMoney(row.grand_total)} detail={`${row.number || "—"} · ${shortDate(row.ordered_at)} · ${row.outstanding > 0 ? `${cellMoney(row.outstanding)} due` : "Paid"}`} onPress={() => router.push(`/(admin)/quotations/${row.id}` as never)} />
           ))}</MobileRows>
@@ -579,7 +586,8 @@ function ReferrerWorkspace({
   testID: string;
 }) {
   const cellMoney = useCellMoney();
-  const { isPhone } = useBp();
+  const { isPhone, isTabletPortrait } = useBp();
+  const useCompactRows = isPhone || isTabletPortrait;
   return (
     <SalesSection
       testID={testID}
@@ -591,15 +599,16 @@ function ReferrerWorkspace({
       emptyTitle="No referrals recorded in this period"
       emptySubtitle="Set 'Referred By' on a quotation and that person's business appears here."
     >
-      {(list) => isPhone ? (
+      {(list) => useCompactRows ? (
         <MobileRows>{list.map((row) => (
-          <MobileRow key={row.referrer_id} testID={`${testID}-row-${row.referrer_id}`} title={row.name} value={cellMoney(row.revenue)} detail={`${row.quotations_confirmed} confirmed ${row.quotations_confirmed === 1 ? "order" : "orders"}`} onPress={() => onOpen(row.referrer_id)} />
+          <MobileRow key={row.referrer_id} testID={`${testID}-row-${row.referrer_id}`} title={row.name} value={cellMoney(row.revenue)} detail={`${row.customers_referred} ${row.customers_referred === 1 ? "client" : "clients"} · ${row.quotations_confirmed} confirmed ${row.quotations_confirmed === 1 ? "order" : "orders"}`} onPress={() => onOpen(row.referrer_id)} />
         ))}</MobileRows>
       ) : (
         <Table>
           <TableHeader
             columns={[
               { label: "Name", flex: 2 },
+              { label: "Clients", align: "right" },
               { label: "Orders", align: "right" },
               { label: "Revenue", align: "right" },
             ]}
@@ -612,6 +621,7 @@ function ReferrerWorkspace({
               onPress={() => onOpen(row.referrer_id)}
             >
               <TableCell flex={2}>{row.name}</TableCell>
+              <TableCell align="right">{String(row.customers_referred)}</TableCell>
               <TableCell align="right">{String(row.quotations_confirmed)}</TableCell>
               <TableCell align="right">{cellMoney(row.revenue)}</TableCell>
             </TableRow>

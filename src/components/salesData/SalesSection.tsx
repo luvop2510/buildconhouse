@@ -33,11 +33,14 @@ export function SalesSection<T>({
   testID: string;
   children: (rows: T[]) => React.ReactNode;
 }) {
-  const { isPhone } = useBp();
+  const { isPhone, isTabletPortrait } = useBp();
   // 24px of interior padding crowds a 375px viewport; the card language's own
   // base/spacious pair is what keeps every card on the page breathing the
   // same way at each width instead of one fixed value at all of them.
-  const padding = isPhone ? layout.cardPadding.base : layout.cardPadding.spacious;
+  // Tablet portrait shares the admin rail and narrow usable column with
+  // phones. The compact padding preserves the card rhythm while leaving room
+  // for values and touch targets rather than creating horizontal overflow.
+  const padding = isPhone || isTabletPortrait ? layout.cardPadding.base : layout.cardPadding.spacious;
 
   return (
     <Card testID={testID} variant="flat" padding={padding}>

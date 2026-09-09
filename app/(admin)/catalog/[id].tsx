@@ -41,7 +41,7 @@ type Product = {
   id: string; name: string; sku: string; description?: string | null;
   finish?: string | null; material?: string | null; dimensions?: string | null; warranty?: string | null;
   price: number; mrp: number; stock: number; images: string[]; tags: string[];
-  brand_id: string; category_id: string;
+  brand_id: string; category_id: string; floor_id?: string | null;
   subcategory?: string | null; series?: string | null; family_key?: string | null;
   family_name?: string | null; variant_label?: string | null;
   finish_code?: string | null; colour?: string | null;
@@ -213,6 +213,14 @@ export default function ProductDetail() {
   const savedPct = p.mrp > p.price ? Math.round((1 - p.price / p.mrp) * 100) : 0;
   const showPoorHint = p.image_quality === "poor";
   const bottomBarHeight = 72;
+  const quotationAction = p.floor_id === "ground-floor"
+    ? { label: "Add to tile quotation", route: `/(admin)/tiles/quotation?productId=${p.id}` }
+    : p.floor_id === "second-floor"
+      ? null
+      : { label: "Add to quotation", route: `/(admin)/quotations/new?productId=${p.id}` };
+  const openQuotation = () => {
+    if (quotationAction) router.push(quotationAction.route as any);
+  };
 
   const Gallery = (
     <View
@@ -475,7 +483,7 @@ export default function ProductDetail() {
       {/* Actions (inline on tablet; sticky on phone below) */}
       {isWide ? (
         <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.md }}>
-          <Button label="Add to quotation" icon="plus" size="lg" onPress={() => router.push(`/(admin)/quotations/new?productId=${p.id}` as any)} testID="add-to-quote" />
+          {quotationAction ? <Button label={quotationAction.label} icon="plus" size="lg" onPress={openQuotation} testID="add-to-quote" /> : null}
           <Button label="Share" variant="secondary" icon="share-2" size="lg" onPress={shareProduct} testID="share-product-wide" />
         </View>
       ) : null}
@@ -547,13 +555,13 @@ export default function ProductDetail() {
       </ScrollView>
 
       {/* Sticky bottom CTA — phone only */}
-      {isPhone ? (
+      {isPhone && quotationAction ? (
         <View style={[styles.stickyBar, { paddingBottom: insets.bottom + 10 }]}>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={type.caption}>Total</Text>
             <Text style={{ fontSize: 18, fontWeight: "800", color: colors.onSurface, fontVariant: ["tabular-nums"] }} numberOfLines={1}>{money(p.price)}</Text>
           </View>
-          <Button label="Add to quotation" icon="plus" size="md" onPress={() => router.push(`/(admin)/quotations/new?productId=${p.id}` as any)} testID="add-to-quote" />
+          <Button label={quotationAction.label} icon="plus" size="md" onPress={openQuotation} testID="add-to-quote" />
         </View>
       ) : null}
 

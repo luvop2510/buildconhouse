@@ -89,7 +89,7 @@ function LineRowImpl({
       >
         <Feather name="menu" size={14} color={colors.onSurfaceMuted} />
       </Pressable>
-      <ProductImage source={l.image} mirror style={[styles.thumb, isPhone ? styles.thumbPhone : {}]} fallbackLabel={l.sku} />
+      <ProductImage source={l.image} style={[styles.thumb, isPhone ? styles.thumbPhone : {}]} fallbackLabel={l.sku} />
       <View style={styles.content}>
         <View style={styles.heading}>
           <View style={styles.nameGroup}>

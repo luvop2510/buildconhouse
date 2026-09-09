@@ -9,7 +9,7 @@
 // the phone builder feel completely broken/cluttered.
 import { useState } from "react";
 import { Feather } from "@expo/vector-icons";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors, font, money, radius, spacing, type } from "@/src/theme/tokens";
@@ -59,9 +59,7 @@ function NotesAndDiscount({ b }: { b: ReturnType<typeof useBuilder> }) {
   );
 }
 
-export function BuilderFooter({ compact = false, browsing = false, onBrowse, onReview }: {
-  compact?: boolean; browsing?: boolean; onBrowse?: () => void; onReview?: () => void;
-}) {
+export function BuilderFooter({ compact = false }: { compact?: boolean }) {
   const b = useBuilder();
   const insets = useSafeAreaInsets();
   const [expanded, setExpanded] = useState(false);
@@ -72,35 +70,35 @@ export function BuilderFooter({ compact = false, browsing = false, onBrowse, onR
     return (
       <View style={styles.phoneWrap}>
         {expanded ? (
-          <ScrollView style={{ maxHeight: 200 }} contentContainerStyle={styles.phoneExpanded} keyboardShouldPersistTaps="handled">
+          <View style={styles.phoneExpanded}>
             <NotesAndDiscount b={b} />
-          </ScrollView>
+          </View>
         ) : null}
 
         <View style={[styles.phoneBar, { paddingBottom: Math.max(spacing.md, insets.bottom + spacing.sm) }]}>
           <Pressable accessibilityRole="button" accessibilityLabel="Quotation totals, notes and discounts" accessibilityState={{ expanded }} testID="mobile-footer-toggle" onPress={() => setExpanded((v) => !v)} style={styles.phoneSummary}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-              <Text style={type.caption} numberOfLines={1}>{b.s.lines.length} items · Details</Text>
+              <Text style={type.caption} numberOfLines={1}>{b.s.lines.length} items · {b.saveLabel}</Text>
               <Feather name={expanded ? "chevron-down" : "chevron-up"} size={13} color={colors.onSurfaceMuted} />
             </View>
             <Text style={styles.phoneTotal} numberOfLines={1}>{money(b.totals.grand)}</Text>
           </Pressable>
           <View style={styles.phoneActions}>
-            {!browsing ? <Pressable accessibilityRole="button" accessibilityLabel="Add products to quotation" testID="mobile-add-first" onPress={() => onBrowse ? onBrowse() : b.setPickerSheetOpen(true)} style={styles.secondary}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Add products to quotation" testID="mobile-add-first" onPress={() => b.setPickerSheetOpen(true)} style={styles.secondary}>
               <Feather name="plus" size={16} color={colors.onSurface} />
               <Text style={styles.secondaryText}>Add</Text>
-            </Pressable> : null}
+            </Pressable>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={browsing ? "View quotation" : "Finish and review quotation"}
-              accessibilityState={{ disabled: !browsing && !canFinish }}
+              accessibilityLabel="Finish and review quotation"
+              accessibilityState={{ disabled: !canFinish }}
               testID="mobile-finalize"
-              onPress={() => { if (browsing) onReview?.(); else if (canFinish) b.finalize(); }}
-              disabled={!browsing && !canFinish}
-              style={({ pressed }) => [styles.primary, { opacity: !browsing && !canFinish ? 0.4 : pressed ? 0.9 : 1 }]}
+              onPress={() => { if (canFinish) b.finalize(); }}
+              disabled={!canFinish}
+              style={({ pressed }) => [styles.primary, { opacity: !canFinish ? 0.4 : pressed ? 0.9 : 1 }]}
             >
-              <Text style={styles.saveBtnTextSm}>{browsing ? "View quote" : "Finish"}</Text>
-              <Feather name="arrow-right" size={16} color={ds.canvas} />
+              <Feather name="check" size={16} color={ds.canvas} />
+              <Text style={styles.saveBtnTextSm}>Finish</Text>
             </Pressable>
           </View>
         </View>
@@ -169,19 +167,19 @@ const styles = StyleSheet.create({
     padding: spacing.md, gap: spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
   },
-  phoneBar: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: spacing.md, paddingTop: 8 },
-  phoneSummary: { flex: 1, minWidth: 0, minHeight: 44, justifyContent: "center" },
-  phoneActions: { flexDirection: "row", flexShrink: 0, gap: 6 },
+  phoneBar: { gap: 8, paddingHorizontal: spacing.md, paddingTop: spacing.md },
+  phoneSummary: { minHeight: 44, justifyContent: "center" },
+  phoneActions: { flexDirection: "row", gap: 8 },
   phoneTotal: { fontSize: 19, fontFamily: font.regular, letterSpacing: -0.3, color: colors.onSurface, fontVariant: ["tabular-nums"] },
   secondary: {
     flexDirection: "row", alignItems: "center", gap: 6,
-    minHeight: 44, justifyContent: "center", paddingHorizontal: 14, paddingVertical: 10, borderRadius: radius.md,
+    minHeight: 44, flex: 1, justifyContent: "center", paddingHorizontal: 14, paddingVertical: 10, borderRadius: radius.md,
     backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
   },
   secondaryText: { fontSize: 13, fontWeight: "600", color: colors.onSurface },
   primary: {
     flexDirection: "row", alignItems: "center", gap: 6,
-    minHeight: 44, justifyContent: "center", paddingHorizontal: 12, paddingVertical: 10, borderRadius: radius.md,
+    minHeight: 44, flex: 1, justifyContent: "center", paddingHorizontal: 16, paddingVertical: 10, borderRadius: radius.md,
     backgroundColor: ds.brass,
   },
   saveBtnTextSm: { color: ds.canvas, fontSize: 13, fontFamily: font.semibold, fontWeight: "600" },

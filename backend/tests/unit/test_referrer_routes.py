@@ -27,6 +27,7 @@ class _Collection:
     def __init__(self, docs):
         self._docs = docs
         self.inserted = None
+        self.updated_selector = None
 
     def find(self, query, *_a, **_kw):
         def matches(doc):
@@ -42,6 +43,15 @@ class _Collection:
 
     async def insert_one(self, doc):
         self.inserted = doc
+
+    async def update_one(self, selector, _update):
+        self.updated_selector = selector
+
+    async def find_one(self, selector, *_a, **_kw):
+        for doc in self._docs:
+            if all(doc.get(key) == value for key, value in selector.items()):
+                return doc
+        return None
 
 
 class _FakeDb:
@@ -126,3 +136,20 @@ def test_create_referrer_same_name_different_type_creates_a_separate_record(monk
     assert result.id != "r1"
     assert result.type == "interior_designer"
     assert fake_db.referrers.inserted is not None
+
+
+def test_archive_referrer_write_stays_on_the_authorized_floor(monkeypatch):
+    doc = {
+        "id": "r1", "name": "Rakesh Sharma", "type": "architect", "floor_id": "first-floor",
+        "normalized_name": "rakesh sharma", "created_at": "t", "updated_at": "t", "created_by": "u",
+    }
+    fake_db = _FakeDb([doc])
+    monkeypatch.setattr(referrer_routes, "db", fake_db)
+
+    async def authorized(*_args, **_kwargs):
+        return doc
+
+    monkeypatch.setattr(referrer_routes, "get_floor_scoped_or_404", authorized)
+    asyncio.run(referrer_routes.archive_referrer("r1", active=False, user=_user()))
+
+    assert fake_db.referrers.updated_selector == {"id": "r1", "floor_id": "first-floor"}

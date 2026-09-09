@@ -74,7 +74,10 @@ export function ProductImageManagerBody({
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) { toast.show("Photo library permission is needed"); return; }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"], quality: 0.85, allowsEditing: true, aspect: [16, 10],
+      // Preserve the original pixels for the backend's quality assessment and
+      // the full-size catalog/PDF views. ProductImage uses a contain fit, so
+      // a forced 16:10 crop is neither necessary nor desirable here.
+      mediaTypes: ["images"], quality: 1, allowsEditing: false,
     });
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];

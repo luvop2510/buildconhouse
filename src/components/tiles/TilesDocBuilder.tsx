@@ -69,12 +69,7 @@ const ZEBRA = "#F0F0F0";
 const GRID = "#8A8A8A";
 const SERIF = Platform.select({ ios: "Times New Roman", android: "serif", default: "Georgia, 'Times New Roman', serif" }) as string;
 
-function tileNeedsLandscapeRotation(size: string | null | undefined): boolean {
-  const match = String(size || "").match(/(\d+(?:\.\d+)?)\s*[x×X]\s*(\d+(?:\.\d+)?)/);
-  return Boolean(match && Number(match[1]) < Number(match[2]));
-}
-
-function TileImageCell({ uri, size }: { uri: string; size?: string | null }) {
+function TileImageCell({ uri }: { uri: string }) {
   const [cellWidth, setCellWidth] = useState(0);
   // A numeric size is intentional: percentage sizing in an RN-web table cell
   // can shrink to the source bitmap's intrinsic square. This guarantees every
@@ -84,13 +79,10 @@ function TileImageCell({ uri, size }: { uri: string; size?: string | null }) {
     <View style={{ width: "100%", alignItems: "center", justifyContent: "center" }} onLayout={(event) => setCellWidth(event.nativeEvent.layout.width)}>
       <ProductImage
         source={uri}
-        contentFit="cover"
+        contentFit="contain"
         frameInset={0}
         borderRadius={0}
         disableSkeleton
-        mirror
-        forceLandscape
-        rotation={tileNeedsLandscapeRotation(size) ? "90deg" : "0deg"}
         frameBackground="#FFFFFF"
         style={{ width: imageWidth, height: imageWidth / TILE_IMAGE_ASPECT_RATIO }}
         accessibilityLabel="Quotation product image"
@@ -232,7 +224,7 @@ function quantityUnitLabel(unit: TileRow["quantityUnit"]): "Box" | "Piece" {
 // ---------------------------------------------------------------------------
 // Document state + persistence
 // ---------------------------------------------------------------------------
-function useTilesDoc(docType: TilesDocType) {
+function useTilesDoc(docType: TilesDocType, initialProductId?: string | null) {
   const router = useRouter();
   const { id: routeId } = useLocalSearchParams<{ id?: string }>();
   const [docId, setDocId] = useState<string | null>(null);
@@ -259,6 +251,7 @@ function useTilesDoc(docType: TilesDocType) {
   const persistRef = useRef<() => Promise<string | null>>(async () => null);
   const persistQueue = useRef<Promise<string | null>>(Promise.resolve(null));
   const persistedIdRef = useRef<string | null>(null);
+  const seededProductRef = useRef<string | null>(null);
 
   useEffect(() => {
     api.get<Customer[]>("/customers", { floorId: TILES_FLOOR_ID }).then(setCustomers).catch(() => {});
@@ -464,6 +457,24 @@ function useTilesDoc(docType: TilesDocType) {
     // this canonical endpoint also covers catalog pages that omit it.
     if (!validTileSizes(product.available_sizes).length) void loadRowSizes(key, product.id);
   }, [markDirty, customerId, loadRowSizes]);
+
+  // Catalog's Ground Floor CTA deep-links here with a concrete product. Seed
+  // only an unsaved document: an existing document URL always remains the
+  // source of truth, even if a stale productId query parameter is present.
+  const initialEmptyRowKey = rows.find((row) => !row.productId)?.key || rows[0]?.key;
+  useEffect(() => {
+    if (!initialProductId || routeId || !initialEmptyRowKey || seededProductRef.current === initialProductId) return;
+    seededProductRef.current = initialProductId;
+    let alive = true;
+    api.get<Product>(`/products/${initialProductId}`, { floorId: TILES_FLOOR_ID })
+      .then((product) => {
+        if (alive) applyProduct(initialEmptyRowKey, product);
+      })
+      .catch((error: any) => {
+        if (alive) toast.error(error?.detail || "Couldn't add this tile to the quotation");
+      });
+    return () => { alive = false; };
+  }, [applyProduct, initialEmptyRowKey, initialProductId, routeId]);
 
   const selectRowSize = useCallback(async (key: string, size: string) => {
     const row = rows.find((item) => item.key === key);
@@ -1282,7 +1293,7 @@ function SelectionPaper(doc: ReturnType<typeof useTilesDoc>) {
           ]}>
             <View style={[selStyles.td, flex(0)]}><Text style={selStyles.cellText}>{index + 1}</Text></View>
             <View style={[selStyles.td, flex(1), { padding: 2 }]}>
-              {row.image ? <TileImageCell uri={row.image} size={row.size} /> : null}
+              {row.image ? <TileImageCell uri={row.image} /> : null}
             </View>
             <View style={[selStyles.td, flex(2)]}>
               <CellInput value={row.area} onChangeText={(t) => doc.updateRow(row.key, { area: t })} placeholder="Area" multiline testID={`tiles-area-${index}`} />
@@ -1409,7 +1420,7 @@ function QuotationPaper(doc: ReturnType<typeof useTilesDoc>) {
           ]}>
             <View style={[quoStyles.td, flex(0)]}><Text style={quoStyles.cellText}>{index + 1}</Text></View>
             <View style={[quoStyles.td, flex(1), { padding: 2 }]}>
-              {row.image ? <TileImageCell uri={row.image} size={row.size} /> : null}
+              {row.image ? <TileImageCell uri={row.image} /> : null}
             </View>
             <View style={[quoStyles.td, flex(2)]}>
               <CellInput value={row.area} onChangeText={(t) => doc.updateRow(row.key, { area: t })} placeholder="Area" multiline testID={`tiles-area-${index}`} />
@@ -1584,7 +1595,7 @@ function MobileRowCard({
     <View style={mobileStyles.rowCard} testID={`mobile-row-${index}`}>
       <Pressable onPress={onOpenPicker} style={mobileStyles.productImage} testID={`mobile-thumb-${index}`} accessibilityLabel={row.productId ? "Change product image" : "Select product image"}>
           {row.image ? (
-            <ProductImage source={row.image} contentFit="cover" frameInset={0} borderRadius={radius.md} disableSkeleton forceLandscape frameBackground={colors.surface} style={{ width: "100%", height: "100%" }} accessibilityLabel="Quotation product image" />
+            <ProductImage source={row.image} contentFit="contain" frameInset={0} borderRadius={radius.md} disableSkeleton frameBackground={colors.surface} style={{ width: "100%", height: "100%" }} accessibilityLabel="Quotation product image" />
           ) : (
             <Feather name="image" size={18} color={colors.onSurfaceMuted} />
           )}
@@ -1722,9 +1733,6 @@ function MobileTilesEditor({
           icon="more-vertical"
           variant="ghost"
           items={[
-            isSelection
-              ? { label: "Generate selection PDF", icon: "file-text", onPress: doc.generatePdf }
-              : { label: "Generate quotation PDF", icon: "file-text", onPress: doc.generatePdf },
             ...(primaryAction
               ? [{ label: primaryAction.label, icon: primaryAction.icon, onPress: primaryAction.onPress }]
               : []),
@@ -1743,7 +1751,7 @@ function MobileTilesEditor({
       ) : (
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}>
           <ScrollView
-            contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg, paddingBottom: primaryAction ? 104 + insets.bottom : spacing.xxxl }}
+            contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg, paddingBottom: 116 + insets.bottom }}
             keyboardShouldPersistTaps="handled"
           >
             <SaveStatusPill state={doc.saveState} />
@@ -1799,15 +1807,22 @@ function MobileTilesEditor({
         </KeyboardAvoidingView>
       )}
 
-      {primaryAction ? (
-        <View style={[mobileStyles.bottomBar, { paddingBottom: Math.max(spacing.lg, insets.bottom + spacing.sm) }]}>
+      <View style={[mobileStyles.bottomBar, { paddingBottom: Math.max(spacing.lg, insets.bottom + spacing.sm) }]}>
+        <View style={{ flexDirection: "row", gap: spacing.sm }}>
           <Button
-            label={primaryAction.label} icon={primaryAction.icon} onPress={primaryAction.onPress}
-            loading={primaryAction.loading} variant="primary" size="lg" fullWidth
-            testID="tiles-mobile-primary-action"
+            label="Download PDF" icon="download" onPress={doc.generatePdf}
+            loading={doc.busy === "pdf"} variant={primaryAction ? "secondary" : "primary"} size="lg"
+            style={{ flex: 1 }} testID="tiles-mobile-download-pdf"
           />
+          {primaryAction ? (
+            <Button
+              label={primaryAction.label} icon={primaryAction.icon} onPress={primaryAction.onPress}
+              loading={primaryAction.loading} variant="primary" size="lg"
+              style={{ flex: 1 }} testID="tiles-mobile-primary-action"
+            />
+          ) : null}
         </View>
-      ) : null}
+      </View>
 
       <TilesProductPicker
         open={pickerRow !== null}
@@ -1931,9 +1946,9 @@ const mobileStyles = StyleSheet.create({
 // ---------------------------------------------------------------------------
 // Page shell — topbar with the action buttons + scrollable paper
 // ---------------------------------------------------------------------------
-export function TilesDocBuilder({ docType }: { docType: TilesDocType }) {
+export function TilesDocBuilder({ docType, initialProductId }: { docType: TilesDocType; initialProductId?: string | null }) {
   const router = useRouter();
-  const doc = useTilesDoc(docType);
+  const doc = useTilesDoc(docType, initialProductId);
   const { isPhone, isTablet } = useBp();
   const [workspaceWidth, setWorkspaceWidth] = useState(0);
   const isSelection = docType === "tiles_selection";
