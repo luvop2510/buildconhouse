@@ -57,6 +57,14 @@ OFFICIAL_DOMAINS: dict[str, tuple[str, ...]] = {
     "Geberit": ("geberit.com", "catalog.geberit.us", "catalog.geberit.in"),
     "Vitra": ("vitra-india.com",),
 }
+# Some manufacturer catalogues expose stable, SKU-addressed product pages.
+# Try these first: search indexes are incomplete for discontinued/currently
+# regionalised products, but the page itself still has to prove the exact SKU.
+CANONICAL_PRODUCT_PAGE_URLS: dict[str, str] = {
+    "grohe.com": "https://www.grohe.com/en-GB/product/{sku}",
+    "catalog.geberit.in": "https://catalog.geberit.in/en-IN/product/{sku}",
+    "vitra-india.com": "https://www.vitra-india.com/wall-hung-toilets/recovery-p-{sku}",
+}
 SEARCH_URL = "https://html.duckduckgo.com/html/"
 MAX_MEDIA_BYTES = 20 * 1024 * 1024
 # This runner is deliberately stricter than the legacy ``quality`` label.
@@ -323,6 +331,18 @@ async def _search_pages(
         return []
 
 
+def official_page_candidates(domain: str, sku: str, search_pages: Iterable[str]) -> list[str]:
+    """Return canonical first-party SKU URL followed by de-duplicated search hits."""
+    pages: list[str] = []
+    template = CANONICAL_PRODUCT_PAGE_URLS.get(domain)
+    if template:
+        pages.append(template.format(sku=sku))
+    for page in search_pages:
+        if page not in pages:
+            pages.append(page)
+    return pages
+
+
 async def find_official_asset(
     client: httpx.AsyncClient,
     *,
@@ -341,7 +361,10 @@ async def find_official_asset(
     target_sku = normalized_sku(sku)
     best_below_target: dict[str, Any] | None = None
     for domain in domains:
-        pages = await _search_pages(client, domain=domain, sku=sku, max_pages=max_pages_per_domain)
+        pages = official_page_candidates(
+            domain, sku,
+            await _search_pages(client, domain=domain, sku=sku, max_pages=max_pages_per_domain),
+        )
         for page_url in pages:
             try:
                 page = await client.get(page_url, follow_redirects=True)

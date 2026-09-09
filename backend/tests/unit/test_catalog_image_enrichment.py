@@ -8,6 +8,7 @@ from scripts.catalog_image_enrichment import (
     is_acceptable_asset,
     is_primary_hero_asset_url,
     normalized_sku,
+    official_page_candidates,
     search_result_urls,
     storage_matches_registered_media,
     weak_media_to_remove,
@@ -35,6 +36,13 @@ def test_search_results_keep_only_the_configured_first_party_domain():
       <a class="result__a" href="https://marketplace.example/13264GN1">seller</a>
     '''
     assert search_result_urls(page, "grohe.com") == ["https://www.grohe.com/en/product/13264GN1"]
+
+
+def test_canonical_sku_page_is_tried_before_search_hits():
+    assert official_page_candidates("grohe.com", "13264GN1", ["https://www.grohe.com/en/product/13264GN1"]) == [
+        "https://www.grohe.com/en-GB/product/13264GN1",
+        "https://www.grohe.com/en/product/13264GN1",
+    ]
 
 
 def test_asset_extraction_accepts_only_sku_named_originals_and_ignores_data_urls():
