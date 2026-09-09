@@ -186,19 +186,6 @@ def _quantity_label(quantity: float, unit: str) -> str:
     return f"{quantity:g} {singular if quantity == 1 else plural}"
 
 
-def _pcs_per_box_label(value: object, quantity_unit: str) -> str:
-    """Return a meaningful value for the PCS/BOX PDF cell.
-
-    A piece-priced product has no box conversion.  Leaving that cell empty
-    made the selected Piece option look as if it had been dropped when the
-    quotation was printed.  ``N/A`` distinguishes that deliberate absence
-    from an accidentally missing boxed-product value.
-    """
-    if quantity_unit == "Pieces":
-        return "N/A"
-    return _escape(value or "")
-
-
 def _tiles_styles() -> dict:
     """Style set shared by both Selection and Quotation — one dict of
     consistently-named keys so the shared page-1 building blocks below
@@ -523,7 +510,7 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
         Paragraph("AREA", styles["colHead"]), Paragraph("PRODUCT DETAIL", styles["colHead"]),
         Paragraph("SIZE", styles["colHead"]), Paragraph("RATE/<br/>SQ.FT", styles["colHeadRed"]),
         Paragraph("OFFER<br/>RATE", styles["colHead"]), Paragraph("RATE/<br/>UNIT", styles["colHead"]),
-        Paragraph("QUANTITY", styles["colHead"]), Paragraph("PCS/<br/>BOX", styles["colHead"]),
+        Paragraph("QUANTITY", styles["colHead"]), Paragraph("PIECES/<br/>BOX", styles["colHead"]),
         Paragraph("TOTAL<br/>(Rs.)", styles["colHead"]),
     ]
     rows: list[list[object]] = [head]
@@ -549,8 +536,12 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
             Paragraph(rate_sqft_text, styles["cellRed"]),
             Paragraph(_money(offer_rate) if offer_rate else "", styles["cellOffer"]),
             Paragraph(_money(rate_box) if rate_box else "", styles["cell"]),
-            Paragraph(_quantity_label(qty, quantity_unit) if qty else "", styles["cellBold"]),
-            Paragraph(_pcs_per_box_label(item.get("pcs_per_box"), quantity_unit), styles["cellBold"]),
+            # The detail table separates the count from its fulfillment unit:
+            # quantity stays numeric while the adjacent column says box/piece.
+            # Keep _quantity_label for the summary, where the combined unit is
+            # useful, but do not duplicate it in each product row.
+            Paragraph(f"{qty:g}" if qty else "", styles["cellBold"]),
+            Paragraph("piece" if quantity_unit == "Pieces" else "box", styles["cellBold"]),
             Paragraph(_money(line_total) if line_total else "", styles["cell"]),
         ])
     # Keep the grand total out of the flowing product table.  When a table

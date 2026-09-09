@@ -83,7 +83,8 @@ def test_tiles_pdf_renders_box_as_the_quantity_unit_and_preserves_box_metadata()
         "grand_total": 2400,
     })
 
-    assert "2 BOXES 4 2,400.00" in text
+    assert "2 box 2,400.00" in text
+    assert "2 BOXES 4" not in text
 
 
 def test_tiles_pdf_normalizes_legacy_lowercase_piece_unit():
