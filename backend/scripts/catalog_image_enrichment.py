@@ -11,6 +11,8 @@ deletes the former asset.
 Examples:
     python -m scripts.catalog_image_enrichment --floor-id first-floor \\
         --limit 10000 --output recovery.jsonl
+    python -m scripts.catalog_image_enrichment --floor-id first-floor \\
+        --legacy-poor-only --limit 100 --output legacy-recovery.jsonl
     python -m scripts.catalog_image_enrichment --apply --manifest recovery.jsonl \\
         --output applied.jsonl
 """
@@ -433,6 +435,11 @@ def discovery_outcome(match: dict[str, Any] | None) -> str:
     return "ready" if match.get("meets_top_notch_standard") else "official_asset_below_target"
 
 
+def discovery_scope(*, require_4k: bool) -> str:
+    """Name the queue criterion recorded in each resumable manifest row."""
+    return "top_quality" if require_4k else "legacy_poor_only"
+
+
 def is_approved_ready_row(row: dict[str, Any]) -> bool:
     """Return whether a discovery result has explicit, attributable approval.
 
@@ -463,12 +470,13 @@ def storage_matches_registered_media(data: bytes, media: Any) -> bool:
 async def discover(
     *, floor_id: str, limit: int, domains_by_brand: dict[str, tuple[str, ...]],
     max_pages_per_domain: int, max_assets_per_page: int, delay_seconds: float,
-    skip_product_ids: set[str] | None = None, checkpoint: Path | None = None,
+    require_4k: bool = True, skip_product_ids: set[str] | None = None,
+    checkpoint: Path | None = None,
 ) -> list[dict[str, Any]]:
-    # The legacy labels stop at 1024px.  A top-quality run must therefore
-    # explicitly include every displayed hero that falls short of 4K/SVG.
+    # Legacy-only runs prioritise the historical poor/missing labels. The
+    # default top-quality run additionally includes every hero below 4K/SVG.
     queue = await recovery_queue(
-        limit=10_000, max_quality="poor", floor_id=floor_id, require_4k=True,
+        limit=10_000, max_quality="poor", floor_id=floor_id, require_4k=require_4k,
     )
     results: list[dict[str, Any]] = []
     headers = {"User-Agent": "BuildconCatalogImageEnrichment/1.0 (+catalog media recovery)"}
@@ -485,6 +493,7 @@ async def discover(
                 "name": candidate.get("name"), "brand": candidate.get("brand"),
                 "floor_id": candidate.get("floor_id"), "old_media_id": candidate.get("hero_media_id"),
                 "old_quality": candidate.get("hero_quality"), "old_dimensions": candidate.get("hero_dimensions"),
+                "queue_scope": discovery_scope(require_4k=require_4k),
             }
             if not sku:
                 row = {**base, "outcome": "missing_sku"}
@@ -644,6 +653,10 @@ async def main() -> None:
     parser.add_argument("--delay-seconds", type=float, default=0.25)
     parser.add_argument("--output", required=True, help="JSONL result/manifest path")
     parser.add_argument("--resume", action="store_true", help="Continue discovery using product IDs already in --output")
+    parser.add_argument(
+        "--legacy-poor-only", action="store_true",
+        help="Discover only legacy poor/missing displayed heroes; still require 4K/SVG assets",
+    )
     parser.add_argument("--manifest", help="Reviewed discovery JSONL to apply")
     parser.add_argument("--apply", action="store_true", help="Write only ready rows from --manifest")
     args = parser.parse_args()
@@ -654,6 +667,8 @@ async def main() -> None:
     output = Path(args.output)
     if args.apply and args.resume:
         parser.error("--resume is discovery-only; use a new output path for each apply run")
+    if args.apply and args.legacy_poor_only:
+        parser.error("--legacy-poor-only is discovery-only")
     if args.apply:
         if output.exists():
             output.unlink()
@@ -665,7 +680,7 @@ async def main() -> None:
         new_rows = await discover(
             floor_id=args.floor_id, limit=args.limit, domains_by_brand=_load_domains(args.domains_json),
             max_pages_per_domain=args.max_pages_per_domain, max_assets_per_page=args.max_assets_per_page,
-            delay_seconds=args.delay_seconds,
+            delay_seconds=args.delay_seconds, require_4k=not args.legacy_poor_only,
             skip_product_ids={str(row["product_id"]) for row in existing_rows if row.get("product_id")},
             checkpoint=output,
         )

@@ -3,6 +3,7 @@ import asyncio
 from scripts import catalog_image_enrichment as enrichment
 from scripts.catalog_image_enrichment import (
     asset_urls,
+    discovery_scope,
     discovery_outcome,
     is_approved_ready_row,
     is_acceptable_asset,
@@ -64,6 +65,11 @@ def test_discovery_records_below_target_official_evidence_without_marking_it_rea
     assert discovery_outcome(None) == "not_found_or_not_acceptable"
     assert discovery_outcome({"meets_top_notch_standard": False}) == "official_asset_below_target"
     assert discovery_outcome({"meets_top_notch_standard": True}) == "ready"
+
+
+def test_discovery_scope_keeps_legacy_prioritisation_auditable():
+    assert discovery_scope(require_4k=False) == "legacy_poor_only"
+    assert discovery_scope(require_4k=True) == "top_quality"
 
 
 def test_weak_media_is_removed_only_after_a_usable_manufacturer_hero_exists():
