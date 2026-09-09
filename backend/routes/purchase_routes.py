@@ -268,6 +268,22 @@ async def list_purchase_orders(
     return docs
 
 
+# -----------------------------------------------------------------------------
+# Reference config for the frontend (status columns, transitions)
+#
+# Keep literal routes above ``/{po_id}``: Starlette matches in declaration
+# order, so otherwise ``/config/statuses`` is incorrectly treated as PO
+# ``config`` and the Purchase Order detail screen fails its config request.
+# -----------------------------------------------------------------------------
+@router.get("/config/statuses")
+async def status_config(_: UserPublic = Depends(get_current_user)):
+    return {
+        "columns": [{"value": s, "label": STATUS_LABELS[s]} for s in DASHBOARD_COLUMNS],
+        "transitions": ALLOWED_TRANSITIONS,
+        "labels": STATUS_LABELS,
+    }
+
+
 @router.get("/{po_id}", response_model=PurchaseOrder)
 async def get_purchase_order(po_id: str, user: UserPublic = Depends(get_current_user)):
     doc = await db.purchase_orders.find_one(floor_query(user, {"id": po_id}), {"_id": 0})
@@ -549,15 +565,3 @@ async def get_attachment_url(
     if att.get("data_url"):
         return {"url": att["data_url"]}
     raise HTTPException(status_code=404, detail="Attachment has no stored content")
-
-
-# -----------------------------------------------------------------------------
-# Reference config for the frontend (status columns, transitions)
-# -----------------------------------------------------------------------------
-@router.get("/config/statuses")
-async def status_config(_: UserPublic = Depends(get_current_user)):
-    return {
-        "columns": [{"value": s, "label": STATUS_LABELS[s]} for s in DASHBOARD_COLUMNS],
-        "transitions": ALLOWED_TRANSITIONS,
-        "labels": STATUS_LABELS,
-    }

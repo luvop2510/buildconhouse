@@ -163,7 +163,7 @@ export function BuilderTopbar({
         </View>
       </BottomSheet>
       <BottomSheet visible={recentOpen} onClose={() => setRecentOpen(false)} title="Recent quotations" testID="builder-recent-sheet">
-        <RecentQuotationsPanel onLoaded={() => setRecentOpen(false)} />
+        <RecentQuotationsPanel />
       </BottomSheet>
       <ConfirmDialog
         visible={deleteOpen}

@@ -1,8 +1,11 @@
 from scripts.catalog_image_enrichment import (
     asset_urls,
+    is_approved_ready_row,
     is_acceptable_asset,
+    is_primary_hero_asset_url,
     normalized_sku,
     search_result_urls,
+    storage_matches_registered_media,
     weak_media_to_remove,
 )
 from scripts.media_recovery_queue import meets_top_notch_media_standard
@@ -40,6 +43,11 @@ def test_asset_extraction_accepts_only_sku_named_originals_and_ignores_data_urls
     assert assets == ["https://cdn.example/13264GN1-master.jpg"]
 
 
+def test_technical_exact_sku_assets_are_not_valid_primary_heroes():
+    assert not is_primary_hero_asset_url("https://cdn.cloud.grohe.com/PQCharts/lores/2/265/original/26566GN0.svg")
+    assert is_primary_hero_asset_url("https://cdn.example/products/26566GN0-master.svg")
+
+
 def test_weak_media_is_removed_only_after_a_usable_manufacturer_hero_exists():
     rows = [
         {"id": "official", "source_type": "manufacturer", "is_primary": True, "role": "hero", "public_url": "https://official", "width": 3840, "height": 2160, "quality": "excellent"},
@@ -64,3 +72,23 @@ def test_top_notch_queue_signal_is_independent_of_legacy_quality_label():
         "mime": "image/jpeg", "width": 3840, "height": 2160, "quality": "excellent",
     })
     assert meets_top_notch_media_standard({"mime": "image/svg+xml", "width": None, "height": None})
+
+
+def test_apply_requires_explicit_attributable_approval_for_ready_rows():
+    row = {"outcome": "ready"}
+    assert not is_approved_ready_row(row)
+    assert not is_approved_ready_row({
+        **row, "approval": {"status": "approved", "reviewer": "", "reviewed_at": "2026-09-09T00:00:00Z"},
+    })
+    assert is_approved_ready_row({
+        **row, "approval": {"status": "approved", "reviewer": "catalog-review", "reviewed_at": "2026-09-09T00:00:00Z"},
+    })
+
+
+def test_storage_readback_must_match_registered_size_and_sha1():
+    class Media:
+        size_bytes = 3
+        sha1 = "a9993e364706816aba3e25717850c26c9cd0d89d"
+
+    assert storage_matches_registered_media(b"abc", Media())
+    assert not storage_matches_registered_media(b"abd", Media())

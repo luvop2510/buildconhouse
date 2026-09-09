@@ -1,9 +1,12 @@
 """Find and safely promote SKU-verified official product media.
 
 Discovery is read-only and writes a JSONL manifest. Applying requires both
-``--apply`` and that manifest; every asset is downloaded and validated again
-before it enters the existing media pipeline. The runner never substitutes a
-generic search image and never deletes the former asset.
+``--apply`` and that manifest, and writes are limited to explicitly reviewed
+``ready`` rows. Add an ``approval`` object with ``status: "approved"``, a
+non-empty ``reviewer``, and a non-empty ``reviewed_at`` to each reviewed row.
+Every asset is downloaded and validated again before it enters the existing
+media pipeline. The runner never substitutes a generic search image and never
+deletes the former asset.
 
 Examples:
     python -m scripts.catalog_image_enrichment --floor-id first-floor \\
@@ -35,6 +38,7 @@ sys.path.insert(0, str(BASE))
 load_dotenv(BASE / ".env")
 
 from db import db  # noqa: E402
+from media_storage.factory import get_media_storage  # noqa: E402
 from scripts.media_recovery_queue import displayed_hero, run as recovery_queue  # noqa: E402
 from services import catalog_service  # noqa: E402
 from services.media_service import upload_and_register  # noqa: E402
@@ -67,6 +71,10 @@ META_CONTENT = re.compile(
     re.I,
 )
 IMG_ATTRIBUTE = re.compile(r"<(?:img|source)\b[^>]+(?:src|srcset)=[\"']([^\"']+)[\"']", re.I)
+# Exact-SKU files can still be non-hero assets (for example a technical
+# pressure/flow chart). They must never replace the customer-facing product
+# hero merely because they are safe SVGs.
+NON_HERO_ASSET_URL_MARKERS = ("pqchart", "technical", "diagram", "installation")
 
 
 def normalized_sku(value: str | None) -> str:
@@ -117,6 +125,12 @@ def _looks_like_image_url(url: str) -> bool:
     return any(path.endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif", ".svg"))
 
 
+def is_primary_hero_asset_url(url: str) -> bool:
+    """Reject exact-SKU support diagrams that are unsuitable as heroes."""
+    path = urlparse(url).path.lower()
+    return not any(marker in path for marker in NON_HERO_ASSET_URL_MARKERS)
+
+
 def asset_urls(page_html: str, page_url: str, sku: str, limit: int) -> list[str]:
     """Extract exact-SKU image URLs from a verified product page.
 
@@ -139,6 +153,7 @@ def asset_urls(page_html: str, page_url: str, sku: str, limit: int) -> list[str]
             candidate = urljoin(page_url, candidate)
             if (
                 not _looks_like_image_url(candidate)
+                or not is_primary_hero_asset_url(candidate)
                 or normalized_sku(sku) not in normalized_sku(candidate)
                 or candidate in found
             ):
@@ -374,6 +389,33 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
 
 
+def is_approved_ready_row(row: dict[str, Any]) -> bool:
+    """Return whether a discovery result has explicit, attributable approval.
+
+    Discovery evidence alone must never authorize a production storage/database
+    write.  Requiring a reviewer and timestamp keeps the JSONL manifest both
+    resumable and auditable without adding mutable review state to a product.
+    """
+    approval = row.get("approval")
+    return (
+        row.get("outcome") == "ready"
+        and isinstance(approval, dict)
+        and approval.get("status") == "approved"
+        and isinstance(approval.get("reviewer"), str)
+        and bool(approval["reviewer"].strip())
+        and isinstance(approval.get("reviewed_at"), str)
+        and bool(approval["reviewed_at"].strip())
+    )
+
+
+def storage_matches_registered_media(data: bytes, media: Any) -> bool:
+    """Check that a read-back Supabase object is the registered object."""
+    return (
+        len(data) == int(media.size_bytes or 0)
+        and hashlib.sha1(data).hexdigest() == str(media.sha1 or "")
+    )
+
+
 async def discover(
     *, floor_id: str, limit: int, domains_by_brand: dict[str, tuple[str, ...]],
     max_pages_per_domain: int, max_assets_per_page: int, delay_seconds: float,
@@ -428,10 +470,19 @@ async def discover(
 
 async def apply(manifest_rows: list[dict[str, Any]], checkpoint: Path | None = None) -> list[dict[str, Any]]:
     ready = [row for row in manifest_rows if row.get("outcome") == "ready"]
+    approved = [row for row in ready if is_approved_ready_row(row)]
     results: list[dict[str, Any]] = []
+    storage = get_media_storage()
+    for row in ready:
+        if is_approved_ready_row(row):
+            continue
+        result = {**row, "mode": "apply", "outcome": "skipped_unapproved"}
+        results.append(result)
+        if checkpoint:
+            _append_jsonl(checkpoint, result)
     headers = {"User-Agent": "BuildconCatalogImageEnrichment/1.0 (+catalog media recovery)"}
     async with httpx.AsyncClient(headers=headers, timeout=httpx.Timeout(60, connect=15)) as client:
-        for row in ready:
+        for row in approved:
             product = await db.products.find_one({
                 "id": row["product_id"], "active": True, "floor_id": row["floor_id"],
             }, {"_id": 0})
@@ -493,22 +544,48 @@ async def apply(manifest_rows: list[dict[str, Any]], checkpoint: Path | None = N
                 brand_id=product.get("brand_id"), floor_id=product["floor_id"], source_type="manufacturer",
                 role="hero", is_primary=True, sort_order=0, notes=notes,
             )
+            registered = await db.product_media.find_one(
+                {"id": media.id, "product_id": product["id"]}, {"_id": 0},
+            )
             current_media = await db.product_media.find({"product_id": product["id"]}, {"_id": 0}).to_list(100)
             displayed = displayed_hero(current_media)
             stored_is_acceptable = is_acceptable_asset(
                 int(media.width or 0), int(media.height or 0), str(media.mime or ""),
             )
+            object_verified = False
+            try:
+                if await storage.exists(bucket=media.bucket, key=media.storage_key):
+                    object_verified = storage_matches_registered_media(
+                        await storage.download(bucket=media.bucket, key=media.storage_key), media,
+                    )
+            except Exception:  # Verification is reported, never hidden by a write result.
+                object_verified = False
+            metadata_verified = bool(
+                registered
+                and registered.get("bucket") == media.bucket
+                and registered.get("storage_key") == media.storage_key
+                and registered.get("mime") == media.mime
+                and int(registered.get("width") or 0) == int(media.width or 0)
+                and int(registered.get("height") or 0) == int(media.height or 0)
+            )
             outcome = "stored_below_4k" if not stored_is_acceptable else "not_displayed"
-            if stored_is_acceptable and displayed and displayed.get("id") == media.id:
+            if not object_verified or not metadata_verified:
+                outcome = "post_write_verification_failed"
+            elif stored_is_acceptable and displayed and displayed.get("id") == media.id:
                 # Keep the prior asset as a recoverable gallery/audit record.
                 # Storage and metadata deletion must be an explicit, later
                 # retention action—not an implicit side effect of recovery.
                 outcome = "applied"
-            result = {**row, "mode": "apply", "outcome": outcome, "new_media_id": media.id, "removed_media_ids": []}
+            result = {
+                **row, "mode": "apply", "outcome": outcome, "new_media_id": media.id,
+                "removed_media_ids": [], "storage_object_verified": object_verified,
+                "product_media_verified": metadata_verified,
+                "displayed_hero_verified": bool(displayed and displayed.get("id") == media.id),
+            }
             results.append(result)
             if checkpoint:
                 _append_jsonl(checkpoint, result)
-    if ready:
+    if approved:
         catalog_service.schedule_catalog_refresh()
     return results
 
