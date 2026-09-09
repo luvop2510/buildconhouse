@@ -1,5 +1,6 @@
 from scripts.catalog_image_enrichment import (
     asset_urls,
+    discovery_outcome,
     is_approved_ready_row,
     is_acceptable_asset,
     is_primary_hero_asset_url,
@@ -46,6 +47,12 @@ def test_asset_extraction_accepts_only_sku_named_originals_and_ignores_data_urls
 def test_technical_exact_sku_assets_are_not_valid_primary_heroes():
     assert not is_primary_hero_asset_url("https://cdn.cloud.grohe.com/PQCharts/lores/2/265/original/26566GN0.svg")
     assert is_primary_hero_asset_url("https://cdn.example/products/26566GN0-master.svg")
+
+
+def test_discovery_records_below_target_official_evidence_without_marking_it_ready():
+    assert discovery_outcome(None) == "not_found_or_not_acceptable"
+    assert discovery_outcome({"meets_top_notch_standard": False}) == "official_asset_below_target"
+    assert discovery_outcome({"meets_top_notch_standard": True}) == "ready"
 
 
 def test_weak_media_is_removed_only_after_a_usable_manufacturer_hero_exists():

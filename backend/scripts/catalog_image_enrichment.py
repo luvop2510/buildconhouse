@@ -331,8 +331,15 @@ async def find_official_asset(
     max_pages_per_domain: int,
     max_assets_per_page: int,
 ) -> dict[str, Any] | None:
-    """Search first-party product pages and return an exact-SKU usable asset."""
+    """Search first-party pages for an exact-SKU hero candidate.
+
+    A qualifying 4K/SVG candidate returns immediately.  When an official hero
+    is exact but below the recovery target, preserve the best such evidence so
+    a manifest distinguishes it from a true source miss without permitting a
+    write.
+    """
     target_sku = normalized_sku(sku)
+    best_below_target: dict[str, Any] | None = None
     for domain in domains:
         pages = await _search_pages(client, domain=domain, sku=sku, max_pages=max_pages_per_domain)
         for page_url in pages:
@@ -355,9 +362,7 @@ async def find_official_asset(
                     width, height = image_dimensions(data, mime)
                 except ValueError:
                     continue
-                if not is_acceptable_asset(width, height, mime):
-                    continue
-                return {
+                candidate = {
                     "source_page_url": str(page.url),
                     "source_url": source_url,
                     "mime": mime,
@@ -367,8 +372,17 @@ async def find_official_asset(
                     "sha256": hashlib.sha256(data).hexdigest(),
                     "official_domain": domain,
                     "match_evidence": f"Exact SKU {sku} present on official {domain} product page",
+                    "meets_top_notch_standard": is_acceptable_asset(width, height, mime),
                 }
-    return None
+                if candidate["meets_top_notch_standard"]:
+                    return candidate
+                candidate["rejection_reason"] = f"Official exact-SKU asset is below 4K target ({width}x{height})"
+                if not best_below_target or (min(width, height), max(width, height)) > (
+                    min(int(best_below_target["width"]), int(best_below_target["height"])),
+                    max(int(best_below_target["width"]), int(best_below_target["height"])),
+                ):
+                    best_below_target = candidate
+    return best_below_target
 
 
 def _write_jsonl(path: Path, rows: Iterable[dict[str, Any]]) -> None:
@@ -387,6 +401,13 @@ def _append_jsonl(path: Path, row: dict[str, Any]) -> None:
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
+def discovery_outcome(match: dict[str, Any] | None) -> str:
+    """Classify discovery evidence without relaxing the write eligibility bar."""
+    if not match:
+        return "not_found_or_not_acceptable"
+    return "ready" if match.get("meets_top_notch_standard") else "official_asset_below_target"
 
 
 def is_approved_ready_row(row: dict[str, Any]) -> bool:
@@ -459,7 +480,7 @@ async def discover(
                 client, sku=sku, domains=domains, max_pages_per_domain=max_pages_per_domain,
                 max_assets_per_page=max_assets_per_page,
             )
-            row = {**base, "outcome": "ready" if match else "not_found_or_not_acceptable", **(match or {})}
+            row = {**base, "outcome": discovery_outcome(match), **(match or {})}
             results.append(row)
             if checkpoint:
                 _append_jsonl(checkpoint, row)
