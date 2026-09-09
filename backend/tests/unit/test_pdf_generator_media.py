@@ -57,6 +57,26 @@ def test_sanitary_pdf_filename_uses_the_customer_name():
     assert pdf_generator.quotation_pdf_filename('  Myruba / Sons  ') == "Myruba Sons.pdf"
 
 
+def test_pdf_money_uses_the_rupee_sign_and_indian_digit_grouping():
+    assert pdf_generator.format_indian_money(12345678.9) == "1,23,45,678.90"
+    assert pdf_generator.format_indian_money(-1000) == "-1,000.00"
+    assert "₹" in pdf_generator._money(12345678.9)
+
+
+def test_standard_pdf_prints_indian_rupees_for_large_amounts():
+    pdf = pdf_generator.build_quotation_pdf(
+        {
+            "customer_name": "Indian Currency Contract",
+            "items": [{"sku": "INR-1", "name": "Premium Fixture", "room": "Bath", "qty": 1, "unit_price": 12345678.9}],
+            "subtotal": 12345678.9,
+            "grand_total": 12345678.9,
+        },
+        {"name": "Indian Currency Contract"},
+    )
+    text = " ".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf)).pages)
+    assert "₹ 1,23,45,678.90" in text
+
+
 def test_standard_item_tables_fill_the_landscape_printable_width():
     source = Path(pdf_generator.__file__).read_text()
 

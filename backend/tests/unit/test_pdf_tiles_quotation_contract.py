@@ -36,9 +36,9 @@ def test_tiles_pdf_uses_rate_per_sqft_offer_rate_and_quantity_unit():
         "grand_total": 4440,
     })
 
-    assert "70 70.00" in text
+    assert "70 ₹ 70.00" in text
     assert "PIECES/ BOX" in text
-    assert "2 box 4,340.00" in text
+    assert "2 box ₹ 4,340.00" in text
     assert "2 BOX 3" not in text
     assert "TOTAL QUANTITY 2 BOX" in text
     assert "₹ 4,340.00" in text
@@ -64,7 +64,7 @@ def test_tiles_pdf_renders_piece_as_the_quantity_unit():
         "grand_total": 900,
     })
 
-    assert "1 piece 900.00" in text
+    assert "1 piece ₹ 900.00" in text
     assert "N/A" not in text
 
 
@@ -83,7 +83,7 @@ def test_tiles_pdf_renders_box_as_the_quantity_unit_and_preserves_box_metadata()
         "grand_total": 2400,
     })
 
-    assert "2 box 2,400.00" in text
+    assert "2 box ₹ 2,400.00" in text
     assert "2 BOXES 4" not in text
 
 
@@ -103,7 +103,7 @@ def test_tiles_pdf_normalizes_legacy_lowercase_piece_unit():
     })
 
     assert "TOTAL QUANTITY 2 PIECES" in text
-    assert "2 piece 1,800.00" in text
+    assert "2 piece ₹ 1,800.00" in text
 
 
 def test_tiles_quotation_detail_rows_separate_numeric_quantity_from_unit():
@@ -118,9 +118,9 @@ def test_tiles_quotation_detail_rows_separate_numeric_quantity_from_unit():
         "grand_total": 15000,
     })
 
-    assert "15 box 1,500.00" in text
-    assert "120 box 12,000.00" in text
-    assert "15 piece 1,500.00" in text
+    assert "15 box ₹ 1,500.00" in text
+    assert "120 box ₹ 12,000.00" in text
+    assert "15 piece ₹ 1,500.00" in text
 
 
 def test_tiles_quotation_keeps_the_cover_on_page_one_and_starts_details_on_page_two():

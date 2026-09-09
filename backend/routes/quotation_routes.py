@@ -1058,7 +1058,7 @@ async def quotation_pdf(quotation_id: str, user: UserPublic = Depends(get_curren
     return StreamingResponse(
         iter([pdf_bytes]),
         media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -1071,7 +1071,7 @@ async def portal_pdf(quotation_id: str, cust: CustomerPublic = Depends(get_curre
     pdf_doc = {**doc, "items": await _pdf_items(doc)}
     pdf_bytes = await _render_pdf(build_quotation_pdf, pdf_doc, cust.model_dump(), await _pdf_branding())
     filename = quotation_pdf_filename(doc.get("customer_name") or cust.name)
-    return StreamingResponse(iter([pdf_bytes]), media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{filename}"'})
+    return StreamingResponse(iter([pdf_bytes]), media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 # --- PDF of a previous revision snapshot (customer portal; read-only) ---
@@ -1102,7 +1102,7 @@ async def portal_pdf_revision(
     pdf_doc = {**merged, **totals, "items": await _pdf_items(merged)}
     pdf_bytes = await _render_pdf(build_quotation_pdf, pdf_doc, cust.model_dump(), await _pdf_branding())
     filename = quotation_pdf_filename(doc.get("customer_name") or cust.name)
-    return StreamingResponse(iter([pdf_bytes]), media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{filename}"'})
+    return StreamingResponse(iter([pdf_bytes]), media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 # --- Brand-filtered PDF (customer portal; read-only) ---
@@ -1141,7 +1141,7 @@ async def portal_pdf_brand(
     pdf_doc = {**filtered_doc, **totals, "items": await _pdf_items(filtered_doc)}
     pdf_bytes = await _render_pdf(build_quotation_pdf, pdf_doc, cust.model_dump(), await _pdf_branding())
     filename = quotation_pdf_filename(doc.get("customer_name") or cust.name)
-    return StreamingResponse(iter([pdf_bytes]), media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{filename}"'})
+    return StreamingResponse(iter([pdf_bytes]), media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 # =============================================================================

@@ -754,7 +754,7 @@ async def chalan_pdf(chalan_id: str, user: UserPublic = Depends(require_min_role
     filename = tile_chalan_pdf_filename(chalan, chalan.get("customer_name", "Customer"))
     return StreamingResponse(
         iter([pdf_bytes]), media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

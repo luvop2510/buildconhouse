@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 import functools
 from io import BytesIO
 import logging
@@ -16,6 +17,8 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont, TTFontFile
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.platypus import (
     Flowable, HRFlowable, Image, KeepTogether, PageBreak, Paragraph, SimpleDocTemplate,
@@ -40,6 +43,33 @@ LOGO_RATIO = 1414 / 412  # native W/H of buildcon_logo.png — size by one edge 
 # this shared instead of allowing individual generators to silently fall back
 # to portrait A4.
 LANDSCAPE_A4 = landscape(A4)
+
+
+def _register_rupee_font() -> str | None:
+    """Register a font that contains U+20B9 in every supported runtime.
+
+    The production Docker image installs DejaVu.  The project-owned Inter
+    font keeps local development and non-container rendering just as reliable.
+    ReportLab's core Helvetica font does not include the Indian rupee glyph.
+    """
+    candidates = (
+        PDF_DIR.parent / "assets" / "fonts" / "Inter-Regular.ttf",
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        Path("/usr/share/fonts/dejavu/DejaVuSans.ttf"),
+        Path("/System/Library/Fonts/Supplemental/Georgia.ttf"),
+    )
+    for candidate in candidates:
+        try:
+            if not candidate.is_file() or TTFontFile(str(candidate)).charToGlyph.get(0x20B9, 0) == 0:
+                continue
+            pdfmetrics.registerFont(TTFont("BuildconRupee", str(candidate)))
+            return "BuildconRupee"
+        except Exception:
+            continue
+    return None
+
+
+RUPEE_FONT = _register_rupee_font()
 
 # Original page-1 partner layout from the supplied quotation template.
 BRAND_PARTNERS = [
@@ -114,8 +144,28 @@ def _item_row_height_mm(item_count: int) -> float:
     return max(ITEM_ROW_MM, usable / item_count)
 
 
-def _money(value: float) -> str:
-    return f"{float(value or 0):,.2f}"
+def format_indian_money(value: object) -> str:
+    """Format a numeric value using Indian digit grouping, without currency."""
+    try:
+        amount = Decimal(str(value if value is not None else 0)).quantize(Decimal("0.01"))
+    except (InvalidOperation, TypeError, ValueError):
+        amount = Decimal("0.00")
+    sign = "-" if amount < 0 else ""
+    whole, fraction = f"{abs(amount):.2f}".split(".")
+    if len(whole) > 3:
+        tail, head = whole[-3:], whole[:-3]
+        groups: list[str] = []
+        while head:
+            groups.append(head[-2:])
+            head = head[:-2]
+        whole = ",".join(reversed(groups)) + "," + tail
+    return f"{sign}{whole}.{fraction}"
+
+
+def _money(value: object) -> str:
+    """PDF-safe Indian rupee amount for ReportLab Paragraph markup."""
+    symbol = f"<font name='{RUPEE_FONT}'>₹</font>" if RUPEE_FONT else "Rs."
+    return f"{symbol} {format_indian_money(value)}"
 
 
 def _escape(value: object) -> str:
@@ -541,10 +591,10 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
     # ---- Dynamic Quotation Summary: exactly one row per room, no filler ----
     n_rooms = len(room_order)
     if has_discount:
-        summary_header = ["SL. NO.", "BATHROOM / AREA", "MRP (Rs.)", "OFFER TOTAL (Rs.)"]
+        summary_header = ["SL. NO.", "BATHROOM / AREA", "MRP (₹)", "OFFER TOTAL (₹)"]
         summary_col_widths = [20 * mm, 120 * mm, 63 * mm, 64 * mm]
     else:
-        summary_header = ["SL. NO.", "BATHROOM / AREA", "TOTAL (Rs.)"]
+        summary_header = ["SL. NO.", "BATHROOM / AREA", "TOTAL (₹)"]
         summary_col_widths = [20 * mm, 135 * mm, 112 * mm]
     summary_rows: list[list[object]] = [[Paragraph(h, styles["tableHead"]) for h in summary_header]]
     for index, room in enumerate(room_order):
@@ -640,17 +690,17 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
         item_header = [
             Paragraph("SR.<br/>NO.", styles["tableHead"]), Paragraph("PRODUCT IMAGE", styles["tableHead"]),
             Paragraph("ARTICLE<br/>NO.", styles["tableHead"]), Paragraph("DESCRIPTION", styles["tableHead"]),
-            Paragraph("MRP<br/>(Rs.)", styles["tableHead"]), Paragraph("QTY", styles["tableHead"]),
-            Paragraph("MRP<br/>TOTAL (Rs.)", styles["tableHead"]),
-            Paragraph("OFFER<br/>RATE", styles["tableHead"]), Paragraph("OFFER<br/>TOTAL (Rs.)", styles["tableHead"]),
+            Paragraph("MRP<br/>(₹)", styles["tableHead"]), Paragraph("QTY", styles["tableHead"]),
+            Paragraph("MRP<br/>TOTAL (₹)", styles["tableHead"]),
+            Paragraph("OFFER<br/>RATE", styles["tableHead"]), Paragraph("OFFER<br/>TOTAL (₹)", styles["tableHead"]),
         ]
         item_widths = [12 * mm, 25 * mm, 40 * mm, 77 * mm, 24 * mm, 12 * mm, 25 * mm, 26 * mm, 26 * mm]
     else:
         item_header = [
             Paragraph("SR.<br/>NO.", styles["tableHead"]), Paragraph("PRODUCT IMAGE", styles["tableHead"]),
             Paragraph("ARTICLE<br/>NO.", styles["tableHead"]), Paragraph("DESCRIPTION", styles["tableHead"]),
-            Paragraph("RATE<br/>(Rs.)", styles["tableHead"]), Paragraph("QTY", styles["tableHead"]),
-            Paragraph("TOTAL<br/>(Rs.)", styles["tableHead"]),
+            Paragraph("RATE<br/>(₹)", styles["tableHead"]), Paragraph("QTY", styles["tableHead"]),
+            Paragraph("TOTAL<br/>(₹)", styles["tableHead"]),
         ]
         item_widths = [12 * mm, 25 * mm, 40 * mm, 110 * mm, 28 * mm, 12 * mm, 40 * mm]
     max_rows = _max_item_rows_per_page()

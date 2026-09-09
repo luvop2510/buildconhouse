@@ -2396,7 +2396,7 @@ async def chalan_pdf(po_id: str, chalan_id: str, user: UserPublic = Depends(get_
     filename = chalan_pdf_filename(chalan, po.get("customer_name") or "")
     return StreamingResponse(
         iter([pdf_bytes]), media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

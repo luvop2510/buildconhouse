@@ -83,8 +83,9 @@ def _ding(char: str) -> str:
 
 
 def _rupee(value: float) -> str:
-    symbol = f"<font name='{_RUPEE_FONT}'>₹</font> " if _RUPEE_FONT else "Rs. "
-    return f"{symbol}{_money(value)}"
+    # `_money` is the shared PDF formatter: it carries a real ₹ glyph and
+    # Indian (lakh/crore) grouping for every document family.
+    return _money(value)
 
 
 def _draw_tiles_page_chrome(cv, doc, branding: dict | None = None) -> None:
@@ -340,9 +341,9 @@ def _price_summary_table(total_quantity: str, subtotal: float, transportation_fe
     TRANSPORTATION / TOTAL QUOTE."""
     rows = [
         [Paragraph("TOTAL QUANTITY", styles["sumLabel"]), Paragraph(total_quantity, styles["sumValue"])],
-        [Paragraph("SUBTOTAL (Rs.)", styles["sumLabel"]), Paragraph(_rupee(subtotal), styles["sumValue"])],
+        [Paragraph("SUBTOTAL (₹)", styles["sumLabel"]), Paragraph(_rupee(subtotal), styles["sumValue"])],
         [Paragraph("TRANSPORTATION", styles["sumLabel"]), Paragraph(_rupee(transportation_fee), styles["sumValue"])],
-        [Paragraph("TOTAL QUOTE (Rs.)", styles["sumRed"]), Paragraph(_rupee(total_quote), styles["sumRed"])],
+        [Paragraph("TOTAL QUOTE (₹)", styles["sumRed"]), Paragraph(_rupee(total_quote), styles["sumRed"])],
     ]
     table = Table(rows, colWidths=[188 * mm, 93 * mm], rowHeights=[5.5 * mm] * 4, hAlign="CENTER")
     table.setStyle(TableStyle([
@@ -511,7 +512,7 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
         Paragraph("SIZE", styles["colHead"]), Paragraph("RATE/<br/>SQ.FT", styles["colHeadRed"]),
         Paragraph("OFFER<br/>RATE", styles["colHead"]), Paragraph("RATE/<br/>UNIT", styles["colHead"]),
         Paragraph("QUANTITY", styles["colHead"]), Paragraph("PIECES/<br/>BOX", styles["colHead"]),
-        Paragraph("TOTAL<br/>(Rs.)", styles["colHead"]),
+        Paragraph("TOTAL<br/>(₹)", styles["colHead"]),
     ]
     rows: list[list[object]] = [head]
     for index, item in enumerate(items, 1):

@@ -12,26 +12,20 @@
 // one row of the Dispatch List, and Delivered was unreachable from any
 // screen even though the backend modelled it.
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { tileOrdersApi, type ChalanDetail, type DispatchDetail } from "@/src/api/tileOrders";
 import { toast } from "@/src/components/Toast";
 import { Sheet } from "@/src/components/ui";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
 import { tileIdentityMeta } from "@/src/components/tiles/tilePresentation";
+import { downloadApiFile, printApiFile } from "@/src/utils/downloadFile";
 
 export async function openChalanPdf(chalanId: string, mode: "view" | "print" = "view") {
   try {
-    const url = await tileOrdersApi.chalanPdfUrl(chalanId);
-    if (Platform.OS === "web") {
-      // @ts-ignore — web only. The browser's own PDF viewer supplies the
-      // print command; `blob:`/token URLs open fine, unlike `data:` URLs
-      // (see the 2026-07-20 quotation-PDF fix).
-      const opened = window.open(url, "_blank");
-      if (!opened) throw new Error("Popup blocked — allow popups for this site");
-    } else {
-      await Linking.openURL(url);
-    }
+    const path = `/tile-orders/chalans/${chalanId}/pdf`;
+    if (mode === "print") await printApiFile(path, "Chalan PDF");
+    else await downloadApiFile(path, `Chalan-${chalanId}.pdf`, "Chalan PDF");
   } catch (e: any) {
     toast.error(e?.detail || e?.message || `Could not open Chalan ${mode === "print" ? "for printing" : "PDF"}`);
   }

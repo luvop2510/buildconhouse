@@ -9,22 +9,14 @@
 // Replaces src/components/tiles/ReadyDispatchSheets.tsx (MarkReadySheet /
 // DispatchSheet), which conflated all of this into one Brand-owned action.
 import { useState } from "react";
-import { ActivityIndicator, Linking, Platform, Pressable, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
 
 import { tileOrdersApi, type CustomerOrderItem, type DispatchDestinationOverride, type PurchaseOrderItemDetail } from "@/src/api/tileOrders";
 import { toast } from "@/src/components/Toast";
+import { downloadApiFile } from "@/src/utils/downloadFile";
 import { Sheet } from "@/src/design/components";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
 import { tileIdentityMeta } from "@/src/components/tiles/tilePresentation";
-
-async function openPdf(url: string) {
-  if (Platform.OS === "web") {
-    // @ts-ignore — web only
-    window.open(url, "_blank");
-  } else {
-    await Linking.openURL(url);
-  }
-}
 
 function SheetFooter({ onCancel, onConfirm, confirmLabel, busy, disabled = false }: { onCancel: () => void; onConfirm: () => void; confirmLabel: string; busy: boolean; disabled?: boolean }) {
   return (
@@ -250,8 +242,7 @@ async function submitDispatch(
   onDone();
   setBusy(false);
   try {
-    const url = await tileOrdersApi.chalanPdfUrl(result.chalan.id);
-    await openPdf(url);
+    await downloadApiFile(`/tile-orders/chalans/${result.chalan.id}/pdf`, `Chalan-${result.chalan.id}.pdf`, "Chalan PDF");
   } catch {
     toast.error("Dispatch saved. Open the Chalan PDF from the Dispatch List tab.");
   }
