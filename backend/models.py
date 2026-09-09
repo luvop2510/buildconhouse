@@ -1321,6 +1321,12 @@ class Notification(TimestampedModel):
 class CatalogImportJob(TimestampedModel):
     filename: str
     source_type: Literal["excel", "pdf", "csv"]
+    # Immutable source retained in forge-private. Review rows hold only
+    # lightweight image-blob references, never the original file or base64.
+    source_bucket: Optional[str] = None
+    source_storage_key: Optional[str] = None
+    source_sha256: Optional[str] = None
+    source_size_bytes: int = 0
     status: Literal["extracted", "normalized", "classified", "validated", "reviewed", "imported", "failed"] = "extracted"
     supplier_name: Optional[str] = None
     total_rows: int = 0

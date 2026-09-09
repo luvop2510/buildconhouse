@@ -2,10 +2,14 @@
 from __future__ import annotations
 import logging
 import re
+import base64
+import hashlib
 from datetime import datetime, timezone
 
 from auth import floor_inherit
 from db import db
+from media_storage import get_media_storage
+from media_storage.factory import private_bucket
 from models import Product
 
 from .base import MISSING
@@ -19,16 +23,19 @@ logger = logging.getLogger("forge.catalog_pipeline")
 # Image blob offload (keeps job doc under MongoDB's 16MB BSON cap)
 # ---------------------------------------------------------------------------
 async def _offload_row_images(rows: list[dict]) -> dict[str, str]:
-    """Move every base64 data-URL out of `rows[].images` into a dedicated
-    `catalog_image_blobs` collection keyed by SHA-1.
+    """Move every base64 data-URL out of ``rows[].images`` into private
+    Supabase Storage, with a lightweight metadata record keyed by SHA-1.
 
-    Mutates rows in-place: `images` becomes a list of ``blob:<sha1>`` refs,
-    and each entry in `image_meta` gets an ``id`` field pointing at the blob.
+    Mutates rows in-place: ``images`` becomes a list of ``blob:<sha1>`` refs.
+    The original image bytes never enter the import-job JSON/BSON document,
+    preventing both API bloat and MongoDB's 16MB-document limit.  The object
+    path is immutable and content-addressed so retries are idempotent.
 
-    Returns the map of ``sha1 → data_url`` that was uploaded (so the caller
-    can pipe it straight into ``import_accepted`` without a second DB read).
+    Legacy rows with a ``data_url`` continue to resolve in ``_resolve_blob``;
+    new imports are Supabase-backed exclusively.
     """
     blob_map: dict[str, str] = {}
+    staged: dict[str, tuple[bytes, str]] = {}
     for r in rows:
         images = r.get("images") or []
         metas = r.get("image_meta") or []
@@ -39,37 +46,48 @@ async def _offload_row_images(rows: list[dict]) -> dict[str, str]:
             if img.startswith("blob:") or not img.startswith("data:"):
                 new_urls.append(img)
                 continue
-            # Compute or reuse sha1 from meta
-            sha1 = (metas[i].get("sha1") if i < len(metas) and isinstance(metas[i], dict) else None)
-            if not sha1:
-                import hashlib
-                sha1 = hashlib.sha1(img.encode("utf-8")).hexdigest()[:16]
-                if i < len(metas) and isinstance(metas[i], dict):
-                    metas[i]["sha1"] = sha1
-            blob_map[sha1] = img
+            try:
+                header, encoded = img.split(",", 1)
+                mime = header.split(";", 1)[0].removeprefix("data:").lower() or "image/png"
+                raw = base64.b64decode(encoded, validate=True)
+            except (ValueError, UnicodeEncodeError):
+                # Leave an unexpected data URL alone for the existing import
+                # error path; never claim it was safely persisted.
+                new_urls.append(img)
+                continue
+            sha1 = hashlib.sha1(raw).hexdigest()
+            staged.setdefault(sha1, (raw, mime))
+            if i < len(metas) and isinstance(metas[i], dict):
+                metas[i]["sha1"] = sha1
             new_urls.append(f"blob:{sha1}")
         r["images"] = new_urls
 
-    # Bulk-upsert blobs (idempotent — same sha1 always maps to same content)
-    if blob_map:
-        from pymongo import UpdateOne
-        ops = [
-            UpdateOne(
-                {"sha1": sha1},
-                {"$setOnInsert": {"sha1": sha1, "data_url": url,
-                                  "created_at": datetime.now(timezone.utc).isoformat()}},
-                upsert=True,
-            )
-            for sha1, url in blob_map.items()
-        ]
-        # Do in chunks of 100 to bound memory
-        for i in range(0, len(ops), 100):
-            await db.catalog_image_blobs.bulk_write(ops[i:i + 100], ordered=False)
+    if staged:
+        storage = get_media_storage()
+        bucket = private_bucket()
+        for sha1, (raw, mime) in staged.items():
+            ext = {"image/jpeg": "jpg", "image/jpg": "jpg", "image/png": "png", "image/webp": "webp", "image/svg+xml": "svg"}.get(mime, "bin")
+            key = f"catalog-import-images/{sha1[:2]}/{sha1}.{ext}"
+            existing = await db.catalog_image_blobs.find_one({"sha1": sha1}, {"_id": 0, "storage_key": 1})
+            if not existing or not existing.get("storage_key"):
+                # A content-addressed key makes this safe even if a prior
+                # process completed the upload but crashed before MongoDB.
+                if not await storage.exists(bucket=bucket, key=key):
+                    await storage.upload(bucket=bucket, key=key, data=raw, content_type=mime)
+                await db.catalog_image_blobs.update_one(
+                    {"sha1": sha1},
+                    {"$set": {
+                        "sha1": sha1, "bucket": bucket, "storage_key": key,
+                        "mime": mime, "size_bytes": len(raw),
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    }, "$setOnInsert": {"created_at": datetime.now(timezone.utc).isoformat()}},
+                    upsert=True,
+                )
     return blob_map
 
 
 async def _resolve_blob(ref: str, blob_map: dict[str, str] | None = None) -> str | None:
-    """Resolve a `blob:<sha1>` ref back to its base64 data URL."""
+    """Resolve a ``blob:<sha1>`` ref for import, including legacy rows."""
     if not ref:
         return None
     if not ref.startswith("blob:"):
@@ -77,8 +95,22 @@ async def _resolve_blob(ref: str, blob_map: dict[str, str] | None = None) -> str
     sha1 = ref[len("blob:"):]
     if blob_map and sha1 in blob_map:
         return blob_map[sha1]
-    doc = await db.catalog_image_blobs.find_one({"sha1": sha1}, {"_id": 0, "data_url": 1})
-    return doc.get("data_url") if doc else None
+    doc = await db.catalog_image_blobs.find_one(
+        {"sha1": sha1}, {"_id": 0, "data_url": 1, "bucket": 1, "storage_key": 1, "mime": 1},
+    )
+    if not doc:
+        return None
+    if doc.get("data_url"):
+        return doc["data_url"]
+    if not doc.get("bucket") or not doc.get("storage_key"):
+        return None
+    try:
+        raw = await get_media_storage().download(bucket=doc["bucket"], key=doc["storage_key"])
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("staged import image could not be downloaded sha1=%s: %s", sha1, exc)
+        return None
+    mime = str(doc.get("mime") or "image/png")
+    return f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
 
 
 async def run_pipeline(brand: str, filename: str, data: bytes) -> dict:
@@ -89,10 +121,13 @@ async def run_pipeline(brand: str, filename: str, data: bytes) -> dict:
 
     # Auto-accept high-confidence rows so the reviewer only sees the exceptions
     for r in validated_rows:
+        if r.image_quality in {"poor", "missing"} and not any("image requires review" in issue.lower() for issue in r.issues):
+            r.issues.append(f"Image requires review ({r.image_quality})")
         if (
             r.status == "pending"
             and r.confidence >= 0.85
             and r.sku != MISSING and r.mrp != MISSING and r.category != MISSING
+            and r.image_quality in {"excellent", "good", "acceptable"}
         ):
             r.status = "accepted"
 

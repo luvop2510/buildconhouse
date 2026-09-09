@@ -5,7 +5,7 @@ Key improvements (Iteration 1):
 *   Reads the XLSX zip archive directly (bypasses openpyxl's silent drop of any
     sheet containing unsupported image formats).
 *   PNG / JPEG raster images are read as-is.
-*   EMF → SVG → PNG conversion via `emf2svg-conv` + `rsvg-convert` at 2048px
+*   EMF → SVG → PNG conversion via `emf2svg-conv` + `rsvg-convert` at 4096px
     long-edge (produces genuine high-resolution artwork, not a rasterized
     thumbnail).
 *   WMF conversion via ImageMagick's libwmf delegate (unrestricted for read-only
@@ -19,8 +19,8 @@ Key improvements (Iteration 1):
 *   For each anchor we prefer the highest-quality candidate (raster ≥1024px,
     then rasterized vector, then any other) — so if the row also carries a
     vector alternative it wins over a 200px thumbnail.
-*   Post-decode optimisation: images >≈ 1MB are re-encoded at quality 90,
-    which typically saves 30-60% while preserving perceived quality.
+*   Original raster bytes are retained; delivery clients request compact
+    Supabase renditions rather than repeatedly re-encoding supplier masters.
 
 The extractor **never fabricates** or upscales images. If the supplier only
 ships thumbnails, the quality bucket will reflect that so the app UI can call
@@ -142,62 +142,19 @@ def _probe_size(raster_bytes: bytes) -> tuple[int, int]:
 
 
 def _optimize(raw: bytes, mime: str) -> tuple[bytes, str]:
-    """Optimize a decoded raster for storage.
+    """Keep the decoded supplier master byte-for-byte.
 
-    Strategy:
-      * Retain a 2048px master: enough genuine source detail for desktop
-        galleries, high-density native displays and customer PDFs. Delivery
-        views request smaller Supabase derivatives as needed.
-      * Re-encode photographic content as JPEG q=90. This keeps a useful
-        storage saving without introducing a second visible compression pass
-        on supplier photography.
-      * Preserve transparency: PNGs with an alpha channel stay PNG at cap.
-      * If the re-encoded output is not smaller than the input, keep the input.
-
-    Returns (bytes, mime).
+    Lossless source retention is what makes a later quality review and a
+    high-resolution re-upload possible.  Bandwidth is controlled at display
+    time through named Supabase image renditions, not by silently replacing a
+    supplied master with a smaller JPEG.
     """
-    if not _HAS_PIL or _PIL_Image is None:
-        return raw, mime
-    try:
-        im = _PIL_Image.open(BytesIO(raw))
-    except Exception:
-        return raw, mime
-    has_alpha = "A" in im.getbands()
-
-    # Skip optimisation for already-small images without transparency
-    if len(raw) <= 60_000 and not has_alpha:
-        return raw, mime
-
-    try:
-        # Keep a real 2048px master. Never upscale a smaller source: this is
-        # a ceiling, not an enhancement operation.
-        w, h = im.size
-        longest = max(w, h)
-        if longest > 2048:
-            scale = 2048 / longest
-            im = im.resize((max(1, int(w * scale)), max(1, int(h * scale))), _PIL_Image.LANCZOS)
-
-        buf = BytesIO()
-        if has_alpha:
-            # Keep transparency → WebP q=90 (better than PNG for photos with alpha)
-            im.save(buf, format="WEBP", quality=90, method=6)
-            out_mime = "image/webp"
-        else:
-            if im.mode != "RGB":
-                im = im.convert("RGB")
-            im.save(buf, format="JPEG", quality=90, optimize=True, progressive=True)
-            out_mime = "image/jpeg"
-        candidate = buf.getvalue()
-        if len(candidate) < len(raw):
-            return candidate, out_mime
-    except Exception:
-        pass
     return raw, mime
 
 
 # ---------- Vector converters ----------
 def _convert_emf_to_png(emf_bytes: bytes) -> Optional[bytes]:
-    """EMF → SVG → PNG @ 2048px longest edge.
+    """EMF → SVG → PNG @ 4096px longest edge.
 
     Uses `emf2svg-conv` + `rsvg-convert` (installed system packages). This
     combination handles the vast majority of EMFs that ImageMagick's WMF
@@ -216,7 +173,7 @@ def _convert_emf_to_png(emf_bytes: bytes) -> Optional[bytes]:
                 return None
             png_path = tempfile.mktemp(suffix=".png")
             r2 = subprocess.run(
-                ["rsvg-convert", "-w", "2048", "-o", png_path, svg_path],
+                ["rsvg-convert", "-w", "4096", "-o", png_path, svg_path],
                 capture_output=True, timeout=10,
             )
             if r2.returncode != 0 or not os.path.exists(png_path):
@@ -330,10 +287,9 @@ def _decode_supplier_image(raw: bytes, ext: str, *, optimize: bool = True) -> Op
     longest = max(w, h)
     quality = classify_quality(longest, source_format)
 
-    # Optimise: retain a 2048px master for storage/delivery. Never changes the
-    # reported width/height above — those still
-    # describe the source. Callers that need byte-for-byte original quality
-    # (e.g. the Qutone tiles adapter) pass optimize=False.
+    # Keep the supplier master byte-for-byte.  The optional flag remains for
+    # API compatibility with adapters, but no longer creates a low-resolution
+    # storage derivative.
     if optimize:
         raw, mime = _optimize(raw, mime)
 

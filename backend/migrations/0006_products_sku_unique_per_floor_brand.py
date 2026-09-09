@@ -3,12 +3,12 @@ globally or per-brand-only — the ground-floor tile catalog and the
 first-floor sanitary catalog are separate businesses that may legitimately
 reuse a supplier SKU code across floors.
 
-The previously reported Hansgrohe collision was verified as already
-normalised in production: the two valid products are stored as ``26456000``
-and ``26456000-2``. The ``-2`` row is the "With attachment" variant; it is
-not a duplicate document. Keep this index strict: any future same-floor,
-same-brand SKU collision must use an explicit supplier/variant SKU suffix
-rather than silently overwriting a catalog row.
+The historical Hansgrohe collision is corrected by the controlled
+``scripts.repair_hansgrohe_skus`` job: Porter 300 uses supplier article number
+``26456000`` and the distinct FixFit S product uses ``27456000``. Keep this
+index strict: a supplier article number must identify one product per floor
+and brand, rather than silently overwriting a catalog row or inventing a
+suffix to hide a source-data error.
 
 Production startup intentionally does not auto-apply pending migrations by
 default. Run the dry-run and controlled migration job in

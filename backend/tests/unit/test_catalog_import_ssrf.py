@@ -9,7 +9,7 @@ import httpx
 import pytest
 from fastapi import HTTPException
 
-from routes.catalog_import_routes import _fetch_public_url, _validate_public_host
+from routes.catalog_import_routes import _fetch_public_url, _source_type_and_validate_adapter, _validate_public_host
 
 
 def test_validate_public_host_accepts_default_https():
@@ -32,6 +32,22 @@ def test_validate_public_host_rejects_non_http_schemes():
         with pytest.raises(HTTPException) as exc:
             _validate_public_host(f"{scheme}://example.com/x")
         assert exc.value.status_code == 400
+
+
+def test_import_validation_rejects_binary_xls_instead_of_silently_losing_images():
+    with pytest.raises(HTTPException) as exc:
+        _source_type_and_validate_adapter("Hansgrohe", "supplier-catalog.xls")
+    assert exc.value.status_code == 400
+    assert "save as .xlsx" in exc.value.detail
+
+
+def test_import_validation_enforces_the_selected_supplier_adapter_format():
+    with pytest.raises(HTTPException) as exc:
+        _source_type_and_validate_adapter("Hansgrohe", "supplier-catalog.pdf")
+    assert exc.value.status_code == 400
+    assert ".xlsx" in exc.value.detail
+
+    assert _source_type_and_validate_adapter("Hansgrohe", "supplier-catalog.xlsx") == "excel"
 
 
 class _FakeResponse:

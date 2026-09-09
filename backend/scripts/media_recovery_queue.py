@@ -32,6 +32,8 @@ from db import db  # noqa: E402
 
 QUALITY_RANK = {"missing": 0, "poor": 1, "acceptable": 2, "good": 3, "excellent": 4}
 SOURCE_RANK = {"internal": 0, "manufacturer": 1, "supplier": 2}
+MIN_4K_LONG_EDGE = 3840
+MIN_4K_SHORT_EDGE = 2160
 
 
 def media_sort_key(row: dict[str, Any]) -> tuple[int, int, int]:
@@ -52,12 +54,32 @@ def displayed_hero(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
     return public_rows[0] if public_rows else None
 
 
+def meets_top_notch_media_standard(row: dict[str, Any] | None) -> bool:
+    """The recovery target: a safe scalable SVG or a genuine 4K raster.
+
+    The main application's historical ``quality`` field intentionally has a
+    lower display-oriented threshold.  Keep that signal intact and expose a
+    separate, auditable recovery criterion instead of relabelling 1024px
+    images as 4K.
+    """
+    if not row:
+        return False
+    if str(row.get("mime") or "").lower() == "image/svg+xml":
+        return True
+    try:
+        width, height = int(row.get("width") or 0), int(row.get("height") or 0)
+    except (TypeError, ValueError):
+        return False
+    return min(width, height) >= MIN_4K_SHORT_EDGE and max(width, height) >= MIN_4K_LONG_EDGE
+
+
 async def run(
     *,
     limit: int = 100,
     max_quality: str = "poor",
     floor_id: str | None = None,
     brand_id: str | None = None,
+    require_4k: bool = False,
 ) -> dict[str, Any]:
     """Return the current recovery queue and an auditable summary."""
     product_filter: dict[str, Any] = {"active": True}
@@ -90,7 +112,9 @@ async def run(
         hero = displayed_hero(media_by_product.get(product["id"], []))
         quality = str(hero.get("quality") if hero else "missing")
         quality_counts[quality] += 1
-        if QUALITY_RANK.get(quality, 0) > threshold:
+        below_requested_quality = QUALITY_RANK.get(quality, 0) <= threshold
+        below_4k = require_4k and not meets_top_notch_media_standard(hero)
+        if not below_requested_quality and not below_4k:
             continue
         brand_name = brands.get(str(product.get("brand_id")), "Unknown")
         brand_counts[brand_name] += 1
@@ -105,6 +129,7 @@ async def run(
             "hero_dimensions": [hero.get("width"), hero.get("height")] if hero else [None, None],
             "hero_source_type": hero.get("source_type") if hero else None,
             "hero_media_id": hero.get("id") if hero else None,
+            "meets_top_notch_standard": meets_top_notch_media_standard(hero),
         })
 
     candidates.sort(key=lambda item: (
@@ -114,7 +139,7 @@ async def run(
         item["sku"] or "",
     ))
     return {
-        "filter": {"floor_id": floor_id, "brand_id": brand_id, "max_quality": max_quality},
+        "filter": {"floor_id": floor_id, "brand_id": brand_id, "max_quality": max_quality, "require_4k": require_4k},
         "active_products_scanned": len(products),
         "displayed_hero_quality": dict(sorted(quality_counts.items())),
         "recoverable_products": len(candidates),
@@ -129,6 +154,7 @@ async def main() -> None:
     parser.add_argument("--max-quality", choices=tuple(QUALITY_RANK), default="poor")
     parser.add_argument("--floor-id")
     parser.add_argument("--brand-id")
+    parser.add_argument("--require-4k", action="store_true", help="Include every displayed hero below the 4K/SVG recovery standard")
     args = parser.parse_args()
     if args.limit < 1:
         parser.error("--limit must be positive")

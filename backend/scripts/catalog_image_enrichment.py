@@ -24,6 +24,7 @@ import sys
 from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import parse_qs, unquote, urljoin, urlparse
+from xml.etree import ElementTree
 
 import httpx
 from dotenv import load_dotenv
@@ -36,7 +37,7 @@ load_dotenv(BASE / ".env")
 from db import db  # noqa: E402
 from scripts.media_recovery_queue import displayed_hero, run as recovery_queue  # noqa: E402
 from services import catalog_service  # noqa: E402
-from services.media_service import delete_media, upload_and_register  # noqa: E402
+from services.media_service import upload_and_register  # noqa: E402
 
 
 # Keep this deliberately conservative. Add a domain only after confirming it
@@ -46,17 +47,20 @@ OFFICIAL_DOMAINS: dict[str, tuple[str, ...]] = {
     "Grohe": ("grohe.com",),
     "Hansgrohe": ("hansgrohe.com",),
     "Axor": ("axor-design.com", "hansgrohe.com"),
-    "Geberit": ("geberit.com",),
+    # Geberit's country catalogues and image delivery service are both
+    # first-party.  The generic extractor still requires the exact SKU on a
+    # catalogue product page; it never treats a CDN filename alone as proof.
+    "Geberit": ("geberit.com", "catalog.geberit.us", "catalog.geberit.in"),
     "Vitra": ("vitra-india.com",),
 }
 SEARCH_URL = "https://html.duckduckgo.com/html/"
 MAX_MEDIA_BYTES = 20 * 1024 * 1024
-# Match the catalog contract: an image becomes acceptable at a 320px longest
-# edge, provided it is not a decorative strip (the quality helper also
-# requires a 160px short edge).  Official product imagery is often delivered
-# below 4K; rejecting it would leave legitimate recoveries unresolved.
-MIN_ACCEPTABLE_EDGE = 320
-MIN_ACCEPTABLE_SHORT_EDGE = 160
+# This runner is deliberately stricter than the legacy ``quality`` label.
+# ``quality=excellent`` begins at 1024px elsewhere in the application and is
+# useful for ordinary display, but it must not be presented as a 4K recovery.
+# A raster master needs both axes at least 2160px and one at least 3840px.
+MIN_4K_LONG_EDGE = 3840
+MIN_4K_SHORT_EDGE = 2160
 IMAGE_URL = re.compile(r"https?://[^\s\"'<>\\]+", re.I)
 META_CONTENT = re.compile(
     r"<meta[^>]+(?:property|name)=[\"'](?:og:image(?::secure_url)?|twitter:image)[\"'][^>]+content=[\"']([^\"']+)[\"']",
@@ -70,9 +74,16 @@ def normalized_sku(value: str | None) -> str:
     return re.sub(r"[^A-Z0-9]", "", (value or "").upper())
 
 
-def is_acceptable_asset(width: int, height: int) -> bool:
-    """Require usable catalog media without claiming that it is 4K."""
-    return min(width, height) >= MIN_ACCEPTABLE_SHORT_EDGE and max(width, height) >= MIN_ACCEPTABLE_EDGE
+def is_acceptable_asset(width: int, height: int, mime: str = "") -> bool:
+    """Return whether an already-validated asset meets the recovery bar.
+
+    SVG is a scalable master only after :func:`image_dimensions` has parsed
+    and rejected active/external content.  Raster media is never upscaled to
+    satisfy this check.
+    """
+    if mime.lower() == "image/svg+xml":
+        return True
+    return min(width, height) >= MIN_4K_SHORT_EDGE and max(width, height) >= MIN_4K_LONG_EDGE
 
 
 def _host_is_official(url: str, domain: str) -> bool:
@@ -103,7 +114,7 @@ def search_result_urls(page: str, domain: str) -> list[str]:
 
 def _looks_like_image_url(url: str) -> bool:
     path = urlparse(url).path.lower()
-    return any(path.endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif"))
+    return any(path.endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif", ".svg"))
 
 
 def asset_urls(page_html: str, page_url: str, sku: str, limit: int) -> list[str]:
@@ -149,7 +160,9 @@ def weak_media_to_remove(rows: list[dict[str, Any]]) -> list[str]:
     hero = displayed_hero(rows)
     if not hero or hero.get("source_type") != "manufacturer":
         return []
-    if not is_acceptable_asset(int(hero.get("width") or 0), int(hero.get("height") or 0)):
+    if not is_acceptable_asset(
+        int(hero.get("width") or 0), int(hero.get("height") or 0), str(hero.get("mime") or ""),
+    ):
         return []
     return [
         str(row["id"])
@@ -202,7 +215,42 @@ async def prune_replaced_weak_media(*, floor_id: str, apply_changes: bool) -> di
     }
 
 
-def image_dimensions(data: bytes) -> tuple[int, int]:
+def _svg_dimensions(data: bytes) -> tuple[int, int]:
+    """Validate a simple product SVG and return nominal scalable dimensions.
+
+    A first-party SVG is a genuine vector master, so its pixel dimensions are
+    not a quality limit.  Reject active/external SVG features before storage;
+    catalog imagery is content, never executable markup.
+    """
+    try:
+        root = ElementTree.fromstring(data)
+    except (ElementTree.ParseError, UnicodeDecodeError) as exc:
+        raise ValueError("asset could not be decoded as SVG") from exc
+    if root.tag.rsplit("}", 1)[-1].lower() != "svg":
+        raise ValueError("asset is not an SVG document")
+    for node in root.iter():
+        tag = node.tag.rsplit("}", 1)[-1].lower()
+        if tag in {"script", "foreignobject", "iframe", "object", "embed"}:
+            raise ValueError("SVG contains an active element")
+        for key, value in node.attrib.items():
+            if key.lower().startswith("on") or (key.rsplit("}", 1)[-1] == "href" and value and not value.startswith("#")):
+                raise ValueError("SVG contains an active or external reference")
+    # ``viewBox`` is the reliable scalable canvas; width/height can carry CSS
+    # units and are intentionally not used as a source-resolution claim.
+    view_box = root.attrib.get("viewBox", "").replace(",", " ").split()
+    if len(view_box) == 4:
+        try:
+            width, height = float(view_box[2]), float(view_box[3])
+            if width > 0 and height > 0:
+                return max(1, int(width)), max(1, int(height))
+        except ValueError:
+            pass
+    return 1024, 1024
+
+
+def image_dimensions(data: bytes, mime: str = "") -> tuple[int, int]:
+    if mime.lower() == "image/svg+xml" or data.lstrip().startswith(b"<svg"):
+        return _svg_dimensions(data)
     try:
         with Image.open(io.BytesIO(data)) as image:
             image.load()
@@ -289,10 +337,10 @@ async def find_official_asset(
                     continue
                 data, mime = downloaded
                 try:
-                    width, height = image_dimensions(data)
+                    width, height = image_dimensions(data, mime)
                 except ValueError:
                     continue
-                if not is_acceptable_asset(width, height):
+                if not is_acceptable_asset(width, height, mime):
                     continue
                 return {
                     "source_page_url": str(page.url),
@@ -331,7 +379,11 @@ async def discover(
     max_pages_per_domain: int, max_assets_per_page: int, delay_seconds: float,
     skip_product_ids: set[str] | None = None, checkpoint: Path | None = None,
 ) -> list[dict[str, Any]]:
-    queue = await recovery_queue(limit=10_000, max_quality="poor", floor_id=floor_id)
+    # The legacy labels stop at 1024px.  A top-quality run must therefore
+    # explicitly include every displayed hero that falls short of 4K/SVG.
+    queue = await recovery_queue(
+        limit=10_000, max_quality="poor", floor_id=floor_id, require_4k=True,
+    )
     results: list[dict[str, Any]] = []
     headers = {"User-Agent": "BuildconCatalogImageEnrichment/1.0 (+catalog media recovery)"}
     timeout = httpx.Timeout(45, connect=15)
@@ -418,7 +470,7 @@ async def apply(manifest_rows: list[dict[str, Any]], checkpoint: Path | None = N
                 continue
             data, mime = downloaded
             try:
-                width, height = image_dimensions(data)
+                width, height = image_dimensions(data, mime)
             except ValueError:
                 result = {**row, "mode": "apply", "outcome": "asset_undecodable"}
                 results.append(result)
@@ -426,7 +478,7 @@ async def apply(manifest_rows: list[dict[str, Any]], checkpoint: Path | None = N
                     _append_jsonl(checkpoint, result)
                 continue
             digest = hashlib.sha256(data).hexdigest()
-            if not is_acceptable_asset(width, height) or digest != row.get("sha256"):
+            if not is_acceptable_asset(width, height, mime) or digest != row.get("sha256"):
                 result = {**row, "mode": "apply", "outcome": "asset_changed_or_not_acceptable"}
                 results.append(result)
                 if checkpoint:
@@ -443,21 +495,16 @@ async def apply(manifest_rows: list[dict[str, Any]], checkpoint: Path | None = N
             )
             current_media = await db.product_media.find({"product_id": product["id"]}, {"_id": 0}).to_list(100)
             displayed = displayed_hero(current_media)
-            stored_is_acceptable = is_acceptable_asset(int(media.width or 0), int(media.height or 0))
-            outcome = "stored_below_acceptable" if not stored_is_acceptable else "not_displayed"
+            stored_is_acceptable = is_acceptable_asset(
+                int(media.width or 0), int(media.height or 0), str(media.mime or ""),
+            )
+            outcome = "stored_below_4k" if not stored_is_acceptable else "not_displayed"
             if stored_is_acceptable and displayed and displayed.get("id") == media.id:
-                # The user chose to remove legacy weak media rather than keep
-                # it as gallery clutter.  Delete only after the new official
-                # hero has been registered and confirmed as the displayed one.
-                removed = []
-                for old in current_media:
-                    if old.get("id") == media.id:
-                        continue
-                    if str(old.get("quality") or "missing") in {"poor", "missing"}:
-                        if await delete_media(str(old["id"])):
-                            removed.append(old["id"])
+                # Keep the prior asset as a recoverable gallery/audit record.
+                # Storage and metadata deletion must be an explicit, later
+                # retention action—not an implicit side effect of recovery.
                 outcome = "applied"
-            result = {**row, "mode": "apply", "outcome": outcome, "new_media_id": media.id, "removed_media_ids": removed if outcome == "applied" else []}
+            result = {**row, "mode": "apply", "outcome": outcome, "new_media_id": media.id, "removed_media_ids": []}
             results.append(result)
             if checkpoint:
                 _append_jsonl(checkpoint, result)

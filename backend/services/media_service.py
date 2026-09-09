@@ -187,7 +187,11 @@ async def delete_media(media_id: str, *, actor: Optional[UserPublic] = None) -> 
     try:
         await storage.delete(bucket=doc["bucket"], key=doc["storage_key"])
     except StorageError as e:
-        logger.warning("storage delete failed (continuing to remove metadata): %s", e)
+        # Metadata is the recoverable pointer to the Supabase object.  Never
+        # delete it after a failed storage operation or the object becomes an
+        # untraceable orphan that cannot be restored or retried safely.
+        logger.error("storage delete failed; preserving media metadata for retry: %s", e)
+        raise
     await db.product_media.delete_one({"id": media_id})
     # The `product_media` row is gone after this point — capture a snapshot
     # in the (immutable, append-only) activity log now, before it's lost,

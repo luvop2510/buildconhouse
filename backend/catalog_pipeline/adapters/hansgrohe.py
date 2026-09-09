@@ -146,6 +146,22 @@ SKU_TAIL_FINISH = {
     "460": ("Brushed Nickel", "BN"),
 }
 
+
+def canonical_hansgrohe_sku(value: object) -> str:
+    """Return the supplier article number without losing its leading zero.
+
+    Hansgrohe article numbers are opaque identifiers, not quantities.  The
+    catalog uses eight-digit numeric article numbers; a spreadsheet that has
+    stored one as a number will yield seven digits when its initial zero is
+    lost by Excel/openpyxl.  Restore *only* that known seven-to-eight-digit
+    form.  Other values (including the intentional ``-2`` attachment-variant
+    suffix) remain untouched so this helper cannot manufacture a new SKU.
+    """
+    sku = str(value or "").strip()
+    if sku.isdigit() and len(sku) == 7:
+        return f"0{sku}"
+    return sku
+
 SIZE_RE = re.compile(r"\b(\d{2,4})(?:\s*[×xX]\s*(\d{2,4}))?\s*(?:mm|cm|inch|\")?\b")
 
 
@@ -335,15 +351,9 @@ class HansgroheAdapter(BrandAdapter):
                         current_subcat = _subcategory_from_section(section, default_subcat)
                     continue
 
-                sku_raw = sku_cell
-                sku = str(sku_raw).strip()
+                sku = canonical_hansgrohe_sku(sku_cell)
                 if not sku or not re.match(r"^[A-Za-z0-9\-\.\/]+$", sku):
                     continue
-                # Hansgrohe SKUs are numeric; strip leading zeros only if pure numeric
-                if sku.isdigit():
-                    sku = str(int(sku))
-                    # Restore expected 8-digit padding when appropriate (leading zeros are informational)
-                    # Actually the source file shows 7-8 digit numeric — keep as-is post int() conversion.
 
                 name_cell = row[col_map["name"]] if col_map["name"] < len(row) else None
                 name = str(name_cell or "").strip()

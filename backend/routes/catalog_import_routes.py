@@ -4,14 +4,20 @@ Pipeline (via `catalog_pipeline/`):
   Upload → Adapter Extract → Validate → Certify → Human Review → Import
 """
 from __future__ import annotations
+import hashlib
 import logging
+import re
+from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
 
 from auth import floor_for_write, floor_query, get_current_user, require_min_role
-from catalog_pipeline.orchestrator import rollback_job, run_pipeline
+from catalog_pipeline.adapters import get_adapter
+from catalog_pipeline.orchestrator import _offload_row_images, rollback_job, run_pipeline
 from db import db
+from media_storage import get_media_storage
+from media_storage.factory import private_bucket
 from models import CatalogImportJob, UserPublic
 from settings import settings
 
@@ -112,10 +118,39 @@ async def _fetch_public_url(url: str, *, max_redirects: int = 5) -> bytes:
     raise HTTPException(status_code=502, detail="Too many redirects while fetching URL")
 
 
-async def _persist_job(brand: str, filename: str, source_type: str, result: dict, user: UserPublic) -> dict:
+def _source_type_and_validate_adapter(brand: str, filename: str) -> str:
+    ext = Path(filename).suffix.lower()
+    if ext == ".xls":
+        raise HTTPException(status_code=400, detail="Legacy .xls files are not supported reliably; save as .xlsx and upload again.")
+    if ext not in {".xlsx", ".pdf", ".csv"}:
+        raise HTTPException(status_code=400, detail="Only .xlsx, .pdf, .csv are supported")
+    adapter = get_adapter(brand)
+    if ext not in adapter.supported_extensions:
+        supported = ", ".join(adapter.supported_extensions)
+        raise HTTPException(status_code=400, detail=f"{brand} imports support {supported}; received {ext}.")
+    return "excel" if ext == ".xlsx" else ("pdf" if ext == ".pdf" else "csv")
+
+
+async def _store_import_source(brand: str, filename: str, data: bytes) -> dict:
+    """Retain the exact supplier input privately under an immutable hash key."""
+    digest = hashlib.sha256(data).hexdigest()
+    safe_brand = re.sub(r"[^a-z0-9]+", "-", brand.lower()).strip("-") or "supplier"
+    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", Path(filename).name).strip(".-") or "source"
+    key = f"catalog-imports/{safe_brand}/{digest[:2]}/{digest}/{safe_name}"
+    content_type = {
+        ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ".pdf": "application/pdf", ".csv": "text/csv",
+    }.get(Path(safe_name).suffix.lower(), "application/octet-stream")
+    bucket = private_bucket()
+    await get_media_storage().upload(bucket=bucket, key=key, data=data, content_type=content_type)
+    return {"source_bucket": bucket, "source_storage_key": key, "source_sha256": digest, "source_size_bytes": len(data)}
+
+
+async def _persist_job(brand: str, filename: str, source_type: str, result: dict, user: UserPublic, source: dict) -> dict:
     job = CatalogImportJob(
         filename=filename,
         source_type=source_type,  # type: ignore[arg-type]
+        **source,
         supplier_name=brand,
         total_rows=len(result["rows"]),
         accepted_rows=sum(1 for r in result["rows"] if r.get("status") == "accepted"),
@@ -159,15 +194,18 @@ async def upload_and_extract(
         raise HTTPException(status_code=400, detail=f"Unsupported brand. Choose from: {SUPPORTED_BRANDS}")
     data = await _read_limited_upload(file)
     filename = file.filename or "upload"
-    lower = filename.lower()
-    if not lower.endswith((".xlsx", ".xls", ".pdf", ".csv")):
-        raise HTTPException(status_code=400, detail="Only .xlsx, .xls, .pdf, .csv are supported")
-    source_type = "excel" if lower.endswith((".xlsx", ".xls")) else ("pdf" if lower.endswith(".pdf") else "csv")
+    source_type = _source_type_and_validate_adapter(brand, filename)
 
     result = await run_pipeline(brand, filename, data)
     if not result["rows"]:
         raise HTTPException(status_code=422, detail="Extraction produced 0 rows. Check the file format.")
-    return await _persist_job(brand, filename, source_type, result, user)
+    # The review API never retains base64 image payloads in the import job.
+    # Embedded Excel/PDF images are staged once in private Supabase Storage;
+    # rows retain only a lightweight content-addressed reference until the
+    # accepted import creates its public product_media master.
+    await _offload_row_images(result["rows"])
+    source = await _store_import_source(brand, filename, data)
+    return await _persist_job(brand, filename, source_type, result, user, source)
 
 
 @router.post("/from-url")
@@ -197,13 +235,14 @@ async def import_from_url(
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Could not fetch file: {e}") from e
 
-    lower = filename.lower()
-    source_type = "excel" if lower.endswith((".xlsx", ".xls")) else ("pdf" if lower.endswith(".pdf") else "csv")
+    source_type = _source_type_and_validate_adapter(brand, filename)
 
     result = await run_pipeline(brand, filename, data)
     if not result["rows"]:
         raise HTTPException(status_code=422, detail="Extraction produced 0 rows.")
-    return await _persist_job(brand, filename, source_type, result, user)
+    await _offload_row_images(result["rows"])
+    source = await _store_import_source(brand, filename, data)
+    return await _persist_job(brand, filename, source_type, result, user, source)
 
 
 _ROW_STRING_FIELDS = ("name", "sku", "category", "finish", "material", "dimensions", "warranty", "status")
