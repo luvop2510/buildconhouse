@@ -3,6 +3,7 @@ import asyncio
 from scripts import catalog_image_enrichment as enrichment
 from scripts.catalog_image_enrichment import (
     asset_urls,
+    has_browser_verified_exact_sku,
     discovery_scope,
     discovery_outcome,
     is_approved_ready_row,
@@ -99,13 +100,28 @@ def test_top_notch_queue_signal_is_independent_of_legacy_quality_label():
 
 
 def test_apply_requires_explicit_attributable_approval_for_ready_rows():
-    row = {"outcome": "ready"}
+    browser_review = {
+        "status": "verified", "exact_sku_verified": True,
+        "source_page_url": "https://manufacturer.example/product/SKU-1",
+        "official_domain": "manufacturer.example", "reviewer": "catalog-browser-review",
+        "reviewed_at": "2026-09-09T00:00:00Z",
+    }
+    row = {"outcome": "ready", "source_page_url": browser_review["source_page_url"]}
     assert not is_approved_ready_row(row)
     assert not is_approved_ready_row({
         **row, "approval": {"status": "approved", "reviewer": "", "reviewed_at": "2026-09-09T00:00:00Z"},
     })
+    assert not has_browser_verified_exact_sku(row)
+    assert not is_approved_ready_row({
+        **row, "approval": {"status": "approved", "reviewer": "catalog-review", "reviewed_at": "2026-09-09T00:00:00Z"},
+    })
+    assert not has_browser_verified_exact_sku({**row, "browser_review": {**browser_review, "exact_sku_verified": False}})
+    assert not has_browser_verified_exact_sku({
+        **row, "source_page_url": "https://manufacturer.example/product/OTHER", "browser_review": browser_review,
+    })
     assert is_approved_ready_row({
         **row, "approval": {"status": "approved", "reviewer": "catalog-review", "reviewed_at": "2026-09-09T00:00:00Z"},
+        "browser_review": browser_review,
     })
 
 

@@ -4,6 +4,8 @@ Discovery is read-only and writes a JSONL manifest. Applying requires both
 ``--apply`` and that manifest, and writes are limited to explicitly reviewed
 ``ready`` rows. Add an ``approval`` object with ``status: "approved"``, a
 non-empty ``reviewer``, and a non-empty ``reviewed_at`` to each reviewed row.
+An applied row must also carry a ``browser_review`` object proving that a
+reviewer opened the exact-SKU page on the official manufacturer domain.
 Every asset is downloaded and validated again before it enters the existing
 media pipeline. The runner never substitutes a generic search image and never
 deletes the former asset.
@@ -440,11 +442,38 @@ def discovery_scope(*, require_4k: bool) -> str:
     return "top_quality" if require_4k else "legacy_poor_only"
 
 
+def has_browser_verified_exact_sku(row: dict[str, Any]) -> bool:
+    """Require attributable browser evidence before a discovery row can write.
+
+    Search or HTTP extraction is useful for discovery but does not satisfy the
+    recovery review requirement on its own.  The reviewer records the official
+    product page they opened, the exact SKU confirmation, and when that review
+    occurred in the same manifest row that is later approved for application.
+    """
+    review = row.get("browser_review")
+    source_page_url = row.get("source_page_url")
+    return (
+        isinstance(review, dict)
+        and review.get("status") == "verified"
+        and review.get("exact_sku_verified") is True
+        and isinstance(review.get("source_page_url"), str)
+        and bool(review["source_page_url"].strip())
+        and isinstance(source_page_url, str)
+        and source_page_url.rstrip("/") == review["source_page_url"].strip().rstrip("/")
+        and isinstance(review.get("official_domain"), str)
+        and bool(review["official_domain"].strip())
+        and isinstance(review.get("reviewer"), str)
+        and bool(review["reviewer"].strip())
+        and isinstance(review.get("reviewed_at"), str)
+        and bool(review["reviewed_at"].strip())
+    )
+
+
 def is_approved_ready_row(row: dict[str, Any]) -> bool:
     """Return whether a discovery result has explicit, attributable approval.
 
     Discovery evidence alone must never authorize a production storage/database
-    write.  Requiring a reviewer and timestamp keeps the JSONL manifest both
+    write.  Approval and browser evidence keep the JSONL manifest both
     resumable and auditable without adding mutable review state to a product.
     """
     approval = row.get("approval")
@@ -456,6 +485,7 @@ def is_approved_ready_row(row: dict[str, Any]) -> bool:
         and bool(approval["reviewer"].strip())
         and isinstance(approval.get("reviewed_at"), str)
         and bool(approval["reviewed_at"].strip())
+        and has_browser_verified_exact_sku(row)
     )
 
 
