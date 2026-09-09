@@ -1,3 +1,6 @@
+import asyncio
+
+from scripts import catalog_image_enrichment as enrichment
 from scripts.catalog_image_enrichment import (
     asset_urls,
     discovery_outcome,
@@ -90,6 +93,24 @@ def test_apply_requires_explicit_attributable_approval_for_ready_rows():
     assert is_approved_ready_row({
         **row, "approval": {"status": "approved", "reviewer": "catalog-review", "reviewed_at": "2026-09-09T00:00:00Z"},
     })
+
+
+def test_apply_records_unapproved_ready_rows_without_touching_catalog(monkeypatch):
+    """Discovery evidence alone must not reach upload, database, or storage."""
+    monkeypatch.setattr(enrichment, "get_media_storage", lambda: object())
+
+    async def unexpected_upload(**_kwargs):
+        raise AssertionError("unapproved row must never be uploaded")
+
+    monkeypatch.setattr(enrichment, "upload_and_register", unexpected_upload)
+    result = asyncio.run(enrichment.apply([{
+        "outcome": "ready", "product_id": "product-1", "sku": "SKU-1", "floor_id": "first-floor",
+    }]))
+
+    assert result == [{
+        "outcome": "skipped_unapproved", "product_id": "product-1", "sku": "SKU-1",
+        "floor_id": "first-floor", "mode": "apply",
+    }]
 
 
 def test_storage_readback_must_match_registered_size_and_sha1():
