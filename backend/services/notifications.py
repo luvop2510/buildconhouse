@@ -36,7 +36,7 @@ async def notify(
         return
     try:
         n = Notification(user_id=user_id, kind=kind, title=title, body=body, link=link, floor_id=floor_id)
-        await db.notifications.insert_one(n.dict())
+        await db.notifications.insert_one(n.model_dump())
     except Exception:  # noqa: BLE001 — notifications are never allowed to fail the caller
         pass
 

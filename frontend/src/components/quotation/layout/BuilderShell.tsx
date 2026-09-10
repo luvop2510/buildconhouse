@@ -124,16 +124,14 @@ export function BuilderShell({ onBack }: { onBack: () => void }) {
         </View>
       ) : twoPane ? (
         <View style={{ flex: 1, flexDirection: "row", minHeight: 0, overflow: "hidden" }}>
-          <View style={{ width: railCollapsed ? 56 : 220, overflow: "hidden" }}>
-            <BrandRail collapsed={railCollapsed} onToggleCollapsed={toggleRail} compact />
-          </View>
-          <View style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden" }}>
-            <QuotationPane compact={compactCatalog} />
+          <View style={{ flex: 1, minWidth: 0, minHeight: 0 }}><ProductExplorer showCompactFilters /></View>
+          <View style={{ width: 340, minHeight: 0, borderLeftWidth: StyleSheet.hairlineWidth, borderColor: colors.border }}>
+            <QuotationPane compact />
           </View>
         </View>
       ) : (
         <View style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-          <QuotationPane compact={compactCatalog} />
+          <QuotationPane compact={compactCatalog} browseInline />
         </View>
       )}
 

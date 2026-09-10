@@ -147,6 +147,69 @@ def test_rule_counts_scopes_to_the_active_floor(monkeypatch):
     assert floor_constraint == {"$in": ["ground-floor"]}
 
 
+def test_waking_expired_snoozes_is_scoped_to_the_callers_floor(monkeypatch):
+    class _Recorder:
+        def __init__(self):
+            self.query = None
+
+        async def update_many(self, query, _update):
+            self.query = query
+
+    class _Db:
+        followups = _Recorder()
+
+    fake_db = _Db()
+    monkeypatch.setattr(followups, "db", fake_db)
+
+    asyncio.run(followups._wake_snoozed(_user("ground-floor")))
+
+    assert _floor_id_constraint(fake_db.followups.query) == {"$in": ["ground-floor"]}
+
+
+def test_paged_followups_filters_and_bounds_the_database_pipeline(monkeypatch):
+    class _Followups:
+        def __init__(self):
+            self.pipeline = None
+
+        async def update_many(self, *_args, **_kwargs):
+            pass
+
+        def aggregate(self, pipeline):
+            self.pipeline = pipeline
+            return self
+
+        async def to_list(self, _limit):
+            return [
+                {"id": f"f-{index}", "status": "open", "due_at": "2099-01-01T00:00:00+00:00", "priority_level": "high"}
+                for index in range(26)
+            ]
+
+    class _Db:
+        followups = _Followups()
+
+    fake_db = _Db()
+    monkeypatch.setattr(followups, "db", fake_db)
+
+    result = asyncio.run(followups.list_followups_page(
+        q="Acme", priority="high", category="sales", rule_type="selection_waiting",
+        page=2, page_size=25, user=_user("ground-floor"),
+    ))
+
+    match = fake_db.followups.pipeline[0]["$match"]
+    assert _floor_id_constraint(match) == {"$in": ["ground-floor"]}
+    assert fake_db.followups.pipeline[2] == {"$sort": {
+        "_inbox_overdue": 1, "_inbox_unresolved": 1, "_inbox_mine": 1,
+        "priority_score": -1, "due_at": 1, "id": 1,
+    }}
+    assert fake_db.followups.pipeline[3] == {"$skip": 25}
+    assert fake_db.followups.pipeline[4] == {"$limit": 26}
+    assert result["page"] == 2
+    assert result["page_size"] == 25
+    assert result["has_more"] is True
+    assert len(result["items"]) == 25
+    assert all(row["bucket"] == "later" for row in result["items"])
+
+
 class _DetailCollection:
     """Small Motor-shaped fake that records every floor-sensitive read."""
 

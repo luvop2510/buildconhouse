@@ -46,6 +46,9 @@ type Product = {
   family_name?: string | null; variant_label?: string | null;
   finish_code?: string | null; colour?: string | null;
   image_quality?: string | null;
+  must_buy_concealed?: boolean;
+  concealed_sku?: string | null;
+  concealed_skus?: string[];
   hero_image_url?: string | null;
   gallery?: { url: string; role?: string; source_type?: string; quality?: string; family_key?: string | null; width?: number | null; height?: number | null; is_primary?: boolean }[];
   specs?: Record<string, any>;
@@ -125,7 +128,9 @@ export default function ProductDetail() {
     } catch { setPipeline([]); }
   };
 
+  const [loadError, setLoadError] = useState(false);
   const loadProduct = async (productId: string) => {
+    setLoadError(false);
     try {
       const prod = await api.get<Product>(`/products/${productId}`);
       setP(prod);
@@ -145,6 +150,7 @@ export default function ProductDetail() {
       } catch { /* ignore */ }
     } catch {
       setP(null);
+      setLoadError(true);
     }
   };
 
@@ -196,6 +202,10 @@ export default function ProductDetail() {
           <IconButton icon="chevron-left" onPress={() => router.back()} size={36} tone="surface" accessibilityLabel="Back" />
           <View style={{ flex: 1 }} />
         </SafeAreaView>
+        <View style={{ padding: 24, gap: 16 }}>
+          <Text accessibilityLiveRegion="polite">{loadError ? "Couldn't load product. Check your connection and try again." : "Loading product…"}</Text>
+          {loadError ? <Button label="Retry" onPress={() => { if (id) void loadProduct(id); }} /> : null}
+        </View>
       </View>
     );
   }
@@ -386,6 +396,14 @@ export default function ProductDetail() {
       ) : null}
 
       {/* Description */}
+      {p.must_buy_concealed && (p.concealed_skus?.length || p.concealed_sku) ? (
+        <View style={[styles.poorHint, { borderColor: "#D97706", backgroundColor: "#FFF7ED" }]}>
+          <Feather name="alert-triangle" size={14} color="#B45309" />
+          <Text style={{ flex: 1, fontSize: 12, fontWeight: "700", color: "#92400E", lineHeight: 17 }}>
+            Must Buy Concealed · {(p.concealed_skus?.length ? p.concealed_skus : [p.concealed_sku]).filter(Boolean).join(", ")}
+          </Text>
+        </View>
+      ) : null}
       {p.description ? (
         <Text style={[type.body, { color: colors.onSurfaceSecondary, lineHeight: 22 }]}>{p.description}</Text>
       ) : null}

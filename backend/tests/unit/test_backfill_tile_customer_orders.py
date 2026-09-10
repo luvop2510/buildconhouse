@@ -234,7 +234,7 @@ def test_backfill_retry_after_partial_failure_does_not_duplicate_customer_order(
         created_by="system-backfill", created_by_name="Backfill script",
         dashboard_summary=backfill_module.TileCustomerOrderDashboardSummary(),
     )
-    db.customer_orders.docs.append(existing_co.dict())
+    db.customer_orders.docs.append(existing_co.model_dump())
 
     monkeypatch.setattr(backfill_module, "db", db)
     monkeypatch.setattr(backfill_module, "next_number", _fake_next_number)
@@ -313,7 +313,7 @@ def test_backfill_retry_recomputes_totals_from_all_quotation_pos_not_just_this_r
     }
 
     db = _make_db([po_brand_a_already_migrated, po_brand_b_not_yet_migrated])
-    db.customer_orders.docs.append(existing_co.dict())
+    db.customer_orders.docs.append(existing_co.model_dump())
     monkeypatch.setattr(backfill_module, "db", db)
     monkeypatch.setattr(backfill_module, "next_number", _fake_next_number)
 

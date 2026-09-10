@@ -9,10 +9,12 @@
 // -----------------------------------------------------------------------------
 import { Feather } from "@expo/vector-icons";
 import { useState } from "react";
-import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { colors, money, radius, spacing, statusMeta, type } from "@/src/theme/tokens";
+import { colors, radius, spacing, statusMeta, type } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";
+import { BottomSheet } from "@/src/components/BottomSheet";
+import { RecentQuotationsPanel } from "../panes/RecentQuotationsPanel";
 import { ConfirmDialog } from "@/src/components/ds";
 import { canManageDestructiveData } from "@/src/constants/roles";
 import { useAuth } from "@/src/state/auth";
@@ -34,6 +36,8 @@ export function BuilderTopbar({
   const { staff } = useAuth();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [recentOpen, setRecentOpen] = useState(false);
 
   const revs = b.recentQuotations.find((q) => q.id === b.quotationId)?.revision_count ?? 0;
   const status = b.recentQuotations.find((q) => q.id === b.quotationId)?.status || "draft";
@@ -41,7 +45,7 @@ export function BuilderTopbar({
 
   return (
     <View style={styles.bar}>
-      <Pressable testID="builder-back" onPress={onBack} style={styles.back} hitSlop={6}>
+      <Pressable testID="builder-back" accessibilityRole="button" accessibilityLabel="Back to quotations" onPress={onBack} style={styles.back} hitSlop={6}>
         <Feather name="chevron-left" size={18} color={colors.onSurface} />
         {!isPhone ? <Text style={styles.backLabel}>Back</Text> : null}
       </Pressable>
@@ -49,13 +53,8 @@ export function BuilderTopbar({
       <View style={styles.titleCol}>
         <View style={styles.titleRow}>
           <Text style={[type.titleMd, styles.titleText]} numberOfLines={1}>
-            Quotation Builder
+            {b.quotationNumber || "New quotation"}
           </Text>
-          {!isPhone && b.quotationNumber ? (
-            <View style={styles.numPill}>
-              <Text style={styles.numPillText}>{b.quotationNumber}</Text>
-            </View>
-          ) : null}
           <View style={[styles.statusPill, { backgroundColor: meta.bg }]}>
             <Text style={[styles.statusText, { color: meta.fg }]}>{meta.label}</Text>
           </View>
@@ -70,82 +69,20 @@ export function BuilderTopbar({
           style={[type.caption, { color: b.saveState === "error" ? colors.error : colors.onSurfaceMuted }]}
           testID="save-status"
         >
-          {b.s.lines.length} items · {money(b.totals.grand)} · {b.saveLabel}
+          {b.saveLabel}
           {b.history.pastSize > 0 ? ` · ${b.history.pastSize} step${b.history.pastSize === 1 ? "" : "s"}` : ""}
         </Text>
       </View>
 
-      {isDesktop ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.headerFieldsRow}
-          contentContainerStyle={styles.headerFieldsRowContent}
-        >
-          <Pressable
-            testID="hdr-customer"
-            onPress={() => b.setCustomerSwitcherOpen(true)}
-            style={({ pressed }) => [styles.field, styles.fieldPressable, pressed && styles.fieldPressed]}
-          >
-            <Text style={styles.fieldLabel}>Customer</Text>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-              <Text style={styles.fieldValue} numberOfLines={1}>
-                {b.customers.find((c) => c.id === b.s.customerId)?.name || "Select customer"}
-              </Text>
-              <Feather name="chevron-down" size={11} color={colors.onSurfaceMuted} />
-            </View>
-          </Pressable>
-          <FieldPill
-            label="Phone"
-            value={b.s.header.phone}
-            onChange={b.setPhone}
-            placeholder="+91 ·········"
-            testID="hdr-phone"
-          />
-          <FieldPill
-            label="Project"
-            value={b.s.header.projectName}
-            onChange={b.setProjectName}
-            placeholder="Project name"
-            testID="hdr-project"
-          />
-          <FieldPill
-            label="Address"
-            value={b.s.header.address}
-            onChange={b.setAddress}
-            placeholder="Site / delivery address"
-            testID="hdr-address"
-          />
-          <FieldPill
-            label="Ref"
-            value={b.s.header.referenceSource}
-            onChange={b.setReferenceSource}
-            placeholder="Walk-in · Architect · Instagram"
-            testID="hdr-ref"
-          />
-          <Pressable
-            testID="hdr-referrer"
-            onPress={() => b.setReferrerSwitcherOpen(true)}
-            accessibilityRole="button"
-            accessibilityLabel="Choose referrer"
-            style={({ pressed }) => [styles.field, styles.fieldPressable, pressed && styles.fieldPressed]}
-          >
-            <Text style={styles.fieldLabel}>Referred By</Text>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-              <Text style={styles.fieldValue} numberOfLines={1}>
-                {b.s.header.referrerName || "None"}
-              </Text>
-              <Feather name="chevron-down" size={11} color={colors.onSurfaceMuted} />
-            </View>
-          </Pressable>
-        </ScrollView>
-      ) : null}
-
-      <View style={{ flexDirection: "row", gap: 4, alignItems: "center" }}>
+      {isPhone ? <Pressable accessibilityRole="button" accessibilityLabel="Quotation actions" onPress={() => setActionsOpen(true)} style={styles.iconBtn} testID="builder-actions">
+        <Feather name="more-horizontal" size={20} color={colors.onSurface} />
+      </Pressable> : null}
+      {!isPhone ? <View style={{ flexDirection: "row", gap: 4, alignItems: "center" }}>
         {/* On phone, keep only the order action here. The persistent checkout
             footer owns draft completion; suppressing secondary actions avoids
             squeezing six touch targets into one row. */}
         {!isPhone ? <Pressable
+          accessibilityRole="button" accessibilityLabel="Generate quotation"
           testID="generate-quotation"
           onPress={b.generateOfficialQuotation}
           disabled={b.workflowBusy || b.s.lines.length === 0}
@@ -155,6 +92,7 @@ export function BuilderTopbar({
           {isPhone ? null : <Text style={styles.workflowText}>Quotation</Text>}
         </Pressable> : null}
         <Pressable
+          accessibilityRole="button" accessibilityLabel="Place order"
           testID="place-order"
           onPress={b.placeOrder}
           disabled={b.workflowBusy || b.s.lines.length === 0}
@@ -163,8 +101,8 @@ export function BuilderTopbar({
           <Feather name="shopping-cart" size={14} color={colors.onBrand} />
           {isPhone ? null : <Text style={[styles.workflowText, { color: colors.onBrand }]}>Place Order</Text>}
         </Pressable>
-      </View>
-      <View style={{ flexDirection: "row", gap: 4, alignItems: "center" }}>
+      </View> : null}
+      {!isPhone ? <View style={{ flexDirection: "row", gap: 4, alignItems: "center" }}>
         {isDesktop && Platform.OS === "web" ? (
           <View style={styles.hint} testID="shortcut-hint">
             <Text style={styles.hintKey}>⌘Z</Text>
@@ -175,6 +113,7 @@ export function BuilderTopbar({
           </View>
         ) : null}
         {!isPhone ? <Pressable
+          accessibilityRole="button" accessibilityLabel="Undo last change"
           testID="undo-btn"
           onPress={b.history.undo}
           disabled={!b.history.canUndo}
@@ -184,6 +123,7 @@ export function BuilderTopbar({
           <Feather name="corner-up-left" size={16} color={colors.onSurface} />
         </Pressable> : null}
         {!isPhone ? <Pressable
+          accessibilityRole="button" accessibilityLabel="Redo change"
           testID="redo-btn"
           onPress={b.history.redo}
           disabled={!b.history.canRedo}
@@ -203,7 +143,28 @@ export function BuilderTopbar({
             <Feather name="trash-2" size={16} color={colors.error} />
           </Pressable>
         ) : null}
-      </View>
+        {!isDesktop ? <Pressable accessibilityRole="button" accessibilityLabel="Recent quotations" style={styles.iconBtn} onPress={() => setRecentOpen(true)}><Feather name="clock" size={16} color={colors.onSurface} /></Pressable> : null}
+      </View> : null}
+      <BottomSheet visible={actionsOpen} onClose={() => setActionsOpen(false)} title="Quotation actions" testID="quotation-actions-sheet">
+        <View style={{ gap: 8 }}>
+          {[
+            { label: "Undo last change", icon: "corner-up-left" as const, action: b.history.undo, disabled: !b.history.canUndo },
+            { label: "Redo change", icon: "corner-up-right" as const, action: b.history.redo, disabled: !b.history.canRedo },
+            { label: "Generate quotation", icon: "file-text" as const, action: b.generateOfficialQuotation, disabled: b.workflowBusy || !b.s.lines.length },
+            { label: "Place order", icon: "shopping-cart" as const, action: b.placeOrder, disabled: b.workflowBusy || !b.s.lines.length },
+            { label: "Recent quotations", icon: "clock" as const, action: () => setRecentOpen(true), disabled: false },
+          ].map(item => <Pressable key={item.label} accessibilityRole="button" accessibilityState={{ disabled: item.disabled }} disabled={item.disabled}
+            onPress={() => { setActionsOpen(false); item.action(); }} style={[styles.actionRow, item.disabled && { opacity: 0.4 }]}>
+            <Feather name={item.icon} size={18} color={colors.onSurface} /><Text style={styles.actionLabel}>{item.label}</Text>
+          </Pressable>)}
+          {canManageDestructiveData(staff?.role) && b.quotationId ? <Pressable accessibilityRole="button" accessibilityLabel="Delete quotation" onPress={() => { setActionsOpen(false); setDeleteOpen(true); }} style={styles.actionRow}>
+            <Feather name="trash-2" size={18} color={colors.error} /><Text style={[styles.actionLabel, { color: colors.error }]}>Delete quotation</Text>
+          </Pressable> : null}
+        </View>
+      </BottomSheet>
+      <BottomSheet visible={recentOpen} onClose={() => setRecentOpen(false)} title="Recent quotations" testID="builder-recent-sheet">
+        <RecentQuotationsPanel onLoaded={() => setRecentOpen(false)} />
+      </BottomSheet>
       <ConfirmDialog
         visible={deleteOpen}
         onClose={() => { if (!deleting) setDeleteOpen(false); }}
@@ -227,39 +188,9 @@ export function BuilderTopbar({
   );
 }
 
-// -----------------------------------------------------------------------------
-// FieldPill — compact inline input used in the topbar. Falls back to a static
-// label when readonly.
-// -----------------------------------------------------------------------------
-function FieldPill({
-  label, value, onChange, placeholder, readonly, testID,
-}: {
-  label: string; value: string; onChange?: (v: string) => void;
-  placeholder?: string; readonly?: boolean; testID?: string;
-}) {
-  const [focused, setFocused] = useState(false);
-  return (
-    <View style={[styles.field, focused && styles.fieldFocused]}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      {readonly ? (
-        <Text style={styles.fieldValue} numberOfLines={1} testID={testID}>{value || "—"}</Text>
-      ) : (
-        <TextInput
-          value={value}
-          onChangeText={onChange}
-          placeholder={placeholder}
-          placeholderTextColor={colors.onSurfaceMuted}
-          style={[styles.fieldInput, Platform.OS === "web" && ({ outlineStyle: "none" } as any)]}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-          testID={testID}
-        />
-      )}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
+  actionRow: { minHeight: 48, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 12 },
+  actionLabel: { fontSize: 15, fontWeight: "600", color: colors.onSurface },
   bar: {
     flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.lg,
     paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border,

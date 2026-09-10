@@ -131,9 +131,26 @@ type Detail = {
 type Assignee = { id: string; full_name: string; role: string };
 type CustomerLite = { id: string; name: string; company?: string | null; phone?: string | null; tier: string };
 type SavedView = { id: string; name: string; filters: Record<string, any> };
+type BulkRequest = {
+  label: string;
+  successPatch: Partial<Followup>;
+  execute: (id: string) => Promise<unknown>;
+};
+type BulkResult = {
+  request: BulkRequest;
+  successCount: number;
+  failedIds: string[];
+};
+type FollowupPage = {
+  items: Followup[];
+  page: number;
+  page_size: number;
+  has_more: boolean;
+};
 
 type KpiFilter = Bucket | "waiting" | "all";
 type FollowupView = "active" | "won" | "lost";
+const FOLLOWUP_PAGE_SIZE = 100;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Static meta
@@ -230,6 +247,16 @@ function isWonOrderFollowup(f: Followup): boolean {
   return f.auto_resolved && (f.completed_outcome === "won" || f.completed_outcome === "converted");
 }
 
+/** Keep bulk mutations bounded so a large selection cannot stampede the API. */
+async function settleBulkRequests(request: BulkRequest, ids: string[]): Promise<PromiseSettledResult<unknown>[]> {
+  const results: PromiseSettledResult<unknown>[] = [];
+  const concurrency = 5;
+  for (let start = 0; start < ids.length; start += concurrency) {
+    results.push(...await Promise.allSettled(ids.slice(start, start + concurrency).map(request.execute)));
+  }
+  return results;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Screen
 // ═══════════════════════════════════════════════════════════════════════════
@@ -243,7 +270,11 @@ export default function FollowupsScreen() {
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [listError, setListError] = useState<string | null>(null);
   const [rawItems, setRawItems] = useState<Followup[]>([]);
+  const [listPage, setListPage] = useState(1);
+  const [hasMorePages, setHasMorePages] = useState(false);
+  const [loadingPage, setLoadingPage] = useState(false);
   const [stats, setStats] = useState<Stats | null>(null);
   const [mission, setMission] = useState<Mission | null>(null);
   const [insights, setInsights] = useState<Insights | null>(null);
@@ -251,6 +282,11 @@ export default function FollowupsScreen() {
   const [customers, setCustomers] = useState<CustomerLite[]>([]);
 
   const [q, setQ] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchQuery(q.trim()), 250);
+    return () => clearTimeout(timer);
+  }, [q]);
   const [kpiFilter, setKpiFilter] = useState<KpiFilter>("all");
   const [priorityFilter, setPriorityFilter] = useState<PriorityLevel | "all">("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
@@ -262,6 +298,11 @@ export default function FollowupsScreen() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const lastListLoadFailed = useRef(false);
+  const listRequestVersion = useRef(0);
+  const loadingPageRef = useRef(false);
+  const detailRequestVersion = useRef(0);
+  const detailAbortController = useRef<AbortController | null>(null);
   const [mobileSheet, setMobileSheet] = useState(false);
 
   const [rulesSheet, setRulesSheet] = useState(false);
@@ -275,6 +316,9 @@ export default function FollowupsScreen() {
 
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkResult, setBulkResult] = useState<BulkResult | null>(null);
+  const bulkBusy = useRef(false);
+  const [bulkSaving, setBulkSaving] = useState(false);
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
   const [savedViewsSheet, setSavedViewsSheet] = useState(false);
   const [shortcutHelp, setShortcutHelp] = useState(false);
@@ -293,10 +337,55 @@ export default function FollowupsScreen() {
   }, [hasTileFollowupWorkspaces]);
 
   // ── Data loading ──────────────────────────────────────────────────────────
-  const loadList = useCallback(async () => {
-    try { setRawItems(await api.get<Followup[]>("/followups")); }
-    catch (e: any) { toast.error(e?.detail || "Could not load follow-ups"); }
-  }, []);
+  const loadList = useCallback(async (nextPage = 1, pageNavigation = false) => {
+    if (pageNavigation && loadingPageRef.current) return [];
+    if (pageNavigation) {
+      loadingPageRef.current = true;
+      setLoadingPage(true);
+    }
+    else {
+      loadingPageRef.current = false;
+      setLoading(true);
+      setListError(null);
+    }
+    const requestVersion = ++listRequestVersion.current;
+    try {
+      const params = new URLSearchParams({ page: String(nextPage), page_size: String(FOLLOWUP_PAGE_SIZE), view: followupView });
+      if (searchQuery) params.set("q", searchQuery);
+      if (priorityFilter !== "all") params.set("priority", priorityFilter);
+      if (categoryFilter !== "all") params.set("category", categoryFilter);
+      if (tierFilter !== "all") params.set("customer_tier", tierFilter);
+      if (ownerFilter === "mine" && staff?.id) params.set("assigned_to", staff.id);
+      else if (ownerFilter !== "all") params.set("assigned_to", ownerFilter);
+      if (workspace === "selection") params.set("rule_type", "selection_waiting");
+      else if (workspace === "quotation_tiles") params.set("rule_type", "quotation_tiles_waiting");
+      if (kpiFilter === "waiting") params.set("waiting", "true");
+      else if (kpiFilter === "completed") params.set("completed_today", "true");
+      else if (kpiFilter !== "all") params.set("bucket", kpiFilter);
+
+      const result = await api.get<FollowupPage>(`/followups/page?${params.toString()}`, { floorId: selectedFloorId });
+      if (requestVersion !== listRequestVersion.current) return [];
+      lastListLoadFailed.current = false;
+      setRawItems(result.items);
+      setListPage(result.page);
+      setHasMorePages(result.has_more);
+      setListError(null);
+      return result.items;
+    } catch (e: any) {
+      if (requestVersion !== listRequestVersion.current) return [];
+      const message = e?.detail || "Could not load follow-ups";
+      lastListLoadFailed.current = true;
+      if (!pageNavigation) setListError(message);
+      toast.error(message);
+      return [];
+    } finally {
+      if (requestVersion === listRequestVersion.current) {
+        loadingPageRef.current = false;
+        setLoadingPage(false);
+        if (!pageNavigation) setLoading(false);
+      }
+    }
+  }, [categoryFilter, followupView, kpiFilter, ownerFilter, priorityFilter, searchQuery, selectedFloorId, staff?.id, tierFilter, workspace]);
 
   const refreshStatsQuiet = useCallback(async () => {
     try {
@@ -313,20 +402,23 @@ export default function FollowupsScreen() {
       // Reconciliation remains available as an explicit administrative action.
       // Do not fire a mutation during workspace bootstrap: navigation can abort
       // an unawaited POST and create a visible browser network error.
-    try {
-      const [s, m, i, list, a, c, sv] = await Promise.all([
-        api.get<Stats>("/followups/stats"),
-        api.get<Mission>("/followups/mission"),
-        api.get<Insights>("/followups/insights"),
-        api.get<Followup[]>("/followups"),
-        api.get<Assignee[]>("/followups/config/assignees"),
-        api.get<CustomerLite[]>("/customers"),
-        api.get<SavedView[]>("/followups/saved-views").catch(() => []),
-      ]);
-      setStats(s); setMission(m); setInsights(i); setRawItems(list); setAssignees(a); setCustomers(c); setSavedViews(sv);
-      return list;
-    } catch (e: any) { toast.error(e?.detail || "Could not load the workspace"); return []; }
-  }, []);
+    void Promise.allSettled([
+      api.get<Stats>("/followups/stats"),
+      api.get<Mission>("/followups/mission"),
+      api.get<Insights>("/followups/insights"),
+      api.get<Assignee[]>("/followups/config/assignees"),
+      api.get<CustomerLite[]>("/customers"),
+      api.get<SavedView[]>("/followups/saved-views"),
+    ]).then(([statsResult, missionResult, insightsResult, assigneesResult, customersResult, savedViewsResult]) => {
+      if (statsResult.status === "fulfilled") setStats(statsResult.value);
+      if (missionResult.status === "fulfilled") setMission(missionResult.value);
+      if (insightsResult.status === "fulfilled") setInsights(insightsResult.value);
+      if (assigneesResult.status === "fulfilled") setAssignees(assigneesResult.value);
+      if (customersResult.status === "fulfilled") setCustomers(customersResult.value);
+      if (savedViewsResult.status === "fulfilled") setSavedViews(savedViewsResult.value);
+    });
+    return loadList();
+  }, [loadList]);
 
   useEffect(() => {
     (async () => {
@@ -346,26 +438,50 @@ export default function FollowupsScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const latestLoadList = useRef(loadList);
+  const didApplyListFilters = useRef(false);
+  useEffect(() => { latestLoadList.current = loadList; }, [loadList]);
+  useEffect(() => {
+    if (!didApplyListFilters.current) {
+      didApplyListFilters.current = true;
+      return;
+    }
+    void loadList();
+  }, [loadList]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await bootstrap();
     setRefreshing(false);
-    toast.success("Workspace synced");
+    if (!lastListLoadFailed.current) toast.success("Workspace synced");
   }, [bootstrap]);
 
   // An order can be placed from the quotation screen while this route remains
   // mounted in the navigator. Refresh on return so its follow-ups move to the
   // Won orders view without relying on a manual page reload.
   useFocusEffect(useCallback(() => {
-    void loadList();
+    void latestLoadList.current();
     void refreshStatsQuiet();
-  }, [loadList, refreshStatsQuiet]));
+  }, [refreshStatsQuiet]));
+
+  useEffect(() => () => detailAbortController.current?.abort(), []);
 
   const loadDetail = useCallback(async (id: string) => {
+    const version = ++detailRequestVersion.current;
+    detailAbortController.current?.abort();
+    const controller = new AbortController();
+    detailAbortController.current = controller;
     setLoadingDetail(true);
-    try { setDetail(await api.get<Detail>(`/followups/${id}`)); }
-    catch (e: any) { toast.error(e?.detail || "Could not load details"); setDetail(null); }
-    finally { setLoadingDetail(false); }
+    try {
+      const loadedDetail = await api.get<Detail>(`/followups/${id}`, { signal: controller.signal });
+      if (version === detailRequestVersion.current) setDetail(loadedDetail);
+    } catch (e: any) {
+      if (version !== detailRequestVersion.current || e?.name === "AbortError") return;
+      toast.error(e?.detail || "Could not load details");
+      setDetail(null);
+    } finally {
+      if (version === detailRequestVersion.current) setLoadingDetail(false);
+    }
   }, []);
 
   const selectCard = useCallback((f: Followup) => {
@@ -373,6 +489,14 @@ export default function FollowupsScreen() {
     loadDetail(f.id);
     if (!isDesktop) setMobileSheet(true);
   }, [isDesktop, loadDetail]);
+
+  const clearSelectedDetail = useCallback(() => {
+    detailRequestVersion.current += 1;
+    detailAbortController.current?.abort();
+    setSelectedId(null);
+    setDetail(null);
+    setLoadingDetail(false);
+  }, []);
 
   // ── Optimistic local patch helper ────────────────────────────────────────
   const patchLocal = useCallback((id: string, patch: Partial<Followup>) => {
@@ -451,13 +575,13 @@ export default function FollowupsScreen() {
     try {
       await api.delete(`/followups/${deleteTarget.id}`);
       setRawItems((prev) => prev.filter((item) => item.id !== deleteTarget.id));
-      if (selectedId === deleteTarget.id) { setSelectedId(null); setDetail(null); }
+      if (selectedId === deleteTarget.id) clearSelectedDetail();
       setDeleteTarget(null);
       toast.success("Follow-up deleted");
       refreshStatsQuiet();
     } catch (e: any) { toast.error(e?.detail || "Could not delete follow-up"); }
     finally { setDeleting(false); }
-  }, [deleteTarget, refreshStatsQuiet, selectedId]);
+  }, [clearSelectedDetail, deleteTarget, refreshStatsQuiet, selectedId]);
 
   const saveNote = useCallback(async (f: Followup, notes: string) => {
     patchLocal(f.id, { notes });
@@ -595,32 +719,45 @@ export default function FollowupsScreen() {
   }, []);
   const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
 
+  const runBulk = useCallback(async (request: BulkRequest, ids = Array.from(selectedIds)) => {
+    if (!ids.length || bulkBusy.current) return;
+    bulkBusy.current = true;
+    setBulkSaving(true);
+    setBulkResult(null);
+    const results = await settleBulkRequests(request, ids);
+    bulkBusy.current = false;
+    setBulkSaving(false);
+    const succeeded = new Set(ids.filter((_, index) => results[index]?.status === "fulfilled"));
+    const failedIds = ids.filter((_, index) => results[index]?.status === "rejected");
+    if (succeeded.size) {
+      setRawItems((prev) => prev.map((f) => succeeded.has(f.id) ? { ...f, ...request.successPatch } : f));
+      void refreshStatsQuiet();
+      toast.success(`${request.label} ${succeeded.size} follow-up${succeeded.size === 1 ? "" : "s"}`);
+    }
+    setSelectedIds(new Set(failedIds));
+    if (failedIds.length) {
+      setBulkResult({ request, successCount: succeeded.size, failedIds });
+      toast.error(`${failedIds.length} follow-up${failedIds.length === 1 ? "" : "s"} could not be updated. They remain selected.`);
+    }
+  }, [refreshStatsQuiet, selectedIds]);
+
   const bulkSnooze = useCallback(async (preset: "1h" | "tomorrow" | "next_week") => {
-    const ids = Array.from(selectedIds);
-    await Promise.all(ids.map((id) => api.post(`/followups/${id}/snooze`, { preset }).catch(() => null)));
-    setRawItems((prev) => prev.map((f) => (selectedIds.has(f.id) ? { ...f, status: "snoozed", bucket: "snoozed" } : f)));
-    toast.success(`Snoozed ${ids.length} follow-up${ids.length === 1 ? "" : "s"}`);
-    clearSelection();
-    refreshStatsQuiet();
-  }, [selectedIds, clearSelection, refreshStatsQuiet]);
+    await runBulk({ label: "Snoozed", successPatch: { status: "snoozed", bucket: "snoozed" }, execute: (id) => api.post(`/followups/${id}/snooze`, { preset }) });
+  }, [runBulk]);
 
   const bulkComplete = useCallback(async () => {
-    const ids = Array.from(selectedIds);
-    await Promise.all(ids.map((id) => api.post(`/followups/${id}/complete`, {}).catch(() => null)));
-    setRawItems((prev) => prev.map((f) => (selectedIds.has(f.id) ? { ...f, status: "done", bucket: "completed", completed_at: new Date().toISOString() } : f)));
-    toast.success(`Completed ${ids.length} follow-up${ids.length === 1 ? "" : "s"}`);
-    clearSelection();
-    refreshStatsQuiet();
-  }, [selectedIds, clearSelection, refreshStatsQuiet]);
+    await runBulk({ label: "Completed", successPatch: { status: "done", bucket: "completed", completed_at: new Date().toISOString() }, execute: (id) => api.post(`/followups/${id}/complete`, {}) });
+  }, [runBulk]);
 
   const bulkAssign = useCallback(async (userId: string) => {
-    const ids = Array.from(selectedIds);
     const u = assignees.find((a) => a.id === userId);
-    await Promise.all(ids.map((id) => api.patch(`/followups/${id}`, { assigned_to: userId }).catch(() => null)));
-    setRawItems((prev) => prev.map((f) => (selectedIds.has(f.id) ? { ...f, assigned_to: userId, assigned_to_name: u?.full_name } : f)));
-    toast.success(`Assigned ${ids.length} follow-up${ids.length === 1 ? "" : "s"} to ${u?.full_name || "—"}`);
-    clearSelection();
-  }, [selectedIds, assignees, clearSelection]);
+    await runBulk({ label: `Assigned to ${u?.full_name || "—"}`, successPatch: { assigned_to: userId, assigned_to_name: u?.full_name }, execute: (id) => api.patch(`/followups/${id}`, { assigned_to: userId }) });
+  }, [assignees, runBulk]);
+
+  const retryFailedBulk = useCallback(() => {
+    if (!bulkResult) return;
+    void runBulk(bulkResult.request, bulkResult.failedIds);
+  }, [bulkResult, runBulk]);
 
   // ── Saved Views ──────────────────────────────────────────────────────────
   const applySavedView = useCallback((v: SavedView) => {
@@ -677,11 +814,14 @@ export default function FollowupsScreen() {
     if (Platform.OS !== "web") return;
     const selected = rawItems.find((f) => f.id === selectedId) || null;
     function onKeyDown(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") {
+      const target = e.target as HTMLElement;
+      const tag = target?.tagName;
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target?.isContentEditable) {
         if (e.key === "Escape") (e.target as HTMLElement).blur();
         return;
       }
+      if (target?.closest('button, a, [role="button"], [role="tab"], [role="checkbox"], [role="dialog"]')) return;
       switch (e.key) {
         case "c": case "C": if (selected) contact(selected, "call"); break;
         case "w": case "W": if (selected) contact(selected, "whatsapp"); break;
@@ -697,7 +837,7 @@ export default function FollowupsScreen() {
         }
         case "?": setShortcutHelp((v) => !v); break;
         case "Escape":
-          setSelectedId(null); setDetail(null); setMobileSheet(false);
+          clearSelectedDetail(); setMobileSheet(false);
           setCallOutcomeFor(null); setNoteFor(null); setCustomSnoozeFor(null);
           break;
         default: break;
@@ -705,7 +845,7 @@ export default function FollowupsScreen() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [rawItems, selectedId, contact, completeFollowup, snoozeFollowup]);
+  }, [rawItems, selectedId, contact, completeFollowup, snoozeFollowup, clearSelectedDetail]);
 
   const activeTileStyle = { borderColor: colors.brand, backgroundColor: colors.brandTint };
   const followupViewControl = (
@@ -804,45 +944,65 @@ export default function FollowupsScreen() {
         </View>
       </Panel>
 
-      {selectedIds.size > 0 && !isPhone ? <BulkActionBar count={selectedIds.size} assignees={assignees} onClear={clearSelection} onSnooze={bulkSnooze} onComplete={bulkComplete} onAssign={bulkAssign} /> : null}
+      {selectedIds.size > 0 && !isPhone ? <BulkActionBar busy={bulkSaving} count={selectedIds.size} assignees={assignees} onClear={clearSelection} onSnooze={bulkSnooze} onComplete={bulkComplete} onAssign={bulkAssign} /> : null}
     </>
   );
 
-  const renderFollowupList = (phone = false) => (
+  const paginationFooter = (hasMorePages || listPage > 1) ? (
+    <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", gap: spacing.md, paddingTop: spacing.md }}>
+      {listPage > 1 ? <Button label="Previous page" variant="secondary" size="sm" disabled={loadingPage} onPress={() => void loadList(listPage - 1, true)} testID="followups-previous-page" /> : null}
+      <Text style={type.caption}>Page {listPage}</Text>
+      {hasMorePages ? <Button label={loadingPage ? "Loading page…" : "Next page"} variant="secondary" size="sm" disabled={loadingPage} onPress={() => void loadList(listPage + 1, true)} testID="followups-next-page" /> : null}
+    </View>
+  ) : null;
+
+  const renderFollowupList = (phone = false, includeWorkspaceHeader = false) => {
+    const ownsScroll = phone || includeWorkspaceHeader;
+    const horizontalPadding = ownsScroll ? pagePad : 0;
+    return (
     <SectionList
-      sections={visibleSections}
+      sections={listError ? [] : visibleSections}
       keyExtractor={(item) => item.id}
-      scrollEnabled={phone}
+      scrollEnabled={ownsScroll}
       stickySectionHeadersEnabled={false}
-      style={phone ? { flex: 1 } : undefined}
-      refreshControl={phone ? <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand} /> : undefined}
-      contentContainerStyle={phone ? { paddingBottom: 132 } : { gap: spacing.sm, paddingBottom: spacing.sm }}
-      ListHeaderComponent={phone ? <View style={{ padding: pagePad, gap: spacing.md }}>{workspaceAndFilters}</View> : undefined}
+      style={ownsScroll ? { flex: 1 } : undefined}
+      refreshControl={ownsScroll ? <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand} /> : undefined}
+      contentContainerStyle={phone ? { paddingBottom: 132 } : ownsScroll ? { paddingBottom: spacing.xxxl } : { gap: spacing.sm, paddingBottom: spacing.sm }}
+      ListHeaderComponent={ownsScroll ? <View style={{ padding: pagePad, gap: spacing.md }}>{workspaceAndFilters}</View> : undefined}
       ListEmptyComponent={loading ? (
-        <View style={{ paddingHorizontal: phone ? pagePad : 0, gap: spacing.md }}><Skeleton w="30%" h={16} radius={radius.sm} /><SkeletonList rows={4} /></View>
+        <View style={{ paddingHorizontal: horizontalPadding, gap: spacing.md }}><Skeleton w="30%" h={16} radius={radius.sm} /><SkeletonList rows={4} /></View>
+      ) : listError ? (
+        <View style={{ paddingHorizontal: horizontalPadding }}><Card><EmptyState icon="alert-circle" tone="neutral" title="Follow-ups are unavailable" subtitle={listError} action={<Button label="Try again" icon="rotate-cw" variant="primary" onPress={() => { void loadList(); }} />} /></Card></View>
       ) : (
-        <View style={{ paddingHorizontal: phone ? pagePad : 0 }}><Card><EmptyState icon="check-circle" tone="brand" title="You're all caught up." subtitle="Nothing requires attention. Automated follow-ups will appear here the moment a quotation, payment or purchase needs you." action={<Button label="New Follow-up" icon="plus" variant="primary" onPress={() => setNewSheet(true)} />} /></Card></View>
+        <View style={{ paddingHorizontal: horizontalPadding }}><Card><EmptyState icon={q || activeFilterCount || kpiFilter !== "all" ? "search" : "check-circle"} tone="brand" title={q || activeFilterCount || kpiFilter !== "all" ? "No matching follow-ups" : "You're all caught up."} subtitle={q || activeFilterCount || kpiFilter !== "all" ? "Try a different search or clear the filters." : "Your next reminders will appear here."} action={<Button label="New Follow-up" icon="plus" variant="primary" onPress={() => setNewSheet(true)} />} /></Card></View>
       )}
+      // Keeping paging with the final visible bucket means it is mounted with
+      // the results on tablet-sized virtual lists, instead of being deferred
+      // until the operator has already scrolled past the last card.
       ListFooterComponent={phone ? <View style={{ height: spacing.md }} /> : undefined}
       renderSectionHeader={({ section }) => {
         const meta = BUCKET_META[section.bucket];
         const isCollapsed = followupView === "active" && collapsed.has(section.bucket);
         const label = followupView === "won" ? "Won orders" : followupView === "lost" ? "Loss" : meta.label;
         const icon: FeatherName = followupView === "won" ? "shopping-bag" : followupView === "lost" ? "user-x" : meta.icon;
-        return <Pressable onPress={() => followupView === "active" && toggleSection(section.bucket)} style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: 4, paddingHorizontal: phone ? pagePad : 0, backgroundColor: colors.surface }}>
+        return <Pressable accessibilityRole={followupView === "active" ? "button" : "header"} accessibilityLabel={label} accessibilityState={followupView === "active" ? { expanded: !isCollapsed } : undefined} onPress={() => followupView === "active" && toggleSection(section.bucket)} style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: 4, paddingHorizontal: horizontalPadding, backgroundColor: colors.surface }}>
           <Feather name={icon} size={14} color={colors.onSurfaceSecondary} /><Text style={type.overline}>{label}</Text><Badge label={String(section.itemCount)} tone="neutral" size="sm" /><View style={{ flex: 1 }} />{followupView === "active" ? <Feather name={isCollapsed ? "chevron-down" : "chevron-up"} size={16} color={colors.onSurfaceMuted} /> : null}
         </Pressable>;
       }}
-      renderItem={({ item: f }) => <View style={{ paddingHorizontal: phone ? pagePad : 0, marginBottom: spacing.sm }}><MemoFollowupCard f={f} active={f.id === selectedId} assignees={assignees} rank={rankMap.get(f.id)} checked={selectedIds.has(f.id)} onToggleSelect={toggleSelect} onPress={selectCard} onCall={contact} onWhatsApp={contact} onEmail={contact} onComplete={completeFollowup} onSnooze={snoozeFollowup} onCustomSnooze={setCustomSnoozeFor} onPushDays={pushDue} onAssign={assignFollowup} onNote={setNoteFor} onMarkLost={(item) => { setLossActionFor(item); setCallOutcomeFor(item); }} onDismiss={dismissFollowup} canDelete={!!staff && MANAGER_ROLES.includes(staff.role)} onDelete={setDeleteTarget} onOpenDoc={openRelatedDocument} /></View>}
+      renderSectionFooter={({ section }) =>
+        section.bucket === visibleSections[visibleSections.length - 1]?.bucket ? paginationFooter : null
+      }
+      renderItem={({ item: f }) => <View style={{ paddingHorizontal: horizontalPadding, marginBottom: spacing.sm }}><MemoFollowupCard f={f} active={f.id === selectedId} assignees={assignees} rank={rankMap.get(f.id)} checked={selectedIds.has(f.id)} onToggleSelect={toggleSelect} onPress={selectCard} onCall={contact} onWhatsApp={contact} onEmail={contact} onComplete={completeFollowup} onSnooze={snoozeFollowup} onCustomSnooze={setCustomSnoozeFor} onPushDays={pushDue} onAssign={assignFollowup} onNote={setNoteFor} onMarkLost={(item) => { setLossActionFor(item); setCallOutcomeFor(item); }} onDismiss={dismissFollowup} canDelete={!!staff && MANAGER_ROLES.includes(staff.role)} onDelete={setDeleteTarget} onOpenDoc={openRelatedDocument} /></View>}
     />
-  );
+    );
+  };
   // ═══════════════════════════════════════════════════════════════════════
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
       <PageHeader
         overline="WORKSPACE"
         title="Follow-ups"
-        subtitle={isPhone ? "Today's calls, reminders and customer promises." : "Never lose another customer. Every follow-up, payment reminder and quotation reminder in one workspace."}
+        subtitle="Calls, reminders and customer promises. One clear next step."
         dense={isPhone}
         actions={
           isPhone ? (
@@ -870,225 +1030,40 @@ export default function FollowupsScreen() {
         }
       />
 
-      {isPhone ? renderFollowupList(true) : (
-      <ScrollView
-        contentContainerStyle={{ padding: pagePad, gap: isPhone ? spacing.md : spacing.lg, paddingBottom: isPhone ? 132 : spacing.xxxl }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand} />}
-      >
-        {followupViewControl}
-        {hasTileFollowupWorkspaces ? (
-          <SegmentedControl
-            value={workspace}
-            onChange={setWorkspace}
-            fullWidth
-            testID="followups-workspace-tabs"
-            options={[
-              { value: "all", label: "All", icon: "layers" },
-              { value: "selection", label: `Selections${stats ? ` · ${stats.workspace_counts.selection}` : ""}`, icon: "grid" },
-              { value: "quotation_tiles", label: `Quotations${stats ? ` · ${stats.workspace_counts.quotation_tiles}` : ""}`, icon: "file-text" },
-            ]}
-          />
-        ) : null}
-
-        {/* Today's Mission */}
-        <MissionHero
-          mission={mission}
-          loading={loading}
-          onOpenPriority={(id) => {
-            const followup = rawItems.find((item) => item.id === id);
-            if (followup) selectCard(followup);
-          }}
-          compact={isPhone}
-        />
-
-        {/* KPI strip */}
-        <ScrollView horizontal={isPhone} showsHorizontalScrollIndicator={isPhone} contentContainerStyle={{ gap: spacing.md, paddingRight: isPhone ? spacing.md : 0 }} style={isPhone ? { marginHorizontal: -pagePad, paddingHorizontal: pagePad } : undefined}>
-          <View style={{ flexDirection: "row", gap: spacing.md, flexWrap: isPhone ? "nowrap" : "wrap" }}>
-          <StatTile label="Today's Tasks" value={stats ? stats.today_tasks : "—"} icon="sun" tone="brand"
-            sub={stats?.today_critical ? `${stats.today_critical} critical` : "On track"}
-            onPress={() => toggleKpi("today")} style={kpiFilter === "today" ? activeTileStyle : undefined} />
-          <StatTile label="Overdue Tasks" value={stats ? stats.overdue : "—"} icon="alert-circle" tone="danger"
-            sub={stats?.overdue_critical ? `${stats.overdue_critical} critical` : "None overdue"}
-            onPress={() => toggleKpi("overdue")} style={kpiFilter === "overdue" ? activeTileStyle : undefined} />
-          <StatTile label="Payments Overdue" value={stats ? stats.overdue_payments_count : "—"} icon="credit-card" tone="danger"
-            sub={stats?.overdue_payments_count ? `₹${stats.overdue_payments_amount_short} at stake` : "None overdue"}
-            onPress={() => toggleKpi("overdue")} />
-          <StatTile label="Expiring Soon" value={stats ? stats.expiring_quotations_count : "—"} icon="clock" tone="warning"
-            sub="Quotations lapsing" onPress={() => setCategoryFilter("quotation")} />
-          <StatTile label="Waiting For Customer" value={stats ? stats.waiting_for_customer : "—"} icon="watch" tone="warning"
-            sub="Ball's in their court" onPress={() => toggleKpi("waiting")} style={kpiFilter === "waiting" ? activeTileStyle : undefined} />
-          <StatTile label="Completed Today" value={stats ? stats.completed_today : "—"} icon="check-circle" tone="success"
-            sub={stats ? `${stats.completed_trend >= 0 ? "+" : ""}${stats.completed_trend} vs yesterday` : undefined}
-            onPress={() => toggleKpi("completed")} style={kpiFilter === "completed" ? activeTileStyle : undefined} />
-          </View>
-        </ScrollView>
-
-        {/* Smart search + filters — Priority chips always visible; the rest
-            collapse behind "More filters" to keep the list within reach
-            (UX audit: filters previously pushed the first card ~200px down). */}
-        <Panel padding={spacing.md}>
-          <View style={{ gap: spacing.md }}>
-            <View style={{ flexDirection: "row", gap: spacing.sm, alignItems: "center", flexWrap: isPhone ? "wrap" : "nowrap" }}>
-              <View style={{ flex: 1, minWidth: isPhone ? "100%" : 0 }}>
-                <SearchField
-                  testID="followups-search"
-                  value={q}
-                  onChangeText={setQ}
-                  onClear={() => setQ("")}
-                  placeholder="Search customer, phone, quotation #, project…"
-                />
+      {bulkResult ? (
+        <View style={{ paddingHorizontal: pagePad, paddingTop: spacing.sm }}>
+          <Card>
+            <View style={{ flexDirection: isPhone ? "column" : "row", alignItems: isPhone ? "flex-start" : "center", gap: spacing.md }}>
+              <View style={{ flex: 1, gap: spacing.xs }}>
+                <Text style={type.bodySm}>{bulkResult.successCount ? `${bulkResult.successCount} updated, ` : ""}{bulkResult.failedIds.length} failed</Text>
+                <Text style={type.caption}>The failed follow-ups remain selected. Retry only those records.</Text>
               </View>
-              {!isPhone ? <IconButton icon="bookmark" onPress={() => setSavedViewsSheet(true)} tone="surface" accessibilityLabel="Saved views" size={40} /> : null}
-              {!isPhone ? <IconButton icon="help-circle" onPress={() => setShortcutHelp(true)} tone="surface" accessibilityLabel="Keyboard shortcuts" size={40} /> : null}
-            </View>
-            {q.trim() ? <Text style={type.caption}>{filtered.length} customer{filtered.length === 1 ? "" : "s"} found</Text> : null}
-            <FilterBar
-              label="PRIORITY"
-              value={priorityFilter}
-              onChange={setPriorityFilter as any}
-              options={[
-                { value: "all", label: "All priorities" },
-                { value: "critical", label: "Critical", count: priorityCounts.critical || undefined },
-                { value: "high", label: "High", count: priorityCounts.high || undefined },
-                { value: "medium", label: "Medium", count: priorityCounts.medium || undefined },
-                { value: "low", label: "Low", count: priorityCounts.low || undefined },
-              ]}
-            />
-            <Pressable onPress={() => setFiltersExpanded((v) => !v)} style={{ flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", minHeight: 44, paddingVertical: 8 }}>
-              <Feather name={filtersExpanded ? "chevron-up" : "sliders"} size={14} color={colors.onSurfaceSecondary} />
-              <Text style={{ fontSize: 12, fontWeight: "700", color: colors.onSurfaceSecondary }}>
-                {filtersExpanded ? "Hide filters" : "More filters"}{activeFilterCount ? ` (${activeFilterCount})` : ""}
-              </Text>
-            </Pressable>
-            {filtersExpanded ? (
-              <>
-                <FilterBar label="TYPE" value={categoryFilter} onChange={setCategoryFilter} options={CATEGORY_OPTIONS} />
-                <View style={{ flexDirection: "row", gap: spacing.md, alignItems: "center", flexWrap: "wrap" }}>
-                  <SegmentedControl
-                    size="sm"
-                    value={tierFilter}
-                    onChange={setTierFilter as any}
-                    options={[
-                      { value: "all", label: "All customers" },
-                      { value: "retail", label: "Retail" },
-                      { value: "trade", label: "Trade" },
-                      { value: "vip", label: "VIP" },
-                    ]}
-                  />
-                  <Dropdown
-                    label={ownerLabel}
-                    icon="user"
-                    variant="secondary"
-                    items={[
-                      { label: "All owners", icon: "users", onPress: () => setOwnerFilter("all") },
-                      { label: "Mine", icon: "user-check", onPress: () => setOwnerFilter("mine") },
-                      ...assignees.map((a) => ({ label: a.full_name, icon: "user" as FeatherName, onPress: () => setOwnerFilter(a.id) })),
-                    ]}
-                  />
-                </View>
-              </>
-            ) : null}
-            {kpiFilter !== "all" || activeFilterCount > 0 ? (
-              <Chip
-                label="Clear filters ✕"
-                active
-                onPress={() => { setKpiFilter("all"); setFollowupView("active"); setPriorityFilter("all"); setCategoryFilter("all"); setTierFilter("all"); setOwnerFilter("all"); }}
-              />
-            ) : null}
-          </View>
-        </Panel>
-
-        {/* Bulk action bar — appears once ≥1 card is selected. Unlocks the
-            "manage 300+ customers without feeling overwhelmed" requirement. */}
-        {selectedIds.size > 0 ? (
-          <BulkActionBar
-            count={selectedIds.size}
-            assignees={assignees}
-            onClear={clearSelection}
-            onSnooze={bulkSnooze}
-            onComplete={bulkComplete}
-            onAssign={bulkAssign}
-          />
-        ) : null}
-
-        {/* Main layout — Inbox (left) · Context + Insights (right) */}
-        <View style={{ flexDirection: isDesktop ? "row" : "column", gap: spacing.lg, alignItems: isDesktop ? "flex-start" : "stretch" }}>
-          <View style={{ flex: isDesktop ? 1.5 : undefined, width: isDesktop ? undefined : "100%", gap: spacing.md, minWidth: 0 }}>
-            {loading ? (
-              <View style={{ gap: spacing.md }}>
-                <Skeleton w="30%" h={16} radius={radius.sm} />
-                <SkeletonList rows={4} />
-                <Skeleton w="30%" h={16} radius={radius.sm} />
-                <SkeletonList rows={3} />
+              <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                <Button label="Retry failed" icon="rotate-cw" variant="secondary" size="sm" onPress={retryFailedBulk} />
+                <IconButton icon="x" tone="surface" size={34} accessibilityLabel="Dismiss bulk result" onPress={() => setBulkResult(null)} />
               </View>
-            ) : sections.length === 0 ? (
-              <Card>
-                <EmptyState
-                  icon="check-circle" tone="brand"
-                  title="You're all caught up."
-                  subtitle="Nothing requires attention. Automated follow-ups will appear here the moment a quotation, payment or purchase needs you."
-                  action={<Button label="New Follow-up" icon="plus" variant="primary" onPress={() => setNewSheet(true)} />}
-                />
-              </Card>
-            ) : (
-              <SectionList
-                sections={visibleSections}
-                keyExtractor={(item) => item.id}
-                contentContainerStyle={{ gap: spacing.sm, paddingBottom: spacing.sm }}
-                scrollEnabled={false}
-                stickySectionHeadersEnabled={false}
-                renderSectionHeader={({ section }) => {
-                  const meta = BUCKET_META[section.bucket];
-                  const isCollapsed = followupView === "active" && collapsed.has(section.bucket);
-                  const label = followupView === "won" ? "Won orders" : followupView === "lost" ? "Loss" : meta.label;
-                  const icon: FeatherName = followupView === "won" ? "shopping-bag" : followupView === "lost" ? "user-x" : meta.icon;
-                  return (
-                    <Pressable onPress={() => followupView === "active" && toggleSection(section.bucket)} style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: 4, backgroundColor: colors.surface }}>
-                      <Feather name={icon} size={14} color={colors.onSurfaceSecondary} />
-                      <Text style={type.overline}>{label}</Text>
-                      <Badge label={String(section.itemCount)} tone="neutral" size="sm" />
-                      <View style={{ flex: 1 }} />
-                      {followupView === "active" ? <Feather name={isCollapsed ? "chevron-down" : "chevron-up"} size={16} color={colors.onSurfaceMuted} /> : null}
-                    </Pressable>
-                  );
-                }}
-                renderItem={({ item: f }) => (
-                  <MemoFollowupCard
-                    f={f}
-                    active={f.id === selectedId}
-                    assignees={assignees}
-                    rank={rankMap.get(f.id)}
-                    checked={selectedIds.has(f.id)}
-                    onToggleSelect={toggleSelect}
-                    onPress={selectCard}
-                    onCall={contact}
-                    onWhatsApp={contact}
-                    onEmail={contact}
-                    onComplete={completeFollowup}
-                    onSnooze={snoozeFollowup}
-                    onCustomSnooze={setCustomSnoozeFor}
-                    onPushDays={pushDue}
-                    onAssign={assignFollowup}
-                    onNote={setNoteFor}
-                    onMarkLost={(f) => { setLossActionFor(f); setCallOutcomeFor(f); }}
-                    onDismiss={dismissFollowup}
-                    canDelete={!!staff && MANAGER_ROLES.includes(staff.role)}
-                    onDelete={setDeleteTarget}
-                    onOpenDoc={openRelatedDocument}
-                  />
-                )}
-              />
-            )}
-          </View>
-
-          {isDesktop ? (
-            <View style={{ width: 400, gap: spacing.md }}>
-              <ContextPanel detail={detail} loading={loadingDetail} />
-              <InsightsPanel insights={insights} />
             </View>
-          ) : null}
+          </Card>
         </View>
-      </ScrollView>
+      ) : null}
+
+      {isPhone ? renderFollowupList(true) : isDesktop ? (
+        <View style={{ flex: 1, flexDirection: "row", gap: spacing.lg, paddingHorizontal: pagePad }}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            {renderFollowupList(false, true)}
+          </View>
+          <ScrollView
+            style={{ width: 400 }}
+            contentContainerStyle={{ gap: spacing.md, paddingVertical: pagePad, paddingRight: pagePad }}
+            showsVerticalScrollIndicator={false}
+          >
+            <ContextPanel detail={detail} loading={loadingDetail} />
+            <InsightsPanel insights={insights} />
+          </ScrollView>
+        </View>
+      ) : (
+        renderFollowupList(false, true)
+
       )}
 
       {/* Mobile: floating quick-contact for the #1 priority item */}
@@ -1116,6 +1091,7 @@ export default function FollowupsScreen() {
       {isPhone && selectedIds.size > 0 ? (
         <View style={[styles.mobileBulkDock, { paddingBottom: Math.max(spacing.sm, insets.bottom + spacing.xs) }]} pointerEvents="box-none">
           <BulkActionBar
+            busy={bulkSaving}
             count={selectedIds.size}
             assignees={assignees}
             onClear={clearSelection}
@@ -1190,13 +1166,15 @@ export default function FollowupsScreen() {
 // BulkActionBar — appears once ≥1 card is selected. Superhuman-style batch
 // processing so a salesperson can clear dozens of stale cards in one pass.
 // ─────────────────────────────────────────────────────────────────────────────
-function BulkActionBar({ count, assignees, onClear, onSnooze, onComplete, onAssign }: {
-  count: number; assignees: Assignee[]; onClear: () => void;
+function BulkActionBar({ count, assignees, onClear, onSnooze, onComplete, onAssign, busy }: {
+  busy?: boolean; count: number; assignees: Assignee[]; onClear: () => void;
   onSnooze: (preset: "1h" | "tomorrow" | "next_week") => void;
   onComplete: () => void; onAssign: (userId: string) => void;
 }) {
   return (
-    <View style={[styles.bulkBar, elevation.medium]}>
+    <View style={[styles.bulkBar, elevation.medium]} accessibilityState={{ busy }}>
+      {busy ? <Text accessibilityLiveRegion="polite" style={type.bodySm}>Updating selected follow-ups…</Text> : <>
+
       <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, flex: 1 }}>
         <Badge label={String(count)} tone="brand" size="sm" />
         <Text style={{ fontSize: 13, fontWeight: "700", color: colors.onSurface }}>selected</Text>
@@ -1217,6 +1195,7 @@ function BulkActionBar({ count, assignees, onClear, onSnooze, onComplete, onAssi
         <Button label="Complete" icon="check" variant="primary" size="sm" onPress={onComplete} />
         <IconButton icon="x" onPress={onClear} tone="surface" size={34} accessibilityLabel="Clear selection" />
       </View>
+      </>}
     </View>
   );
 }
@@ -1534,7 +1513,7 @@ function FollowupCard({
         {/* Header row */}
         <View style={{ flexDirection: "row", alignItems: "flex-start", gap: spacing.sm }}>
           {!isResolved ? (
-            <Pressable onPress={() => onToggleSelect(f.id)} hitSlop={8} style={{ paddingTop: 2 }} accessibilityLabel="Select">
+            <Pressable onPress={(event) => { event.stopPropagation(); onToggleSelect(f.id); }} hitSlop={8} style={{ paddingTop: 2, minWidth: 24, minHeight: 24 }} accessibilityRole="checkbox" accessibilityState={{ checked }} accessibilityLabel="Select">
               <Feather name={checked ? "check-square" : "square"} size={18} color={checked ? colors.brand : colors.onSurfaceMuted} />
             </Pressable>
           ) : null}

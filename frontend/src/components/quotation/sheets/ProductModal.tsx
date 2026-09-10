@@ -23,6 +23,20 @@ import { productImageList, resolveVariantImages } from "../helpers/media";
 import { variantDescriptor } from "../helpers/pricing";
 import type { Product, ProductVariant } from "../helpers/types";
 
+function productAsVariant(product: Product): ProductVariant {
+  return {
+    id: product.id, sku: product.sku, name: product.name,
+    finish: product.finish ?? null, finish_code: product.finish_code ?? null,
+    size: product.size ?? null, colour: product.colour ?? null,
+    variant_label: product.variant_label ?? null,
+    price: product.price, mrp: product.mrp, stock: product.stock ?? 0,
+    dimensions: product.dimensions ?? null, material: product.material ?? null,
+    warranty: product.warranty ?? null, specs: product.specs ?? null,
+    description: product.description ?? null,
+    image: product.hero_image_url ?? productImageList(product)[0] ?? null,
+  };
+}
+
 export function ProductModal() {
   const b = useBuilder();
   const { staff } = useAuth();
@@ -41,6 +55,40 @@ export function ProductModal() {
   const [completeSet, setCompleteSet] = useState<Product[]>([]);
   const [zoomOpen, setZoomOpen] = useState(false);
   const [activeImageIdx, setActiveImageIdx] = useState(0);
+
+  // Family cards contain all sibling SKUs, including their own SKU-specific
+  // commercial/specification values. A selected finish must therefore replace
+  // the displayed detail record, rather than merely changing the price chip.
+  const selectableVariants = useMemo(() => {
+    if (!product) return [];
+    const variants = product.variants || [];
+    return variants.some((variant) => variant.sku === product.sku)
+      ? variants
+      : [productAsVariant(product), ...variants];
+  }, [product]);
+  const selectedProduct = useMemo(() => {
+    if (!product || !selectedVariant) return product;
+    const variantColour = selectedVariant.colour ?? selectedVariant.color ?? product.colour;
+    return {
+      ...product,
+      id: selectedVariant.id ?? product.id,
+      name: selectedVariant.name ?? product.name,
+      sku: selectedVariant.sku,
+      finish: selectedVariant.finish ?? product.finish,
+      finish_code: selectedVariant.finish_code ?? product.finish_code,
+      variant_label: selectedVariant.variant_label ?? product.variant_label,
+      colour: variantColour,
+      size: selectedVariant.size ?? product.size,
+      price: selectedVariant.price ?? product.price,
+      mrp: selectedVariant.mrp ?? product.mrp,
+      stock: selectedVariant.stock ?? product.stock,
+      dimensions: selectedVariant.dimensions ?? product.dimensions,
+      material: selectedVariant.material ?? product.material,
+      warranty: selectedVariant.warranty ?? product.warranty,
+      specs: selectedVariant.specs ?? product.specs,
+      description: selectedVariant.description ?? product.description,
+    };
+  }, [product, selectedVariant]);
 
   // Reset when product changes.
   useEffect(() => {
@@ -91,15 +139,13 @@ export function ProductModal() {
 
   const activeImage = heroImages[Math.min(activeImageIdx, Math.max(0, heroImages.length - 1))];
 
-  if (!product) return null;
+  if (!product || !selectedProduct) return null;
 
   const commit = (closeAfter: boolean) => {
-    const v: ProductVariant | undefined = selectedVariant ?? undefined;
+    const v = selectedVariant ?? productAsVariant(product);
     // Custom price / quantity override via a synthetic variant — keeps
     // the existing addFromProduct path a single source of truth.
-    const custom: ProductVariant = v
-      ? { ...v, price: currentPrice }
-      : { sku: product.sku, price: currentPrice, mrp: product.mrp, finish: product.finish ?? null };
+    const custom: ProductVariant = { ...v, price: currentPrice };
     const qtyAdded = Math.max(1, Math.floor(qty));
     for (let i = 0; i < qtyAdded; i++) b.addFromProduct(product, custom);
     if (notes.trim() && b.s.lines.length) {
@@ -120,8 +166,8 @@ export function ProductModal() {
           <View style={[styles.header, isPhone && styles.headerPhone]}>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={styles.crumb}>{product.brand_name || "Product"}{product.collection ? ` · ${product.collection}` : ""}</Text>
-              <Text style={styles.title} numberOfLines={2}>{product.name}</Text>
-              <Text style={styles.sku}>{product.sku}</Text>
+              <Text style={styles.title} numberOfLines={2}>{selectedProduct.name}</Text>
+              <Text style={styles.sku}>{selectedProduct.sku}</Text>
             </View>
             {canEditProduct ? (
               <Pressable onPress={() => setEditorOpen(true)} style={[styles.editBtn, isPhone && styles.editBtnPhone]} hitSlop={6} testID="product-modal-edit" accessibilityLabel="Edit product">
@@ -144,7 +190,7 @@ export function ProductModal() {
                       transition crossfade smoothly between photos instead of
                       unmounting/remounting (which was causing a flash to the
                       empty/skeleton state on every swatch tap). */}
-                  <ProductImage source={activeImage ? [activeImage] : []} style={styles.hero} fallbackLabel={selectedVariant?.sku || product.sku} />
+                  <ProductImage source={activeImage ? [activeImage] : []} style={styles.hero} fallbackLabel={selectedProduct.sku} />
                   {activeImage ? (
                     <View style={styles.zoomHint}>
                       <Feather name="maximize-2" size={11} color="#fff" />
@@ -158,7 +204,7 @@ export function ProductModal() {
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, marginTop: 8 }}>
                     {heroImages.slice(0, 8).map((url, i) => (
                       <Pressable key={`${url}-${i}`} onPress={() => setActiveImageIdx(i)} style={[styles.thumb, i === activeImageIdx && styles.thumbActive]}>
-                        <ProductImage source={[url]} style={{ width: "100%", height: "100%" }} fallbackLabel={selectedVariant?.sku || product.sku} disableSkeleton />
+                        <ProductImage source={[url]} style={{ width: "100%", height: "100%" }} fallbackLabel={selectedProduct.sku} disableSkeleton />
                       </Pressable>
                     ))}
                   </ScrollView>
@@ -167,13 +213,13 @@ export function ProductModal() {
                 <View style={styles.priceCard}>
                   <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8 }}>
                     <Text style={styles.priceBig} numberOfLines={1}>{money(currentPrice)}</Text>
-                    {product.mrp && product.mrp > currentPrice ? (
-                      <Text style={styles.mrpBig} numberOfLines={1}>{money(product.mrp)}</Text>
+                    {selectedProduct.mrp && selectedProduct.mrp > currentPrice ? (
+                      <Text style={styles.mrpBig} numberOfLines={1}>{money(selectedProduct.mrp)}</Text>
                     ) : null}
                   </View>
                   <Text style={styles.priceHint}>Editable selling price · MRP shown for reference</Text>
                   <TextInput
-                    placeholder={String(product.price)}
+                    placeholder={String(selectedProduct.price)}
                     placeholderTextColor={colors.onSurfaceMuted}
                     keyboardType="numeric"
                     value={priceOverride}
@@ -187,16 +233,16 @@ export function ProductModal() {
               {/* Right: details */}
               <View style={[styles.right, isPhone && styles.rightPhone]}>
                 {/* Variants / finishes */}
-                {product.variants && product.variants.length ? (
+                {selectableVariants.length > 1 ? (
                   <View style={{ gap: 6 }}>
                     <Text style={styles.sectionLabel}>Available finishes</Text>
                     <View style={styles.variantRow}>
-                      {product.variants.map((v) => {
-                        const on = selectedVariant?.sku === v.sku;
+                      {selectableVariants.map((v) => {
+                        const on = selectedProduct.sku === v.sku;
                         return (
                           <Pressable
                             key={v.sku}
-                            onPress={() => { setSelectedVariant(on ? null : v); setActiveImageIdx(0); }}
+                            onPress={() => { setSelectedVariant(v.sku === product.sku ? null : v); setActiveImageIdx(0); }}
                             style={[styles.variantChip, on && styles.variantChipActive]}
                             testID={`pm-variant-${v.sku}`}
                           >
@@ -216,12 +262,12 @@ export function ProductModal() {
 
                 <View style={styles.specGrid}>
                   {[
-                    ["Category", (product as any).category_name || "—"],
-                    ["Collection", product.collection || product.series || "—"],
-                    ["Finish", product.finish || "—"],
-                    ["Dimensions", (product as any).dimensions || "—"],
-                    ["Warranty", (product as any).warranty || "—"],
-                    ["Stock", (product.stock ?? "—") + ""],
+                    ["Category", (selectedProduct as any).category_name || "—"],
+                    ["Collection", selectedProduct.collection || selectedProduct.series || "—"],
+                    ["Finish", variantDescriptor(selectedProduct) || "—"],
+                    ["Dimensions", selectedProduct.dimensions || "—"],
+                    ["Warranty", selectedProduct.warranty || "—"],
+                    ["Stock", (selectedProduct.stock ?? "—") + ""],
                   ].map(([label, val]) => (
                     <View key={label} style={styles.specCell}>
                       <Text style={styles.specLabel}>{label}</Text>
@@ -230,10 +276,10 @@ export function ProductModal() {
                   ))}
                 </View>
 
-                {product.description ? (
+                {selectedProduct.description ? (
                   <View style={{ gap: 4 }}>
                     <Text style={styles.sectionLabel}>Description</Text>
-                    <Text style={styles.desc}>{product.description}</Text>
+                    <Text style={styles.desc}>{selectedProduct.description}</Text>
                   </View>
                 ) : null}
 

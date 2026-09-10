@@ -59,6 +59,7 @@ export function QuickAddButton({
   if (circular) {
     return (
       <Pressable
+        accessibilityRole="button" accessibilityLabel={justAdded ? addedLabel : "Add product"}
         hitSlop={8}
         onPress={handlePress}
         testID={testID}
@@ -77,7 +78,7 @@ export function QuickAddButton({
   }
 
   return (
-    <Pressable onPress={handlePress} testID={testID} style={[styles.addBtn, justAdded && styles.addBtnAdded, style]}>
+    <Pressable accessibilityRole="button" accessibilityLabel={justAdded ? addedLabel : idleLabel} onPress={handlePress} testID={testID} style={[styles.addBtn, justAdded && styles.addBtnAdded, style]}>
       <Animated.View style={[styles.addBtnInner, { transform: [{ scale }] }]}>
         <Feather name={justAdded ? "check" : "plus"} size={iconSize ?? 13} color={colors.onBrand} />
         <Text style={styles.addLabel} numberOfLines={1}>{justAdded ? addedLabel : idleLabel}</Text>
@@ -93,7 +94,7 @@ const styles = StyleSheet.create({
   },
   addBtnAdded: { backgroundColor: colors.success },
   addBtnInner: { flexDirection: "row", alignItems: "center", gap: 4 },
-  addLabel: { fontSize: 11, fontWeight: "700", color: colors.onBrand, letterSpacing: 0.2 },
+  addLabel: { fontSize: 13, fontWeight: "700", color: colors.onBrand, letterSpacing: 0.2 },
 });
 
 const stylesCircular = StyleSheet.create({

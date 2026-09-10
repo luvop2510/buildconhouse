@@ -2,10 +2,12 @@
 // Kept isolated so components can depend on these without touching the context.
 
 export type ProductVariant = {
-  sku: string; finish?: string | null; size?: string | null;
+  sku: string; name?: string | null; finish?: string | null; finish_code?: string | null; size?: string | null;
   /** `colour` is the catalog API spelling; `color` remains for old clients. */
   colour?: string | null; color?: string | null; variant_label?: string | null;
   mrp: number; price: number; stock?: number;
+  dimensions?: string | null; material?: string | null; warranty?: string | null;
+  specs?: Record<string, any> | null; description?: string | null;
   // Populated dynamically by the backend from family-sibling products —
   // lets a finish/colour chip switch the main image, not just the price.
   id?: string | null; image?: string | null;
@@ -13,7 +15,9 @@ export type ProductVariant = {
 
 export type Product = {
   id: string; name: string; sku: string; price: number; mrp: number;
-  finish?: string | null; colour?: string | null; size?: string | null; images: string[]; category_id: string; brand_id: string;
+  finish?: string | null; finish_code?: string | null; variant_label?: string | null;
+  colour?: string | null; size?: string | null; material?: string | null;
+  images: string[]; category_id: string; brand_id: string;
   variants?: ProductVariant[];
   /** Server-derived, family-level tile sizing metadata. Unlike `variants`,
    * this is complete even when the compact sibling preview is capped. */

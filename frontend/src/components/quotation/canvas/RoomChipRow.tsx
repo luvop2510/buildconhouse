@@ -19,12 +19,13 @@ export function RoomChipRow() {
         <Pressable
           onLongPress={drag}
           delayLongPress={160}
+          accessibilityRole="button" accessibilityState={{ selected: active }}
           onPress={() => b.setActiveRoom(item)}
           testID={`room-${item}`}
           style={[styles.tab, active && styles.tabActive, isActive && { opacity: 0.7 }, grabCursor]}
         >
-          <Feather name="menu" size={11} color={active ? colors.onBrand : colors.onSurfaceMuted} style={{ opacity: 0.7, marginRight: 4 }} />
-          <Text style={{ fontSize: 12, fontWeight: "600", color: active ? colors.onBrand : colors.onSurfaceSecondary }}>{item}</Text>
+          <Feather name="menu" size={11} color={active ? ds.brassDeep : colors.onSurfaceMuted} style={{ opacity: 0.7, marginRight: 4 }} />
+          <Text style={{ fontSize: 12, fontWeight: "600", color: active ? ds.brassDeep : colors.onSurfaceSecondary }}>{item}</Text>
         </Pressable>
       </ScaleDecorator>
     );
@@ -46,7 +47,7 @@ export function RoomChipRow() {
       </View>
       <Pressable
         onPress={() => { b.setRoomInput(""); b.setRoomSheet({ kind: "add" }); }}
-        testID="add-room-btn"
+        testID="add-room-btn" accessibilityRole="button" accessibilityLabel="Add room"
         style={[styles.tab, { borderStyle: "dashed", paddingHorizontal: 10 }]}
       >
         <Feather name="plus" size={13} color={colors.onSurfaceMuted} />
@@ -58,7 +59,7 @@ export function RoomChipRow() {
 const styles = StyleSheet.create({
   wrap: { flexDirection: "row", alignItems: "center", gap: 6 },
   tab: {
-    flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 6,
+    minHeight: 44, minWidth: 44, justifyContent: "center", flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 6,
     borderRadius: 999, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary,
   },
   tabActive: { backgroundColor: ds.brassTint, borderColor: ds.brassLine },

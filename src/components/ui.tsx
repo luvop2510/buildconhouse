@@ -1,3 +1,4 @@
+import { useReducedMotion } from "@/src/hooks/use-reduced-motion";
 // BuildCon House · Design System V1 · Primitives
 // Every screen composes UI from this file. No hardcoded colors, spacing, or
 // typography allowed anywhere else. Feels closer to Linear / Stripe / Notion.
@@ -41,18 +42,6 @@ type FeatherName = keyof typeof Feather.glyphMap;
 // ──────────────────────────────────────────────────────────────────────────
 // Press-animated wrapper — subtle scale + opacity feedback for all touchables
 // ──────────────────────────────────────────────────────────────────────────
-export function useSpring(active: boolean, from = 1, to = 0.97) {
-  const anim = useRef(new Animated.Value(from)).current;
-  Animated.spring(anim, {
-    toValue: active ? to : from,
-    useNativeDriver: Platform.OS !== "web",
-    damping: 22,
-    stiffness: 320,
-    mass: 0.6,
-  }).start();
-  return anim;
-}
-
 // ──────────────────────────────────────────────────────────────────────────
 // Button — primary / secondary / ghost / danger / brand-light
 // ──────────────────────────────────────────────────────────────────────────
@@ -377,8 +366,10 @@ export function Divider({ vertical, style, inset }: { vertical?: boolean; style?
 }
 
 export function Skeleton({ w = "100%", h = 14, style, radius: r }: { w?: number | string; h?: number; style?: ViewStyle; radius?: number }) {
+  const reducedMotion = useReducedMotion();
   const pulse = useRef(new Animated.Value(0.5)).current;
   useEffect(() => {
+    if (reducedMotion) { pulse.setValue(0.7); return; }
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(pulse, { toValue: 1, duration: 900, useNativeDriver: Platform.OS !== "web" }),
@@ -387,7 +378,7 @@ export function Skeleton({ w = "100%", h = 14, style, radius: r }: { w?: number 
     );
     loop.start();
     return () => loop.stop();
-  }, [pulse]);
+  }, [pulse, reducedMotion]);
 
   return (
     <Animated.View style={[
@@ -1249,8 +1240,8 @@ export function PageHeader({
   testID?: string;
   dense?: boolean;
 }) {
-  const { isPhone, isDesktop } = useBp();
-  const horizontal = isPhone ? spacing.lg : spacing.xl;
+  const { isPhone, isDesktop, gutter } = useBp();
+  const horizontal = gutter;
   return (
     <View
       testID={testID}
@@ -1270,11 +1261,12 @@ export function PageHeader({
         <View style={{ flex: 1, minWidth: 0 }}>
           {overline ? <Text style={[type.overline, { marginBottom: 4 }]}>{overline}</Text> : null}
           <Text
+            accessibilityRole="header"
             numberOfLines={2}
             style={
               dense
                 ? type.titleLg
-              : { fontFamily: dsFont.display, fontSize: isPhone ? 23 : 28, lineHeight: isPhone ? 30 : 36, letterSpacing: -0.3, color: colors.onSurface }
+              : { fontFamily: dsFont.semibold, fontWeight: "600", fontSize: isPhone ? 24 : 28, lineHeight: isPhone ? 31 : 36, letterSpacing: -0.7, color: colors.onSurface }
             }
           >
             {title}

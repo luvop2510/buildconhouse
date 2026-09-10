@@ -13,7 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { api } from "@/src/api/client";
 import {
-  Button, Card, Chip, PageHeader, TextField,
+  Button, Card, Chip, PageHeader, TextField, ErrorState,
 } from "@/src/components/ui";
 import { ConfirmDialog } from "@/src/components/ds";
 import { TempPasswordDialog, TempPasswordResult } from "@/src/components/TempPasswordDialog";
@@ -41,6 +41,7 @@ export default function EditCustomer() {
   const { staff } = useAuth();
 
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [name, setName] = useState("");
   const [company, setCompany] = useState("");
   const [email, setEmail] = useState("");
@@ -65,6 +66,9 @@ export default function EditCustomer() {
   const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
+    setLoadError(false);
+    setLoaded(false);
+    try {
     const c = await api.get<Customer>(`/customers/${id}`);
     setName(c.name || "");
     setCompany(c.company || "");
@@ -81,6 +85,7 @@ export default function EditCustomer() {
     setNotes(c.notes || "");
     setPortalEnabled(!!c.portal_enabled);
     setLoaded(true);
+    } catch { setLoadError(true); }
   }, [id]);
   useEffect(() => { load(); }, [load]);
 
@@ -162,7 +167,9 @@ export default function EditCustomer() {
     }
   };
 
-  if (!loaded) return <View style={{ flex: 1, backgroundColor: colors.surface }} />;
+  if (!loaded) return <View style={{ flex: 1, padding: gutter, backgroundColor: colors.surface }}>
+    {loadError ? <ErrorState title="Couldn't load customer" subtitle="Check your connection and try again." onRetry={load} /> : <Text accessibilityLiveRegion="polite">Loading customer…</Text>}
+  </View>;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>

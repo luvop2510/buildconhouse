@@ -19,13 +19,16 @@ import { Platform, TextInput } from "react-native";
 import { api } from "@/src/api/client";
 import { toast } from "@/src/components/Toast";
 import { useHistory, useUndoRedoShortcuts } from "@/src/hooks/useHistory";
+import { useAuth } from "@/src/state/auth";
+import { builderDraftEpoch, readBuilderDraft, writeBuilderDraft, removeBuilderDraft } from "../helpers/draftStorage";
+import { draftNeedsCopy, moveWithinRoom, type BuilderDraft } from "../helpers/draftRecovery";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import type { HistoryApi } from "@/src/hooks/useHistory";
 import { playAddProductSound } from "@/src/services/soundService";
 import { catalogReferences, CATALOG_PAGE_SIZE, fetchCatalogPage } from "@/src/services/catalogService";
 import { downloadApiFile } from "@/src/utils/downloadFile";
 
-import { computeTotals, effectivePct } from "../helpers/pricing";
+import { computeTotals, computeLineBreakdown, type LineBreakdown } from "../helpers/pricing";
 import { enqueueQuotationPersist } from "../helpers/autosave";
 import { productImageList } from "../helpers/media";
 import {
@@ -34,7 +37,6 @@ import {
   RecentQuotation, Referrer, RoomDiscount, RoomSheetState, SaveState, SwapSheetState,
 } from "../helpers/types";
 
-const LOCAL_SNAPSHOT_KEY = "forge.builder.snapshot.v4";
 
 type SortKey = "popular" | "recent" | "price_asc" | "price_desc" | "name";
 
@@ -64,6 +66,17 @@ function familyCardToProduct(family: CatalogFamily): Product | null {
     brand_id: family.brand_id,
     family_key: family.family_key || null,
     images: family.sample_image ? [family.sample_image] : representative.image ? [representative.image] : [],
+    finish: representative.finish ?? null,
+    finish_code: representative.finish_code ?? null,
+    variant_label: representative.variant_label ?? null,
+    colour: representative.colour ?? representative.color ?? null,
+    size: representative.size ?? null,
+    stock: representative.stock ?? 0,
+    dimensions: representative.dimensions ?? null,
+    material: representative.material ?? null,
+    warranty: representative.warranty ?? null,
+    specs: representative.specs ?? null,
+    description: representative.description ?? null,
     variants,
   };
 }
@@ -151,6 +164,11 @@ export type BuilderApi = {
   totals: { subtotal: number; discount: number; grand: number };
   usedCategoryIds: string[];
   flatRows: BuilderRow[];
+  lineBreakdownById: Record<string, LineBreakdown>;
+  recoveryDraft: BuilderDraft | null;
+  recoveryBusy: boolean;
+  restoreLocalDraft: () => Promise<void>;
+  dismissRecovery: () => void;
 
   // Autosave
   quotationId: string | null;
@@ -178,6 +196,8 @@ export type BuilderApi = {
   removeLine: (id: string) => void;
   duplicateLine: (id: string) => void;
   moveLineToNextRoom: (id: string) => void;
+  moveLine: (id: string, direction: -1 | 1) => void;
+  moveRoom: (room: string, direction: -1 | 1) => void;
 
   // Rooms
   addRoom: (name: string) => void;
@@ -245,6 +265,8 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
   children: React.ReactNode;
 }) {
   const { selectedFloorId, floors } = useFloorAccess();
+  const { staff } = useAuth();
+  const accountId = staff?.id || "";
   // The selected floor is published synchronously by the app shell. The
   // fallback only covers the brief initial storage-read window.
   const activeFloorId = selectedFloorId || floors[0]?.id || "";
@@ -276,6 +298,15 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
   // Undo/redo document state
   const history = useHistory<BuilderState>(INITIAL_BUILDER_STATE, { max: 200, coalesceMs: 800 });
   const s = history.state;
+  const stateRef = useRef(s);
+  stateRef.current = s;
+  const lastSavedStateRef = useRef<BuilderState | null>(null);
+  const documentGeneration = useRef(0);
+  const restoreRequest = useRef(0);
+  const draftEpoch = useRef(builderDraftEpoch());
+  const [recoveryDraft, setRecoveryDraft] = useState<BuilderDraft | null>(null);
+  const [recoveryReady, setRecoveryReady] = useState(false);
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
   useUndoRedoShortcuts(history as any, true);
 
   // Autosave metadata (not undoable)
@@ -290,6 +321,7 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
   // with stale quotation state.
   const persistQueue = useRef<Promise<string | null>>(Promise.resolve(null));
   const persistedIdRef = useRef<string | null>(null);
+  const serverSavedAtRef = useRef<string | null>(null);
 
   // Sheets
   const [discountSheet, setDiscountSheet] = useState<DiscountSheetState>(null);
@@ -551,8 +583,10 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
 
   // ---------- Autosave ----------
   const persist = useCallback(async (): Promise<string | null> => {
+    const generation = documentGeneration.current;
     const run = async (): Promise<string | null> => {
-      if (!s.customerId) return null;
+      if (generation !== documentGeneration.current || !s.customerId) return null;
+      if (lastSavedStateRef.current === s && persistedIdRef.current) return persistedIdRef.current;
       const payload = {
         customer_id: s.customerId,
         items: s.lines,
@@ -577,28 +611,37 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
         setSaveState("saving");
         let persistedId = persistedIdRef.current || quotationId;
         if (!persistedId) {
-          const created = await api.post<{ id: string; number: string }>("/quotations", payload, { floorId: activeFloorId });
+          const created = await api.post<{ id: string; number: string; updated_at?: string }>("/quotations", payload, { floorId: activeFloorId });
+          if (generation !== documentGeneration.current) return null;
+          serverSavedAtRef.current = created.updated_at || null;
           setQuotationId(created.id);
           setQuotationNumber(created.number);
           persistedIdRef.current = created.id;
           persistedId = created.id;
         } else {
           const upd: any = { ...payload, silent: true, collapsed_rooms: Object.keys(s.collapsedRooms).filter((k) => s.collapsedRooms[k]) };
-          await api.patch(`/quotations/${persistedId}`, upd, { floorId: activeFloorId });
+          const updated = await api.patch<{ updated_at?: string }>(`/quotations/${persistedId}`, upd, { floorId: activeFloorId });
+          if (generation !== documentGeneration.current) return null;
+          serverSavedAtRef.current = updated.updated_at || null;
         }
-        setSaveState("saved");
+        lastSavedStateRef.current = s;
+        setSaveState(stateRef.current === s ? "saved" : "idle");
         setSavedAt(new Date());
+        if (stateRef.current === s) void removeBuilderDraft(accountId, activeFloorId);
         return persistedId;
       } catch (e: any) {
+        if (generation !== documentGeneration.current) return null;
         setSaveState("error");
         toast.error(e?.detail || "Save failed");
         return null;
       }
     };
     return enqueueQuotationPersist(persistQueue, run);
-  }, [s, quotationId, selectedBrandId, selectedCategoryId, sortKey, activeFloorId]);
+  }, [s, quotationId, selectedBrandId, selectedCategoryId, sortKey, activeFloorId, accountId]);
 
   useEffect(() => {
+    if (lastSavedStateRef.current === s) return;
+    setSaveState("idle");
     if (!s.customerId) return;
     if (s.lines.length === 0 && !quotationId && s.projectDiscount === 0 && Object.keys(s.categoryDiscounts).length === 0 && Object.keys(s.roomDiscounts).length === 0) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -606,23 +649,65 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   }, [s, quotationId, persist]);
 
-  // ---------- LocalStorage snapshot (web only) ----------
-  // Backend autosave is the source of truth, but a lightweight local snapshot
-  // every 3s survives tab crashes / accidental closes / lost network.
+  // Recovery is account/floor scoped on web and native, and never replaces
+  // a document without an explicit choice. Only unacknowledged edits remain.
   useEffect(() => {
-    if (Platform.OS !== "web" || typeof window === "undefined") return;
-    const t = setInterval(() => {
-      try {
-        window.localStorage.setItem(LOCAL_SNAPSHOT_KEY, JSON.stringify({
-          at: Date.now(),
-          quotationId, quotationNumber,
-          state: s,
-          selectedBrandId, selectedCategoryId, sortKey,
-        }));
-      } catch {}
-    }, 3000);
-    return () => clearInterval(t);
-  }, [s, quotationId, quotationNumber, selectedBrandId, selectedCategoryId, sortKey]);
+    let current = true;
+    void readBuilderDraft(accountId, activeFloorId).then((draft) => {
+      if (current) { setRecoveryDraft(draft); setRecoveryReady(true); }
+    });
+    return () => { current = false; documentGeneration.current += 1; restoreRequest.current += 1; };
+  }, [accountId, activeFloorId]);
+
+  useEffect(() => {
+    if (!recoveryReady || recoveryDraft || !accountId || !activeFloorId || lastSavedStateRef.current === s) return;
+    if (!s.customerId && !s.lines.length && !s.header.projectName && !s.notes) return;
+    const timer = setTimeout(() => {
+      void writeBuilderDraft({ version: 1, accountId, floorId: activeFloorId, at: Date.now(),
+        quotationId, quotationNumber, serverSavedAt: serverSavedAtRef.current, state: s }, draftEpoch.current);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [s, quotationId, quotationNumber, accountId, activeFloorId, recoveryReady, recoveryDraft]);
+
+  const dismissRecovery = useCallback(() => {
+    setRecoveryDraft(null);
+    void removeBuilderDraft(accountId, activeFloorId);
+  }, [accountId, activeFloorId]);
+
+  const restoreLocalDraft = useCallback(async () => {
+    if (!recoveryDraft || recoveryBusy) return;
+    const draft = recoveryDraft;
+    setRecoveryBusy(true);
+    try {
+      let copy = false;
+      if (draft.quotationId) {
+        try {
+          const server = await api.get<{ updated_at?: string; status?: string }>(`/quotations/${draft.quotationId}`, { floorId: activeFloorId });
+          copy = draftNeedsCopy(draft, server);
+        } catch (error: any) {
+          // An unavailable/deleted source cannot authorize overwriting it.
+          // Restore locally as a separate draft, preserving every entered line.
+          if (error?.status !== 404) throw error;
+          copy = true;
+        }
+      }
+      documentGeneration.current += 1;
+      restoreRequest.current += 1;
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      lastSavedStateRef.current = null;
+      persistedIdRef.current = copy ? null : draft.quotationId;
+      serverSavedAtRef.current = copy ? null : draft.serverSavedAt;
+      setQuotationId(copy ? null : draft.quotationId);
+      setQuotationNumber(copy ? null : draft.quotationNumber);
+      history.replace(draft.state);
+      setSaveState("idle");
+      setSavedAt(null);
+      setRecoveryDraft(null);
+      toast.success(copy ? "Recovered as a new draft; the saved quotation has newer changes" : "Unsaved changes recovered");
+    } catch (error: any) {
+      toast.error(error?.detail || "Could not verify the saved quotation. Retry when connected; your recovery is retained.");
+    } finally { setRecoveryBusy(false); }
+  }, [recoveryDraft, recoveryBusy, activeFloorId, history]);
 
   // ---------- Restore an existing quotation ----------
   const refreshRecentQuotations = useCallback(async () => {
@@ -633,8 +718,12 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
   }, [activeFloorId]);
 
   const restoreQuotation = useCallback(async (id: string) => {
+    const request = ++restoreRequest.current;
     try {
       const doc = await api.get<any>(`/quotations/${id}`, { floorId: activeFloorId });
+      if (request !== restoreRequest.current) return;
+      documentGeneration.current += 1;
+      if (saveTimer.current) clearTimeout(saveTimer.current);
       const collapsed: Record<string, boolean> = {};
       for (const r of doc.collapsed_rooms || []) collapsed[r] = true;
       const ui: any = doc.ui_state || {};
@@ -665,6 +754,8 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
         categoryDiscounts: doc.category_discounts || {},
         roomDiscounts: doc.room_discounts || {},
       };
+      lastSavedStateRef.current = restored;
+      serverSavedAtRef.current = doc.updated_at || null;
       history.replace(restored);
       setQuotationId(doc.id);
       persistedIdRef.current = doc.id;
@@ -687,6 +778,10 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
       await api.delete(`/quotations/${id}`, { floorId: activeFloorId });
       setRecentQuotations((current) => current.filter((q) => q.id !== id));
       if (id === quotationId) {
+        documentGeneration.current += 1;
+        restoreRequest.current += 1;
+        lastSavedStateRef.current = INITIAL_BUILDER_STATE;
+        void removeBuilderDraft(accountId, activeFloorId);
         history.replace(INITIAL_BUILDER_STATE);
         setQuotationId(null);
         persistedIdRef.current = null;
@@ -700,9 +795,14 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
       toast.error(e?.detail || "Could not delete quotation");
       return false;
     }
-  }, [history, quotationId, activeFloorId]);
+  }, [history, quotationId, activeFloorId, accountId]);
 
   const startNewQuotation = useCallback(() => {
+    documentGeneration.current += 1;
+    restoreRequest.current += 1;
+    lastSavedStateRef.current = INITIAL_BUILDER_STATE;
+    serverSavedAtRef.current = null;
+    void removeBuilderDraft(accountId, activeFloorId);
     history.replace(INITIAL_BUILDER_STATE);
     setQuotationId(null);
     persistedIdRef.current = null;
@@ -712,7 +812,7 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
     setSelectedBrandIdState(null);
     setSelectedCategoryIdState(null);
     setQ("");
-  }, [history]);
+  }, [history, accountId, activeFloorId]);
 
   // Product modal helpers
   const openProductModal = useCallback((p: Product) => setProductModal(p), []);
@@ -727,6 +827,10 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
     () => computeTotals(s.lines, s.projectDiscount, s.categoryDiscounts, s.roomDiscounts),
     [s.lines, s.projectDiscount, s.categoryDiscounts, s.roomDiscounts],
   );
+
+  const lineBreakdownById = useMemo(() => Object.fromEntries(
+    computeLineBreakdown(s.lines, s.projectDiscount, s.categoryDiscounts, s.roomDiscounts).map(row => [row.line.id, row]),
+  ), [s.lines, s.projectDiscount, s.categoryDiscounts, s.roomDiscounts]);
 
   const categoryById: Record<string, string> = useMemo(
     () => Object.fromEntries(categories.map((c) => [c.id, c.name])),
@@ -745,8 +849,7 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
     for (const room of s.rooms) {
       const roomLines = s.lines.filter((l) => l.room === room);
       const roomSub = roomLines.reduce((sum, l) => {
-        const eff = effectivePct(l, s.roomDiscounts, s.categoryDiscounts, s.projectDiscount);
-        return sum + l.qty * l.unit_price * (1 - eff.pct / 100);
+        return sum + (lineBreakdownById[l.id]?.net || 0);
       }, 0);
       const collapsed = !!s.collapsedRooms[room];
       const roomDiscount = s.roomDiscounts[room] || null;
@@ -754,7 +857,7 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
       if (!collapsed) for (const l of roomLines) rows.push({ kind: "line", id: l.id, line: l });
     }
     return rows;
-  }, [s]);
+  }, [s, lineBreakdownById]);
 
   // ---------- Mutations ----------
   const setCustomer = useCallback((id: string) => {
@@ -952,6 +1055,20 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
       return { ...cur, lines: cur.lines.map((x) => (x.id === id ? { ...x, room: nextRoom } : x)) };
     });
     Haptics.selectionAsync();
+  }, [history]);
+
+  const moveLine = useCallback((id: string, direction: -1 | 1) => {
+    history.apply(cur => ({ ...cur, lines: moveWithinRoom(cur.lines, id, direction) }));
+  }, [history]);
+
+  const moveRoom = useCallback((room: string, direction: -1 | 1) => {
+    history.apply(cur => {
+      const from = cur.rooms.indexOf(room), to = from + direction;
+      if (from < 0 || to < 0 || to >= cur.rooms.length) return cur;
+      const rooms = [...cur.rooms];
+      [rooms[from], rooms[to]] = [rooms[to], rooms[from]];
+      return { ...cur, rooms };
+    });
   }, [history]);
 
   // Rooms
@@ -1174,6 +1291,7 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
   // Save label string
   const saveLabel = saveState === "saving" ? "Saving…"
     : saveState === "error" ? "Save failed"
+    : s !== lastSavedStateRef.current && (s.customerId || s.lines.length) ? (s.customerId ? "Unsaved changes" : "Choose a customer to save")
     : savedAt ? `Saved · ${savedAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}`
     : "Draft — no changes yet";
 
@@ -1195,12 +1313,12 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
     productModal, openProductModal, closeProductModal, patchProduct,
     customProductSheetOpen, setCustomProductSheetOpen,
     recentQuotations, refreshRecentQuotations, restoreQuotation, deleteQuotation, startNewQuotation,
-    totals, usedCategoryIds, flatRows,
+    totals, usedCategoryIds, flatRows, lineBreakdownById, recoveryDraft, recoveryBusy, restoreLocalDraft, dismissRecovery,
     quotationId, quotationNumber, saveState, savedAt, saveLabel, persist, finalize,
     workflowBusy, generateOfficialQuotation, placeOrder,
     setCustomer, createCustomer, importCustomerFromGround, customerSwitcherOpen, setCustomerSwitcherOpen,
     setReferrer, clearReferrer, createReferrer, referrerSwitcherOpen, setReferrerSwitcherOpen,
-    addFromProduct, updateLine, removeLine, duplicateLine, moveLineToNextRoom,
+    addFromProduct, updateLine, removeLine, duplicateLine, moveLineToNextRoom, moveLine, moveRoom,
     addRoom, renameRoom, duplicateRoom, deleteRoom, toggleCollapse, setActiveRoom, onRoomDragEnd, onLinesDragEnd,
     setProjectDiscount, setCategoryDiscount, setRoomDiscount, setNotes,
     swapItems, swapLoading, openSwap, commitSwap, closeSwap,
@@ -1223,12 +1341,12 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
     productModal, openProductModal, closeProductModal, patchProduct,
     customProductSheetOpen, setCustomProductSheetOpen,
     recentQuotations, refreshRecentQuotations, restoreQuotation, deleteQuotation, startNewQuotation,
-    totals, usedCategoryIds, flatRows,
+    totals, usedCategoryIds, flatRows, lineBreakdownById, recoveryDraft, recoveryBusy, restoreLocalDraft, dismissRecovery,
     quotationId, quotationNumber, saveState, savedAt, saveLabel, persist, finalize,
     workflowBusy, generateOfficialQuotation, placeOrder,
     setCustomer, createCustomer, importCustomerFromGround, customerSwitcherOpen, setCustomerSwitcherOpen,
     setReferrer, clearReferrer, createReferrer, referrerSwitcherOpen, setReferrerSwitcherOpen,
-    addFromProduct, updateLine, removeLine, duplicateLine, moveLineToNextRoom,
+    addFromProduct, updateLine, removeLine, duplicateLine, moveLineToNextRoom, moveLine, moveRoom,
     addRoom, renameRoom, duplicateRoom, deleteRoom, toggleCollapse, setActiveRoom, onRoomDragEnd, onLinesDragEnd,
     setProjectDiscount, setCategoryDiscount, setRoomDiscount, setNotes,
     swapItems, swapLoading, openSwap, commitSwap, closeSwap,

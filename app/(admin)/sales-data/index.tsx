@@ -70,6 +70,8 @@ type Sections = {
   architects: ReferrerSummaryRow[] | null;
   designers: ReferrerSummaryRow[] | null;
 };
+type SectionKey = keyof Sections;
+type SectionRows = NonNullable<Sections[SectionKey]>;
 
 const EMPTY_SECTIONS: Sections = {
   trend: null, brands: null, customers: null, products: null, orders: null, architects: null, designers: null,
@@ -112,19 +114,54 @@ export default function SalesDataIndex() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [overviewError, setOverviewError] = useState<string | null>(null);
   const [sections, setSections] = useState<Sections>(EMPTY_SECTIONS);
-  const [sectionErrors, setSectionErrors] = useState<Partial<Record<keyof Sections, string>>>({});
+  const [sectionErrors, setSectionErrors] = useState<Partial<Record<SectionKey, string>>>({});
   const requestVersion = useRef(0);
+  const scopeKeyRef = useRef<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [updating, setUpdating] = useState(false);
+
+  const filterForScope = useCallback((): SalesFilter | null => {
+    if (!floorId || !period) return null;
+    return { floorId, preset: period.preset, dateFrom: period.dateFrom, dateTo: period.dateTo };
+  }, [floorId, period]);
+
+  const requestSection = useCallback((key: SectionKey, filter: SalesFilter): Promise<{ rows: SectionRows }> => {
+    switch (key) {
+      case "trend": return salesDataApi.revenueTrend(filter).then((result) => ({ rows: result.points }));
+      case "brands": return salesDataApi.revenueByBrand(filter);
+      case "customers": return salesDataApi.revenueByCustomer(filter);
+      case "products": return salesDataApi.bestSellingProducts(filter, TOP_N);
+      case "orders": return salesDataApi.recentOrders(filter, TOP_N);
+      case "architects": return salesDataApi.referrers(filter, "architect");
+      case "designers": return salesDataApi.referrers(filter, "interior_designer");
+    }
+  }, []);
+
+  const loadSection = useCallback(async (key: SectionKey, filter: SalesFilter, version = requestVersion.current) => {
+    setSectionErrors((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+    try {
+      const result = await requestSection(key, filter);
+      if (version === requestVersion.current) {
+        setSections((current) => ({ ...current, [key]: result.rows } as Sections));
+      }
+    } catch (e: unknown) {
+      if (version !== requestVersion.current) return;
+      const detail = (e as { detail?: unknown })?.detail;
+      setSectionErrors((current) => ({ ...current, [key]: typeof detail === "string" ? detail : "Could not load this breakdown" }));
+    }
+  }, [requestSection]);
 
   const load = useCallback(() => {
-    if (!floorId || !period) return; // never query before the scope is known
+    const filter = filterForScope();
+    if (!filter || !period) return; // never query before the scope is known
     const version = ++requestVersion.current;
-    const filter: SalesFilter = {
-      floorId,
-      preset: period.preset,
-      dateFrom: period.dateFrom,
-      dateTo: period.dateTo,
-    };
+    const scopeKey = JSON.stringify(filter);
+    const scopeChanged = scopeKeyRef.current !== scopeKey;
+    scopeKeyRef.current = scopeKey;
     const executiveQuery = {
       floorId: floorId === "all" ? undefined : floorId,
       preset: period.preset,
@@ -133,12 +170,18 @@ export default function SalesDataIndex() {
     };
 
     setOverviewError(null);
-    setOverview(null);
-    setSections(EMPTY_SECTIONS);
-    setSectionErrors({});
-    setUpdatedAt(null);
+    setUpdating(true);
+    // A scope change must never label old data as the new floor/date range.
+    // A same-scope refresh instead leaves usable content in place with an
+    // explicit Updating signal while individual requests settle.
+    if (scopeChanged) {
+      setOverview(null);
+      setSections(EMPTY_SECTIONS);
+      setSectionErrors({});
+      setUpdatedAt(null);
+    }
 
-    executiveApi.overview(executiveQuery)
+    const overviewRequest = executiveApi.overview(executiveQuery)
       .then((result) => {
         if (version !== requestVersion.current) return;
         setOverview(result);
@@ -150,25 +193,16 @@ export default function SalesDataIndex() {
         setOverviewError(typeof detail === "string" ? detail : "Could not load the sales summary");
       });
 
-    // Each breakdown settles independently so one unavailable service cannot
-    // hide the rest of the business. Responses from old filters are ignored.
-    const settle = <K extends keyof Sections>(key: K, request: Promise<{ rows: NonNullable<Sections[K]> }>) => {
-      void request.then((result) => {
-        if (version === requestVersion.current) setSections((current) => ({ ...current, [key]: result.rows }));
-      }).catch((e: unknown) => {
-        if (version !== requestVersion.current) return;
-        const detail = (e as { detail?: unknown })?.detail;
-        setSectionErrors((current) => ({ ...current, [key]: typeof detail === "string" ? detail : "Could not load this breakdown" }));
-      });
-    };
-    settle("trend", salesDataApi.revenueTrend(filter).then(result => ({ rows: result.points })));
-    settle("brands", salesDataApi.revenueByBrand(filter));
-    settle("customers", salesDataApi.revenueByCustomer(filter));
-    settle("products", salesDataApi.bestSellingProducts(filter, TOP_N));
-    settle("orders", salesDataApi.recentOrders(filter, TOP_N));
-    settle("architects", salesDataApi.referrers(filter, "architect"));
-    settle("designers", salesDataApi.referrers(filter, "interior_designer"));
-  }, [floorId, period]);
+    const sectionRequests = (Object.keys(EMPTY_SECTIONS) as SectionKey[]).map((key) => loadSection(key, filter, version));
+    void Promise.all([overviewRequest, ...sectionRequests]).finally(() => {
+      if (version === requestVersion.current) setUpdating(false);
+    });
+  }, [filterForScope, floorId, loadSection, period]);
+
+  const retrySection = useCallback((key: SectionKey) => {
+    const filter = filterForScope();
+    if (filter) void loadSection(key, filter);
+  }, [filterForScope, loadSection]);
 
   useEffect(() => {
     load();
@@ -231,8 +265,8 @@ export default function SalesDataIndex() {
             onPeriodChange={choose}
           />
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, alignItems: "center", justifyContent: "flex-end" }}>
-            {updatedAt ? <Text style={[type.caption, { color: colors.onSurfaceMuted, flexGrow: 1 }, isPhone && { width: "100%" }]}>Updated {updatedAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</Text> : null}
-            <Button label="Refresh" icon="refresh-cw" variant="secondary" onPress={load} style={isPhone ? { flex: 1 } : undefined} />
+            {updatedAt || updating ? <Text style={[type.caption, { color: colors.onSurfaceMuted, flexGrow: 1 }, isPhone && { width: "100%" }]}>{updatedAt ? `Updated ${updatedAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}` : "Loading"}{updating ? " · Updating…" : ""}</Text> : null}
+            <Button label="Refresh" icon="refresh-cw" variant="secondary" onPress={load} loading={updating} style={isPhone ? { flex: 1 } : undefined} />
             <Button
               testID="sales-data-export-xlsx"
               label="Export Excel"
@@ -304,7 +338,7 @@ export default function SalesDataIndex() {
         </View>
       ) : null}
 
-      <SalesSection title="Revenue over time" question="Confirmed order revenue by order date · UTC" rows={sections.trend} error={sectionErrors.trend} onRetry={load} emptyTitle={period?.preset === "all" ? "Choose a date range to see the trend" : "No trend data in this period"} testID="sales-revenue-trend">
+      <SalesSection title="Revenue over time" question="Confirmed order revenue by order date · UTC" rows={sections.trend} error={sectionErrors.trend} onRetry={() => retrySection("trend")} emptyTitle={period?.preset === "all" ? "Choose a date range to see the trend" : "No trend data in this period"} testID="sales-revenue-trend">
         {(points) => <TrendChart points={points} />}
       </SalesSection>
 
@@ -366,7 +400,7 @@ export default function SalesDataIndex() {
         question="Which brands are actually selling?"
         rows={sections.brands}
         error={sectionErrors.brands}
-        onRetry={load}
+        onRetry={() => retrySection("brands")}
         emptyTitle="No brand revenue in this period"
       >
         {(rows) => useCompactRows ? (
@@ -404,7 +438,7 @@ export default function SalesDataIndex() {
         question="Who is buying the most?"
         rows={sections.customers}
         error={sectionErrors.customers}
-        onRetry={load}
+        onRetry={() => retrySection("customers")}
         emptyTitle="No customer revenue in this period"
         footer={
           sections.customers && sections.customers.length > TOP_N ? (
@@ -447,7 +481,7 @@ export default function SalesDataIndex() {
         title="Referred By — Architects"
         rows={sections.architects}
         error={sectionErrors.architects}
-        onRetry={load}
+        onRetry={() => retrySection("architects")}
         onOpen={(id) => router.push({ pathname: "/(admin)/sales-data/referrer/[id]", params: { id, floorId, preset: period?.preset, dateFrom: period?.dateFrom || "", dateTo: period?.dateTo || "" } } as never)}
       />
       <ReferrerWorkspace
@@ -455,7 +489,7 @@ export default function SalesDataIndex() {
         title="Referred By — Interior Designers"
         rows={sections.designers}
         error={sectionErrors.designers}
-        onRetry={load}
+        onRetry={() => retrySection("designers")}
         onOpen={(id) => router.push({ pathname: "/(admin)/sales-data/referrer/[id]", params: { id, floorId, preset: period?.preset, dateFrom: period?.dateFrom || "", dateTo: period?.dateTo || "" } } as never)}
       />
 
@@ -468,7 +502,7 @@ export default function SalesDataIndex() {
         question="What is moving off the shelves?"
         rows={sections.products}
         error={sectionErrors.products}
-        onRetry={load}
+        onRetry={() => retrySection("products")}
         emptyTitle="No products sold in this period"
       >
         {(rows) => useCompactRows ? (
@@ -507,7 +541,7 @@ export default function SalesDataIndex() {
         question="What has just been confirmed?"
         rows={sections.orders}
         error={sectionErrors.orders}
-        onRetry={load}
+        onRetry={() => retrySection("orders")}
         emptyTitle="No confirmed orders in this period"
         emptySubtitle="Orders appear here the moment a quotation is confirmed."
         footer={

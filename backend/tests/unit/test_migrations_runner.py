@@ -121,3 +121,15 @@ def test_migration_lease_excludes_another_replica_and_releases():
     assert not asyncio.run(_acquire_lease(fake_db, "replica-b"))
     asyncio.run(_release_lease(fake_db, "replica-a"))
     assert asyncio.run(_acquire_lease(fake_db, "replica-b"))
+
+
+def test_dry_run_never_creates_indexes_or_acquires_a_lease(monkeypatch):
+    from unittest.mock import AsyncMock
+    import migrations.runner as runner
+    create = AsyncMock(side_effect=AssertionError("dry run attempted a write"))
+    lease = AsyncMock(side_effect=AssertionError("dry run attempted a lease"))
+    monkeypatch.setattr(runner, "ensure_migrations_index", create)
+    monkeypatch.setattr(runner, "_acquire_lease", lease)
+    assert asyncio.run(runner.run_migrations(_FakeDb(), dry_run=True))
+    create.assert_not_awaited()
+    lease.assert_not_awaited()

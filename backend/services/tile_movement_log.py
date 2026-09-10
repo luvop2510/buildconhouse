@@ -53,6 +53,6 @@ async def record_movement(
         dispatch_id=dispatch_id, dispatch_number=dispatch_number, chalan_id=chalan_id, chalan_number=chalan_number,
         performed_by=performed_by, performed_by_name=performed_by_name,
     )
-    doc = movement.dict()
+    doc = movement.model_dump()
     await db.material_movements.insert_one(doc, session=session)
     return doc

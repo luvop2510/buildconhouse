@@ -72,32 +72,21 @@ export function HoverCard({
   radius?: number;
   padding?: number;
 }) {
-  const Container: any = onPress ? Pressable : View;
-  return (
-    <Container
-      testID={testID}
-      onPress={onPress}
-      disabled={disabled}
-      style={({ pressed, hovered }: any) => [
-        {
-          backgroundColor: colors.surfaceSecondary,
-          borderWidth: StyleSheet.hairlineWidth,
-          borderColor: hovered ? colors.borderStrong : colors.border,
-          borderRadius: r,
-          padding: p,
-          transform: hovered ? [{ scale: motion.cardHoverScale }] : [{ scale: 1 }],
-          opacity: pressed ? 0.94 : 1,
-          ...(Platform.OS === "web"
-            ? ({ transition: `transform ${motion.hover.duration}ms ${motion.hover.easing}, border-color ${motion.hover.duration}ms ${motion.hover.easing}, box-shadow ${motion.hover.duration}ms ${motion.hover.easing}` } as any)
-            : {}),
-        },
-        elevation.low,
-        style,
-      ]}
-    >
-      {children}
-    </Container>
-  );
+  const cardStyle = ({ pressed = false, hovered = false } = {}) => [
+    {
+      backgroundColor: colors.surfaceSecondary,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: hovered ? colors.borderStrong : colors.border,
+      borderRadius: r,
+      padding: p,
+      opacity: pressed ? 0.94 : 1,
+      ...(Platform.OS === "web" ? { transition: `border-color ${motion.hover.duration}ms ${motion.hover.easing}, background-color ${motion.hover.duration}ms ${motion.hover.easing}` } as any : {}),
+    },
+    elevation.low,
+    style,
+  ];
+  if (!onPress) return <View testID={testID} style={cardStyle()}>{children}</View>;
+  return <Pressable testID={testID} onPress={onPress} disabled={disabled} style={cardStyle}>{children}</Pressable>;
 }
 
 // ───────────────────────────────────────────────────────────────────────────

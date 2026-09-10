@@ -223,7 +223,7 @@ async def update_customer(
     on implicitly, see below)."""
     existing = await get_floor_scoped_or_404(db.customers, customer_id, user, not_found="Customer not found", projection={"_id": 0})
 
-    patch = body.dict(exclude_unset=True)
+    patch = body.model_dump(exclude_unset=True)
     if "referrer_id" in patch:
         patch.update(await _referrer_fields(patch["referrer_id"], user))
     # Display/type fields are derived from the selected id, never accepted as

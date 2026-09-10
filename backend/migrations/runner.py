@@ -105,7 +105,8 @@ async def _release_lease(db, owner: str) -> None:
 async def run_migrations(db, *, dry_run: bool = False, use_lease: bool = True) -> list[str]:
     """Applies every not-yet-recorded migration in order. Returns the list of
     migration names that were (or, in dry-run, would be) applied."""
-    await ensure_migrations_index(db)
+    if not dry_run:
+        await ensure_migrations_index(db)
     owner = str(uuid.uuid4())
     if use_lease and not dry_run and not await _acquire_lease(db, owner):
         raise RuntimeError("Another Forge replica is applying migrations; retry startup shortly.")

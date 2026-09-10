@@ -125,8 +125,8 @@ async def mark_items_ready(
                     series=item.get("series"), finish=item.get("finish"), size=item.get("size"), sku=item.get("sku"), quantity_unit=item.get("quantity_unit") or "Box",
                     qty=entry.qty, remaining_qty=entry.qty, created_by=user.id, created_by_name=user.full_name,
                 )
-                await db.ready_batches.insert_one(batch.dict(), session=session)
-                created_batches.append(batch.dict())
+                await db.ready_batches.insert_one(batch.model_dump(), session=session)
+                created_batches.append(batch.model_dump())
 
                 item["boxes_ready"] = float(item.get("boxes_ready") or 0) + entry.qty
                 item["boxes_pending"] = pending - entry.qty
@@ -298,7 +298,7 @@ async def commit_dispatch(po_id: str, body: DispatchBody, user: UserPublic = Dep
                         series=item.get("series"), finish=item.get("finish"), size=item.get("size"), sku=item.get("sku"),
                         qty=qty, remaining_qty=0, created_by=user.id, created_by_name=user.full_name, auto_created=True,
                     )
-                    await db.ready_batches.insert_one(auto_batch.dict(), session=session)
+                    await db.ready_batches.insert_one(auto_batch.model_dump(), session=session)
                     ready_batch_id = auto_batch.id
                     item["boxes_pending"] = float(item.get("boxes_pending") or 0) - qty
 
@@ -353,9 +353,9 @@ async def commit_dispatch(po_id: str, body: DispatchBody, user: UserPublic = Dep
                 created_by=user.id, created_by_name=user.full_name, chalan_id=chalan.id, labor_cost=body.labor_cost,
             )
             chalan.dispatch_id = dispatch.id
-            await db.chalans.insert_one(chalan.dict(), session=session)
-            await db.dispatches.insert_one(dispatch.dict(), session=session)
-            await _apply_dispatch_labor_cost(po, dispatch.dict(), body.labor_cost, session)
+            await db.chalans.insert_one(chalan.model_dump(), session=session)
+            await db.dispatches.insert_one(dispatch.model_dump(), session=session)
+            await _apply_dispatch_labor_cost(po, dispatch.model_dump(), body.labor_cost, session)
 
             items = list(items_by_id.values())
             ordered_boxes = sum(float(i.get("qty") or 0) for i in items)
@@ -392,7 +392,7 @@ async def commit_dispatch(po_id: str, body: DispatchBody, user: UserPublic = Dep
         customer_id=po.get("customer_id"), purchase_id=po_id,
         summary=f"Status changed to {new_status}", payload={"to": new_status},
     )
-    return {"po_id": po_id, "dispatch": dispatch.dict(), "chalan": chalan.dict(), "overall_status": new_status}
+    return {"po_id": po_id, "dispatch": dispatch.model_dump(), "chalan": chalan.model_dump(), "overall_status": new_status}
 
 async def _consume_released_pool(po_id: str, po_item_id: str, qty: float, session) -> list[TileDispatchLineConsumed]:
     """FIFO-consumes `qty` boxes from this item's active Released pool
@@ -555,7 +555,7 @@ async def _apply_dispatch_labor_cost(po: dict, dispatch: dict, labor_cost: float
         note=f"₹{labor_cost:,.0f} labor cost added via dispatch {dispatch.get('dispatch_number', '')}".strip(),
         recorded_by=dispatch.get("created_by"), recorded_by_name=dispatch.get("created_by_name"),
         floor_id=po.get("floor_id", TILES_FLOOR_ID),
-    ).dict()
+    ).model_dump()
     payment.pop("idempotency_key", None)
     # ``Payment`` is intentionally a general-purpose collection record, so
     # retain a small, structured display label alongside the audit note.  The
@@ -670,9 +670,9 @@ async def _commit_simple_dispatch(
                 created_by=user.id, created_by_name=user.full_name, chalan_id=chalan.id, labor_cost=body.labor_cost,
             )
             chalan.dispatch_id = dispatch.id
-            await db.chalans.insert_one(chalan.dict(), session=session)
-            await db.dispatches.insert_one(dispatch.dict(), session=session)
-            await _apply_dispatch_labor_cost(po, dispatch.dict(), body.labor_cost, session)
+            await db.chalans.insert_one(chalan.model_dump(), session=session)
+            await db.dispatches.insert_one(dispatch.model_dump(), session=session)
+            await _apply_dispatch_labor_cost(po, dispatch.model_dump(), body.labor_cost, session)
 
             items = list(items_by_id.values())
             ordered_boxes = sum(float(i.get("qty") or 0) for i in items)
@@ -720,7 +720,7 @@ async def _commit_simple_dispatch(
         customer_id=po.get("customer_id"), purchase_id=po_id,
         summary=f"Status changed to {new_status}", payload={"to": new_status},
     )
-    return {"po_id": po_id, "dispatch": dispatch.dict(), "chalan": chalan.dict(), "overall_status": new_status}
+    return {"po_id": po_id, "dispatch": dispatch.model_dump(), "chalan": chalan.model_dump(), "overall_status": new_status}
 
 
 @router.post("/purchase-orders/{po_id}/dispatch-from-released")
@@ -887,7 +887,7 @@ async def update_dispatch_transport(
     dispatch, chalan = await _dispatch_with_chalan(dispatch_id, user)
     if not chalan:
         raise HTTPException(status_code=404, detail="Chalan not found for this dispatch")
-    updates = {k: v for k, v in body.dict().items() if v is not None}
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
     if not updates:
         raise HTTPException(status_code=400, detail="Nothing to update")
     now = now_iso()

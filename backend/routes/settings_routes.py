@@ -48,7 +48,7 @@ async def get_company_settings(_: UserPublic = Depends(get_current_user)):
 async def update_company_settings(body: CompanySettings, user: UserPublic = Depends(require_min_role("admin"))):
     if body.logo_base64 and len(body.logo_base64) > MAX_LOGO_B64_CHARS:
         raise HTTPException(status_code=413, detail="Logo image is too large")
-    patch = body.dict(exclude={"updated_at", "updated_by", "updated_by_name"})
+    patch = body.model_dump(exclude={"updated_at", "updated_by", "updated_by_name"})
     patch.update({"key": COMPANY_KEY, "updated_at": now_iso(), "updated_by": user.id, "updated_by_name": user.full_name})
     await db.settings.update_one({"key": COMPANY_KEY}, {"$set": patch}, upsert=True)
     return await _load(COMPANY_KEY, CompanySettings)
@@ -62,7 +62,7 @@ async def get_pdf_settings(_: UserPublic = Depends(get_current_user)):
 
 @router.put("/pdf", response_model=PDFSettings)
 async def update_pdf_settings(body: PDFSettings, user: UserPublic = Depends(require_min_role("admin"))):
-    patch = body.dict(exclude={"updated_at", "updated_by", "updated_by_name"})
+    patch = body.model_dump(exclude={"updated_at", "updated_by", "updated_by_name"})
     patch.update({"key": PDF_KEY, "updated_at": now_iso(), "updated_by": user.id, "updated_by_name": user.full_name})
     await db.settings.update_one({"key": PDF_KEY}, {"$set": patch}, upsert=True)
     return await _load(PDF_KEY, PDFSettings)

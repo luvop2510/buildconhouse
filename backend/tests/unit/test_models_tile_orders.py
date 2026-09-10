@@ -80,6 +80,6 @@ def test_chalan_is_a_plain_dict_after_serialization_and_has_no_update_hook():
         generated_at="2026-07-29T14:23:00+00:00", generated_by_name="Warehouse Rep",
         floor_id="ground-floor",
     )
-    data = chalan.dict()
+    data = chalan.model_dump()
     assert "update" not in data  # no mutable-state field snuck in
     assert data["system_version"] == "BuildCon ERP v2"

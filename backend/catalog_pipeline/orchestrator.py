@@ -155,8 +155,8 @@ async def import_accepted(job: dict, user_id: str, blob_map: dict[str, str] | No
         # Autocreate brand if missing
         from models import Brand
         b = Brand(name=supplier, slug=supplier.lower(), country=None, floor_id=floor_id)
-        await db.brands.insert_one(b.dict())
-        brand_doc = b.dict()
+        await db.brands.insert_one(b.model_dump())
+        brand_doc = b.model_dump()
 
     # Per-row brand override: AXOR ships inside Hansgrohe supplier files but is
     # a genuinely separate premium brand — never merge the two. Any row whose
@@ -177,8 +177,8 @@ async def import_accepted(job: dict, user_id: str, blob_map: dict[str, str] | No
         if not doc:
             from models import Brand
             b = Brand(name=name, slug=name.lower(), country=None, floor_id=floor_id)
-            await db.brands.insert_one(b.dict())
-            doc = b.dict()
+            await db.brands.insert_one(b.model_dump())
+            doc = b.model_dump()
         brand_cache[name] = doc
         return doc
 
@@ -220,8 +220,8 @@ async def import_accepted(job: dict, user_id: str, blob_map: dict[str, str] | No
                     continue
                 slug = re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-") or "misc"
                 c = Category(name=label, slug=slug, floor_id=floor_id)
-                await db.categories.insert_one(c.dict())
-                cat = c.dict()
+                await db.categories.insert_one(c.model_dump())
+                cat = c.model_dump()
                 cat_by_name[label.lower()] = cat
 
             mrp = float(r["mrp"])
@@ -350,7 +350,7 @@ async def import_accepted(job: dict, user_id: str, blob_map: dict[str, str] | No
                     "job_id": job_id, "product_id": p.id, "was_new": True,
                     "previous": None, "created_at": datetime.now(timezone.utc).isoformat(),
                 })
-            await db.products.insert_one(p.dict())
+            await db.products.insert_one(p.model_dump())
             await _upload_supplier_images(
                 resolved_images, image_meta, image_quality,
                 product_id=p.id, family_key=family_key,

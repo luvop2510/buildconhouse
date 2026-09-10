@@ -88,7 +88,7 @@ async def backfill(*, dry_run: bool) -> dict:
             # durable before the per-PO loop runs — a crash partway through
             # the loop still leaves a valid document a retry can find above.
             if not dry_run:
-                await db.customer_orders.insert_one(customer_order.dict())
+                await db.customer_orders.insert_one(customer_order.model_dump())
             customer_orders_created += 1
 
         total_products, total_boxes = 0, 0.0
@@ -180,7 +180,7 @@ async def backfill(*, dry_run: bool) -> dict:
                         tile_name=line_item.get("name", ""), qty=qty, remaining_qty=0,
                         created_by="system-backfill", created_by_name="Backfill script", auto_created=True,
                     )
-                    await db.ready_batches.insert_one(batch.dict())
+                    await db.ready_batches.insert_one(batch.model_dump())
                     new_chalan_items.append(
                         TileChalanItem(po_item_id=line_item["id"], tile_name=line_item.get("name", ""), boxes=qty, quantity=qty)
                     )
@@ -217,8 +217,8 @@ async def backfill(*, dry_run: bool) -> dict:
                 chalan.dispatch_id = dispatch.id
                 if old_chalan.get("stage") == "at_godown":
                     dispatch.godown_received_at = old_chalan.get("created_at")
-                await db.chalans.insert_one(chalan.dict())
-                await db.dispatches.insert_one(dispatch.dict())
+                await db.chalans.insert_one(chalan.model_dump())
+                await db.dispatches.insert_one(dispatch.model_dump())
 
             po_status = rollup_status(item_statuses)
             brands.append(TileCustomerOrderBrand(
@@ -274,9 +274,9 @@ async def backfill(*, dry_run: bool) -> dict:
         # single insert_one this used to be at the very end.
         if not dry_run:
             await db.customer_orders.update_one({"id": customer_order.id}, {"$set": {
-                "brands": [b.dict() for b in brands], "total_products": total_products, "total_boxes": total_boxes,
+                "brands": [b.model_dump() for b in brands], "total_products": total_products, "total_boxes": total_boxes,
                 "overall_status": customer_order.overall_status,
-                "dashboard_summary": customer_order.dashboard_summary.dict(),
+                "dashboard_summary": customer_order.dashboard_summary.model_dump(),
             }})
 
     return {

@@ -32,7 +32,7 @@ export function useBp() {
  */
 export function quotationBuilderLayout(containerWidth: number, railCollapsed: boolean) {
   const threePane = containerWidth >= 1180;
-  const twoPane = !threePane && containerWidth >= 820;
+  const twoPane = !threePane && containerWidth >= 740;
 
   return {
     threePane,

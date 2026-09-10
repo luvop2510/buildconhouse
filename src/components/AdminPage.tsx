@@ -39,7 +39,7 @@ export function AdminPage({
   const horizontalPadding = gutter;
 
   return (
-    <View style={{ flex: 1, backgroundColor: color.surface }}>
+    <View style={{ flex: 1, backgroundColor: color.canvas }}>
       <PageHeader
         title={title}
         subtitle={subtitle || undefined}

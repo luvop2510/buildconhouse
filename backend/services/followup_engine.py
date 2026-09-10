@@ -512,7 +512,7 @@ async def _persist_desired_followups(
         else:
             f = Followup(source_key=key, is_automated=True, **fields)
             try:
-                await db.followups.insert_one(f.dict())
+                await db.followups.insert_one(f.model_dump())
             except DuplicateKeyError:
                 # Belt and braces against a concurrent writer between the read
                 # above and this insert. One card must never be able to abort

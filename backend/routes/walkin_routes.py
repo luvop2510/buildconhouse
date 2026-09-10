@@ -320,7 +320,7 @@ async def update_walkin(walkin_id: str, body: WalkInUpdate, user: UserPublic = D
     doc = await db.walkins.find_one(floor_query(user, {"id": walkin_id}), {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Walk-in not found")
-    patch = body.dict(exclude_unset=True)
+    patch = body.model_dump(exclude_unset=True)
     if patch.get("status") == "lost":
         resulting_notes = patch.get("notes", doc.get("notes"))
         if not str(resulting_notes or "").strip():

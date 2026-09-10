@@ -93,3 +93,14 @@ jobs:
         run: npm run build
       - name: Mobile initial-JavaScript budget
         run: npm run test:mobile-budget
+      - name: Install audit browsers
+        run: npx playwright install --with-deps chromium firefox webkit
+      - name: Release browser journeys and responsive audit
+        run: npm run test:e2e:audit
+      - name: Preserve browser audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-audit
+          path: output/playwright
+          retention-days: 14

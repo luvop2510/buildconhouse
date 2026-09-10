@@ -64,6 +64,17 @@ function familyCardToProduct(family: CatalogFamily): Product | null {
     brand_id: family.brand_id,
     family_key: family.family_key || null,
     images: family.sample_image ? [family.sample_image] : representative.image ? [representative.image] : [],
+    finish: representative.finish ?? null,
+    finish_code: representative.finish_code ?? null,
+    variant_label: representative.variant_label ?? null,
+    colour: representative.colour ?? representative.color ?? null,
+    size: representative.size ?? null,
+    stock: representative.stock ?? 0,
+    dimensions: representative.dimensions ?? null,
+    material: representative.material ?? null,
+    warranty: representative.warranty ?? null,
+    specs: representative.specs ?? null,
+    description: representative.description ?? null,
     variants,
   };
 }

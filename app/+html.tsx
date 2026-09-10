@@ -21,6 +21,17 @@ export default function Root({ children }: PropsWithChildren) {
         <style
           dangerouslySetInnerHTML={{
             __html: `
+              html { color-scheme: light; }
+              body { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+              :is(button, a, input, textarea, select, [role="button"], [role="link"], [role="tab"], [role="checkbox"], [tabindex]):focus-visible {
+                outline: 3px solid #0066CC !important;
+                outline-offset: 3px !important;
+              }
+              :is(input, textarea)::placeholder { opacity: 1; }
+              :is(button, [role="button"], [role="tab"]) { touch-action: manipulation; }
+              @media (prefers-reduced-motion: reduce) {
+                *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+              }
               body > div:first-child { position: fixed !important; top: 0; left: 0; right: 0; bottom: 0; }
               [role="tablist"] [role="tab"] * { overflow: visible !important; }
               [role="heading"], [role="heading"] * { overflow: visible !important; }

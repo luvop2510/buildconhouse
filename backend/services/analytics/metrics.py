@@ -57,7 +57,7 @@ def revenue_pipeline(match: dict) -> list[dict]:
     ]
 
 
-def line_revenue_pipeline(match: dict, group_by: str, limit: int = 50) -> list[dict]:
+def line_revenue_pipeline(match: dict, group_by: str, limit: int | None = 50) -> list[dict]:
     """Revenue grouped by a line-level field.
 
     Sums items.net_amount — the denormalized post-discount total — so brand,
@@ -83,8 +83,7 @@ def line_revenue_pipeline(match: dict, group_by: str, limit: int = 50) -> list[d
             "customers": {"$size": "$customers"},
         }},
         {"$sort": {"revenue": -1}},
-        {"$limit": limit},
-    ]
+    ] + ([{"$limit": limit}] if limit is not None else [])
 
 
 def outstanding_pipeline(match: dict) -> list[dict]:

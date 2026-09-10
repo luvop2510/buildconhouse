@@ -40,6 +40,7 @@ const SORT_OPTIONS: { k: SortKey; label: string; icon: React.ComponentProps<type
 export function ProductExplorer({ showCompactFilters = true }: { showCompactFilters?: boolean }) {
   const b = useBuilder();
   const [paneWidth, setPaneWidth] = useState(0);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const numCols = quotationGridColumns(paneWidth);
   // The full-screen mobile/tablet picker needs compact cards so two complete
   // rows fit below its fixed controls. Keep the larger product imagery in the
@@ -95,13 +96,13 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
         if (next !== paneWidth) setPaneWidth(next);
       }}
     >
-      <View style={styles.head}>
+      <View style={[styles.head, showCompactFilters && styles.headCompact]}>
         <View style={styles.crumbs}>
-          <Text style={styles.crumb}>{brandName}</Text>
+          <Text style={styles.crumb} numberOfLines={1}>{brandName}</Text>
           {catName ? (
             <>
               <Feather name="chevron-right" size={12} color={colors.onSurfaceMuted} />
-              <Text style={[styles.crumb, styles.crumbActive]}>{catName}</Text>
+              <Text style={[styles.crumb, styles.crumbActive]} numberOfLines={1}>{catName}</Text>
             </>
           ) : null}
           <Text style={styles.crumbCount}>· {b.productTotal} products</Text>
@@ -114,19 +115,32 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
             value={b.q}
             onChangeText={b.setQ}
             onSubmitEditing={() => commitSearch(b.q)}
-            placeholder={Platform.OS === "web" ? "Search products · SKU · brand · finish · color · ⌘K" : "Search products"}
+            accessibilityLabel="Search products by name, SKU or finish"
+            placeholder={showCompactFilters ? "Search products, SKU or finish" : "Search products · SKU · finish · ⌘K"}
             placeholderTextColor={colors.onSurfaceMuted}
-            style={styles.searchInput}
+            style={[styles.searchInput, showCompactFilters && { fontSize: 16 }]}
             testID="explorer-search"
             returnKeyType="search"
           />
           {b.q ? (
-            <Pressable hitSlop={8} onPress={() => b.setQ("")} testID="explorer-search-clear">
+            <Pressable accessibilityRole="button" accessibilityLabel="Clear product search" style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }} onPress={() => b.setQ("")} testID="explorer-search-clear">
               <Feather name="x" size={14} color={colors.onSurfaceMuted} />
             </Pressable>
           ) : null}
         </View>
 
+        {showCompactFilters ? <View style={styles.filterToolbar}>
+          <Pressable accessibilityRole="button" accessibilityState={{ expanded: filtersOpen }}
+            accessibilityLabel="Filters and sort" testID="explorer-filter-toggle" onPress={() => setFiltersOpen(v => !v)} style={styles.filterTrigger}>
+            <Feather name="sliders" size={15} color={colors.onSurface} />
+            <Text style={styles.filterTriggerLabel}>Filters & sort{b.selectedBrandId || b.selectedCategoryId ? " · Active" : ""}</Text>
+            <Feather name={filtersOpen ? "chevron-up" : "chevron-down"} size={13} color={colors.onSurface} />
+          </Pressable>
+          {b.selectedBrandId || b.selectedCategoryId || b.q ? <Pressable accessibilityRole="button" accessibilityLabel="Clear all product filters" onPress={() => { b.setSelectedBrandId(null); b.setSelectedCategoryId(null); b.setQ(""); }} style={styles.filterTrigger}>
+            <Text style={styles.filterTriggerLabel}>Clear</Text>
+          </Pressable> : <Text style={styles.filterHint}>{SORT_OPTIONS.find(o => o.k === b.sortKey)?.label}</Text>}
+        </View> : null}
+        {!showCompactFilters || filtersOpen ? <ScrollView style={showCompactFilters ? { maxHeight: 220 } : undefined} contentContainerStyle={{ gap: 8 }} keyboardShouldPersistTaps="handled">
         {/* Mobile-only: brand + category selectors (tablet/desktop already show
             these permanently in BrandRail alongside the grid, so this block is
             redundant there and intentionally hidden). Keeps the phone catalog
@@ -248,6 +262,7 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
             </ScrollView>
           </View>
         ) : null}
+        </ScrollView> : null}
       </View>
 
       <FlatList
@@ -257,13 +272,14 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
         style={{ flex: 1, minHeight: 0 }}
         columnWrapperStyle={numCols > 1 ? { gap: 12 } : undefined}
         keyExtractor={(p) => p.id}
-        contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 32 }}
+        contentContainerStyle={{ padding: showCompactFilters ? 12 : 16, gap: 12, paddingBottom: 24 }}
         keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => (
           <ProductGridCard
             product={item}
             compact={compactCards}
             favourite={b.favouriteIds.includes(item.id)}
+            addedQty={b.s.lines.filter(l => l.room === b.s.activeRoom && (l.product_id === item.id || item.variants?.some(v => v.id === l.product_id))).reduce((sum, l) => sum + l.qty, 0)}
             onToggleFav={() => b.toggleFavourite(item.id)}
             onQuickAdd={(p, v) => b.addFromProduct(p, v)}
             onOpenModal={(p) => b.openProductModal(p)}
@@ -318,29 +334,29 @@ type CardProps = {
   product: Product;
   compact: boolean;
   favourite: boolean;
+  addedQty: number;
   onToggleFav: () => void;
   onQuickAdd: (p: Product, v?: ProductVariant) => void;
   onOpenModal: (p: Product) => void;
 };
 
-function ProductGridCardImpl({ product, compact, favourite, onToggleFav, onQuickAdd, onOpenModal }: CardProps) {
+function ProductGridCardImpl({ product, compact, favourite, addedQty, onToggleFav, onQuickAdd, onOpenModal }: CardProps) {
   const badges: { label: string; tone: "popular" | "frequent" | "recent" }[] = [];
   if (product.popular) badges.push({ label: "Popular", tone: "popular" });
   else if (product.frequently_used) badges.push({ label: "Frequently used", tone: "frequent" });
   else if (product.recently_used) badges.push({ label: "Recent", tone: "recent" });
 
   return (
-    <Pressable
-      onPress={() => onOpenModal(product)}
-      onLongPress={() => onQuickAdd(product)}
-      delayLongPress={220}
-      style={({ pressed }) => [styles.card, compact && styles.cardCompact, pressed && { transform: [{ scale: 0.995 }] }]}
+    <View
+      style={[styles.card, compact && styles.cardCompact]}
       testID={`product-card-${product.sku}`}
     >
       <View style={[styles.cardMedia, compact && styles.cardMediaCompact]}>
-        <ProductImage source={productImageList(product)} style={styles.thumb} fallbackLabel={product.sku} />
+        <Pressable accessibilityRole="button" accessibilityLabel={`View ${product.name}`} onPress={() => onOpenModal(product)} style={styles.thumb}>
+          <ProductImage source={productImageList(product)} style={styles.thumb} fallbackLabel={product.sku} />
+        </Pressable>
         {/* Overlay: badges + fav heart */}
-        <View style={styles.badgeRow}>
+        <View pointerEvents="none" style={styles.badgeRow}>
           {badges.slice(0, 1).map((bg) => (
             <View
               key={bg.label}
@@ -365,7 +381,7 @@ function ProductGridCardImpl({ product, compact, favourite, onToggleFav, onQuick
           ))}
         </View>
         <Pressable
-          hitSlop={8}
+          accessibilityRole="button" accessibilityLabel={`${favourite ? "Remove" : "Save"} ${product.name} ${favourite ? "from" : "to"} favorites`} accessibilityState={{ selected: favourite }}
           onPress={onToggleFav}
           style={styles.favBtn}
           testID={`fav-${product.sku}`}
@@ -375,7 +391,7 @@ function ProductGridCardImpl({ product, compact, favourite, onToggleFav, onQuick
       </View>
 
       <View style={[styles.cardBody, compact && styles.cardBodyCompact]}>
-        <Text style={[styles.cardName, compact && styles.cardNameCompact]} numberOfLines={compact ? 1 : 2}>{product.name}</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Details for ${product.name}`} onPress={() => onOpenModal(product)}><Text style={[styles.cardName, compact && styles.cardNameCompact]} numberOfLines={2}>{product.name}</Text></Pressable>
         <Text style={styles.cardSku} numberOfLines={1}>
           {product.sku}{product.brand_name ? ` · ${product.brand_name}` : ""}
         </Text>
@@ -387,39 +403,30 @@ function ProductGridCardImpl({ product, compact, favourite, onToggleFav, onQuick
               <Text style={styles.mrp} numberOfLines={1} ellipsizeMode="clip">{money(product.mrp)}</Text>
             ) : null}
           </View>
-          <QuickAddButton
-            onAdd={() => onQuickAdd(product)}
-            toastText={`${product.name} added to quotation`}
-            testID={`add-${product.sku}`}
-            circular={compact}
-            circularSize={28}
-            iconSize={14}
-          />
         </View>
+        <QuickAddButton onAdd={() => onQuickAdd(product)} toastText={`${product.name} added to quotation`}
+          testID={`add-${product.sku}`} style={styles.cardAdd} />
+        {addedQty > 0 ? <Text accessibilityLiveRegion="polite" style={styles.addedLabel}>{addedQty} in this room</Text> : null}
 
         <View style={[styles.variantSlot, compact && styles.variantSlotCompact]}>
-          <VariantSwatchStrip
+          {compact && product.variants?.length ? <Pressable accessibilityRole="button" accessibilityLabel={`Choose finish for ${product.name}`} onPress={() => onOpenModal(product)} style={styles.chooseFinish}>
+            <Text style={styles.finishLabel}>{product.variants.length} options · Choose finish</Text>
+            <Feather name="chevron-right" size={12} color={colors.onSurfaceSecondary} />
+          </Pressable> : <VariantSwatchStrip
             product={product}
             onSelect={(v) => {
               onQuickAdd(product, v);
               toast.success(`${product.name} · ${v.finish || v.color || v.size || v.sku} added`);
             }}
             paddingLeft={0}
-          />
+          />}
         </View>
       </View>
-    </Pressable>
+    </View>
   );
 }
 
-const ProductGridCard = memo(
-  ProductGridCardImpl,
-  (a, b) =>
-    a.product.id === b.product.id &&
-    a.product.price === b.product.price &&
-    a.compact === b.compact &&
-    a.favourite === b.favourite,
-);
+const ProductGridCard = memo(ProductGridCardImpl);
 
 // -----------------------------------------------------------------------------
 // FilterPill — compact brand/category selector chip used in the phone-only
@@ -433,7 +440,7 @@ function FilterPill({
   active?: boolean; onPress?: () => void; testID?: string;
 }) {
   return (
-    <Pressable onPress={onPress} testID={testID} style={[styles.filterPill, active && styles.filterPillActive]}>
+    <Pressable accessibilityRole="button" accessibilityState={{ selected: !!active }} onPress={onPress} testID={testID} style={[styles.filterPill, active && styles.filterPillActive]}>
       {logo ? (
         <View style={styles.filterPillLogoWrap}>
           <Image source={logo} style={{ width: "100%", height: "100%" }} contentFit="cover" />
@@ -458,15 +465,24 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
     backgroundColor: colors.surfaceSecondary, gap: spacing.sm,
   },
+  headCompact: { paddingHorizontal: 12, paddingVertical: 8, gap: 6 },
+  filterToolbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  filterTrigger: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 8 },
+  filterTriggerLabel: { fontSize: 12, fontWeight: "600", color: colors.onSurface },
+  filterHint: { fontSize: 11, color: colors.onSurfaceSecondary },
+  cardAdd: { minHeight: 44, alignItems: "center", justifyContent: "center", marginTop: 4 },
+  addedLabel: { fontSize: 11, color: ds.brassDeep, fontWeight: "600" },
+  chooseFinish: { minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 4 },
+  finishLabel: { flex: 1, fontSize: 11, color: colors.onSurfaceSecondary },
   crumbs: { flexDirection: "row", alignItems: "center", gap: 6 },
-  crumb: { fontSize: 13, fontWeight: "600", color: colors.onSurfaceSecondary },
+  crumb: { flexShrink: 1, fontSize: 13, fontWeight: "600", color: colors.onSurfaceSecondary },
   crumbActive: { color: colors.onSurface },
   crumbCount: { fontSize: 12, color: colors.onSurfaceMuted, marginLeft: 4 },
 
   searchWrap: {
     flexDirection: "row", alignItems: "center", gap: 8,
     borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
-    paddingHorizontal: 12, borderRadius: radius.md, minHeight: 38,
+    paddingHorizontal: 12, borderRadius: radius.md, minHeight: 44,
   },
   searchInput: { flex: 1, fontSize: 13, paddingVertical: 8, color: colors.onSurface },
 
@@ -474,7 +490,7 @@ const styles = StyleSheet.create({
   recentLabel: { fontSize: 10, fontWeight: "700", color: colors.onSurfaceMuted, letterSpacing: 0.8, textTransform: "uppercase" },
   recentChip: {
     flexDirection: "row", alignItems: "center", gap: 5,
-    paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.pill,
+    minHeight: 44, paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.pill,
     backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
   },
   recentChipLabel: { fontSize: 11, fontWeight: "600", color: colors.onSurfaceSecondary, maxWidth: 140 },
@@ -483,7 +499,7 @@ const styles = StyleSheet.create({
 
   filterPill: {
     flexDirection: "row", alignItems: "center", gap: 6,
-    paddingHorizontal: 11, paddingLeft: 11, height: 34, borderRadius: 999,
+    paddingHorizontal: 11, paddingLeft: 11, minHeight: 44, borderRadius: 999,
     borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
   },
   filterPillActive: { backgroundColor: colors.brand, borderColor: colors.brand },
@@ -500,7 +516,7 @@ const styles = StyleSheet.create({
   mobileSortContent: { gap: 6, paddingRight: 4 },
   sortChip: {
     flexDirection: "row", alignItems: "center", gap: 4,
-    paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.pill,
+    minHeight: 44, paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.pill,
     backgroundColor: colors.surfaceTertiary,
   },
   sortChipActive: { backgroundColor: colors.brand },
@@ -523,7 +539,7 @@ const styles = StyleSheet.create({
   badgeText: { fontSize: 10, fontWeight: "700", letterSpacing: 0.2 },
   favBtn: {
     position: "absolute", top: 8, right: 8,
-    width: 26, height: 26, borderRadius: 999, backgroundColor: "rgba(255,255,255,0.92)",
+    width: 44, height: 44, borderRadius: 999, backgroundColor: "rgba(255,255,255,0.92)",
     alignItems: "center", justifyContent: "center",
   },
   // Fixed-slot layout: cardName reserves 2 lines' worth of height always
@@ -533,7 +549,7 @@ const styles = StyleSheet.create({
   cardBody: { padding: 10, gap: 6 },
   cardBodyCompact: { padding: 8, gap: 3 },
   cardName: { fontSize: 13, fontWeight: "600", color: colors.onSurface, lineHeight: 17, minHeight: 34 },
-  cardNameCompact: { fontSize: 12, lineHeight: 15, minHeight: 15 },
+  cardNameCompact: { fontSize: 13, lineHeight: 17, minHeight: 34 },
   cardSku: { fontSize: 11, color: colors.onSurfaceMuted, fontVariant: ["tabular-nums"] },
   priceRow: { flexDirection: "row", alignItems: "center", gap: 6, minHeight: 32 },
   priceCol: { flex: 1, minWidth: 0 },

@@ -802,7 +802,7 @@ async def _cancel_parent_po_if_empty(po: dict, user: UserPublic, now: str, reaso
         from_status=po.get("status"), to_status="cancelled",
         by_user_id=user.id, by_user_name=user.full_name,
         note="All purchase items cancelled" + (f": {reason}" if reason else ""),
-    ).dict()
+    ).model_dump()
     result = await db.purchase_orders.update_one(
         {
             "id": po["id"],
@@ -838,7 +838,7 @@ async def _cancel_item(
     now = now_iso()
     cancellation = PurchaseCancellationEvent(
         by_user_id=user.id, by_user_name=user.full_name, reason=reason,
-    ).dict()
+    ).model_dump()
     # The element match is a compare-and-set guard: a concurrent cancellation
     # or delivery move cannot overwrite this item's active state.
     result = await db.purchase_orders.update_one(
@@ -941,7 +941,7 @@ async def _sync_po_status_with_stages(po_id: str, user: UserPublic) -> Optional[
         from_status=fresh.get("status"), to_status=target,
         by_user_id=user.id, by_user_name=user.full_name,
         note="Auto-synced from Material Tracker stage change",
-    ).dict()
+    ).model_dump()
     set_fields: dict = {"status": target, "updated_at": now}
     await db.purchase_orders.update_one(
         {"id": po_id},
@@ -1048,7 +1048,7 @@ async def _attempt_stage_change(
             by_user_id=user.id, by_user_name=user.full_name,
             note=note, action="split_in",
             ref_item_id=item_id, ref_po_id=po["id"], qty=move_qty,
-        ).dict()
+        ).model_dump()
         new_item = dict(it)
         new_item["id"] = new_item_id
         new_item["qty"] = move_qty
@@ -1067,7 +1067,7 @@ async def _attempt_stage_change(
             note=note or f"Split {move_qty} of {full_qty} → {STAGE_LABELS.get(to_stage, to_stage)}",
             action="split_out",
             ref_item_id=new_item_id, ref_po_id=po["id"], qty=move_qty,
-        ).dict()
+        ).model_dump()
 
         # Optimistic concurrency: the filter requires items.qty to still equal
         # the value this request read (`full_qty`). Two concurrent partial
@@ -1139,7 +1139,7 @@ async def _attempt_stage_change(
         from_stage=from_stage, to_stage=to_stage,
         by_user_id=user.id, by_user_name=user.full_name,
         note=note, action="move", qty=move_qty,
-    ).dict()
+    ).model_dump()
 
     # Same $elemMatch CAS guard as the partial-move branch, applied to `stage`
     # instead of `qty` — lower severity here (a lost update just means a
@@ -1358,7 +1358,7 @@ async def _reconcile_shortage_for_line(
             shortage_id = existing["id"]
         else:
             doc = PurchaseShortage(**fields)
-            await db.purchase_shortages.insert_one(doc.dict())
+            await db.purchase_shortages.insert_one(doc.model_dump())
             shortage_id = doc.id
         await log_event(
             event_type="purchase.shortage_flagged",
@@ -1550,13 +1550,13 @@ async def transfer_item(
                 from_status=None, to_status="draft",
                 by_user_id=user.id, by_user_name=user.full_name,
                 note=f"Customer transfer from {po.get('number')}",
-            ).dict()
+            ).model_dump()
         ],
     )
-    await db.purchase_orders.insert_one(dest_po.dict())
+    await db.purchase_orders.insert_one(dest_po.model_dump())
     auto_quotation.source_purchase_order_id = dest_po.id
     auto_quotation.source_item_id = dest_item_id
-    await db.quotations.insert_one(auto_quotation.dict())
+    await db.quotations.insert_one(auto_quotation.model_dump())
     await log_event(
         event_type="quotation.auto_created_from_transfer",
         entity_type="quotation", entity_id=auto_quotation.id, actor=user,
@@ -1580,7 +1580,7 @@ async def transfer_item(
         note=body.reason or f"Transferred {body.qty} → {new_cust.get('name')}",
         action="transfer_out",
         ref_item_id=dest_item_id, ref_po_id=dest_po.id,
-    ).dict()
+    ).model_dump()
 
     if remaining <= 1e-6:
         # Push an audit event onto the item, then pull it from the array.
@@ -1757,10 +1757,10 @@ async def create_po_for_shortage(
                 from_status=None, to_status="draft",
                 by_user_id=user.id, by_user_name=user.full_name,
                 note="Created from a shortage recommendation",
-            ).dict()
+            ).model_dump()
         ],
     )
-    await db.purchase_orders.insert_one(new_po.dict())
+    await db.purchase_orders.insert_one(new_po.model_dump())
     await db.purchase_shortages.update_one(
         {"id": shortage_id},
         {"$set": {
@@ -2056,7 +2056,7 @@ async def generate_chalan(
         receiver_name=body.receiver_name, sender_name=body.sender_name,
         transport=body.transport, remarks=body.remarks,
     )
-    chalan_doc = chalan.dict()
+    chalan_doc = chalan.model_dump()
     chalan_doc["request_key"] = request_key
     now = now_iso()
     # Optimistic concurrency: the filter requires the chalans array to still

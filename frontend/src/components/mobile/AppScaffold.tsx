@@ -27,12 +27,12 @@ export function AppScaffold({
       style={[{ flex: 1, minWidth: 0, backgroundColor: color.canvas }, style]}
     >
       <View style={{ flex: 1, minWidth: 0, minHeight: 0 }}>{children}</View>
-      <SafeAreaView
+      {bottomNavigation ? <SafeAreaView
         edges={["bottom"]}
         style={{ backgroundColor: color.canvas, borderTopWidth: layout.hairline, borderTopColor: color.line }}
       >
         {bottomNavigation}
-      </SafeAreaView>
+      </SafeAreaView> : null}
     </SafeAreaView>
   );
 }

@@ -4,66 +4,25 @@
 // Everything downstream (primitives, screens) references these tokens; no hardcoded hex.
 
 import { Platform } from "react-native";
+import { color } from "@/src/design/tokens";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Palette (raw)
 // ─────────────────────────────────────────────────────────────────────────────
-// ⚠️ SHOWROOM REMAP — the "blue" and "gray" keys are retained for backwards
-// compatibility, but their VALUES now belong to the Showroom language
-// (src/design/tokens.ts): warm neutrals, ink action, muted statuses.
-// New code must import from @/src/design/tokens instead of this file.
+// Compatibility palette: source shared roles from the canonical design tokens.
+// Existing imports keep working without maintaining a second visual system.
 const palette = {
-  // Brass is the only accent and every primary CTA uses it.
-  blue50:  "#F1EAE0",
-  blue100: "#E6D8C2",
-  blue200: "#D9CCB8",
-  blue500: "#8C7351",
-  blue600: "#8C7351",   // primary action — brushed brass
-  blue700: "#6E5A3F",   // hover
-  blue900: "#6E5A3F",
-
-  // Warm architectural neutrals
-  gray0:   "#FFFFFF",   // cards
-  gray15:  "#F7F5F1",   // page background — warm gallery
-  gray25:  "#F2EFEA",   // hover fill / subtle surface
-  gray50:  "#F0EDE7",
-  gray75:  "#EBE7E0",
-  gray100: "#E8E4DD",   // default hairline
-  gray150: "#D8D3C9",
-  gray200: "#C8C2B6",
-  gray400: "#9B958A",
-  gray500: "#8B8579",
-  gray600: "#6B665D",
-  gray700: "#57534B",
-  gray800: "#2E2B25",
-  gray900: "#1D1B16",
-
-  // Semantic families — muted, architectural
-  green50:  "#EAF1EC",
-  green100: "#D6E5DB",
-  green600: "#3E7C55",
-  green700: "#356A49",
-
-  amber50:  "#F6EEDF",
-  amber100: "#EFE0C4",
-  amber600: "#A2691F",
-  amber700: "#8F5A1C",
-
-  red50:  "#F7ECE9",
-  red100: "#F0DAD4",
-  red600: "#AE4A3D",
-  // Phase 4 · Batch 1 (Production UI Consistency & UX Audit): was "#9A3E34"
-  // — a slightly different red than src/design/tokens.ts's `pal.risk`
-  // ("#AE4A3D"), so the "danger" color rendered two different shades
-  // depending on which design system drew it (Button danger variant vs.
-  // Showroom's danger button, status badges, etc). Unified to one value —
-  // single source of truth for every danger/error/rejected/overdue surface.
-  red700: "#AE4A3D",
-
-  sky50:  "#EEF0F1",
-  sky100: "#DEE2E4",
-  sky600: "#4F6B77",
-  sky700: "#425963",
+  blue50: color.brassTint, blue100: color.brassTint, blue200: color.brassLine,
+  blue500: color.action, blue600: color.action, blue700: color.actionHover, blue900: color.actionHover,
+  gray0: color.surface, gray15: color.canvas, gray25: color.sunken,
+  gray50: color.sunken, gray75: color.sunkenDeep, gray100: color.line,
+  gray150: color.lineStrong, gray200: color.lineStrong, gray400: color.inkFaint,
+  gray500: color.inkSoft, gray600: color.inkMid, gray700: color.inkMid,
+  gray800: color.ink, gray900: color.ink,
+  green50: color.okTint, green100: "#D6E5DB", green600: color.ok, green700: color.ok,
+  amber50: color.warnTint, amber100: "#EFE0C4", amber600: color.warn, amber700: color.warn,
+  red50: color.riskTint, red100: "#F0DAD4", red600: color.risk, red700: color.risk,
+  sky50: color.brassTint, sky100: color.brassLine, sky600: color.action, sky700: color.actionHover,
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -101,8 +60,8 @@ export const colors = {
   divider: palette.gray100,
 
   // Focus & selection — brass guidance (Showroom)
-  focusRing: "rgba(140, 115, 81, 0.42)",
-  selection: "#F1EAE0",
+  focusRing: color.focus,
+  selection: color.brassTint,
 
   // Overlays & scrims
   overlay: "rgba(26, 23, 18, 0.44)",

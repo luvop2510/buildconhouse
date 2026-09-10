@@ -80,17 +80,17 @@ def test_standard_pdf_prints_indian_rupees_for_large_amounts():
 def test_standard_item_tables_fill_the_landscape_printable_width():
     source = Path(pdf_generator.__file__).read_text()
 
-    assert "item_widths = [12 * mm, 25 * mm, 40 * mm, 77 * mm, 24 * mm, 12 * mm, 25 * mm, 26 * mm, 26 * mm]" in source
-    assert "item_widths = [12 * mm, 25 * mm, 40 * mm, 110 * mm, 28 * mm, 12 * mm, 40 * mm]" in source
+    assert "item_widths = [12 * mm, 25 * mm, 43 * mm, 74 * mm, 24 * mm, 12 * mm, 25 * mm, 26 * mm, 26 * mm]" in source
+    assert "item_widths = [12 * mm, 25 * mm, 43 * mm, 107 * mm, 28 * mm, 12 * mm, 40 * mm]" in source
 
 
 def test_sanitary_item_text_columns_are_center_aligned():
     """Article, description, rate and total must share the table's center axis."""
     source = Path(pdf_generator.__file__).read_text()
 
-    assert '"itemDescription", parent=base["Normal"], fontName="Helvetica", fontSize=6.6, leading=7.15, textColor=INK, alignment=1' in source
-    assert '"itemSku", parent=base["Normal"], fontName="Helvetica", fontSize=MIN_DETAIL_FONT_SIZE_PT, leading=6.9, textColor=INK, alignment=1' in source
-    assert '"itemMoney", parent=base["Normal"], fontName="Helvetica", fontSize=MIN_DETAIL_FONT_SIZE_PT, leading=7.1, textColor=INK, alignment=1' in source
+    assert '"itemDescription", parent=base["Normal"], fontName="Helvetica", fontSize=MIN_DETAIL_FONT_SIZE_PT, leading=8.5, textColor=INK, alignment=1' in source
+    assert '"itemSku", parent=base["Normal"], fontName="Helvetica", fontSize=MIN_DETAIL_FONT_SIZE_PT, leading=8.2, textColor=INK, alignment=1' in source
+    assert '"itemMoney", parent=base["Normal"], fontName="Helvetica", fontSize=MIN_DETAIL_FONT_SIZE_PT, leading=8.2, textColor=INK, alignment=1' in source
 
 
 def test_standard_pdf_keeps_supplied_terms_enquiries_and_signature_on_page_one():
@@ -340,7 +340,7 @@ def test_detail_pages_repeat_chrome_keep_content_inside_safe_bounds_and_preserve
 
 def test_detail_copy_is_never_below_the_print_minimum_and_full_fitting_skus_survive():
     source = Path(pdf_generator.__file__).read_text()
-    assert pdf_generator.MIN_DETAIL_FONT_SIZE_PT == 6.5
+    assert pdf_generator.MIN_DETAIL_FONT_SIZE_PT == 7.5
     assert "fontSize=5" not in source
     assert "size='5" not in source
 

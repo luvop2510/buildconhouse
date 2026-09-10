@@ -106,18 +106,20 @@ export function WorkspaceSwitcher() {
             <Pressable
               key={group.key}
               testID={`workspace-group-${group.key}`}
+              accessibilityRole="button"
               accessibilityLabel={group.label}
+              accessibilityState={{ expanded: openGroup === group.key, selected: isActive }}
               hitSlop={layout.hitSlop}
               onPress={() => {
                 setOpenGroup(group.members.length > 1 ? (openGroup === group.key ? null : group.key) : null);
                 // Opens to the first member that actually exists, falling back
                 // to the first entry when the whole group is still roadmap.
-                openMember(group.members.find((m) => m.implemented) || group.members[0]);
+                if (group.members.length === 1) openMember(group.members[0]);
               }}
               style={({ pressed }: any) => ({
                 // 36 with hitSlop rather than a 44 box: a 44px-tall pill row
                 // reads as a second page header stacked above the real one.
-                height: 36,
+                minHeight: 44,
                 justifyContent: "center",
                 paddingHorizontal: spacing.md,
                 borderRadius: radius.pill,
@@ -148,11 +150,13 @@ export function WorkspaceSwitcher() {
               <Pressable
                 key={member.route}
                 testID={`workspace-member-${member.label.toLowerCase().replace(/[^a-z]+/g, "-")}`}
+                accessibilityRole="link"
+                accessibilityState={{ selected: isActive }}
                 accessibilityLabel={member.implemented ? member.label : `${member.label} — coming soon`}
                 hitSlop={layout.hitSlop}
                 onPress={() => openMember(member)}
                 style={({ pressed }: any) => ({
-                  height: 32,
+                  minHeight: 44,
                   justifyContent: "center",
                   paddingHorizontal: spacing.md,
                   borderRadius: radius.pill,

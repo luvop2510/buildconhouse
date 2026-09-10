@@ -1,9 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// BuildCon House · "Showroom" Design System — the single source of truth.
+// BuildCon House · Workspace Design System — the single source of truth.
 //
-// Philosophy: calm, architectural, timeless. 90–95% warm neutral; ink for
-// action; brushed brass ONLY where the eye needs guidance. If a screen feels
-// "gold", brass was overused. If it feels like a gallery, it's right.
+// Calm neutral surfaces, readable system typography and one blue action accent.
+// Legacy brass keys remain aliases so every existing module shares this palette.
 //
 // Every module MUST consume these tokens. Zero local styling downstream.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -11,29 +10,29 @@ import { Platform, StyleSheet } from "react-native";
 
 // ── Raw palette (never import this from screens — use `color`) ──────────────
 const pal = {
-  // Warm architectural neutrals — plaster, bone, limestone, ink.
+  // Neutral surfaces and contrast-tested foregrounds.
   white:   "#FFFFFF",
-  canvas:  "#F7F5F1",  // app background — warm gallery wall
-  sunken:  "#F0EDE7",  // inset fills: inputs, washes, rails
-  sunken2: "#E9E5DE",  // pressed / deeper inset
-  line:    "#E8E4DD",  // hairline
-  line2:   "#D8D3C9",  // emphasized hairline
-  ink:     "#1D1B16",  // warm near-black — text & the primary action
-  ink2:    "#57534B",  // secondary text
-  ink3:    "#8B8579",  // tertiary text, captions
-  ink4:    "#B5AFA3",  // placeholders, disabled
-  inkHover:"#33302A",
+  canvas:  "#F5F5F7",  // app background — warm gallery wall
+  sunken:  "#EEEEF2",  // inset fills: inputs, washes, rails
+  sunken2: "#E4E5EB",  // pressed / deeper inset
+  line:    "#E1E2E7",  // hairline
+  line2:   "#C5C7D0",  // emphasized hairline
+  ink:     "#1D1D1F",  // warm near-black — text & the primary action
+  ink2:    "#515158",  // secondary text
+  ink3:    "#686870",  // tertiary text, captions
+  ink4:    "#787880",  // placeholders, disabled
+  inkHover:"#333336",
 
-  // Brushed brass — the material accent. Guidance & emphasis only.
-  brass:      "#8C7351",
-  brassDeep:  "#6E5A3F",
-  brassTint:  "#F1EAE0",
-  brassLine:  "#D9CCB8",
+  // Action accent. Brass names are retained for source compatibility.
+  brass:      "#0066CC",
+  brassDeep:  "#004F9F",
+  brassTint:  "#EAF2FF",
+  brassLine:  "#BED6F7",
 
   // Muted status hues — always dot+word, never shouting pills.
   ok:      "#3E7C55",
   okTint:  "#EAF1EC",
-  warn:    "#A2691F",
+  warn:    "#8B5A16",
   warnTint:"#F6EEDF",
   risk:    "#AE4A3D",
   riskTint:"#F7ECE9",
@@ -63,7 +62,7 @@ export const color = {
   brassDeep: pal.brassDeep,
   brassTint: pal.brassTint,
   brassLine: pal.brassLine,
-  focus: "rgba(140,115,81,0.45)",
+  focus: "#0066CC",
 
   ok: pal.ok,
   okTint: pal.okTint,
@@ -83,8 +82,8 @@ export const font = {
   medium: Platform.OS === "web" ? "system-ui" : "Inter-Medium",
   semibold: Platform.OS === "web" ? "system-ui" : "Inter-SemiBold",
   bold: Platform.OS === "web" ? "system-ui" : "Inter-Bold",
-  display: Platform.OS === "web" ? "Georgia" : "Fraunces-Light",        // the single serif voice — greetings, auth
-  displayItalic: Platform.OS === "web" ? "Georgia" : "Fraunces-LightItalic",
+  display: Platform.OS === "web" ? "system-ui" : "Inter-SemiBold",        // the single serif voice — greetings, auth
+  displayItalic: Platform.OS === "web" ? "system-ui" : "Inter-Medium",
   serif: Platform.OS === "web" ? "Georgia" : "Fraunces-Regular",
   mono: Platform.select({ ios: "Menlo", android: "monospace", default: "ui-monospace" }) as string,
 } as const;
@@ -95,8 +94,8 @@ const tabular = { fontVariant: ["tabular-nums"] as any };
 
 export const text = {
   // Display — Fraunces. Two places only: greetings and auth. Never in chrome.
-  display:   { fontFamily: font.display, fontSize: 34, lineHeight: 42, letterSpacing: -0.3, color: color.ink } as Style,
-  displaySm: { fontFamily: font.display, fontSize: 27, lineHeight: 34, letterSpacing: -0.2, color: color.ink } as Style,
+  display:   { fontFamily: font.display, fontSize: 34, lineHeight: 42, fontWeight: "600", letterSpacing: -0.8, color: color.ink } as Style,
+  displaySm: { fontFamily: font.display, fontSize: 27, lineHeight: 34, fontWeight: "600", letterSpacing: -0.6, color: color.ink } as Style,
 
   // Titles
   title:    { fontFamily: font.semibold, fontSize: 19, lineHeight: 26, letterSpacing: -0.3, color: color.ink, fontWeight: "600" as const } as Style,

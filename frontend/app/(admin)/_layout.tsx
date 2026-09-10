@@ -754,6 +754,8 @@ function CustomAccessRouteGate({ children }: { children: React.ReactNode }) {
 
 export default function AdminLayout() {
   const { isPhone, isTablet } = useBp();
+  const builderSegments = useSegments() as string[];
+  const focusedQuotation = builderSegments.includes("quotations") && builderSegments.includes("new");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
@@ -776,7 +778,7 @@ export default function AdminLayout() {
         <AppScaffold
           testID="admin-mobile-shell"
           style={{ backgroundColor: color.canvas }}
-          bottomNavigation={<PhoneBar />}
+          bottomNavigation={focusedQuotation ? null : <PhoneBar />}
         >
           <FloorAccessGate><CustomAccessRouteGate><Slot /></CustomAccessRouteGate></FloorAccessGate>
         </AppScaffold>

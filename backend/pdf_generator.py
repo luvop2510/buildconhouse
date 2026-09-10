@@ -103,7 +103,7 @@ AREA_HEADER_BLOCK_MM = 25.75    # brand/area title block + rule + spacers above 
 ITEM_HEADER_ROW_MM = 10.0
 ITEM_TOTAL_ROW_MM = 8.0
 DETAIL_BOTTOM_SAFETY_MM = 8.0
-# Six items keeps a clear, consistent product frame and at least 6.5 pt
+# Six items keeps a clear, consistent product frame and at least 7.5 pt
 # wrapped copy. Seven, seventeen and eighteen products intentionally exercise the
 # continuation-page path instead of shrinking into an unreadable grid.
 MAX_ITEM_ROWS_PER_PAGE = 6
@@ -121,7 +121,10 @@ COMPACT_SPARSE_ITEM_ROW_MM = 25.0
 # This is a print-safety lower bound.  Actual rows use the space available
 # after the footer buffer but are never allowed below it.
 ITEM_ROW_MM = 20.0
-MIN_DETAIL_FONT_SIZE_PT = 6.5
+# Sanitary quotations are frequently printed, carried around a site, and
+# reviewed from arm's length.  Keep every product-table value at a readable
+# print size; pagination already protects that floor by using six rows.
+MIN_DETAIL_FONT_SIZE_PT = 7.5
 SUMMARY_HEADER_ROW_MM = 7.0
 SUMMARY_ROW_MM = 5.6
 SUMMARY_TOTAL_ROW_MM = 6.2
@@ -508,21 +511,23 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
         "brandFallback": ParagraphStyle("brandFallback", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=14, leading=15, textColor=INK),
         "titleRight": ParagraphStyle("titleRight", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=14, leading=16, textColor=INK, alignment=2),
         "areaTitle": ParagraphStyle("areaTitle", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=15.5, leading=17.5, textColor=INK, alignment=2),
-        "label": ParagraphStyle("label", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=6.8, leading=8, textColor=INK),
-        "body": ParagraphStyle("body", parent=base["Normal"], fontName="Helvetica", fontSize=8.4, leading=11.5, textColor=INK),
-        "small": ParagraphStyle("small", parent=base["Normal"], fontName="Helvetica", fontSize=6.7, leading=8, textColor=INK),
-        "terms": ParagraphStyle("terms", parent=base["Normal"], fontName="Helvetica", fontSize=MIN_DETAIL_FONT_SIZE_PT, leading=7.4, textColor=INK),
-        "tiny": ParagraphStyle("tiny", parent=base["Normal"], fontName="Helvetica", fontSize=7.2, leading=8.8, textColor=INK, alignment=1),
-        "itemDescription": ParagraphStyle("itemDescription", parent=base["Normal"], fontName="Helvetica", fontSize=6.6, leading=7.15, textColor=INK, alignment=1, wordWrap="CJK"),
-        "itemSku": ParagraphStyle("itemSku", parent=base["Normal"], fontName="Helvetica", fontSize=MIN_DETAIL_FONT_SIZE_PT, leading=6.9, textColor=INK, alignment=1, wordWrap="CJK"),
-        "itemMoney": ParagraphStyle("itemMoney", parent=base["Normal"], fontName="Helvetica", fontSize=MIN_DETAIL_FONT_SIZE_PT, leading=7.1, textColor=INK, alignment=1),
-        "itemQty": ParagraphStyle("itemQty", parent=base["Normal"], fontName="Helvetica", fontSize=MIN_DETAIL_FONT_SIZE_PT, leading=7.1, textColor=INK, alignment=1),
+        "label": ParagraphStyle("label", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=7.4, leading=8.6, textColor=INK),
+        "body": ParagraphStyle("body", parent=base["Normal"], fontName="Helvetica", fontSize=9.2, leading=11.5, textColor=INK),
+        "small": ParagraphStyle("small", parent=base["Normal"], fontName="Helvetica", fontSize=7.5, leading=9, textColor=INK),
+        "terms": ParagraphStyle("terms", parent=base["Normal"], fontName="Helvetica", fontSize=7.0, leading=8.1, textColor=INK),
+        "tiny": ParagraphStyle("tiny", parent=base["Normal"], fontName="Helvetica", fontSize=7.5, leading=9, textColor=INK, alignment=1),
+        "itemDescription": ParagraphStyle("itemDescription", parent=base["Normal"], fontName="Helvetica", fontSize=MIN_DETAIL_FONT_SIZE_PT, leading=8.5, textColor=INK, alignment=1, wordWrap="CJK"),
+        "itemSku": ParagraphStyle("itemSku", parent=base["Normal"], fontName="Helvetica", fontSize=MIN_DETAIL_FONT_SIZE_PT, leading=8.2, textColor=INK, alignment=1, wordWrap="CJK"),
+        "itemMoney": ParagraphStyle("itemMoney", parent=base["Normal"], fontName="Helvetica", fontSize=MIN_DETAIL_FONT_SIZE_PT, leading=8.2, textColor=INK, alignment=1),
+        "itemQty": ParagraphStyle("itemQty", parent=base["Normal"], fontName="Helvetica", fontSize=MIN_DETAIL_FONT_SIZE_PT, leading=8.2, textColor=INK, alignment=1),
         "section": ParagraphStyle("section", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=10, leading=12, textColor=INK),
-        "cell": ParagraphStyle("cell", parent=base["Normal"], fontName="Helvetica", fontSize=7.4, leading=9, textColor=INK, alignment=1),
-        "cellRight": ParagraphStyle("cellRight", parent=base["Normal"], fontName="Helvetica", fontSize=7.4, leading=9, textColor=INK, alignment=2),
-        "cellCenter": ParagraphStyle("cellCenter", parent=base["Normal"], fontName="Helvetica", fontSize=7.4, leading=9, textColor=INK, alignment=1),
-        "tableHead": ParagraphStyle("tableHead", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=7.4, leading=8.6, textColor=INK, alignment=1),
-        "signature": ParagraphStyle("signature", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=7, leading=8, textColor=INK, alignment=2),
+        "cell": ParagraphStyle("cell", parent=base["Normal"], fontName="Helvetica", fontSize=8.0, leading=9.4, textColor=INK, alignment=1),
+        "cellRight": ParagraphStyle("cellRight", parent=base["Normal"], fontName="Helvetica", fontSize=8.0, leading=9.4, textColor=INK, alignment=2),
+        "cellCenter": ParagraphStyle("cellCenter", parent=base["Normal"], fontName="Helvetica", fontSize=8.0, leading=9.4, textColor=INK, alignment=1),
+        # 7.5 pt is the largest readable header size that keeps "PRODUCT
+        # IMAGE" on one line in its fixed 25 mm image column.
+        "tableHead": ParagraphStyle("tableHead", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=7.5, leading=9.0, textColor=INK, alignment=1),
+        "signature": ParagraphStyle("signature", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=7.5, leading=9, textColor=INK, alignment=2),
     }
     # Discount-aware layout mode — decided ONCE for the whole document so the
     # summary table and every item table switch columns consistently (never
@@ -694,7 +699,9 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
             Paragraph("MRP<br/>TOTAL (₹)", styles["tableHead"]),
             Paragraph("OFFER<br/>RATE", styles["tableHead"]), Paragraph("OFFER<br/>TOTAL (₹)", styles["tableHead"]),
         ]
-        item_widths = [12 * mm, 25 * mm, 40 * mm, 77 * mm, 24 * mm, 12 * mm, 25 * mm, 26 * mm, 26 * mm]
+        # The 43 mm article column holds a full 7.5 pt SKU on one line; its
+        # three millimetres come from the still-generous description column.
+        item_widths = [12 * mm, 25 * mm, 43 * mm, 74 * mm, 24 * mm, 12 * mm, 25 * mm, 26 * mm, 26 * mm]
     else:
         item_header = [
             Paragraph("SR.<br/>NO.", styles["tableHead"]), Paragraph("PRODUCT IMAGE", styles["tableHead"]),
@@ -702,7 +709,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
             Paragraph("RATE<br/>(₹)", styles["tableHead"]), Paragraph("QTY", styles["tableHead"]),
             Paragraph("TOTAL<br/>(₹)", styles["tableHead"]),
         ]
-        item_widths = [12 * mm, 25 * mm, 40 * mm, 110 * mm, 28 * mm, 12 * mm, 40 * mm]
+        item_widths = [12 * mm, 25 * mm, 43 * mm, 107 * mm, 28 * mm, 12 * mm, 40 * mm]
     max_rows = _max_item_rows_per_page()
     for area_index, room in enumerate(room_order, 1):
         room_items = grouped.get(room, [])

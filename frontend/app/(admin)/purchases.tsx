@@ -1116,7 +1116,7 @@ function ItemRow(props: {
             fallbackLabel={row.sku}
             borderRadius={8}
           />
-          <View style={{ flex: 1 }}>
+          <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={{ fontSize: 14, fontWeight: "600", color: colors.onSurface }} numberOfLines={1}>{row.name}</Text>
             <Text style={type.caption} numberOfLines={1}>{row.sku} · {row.customer_name}</Text>
           </View>

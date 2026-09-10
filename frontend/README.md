@@ -1,56 +1,46 @@
-# Welcome to your Expo app 👋
+# BuildCon House
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Internal operations workspace for sanitaryware, tiles, kitchen and furniture departments. The canonical Expo / React Native Web application is at this repository root. FastAPI runs from `backend/` with MongoDB Atlas and Supabase file storage.
 
-## Get started
+The older `frontend/` checkout is retained for existing work. CI and releases build the root application; make new frontend changes under `app/` and `src/` here.
 
-## Deployment configuration
+## Run and validate
 
-The web build and Vercel API proxy require `BACKEND_URL`, a server-side absolute HTTPS URL with no embedded credentials. Set it in the deployment provider's encrypted environment settings; the build intentionally fails when it is absent or invalid. Browser production traffic uses the same-origin `/api` proxy and must not receive this value.
+Use Node 22 or later. Install with `npm ci`, then run `npm run web`. Set local development configuration using `.env.example`; keep real secrets out of source control.
 
-Native EAS preview and production environments must separately provide `EXPO_PUBLIC_BACKEND_URL` as an HTTPS URL through EAS environment variables or secrets. It is intentionally not stored in `eas.json`.
+Production browsers use the same-origin `/api` worker with HttpOnly sessions and CSRF protection. The production build requires `BACKEND_URL`, a server-side HTTPS URL. Native builds use `EXPO_PUBLIC_BACKEND_URL` separately.
 
-1. Install dependencies
-
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```sh
+npx tsc --noEmit
+npm run lint -- --max-warnings 0
+npm run test:quotation-media
+npm run test:quotation-contract
+npm run test:notebook
+npm run test:mobile-ux
+npm run test:api-client
+npm run test:api-proxy
+npm run test:web-worker
+npm run test:sales-periods
+npm run build
+npm run test:mobile-budget
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+`npm run test:e2e:audit` exercises the production web export with intercepted API fixtures, including request failures, retry, date validation and responsive layouts. Set `E2E_BASE_URL` to a locally served `dist/client` with SPA fallback. It uses Chrome, Chromium, Firefox and WebKit. Install Playwright browser binaries first. Fixtures never contact production APIs.
 
-## Learn more
+Backend unit tests must use an isolated database configuration, as in `.github/workflows/ci.yml`. Do not run ad-hoc tests or start a development backend against production data. Read `AGENTS.md` and `PRODUCTION.md` before deployment.
 
-To learn more about developing your project with Expo, look at the following resources:
+## Main workflows
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+- Purchases: stock, customer orders, stage changes, transfers and dispatch records.
+- Tiles: selections, quotations, brand/customer orders, stock releases and dispatches.
+- Quotation Builder: sanitary catalog, rooms, discounts, autosave and order confirmation.
+- Sales Data: confirmed revenue, date comparisons, collections, trends and business-unit/product/customer analysis. Missing data is explicitly reported.
+- Staff administration: customers, walk-ins, follow-ups, permissions, settings and sessions.
 
-## Join the community
+## Deployment
 
-Join our community of developers creating universal apps.
+The existing Sites binding is in `.openai/hosting.json`. Reuse this project and its existing access policy; do not create or substitute another site. `npm run build` generates `dist/client` and the authentication worker in `dist/server/index.js`.
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Railway deploys `backend/` from `main`. Its readiness probe is `/api/health/ready`. Before deployment, run the read-only datastore/index gate and check for pending migrations. Never resolve duplicate products, apply destructive migrations or mutate live business data without confirming the exact operation with the owner.
+
+See `docs/audit-2026-09-05.md` for the current audit, validation evidence and release status.

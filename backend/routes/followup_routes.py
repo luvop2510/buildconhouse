@@ -65,11 +65,16 @@ def require_notebook_floor(floor_id: str, user: UserPublic) -> None:
         raise HTTPException(status_code=404, detail="Notebook is available only on Kitchen or Furniture Floor")
 
 
-async def _wake_snoozed() -> None:
+async def _wake_snoozed(user: UserPublic) -> None:
     """Self-healing: any snooze whose timer has elapsed flips back to open so
-    it resurfaces in the inbox without needing a background job."""
+    it resurfaces in the inbox without needing a background job.
+
+    This update is triggered by a caller's read. Keep it in that caller's
+    floor scope: a Ground Floor request must never mutate an overdue snooze
+    belonging to another operational floor.
+    """
     await db.followups.update_many(
-        {"status": "snoozed", "snoozed_until": {"$lte": now_iso()}},
+        floor_query(user, {"status": "snoozed", "snoozed_until": {"$lte": now_iso()}}),
         {"$set": {"status": "open", "updated_at": now_iso()}},
     )
 
@@ -160,7 +165,7 @@ async def get_automation_rules(user: UserPublic = Depends(get_current_user)):
 
 @router.put("/config/automation-rules/{category}")
 async def put_automation_rule(category: str, body: AutomationRuleUpdate, user: UserPublic = Depends(require_min_role("manager"))):
-    patch = body.dict(exclude_unset=True)
+    patch = body.model_dump(exclude_unset=True)
     updated = await automation_rules.update_rule(category, patch, user_id=user.id, user_name=user.full_name)
     asyncio.create_task(reconcile_followups())
     return updated
@@ -191,7 +196,7 @@ async def get_workflow_transitions(_: UserPublic = Depends(get_current_user)):
 
 @router.put("/config/workflow-transitions/{key}")
 async def put_workflow_transition(key: str, body: WorkflowTransitionUpdate, user: UserPublic = Depends(require_min_role("manager"))):
-    patch = body.dict(exclude_unset=True)
+    patch = body.model_dump(exclude_unset=True)
     updated = await workflow_transitions.update_transition(key, patch, user_id=user.id, user_name=user.full_name)
     asyncio.create_task(reconcile_followups())
     return updated
@@ -202,7 +207,7 @@ async def put_workflow_transition(key: str, body: WorkflowTransitionUpdate, user
 # ─────────────────────────────────────────────────────────────────────────────
 @router.get("/stats")
 async def stats(user: UserPublic = Depends(get_current_user)):
-    await _wake_snoozed()
+    await _wake_snoozed(user)
     docs = await _all_with_bucket(user)
 
     counts = {b: 0 for b in ("overdue", "today", "tomorrow", "this_week", "later", "completed", "snoozed")}
@@ -262,7 +267,7 @@ async def stats(user: UserPublic = Depends(get_current_user)):
 
 @router.get("/mission")
 async def mission(user: UserPublic = Depends(get_current_user)):
-    await _wake_snoozed()
+    await _wake_snoozed(user)
     docs = await _all_with_bucket(user)
     actionable = [d for d in docs if d["bucket"] in ("overdue", "today")]
 
@@ -411,7 +416,7 @@ async def list_saved_views(user: UserPublic = Depends(get_current_user)):
 @router.post("/saved-views", response_model=FollowupSavedView)
 async def create_saved_view(body: FollowupSavedViewCreate, user: UserPublic = Depends(get_current_user)):
     v = FollowupSavedView(user_id=user.id, name=body.name, filters=body.filters)
-    await db.followup_saved_views.insert_one(v.dict())
+    await db.followup_saved_views.insert_one(v.model_dump())
     return v
 
 
@@ -424,6 +429,139 @@ async def delete_saved_view(view_id: str, user: UserPublic = Depends(get_current
 # ─────────────────────────────────────────────────────────────────────────────
 # List
 # ─────────────────────────────────────────────────────────────────────────────
+def _paged_followup_query(
+    user: UserPublic,
+    *,
+    bucket: Optional[str], priority: Optional[str], category: Optional[str],
+    customer_tier: Optional[str], assigned_to: Optional[str], q: Optional[str],
+    rule_type: Optional[str], view: str, waiting: bool, completed_today: bool,
+) -> dict:
+    """Build the database-side portion of the paged inbox filter.
+
+    The legacy list endpoint intentionally retains its array response for
+    integration callers. The canonical UI uses this bounded path so a search
+    is not silently limited to the first thousand rows.
+    """
+    clauses: list[dict] = []
+    if category:
+        clauses.append({"category": category})
+    if customer_tier:
+        clauses.append({"customer_tier": customer_tier})
+    if assigned_to:
+        clauses.append({"assigned_to": assigned_to})
+    if rule_type:
+        clauses.append({"rule_type": rule_type})
+    if q:
+        term = {"$regex": re.escape(q), "$options": "i"}
+        clauses.append({"$or": [
+            {"customer_name": term}, {"customer_phone": term}, {"quotation_number": term},
+            {"purchase_number": term}, {"project_name": term}, {"reason": term}, {"tags": term},
+        ]})
+    if priority:
+        clauses.append({"$or": [
+            {"manual_priority_override": priority},
+            {"manual_priority_override": None, "priority_level": priority},
+        ]})
+
+    today_start, tomorrow_start = ist_day_bounds_utc()
+    _, day_after_tomorrow = ist_day_bounds_utc(1)
+    _, week_end = ist_day_bounds_utc(7)
+    today = today_start.isoformat()
+    tomorrow = tomorrow_start.isoformat()
+    day_after = day_after_tomorrow.isoformat()
+    week_ends = week_end.isoformat()
+    unresolved = {
+        "$and": [
+            {"status": {"$nin": ["done", "dismissed"]}},
+            {"$or": [{"status": {"$ne": "snoozed"}}, {"snoozed_until": None}]},
+        ],
+    }
+    if bucket and bucket != "all":
+        if bucket == "completed":
+            clauses.append({"status": {"$in": ["done", "dismissed"]}})
+        elif bucket == "snoozed":
+            clauses.append({"status": "snoozed", "snoozed_until": {"$ne": None}})
+        else:
+            ranges = {
+                "overdue": {"$lt": today},
+                "today": {"$gte": today, "$lt": tomorrow},
+                "tomorrow": {"$gte": tomorrow, "$lt": day_after},
+                "this_week": {"$gte": day_after, "$lt": week_ends},
+                "later": {"$gte": week_ends},
+            }
+            if bucket in ranges:
+                clauses.extend([unresolved, {"due_at": ranges[bucket]}])
+    if waiting:
+        clauses.append({"status": "open", "rule_type": "payment_partial"})
+    if completed_today:
+        clauses.extend([
+            {"status": {"$in": ["done", "dismissed"]}},
+            {"completed_at": {"$gte": today, "$lt": tomorrow}},
+        ])
+    if view == "won":
+        clauses.append({"auto_resolved": True, "completed_outcome": {"$in": ["won", "converted"]}})
+    elif view == "lost":
+        clauses.append({"completed_outcome": "lost"})
+    else:
+        clauses.append({"$nor": [
+            {"auto_resolved": True, "completed_outcome": {"$in": ["won", "converted"]}},
+            {"completed_outcome": "lost"},
+        ]})
+
+    base = clauses[0] if len(clauses) == 1 else {"$and": clauses} if clauses else {}
+    return floor_query(user, base)
+
+
+@router.get("/page")
+async def list_followups_page(
+    bucket: Optional[str] = None,
+    priority: Optional[str] = None,
+    category: Optional[str] = None,
+    customer_tier: Optional[str] = None,
+    assigned_to: Optional[str] = None,
+    q: Optional[str] = None,
+    rule_type: Optional[str] = None,
+    view: str = Query("active", pattern="^(active|won|lost)$"),
+    waiting: bool = False,
+    completed_today: bool = False,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(100, ge=25, le=200),
+    user: UserPublic = Depends(get_current_user),
+):
+    """Return one stable, floor-scoped follow-up page for the inbox."""
+    await _wake_snoozed(user)
+    start_of_today, _ = ist_day_bounds_utc()
+    pipeline = [
+        {"$match": _paged_followup_query(
+            user, bucket=bucket, priority=priority, category=category,
+            customer_tier=customer_tier, assigned_to=assigned_to, q=q,
+            rule_type=rule_type, view=view, waiting=waiting,
+            completed_today=completed_today,
+        )},
+        {"$addFields": {
+            "_inbox_overdue": {"$cond": [{"$and": [
+                {"$eq": ["$status", "open"]}, {"$lt": ["$due_at", start_of_today.isoformat()]},
+            ]}, 0, 1]},
+            "_inbox_unresolved": {"$cond": [{"$in": ["$status", ["open", "snoozed"]]}, 0, 1]},
+            "_inbox_mine": {"$cond": [{"$eq": ["$assigned_to", user.id]}, 0, 1]},
+        }},
+        {"$sort": {
+            "_inbox_overdue": 1, "_inbox_unresolved": 1, "_inbox_mine": 1,
+            "priority_score": -1, "due_at": 1, "id": 1,
+        }},
+        {"$skip": (page - 1) * page_size},
+        {"$limit": page_size + 1},
+        {"$project": {"_id": 0, "_inbox_overdue": 0, "_inbox_unresolved": 0, "_inbox_mine": 0}},
+    ]
+    rows = await db.followups.aggregate(pipeline).to_list(page_size + 1)
+    has_more = len(rows) > page_size
+    rows = rows[:page_size]
+    for row in rows:
+        row["bucket"] = compute_bucket(row)
+        row["effective_priority_level"] = row.get("manual_priority_override") or row.get("priority_level")
+    return {"items": rows, "page": page, "page_size": page_size, "has_more": has_more}
+
+
 @router.get("")
 async def list_followups(
     bucket: Optional[str] = None,
@@ -436,7 +574,7 @@ async def list_followups(
     limit: int = Query(1000, ge=1, le=3000),
     user: UserPublic = Depends(get_current_user),
 ):
-    await _wake_snoozed()
+    await _wake_snoozed(user)
     query: dict = {}
     if category:
         query["category"] = category
@@ -520,7 +658,7 @@ async def create_notebook_row(
     user: UserPublic = Depends(get_current_user),
 ):
     require_notebook_floor(floor_id, user)
-    patch = body.dict(exclude_none=True)
+    patch = body.model_dump(exclude_none=True)
     requested_referrer_id = patch.pop("referrer_id", None)
     patch["notebook_status"] = "new"
     try:
@@ -575,7 +713,7 @@ async def create_notebook_row(
         notes=clean.get("notes"),
     )
     try:
-        await db.followups.insert_one(row.dict())
+        await db.followups.insert_one(row.model_dump())
     except DuplicateKeyError:
         # The unique notebook_key index wins races between two staff members
         # creating the same floor/customer record at once.
@@ -590,7 +728,7 @@ async def create_notebook_row(
         actor=user, customer_id=row.customer_id, floor_id=floor_id,
         summary="Notebook follow-up created",
     )
-    return serialize_notebook_row(row.dict())
+    return serialize_notebook_row(row.model_dump())
 
 
 @router.get("/notebook/{floor_id}/{row_id}")
@@ -720,7 +858,7 @@ async def convert_notebook(
     try:
         row = await convert_notebook_row(
             db, user=user, floor_id=floor_id, row_id=row_id,
-            patch=body.dict(exclude={"updated_at"}, exclude_none=True), expected_updated_at=body.updated_at,
+            patch=body.model_dump(exclude={"updated_at"}, exclude_none=True), expected_updated_at=body.updated_at,
         )
     except NotebookConflictError as error:
         raise _notebook_conflict(error)
@@ -914,7 +1052,7 @@ async def create_followup(body: FollowupCreate, user: UserPublic = Depends(get_c
         notes=body.notes,
         floor_id=floor_for_write(user),
     )
-    await db.followups.insert_one(f.dict())
+    await db.followups.insert_one(f.model_dump())
     await log_event(
         event_type="followup.created", entity_type="followup", entity_id=f.id, actor=user,
         customer_id=f.customer_id, quotation_id=f.quotation_id,
@@ -928,7 +1066,7 @@ async def update_followup(followup_id: str, body: FollowupUpdate, user: UserPubl
     f = await db.followups.find_one(floor_query(user, {"id": followup_id}), {"_id": 0})
     if not f:
         raise HTTPException(status_code=404, detail="Follow-up not found")
-    patch = body.dict(exclude_unset=True)
+    patch = body.model_dump(exclude_unset=True)
     if "assigned_to" in patch and patch["assigned_to"]:
         au = await db.users.find_one({"id": patch["assigned_to"]}, {"_id": 0, "full_name": 1})
         patch["assigned_to_name"] = au["full_name"] if au else None
@@ -1128,7 +1266,7 @@ async def log_call(followup_id: str, body: FollowupCallOutcomePayload, user: Use
             tags=f.get("tags", []), notes=body.notes,
             floor_id=floor_inherit(f),
         )
-        await db.followups.insert_one(nf.dict())
+        await db.followups.insert_one(nf.model_dump())
         next_created = nf.id
     elif body.outcome == "no_answer":
         attempts = (f.get("contact_attempts") or 0) + 1

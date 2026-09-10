@@ -137,7 +137,7 @@ async def upload_and_register(
         sort_order=sort_order, uploaded_by=uploaded_by, notes=notes,
     )
     try:
-        await db.product_media.insert_one(doc.dict())
+        await db.product_media.insert_one(doc.model_dump())
     except Exception:
         # Compensating action — don't leave an orphaned object in storage
         # with no metadata row pointing at it.

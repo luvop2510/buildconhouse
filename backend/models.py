@@ -329,12 +329,21 @@ class CategoryCreate(BaseModel):
 
 class ProductVariant(BaseModel):
     sku: str
+    name: Optional[str] = None
     finish: Optional[str] = None
+    finish_code: Optional[str] = None
     size: Optional[str] = None
+    colour: Optional[str] = None
     color: Optional[str] = None
+    variant_label: Optional[str] = None
     mrp: float
     price: float
     stock: int = 0
+    dimensions: Optional[str] = None
+    material: Optional[str] = None
+    warranty: Optional[str] = None
+    specs: dict = {}
+    description: Optional[str] = None
     # Populated dynamically at read-time (media_service.hydrate_variants_batch)
     # from family-sibling products — NOT persisted on the stored embedded
     # field. Lets every variant chip show its own real photo + link back to

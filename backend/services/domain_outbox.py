@@ -153,7 +153,7 @@ async def _upsert_activity(*, key: str, event_type: str, entity_type: str, entit
         summary=summary,
         payload=payload,
         floor_id=floor_id,
-    ).dict()
+    ).model_dump()
     event["automation_key"] = key
     await db.activity_events.update_one({"automation_key": key}, {"$setOnInsert": event}, upsert=True, session=session)
 
@@ -166,7 +166,7 @@ async def _upsert_notification(*, key: str, user_id: str, title: str, body: str 
         kind=kind,
         link=link,
         floor_id=floor_id,
-    ).dict()
+    ).model_dump()
     notification["automation_key"] = key
     await db.notifications.update_one(
         {"automation_key": key},
@@ -242,7 +242,7 @@ async def _upsert_followup(*, key: str, quotation: dict, reason: str, category: 
         due_at=now_iso(),
         is_automated=False,
         floor_id=floor_inherit(quotation),
-    ).dict()
+    ).model_dump()
     followup["automation_key"] = key
     await db.followups.update_one({"automation_key": key}, {"$setOnInsert": followup}, upsert=True, session=session)
 
@@ -414,7 +414,7 @@ async def _handle_order_placed(event: dict, session: Any) -> dict:
             floor_id=floor_inherit(quotation),
             status_history=[PurchaseStatusEvent(from_status=None, to_status="draft", by_user_id=event["actor_id"], by_user_name=event["actor_name"], note=f"Created from {quotation.get('number')}")],
             customer_order_id=(customer_order.id if customer_order else None),
-        ).dict()
+        ).model_dump()
         po["automation_key"] = po_key
         await db.purchase_orders.insert_one(po, session=session)
         created_po_ids.append(po["id"])
@@ -476,7 +476,7 @@ async def _handle_order_placed(event: dict, session: Any) -> dict:
             )
         customer_order.last_activity = "Order created"
         customer_order.last_activity_at = now_iso()
-        co_doc = customer_order.dict()
+        co_doc = customer_order.model_dump()
         co_doc["automation_key"] = customer_order_key
         await db.customer_orders.update_one(
             {"automation_key": customer_order_key}, {"$setOnInsert": co_doc}, upsert=True, session=session,
@@ -505,7 +505,7 @@ async def _handle_order_placed(event: dict, session: Any) -> dict:
             amount=payment_amount, mode="bank", status="pending", note="Outstanding balance created by OrderPlaced automation.",
             recorded_by=event["actor_id"], recorded_by_name=event["actor_name"],
             floor_id=floor_inherit(quotation),
-        ).dict()
+        ).model_dump()
         # Automation payments dedupe via automation_key, not idempotency_key —
         # the field must be OMITTED (not left as an explicit None) or it
         # collides with payments.payment_idempotency_key's unique *sparse*

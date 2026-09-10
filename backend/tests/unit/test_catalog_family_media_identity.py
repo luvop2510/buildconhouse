@@ -47,6 +47,31 @@ def test_family_card_variants_and_sample_use_each_products_own_primary_media(mon
     }
 
 
+def test_family_card_variant_switching_exposes_each_skus_business_fields(monkeypatch):
+    a, b = _product("a"), _product("b")
+    a.update({"stock": 3, "dimensions": "100 mm", "material": "Brass", "warranty": "5 years", "specs": {"flow": "5 l/min"}})
+    b.update({"stock": 9, "dimensions": "220 mm", "material": "Steel", "warranty": "10 years", "specs": {"flow": "7 l/min"}})
+    snapshot = _build_snapshot([a, b], [_media("a"), _media("b")], [], [], [])
+
+    async def fake_snapshot():
+        return snapshot
+
+    monkeypatch.setattr(catalog_service, "get_catalog_snapshot", fake_snapshot)
+    family = asyncio.run(list_family_groups(
+        brand_id=None, category_id=None, subcategory=None, series=None, q=None,
+        limit=10, skip=0,
+    ))["items"][0]
+
+    switched = next(item for item in family["variants"] if item["id"] == "b")
+    assert switched == {
+        "id": "b", "sku": "SKU-b", "name": "Basin Family", "finish": "Black",
+        "finish_code": None, "variant_label": None, "size": "220 mm", "colour": None,
+        "color": None, "price": 200, "mrp": 250, "stock": 9, "dimensions": "220 mm",
+        "material": "Steel", "warranty": "10 years", "specs": {"flow": "7 l/min"}, "description": None,
+        "image": "https://cdn.test/b.jpg", "image_quality": None,
+    }
+
+
 def test_variant_hydration_never_crosses_a_floor_or_catalog_namespace():
     a = _product("a")
     same = _product("b")
@@ -62,6 +87,17 @@ def test_variant_hydration_never_crosses_a_floor_or_catalog_namespace():
     hydrated = hydrate_product(a, snapshot)
     assert [variant["id"] for variant in hydrated["variants"]] == ["b"]
     assert [variant["id"] for variant in hydrated["family_variants"]] == ["a", "b"]
+
+
+def test_variant_hydration_keeps_every_finish_in_a_large_family():
+    products = [_product(f"finish-{index}") for index in range(11)]
+    snapshot = _build_snapshot(products, [], [], [], [])
+
+    hydrated = hydrate_product(products[0], snapshot)
+
+    assert [variant["id"] for variant in hydrated["variants"]] == [
+        f"finish-{index}" for index in range(1, 11)
+    ]
 
 
 def test_hydrated_product_uses_its_actual_hero_quality_not_stale_import_metadata():

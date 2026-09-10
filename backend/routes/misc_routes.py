@@ -316,7 +316,7 @@ async def update_team_member(
     # `access_profile: null` is a meaningful request: it safely clears the
     # provisioner profile.  Other nulls retain PATCH's usual "not supplied"
     # semantics.
-    supplied = body.dict(exclude_unset=True)
+    supplied = body.model_dump(exclude_unset=True)
     patch = {k: v for k, v in supplied.items() if v is not None or k == "access_profile"}
     if not patch:
         raise HTTPException(status_code=400, detail="Nothing to update")

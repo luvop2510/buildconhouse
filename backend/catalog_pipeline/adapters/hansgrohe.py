@@ -109,6 +109,8 @@ FINISH_ALIASES: list[tuple[re.Pattern, str, str]] = [
     (re.compile(r"\bpolished\s*gold\b|\bp\.?g\.?o?\.?\b", re.I), "Polished Gold", "PG"),
     (re.compile(r"\bpolished\s*black\s*chrome\b", re.I),  "Polished Black Chrome", "PBC"),
     (re.compile(r"\bbrushed\s*black\s*chrome\b", re.I),   "Brushed Black Chrome", "BBC"),
+    (re.compile(r"\bpolished\s*red\s*gold\b|\bprg\b", re.I), "Polished Red Gold", "PRG"),
+    (re.compile(r"\bbrushed\s*red\s*gold\b|\bbrg\b", re.I), "Brushed Red Gold", "BRG"),
     (re.compile(r"\bblack\s*chrome\b", re.I),             "Black Chrome",     "BC"),
     (re.compile(r"\bbrushed\s*bronze\b|\bbbr\b", re.I),   "Brushed Bronze",   "BBR"),
     (re.compile(r"\bbrushed\s*brass\b", re.I),              "Brushed Brass",    "BR"),
@@ -129,13 +131,16 @@ SKU_TAIL_FINISH = {
     "000": ("Chrome",         "CR"),
     "800": ("Polished Gold",  "PG"),
     "140": ("Brushed Bronze", "BBR"),
-    "340": ("Brushed Nickel", "BN"),
+    "340": ("Brushed Black Chrome", "BBC"),
     "700": ("Matt White",     "MW"),
     "670": ("Matt Black",     "MB"),
     "990": ("Matt Black",     "MB"),
     "820": ("Polished Gold Optic", "PGO"),
     "830": ("Brushed Gold Optic",  "BGO"),
-    "310": ("Brushed Nickel", "BN"),
+    "310": ("Brushed Red Gold", "BRG"),
+    "300": ("Polished Red Gold", "PRG"),
+    "330": ("Polished Black Chrome", "PBC"),
+    "677": ("Matt Black", "MB"),
     "180": ("Chrome",         "CR"),
     "007": ("Chrome",         "CR"),
     "400": ("Stainless Steel Optic", "SSO"),
@@ -161,6 +166,20 @@ def canonical_hansgrohe_sku(value: object) -> str:
     if sku.isdigit() and len(sku) == 7:
         return f"0{sku}"
     return sku
+
+
+def _family_key_from_article(collection: str, sku: str, fallback: str) -> str:
+    """Use Hansgrohe's finish-independent five-digit design number.
+
+    The last three digits of an eight-digit Hansgrohe/AXOR article identify
+    the surface finish.  Keeping the five-digit design in the family key
+    makes new imports join existing finish siblings even when supplier prose
+    calls the same finish by a different name.
+    """
+    normalized = re.sub(r"\s+", "", str(sku or ""))
+    if re.fullmatch(r"\d{8}", normalized):
+        return f"hansgrohe:{_slug(collection)}:sku:{normalized[:5]}"
+    return fallback
 
 SIZE_RE = re.compile(r"\b(\d{2,4})(?:\s*[×xX]\s*(\d{2,4}))?\s*(?:mm|cm|inch|\")?\b")
 
@@ -386,7 +405,8 @@ class HansgroheAdapter(BrandAdapter):
                 # Family key: collection (Hansgrohe/AXOR) + series + base
                 series_slug = _slug(series or "misc")
                 base_slug = _slug(base)
-                family_key = f"hansgrohe:{_slug(collection)}:{series_slug}:{base_slug}"
+                fallback_family_key = f"hansgrohe:{_slug(collection)}:{series_slug}:{base_slug}"
+                family_key = _family_key_from_article(collection, sku, fallback_family_key)
 
                 # Image: nearest anchor within ±3 rows
                 best: ExtractedImage | None = None

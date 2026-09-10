@@ -9,7 +9,11 @@ const ROOT = path.resolve(SCRIPT_DIR, "..", "dist", "client");
 // workflow code. Keep each initial payload within the same release envelope;
 // checking only login/dashboard previously let Follow-ups and Purchases grow
 // without a CI signal.
-const ROUTES = ["login.html", "dashboard.html", "followups.html", "purchases.html"];
+const ROUTES = [
+  "login.html", "dashboard.html", "followups.html", "purchases.html",
+  "tiles/quotation.html", "tiles/orders/index.html", "quotations/new.html",
+  "sales-data/index.html",
+];
 // Expo Router + React Native Web form the unavoidable shell shared by every
 // route (about 490 KiB gzip in the production export). The profiled largest
 // route is 519 KiB, so retain at least 10% (57 KiB) of release headroom while

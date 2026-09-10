@@ -99,3 +99,6 @@ backend/backups/
 # Superpowers SDD scratch — task briefs, reports, progress ledger.
 # Session-local working state, never part of the source tree.
 .superpowers/
+.env*
+.playwright-cli/
+output/playwright/

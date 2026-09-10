@@ -28,7 +28,7 @@ const LABELS: Record<WorkspaceName, { title: string; subtitle: string; rows: "br
 };
 
 export function OwnerWorkspace({ workspace }: { workspace: WorkspaceName }) {
-  const { staff } = useAuth(); const { floors } = useFloorAccess(); const router = useRouter(); const { isPhone, isTablet, isTabletPortrait } = useBp();
+  const { staff } = useAuth(); const { floors } = useFloorAccess(); const router = useRouter(); const { isPhone, isTablet } = useBp();
   const [floorId, setFloorId] = useState(""); const [data, setData] = useState<WorkspaceData | null>(null); const [error, setError] = useState<string | null>(null);
   useEffect(() => { if (!floorId) void getSelectedFloorId().then((id) => setFloorId(id || "all")); }, [floorId]);
   const { period, choose } = useSalesPeriod(floorId);
@@ -45,7 +45,6 @@ export function OwnerWorkspace({ workspace }: { workspace: WorkspaceName }) {
   useEffect(() => { load(); return () => { requestId.current += 1; }; }, [load]);
   if (staff && staff.role !== "owner") return <Redirect href="/(admin)/sales-data" />;
   const meta = LABELS[workspace]; const cardStyle = isPhone ? { width: "100%" as const } : isTablet ? { width: "48%" as const } : { flex: 1, minWidth: 180 };
-  const useCompactRows = isPhone || isTabletPortrait;
   return <AdminPage title={meta.title} subtitle={data ? `${meta.subtitle} · ${data.period}` : meta.subtitle}>
     {period ? <SalesFilters floors={floors} floorId={floorId} onFloorChange={setFloorId} period={period} onPeriodChange={choose} /> : null}
     {error ? <ErrorState subtitle={error} onRetry={load} /> : null}
@@ -58,14 +57,14 @@ export function OwnerWorkspace({ workspace }: { workspace: WorkspaceName }) {
         <KpiCard label="Average order" value={data.kpis.orders ? fmtMoneyCompact(data.kpis.revenue / data.kpis.orders) : "—"} question="Confirmed revenue per order in this period" style={cardStyle} />
       </View>
       {workspace === "forecasting" ? <Forecast data={data} /> : null}
-      {workspace === "suppliers" ? <EmptyState icon="truck" title="Supplier sales attribution unavailable" subtitle="These sales records link products to brands, but do not identify their purchasing supplier. Review supplier purchase orders in Purchases." /> : <WorkspaceTable key={`${workspace}:${floorId}:${period?.label}`} kind={meta.rows} data={data} compactRows={useCompactRows} onOpen={(path) => router.push(path as never)} />}
+      {workspace === "suppliers" ? <EmptyState icon="truck" title="Supplier sales attribution unavailable" subtitle="These sales records link products to brands, but do not identify their purchasing supplier. Review supplier purchase orders in Purchases." /> : <WorkspaceTable key={`${workspace}:${floorId}:${period?.label}`} kind={meta.rows} data={data} phone={isPhone} onOpen={(path) => router.push(path as never)} />}
     </> : null}
   </AdminPage>;
 }
 
 function Forecast({ data }: { data: WorkspaceData }) { const forecast = data.forecast; return <Card variant="flat" padding={spacing.xl}><View style={{ gap: spacing.sm }}><Text style={type.titleSm}>Conservative forecast</Text>{forecast?.forecast == null ? <Text style={[type.body, { color: colors.onSurfaceMuted }]}>Orders in each of the previous three complete UTC calendar months are required. This baseline uses the selected business unit and is independent of the report period.</Text> : <><Text style={type.displayMd}>{fmtMoneyCompact(forecast?.forecast || 0)}</Text><Text style={[type.caption, { color: colors.onSurfaceMuted }]}>Baseline for the current month, independent of the report period. Prior three complete UTC months (oldest first): {forecast?.monthly_history.map(fmtMoneyCompact).join(" · ")}</Text></>}</View></Card>; }
 
-function WorkspaceTable({ kind, data, compactRows, onOpen }: { kind: "brands" | "products" | "customers" | "relationships" | "floors"; data: WorkspaceData; compactRows: boolean; onOpen: (path: string) => void }) {
+function WorkspaceTable({ kind, data, phone, onOpen }: { kind: "brands" | "products" | "customers" | "relationships" | "floors"; data: WorkspaceData; phone: boolean; onOpen: (path: string) => void }) {
   const [visibleCount, setVisibleCount] = useState(25);
   const rows: any[] = kind === "brands" ? data.brands : kind === "products" ? data.products : kind === "customers" ? data.customers : kind === "relationships" ? (data.relationships || []) : data.floors;
   if (!rows.length) return <EmptyState icon="bar-chart-2" title="No confirmed sales in this period" subtitle="Try a different date range or business unit." tone="brand" />;
@@ -76,5 +75,5 @@ function WorkspaceTable({ kind, data, compactRows, onOpen }: { kind: "brands" | 
     const body = <View style={{ minHeight: 56, paddingVertical: spacing.xs, borderBottomWidth: 1, borderBottomColor: colors.border, justifyContent: "center" }}><Text style={type.bodyStrong} numberOfLines={2}>{r.name || r.floor_id}</Text><Text style={[type.caption, { color: colors.onSurfaceMuted }]}>{detail}</Text></View>;
     return r.customer_id ? <Pressable key={key} accessibilityRole="button" accessibilityLabel={`Open customer ${r.name}`} onPress={() => onOpen(`/(admin)/customers/${r.customer_id}`)}>{body}</Pressable> : <View key={key}>{body}</View>;
   };
-  return <Card variant="flat" padding={compactRows ? layout.cardPadding.base : spacing.lg}><View style={{ gap: spacing.md }}><Text style={type.titleSm}>{title}</Text>{compactRows ? <View style={{ gap: spacing.xs }}>{rows.slice(0, visibleCount).map(phoneRow)}</View> : <Table><TableHeader columns={[{ label: "Name", flex: 2 }, { label: "Revenue", align: "right" }, { label: "Orders", align: "right" }]} />{rows.slice(0, visibleCount).map((r, i) => <TableRow key={r.id || r.brand_id || r.product_id || r.customer_id || r.floor_id} isLast={i === Math.min(rows.length, visibleCount) - 1} onPress={r.customer_id ? () => onOpen(`/(admin)/customers/${r.customer_id}`) : undefined}><TableCell flex={2}>{r.name || r.floor_id}</TableCell><TableCell align="right">{fmtMoneyCompact(r.revenue)}</TableCell><TableCell align="right">{String(r.orders || r.quantity || 0)}</TableCell></TableRow>)}</Table>}{rows.length > visibleCount ? <Button label={`Show more (${visibleCount} of ${rows.length})`} variant="secondary" onPress={() => setVisibleCount(n => n + 25)} /> : null}</View></Card>;
+  return <Card variant="flat" padding={phone ? layout.cardPadding.base : spacing.lg}><View style={{ gap: spacing.md }}><Text style={type.titleSm}>{title}</Text>{phone ? <View style={{ gap: spacing.xs }}>{rows.slice(0, visibleCount).map(phoneRow)}</View> : <Table><TableHeader columns={[{ label: "Name", flex: 2 }, { label: "Revenue", align: "right" }, { label: "Orders", align: "right" }]} />{rows.slice(0, visibleCount).map((r, i) => <TableRow key={r.id || r.brand_id || r.product_id || r.customer_id || r.floor_id} isLast={i === Math.min(rows.length, visibleCount) - 1} onPress={r.customer_id ? () => onOpen(`/(admin)/customers/${r.customer_id}`) : undefined}><TableCell flex={2}>{r.name || r.floor_id}</TableCell><TableCell align="right">{fmtMoneyCompact(r.revenue)}</TableCell><TableCell align="right">{String(r.orders || r.quantity || 0)}</TableCell></TableRow>)}</Table>}{rows.length > visibleCount ? <Button label={`Show more (${visibleCount} of ${rows.length})`} variant="secondary" onPress={() => setVisibleCount(n => n + 25)} /> : null}</View></Card>;
 }

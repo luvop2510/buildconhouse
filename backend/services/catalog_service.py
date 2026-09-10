@@ -416,51 +416,57 @@ def _size_metadata(product: dict, snapshot: CatalogSnapshot) -> dict:
     return _size_metadata_for_products(siblings)
 
 
-def _hydrate_variants(product: dict, snapshot: CatalogSnapshot, limit: int = 8) -> None:
+def _variant_summary(product: dict, snapshot: CatalogSnapshot) -> dict:
+    """Return every SKU-specific field a finish selector must switch.
+
+    A family is only a navigation aid: its members remain independent SKUs
+    with their own price, stock, specifications and media.  Keeping this
+    projection in one place prevents a grouped card from accidentally showing
+    the representative SKU's business data after a user selects another
+    finish.
+    """
+    colour = product.get("colour") or product.get("color")
+    return {
+        "id": product["id"], "sku": product.get("sku"), "name": product.get("name"),
+        "finish": product.get("finish"), "finish_code": product.get("finish_code"),
+        "variant_label": product.get("variant_label"), "size": _product_size(product),
+        "colour": colour, "color": colour,
+        "price": product.get("price"), "mrp": product.get("mrp"),
+        "stock": product.get("stock", 0), "dimensions": product.get("dimensions"),
+        "material": product.get("material"), "warranty": product.get("warranty"),
+        "specs": product.get("specs") or {}, "description": product.get("description"),
+        "image": _primary_product_image(snapshot, product["id"], product.get("family_key")),
+    }
+
+
+def _hydrate_variants(product: dict, snapshot: CatalogSnapshot) -> None:
     if product.get("variants") or not product.get("family_key"):
         return
     variants = []
     for sibling in _family_siblings(snapshot, product):
         if sibling["id"] == product["id"]:
             continue
-        variants.append({
-            "id": sibling["id"],
-            "sku": sibling["sku"],
-            "finish": sibling.get("finish"),
-            "variant_label": sibling.get("variant_label"),
-            "size": _product_size(sibling),
-            "colour": sibling.get("colour") or sibling.get("color"),
-            "price": float(sibling.get("price") or 0),
-            "mrp": float(sibling.get("mrp") or sibling.get("price") or 0),
-            "stock": int(sibling.get("stock") or 0),
-            "image": _primary_product_image(snapshot, sibling["id"], product["family_key"]),
-        })
+        variants.append(_variant_summary(sibling, snapshot))
     if variants:
-        product["variants"] = variants[:limit]
+        # A colour/finish selector is only truthful if every sibling SKU can
+        # be selected.  The former eight-item preview silently hid finishes in
+        # larger supplier families (including 10+ finish Hansgrohe ranges).
+        product["variants"] = variants
 
 
 def _family_variants(product: dict, snapshot: CatalogSnapshot) -> list[dict]:
     """Complete, same-floor family membership for size-aware clients.
 
-    ``variants`` is an older, display-oriented sibling preview (and remains
-    capped for backwards compatibility).  This separate contract includes the
-    current product and every active sibling, so a client never infers size
-    availability from a truncated preview.
+    ``variants`` omits the current product for legacy callers. This separate
+    contract includes the current product too, so clients can model the whole
+    family without having to reconstruct that membership themselves.
     """
     if product.get("family_key"):
         rows = _family_siblings(snapshot, product)
     else:
         rows = [product]
     return [
-        {
-            "id": row["id"], "sku": row.get("sku"), "size": _product_size(row),
-            "finish": row.get("finish"), "finish_code": row.get("finish_code"),
-            "colour": row.get("colour"), "variant_label": row.get("variant_label"),
-            "price": row.get("price"), "mrp": row.get("mrp"),
-            "stock": row.get("stock", 0), "dimensions": row.get("dimensions"),
-            "material": row.get("material"), "specs": row.get("specs") or {},
-            "image": _primary_product_image(snapshot, row["id"], row.get("family_key")),
-        }
+        _variant_summary(row, snapshot)
         for row in sorted(rows, key=lambda item: (item.get("sku") or "", item.get("id") or ""))
     ]
 
@@ -794,15 +800,9 @@ async def list_family_groups(
         group["min_price"] = min(group["min_price"], price)
         group["max_price"] = max(group["max_price"], price)
         group["product_count"] += 1
-        group["variants"].append({
-            "id": product["id"], "sku": product["sku"],
-            "variant_label": product.get("variant_label"), "colour": product.get("colour"),
-            "finish": product.get("finish"), "finish_code": product.get("finish_code"),
-            "size": product.get("size") or product.get("dimensions"),
-            "price": product.get("price"), "mrp": product.get("mrp"),
-            "image": _primary_product_image(snapshot, product["id"]),
-            "image_quality": product.get("image_quality"),
-        })
+        summary = _variant_summary(product, snapshot)
+        summary["image_quality"] = product.get("image_quality")
+        group["variants"].append(summary)
     ordered = sorted(groups.values(), key=lambda row: row.get("family_name") or "")
     page = copy.deepcopy(ordered[skip:skip + limit])
     for group in page:
@@ -944,13 +944,7 @@ async def search_catalog(
         family["product_count"] += 1
         family["min_price"] = min(family["min_price"], product.get("price") or family["min_price"])
         family["max_price"] = max(family["max_price"], product.get("price") or family["max_price"])
-        family["variants"].append({
-            "id": product["id"], "sku": product["sku"], "colour": product.get("colour"),
-            "finish": product.get("finish"), "size": _product_size(product),
-            "price": product.get("price"),
-            "mrp": product.get("mrp"),
-            "image": _primary_product_image(snapshot, product["id"]),
-        })
+        family["variants"].append(_variant_summary(product, snapshot))
 
     grouped = [groups[key] for key in order][:limit]
     for family in grouped:
@@ -1008,17 +1002,11 @@ async def family_detail(family_key: str, floor_ids: Optional[list[str]] = None) 
     variants = []
     specs_union: dict = {}
     for product in products:
-        variants.append({
-            "id": product["id"], "sku": product["sku"], "name": product.get("name"),
-            "colour": product.get("colour"), "finish": product.get("finish"),
-            "finish_code": product.get("finish_code"), "variant_label": product.get("variant_label"),
-            "price": product.get("price"), "mrp": product.get("mrp"),
-            "stock": product.get("stock", 0), "dimensions": product.get("dimensions"),
-            "size": _product_size(product),
-            "material": product.get("material"), "warranty": product.get("warranty"),
-            "specs": product.get("specs") or {},
-            "hero_image": _primary_product_image(snapshot, product["id"], family_key),
-        })
+        summary = _variant_summary(product, snapshot)
+        # ``hero_image`` is the original family-detail field; retain it as a
+        # compatibility alias while grouped cards consistently use ``image``.
+        summary["hero_image"] = summary["image"]
+        variants.append(summary)
         for key, value in (product.get("specs") or {}).items():
             specs_union.setdefault(key, value)
 

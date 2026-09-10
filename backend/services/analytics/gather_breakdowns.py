@@ -70,7 +70,7 @@ async def gather_order_collections(db, orders: list[dict]) -> dict[str, float]:
 
 
 async def gather_product_line_revenue(
-    db, f: AnalyticsFilter, accessible_floors, window, limit: int = _MAX_PRODUCTS,
+    db, f: AnalyticsFilter, accessible_floors, window, limit: int | None = _MAX_PRODUCTS,
 ) -> list[dict]:
     """Revenue per product id, straight off the canonical line pipeline.
 

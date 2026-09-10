@@ -174,12 +174,14 @@ export default function TileOrdersScreen() {
     return () => clearTimeout(timer);
   }, [movementSearchDraft]);
 
-  const load = useCallback(async (nextPage = 1) => {
-    if (nextPage > 1 && loadingMoreRef.current) return;
-    loadingMoreRef.current = nextPage > 1;
-    setLoadingMore(nextPage > 1);
+  const load = useCallback(async (nextPage = 1, pageNavigation = false) => {
+    // Page controls retain the current 30-row result while their replacement
+    // is in flight. A fresh query still owns the full-screen loading state.
+    if (pageNavigation && loadingMoreRef.current) return;
+    loadingMoreRef.current = pageNavigation;
+    setLoadingMore(pageNavigation);
     const currentRequest = ++requestId.current;
-    if (nextPage === 1) setLoading(true);
+    if (!pageNavigation) setLoading(true);
     setLoadError(null);
     try {
       if (tab === "customer") {
@@ -189,24 +191,24 @@ export default function TileOrdersScreen() {
           status: customerStatus === "All" ? undefined : customerStatus,
         });
         if (currentRequest !== requestId.current) return;
-        setCustomerOrders((previous) => nextPage === 1 ? result.orders : [...previous, ...result.orders]);
+        setCustomerOrders(result.orders);
         setHasMore(result.has_more);
       } else if (tab === "brands") {
         const result = await tileOrdersApi.listBrands({ page: nextPage, page_size: 30, search: brandSearch || undefined });
         if (currentRequest !== requestId.current) return;
-        setBrands((previous) => nextPage === 1 ? result.brands : [...previous, ...result.brands]);
+        setBrands(result.brands);
         setHasMore(result.has_more);
       } else if (tab === "history") {
         const dateFrom = historyDateRange === "year" ? `${new Date().getFullYear()}-01-01` : historyDateRange === "30d" ? new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10) : undefined;
         const result = await tileOrdersApi.listHistory({ search: historySearch || undefined, customer_id: historyCustomer !== "All" ? historyCustomer : undefined, brand_id: historyBrand !== "All" ? historyBrand : undefined, date_from: dateFrom, page: nextPage, page_size: 30 });
         if (currentRequest !== requestId.current) return;
-        setHistory((previous) => nextPage === 1 ? result.rows : [...previous, ...result.rows]);
+        setHistory(result.rows);
         setHistoryFacets(result.facets);
         setHasMore(result.has_more);
       } else if (tab === "inventory") {
         const result = await tileOrdersApi.listInventory({ search: inventorySearch || undefined, page: nextPage, page_size: 30 });
         if (currentRequest !== requestId.current) return;
-        setInventory((previous) => nextPage === 1 ? result.rows : [...previous, ...result.rows]);
+        setInventory(result.rows);
         setHasMore(result.has_more);
       } else if (tab === "dispatch-list") {
         const result = await tileOrdersApi.listDispatchList({
@@ -215,7 +217,7 @@ export default function TileOrdersScreen() {
           page: nextPage, page_size: 30,
         });
         if (currentRequest !== requestId.current) return;
-        setDispatchRows((previous) => nextPage === 1 ? result.rows : [...previous, ...result.rows]);
+        setDispatchRows(result.rows);
         setHasMore(result.has_more);
       } else {
         const result = await tileOrdersApi.listMovements({
@@ -223,7 +225,7 @@ export default function TileOrdersScreen() {
           page: nextPage, page_size: 30,
         });
         if (currentRequest !== requestId.current) return;
-        setMovements((previous) => nextPage === 1 ? result.rows : [...previous, ...result.rows]);
+        setMovements(result.rows);
         setHasMore(result.has_more);
       }
       if (currentRequest === requestId.current) setPage(nextPage);
@@ -701,9 +703,15 @@ export default function TileOrdersScreen() {
           ) : null}
 
           {renderBody()}
-          {hasMore && !loading ? (
+          {(hasMore || page > 1) && !loading ? (
             <View style={styles.loadMore}>
-              <Button label={loadingMore ? "Loading more…" : "Load more"} disabled={loadingMore} size="lg" onPress={() => void load(page + 1)} testID="tile-orders-load-more" />
+              {page > 1 ? (
+                <Button label="Previous page" disabled={loadingMore} onPress={() => void load(page - 1, true)} testID="tile-orders-previous-page" />
+              ) : null}
+              <Text style={styles.pageLabel}>Page {page}</Text>
+              {hasMore ? (
+                <Button label={loadingMore ? "Loading page…" : "Next page"} disabled={loadingMore} onPress={() => void load(page + 1, true)} testID="tile-orders-load-more" />
+              ) : null}
             </View>
           ) : null}
         </Section>
@@ -835,7 +843,8 @@ function SheetFact({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   stateBlock: { paddingVertical: spacing.s48, alignItems: "center", gap: spacing.lg },
-  loadMore: { paddingTop: spacing.lg, alignItems: "center" },
+  loadMore: { paddingTop: spacing.lg, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: spacing.md },
+  pageLabel: { ...type.body, color: colors.onSurfaceMuted },
   // The Dispatch List's status is a free-text backend string rather than one
   // of the StatusPill ladder values, so it gets a neutral chip of the same
   // height as a pill instead of pretending to be one.

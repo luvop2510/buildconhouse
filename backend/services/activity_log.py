@@ -92,7 +92,7 @@ async def log_event(
             summary=summary,
             floor_id=floor_id or (actor.active_floor_id if actor else None),
         )
-        await db.activity_events.insert_one(ev.dict())
+        await db.activity_events.insert_one(ev.model_dump())
         return ev
     except Exception as e:  # noqa: BLE001
         logger.warning("activity log failed (%s / %s): %s", event_type, entity_id, e)

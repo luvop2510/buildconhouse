@@ -5,7 +5,7 @@ import {mockSession} from './audit-fixtures';
 const app=join(process.cwd(),'app');
 function files(dir:string):string[]{return readdirSync(dir,{withFileTypes:true}).flatMap(f=>f.isDirectory()?files(join(dir,f.name)):[join(dir,f.name)]);}
 const routes=[...new Set(files(app).filter(f=>f.endsWith('.tsx')&&!/\/_|\/\+/.test(f)&&!f.endsWith('.web.tsx')).map(f=>'/'+relative(app,f).replace(/\([^/]+\)\//g,'').replace(/\.tsx$/,'').replace(/(^|\/)index$/,'').replace(/\/$/,'').replace('[floor]','kitchen').replace('[view]','followups').replace('[kind]','salespeople').replace(/\[[^\]]+\]/g,'audit-record')).filter(p=>p!=='/'&&!p.includes('set-new-password')&&p!=='/login'))];
-const critical=new Set(['/purchases','/tiles/orders','/tiles/quotation','/quotations/new','/sales-data']);
+const critical=new Set(['/purchases','/tiles/orders','/tiles/quotation','/quotations/new','/sales-data','/followups']);
 for(const path of routes){
  test(`${critical.has(path)?'critical ':''}${path} handles unavailable data and fits viewport`,async({page},info)=>{
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));

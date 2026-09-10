@@ -1,3 +1,4 @@
+import { useReducedMotion } from "@/src/hooks/use-reduced-motion";
 // ─────────────────────────────────────────────────────────────────────────────
 // BuildCon House · Showroom primitives.
 // Every screen composes ONLY these. No local styling in modules.
@@ -371,8 +372,10 @@ export function EmptyState({
 export function Skeleton({ w = "100%", h = 14, r = 6, style }: {
   w?: number | `${number}%`; h?: number; r?: number; style?: StyleProp<ViewStyle>;
 }) {
+  const reducedMotion = useReducedMotion();
   const pulse = useRef(new Animated.Value(0.5)).current;
   useEffect(() => {
+    if (reducedMotion) { pulse.setValue(0.7); return; }
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(pulse, { toValue: 1, duration: 700, easing: Easing.inOut(Easing.quad), useNativeDriver: Platform.OS !== "web" }),
@@ -381,7 +384,7 @@ export function Skeleton({ w = "100%", h = 14, r = 6, style }: {
     );
     loop.start();
     return () => loop.stop();
-  }, [pulse]);
+  }, [pulse, reducedMotion]);
   return (
     <Animated.View
       style={[{ width: w, height: h, borderRadius: r, backgroundColor: color.sunkenDeep, opacity: pulse }, style]}
