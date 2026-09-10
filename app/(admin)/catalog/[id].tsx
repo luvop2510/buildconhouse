@@ -20,7 +20,7 @@ import { Feather } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  FlatList, LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent, Pressable,
+  ActivityIndicator, FlatList, LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent, Pressable,
   ScrollView, Share, StyleSheet, Text, View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -73,6 +73,7 @@ function swatchColor(label?: string | null): string {
   if (l.includes("chrome") || l.includes("steel") || l.includes("polished")) return "#C0C5CB";
   if (l.includes("brushed") && l.includes("brass")) return "#B08D57";
   if (l.includes("brass") || l.includes("gold")) return "#C6A664";
+  if (l.includes("brown") || l.includes("red") || l.includes("rust") || l.includes("terracotta")) return "#7B3F2D";
   if (l.includes("bronze") || l.includes("copper")) return "#8C5E3C";
   if (l.includes("nickel")) return "#7C8791";
   if (l.includes("graphite") || l.includes("anthracite")) return "#3A3A3A";
@@ -97,6 +98,11 @@ export default function ProductDetail() {
   const [imageIdx, setImageIdx] = useState(0);
   const [galleryW, setGalleryW] = useState(0);
   const galleryRef = useRef<FlatList<string>>(null);
+  // A finish tap can happen before the prior product request resolves. Keep a
+  // monotonically increasing token so an older response can never overwrite
+  // the newly selected colour (and its image) after a fast sequence of taps.
+  const loadRequestRef = useRef(0);
+  const [isVariantSwitching, setIsVariantSwitching] = useState(false);
   const [pipeline, setPipeline] = useState<PipelineItem[]>([]);
   const [moveItem, setMoveItem] = useState<PipelineItem | null>(null);
   const [transferItem, setTransferItem] = useState<PipelineItem | null>(null);
@@ -121,36 +127,51 @@ export default function ProductDetail() {
     po_number: it.po_number, brand_name: it.brand_name, supplier_name: it.supplier_name,
   });
 
-  const loadPipeline = async (productId: string) => {
+  const loadPipeline = async (productId: string, requestId?: number) => {
     try {
       const r = await api.get<{ items: PipelineItem[] }>(`/purchases/items?product_id=${productId}&limit=50`);
+      if (requestId !== undefined && requestId !== loadRequestRef.current) return;
       setPipeline((r.items || []).filter((it) => it.stage !== "delivered"));
-    } catch { setPipeline([]); }
+    } catch {
+      if (requestId === undefined || requestId === loadRequestRef.current) setPipeline([]);
+    }
   };
 
   const [loadError, setLoadError] = useState(false);
   const loadProduct = async (productId: string) => {
+    const requestId = ++loadRequestRef.current;
     setLoadError(false);
     try {
       const prod = await api.get<Product>(`/products/${productId}`);
+      if (requestId !== loadRequestRef.current) return;
       setP(prod);
-      loadPipeline(prod.id);
-      if (prod.family_key) {
-        const res = await api.get<{ items: Product[] }>(`/products?family_key=${encodeURIComponent(prod.family_key)}&limit=20`);
-        setSiblings(res.items.filter((x) => x.id !== prod.id));
+      setImageIdx(0);
+      setIsVariantSwitching(false);
+      void loadPipeline(prod.id, requestId);
+
+      // These secondary panels must not delay the selected variant's hero.
+      // Fetch independently, then apply only if this is still the selection.
+      const siblingsRequest = prod.family_key
+        ? api.get<{ items: Product[] }>(`/products?family_key=${encodeURIComponent(prod.family_key)}&limit=20`)
+        : Promise.resolve<{ items: Product[] }>({ items: [] });
+      const [siblingsResult, alternatesResult, brandsResult] = await Promise.allSettled([
+        siblingsRequest,
+        api.get<{ items: Product[] }>(`/products/${prod.id}/alternates?limit=6`),
+        api.get<Brand[]>("/brands"),
+      ]);
+      if (requestId !== loadRequestRef.current) return;
+      setSiblings(siblingsResult.status === "fulfilled" ? siblingsResult.value.items.filter((x) => x.id !== prod.id) : []);
+      setAlternates(alternatesResult.status === "fulfilled" ? alternatesResult.value.items || [] : []);
+      if (brandsResult.status === "fulfilled") {
+        const brand = brandsResult.value.find((x) => x.id === prod.brand_id);
+        setBrandName(brand?.name || "");
       }
-      try {
-        const alt = await api.get<{ items: Product[] }>(`/products/${prod.id}/alternates?limit=6`);
-        setAlternates(alt.items || []);
-      } catch { /* ignore */ }
-      try {
-        const brands = await api.get<Brand[]>("/brands");
-        const b = brands.find((x) => x.id === prod.brand_id);
-        setBrandName(b?.name || "");
-      } catch { /* ignore */ }
     } catch {
-      setP(null);
+      if (requestId !== loadRequestRef.current) return;
+      // Retain an optimistic sibling card after a transient request failure;
+      // it has the correct SKU/media and is far more useful than a blank page.
       setLoadError(true);
+      setIsVariantSwitching(false);
     }
   };
 
@@ -171,6 +192,21 @@ export default function ProductDetail() {
     // this effect is driven only by the route product id.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  const selectVariant = (variant: Product) => {
+    if (variant.id === p?.id) return;
+    // Instantly move the hero to the chosen variant's own hydrated media.
+    // The authoritative detail request below then fills in full specs without
+    // ever exposing a sibling's photo during the transition.
+    loadRequestRef.current += 1;
+    setP(variant);
+    setImageIdx(0);
+    setPipeline([]);
+    setAlternates([]);
+    setLoadError(false);
+    setIsVariantSwitching(true);
+    router.replace(`/(admin)/catalog/${variant.id}` as any);
+  };
 
   const ownImageUrls = (item: Pick<Product, "gallery" | "hero_image_url" | "images">): string[] => {
     return productImageList(item);
@@ -240,6 +276,12 @@ export default function ProductDetail() {
                 borderRadius={0}
               />
             </View>
+            {isVariantSwitching ? (
+              <View style={styles.variantLoading} accessibilityLiveRegion="polite">
+                <ActivityIndicator size="small" color={colors.onBrand} />
+                <Text style={styles.variantLoadingText}>Updating finish</Text>
+              </View>
+            ) : null}
             {galleryUrls.length > 1 ? (
               <View style={styles.countPill}>
                 <Feather name="image" size={11} color="#fff" />
@@ -266,6 +308,7 @@ export default function ProductDetail() {
         <View style={{ backgroundColor: colors.surfaceTertiary, aspectRatio: PRODUCT_IMAGE_ASPECT_RATIO }}>
           {galleryW > 0 ? (
             <FlatList
+              key={p.id}
               ref={galleryRef}
               data={galleryUrls.length > 0 ? galleryUrls : [""]}
               keyExtractor={(_, i) => `img-${i}`}
@@ -290,6 +333,12 @@ export default function ProductDetail() {
                 </View>
               )}
             />
+          ) : null}
+          {isVariantSwitching ? (
+            <View style={styles.variantLoading} accessibilityLiveRegion="polite">
+              <ActivityIndicator size="small" color={colors.onBrand} />
+              <Text style={styles.variantLoadingText}>Updating finish</Text>
+            </View>
           ) : null}
           {galleryUrls.length > 1 ? (
             <View style={styles.pageDots}>
@@ -369,7 +418,7 @@ export default function ProductDetail() {
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             <VariantSwatch product={p} active onPress={() => {}} />
             {siblings.map((s) => (
-              <VariantSwatch key={s.id} product={s} onPress={() => router.replace(`/(admin)/catalog/${s.id}` as any)} />
+              <VariantSwatch key={s.id} product={s} onPress={() => selectVariant(s)} />
             ))}
           </View>
         </View>
@@ -637,6 +686,12 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", gap: 4,
   },
   countPillText: { color: "#fff", fontSize: 11, fontWeight: "700" },
+  variantLoading: {
+    position: "absolute", left: 12, bottom: 12, zIndex: 2,
+    flexDirection: "row", alignItems: "center", gap: 6,
+    backgroundColor: "rgba(29,27,22,0.82)", paddingHorizontal: 10, paddingVertical: 7, borderRadius: radius.pill,
+  },
+  variantLoadingText: { color: colors.onBrand, fontSize: 11, fontWeight: "700" },
   repImageNote: { fontSize: 11, color: colors.onSurfaceMuted, fontStyle: "italic", padding: 8, textAlign: "center" },
 
   thumb: {

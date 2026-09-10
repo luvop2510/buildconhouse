@@ -247,6 +247,15 @@ function isWonOrderFollowup(f: Followup): boolean {
   return f.auto_resolved && (f.completed_outcome === "won" || f.completed_outcome === "converted");
 }
 
+/**
+ * Older API deployments do not expose the bounded `/followups/page` route.
+ * FastAPI then resolves `page` as a follow-up id and responds with this exact
+ * detail 404. It is a recoverable capability mismatch, not an empty inbox.
+ */
+function isMissingPagedInbox(error: any): boolean {
+  return error?.status === 404 && /follow-?up not found/i.test(String(error?.detail || error?.message || ""));
+}
+
 /** Keep bulk mutations bounded so a large selection cannot stampede the API. */
 async function settleBulkRequests(request: BulkRequest, ids: string[]): Promise<PromiseSettledResult<unknown>[]> {
   const results: PromiseSettledResult<unknown>[] = [];
@@ -301,6 +310,7 @@ export default function FollowupsScreen() {
   const lastListLoadFailed = useRef(false);
   const listRequestVersion = useRef(0);
   const loadingPageRef = useRef(false);
+  const bootstrappedFloorRef = useRef<string | null>(null);
   const detailRequestVersion = useRef(0);
   const detailAbortController = useRef<AbortController | null>(null);
   const [mobileSheet, setMobileSheet] = useState(false);
@@ -338,6 +348,10 @@ export default function FollowupsScreen() {
 
   // ── Data loading ──────────────────────────────────────────────────────────
   const loadList = useCallback(async (nextPage = 1, pageNavigation = false) => {
+    // The app shell normally waits for this, but retain the guard here for a
+    // direct route/remount. A request with no floor header can be rejected or
+    // return a different workspace, neither of which is an inbox failure.
+    if (!selectedFloorId) return [];
     if (pageNavigation && loadingPageRef.current) return [];
     if (pageNavigation) {
       loadingPageRef.current = true;
@@ -363,7 +377,30 @@ export default function FollowupsScreen() {
       else if (kpiFilter === "completed") params.set("completed_today", "true");
       else if (kpiFilter !== "all") params.set("bucket", kpiFilter);
 
-      const result = await api.get<FollowupPage>(`/followups/page?${params.toString()}`, { floorId: selectedFloorId });
+      let result: FollowupPage;
+      try {
+        result = await api.get<FollowupPage>(`/followups/page?${params.toString()}`, { floorId: selectedFloorId });
+      } catch (error: any) {
+        // A rolling frontend/backend deploy must not strand an otherwise
+        // usable queue. The established array endpoint retains the same core
+        // filter contract, while the client continues to apply every visible
+        // filter below. It intentionally has no cursor/page contract, so only
+        // recover the first page and suppress unavailable pagination.
+        if (!pageNavigation && nextPage === 1 && isMissingPagedInbox(error)) {
+          const legacyParams = new URLSearchParams({ limit: String(FOLLOWUP_PAGE_SIZE) });
+          if (searchQuery) legacyParams.set("q", searchQuery);
+          if (priorityFilter !== "all") legacyParams.set("priority", priorityFilter);
+          if (categoryFilter !== "all") legacyParams.set("category", categoryFilter);
+          if (tierFilter !== "all") legacyParams.set("customer_tier", tierFilter);
+          if (ownerFilter === "mine" && staff?.id) legacyParams.set("assigned_to", staff.id);
+          else if (ownerFilter !== "all") legacyParams.set("assigned_to", ownerFilter);
+          if (kpiFilter !== "all" && kpiFilter !== "waiting" && kpiFilter !== "completed") legacyParams.set("bucket", kpiFilter);
+          const items = await api.get<Followup[]>(`/followups?${legacyParams.toString()}`, { floorId: selectedFloorId });
+          result = { items, page: 1, page_size: FOLLOWUP_PAGE_SIZE, has_more: false };
+        } else {
+          throw error;
+        }
+      }
       if (requestVersion !== listRequestVersion.current) return [];
       lastListLoadFailed.current = false;
       setRawItems(result.items);
@@ -388,28 +425,34 @@ export default function FollowupsScreen() {
   }, [categoryFilter, followupView, kpiFilter, ownerFilter, priorityFilter, searchQuery, selectedFloorId, staff?.id, tierFilter, workspace]);
 
   const refreshStatsQuiet = useCallback(async () => {
+    if (!selectedFloorId) return;
     try {
       const [s, m, i] = await Promise.all([
-        api.get<Stats>("/followups/stats"),
-        api.get<Mission>("/followups/mission"),
-        api.get<Insights>("/followups/insights"),
+        api.get<Stats>("/followups/stats", { floorId: selectedFloorId }),
+        api.get<Mission>("/followups/mission", { floorId: selectedFloorId }),
+        api.get<Insights>("/followups/insights", { floorId: selectedFloorId }),
       ]);
       setStats(s); setMission(m); setInsights(i);
     } catch { /* best-effort */ }
-  }, []);
+  }, [selectedFloorId]);
 
   const bootstrap = useCallback(async () => {
+    if (!selectedFloorId) return [];
+    const floorId = selectedFloorId;
       // Reconciliation remains available as an explicit administrative action.
       // Do not fire a mutation during workspace bootstrap: navigation can abort
       // an unawaited POST and create a visible browser network error.
     void Promise.allSettled([
-      api.get<Stats>("/followups/stats"),
-      api.get<Mission>("/followups/mission"),
-      api.get<Insights>("/followups/insights"),
-      api.get<Assignee[]>("/followups/config/assignees"),
-      api.get<CustomerLite[]>("/customers"),
-      api.get<SavedView[]>("/followups/saved-views"),
+      api.get<Stats>("/followups/stats", { floorId: selectedFloorId }),
+      api.get<Mission>("/followups/mission", { floorId: selectedFloorId }),
+      api.get<Insights>("/followups/insights", { floorId: selectedFloorId }),
+      api.get<Assignee[]>("/followups/config/assignees", { floorId: selectedFloorId }),
+      api.get<CustomerLite[]>("/customers", { floorId: selectedFloorId }),
+      api.get<SavedView[]>("/followups/saved-views", { floorId: selectedFloorId }),
     ]).then(([statsResult, missionResult, insightsResult, assigneesResult, customersResult, savedViewsResult]) => {
+      // A new floor request may already be in flight. Never let a late,
+      // otherwise successful summary response repaint the newer workspace.
+      if (bootstrappedFloorRef.current !== floorId) return;
       if (statsResult.status === "fulfilled") setStats(statsResult.value);
       if (missionResult.status === "fulfilled") setMission(missionResult.value);
       if (insightsResult.status === "fulfilled") setInsights(insightsResult.value);
@@ -418,9 +461,23 @@ export default function FollowupsScreen() {
       if (savedViewsResult.status === "fulfilled") setSavedViews(savedViewsResult.value);
     });
     return loadList();
-  }, [loadList]);
+  }, [loadList, selectedFloorId]);
 
   useEffect(() => {
+    if (!selectedFloorId || bootstrappedFloorRef.current === selectedFloorId) return;
+    bootstrappedFloorRef.current = selectedFloorId;
+    didApplyListFilters.current = false;
+    // A floor is a hard data boundary: any selected card, detail request, or
+    // bulk selection from the prior floor would otherwise make a valid 404
+    // look like a broken follow-up.
+    detailRequestVersion.current += 1;
+    detailAbortController.current?.abort();
+    setSelectedId(null);
+    setDetail(null);
+    setLoadingDetail(false);
+    setMobileSheet(false);
+    setSelectedIds(new Set());
+    setBulkResult(null);
     (async () => {
       setLoading(true);
       const list = await bootstrap();
@@ -436,18 +493,19 @@ export default function FollowupsScreen() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [selectedFloorId]);
 
   const latestLoadList = useRef(loadList);
   const didApplyListFilters = useRef(false);
   useEffect(() => { latestLoadList.current = loadList; }, [loadList]);
   useEffect(() => {
+    if (!selectedFloorId) return;
     if (!didApplyListFilters.current) {
       didApplyListFilters.current = true;
       return;
     }
     void loadList();
-  }, [loadList]);
+  }, [loadList, selectedFloorId]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -473,16 +531,27 @@ export default function FollowupsScreen() {
     detailAbortController.current = controller;
     setLoadingDetail(true);
     try {
-      const loadedDetail = await api.get<Detail>(`/followups/${id}`, { signal: controller.signal });
+      const loadedDetail = await api.get<Detail>(`/followups/${id}`, { signal: controller.signal, floorId: selectedFloorId });
       if (version === detailRequestVersion.current) setDetail(loadedDetail);
     } catch (e: any) {
       if (version !== detailRequestVersion.current || e?.name === "AbortError") return;
+      if (e?.status === 404) {
+        // The card was completed, moved, or removed in another session. Put
+        // the queue back in control instead of displaying a stale "not found"
+        // detail panel.
+        setSelectedId(null);
+        setDetail(null);
+        setMobileSheet(false);
+        void latestLoadList.current();
+        toast.error("That follow-up changed elsewhere. The queue has been refreshed.");
+        return;
+      }
       toast.error(e?.detail || "Could not load details");
       setDetail(null);
     } finally {
       if (version === detailRequestVersion.current) setLoadingDetail(false);
     }
-  }, []);
+  }, [selectedFloorId]);
 
   const selectCard = useCallback((f: Followup) => {
     setSelectedId(f.id);
@@ -1492,6 +1561,7 @@ function FollowupCard({
   onAssign: (f: Followup, userId: string) => void; onNote: (f: Followup) => void; onMarkLost: (f: Followup) => void; onDismiss: (f: Followup) => void; canDelete: boolean; onDelete: (f: Followup) => void; onOpenDoc?: (f: Followup) => void;
 }) {
   const { isPhone } = useBp();
+  const [expanded, setExpanded] = useState(false);
   const level = f.manual_priority_override || f.priority_level;
   const tone = PRIORITY_TONE[level];
   const isResolved = f.status === "done" || f.status === "dismissed";
@@ -1532,6 +1602,16 @@ function FollowupCard({
               {[f.project_name, f.quotation_number || f.purchase_number].filter(Boolean).join(" · ") || "General follow-up"}
             </Text>
           </View>
+          <Pressable
+            onPress={(event) => { event.stopPropagation(); setExpanded((value) => !value); }}
+            style={({ pressed }) => ({ width: 36, height: 36, borderRadius: radius.sm, alignItems: "center", justifyContent: "center", backgroundColor: pressed ? colors.surfaceTertiary : "transparent" })}
+            accessibilityRole="button"
+            accessibilityLabel={expanded ? "Hide follow-up details" : "Show follow-up details"}
+            accessibilityState={{ expanded }}
+            hitSlop={4}
+          >
+            <Feather name={expanded ? "chevron-up" : "chevron-down"} size={17} color={colors.onSurfaceSecondary} />
+          </Pressable>
           {!isResolved ? <ScoreBadge score={f.priority_score} level={level} /> : (
             <Badge label={f.completed_outcome === "lost" ? "Lost" : isWonOrderFollowup(f) ? "Won order" : f.status === "dismissed" ? "Dismissed" : (f.completed_outcome || "Done")} tone={f.completed_outcome === "lost" || f.status === "dismissed" ? "neutral" : "success"} size="sm" />
           )}
@@ -1548,14 +1628,15 @@ function FollowupCard({
 
         {/* Reason + explainability */}
         <View style={{ gap: 2 }}>
-          <Text style={type.bodySm} numberOfLines={isPhone ? 1 : 2}>{f.reason}</Text>
-          {!isPhone && f.reason_factors?.length ? (
+          <Text style={type.bodySm} numberOfLines={expanded ? 3 : 1}>{f.reason}</Text>
+          {expanded && f.reason_factors?.length ? (
             <Text style={type.caption} numberOfLines={2}>{f.reason_factors.join(" · ")}</Text>
           ) : null}
         </View>
 
-        {/* Tags */}
-        {!isPhone && f.tags?.length ? (
+        {/* The inbox stays scan-first by default. Supporting signals are one
+            deliberate tap away instead of making every record a tall form. */}
+        {expanded && f.tags?.length ? (
           <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
             {f.tags.map((t, i) => <Badge key={`${t}-${i}`} label={t} tone="neutral" size="sm" />)}
           </View>
@@ -1577,9 +1658,9 @@ function FollowupCard({
         {/* Meta row */}
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm }}>
           <Text style={{ fontSize: 12, fontWeight: "600", color: overdueDue ? colors.error : colors.onSurfaceSecondary }}>{dueLabel(f)}</Text>
-          <Text style={type.caption} numberOfLines={1}>{timeAgo(f.last_contacted_at)}</Text>
+          {expanded ? <Text style={type.caption} numberOfLines={1}>{timeAgo(f.last_contacted_at)}</Text> : null}
         </View>
-        {f.assigned_to_name ? (
+        {expanded && f.assigned_to_name ? (
           <Text style={type.caption}>Assigned to {f.assigned_to_name}</Text>
         ) : null}
 
@@ -1632,15 +1713,6 @@ function FollowupCard({
               ]}
             />
             <IconMenuButton
-              icon="fast-forward" accessibilityLabel="Push follow-up date" testID={`push-${f.id}`}
-              items={[
-                { label: "Push +1 day", icon: "chevron-right", onPress: () => onPushDays(f, 1) },
-                { label: "Push +2 days", icon: "chevron-right", onPress: () => onPushDays(f, 2) },
-                { label: "Push +3 days", icon: "chevron-right", onPress: () => onPushDays(f, 3) },
-                { label: "Push +7 days", icon: "chevron-right", onPress: () => onPushDays(f, 7) },
-              ]}
-            />
-            <IconMenuButton
               icon="user-plus" accessibilityLabel="Assign" testID={`assign-${f.id}`}
               items={assignees.map((a) => ({ label: `Assign to ${a.full_name}`, icon: "user" as FeatherName, onPress: () => onAssign(f, a.id) }))}
             />
@@ -1649,6 +1721,9 @@ function FollowupCard({
               label="More" icon="more-horizontal" variant="secondary"
               items={[
                 { label: "Email", icon: "mail", onPress: () => onEmail(f, "email") },
+                { label: "Push +1 day", icon: "fast-forward", onPress: () => onPushDays(f, 1) },
+                { label: "Push +3 days", icon: "fast-forward", onPress: () => onPushDays(f, 3) },
+                { label: "Push +7 days", icon: "fast-forward", onPress: () => onPushDays(f, 7) },
                 { label: "Add note", icon: "edit-3", onPress: () => onNote(f) },
                 { label: "Mark as lost…", icon: "user-x", tone: "danger" as const, onPress: () => onMarkLost(f) },
                 { label: "Dismiss", icon: "x-circle", tone: "danger" as const, onPress: () => onDismiss(f) },

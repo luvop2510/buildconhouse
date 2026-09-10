@@ -12,7 +12,7 @@ import { colors, money, PRODUCT_IMAGE_ASPECT_RATIO, radius, type } from "@/src/t
 
 import { VariantSwatchStrip } from "../shared/VariantChip";
 import { QuickAddButton } from "../shared/QuickAddButton";
-import { productImageList } from "../helpers/media";
+import { resolveVariantImages } from "../helpers/media";
 import { variantDescriptor } from "../helpers/pricing";
 import type { Product, ProductVariant } from "../helpers/types";
 
@@ -27,6 +27,7 @@ const ROW_FLASH_MS = 700;
 
 function PickerCardImpl({ product, onQuickAdd, onLongPress, onOpenDetails }: Props) {
   const [rowFlash, setRowFlash] = useState(false);
+  const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (flashTimer.current) clearTimeout(flashTimer.current); }, []);
 
@@ -37,13 +38,17 @@ function PickerCardImpl({ product, onQuickAdd, onLongPress, onOpenDetails }: Pro
   };
 
   const handleRowAdd = () => {
-    onQuickAdd(product);
+    onQuickAdd(product, selectedVariant ?? undefined);
     Haptics.selectionAsync();
-    toast.success(`${product.name} added to quotation`);
+    const finish = selectedVariant ? variantDescriptor(selectedVariant) : "";
+    toast.success(`${product.name}${finish ? ` · ${finish}` : ""} added to quotation`);
     setRowFlash(true);
     if (flashTimer.current) clearTimeout(flashTimer.current);
     flashTimer.current = setTimeout(() => setRowFlash(false), ROW_FLASH_MS);
   };
+  const selectedImages = resolveVariantImages(product, selectedVariant);
+  const selectedSku = selectedVariant?.sku ?? product.sku;
+  const selectedPrice = selectedVariant?.price ?? product.price;
 
   return (
     <View style={{ gap: 6 }}>
@@ -59,30 +64,30 @@ function PickerCardImpl({ product, onQuickAdd, onLongPress, onOpenDetails }: Pro
             : { backgroundColor: pressed ? colors.surfaceTertiary : colors.surfaceSecondary },
         ]}
       >
-        <ProductImage source={productImageList(product)} style={styles.thumb} fallbackLabel={product.sku} />
+        <ProductImage source={selectedImages.images} style={styles.thumb} fallbackLabel={selectedSku} disableSkeleton />
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={styles.name} numberOfLines={1}>{product.name}</Text>
           <Text style={type.caption} numberOfLines={1}>
-            {product.sku}{variantDescriptor(product) ? ` · ${variantDescriptor(product)}` : ""}
+            {selectedSku}{variantDescriptor(selectedVariant ?? product) ? ` · ${variantDescriptor(selectedVariant ?? product)}` : ""}
           </Text>
         </View>
-        <Text style={styles.price} numberOfLines={1}>{money(product.price)}</Text>
+        <Text style={styles.price} numberOfLines={1}>{money(selectedPrice)}</Text>
         <QuickAddButton
           circular
           circularSize={28}
           iconSize={16}
-          onAdd={() => onQuickAdd(product)}
-          toastText={`${product.name} added to quotation`}
+          onAdd={() => onQuickAdd(product, selectedVariant ?? undefined)}
+          toastText={`${product.name}${selectedVariant ? ` · ${variantDescriptor(selectedVariant) || selectedVariant.sku}` : ""} added to quotation`}
           testID={`add-plus-${product.id}`}
         />
       </Pressable>
       <VariantSwatchStrip
         product={product}
         onSelect={(v) => {
-          onQuickAdd(product, v);
+          setSelectedVariant(v);
           Haptics.selectionAsync();
-          toast.success(`${product.name} · ${variantDescriptor(v) || v.sku} added`);
         }}
+        activeSku={selectedVariant?.sku ?? product.sku}
       />
     </View>
   );

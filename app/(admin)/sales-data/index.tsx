@@ -20,7 +20,7 @@ import { TrendChart } from "@/src/components/salesData/TrendChart";
 import { SalesSection } from "@/src/components/salesData/SalesSection";
 import { useSalesPeriod } from "@/src/components/salesData/useSalesPeriod";
 import {
-  Alert, Badge, Button, Card, ErrorState, KpiCard, SkeletonList,
+  Alert, Badge, Button, Card, ErrorState, KpiCard, SkeletonCard,
   Table, TableCell, TableHeader, TableRow,
 } from "@/src/components/ui";
 import { useBp } from "@/src/design/responsive";
@@ -116,6 +116,7 @@ export default function SalesDataIndex() {
   const [sections, setSections] = useState<Sections>(EMPTY_SECTIONS);
   const [sectionErrors, setSectionErrors] = useState<Partial<Record<SectionKey, string>>>({});
   const requestVersion = useRef(0);
+  const sectionRequestController = useRef<AbortController | null>(null);
   const scopeKeyRef = useRef<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [updating, setUpdating] = useState(false);
@@ -125,31 +126,31 @@ export default function SalesDataIndex() {
     return { floorId, preset: period.preset, dateFrom: period.dateFrom, dateTo: period.dateTo };
   }, [floorId, period]);
 
-  const requestSection = useCallback((key: SectionKey, filter: SalesFilter): Promise<{ rows: SectionRows }> => {
+  const requestSection = useCallback((key: SectionKey, filter: SalesFilter, signal?: AbortSignal): Promise<{ rows: SectionRows }> => {
     switch (key) {
-      case "trend": return salesDataApi.revenueTrend(filter).then((result) => ({ rows: result.points }));
-      case "brands": return salesDataApi.revenueByBrand(filter);
-      case "customers": return salesDataApi.revenueByCustomer(filter);
-      case "products": return salesDataApi.bestSellingProducts(filter, TOP_N);
-      case "orders": return salesDataApi.recentOrders(filter, TOP_N);
-      case "architects": return salesDataApi.referrers(filter, "architect");
-      case "designers": return salesDataApi.referrers(filter, "interior_designer");
+      case "trend": return salesDataApi.revenueTrend(filter, { signal }).then((result) => ({ rows: result.points }));
+      case "brands": return salesDataApi.revenueByBrand(filter, { signal });
+      case "customers": return salesDataApi.revenueByCustomer(filter, { signal });
+      case "products": return salesDataApi.bestSellingProducts(filter, TOP_N, { signal });
+      case "orders": return salesDataApi.recentOrders(filter, TOP_N, { signal });
+      case "architects": return salesDataApi.referrers(filter, "architect", { signal });
+      case "designers": return salesDataApi.referrers(filter, "interior_designer", { signal });
     }
   }, []);
 
-  const loadSection = useCallback(async (key: SectionKey, filter: SalesFilter, version = requestVersion.current) => {
+  const loadSection = useCallback(async (key: SectionKey, filter: SalesFilter, version = requestVersion.current, signal?: AbortSignal) => {
     setSectionErrors((current) => {
       const next = { ...current };
       delete next[key];
       return next;
     });
     try {
-      const result = await requestSection(key, filter);
+      const result = await requestSection(key, filter, signal);
       if (version === requestVersion.current) {
         setSections((current) => ({ ...current, [key]: result.rows } as Sections));
       }
     } catch (e: unknown) {
-      if (version !== requestVersion.current) return;
+      if (version !== requestVersion.current || (e as { name?: string })?.name === "AbortError") return;
       const detail = (e as { detail?: unknown })?.detail;
       setSectionErrors((current) => ({ ...current, [key]: typeof detail === "string" ? detail : "Could not load this breakdown" }));
     }
@@ -159,6 +160,9 @@ export default function SalesDataIndex() {
     const filter = filterForScope();
     if (!filter || !period) return; // never query before the scope is known
     const version = ++requestVersion.current;
+    sectionRequestController.current?.abort();
+    const controller = new AbortController();
+    sectionRequestController.current = controller;
     const scopeKey = JSON.stringify(filter);
     const scopeChanged = scopeKeyRef.current !== scopeKey;
     scopeKeyRef.current = scopeKey;
@@ -181,6 +185,11 @@ export default function SalesDataIndex() {
       setUpdatedAt(null);
     }
 
+    // The overview is the first useful paint: it answers the page's three
+    // headline questions and sets the floor context. Previously it raced
+    // seven independent, aggregation-heavy breakdowns on first entry. That
+    // made the owner wait for the least important tables before the summary
+    // could settle. Detailed analysis now begins after this critical read.
     const overviewRequest = executiveApi.overview(executiveQuery)
       .then((result) => {
         if (version !== requestVersion.current) return;
@@ -193,20 +202,28 @@ export default function SalesDataIndex() {
         setOverviewError(typeof detail === "string" ? detail : "Could not load the sales summary");
       });
 
-    const sectionRequests = (Object.keys(EMPTY_SECTIONS) as SectionKey[]).map((key) => loadSection(key, filter, version));
-    void Promise.all([overviewRequest, ...sectionRequests]).finally(() => {
-      if (version === requestVersion.current) setUpdating(false);
+    void overviewRequest.finally(() => {
+      if (version !== requestVersion.current || controller.signal.aborted) return;
+      const sectionRequests = (Object.keys(EMPTY_SECTIONS) as SectionKey[]).map(
+        (key) => loadSection(key, filter, version, controller.signal),
+      );
+      void Promise.all(sectionRequests).finally(() => {
+        if (version === requestVersion.current) setUpdating(false);
+      });
     });
   }, [filterForScope, floorId, loadSection, period]);
 
   const retrySection = useCallback((key: SectionKey) => {
     const filter = filterForScope();
-    if (filter) void loadSection(key, filter);
+    if (filter) void loadSection(key, filter, requestVersion.current, sectionRequestController.current?.signal);
   }, [filterForScope, loadSection]);
 
   useEffect(() => {
     load();
-    return () => { requestVersion.current += 1; };
+    return () => {
+      requestVersion.current += 1;
+      sectionRequestController.current?.abort();
+    };
   }, [load]);
 
   const exportSalesData = useCallback(() => {
@@ -256,27 +273,33 @@ export default function SalesDataIndex() {
       subtitle={`Confirmed sales, dated by order confirmation${period ? ` · ${period.label}` : ""}`}
     >
       {period ? (
-        <View style={{ gap: spacing.md }}>
-          <SalesFilters
-            floors={floors}
-            floorId={floorId}
-            onFloorChange={setFloorId}
-            period={period}
-            onPeriodChange={choose}
-          />
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, alignItems: "center", justifyContent: "flex-end" }}>
-            {updatedAt || updating ? <Text style={[type.caption, { color: colors.onSurfaceMuted, flexGrow: 1 }, isPhone && { width: "100%" }]}>{updatedAt ? `Updated ${updatedAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}` : "Loading"}{updating ? " · Updating…" : ""}</Text> : null}
-            <Button label="Refresh" icon="refresh-cw" variant="secondary" onPress={load} loading={updating} style={isPhone ? { flex: 1 } : undefined} />
-            <Button
-              testID="sales-data-export-xlsx"
-              label="Export Excel"
-              icon="download"
-              variant="secondary"
-              onPress={exportSalesData}
-              style={isPhone ? { flex: 1 } : undefined}
+        <Card testID="sales-data-scope" variant="flat" padding={sectionPadding}>
+          <View style={{ gap: spacing.lg }}>
+            <View style={{ gap: spacing.s4 }}>
+              <Text style={type.titleMd}>Analysis scope</Text>
+              <Text style={[type.caption, { color: colors.onSurfaceMuted }]}>Choose a business unit and period before comparing performance.</Text>
+            </View>
+            <SalesFilters
+              floors={floors}
+              floorId={floorId}
+              onFloorChange={setFloorId}
+              period={period}
+              onPeriodChange={choose}
             />
+            <View style={{ borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: spacing.md, flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, alignItems: "center", justifyContent: "flex-end" }}>
+              {updatedAt || updating ? <Text accessibilityLiveRegion="polite" style={[type.caption, { color: colors.onSurfaceMuted, flexGrow: 1 }, isPhone && { width: "100%" }]}>{updatedAt ? `Updated ${updatedAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}` : "Preparing summary"}{updating ? " · Updating…" : ""}</Text> : null}
+              <Button label="Refresh" icon="refresh-cw" variant="secondary" onPress={load} loading={updating} style={isPhone ? { flex: 1 } : undefined} />
+              <Button
+                testID="sales-data-export-xlsx"
+                label="Export Excel"
+                icon="download"
+                variant="secondary"
+                onPress={exportSalesData}
+                style={isPhone ? { flex: 1 } : undefined}
+              />
+            </View>
           </View>
-        </View>
+        </Card>
       ) : null}
 
       {origin === "fallback" ? (
@@ -300,7 +323,11 @@ export default function SalesDataIndex() {
           1-3. Total Revenue · Total Orders · Outstanding Payments
           --------------------------------------------------------------- */}
       {overviewError ? <ErrorState subtitle={overviewError} onRetry={load} /> : null}
-      {!overviewError && !kpis ? <SkeletonList rows={2} /> : null}
+      {!overviewError && !kpis ? (
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: kpiGap }} testID="sales-data-kpis-loading">
+          {[0, 1, 2].map((key) => <View key={key} style={kpiCardStyle}><SkeletonCard height={142} /></View>)}
+        </View>
+      ) : null}
       {kpis ? (
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: kpiGap }} testID="sales-data-kpis">
           <KpiCard

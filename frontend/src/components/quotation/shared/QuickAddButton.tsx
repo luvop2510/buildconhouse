@@ -36,13 +36,20 @@ export function QuickAddButton({
   const scale = useRef(new Animated.Value(1)).current;
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mounted = useRef(true);
+  const addLocked = useRef(false);
 
   useEffect(() => () => {
     mounted.current = false;
     if (timer.current) clearTimeout(timer.current);
   }, []);
 
-  const handlePress = () => {
+  const handlePress = (event?: { stopPropagation?: () => void }) => {
+    // Picker rows are also pressable. Stop the nested control from becoming
+    // a second add on web, then briefly lock it while the success state is
+    // visible so an impatient double-tap cannot add two line items.
+    event?.stopPropagation?.();
+    if (justAdded || addLocked.current) return;
+    addLocked.current = true;
     onAdd();
     Haptics.selectionAsync();
     if (toastText) toast.success(toastText);
@@ -53,7 +60,10 @@ export function QuickAddButton({
       Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 24, bounciness: 6 }),
     ]).start();
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => { if (mounted.current) setJustAdded(false); }, FLASH_MS);
+    timer.current = setTimeout(() => {
+      addLocked.current = false;
+      if (mounted.current) setJustAdded(false);
+    }, FLASH_MS);
   };
 
   if (circular) {

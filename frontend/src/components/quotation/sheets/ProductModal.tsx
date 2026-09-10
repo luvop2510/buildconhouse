@@ -190,7 +190,7 @@ export function ProductModal() {
                       transition crossfade smoothly between photos instead of
                       unmounting/remounting (which was causing a flash to the
                       empty/skeleton state on every swatch tap). */}
-                  <ProductImage source={activeImage ? [activeImage] : []} style={styles.hero} fallbackLabel={selectedProduct.sku} />
+                  <ProductImage source={activeImage ? [activeImage] : []} style={styles.hero} fallbackLabel={selectedProduct.sku} preferOriginal transition={180} />
                   {activeImage ? (
                     <View style={styles.zoomHint}>
                       <Feather name="maximize-2" size={11} color="#fff" />
@@ -242,11 +242,18 @@ export function ProductModal() {
                         return (
                           <Pressable
                             key={v.sku}
-                            onPress={() => { setSelectedVariant(v.sku === product.sku ? null : v); setActiveImageIdx(0); }}
+                            accessibilityRole="button"
+                            accessibilityState={{ selected: on }}
+                            accessibilityLabel={`${variantDescriptor(v) || v.sku}${on ? ", selected" : ""}`}
+                            onPress={() => {
+                              if (on) return;
+                              setSelectedVariant(v.sku === product.sku ? null : v);
+                              setActiveImageIdx(0);
+                            }}
                             style={[styles.variantChip, on && styles.variantChipActive]}
                             testID={`pm-variant-${v.sku}`}
                           >
-                            <View style={[styles.swatch, { backgroundColor: colourHex(v.color || v.finish) }]} />
+                            <View style={[styles.swatch, { backgroundColor: colourHex(v.colour ?? v.color ?? v.finish) }]} />
                             <Text style={[styles.variantLabel, on && { color: colors.onBrand }]}>{variantDescriptor(v) || v.sku}</Text>
                             {v.price !== product.price ? (
                               <Text style={[styles.variantDelta, on && { color: colors.onBrand }]}>
@@ -419,6 +426,7 @@ export function ProductModal() {
           source={activeImage ? [activeImage] : []}
           style={styles.zoomImage}
           contentFit="contain"
+          preferOriginal
           fallbackLabel={product.sku}
         />
       </Pressable>
@@ -446,6 +454,7 @@ function colourHex(v?: string | null): string {
   if (s.includes("chrome")) return "#D4D4D8";
   if (s.includes("gold")) return "#D4AF37";
   if (s.includes("brass") || s.includes("bronze")) return "#A97142";
+  if (s.includes("brown") || s.includes("red") || s.includes("rose")) return "#8C3B2A";
   if (s.includes("white")) return "#F4F4F5";
   if (s.includes("copper")) return "#B87333";
   if (s.includes("nickel")) return "#B0B7C1";
@@ -531,7 +540,7 @@ const styles = StyleSheet.create({
   variantRow: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
   variantChip: {
     flexDirection: "row", alignItems: "center", gap: 6,
-    paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.pill,
+    minHeight: 44, paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.pill,
     borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
   },
   variantChipActive: { backgroundColor: colors.brand, borderColor: colors.brand },

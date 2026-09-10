@@ -97,6 +97,7 @@ function swatchColor(colour?: string | null, finish?: string | null): string {
   if (label.includes("chrome") || label.includes("steel") || label.includes("polished")) return "#C0C5CB";
   if (label.includes("brushed") && label.includes("brass")) return "#B08D57";
   if (label.includes("brass") || label.includes("gold")) return "#C6A664";
+  if (label.includes("brown") || label.includes("red") || label.includes("rust") || label.includes("terracotta")) return "#7B3F2D";
   if (label.includes("bronze") || label.includes("copper")) return "#8C5E3C";
   if (label.includes("nickel")) return "#7C8791";
   if (label.includes("graphite") || label.includes("anthracite")) return "#3A3A3A";

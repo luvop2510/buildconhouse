@@ -48,9 +48,7 @@ export function QuotationPane({ compact = false, browseInline = false }: { compa
       <View style={[styles.body, browsing && { display: "none" }]}>
         <QuotationCanvas compact={compact} />
       </View>
-      <BuilderFooter compact={compact} browsing={browsing}
-        onBrowse={browseInline ? () => setSection("products") : undefined}
-        onReview={browseInline ? () => setSection("quotation") : undefined} />
+      <BuilderFooter compact={compact} />
     </View>
   );
 }

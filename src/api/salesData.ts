@@ -17,6 +17,11 @@ export type SalesFilter = {
   dateTo?: string | null;
 };
 
+/** Options deliberately limited to read lifecycle concerns. The shared API
+ * client keeps a shared GET transport alive for other consumers, while this
+ * screen can still stop waiting for a stale floor or period. */
+type SalesReadOptions = { signal?: AbortSignal };
+
 export type BrandRevenueRow = {
   brand_id: string;
   name: string;
@@ -116,34 +121,36 @@ function query(filter: SalesFilter, extra: Record<string, string | number | unde
 }
 
 export const salesDataApi = {
-  revenueTrend(filter: SalesFilter) {
+  revenueTrend(filter: SalesFilter, options?: SalesReadOptions) {
     const days = filter.dateFrom && filter.dateTo ? (Date.parse(filter.dateTo) - Date.parse(filter.dateFrom)) / 86400000 : null;
     const granularity = ["quarter", "year"].includes(filter.preset) || (days !== null && days > 62) ? "month" : "day";
-    return api.get<{ points: { bucket: string; revenue: number }[] }>(`/analytics/revenue-trend?${query(filter, { granularity })}`);
+    return api.get<{ points: { bucket: string; revenue: number }[] }>(`/analytics/revenue-trend?${query(filter, { granularity })}`, options);
   },
-  defaultPeriod(floorId: string) {
+  defaultPeriod(floorId: string, options?: SalesReadOptions) {
     const params = new URLSearchParams();
     if (floorId && floorId !== "all") params.set("floor_id", floorId);
-    return api.get<DefaultPeriod>(`/analytics/default-period?${params.toString()}`);
+    return api.get<DefaultPeriod>(`/analytics/default-period?${params.toString()}`, options);
   },
 
-  revenueByBrand(filter: SalesFilter) {
-    return api.get<{ rows: BrandRevenueRow[] }>(`/analytics/revenue-by-brand?${query(filter)}`);
+  revenueByBrand(filter: SalesFilter, options?: SalesReadOptions) {
+    return api.get<{ rows: BrandRevenueRow[] }>(`/analytics/revenue-by-brand?${query(filter)}`, options);
   },
 
-  revenueByCustomer(filter: SalesFilter) {
-    return api.get<{ rows: CustomerRevenueRow[] }>(`/analytics/revenue-by-customer?${query(filter)}`);
+  revenueByCustomer(filter: SalesFilter, options?: SalesReadOptions) {
+    return api.get<{ rows: CustomerRevenueRow[] }>(`/analytics/revenue-by-customer?${query(filter)}`, options);
   },
 
-  bestSellingProducts(filter: SalesFilter, limit = 10) {
+  bestSellingProducts(filter: SalesFilter, limit = 10, options?: SalesReadOptions) {
     return api.get<{ rows: BestSellingProductRow[]; total: number }>(
       `/analytics/best-selling-products?${query(filter, { limit })}`,
+      options,
     );
   },
 
-  recentOrders(filter: SalesFilter, limit = 10) {
+  recentOrders(filter: SalesFilter, limit = 10, options?: SalesReadOptions) {
     return api.get<{ rows: RecentOrderRow[]; total: number }>(
       `/analytics/recent-orders?${query(filter, { limit })}`,
+      options,
     );
   },
 
@@ -160,9 +167,10 @@ export const salesDataApi = {
   /** Phase 0's referral surface, consumed unchanged — one call per referrer
    *  type so Architects and Interior Designers render as the two separate
    *  workspaces the launch spec asks for. */
-  referrers(filter: SalesFilter, type: ReferrerType) {
+  referrers(filter: SalesFilter, type: ReferrerType, options?: SalesReadOptions) {
     return api.get<{ rows: ReferrerSummaryRow[] }>(
       `/analytics/referrers?${query(filter, { type })}`,
+      options,
     );
   },
 };

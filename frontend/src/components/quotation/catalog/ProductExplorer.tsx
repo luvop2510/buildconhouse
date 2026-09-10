@@ -11,7 +11,6 @@ import { ActivityIndicator, FlatList, LayoutChangeEvent, Platform, Pressable, Sc
 
 import { EmptyState } from "@/src/components/ui";
 import { ProductImage } from "@/src/components/ProductImage";
-import { toast } from "@/src/components/Toast";
 import { colors, money, PRODUCT_IMAGE_ASPECT_RATIO, radius, spacing } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";
 import { supplierLogoFor } from "@/src/design/BrandLogo";
@@ -19,7 +18,8 @@ import { storage } from "@/src/utils/storage";
 import { useBuilder } from "../context/BuilderContext";
 import { VariantSwatchStrip } from "../shared/VariantChip";
 import { QuickAddButton } from "../shared/QuickAddButton";
-import { productImageList } from "../helpers/media";
+import { resolveVariantImages } from "../helpers/media";
+import { variantDescriptor } from "../helpers/pricing";
 import { quotationGridColumns } from "../helpers/responsive";
 import type { Product, ProductVariant } from "../helpers/types";
 import { isNearScrollEnd } from "@/src/utils/scrollEnd";
@@ -341,10 +341,15 @@ type CardProps = {
 };
 
 function ProductGridCardImpl({ product, compact, favourite, addedQty, onToggleFav, onQuickAdd, onOpenModal }: CardProps) {
+  const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
   const badges: { label: string; tone: "popular" | "frequent" | "recent" }[] = [];
   if (product.popular) badges.push({ label: "Popular", tone: "popular" });
   else if (product.frequently_used) badges.push({ label: "Frequently used", tone: "frequent" });
   else if (product.recently_used) badges.push({ label: "Recent", tone: "recent" });
+  const selectedImages = resolveVariantImages(product, selectedVariant);
+  const selectedSku = selectedVariant?.sku ?? product.sku;
+  const selectedPrice = selectedVariant?.price ?? product.price;
+  const selectedMrp = selectedVariant?.mrp ?? product.mrp;
 
   return (
     <View
@@ -353,7 +358,7 @@ function ProductGridCardImpl({ product, compact, favourite, addedQty, onToggleFa
     >
       <View style={[styles.cardMedia, compact && styles.cardMediaCompact]}>
         <Pressable accessibilityRole="button" accessibilityLabel={`View ${product.name}`} onPress={() => onOpenModal(product)} style={styles.thumb}>
-          <ProductImage source={productImageList(product)} style={styles.thumb} fallbackLabel={product.sku} />
+          <ProductImage source={selectedImages.images} style={styles.thumb} fallbackLabel={selectedSku} disableSkeleton />
         </Pressable>
         {/* Overlay: badges + fav heart */}
         <View pointerEvents="none" style={styles.badgeRow}>
@@ -393,18 +398,18 @@ function ProductGridCardImpl({ product, compact, favourite, addedQty, onToggleFa
       <View style={[styles.cardBody, compact && styles.cardBodyCompact]}>
         <Pressable accessibilityRole="button" accessibilityLabel={`Details for ${product.name}`} onPress={() => onOpenModal(product)}><Text style={[styles.cardName, compact && styles.cardNameCompact]} numberOfLines={2}>{product.name}</Text></Pressable>
         <Text style={styles.cardSku} numberOfLines={1}>
-          {product.sku}{product.brand_name ? ` · ${product.brand_name}` : ""}
+          {selectedSku}{product.brand_name ? ` · ${product.brand_name}` : ""}
         </Text>
 
         <View style={styles.priceRow}>
           <View style={styles.priceCol}>
-            <Text style={styles.price} numberOfLines={1} ellipsizeMode="clip">{money(product.price)}</Text>
-            {product.mrp && product.mrp > product.price ? (
-              <Text style={styles.mrp} numberOfLines={1} ellipsizeMode="clip">{money(product.mrp)}</Text>
+            <Text style={styles.price} numberOfLines={1} ellipsizeMode="clip">{money(selectedPrice)}</Text>
+            {selectedMrp && selectedMrp > selectedPrice ? (
+              <Text style={styles.mrp} numberOfLines={1} ellipsizeMode="clip">{money(selectedMrp)}</Text>
             ) : null}
           </View>
         </View>
-        <QuickAddButton onAdd={() => onQuickAdd(product)} toastText={`${product.name} added to quotation`}
+        <QuickAddButton onAdd={() => onQuickAdd(product, selectedVariant ?? undefined)} toastText={`${product.name}${selectedVariant ? ` · ${variantDescriptor(selectedVariant) || selectedVariant.sku}` : ""} added to quotation`}
           testID={`add-${product.sku}`} style={styles.cardAdd} />
         {addedQty > 0 ? <Text accessibilityLiveRegion="polite" style={styles.addedLabel}>{addedQty} in this room</Text> : null}
 
@@ -414,10 +419,8 @@ function ProductGridCardImpl({ product, compact, favourite, addedQty, onToggleFa
             <Feather name="chevron-right" size={12} color={colors.onSurfaceSecondary} />
           </Pressable> : <VariantSwatchStrip
             product={product}
-            onSelect={(v) => {
-              onQuickAdd(product, v);
-              toast.success(`${product.name} · ${v.finish || v.color || v.size || v.sku} added`);
-            }}
+            onSelect={setSelectedVariant}
+            activeSku={selectedVariant?.sku ?? product.sku}
             paddingLeft={0}
           />}
         </View>

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { quotationGridColumns } from "../src/components/quotation/helpers/responsive.ts";
-import { productImageList } from "../src/components/quotation/helpers/media.ts";
+import { productImageList, resolveVariantImages } from "../src/components/quotation/helpers/media.ts";
 
 // Phone, tablet and wide-picker widths must all preserve the shop-style
 // two-column grid; 280px is the supported lower bound for a picker viewport.
@@ -41,6 +41,16 @@ assert.deepEqual(productImageList({
   ],
   images: [],
 }), ["original", "thumbnail"]);
+const chromeBase = {
+  sku: "CHROME", hero_image_url: "chrome-hero", gallery: [{ url: "chrome-hero" }], images: ["chrome-hero"],
+  variants: [{ sku: "BROWN-RED", image: "brown-red-hero", mrp: 1, price: 1 }],
+};
+assert.deepEqual(resolveVariantImages(chromeBase, chromeBase.variants[0]), {
+  images: ["brown-red-hero"], isFallback: false,
+});
+assert.deepEqual(resolveVariantImages(chromeBase, { ...chromeBase.variants[0], image: null }), {
+  images: ["chrome-hero"], isFallback: true,
+});
 
 // Keep this zero-config Node contract free of app-runtime imports. Importing
 // tilePresentation used its @/ alias, which Node's strip-types runner cannot
@@ -55,6 +65,7 @@ assert.doesNotMatch(productImageSource, /resize=fill/);
 assert.doesNotMatch(productImageSource, /scaleX:\s*-1/);
 assert.doesNotMatch(productImageSource, /rotate:\s*rotation/);
 assert.match(productImageSource, /contentFit=\{contentFit\}/);
+assert.match(productImageSource, /preferOriginal/);
 
 // Tile document frames are horizontal, but source media must remain upright
 // and fully visible instead of being mirrored, rotated, or cropped.
@@ -94,4 +105,4 @@ assert.match(builderSource, /image: variant \? variant\.image \?\? null : produc
 assert.match(builderSource, /const selectedProductId = variant\?\.id \?\? target\.id/);
 assert.match(builderSource, /image: variant \? variant\.image \?\? null : productImageList\(target\)\[0\] \?\? null/);
 
-console.log("quotation media/layout helpers: 40 assertions passed");
+console.log("quotation media/layout helpers: 42 assertions passed");

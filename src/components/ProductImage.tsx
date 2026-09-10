@@ -45,6 +45,12 @@ export type ProductImageProps = {
   fallbackLabel?: string | null;
   // Lets document cells render media with no shaded image-card background.
   frameBackground?: string;
+  // A hero/zoom image should begin with the full source. Compact list cells
+  // retain the responsive Supabase derivative to protect scrolling latency.
+  preferOriginal?: boolean;
+  // Use a short crossfade for meaningful image changes. Tiny recycled cells
+  // can opt out to avoid animating an entire virtualized list at once.
+  transition?: number;
 };
 
 const CACHE_POLICY = "memory-disk" as const;
@@ -82,6 +88,8 @@ export function ProductImage({
   borderRadius,
   fallbackLabel,
   frameBackground = colors.surfaceTertiary,
+  preferOriginal = false,
+  transition = 0,
 }: ProductImageProps) {
   const [frameWidth, setFrameWidth] = useState(0);
   // Normalise `source` into an ordered list of candidates. Empty / null entries
@@ -101,10 +109,11 @@ export function ProductImage({
     const requestedWidth = Math.max(1, frameWidth || 160) * PixelRatio.get();
     const expanded = candidates.flatMap((uri) => {
       const sized = supabaseSizedImageUrl(uri, requestedWidth);
-      return sized ? [sized, uri] : [uri];
+      if (!sized) return [uri];
+      return preferOriginal ? [uri, sized] : [sized, uri];
     });
     return expanded.filter((uri) => !seen.has(uri) && seen.add(uri));
-  }, [candidates, frameWidth]);
+  }, [candidates, frameWidth, preferOriginal]);
 
   // Track the current candidate index. On error we advance; once we run out
   // of candidates we render the fallback glyph.
@@ -151,9 +160,7 @@ export function ProductImage({
               contentFit={contentFit}
               cachePolicy={CACHE_POLICY}
               placeholder={{ blurhash: BLURHASH }}
-              // Large virtualized lists become visibly sluggish when every
-              // recycled thumbnail runs a transition animation.
-              transition={0}
+              transition={transition}
               recyclingKey={current}
               onLoad={() => {
                 setLoaded(true);

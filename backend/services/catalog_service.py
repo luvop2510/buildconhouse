@@ -332,11 +332,30 @@ def _apply_media(product: dict, snapshot: CatalogSnapshot) -> None:
 def _primary_product_image(snapshot: CatalogSnapshot, product_id: str, family_key: Optional[str] = None) -> Optional[str]:
     # Product media is authoritative.  Do not fall back to family media here:
     # a family can contain visually different finish/size variants, and a
-    # supplier ``family_key`` is not globally unique.
-    for row in snapshot.media_rows_by_product.get(product_id, ()):
-        if not row.get("public_url"):
-            continue
-        return row["public_url"]
+    # supplier ``family_key`` is not globally unique. Reapply the exact
+    # primary/source/sort policy used by `_apply_media` rather than relying on
+    # the incidental insertion order of raw snapshot rows; this value feeds
+    # `variants[].image`, which is the selected-colour hero source.
+    media_by_product = getattr(snapshot, "media_by_product", None)
+    if media_by_product is not None:
+        for media in _dedup_media(list(media_by_product.get(product_id, ()))):
+            if media.public_url:
+                return media.public_url
+        return None
+
+    # Lightweight snapshot doubles used by focused family-list tests expose
+    # the raw rows only. Preserve the production ordering policy there too,
+    # rather than making a catalogue list depend on an implementation detail
+    # of the full immutable snapshot.
+    rows = list(getattr(snapshot, "media_rows_by_product", {}).get(product_id, ()))
+    rows.sort(key=lambda item: (
+        _MEDIA_PRIORITY.get(item.get("source_type", "supplier"), 3),
+        0 if item.get("is_primary") else 1,
+        int(item.get("sort_order", 100)),
+    ))
+    for row in rows:
+        if row.get("public_url"):
+            return row["public_url"]
     return None
 
 
