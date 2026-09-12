@@ -25,6 +25,7 @@ export default function SetNewPassword() {
   const [error, setError] = useState<string | null>(null);
 
   const submit = async () => {
+    if (saving) return;
     setError(null);
     if (!current) { setError("Enter the temporary password you just used to sign in"); return; }
     if (next.length < 12) { setError("New password must be at least 12 characters"); return; }
@@ -48,7 +49,7 @@ export default function SetNewPassword() {
         <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: "center", paddingHorizontal: gutter, paddingVertical: isPhone ? spacing.lg : spacing.xl }} keyboardShouldPersistTaps="handled">
           <Card style={{ width: "100%", maxWidth: 480, alignSelf: "center", gap: spacing.md }}>
             <View style={{ gap: 4 }}>
-              <Text style={type.titleLg}>Set a new password</Text>
+              <Text accessibilityRole="header" style={type.titleLg}>Set a new password</Text>
               <Text style={type.bodyMuted}>
                 You signed in with a temporary password. Choose a new one to continue —
                 this only takes a moment.
@@ -61,6 +62,7 @@ export default function SetNewPassword() {
               onChangeText={setCurrent}
               secureTextEntry
               autoCapitalize="none"
+              editable={!saving}
               placeholder="The temporary password you signed in with"
             />
             <TextField
@@ -70,6 +72,7 @@ export default function SetNewPassword() {
               onChangeText={setNext}
               secureTextEntry
               autoCapitalize="none"
+              editable={!saving}
               placeholder="At least 12 characters"
             />
             <TextField
@@ -79,11 +82,12 @@ export default function SetNewPassword() {
               onChangeText={setConfirm}
               secureTextEntry
               autoCapitalize="none"
+              editable={!saving}
               placeholder="Re-enter new password"
               error={error}
             />
             <Button testID="force-change-submit" label={saving ? "Saving…" : "Set password & continue"} icon="lock" loading={saving} onPress={submit} fullWidth />
-            <Button testID="force-change-signout" label="Sign out instead" variant="ghost" onPress={() => logout()} fullWidth />
+            <Button disabled={saving} testID="force-change-signout" label="Sign out instead" variant="ghost" onPress={() => logout()} fullWidth />
           </Card>
         </ScrollView>
       </KeyboardAvoidingView>

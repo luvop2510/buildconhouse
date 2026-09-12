@@ -1,3 +1,4 @@
+import { useReducedMotion } from "@/src/hooks/use-reduced-motion";
 // QuickAddButton — shared "Add to quotation" micro-interaction used by every
 // product-picker surface (ProductExplorer grid cards, PickerCard rows).
 // Fixes the "adding a product gives poor feedback" complaint: on tap it
@@ -8,7 +9,7 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useEffect, useRef, useState } from "react";
-import { Animated, Pressable, StyleSheet, Text, type StyleProp, type ViewStyle } from "react-native";
+import { Animated, Platform, Pressable, StyleSheet, Text, type StyleProp, type ViewStyle } from "react-native";
 
 import { toast } from "@/src/components/Toast";
 import { colors, radius } from "@/src/theme/tokens";
@@ -32,6 +33,7 @@ export function QuickAddButton({
   onAdd, toastText, idleLabel = "Add", addedLabel = "Added",
   style, testID, circular, circularSize = 28, iconSize,
 }: Props) {
+  const reducedMotion = useReducedMotion();
   const [justAdded, setJustAdded] = useState(false);
   const scale = useRef(new Animated.Value(1)).current;
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -55,9 +57,9 @@ export function QuickAddButton({
     if (toastText) toast.success(toastText);
     setJustAdded(true);
     scale.setValue(1);
-    Animated.sequence([
-      Animated.spring(scale, { toValue: 1.22, useNativeDriver: true, speed: 40, bounciness: 12 }),
-      Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 24, bounciness: 6 }),
+    if (!reducedMotion) Animated.sequence([
+      Animated.spring(scale, { toValue: 1.22, useNativeDriver: Platform.OS !== "web", speed: 40, bounciness: 12 }),
+      Animated.spring(scale, { toValue: 1, useNativeDriver: Platform.OS !== "web", speed: 24, bounciness: 6 }),
     ]).start();
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => {

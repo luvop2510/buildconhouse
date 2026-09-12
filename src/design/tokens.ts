@@ -20,7 +20,7 @@ const pal = {
   ink:     "#1D1D1F",  // warm near-black — text & the primary action
   ink2:    "#515158",  // secondary text
   ink3:    "#686870",  // tertiary text, captions
-  ink4:    "#787880",  // placeholders, disabled
+  ink4:    "#686870",  // placeholders, disabled
   inkHover:"#333336",
 
   // Action accent. Brass names are retained for source compatibility.
@@ -30,7 +30,7 @@ const pal = {
   brassLine:  "#BED6F7",
 
   // Muted status hues — always dot+word, never shouting pills.
-  ok:      "#3E7C55",
+  ok:      "#39724D",
   okTint:  "#EAF1EC",
   warn:    "#8B5A16",
   warnTint:"#F6EEDF",
@@ -52,12 +52,15 @@ export const color = {
   inkSoft: pal.ink3,
   inkFaint: pal.ink4,
 
-  // The primary action is brass; ink remains text/chrome.
+  // Blue indicates the primary action; graphite is reserved for text.
   action: pal.brass,
   actionHover: pal.brassDeep,
   onAction: pal.white,
 
-  // Brass — guidance & emphasis. Active nav bar, focus ring, selected marks.
+  // Accent roles. Brass keys below are compatibility aliases.
+  accent: pal.brass,
+  accentTint: pal.brassTint,
+  accentBorder: pal.brassLine,
   brass: pal.brass,
   brassDeep: pal.brassDeep,
   brassTint: pal.brassTint,
@@ -82,7 +85,7 @@ export const font = {
   medium: Platform.OS === "web" ? "system-ui" : "Inter-Medium",
   semibold: Platform.OS === "web" ? "system-ui" : "Inter-SemiBold",
   bold: Platform.OS === "web" ? "system-ui" : "Inter-Bold",
-  display: Platform.OS === "web" ? "system-ui" : "Inter-SemiBold",        // the single serif voice — greetings, auth
+  display: Platform.OS === "web" ? "system-ui" : "Inter-SemiBold",        // headings, greetings and authentication
   displayItalic: Platform.OS === "web" ? "system-ui" : "Inter-Medium",
   serif: Platform.OS === "web" ? "Georgia" : "Fraunces-Regular",
   mono: Platform.select({ ios: "Menlo", android: "monospace", default: "ui-monospace" }) as string,
@@ -93,13 +96,13 @@ type Style = Record<string, unknown>;
 const tabular = { fontVariant: ["tabular-nums"] as any };
 
 export const text = {
-  // Display — Fraunces. Two places only: greetings and auth. Never in chrome.
+  // Display is reserved for greetings and authentication.
   display:   { fontFamily: font.display, fontSize: 34, lineHeight: 42, fontWeight: "600", letterSpacing: -0.8, color: color.ink } as Style,
   displaySm: { fontFamily: font.display, fontSize: 27, lineHeight: 34, fontWeight: "600", letterSpacing: -0.6, color: color.ink } as Style,
 
   // Titles
   title:    { fontFamily: font.semibold, fontSize: 19, lineHeight: 26, letterSpacing: -0.3, color: color.ink, fontWeight: "600" as const } as Style,
-  heading:  { fontFamily: font.semibold, fontSize: 16, lineHeight: 22, letterSpacing: -0.2, color: color.ink, fontWeight: "600" as const } as Style,
+  heading:  { fontFamily: font.semibold, fontSize: 18, lineHeight: 26, letterSpacing: -0.2, color: color.ink, fontWeight: "600" as const } as Style,
   rowTitle: { fontFamily: font.medium,  fontSize: 15, lineHeight: 21, letterSpacing: -0.1, color: color.ink, fontWeight: "500" as const } as Style,
 
   // Body
@@ -124,7 +127,7 @@ export const space = {
 } as const;
 
 // ── Radii ───────────────────────────────────────────────────────────────────
-export const radius = { sm: 7, md: 10, lg: 14, xl: 20, pill: 999 } as const;
+export const radius = { sm: 8, md: 8, lg: 12, xl: 16, pill: 999 } as const;
 
 // ── Elevation — exactly two levels. Everything else is hairlines. ───────────
 export const shadow = {
@@ -156,7 +159,7 @@ export const layout = {
   sidebar: 240,
   rail: 64,
   bottomBar: 62,
-  gutter: { phone: 20, tablet: 28, desktop: 40 },
+  gutter: { phone: 16, tablet: 24, desktop: 32 },
   content: 1120,          // default page max width
   contentNarrow: 760,     // reading / form pages
   // One responsive contract. Components must consume this through `useBp()`

@@ -222,9 +222,9 @@ export function DataTable<T>({
     const renderMobileRow = (item: T, index: number) => {
       const selected = isRowSelected?.(item, index) ?? false;
       const content = (
-        <View style={styles.mobileCardContent}>
-          {columns.filter((column) => column.label).map((column) => (
-            <View key={column.key} style={styles.mobileField}>
+        <View style={[styles.mobileCardContent, { flexDirection: "row", flexWrap: "wrap", gap: 12 }]}>
+          {columns.filter((column) => column.label).map((column, columnIndex) => (
+            <View key={column.key} style={[styles.mobileField, { width: columnIndex === 0 ? "100%" : "48%", flexGrow: 1, minWidth: 0 }]} >
               <Text style={styles.mobileLabel}>{column.label}</Text>
               <View style={styles.mobileValue}>{column.render(item)}</View>
             </View>
@@ -291,6 +291,7 @@ export function DataTable<T>({
   return (
     <View
       ref={shellRef}
+      role="table" aria-rowcount={data.length + 1} aria-colcount={columns.length}
       style={styles.shell}
       testID={testID}
       onLayout={(event) => {
@@ -330,10 +331,11 @@ export function DataTable<T>({
           ]}
         >
           <ScrollableBody enabled={innerScroll} maxHeight={bodyMaxHeight ?? 0}>
-          <View style={[styles.headerRow, innerScroll ? stickyHeader : null]}>
+          <View role="row" style={[styles.headerRow, innerScroll ? stickyHeader : null]}>
             {columns.map((column) => (
               <View
                 key={column.key}
+                role="columnheader"
                 style={[
                   styles.cell,
                   cellLayout(column),
@@ -363,9 +365,9 @@ export function DataTable<T>({
               const hovered = hoveredIndex === index;
               const background = rowBackground(index, selected, hovered);
 
-              const cells = columns.map((column) => (
+              const cells = columns.map((column, columnIndex) => (
                 <View
-                  key={column.key}
+                  key={column.key} role="cell" aria-colindex={columnIndex + 1}
                   style={[
                     styles.cell,
                     cellLayout(column),
@@ -390,7 +392,7 @@ export function DataTable<T>({
               // Release table) must not nest those inside a pressable parent.
               if (!onRowPress) {
                 return (
-                  <View key={keyExtractor(row, index)} testID={rowTestID?.(row, index)} style={base}>
+                  <View role="row" aria-rowindex={index + 2} key={keyExtractor(row, index)} testID={rowTestID?.(row, index)} style={base}>
                     {cells}
                   </View>
                 );
@@ -401,7 +403,11 @@ export function DataTable<T>({
                   key={keyExtractor(row, index)}
                   testID={rowTestID?.(row, index)}
                   onPress={() => onRowPress(row, index)}
-                  accessibilityRole="button"
+                  role="row" aria-rowindex={index + 2} tabIndex={0}
+                  {...(Platform.OS === "web" ? { onKeyDown: (event: any) => {
+                    if (event.target !== event.currentTarget) return;
+                    if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onRowPress(row, index); }
+                  }} : {})}
                   accessibilityLabel={rowAccessibilityLabel?.(row, index)}
                   accessibilityHint="Opens details"
                   onHoverIn={() => setHoveredIndex(index)}

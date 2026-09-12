@@ -5,7 +5,7 @@ import { useState } from "react";
 import { View } from "react-native";
 
 import { api } from "@/src/api/client";
-import { AdminPage } from "@/src/components/AdminPage";
+import { SettingsPage as AdminPage } from "@/src/components/settings/SettingsPage";
 import { toast } from "@/src/components/Toast";
 import { Button, Card, TextField } from "@/src/components/ui";
 import { spacing } from "@/src/theme/tokens";

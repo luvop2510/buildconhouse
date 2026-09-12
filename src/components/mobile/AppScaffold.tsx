@@ -26,7 +26,7 @@ export function AppScaffold({
       edges={["top", "left", "right"]}
       style={[{ flex: 1, minWidth: 0, backgroundColor: color.canvas }, style]}
     >
-      <View style={{ flex: 1, minWidth: 0, minHeight: 0 }}>{children}</View>
+      <View role="main" accessibilityLabel="Workspace content" style={{ flex: 1, minWidth: 0, minHeight: 0 }}>{children}</View>
       {bottomNavigation ? <SafeAreaView
         edges={["bottom"]}
         style={{ backgroundColor: color.canvas, borderTopWidth: layout.hairline, borderTopColor: color.line }}

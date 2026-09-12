@@ -1,6 +1,6 @@
 import { defineConfig } from '@playwright/test';
 export default defineConfig({
-  testDir:'./e2e',testMatch:['app-audit.spec.ts','release-journeys.spec.ts'],timeout:30000,workers:3,retries:0,
+  testDir:'./e2e',testMatch:['app-audit.spec.ts','release-journeys.spec.ts','redesign-*.spec.ts'],timeout:30000,workers:3,retries:0,
   reporter:[['list'],['json',{outputFile:'output/playwright/audit-results.json'}]],
   outputDir:'./output/playwright/audit',
   use:{baseURL:process.env.E2E_BASE_URL || 'http://127.0.0.1:8090',screenshot:'only-on-failure',trace:'retain-on-failure'},
@@ -12,6 +12,7 @@ export default defineConfig({
     {name:'tablet',use:{browserName:'chromium',viewport:{width:834,height:1112}}},
     {name:'phone',use:{browserName:'chromium',viewport:{width:390,height:844}}},
     {name:'small-phone',use:{browserName:'chromium',viewport:{width:320,height:740}},grep:/critical|login/},
+    {name:'tablet-boundary',use:{browserName:'chromium',viewport:{width:768,height:1024}},grep:/critical|login/},
     {name:'tablet-landscape',use:{browserName:'chromium',viewport:{width:1024,height:768}},grep:/critical|login/},
     {name:'firefox',use:{browserName:'firefox',viewport:{width:1440,height:1000}},grep:/critical|login/},
     {name:'webkit',use:{browserName:'webkit',viewport:{width:390,height:844}},grep:/critical|login/},

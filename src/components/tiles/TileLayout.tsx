@@ -1,3 +1,7 @@
+import { Feather } from "@expo/vector-icons";
+import { Button as SharedButton } from "@/src/design/controls";
+import { NavigationTabs } from "@/src/design/NavigationTabs";
+import { PageHeader as SharedPageHeader } from "@/src/design/PageHeader";
 // frontend/src/components/tiles/TileLayout.tsx
 // Page chrome and controls shared by every Tile Orders screen.
 //
@@ -72,6 +76,7 @@ export function BackLink({ label, onPress, testID }: { label: string; onPress: (
   return (
     <Pressable
       testID={testID}
+      accessibilityRole="button" accessibilityLabel={label}
       onPress={onPress}
       style={({ hovered }: any) => [styles.backLink, hovered ? styles.backLinkHovered : null, webCursor]}
     >
@@ -81,24 +86,10 @@ export function BackLink({ label, onPress, testID }: { label: string; onPress: (
   );
 }
 
-export function PageHeader({
-  eyebrow, title, subtitle, actions,
-}: { eyebrow?: string; title: string; subtitle?: string; actions?: ReactNode }) {
-  const { isPhone, bp } = useBreakpoint();
-  const compact = isPhone || bp === "tabletPortrait";
-  return (
-    <View style={[styles.pageHeader, compact ? styles.pageHeaderCompact : null]}>
-      <View style={[styles.pageHeaderText, compact ? styles.pageHeaderTextCompact : null]}>
-        {eyebrow ? <Text style={styles.eyebrow}>{eyebrow}</Text> : null}
-        <Text style={type.displayMd}>{title}</Text>
-        {subtitle ? <Text style={[type.bodyMuted, styles.pageSubtitle]}>{subtitle}</Text> : null}
-      </View>
-      {actions ? <View style={[styles.pageHeaderActions, compact ? styles.pageHeaderActionsCompact : null]}>{actions}</View> : null}
-    </View>
-  );
-}
+export function PageHeader({ eyebrow, title, subtitle, actions }: {
+  eyebrow?: string; title: string; subtitle?: string; actions?: ReactNode;
+}) { return <SharedPageHeader embedded title={title} overline={eyebrow} subtitle={subtitle} actions={actions} />; }
 
-/** A 32px-separated band of the page. Every top-level block on a page is one. */
 export function Section({ children, testID }: { children: ReactNode; testID?: string }) {
   return <View style={styles.section} testID={testID}>{children}</View>;
 }
@@ -129,74 +120,10 @@ export function Card({ children, testID }: { children: ReactNode; testID?: strin
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 export type ButtonSize = "sm" | "md" | "lg";
 
-const SIZE_METRICS: Record<ButtonSize, { height: number; paddingHorizontal: number; fontSize: number }> = {
-  // Even the smallest button keeps a 32px box and 12px side padding — the
-  // old 28px/7px/10pt chips read as disabled UI and were hard to hit.
-  sm: { height: 32, paddingHorizontal: spacing.s12, fontSize: 12 },
-  md: { height: 40, paddingHorizontal: spacing.lg, fontSize: 13 },
-  lg: { height: 44, paddingHorizontal: spacing.s20, fontSize: 14 },
-};
-
-export function Button({
-  label, onPress, variant = "secondary", size = "md", disabled, testID, fullWidth,
-}: {
-  label: string;
-  onPress?: () => void;
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  disabled?: boolean;
-  testID?: string;
-  fullWidth?: boolean;
-}) {
-  const metrics = SIZE_METRICS[size];
-  // Tile screens are routinely operated on touch-enabled tablets as well as
-  // phones. Visual density may change, but an operational control is never
-  // smaller than the platform's 44pt touch target.
-  const height = Math.max(44, metrics.height);
-  return (
-    <Pressable
-      testID={testID}
-      disabled={disabled}
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ disabled: Boolean(disabled) }}
-      style={({ hovered, pressed }: any) => [
-        styles.buttonBase,
-        {
-          height,
-          paddingHorizontal: metrics.paddingHorizontal,
-          alignSelf: fullWidth ? "stretch" : "flex-start",
-        },
-        variant === "primary" ? styles.buttonPrimary
-          : variant === "danger" ? styles.buttonDanger
-          : variant === "ghost" ? styles.buttonGhost
-          : styles.buttonSecondary,
-        hovered && !disabled ? (
-          variant === "primary" ? styles.buttonPrimaryHovered
-            : variant === "danger" ? styles.buttonDangerHovered
-            : styles.buttonSecondaryHovered
-        ) : null,
-        pressed && !disabled ? styles.buttonPressed : null,
-        disabled ? styles.buttonDisabled : null,
-        webCursor,
-      ]}
-    >
-      <Text
-        numberOfLines={1}
-        style={[
-          styles.buttonLabel,
-          { fontSize: metrics.fontSize },
-          variant === "primary" ? styles.buttonLabelPrimary
-            : variant === "danger" ? styles.buttonLabelDanger
-            : styles.buttonLabelSecondary,
-        ]}
-      >
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
+export function Button({ label, onPress, variant = "secondary", size = "md", disabled, testID, fullWidth }: {
+  label: string; onPress?: () => void; variant?: ButtonVariant; size?: ButtonSize;
+  disabled?: boolean; testID?: string; fullWidth?: boolean;
+}) { return <SharedButton label={label} onPress={onPress} variant={variant} size={size} disabled={disabled} testID={testID} full={fullWidth} />; }
 
 /**
  * A horizontal cluster of buttons with the module's minimum 12px separation.
@@ -226,7 +153,7 @@ export function SearchField({
   const { isPhone } = useBreakpoint();
   return (
     <View style={[styles.searchWrap, isPhone ? styles.searchWrapPhone : null]}>
-      <Text style={styles.searchIcon}>⌕</Text>
+      <Feather name="search" size={18} color={colors.onSurfaceMuted} />
       <TextInput
         testID={testID}
         value={value}
@@ -235,7 +162,7 @@ export function SearchField({
         placeholder={placeholder}
         placeholderTextColor={colors.onSurfaceSubtle}
         accessibilityLabel={accessibilityLabel}
-        style={styles.searchInput}
+        style={[styles.searchInput, { fontSize: 16, minWidth: 0 }]}
         returnKeyType="search"
       />
     </View>
@@ -251,7 +178,7 @@ export function FilterChip({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ selected: active }}
+      aria-pressed={active} accessibilityState={{ selected: active }}
       style={({ hovered }: any) => [
         styles.chip,
         active ? styles.chipActive : null,
@@ -273,42 +200,7 @@ export function TabBar<K extends string>({
   onChange: (key: K) => void;
   testIDPrefix?: string;
 }) {
-  const { isPhone } = useBreakpoint();
-  const tabsContent = tabs.map(([key, label]) => {
-    const active = key === value;
-    return (
-      <Pressable
-        key={key}
-        testID={testIDPrefix ? `${testIDPrefix}-${key}` : undefined}
-        onPress={() => onChange(key)}
-        accessibilityRole="tab"
-        accessibilityLabel={label}
-        accessibilityState={{ selected: active }}
-        style={({ hovered }: any) => [
-          styles.tab,
-          active ? styles.tabActive : null,
-          hovered && !active ? styles.tabHovered : null,
-          webCursor,
-        ]}
-      >
-        <Text numberOfLines={1} style={[styles.tabLabel, active ? styles.tabLabelActive : null]}>
-          {label}
-        </Text>
-      </Pressable>
-    );
-  });
-  if (isPhone) {
-    return (
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} accessibilityRole="tablist" style={styles.tabScroller} contentContainerStyle={styles.tabBar}>
-        {tabsContent}
-      </ScrollView>
-    );
-  }
-  return (
-    <View accessibilityRole="tablist" style={styles.tabBar}>
-      {tabsContent}
-    </View>
-  );
+  return <NavigationTabs value={value} onChange={onChange} testID={testIDPrefix} options={tabs.map(([value, label]) => ({ value, label }))} />;
 }
 
 /**

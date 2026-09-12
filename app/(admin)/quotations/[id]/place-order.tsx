@@ -13,7 +13,7 @@ import { useCallback, useEffect, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Button, Card } from "@/src/components/ui";
+import { Alert, Button, Card, ErrorState, LoadingState, PageHeader } from "@/src/components/ui";
 import { toast } from "@/src/components/Toast";
 import { api } from "@/src/api/client";
 import { colors, money, radius, spacing, type } from "@/src/theme/tokens";
@@ -69,6 +69,7 @@ export default function PlaceOrderReview() {
   const [projectName, setProjectName] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
   const floorId = floor === TILES_FLOOR_ID ? TILES_FLOOR_ID : undefined;
 
   const loadPreview = useCallback(async () => {
@@ -104,8 +105,8 @@ export default function PlaceOrderReview() {
   );
 
   const confirm = async () => {
-    if (!preview) return;
-    setBusy(true);
+    if (!preview || busy) return;
+    setConfirmError(null); setBusy(true);
     try {
       const res = await api.post<{ purchase_orders: { id: string }[]; count: number }>(
         `/quotations/${id}/place-order/confirm`,
@@ -120,7 +121,7 @@ export default function PlaceOrderReview() {
       const isTilesDoc = preview.doc_type === "tiles_selection" || preview.doc_type === "tiles_quotation";
       router.replace((isTilesDoc ? "/(admin)/tiles/orders" : "/(admin)/purchases") as any);
     } catch (e: any) {
-      toast.error(e?.detail || "Could not place order");
+      setConfirmError(e?.detail || "Could not place order. Your supplier choices and notes are still here.");
     } finally {
       setBusy(false);
     }
@@ -129,33 +130,19 @@ export default function PlaceOrderReview() {
   if (error) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
-        <View style={{ padding: spacing.xxl, alignItems: "center", gap: spacing.md }}>
-          <Feather name="alert-triangle" size={30} color={colors.warning} />
-          <Text style={type.titleMd}>{error}</Text>
-          <Button label="Try again" onPress={() => void loadPreview()} />
-          <Button label="Back to quotation" onPress={() => router.back()} />
-        </View>
+        <PageHeader title="Review order" back={() => router.back()} />
+        <ErrorState title="Could not prepare order" subtitle={error} onRetry={() => void loadPreview()} />
       </SafeAreaView>
     );
   }
 
   if (!preview) {
-    return <View style={{ flex: 1, backgroundColor: colors.surface }} />;
+    return <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}><PageHeader title="Review order" back={() => router.back()} /><LoadingState label="Preparing items, brands and suppliers…" /></SafeAreaView>;
   }
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
-      <View style={styles.topbar}>
-        <Pressable testID="back-btn" onPress={() => router.back()} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-          <Feather name="chevron-left" size={18} color={colors.onSurface} />
-          <Text style={{ fontSize: 14, fontWeight: "500" }}>Back</Text>
-        </Pressable>
-        <View style={{ alignItems: "center" }}>
-          <Text style={{ fontSize: 12, fontWeight: "500", color: colors.onSurfaceMuted }}>Review Order</Text>
-          <Text style={[type.mono, { fontSize: 12 }]}>{preview.quotation_number}</Text>
-        </View>
-        <View style={{ width: 60 }} />
-      </View>
+      <PageHeader title="Review order" subtitle={preview.quotation_number} back={() => router.back()} />
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
@@ -163,9 +150,10 @@ export default function PlaceOrderReview() {
         keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 24}
       >
         <ScrollView contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, gap: spacing.lg, paddingBottom: spacing.xxxl + insets.bottom }} keyboardShouldPersistTaps="handled">
+        {confirmError ? <Alert tone="error" title="Order not placed" description={confirmError} /> : null}
         {/* Header summary */}
         <View>
-          <Text style={type.displayLg}>{preview.customer_name}</Text>
+          <Text accessibilityRole="header" aria-level={2} style={type.titleLg}>{preview.customer_name}</Text>
           <Text style={[type.bodyMuted, { marginTop: 4 }]}>
             {preview.brands.length} brand{preview.brands.length !== 1 ? "s" : ""} · {preview.brands.reduce((s, b) => s + b.item_count, 0)} items · {money(preview.total_value)}
           </Text>
@@ -183,7 +171,7 @@ export default function PlaceOrderReview() {
                 placeholder="e.g. Sea View Villa – Alibaug"
                 placeholderTextColor={colors.onSurfaceMuted}
                 style={styles.textInput}
-                testID="project-name"
+                testID="project-name" accessibilityLabel="Project name"
               />
             </View>
             <View>
@@ -194,7 +182,7 @@ export default function PlaceOrderReview() {
                 placeholder="YYYY-MM-DD"
                 placeholderTextColor={colors.onSurfaceMuted}
                 style={styles.textInput}
-                testID="expected-delivery"
+                testID="expected-delivery" accessibilityLabel="Expected delivery"
               />
             </View>
           </View>
@@ -282,7 +270,7 @@ export default function PlaceOrderReview() {
                     placeholderTextColor={colors.onSurfaceMuted}
                     style={[styles.textInput, { minHeight: 56 }]}
                     multiline
-                    testID={`notes-${brandKey}`}
+                    testID={`notes-${brandKey}`} accessibilityLabel={`Internal notes for ${b.brand_name}`}
                   />
                 </View>
               </View>

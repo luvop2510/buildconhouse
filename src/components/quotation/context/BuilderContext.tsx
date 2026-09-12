@@ -115,6 +115,8 @@ export type BuilderApi = {
   products: Product[];
   productTotal: number;
   productLoading: boolean;
+  productError: string | null;
+  retryProducts: () => void;
   productHasMore: boolean;
   productLoadingMore: boolean;
   loadMoreProducts: () => void;
@@ -167,6 +169,7 @@ export type BuilderApi = {
   lineBreakdownById: Record<string, LineBreakdown>;
   recoveryDraft: BuilderDraft | null;
   recoveryBusy: boolean;
+  recoveryError: string | null;
   restoreLocalDraft: () => Promise<void>;
   dismissRecovery: () => void;
 
@@ -275,6 +278,9 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [productTotal, setProductTotal] = useState(0);
+  const [productError, setProductError] = useState<string | null>(null);
+  const [productRetry, setProductRetry] = useState(0);
+  const retryProducts = useCallback(() => setProductRetry(value => value + 1), []);
   const [productLoading, setProductLoading] = useState(false);
   const [productHasMore, setProductHasMore] = useState(false);
   const [productLoadingMore, setProductLoadingMore] = useState(false);
@@ -307,6 +313,7 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
   const [recoveryDraft, setRecoveryDraft] = useState<BuilderDraft | null>(null);
   const [recoveryReady, setRecoveryReady] = useState(false);
   const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
   useUndoRedoShortcuts(history as any, true);
 
   // Autosave metadata (not undoable)
@@ -515,10 +522,11 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
     const controller = new AbortController();
     let cancelled = false;
     setProductLoading(true);
+    setProductError(null);
     const t = setTimeout(async () => {
       // Safety net — never let the grid spin forever even if something
       // upstream (network, backend) genuinely stalls. 12s is generous.
-      const safety = setTimeout(() => { if (!cancelled) setProductLoading(false); }, 12000);
+      const safety = setTimeout(() => { if (!cancelled) { setProductLoading(false); setProductError("Product search is taking longer than expected. Please retry."); controller.abort(); } }, 12000);
       try {
         const res = await fetchCatalogPage<CatalogFamily>({
           mode: "families", q, brandId: selectedBrandId, categoryId: selectedCategoryId, sort: sortKey,
@@ -530,7 +538,8 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
         setProductHasMore(items.length < (res.total || 0));
       } catch (e) {
         if (!cancelled && generation === productRequestGeneration.current && (e as any)?.name !== "AbortError") {
-          setProducts([]); setProductTotal(0); setProductHasMore(false); console.warn("Product search failed", e);
+          setProductError((e as any)?.detail || "Could not load products. Check your connection and retry.");
+          setProducts([]); setProductTotal(0); setProductHasMore(false);
         }
       } finally {
         clearTimeout(safety);
@@ -543,7 +552,7 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
       loadMoreController.current?.abort();
       clearTimeout(t);
     };
-  }, [q, selectedBrandId, selectedCategoryId, sortKey, activeFloorId]);
+  }, [q, selectedBrandId, selectedCategoryId, sortKey, activeFloorId, productRetry]);
 
   // ---------- Infinite scroll — fetch the next page and append ----------
   const loadingMoreRef = useRef(false);
@@ -670,6 +679,7 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
   }, [s, quotationId, quotationNumber, accountId, activeFloorId, recoveryReady, recoveryDraft]);
 
   const dismissRecovery = useCallback(() => {
+    setRecoveryError(null);
     setRecoveryDraft(null);
     void removeBuilderDraft(accountId, activeFloorId);
   }, [accountId, activeFloorId]);
@@ -677,6 +687,7 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
   const restoreLocalDraft = useCallback(async () => {
     if (!recoveryDraft || recoveryBusy) return;
     const draft = recoveryDraft;
+    setRecoveryError(null);
     setRecoveryBusy(true);
     try {
       let copy = false;
@@ -705,7 +716,9 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
       setRecoveryDraft(null);
       toast.success(copy ? "Recovered as a new draft; the saved quotation has newer changes" : "Unsaved changes recovered");
     } catch (error: any) {
-      toast.error(error?.detail || "Could not verify the saved quotation. Retry when connected; your recovery is retained.");
+      const message = typeof error?.detail === "string" ? error.detail : "Could not verify the saved quotation. Retry when connected; your recovery is retained.";
+      setRecoveryError(message);
+      toast.error(message);
     } finally { setRecoveryBusy(false); }
   }, [recoveryDraft, recoveryBusy, activeFloorId, history]);
 
@@ -1305,7 +1318,7 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
   const value: BuilderApi = useMemo(() => ({
     history, s,
     customers, referrers, categories, categoryById, referenceLoading, referenceError, retryReferenceData,
-    q, setQ, pickerTab, setPickerTab, pickerList, products, productTotal, productLoading,
+    q, setQ, pickerTab, setPickerTab, pickerList, products, productTotal, productLoading, productError, retryProducts,
     productHasMore, productLoadingMore, loadMoreProducts, recent, frequent, searchRef,
     brands, categoriesForRail, selectedBrandId, setSelectedBrandId, selectedCategoryId, setSelectedCategoryId,
     sortKey, setSortKey, favouriteIds, toggleFavourite,
@@ -1313,7 +1326,7 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
     productModal, openProductModal, closeProductModal, patchProduct,
     customProductSheetOpen, setCustomProductSheetOpen,
     recentQuotations, refreshRecentQuotations, restoreQuotation, deleteQuotation, startNewQuotation,
-    totals, usedCategoryIds, flatRows, lineBreakdownById, recoveryDraft, recoveryBusy, restoreLocalDraft, dismissRecovery,
+    totals, usedCategoryIds, flatRows, lineBreakdownById, recoveryDraft, recoveryBusy, recoveryError, restoreLocalDraft, dismissRecovery,
     quotationId, quotationNumber, saveState, savedAt, saveLabel, persist, finalize,
     workflowBusy, generateOfficialQuotation, placeOrder,
     setCustomer, createCustomer, importCustomerFromGround, customerSwitcherOpen, setCustomerSwitcherOpen,
@@ -1333,7 +1346,7 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
   }), [
     history, s,
     customers, referrers, categories, categoryById, referenceLoading, referenceError, retryReferenceData,
-    q, setQ, pickerTab, setPickerTab, pickerList, products, productTotal, productLoading,
+    q, setQ, pickerTab, setPickerTab, pickerList, products, productTotal, productLoading, productError, retryProducts,
     productHasMore, productLoadingMore, loadMoreProducts, recent, frequent, searchRef,
     brands, categoriesForRail, selectedBrandId, setSelectedBrandId, selectedCategoryId, setSelectedCategoryId,
     sortKey, setSortKey, favouriteIds, toggleFavourite,
@@ -1341,7 +1354,7 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
     productModal, openProductModal, closeProductModal, patchProduct,
     customProductSheetOpen, setCustomProductSheetOpen,
     recentQuotations, refreshRecentQuotations, restoreQuotation, deleteQuotation, startNewQuotation,
-    totals, usedCategoryIds, flatRows, lineBreakdownById, recoveryDraft, recoveryBusy, restoreLocalDraft, dismissRecovery,
+    totals, usedCategoryIds, flatRows, lineBreakdownById, recoveryDraft, recoveryBusy, recoveryError, restoreLocalDraft, dismissRecovery,
     quotationId, quotationNumber, saveState, savedAt, saveLabel, persist, finalize,
     workflowBusy, generateOfficialQuotation, placeOrder,
     setCustomer, createCustomer, importCustomerFromGround, customerSwitcherOpen, setCustomerSwitcherOpen,

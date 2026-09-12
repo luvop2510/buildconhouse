@@ -8,10 +8,21 @@ assert.match(scaffold, /edges=\{\["top", "left", "right"\]\}/);
 assert.match(scaffold, /edges=\{\["bottom"\]\}/);
 
 const adminShell = read("../app/(admin)/_layout.tsx");
-assert.match(adminShell, /if \(contextualNotebookTabs\)/);
-assert.match(adminShell, /styles\.notebookPhoneBar/);
+// Every viewport reads the same destinations; floor and permission filtering
+// precedes the phone priority list, including the two notebook departments.
+const navigation = read("../src/design/navigation.ts");
+assert.match(adminShell, /import \{ PRIMARY, SECONDARY, TILES_ITEMS, type NavItem \} from "@\/src\/design\/navigation"/);
+assert.match(adminShell, /const all = \[\.\.\.visible\(PRIMARY\), \.\.\.tilesNav\.items, \.\.\.visible\(SECONDARY\)\]/);
+assert.match(adminShell, /const priorities = notebook \? all\.filter/);
+assert.match(adminShell, /selectedFloorId === KITCHEN_FLOOR_ID \|\| selectedFloorId === FURNITURE_FLOOR_ID/);
+assert.match(adminShell, /hasAccess\(item\.match\)/);
 assert.match(adminShell, /bottom-nav-notebook-workspace/);
-assert.doesNotMatch(adminShell, /bottom-fab-new-quotation[\s\S]{0,600}contextualNotebookTabs/);
+assert.match(adminShell, /const more = all\.filter/);
+assert.doesNotMatch(adminShell, /bottom-fab-new-quotation/);
+assert.match(navigation, /match: "quotations", floors: \[SANITARY_FLOOR_ID\]/);
+assert.match(navigation, /match: "purchases", floors: \[SANITARY_FLOOR_ID\]/);
+assert.match(navigation, /notebook\/kitchen\/quotation-follow-up/);
+assert.match(navigation, /notebook\/furniture\/quotation-follow-up/);
 
 const permissions = read("../src/hooks/use-permissions.ts");
 assert.match(permissions, /tiles:\s*"tiles"/);
@@ -119,4 +130,4 @@ assert.match(productModal, /edges=\{isPhone \? \["bottom"\] : \[\]\}/);
 const customProduct = read("../src/components/quotation/sheets/CustomProductSheet.tsx");
 assert.match(customProduct, /\[styles\.grid, isPhone && styles\.phoneGrid\]/);
 
-console.log("mobile shell, sheet, list ownership, quotation flow, and notebook navigation contracts: 55 assertions passed");
+console.log("mobile shell, sheet, list ownership, quotation flow, and notebook navigation contracts passed");

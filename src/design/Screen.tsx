@@ -3,7 +3,7 @@ import { useRouter } from "expo-router";
 import React from "react";
 import { ScrollView, View } from "react-native";
 
-import { IconButton, Txt } from "./components";
+import { PageHeader } from "./PageHeader";
 import { useBp } from "./responsive";
 import { color, layout, space } from "./tokens";
 
@@ -21,33 +21,17 @@ export function Screen({
   maxWidth?: number;
   header?: boolean;
 }) {
-  const { isPhone, gutter } = useBp();
+  const { gutter } = useBp();
   const router = useRouter();
 
-  const headerBlock = header && (title || actions) ? (
-    <View style={{
-      flexDirection: "row", alignItems: "flex-start", gap: space.x3,
-      paddingTop: isPhone ? space.x3 : space.x8,
-      paddingBottom: isPhone ? space.x4 : space.x6,
-    }}>
-      {back ? (
-        <IconButton icon="arrow-left" onPress={() => router.back()} label="Back" size={38} iconSize={19} />
-      ) : null}
-      <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
-        {eyebrow ? <Txt v="eyebrow">{eyebrow}</Txt> : null}
-        {title ? <Txt v="title" style={{ fontSize: isPhone ? 20 : 22, lineHeight: isPhone ? 27 : 29 }}>{title}</Txt> : null}
-        {sub ? <Txt v="sub">{sub}</Txt> : null}
-      </View>
-      {actions ? (
-        <View style={{ flexDirection: "row", alignItems: "center", gap: space.x2 }}>{actions}</View>
-      ) : null}
-    </View>
-  ) : null;
+  const headerBlock = header && (title || actions) ? <PageHeader embedded
+    title={title || ""} overline={eyebrow} subtitle={sub}
+    back={back ? () => router.back() : undefined} actions={actions} /> : null;
 
   const inner = (
     <View style={{
       width: "100%", maxWidth, alignSelf: "center",
-      paddingHorizontal: gutter, flexGrow: 1,
+      paddingHorizontal: gutter, flexGrow: 1, minWidth: 0, minHeight: 0,
     }}>
       {headerBlock}
       {children}

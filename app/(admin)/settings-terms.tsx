@@ -3,7 +3,7 @@
 // public, unauthenticated hosted-URL half App Store Connect / Google Play
 // Console require in their submission forms. Both render
 // TermsOfServiceContent so the copy can't drift between them.
-import { AdminPage } from "@/src/components/AdminPage";
+import { SettingsPage as AdminPage } from "@/src/components/settings/SettingsPage";
 import { TermsOfServiceContent } from "@/src/components/TermsOfServiceContent";
 
 export default function SettingsTerms() {

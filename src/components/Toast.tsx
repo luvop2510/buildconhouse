@@ -1,8 +1,10 @@
+import { useReducedMotion } from "@/src/hooks/use-reduced-motion";
+import { color, font, radius } from "@/src/design/tokens";
 // Toast — quiet ink pill, bottom of screen. Non-blocking feedback.
 // Mount <ToastHost /> once at the app root. Trigger via `toast.show(...)`.
 import { Feather } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
-import { Animated, Easing, StyleSheet, Text, View } from "react-native";
+import { Animated, Easing, Platform, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type ToastKind = "success" | "error" | "info";
@@ -18,7 +20,7 @@ export const toast = {
   error(text: string) { this.show(text, "error"); },
 };
 
-const INK = "#1D1B16";
+const INK = color.ink;
 const OK = "#7FBF97";
 const RISK = "#E8A198";
 
@@ -27,21 +29,22 @@ export function ToastHost() {
   const anim = useRef(new Animated.Value(0)).current;
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const insets = useSafeAreaInsets();
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
     const l = (e: ToastEvent) => {
       setEv(e);
-      Animated.timing(anim, { toValue: 1, duration: 200, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+      Animated.timing(anim, { toValue: 1, duration: reducedMotion ? 0 : 200, easing: Easing.out(Easing.cubic), useNativeDriver: Platform.OS !== "web" }).start();
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => {
-        Animated.timing(anim, { toValue: 0, duration: 160, easing: Easing.in(Easing.cubic), useNativeDriver: true }).start(({ finished }) => {
+        Animated.timing(anim, { toValue: 0, duration: reducedMotion ? 0 : 140, easing: Easing.in(Easing.cubic), useNativeDriver: Platform.OS !== "web" }).start(({ finished }) => {
           if (finished) setEv(null);
         });
       }, 2600);
     };
     listeners.push(l);
-    return () => { listeners = listeners.filter((x) => x !== l); };
-  }, [anim]);
+    return () => { listeners = listeners.filter((x) => x !== l); if (timer.current) clearTimeout(timer.current); };
+  }, [anim, reducedMotion]);
 
   if (!ev) return null;
   const iconColor = ev.kind === "success" ? OK : ev.kind === "error" ? RISK : "rgba(255,255,255,0.75)";
@@ -73,9 +76,9 @@ const styles = StyleSheet.create({
   host: { position: "absolute", left: 0, right: 0, alignItems: "center", zIndex: 9999 },
   toast: {
     flexDirection: "row", alignItems: "center", gap: 10,
-    paddingHorizontal: 18, paddingVertical: 12, borderRadius: 999,
-    backgroundColor: INK, maxWidth: 440,
+    paddingHorizontal: 18, paddingVertical: 12, borderRadius: radius.lg,
+    backgroundColor: INK, maxWidth: "92%",
     shadowColor: "#26221B", shadowOpacity: 0.24, shadowOffset: { width: 0, height: 10 }, shadowRadius: 28, elevation: 10,
   },
-  text: { color: "#FFFFFF", fontFamily: "Inter-Medium", fontWeight: "500", fontSize: 13.5, flexShrink: 1 },
+  text: { color: "#FFFFFF", fontFamily: font.medium, fontWeight: "500", fontSize: 13.5, flexShrink: 1 },
 });

@@ -13,17 +13,21 @@ for(const path of routes){
   await page.goto(path);
   await expect(page.locator('body')).not.toContainText('Unmatched Route');
   await expect.poll(()=>page.locator('body').innerText()).toMatch(/[A-Za-z]{4}/);
-  await page.waitForTimeout(450);
+  const redirect = ({ '/reports': '/dashboard', '/purchase-orders': '/purchases', '/notebook/kitchen/followups': '/notebook/kitchen' } as Record<string, string>)[path];
+  if (redirect) await expect(page).toHaveURL(new RegExp(`${redirect}$`));
+  // Let bounded API retries settle before capturing the terminal data state.
+  await page.waitForTimeout(1600);
   expect(errors).toEqual([]);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
-  if(critical.has(path)) await page.screenshot({path:info.outputPath('page.png'),fullPage:true});
+  await page.screenshot({path:info.outputPath('page.png'),fullPage:true});
  });
 }
-test('login validation and accessible input labels',async({page})=>{
+test('login validation and accessible input labels',async({page},info)=>{
  await page.goto('/login');
  await expect(page.getByRole('textbox',{name:'Email',exact:true})).toBeVisible();
  await page.getByTestId('login-submit').click();
  await expect(page.getByRole('alert')).toContainText('Enter your email and password');
+ await page.screenshot({path:info.outputPath('login.png'),fullPage:true});
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
 });
 test('critical customer request failure retries into honest empty state',async({page})=>{

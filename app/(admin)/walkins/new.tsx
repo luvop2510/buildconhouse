@@ -1,3 +1,4 @@
+import { Disclosure } from "@/src/design/Disclosure";
 // Log Walk-in — Phase 4 (2026-07-30), extended for the CRM Foundation spec
 // (2026-08): full Customer capture (address/city/state/pincode), explicit
 // Salesperson assignment (never silent), separate Reference/Architect/
@@ -13,7 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { type CustomerMatch, type DuplicateMatches, parseDuplicateConflict, walkinsApi } from "@/src/api/walkins";
 import { toast } from "@/src/components/Toast";
 import {
-  Avatar, Button, Card, Chip, ListRow, PageHeader, SearchField, Sheet, TextField,
+  Alert, Avatar, Button, Card, Chip, ListRow, PageHeader, SearchField, Sheet, TextField,
 } from "@/src/components/ui";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { useBp } from "@/src/design/responsive";
@@ -28,6 +29,8 @@ export default function NewWalkIn() {
   const { floor_id: routeFloorId } = useLocalSearchParams<{ floor_id?: string }>();
   const { staff } = useAuth();
   const { floors, selectedFloorId } = useFloorAccess();
+  const [optionsError, setOptionsError] = useState(false);
+  const [optionsRetry, setOptionsRetry] = useState(0);
   const [saving, setSaving] = useState(false);
 
   const [name, setName] = useState("");
@@ -65,9 +68,10 @@ export default function NewWalkIn() {
   const [dupSheetOpen, setDupSheetOpen] = useState(false);
 
   useEffect(() => {
-    walkinsApi.listSources().then((r) => setSources(r.sources)).catch(() => {});
-    walkinsApi.listAssignees().then(setAssignees).catch(() => {});
-  }, []);
+    setOptionsError(false);
+    walkinsApi.listSources().then((r) => setSources(r.sources)).catch(() => setOptionsError(true));
+    walkinsApi.listAssignees().then(setAssignees).catch(() => setOptionsError(true));
+  }, [optionsRetry]);
 
   useEffect(() => {
     if (!salespersonId && staff?.id) { setSalespersonId(staff.id); setSalespersonName(staff.full_name); }
@@ -120,6 +124,8 @@ export default function NewWalkIn() {
   };
 
   const submit = async (useExistingId?: string, force?: boolean) => {
+    if (saving) return;
+    setError(null);
     setSaving(true);
     try {
       const created = await walkinsApi.create({
@@ -142,7 +148,9 @@ export default function NewWalkIn() {
         setMatches(conflict.matches);
         setDupSheetOpen(true);
       } else {
-        toast.error(e?.detail || "Could not save Walk-in");
+        const message = typeof e?.detail === "string" ? e.detail : "Could not save the walk-in. Your details are retained; try again.";
+        setError(message);
+        toast.error(message);
       }
     } finally {
       setSaving(false);
@@ -192,7 +200,7 @@ export default function NewWalkIn() {
           ) : null}
 
           <TextField label="Alternate Phone" value={altPhone} onChangeText={setAltPhone} keyboardType="phone-pad" placeholder="Optional" testID="walkin-alt-phone" />
-          <TextField label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" placeholder="Optional" testID="walkin-email" />
+          <Disclosure title="Address and additional contact details"><TextField label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" placeholder="Optional" testID="walkin-email" />
           <TextField label="Address" value={address} onChangeText={setAddress} placeholder="Optional" multiline numberOfLines={2} testID="walkin-address" />
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <TextField label="City" value={city} onChangeText={setCity} placeholder="Optional" containerStyle={{ flex: 1 }} testID="walkin-city" />
@@ -200,7 +208,9 @@ export default function NewWalkIn() {
           </View>
           <TextField label="Pincode" value={pincode} onChangeText={setPincode} keyboardType="number-pad" placeholder="Optional" testID="walkin-pincode" />
 
-          <Text style={[type.overline, { marginTop: spacing.sm }]}>Walk-in Details</Text>
+          </Disclosure>
+          {optionsError ? <Alert tone="error" title="Some intake options are unavailable" description="Retry to load the configured lead sources and salespeople." action={<Button label="Try again" variant="secondary" onPress={() => setOptionsRetry(value => value + 1)} />} /> : null}
+          <Text accessibilityRole="header" style={[type.overline, { marginTop: spacing.sm }]}>Walk-in Details</Text>
 
           <Text style={type.bodyStrong}>Salesperson *</Text>
           <ListRow
@@ -227,18 +237,18 @@ export default function NewWalkIn() {
             ))}
           </View>
 
-          <Text style={[type.overline, { marginTop: spacing.sm }]}>Referring Parties (optional)</Text>
+          <Disclosure title="Referral and project details">
           <TextField label="Reference Contact" value={referenceContact} onChangeText={setReferenceContact} placeholder="Who referred this customer?" testID="walkin-reference" />
           <TextField label="Architect" value={architect} onChangeText={setArchitect} placeholder="Project architect" testID="walkin-architect" />
           <TextField label="Builder" value={builder} onChangeText={setBuilder} placeholder="Project builder" testID="walkin-builder" />
 
           <TextField label="Interested Products" value={products} onChangeText={setProducts} placeholder="Comma-separated, e.g. Vitrified Tiles, Granite" testID="walkin-products" />
           <TextField label="Budget (₹)" value={budget} onChangeText={setBudget} keyboardType="numeric" placeholder="Optional" testID="walkin-budget" />
-          <TextField label="Notes" value={notes} onChangeText={setNotes} placeholder="Optional" multiline numberOfLines={3} testID="walkin-notes" />
+          <TextField label="Notes" value={notes} onChangeText={setNotes} placeholder="Optional" multiline numberOfLines={3} testID="walkin-notes" /></Disclosure>
 
         </ScrollView>
         <View style={styles.submitFooter}>
-          {error ? <Text testID="walkin-submit-error" style={[type.bodySm, { color: colors.error }]}>{error}</Text> : null}
+          {error ? <Text accessibilityRole="alert" testID="walkin-submit-error" style={[type.bodySm, { color: colors.error }]}>{error}</Text> : null}
           <Button label="Log Walk-in" onPress={save} loading={saving} fullWidth testID="walkin-save-btn" />
         </View>
       </KeyboardAvoidingView>

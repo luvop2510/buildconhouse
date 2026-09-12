@@ -125,7 +125,7 @@ export default function CustomerDashboard() {
             </View>
             <Button
               testID="latest-view-btn"
-              label="View"
+              label="Open quotation"
               icon="arrow-right"
               size="sm"
               variant="secondary"
@@ -171,9 +171,9 @@ const styles = StyleSheet.create({
   quoteFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: spacing.md },
   totalCopy: { flex: 1, minWidth: 120, gap: 2 },
   total: { ...type.monoLg, fontSize: 22, lineHeight: 30 },
-  supportCard: { backgroundColor: colors.surfaceInverse, borderColor: colors.surfaceInverse, flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: spacing.md },
+  supportCard: { backgroundColor: colors.surfaceSecondary, borderColor: colors.border, flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: spacing.md },
   supportCopy: { flex: 1, minWidth: 160, gap: 2 },
-  supportTitle: { ...type.titleMd, color: colors.onSurfaceInverse },
-  supportSubtitle: { ...type.caption, color: colors.onSurfaceSubtle },
+  supportTitle: { ...type.titleMd, color: colors.onSurface },
+  supportSubtitle: { ...type.bodySm, color: colors.onSurfaceMuted },
   stackOnPhone: { flexDirection: "column", alignItems: "stretch" },
 });

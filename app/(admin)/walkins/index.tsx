@@ -1,19 +1,20 @@
+import { Disclosure } from "@/src/design/Disclosure";
 // Walk-ins — Phase 4 (2026-07-30). Company-wide CRM entry point:
 // Walk-in -> Customer -> Selection -> Quotation -> Order -> Dispatch -> Payment.
 // Dedicated workspace: KPI dashboard + filterable list, matching the same
 // premium design language as Follow-ups / Tile Orders (Card/Chip/StatTile).
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
-import { Linking, Platform, ScrollView, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Linking, Platform, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { walkinsApi, type WalkIn, type WalkInsDashboard } from "@/src/api/walkins";
 import { toast } from "@/src/components/Toast";
-import { Button, Chip, EmptyState, PageHeader, SearchField, StatTile } from "@/src/components/ui";
+import { Button, Chip, EmptyState, ErrorState, LoadingState, PageHeader, SearchField, StatTile } from "@/src/components/ui";
 import { WalkInCard } from "@/src/components/walkins/WalkInCard";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { useBp } from "@/src/design/responsive";
-import { spacing } from "@/src/theme/tokens";
+import { spacing, type } from "@/src/theme/tokens";
 
 const STATUS_FILTERS: { value: string; label: string }[] = [
   { value: "", label: "All" }, { value: "new", label: "New" }, { value: "contacted", label: "Contacted" },
@@ -37,31 +38,39 @@ export default function WalkInsScreen({
   const router = useRouter();
   const { isPhone } = useBp();
   const { floors } = useFloorAccess();
+  const [summaryError, setSummaryError] = useState(false);
   const [dashboard, setDashboard] = useState<WalkInsDashboard | null>(null);
   const [items, setItems] = useState<WalkIn[]>([]);
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
   const [visibleCount, setVisibleCount] = useState(WALKIN_RENDER_BATCH);
   const [floorId, setFloorId] = useState(fixedFloorId || "");
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const requestId = useRef(0);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
+    const request = ++requestId.current;
+    setLoadError(null);
     setLoading(true);
     try {
-      const [dash, list] = await Promise.all([
+      const [dash, list] = await Promise.allSettled([
         walkinsApi.dashboard(fixedFloorId ? { floorId: fixedFloorId } : undefined),
         walkinsApi.list({ status: quotationFollowup ? "converted" : status || undefined, floor_id: floorId || undefined, search: search || undefined }, fixedFloorId ? { floorId: fixedFloorId } : undefined),
       ]);
-      setDashboard(dash);
-      setItems(list);
+      if (request !== requestId.current) return;
+      setSummaryError(dash.status === 'rejected');
+      setDashboard(dash.status === 'fulfilled' ? dash.value : null);
+      if (list.status === 'fulfilled') setItems(list.value);
+      else throw list.reason;
     } catch (e: any) {
-      toast.error(e?.detail || "Could not load Walk-ins");
+      if (request === requestId.current) setLoadError(e?.detail || "Could not load walk-ins");
     } finally {
-      setLoading(false);
+      if (request === requestId.current) setLoading(false);
     }
   }, [fixedFloorId, quotationFollowup, status, floorId, search]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); return () => { requestId.current += 1; }; }, [load]);
   useEffect(() => { setVisibleCount(WALKIN_RENDER_BATCH); }, [status, search, floorId, quotationFollowup]);
 
   const callCustomer = (w: WalkIn) => {
@@ -114,6 +123,8 @@ export default function WalkInsScreen({
         actions={<Button label="Log Walk-in" icon="user-plus" onPress={() => router.push((fixedFloorId ? `/(admin)/walkins/new?floor_id=${fixedFloorId}` : "/(admin)/walkins/new") as any)} testID="walkin-new-btn" />}
       />
       <ScrollView contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, paddingBottom: isPhone ? 132 : spacing.xxxl }}>
+        <Disclosure title="Walk-in summary">
+        {summaryError ? <Text role="status" style={[type.bodyMuted, { marginBottom: spacing.sm }]}>Summary unavailable. Your walk-in register is still available below.</Text> : null}
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginBottom: spacing.lg }}>
           <StatTile label="Today" value={dashboard?.today_walkins ?? "—"} icon="user-plus" tone="brand" style={{ minWidth: isPhone ? 120 : 140, flex: 1 }} />
           <StatTile label="This Week" value={dashboard?.this_week ?? "—"} icon="calendar" style={{ minWidth: isPhone ? 120 : 140, flex: 1 }} />
@@ -121,10 +132,11 @@ export default function WalkInsScreen({
           <StatTile label="Selections Scheduled" value={dashboard?.selections_scheduled ?? "—"} icon="calendar" style={{ minWidth: isPhone ? 120 : 140, flex: 1 }} />
           <StatTile label="Converted" value={dashboard?.converted ?? "—"} icon="check-circle" tone="success" style={{ minWidth: isPhone ? 120 : 140, flex: 1 }} />
           <StatTile label="Lost" value={dashboard?.lost ?? "—"} icon="x-circle" tone="danger" style={{ minWidth: isPhone ? 120 : 140, flex: 1 }} />
-          <StatTile label="Conversion Rate" value={`${dashboard?.conversion_rate ?? 0}%`} icon="trending-up" tone="brand" style={{ minWidth: isPhone ? 120 : 140, flex: 1 }} />
-          <StatTile label="Avg. Conversion" value={`${dashboard?.avg_conversion_days ?? 0}d`} icon="activity" style={{ minWidth: isPhone ? 120 : 140, flex: 1 }} />
+          <StatTile label="Conversion Rate" value={dashboard ? `${dashboard.conversion_rate}%` : "—"} icon="trending-up" tone="brand" style={{ minWidth: isPhone ? 120 : 140, flex: 1 }} />
+          <StatTile label="Avg. Conversion" value={dashboard ? `${dashboard.avg_conversion_days}d` : "—"} icon="activity" style={{ minWidth: isPhone ? 120 : 140, flex: 1 }} />
         </View>
 
+        </Disclosure>
         <SearchField
           placeholder="Search customer, phone, salesperson, source, notes…"
           value={search} onChangeText={setSearch} onClear={() => setSearch("")}
@@ -144,7 +156,7 @@ export default function WalkInsScreen({
           </View>
         ) : null}
 
-        {!loading && items.length === 0 ? (
+        {loadError ? <ErrorState title="Could not load walk-ins" subtitle={loadError} onRetry={() => void load()} /> : loading ? <LoadingState label="Loading walk-ins…" /> : items.length === 0 ? (
           <EmptyState icon="user-plus" title="No walk-ins yet" subtitle="Log your first walk-in to start the pipeline." />
         ) : (
           <>

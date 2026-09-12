@@ -1,3 +1,4 @@
+import { Overlay } from "@/src/design/Overlay";
 // TilesProductPicker — a mobile-first catalog for adding a tile to a document.
 //
 // This intentionally shares the same search API and media resolver as the
@@ -8,7 +9,7 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator, FlatList, Modal, Platform, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View,
+  ActivityIndicator, FlatList, Platform, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -121,10 +122,10 @@ export function TilesProductPicker({
   }, [hasMore, loading, loadingMore, query, results.length, search]);
 
   return (
-    <Modal visible={open} animationType="slide" onRequestClose={onClose} presentationStyle="fullScreen">
-      <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
+    <Overlay open={open} onClose={onClose} title="Add tiles" presentation="fullscreen" scroll={false} header={false}>
+      <SafeAreaView style={styles.screen} edges={[]}>
         <View style={styles.header}>
-          <Pressable onPress={onClose} hitSlop={12} style={styles.close} testID="tiles-picker-close" accessibilityLabel="Close catalog">
+          <Pressable onPress={onClose} hitSlop={12} style={styles.close} testID="tiles-picker-close" accessibilityRole="button" accessibilityLabel="Close catalog">
             <Feather name="x" size={21} color={colors.onSurface} />
           </Pressable>
           <View style={{ flex: 1, minWidth: 0 }}>
@@ -198,7 +199,7 @@ export function TilesProductPicker({
           </View>
         ) : null}
       </SafeAreaView>
-    </Modal>
+    </Overlay>
   );
 }
 

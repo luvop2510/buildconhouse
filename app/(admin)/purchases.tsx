@@ -424,8 +424,8 @@ export default function PurchasesScreen() {
               <View style={styles.mobileTitleRow}>
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.overline}>OPERATIONS · {VIEW_META[view].label.toUpperCase()}</Text>
-                  <Text style={styles.mobilePageTitle}>{isTablet ? "Purchase control" : "Purchases"}</Text>
-                  <Text style={type.bodyMuted}>{total} active items · {blockedCount ? `${blockedCount} need attention` : "all on track"}</Text>
+                  <Text accessibilityRole="header" aria-level={1} style={styles.mobilePageTitle}>{isTablet ? "Purchase control" : "Purchases"}</Text>
+                  <Text style={type.bodyMuted}>{itemsError ? "Purchase data is unavailable" : `${total} active items${blockedCount ? ` · ${blockedCount} need attention` : ""}`}</Text>
                 </View>
                 <Pressable accessibilityRole="button" accessibilityLabel="More purchase actions" onPress={() => setShowMobileActions(true)} style={styles.mobileIconButton}>
                   <Feather name="more-vertical" size={20} color={colors.onSurface} />
@@ -518,7 +518,7 @@ export default function PurchasesScreen() {
         <View style={[styles.headerRow, !isDesktop && { flexDirection: "column", alignItems: "stretch", gap: 12 }]}>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.overline}>PURCHASES · {VIEW_META[view].label.toUpperCase()}</Text>
-            <Text style={styles.pageTitle}>Purchases</Text>
+            <Text accessibilityRole="header" aria-level={1} style={styles.pageTitle}>Purchases</Text>
             <Text style={type.bodyMuted}>
               Material tracker · {activeStageCount} item{activeStageCount === 1 ? "" : "s"} across all stages · SLA {slaDays}d
             </Text>
@@ -1047,7 +1047,6 @@ function DispatchWorkspace({ loading, rows, onHistory, onOpenPo }: { loading: bo
         <OpsMetric label="Dispatched" value={dispatched.length} icon="truck" />
         <OpsMetric label="In transit" value={transit.length} icon="navigation" tone="warn" />
         <OpsMetric label="Delivered" value={delivered.length} icon="check-circle" tone="ok" />
-        <OpsMetric label="Returned" value={0} icon="corner-up-left" />
       </View>
       <View style={styles.workspaceCard}>
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.sm }}><Text style={styles.workspaceTitle}>Dispatch history</Text><Text style={type.caption}>Carrier status uses the linked supplier until a carrier is recorded.</Text></View>
@@ -1773,7 +1772,7 @@ const styles = StyleSheet.create({
 
   // Mobile-first Purchases workspace
   mobileSafe: { flex: 1, backgroundColor: colors.surface },
-  mobileListContent: { paddingHorizontal: spacing.md, paddingTop: spacing.md, paddingBottom: spacing.md, alignItems: "center" },
+  mobileListContent: { width: "100%", paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.md, alignItems: "stretch" },
   tabletListContent: { paddingHorizontal: spacing.xl, paddingTop: spacing.xl, alignItems: "stretch" },
   mobileHeaderContent: { width: "100%", maxWidth: 1120, gap: spacing.md, paddingBottom: spacing.md },
   mobileTitleRow: { flexDirection: "row", alignItems: "center", gap: 12 },

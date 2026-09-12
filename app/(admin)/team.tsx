@@ -11,7 +11,7 @@ import {
 } from "react-native";
 
 import { AdminPage, IconAction } from "@/src/components/AdminPage";
-import { Avatar, Badge, Button, Chip, EmptyState, Sheet, Skeleton, TextField } from "@/src/components/ui";
+import { Avatar, Badge, Button, Chip, EmptyState, ErrorState, Sheet, Skeleton, TextField } from "@/src/components/ui";
 import { TempPasswordDialog, TempPasswordResult } from "@/src/components/TempPasswordDialog";
 import { api } from "@/src/api/client";
 import { toast } from "@/src/components/Toast";
@@ -33,16 +33,20 @@ export default function Team() {
   const { roles } = useRoles();
   const [floors, setFloors] = useState<Floor[]>([]);
   const [items, setItems] = useState<Staff[] | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [floorError, setFloorError] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<Staff | null>(null);
   const [tempResult, setTempResult] = useState<TempPasswordResult | null>(null);
   const [tempDialogOpen, setTempDialogOpen] = useState(false);
 
   const load = useCallback(() => {
-    api.get<Staff[]>("/team").then(setItems).catch(() => setItems([]));
+    setLoadError(false);
+    api.get<Staff[]>("/team").then(setItems).catch(() => setLoadError(true));
   }, []);
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { api.get<Floor[]>("/settings/floors").then(setFloors).catch(() => setFloors([])); }, []);
+  const loadFloors = useCallback(() => { setFloorError(false); api.get<Floor[]>("/settings/floors").then(setFloors).catch(() => setFloorError(true)); }, []);
+  useEffect(loadFloors, [loadFloors]);
 
   return (
     <AdminPage
@@ -50,7 +54,8 @@ export default function Team() {
       subtitle="Roles, access & performance"
       right={<IconAction icon="user-plus" label="Add" onPress={() => setAddOpen(true)} testID="team-add-btn" />}
     >
-      {!items ? (
+      {floorError ? <ErrorState title="Department options unavailable" subtitle="Retry before assigning staff access." onRetry={loadFloors} /> : null}
+      {loadError ? <ErrorState title="Could not load team" onRetry={load} /> : !items ? (
         <View style={{ gap: spacing.sm }}>
           {Array.from({ length: 4 }).map((_, i) => (
             <View key={i} style={[styles.card, { flexDirection: "row", gap: spacing.md }]}>
@@ -72,6 +77,7 @@ export default function Team() {
               <Pressable
                 key={u.id}
                 testID={`team-row-${u.id}`}
+                accessibilityRole="button" accessibilityLabel={`Edit ${u.full_name}`}
                 onPress={() => setEditing(u)}
                 style={({ pressed }) => [
                   styles.card,

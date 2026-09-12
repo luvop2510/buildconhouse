@@ -9,7 +9,7 @@ import { Image } from "expo-image";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, FlatList, LayoutChangeEvent, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
-import { EmptyState } from "@/src/components/ui";
+import { EmptyState, ErrorState } from "@/src/components/ui";
 import { ProductImage } from "@/src/components/ProductImage";
 import { colors, money, PRODUCT_IMAGE_ASPECT_RATIO, radius, spacing } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";
@@ -318,6 +318,8 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
                 </View>
               ))}
             </View>
+          ) : b.productError || b.referenceError ? (
+            <ErrorState title="Products unavailable" subtitle={b.productError || b.referenceError || undefined} onRetry={() => { b.retryProducts(); b.retryReferenceData(); }} />
           ) : (
             <EmptyState icon="package" title="No products match" subtitle="Try clearing filters or a different search term." />
           )

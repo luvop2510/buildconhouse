@@ -4,6 +4,8 @@
 // spacing, color, radius, elevation, typography, or motion. Business logic
 // preserved byte-for-byte from the previous implementation.
 // ═══════════════════════════════════════════════════════════════════════════
+import { Disclosure } from "@/src/design/Disclosure";
+import { useReducedMotion } from "@/src/hooks/use-reduced-motion";
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -20,7 +22,7 @@ import { toast } from "@/src/components/Toast";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import {
   Alert as UIAlert,
-  Badge, Button, Card, Dropdown, EmptyState, FilterBar, FormField, HeroCard,
+  Badge, Button, Card, Dropdown, EmptyState, FilterBar, FormField, ErrorState,
   Panel, PageHeader, ProgressBar, SearchField, Sheet,
   Skeleton, StatTile, StatusBadge, HoverCard, ActivityRow, Tabs,
 } from "@/src/components/ds";
@@ -175,6 +177,14 @@ export default function PaymentsScreen() {
   const [detail, setDetail] = useState<OrderDetail | null>(null);
   const isGroundFloorOrder = detail?.floor_id === TILES_FLOOR_ID;
   const [loadingList, setLoadingList] = useState(true);
+  const [listError, setListError] = useState<string | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [statsError, setStatsError] = useState(false);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const orderRequest = useRef(0);
+  const detailRequest = useRef(0);
+  const statsRequest = useRef(0);
+  const reducedMotion = useReducedMotion();
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [waLoading, setWaLoading] = useState(false);
 
@@ -208,43 +218,53 @@ export default function PaymentsScreen() {
 
   const loadStats = useCallback(async () => {
     if (!selectedFloorId) return;
-    try { setStats(await api.get<Stats>("/payments/stats")); }
-    catch (e: any) { console.warn("stats", e); }
+    const request = ++statsRequest.current;
+    setStatsError(false);
+    try { const result = await api.get<Stats>("/payments/stats"); if (request === statsRequest.current) setStats(result); }
+    catch { if (request === statsRequest.current) setStatsError(true); }
   }, [selectedFloorId]);
 
   const loadOrders = useCallback(async (query: string = q) => {
     if (!selectedFloorId) return;
+    const request = ++orderRequest.current;
     setLoadingList(true);
+    setListError(null);
     try {
       const url = query ? `/payments/orders?q=${encodeURIComponent(query)}` : "/payments/orders";
       const list = await api.get<OrderRow[]>(url);
+      if (request !== orderRequest.current) return;
       setOrders(list);
       setSelectedId((current) => list.some((order) => order.id === current) ? current : (list.length ? list[0].id : null));
     } catch (e: any) {
-      toast.error(e?.detail || "Could not load orders");
+      if (request === orderRequest.current) setListError(e?.detail || "Check your connection and try again.");
     } finally {
-      setLoadingList(false);
+      if (request === orderRequest.current) setLoadingList(false);
     }
   }, [q, selectedFloorId]);
 
   const loadDetail = useCallback(async (id: string) => {
     if (!selectedFloorId) return;
+    const request = ++detailRequest.current;
     setLoadingDetail(true);
+    setDetail(null);
+    setDetailError(null);
     try {
       const d = await api.get<OrderDetail>(`/payments/orders/${id}`);
+      if (request !== detailRequest.current) return;
       setDetail(d);
       setAmount(d.outstanding > 0 ? String(Math.round(d.outstanding)) : "");
       setManualExtra(d.manual_extra_amount ? String(d.manual_extra_amount) : "");
       setManualExtraName(d.manual_extra_name || "");
     } catch (e: any) {
-      toast.error(e?.detail || "Could not load order details");
-      setDetail(null);
+      if (request === detailRequest.current) setDetailError(e?.detail || "Check your connection and try again.");
     } finally {
-      setLoadingDetail(false);
+      if (request === detailRequest.current) setLoadingDetail(false);
     }
   }, [selectedFloorId]);
 
   useEffect(() => {
+    orderRequest.current += 1; detailRequest.current += 1;
+    setListError(null); setDetailError(null);
     setStats(null); setOrders([]); setSelectedId(null); setDetail(null); setHistoryRows([]); setHistoryTotal(0);
     loadStats();
   }, [selectedFloorId, loadStats]);
@@ -252,18 +272,18 @@ export default function PaymentsScreen() {
     const t = setTimeout(() => { loadOrders(q); }, 220);
     return () => clearTimeout(t);
   }, [q, loadOrders, selectedFloorId]);
-  useEffect(() => { if (selectedId) loadDetail(selectedId); }, [selectedId, loadDetail]);
+  useEffect(() => { if (selectedId) loadDetail(selectedId); else { detailRequest.current += 1; setDetail(null); } }, [selectedId, loadDetail]);
 
   // On a phone the customer queue precedes its detail panel. Bring the chosen
   // order into view immediately instead of leaving the collector below it.
   useEffect(() => {
     if (!isPhone || !detail || !shouldFocusDetailRef.current) return;
     const timer = setTimeout(() => {
-      collectionsScrollRef.current?.scrollTo({ y: detailTopRef.current, animated: true });
+      collectionsScrollRef.current?.scrollTo({ y: detailTopRef.current, animated: !reducedMotion });
       shouldFocusDetailRef.current = false;
     }, 0);
     return () => clearTimeout(timer);
-  }, [detail, isPhone]);
+  }, [detail, isPhone, reducedMotion]);
 
   const customerCollections = useMemo<CustomerCollection[]>(() => {
     const grouped = new Map<string, CustomerCollection>();
@@ -293,9 +313,10 @@ export default function PaymentsScreen() {
   }, []);
 
   const savePayment = async () => {
-    if (!detail) return;
+    if (!detail || saving) return;
+    setPaymentError(null);
     const amt = Number((amount || "").toString().replace(/[^0-9.]/g, ""));
-    if (!amt || amt <= 0) { toast.error("Enter a valid amount"); return; }
+    if (!Number.isFinite(amt) || amt <= 0) { setPaymentError("Enter an amount greater than zero."); return; }
     setSaving(true);
     try {
       await api.post("/payments", {
@@ -309,7 +330,7 @@ export default function PaymentsScreen() {
       setMode("cash");
       await Promise.all([loadStats(), loadOrders(q), loadDetail(detail.id)]);
     } catch (e: any) {
-      toast.error(e?.detail || "Save failed");
+      setPaymentError(e?.detail || "Payment could not be saved. Check the payment history before retrying.");
     } finally { setSaving(false); }
   };
 
@@ -450,10 +471,7 @@ export default function PaymentsScreen() {
           ? "Track outstanding balances, record payments, and send reminders."
           : "Permanent reconciliation ledger — every collected payment, reconciled exactly with Collections."}
         overline={tab === "collections" ? "COLLECTIONS" : "LEDGER"}
-        actions={tab === "collections" ? (
-          <Button icon="download" label="Export" variant="secondary" size="md"
-            onPress={() => toast.success("Export coming soon")} />
-        ) : (
+        actions={tab === "collections" ? undefined : (
           <Dropdown
             testID="history-export"
             label="Export"
@@ -481,15 +499,8 @@ export default function PaymentsScreen() {
 
       {tab === "collections" ? (
       <ScrollView ref={collectionsScrollRef} contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, gap: spacing.lg, paddingBottom: isPhone ? 132 : spacing.xxxl }}>
-        {/* Hero — white card with brand icon tile */}
-        <HeroCard
-          overline="THIS MONTH"
-          title={stats ? `${moneyShort(stats.total_outstanding)} outstanding` : "Loading collections…"}
-          subtitle="Follow up on partial and due orders. Recording a payment updates the customer's timeline automatically."
-          icon="credit-card"
-          iconTone="brand"
-        />
-
+        <Disclosure title="Collections summary" summary="Outstanding balances and payments this month">
+          {statsError ? <ErrorState title="Summary unavailable" onRetry={() => void loadStats()} /> : null}
         {/* Stats */}
         <View style={{ flexDirection: "row", gap: spacing.md, flexWrap: "wrap" }}>
           <StatTile label="Total Outstanding" value={stats ? moneyShort(stats.total_outstanding) : "—"}
@@ -501,6 +512,8 @@ export default function PaymentsScreen() {
           <StatTile label="Fully Paid" value={stats ? String(stats.fully_paid) : "—"}
             icon="check-circle" tone="success" sub="Closed collections" />
         </View>
+
+        </Disclosure>
 
         {/* Body */}
         <View style={{ flexDirection: isDesktop ? "row" : "column", gap: spacing.lg, alignItems: "flex-start" }}>
@@ -515,7 +528,7 @@ export default function PaymentsScreen() {
                   placeholder="Search orders…"
                   onClear={() => setQ("")}
                 />
-                {loadingList ? (
+                {listError ? <ErrorState title="Could not load collections" subtitle={listError} onRetry={() => void loadOrders(q)} /> : loadingList ? (
                   <View style={{ gap: spacing.sm }}>
                     {Array.from({ length: 5 }).map((_, i) => (
                       <View key={i} style={{
@@ -531,8 +544,8 @@ export default function PaymentsScreen() {
                     ))}
                   </View>
                 ) : orders.length === 0 ? (
-                  <EmptyState icon="inbox" title="No outstanding customers"
-                    subtitle="Place an order from a quotation to start tracking payments here." />
+                  <EmptyState icon="inbox" title={q ? "No orders match" : "No outstanding customers"}
+                    subtitle={q ? "Try another customer, order number or clear your search." : "Place an order from a quotation to start tracking payments here."} />
                 ) : (
                   <View style={{ gap: spacing.sm }}>
                     {customerCollections.map((customer) => (
@@ -554,7 +567,7 @@ export default function PaymentsScreen() {
             onLayout={(event) => { detailTopRef.current = event.nativeEvent.layout.y; }}
             style={{ flex: 1, gap: spacing.lg, minWidth: 0, width: isDesktop ? undefined : "100%" }}
           >
-            {loadingDetail || !detail ? (
+            {detailError ? <ErrorState title="Could not load order" subtitle={detailError} onRetry={() => selectedId && void loadDetail(selectedId)} /> : loadingDetail || !detail ? (
               <Card>
                 <EmptyState
                   icon={loadingDetail ? "loader" : "file-text"}
@@ -775,7 +788,7 @@ export default function PaymentsScreen() {
 
       <RecordPaymentSheet
         visible={showRecord}
-        onClose={() => setShowRecord(false)}
+        onClose={() => { if (!saving) { setShowRecord(false); setPaymentError(null); } }}
         detail={detail}
         amount={amount} setAmount={setAmount}
         payDate={payDate} setPayDate={setPayDate}
@@ -783,6 +796,7 @@ export default function PaymentsScreen() {
         reference={reference} setReference={setReference}
         onSave={savePayment}
         saving={saving}
+        error={paymentError}
       />
     </SafeAreaView>
   );
@@ -1027,9 +1041,9 @@ function RecordPaymentSheet(props: {
   payDate: string; setPayDate: (v: string) => void;
   mode: PayMode; setMode: (m: PayMode) => void;
   reference: string; setReference: (v: string) => void;
-  onSave: () => void; saving: boolean;
+  onSave: () => void; saving: boolean; error: string | null;
 }) {
-  const { visible, onClose, detail, amount, setAmount, payDate, setPayDate, mode, setMode, reference, setReference, onSave, saving } = props;
+  const { visible, onClose, detail, amount, setAmount, payDate, setPayDate, mode, setMode, reference, setReference, onSave, saving, error } = props;
   if (!detail) return null;
   const modes: PayMode[] = ["cash", "upi", "bank", "cheque", "card"];
 
@@ -1052,8 +1066,10 @@ function RecordPaymentSheet(props: {
     >
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={{ padding: spacing.xl, gap: spacing.lg }}>
+          {error ? <UIAlert tone="error" title="Payment not saved" description={error} /> : null}
           <FormField label="Amount Received (₹)" required>
             <TextInput
+              accessibilityLabel="Amount received in rupees"
               testID="pay-amount"
               value={amount}
               onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ""))}
@@ -1068,13 +1084,13 @@ function RecordPaymentSheet(props: {
           <FormField label="Date Received">
             {Platform.OS === "web" ? (
               // @ts-ignore native HTML date input
-              <input type="date" value={payDate}
+              <input aria-label="Date received" type="date" value={payDate}
                 onChange={(e: any) => setPayDate(e.target.value)}
                 style={{
                   border: `1px solid ${colors.border}`, borderRadius: radius.md,
-                  padding: "10px 12px", fontSize: 14,
+                  padding: "10px 12px", fontSize: 16,
                   backgroundColor: colors.surfaceSecondary, color: colors.onSurface,
-                  fontFamily: "inherit", outline: "none", boxSizing: "border-box", height: 40,
+                  fontFamily: "inherit", outline: "none", boxSizing: "border-box", height: 44,
                 } as any}
               />
             ) : (

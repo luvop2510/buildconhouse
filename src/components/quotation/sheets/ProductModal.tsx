@@ -1,3 +1,4 @@
+import { Overlay } from "@/src/design/Overlay";
 // ProductModal — the premium floating product modal in V4.
 // Opens when a product card is tapped/quick-previewed. Shows gallery, color
 // swatches, finish selector, dimensions, description, warranty, editable
@@ -7,7 +8,7 @@
 // -----------------------------------------------------------------------------
 import { Feather } from "@expo/vector-icons";
 import { useEffect, useMemo, useState } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { api } from "@/src/api/client";
@@ -159,9 +160,8 @@ export function ProductModal() {
 
   return (
     <>
-    <Modal visible={open} transparent animationType="fade" onRequestClose={b.closeProductModal}>
-      <Pressable style={[styles.backdrop, isPhone && styles.phoneBackdrop]} onPress={b.closeProductModal}>
-        <Pressable style={[styles.sheet, isPhone && styles.phoneSheet]} onPress={(e) => e.stopPropagation()} accessibilityViewIsModal>
+    <Overlay open={open} onClose={b.closeProductModal} title={selectedProduct.name} width={960} presentation={isPhone ? "fullscreen" : "dialog"} scroll={false} header={false}>
+        <View style={{ flex: 1, minHeight: 0 }}>
           {/* Header */}
           <View style={[styles.header, isPhone && styles.headerPhone]}>
             <View style={{ flex: 1, minWidth: 0 }}>
@@ -175,7 +175,7 @@ export function ProductModal() {
                 {!isPhone ? <Text style={styles.editBtnLabel}>Edit product</Text> : null}
               </Pressable>
             ) : null}
-            <Pressable onPress={b.closeProductModal} style={styles.close} hitSlop={6}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Close product details" onPress={b.closeProductModal} style={styles.close} hitSlop={6}>
               <Feather name="x" size={18} color={colors.onSurface} />
             </Pressable>
           </View>
@@ -412,14 +412,13 @@ export function ProductModal() {
             </View>
           )}
           </SafeAreaView>
-        </Pressable>
-      </Pressable>
-    </Modal>
+        </View>
+    </Overlay>
 
     {/* Zoom overlay — tap-to-enlarge the active hero image */}
-    <Modal visible={zoomOpen} transparent animationType="fade" onRequestClose={() => setZoomOpen(false)}>
+    <Overlay open={zoomOpen} onClose={() => setZoomOpen(false)} title="Product image" presentation="fullscreen" scroll={false} header={false}>
       <Pressable style={styles.zoomBackdrop} onPress={() => setZoomOpen(false)}>
-        <Pressable style={styles.zoomClose} onPress={() => setZoomOpen(false)} hitSlop={8}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Close product image" style={styles.zoomClose} onPress={() => setZoomOpen(false)} hitSlop={8}>
           <Feather name="x" size={20} color="#fff" />
         </Pressable>
         <ProductImage
@@ -430,7 +429,7 @@ export function ProductModal() {
           fallbackLabel={product.sku}
         />
       </Pressable>
-    </Modal>
+    </Overlay>
 
     {/* Single shared Product Editor — same component used from Catalog. */}
     <ProductEditor

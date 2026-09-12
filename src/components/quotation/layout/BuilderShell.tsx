@@ -29,6 +29,7 @@ import { ProductPickerSheet } from "../sheets/ProductPickerSheet";
 import { ReferrerSwitcherSheet } from "../sheets/ReferrerSwitcherSheet";
 import { RoomSheet } from "../sheets/RoomSheet";
 import { SwapSheet } from "../sheets/SwapSheet";
+import { DraftRecoverySheet } from "../sheets/DraftRecoverySheet";
 import { BuilderTopbar } from "./BuilderTopbar";
 
 export function BuilderShell({ onBack }: { onBack: () => void }) {
@@ -134,6 +135,8 @@ export function BuilderShell({ onBack }: { onBack: () => void }) {
           <QuotationPane compact={compactCatalog} browseInline />
         </View>
       )}
+
+      <DraftRecoverySheet />
 
       {/* Universal sheets */}
       <ProductModal />

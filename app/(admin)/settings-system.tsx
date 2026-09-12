@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState } from "react";
 import { RefreshControl, ScrollView, Text, View } from "react-native";
 
 import { api } from "@/src/api/client";
-import { AdminPage } from "@/src/components/AdminPage";
+import { SettingsPage as AdminPage } from "@/src/components/settings/SettingsPage";
 import { Card, ErrorState, Skeleton } from "@/src/components/ui";
 import { useBp } from "@/src/design/responsive";
 import { colors, spacing, type } from "@/src/theme/tokens";

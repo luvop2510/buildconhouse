@@ -45,7 +45,7 @@ export default function PublicTermsOfService() {
 
           <TermsOfServiceContent />
 
-          <Pressable onPress={() => router.push("/(auth)/login")} hitSlop={8}>
+          <Pressable accessibilityRole="link" style={{ minHeight: 44, justifyContent: "center" }} onPress={() => router.push("/(auth)/login")} hitSlop={8}>
             <Text style={{ fontFamily: font.medium, fontSize: 13, color: color.brassDeep }}>← Back to sign in</Text>
           </Pressable>
         </View>

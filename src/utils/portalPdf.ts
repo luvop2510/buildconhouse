@@ -3,5 +3,6 @@
 import { downloadApiFile } from "@/src/utils/downloadFile";
 
 export async function openPortalPdf(path: string, fallbackName = "quotation.pdf"): Promise<void> {
-  await downloadApiFile(path, fallbackName, "PDF");
+  const downloaded = await downloadApiFile(path, fallbackName, "PDF");
+  if (!downloaded) throw new Error("The quotation PDF could not be downloaded.");
 }

@@ -8,7 +8,7 @@ import { color, font } from "@/src/design/tokens";
 export function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <View style={{ gap: 8 }}>
-      <Text style={{ fontFamily: font.medium, fontSize: 17, color: color.ink }}>{title}</Text>
+      <Text accessibilityRole="header" style={{ fontFamily: font.medium, fontSize: 17, color: color.ink }}>{title}</Text>
       {children}
     </View>
   );
@@ -16,7 +16,7 @@ export function Section({ title, children }: { title: string; children: React.Re
 
 export function P({ children }: { children: React.ReactNode }) {
   return (
-    <Text style={{ fontFamily: font.regular, fontSize: 14, lineHeight: 21, color: color.inkSoft }}>
+    <Text style={{ fontFamily: font.regular, fontSize: 15, lineHeight: 24, color: color.inkMid }}>
       {children}
     </Text>
   );

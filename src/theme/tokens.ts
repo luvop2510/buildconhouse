@@ -4,7 +4,7 @@
 // Everything downstream (primitives, screens) references these tokens; no hardcoded hex.
 
 import { Platform } from "react-native";
-import { color } from "@/src/design/tokens";
+import { color, radius as designRadius, font as designFont, shadow as designShadow } from "@/src/design/tokens";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Palette (raw)
@@ -124,14 +124,8 @@ export const spacing = {
 // ─────────────────────────────────────────────────────────────────────────────
 // Radii — geometric, product-consistent.
 // ─────────────────────────────────────────────────────────────────────────────
-export const radius = {
-  xs: 4,
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 24,
-  pill: 999,
-} as const;
+export const radius = { xs: 4, sm: designRadius.sm, md: designRadius.lg,
+  lg: designRadius.xl, xl: designRadius.xl, pill: designRadius.pill } as const;
 
 // Shared landscape frame for all product imagery.
 export const PRODUCT_IMAGE_ASPECT_RATIO = 16 / 10;
@@ -144,55 +138,9 @@ export const PRODUCT_IMAGE_ASPECT_RATIO = 16 / 10;
 //   overlay  = e4  popovers, dropdowns lifted above sheets
 // Every card in the app uses ONE of these.
 // ─────────────────────────────────────────────────────────────────────────────
-export const elevation = {
-  none: {
-    shadowColor: "transparent",
-    shadowOpacity: 0,
-    shadowRadius: 0,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 0,
-  },
-  // e1 — resting card (very subtle, Linear/Stripe style)
-  low: {
-    shadowColor: "#0B1220",
-    shadowOpacity: 0.04,
-    shadowRadius: 3,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 1,
-  },
-  // e2 — sticky toolbars, floating pills
-  medium: {
-    shadowColor: "#0B1220",
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
-  // e3 — sheets, modals
-  high: {
-    shadowColor: "#0B1220",
-    shadowOpacity: 0.10,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 6,
-  },
-  // e4 — popovers, dropdowns lifted above sheets
-  overlay: {
-    shadowColor: "#0B1220",
-    shadowOpacity: 0.14,
-    shadowRadius: 28,
-    shadowOffset: { width: 0, height: 14 },
-    elevation: 10,
-  },
-  // Legacy alias — treat as e1
-  hairline: {
-    shadowColor: "#0B1220",
-    shadowOpacity: 0.03,
-    shadowRadius: 2,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 1,
-  },
-} as const;
+const flat = { shadowColor: "transparent", shadowOpacity: 0, shadowRadius: 0, shadowOffset: { width: 0, height: 0 }, elevation: 0 };
+export const elevation = { none: flat, low: flat, hairline: flat,
+  medium: designShadow.raised, high: designShadow.overlay, overlay: designShadow.overlay } as const;
 
 // Legacy alias — some existing screens reference `shadow.soft` etc.
 export const shadow = {
@@ -215,17 +163,17 @@ export const shadow = {
 // Every drawer, dialog, dropdown, hover, button, and page transition MUST pick one.
 // ─────────────────────────────────────────────────────────────────────────────
 export const motion = {
-  press:   { duration: 80,  easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
-  hover:   { duration: 120, easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
-  modal:   { duration: 180, easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
-  drawer:  { duration: 220, easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
-  page:    { duration: 220, easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
+  press:   { duration: 90,  easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
+  hover:   { duration: 140, easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
+  modal:   { duration: 200, easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
+  drawer:  { duration: 200, easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
+  page:    { duration: 200, easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
   // Card hover scale
   cardHoverScale: 1.01,
   // Legacy aliases
-  instant: { duration: 80,  easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
-  fast:    { duration: 120, easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
-  base:    { duration: 220, easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
+  instant: { duration: 90,  easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
+  fast:    { duration: 140, easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
+  base:    { duration: 200, easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
   slow:    { duration: 320, easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
   spring:  { damping: 22, stiffness: 260, mass: 0.9 },
   springSoft: { damping: 18, stiffness: 160, mass: 0.9 },
@@ -239,7 +187,7 @@ export const motion = {
 // Fallback to system when custom files fail to load.
 // ─────────────────────────────────────────────────────────────────────────────
 const systemSans = Platform.select({ ios: "System", android: "sans-serif", default: "System" });
-const systemMono = Platform.select({ ios: "Menlo", android: "monospace", default: "Menlo" });
+const systemMono = designFont.mono;
 
 export const font = {
   regular:  Platform.OS === "web" ? "system-ui" : "Inter-Regular",
@@ -268,9 +216,9 @@ export const type = {
 
   // Body
   bodyLg: { fontFamily: font.regular, fontSize: 16, lineHeight: 24, color: colors.onSurface, fontWeight: "400" as const },
-  body:   { fontFamily: font.regular, fontSize: 14, lineHeight: 20, color: colors.onSurface, fontWeight: "400" as const },
-  bodyStrong: { fontFamily: font.medium, fontSize: 14, lineHeight: 20, color: colors.onSurface, fontWeight: "500" as const },
-  bodyMuted: { fontFamily: font.regular, fontSize: 14, lineHeight: 20, color: colors.onSurfaceMuted, fontWeight: "400" as const },
+  body:   { fontFamily: font.regular, fontSize: 15, lineHeight: 22, color: colors.onSurface, fontWeight: "400" as const },
+  bodyStrong: { fontFamily: font.medium, fontSize: 15, lineHeight: 22, color: colors.onSurface, fontWeight: "500" as const },
+  bodyMuted: { fontFamily: font.regular, fontSize: 15, lineHeight: 22, color: colors.onSurfaceMuted, fontWeight: "400" as const },
   bodySm: { fontFamily: font.regular, fontSize: 13, lineHeight: 18, color: colors.onSurface, fontWeight: "400" as const },
 
   // Meta

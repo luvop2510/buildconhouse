@@ -130,7 +130,7 @@ export default function EditCustomer() {
       return true;
     } catch (e: any) {
       if (!silent) toast.error(e?.detail || "Could not save customer");
-      setError(e?.detail || null);
+      setError(typeof e?.detail === "string" ? e.detail : "Could not save customer changes. Your details are retained; try again.");
       return false;
     } finally {
       setSaving(false);

@@ -7,7 +7,7 @@ import { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { Button, EmptyState, ErrorState, SegmentedControl } from "@/src/components/ui";
+import { Button, EmptyState, ErrorState, PageHeader, SearchField, SegmentedControl } from "@/src/components/ui";
 import { api } from "@/src/api/client";
 import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
 import { useBp } from "@/src/design/responsive";
@@ -26,6 +26,7 @@ export default function QuotationTilesList() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const requestIdRef = useRef(0);
+  const [search, setSearch] = useState("");
   const [documentType, setDocumentType] = useState<TilesDoc["doc_type"]>("tiles_quotation");
   const { isPhone, isTablet } = useBp();
   // The tablet shell reserves a 64px navigation rail. At a 768px viewport the
@@ -65,16 +66,12 @@ export default function QuotationTilesList() {
     const route = doc.doc_type === "tiles_selection" ? "selection" : "quotation";
     router.push(`/(admin)/tiles/${route}?id=${doc.id}` as any);
   };
-  const docs = documents?.[documentType] ?? null;
+  const docs = documents?.[documentType]?.filter(doc => !search.trim() || `${doc.customer_name} ${doc.number}`.toLowerCase().includes(search.trim().toLowerCase())) ?? null;
   const label = documentType === "tiles_selection" ? "selections" : "quotations";
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
-      <View style={[styles.header, compact && styles.headerCompact]}>
-        <View style={compact && { width: "100%" }}>
-          <Text style={type.overline}>Ground Floor · Tiles</Text>
-          <Text style={type.titleMd}>Quotation Tiles</Text>
-        </View>
+      <PageHeader title="Tile quotations" overline="Ground Floor · Tiles" actions={
         <View style={[styles.headerActions, compact && styles.headerActionsCompact]}>
           <Button
             label="Create new selection"
@@ -94,7 +91,7 @@ export default function QuotationTilesList() {
             style={compact ? styles.compactAction : undefined}
           />
         </View>
-      </View>
+      } />
 
       <View style={styles.filterBar}>
         <SegmentedControl
@@ -109,6 +106,7 @@ export default function QuotationTilesList() {
         />
       </View>
 
+      <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}><SearchField value={search} onChangeText={setSearch} onClear={() => setSearch("")} placeholder="Search customer or document number" /></View>
       {loadError ? (
         <ErrorState title="Couldn't load quotation tiles" subtitle={loadError} onRetry={() => void load()} />
       ) : loading && docs === null ? (
@@ -117,7 +115,7 @@ export default function QuotationTilesList() {
           <Text style={type.bodyMuted}>Loading quotation tiles…</Text>
         </View>
       ) : docs?.length === 0 ? (
-        <EmptyState icon="layers" title={`No ${label} yet`} subtitle={`Create a new ${label.slice(0, -1)} to get started.`} />
+        <EmptyState icon="layers" title={search ? "No matching documents" : `No ${label} yet`} subtitle={search ? "Try a different customer or document number." : `Create a new ${label.slice(0, -1)} to get started.`} />
       ) : (
         <FlatList
           data={docs}

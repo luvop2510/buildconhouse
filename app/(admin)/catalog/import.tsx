@@ -255,7 +255,7 @@ export default function CatalogImport() {
     return (
       <AdminPage
         title={`Review · ${current.supplier_name}`}
-        subtitle={`${current.filename} · ${current.total_rows} products · Powered by BuildCon Ingestion Framework`}
+        subtitle={`${current.filename} · ${current.total_rows} products · Review before importing`}
         right={
           <View style={[styles.reviewActions, isPhone && styles.reviewActionsPhone]}>
             <Button label="Discard" variant="secondary" onPress={() => setCurrent(null)} disabled={processing || changesInFlight} testID="discard-import" fullWidth={isPhone} />

@@ -2,6 +2,7 @@ import { usePathname, useRouter } from "expo-router";
 import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
+import { Button, Sheet } from "@/src/design/components";
 import { useBp } from "@/src/design/responsive";
 import { colors, layout, radius, spacing, type } from "@/src/theme/tokens";
 
@@ -65,6 +66,7 @@ export function WorkspaceSwitcher() {
   const router = useRouter();
   const pathname = usePathname();
   const { isPhone } = useBp();
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [openGroup, setOpenGroup] = useState<string | null>(null);
 
   // The switcher renders outside AdminPage, so it does not inherit the page's
@@ -85,6 +87,22 @@ export function WorkspaceSwitcher() {
   const activeGroup = WORKSPACE_GROUPS.find((g) => g.members.some(isActiveMember));
 
   const openMember = (member: Member) => router.push(destinationFor(member) as never);
+
+  if (isPhone) return (
+    <View style={{ paddingHorizontal: gutter, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.surface }}>
+      <Button testID="sales-report-selector" label={`Report: ${activeGroup?.members.find(isActiveMember)?.label || "Performance detail"}`} icon="chevron-down" variant="secondary" onPress={() => setPickerOpen(true)} full />
+      <Sheet open={pickerOpen} onClose={() => setPickerOpen(false)} title="Choose a report">
+        <View style={{ gap: spacing.lg }}>
+          {WORKSPACE_GROUPS.map(group => <View key={group.key} style={{ gap: spacing.xs }}>
+            <Text accessibilityRole="header" style={type.overline}>{group.label}</Text>
+            {group.members.map(member => <Pressable key={member.route} accessibilityRole="link" accessibilityState={{ selected: isActiveMember(member) }} onPress={() => { setPickerOpen(false); openMember(member); }} style={({ pressed }) => ({ minHeight: 48, paddingHorizontal: spacing.md, justifyContent: "center", backgroundColor: isActiveMember(member) ? colors.brandTint : pressed ? colors.surfaceSecondary : "transparent", borderRadius: 6 })}>
+              <Text style={[type.bodyStrong, { color: isActiveMember(member) ? colors.brand : colors.onSurface }]}>{member.label}</Text>
+            </Pressable>)}
+          </View>)}
+        </View>
+      </Sheet>
+    </View>
+  );
 
   return (
     <View style={{
@@ -122,7 +140,7 @@ export function WorkspaceSwitcher() {
                 minHeight: 44,
                 justifyContent: "center",
                 paddingHorizontal: spacing.md,
-                borderRadius: radius.pill,
+                borderRadius: radius.sm,
                 backgroundColor: isActive ? colors.brand : "transparent",
                 opacity: pressed ? 0.85 : 1,
               })}
@@ -159,7 +177,7 @@ export function WorkspaceSwitcher() {
                   minHeight: 44,
                   justifyContent: "center",
                   paddingHorizontal: spacing.md,
-                  borderRadius: radius.pill,
+                  borderRadius: radius.sm,
                   borderWidth: StyleSheet.hairlineWidth,
                   borderColor: isActive ? colors.brandBorder : colors.border,
                   backgroundColor: isActive ? colors.brandTint : colors.surfaceSecondary,
@@ -186,7 +204,7 @@ export function WorkspaceSwitcher() {
                   <View style={{
                     paddingHorizontal: spacing.s4,
                     paddingVertical: 1,
-                    borderRadius: radius.pill,
+                    borderRadius: radius.sm,
                     backgroundColor: colors.surfaceTertiary,
                   }}>
                     <Text style={{

@@ -116,7 +116,7 @@ export default function Settings() {
       {/* Profile hero */}
       <View style={styles.hero}>
         <Avatar name={staff?.full_name} size={64} tone="brand" />
-        <View style={{ alignItems: "center", gap: 4 }}>
+        <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
           <Text style={type.titleLg}>{staff?.full_name || "—"}</Text>
           <Text style={type.bodyMuted}>{staff?.email}</Text>
           <View style={styles.rolePill}>
@@ -126,7 +126,7 @@ export default function Settings() {
         </View>
       </View>
 
-      {sections.map((s) => (
+      {sections.filter(s => s.title !== "Profile").map((s) => (
         <Card key={s.title} style={{ padding: 0 }} variant="flat">
           <Text style={[type.overline, { padding: spacing.md, paddingBottom: 8 }]}>{s.title}</Text>
           {s.items.map((it, i) => (
@@ -152,10 +152,14 @@ export default function Settings() {
         </Card>
       ))}
 
-      {/* Workspace — every functional Settings section lives behind these rows */}
-      <Card style={{ padding: 0 }} variant="flat">
-        <Text style={[type.overline, { padding: spacing.md, paddingBottom: 8 }]}>Workspace</Text>
-        {workspaceRows.filter((r) => !r.roles || r.roles.includes(staff?.role || "")).map((r, i) => (
+      {[
+        { title: "Business & documents", ids: ["company", "pdf", "catalog", "walkins"] },
+        { title: "People & access", ids: ["team", "permissions", "access-grants"] },
+        { title: "Preferences & support", ids: ["notifications", "system", "privacy", "terms"] },
+      ].map(group => (
+      <Card key={group.title} style={{ padding: 0 }} variant="flat">
+        <Text style={[type.overline, { padding: spacing.md, paddingBottom: 8 }]}>{group.title}</Text>
+        {workspaceRows.filter(r => group.ids.includes(r.testId.replace("settings-nav-", ""))).filter((r) => !r.roles || r.roles.includes(staff?.role || "")).map((r, i) => (
           <Pressable
             key={r.href}
             testID={r.testId}
@@ -179,6 +183,7 @@ export default function Settings() {
           </Pressable>
         ))}
       </Card>
+      ))}
 
       {/* Security — active sessions / trusted devices */}
       <Card style={{ padding: 0 }} variant="flat">
@@ -188,6 +193,7 @@ export default function Settings() {
         </View>
         <Pressable
           testID="settings-nav-password"
+          accessibilityRole="link"
           onPress={() => router.push("/(admin)/settings-password" as any)}
           style={({ pressed }) => [styles.row, { opacity: pressed ? 0.7 : 1 }]}
         >
@@ -224,6 +230,7 @@ export default function Settings() {
         ))}
         <Pressable
           testID="logout-all-devices"
+          accessibilityRole="button"
           onPress={confirmLogoutAll}
           disabled={revoking}
           style={({ pressed }) => [styles.logoutAllRow, { opacity: pressed || revoking ? 0.7 : 1 }]}
@@ -235,6 +242,7 @@ export default function Settings() {
 
       <Pressable
         testID="settings-logout"
+        accessibilityRole="button"
         onPress={async () => { await logout(); router.replace("/(auth)/login"); }}
         style={({ pressed }) => [styles.logout, { opacity: pressed ? 0.88 : 1 }]}
       >
@@ -256,12 +264,12 @@ export default function Settings() {
 
 const styles = StyleSheet.create({
   hero: {
+    flexDirection: "row",
     alignItems: "center",
     gap: spacing.md,
-    padding: spacing.xl,
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
+    paddingVertical: spacing.lg,
+    backgroundColor: colors.surface,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },
   rolePill: {

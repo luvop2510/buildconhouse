@@ -287,9 +287,11 @@ export default function FollowupsScreen() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [mission, setMission] = useState<Mission | null>(null);
   const [insights, setInsights] = useState<Insights | null>(null);
+  const [insightsLoading, setInsightsLoading] = useState(true);
   const [assignees, setAssignees] = useState<Assignee[]>([]);
   const [customers, setCustomers] = useState<CustomerLite[]>([]);
 
+  const [summaryOpen, setSummaryOpen] = useState(false);
   const [q, setQ] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   useEffect(() => {
@@ -439,6 +441,7 @@ export default function FollowupsScreen() {
   const bootstrap = useCallback(async () => {
     if (!selectedFloorId) return [];
     const floorId = selectedFloorId;
+    setInsightsLoading(true);
       // Reconciliation remains available as an explicit administrative action.
       // Do not fire a mutation during workspace bootstrap: navigation can abort
       // an unawaited POST and create a visible browser network error.
@@ -455,6 +458,7 @@ export default function FollowupsScreen() {
       if (bootstrappedFloorRef.current !== floorId) return;
       if (statsResult.status === "fulfilled") setStats(statsResult.value);
       if (missionResult.status === "fulfilled") setMission(missionResult.value);
+      setInsightsLoading(false);
       if (insightsResult.status === "fulfilled") setInsights(insightsResult.value);
       if (assigneesResult.status === "fulfilled") setAssignees(assigneesResult.value);
       if (customersResult.status === "fulfilled") setCustomers(customersResult.value);
@@ -466,6 +470,9 @@ export default function FollowupsScreen() {
   useEffect(() => {
     if (!selectedFloorId || bootstrappedFloorRef.current === selectedFloorId) return;
     bootstrappedFloorRef.current = selectedFloorId;
+    setStats(null);
+    setMission(null);
+    setInsights(null);
     didApplyListFilters.current = false;
     // A floor is a hard data boundary: any selected card, detail request, or
     // bulk selection from the prior floor would otherwise make a valid 404
@@ -947,6 +954,12 @@ export default function FollowupsScreen() {
         />
       ) : null}
 
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+        <Chip label={`Today${stats ? ` · ${stats.today_tasks}` : ""}`} active={kpiFilter === "today"} onPress={() => toggleKpi("today")} />
+        <Chip label={`Overdue${stats ? ` · ${stats.overdue}` : ""}`} active={kpiFilter === "overdue"} onPress={() => toggleKpi("overdue")} />
+        <Chip label="Summary" active={summaryOpen} onPress={() => setSummaryOpen(value => !value)} />
+      </View>
+      {summaryOpen ? <View style={{ gap: spacing.md }}>
       <MissionHero
         mission={mission}
         loading={loading}
@@ -978,6 +991,8 @@ export default function FollowupsScreen() {
         </View>
       </ScrollView>
 
+      </View> : null}
+
       <Panel padding={spacing.md}>
         <View style={{ gap: spacing.md }}>
           <View style={{ flexDirection: "row", gap: spacing.sm, alignItems: "center", flexWrap: isPhone ? "wrap" : "nowrap" }}>
@@ -993,7 +1008,7 @@ export default function FollowupsScreen() {
             { value: "high", label: "High", count: priorityCounts.high || undefined }, { value: "medium", label: "Medium", count: priorityCounts.medium || undefined },
             { value: "low", label: "Low", count: priorityCounts.low || undefined },
           ]} />
-          <Pressable onPress={() => setFiltersExpanded((v) => !v)} style={{ flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", minHeight: 44, paddingVertical: 8 }}>
+          <Pressable accessibilityRole="button" accessibilityLabel="More filters" accessibilityState={{ expanded: filtersExpanded }} onPress={() => setFiltersExpanded((v) => !v)} style={{ flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", minHeight: 44, paddingVertical: 8 }}>
             <Feather name={filtersExpanded ? "chevron-up" : "sliders"} size={14} color={colors.onSurfaceSecondary} />
             <Text style={{ fontSize: 12, fontWeight: "700", color: colors.onSurfaceSecondary }}>{filtersExpanded ? "Hide filters" : "More filters"}{activeFilterCount ? ` (${activeFilterCount})` : ""}</Text>
           </Pressable>
@@ -1127,7 +1142,7 @@ export default function FollowupsScreen() {
             showsVerticalScrollIndicator={false}
           >
             <ContextPanel detail={detail} loading={loadingDetail} />
-            <InsightsPanel insights={insights} />
+            <InsightsPanel insights={insights} loading={insightsLoading} onRetry={() => void bootstrap()} />
           </ScrollView>
         </View>
       ) : (
@@ -1350,6 +1365,7 @@ function ShortcutHelpSheet({ visible, onClose }: { visible: boolean; onClose: ()
 // MissionHero — Today's Mission
 // ─────────────────────────────────────────────────────────────────────────────
 function MissionHero({ mission, loading, onOpenPriority, compact }: { mission: Mission | null; loading: boolean; onOpenPriority: (id: string) => void; compact?: boolean }) {
+  if (!loading && !mission) return <Text style={type.bodyMuted}>Summary unavailable. Your task queue is still available below.</Text>;
   if (loading || !mission) {
     return (
       <View style={{ padding: spacing.xl, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, gap: spacing.md }}>
@@ -1425,10 +1441,10 @@ function MissionHero({ mission, loading, onOpenPriority, compact }: { mission: M
 // ─────────────────────────────────────────────────────────────────────────────
 // InsightsPanel — bottom-right insights (calls, WhatsApps, payments, response)
 // ─────────────────────────────────────────────────────────────────────────────
-function InsightsPanel({ insights }: { insights: Insights | null }) {
+function InsightsPanel({ insights, loading, onRetry }: { insights: Insights | null; loading: boolean; onRetry: () => void }) {
   return (
     <Panel title="Today's conversion" overline="INSIGHTS">
-      {!insights ? (
+      {!insights && !loading ? <View style={{ gap: spacing.sm }}><Text role="status" style={type.bodyMuted}>Conversion insights are unavailable.</Text><Button label="Retry insights" variant="secondary" onPress={onRetry} /></View> : !insights ? (
         <View style={{ gap: spacing.sm }}>
           <Skeleton w="100%" h={14} radius={radius.sm} />
           <Skeleton w="100%" h={14} radius={radius.sm} />
