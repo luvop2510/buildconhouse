@@ -39,6 +39,16 @@ def test_square_and_wide_sources_are_not_cropped_to_a_document_canvas():
     assert _size(landscape) == (320, 200)
 
 
+def test_force_landscape_pads_a_portrait_image_without_rotating_or_cropping_it():
+    data, mime = normalize_product_image(_image_bytes((60, 120)), "image/png", force_landscape=True)
+
+    assert mime == "image/png"
+    assert _size(data) == (192, 120)
+    with Image.open(BytesIO(data)) as image:
+        assert image.getpixel((96, 60)) == (255, 0, 0)
+        assert image.getpixel((0, 60)) == (255, 255, 255)
+
+
 def test_exif_orientation_is_applied_without_a_second_rotation_or_crop():
     data, mime = normalize_product_image(_image_bytes((60, 120), fmt="JPEG", exif_orientation=6), "image/jpeg")
     assert mime == "image/jpeg"

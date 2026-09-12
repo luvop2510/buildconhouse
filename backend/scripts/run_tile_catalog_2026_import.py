@@ -44,7 +44,13 @@ def auto_accept(rows):
     return rows
 
 
-async def import_source(brand: str, source: Path, *, dry_run: bool) -> dict:
+async def import_source(
+    brand: str,
+    source: Path,
+    *,
+    dry_run: bool,
+    force_landscape_images: bool = False,
+) -> dict:
     data = source.read_bytes()
     rows, extraction = TileCatalog2026Adapter(brand).extract(data, source.name)
     rows, certification = validate(rows)
@@ -76,9 +82,17 @@ async def import_source(brand: str, source: Path, *, dry_run: bool) -> dict:
                            status="classified", rows=public_rows, created_by=(owner or {}).get("id", "system"),
                            floor_id=TILES_FLOOR_ID).model_dump()
     job.update({"extraction": extraction.__dict__, "certification": certification.to_public(), "source_asset": source_asset})
+    if force_landscape_images:
+        job["force_landscape_images"] = True
     await db.catalog_imports.insert_one(job)
     job.pop("_id", None)
-    result = await import_accepted(job, (owner or {}).get("id", "system"), blob_map=blob_map, floor_id=TILES_FLOOR_ID)
+    result = await import_accepted(
+        job,
+        (owner or {}).get("id", "system"),
+        blob_map=blob_map,
+        floor_id=TILES_FLOOR_ID,
+        force_landscape_images=force_landscape_images,
+    )
     status = "imported" if not result["failed"] and not result["skipped"] else "failed"
     await db.catalog_imports.update_one({"id": job["id"]}, {"$set": {"status": status, "accepted_rows": result["imported"] + result["updated"], "rejected_rows": result["skipped"]}})
     if status != "imported":

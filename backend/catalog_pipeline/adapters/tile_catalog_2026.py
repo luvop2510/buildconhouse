@@ -64,6 +64,13 @@ class TileCatalog2026Adapter(BrandAdapter):
                 report.warnings.append(f"Sheet {worksheet.title!r}: expected a RATE column")
                 continue
             image_column = headers.get("image")
+            finish_column = next((index for label, index in headers.items() if "finish" in label), None)
+            box_pieces_column = next(
+                (index for label, index in headers.items() if "box" in label and ("pcs" in label or "pis" in label)),
+                None,
+            )
+            box_sqft_column = next((index for label, index in headers.items() if "box" in label and "sqft" in label), None)
+            serial_column = next((index for label, index in headers.items() if label.rstrip(".") in {"sr", "serial", "sr no"}), None)
             images_by_row: dict[int, ExtractedImage] = {}
             for sheet, row, column, image in extract_images_from_xlsx_ex(data, optimize=False):
                 if sheet != worksheet.title or (image_column is not None and column != image_column):
@@ -82,7 +89,14 @@ class TileCatalog2026Adapter(BrandAdapter):
                 match = RATE_RE.match(raw_rate)
                 price = float(match.group(1).replace(",", "")) if match else None
                 unit = match.group(2).lower() if match else None
-                base_sku = f"{_compact(self.brand)}-{_compact(name)[:36] or 'PRODUCT'}-{_compact(size)[:16] or 'SIZE'}"
+                finish = str(row[finish_column] or "").strip() if finish_column is not None else ""
+                raw_box_pieces = str(row[box_pieces_column] or "").strip() if box_pieces_column is not None else ""
+                raw_box_sqft = str(row[box_sqft_column] or "").strip() if box_sqft_column is not None else ""
+                source_serial = str(row[serial_column] or "").strip() if serial_column is not None else ""
+                base_sku = "-".join(filter(None, [
+                    _compact(self.brand), _compact(name)[:36] or "PRODUCT", _compact(size)[:16] or "SIZE",
+                    _compact(finish)[:24],
+                ]))
                 occurrence = sku_occurrences.get(base_sku, 0) + 1
                 sku_occurrences[base_sku] = occurrence
                 sku = base_sku if occurrence == 1 else f"{base_sku}-{occurrence}"
@@ -91,15 +105,16 @@ class TileCatalog2026Adapter(BrandAdapter):
                     report.images_mapped += 1
                 product = ProductRow(
                     brand=self.brand, sku=sku, name=f"{name} ({size})", category=CATEGORY,
-                    family_key=f"{_slug(self.brand)}:{_slug(name)}", variant=size, size=size,
+                    family_key=f"{_slug(self.brand)}:{_slug(name)}", variant=finish or size, finish=finish or MISSING, size=size,
                     mrp=price if price is not None else 0.0,
                     dealer_price=price if price is not None else 0.0,
                     images=[image.data_url] if image else [], image_meta=[image.to_dict()] if image else [],
                     image_quality=image.quality if image else "missing",
                     specs={"source_file": filename, "source_row": row_number,
-                           "source_rate": raw_rate, "price_unit": unit,
+                           "source_serial": source_serial or None, "source_rate": raw_rate, "price_unit": unit,
+                           "box_pieces": raw_box_pieces or None, "box_sqft": raw_box_sqft or None,
                            "needs_pricing": price is None},
-                    tags=dedupe_iter(["tiles", _slug(self.brand), unit or "rate-review"]),
+                    tags=dedupe_iter(["tiles", _slug(self.brand), _slug(finish), unit or "rate-review"]),
                     confidence=0.95 if price is not None else 0.6,
                 )
                 if price is None:
@@ -118,3 +133,10 @@ class PandaAdapter(TileCatalog2026Adapter):
 
     def __init__(self) -> None:
         super().__init__("Panda")
+
+
+class BoffoAdapter(TileCatalog2026Adapter):
+    """BOFFO 2026 ground-floor tile catalogue."""
+
+    def __init__(self) -> None:
+        super().__init__("BOFFO")

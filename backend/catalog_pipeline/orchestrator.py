@@ -138,7 +138,13 @@ async def run_pipeline(brand: str, filename: str, data: bytes) -> dict:
     }
 
 
-async def import_accepted(job: dict, user_id: str, blob_map: dict[str, str] | None = None, floor_id: str | None = None) -> dict:
+async def import_accepted(
+    job: dict,
+    user_id: str,
+    blob_map: dict[str, str] | None = None,
+    floor_id: str | None = None,
+    force_landscape_images: bool = False,
+) -> dict:
     """Persist all rows in job['rows'] with status == 'accepted' into products.
 
     Idempotent: existing SKUs are updated (not duplicated). Never deletes anything.
@@ -149,6 +155,7 @@ async def import_accepted(job: dict, user_id: str, blob_map: dict[str, str] | No
     falls back to the ``catalog_image_blobs`` collection.
     """
     supplier = job["supplier_name"]
+    force_landscape_images = force_landscape_images or bool(job.get("force_landscape_images"))
     floor_id = floor_id or floor_inherit(job)
     brand_doc = await db.brands.find_one({"name": supplier, "floor_id": floor_id}, {"_id": 0})
     if not brand_doc:
@@ -339,6 +346,7 @@ async def import_accepted(job: dict, user_id: str, blob_map: dict[str, str] | No
                     resolved_images, image_meta, image_quality,
                     product_id=existing["id"], family_key=family_key,
                     brand_id=row_brand["id"], brand_slug=row_brand.get("slug") or supplier.lower(), floor_id=floor_id,
+                    force_landscape_images=force_landscape_images,
                 )
                 updated += 1
                 continue
@@ -355,6 +363,7 @@ async def import_accepted(job: dict, user_id: str, blob_map: dict[str, str] | No
                 resolved_images, image_meta, image_quality,
                 product_id=p.id, family_key=family_key,
                 brand_id=row_brand["id"], brand_slug=row_brand.get("slug") or supplier.lower(), floor_id=floor_id,
+                force_landscape_images=force_landscape_images,
             )
             imported += 1
         except Exception as e:  # noqa: BLE001
@@ -374,6 +383,7 @@ async def import_accepted(job: dict, user_id: str, blob_map: dict[str, str] | No
 async def _upload_supplier_images(
     images: list[str], metas: list[dict], quality: str, *,
     product_id: str, family_key: str | None, brand_id: str, brand_slug: str, floor_id: str,
+    force_landscape_images: bool = False,
 ) -> None:
     """Import base64 supplier images into Supabase via the MediaStorage layer.
 
@@ -407,6 +417,7 @@ async def _upload_supplier_images(
                 floor_id=floor_id,
                 source_type="supplier", role=role,
                 is_primary=(i == 0), sort_order=i * 10,
+                force_landscape=force_landscape_images,
             )
         except Exception as e:  # noqa: BLE001
             logger.warning("supplier image upload failed for %s idx=%d: %s", product_id, i, e)

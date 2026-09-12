@@ -11,7 +11,7 @@ from .modulo import ModuloAdapter
 from .donato import DonatoAdapter
 from .renite import ReniteAdapter
 from .tile_per_piece import KenzoAdapter, MilagroAdapter
-from .tile_catalog_2026 import PandaAdapter
+from .tile_catalog_2026 import BoffoAdapter, PandaAdapter
 
 REGISTRY = {
     "grohe": GroheAdapter,
@@ -31,6 +31,7 @@ REGISTRY = {
     "milagro": MilagroAdapter,
     "kenzo": KenzoAdapter,
     "panda": PandaAdapter,
+    "boffo": BoffoAdapter,
 }
 
 

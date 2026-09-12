@@ -93,6 +93,7 @@ async def upload_and_register(
     notes: Optional[str] = None,
     private: bool = False,
     actor: Optional[UserPublic] = None,
+    force_landscape: bool = False,
 ) -> ProductMedia:
     """Upload bytes to storage and persist metadata.
 
@@ -106,7 +107,7 @@ async def upload_and_register(
     """
     # Every ingestion path (manual upload, replacement and catalog import)
     # passes here, so normalize once before hashing/deduplicating/storing.
-    data, mime = normalize_product_image(data, mime)
+    data, mime = normalize_product_image(data, mime, force_landscape=force_landscape)
     sha1 = hashlib.sha1(data).hexdigest()
 
     # Dedupe check
