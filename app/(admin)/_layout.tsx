@@ -67,18 +67,18 @@ function SideItem({ item, active, onPress, compact = false }: { item: NavItem; a
       style={({ pressed, hovered }: any) => [
         styles.sideItem,
         compact && styles.sideItemCompact,
-        { backgroundColor: active ? color.sunken : pressed || hovered ? color.hoverWash : "transparent" },
+        { backgroundColor: active ? color.accentTint : pressed || hovered ? color.hoverWash : "transparent" },
         Platform.OS === "web" ? ({ cursor: "pointer" } as any) : null,
       ]}
     >
       <View style={[styles.brassBar, { backgroundColor: active ? color.brass : "transparent" }]} />
-      <Feather name={item.icon} size={16} color={active ? color.ink : color.inkSoft} />
+      <Feather name={item.icon} size={16} color={active ? color.action : color.inkSoft} />
       {!compact ? <Text
         style={{
           fontFamily: active ? font.semibold : font.medium,
           fontWeight: active ? "600" : "500",
           fontSize: 13.5, letterSpacing: -0.1,
-          color: active ? color.ink : color.inkMid,
+          color: active ? color.actionHover : color.inkMid,
         }}
       >
         {item.label}
@@ -144,7 +144,7 @@ function FloorSwitcher({ compact = false }: { compact?: boolean }) {
       triggerLabel={`Switch workspace. Current workspace: ${currentLabel}`}
       triggerTestID="floor-switcher"
     >
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 10, height: 40, borderRadius: radius.md, backgroundColor: color.surface, borderWidth: layout.hairline, borderColor: color.line }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, height: 42, borderRadius: radius.lg, backgroundColor: color.surface, borderWidth: layout.hairline, borderColor: color.line }}>
         <Feather name="layers" size={15} color={color.brass} />
         {!compact ? <Text numberOfLines={1} style={{ flex: 1, fontFamily: font.medium, fontSize: 12.5, color: color.ink }}>{currentLabel}</Text> : null}
         <Feather name="chevron-down" size={14} color={color.inkSoft} />
@@ -154,7 +154,7 @@ function FloorSwitcher({ compact = false }: { compact?: boolean }) {
 }
 
 const FLOOR_ROUTE_SEGMENTS: Record<string, string[]> = {
-  [SANITARY_FLOOR_ID]: ["quotations", "purchases", "purchase-orders"],
+  [SANITARY_FLOOR_ID]: ["quotations", "purchases", "purchase-orders", "godown-stock"],
   [TILES_FLOOR_ID]: ["tiles", "orders"],
   [KITCHEN_FLOOR_ID]: ["kitchen"],
   [FURNITURE_FLOOR_ID]: ["furniture"],
@@ -265,7 +265,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
               return group === "Daily work" ? daily : !daily;
             });
           return destinations.length ? <View key={group} style={{ gap: 1, marginBottom: space.x3 }}>
-            {!collapsed ? <Text style={{ fontFamily: font.medium, fontSize: 11, color: color.inkSoft, paddingHorizontal: space.x3, paddingVertical: space.x2 }}>{group}</Text> : null}
+            {!collapsed ? <Text style={{ fontFamily: font.semibold, fontSize: 10.5, letterSpacing: 1.05, textTransform: "uppercase", color: color.inkSoft, paddingHorizontal: space.x3, paddingVertical: space.x2 }}>{group}</Text> : null}
             {destinations.map(n => <SideItem key={n.href} item={n} active={isActive(n)} compact={collapsed}
               onPress={() => { if (tilesNav.items.includes(n)) void tilesNav.open(n); else router.push(n.href as any); }} />)}
           </View> : null;
@@ -322,11 +322,11 @@ function Rail() {
         onPress={() => router.push(item.href as any)}
         style={({ pressed, hovered }: any) => [
           styles.railItem,
-          { backgroundColor: on ? color.sunken : pressed || hovered ? color.hoverWash : "transparent" },
+          { backgroundColor: on ? color.accentTint : pressed || hovered ? color.hoverWash : "transparent" },
         ]}
       >
         <View style={[styles.brassBarRail, { backgroundColor: on ? color.brass : "transparent" }]} />
-        <Feather name={item.icon} size={18} color={on ? color.ink : color.inkSoft} />
+        <Feather name={item.icon} size={18} color={on ? color.action : color.inkSoft} />
       </Pressable>
     );
   };
@@ -354,11 +354,11 @@ function Rail() {
               onPress={() => { void tilesNav.open(n); }}
               style={({ pressed, hovered }: any) => [
                 styles.railItem,
-                { backgroundColor: on ? color.sunken : pressed || hovered ? color.hoverWash : "transparent" },
+                { backgroundColor: on ? color.accentTint : pressed || hovered ? color.hoverWash : "transparent" },
               ]}
             >
               <View style={[styles.brassBarRail, { backgroundColor: on ? color.brass : "transparent" }]} />
-              <Feather name={n.icon} size={18} color={on ? color.ink : color.inkSoft} />
+              <Feather name={n.icon} size={18} color={on ? color.action : color.inkSoft} />
             </Pressable>
           );
         })}
@@ -585,8 +585,8 @@ const styles = StyleSheet.create({
   floorAccessCopy: { fontFamily: font.regular, fontSize: 13, lineHeight: 19, color: color.inkSoft, textAlign: "center", maxWidth: 360 },
   floorAccessButton: { minHeight: 44, paddingHorizontal: space.x4, borderRadius: radius.md, alignItems: "center", justifyContent: "center", backgroundColor: color.ink, marginTop: space.x1 },
   floorAccessButtonText: { fontFamily: font.medium, fontWeight: "500", fontSize: 13, color: color.onAction },
-  sidebar: { flex: 1, backgroundColor: color.canvas },
-  rail: { flex: 1, backgroundColor: color.canvas },
+  sidebar: { flex: 1, backgroundColor: color.surface },
+  rail: { flex: 1, backgroundColor: color.surface },
   monogram: {
     width: 26, height: 26, borderRadius: 7, backgroundColor: color.ink,
     alignItems: "center", justifyContent: "center",
@@ -613,10 +613,10 @@ const styles = StyleSheet.create({
     position: "absolute", left: 0, top: 8, bottom: 8, width: 2.5, borderRadius: 2,
   },
   brassBarRail: {
-    position: "absolute", left: 0, top: 10, bottom: 10, width: 2.5, borderRadius: 2,
+    position: "absolute", left: 0, top: 10, bottom: 10, width: 3, borderRadius: 3,
   },
   railItem: {
-    width: 44, height: 44, borderRadius: radius.sm,
+    width: 44, height: 44, borderRadius: radius.md,
     alignItems: "center", justifyContent: "center", overflow: "hidden",
   },
   userRow: {

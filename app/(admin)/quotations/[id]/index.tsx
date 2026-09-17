@@ -13,7 +13,7 @@ import { downloadApiFile } from "@/src/utils/downloadFile";
 import { colors, money, radius, spacing, type } from "@/src/theme/tokens";
 import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
 
-type Line = { id: string; sku: string; name: string; qty: number; unit_price: number; discount_pct: number | null; room?: string; description?: string | null; category_id?: string | null };
+type Line = { id: string; sku: string; name: string; qty: number; unit_price: number; discount_pct: number | null; room?: string; description?: string | null; category_id?: string | null; godown_stock_id?: string | null; godown_source_customer_name?: string | null; godown_source_purchased_at?: string | null; godown_allocated_at?: string | null };
 type Quotation = {
   id: string; number: string; customer_name: string; status: string;
   items: Line[]; rooms: string[]; subtotal: number; discount_total: number;
@@ -187,6 +187,7 @@ export default function QuotationDetail() {
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: 14, fontFamily: type.titleMd.fontFamily, fontWeight: "600", color: colors.onSurface }} numberOfLines={2}>{it.name}</Text>
                     <Text style={type.caption}>{it.sku}{it.room ? ` · ${it.room}` : ""}</Text>
+                    <GodownProvenance item={it} />
                   </View>
                   <Text style={[type.mono, { width: 60, textAlign: "right" }]} numberOfLines={1}>{it.qty}</Text>
                   <Text style={[type.mono, { width: 100, textAlign: "right" }]} numberOfLines={1}>{money(it.unit_price)}</Text>
@@ -216,6 +217,7 @@ export default function QuotationDetail() {
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={{ fontSize: 14, fontFamily: type.titleMd.fontFamily, fontWeight: "600", color: colors.onSurface }} numberOfLines={2}>{it.name}</Text>
                       <Text style={[type.caption, { marginTop: 2 }]}>{it.sku}{it.room ? ` · ${it.room}` : ""}</Text>
+                      <GodownProvenance item={it} />
                     </View>
                   </View>
                   <View style={styles.lineMeta}>
@@ -326,6 +328,12 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
+function GodownProvenance({ item }: { item: Line }) {
+  if (!item.godown_stock_id) return null;
+  const purchased = item.godown_source_purchased_at ? new Date(item.godown_source_purchased_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "date not recorded";
+  return <View style={styles.godownTag}><Feather name="archive" size={11} color={colors.brand} /><Text style={styles.godownText}>From godown · {item.godown_source_customer_name || "source not recorded"} · purchased {purchased}</Text></View>;
+}
+
 const styles = StyleSheet.create({
   centered: {
     flex: 1, alignItems: "center", justifyContent: "center",
@@ -360,6 +368,8 @@ const styles = StyleSheet.create({
     fontSize: 13, fontFamily: type.titleMd.fontFamily,
     fontWeight: "600", color: colors.brand,
   },
+  godownTag: { marginTop: 5, flexDirection: "row", gap: 4, padding: 6, borderRadius: 6, backgroundColor: colors.brandTint },
+  godownText: { flex: 1, fontSize: 10, lineHeight: 14, color: colors.onSurfaceSecondary },
   tableHead: {
     flexDirection: "row",
     padding: spacing.md,

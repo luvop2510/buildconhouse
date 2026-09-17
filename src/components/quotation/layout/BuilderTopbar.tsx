@@ -38,6 +38,7 @@ export function BuilderTopbar({
   const [deleting, setDeleting] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [recentOpen, setRecentOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const revs = b.recentQuotations.find((q) => q.id === b.quotationId)?.revision_count ?? 0;
   const status = b.recentQuotations.find((q) => q.id === b.quotationId)?.status || "draft";
@@ -81,6 +82,7 @@ export function BuilderTopbar({
         {/* On phone, keep only the order action here. The persistent checkout
             footer owns draft completion; suppressing secondary actions avoids
             squeezing six touch targets into one row. */}
+        {!isPhone ? <Pressable accessibilityRole="button" accessibilityLabel="Preview quotation" onPress={() => setPreviewOpen(true)} disabled={!b.s.lines.length} style={({ pressed }) => [styles.iconBtn, { opacity: !b.s.lines.length ? .35 : pressed ? .7 : 1 }]}><Feather name="eye" size={16} color={colors.onSurface} /></Pressable> : null}
         {!isPhone ? <Pressable
           accessibilityRole="button" accessibilityLabel="Generate quotation"
           testID="generate-quotation"
@@ -150,6 +152,7 @@ export function BuilderTopbar({
           {[
             { label: "Undo last change", icon: "corner-up-left" as const, action: b.history.undo, disabled: !b.history.canUndo },
             { label: "Redo change", icon: "corner-up-right" as const, action: b.history.redo, disabled: !b.history.canRedo },
+            { label: "Preview quotation", icon: "eye" as const, action: () => setPreviewOpen(true), disabled: !b.s.lines.length },
             { label: "Generate quotation", icon: "file-text" as const, action: b.generateOfficialQuotation, disabled: b.workflowBusy || !b.s.lines.length },
             { label: "Place order", icon: "shopping-cart" as const, action: b.placeOrder, disabled: b.workflowBusy || !b.s.lines.length },
             { label: "Recent quotations", icon: "clock" as const, action: () => setRecentOpen(true), disabled: false },
@@ -164,6 +167,13 @@ export function BuilderTopbar({
       </BottomSheet>
       <BottomSheet visible={recentOpen} onClose={() => setRecentOpen(false)} title="Recent quotations" testID="builder-recent-sheet">
         <RecentQuotationsPanel />
+      </BottomSheet>
+      <BottomSheet visible={previewOpen} onClose={() => setPreviewOpen(false)} title="Quotation preview" testID="quotation-preview-sheet">
+        <View style={{ gap: 12 }} accessibilityLiveRegion="polite">
+          <Text style={type.caption}>{b.s.customerId ? "Review items before generating the PDF or placing the order." : "Choose a customer before saving this quotation."}</Text>
+          {b.s.lines.map(line => <View key={line.id} style={styles.previewRow}><View style={{ flex: 1, minWidth: 0 }}><Text style={styles.previewName} numberOfLines={2}>{line.name}</Text><Text style={type.caption}>{line.sku}{line.godown_stock_id ? ` · From godown${line.godown_source_customer_name ? ` · ${line.godown_source_customer_name}` : ""}` : ""}</Text></View><Text style={styles.previewQty}>{line.qty} × ₹{line.unit_price.toLocaleString("en-IN")}</Text></View>)}
+          <View style={styles.previewTotal}><Text style={type.titleMd}>Total</Text><Text style={type.titleLg}>₹{b.totals.grand.toLocaleString("en-IN")}</Text></View>
+        </View>
       </BottomSheet>
       <ConfirmDialog
         visible={deleteOpen}
@@ -191,6 +201,10 @@ export function BuilderTopbar({
 const styles = StyleSheet.create({
   actionRow: { minHeight: 48, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 12 },
   actionLabel: { fontSize: 15, fontWeight: "600", color: colors.onSurface },
+  previewRow: { minHeight: 48, flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
+  previewName: { fontSize: 14, fontWeight: "600", color: colors.onSurface },
+  previewQty: { fontSize: 12, fontWeight: "600", color: colors.onSurfaceMuted },
+  previewTotal: { flexDirection: "row", justifyContent: "space-between", paddingTop: 8 },
   bar: {
     flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.lg,
     paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border,

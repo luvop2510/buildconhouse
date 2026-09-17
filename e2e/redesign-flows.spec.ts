@@ -129,3 +129,58 @@ test('critical workspace menu supports arrow keys and restores focus without swi
   await expect(trigger).toBeFocused();
   await expect(trigger).toContainText('The Sanitary Bathroom');
 });
+
+test('critical Follow-ups snooze menu keeps keyboard focus and restores its trigger', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await mockSession(page, '/followups');
+  await page.route('**/api/followups/config/assignees', route => route.fulfill({ json: [] }));
+  await page.route('**/api/followups/saved-views', route => route.fulfill({ json: [] }));
+  await page.route('**/api/customers', route => route.fulfill({ json: [] }));
+  await page.route('**/api/followups/page?**', route => route.fulfill({ json: {
+    items: [{
+      id: 'menu-followup', customer_id: 'customer-one', customer_name: 'Menu Customer', customer_tier: 'retail', customer_phone: '9000000000',
+      rule_type: 'manual', category: 'general', value: 12000, reason: 'Confirm delivery', reason_factors: [],
+      next_action: 'Call customer', next_action_reason: 'Delivery confirmation', suggested_channel: 'call',
+      priority_score: 70, priority_level: 'high', due_at: new Date().toISOString(), status: 'open',
+      is_automated: false, auto_resolved: false, contact_attempts: 0, tags: [], bucket: 'today',
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(), assigned_to: 'audit-owner',
+    }], page: 1, page_size: 100, has_more: false,
+  } }));
+  await page.goto('/followups');
+  const trigger = page.getByTestId('snooze-menu-followup');
+  await trigger.focus();
+  await page.keyboard.press('Enter');
+  const menu = page.getByRole('menu', { name: 'Snooze' });
+  const items = menu.getByRole('menuitem');
+  await expect(menu).toBeVisible();
+  await expect(items.first()).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(items.nth(1)).toBeFocused();
+  await page.keyboard.press('End');
+  await expect(items.last()).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+});
+
+test('critical manager assignments recover from an unavailable register without showing an empty state', async ({ page }) => {
+  await mockSession(page, '/followup-assignments');
+  await page.goto('/followup-assignments');
+  await expect(page.getByText("Couldn't load assignments", { exact: true })).toBeVisible();
+  await expect(page.getByText('Nothing assigned', { exact: true })).toHaveCount(0);
+
+  const requested: string[] = [];
+  await page.route('**/api/followups/assignments', route => {
+    requested.push(new URL(route.request().url()).pathname);
+    return route.fulfill({ json: [{
+      id: 'assignment-one', assigned_to: 'audit-owner', assigned_to_name: 'Audit Owner',
+      customer_name: 'Asha Project', reason: 'Confirm delivery', category: 'general',
+      status: 'open', bucket: 'today', days_pending: 2,
+      due_at: '2026-09-13T09:00:00Z', created_at: '2026-09-11T09:00:00Z',
+    }] });
+  });
+  await page.getByRole('button', { name: 'Try again', exact: true }).click();
+  await expect(page.getByText('1 assignment', { exact: true })).toBeVisible();
+  await expect(page.getByText('Asha Project · Confirm delivery', { exact: true })).toBeVisible();
+  expect(requested).toEqual(['/api/followups/assignments']);
+});

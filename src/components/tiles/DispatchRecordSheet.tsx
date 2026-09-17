@@ -88,10 +88,10 @@ export function ChalanPreviewSheet({ chalanId, onClose }: { chalanId: string; on
               ))}
             </View>
             <View style={styles.actionRow}>
-              <Pressable testID="tile-chalan-preview-pdf" onPress={() => openChalanPdf(chalan.id)} style={styles.primaryAction}>
+              <Pressable testID="tile-chalan-preview-pdf" accessibilityRole="button" accessibilityLabel="Generate Chalan PDF" onPress={() => openChalanPdf(chalan.id)} style={styles.primaryAction}>
                 <Text style={styles.primaryActionText}>Generate PDF</Text>
               </Pressable>
-              <Pressable testID="tile-chalan-preview-print" onPress={() => openChalanPdf(chalan.id, "print")} style={styles.outlineAction}>
+              <Pressable testID="tile-chalan-preview-print" accessibilityRole="button" accessibilityLabel="Print Chalan" onPress={() => openChalanPdf(chalan.id, "print")} style={styles.outlineAction}>
                 <Text style={styles.outlineActionText}>Print</Text>
               </Pressable>
             </View>
@@ -201,32 +201,33 @@ export function DispatchRecordSheet({
                       <TextInput
                         testID={`tile-dispatch-edit-${key.replace(/_/g, "-")}`}
                         value={form[key]} onChangeText={(v) => setForm((f) => ({ ...f, [key]: v }))}
+                        accessibilityLabel={label}
                         placeholderTextColor={colors.onSurfaceSubtle} placeholder={label}
                         style={styles.input}
                       />
                     </View>
                   ))}
                   <View style={styles.actionRow}>
-                    <Pressable testID="tile-dispatch-save-transport" disabled={busy} onPress={saveTransport} style={styles.primaryAction}>
+                    <Pressable testID="tile-dispatch-save-transport" accessibilityRole="button" accessibilityLabel="Save dispatch changes" disabled={busy} onPress={saveTransport} style={styles.primaryAction}>
                       <Text style={styles.primaryActionText}>{busy ? "Saving…" : "Save changes"}</Text>
                     </Pressable>
-                    <Pressable testID="tile-dispatch-cancel-edit" onPress={() => setEditing(false)} style={styles.outlineAction}>
+                    <Pressable testID="tile-dispatch-cancel-edit" accessibilityRole="button" accessibilityLabel="Cancel editing dispatch" onPress={() => setEditing(false)} style={styles.outlineAction}>
                       <Text style={styles.outlineActionText}>Cancel</Text>
                     </Pressable>
                   </View>
                 </View>
               ) : (
                 <View style={styles.actionRow}>
-                  <Pressable testID="tile-dispatch-preview-chalan" onPress={() => setPreview(true)} style={styles.primaryAction}>
+                  <Pressable testID="tile-dispatch-preview-chalan" accessibilityRole="button" accessibilityLabel="Preview Chalan" onPress={() => setPreview(true)} style={styles.primaryAction}>
                     <Text style={styles.primaryActionText}>Preview Chalan</Text>
                   </Pressable>
-                  <Pressable testID="tile-dispatch-open-pdf" onPress={() => openChalanPdf(detail.chalan.id)} style={styles.outlineAction}>
+                  <Pressable testID="tile-dispatch-open-pdf" accessibilityRole="button" accessibilityLabel="Generate Chalan PDF" onPress={() => openChalanPdf(detail.chalan.id)} style={styles.outlineAction}>
                     <Text style={styles.outlineActionText}>Generate PDF</Text>
                   </Pressable>
-                  <Pressable testID="tile-dispatch-print" onPress={() => openChalanPdf(detail.chalan.id, "print")} style={styles.outlineAction}>
+                  <Pressable testID="tile-dispatch-print" accessibilityRole="button" accessibilityLabel="Print Chalan" onPress={() => openChalanPdf(detail.chalan.id, "print")} style={styles.outlineAction}>
                     <Text style={styles.outlineActionText}>Print</Text>
                   </Pressable>
-                  {!readOnly ? <Pressable testID="tile-dispatch-edit" onPress={() => setEditing(true)} style={styles.outlineAction}>
+                  {!readOnly ? <Pressable testID="tile-dispatch-edit" accessibilityRole="button" accessibilityLabel="Edit dispatch" onPress={() => setEditing(true)} style={styles.outlineAction}>
                     <Text style={styles.outlineActionText}>Edit dispatch</Text>
                   </Pressable> : null}
                 </View>
@@ -238,6 +239,7 @@ export function DispatchRecordSheet({
                   {dispatch.destination_type === "Godown" && !dispatch.godown_received_at ? (
                     <Pressable
                       testID="tile-dispatch-godown-received" disabled={busy}
+                      accessibilityRole="button" accessibilityLabel="Mark received at Godown"
                       onPress={() => run(() => tileOrdersApi.markGodownReceived(dispatchId), "Marked received at Godown")}
                       style={styles.outlineAction}
                     >
@@ -246,11 +248,13 @@ export function DispatchRecordSheet({
                   ) : null}
                   <TextInput
                     testID="tile-dispatch-received-by" value={receivedBy} onChangeText={setReceivedBy}
+                    accessibilityLabel="Delivery received by"
                     placeholder="Delivery received by (optional)" placeholderTextColor={colors.onSurfaceSubtle}
                     style={styles.input}
                   />
                   <Pressable
                     testID="tile-dispatch-mark-delivered" disabled={busy}
+                    accessibilityRole="button" accessibilityLabel="Mark delivery as complete"
                     onPress={() => run(
                       () => tileOrdersApi.markDelivered(dispatchId, { received_by: receivedBy.trim() || undefined }),
                       "Marked delivered",

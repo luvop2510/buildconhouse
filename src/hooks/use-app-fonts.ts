@@ -2,7 +2,6 @@
 // Inter is loaded from local /assets/fonts. Icon fonts fall back to CDN under Expo Go.
 import Constants, { ExecutionEnvironment } from "expo-constants";
 import { useFonts } from "expo-font";
-import { Platform } from "react-native";
 
 const ICON_VECTOR_VERSION = "15.1.1";
 
@@ -53,10 +52,10 @@ const FRAUNCES_FAMILY: Record<string, any> = {
 
 export const useAppFonts = (): readonly [boolean, Error | null] =>
   useFonts({
-    // Browsers start immediately with their system font stack. Native keeps
-    // the packaged families, which do not require a network round trip.
-    ...(Platform.OS === "web" ? {} : INTER_FAMILY),
-    ...(Platform.OS === "web" ? {} : FRAUNCES_FAMILY),
+    // Keep the same typographic voice on web and native. The local files are
+    // bundled with the app, so the shell never depends on a font CDN.
+    ...INTER_FAMILY,
+    ...FRAUNCES_FAMILY,
     ...(Constants.executionEnvironment === ExecutionEnvironment.StoreClient
       ? iconFontMap()
       : {}),

@@ -16,7 +16,8 @@
 // declaration, which is what stops labels drifting off their columns.
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Linking, Platform, StyleSheet, Text, View } from "react-native";
+import { Feather } from "@expo/vector-icons";
+import { ActivityIndicator, Linking, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
 import {
   tileOrdersApi,
@@ -34,7 +35,7 @@ import { CreateDispatchSheet } from "@/src/components/tiles/CreateDispatchSheet"
 import { DispatchRecordSheet, openChalanPdf } from "@/src/components/tiles/DispatchRecordSheet";
 import {
   Button, ButtonGroup, FilterChip, PageHeader, PageShell,
-  SearchField, Section, TabBar, Toolbar,
+  SearchField, Section, Toolbar,
 } from "@/src/components/tiles/TileLayout";
 import { StatusPill } from "@/src/components/tiles/TileOrderStatusUI";
 import { tileIdentityMeta } from "@/src/components/tiles/tilePresentation";
@@ -45,7 +46,7 @@ import {
 import { Sheet } from "@/src/components/ui";
 import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
 import { useAuth } from "@/src/state/auth";
-import { colors, spacing, type } from "@/src/theme/tokens";
+import { colors, radius, spacing, type } from "@/src/theme/tokens";
 
 type TabKey = "customer" | "brands" | "history" | "inventory" | "dispatch-list" | "material-register";
 
@@ -59,6 +60,18 @@ const TABS: [TabKey, string][] = [
   ["inventory", "Go-down Inventory"],
   ["dispatch-list", "Dispatch List"],
   ["material-register", "Material Movement Register"],
+];
+
+const WORK_QUEUES: { key: Extract<TabKey, "customer" | "brands" | "dispatch-list">; label: string; description: string; icon: keyof typeof Feather.glyphMap }[] = [
+  { key: "customer", label: "Customer orders", description: "See every order and its current fulfilment state.", icon: "users" },
+  { key: "brands", label: "Release queue", description: "Release material brand by brand, without supplier hunting.", icon: "package" },
+  { key: "dispatch-list", label: "Dispatch board", description: "Open chalans and confirm what is leaving today.", icon: "truck" },
+];
+
+const RECORDS: { key: Extract<TabKey, "history" | "inventory" | "material-register">; label: string; description: string; icon: keyof typeof Feather.glyphMap }[] = [
+  { key: "inventory", label: "Go-down stock", description: "Material received and waiting at the go-down.", icon: "archive" },
+  { key: "history", label: "Completed", description: "Delivered orders and final values.", icon: "check-circle" },
+  { key: "material-register", label: "Movement register", description: "The permanent audit trail for every box.", icon: "activity" },
 ];
 
 // "At Godown" and "Delivered" became reachable once the Dispatch record
@@ -95,6 +108,51 @@ function timestamp(value: string | undefined | null) {
 
 function quantityLabel(value: number | string, unit?: "Box" | "Pieces") {
   return `${value} ${unit === "Pieces" ? "pieces" : "boxes"}`;
+}
+
+function TileOrdersNavigator({ value, onChange, counts }: {
+  value: TabKey;
+  onChange: (key: TabKey) => void;
+  counts: Partial<Record<TabKey, number>>;
+}) {
+  const renderGroup = (label: string, items: { key: TabKey; label: string; description: string; icon: keyof typeof Feather.glyphMap }[]) => (
+    <View style={styles.navigatorGroup}>
+      <Text style={styles.navigatorLabel}>{label}</Text>
+      <View role="tablist" style={styles.navigatorCards}>
+        {items.map((item) => {
+          const active = value === item.key;
+          const count = counts[item.key];
+          return (
+            <Pressable
+              key={item.key}
+              testID={`tile-orders-tab-${item.key}`}
+              role="tab"
+              aria-selected={active}
+              accessibilityLabel={`${item.label}. ${item.description}`}
+              accessibilityState={{ selected: active }}
+              onPress={() => onChange(item.key)}
+              style={({ hovered, pressed }: any) => [
+                styles.navigatorCard,
+                active ? styles.navigatorCardActive : null,
+                (hovered || pressed) && !active ? styles.navigatorCardHovered : null,
+              ]}
+            >
+              <View style={[styles.navigatorIcon, active ? styles.navigatorIconActive : null]}>
+                <Feather name={item.icon} size={18} color={active ? colors.onBrand : colors.brand} />
+              </View>
+              <View style={styles.navigatorCopy}>
+                <Text style={[styles.navigatorTitle, active ? styles.navigatorTitleActive : null]} numberOfLines={1}>{item.label}</Text>
+                <Text style={[styles.navigatorDescription, active ? styles.navigatorDescriptionActive : null]} numberOfLines={2}>{item.description}</Text>
+              </View>
+              {typeof count === "number" ? <Text style={[styles.navigatorCount, active ? styles.navigatorCountActive : null]}>{count}</Text> : null}
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+
+  return <View style={styles.navigator}>{renderGroup("WORK QUEUES", WORK_QUEUES)}{renderGroup("RECORDS & AUDIT", RECORDS)}</View>;
 }
 
 export default function TileOrdersScreen() {
@@ -276,7 +334,7 @@ export default function TileOrdersScreen() {
   // spend the surplus on the two `grow` columns.
   const customerColumns = useMemo<Column<CustomerOrderCard>[]>(() => [
     {
-      key: "customer", label: "CUSTOMER", grow: 2, minWidth: 200,
+      key: "customer", label: "CUSTOMER", grow: 2, minWidth: 200, mobile: "primary",
       render: (order) => <CellTitle>{order.customer_name}</CellTitle>,
     },
     {
@@ -287,7 +345,7 @@ export default function TileOrdersScreen() {
       render: (order) => <CellMono>{order.number}</CellMono>,
     },
     {
-      key: "brands", label: "BRANDS", grow: 2, minWidth: 160,
+      key: "brands", label: "BRANDS", grow: 2, minWidth: 160, mobile: "hidden",
       render: (order) => <CellText muted>{order.brands.map((b) => b.brand_name).join(", ") || "—"}</CellText>,
     },
     {
@@ -307,24 +365,24 @@ export default function TileOrdersScreen() {
       render: (order) => <StatusPill status={order.overall_status} />,
     },
     {
-      key: "waiting", label: "WAITING", width: 90, align: "right",
+      key: "waiting", label: "WAITING", width: 90, align: "right", mobile: "hidden",
       render: (order) => <CellNumber value={`${order.waiting_days}d`} dim />,
     },
     {
-      key: "progress", label: "PROGRESS", width: 150,
+      key: "progress", label: "PROGRESS", width: 150, mobile: "hidden",
       render: (order) => <ProgressCell percent={order.completion_percentage} />,
     },
     {
       // The row itself is the affordance; this is just the visual cue that
       // says so, so it stays as narrow as a chevron needs to be.
-      key: "action", label: "", width: 56, align: "right",
+      key: "action", label: "", width: 56, align: "right", mobile: "hidden",
       render: () => <CellChevron />,
     },
   ], []);
 
   const brandColumns = useMemo<Column<BrandLandingCard>[]>(() => [
     {
-      key: "brand", label: "BRAND", grow: 3, minWidth: 260,
+      key: "brand", label: "BRAND", grow: 3, minWidth: 260, mobile: "primary",
       render: (brand) => <CellTitle>{brand.brand_name}</CellTitle>,
     },
     {
@@ -338,7 +396,7 @@ export default function TileOrdersScreen() {
       ),
     },
     {
-      key: "action", label: "", width: 180, align: "right",
+      key: "action", label: "", width: 180, align: "right", mobile: "action",
       render: () => <CellLink>Release queue →</CellLink>,
     },
   ], []);
@@ -349,7 +407,7 @@ export default function TileOrdersScreen() {
       // date is an attribute of the dispatch, not an independent axis to scan,
       // and folding it here buys ~110px back for a table that must otherwise
       // scroll to reach its own data.
-      key: "number", label: "DISPATCH NO.", width: 176,
+      key: "number", label: "DISPATCH NO.", width: 176, mobile: "hidden",
       render: (row) => (
         <CellStack title={row.dispatch_number} subtitle={row.dispatch_date?.slice(0, 10) || "—"} />
       ),
@@ -359,7 +417,7 @@ export default function TileOrdersScreen() {
       render: (row) => <CellTitle>{row.customer_name}</CellTitle>,
     },
     {
-      key: "product", label: "BRAND / TILE", grow: 3, minWidth: 220,
+      key: "product", label: "BRAND / TILE", grow: 3, minWidth: 220, mobile: "primary",
       render: (row) => <CellStack title={row.tile_name} subtitle={tileIdentityMeta([row.brand_name], row.sku)} />,
     },
     {
@@ -372,11 +430,11 @@ export default function TileOrdersScreen() {
       // word "Customer" on every row of every page. One route column carries
       // the same information and gives ~80px back to the columns that vary.
       // Fits "Released → Customer", the longer of the two possible routes.
-      key: "route", label: "ROUTE", width: 180,
+      key: "route", label: "ROUTE", width: 180, mobile: "hidden",
       render: (row) => <CellText muted>{row.source} → Customer</CellText>,
     },
     {
-      key: "vehicle", label: "VEHICLE / DRIVER", grow: 1, minWidth: 190,
+      key: "vehicle", label: "VEHICLE / DRIVER", grow: 1, minWidth: 190, mobile: "hidden",
       render: (row) => (
         <CellStack title={row.vehicle_number || "—"} subtitle={row.driver_name || "Driver not recorded"} />
       ),
@@ -393,7 +451,7 @@ export default function TileOrdersScreen() {
       // Wide enough to hold all four full-length labels on one line — the
       // contract fixes the wording, so the column is sized to the words
       // rather than the words trimmed to fit the column.
-      key: "actions", label: "ACTIONS", width: 468,
+      key: "actions", label: "ACTIONS", width: 468, mobile: "action",
       render: (row) => (
         <ButtonGroup>
           <Button
@@ -425,7 +483,7 @@ export default function TileOrdersScreen() {
 
   const movementColumns = useMemo<Column<MaterialMovementRow>[]>(() => [
     {
-      key: "time", label: "TIMESTAMP", width: 164,
+      key: "time", label: "TIMESTAMP", width: 164, mobile: "hidden",
       render: (row) => <CellMono>{timestamp(row.created_at)}</CellMono>,
     },
     {
@@ -433,7 +491,7 @@ export default function TileOrdersScreen() {
       render: (row) => <CellTitle>{row.customer_name}</CellTitle>,
     },
     {
-      key: "product", label: "BRAND / TILE", grow: 3, minWidth: 220,
+      key: "product", label: "BRAND / TILE", grow: 3, minWidth: 220, mobile: "primary",
       render: (row) => <CellStack title={row.tile_name} subtitle={tileIdentityMeta([row.brand_name], row.sku)} />,
     },
     {
@@ -451,45 +509,45 @@ export default function TileOrdersScreen() {
       // FROM is always a short location word ("Released", "Godown"); TO is
       // usually a customer name, so only TO needs room to grow. Fixing both at
       // 132 truncated every delivery destination by ~77px.
-      key: "from", label: "FROM", width: 128,
+      key: "from", label: "FROM", width: 128, mobile: "hidden",
       render: (row) => <CellText muted>{row.source || "—"}</CellText>,
     },
     {
-      key: "to", label: "TO", grow: 1, minWidth: 200,
+      key: "to", label: "TO", grow: 1, minWidth: 200, mobile: "hidden",
       render: (row) => <CellText muted>{row.destination || "—"}</CellText>,
     },
     {
-      key: "reference", label: "REFERENCE", width: 168,
+      key: "reference", label: "REFERENCE", width: 168, mobile: "hidden",
       render: (row) => <CellMono>{row.chalan_number || row.dispatch_number || "—"}</CellMono>,
     },
     {
-      key: "user", label: "USER", grow: 1, minWidth: 156,
+      key: "user", label: "USER", grow: 1, minWidth: 156, mobile: "hidden",
       render: (row) => <CellText muted>{row.performed_by_name}</CellText>,
     },
     {
-      key: "action", label: "", width: 108, align: "right",
+      key: "action", label: "", width: 108, align: "right", mobile: "hidden",
       render: () => <CellLink>Open →</CellLink>,
     },
   ], []);
 
   const historyColumns = useMemo<Column<CompletedTileOrder>[]>(() => [
-    { key: "customer", label: "CUSTOMER", grow: 2, minWidth: 190, render: (row) => <CellTitle>{row.customer}</CellTitle> },
+    { key: "customer", label: "CUSTOMER", grow: 2, minWidth: 190, mobile: "primary", render: (row) => <CellTitle>{row.customer}</CellTitle> },
     { key: "order", label: "ORDER NO.", width: 160, render: (row) => <CellMono>{row.order_number}</CellMono> },
-    { key: "brands", label: "BRANDS", grow: 2, minWidth: 180, render: (row) => <CellText muted>{row.brands.join(", ")}</CellText> },
+    { key: "brands", label: "BRANDS", grow: 2, minWidth: 180, mobile: "hidden", render: (row) => <CellText muted>{row.brands.join(", ")}</CellText> },
     { key: "date", label: "COMPLETED", width: 150, render: (row) => <CellMono>{timestamp(row.completion_date)}</CellMono> },
-    { key: "products", label: "PRODUCTS", width: 100, align: "right", render: (row) => <CellNumber value={row.products.length} /> },
-    { key: "amount", label: "FINAL AMOUNT", width: 140, align: "right", render: (row) => <CellNumber value={row.final_amount} /> },
+    { key: "products", label: "PRODUCTS", width: 100, align: "right", mobile: "hidden", render: (row) => <CellNumber value={row.products.length} /> },
+    { key: "amount", label: "FINAL AMOUNT", width: 140, align: "right", mobile: "hidden", render: (row) => <CellNumber value={row.final_amount} /> },
     { key: "status", label: "STATUS", width: 130, align: "center", render: (row) => <StatusPill status={row.delivery_status as any} /> },
-    { key: "action", label: "", width: 56, align: "right", render: () => <CellChevron /> },
+    { key: "action", label: "", width: 56, align: "right", mobile: "hidden", render: () => <CellChevron /> },
   ], []);
 
   const inventoryColumns = useMemo<Column<GodownInventoryRow>[]>(() => [
-    { key: "customer", label: "CUSTOMER", grow: 2, minWidth: 180, render: (row) => <CellTitle>{row.customer}</CellTitle> },
-    { key: "name", label: "TILE NAME", grow: 3, minWidth: 220, render: (row) => <CellText>{row.name}</CellText> },
+    { key: "customer", label: "CUSTOMER", grow: 2, minWidth: 180, mobile: "hidden", render: (row) => <CellTitle>{row.customer}</CellTitle> },
+    { key: "name", label: "TILE NAME", grow: 3, minWidth: 220, mobile: "primary", render: (row) => <CellText>{row.name}</CellText> },
     { key: "brand", label: "BRAND", grow: 2, minWidth: 150, render: (row) => <CellText muted>{row.brand}</CellText> },
-    { key: "product", label: "SKU", grow: 2, minWidth: 150, render: (row) => <CellMono>{row.product || "—"}</CellMono> },
+    { key: "product", label: "SKU", grow: 2, minWidth: 150, mobile: "hidden", render: (row) => <CellMono>{row.product || "—"}</CellMono> },
     { key: "size", label: "SIZE", width: 130, render: (row) => <CellText muted>{row.size || "—"}</CellText> },
-    { key: "arrival", label: "ARRIVED", width: 160, render: (row) => <CellMono>{timestamp(row.arrival_date)}</CellMono> },
+    { key: "arrival", label: "ARRIVED", width: 160, mobile: "hidden", render: (row) => <CellMono>{timestamp(row.arrival_date)}</CellMono> },
   ], []);
 
   const renderBody = () => {
@@ -612,7 +670,18 @@ export default function TileOrdersScreen() {
             Restore with <WorkflowRail active=… /> if a real stage is ever
             derivable for the list as a whole. */}
         <Section>
-          <TabBar tabs={TABS} value={tab} onChange={changeTab} testIDPrefix="tile-orders-tab" />
+          <TileOrdersNavigator
+            value={tab}
+            onChange={changeTab}
+            counts={{
+              customer: customerOrders.length || undefined,
+              brands: brands.length || undefined,
+              "dispatch-list": dispatchRows.length || undefined,
+              inventory: inventory.length || undefined,
+              history: history.length || undefined,
+              "material-register": movements.length || undefined,
+            }}
+          />
         </Section>
 
         <Section testID="tile-orders-body">
@@ -842,6 +911,26 @@ function SheetFact({ label, value }: { label: string; value: string }) {
 }
 
 const styles = StyleSheet.create({
+  navigator: { gap: spacing.s16 },
+  navigatorGroup: { gap: spacing.s8 },
+  navigatorLabel: { ...type.overline, color: colors.onSurfaceMuted, letterSpacing: 1 },
+  navigatorCards: { flexDirection: "row", flexWrap: "wrap", gap: spacing.s12 },
+  navigatorCard: {
+    flexBasis: 250, flexGrow: 1, minWidth: 0, minHeight: 104, padding: spacing.lg,
+    borderWidth: 1, borderColor: colors.border, borderRadius: radius.md,
+    backgroundColor: colors.surfaceSecondary, flexDirection: "row", alignItems: "flex-start", gap: spacing.s12,
+  },
+  navigatorCardActive: { backgroundColor: colors.brand, borderColor: colors.brand },
+  navigatorCardHovered: { backgroundColor: colors.surfaceTertiary, borderColor: colors.brandBorder },
+  navigatorIcon: { width: 38, height: 38, borderRadius: radius.sm, backgroundColor: colors.brandTint, alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  navigatorIconActive: { backgroundColor: "rgba(255,255,255,0.18)" },
+  navigatorCopy: { flex: 1, minWidth: 0, gap: 3 },
+  navigatorTitle: { ...type.titleSm, color: colors.onSurface },
+  navigatorTitleActive: { color: colors.onBrand },
+  navigatorDescription: { ...type.caption, color: colors.onSurfaceMuted },
+  navigatorDescriptionActive: { color: "rgba(255,255,255,0.82)" },
+  navigatorCount: { ...type.titleMd, color: colors.onSurfaceMuted, fontVariant: ["tabular-nums"], paddingLeft: spacing.s4 },
+  navigatorCountActive: { color: colors.onBrand },
   stateBlock: { paddingVertical: spacing.s48, alignItems: "center", gap: spacing.lg },
   loadMore: { paddingTop: spacing.lg, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: spacing.md },
   pageLabel: { ...type.body, color: colors.onSurfaceMuted },

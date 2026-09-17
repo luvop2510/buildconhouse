@@ -258,13 +258,15 @@ export function useBuilder(): BuilderApi {
 // -----------------------------------------------------------------------------
 // Provider
 // -----------------------------------------------------------------------------
-export function BuilderProvider({ onFinalize, initialProductId, children }: {
+export function BuilderProvider({ onFinalize, initialProductId, initialGodownStockId, children }: {
   onFinalize?: (quotationId: string) => void;
   /** Seed the new quotation with this product on mount — used when
    *  navigating here from Catalog's "Add to quotation" CTA (product detail
    *  page / product cards) so that action actually adds the product instead
    *  of just dropping the user on an empty builder. */
   initialProductId?: string | null;
+  /** A lot selected on the Godown Stock page. It is claimed on first save. */
+  initialGodownStockId?: string | null;
   children: React.ReactNode;
 }) {
   const { selectedFloorId, floors } = useFloorAccess();
@@ -1035,6 +1037,27 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
       }
     })();
   }, [initialProductId, addFromProduct, activeFloorId]);
+
+  const appliedInitialGodownRef = useRef(false);
+  useEffect(() => {
+    if (!initialGodownStockId || !activeFloorId || appliedInitialGodownRef.current) return;
+    appliedInitialGodownRef.current = true;
+    (async () => {
+      try {
+        const lot = await api.get<any>(`/godown-stock/${initialGodownStockId}`, { floorId: activeFloorId });
+        if (!Number(lot.available_qty)) throw new Error("This lot is no longer available");
+        history.apply(cur => ({ ...cur, lines: [...cur.lines, {
+          id: `godown-${lot.id}-${Date.now()}`, product_id: lot.product_id, sku: lot.sku, name: lot.name,
+          image: lot.image || null, category_id: null, room: cur.activeRoom, qty: 1, unit_price: 0,
+          mrp: null, discount_pct: null, finish: lot.finish || null, godown_stock_id: lot.id,
+          godown_source_customer_name: lot.source_customer_name || null,
+          godown_source_purchased_at: lot.source_purchased_at || null,
+          godown_transferred_at: lot.transferred_at || null,
+        }] }));
+        toast.success(`${lot.name} added from godown stock — select a customer to reserve it`);
+      } catch (e: any) { toast.error(e?.detail || "That godown lot is no longer available"); }
+    })();
+  }, [initialGodownStockId, activeFloorId, history]);
 
   const updateLine = useCallback((id: string, patch: Partial<Line>, coalesceKey?: string) =>
     history.apply(

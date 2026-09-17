@@ -536,6 +536,23 @@ async def update_product(
     if not updates:
         return Product(**existing)
 
+    # A salesperson may configure a concealed part with just its supplier SKU.
+    # When that SKU exists in this floor's catalog, store a stable snapshot and
+    # product id so quotation pickers can add the required rough-in line too.
+    concealed = updates.get("concealed_part")
+    if concealed and concealed.get("sku"):
+        linked = await db.products.find_one(
+            {"floor_id": existing.get("floor_id"), "sku": concealed["sku"]}, {"_id": 0},
+        )
+        if linked:
+            concealed = {**concealed,
+                "product_id": linked["id"], "name": concealed.get("name") or linked.get("name"),
+                "unit_price": concealed.get("unit_price") if concealed.get("unit_price") is not None else linked.get("price"),
+                "mrp": concealed.get("mrp") if concealed.get("mrp") is not None else linked.get("mrp"),
+                "image": concealed.get("image") or linked.get("hero_image_url") or (linked.get("images") or [None])[0],
+            }
+        updates["concealed_part"] = concealed
+
     new_sku = updates.get("sku", existing.get("sku"))
     new_brand_id = updates.get("brand_id", existing.get("brand_id"))
     new_category_id = updates.get("category_id", existing.get("category_id"))

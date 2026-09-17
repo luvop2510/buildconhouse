@@ -1274,7 +1274,7 @@ function CustomerPurchasePanel({ visible, loading, workspace, onClose, onMove, o
       {loading || !workspace ? (
         <View style={styles.loadingCard}><ActivityIndicator /><Text style={type.caption}>Loading customer purchases…</Text></View>
       ) : (
-        <ScrollView contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.lg }}>
+        <View style={{ gap: spacing.md, paddingBottom: spacing.lg }}>
           <View style={styles.customerPanelHero}>
             <View style={{ flex: 1, gap: 3 }}>
               <Text style={styles.actionTitle}>{workspace.customer.company || workspace.customer.name}</Text>
@@ -1298,14 +1298,14 @@ function CustomerPurchasePanel({ visible, loading, workspace, onClose, onMove, o
                   <Text style={type.caption} numberOfLines={1}>{item.sku} · {item.qty} · {item.stage_label}</Text>
                 </View>
                 <View style={{ gap: 5 }}>
-                  <Pressable accessibilityLabel={`Move ${item.name}`} onPress={() => onMove(item)} style={styles.customerPanelAction}><Text style={styles.customerPanelActionText}>Move</Text></Pressable>
-                  <Pressable accessibilityLabel={`Transfer ${item.name}`} onPress={() => onTransfer(item)} style={styles.customerPanelAction}><Text style={styles.customerPanelActionText}>Transfer</Text></Pressable>
-                  <Pressable accessibilityLabel={`View movement history for ${item.name}`} onPress={() => onHistory(item)} style={styles.customerPanelAction}><Text style={styles.customerPanelActionText}>History</Text></Pressable>
+                  <Pressable accessibilityRole="button" accessibilityLabel={`Move ${item.name}`} onPress={() => onMove(item)} style={styles.customerPanelAction}><Text style={styles.customerPanelActionText}>Move</Text></Pressable>
+                  <Pressable accessibilityRole="button" accessibilityLabel={`Transfer ${item.name}`} onPress={() => onTransfer(item)} style={styles.customerPanelAction}><Text style={styles.customerPanelActionText}>Transfer</Text></Pressable>
+                  <Pressable accessibilityRole="button" accessibilityLabel={`View movement history for ${item.name}`} onPress={() => onHistory(item)} style={styles.customerPanelAction}><Text style={styles.customerPanelActionText}>History</Text></Pressable>
                 </View>
               </View>
             ))}
           </View>
-        </ScrollView>
+        </View>
       )}
     </Sheet>
   );

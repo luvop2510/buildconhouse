@@ -518,6 +518,33 @@ async def customer_facets(user: UserPublic = Depends(get_current_user)):
     ]
 
 
+@router.get("/customers/completed")
+async def completed_customer_facets(user: UserPublic = Depends(get_current_user)):
+    """Customers whose non-cancelled tracked items are all delivered.
+
+    This is deliberately separate from the active customer facet above: the
+    regular Purchases view stays operationally quiet while staff retain a
+    first-class, floor-scoped completion list for handover and audit.
+    """
+    match: dict = {"status": {"$ne": "cancelled"}}
+    floor_ids = floor_scope_ids(user)
+    if floor_ids is not None:
+        match["floor_id"] = {"$in": floor_ids}
+    rows = await db.purchase_orders.aggregate([
+        {"$match": match}, {"$unwind": "$items"},
+        {"$match": {"items.cancelled": {"$ne": True}}},
+        {"$group": {
+            "_id": {"id": "$customer_id", "name": "$customer_name"},
+            "item_count": {"$sum": 1},
+            "open_count": {"$sum": {"$cond": [{"$eq": [{"$ifNull": ["$items.stage", "order_in_company"]}, "delivered"]}, 0, 1]}},
+            "last_delivered_at": {"$max": "$items.last_moved_at"},
+        }},
+        {"$match": {"item_count": {"$gt": 0}, "open_count": 0}},
+        {"$sort": {"last_delivered_at": -1}},
+    ]).to_list(500)
+    return [{"id": r["_id"].get("id"), "name": r["_id"].get("name"), "count": r["item_count"], "completed_at": r.get("last_delivered_at")} for r in rows if r["_id"].get("id")]
+
+
 @router.get("/customers/{customer_id}/workspace")
 async def customer_workspace(
     customer_id: str,

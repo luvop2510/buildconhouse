@@ -756,11 +756,10 @@ export default function PurchasesScreen() {
                 onCancel={setCancelTarget}
               />
             ) : view === "customers" ? (
-              <CustomerNavigator
-                loading={loadingCustomers}
-                customers={visibleCustomers}
-                onOpen={setCustomerWorkspaceId}
-              />
+              <View style={{ gap: spacing.md }}>
+                <Pressable accessibilityRole="button" accessibilityLabel="Open 100 percent complete customers" onPress={() => router.push("/(admin)/purchases-completed" as any)} style={styles.completedLink}><Feather name="check-circle" size={16} color={colors.success} /><Text style={styles.completedLinkText}>100% complete customers</Text><Feather name="arrow-right" size={16} color={colors.success} /></Pressable>
+                <CustomerNavigator loading={loadingCustomers} customers={visibleCustomers} onOpen={setCustomerWorkspaceId} />
+              </View>
             ) : (
               <DispatchWorkspace
                 loading={loading}
@@ -1750,6 +1749,8 @@ const styles = StyleSheet.create({
   workspaceActionText: { color: colors.onBrand, fontSize: 12, fontWeight: "700" },
   shortageBanner: { flexDirection: "row", alignItems: "center", gap: 8, padding: spacing.md, borderRadius: radius.md, backgroundColor: ds.riskTint, borderWidth: 1, borderColor: "rgba(174,74,61,0.22)" },
   customerNavRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, paddingHorizontal: 4 },
+  completedLink: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.md, borderRadius: radius.md, backgroundColor: colors.successBg, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.successBorder },
+  completedLinkText: { flex: 1, color: colors.success, fontSize: 13, fontWeight: "800" },
   customerNavDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
   customerAvatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: ds.brassTint, alignItems: "center", justifyContent: "center" },
   customerAvatarText: { color: ds.brassDeep, fontWeight: "800", fontSize: 14 },

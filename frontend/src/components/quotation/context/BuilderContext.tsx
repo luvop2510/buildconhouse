@@ -30,7 +30,7 @@ import { enqueueQuotationPersist } from "../helpers/autosave";
 import { productImageList } from "../helpers/media";
 import {
   Brand, BuilderRow, BuilderState, Category, Customer, DEFAULT_ROOMS, DescSheetState, DiscountSheetState,
-  INITIAL_BUILDER_STATE, Line, PickerTab, Product, ProductVariant,
+  INITIAL_BUILDER_STATE, Line, PickerTab, Product, ProductVariant, ConcealedPart,
   RecentQuotation, Referrer, RoomDiscount, RoomSheetState, SaveState, SwapSheetState,
 } from "../helpers/types";
 
@@ -897,6 +897,15 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
       const displayName = variant && (variant.finish || variantColour || variant.size)
         ? `${p.name} · ${variant.finish || variantColour || variant.size}`
         : p.name;
+      const concealed: ConcealedPart | null | undefined = variant?.concealed_part ?? p.concealed_part;
+      const hasConcealed = !!concealed?.sku && cur.lines.some((line) => line.sku === concealed.sku && line.room === cur.activeRoom);
+      const concealedLines = concealed?.product_id && !hasConcealed ? [{
+        id: `${concealed.product_id}-${Date.now()}-concealed`, product_id: concealed.product_id, sku: concealed.sku,
+        name: concealed.name || `Concealed part · ${concealed.sku}`, image: concealed.image || null,
+        category_id: p.category_id, room: cur.activeRoom, qty: concealed.qty || 1,
+        unit_price: concealed.unit_price || 0, mrp: concealed.mrp || concealed.unit_price || 0,
+        discount_pct: null, finish: null, family_key: null,
+      }] : [];
       return {
         ...cur,
         lines: [...cur.lines, {
@@ -910,7 +919,7 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
           qty: 1, unit_price: variant?.price ?? p.price, mrp: variant?.mrp ?? p.mrp,
           discount_pct: null, finish,
           family_key: p.family_key ?? null,
-        }],
+        }, ...concealedLines],
       };
     });
   }, [history]);

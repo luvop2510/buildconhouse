@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from pymongo import ReturnDocument
 from starlette.concurrency import run_in_threadpool
 
 from auth import (
@@ -375,7 +376,45 @@ async def create_quotation(
         ),
         **totals,
     )
+    # A builder can be opened from a godown-stock card.  Claim the requested
+    # lot exactly once, at the same boundary that creates the quotation; the
+    # resulting allocation id comes back with later autosaves and therefore
+    # cannot be claimed twice.
+    for line in quot.items:
+        if not line.godown_stock_id or line.godown_allocation_id:
+            continue
+        allocation_at = now_iso()
+        allocation = {
+            "id": str(__import__("uuid").uuid4()), "quotation_id": quot.id,
+            "quotation_number": quot.number, "customer_id": quot.customer_id,
+            "customer_name": quot.customer_name, "qty": line.qty,
+            "allocated_at": allocation_at, "allocated_by": user.id,
+            "allocated_by_name": user.full_name,
+        }
+        lot = await db.godown_stock.find_one_and_update(
+            floor_query(user, {"id": line.godown_stock_id, "available_qty": {"$gte": line.qty}}),
+            {"$inc": {"available_qty": -line.qty}, "$push": {"allocations": allocation}, "$set": {"updated_at": allocation_at}},
+            return_document=ReturnDocument.AFTER,
+        )
+        if not lot:
+            raise HTTPException(status_code=409, detail=f"Godown stock for {line.name} is no longer available in the requested quantity.")
+        line.godown_allocation_id = allocation["id"]
+        line.godown_source_customer_name = lot.get("source_customer_name")
+        line.godown_source_purchased_at = lot.get("source_purchased_at")
+        line.godown_transferred_at = lot.get("transferred_at")
+        line.godown_allocated_at = allocation_at
     await db.quotations.insert_one(quot.model_dump())
+    for line in quot.items:
+        if line.godown_allocation_id:
+            await log_event(
+                event_type="godown_stock.allocated", entity_type="quotation", entity_id=quot.id,
+                actor=user, floor_id=quot.floor_id, customer_id=quot.customer_id, quotation_id=quot.id,
+                summary=f"Added {line.qty:g} × {line.name} from godown stock",
+                payload={"stock_id": line.godown_stock_id, "allocation_id": line.godown_allocation_id,
+                         "source_customer": line.godown_source_customer_name,
+                         "source_purchased_at": line.godown_source_purchased_at,
+                         "allocated_at": line.godown_allocated_at},
+            )
     await _track_product_usage(user.id, [it.product_id for it in items])
     await log_event(
         event_type="quotation.created",

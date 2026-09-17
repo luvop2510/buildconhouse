@@ -58,6 +58,7 @@ from routes.sales_breakdown_routes import router as sales_breakdown_router  # no
 from routes.sales_workspace_routes import router as sales_workspace_router  # noqa: E402
 from routes.tile_orders import router as tile_orders_router  # noqa: E402
 from routes.walkin_routes import router as walkin_router  # noqa: E402
+from routes.godown_stock_routes import ensure_godown_stock_indexes, router as godown_stock_router  # noqa: E402
 from seed import resync_catalog_if_needed, seed_if_empty  # noqa: E402
 from services import catalog_service  # noqa: E402
 from services.domain_outbox import dispatch_pending, ensure_outbox_indexes, outbox_worker  # noqa: E402
@@ -130,6 +131,7 @@ async def _startup(app: FastAPI) -> None:
     await resync_catalog_if_needed()
     await ensure_outbox_indexes()
     await ensure_tile_order_indexes()
+    await ensure_godown_stock_indexes()
     await ensure_transfer_indexes()
     await ensure_download_token_indexes()
     await ensure_access_grant_indexes(db)
@@ -356,6 +358,7 @@ api.include_router(sales_breakdown_router)
 api.include_router(sales_workspace_router)
 api.include_router(tile_orders_router)
 api.include_router(walkin_router)
+api.include_router(godown_stock_router)
 
 app.include_router(api)
 

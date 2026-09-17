@@ -350,6 +350,25 @@ class ProductVariant(BaseModel):
     # the sibling product it represents.
     id: Optional[str] = None
     image: Optional[str] = None
+    concealed_part: Optional["ConcealedPart"] = None
+
+
+class ConcealedPart(BaseModel):
+    """The optional rough-in/concealed item automatically added with a SKU.
+
+    ``sku`` is deliberately the only required field: a salesperson may know a
+    supplier article number before that item has been imported into Forge.
+    The remaining snapshot fields make that one-off configuration usable in a
+    quotation immediately and are refreshed from the catalog when possible.
+    """
+    sku: str = Field(min_length=1, max_length=160)
+    product_id: Optional[str] = None
+    name: Optional[str] = None
+    description: Optional[str] = None
+    unit_price: Optional[float] = Field(default=None, ge=0)
+    mrp: Optional[float] = Field(default=None, ge=0)
+    image: Optional[str] = None
+    qty: float = Field(default=1, gt=0)
 
 
 class Product(TimestampedModel):
@@ -386,6 +405,9 @@ class Product(TimestampedModel):
     must_buy_concealed: bool = False
     concealed_sku: Optional[str] = None
     concealed_skus: list[str] = []          # plural when a trimset needs more than one rough-in
+    # The editable, quotation-ready default. Legacy SKU fields remain for
+    # import compatibility and are backfilled into this field by migration.
+    concealed_part: Optional[ConcealedPart] = None
     # NEW media architecture (Iteration 2A). These fields are populated from
     # the `product_media` collection at query-time so business code stays
     # decoupled from storage. Never write directly to these fields.
@@ -434,6 +456,7 @@ class ProductCreate(BaseModel):
     must_buy_concealed: bool = False
     concealed_sku: Optional[str] = None
     concealed_skus: list[str] = []
+    concealed_part: Optional[ConcealedPart] = None
     is_custom: bool = False
 
 
@@ -462,6 +485,7 @@ class ProductPatch(BaseModel):
     must_buy_concealed: Optional[bool] = None
     concealed_sku: Optional[str] = None
     concealed_skus: Optional[list[str]] = None
+    concealed_part: Optional[ConcealedPart] = None
 
 
 class SizeVariantResolution(BaseModel):
@@ -521,6 +545,16 @@ class QuotationLineItem(BaseModel):
     box_sqft: Optional[float] = Field(default=None, ge=0)  # sqft covered by one box — effective per-sqft price x box_sqft derives unit_price (rate/box)
     offer_rate: Optional[float] = Field(default=None, ge=0)  # final selling price per SQ.FT; defaults to rate_sqft and drives totals
     quantity_unit: Literal["Box", "Pieces"] = "Box"
+    # When a line is fulfilled from returned/declined material in BuildCon's
+    # godown, retain immutable provenance on the quotation itself.  This is
+    # deliberately a snapshot (not a join) so PDFs and historic quotations
+    # remain explainable after the source stock is exhausted.
+    godown_stock_id: Optional[str] = None
+    godown_allocation_id: Optional[str] = None
+    godown_source_customer_name: Optional[str] = None
+    godown_source_purchased_at: Optional[str] = None
+    godown_transferred_at: Optional[str] = None
+    godown_allocated_at: Optional[str] = None
 
     @field_validator("quantity_unit", mode="before")
     @classmethod
@@ -645,10 +679,12 @@ class Quotation(TimestampedModel):
     # Ground Floor Tiles only. Kept on the quotation aggregate so it is
     # persisted, recalculated, rendered in the PDF, and survives reloads.
     transportation_fee: float = Field(default=0, ge=0)
-    # Ground Floor collections-only addition (labour or other agreed costs).
-    # Kept separate from grand_total so the original printed quotation remains
-    # intact and is what the payment screen presents as the quotation price.
+    # Cached sum of the immutable additional-cost history below. Kept separate
+    # from grand_total so the original printed quotation remains intact.
     payment_extra_amount: float = Field(default=0, ge=0)
+    # [{id, name, amount, note, created_at, recorded_by, recorded_by_name}].
+    # Entries are append-only audit records; never rewrite an existing cost.
+    payment_extra_history: list[dict] = Field(default_factory=list)
     notes: Optional[str] = None
     valid_until: Optional[str] = None
     created_by: str                      # user id
@@ -797,6 +833,9 @@ class PurchaseOrderItem(BaseModel):
     room: Optional[str] = None
     qty: float = 1
     qty_received: float = 0
+    # Quantity moved out of a sanitary purchase line into reusable godown
+    # stock. Kept distinct from tile-only `boxes_godown` below.
+    godown_transferred_qty: float = Field(default=0, ge=0)
     unit_cost: float = 0                  # final cost per unit paid to supplier
     notes: Optional[str] = None
     quotation_line_id: Optional[str] = None
@@ -1081,14 +1120,15 @@ class PaymentCreate(BaseModel):
 
 
 class PaymentOrderExtraUpdate(BaseModel):
-    """A Ground Floor-only charge added to the amount to be collected.
+    """One immutable additional cost added to an order's collection total.
 
-    This intentionally lives on the quotation, rather than being represented
-    as a negative payment: it is an amount the customer owes (for labour,
-    delivery, etc.), not money that has been received.
+    Costs are receivables rather than payments, so they remain attached to
+    the quotation.  Each request creates a new history entry; it never edits
+    a prior cost.
     """
-    amount: float = Field(ge=0)
-    name: Optional[str] = Field(default=None, max_length=120)
+    amount: float = Field(gt=0)
+    name: str = Field(..., min_length=1, max_length=120)
+    note: Optional[str] = Field(default=None, max_length=500)
 
 
 # ---------- Follow-ups (Sales Command Center) ----------

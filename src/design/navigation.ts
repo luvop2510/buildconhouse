@@ -24,6 +24,7 @@ export const PRIMARY: NavItem[] = [
   { href: "/(admin)/catalog", label: "Catalog", icon: "package", match: "catalog" },
   { href: "/(admin)/customers", label: "Customers", icon: "users", match: "customers" },
   { href: "/(admin)/purchases", label: "Purchases", icon: "shopping-cart", match: "purchases", floors: [SANITARY_FLOOR_ID] },
+  { href: "/(admin)/godown-stock", label: "Godown stock", icon: "archive", match: "godown-stock", floors: [SANITARY_FLOOR_ID] },
   { href: "/(admin)/payments", label: "Payments", icon: "credit-card", match: "payments" },
   { href: "/(admin)/payments-list", label: "Fully paid orders", icon: "list", match: "payments-list" },
   { href: "/(admin)/followups", label: "Follow-ups", icon: "phone-call", match: "followups" },

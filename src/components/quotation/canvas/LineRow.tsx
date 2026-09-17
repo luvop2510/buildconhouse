@@ -77,7 +77,10 @@ function LineRowImpl({
         styles.row,
         isPhone && styles.rowPhone,
         focused && { borderColor: ds.brassLine, backgroundColor: ds.brassTint },
-        isActive && { opacity: 0.75, transform: [{ scale: 0.99 }] },
+        // Dragging should read as an in-progress reordering state, not a
+        // generic card-press animation. Color and opacity preserve the row's
+        // geometry so adjacent controls never appear to jump.
+        isActive && { opacity: 0.75, borderColor: colors.brandBorder, backgroundColor: colors.brandTint },
       ]}
     >
       <Pressable

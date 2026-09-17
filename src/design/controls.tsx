@@ -29,7 +29,7 @@ export function Button({
   const px = size === "sm" ? 12 : size === "lg" ? 20 : 16;
   const fs = size === "sm" ? 13 : size === "lg" ? 15 : 14;
   const iconPx = size === "sm" ? 14 : size === "lg" ? 18 : 16;
-  const btnRadius = radius.sm;
+  const btnRadius = radius.md;
   const dim = disabled || loading;
 
   const face = (pressed: boolean, hovered: boolean): ViewStyle => {
@@ -68,8 +68,8 @@ export function Button({
           flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
           opacity: dim ? 0.45 : 1,
           alignSelf: full ? "stretch" : "flex-start",
-
         },
+        variant === "primary" && !dim ? { shadowColor: color.action, shadowOpacity: 0.16, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 2 } : null,
         face(!!pressed, !!hovered),
         webCursor,
         style,
@@ -110,7 +110,7 @@ export function IconButton({
       hitSlop={layout.hitSlop}
       style={({ pressed, hovered }: any) => [
         {
-          width: Math.max(size, layout.tap), height: Math.max(size, layout.tap), borderRadius: radius.sm,
+          width: Math.max(size, layout.tap), height: Math.max(size, layout.tap), borderRadius: radius.md,
           alignItems: "center", justifyContent: "center",
           backgroundColor: pressed ? color.pressWash : hovered ? color.hoverWash : "transparent",
         },

@@ -12,16 +12,16 @@ import { Platform, StyleSheet } from "react-native";
 const pal = {
   // Neutral surfaces and contrast-tested foregrounds.
   white:   "#FFFFFF",
-  canvas:  "#F5F5F7",  // app background — warm gallery wall
-  sunken:  "#EEEEF2",  // inset fills: inputs, washes, rails
-  sunken2: "#E4E5EB",  // pressed / deeper inset
-  line:    "#E1E2E7",  // hairline
-  line2:   "#C5C7D0",  // emphasized hairline
-  ink:     "#1D1D1F",  // warm near-black — text & the primary action
-  ink2:    "#515158",  // secondary text
-  ink3:    "#686870",  // tertiary text, captions
-  ink4:    "#686870",  // placeholders, disabled
-  inkHover:"#333336",
+  canvas:  "#F7F8FA",  // app background — cool porcelain
+  sunken:  "#F0F2F5",  // inset fills: inputs, washes, rails
+  sunken2: "#E5E9F0",  // pressed / deeper inset
+  line:    "#E2E6ED",  // hairline
+  line2:   "#C7CFDA",  // emphasized hairline
+  ink:     "#101828",  // graphite — text & the primary action
+  ink2:    "#475467",  // secondary text
+  ink3:    "#667085",  // tertiary text, captions
+  ink4:    "#98A2B3",  // placeholders, disabled
+  inkHover:"#1D2939",
 
   // Action accent. Brass names are retained for source compatibility.
   brass:      "#0066CC",
@@ -81,13 +81,13 @@ export const color = {
 
 // ── Fonts ────────────────────────────────────────────────────────────────────
 export const font = {
-  regular: Platform.OS === "web" ? "system-ui" : "Inter-Regular",
-  medium: Platform.OS === "web" ? "system-ui" : "Inter-Medium",
-  semibold: Platform.OS === "web" ? "system-ui" : "Inter-SemiBold",
-  bold: Platform.OS === "web" ? "system-ui" : "Inter-Bold",
-  display: Platform.OS === "web" ? "system-ui" : "Inter-SemiBold",        // headings, greetings and authentication
-  displayItalic: Platform.OS === "web" ? "system-ui" : "Inter-Medium",
-  serif: Platform.OS === "web" ? "Georgia" : "Fraunces-Regular",
+  regular: "Inter-Regular",
+  medium: "Inter-Medium",
+  semibold: "Inter-SemiBold",
+  bold: "Inter-Bold",
+  display: "Inter-SemiBold",        // headings, greetings and authentication
+  displayItalic: "Inter-Medium",
+  serif: "Fraunces-Regular",
   mono: Platform.select({ ios: "Menlo", android: "monospace", default: "ui-monospace" }) as string,
 } as const;
 
@@ -127,16 +127,16 @@ export const space = {
 } as const;
 
 // ── Radii ───────────────────────────────────────────────────────────────────
-export const radius = { sm: 8, md: 8, lg: 12, xl: 16, pill: 999 } as const;
+export const radius = { sm: 10, md: 12, lg: 16, xl: 20, pill: 999 } as const;
 
 // ── Elevation — exactly two levels. Everything else is hairlines. ───────────
 export const shadow = {
   raised: {
-    shadowColor: "#26221B", shadowOpacity: 0.05, shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 }, elevation: 2,
+    shadowColor: "#101828", shadowOpacity: 0.06, shadowRadius: 18,
+    shadowOffset: { width: 0, height: 6 }, elevation: 2,
   },
   overlay: {
-    shadowColor: "#26221B", shadowOpacity: 0.18, shadowRadius: 44,
+    shadowColor: "#101828", shadowOpacity: 0.16, shadowRadius: 44,
     shadowOffset: { width: 0, height: 18 }, elevation: 16,
   },
 } as const;

@@ -16,6 +16,8 @@
     "test:purchases-contract": "node scripts/test-purchases-contract.mjs",
     "test:notebook": "node --experimental-strip-types --no-warnings scripts/test-notebook.mjs",
     "test:mobile-ux": "node scripts/test-mobile-ux-contract.mjs",
+    "test:frontend-drift": "node scripts/test-frontend-drift.mjs",
+    "test:frontend-drift:browser": "playwright test --config playwright.forge-drift.config.ts --project=desktop --project=phone --workers=2",
     "test:mobile-budget": "node scripts/check-web-budget.mjs",
     "test:api-proxy": "node --no-warnings scripts/test-api-proxy.mjs",
     "test:api-client": "node scripts/test-api-client-contract.mjs",

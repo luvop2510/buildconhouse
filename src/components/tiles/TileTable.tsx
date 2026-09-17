@@ -56,6 +56,13 @@ export type Column<T> = {
    * already is. Pin the verbs on a workspace; scroll the body on a long list.
    */
   sticky?: boolean;
+  /**
+   * How this desktop column participates in the compact record card. Desktop
+   * tables may carry many scanning columns; phones should lead with one
+   * recognisable record, a few decision fields, then its verbs. Leaving this
+   * unset retains the sensible `detail` default for older tables.
+   */
+  mobile?: "primary" | "detail" | "action" | "hidden";
   render: (row: T) => ReactNode;
 };
 
@@ -221,17 +228,27 @@ export function DataTable<T>({
   if (useCardRows) {
     const renderMobileRow = (item: T, index: number) => {
       const selected = isRowSelected?.(item, index) ?? false;
+      const primary = columns.filter((column) => column.mobile === "primary");
+      const details = columns.filter((column) => column.label && column.mobile !== "primary" && column.mobile !== "action" && column.mobile !== "hidden");
+      const actions = columns.filter((column) => column.mobile === "action" || (!column.label && column.mobile !== "hidden"));
       const content = (
-        <View style={[styles.mobileCardContent, { flexDirection: "row", flexWrap: "wrap", gap: 12 }]}>
-          {columns.filter((column) => column.label).map((column, columnIndex) => (
-            <View key={column.key} style={[styles.mobileField, { width: columnIndex === 0 ? "100%" : "48%", flexGrow: 1, minWidth: 0 }]} >
-              <Text style={styles.mobileLabel}>{column.label}</Text>
-              <View style={styles.mobileValue}>{column.render(item)}</View>
+        <View style={styles.mobileCardContent}>
+          {primary.map((column) => (
+            <View key={column.key} style={styles.mobilePrimary}>{column.render(item)}</View>
+          ))}
+          {details.length ? (
+            <View style={styles.mobileFields}>
+              {details.map((column) => (
+                <View key={column.key} style={styles.mobileField}>
+                  <Text style={styles.mobileLabel}>{column.label}</Text>
+                  <View style={styles.mobileValue}>{column.render(item)}</View>
+                </View>
+              ))}
             </View>
-          ))}
-          {columns.filter((column) => !column.label).map((column) => (
-            <View key={column.key} style={styles.mobileAction}>{column.render(item)}</View>
-          ))}
+          ) : null}
+          {actions.length ? (
+            <View style={styles.mobileAction}>{actions.map((column) => <View key={column.key}>{column.render(item)}</View>)}</View>
+          ) : null}
         </View>
       );
       if (!onRowPress) {
@@ -403,7 +420,10 @@ export function DataTable<T>({
                   key={keyExtractor(row, index)}
                   testID={rowTestID?.(row, index)}
                   onPress={() => onRowPress(row, index)}
-                  role="row" aria-rowindex={index + 2} tabIndex={0}
+                  // This record is an activation target, not a passive row.
+                  // Expose that consistently to screen readers and keyboards.
+                  role="button" tabIndex={0}
+                  accessibilityRole="button"
                   {...(Platform.OS === "web" ? { onKeyDown: (event: any) => {
                     if (event.target !== event.currentTarget) return;
                     if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onRowPress(row, index); }
@@ -501,10 +521,12 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
   },
   mobileCardContent: { gap: spacing.s12 },
-  mobileField: { gap: spacing.s4, minWidth: 0 },
+  mobilePrimary: { minWidth: 0 },
+  mobileFields: { flexDirection: "row", flexWrap: "wrap", gap: spacing.s12 },
+  mobileField: { gap: spacing.s4, minWidth: 0, width: "47%", flexGrow: 1 },
   mobileLabel: { ...type.overline, fontSize: 10, color: colors.onSurfaceSubtle },
   mobileValue: { minWidth: 0, width: "100%", alignItems: "flex-start" },
-  mobileAction: { minHeight: 44, alignItems: "flex-end", justifyContent: "center" },
+  mobileAction: { minHeight: 44, alignItems: "stretch", justifyContent: "center", gap: spacing.s8, paddingTop: spacing.s8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider },
   mobileEmpty: { paddingVertical: spacing.s40, paddingHorizontal: spacing.lg, alignItems: "center" },
   shell: {
     borderWidth: 1,

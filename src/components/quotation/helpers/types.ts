@@ -95,6 +95,9 @@ export type Line = {
   description?: string | null; notes?: string | null;
   finish?: string | null;
   family_key?: string | null;
+  godown_stock_id?: string | null; godown_allocation_id?: string | null;
+  godown_source_customer_name?: string | null; godown_source_purchased_at?: string | null;
+  godown_transferred_at?: string | null; godown_allocated_at?: string | null;
 };
 
 export type SaveState = "idle" | "saving" | "saved" | "error";

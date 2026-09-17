@@ -20,9 +20,11 @@ export type QuotationBuilderMode = "sanitary" | "tiles_selection" | "tiles_quota
 export function QuotationBuilder({
   mode,
   initialProductId,
+  initialGodownStockId,
 }: {
   mode: QuotationBuilderMode;
   initialProductId?: string | null;
+  initialGodownStockId?: string | null;
 }) {
   const router = useRouter();
   const { staff } = useAuth();
@@ -36,6 +38,7 @@ export function QuotationBuilder({
     <BuilderProvider
       key={`${staff?.id}:${selectedFloorId || floors[0]?.id || ""}`}
       initialProductId={initialProductId || null}
+      initialGodownStockId={initialGodownStockId || null}
       onFinalize={(quotationId) => router.replace(`/(admin)/quotations/${quotationId}` as any)}
     >
       <BuilderShell onBack={() => router.back()} />

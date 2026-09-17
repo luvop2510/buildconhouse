@@ -8,7 +8,7 @@ The audit found competing component systems and sheet implementations, clipped p
 
 ## Design system and architecture
 
-The application retains BuildCon imagery and identity, Feather icons, #0066CC actions, system web fonts and packaged Inter on native. The common system uses a porcelain canvas, white surfaces, graphite text, restrained semantic colors, a 4px spacing scale, 16/24/32px gutters, 8px controls, 12px grouped surfaces and 16px overlays. Page titles use 24/32px on phones and 28/36px on larger screens. Currency precision and tabular numerals remain intact.
+The application retains BuildCon imagery and identity, Feather icons and #0066CC actions, while now loading the packaged Inter and Fraunces families on web as well as native. The common system uses a cool porcelain canvas, white surfaces, graphite text, restrained semantic colors, a 4px spacing scale, 16/24/32px gutters, 12px controls, 16/20px grouped surfaces and 16px overlays. Page titles use 25/32px on phones and 30/38px on larger screens. Currency precision and tabular numerals remain intact.
 
 `src/design` now owns focused typography, controls, forms, surfaces, navigation, feedback, overlays and page headers. The previous component monolith is a barrel; existing UI, DS, bottom-sheet and tile APIs adapt to it. This avoids changing page business contracts. The system retains the existing 768/1024/1366 viewport breakpoints and the quotation builder's separate measured-container calculations.
 

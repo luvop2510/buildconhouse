@@ -10,6 +10,7 @@ final price the customer pays, and payments accumulate against it directly.
 from __future__ import annotations
 import asyncio
 import logging
+from uuid import uuid4
 from datetime import datetime, timezone
 from typing import Optional
 from urllib.parse import quote_plus
@@ -116,14 +117,18 @@ def _payment_status(paid: float, grand: float) -> str:
 
 
 def _collection_total(quotation: dict) -> float:
-    """Amount due in Collections, including a Ground Floor manual charge.
-
-    The original quotation total is deliberately not overwritten: the charge
-    is entered after quotation approval for labour/other collection costs.
-    """
+    """Amount due in Collections, including all append-only added costs."""
+    history = quotation.get("payment_extra_history")
+    # A migration backfills the array, but retaining this fallback keeps an
+    # in-flight deployment and old exports correct.
+    extras = (
+        sum(float(entry.get("amount") or 0) for entry in history)
+        if isinstance(history, list)
+        else float(quotation.get("payment_extra_amount") or 0)
+    )
     return round(
         float(quotation.get("grand_total") or 0)
-        + float(quotation.get("payment_extra_amount") or 0),
+        + extras,
         2,
     )
 
@@ -160,7 +165,7 @@ async def payment_stats(user: UserPublic = Depends(get_current_user)):
     """Four KPIs: Total Outstanding · Collected This Month · Active Orders · Fully Paid."""
     orders = await db.quotations.find(
         _payment_scope_query(user, {"status": {"$in": list(ORDER_STATUSES)}}),
-        {"_id": 0, "id": 1, "grand_total": 1, "payment_extra_amount": 1},
+        {"_id": 0, "id": 1, "grand_total": 1, "payment_extra_amount": 1, "payment_extra_history": 1},
     ).to_list(2000)
     ids = [o["id"] for o in orders]
     paid_map = await _paid_by_quotation(ids)
@@ -219,7 +224,7 @@ async def list_orders(
 
     docs = await db.quotations.find(
         _payment_scope_query(user, query), {"_id": 0, "id": 1, "number": 1, "customer_id": 1, "customer_name": 1,
-                "grand_total": 1, "payment_extra_amount": 1, "status": 1, "updated_at": 1, "created_at": 1, "notes": 1},
+                "grand_total": 1, "payment_extra_amount": 1, "payment_extra_history": 1, "status": 1, "updated_at": 1, "created_at": 1, "notes": 1},
     ).sort("updated_at", -1).to_list(limit * 2)
 
     ids = [d["id"] for d in docs]
@@ -277,7 +282,8 @@ async def order_detail(order_id: str, user: UserPublic = Depends(get_current_use
     paid_map = await _paid_by_quotation([order_id], floor_id=floor_id)
     paid = paid_map.get(order_id, 0.0)
     quotation_total = float(doc.get("grand_total") or 0)
-    manual_extra_amount = float(doc.get("payment_extra_amount") or 0)
+    extra_history = doc.get("payment_extra_history") if isinstance(doc.get("payment_extra_history"), list) else []
+    manual_extra_amount = round(_collection_total({**doc, "grand_total": 0}), 2)
     manual_extra_name = doc.get("payment_extra_name") or ("Additional cost" if manual_extra_amount else None)
     grand = _collection_total(doc)
     mrp = await _mrp_for_quotation(doc)
@@ -316,6 +322,7 @@ async def order_detail(order_id: str, user: UserPublic = Depends(get_current_use
         "quotation_total": round(quotation_total, 2),
         "manual_extra_amount": round(manual_extra_amount, 2),
         "manual_extra_name": manual_extra_name,
+        "additional_costs": extra_history,
         "grand_total": round(grand, 2),
         "paid": round(paid, 2),
         "outstanding": round(outstanding, 2),
@@ -331,40 +338,35 @@ async def update_ground_floor_manual_extra(
     body: PaymentOrderExtraUpdate,
     user: UserPublic = Depends(require_min_role("accounts")),
 ):
-    """Persist a labour/other charge without changing the original quotation.
-
-    This control belongs solely to Ground Floor collections.  Sanitary orders
-    continue to collect precisely their printed quotation total.
-    """
-    # Start with the user's normal floor scope, then explicitly include the
-    # Ground Floor collections surface for staff who are permitted to use it.
-    # Keeping the floor_query call here makes this id-addressed mutation's
-    # cross-business-unit boundary explicit rather than hiding it in a helper.
-    scope = floor_query(user, {"id": order_id})
-    allowed = accessible_floor_ids(user)
-    if user.role in ("owner", "manager") or (allowed and TILES_FLOOR_ID in allowed):
-        scope = {"$or": [scope, {"floor_id": TILES_FLOOR_ID, "id": order_id}]}
+    """Append a labour/other charge without changing the quotation price."""
+    # Payments can include all floors the accounts user is authorized to see.
+    scope = _payment_scope_query(user, {"id": order_id})
     quotation = await db.quotations.find_one(
         scope, {"_id": 0, "id": 1, "floor_id": 1, "grand_total": 1, "status": 1},
     )
     if not quotation:
         raise HTTPException(status_code=404, detail="Order not found")
-    if quotation.get("floor_id") != TILES_FLOOR_ID:
-        raise HTTPException(status_code=400, detail="Manual extra costs are available for Ground Floor orders only")
     if quotation.get("status") not in ORDER_STATUSES:
         raise HTTPException(status_code=400, detail="Quotation is not a confirmed order yet")
 
     extra = round(float(body.amount), 2)
     name = (body.name or "").strip()
-    if extra > 0 and not name:
+    if not name:
         raise HTTPException(status_code=422, detail="Name the additional cost")
+    now = datetime.now(timezone.utc).isoformat()
+    entry = {
+        "id": str(uuid4()),
+        "name": name,
+        "amount": extra,
+        "note": (body.note or "").strip() or None,
+        "created_at": now,
+        "recorded_by": user.id,
+        "recorded_by_name": user.full_name,
+    }
     await db.quotations.update_one(
-        {"id": order_id, "floor_id": TILES_FLOOR_ID},
-        {"$set": {
-            "payment_extra_amount": extra,
-            "payment_extra_name": name or None,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }},
+        {"id": order_id, "floor_id": quotation.get("floor_id")},
+        {"$push": {"payment_extra_history": entry}, "$inc": {"payment_extra_amount": extra},
+         "$set": {"payment_extra_name": name, "updated_at": now}},
     )
     try:
         await cache.bump("payments")
@@ -372,9 +374,10 @@ async def update_ground_floor_manual_extra(
         logger.exception("cache bump failed after manual extra update for %s", order_id)
     return {
         "quotation_total": round(float(quotation.get("grand_total") or 0), 2),
-        "manual_extra_amount": extra,
-        "manual_extra_name": name or None,
-        "grand_total": round(float(quotation.get("grand_total") or 0) + extra, 2),
+        "manual_extra_amount": round(_collection_total(quotation) + extra - float(quotation.get("grand_total") or 0), 2),
+        "manual_extra_name": name,
+        "additional_cost": entry,
+        "grand_total": round(_collection_total(quotation) + extra, 2),
     }
 
 

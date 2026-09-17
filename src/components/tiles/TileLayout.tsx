@@ -360,7 +360,6 @@ const styles = StyleSheet.create({
     ...type.body,
     color: colors.onSurface,
     height: "100%",
-    ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as any) : null),
   },
 
   chip: {

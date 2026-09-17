@@ -335,7 +335,7 @@ export default function PaymentsScreen() {
   };
 
   const saveManualExtra = async () => {
-    if (!detail || !isGroundFloorOrder) return;
+    if (!detail) return;
     const parsed = Number((manualExtra || "").replace(/[^0-9.]/g, ""));
     if (!Number.isFinite(parsed) || parsed < 0) {
       toast.error("Enter a valid extra cost");
@@ -360,9 +360,9 @@ export default function PaymentsScreen() {
         payment_status: current.paid >= updated.grand_total && updated.grand_total > 0
           ? "paid" : current.paid > 0 ? "partial" : "due",
       } : current);
-      setManualExtra(updated.manual_extra_amount ? String(updated.manual_extra_amount) : "");
-      setManualExtraName(updated.manual_extra_name || "");
-      toast.success("Extra cost updated");
+      setManualExtra("");
+      setManualExtraName("");
+      toast.success("Additional cost recorded");
       await Promise.all([loadStats(), loadOrders(q)]);
     } catch (e: any) {
       toast.error(e?.detail || "Could not update extra cost");
@@ -620,9 +620,8 @@ export default function PaymentsScreen() {
                     description="Every rupee collected — this order is closed." />
                 )}
 
-                {isGroundFloorOrder ? (
-                  <Panel title="Additional cost" overline="GROUND FLOOR" padding={spacing.lg}>
-                    <Text style={[type.body, { color: colors.onSurfaceMuted, marginBottom: spacing.md }]}>Name the expense and update its amount whenever the agreed price changes. The original quotation price remains unchanged.</Text>
+                  <Panel title="Add an additional cost" overline="PAYMENT ADJUSTMENT" padding={spacing.lg}>
+                    <Text style={[type.body, { color: colors.onSurfaceMuted, marginBottom: spacing.md }]}>Each cost is recorded separately with its timestamp. The original quotation price remains unchanged.</Text>
                     <View style={{ flexDirection: isPhone ? "column" : "row", gap: spacing.sm, alignItems: isPhone ? "stretch" : "flex-end" }}>
                       <View style={{ flex: 1 }}>
                         <Text style={[type.caption, { marginBottom: 6 }]}>Cost name</Text>
@@ -647,11 +646,10 @@ export default function PaymentsScreen() {
                           style={styles.dateInput}
                         />
                       </View>
-                      <Button label="Update total" icon="plus" variant="secondary" loading={savingManualExtra}
+                      <Button label="Add cost" icon="plus" variant="secondary" loading={savingManualExtra}
                         onPress={saveManualExtra} testID="save-ground-floor-manual-extra" />
                     </View>
                   </Panel>
-                ) : null}
 
                 {selectedCustomer && selectedCustomer.orders.length > 1 ? (
                   <Panel title="Outstanding customer orders" overline="SELECT AN ORDER" padding={spacing.md}>

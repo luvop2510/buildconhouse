@@ -11,7 +11,8 @@ export function PageHeader({ title, subtitle, actions, back, overline, testID, d
 }) {
   const { isPhone, isDesktop, gutter } = useBp();
   return <View testID={testID} style={{ paddingHorizontal: embedded ? 0 : gutter,
-    paddingVertical: dense ? space.x3 : space.x5, borderBottomWidth: embedded ? 0 : layout.hairline,
+    paddingTop: dense ? space.x3 : space.x6, paddingBottom: dense ? space.x3 : space.x5,
+    borderBottomWidth: embedded ? 0 : layout.hairline,
     borderBottomColor: color.line, backgroundColor: color.canvas, flexShrink: 0 }}>
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: space.x3 }}>
       <View style={{ flexDirection: 'row', gap: space.x3, flexGrow: 1, flexShrink: 1,
@@ -22,16 +23,17 @@ export function PageHeader({ title, subtitle, actions, back, overline, testID, d
           <Feather name="arrow-left" size={20} color={color.ink} />
         </Pressable> : null}
         <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-          {overline ? <Text style={{ fontFamily: font.medium, fontSize: 12, lineHeight: 18, color: color.inkSoft }}>{overline}</Text> : null}
+          {overline ? <Text style={{ fontFamily: font.semibold, fontSize: 11, lineHeight: 16, letterSpacing: 1.15, textTransform: "uppercase", color: color.inkSoft }}>{overline}</Text> : null}
           <Text accessibilityRole="header" aria-level={1} style={{ fontFamily: font.semibold, fontWeight: '600',
-            fontSize: dense ? 20 : isPhone ? 24 : 28, lineHeight: dense ? 28 : isPhone ? 32 : 36,
-            letterSpacing: -0.6, color: color.ink }}>{title}</Text>
+            fontSize: dense ? 20 : isPhone ? 25 : 30, lineHeight: dense ? 28 : isPhone ? 32 : 38,
+            letterSpacing: -0.9, color: color.ink }}>{title}</Text>
           {subtitle ? <Text style={{ fontFamily: font.regular, fontSize: isPhone ? 14 : 15,
             lineHeight: 22, color: color.inkMid, maxWidth: 680 }}>{subtitle}</Text> : null}
         </View>
       </View>
       {actions ? <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.x2,
-        alignItems: 'center', maxWidth: '100%', flexShrink: 1 }}>{actions}</View> : null}
+        alignItems: 'center', maxWidth: '100%', flexShrink: 1,
+        flexBasis: isPhone ? '100%' : undefined }}>{actions}</View> : null}
     </View>
   </View>;
 }

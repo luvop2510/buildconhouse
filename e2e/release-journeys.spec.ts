@@ -112,3 +112,39 @@ test('critical Tile Orders bounded pages preserve quantities and search resets p
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   await page.screenshot({ path: info.outputPath('tile-orders-populated.png'), fullPage: true });
 });
+
+test('critical Tile Orders uses a compact mobile record instead of a desktop column dump', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockSession(page, '/tiles/orders');
+  await page.route('**/api/tile-orders/customer-orders?**', route => route.fulfill({ json: { orders: [{
+    id: 'mobile-order', number: 'TCO-MOBILE', customer_name: 'Mobile Customer', customer_phone: '9000000000',
+    order_date: '2026-09-08T12:00:00Z', waiting_days: 4, ageing_band: 'amber', brands: [{ brand_name: 'Example Tile Brand' }],
+    total_products: 3, total_boxes: 24, total_value: 48000, overall_status: 'Partially Dispatched', completion_percentage: 50,
+  }], page: 1, page_size: 30, total: 1, has_more: false, next_page: null } }));
+  await page.goto('/tiles/orders');
+  const record = page.getByTestId('tile-orders-customer-mobile-order');
+  await expect(record).toBeVisible();
+  await expect(record.getByText('Mobile Customer', { exact: true })).toBeVisible();
+  await expect(record.getByText('ORDER NO.', { exact: true })).toBeVisible();
+  await expect(record.getByText('STATUS', { exact: true })).toBeVisible();
+  await expect(record.getByText('BRANDS', { exact: true })).toHaveCount(0);
+  await expect(record.getByText('WAITING', { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('tile-orders-tab-customer')).toHaveAttribute('aria-selected', 'true');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+});
+
+test('critical Purchase Order remains usable when optional timeline configuration is unavailable', async ({ page }) => {
+  await mockSession(page, '/purchase-orders/po-one');
+  await page.route('**/api/purchases/po-one/order-detail', route => route.fulfill({ json: {
+    id: 'po-one', number: 'PO-ONE', customer_id: 'customer-one', customer_name: 'Resilient Customer',
+    status: 'draft', items: [], status_history: [], attachments: [], internal_notes: null,
+    subtotal: 0, grand_total: 0, created_at: '2026-09-08T12:00:00Z', created_by_name: 'Audit Owner',
+    stage: 'order', chalans: [], remaining_qty_by_item: {},
+  } }));
+  // The fixture's generic API route leaves config and activity requests at 503.
+  await page.goto('/purchase-orders/po-one');
+  await expect(page.getByText('PO-ONE', { exact: true })).toBeVisible();
+  await expect(page.getByText('Resilient Customer', { exact: true })).toBeVisible();
+  await expect(page.getByText('Draft', { exact: true })).toBeVisible();
+  await expect(page.getByText('Could not load purchase order', { exact: true })).toHaveCount(0);
+});

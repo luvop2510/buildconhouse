@@ -99,7 +99,7 @@ export function IconButton({
       disabled={disabled}
       hitSlop={layout.hitSlop}
       style={({ pressed }) => [{
-        width: Math.max(size, 44), height: Math.max(size, 44), borderRadius: radius.sm,
+        width: Math.max(size, 44), height: Math.max(size, 44), borderRadius: radius.md,
         backgroundColor: skin.bg,
         borderWidth: tone === "ghost" ? 0 : StyleSheet.hairlineWidth,
         borderColor: skin.border,
@@ -141,10 +141,11 @@ export function Card({
     <View testID={testID} style={[
       {
         backgroundColor: skin.bg,
-        borderRadius: radius.lg,
+        borderRadius: radius.xl,
         borderWidth: skin.borderWidth,
         borderColor: skin.borderColor,
         padding: padding ?? (isPhone ? spacing.md : spacing.lg),
+        overflow: "hidden",
       },
       skin.shadow,
       style,
@@ -508,9 +509,11 @@ export function SearchField({ onClear, ...props }: TextInputProps & { onClear?: 
     <View style={{
       flexDirection: "row", alignItems: "center",
       backgroundColor: colors.surfaceTertiary,
-      borderRadius: radius.md,
-      paddingHorizontal: 12,
-      minHeight: 44,
+        borderRadius: radius.xl,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: colors.border,
+        paddingHorizontal: 12,
+        minHeight: 44,
     }}>
       <Feather name="search" size={15} color={colors.onSurfaceMuted} style={{ marginRight: 8 }} />
       <TextInput

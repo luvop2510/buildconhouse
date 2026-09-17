@@ -215,7 +215,6 @@ function PaletteHost({ open, onClose }: { open: boolean; onClose: () => void }) 
                   borderRadius: radius.xl,
                   transform: [
                     { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] }) },
-                    { scale: anim.interpolate({ inputRange: [0, 1], outputRange: [0.985, 1] }) },
                   ],
                 },
           ]}

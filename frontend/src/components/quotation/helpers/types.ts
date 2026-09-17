@@ -10,8 +10,10 @@ export type ProductVariant = {
   specs?: Record<string, any> | null; description?: string | null;
   // Populated dynamically by the backend from family-sibling products —
   // lets a finish/colour chip switch the main image, not just the price.
-  id?: string | null; image?: string | null;
+  id?: string | null; image?: string | null; concealed_part?: ConcealedPart | null;
 };
+
+export type ConcealedPart = { sku: string; product_id?: string | null; name?: string | null; unit_price?: number | null; mrp?: number | null; image?: string | null; qty?: number };
 
 export type Product = {
   id: string; name: string; sku: string; price: number; mrp: number;
@@ -49,6 +51,7 @@ export type Product = {
   usage_count?: number;
   my_usage_count?: number;
   is_custom?: boolean;
+  concealed_part?: ConcealedPart | null;
 };
 
 export type Brand = { id: string; name: string; slug?: string; product_count?: number };

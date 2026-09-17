@@ -190,11 +190,14 @@ const systemSans = Platform.select({ ios: "System", android: "sans-serif", defau
 const systemMono = designFont.mono;
 
 export const font = {
-  regular:  Platform.OS === "web" ? "system-ui" : "Inter-Regular",
-  medium:   Platform.OS === "web" ? "system-ui" : "Inter-Medium",
-  semibold: Platform.OS === "web" ? "system-ui" : "Inter-SemiBold",
-  bold:     Platform.OS === "web" ? "system-ui" : "Inter-Bold",
-  sans:     Platform.OS === "web" ? "system-ui" : "Inter-Regular", // default alias
+  // `useAppFonts` loads these bundled files before either root shell renders.
+  // Keep the family names platform-neutral so browser and native typography
+  // have the same metrics, weights, and hierarchy.
+  regular:  "Inter-Regular",
+  medium:   "Inter-Medium",
+  semibold: "Inter-SemiBold",
+  bold:     "Inter-Bold",
+  sans:     "Inter-Regular", // default alias
   mono:     systemMono as string,
   systemSans: systemSans as string,
 } as const;

@@ -15,7 +15,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { api } from "@/src/api/client";
 import { useBp } from "@/src/design/responsive";
-import { TILES_FLOOR_ID } from "@/src/constants/floors";
 import { toast } from "@/src/components/Toast";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import {
@@ -66,6 +65,7 @@ type OrderDetail = {
   project_name?: string | null;
   floor_id: string; mrp: number; discounted_rate: number;
   quotation_total: number; manual_extra_amount: number; manual_extra_name?: string | null; grand_total: number;
+  additional_costs?: { id: string; name: string; amount: number; note?: string | null; created_at: string; recorded_by_name?: string | null }[];
   paid: number; outstanding: number; percent_collected: number;
   payment_status: "paid" | "partial" | "due";
   payments: PaymentEntry[];
@@ -173,7 +173,6 @@ export default function PaymentsScreen() {
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<OrderDetail | null>(null);
-  const isGroundFloorOrder = detail?.floor_id === TILES_FLOOR_ID;
   const [loadingList, setLoadingList] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [waLoading, setWaLoading] = useState(false);
@@ -314,7 +313,7 @@ export default function PaymentsScreen() {
   };
 
   const saveManualExtra = async () => {
-    if (!detail || !isGroundFloorOrder) return;
+    if (!detail) return;
     const parsed = Number((manualExtra || "").replace(/[^0-9.]/g, ""));
     if (!Number.isFinite(parsed) || parsed < 0) {
       toast.error("Enter a valid extra cost");
@@ -327,7 +326,7 @@ export default function PaymentsScreen() {
     }
     setSavingManualExtra(true);
     try {
-      const updated = await api.patch<{ quotation_total: number; manual_extra_amount: number; manual_extra_name?: string | null; grand_total: number }>(
+      const updated = await api.patch<{ quotation_total: number; manual_extra_amount: number; manual_extra_name?: string | null; additional_cost?: NonNullable<OrderDetail["additional_costs"]>[number]; grand_total: number }>(
         `/payments/orders/${detail.id}/manual-extra`, { amount: parsed || 0, name: name || null },
       );
       setDetail((current) => current ? {
@@ -336,12 +335,13 @@ export default function PaymentsScreen() {
         outstanding: Math.max(0, updated.grand_total - current.paid),
         percent_collected: updated.grand_total > 0
           ? Math.min(100, Math.round(current.paid / updated.grand_total * 100)) : 0,
+        additional_costs: updated.additional_cost ? [...(current.additional_costs || []), updated.additional_cost] : current.additional_costs,
         payment_status: current.paid >= updated.grand_total && updated.grand_total > 0
           ? "paid" : current.paid > 0 ? "partial" : "due",
       } : current);
-      setManualExtra(updated.manual_extra_amount ? String(updated.manual_extra_amount) : "");
-      setManualExtraName(updated.manual_extra_name || "");
-      toast.success("Extra cost updated");
+      setManualExtra("");
+      setManualExtraName("");
+      toast.success("Additional cost recorded");
       await Promise.all([loadStats(), loadOrders(q)]);
     } catch (e: any) {
       toast.error(e?.detail || "Could not update extra cost");
@@ -607,9 +607,8 @@ export default function PaymentsScreen() {
                     description="Every rupee collected — this order is closed." />
                 )}
 
-                {isGroundFloorOrder ? (
-                  <Panel title="Additional cost" overline="GROUND FLOOR" padding={spacing.lg}>
-                    <Text style={[type.body, { color: colors.onSurfaceMuted, marginBottom: spacing.md }]}>Name the expense and update its amount whenever the agreed price changes. The original quotation price remains unchanged.</Text>
+                <Panel title="Add an additional cost" overline="PAYMENT ADJUSTMENT" padding={spacing.lg}>
+                    <Text style={[type.body, { color: colors.onSurfaceMuted, marginBottom: spacing.md }]}>Each cost is recorded separately with its timestamp. The original quotation price remains unchanged.</Text>
                     <View style={{ flexDirection: isPhone ? "column" : "row", gap: spacing.sm, alignItems: isPhone ? "stretch" : "flex-end" }}>
                       <View style={{ flex: 1 }}>
                         <Text style={[type.caption, { marginBottom: 6 }]}>Cost name</Text>
@@ -634,11 +633,10 @@ export default function PaymentsScreen() {
                           style={styles.dateInput}
                         />
                       </View>
-                      <Button label="Update total" icon="plus" variant="secondary" loading={savingManualExtra}
+                      <Button label="Add cost" icon="plus" variant="secondary" loading={savingManualExtra}
                         onPress={saveManualExtra} testID="save-ground-floor-manual-extra" />
                     </View>
-                  </Panel>
-                ) : null}
+                </Panel>
 
                 {selectedCustomer && selectedCustomer.orders.length > 1 ? (
                   <Panel title="Outstanding customer orders" overline="SELECT AN ORDER" padding={spacing.md}>
@@ -674,18 +672,8 @@ export default function PaymentsScreen() {
 
                 {/* Metrics */}
                 <View style={{ flexDirection: "row", gap: spacing.md, flexWrap: "wrap" }}>
-                  {isGroundFloorOrder ? (
-                    <StatTile dense label="Quotation price" value={money(detail.quotation_total)}
-                      sub="Original quotation" tone="brand" />
-                  ) : (
-                    <>
-                      <StatTile dense label="MRP" value={money(detail.mrp)} sub="Catalog price" tone="neutral" />
-                      <StatTile dense label="Discounted" value={money(detail.discounted_rate)}
-                        sub={detail.mrp > detail.discounted_rate ? `Save ${moneyShort(detail.mrp - detail.discounted_rate)}` : "No discount"}
-                        tone="brand" />
-                    </>
-                  )}
-                  {isGroundFloorOrder && detail.manual_extra_amount > 0 ? (
+                  <StatTile dense label="Quotation price" value={money(detail.quotation_total)} sub="Original quotation" tone="brand" />
+                  {detail.manual_extra_amount > 0 ? (
                     <StatTile dense label="Additional cost" value={money(detail.manual_extra_amount)}
                       sub={detail.manual_extra_name || "Additional cost"} tone="neutral" />
                   ) : null}
@@ -695,6 +683,12 @@ export default function PaymentsScreen() {
                     sub={detail.outstanding > 0 ? "Remaining balance" : "Fully paid"}
                     tone={detail.outstanding > 0 ? "danger" : "success"} />
                 </View>
+
+                {(detail.additional_costs || []).length ? (
+                  <Panel title="Additional-cost history" overline="AUDIT LOG" actions={<Badge label={`${detail.additional_costs!.length} entries`} tone="neutral" size="sm" />}>
+                    <View>{detail.additional_costs!.map((cost, i) => <ActivityRow key={cost.id} icon="plus-circle" iconTone="neutral" title={`${cost.name} · ${money(cost.amount)}`} subtitle={cost.note || `Recorded by ${cost.recorded_by_name || "—"}`} timestamp={dateShort(cost.created_at)} isLast={i === detail.additional_costs!.length - 1} />)}</View>
+                  </Panel>
+                ) : null}
 
                 {/* Progress */}
                 <Panel padding={spacing.lg}>
