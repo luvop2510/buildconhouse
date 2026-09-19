@@ -101,7 +101,13 @@ async def intake_stock(body: Intake, user: UserPublic = Depends(require_min_role
                 "godown_transferred_qty": {"$lte": received_qty - body.qty},
             }},
         }),
-        {"$inc": {"items.$.godown_transferred_qty": body.qty}, "$set": {"updated_at": at}},
+        {"$inc": {"items.$.godown_transferred_qty": body.qty}, "$set": {"updated_at": at}, "$push": {
+            "items.$.godown_transfer_history": {
+                "stock_id": lot["id"], "qty": body.qty, "reason": lot["reason"],
+                "transferred_at": at, "transferred_by": user.id,
+                "transferred_by_name": user.full_name,
+            },
+        }},
     )
     if not moved.modified_count:
         raise HTTPException(status_code=409, detail="This purchase item was changed while transferring it. Refresh and try again.")

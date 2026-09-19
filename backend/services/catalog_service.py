@@ -445,7 +445,7 @@ def _variant_summary(product: dict, snapshot: CatalogSnapshot) -> dict:
     finish.
     """
     colour = product.get("colour") or product.get("color")
-    return {
+    summary = {
         "id": product["id"], "sku": product.get("sku"), "name": product.get("name"),
         "finish": product.get("finish"), "finish_code": product.get("finish_code"),
         "variant_label": product.get("variant_label"), "size": _product_size(product),
@@ -455,6 +455,48 @@ def _variant_summary(product: dict, snapshot: CatalogSnapshot) -> dict:
         "material": product.get("material"), "warranty": product.get("warranty"),
         "specs": product.get("specs") or {}, "description": product.get("description"),
         "image": _primary_product_image(snapshot, product["id"], product.get("family_key")),
+    }
+    # Preserve the compact response shape for ordinary variants. A finish is
+    # an independently sellable SKU, though, so expose its rough-in when one
+    # is configured instead of inheriting the representative card's value.
+    if product.get("concealed_part"):
+        configured = {
+            "id": product.get("id"), "floor_id": product.get("floor_id"),
+            "concealed_part": copy.deepcopy(product["concealed_part"]),
+        }
+        _hydrate_concealed_part(configured, snapshot)
+        summary["concealed_part"] = configured["concealed_part"]
+    return summary
+
+
+def _hydrate_concealed_part(product: dict, snapshot: CatalogSnapshot) -> None:
+    """Fill a legacy SKU-only conceal configuration from this catalog snapshot.
+
+    Migration 0021 deliberately preserves old importer fields as a minimal
+    ``{sku, qty}`` configuration.  Resolving those rows here makes them as
+    usable in the quotation picker as a newly configured product, without a
+    database lookup on the catalog read path.
+    """
+    configured = product.get("concealed_part")
+    if not isinstance(configured, dict) or not str(configured.get("sku") or "").strip():
+        return
+    sku = str(configured["sku"]).strip()
+    linked = next((candidate for candidate in snapshot.products
+                   if candidate.get("id") != product.get("id")
+                   and candidate.get("floor_id") == product.get("floor_id")
+                   and candidate.get("sku") == sku
+                   and candidate.get("active", True)), None)
+    if not linked:
+        return
+    product["concealed_part"] = {
+        **configured,
+        "sku": sku,
+        "product_id": configured.get("product_id") or linked.get("id"),
+        "name": configured.get("name") or linked.get("name"),
+        "description": configured.get("description") or linked.get("description"),
+        "unit_price": configured.get("unit_price") if configured.get("unit_price") is not None else linked.get("price"),
+        "mrp": configured.get("mrp") if configured.get("mrp") is not None else linked.get("mrp"),
+        "image": configured.get("image") or _primary_product_image(snapshot, linked["id"], linked.get("family_key")),
     }
 
 
@@ -493,6 +535,7 @@ def _family_variants(product: dict, snapshot: CatalogSnapshot) -> list[dict]:
 def hydrate_product(product: dict, snapshot: CatalogSnapshot) -> dict:
     out = copy.deepcopy(product)
     _apply_media(out, snapshot)
+    _hydrate_concealed_part(out, snapshot)
     _hydrate_variants(out, snapshot)
     out.update(_size_metadata(product, snapshot))
     out["family_variants"] = _family_variants(product, snapshot)

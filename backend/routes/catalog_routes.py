@@ -536,21 +536,32 @@ async def update_product(
     if not updates:
         return Product(**existing)
 
-    # A salesperson may configure a concealed part with just its supplier SKU.
-    # When that SKU exists in this floor's catalog, store a stable snapshot and
-    # product id so quotation pickers can add the required rough-in line too.
+    # A salesperson configures a concealed part by its supplier SKU. It must
+    # resolve to one active product on this floor: quotation lines need the
+    # durable product id, not an unverified free-form SKU. A SKU may legally
+    # exist under multiple brands, so prefer this product's brand and reject a
+    # remaining ambiguity instead of choosing an arbitrary rough-in.
     concealed = updates.get("concealed_part")
     if concealed and concealed.get("sku"):
-        linked = await db.products.find_one(
-            {"floor_id": existing.get("floor_id"), "sku": concealed["sku"]}, {"_id": 0},
-        )
-        if linked:
-            concealed = {**concealed,
-                "product_id": linked["id"], "name": concealed.get("name") or linked.get("name"),
-                "unit_price": concealed.get("unit_price") if concealed.get("unit_price") is not None else linked.get("price"),
-                "mrp": concealed.get("mrp") if concealed.get("mrp") is not None else linked.get("mrp"),
-                "image": concealed.get("image") or linked.get("hero_image_url") or (linked.get("images") or [None])[0],
-            }
+        sku = str(concealed["sku"]).strip()
+        if not sku:
+            raise HTTPException(status_code=422, detail="Conceal-part SKU is required")
+        matches = await db.products.find(
+            {"floor_id": existing.get("floor_id"), "sku": sku, "active": {"$ne": False}}, {"_id": 0},
+        ).to_list(3)
+        same_brand = [row for row in matches if row.get("brand_id") == existing.get("brand_id")]
+        linked = same_brand[0] if len(same_brand) == 1 else matches[0] if len(matches) == 1 else None
+        if not linked:
+            detail = "Conceal-part SKU was not found in this floor's catalog" if not matches else "Conceal-part SKU is ambiguous; use a SKU unique to this floor or matching this product's brand"
+            raise HTTPException(status_code=404 if not matches else 409, detail=detail)
+        if linked.get("id") == product_id:
+            raise HTTPException(status_code=422, detail="A product cannot be its own conceal part")
+        concealed = {**concealed, "sku": sku,
+            "product_id": linked["id"], "name": linked.get("name"),
+            "description": linked.get("description"), "unit_price": linked.get("price"),
+            "mrp": linked.get("mrp"),
+            "image": linked.get("hero_image_url") or (linked.get("images") or [None])[0],
+        }
         updates["concealed_part"] = concealed
 
     new_sku = updates.get("sku", existing.get("sku"))

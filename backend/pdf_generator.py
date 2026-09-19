@@ -42,7 +42,15 @@ LOGO_RATIO = 1414 / 412  # native W/H of buildcon_logo.png — size by one edge 
 # A single page contract for every customer-facing quotation artifact.  Keep
 # this shared instead of allowing individual generators to silently fall back
 # to portrait A4.
+# Other document generators import this established landscape contract. The
+# standard sanitary quotation alone opts into the portrait page below.
 LANDSCAPE_A4 = landscape(A4)
+PORTRAIT_A4 = A4
+PORTRAIT_SCALE = 0.70
+
+
+def _pw(value_mm: float) -> float:
+    return value_mm * PORTRAIT_SCALE
 
 
 def _register_rupee_font() -> str | None:
@@ -82,7 +90,7 @@ def brand_partners_table(base_cell_style: ParagraphStyle, col_width_mm: float = 
     """The original 2x6 partner grid used on quotation page 1."""
     partner_style = ParagraphStyle("partner", parent=base_cell_style, fontSize=6.6, leading=8, alignment=1)
     rows = [[Paragraph(f"<b>{name}</b><br/><font size='6.5'><i>{tagline}</i></font>", partner_style) for name, tagline in row] for row in BRAND_PARTNERS]
-    table = Table(rows, colWidths=[col_width_mm * mm] * 6, rowHeights=[12 * mm, 12 * mm])
+    table = Table(rows, colWidths=[_pw(col_width_mm) * mm] * 6, rowHeights=[12 * mm, 12 * mm])
     table.setStyle(TableStyle([
         ("GRID", (0, 0), (-1, -1), 0.35, grid_color or GRID),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -96,9 +104,9 @@ def brand_partners_table(base_cell_style: ParagraphStyle, col_width_mm: float = 
 # high row count: the previous 17-row layout left just 5.2 pt for product
 # copy and consumed the whole frame.  Every page below reserves a physical
 # buffer above the footer and leaves spare white space for small selections.
-PAGE_H_MM = 210.0  # A4 landscape
-TOP_MARGIN_MM = 13.0
-BOTTOM_MARGIN_MM = 22.0
+PAGE_H_MM = 297.0  # A4 portrait
+TOP_MARGIN_MM = 12.0
+BOTTOM_MARGIN_MM = 20.0
 AREA_HEADER_BLOCK_MM = 25.75    # brand/area title block + rule + spacers above the table
 ITEM_HEADER_ROW_MM = 10.0
 ITEM_TOTAL_ROW_MM = 8.0
@@ -106,7 +114,7 @@ DETAIL_BOTTOM_SAFETY_MM = 8.0
 # Six items keeps a clear, consistent product frame and at least 7.5 pt
 # wrapped copy. Seven, seventeen and eighteen products intentionally exercise the
 # continuation-page path instead of shrinking into an unreadable grid.
-MAX_ITEM_ROWS_PER_PAGE = 6
+MAX_ITEM_ROWS_PER_PAGE = 9
 PRODUCT_IMAGE_ASPECT_RATIO = 16 / 10
 PRODUCT_IMAGE_FRAME_WIDTH_MM = 23.0
 PRODUCT_IMAGE_FRAME_HEIGHT_MM = 18.0
@@ -368,7 +376,7 @@ def _img(
 def _draw_footer(cv, doc, branding: dict | None = None) -> None:
     b = branding or {}
     cv.saveState()
-    page_width, _ = LANDSCAPE_A4
+    page_width, _ = doc.pagesize
     cv.setStrokeColor(LINE)
     cv.setLineWidth(0.45)
     cv.line(0, 15 * mm, page_width, 15 * mm)
@@ -417,7 +425,7 @@ def _draw_room_watermark(cv, doc, branding: dict | None = None) -> None:
     # watermark, not a cover image: clipping any edge changes the logo.
     if hasattr(cv, "setFillAlpha"):
         cv.setFillAlpha(0.075)
-    page_width, page_height = LANDSCAPE_A4
+    page_width, page_height = doc.pagesize
     watermark_x, watermark_y, watermark_w, watermark_h = watermark_geometry(page_width, page_height)
     watermark_cx = watermark_x + watermark_w / 2
     watermark_cy = watermark_y + watermark_h / 2
@@ -440,7 +448,7 @@ def _brand_header(right_title: str, styles: dict, style_key: str = "titleRight")
         logo = Image(str(LOGO_PATH), width=logo_width, height=logo_width / LOGO_RATIO, kind="proportional")
     else:
         logo = Paragraph("<b>BUILDCON HOUSE</b><br/><font size='8'>Let You Live Better</font>", styles["brandFallback"])
-    table = Table([[logo, Paragraph(right_title, styles[style_key])]], colWidths=[165 * mm, 102 * mm])
+    table = Table([[logo, Paragraph(right_title, styles[style_key])]], colWidths=[_pw(165) * mm, _pw(102) * mm])
     table.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6), ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
     return table
 
@@ -502,8 +510,8 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
     prefetch_product_images(quotation.get("items") or [])
     buf = BytesIO()
     doc = SimpleDocTemplate(
-        buf, pagesize=LANDSCAPE_A4, leftMargin=15 * mm, rightMargin=15 * mm,
-        topMargin=13 * mm, bottomMargin=22 * mm, title=quotation.get("number", "Quotation"),
+        buf, pagesize=PORTRAIT_A4, leftMargin=10 * mm, rightMargin=10 * mm,
+        topMargin=TOP_MARGIN_MM * mm, bottomMargin=BOTTOM_MARGIN_MM * mm, title=quotation.get("number", "Quotation"),
         author=b.get("footer_company_name") or "Buildcon House",
     )
     base = getSampleStyleSheet()
@@ -587,7 +595,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
         ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
         ("TOPPADDING", (0, 0), (-1, -1), 1), ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
     ]
-    meta_table = Table(meta, colWidths=[66.75 * mm] * 4, rowHeights=meta_row_heights)
+    meta_table = Table(meta, colWidths=[_pw(66.75) * mm] * 4, rowHeights=meta_row_heights)
     meta_table.setStyle(TableStyle(meta_style))
     story.extend([meta_table, Spacer(1, 2 * mm)])
     story.append(Paragraph("Dear Sir/Madam, thank you for your interest in our products. We are pleased to offer our most competitive rates for premium tiles and sanitaryware, prepared as per your selection.", styles["body"]))
@@ -597,10 +605,10 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
     n_rooms = len(room_order)
     if has_discount:
         summary_header = ["SL. NO.", "BATHROOM / AREA", "MRP (₹)", "OFFER TOTAL (₹)"]
-        summary_col_widths = [20 * mm, 120 * mm, 63 * mm, 64 * mm]
+        summary_col_widths = [_pw(v) * mm for v in (20, 120, 63, 64)]
     else:
         summary_header = ["SL. NO.", "BATHROOM / AREA", "TOTAL (₹)"]
-        summary_col_widths = [20 * mm, 135 * mm, 112 * mm]
+        summary_col_widths = [_pw(v) * mm for v in (20, 135, 112)]
     summary_rows: list[list[object]] = [[Paragraph(h, styles["tableHead"]) for h in summary_header]]
     for index, room in enumerate(room_order):
         gross, _, net = _room_totals(grouped.get(room, []))
@@ -662,7 +670,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
             Paragraph(terms[index], styles["terms"]),
             Paragraph(terms[index + 1], styles["terms"]) if index + 1 < len(terms) else "",
         ])
-    terms_table = Table(terms_rows, colWidths=[133.5 * mm, 133.5 * mm])
+    terms_table = Table(terms_rows, colWidths=[_pw(133.5) * mm, _pw(133.5) * mm])
     terms_table.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 2), ("RIGHTPADDING", (0, 0), (-1, -1), 5),
@@ -675,7 +683,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
         f"For general enquiries: M: {_escape(b.get('footer_phone') or '+91 99099 06652')}  |  Email: {_escape(b.get('footer_email') or 'buildconhouse10@gmail.com')}",
         styles["small"],
     )
-    signature = Table([[Paragraph("I/We have reviewed and agree to the terms and conditions mentioned in this quotation.", styles["small"]), Paragraph("CUSTOMER SIGNATURE &amp; DATE", styles["signature"])]], colWidths=[160 * mm, 107 * mm], rowHeights=[8 * mm])
+    signature = Table([[Paragraph("I/We have reviewed and agree to the terms and conditions mentioned in this quotation.", styles["small"]), Paragraph("CUSTOMER SIGNATURE &amp; DATE", styles["signature"])]], colWidths=[_pw(160) * mm, _pw(107) * mm], rowHeights=[8 * mm])
     signature.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 0.45, GRID), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4), ("TOPPADDING", (0, 0), (-1, -1), 1.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5)]))
     story.extend([
         Paragraph("TERMS &amp; CONDITIONS", styles["section"]), Spacer(1, 0.8 * mm), terms_table,
@@ -701,7 +709,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
         ]
         # The 43 mm article column holds a full 7.5 pt SKU on one line; its
         # three millimetres come from the still-generous description column.
-        item_widths = [12 * mm, 25 * mm, 43 * mm, 74 * mm, 24 * mm, 12 * mm, 25 * mm, 26 * mm, 26 * mm]
+        item_widths = [_pw(v) * mm for v in (12, 25, 43, 74, 24, 12, 25, 26, 26)]
     else:
         item_header = [
             Paragraph("SR.<br/>NO.", styles["tableHead"]), Paragraph("PRODUCT IMAGE", styles["tableHead"]),
@@ -709,7 +717,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
             Paragraph("RATE<br/>(₹)", styles["tableHead"]), Paragraph("QTY", styles["tableHead"]),
             Paragraph("TOTAL<br/>(₹)", styles["tableHead"]),
         ]
-        item_widths = [12 * mm, 25 * mm, 43 * mm, 107 * mm, 28 * mm, 12 * mm, 40 * mm]
+        item_widths = [_pw(v) * mm for v in (12, 25, 43, 107, 28, 12, 40)]
     max_rows = _max_item_rows_per_page()
     for area_index, room in enumerate(room_order, 1):
         room_items = grouped.get(room, [])

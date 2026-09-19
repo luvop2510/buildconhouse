@@ -212,6 +212,16 @@ def _flatten_item(po: dict, it: dict, sla_days: int) -> dict:
         "split_from_item_id": it.get("split_from_item_id"),
         "transferred_from_item_id": it.get("transferred_from_item_id"),
         "transferred_from_customer_id": it.get("transferred_from_customer_id"),
+        # Sanitary godown provenance is a snapshot on the purchase item so
+        # both the stock tracker and the client workspace can explain where a
+        # reused product came from (or that part of this line was returned).
+        "godown_transferred_qty": float(it.get("godown_transferred_qty") or 0),
+        "godown_transfer_history": it.get("godown_transfer_history") or [],
+        "godown_stock_id": it.get("godown_stock_id"),
+        "godown_allocation_id": it.get("godown_allocation_id"),
+        "godown_source_customer_name": it.get("godown_source_customer_name"),
+        "godown_source_purchased_at": it.get("godown_source_purchased_at"),
+        "godown_transferred_at": it.get("godown_transferred_at"),
     }
     return response
 

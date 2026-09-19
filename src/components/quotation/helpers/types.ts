@@ -1,6 +1,12 @@
 // Shared types for the Quotation Builder.
 // Kept isolated so components can depend on these without touching the context.
 
+export type ConcealedPart = {
+  sku: string; product_id?: string | null; name?: string | null;
+  description?: string | null; unit_price?: number | null; mrp?: number | null;
+  image?: string | null; qty?: number | null;
+};
+
 export type ProductVariant = {
   sku: string; name?: string | null; finish?: string | null; finish_code?: string | null; size?: string | null;
   /** `colour` is the catalog API spelling; `color` remains for old clients. */
@@ -11,6 +17,7 @@ export type ProductVariant = {
   // Populated dynamically by the backend from family-sibling products —
   // lets a finish/colour chip switch the main image, not just the price.
   id?: string | null; image?: string | null;
+  concealed_part?: ConcealedPart | null;
 };
 
 export type Product = {
@@ -49,6 +56,8 @@ export type Product = {
   usage_count?: number;
   my_usage_count?: number;
   is_custom?: boolean;
+  /** Persisted once on a product and expanded whenever this SKU is quoted. */
+  concealed_part?: ConcealedPart | null;
 };
 
 export type Brand = { id: string; name: string; slug?: string; product_count?: number };

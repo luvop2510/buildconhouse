@@ -265,11 +265,19 @@ export default function PurchasesScreen() {
     ]);
   }, [loadItems, loadFacets]);
 
-  const cancelItem = useCallback(async (reason?: string) => {
+  const cancelItem = useCallback(async (reason?: string, moveToGodown = false) => {
     if (!cancelTarget) return;
     try {
+      if (moveToGodown) {
+        await api.post("/godown-stock/intakes", {
+          purchase_order_id: cancelTarget.po_id,
+          purchase_item_id: cancelTarget.item_id,
+          qty: cancelTarget.qty,
+          reason: reason?.trim() || "Customer declined / cancelled item",
+        });
+      }
       await cancelPurchaseItem(cancelTarget.item_id, reason);
-      toast.success(`${cancelTarget.name} removed from active purchases`);
+      toast.success(moveToGodown ? `${cancelTarget.name} moved to godown stock and removed from active purchases` : `${cancelTarget.name} removed from active purchases`);
       setCancelTarget(null);
       await Promise.all([refreshPurchases({ strict: true }), loadCustomers(), loadShortages()]);
     } catch (e: any) {
@@ -868,6 +876,7 @@ function MobilePurchaseCard({ item, selected, compact, onSelect, onMove, onTrans
         <View style={{ minWidth: 76 }}><Text style={styles.mobileCardLabel}>QUANTITY</Text><Text style={styles.mobileCardValue}>{item.qty}</Text></View>
         <View style={{ minWidth: 82, alignItems: "flex-end" }}><Text style={styles.mobileCardLabel}>AGE</Text><Text style={[styles.mobileCardValue, item.blocked && { color: colors.error }]}>{item.age_days}d</Text></View>
       </View>
+      <GodownStatus item={item} />
       <View style={styles.mobileProgress} accessibilityLabel={`${item.stage_label}, stage ${Math.max(stageIndex + 1, 1)} of ${STAGE_ORDER.length}`}>
         {STAGE_ORDER.map((key, index) => <View key={key} style={[styles.mobileProgressDot, index <= stageIndex && styles.mobileProgressDotDone, index === stageIndex && styles.mobileProgressDotCurrent]} />)}
       </View>
@@ -1118,6 +1127,7 @@ function ItemRow(props: {
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={{ fontSize: 14, fontWeight: "600", color: colors.onSurface }} numberOfLines={1}>{row.name}</Text>
             <Text style={type.caption} numberOfLines={1}>{row.sku} · {row.customer_name}</Text>
+            <GodownStatus item={row} compact />
           </View>
           <StageBadge stage={row.stage} tone={row.stage_tone} label={row.stage_label} />
         </View>
@@ -1156,6 +1166,7 @@ function ItemRow(props: {
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={{ fontSize: 14, fontWeight: "600", color: colors.onSurface }} numberOfLines={1}>{row.name}</Text>
           <Text style={styles.mono} numberOfLines={1}>{row.sku}{compact ? ` · ${row.brand_name}` : ""}</Text>
+          <GodownStatus item={row} compact />
         </View>
       </Pressable>
       {/* Customer */}
@@ -1296,6 +1307,7 @@ function CustomerPurchasePanel({ visible, loading, workspace, onClose, onMove, o
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.actionTitle} numberOfLines={1}>{item.name}</Text>
                   <Text style={type.caption} numberOfLines={1}>{item.sku} · {item.qty} · {item.stage_label}</Text>
+                  <GodownStatus item={item} compact />
                 </View>
                 <View style={{ gap: 5 }}>
                   <Pressable accessibilityRole="button" accessibilityLabel={`Move ${item.name}`} onPress={() => onMove(item)} style={styles.customerPanelAction}><Text style={styles.customerPanelActionText}>Move</Text></Pressable>
@@ -1311,19 +1323,34 @@ function CustomerPurchasePanel({ visible, loading, workspace, onClose, onMove, o
   );
 }
 
+function GodownStatus({ item, compact = false }: { item: Item; compact?: boolean }) {
+  if (item.godown_stock_id) {
+    const source = item.godown_source_customer_name ? ` · from ${item.godown_source_customer_name}` : "";
+    const date = item.godown_transferred_at ? ` · transferred ${fmtDate(item.godown_transferred_at)}` : "";
+    return <Text style={[styles.godownStatus, compact && styles.godownStatusCompact]} numberOfLines={1}>From godown stock{source}{date}</Text>;
+  }
+  if ((item.godown_transferred_qty || 0) > 0) {
+    const latest = item.godown_transfer_history?.[item.godown_transfer_history.length - 1];
+    const date = latest?.transferred_at ? ` · ${fmtDate(latest.transferred_at)}` : "";
+    return <Text style={[styles.godownStatus, compact && styles.godownStatusCompact]} numberOfLines={1}>{item.godown_transferred_qty} moved to godown stock{date}</Text>;
+  }
+  return null;
+}
+
 function CustomerMetric({ label, value }: { label: string; value: string }) {
   return <View style={styles.customerPanelMetric}><Text style={styles.customerPanelMetricValue}>{value}</Text><Text style={styles.customerPanelMetricLabel}>{label}</Text></View>;
 }
 
 function CancelPurchaseModal({ item, onClose, onConfirm }: {
-  item: Item | null; onClose: () => void; onConfirm: (reason?: string) => Promise<void>;
+  item: Item | null; onClose: () => void; onConfirm: (reason?: string, moveToGodown?: boolean) => Promise<void>;
 }) {
   const [reason, setReason] = useState("");
+  const [moveToGodown, setMoveToGodown] = useState(false);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (item) setReason(""); }, [item]);
+  useEffect(() => { if (item) { setReason(""); setMoveToGodown(false); } }, [item]);
   const confirm = async () => {
     setBusy(true);
-    try { await onConfirm(reason); }
+    try { await onConfirm(reason, moveToGodown); }
     catch { /* toast is surfaced by the caller; keep this confirmation open. */ }
     finally { setBusy(false); }
   };
@@ -1334,6 +1361,10 @@ function CancelPurchaseModal({ item, onClose, onConfirm }: {
             <Text style={styles.fieldLabel}>REASON (OPTIONAL)</Text>
             <TextInput accessibilityLabel="Reason for removing purchase" value={reason} onChangeText={setReason} placeholder="Why is this product being removed?" placeholderTextColor={colors.onSurfaceMuted} style={styles.input} editable={!busy} multiline />
           </View>
+          <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: moveToGodown }} accessibilityLabel="Move product to godown stock" disabled={busy} onPress={() => setMoveToGodown((value) => !value)} style={{ marginTop: 14, flexDirection: "row", alignItems: "flex-start", gap: 9, padding: 10, borderRadius: radius.md, borderWidth: 1, borderColor: moveToGodown ? colors.brand : colors.border, backgroundColor: moveToGodown ? colors.brandTint : colors.surfaceSecondary }}>
+            <Feather name={moveToGodown ? "check-square" : "square"} size={18} color={colors.brand} />
+            <View style={{ flex: 1 }}><Text style={{ fontWeight: "700", color: colors.onSurface }}>Transfer to godown stock</Text><Text style={[type.caption, { marginTop: 2 }]}>Records the product, source customer and transfer date so it can be reused in a future quotation.</Text></View>
+          </Pressable>
     </Sheet>
   );
 }
@@ -1764,6 +1795,8 @@ const styles = StyleSheet.create({
   customerPanelImage: { width: 64, height: 64, flexShrink: 0 },
   customerPanelAction: { minWidth: 62, minHeight: 27, paddingHorizontal: 8, borderRadius: 7, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceTertiary },
   customerPanelActionText: { color: colors.onSurface, fontSize: 10, fontWeight: "800" },
+  godownStatus: { marginTop: 6, color: colors.brand, fontSize: 11, fontWeight: "700" },
+  godownStatusCompact: { marginTop: 3, fontSize: 10 },
   openPill: { minWidth: 46, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, alignItems: "center", backgroundColor: colors.surfaceTertiary },
   openPillText: { color: colors.onSurfaceSecondary, fontSize: 10.5, fontWeight: "700" },
   dispatchRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10, paddingHorizontal: 4 },

@@ -47,6 +47,10 @@ class _FakeProducts:
                 if doc.get("id") == value["$ne"]:
                     return False
                 continue
+            if isinstance(value, dict) and "$ne" in value:
+                if doc.get(key) == value["$ne"]:
+                    return False
+                continue
             if isinstance(value, dict) and "$in" in value:
                 if doc.get(key) not in value["$in"]:
                     return False
@@ -60,6 +64,15 @@ class _FakeProducts:
             if self._matches(doc, query):
                 return doc
         return None
+
+    def find(self, query, *_args, **_kwargs):
+        rows = [doc for doc in self.docs if self._matches(doc, query)]
+
+        class _Cursor:
+            async def to_list(self, length):
+                return rows[:length]
+
+        return _Cursor()
 
     async def insert_one(self, doc):
         self.inserted.append(doc)
@@ -225,3 +238,44 @@ def test_update_product_scopes_check_to_the_new_brand_id_when_brand_is_changing(
 
     assert exc.value.status_code == 409
     assert fake_db.products.updated is None
+
+
+def test_update_product_resolves_a_conceal_sku_to_its_catalog_snapshot(monkeypatch):
+    docs = [
+        {"id": "p1", "sku": "TRIM-1", "floor_id": "first-floor", "brand_id": "brand-A"},
+        {"id": "body", "sku": "BODY-1", "name": "Concealed body", "price": 4000.0,
+         "mrp": 4500.0, "floor_id": "first-floor", "brand_id": "brand-A", "active": True},
+    ]
+    fake_db = _patch_setup(monkeypatch, docs)
+
+    asyncio.run(catalog_routes.update_product(
+        "p1", ProductPatch(concealed_part={"sku": "  BODY-1  ", "qty": 1}),
+        user=_user("purchase", "first-floor"),
+    ))
+
+    concealed = fake_db.products.updated[1]["$set"]["concealed_part"]
+    assert concealed == {
+        "sku": "BODY-1", "qty": 1.0, "product_id": "body", "name": "Concealed body",
+        "description": None, "unit_price": 4000.0, "mrp": 4500.0, "image": None,
+    }
+
+
+def test_update_product_rejects_missing_or_ambiguous_conceal_sku(monkeypatch):
+    base = {"id": "p1", "sku": "TRIM-1", "floor_id": "first-floor", "brand_id": "brand-A"}
+    fake_db = _patch_setup(monkeypatch, [base])
+    with pytest.raises(HTTPException) as missing:
+        asyncio.run(catalog_routes.update_product(
+            "p1", ProductPatch(concealed_part={"sku": "MISSING"}), user=_user("purchase", "first-floor"),
+        ))
+    assert missing.value.status_code == 404
+
+    fake_db = _patch_setup(monkeypatch, [
+        base,
+        {"id": "other-a", "sku": "BODY", "floor_id": "first-floor", "brand_id": "brand-B", "active": True},
+        {"id": "other-b", "sku": "BODY", "floor_id": "first-floor", "brand_id": "brand-C", "active": True},
+    ])
+    with pytest.raises(HTTPException) as ambiguous:
+        asyncio.run(catalog_routes.update_product(
+            "p1", ProductPatch(concealed_part={"sku": "BODY"}), user=_user("purchase", "first-floor"),
+        ))
+    assert ambiguous.value.status_code == 409

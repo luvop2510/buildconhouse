@@ -31,6 +31,7 @@ import { downloadApiFile } from "@/src/utils/downloadFile";
 import { computeTotals, computeLineBreakdown, type LineBreakdown } from "../helpers/pricing";
 import { enqueueQuotationPersist } from "../helpers/autosave";
 import { productImageList } from "../helpers/media";
+import { addProductAndConcealedPart } from "../helpers/concealedParts";
 import {
   Brand, BuilderRow, BuilderState, Category, Customer, DEFAULT_ROOMS, DescSheetState, DiscountSheetState,
   INITIAL_BUILDER_STATE, Line, PickerTab, Product, ProductVariant,
@@ -992,32 +993,16 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
     Haptics.selectionAsync();
     playAddProductSound();
     history.apply((cur) => {
-      const selectedProductId = variant?.id ?? p.id;
-      const sku = variant?.sku ?? p.sku;
-      const idx = cur.lines.findIndex((l) => l.sku === sku && l.room === cur.activeRoom);
-      if (idx >= 0) {
-        const next = [...cur.lines]; next[idx] = { ...next[idx], qty: next[idx].qty + 1 };
-        return { ...cur, lines: next };
-      }
-      const variantColour = variant?.colour ?? variant?.color;
-      const finish = variant?.finish ?? variantColour ?? variant?.size ?? p.finish ?? p.colour ?? null;
-      const displayName = variant && (variant.finish || variantColour || variant.size)
-        ? `${p.name} · ${variant.finish || variantColour || variant.size}`
-        : p.name;
       return {
         ...cur,
-        lines: [...cur.lines, {
-          id: `${selectedProductId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          // A family card is merely a representative.  The quotation must
-          // retain the SKU the salesperson actually chose so persistence and
-          // PDF canonicalisation resolve that exact variant's media.
-          product_id: selectedProductId, sku,
-          name: displayName, image: variant ? variant.image ?? null : productImageList(p)[0] ?? null,
-          category_id: p.category_id, room: cur.activeRoom,
-          qty: 1, unit_price: variant?.price ?? p.price, mrp: variant?.mrp ?? p.mrp,
-          discount_pct: null, finish,
-          family_key: p.family_key ?? null,
-        }],
+        // One history transaction adds both the visible product and its
+        // configured rough-in. Repeated adds increment each matching line,
+        // so staff never need to type the conceal SKU again.
+        lines: addProductAndConcealedPart(
+          cur.lines, p, variant, cur.activeRoom,
+          (productId) => `${productId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          productImageList(p)[0] ?? null,
+        ),
       };
     });
   }, [history]);

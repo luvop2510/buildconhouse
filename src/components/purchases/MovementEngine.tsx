@@ -145,6 +145,29 @@ export function MoveStageSheet({
     } finally { setBusy(false); }
   };
 
+  const moveToGodown = async () => {
+    if (!n || n <= 0 || n > item.qty + 1e-6) return;
+    setBusy(true);
+    try {
+      // The tracker detail owns the parent PO id; resolve it here rather than
+      // trusting a stale row after a split/move.  The stock intake endpoint
+      // then performs the conditional source-quantity update and records
+      // customer/PO provenance atomically with the new lot.
+      const detail = await api.get<{ po_id: string }>(`/purchases/items/${item.item_id}`);
+      await api.post("/godown-stock/intakes", {
+        purchase_order_id: detail.po_id,
+        purchase_item_id: item.item_id,
+        qty: n,
+        reason: note.trim() || "Customer declined / cancelled item",
+      });
+      toast.success(`${n} × ${item.name} moved to godown stock`);
+      await onMoved({ moved_to_godown: true, qty_moved: n });
+      onClose();
+    } catch (e: any) {
+      toast.error(e instanceof ApiError ? e.detail || e.message : "Could not move item to godown stock");
+    } finally { setBusy(false); }
+  };
+
   return (
     <Sheet open={visible} onClose={onClose} title="Move stage" width={440}
       footer={
@@ -229,6 +252,23 @@ export function MoveStageSheet({
             })}
           </View>
         </Field>
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Move ${item.name} to godown stock`}
+          testID="movement-godown-submit"
+          disabled={!n || n <= 0 || n > item.qty + 1e-6 || busy}
+          onPress={moveToGodown}
+          style={({ pressed }) => [{
+            minHeight: 46, borderRadius: radius.md, borderWidth: 1, borderColor: ds.brass,
+            paddingHorizontal: 12, flexDirection: "row", alignItems: "center", gap: 9,
+            backgroundColor: pressed ? ds.brassTint : "transparent",
+            opacity: (!n || n <= 0 || n > item.qty + 1e-6 || busy) ? 0.45 : 1,
+          }]}
+        >
+          <Feather name="archive" size={16} color={ds.brassDeep} />
+          <View style={{ flex: 1 }}><Txt v="body" tone="brass">Move to godown stock</Txt><Txt v="caption" tone="soft">Keep the product available for a future customer instead of ordering it again.</Txt></View>
+        </Pressable>
 
         <Field label="Note (optional)">
           <TextInput

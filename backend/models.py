@@ -836,6 +836,16 @@ class PurchaseOrderItem(BaseModel):
     # Quantity moved out of a sanitary purchase line into reusable godown
     # stock. Kept distinct from tile-only `boxes_godown` below.
     godown_transferred_qty: float = Field(default=0, ge=0)
+    # Immutable audit trail for returned/declined sanitary material. This is
+    # separate from a tile's boxes_godown logistics counter below.
+    godown_transfer_history: list[dict] = []
+    # Set when the line itself is fulfilled from reusable sanitary godown
+    # stock. These fields make the customer/Purchases indication self-contained.
+    godown_stock_id: Optional[str] = None
+    godown_allocation_id: Optional[str] = None
+    godown_source_customer_name: Optional[str] = None
+    godown_source_purchased_at: Optional[str] = None
+    godown_transferred_at: Optional[str] = None
     unit_cost: float = 0                  # final cost per unit paid to supplier
     notes: Optional[str] = None
     quotation_line_id: Optional[str] = None

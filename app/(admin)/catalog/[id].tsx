@@ -21,7 +21,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator, FlatList, LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent, Pressable,
-  ScrollView, Share, StyleSheet, Text, View,
+  ScrollView, Share, StyleSheet, Text, TextInput, View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -29,6 +29,7 @@ import { ProductImage } from "@/src/components/ProductImage";
 import { productImageList } from "@/src/components/quotation/helpers/media";
 import { Button, Card, IconButton, PriceTag } from "@/src/components/ui";
 import { ProductEditor } from "@/src/components/catalog/ProductEditor";
+import { toast } from "@/src/components/Toast";
 import { api } from "@/src/api/client";
 import { useAuth } from "@/src/state/auth";
 import { useBreakpoint } from "@/src/hooks/use-breakpoint";
@@ -49,6 +50,11 @@ type Product = {
   must_buy_concealed?: boolean;
   concealed_sku?: string | null;
   concealed_skus?: string[];
+  concealed_part?: {
+    sku: string; product_id?: string | null; name?: string | null;
+    description?: string | null; unit_price?: number | null; mrp?: number | null;
+    image?: string | null; qty?: number | null;
+  } | null;
   hero_image_url?: string | null;
   gallery?: { url: string; role?: string; source_type?: string; quality?: string; family_key?: string | null; width?: number | null; height?: number | null; is_primary?: boolean }[];
   specs?: Record<string, any>;
@@ -108,6 +114,8 @@ export default function ProductDetail() {
   const [transferItem, setTransferItem] = useState<PipelineItem | null>(null);
   const [historyItemId, setHistoryItemId] = useState<string | null>(null);
   const [showImageManager, setShowImageManager] = useState(false);
+  const [concealSku, setConcealSku] = useState("");
+  const [savingConcealPart, setSavingConcealPart] = useState(false);
 
   const shareProduct = async () => {
     if (!p) return;
@@ -138,6 +146,29 @@ export default function ProductDetail() {
   };
 
   const [loadError, setLoadError] = useState(false);
+
+  // The saved SKU is the source of truth. It is prefilled here only to make
+  // changing an existing relationship as quick as its initial configuration.
+  useEffect(() => {
+    setConcealSku(p?.concealed_part?.sku || "");
+  }, [p?.id, p?.concealed_part?.sku]);
+
+  const saveConcealPart = async () => {
+    if (!p || !concealSku.trim()) return;
+    setSavingConcealPart(true);
+    try {
+      const updated = await api.patch<Product>(`/products/${p.id}`, {
+        concealed_part: { sku: concealSku.trim(), qty: 1 },
+      });
+      setP((current) => current ? { ...current, ...updated } : current);
+    } catch (e: any) {
+      // The server verifies that the SKU exists on this floor and points at a
+      // single product, so a typing error can never create a broken auto-add.
+      toast.error(e?.detail || e?.message || "Couldn't save conceal part");
+    } finally {
+      setSavingConcealPart(false);
+    }
+  };
   const loadProduct = async (productId: string) => {
     const requestId = ++loadRequestRef.current;
     setLoadError(false);
@@ -444,6 +475,44 @@ export default function ProductDetail() {
         </View>
       ) : null}
 
+      {/* This relationship is saved on the catalog product once. Every later
+          quotation addition expands it automatically in BuilderContext. */}
+      {(p.concealed_part || canManageImages) ? (
+        <Card style={{ gap: spacing.sm, padding: spacing.md, backgroundColor: colors.surfaceSecondary }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+            <Feather name="layers" size={16} color={colors.brand} />
+            <View style={{ flex: 1 }}>
+              <Text style={type.label}>Conceal part</Text>
+              <Text style={type.caption}>
+                {p.concealed_part
+                  ? `${p.concealed_part.name || "Configured part"} · ${p.concealed_part.sku} is added automatically`
+                  : "Add the existing catalog SKU once to include it automatically in future quotations."}
+              </Text>
+            </View>
+          </View>
+          {canManageImages ? (
+            <View style={{ flexDirection: isPhone ? "column" : "row", gap: spacing.sm, alignItems: isPhone ? "stretch" : "center" }}>
+              <TextInput
+                value={concealSku}
+                onChangeText={setConcealSku}
+                placeholder="Conceal-part SKU"
+                autoCapitalize="characters"
+                accessibilityLabel="Conceal-part SKU"
+                testID="conceal-part-sku"
+                style={styles.concealSkuInput}
+              />
+              <Button
+                label={p.concealed_part ? "Update conceal part" : "Add conceal part"}
+                onPress={saveConcealPart}
+                loading={savingConcealPart}
+                disabled={!concealSku.trim() || savingConcealPart}
+                testID="save-conceal-part"
+              />
+            </View>
+          ) : null}
+        </Card>
+      ) : null}
+
       {/* Description */}
       {p.must_buy_concealed && (p.concealed_skus?.length || p.concealed_sku) ? (
         <View style={[styles.poorHint, { borderColor: "#D97706", backgroundColor: "#FFF7ED" }]}>
@@ -672,6 +741,11 @@ const styles = StyleSheet.create({
   },
   brandTag: { fontSize: 10, fontWeight: "800", color: colors.brand, letterSpacing: 1.3 },
   overline: { fontSize: 10, fontWeight: "700", letterSpacing: 1.1, color: colors.onSurfaceMuted, textTransform: "uppercase" },
+  concealSkuInput: {
+    flex: 1, minHeight: 42, borderWidth: 1, borderColor: colors.border,
+    borderRadius: radius.md, paddingHorizontal: spacing.md, color: colors.onSurface,
+    backgroundColor: colors.surface,
+  },
 
   pageDots: {
     position: "absolute", left: 0, right: 0, bottom: 12,

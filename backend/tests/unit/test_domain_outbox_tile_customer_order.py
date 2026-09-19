@@ -163,6 +163,35 @@ def test_standard_quotation_never_creates_customer_order(monkeypatch):
         assert po["customer_order_id"] is None
 
 
+def test_sanitary_godown_line_creates_an_in_box_purchase_item(monkeypatch):
+    quotation = _tiles_quotation(
+        doc_type="standard",
+        floor_id="first-floor",
+        items=[{
+            "id": "li-godown", "product_id": "p-1", "sku": "SKU-1", "name": "Glossy Ivory 600x600",
+            "qty": 4, "unit_price": 1000, "godown_stock_id": "stock-1", "godown_allocation_id": "alloc-1",
+            "godown_source_customer_name": "Original Customer", "godown_source_purchased_at": "2026-09-01T10:00:00+00:00",
+            "godown_transferred_at": "2026-09-05T10:00:00+00:00",
+        }],
+    )
+    fake_db = _FakeDb(quotation)
+    monkeypatch.setattr(outbox, "db", fake_db)
+    monkeypatch.setattr(sequence, "db", fake_db)
+    monkeypatch.setattr(tile_movement_log, "db", fake_db)
+
+    asyncio.run(outbox._handle_order_placed(_event("q-1"), session=None))
+
+    assert len(fake_db.purchase_orders.docs) == 1
+    po = fake_db.purchase_orders.docs[0]
+    item = po["items"][0]
+    assert po["supplier_id"] is None
+    assert item["stage"] == "in_box"
+    assert item["stage_history"][0]["to_stage"] == "in_box"
+    assert item["godown_stock_id"] == "stock-1"
+    assert item["godown_source_customer_name"] == "Original Customer"
+    assert item["godown_source_purchased_at"] == "2026-09-01T10:00:00+00:00"
+
+
 def test_retry_is_idempotent_and_does_not_duplicate_customer_order(monkeypatch):
     fake_db = _FakeDb(_tiles_quotation())
     monkeypatch.setattr(outbox, "db", fake_db)

@@ -273,10 +273,15 @@ async def _brand_groups(quotation: dict, session: Any) -> list[dict]:
     for item in quotation.get("items", []):
         product = product_by_id.get(item["product_id"], {})
         brand_id = product.get("brand_id") or "__unassigned__"
-        group = groups.setdefault(brand_id, {
+        # Godown fulfilment must never be mixed into a supplier PO for the
+        # same brand. It is an internal allocation and arrives directly in
+        # the Purchases tracker at In Box.
+        group_key = f"{brand_id}:godown" if item.get("godown_stock_id") else brand_id
+        group = groups.setdefault(group_key, {
             "brand_id": None if brand_id == "__unassigned__" else brand_id,
             "brand_name": brand_by_id.get(brand_id, {}).get("name", "Unassigned"),
-            "supplier": supplier_by_brand.get(brand_id),
+            "supplier": None if item.get("godown_stock_id") else supplier_by_brand.get(brand_id),
+            "is_godown": bool(item.get("godown_stock_id")),
             "items": [],
         })
         # Tile Orders logistics (Task 5): series lives on Product, not on
@@ -373,7 +378,7 @@ async def _handle_order_placed(event: dict, session: Any) -> dict:
 
     created_po_ids: list[str] = []
     for group in groups:
-        brand_key = group["brand_id"] or "unassigned"
+        brand_key = (group["brand_id"] or "unassigned") + (":godown" if group.get("is_godown") else "")
         po_key = f"{key}:po:{brand_key}"
         existing = await db.purchase_orders.find_one({"automation_key": po_key}, {"_id": 0, "id": 1}, session=session)
         if existing:
@@ -393,11 +398,14 @@ async def _handle_order_placed(event: dict, session: Any) -> dict:
             po_items.append(PurchaseOrderItem(
                 product_id=raw["product_id"], sku=raw["sku"], name=raw["name"], image=raw.get("image"),
                 finish=raw.get("finish"), category_id=raw.get("category_id"), room=raw.get("room"),
-                qty=qty, unit_cost=unit_cost, quotation_line_id=raw.get("id"), stage="order_in_company",
+                qty=qty, unit_cost=unit_cost, quotation_line_id=raw.get("id"), stage="in_box" if group.get("is_godown") else "order_in_company",
                 customer_id=quotation["customer_id"], customer_name=quotation.get("customer_name", ""),
                 brand_id=group["brand_id"], brand_name=group["brand_name"],
                 last_moved_at=now, last_moved_by=event["actor_id"], last_moved_by_name=event["actor_name"],
-                stage_history=[PurchaseStageEvent(from_stage=None, to_stage="order_in_company", by_user_id=event["actor_id"], by_user_name=event["actor_name"], note=f"Created from {quotation.get('number')}", action="create")],
+                stage_history=[PurchaseStageEvent(from_stage=None, to_stage="in_box" if group.get("is_godown") else "order_in_company", by_user_id=event["actor_id"], by_user_name=event["actor_name"], note=(f"Allocated from godown stock for {quotation.get('number')}" if group.get("is_godown") else f"Created from {quotation.get('number')}"), action="create")],
+                godown_stock_id=raw.get("godown_stock_id"), godown_allocation_id=raw.get("godown_allocation_id"),
+                godown_source_customer_name=raw.get("godown_source_customer_name"), godown_source_purchased_at=raw.get("godown_source_purchased_at"),
+                godown_transferred_at=raw.get("godown_transferred_at"),
                 # Tile Orders logistics (Task 5) — harmless no-op defaults
                 # on non-tile orders, real data on tiles orders.
                 series=raw.get("series"), size=raw.get("size"), pieces_per_box=raw.get("pcs_per_box"), quantity_unit=raw.get("quantity_unit") or "Box",

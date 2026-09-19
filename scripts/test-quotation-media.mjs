@@ -17,6 +17,7 @@ assert.equal(quotationGridColumns(800), 2);
 assert.equal(quotationGridColumns(810), 2);
 assert.equal(quotationGridColumns(1040), 2);
 assert.equal(quotationGridColumns(1920), 2);
+assert.equal(quotationGridColumns(600, true), 4);
 assert.equal(quotationGridColumns(279), 1);
 assert.deepEqual(productImageList({
   hero_image_url: "hero",
@@ -85,6 +86,7 @@ const tilesStageSource = readFileSync(new URL("../src/components/tiles/tilesStag
 assert.match(tilesStageSource, /if \(docType === "tiles_selection"\) return false/);
 
 const builderSource = readFileSync(new URL("../src/components/quotation/context/BuilderContext.tsx", import.meta.url), "utf8");
+const concealedPartSource = readFileSync(new URL("../src/components/quotation/helpers/concealedParts.ts", import.meta.url), "utf8");
 const catalogServiceSource = readFileSync(new URL("../src/services/catalogService.ts", import.meta.url), "utf8");
 assert.ok(builderSource.includes('api.get<Customer[]>("/customers", request)'), "missing essential customer bootstrap request");
 assert.match(builderSource, /catalogReferences\.categories<Category\[\]>\(null, request\)/);
@@ -99,9 +101,9 @@ assert.match(builderSource, /retryReferenceData/);
 assert.match(builderSource, /controller\.abort\(\)/);
 // A picker card represents a family, but a selected swatch must be persisted
 // as its own SKU/product so the saved quotation and PDF resolve its own media.
-assert.match(builderSource, /const selectedProductId = variant\?\.id \?\? p\.id/);
-assert.match(builderSource, /product_id: selectedProductId, sku/);
-assert.match(builderSource, /image: variant \? variant\.image \?\? null : productImageList\(p\)\[0\] \?\? null/);
+assert.match(builderSource, /addProductAndConcealedPart\(/);
+assert.match(concealedPartSource, /const productId = variant\?\.id \|\| product\.id/);
+assert.match(concealedPartSource, /image: variant\?\.image \|\| primaryImage/);
 assert.match(builderSource, /const selectedProductId = variant\?\.id \?\? target\.id/);
 assert.match(builderSource, /image: variant \? variant\.image \?\? null : productImageList\(target\)\[0\] \?\? null/);
 

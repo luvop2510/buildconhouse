@@ -1,6 +1,7 @@
 """Quotation Builder API — v2 with multi-level discounts, autosave, duplicate."""
 import asyncio
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -1194,6 +1195,34 @@ class PlaceOrderConfirmPayload(BaseModel):
     project_name: str | None = None
 
 
+async def _godown_matches(doc: dict) -> list[dict]:
+    """Return reusable sanitary stock for otherwise-to-be-produced lines."""
+    # Returned sanitary material is deliberately isolated from Ground Floor
+    # tile documents (which have their own logistics godown workflow).
+    if doc.get("floor_id") != "first-floor":
+        return []
+    wanted = [line for line in doc.get("items", []) if not line.get("godown_stock_id")]
+    product_ids = list({line.get("product_id") for line in wanted if line.get("product_id")})
+    if not product_ids:
+        return []
+    lots = await db.godown_stock.find(
+        {"floor_id": doc.get("floor_id"), "product_id": {"$in": product_ids}, "available_qty": {"$gt": 0}},
+        {"_id": 0, "id": 1, "product_id": 1, "available_qty": 1, "source_customer_name": 1, "transferred_at": 1},
+    ).sort("transferred_at", 1).to_list(500)
+    available: dict[str, float] = {}
+    sources: dict[str, list[dict]] = {}
+    for lot in lots:
+        product_id = str(lot["product_id"])
+        available[product_id] = available.get(product_id, 0.0) + float(lot.get("available_qty") or 0)
+        sources.setdefault(product_id, []).append(lot)
+    return [{
+        "line_id": line.get("id"), "product_id": line.get("product_id"), "sku": line.get("sku"), "name": line.get("name"),
+        "requested_qty": float(line.get("qty") or 0), "available_qty": available.get(str(line.get("product_id")), 0.0),
+        "replaceable_qty": min(float(line.get("qty") or 0), available.get(str(line.get("product_id")), 0.0)),
+        "source_customers": list(dict.fromkeys(lot.get("source_customer_name") or "Unknown customer" for lot in sources.get(str(line.get("product_id")), []))),
+    } for line in wanted if available.get(str(line.get("product_id")), 0.0) > 0]
+
+
 async def _brand_grouped_preview(doc: dict) -> dict:
     items = doc.get("items", [])
     if not items:
@@ -1223,7 +1252,56 @@ async def _brand_grouped_preview(doc: dict) -> dict:
     # quotation total also includes transport. The review screen must show
     # the same grand total that will be journaled as the payment/customer-order
     # amount; otherwise Place Order appears to change the price by freight.
-    return {"quotation_id": doc["id"], "quotation_number": doc.get("number"), "doc_type": doc.get("doc_type", "standard"), "customer_id": doc.get("customer_id"), "customer_name": doc.get("customer_name"), "brands": sorted(cards, key=lambda card: card["brand_name"]), "total_value": round(float(doc.get("grand_total") or sum(card["subtotal"] for card in cards)), 2)}
+    return {"quotation_id": doc["id"], "quotation_number": doc.get("number"), "doc_type": doc.get("doc_type", "standard"), "customer_id": doc.get("customer_id"), "customer_name": doc.get("customer_name"), "brands": sorted(cards, key=lambda card: card["brand_name"]), "total_value": round(float(doc.get("grand_total") or sum(card["subtotal"] for card in cards)), 2), "godown_matches": await _godown_matches(doc)}
+
+
+@router.post("/{quotation_id}/use-godown-stock")
+async def use_godown_stock(quotation_id: str, user: UserPublic = Depends(require_min_role("sales"))):
+    """Replace matching open-quotation quantities with reserved godown lots.
+
+    The customer-facing price and room stay unchanged; only fulfilment changes.
+    A partial match splits the original line so the unmatched remainder still
+    creates a supplier PO, while each reserved part becomes an In Box item.
+    """
+    doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0})
+    if doc.get("floor_id") != "first-floor":
+        raise HTTPException(status_code=404, detail="Godown stock replacement is only available for sanitary quotations")
+    if doc.get("status") not in {"draft", "sent", "approved"}:
+        raise HTTPException(status_code=409, detail="Godown stock can only replace products on an open quotation")
+    output: list[dict] = []
+    replacements = 0
+    for raw in doc.get("items", []):
+        remaining = float(raw.get("qty") or 0)
+        if raw.get("godown_stock_id") or remaining <= 0:
+            output.append(raw); continue
+        lots = await db.godown_stock.find({"floor_id": doc.get("floor_id"), "product_id": raw.get("product_id"), "available_qty": {"$gt": 0}}, {"_id": 0}).sort("transferred_at", 1).to_list(100)
+        for lot in lots:
+            if remaining <= 1e-6: break
+            qty = min(remaining, float(lot.get("available_qty") or 0))
+            at = now_iso()
+            allocation = {"id": str(uuid4()), "quotation_id": doc["id"], "quotation_number": doc.get("number"), "customer_id": doc.get("customer_id"), "customer_name": doc.get("customer_name"), "qty": qty, "allocated_at": at, "allocated_by": user.id, "allocated_by_name": user.full_name}
+            claimed = await db.godown_stock.find_one_and_update({"id": lot["id"], "floor_id": doc.get("floor_id"), "available_qty": {"$gte": qty}}, {"$inc": {"available_qty": -qty}, "$push": {"allocations": allocation}, "$set": {"updated_at": at}}, return_document=ReturnDocument.AFTER)
+            if not claimed:
+                continue
+            replacement = {**raw, "id": str(uuid4()), "qty": qty, "godown_stock_id": lot["id"], "godown_allocation_id": allocation["id"], "godown_source_customer_name": lot.get("source_customer_name"), "godown_source_purchased_at": lot.get("source_purchased_at"), "godown_transferred_at": lot.get("transferred_at"), "godown_allocated_at": at}
+            output.append(replacement)
+            remaining = round(remaining - qty, 4); replacements += 1
+        if remaining > 1e-6:
+            output.append({**raw, "qty": remaining})
+    if not replacements:
+        raise HTTPException(status_code=409, detail="Matching godown stock is no longer available")
+    # Splitting one quoted line into a godown line plus a supplier remainder
+    # changes line ids and quantities. Re-stamp the denormalized analytics
+    # values so their sum still equals the quotation total.
+    output = stamp_net_amounts(
+        output,
+        doc.get("project_discount_pct", 0) or 0,
+        doc.get("category_discounts", {}) or {},
+        doc.get("room_discounts", {}) or {},
+    )
+    await db.quotations.update_one({"id": quotation_id}, {"$set": {"items": output, "updated_at": now_iso()}})
+    await log_event(event_type="godown_stock.replaced_on_quotation", entity_type="quotation", entity_id=quotation_id, actor=user, floor_id=doc.get("floor_id"), customer_id=doc.get("customer_id"), quotation_id=quotation_id, summary=f"Reserved {replacements} godown stock lot(s) for {doc.get('customer_name')}", payload={"replacements": replacements})
+    return {"replacements": replacements, "godown_matches": await _godown_matches({**doc, "items": output})}
 
 
 @router.get("/{quotation_id}/place-order/preview")

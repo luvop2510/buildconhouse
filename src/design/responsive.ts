@@ -38,6 +38,8 @@ export function quotationBuilderLayout(containerWidth: number, railCollapsed: bo
     threePane,
     twoPane,
     railWidth: railCollapsed ? 56 : containerWidth >= 1400 ? 260 : 240,
-    quotationWidth: containerWidth >= 1440 ? 480 : containerWidth >= 1200 ? 440 : 400,
+    // The quotation pane is intentionally narrower than before so the
+    // desktop catalog has room for a four-product grid.
+    quotationWidth: containerWidth >= 1440 ? 400 : containerWidth >= 1200 ? 360 : 340,
   };
 }

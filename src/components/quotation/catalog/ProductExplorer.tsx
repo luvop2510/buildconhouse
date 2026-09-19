@@ -41,7 +41,7 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
   const b = useBuilder();
   const [paneWidth, setPaneWidth] = useState(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const numCols = quotationGridColumns(paneWidth);
+  const numCols = quotationGridColumns(paneWidth, !showCompactFilters);
   // The full-screen mobile/tablet picker needs compact cards so two complete
   // rows fit below its fixed controls. Keep the larger product imagery in the
   // desktop explorer, where visual inspection has more space.
