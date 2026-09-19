@@ -91,7 +91,7 @@ class TileCatalog2026Adapter(BrandAdapter):
                 if match:
                     price = float(match.group(1).replace(",", ""))
                     raw_unit = match.group(2).lower()
-                    unit = "pcs" if raw_unit in {"pcs", "p"} else "sqft"
+                    unit = "pcs" if raw_unit == "pcs" else "sqft"
                 elif re.fullmatch(r"[\d,]+(?:\.\d+)?", raw_rate):
                     price = float(raw_rate.replace(",", ""))
                     unit = "sqft" if "sqft" in rate_label else ("pcs" if "pcs" in rate_label or "pis" in rate_label else None)
