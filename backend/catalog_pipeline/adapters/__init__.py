@@ -32,6 +32,8 @@ REGISTRY = {
     "kenzo": KenzoAdapter,
     "panda": PandaAdapter,
     "boffo": BoffoAdapter,
+    "mcm": MCMAdapter,
+    "granoland": GranolandAdapter,
 }
 
 
