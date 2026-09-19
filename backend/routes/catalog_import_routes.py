@@ -27,7 +27,7 @@ from services.catalog_import_jobs import claim_for_processing, enqueue
 router = APIRouter(prefix="/catalog/imports", tags=["catalog-import"])
 logger = logging.getLogger("forge.catalog_import")
 
-SUPPORTED_BRANDS = ["Hansgrohe", "Axor", "Grohe", "Vitra", "Geberit", "Oyster", "Qutone", "Dimore"]
+SUPPORTED_BRANDS = ["Hansgrohe", "Axor", "Grohe", "Vitra", "Geberit", "Oyster", "Qutone", "Dimore", "MCM", "GRANOLAND"]
 MISSING = "[MISSING DATA]"
 
 # Security audit (Phase 1, 2026-08): supplier pricelists (PDF/XLSX) legitimately
