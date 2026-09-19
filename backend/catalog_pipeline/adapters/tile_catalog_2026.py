@@ -13,7 +13,7 @@ from ..base import MISSING, BrandAdapter, ExtractionReport, ProductRow, dedupe_i
 from ..image_extractor import ExtractedImage, extract_images_from_xlsx_ex
 
 CATEGORY = "Tiles"
-RATE_RE = re.compile(r"^\s*([\d,]+(?:\.\d+)?)\s*PER\s*(PCS|SQFT)\s*$", re.I)
+RATE_RE = re.compile(r"^\s*([\d,]+(?:\.\d+)?)\s*(?:PER\s*)?(PCS|SQFT|P)\s*$", re.I)
 
 
 def _slug(value: str) -> str:
@@ -59,7 +59,8 @@ class TileCatalog2026Adapter(BrandAdapter):
             if not required <= headers.keys():
                 report.warnings.append(f"Sheet {worksheet.title!r}: expected NAME and SIZE columns")
                 continue
-            rate_column = next((index for label, index in headers.items() if "rate" in label), None)
+            rate_label = next((label for label in headers if "rate" in label), "")
+            rate_column = headers.get(rate_label)
             if rate_column is None:
                 report.warnings.append(f"Sheet {worksheet.title!r}: expected a RATE column")
                 continue
@@ -87,8 +88,16 @@ class TileCatalog2026Adapter(BrandAdapter):
                     continue
                 raw_rate = str(row[rate_column] or "").strip()
                 match = RATE_RE.match(raw_rate)
-                price = float(match.group(1).replace(",", "")) if match else None
-                unit = match.group(2).lower() if match else None
+                if match:
+                    price = float(match.group(1).replace(",", ""))
+                    raw_unit = match.group(2).lower()
+                    unit = "pcs" if raw_unit in {"pcs", "p"} else "sqft"
+                elif re.fullmatch(r"[\d,]+(?:\.\d+)?", raw_rate):
+                    price = float(raw_rate.replace(",", ""))
+                    unit = "sqft" if "sqft" in rate_label else ("pcs" if "pcs" in rate_label or "pis" in rate_label else None)
+                else:
+                    price = None
+                    unit = None
                 finish = str(row[finish_column] or "").strip() if finish_column is not None else ""
                 raw_box_pieces = str(row[box_pieces_column] or "").strip() if box_pieces_column is not None else ""
                 raw_box_sqft = str(row[box_sqft_column] or "").strip() if box_sqft_column is not None else ""
@@ -140,3 +149,17 @@ class BoffoAdapter(TileCatalog2026Adapter):
 
     def __init__(self) -> None:
         super().__init__("BOFFO")
+
+
+class MCMAdapter(TileCatalog2026Adapter):
+    """MCM 2026 ground-floor tile catalogue."""
+
+    def __init__(self) -> None:
+        super().__init__("MCM")
+
+
+class GranolandAdapter(TileCatalog2026Adapter):
+    """GRANOLAND 2026 ground-floor tile catalogue."""
+
+    def __init__(self) -> None:
+        super().__init__("GRANOLAND")
