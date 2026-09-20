@@ -139,6 +139,13 @@ export function AssistantPane({ onClose }: { onClose?: () => void }) {
   // Falls back to a sibling finish's photo when the active one has none of
   // its own, rather than leaving the gallery empty (see helpers/media.ts).
   const { images: heroImages, isFallback: heroIsFallback } = resolveVariantImages(product, activeVariant);
+  // A quotation retains the image selected at the time its line was added.
+  // Keep that snapshot as a final fallback so a deleted/migrated catalog
+  // media row cannot leave the right-pane preview as an empty frame.
+  const assistantImages = Array.from(new Set([
+    ...heroImages,
+    focusedLine?.image || "",
+  ].filter(Boolean)));
   const price = focusedLine?.unit_price ?? activeVariant?.price ?? product.price;
   const mrp = activeVariant?.mrp ?? product.mrp ?? product.price;
   const brand = product.brand_name || product.brand_id;
@@ -191,8 +198,8 @@ export function AssistantPane({ onClose }: { onClose?: () => void }) {
               finish switches lets expo-image's own transition crossfade
               smoothly instead of a hard remount/flash. */}
           <ProductImage
-            source={heroImages}
-            style={{ width: "100%", aspectRatio: PRODUCT_IMAGE_ASPECT_RATIO, borderRadius: radius.md }}
+            source={assistantImages}
+            style={styles.heroImage}
             fallbackLabel={activeVariant?.sku || product.sku}
           />
           {heroImages.length && heroIsFallback ? (
@@ -433,9 +440,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSecondary,
   },
   hero: {
-    padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary,
+    padding: spacing.sm, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary,
     borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
   },
+  // A proportional hero could consume most of the narrow assistant pane.
+  // Bound the preview so product controls and alternates remain visible.
+  heroImage: { width: "100%", height: 148, borderRadius: radius.md },
   repImageNote: { fontSize: 10, color: colors.onSurfaceMuted, fontStyle: "italic", marginTop: 4 },
   priceBlock: {
     padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary,

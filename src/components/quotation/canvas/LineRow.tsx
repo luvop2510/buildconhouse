@@ -181,6 +181,12 @@ function LineActions({ line, onCancel }: { line: Line; onCancel: () => void }) {
   const b = useBuilder();
   return (
     <>
+      <Pressable testID={`line-move-up-${line.id}`} accessibilityLabel="Move product up" onPress={() => b.moveLine(line.id, -1)} style={styles.icon}>
+        <Feather name="chevron-up" size={16} color={colors.onSurfaceMuted} />
+      </Pressable>
+      <Pressable testID={`line-move-down-${line.id}`} accessibilityLabel="Move product down" onPress={() => b.moveLine(line.id, 1)} style={styles.icon}>
+        <Feather name="chevron-down" size={16} color={colors.onSurfaceMuted} />
+      </Pressable>
       <Pressable testID={`line-desc-${line.id}`} accessibilityLabel="Edit description" onPress={() => b.setDescSheet({ line_id: line.id })} style={styles.icon}>
         <Feather name="align-left" size={16} color={colors.onSurfaceMuted} />
       </Pressable>

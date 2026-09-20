@@ -41,12 +41,14 @@ import {
 type Product = {
   id: string; name: string; sku: string; description?: string | null;
   finish?: string | null; material?: string | null; dimensions?: string | null; warranty?: string | null;
+  size?: string | null;
   price: number; mrp: number; stock: number; images: string[]; tags: string[];
   brand_id: string; category_id: string; floor_id?: string | null;
   subcategory?: string | null; series?: string | null; family_key?: string | null;
   family_name?: string | null; variant_label?: string | null;
   finish_code?: string | null; colour?: string | null;
   image_quality?: string | null;
+  compatible_ids?: string[];
   must_buy_concealed?: boolean;
   concealed_sku?: string | null;
   concealed_skus?: string[];
@@ -86,6 +88,24 @@ function swatchColor(label?: string | null): string {
   return "#D1D5DB";
 }
 
+/** Supplier imports do not have one universal compatibility column. Surface
+ * the fields that carry console/compatibility/concealment context without
+ * assuming a particular catalog adapter's schema. */
+function associatedConsoleInfo(product: Product): string | null {
+  const spec = Object.entries(product.specs || {}).find(([key, value]) =>
+    /console|compatib|conceal/i.test(key) && value !== null && value !== undefined && String(value).trim(),
+  );
+  if (spec) {
+    const [label, value] = spec;
+    return `${label}: ${Array.isArray(value) ? value.join(", ") : String(value)}`;
+  }
+  if (product.concealed_part?.sku) {
+    return `Associated conceal part · ${product.concealed_part.name || product.concealed_part.sku}`;
+  }
+  if (product.compatible_ids?.length) return `Compatibility references · ${product.compatible_ids.length}`;
+  return null;
+}
+
 export default function ProductDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -115,6 +135,16 @@ export default function ProductDetail() {
   const [historyItemId, setHistoryItemId] = useState<string | null>(null);
   const [showImageManager, setShowImageManager] = useState(false);
   const [concealSku, setConcealSku] = useState("");
+  const [concealPartProductId, setConcealPartProductId] = useState<string | null>(null);
+  const [concealCandidates, setConcealCandidates] = useState<Product[]>([]);
+  const [concealLookupLoading, setConcealLookupLoading] = useState(false);
+  const [concealLookupError, setConcealLookupError] = useState<string | null>(null);
+  const concealLookupRequestRef = useRef(0);
+  // SKU lookups are deliberately remembered for the lifetime of this screen.
+  // Operators commonly compare two or three products and then return to the
+  // original supplier SKU; that should feel instant and never lose the
+  // preview they already verified.
+  const concealLookupCacheRef = useRef(new Map<string, Product[]>());
   const [savingConcealPart, setSavingConcealPart] = useState(false);
 
   const shareProduct = async () => {
@@ -151,14 +181,84 @@ export default function ProductDetail() {
   // changing an existing relationship as quick as its initial configuration.
   useEffect(() => {
     setConcealSku(p?.concealed_part?.sku || "");
-  }, [p?.id, p?.concealed_part?.sku]);
+    setConcealPartProductId(p?.concealed_part?.product_id || null);
+    setConcealCandidates([]);
+    setConcealLookupError(null);
+  }, [p?.id, p?.concealed_part?.sku, p?.concealed_part?.product_id]);
+
+  useEffect(() => {
+    const sku = concealSku.trim();
+    const sourceProductId = p?.id;
+    if (!sourceProductId || !sku) {
+      setConcealCandidates([]);
+      setConcealLookupError(null);
+      setConcealLookupLoading(false);
+      return;
+    }
+
+    const cacheKey = sku.toLocaleLowerCase();
+    const cached = concealLookupCacheRef.current.get(cacheKey);
+    if (cached) {
+      setConcealCandidates(cached);
+      setConcealLookupError(cached.length ? null : "No active catalog item matches this SKU.");
+      setConcealLookupLoading(false);
+      return;
+    }
+
+    const requestId = ++concealLookupRequestRef.current;
+    setConcealLookupLoading(true);
+    setConcealLookupError(null);
+    const timer = setTimeout(() => {
+      // Use the ranked Catalog search rather than a direct database lookup.
+      // It is floor-scoped, returns hydrated media, and keeps this preview on
+      // the same SKU search contract staff already use elsewhere.
+      api.get<{ items: Product[] }>(`/catalog/search?group=false&limit=12&q=${encodeURIComponent(sku)}`)
+        .then((result) => {
+          if (requestId !== concealLookupRequestRef.current) return;
+          const matches = (result.items || []).filter((item) =>
+            item.id !== sourceProductId && item.sku.trim().toLocaleLowerCase() === cacheKey,
+          );
+          concealLookupCacheRef.current.set(cacheKey, matches);
+          setConcealCandidates(matches);
+          setConcealLookupError(matches.length ? null : "No active catalog item matches this SKU.");
+        })
+        .catch(() => {
+          if (requestId === concealLookupRequestRef.current) {
+            setConcealCandidates([]);
+            setConcealLookupError("Couldn’t look up this SKU. Check the connection and try again.");
+          }
+        })
+        .finally(() => {
+          if (requestId === concealLookupRequestRef.current) setConcealLookupLoading(false);
+        });
+    }, 220);
+    return () => clearTimeout(timer);
+  }, [concealSku, p?.id]);
+
+  useEffect(() => {
+    if (!p || concealPartProductId || !concealCandidates.length) return;
+    // Preserve the write endpoint's established default: prefer a same-brand
+    // match, otherwise use the one unambiguous SKU. Multiple cross-brand
+    // matches stay unselected so the preview asks the worker to choose.
+    const sameBrand = concealCandidates.filter((candidate) => candidate.brand_id === p.brand_id);
+    const defaultCandidate = sameBrand.length === 1
+      ? sameBrand[0]
+      : concealCandidates.length === 1 ? concealCandidates[0] : null;
+    if (defaultCandidate) setConcealPartProductId(defaultCandidate.id);
+  }, [concealCandidates, concealPartProductId, p]);
+
+  const onConcealSkuChange = (value: string) => {
+    setConcealSku(value);
+    const isSavedPart = value.trim().toLocaleLowerCase() === (p?.concealed_part?.sku || "").trim().toLocaleLowerCase();
+    setConcealPartProductId(isSavedPart ? p?.concealed_part?.product_id || null : null);
+  };
 
   const saveConcealPart = async () => {
     if (!p || !concealSku.trim()) return;
     setSavingConcealPart(true);
     try {
       const updated = await api.patch<Product>(`/products/${p.id}`, {
-        concealed_part: { sku: concealSku.trim(), qty: 1 },
+        concealed_part: { sku: concealSku.trim(), product_id: concealPartProductId, qty: 1 },
       });
       setP((current) => current ? { ...current, ...updated } : current);
     } catch (e: any) {
@@ -288,6 +388,11 @@ export default function ProductDetail() {
   const openQuotation = () => {
     if (quotationAction) router.push(quotationAction.route as any);
   };
+  const selectedConcealCandidate = concealCandidates.find((candidate) => candidate.id === concealPartProductId) || null;
+  const isSavedConcealPart = concealSku.trim().toLocaleLowerCase() === (p.concealed_part?.sku || "").trim().toLocaleLowerCase();
+  const canSaveConcealPart = !!concealSku.trim() && !concealLookupLoading && (
+    !!selectedConcealCandidate || (isSavedConcealPart && !!p.concealed_part?.product_id)
+  );
 
   const Gallery = (
     <View
@@ -491,23 +596,76 @@ export default function ProductDetail() {
             </View>
           </View>
           {canManageImages ? (
-            <View style={{ flexDirection: isPhone ? "column" : "row", gap: spacing.sm, alignItems: isPhone ? "stretch" : "center" }}>
-              <TextInput
-                value={concealSku}
-                onChangeText={setConcealSku}
-                placeholder="Conceal-part SKU"
-                autoCapitalize="characters"
-                accessibilityLabel="Conceal-part SKU"
-                testID="conceal-part-sku"
-                style={styles.concealSkuInput}
-              />
-              <Button
-                label={p.concealed_part ? "Update conceal part" : "Add conceal part"}
-                onPress={saveConcealPart}
-                loading={savingConcealPart}
-                disabled={!concealSku.trim() || savingConcealPart}
-                testID="save-conceal-part"
-              />
+            <View style={{ gap: spacing.sm }}>
+              <View style={{ flexDirection: isPhone ? "column" : "row", gap: spacing.sm, alignItems: isPhone ? "stretch" : "center" }}>
+                <TextInput
+                  value={concealSku}
+                  onChangeText={onConcealSkuChange}
+                  placeholder="Conceal-part SKU"
+                  autoCapitalize="characters"
+                  accessibilityLabel="Conceal-part SKU"
+                  testID="conceal-part-sku"
+                  style={styles.concealSkuInput}
+                />
+                <Button
+                  label={p.concealed_part ? "Update conceal part" : "Add conceal part"}
+                  onPress={saveConcealPart}
+                  loading={savingConcealPart}
+                  disabled={!canSaveConcealPart || savingConcealPart}
+                  testID="save-conceal-part"
+                />
+              </View>
+
+              {concealLookupLoading ? (
+                <View style={styles.concealLookupStatus} accessibilityLiveRegion="polite">
+                  <ActivityIndicator size="small" color={colors.brand} />
+                  <Text style={type.caption}>Looking up SKU…</Text>
+                </View>
+              ) : null}
+              {concealLookupError ? <Text style={styles.concealLookupError}>{concealLookupError}</Text> : null}
+              {concealCandidates.length ? (
+                <View style={{ gap: 6 }}>
+                  <Text style={type.caption}>
+                    {concealCandidates.length > 1 ? "Select the matching catalog item" : "Catalog preview"}
+                  </Text>
+                  {concealCandidates.map((candidate) => {
+                    const selected = candidate.id === concealPartProductId;
+                    const metadata = [candidate.series, candidate.finish || candidate.colour, candidate.size || candidate.dimensions]
+                      .filter(Boolean).join(" · ");
+                    const consoleInfo = associatedConsoleInfo(candidate);
+                    return (
+                      <Pressable
+                        key={candidate.id}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Use ${candidate.name}, SKU ${candidate.sku} as conceal part`}
+                        testID={`conceal-part-preview-${candidate.id}`}
+                        onPress={() => {
+                          setConcealSku(candidate.sku);
+                          setConcealPartProductId(candidate.id);
+                        }}
+                        style={({ pressed }) => [styles.concealPreview, selected && styles.concealPreviewSelected, pressed && { opacity: 0.78 }]}
+                      >
+                        <ProductImage
+                          source={candidate.hero_image_url || candidate.images}
+                          style={styles.concealPreviewImage}
+                          contentFit="contain"
+                          fallbackLabel={candidate.sku}
+                          disableSkeleton
+                          borderRadius={radius.sm}
+                        />
+                        <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                          <Text style={type.label} numberOfLines={2}>{candidate.name}</Text>
+                          <Text style={type.caption} numberOfLines={1}>{candidate.sku}{metadata ? ` · ${metadata}` : ""}</Text>
+                          {candidate.description ? <Text style={styles.concealPreviewDescription} numberOfLines={2}>{candidate.description}</Text> : null}
+                          {consoleInfo ? <Text style={styles.concealPreviewConsole} numberOfLines={2}>{consoleInfo}</Text> : null}
+                          <Text style={styles.concealPreviewPrice}>{money(candidate.price)}</Text>
+                        </View>
+                        {selected ? <Feather name="check-circle" size={18} color={colors.brand} /> : <Feather name="chevron-right" size={18} color={colors.onSurfaceMuted} />}
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : null}
             </View>
           ) : null}
         </Card>
@@ -746,6 +904,20 @@ const styles = StyleSheet.create({
     borderRadius: radius.md, paddingHorizontal: spacing.md, color: colors.onSurface,
     backgroundColor: colors.surface,
   },
+  concealLookupStatus: { flexDirection: "row", alignItems: "center", gap: 7, minHeight: 22 },
+  concealLookupError: { color: colors.error, fontSize: 12, lineHeight: 17 },
+  concealPreview: {
+    flexDirection: "row", alignItems: "center", gap: 10, padding: 9,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  concealPreviewSelected: { borderColor: colors.brand, backgroundColor: colors.brandTint },
+  concealPreviewImage: {
+    width: 54, aspectRatio: PRODUCT_IMAGE_ASPECT_RATIO, backgroundColor: colors.surfaceTertiary,
+  },
+  concealPreviewDescription: { color: colors.onSurfaceSecondary, fontSize: 11, lineHeight: 15 },
+  concealPreviewConsole: { color: colors.onSurfaceSecondary, fontSize: 11, fontWeight: "700", lineHeight: 15 },
+  concealPreviewPrice: { color: colors.brand, fontSize: 12, fontWeight: "800", marginTop: 1 },
 
   pageDots: {
     position: "absolute", left: 0, right: 0, bottom: 12,

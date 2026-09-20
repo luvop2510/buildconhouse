@@ -32,10 +32,6 @@ from services.domain_outbox import (
     enqueue_after_primary_commit,
 )
 from services.followup_engine import reconcile_followups
-from services.quotation_lifecycle import (
-    preflight_ordered_quotation_change,
-    reconcile_ordered_quotation,
-)
 from services.pricing import _resolve_line_rows, net_amount_list, normalize_tile_line_item, per_line_net_amounts, stamp_net_amounts
 from services.pagination import MAX_PAGE_LIMIT, normalize_pagination
 from services.pricing import recalc_quotation_totals as _recalc
@@ -437,7 +433,11 @@ async def create_quotation(
                          "source_purchased_at": line.godown_source_purchased_at,
                          "allocated_at": line.godown_allocated_at},
             )
-    await _track_product_usage(user.id, [it.product_id for it in items])
+    # Usage ranking is helpful to the picker, but it is not part of creating
+    # the commercial document.  In particular, a slow catalog analytics
+    # write must not make the customer-facing quotation request time out.
+    if items:
+        asyncio.create_task(_track_product_usage(user.id, [it.product_id for it in items]))
     await log_event(
         event_type="quotation.created",
         entity_type="quotation",
@@ -572,6 +572,7 @@ async def update_quotation(
         if body.phone_snapshot is None:
             update["phone_snapshot"] = new_customer.get("phone")
 
+    usage_product_ids: list[str] = []
     if body.items is not None:
         items_typed = [
             QuotationLineItem(**i.model_dump()) if not isinstance(i, dict) else QuotationLineItem(**i)
@@ -581,11 +582,19 @@ async def update_quotation(
         # quotation's established floor. Product ids are client-controlled,
         # so an unscoped lookup here would let a caller splice a foreign-floor
         # catalog item into an otherwise valid quotation.
-        for it in items_typed:
-            p = await db.products.find_one(
+        # This endpoint receives the complete builder state on autosave. A
+        # sequential product lookup made a moderately sized quotation take
+        # longer than the request proxy timeout. Resolve the independent
+        # catalog rows concurrently, while keeping the validation and item
+        # order exactly the same.
+        products = await asyncio.gather(*[
+            db.products.find_one(
                 floor_query(user, {"id": it.product_id, "floor_id": doc.get("floor_id")}),
                 {"_id": 0, "category_id": 1, "specs": 1},
             )
+            for it in items_typed
+        ])
+        for it, p in zip(items_typed, products, strict=True):
             if not p:
                 raise HTTPException(status_code=400, detail="One or more quotation products are unavailable on this quotation's floor.")
             if not it.category_id:
@@ -594,7 +603,7 @@ async def update_quotation(
         update["items"] = [i.model_dump() for i in _normalize_tile_items(
             [QuotationLineItem(**item) for item in canonical_items], doc.get("doc_type", "standard")
         )]
-        await _track_product_usage(user.id, [it.product_id for it in items_typed])
+        usage_product_ids = [it.product_id for it in items_typed]
 
     if body.rooms is not None:
         update["rooms"] = body.rooms
@@ -698,15 +707,6 @@ async def update_quotation(
     if not update:
         return Quotation(**doc)
 
-    pricing_changed = any(k in update for k in (
-        "items", "project_discount_pct", "category_discounts", "room_discounts", "transportation_fee",
-    ))
-    # Confirmed orders have projections in Purchasing and Payments. Validate
-    # before committing the quotation so an in-flight/received PO line cannot
-    # be silently made inconsistent with the commercial document.
-    if pricing_changed:
-        await preflight_ordered_quotation_change(doc, {**doc, **update})
-
     # revision snapshot (unless silent autosave)
     if not body.silent:
         revisions = doc.get("revisions", [])
@@ -725,8 +725,13 @@ async def update_quotation(
     await db.quotations.update_one({"id": quotation_id}, {"$set": update})
 
     fresh = await db.quotations.find_one({"id": quotation_id}, {"_id": 0})
-    if pricing_changed:
-        await reconcile_ordered_quotation(doc, fresh, user, reason=body.reason)
+    # Editing a quotation is intentionally document-local, including after
+    # its order has been placed. Purchase orders, payments and follow-ups are
+    # immutable operational records created at order confirmation; revising a
+    # quote must never rewrite those records or delay this request waiting on
+    # their reconciliation.
+    if usage_product_ids:
+        asyncio.create_task(_track_product_usage(user.id, usage_product_ids))
 
     # Activity logging (non-silent only — silent = autosave)
     if not body.silent:
@@ -797,10 +802,6 @@ async def update_quotation(
             await _complete_pre_confirmation_followups(quotation_id, doc.get("number"))
         # Event-triggered (not cron) reconciliation — a status change is
         # exactly the moment quotation-stage follow-ups should refresh/close.
-        asyncio.create_task(reconcile_followups())
-    elif pricing_changed:
-        # Payment follow-ups carry the outstanding amount. They need the same
-        # immediate refresh after an ordered quotation is revised.
         asyncio.create_task(reconcile_followups())
     return Quotation(**fresh)
 

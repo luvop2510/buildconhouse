@@ -540,20 +540,34 @@ async def update_product(
     # resolve to one active product on this floor: quotation lines need the
     # durable product id, not an unverified free-form SKU. A SKU may legally
     # exist under multiple brands, so prefer this product's brand and reject a
-    # remaining ambiguity instead of choosing an arbitrary rough-in.
+    # remaining ambiguity instead of choosing an arbitrary rough-in. The
+    # Catalog preview can additionally submit the chosen product_id, which is
+    # verified here rather than trusted; this lets staff deliberately choose
+    # the right item when a supplier reuses an SKU across brands.
     concealed = updates.get("concealed_part")
     if concealed and concealed.get("sku"):
         sku = str(concealed["sku"]).strip()
         if not sku:
             raise HTTPException(status_code=422, detail="Conceal-part SKU is required")
-        matches = await db.products.find(
-            {"floor_id": existing.get("floor_id"), "sku": sku, "active": {"$ne": False}}, {"_id": 0},
-        ).to_list(3)
-        same_brand = [row for row in matches if row.get("brand_id") == existing.get("brand_id")]
-        linked = same_brand[0] if len(same_brand) == 1 else matches[0] if len(matches) == 1 else None
-        if not linked:
-            detail = "Conceal-part SKU was not found in this floor's catalog" if not matches else "Conceal-part SKU is ambiguous; use a SKU unique to this floor or matching this product's brand"
-            raise HTTPException(status_code=404 if not matches else 409, detail=detail)
+        selected_product_id = str(concealed.get("product_id") or "").strip()
+        if selected_product_id:
+            linked = await db.products.find_one({
+                "id": selected_product_id,
+                "floor_id": existing.get("floor_id"),
+                "sku": sku,
+                "active": {"$ne": False},
+            }, {"_id": 0})
+            if not linked:
+                raise HTTPException(status_code=422, detail="Selected conceal part is no longer available for this SKU")
+        else:
+            matches = await db.products.find(
+                {"floor_id": existing.get("floor_id"), "sku": sku, "active": {"$ne": False}}, {"_id": 0},
+            ).to_list(3)
+            same_brand = [row for row in matches if row.get("brand_id") == existing.get("brand_id")]
+            linked = same_brand[0] if len(same_brand) == 1 else matches[0] if len(matches) == 1 else None
+            if not linked:
+                detail = "Conceal-part SKU was not found in this floor's catalog" if not matches else "Conceal-part SKU is ambiguous; select the matching catalog item"
+                raise HTTPException(status_code=404 if not matches else 409, detail=detail)
         if linked.get("id") == product_id:
             raise HTTPException(status_code=422, detail="A product cannot be its own conceal part")
         concealed = {**concealed, "sku": sku,

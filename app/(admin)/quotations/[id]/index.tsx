@@ -122,6 +122,9 @@ export default function QuotationDetail() {
       <PageHeader title={q.number} overline="Quotation" back={() => router.back()} actions={
         <View style={{ flexDirection: "row", gap: isPhone ? 4 : 8, alignItems: "center", flexShrink: 0 }}>
           {isPhone ? (
+            <IconButton icon="edit-3" tone="surface" onPress={() => router.push(`/(admin)/quotations/new?quotationId=${encodeURIComponent(id)}` as any)} testID="edit-quotation" accessibilityLabel="Edit quotation" />
+          ) : <Button label="Edit" icon="edit-3" variant="secondary" size="sm" onPress={() => router.push(`/(admin)/quotations/new?quotationId=${encodeURIComponent(id)}` as any)} testID="edit-quotation" />}
+          {isPhone ? (
             <IconButton icon="download" tone="surface" onPress={openPdf} testID="download-pdf" accessibilityLabel="Download PDF" />
           ) : <Button label="PDF" icon="download" variant="secondary" size="sm" onPress={openPdf} testID="download-pdf" />}
           {isPhone ? (

@@ -76,6 +76,8 @@ assert.match(tilesDocBuilderSource, /contentFit="contain"/);
 assert.doesNotMatch(tilesDocBuilderSource, /forceLandscape|tileNeedsLandscapeRotation|rotation=\{/);
 const lineRowSource = readFileSync(new URL("../src/components/quotation/canvas/LineRow.tsx", import.meta.url), "utf8");
 assert.doesNotMatch(lineRowSource, /<ProductImage source=\{l\.image\} mirror/);
+assert.match(lineRowSource, /line-move-up-\$\{line\.id\}/);
+assert.match(lineRowSource, /line-move-down-\$\{line\.id\}/);
 assert.match(tilesDocBuilderSource, /This product has no image\. Add a product image before including it in a tile selection\./);
 assert.match(tilesDocBuilderSource, /Every selected tile needs a product image before generating the PDF\./);
 // Phone and tablet both use MobileTilesEditor. Keep downloading explicit in
@@ -106,5 +108,8 @@ assert.match(concealedPartSource, /const productId = variant\?\.id \|\| product\
 assert.match(concealedPartSource, /image: variant\?\.image \|\| primaryImage/);
 assert.match(builderSource, /const selectedProductId = variant\?\.id \?\? target\.id/);
 assert.match(builderSource, /image: variant \? variant\.image \?\? null : productImageList\(target\)\[0\] \?\? null/);
+const assistantSource = readFileSync(new URL("../src/components/quotation/panes/AssistantPane.tsx", import.meta.url), "utf8");
+assert.match(assistantSource, /focusedLine\?\.image/);
+assert.match(assistantSource, /height: 148/);
 
-console.log("quotation media/layout helpers: 42 assertions passed");
+console.log("quotation media/layout helpers: 46 assertions passed");

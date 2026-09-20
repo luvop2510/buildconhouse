@@ -428,6 +428,7 @@ export default function FollowupsScreen() {
 
   const refreshStatsQuiet = useCallback(async () => {
     if (!selectedFloorId) return;
+    setInsightsLoading(true);
     try {
       const [s, m, i] = await Promise.all([
         api.get<Stats>("/followups/stats", { floorId: selectedFloorId }),
@@ -436,30 +437,24 @@ export default function FollowupsScreen() {
       ]);
       setStats(s); setMission(m); setInsights(i);
     } catch { /* best-effort */ }
+    finally { setInsightsLoading(false); }
   }, [selectedFloorId]);
 
   const bootstrap = useCallback(async () => {
     if (!selectedFloorId) return [];
     const floorId = selectedFloorId;
-    setInsightsLoading(true);
-      // Reconciliation remains available as an explicit administrative action.
-      // Do not fire a mutation during workspace bootstrap: navigation can abort
-      // an unawaited POST and create a visible browser network error.
+    // Keep entering the work queue cheap. The previous dashboard eagerly ran
+    // three full-dataset summary queries alongside the inbox query; on a busy
+    // floor those competing reads were the source of the client timeout. The
+    // optional summary is loaded only when an operator explicitly opens it.
     void Promise.allSettled([
-      api.get<Stats>("/followups/stats", { floorId: selectedFloorId }),
-      api.get<Mission>("/followups/mission", { floorId: selectedFloorId }),
-      api.get<Insights>("/followups/insights", { floorId: selectedFloorId }),
       api.get<Assignee[]>("/followups/config/assignees", { floorId: selectedFloorId }),
       api.get<CustomerLite[]>("/customers", { floorId: selectedFloorId }),
       api.get<SavedView[]>("/followups/saved-views", { floorId: selectedFloorId }),
-    ]).then(([statsResult, missionResult, insightsResult, assigneesResult, customersResult, savedViewsResult]) => {
+    ]).then(([assigneesResult, customersResult, savedViewsResult]) => {
       // A new floor request may already be in flight. Never let a late,
       // otherwise successful summary response repaint the newer workspace.
       if (bootstrappedFloorRef.current !== floorId) return;
-      if (statsResult.status === "fulfilled") setStats(statsResult.value);
-      if (missionResult.status === "fulfilled") setMission(missionResult.value);
-      setInsightsLoading(false);
-      if (insightsResult.status === "fulfilled") setInsights(insightsResult.value);
       if (assigneesResult.status === "fulfilled") setAssignees(assigneesResult.value);
       if (customersResult.status === "fulfilled") setCustomers(customersResult.value);
       if (savedViewsResult.status === "fulfilled") setSavedViews(savedViewsResult.value);
@@ -526,8 +521,8 @@ export default function FollowupsScreen() {
   // Won orders view without relying on a manual page reload.
   useFocusEffect(useCallback(() => {
     void latestLoadList.current();
-    void refreshStatsQuiet();
-  }, [refreshStatsQuiet]));
+    if (summaryOpen) void refreshStatsQuiet();
+  }, [refreshStatsQuiet, summaryOpen]));
 
   useEffect(() => () => detailAbortController.current?.abort(), []);
 
@@ -924,6 +919,13 @@ export default function FollowupsScreen() {
   }, [rawItems, selectedId, contact, completeFollowup, snoozeFollowup, clearSelectedDetail]);
 
   const activeTileStyle = { borderColor: colors.brand, backgroundColor: colors.brandTint };
+  const toggleSummary = useCallback(() => {
+    setSummaryOpen((open) => {
+      const next = !open;
+      if (next) void refreshStatsQuiet();
+      return next;
+    });
+  }, [refreshStatsQuiet]);
   const followupViewControl = (
     <SegmentedControl
       value={followupView}
@@ -957,7 +959,7 @@ export default function FollowupsScreen() {
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
         <Chip label={`Today${stats ? ` · ${stats.today_tasks}` : ""}`} active={kpiFilter === "today"} onPress={() => toggleKpi("today")} />
         <Chip label={`Overdue${stats ? ` · ${stats.overdue}` : ""}`} active={kpiFilter === "overdue"} onPress={() => toggleKpi("overdue")} />
-        <Chip label="Summary" active={summaryOpen} onPress={() => setSummaryOpen(value => !value)} />
+        <Chip label="Summary" active={summaryOpen} onPress={toggleSummary} />
       </View>
       {summaryOpen ? <View style={{ gap: spacing.md }}>
       <MissionHero
@@ -1577,7 +1579,6 @@ function FollowupCard({
   onAssign: (f: Followup, userId: string) => void; onNote: (f: Followup) => void; onMarkLost: (f: Followup) => void; onDismiss: (f: Followup) => void; canDelete: boolean; onDelete: (f: Followup) => void; onOpenDoc?: (f: Followup) => void;
 }) {
   const { isPhone } = useBp();
-  const [expanded, setExpanded] = useState(false);
   const level = f.manual_priority_override || f.priority_level;
   const tone = PRIORITY_TONE[level];
   const isResolved = f.status === "done" || f.status === "dismissed";
@@ -1618,16 +1619,6 @@ function FollowupCard({
               {[f.project_name, f.quotation_number || f.purchase_number].filter(Boolean).join(" · ") || "General follow-up"}
             </Text>
           </View>
-          <Pressable
-            onPress={(event) => { event.stopPropagation(); setExpanded((value) => !value); }}
-            style={({ pressed }) => ({ width: 36, height: 36, borderRadius: radius.sm, alignItems: "center", justifyContent: "center", backgroundColor: pressed ? colors.surfaceTertiary : "transparent" })}
-            accessibilityRole="button"
-            accessibilityLabel={expanded ? "Hide follow-up details" : "Show follow-up details"}
-            accessibilityState={{ expanded }}
-            hitSlop={4}
-          >
-            <Feather name={expanded ? "chevron-up" : "chevron-down"} size={17} color={colors.onSurfaceSecondary} />
-          </Pressable>
           {!isResolved ? <ScoreBadge score={f.priority_score} level={level} /> : (
             <Badge label={f.completed_outcome === "lost" ? "Lost" : isWonOrderFollowup(f) ? "Won order" : f.status === "dismissed" ? "Dismissed" : (f.completed_outcome || "Done")} tone={f.completed_outcome === "lost" || f.status === "dismissed" ? "neutral" : "success"} size="sm" />
           )}
@@ -1644,15 +1635,14 @@ function FollowupCard({
 
         {/* Reason + explainability */}
         <View style={{ gap: 2 }}>
-          <Text style={type.bodySm} numberOfLines={expanded ? 3 : 1}>{f.reason}</Text>
-          {expanded && f.reason_factors?.length ? (
+          <Text style={type.bodySm} numberOfLines={isPhone ? 1 : 2}>{f.reason}</Text>
+          {!isPhone && f.reason_factors?.length ? (
             <Text style={type.caption} numberOfLines={2}>{f.reason_factors.join(" · ")}</Text>
           ) : null}
         </View>
 
-        {/* The inbox stays scan-first by default. Supporting signals are one
-            deliberate tap away instead of making every record a tall form. */}
-        {expanded && f.tags?.length ? (
+        {/* Tags */}
+        {!isPhone && f.tags?.length ? (
           <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
             {f.tags.map((t, i) => <Badge key={`${t}-${i}`} label={t} tone="neutral" size="sm" />)}
           </View>
@@ -1674,9 +1664,9 @@ function FollowupCard({
         {/* Meta row */}
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm }}>
           <Text style={{ fontSize: 12, fontWeight: "600", color: overdueDue ? colors.error : colors.onSurfaceSecondary }}>{dueLabel(f)}</Text>
-          {expanded ? <Text style={type.caption} numberOfLines={1}>{timeAgo(f.last_contacted_at)}</Text> : null}
+          <Text style={type.caption} numberOfLines={1}>{timeAgo(f.last_contacted_at)}</Text>
         </View>
-        {expanded && f.assigned_to_name ? (
+        {f.assigned_to_name ? (
           <Text style={type.caption}>Assigned to {f.assigned_to_name}</Text>
         ) : null}
 
@@ -1729,6 +1719,15 @@ function FollowupCard({
               ]}
             />
             <IconMenuButton
+              icon="fast-forward" accessibilityLabel="Push follow-up date" testID={`push-${f.id}`}
+              items={[
+                { label: "Push +1 day", icon: "chevron-right", onPress: () => onPushDays(f, 1) },
+                { label: "Push +2 days", icon: "chevron-right", onPress: () => onPushDays(f, 2) },
+                { label: "Push +3 days", icon: "chevron-right", onPress: () => onPushDays(f, 3) },
+                { label: "Push +7 days", icon: "chevron-right", onPress: () => onPushDays(f, 7) },
+              ]}
+            />
+            <IconMenuButton
               icon="user-plus" accessibilityLabel="Assign" testID={`assign-${f.id}`}
               items={assignees.map((a) => ({ label: `Assign to ${a.full_name}`, icon: "user" as FeatherName, onPress: () => onAssign(f, a.id) }))}
             />
@@ -1737,9 +1736,6 @@ function FollowupCard({
               label="More" icon="more-horizontal" variant="secondary"
               items={[
                 { label: "Email", icon: "mail", onPress: () => onEmail(f, "email") },
-                { label: "Push +1 day", icon: "fast-forward", onPress: () => onPushDays(f, 1) },
-                { label: "Push +3 days", icon: "fast-forward", onPress: () => onPushDays(f, 3) },
-                { label: "Push +7 days", icon: "fast-forward", onPress: () => onPushDays(f, 7) },
                 { label: "Add note", icon: "edit-3", onPress: () => onNote(f) },
                 { label: "Mark as lost…", icon: "user-x", tone: "danger" as const, onPress: () => onMarkLost(f) },
                 { label: "Dismiss", icon: "x-circle", tone: "danger" as const, onPress: () => onDismiss(f) },

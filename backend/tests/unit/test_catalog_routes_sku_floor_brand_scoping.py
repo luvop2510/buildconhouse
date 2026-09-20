@@ -260,6 +260,48 @@ def test_update_product_resolves_a_conceal_sku_to_its_catalog_snapshot(monkeypat
     }
 
 
+def test_update_product_honours_a_preview_selected_conceal_part(monkeypatch):
+    """A shared supplier SKU can be made unambiguous by the Catalog preview.
+
+    The product id remains server-verified against the SKU and the active
+    floor, so this is a selection aid rather than a client-trusted write.
+    """
+    docs = [
+        {"id": "p1", "sku": "TRIM-1", "floor_id": "first-floor", "brand_id": "brand-A"},
+        {"id": "body-a", "sku": "BODY-SHARED", "name": "Body A", "price": 4000.0,
+         "mrp": 4500.0, "floor_id": "first-floor", "brand_id": "brand-A", "active": True},
+        {"id": "body-b", "sku": "BODY-SHARED", "name": "Body B", "price": 5100.0,
+         "mrp": 5600.0, "floor_id": "first-floor", "brand_id": "brand-B", "active": True},
+    ]
+    fake_db = _patch_setup(monkeypatch, docs)
+
+    asyncio.run(catalog_routes.update_product(
+        "p1", ProductPatch(concealed_part={"sku": "BODY-SHARED", "product_id": "body-b"}),
+        user=_user("purchase", "first-floor"),
+    ))
+
+    concealed = fake_db.products.updated[1]["$set"]["concealed_part"]
+    assert concealed["product_id"] == "body-b"
+    assert concealed["name"] == "Body B"
+    assert concealed["unit_price"] == 5100.0
+
+
+def test_update_product_rejects_a_preview_selection_that_no_longer_matches(monkeypatch):
+    docs = [
+        {"id": "p1", "sku": "TRIM-1", "floor_id": "first-floor", "brand_id": "brand-A"},
+        {"id": "body", "sku": "BODY-1", "floor_id": "first-floor", "brand_id": "brand-A", "active": True},
+    ]
+    _patch_setup(monkeypatch, docs)
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(catalog_routes.update_product(
+            "p1", ProductPatch(concealed_part={"sku": "BODY-OTHER", "product_id": "body"}),
+            user=_user("purchase", "first-floor"),
+        ))
+
+    assert exc.value.status_code == 422
+
+
 def test_update_product_rejects_missing_or_ambiguous_conceal_sku(monkeypatch):
     base = {"id": "p1", "sku": "TRIM-1", "floor_id": "first-floor", "brand_id": "brand-A"}
     fake_db = _patch_setup(monkeypatch, [base])

@@ -1078,7 +1078,11 @@ function DispatchWorkspace({ loading, rows, onHistory, onOpenPo }: { loading: bo
 // how many table columns fit. Measure this container's own width instead,
 // mirroring BuilderShell's container-width responsive strategy.
 const TABLE_FULL = 900;
-const TABLE_STACK = 620;
+// A stock row has four controls (history, move, transfer, remove). The old
+// 620px cutover kept the desktop table active after those controls had already
+// exhausted the available column width inside the admin shell. Switch to the
+// card row before that point so neither the controls nor product text clip.
+const TABLE_STACK = 720;
 
 function TrackerRows({ rows, isDesktop, selected, setSelected, onMove, onTransfer, onHistory, onOpenPo, onCancel }: {
   rows: Item[]; isDesktop: boolean; selected: Set<string>; setSelected: Dispatch<SetStateAction<Set<string>>>;
@@ -1112,7 +1116,7 @@ function ItemRow(props: {
   if (!desktopTable) {
     return (
       <View style={styles.mobileRow}>
-          <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
+          <View style={styles.mobileRowTop}>
           <BulkChk checked={checked} onToggle={onToggle} />
           <ProductImage
             source={row.image}
@@ -1131,11 +1135,11 @@ function ItemRow(props: {
           </View>
           <StageBadge stage={row.stage} tone={row.stage_tone} label={row.stage_label} />
         </View>
-        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 8, flexWrap: "wrap", gap: 6 }}>
-          <Text style={[type.caption, { flex: 1, minWidth: 0 }]} numberOfLines={2}>
+        <View style={styles.mobileRowFooter}>
+          <Text style={[type.caption, styles.mobileRowMeta]} numberOfLines={2}>
             Qty {row.qty} · {row.brand_name} · {row.age_days}d{row.supplier_name ? ` · via ${row.supplier_name}` : ""}
           </Text>
-          <View style={{ flexDirection: "row", gap: 6 }}>
+          <View style={styles.stockRowActions}>
             <Pressable accessibilityRole="button" accessibilityLabel={`View movement history for ${row.name}`} onPress={onHistory} style={styles.mobileTransferBtn} hitSlop={6}><Feather name="clock" size={14} color={colors.onSurface} /></Pressable>
             <Pressable accessibilityRole="button" accessibilityLabel={`Move ${row.name} to another stage`} onPress={onOpenMove} style={styles.mobileMoveBtn} hitSlop={6}><Text style={styles.moveBtnText}>Move</Text></Pressable>
             <Pressable accessibilityRole="button" accessibilityLabel={`Transfer ${row.name} to another customer`} onPress={onTransfer} style={styles.mobileTransferBtn} hitSlop={6}><Feather name="repeat" size={14} color={colors.onSurface} /></Pressable>
@@ -1188,15 +1192,10 @@ function ItemRow(props: {
       <Text style={{ width: 44, textAlign: "right", fontSize: 13, fontWeight: "600", color: colors.onSurface }}>
         {row.qty}
       </Text>
-      {/* Last move — dropped below TABLE_FULL to give Product/Customer room */}
-      {!compact ? (
-        <View style={{ flex: 1.1, minWidth: 0 }}>
-          <Text style={{ fontSize: 12, color: colors.onSurface }} numberOfLines={1}>{fmtDate(row.last_moved_at)}</Text>
-          <Text style={type.caption} numberOfLines={1}>{row.last_moved_by_name || "—"}</Text>
-        </View>
-      ) : null}
-      {/* Action */}
-      <View style={{ width: 118, alignItems: "flex-end", flexDirection: "row", justifyContent: "flex-end", gap: 6 }}>
+      {/* Movement date/actor intentionally live in History, not the stock list.
+          This keeps the workspace focused on product availability and avoids
+          exposing the fallback order creator as if they made the last move. */}
+      <View style={styles.stockRowActionsDesktop}>
         <Pressable accessibilityRole="button" accessibilityLabel={`View movement history for ${row.name}`} onPress={onHistory} testID={`row-history-${row.item_id}`} hitSlop={6} style={({ pressed }) => [styles.transferBtn, pressed && { opacity: 0.85 }]}>
           <Feather name="clock" size={12} color={colors.onSurface} />
         </Pressable>
@@ -1649,8 +1648,13 @@ const styles = StyleSheet.create({
   mobileRow: {
     padding: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
   },
-  mobileTransferBtn: { width: 44, height: 44, borderRadius: 8, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
-  mobileMoveBtn: { minWidth: 70, minHeight: 44, paddingHorizontal: 12, borderRadius: 8, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
+  mobileRowTop: { flexDirection: "row", alignItems: "flex-start", gap: 8, flexWrap: "wrap" },
+  mobileRowFooter: { marginTop: 10, gap: 8 },
+  mobileRowMeta: { minWidth: 0 },
+  stockRowActions: { flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-end", alignSelf: "flex-end", gap: 6 },
+  stockRowActionsDesktop: { width: 180, flexShrink: 0, alignItems: "flex-end", flexDirection: "row", justifyContent: "flex-end", gap: 6 },
+  mobileTransferBtn: { width: 44, height: 44, flexShrink: 0, borderRadius: 8, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
+  mobileMoveBtn: { minWidth: 70, minHeight: 44, flexShrink: 0, paddingHorizontal: 12, borderRadius: 8, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
   mobileThumb: {
     width: 68, aspectRatio: PRODUCT_IMAGE_ASPECT_RATIO, borderRadius: 8, backgroundColor: colors.surfaceTertiary,
     alignItems: "center", justifyContent: "center", overflow: "hidden",
