@@ -26,6 +26,14 @@ type Staff = {
   phone?: string | null; active: boolean; floor_ids?: string[]; access_profile?: AccessProfile | null;
 };
 type Floor = { id: string; name: string; slug: string };
+type GrantAction = "view" | "create" | "update" | "delete" | "export";
+type GrantResource = { key: string; label: string; actions: GrantAction[] };
+type Allocation = { id: string; resource: string; actions: GrantAction[]; floor_id: string | null };
+type AllocationDraft = Omit<Allocation, "id">;
+
+const ACTION_LABELS: Record<GrantAction, string> = {
+  view: "View", create: "Create", update: "Edit", delete: "Delete", export: "Export",
+};
 
 export default function Team() {
   const { isPhone } = useBp();
@@ -141,6 +149,7 @@ function AddStaffSheet({ visible, floors, onClose, onCreated }: { visible: boole
   const [role, setRole] = useState<string>("");
   const [floorIds, setFloorIds] = useState<string[]>([]);
   const [accessProfile, setAccessProfile] = useState<AccessProfile | null>(null);
+  const [allocations, setAllocations] = useState<Allocation[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -150,7 +159,7 @@ function AddStaffSheet({ visible, floors, onClose, onCreated }: { visible: boole
     if (!role && roles.length > 0) setRole(roles[roles.length - 1].role);
   }, [roles, role]);
 
-  const reset = () => { setFullName(""); setEmail(""); setPhone(""); setPassword(""); setFloorIds([]); setAccessProfile(null); setError(null); };
+  const reset = () => { setFullName(""); setEmail(""); setPhone(""); setPassword(""); setFloorIds([]); setAccessProfile(null); setAllocations([]); setError(null); };
 
   const save = async () => {
     if (!fullName.trim()) { setError("Full name is required"); return; }
@@ -162,7 +171,12 @@ function AddStaffSheet({ visible, floors, onClose, onCreated }: { visible: boole
     }
     setSaving(true);
     try {
-      await api.post("/team", { full_name: fullName.trim(), email: email.trim(), phone: phone.trim() || null, password, role, floor_ids: floorIds, access_profile: accessProfile });
+      const member = await api.post<Staff>("/team", { full_name: fullName.trim(), email: email.trim(), phone: phone.trim() || null, password, role, floor_ids: floorIds, access_profile: accessProfile });
+      // The member must exist before their exact page/action allocations can
+      // be persisted. Each grant is server-enforced and floor-scoped.
+      for (const allocation of allocations) {
+        await api.post(`/settings/access-grants/${member.id}`, allocation);
+      }
       toast.success("Team member added — they must set their own password on first sign-in");
       reset();
       onCreated();
@@ -199,6 +213,16 @@ function AddStaffSheet({ visible, floors, onClose, onCreated }: { visible: boole
             </View>
           </View>
           <FloorPicker floors={floors} value={floorIds} onChange={setFloorIds} hint={accessProfile ? "This profile is safely pinned to its required floor." : "Owners and managers automatically see every floor. Other accounts require at least one floor."} disabled={!!accessProfile} />
+          <CustomAllocationEditor
+            floors={floors}
+            allowedFloorIds={floorIds}
+            allocations={allocations}
+            onCreate={async (allocation) => {
+              setAccessProfile(null);
+              setAllocations((current) => [...current, { ...allocation, id: `draft-${allocation.floor_id}-${allocation.resource}` }]);
+            }}
+            onRemove={async (allocation) => setAllocations((current) => current.filter((item) => item.id !== allocation.id))}
+          />
           <Button testID="add-staff-save" label={saving ? "Adding…" : "Add staff member"} variant="primary" size="lg" icon="check" disabled={saving} onPress={save} fullWidth />
         </ScrollView>
       </KeyboardAvoidingView>
@@ -226,6 +250,7 @@ function EditStaffSheet({
   const [active, setActive] = useState(true);
   const [floorIds, setFloorIds] = useState<string[]>([]);
   const [accessProfile, setAccessProfile] = useState<AccessProfile | null>(null);
+  const [allocations, setAllocations] = useState<Allocation[] | null>(null);
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
 
@@ -237,6 +262,10 @@ function EditStaffSheet({
       setActive(staff.active);
       setFloorIds(staff.floor_ids || []);
       setAccessProfile(staff.access_profile || null);
+      setAllocations(null);
+      api.get<{ grants: Allocation[] }>(`/settings/access-grants/${staff.id}`)
+        .then((response) => setAllocations(response.grants))
+        .catch(() => setAllocations([]));
     }
   }, [staff]);
 
@@ -320,6 +349,30 @@ function EditStaffSheet({
 
           <FloorPicker floors={floors} value={floorIds} onChange={setFloorIds} hint={accessProfile ? "This profile is safely pinned to its required floor." : "Owners and managers automatically see every floor. Other accounts require at least one floor."} disabled={isSelf || !!accessProfile} />
 
+          {!isSelf ? <CustomAllocationEditor
+            floors={floors}
+            allowedFloorIds={floorIds}
+            allocations={allocations || []}
+            loading={allocations === null}
+            onCreate={async (allocation) => {
+              // Persist the selected floors and clear a preset before writing
+              // a grant. Otherwise the prior profile/floor claim could still
+              // reject a newly allocated page until someone separately saved
+              // the rest of this sheet.
+              await api.patch(`/team/${staff.id}`, { floor_ids: floorIds, access_profile: null });
+              setAccessProfile(null);
+              await api.post(`/settings/access-grants/${staff.id}`, allocation);
+              const response = await api.get<{ grants: Allocation[] }>(`/settings/access-grants/${staff.id}`);
+              setAllocations(response.grants);
+              toast.success("Custom allocation saved — their active sessions were signed out");
+            }}
+            onRemove={async (allocation) => {
+              await api.delete(`/settings/access-grants/${staff.id}/${allocation.id}`);
+              setAllocations((current) => (current || []).filter((item) => item.id !== allocation.id));
+              toast.success("Custom allocation removed");
+            }}
+          /> : null}
+
           <Button testID="edit-staff-save" label={saving ? "Saving…" : "Save changes"} variant="primary" icon="check" disabled={saving} onPress={save} fullWidth />
 
           <View style={styles.divider} />
@@ -375,6 +428,97 @@ function FloorPicker({ floors, value, onChange, hint, disabled }: { floors: Floo
   );
 }
 
+/**
+ * Builds a least-privilege allocation in the natural business order: floor,
+ * then page, then the exact permitted actions. The backend treats every saved
+ * item as an API allow-list, not merely a navigation preference.
+ */
+function CustomAllocationEditor({
+  floors, allowedFloorIds, allocations, loading, onCreate, onRemove,
+}: {
+  floors: Floor[];
+  allowedFloorIds: string[];
+  allocations: Allocation[];
+  loading?: boolean;
+  onCreate: (allocation: AllocationDraft) => Promise<void>;
+  onRemove: (allocation: Allocation) => Promise<void>;
+}) {
+  const [resources, setResources] = useState<GrantResource[]>([]);
+  const [selectedFloorId, setSelectedFloorId] = useState<string | null>(null);
+  const [selectedResource, setSelectedResource] = useState("");
+  const [actions, setActions] = useState<GrantAction[]>(["view"]);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api.get<{ resources: GrantResource[] }>("/settings/access-grants/resources")
+      .then((response) => {
+        setResources(response.resources);
+        setSelectedResource((current) => current || response.resources[0]?.key || "");
+      })
+      .catch(() => setResources([]));
+  }, []);
+  useEffect(() => {
+    if (selectedFloorId && allowedFloorIds.includes(selectedFloorId)) return;
+    setSelectedFloorId(allowedFloorIds[0] || null);
+  }, [allowedFloorIds, selectedFloorId]);
+
+  const availableFloors = floors.filter((floor) => allowedFloorIds.includes(floor.id));
+  const resource = resources.find((item) => item.key === selectedResource);
+  const toggleAction = (action: GrantAction) => setActions((current) => (
+    current.includes(action) ? current.filter((item) => item !== action) : [...current, action]
+  ));
+  const add = async () => {
+    if (!selectedFloorId) { toast.error("Select a floor before assigning pages"); return; }
+    if (!resource || actions.length === 0) { toast.error("Choose a page and at least one action"); return; }
+    setBusy(true);
+    try {
+      await onCreate({ resource: resource.key, floor_id: selectedFloorId, actions });
+      setActions(["view"]);
+    } catch (error: any) {
+      toast.error(error?.detail || "Could not save custom allocation");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return <View style={styles.allocationPanel}>
+    <View style={{ gap: 3 }}>
+      <Text style={type.label}>Custom allocation</Text>
+      <Text style={type.caption}>Choose a floor, then the page and exact actions this person can use. Custom allocation replaces broad role access for this person.</Text>
+    </View>
+    {availableFloors.length === 0 ? <Text style={type.caption}>First select one or more floors above to unlock page allocation.</Text> : <>
+      <View style={{ gap: 6 }}>
+        <Text style={type.label}>1. Floor</Text>
+        <View style={styles.chips}>{availableFloors.map((floor) => <Chip key={floor.id} label={floor.name} active={selectedFloorId === floor.id} onPress={() => setSelectedFloorId(floor.id)} />)}</View>
+      </View>
+      <View style={{ gap: 6 }}>
+        <Text style={type.label}>2. Page</Text>
+        <View style={styles.chips}>{resources.map((item) => <Chip key={item.key} label={item.label} active={selectedResource === item.key} onPress={() => { setSelectedResource(item.key); setActions(["view"]); }} />)}</View>
+      </View>
+      <View style={{ gap: 6 }}>
+        <Text style={type.label}>3. What can they do?</Text>
+        <View style={styles.chips}>{(resource?.actions || []).map((action) => <Chip key={action} label={ACTION_LABELS[action]} active={actions.includes(action)} onPress={() => toggleAction(action)} />)}</View>
+      </View>
+      <Button label="Add custom allocation" variant="secondary" icon="shield" fullWidth disabled={busy || !selectedFloorId || !resource || actions.length === 0} loading={busy} onPress={add} />
+    </>}
+    <View style={{ gap: spacing.xs }}>
+      <Text style={type.label}>Active allocations</Text>
+      {loading ? <Text style={type.caption}>Loading allocations…</Text> : allocations.length === 0 ? <Text style={type.caption}>No custom allocations yet. Standard role access remains in effect.</Text> : allocations.map((allocation) => (
+        <View key={allocation.id} style={styles.allocationRow}>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={type.bodyStrong}>{resources.find((item) => item.key === allocation.resource)?.label || allocation.resource}</Text>
+            <Text style={type.caption}>{floors.find((floor) => floor.id === allocation.floor_id)?.name || "All floors"} · {allocation.actions.map((action) => ACTION_LABELS[action]).join(" · ")}</Text>
+          </View>
+          <Pressable accessibilityRole="button" accessibilityLabel="Remove custom allocation" disabled={busy} onPress={async () => {
+            setBusy(true);
+            try { await onRemove(allocation); } catch (error: any) { toast.error(error?.detail || "Could not remove custom allocation"); } finally { setBusy(false); }
+          }} style={styles.removeAllocation}><Feather name="trash-2" size={16} color={colors.error} /></Pressable>
+        </View>
+      ))}
+    </View>
+  </View>;
+}
+
 const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.surfaceSecondary,
@@ -398,4 +542,22 @@ const styles = StyleSheet.create({
     backgroundColor: colors.divider,
     marginVertical: spacing.xs,
   },
+  allocationPanel: {
+    gap: spacing.md,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    padding: spacing.md,
+  },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  allocationRow: {
+    flexDirection: "row",
+    gap: spacing.md,
+    alignItems: "center",
+    padding: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+  },
+  removeAllocation: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
 });

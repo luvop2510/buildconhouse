@@ -13,7 +13,8 @@ import { PROFILE_MODULES } from "@/src/access-profiles";
 const MODULE_GRANT_RESOURCE: Record<string, string> = {
   dashboard: "dashboard", quotations: "quotations", catalog: "catalog", customers: "customers",
   purchases: "purchases", payments: "payments", followups: "followups", notifications: "notifications",
-  orders: "orders", tiles: "tiles", walkins: "walkins", reports: "reports",
+  "godown-stock": "godown_stock",
+  orders: "orders", tiles: "quotations", walkins: "walkins", reports: "reports",
 };
 
 export type ModuleInfo = { key: string; label: string };

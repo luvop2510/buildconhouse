@@ -54,7 +54,7 @@ export function staffLandingPath(profile?: AccessProfile | null, grants?: Person
       payments: "/(admin)/payments", quotations: "/(admin)/quotations", catalog: "/(admin)/catalog",
       customers: "/(admin)/customers", purchases: "/(admin)/purchases", followups: "/(admin)/followups",
       orders: "/(admin)/tiles/orders", walkins: "/(admin)/walkins", dashboard: "/(admin)/dashboard",
-      notifications: "/(admin)/notifications", tiles: "/(admin)/tiles",
+      notifications: "/(admin)/notifications", tiles: "/(admin)/tiles", godown_stock: "/(admin)/godown-stock",
     };
     if (routeByResource[permitted.resource]) return routeByResource[permitted.resource];
   }

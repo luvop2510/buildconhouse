@@ -312,10 +312,10 @@ export default function PlaceOrderReview() {
         </View>
       </ScrollView>
       </KeyboardAvoidingView>
-      <Sheet open={godownPromptOpen} onClose={() => setGodownPromptOpen(false)} title="Products already in GoDant" width={520}
-        footer={<View style={{ flexDirection: "row", gap: spacing.sm }}><Button label="Place fresh order" variant="ghost" onPress={() => setGodownPromptOpen(false)} disabled={godownBusy} fullWidth /><Button label="Use GoDant stock" icon="archive" onPress={useGodownStock} loading={godownBusy} fullWidth /></View>}
+      <Sheet open={godownPromptOpen} onClose={() => setGodownPromptOpen(false)} title="Products already in Godown" width={520}
+        footer={<View style={{ flexDirection: "row", gap: spacing.sm }}><Button label="Place fresh order" variant="ghost" onPress={() => setGodownPromptOpen(false)} disabled={godownBusy} fullWidth /><Button label="Use Godown stock" icon="archive" onPress={useGodownStock} loading={godownBusy} fullWidth /></View>}
       >
-        <Text style={type.body}>These products are already in our GoDant. Should we replace the products with our GoDant stock items and not produce them, or place an order for the products we already have in GoDant?</Text>
+        <Text style={type.body}>These products are already in our Godown. Should we replace the products with our Godown stock items and not produce them, or place an order for the products we already have in Godown?</Text>
         <View style={{ marginTop: spacing.md, gap: 8 }}>
           {(preview.godown_matches || []).map((match) => <View key={match.line_id} style={styles.godownMatch}><Feather name="archive" size={15} color={colors.brand} /><View style={{ flex: 1 }}><Text style={{ fontWeight: "700", color: colors.onSurface }}>{match.name}</Text><Text style={type.caption}>{match.sku} · {match.replaceable_qty} of {match.requested_qty} available · from {match.source_customers.join(", ")}</Text></View></View>)}
         </View>

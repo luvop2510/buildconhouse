@@ -510,6 +510,7 @@ function CustomAccessRouteGate({ children }: { children: React.ReactNode }) {
     : segments.includes("catalog") ? "catalog"
     : segments.includes("customers") ? "customers"
     : segments.includes("purchases") || segments.includes("purchase-orders") ? "purchases"
+    : segments.includes("godown-stock") ? "godown-stock"
     : segments.includes("followups") ? "followups"
     : segments.includes("notifications") ? "notifications"
     : segments.includes("walkins") ? "walkins"

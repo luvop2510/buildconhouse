@@ -5,10 +5,13 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from starlette.requests import Request
 from starlette.responses import Response
+from fastapi import HTTPException
 
+from auth import require_min_role, require_roles
+from models import UserPublic
 from services.access_grants import (
     action_for_http_method, build_grant, grant_allows, grants_allow,
-    is_expired, normalized_actions,
+    is_expired, normalized_actions, resource_for_api_path,
 )
 
 
@@ -55,6 +58,8 @@ def test_method_mapping_and_action_validation_are_explicit():
     assert normalized_actions(["view", "view", "export"]) == ["view", "export"]
     assert normalized_actions([]) is None
     assert normalized_actions(["view", "anything"]) is None
+    assert resource_for_api_path("/api/godown-stock") == "godown_stock"
+    assert resource_for_api_path("/api/godown-stock/intakes") == "godown_stock"
 
 
 def test_build_grant_has_audit_fields_and_rejects_non_future_expiry():
@@ -103,3 +108,20 @@ async def test_custom_access_middleware_allows_only_granted_floor_and_action(mon
     assert (await server.enforce_access_profile(request("GET", "ground-floor"), next_handler)).status_code == 204
     assert (await server.enforce_access_profile(request("PATCH", "ground-floor"), next_handler)).status_code == 403
     assert (await server.enforce_access_profile(request("GET", "first-floor"), next_handler)).status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_custom_access_can_use_only_the_action_already_allowed_by_middleware():
+    """A precise custom allocation may override the broad base-role gate.
+
+    The preceding middleware test proves that the request is still limited to
+    its explicitly granted resource/action/floor before either dependency is
+    reached.
+    """
+    worker = UserPublic(email="worker@example.com", full_name="Worker", role="worker", custom_access=True)
+    assert await require_min_role("admin")(worker) is worker
+    assert await require_roles("owner", "admin")(worker) is worker
+
+    standard_worker = UserPublic(email="standard@example.com", full_name="Standard Worker", role="worker")
+    with pytest.raises(HTTPException):
+        await require_min_role("admin")(standard_worker)

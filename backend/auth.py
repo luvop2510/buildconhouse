@@ -338,6 +338,15 @@ ROLE_CAPABILITIES: dict[str, list[str]] = {
 
 def require_roles(*allowed: Role):
     async def _dep(user: UserPublic = Depends(get_current_user)) -> UserPublic:
+        # Custom allocations are an explicit, server-enforced allow-list in
+        # ``server.enforce_access_profile``. Once that middleware has allowed
+        # a request's resource, HTTP action, and floor, do not reintroduce a
+        # broad role gate here: doing so would make an apparently granted
+        # action unusable for a worker whose base role is intentionally low.
+        # Sessions are revoked whenever a grant changes, so this cannot leave
+        # an old custom allocation active.
+        if user.custom_access:
+            return user
         if user.role not in allowed:
             raise HTTPException(status_code=403, detail=f"Role '{user.role}' not allowed")
         return user
@@ -348,6 +357,11 @@ def require_min_role(min_role: Role):
     threshold = ROLE_HIERARCHY[min_role]
 
     async def _dep(user: UserPublic = Depends(get_current_user)) -> UserPublic:
+        # See ``require_roles`` above. The custom-access middleware remains
+        # the security boundary for custom allocations; role checks continue
+        # to protect every standard (non-custom) account.
+        if user.custom_access:
+            return user
         if ROLE_HIERARCHY.get(user.role, 0) < threshold:
             raise HTTPException(status_code=403, detail="Insufficient role")
         return user
