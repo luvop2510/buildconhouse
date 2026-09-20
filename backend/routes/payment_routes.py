@@ -342,7 +342,10 @@ async def update_ground_floor_manual_extra(
     # Payments can include all floors the accounts user is authorized to see.
     scope = _payment_scope_query(user, {"id": order_id})
     quotation = await db.quotations.find_one(
-        scope, {"_id": 0, "id": 1, "floor_id": 1, "grand_total": 1, "status": 1},
+        scope, {
+            "_id": 0, "id": 1, "floor_id": 1, "grand_total": 1, "status": 1,
+            "number": 1, "customer_id": 1, "customer_name": 1,
+        },
     )
     if not quotation:
         raise HTTPException(status_code=404, detail="Order not found")
@@ -363,11 +366,50 @@ async def update_ground_floor_manual_extra(
         "recorded_by": user.id,
         "recorded_by_name": user.full_name,
     }
-    await db.quotations.update_one(
-        {"id": order_id, "floor_id": quotation.get("floor_id")},
-        {"$push": {"payment_extra_history": entry}, "$inc": {"payment_extra_amount": extra},
-         "$set": {"payment_extra_name": name, "updated_at": now}},
-    )
+    # An added cost must be visible in the same permanent ledger as payments.
+    # It is a debit (not a collection), so it has a distinct status and is
+    # intentionally excluded by all ``status: completed`` cash aggregates.
+    ledger_entry = Payment(
+        id=entry["id"], created_at=now, updated_at=now, paid_at=now,
+        floor_id=quotation.get("floor_id"), quotation_id=order_id,
+        quotation_number=quotation.get("number"), customer_id=quotation.get("customer_id"),
+        customer_name=quotation.get("customer_name"), amount=extra,
+        mode="adjustment", status="adjustment", entry_type="additional_cost",
+        additional_cost_id=entry["id"], cost_name=name, note=entry["note"],
+        recorded_by=user.id, recorded_by_name=user.full_name,
+    ).model_dump()
+
+    async def _write_extra(*, session=None):
+        await db.quotations.update_one(
+            {"id": order_id, "floor_id": quotation.get("floor_id")},
+            {"$push": {"payment_extra_history": entry}, "$inc": {"payment_extra_amount": extra},
+             "$set": {"payment_extra_name": name, "updated_at": now}},
+            session=session,
+        )
+        await db.payments.insert_one(ledger_entry, session=session)
+
+    # Keep the quotation audit trail and ledger debit atomic on Atlas.  Local
+    # standalone MongoDB cannot run transactions, so it uses the same safe
+    # fallback used by payment recording elsewhere in this module.
+    try:
+        try:
+            async with await client.start_session() as session:
+                async with session.start_transaction():
+                    await _write_extra(session=session)
+        except Exception as exc:
+            txn_unsupported = any(marker in str(exc) for marker in (
+                "Transaction numbers", "replica set", "IllegalOperation",
+            ))
+            if not txn_unsupported:
+                raise
+            if settings.environment == "production":
+                raise HTTPException(status_code=503, detail="Additional cost recording requires a MongoDB replica set in production")
+            await _write_extra(session=None)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("additional cost ledger write failed for %s", order_id)
+        raise HTTPException(status_code=503, detail="Additional cost could not be committed safely") from exc
     try:
         await cache.bump("payments")
     except Exception:
@@ -377,6 +419,7 @@ async def update_ground_floor_manual_extra(
         "manual_extra_amount": round(_collection_total(quotation) + extra - float(quotation.get("grand_total") or 0), 2),
         "manual_extra_name": name,
         "additional_cost": entry,
+        "ledger_entry": ledger_entry,
         "grand_total": round(_collection_total(quotation) + extra, 2),
     }
 
@@ -591,13 +634,10 @@ async def completed_payment_list(
 # ---------------------------------------------------------------------------
 # Payment History — permanent reconciliation ledger.
 #
-# Zero new storage: every row here IS an existing `payments` document
-# (created exclusively by create_payment() above, the single write path for
-# this collection). This is a read/derive layer only — it joins in the
-# quotation's invoice number + grand_total and the customer's name, then
-# computes a running outstanding-before/after balance per quotation from the
-# SAME payment rows (not a second ledger), so it always reconciles exactly
-# with what /payments and /payments/orders already show.
+# Every row here is an immutable ``payments`` ledger document.  Cash payments
+# are credits and added costs are explicit receivable debits; keeping both in
+# the same indexed collection lets the ledger paginate and export correctly
+# without a separate, eventually-consistent history read model.
 #
 # Floor scope follows the Sales Data precedent (routes/sales_data_routes.py
 # `_resolve_floor_ids`), NOT the single-active-floor `floor_query()` used
@@ -646,7 +686,10 @@ def _history_filter(
         query["created_at"] = date_range
     if q:
         rx = {"$regex": q.strip(), "$options": "i"}
-        or_clause = [{"customer_name": rx}, {"quotation_number": rx}, {"reference": rx}, {"note": rx}]
+        or_clause = [
+            {"customer_name": rx}, {"quotation_number": rx}, {"reference": rx},
+            {"note": rx}, {"cost_name": rx},
+        ]
         query["$and"] = query.get("$and", []) + [{"$or": or_clause}]
     return query
 
@@ -664,16 +707,22 @@ async def _enrich_history_rows(docs: list[dict]) -> list[dict]:
     before/after — all derived, nothing stored twice."""
     qids = list({d["quotation_id"] for d in docs if d.get("quotation_id")})
     quotations = await db.quotations.find(
-        {"id": {"$in": qids}}, {"_id": 0, "id": 1, "number": 1, "doc_number": 1, "grand_total": 1, "payment_extra_amount": 1},
+        {"id": {"$in": qids}}, {
+            "_id": 0, "id": 1, "number": 1, "doc_number": 1, "grand_total": 1,
+            "payment_extra_amount": 1, "payment_extra_history": 1,
+        },
     ).to_list(len(qids) + 5) if qids else []
     quot_by_id = {qq["id"]: qq for qq in quotations}
 
-    # Running balance needs EVERY completed payment on each touched
-    # quotation (not just the ones matching this page's filters), otherwise
-    # a search/date filter would silently produce a wrong running balance.
+    # Running balance needs every cash credit and added-cost debit on each
+    # touched quotation (not just the rows matching this page's filters),
+    # otherwise a search/date filter would silently produce a wrong balance.
     all_pmts = await db.payments.find(
-        {"quotation_id": {"$in": qids}, "status": "completed"},
-        {"_id": 0, "id": 1, "quotation_id": 1, "amount": 1, "paid_at": 1, "created_at": 1},
+        {"quotation_id": {"$in": qids}, "status": {"$in": ["completed", "adjustment"]}},
+        {
+            "_id": 0, "id": 1, "quotation_id": 1, "amount": 1, "paid_at": 1,
+            "created_at": 1, "entry_type": 1, "additional_cost_id": 1,
+        },
     ).to_list(5000) if qids else []
     by_qid: dict[str, list[dict]] = {}
     for p in all_pmts:
@@ -681,12 +730,27 @@ async def _enrich_history_rows(docs: list[dict]) -> list[dict]:
     outstanding_by_payment_id: dict[str, tuple[float, float]] = {}
     for qid, pmts in by_qid.items():
         pmts.sort(key=lambda p: (p.get("paid_at") or p.get("created_at") or "", p.get("id") or ""))
-        grand = _collection_total(quot_by_id.get(qid) or {})
-        running = 0.0
+        quotation = quot_by_id.get(qid) or {}
+        # Costs recorded before this ledger feature have no matching debit
+        # document. Treat only those historical costs as opening receivables;
+        # new costs are added exactly once by their ledger event below.
+        history = quotation.get("payment_extra_history")
+        ledger_cost_ids = {p.get("additional_cost_id") for p in pmts if p.get("entry_type") == "additional_cost"}
+        if isinstance(history, list):
+            legacy_extras = sum(
+                float(cost.get("amount") or 0) for cost in history
+                if cost.get("id") not in ledger_cost_ids
+            )
+        else:
+            legacy_extras = float(quotation.get("payment_extra_amount") or 0)
+        running = float(quotation.get("grand_total") or 0) + legacy_extras
         for p in pmts:
-            before = round(grand - running, 2)
-            running += float(p.get("amount") or 0)
-            after = round(grand - running, 2)
+            before = round(running, 2)
+            if p.get("entry_type") == "additional_cost":
+                running += float(p.get("amount") or 0)
+            else:
+                running -= float(p.get("amount") or 0)
+            after = round(running, 2)
             outstanding_by_payment_id[p["id"]] = (before, after)
 
     floor_names = await _floor_names()
@@ -700,6 +764,8 @@ async def _enrich_history_rows(docs: list[dict]) -> list[dict]:
         label = d.get("label")
         if d.get("entry_type") == "godown_stock_credit":
             label = "Moved to go-down stock"
+        elif d.get("entry_type") == "additional_cost":
+            label = f"Additional cost · {d.get('cost_name') or 'Unnamed cost'}"
         out.append({
             **d,
             "label": label,

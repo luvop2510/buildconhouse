@@ -114,7 +114,11 @@ DETAIL_BOTTOM_SAFETY_MM = 8.0
 # Six items keeps a clear, consistent product frame and at least 7.5 pt
 # wrapped copy. Seven, seventeen and eighteen products intentionally exercise the
 # continuation-page path instead of shrinking into an unreadable grid.
-MAX_ITEM_ROWS_PER_PAGE = 9
+# Ten compact rows fit inside the measured printable frame while preserving
+# the minimum type size below.  Keeping this as a capacity rather than a
+# visual guess prevents needlessly spilling an otherwise ordinary room onto a
+# continuation page.
+MAX_ITEM_ROWS_PER_PAGE = 10
 PRODUCT_IMAGE_ASPECT_RATIO = 16 / 10
 PRODUCT_IMAGE_FRAME_WIDTH_MM = 23.0
 PRODUCT_IMAGE_FRAME_HEIGHT_MM = 18.0
@@ -174,9 +178,13 @@ def format_indian_money(value: object) -> str:
 
 
 def _money(value: object) -> str:
-    """PDF-safe Indian rupee amount for ReportLab Paragraph markup."""
-    symbol = f"<font name='{RUPEE_FONT}'>₹</font>" if RUPEE_FONT else "Rs."
-    return f"{symbol} {format_indian_money(value)}"
+    """PDF-safe Indian currency amount for ReportLab Paragraph markup.
+
+    A number of deployed ReportLab/font combinations substitute the rupee
+    glyph with an oversized filled dot.  ``Rs.`` is compact, unambiguous, and
+    uses the document's base font, so it renders identically on every worker.
+    """
+    return f"Rs. {format_indian_money(value)}"
 
 
 def _escape(value: object) -> str:
@@ -604,10 +612,10 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
     # ---- Dynamic Quotation Summary: exactly one row per room, no filler ----
     n_rooms = len(room_order)
     if has_discount:
-        summary_header = ["SL. NO.", "BATHROOM / AREA", "MRP (₹)", "OFFER TOTAL (₹)"]
+        summary_header = ["SL. NO.", "BATHROOM / AREA", "MRP (Rs.)", "OFFER TOTAL (Rs.)"]
         summary_col_widths = [_pw(v) * mm for v in (20, 120, 63, 64)]
     else:
-        summary_header = ["SL. NO.", "BATHROOM / AREA", "TOTAL (₹)"]
+        summary_header = ["SL. NO.", "BATHROOM / AREA", "TOTAL (Rs.)"]
         summary_col_widths = [_pw(v) * mm for v in (20, 135, 112)]
     summary_rows: list[list[object]] = [[Paragraph(h, styles["tableHead"]) for h in summary_header]]
     for index, room in enumerate(room_order):
@@ -703,9 +711,9 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
         item_header = [
             Paragraph("SR.<br/>NO.", styles["tableHead"]), Paragraph("PRODUCT IMAGE", styles["tableHead"]),
             Paragraph("ARTICLE<br/>NO.", styles["tableHead"]), Paragraph("DESCRIPTION", styles["tableHead"]),
-            Paragraph("MRP<br/>(₹)", styles["tableHead"]), Paragraph("QTY", styles["tableHead"]),
-            Paragraph("MRP<br/>TOTAL (₹)", styles["tableHead"]),
-            Paragraph("OFFER<br/>RATE", styles["tableHead"]), Paragraph("OFFER<br/>TOTAL (₹)", styles["tableHead"]),
+            Paragraph("MRP<br/>(Rs.)", styles["tableHead"]), Paragraph("QTY", styles["tableHead"]),
+            Paragraph("MRP<br/>TOTAL (Rs.)", styles["tableHead"]),
+            Paragraph("OFFER<br/>RATE", styles["tableHead"]), Paragraph("OFFER<br/>TOTAL (Rs.)", styles["tableHead"]),
         ]
         # The 43 mm article column holds a full 7.5 pt SKU on one line; its
         # three millimetres come from the still-generous description column.
@@ -714,8 +722,8 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
         item_header = [
             Paragraph("SR.<br/>NO.", styles["tableHead"]), Paragraph("PRODUCT IMAGE", styles["tableHead"]),
             Paragraph("ARTICLE<br/>NO.", styles["tableHead"]), Paragraph("DESCRIPTION", styles["tableHead"]),
-            Paragraph("RATE<br/>(₹)", styles["tableHead"]), Paragraph("QTY", styles["tableHead"]),
-            Paragraph("TOTAL<br/>(₹)", styles["tableHead"]),
+            Paragraph("RATE<br/>(Rs.)", styles["tableHead"]), Paragraph("QTY", styles["tableHead"]),
+            Paragraph("TOTAL<br/>(Rs.)", styles["tableHead"]),
         ]
         item_widths = [_pw(v) * mm for v in (12, 25, 43, 107, 28, 12, 40)]
     max_rows = _max_item_rows_per_page()
@@ -738,8 +746,12 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
             # intentionally independent of the number of products in a room:
             # a single selected faucet must not look unlike the same faucet in
             # a six-product bathroom.
-            image_width_mm = PRODUCT_IMAGE_FRAME_WIDTH_MM
-            image_height_mm = PRODUCT_IMAGE_FRAME_HEIGHT_MM
+            # Table columns use the portrait scale; the image frame must use
+            # the same coordinate system.  Previously it remained 23×18 mm
+            # inside a 17.5 mm-wide column, physically painting across the
+            # article number and pricing cells.
+            image_width_mm = _pw(PRODUCT_IMAGE_FRAME_WIDTH_MM)
+            image_height_mm = _pw(PRODUCT_IMAGE_FRAME_HEIGHT_MM)
             rows: list[list[object]] = [item_header]
             for offset_in_block, item in enumerate(block):
                 sr_no = sr_offset + offset_in_block + 1

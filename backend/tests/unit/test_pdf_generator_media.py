@@ -57,13 +57,13 @@ def test_sanitary_pdf_filename_uses_the_customer_name():
     assert pdf_generator.quotation_pdf_filename('  Myruba / Sons  ') == "Myruba Sons.pdf"
 
 
-def test_pdf_money_uses_the_rupee_sign_and_indian_digit_grouping():
+def test_pdf_money_uses_a_portable_indian_currency_prefix_and_digit_grouping():
     assert pdf_generator.format_indian_money(12345678.9) == "1,23,45,678.90"
     assert pdf_generator.format_indian_money(-1000) == "-1,000.00"
-    assert "₹" in pdf_generator._money(12345678.9)
+    assert pdf_generator._money(12345678.9) == "Rs. 1,23,45,678.90"
 
 
-def test_standard_pdf_prints_indian_rupees_for_large_amounts():
+def test_standard_pdf_prints_indian_currency_for_large_amounts():
     pdf = pdf_generator.build_quotation_pdf(
         {
             "customer_name": "Indian Currency Contract",
@@ -74,7 +74,7 @@ def test_standard_pdf_prints_indian_rupees_for_large_amounts():
         {"name": "Indian Currency Contract"},
     )
     text = " ".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf)).pages)
-    assert "₹ 1,23,45,678.90" in text
+    assert "Rs. 1,23,45,678.90" in text
 
 
 def test_standard_item_tables_scale_into_portrait_printable_width():
@@ -123,7 +123,7 @@ def test_three_products_in_one_room_share_a_single_detail_page():
     assert len(pages) == 2  # cover + one room-detail page
     detail_text = pages[1].extract_text() or ""
     assert all(item["sku"] in detail_text for item in items)
-    assert pdf_generator._max_item_rows_per_page() == 9
+    assert pdf_generator._max_item_rows_per_page() == 10
 
 
 def test_sanitary_pdf_uses_persisted_tile_order_within_each_area():
@@ -157,15 +157,14 @@ def test_sanitary_detail_pages_continue_after_six_products_and_start_each_area_f
     pages = PdfReader(BytesIO(pdf_generator.build_quotation_pdf(quotation, {"name": "Seventeen Per Page"}))).pages
     page_text = [page.extract_text() or "" for page in pages]
 
-    assert len(pages) == 5  # portrait cover + three Bathroom One pages + Bathroom Two
-    assert all(item["sku"] in page_text[1] for item in primary_area[:9])
-    assert all(item["sku"] not in page_text[1] for item in primary_area[9:])
-    assert all(item["sku"] in page_text[2] for item in primary_area[9:18])
+    assert len(pages) == 4  # portrait cover + two Bathroom One pages + Bathroom Two
+    assert all(item["sku"] in page_text[1] for item in primary_area[:10])
+    assert all(item["sku"] not in page_text[1] for item in primary_area[10:])
+    assert all(item["sku"] in page_text[2] for item in primary_area[10:20])
     assert "AREA 1: Bathroom One" in page_text[2]
     assert "(continued)" in page_text[2]
-    assert all(item["sku"] in page_text[3] for item in primary_area[18:])
-    assert "AREA 2: Bathroom Two" in page_text[4]
-    assert "BATH-2-01" in page_text[4]
+    assert "AREA 2: Bathroom Two" in page_text[3]
+    assert "BATH-2-01" in page_text[3]
 
 
 def test_seventeen_long_products_continue_without_clipping_or_blank_pages():
@@ -453,7 +452,7 @@ def test_all_quotation_pdfs_use_forced_landscape_image_frames(monkeypatch):
     assert pdf_tiles.build_tiles_quotation_pdf(tiles, {"name": "PDF Test"}).startswith(b"%PDF-")
     assert len(rendered_sizes) == 3
     assert requested_boxes == [
-        (pdf_generator.PRODUCT_IMAGE_FRAME_WIDTH_MM, pdf_generator.PRODUCT_IMAGE_FRAME_HEIGHT_MM),
+        (pdf_generator._pw(pdf_generator.PRODUCT_IMAGE_FRAME_WIDTH_MM), pdf_generator._pw(pdf_generator.PRODUCT_IMAGE_FRAME_HEIGHT_MM)),
         (pdf_tiles.SELECTION_PRODUCT_IMAGE_WIDTH_MM, pdf_tiles.SELECTION_PRODUCT_IMAGE_HEIGHT_MM),
         (pdf_tiles.QUOTATION_PRODUCT_IMAGE_WIDTH_MM, pdf_tiles.QUOTATION_PRODUCT_IMAGE_HEIGHT_MM),
     ]
@@ -490,10 +489,18 @@ def test_sanitary_pages_use_one_large_contained_image_frame(monkeypatch, count):
     assert len(images) == count
     for image, kwargs in images:
         assert kwargs["cover"] is False
-        assert kwargs["width_mm"] == pdf_generator.PRODUCT_IMAGE_FRAME_WIDTH_MM
-        assert kwargs["height_mm"] == pdf_generator.PRODUCT_IMAGE_FRAME_HEIGHT_MM
-        assert image.drawWidth == pdf_generator.PRODUCT_IMAGE_FRAME_WIDTH_MM * pdf_generator.mm
-        assert image.drawHeight == pdf_generator.PRODUCT_IMAGE_FRAME_HEIGHT_MM * pdf_generator.mm
+        assert kwargs["width_mm"] == pdf_generator._pw(pdf_generator.PRODUCT_IMAGE_FRAME_WIDTH_MM)
+        assert kwargs["height_mm"] == pdf_generator._pw(pdf_generator.PRODUCT_IMAGE_FRAME_HEIGHT_MM)
+        assert image.drawWidth == pdf_generator._pw(pdf_generator.PRODUCT_IMAGE_FRAME_WIDTH_MM) * pdf_generator.mm
+        assert image.drawHeight == pdf_generator._pw(pdf_generator.PRODUCT_IMAGE_FRAME_HEIGHT_MM) * pdf_generator.mm
+
+
+def test_portrait_product_frame_fits_inside_its_scaled_table_column():
+    """A product image must never intrude into article/rate cells."""
+    image_frame = pdf_generator._pw(pdf_generator.PRODUCT_IMAGE_FRAME_WIDTH_MM)
+    image_column = pdf_generator._pw(25)
+    # More than one millimetre remains for ReportLab's 1 pt side paddings.
+    assert image_frame + 1 <= image_column
 
 
 def test_every_quotation_pdf_is_portrait_a4(monkeypatch):

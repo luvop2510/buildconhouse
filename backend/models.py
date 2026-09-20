@@ -1110,8 +1110,11 @@ class Payment(TimestampedModel):
     customer_id: str
     customer_name: Optional[str] = None
     amount: float = Field(gt=0)
-    mode: Literal["cash", "upi", "bank", "card", "cheque"] = "upi"
-    status: Literal["pending", "completed", "failed"] = "completed"
+    # ``adjustment`` is an accounts-receivable debit, not money received.
+    # It deliberately has its own mode/status so every collection aggregate
+    # that selects ``completed`` payments continues to represent cash only.
+    mode: Literal["cash", "upi", "bank", "card", "cheque", "adjustment"] = "upi"
+    status: Literal["pending", "completed", "failed", "adjustment"] = "completed"
     reference: Optional[str] = None            # cheque no. / UTR / short note
     note: Optional[str] = None                 # freeform note (optional)
     # A positive ledger credit can settle an order without money changing
@@ -1119,8 +1122,13 @@ class Payment(TimestampedModel):
     # It remains a Payment row so balances and the immutable payment history
     # use one reconciliation ledger, while the type keeps it distinguishable
     # from an actual customer collection.
-    entry_type: Literal["payment", "godown_stock_credit"] = "payment"
+    entry_type: Literal["payment", "godown_stock_credit", "additional_cost"] = "payment"
     godown_stock_id: Optional[str] = None
+    # Links the immutable ledger debit to its append-only quotation audit
+    # record.  This makes retries/support investigations unambiguous without
+    # changing the original quotation price.
+    additional_cost_id: Optional[str] = None
+    cost_name: Optional[str] = None
     paid_at: Optional[str] = None              # ISO date of receipt (defaults to created_at)
     recorded_by: Optional[str] = None          # user id
     recorded_by_name: Optional[str] = None
