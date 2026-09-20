@@ -20,6 +20,8 @@ export type ProductVariant = {
   concealed_part?: ConcealedPart | null;
 };
 
+export type ConcealedPart = { sku: string; product_id?: string | null; name?: string | null; unit_price?: number | null; mrp?: number | null; image?: string | null; qty?: number };
+
 export type Product = {
   id: string; name: string; sku: string; price: number; mrp: number;
   finish?: string | null; finish_code?: string | null; variant_label?: string | null;

@@ -30,7 +30,7 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: "draft",            label: "Draft" },
   { key: "pending_approval", label: "Pending" },
   { key: "sent",             label: "Sent" },
-  { key: "won",              label: "Won" },
+  { key: "won",              label: "Complete" },
   { key: "lost",             label: "Lost" },
 ];
 
@@ -83,6 +83,9 @@ export default function QuotationsList() {
   }, [items]);
 
   const filtered = useMemo(() => (items || []).filter((it) => {
+    // Completed/won quotations belong in their own archive-style view so
+    // the default pipeline stays focused on work that still needs action.
+    if (statusFilter === "all" && it.status === "won") return false;
     if (statusFilter !== "all" && it.status !== statusFilter) return false;
     if (q && !`${it.number} ${it.customer_name}`.toLowerCase().includes(q.toLowerCase())) return false;
     return true;

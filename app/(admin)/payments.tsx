@@ -17,7 +17,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { api } from "@/src/api/client";
 import { useBp } from "@/src/design/responsive";
-import { TILES_FLOOR_ID } from "@/src/constants/floors";
 import { toast } from "@/src/components/Toast";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import {
@@ -69,6 +68,7 @@ type OrderDetail = {
   project_name?: string | null;
   floor_id: string; mrp: number; discounted_rate: number;
   quotation_total: number; manual_extra_amount: number; manual_extra_name?: string | null; grand_total: number;
+  additional_costs?: { id: string; name: string; amount: number; note?: string | null; created_at: string; recorded_by_name?: string | null }[];
   paid: number; outstanding: number; percent_collected: number;
   payment_status: "paid" | "partial" | "due";
   payments: PaymentEntry[];
@@ -183,7 +183,6 @@ export default function PaymentsScreen() {
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<OrderDetail | null>(null);
-  const isGroundFloorOrder = detail?.floor_id === TILES_FLOOR_ID;
   const [loadingList, setLoadingList] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -356,7 +355,7 @@ export default function PaymentsScreen() {
     }
     setSavingManualExtra(true);
     try {
-      const updated = await api.patch<{ quotation_total: number; manual_extra_amount: number; manual_extra_name?: string | null; grand_total: number }>(
+      const updated = await api.patch<{ quotation_total: number; manual_extra_amount: number; manual_extra_name?: string | null; additional_cost?: NonNullable<OrderDetail["additional_costs"]>[number]; grand_total: number }>(
         `/payments/orders/${detail.id}/manual-extra`, { amount: parsed || 0, name: name || null },
       );
       setDetail((current) => current ? {
@@ -365,6 +364,7 @@ export default function PaymentsScreen() {
         outstanding: Math.max(0, updated.grand_total - current.paid),
         percent_collected: updated.grand_total > 0
           ? Math.min(100, Math.round(current.paid / updated.grand_total * 100)) : 0,
+        additional_costs: updated.additional_cost ? [...(current.additional_costs || []), updated.additional_cost] : current.additional_costs,
         payment_status: current.paid >= updated.grand_total && updated.grand_total > 0
           ? "paid" : current.paid > 0 ? "partial" : "due",
       } : current);
@@ -693,18 +693,8 @@ export default function PaymentsScreen() {
 
                 {/* Metrics */}
                 <View style={{ flexDirection: "row", gap: spacing.md, flexWrap: "wrap" }}>
-                  {isGroundFloorOrder ? (
-                    <StatTile dense label="Quotation price" value={money(detail.quotation_total)}
-                      sub="Original quotation" tone="brand" />
-                  ) : (
-                    <>
-                      <StatTile dense label="MRP" value={money(detail.mrp)} sub="Catalog price" tone="neutral" />
-                      <StatTile dense label="Discounted" value={money(detail.discounted_rate)}
-                        sub={detail.mrp > detail.discounted_rate ? `Save ${moneyShort(detail.mrp - detail.discounted_rate)}` : "No discount"}
-                        tone="brand" />
-                    </>
-                  )}
-                  {isGroundFloorOrder && detail.manual_extra_amount > 0 ? (
+                  <StatTile dense label="Quotation price" value={money(detail.quotation_total)} sub="Original quotation" tone="brand" />
+                  {detail.manual_extra_amount > 0 ? (
                     <StatTile dense label="Additional cost" value={money(detail.manual_extra_amount)}
                       sub={detail.manual_extra_name || "Additional cost"} tone="neutral" />
                   ) : null}
@@ -714,6 +704,12 @@ export default function PaymentsScreen() {
                     sub={detail.outstanding > 0 ? "Remaining balance" : "Fully paid"}
                     tone={detail.outstanding > 0 ? "danger" : "success"} />
                 </View>
+
+                {(detail.additional_costs || []).length ? (
+                  <Panel title="Additional-cost history" overline="AUDIT LOG" actions={<Badge label={`${detail.additional_costs!.length} entries`} tone="neutral" size="sm" />}>
+                    <View>{detail.additional_costs!.map((cost, i) => <ActivityRow key={cost.id} icon="plus-circle" iconTone="neutral" title={`${cost.name} · ${money(cost.amount)}`} subtitle={cost.note || `Recorded by ${cost.recorded_by_name || "—"}`} timestamp={dateShort(cost.created_at)} isLast={i === detail.additional_costs!.length - 1} />)}</View>
+                  </Panel>
+                ) : null}
 
                 {/* Progress */}
                 <Panel padding={spacing.lg}>

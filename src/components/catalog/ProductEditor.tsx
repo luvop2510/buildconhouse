@@ -25,6 +25,7 @@ type EditableProduct = {
   id: string; name: string; sku: string; brand_id: string; category_id: string;
   family_name: string; finish: string; colour: string;
   description: string; mrp: number; price: number;
+  concealed_sku: string; concealed_name: string; concealed_price: number;
 };
 
 const TABS = ["General", "Pricing", "Media"] as const;
@@ -72,6 +73,7 @@ export function ProductEditor({
           brand_id: prod.brand_id || "", category_id: prod.category_id || "",
           family_name: prod.family_name || "", finish: prod.finish || "", colour: prod.colour || "",
           description: prod.description || "", mrp: Number(prod.mrp) || 0, price: Number(prod.price) || 0,
+          concealed_sku: prod.concealed_part?.sku || prod.concealed_sku || "", concealed_name: prod.concealed_part?.name || "", concealed_price: Number(prod.concealed_part?.unit_price) || 0,
         };
         setOriginal(editable);
         setForm(editable);
@@ -92,6 +94,12 @@ export function ProductEditor({
       if (k === "id") return;
       if (form[k] !== original[k]) out[k] = form[k];
     });
+    if ("concealed_sku" in out || "concealed_name" in out || "concealed_price" in out) {
+      const sku = form.concealed_sku.trim();
+      out.concealed_part = sku ? { sku, name: form.concealed_name.trim() || null, unit_price: form.concealed_price || null, qty: 1 } : null;
+      out.must_buy_concealed = Boolean(sku); out.concealed_sku = sku || null;
+      delete out.concealed_name; delete out.concealed_price;
+    }
     return out;
   }, [original, form]);
   const hasChanges = Object.keys(dirty).length > 0;
@@ -193,6 +201,13 @@ export function ProductEditor({
                 label="Description" value={form.description} onChangeText={(v) => set("description", v)}
                 multiline numberOfLines={4} style={{ minHeight: 90, textAlignVertical: "top" }} testID="edit-description"
               />
+              <View style={{ gap: spacing.sm, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary }}>
+                <Text style={type.label}>Default concealed part</Text>
+                <Text style={type.caption}>Automatically added in new quotations. Replace or clear it here at any time.</Text>
+                <TextField label="Concealed SKU" value={form.concealed_sku} onChangeText={(v) => set("concealed_sku", v)} testID="edit-concealed-sku" autoCapitalize="characters" />
+                <TextField label="Part name (optional)" value={form.concealed_name} onChangeText={(v) => set("concealed_name", v)} testID="edit-concealed-name" />
+                <TextField label="Unit price (optional)" value={form.concealed_price ? String(form.concealed_price) : ""} keyboardType="decimal-pad" onChangeText={(v) => set("concealed_price", Number(v.replace(/[^0-9.]/g, "")) || 0)} testID="edit-concealed-price" />
+              </View>
             </>
           ) : (
             <>

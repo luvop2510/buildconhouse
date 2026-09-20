@@ -34,7 +34,7 @@ import { productImageList } from "../helpers/media";
 import { addProductAndConcealedPart } from "../helpers/concealedParts";
 import {
   Brand, BuilderRow, BuilderState, Category, Customer, DEFAULT_ROOMS, DescSheetState, DiscountSheetState,
-  INITIAL_BUILDER_STATE, Line, PickerTab, Product, ProductVariant,
+  INITIAL_BUILDER_STATE, Line, PickerTab, Product, ProductVariant, ConcealedPart,
   RecentQuotation, Referrer, RoomDiscount, RoomSheetState, SaveState, SwapSheetState,
 } from "../helpers/types";
 
