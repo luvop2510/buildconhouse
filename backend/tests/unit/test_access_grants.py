@@ -11,7 +11,7 @@ from auth import require_min_role, require_roles
 from models import UserPublic
 from services.access_grants import (
     action_for_http_method, build_grant, grant_allows, grants_allow,
-    is_expired, normalized_actions, resource_for_api_path,
+    is_expired, normalized_actions, resource_candidates_for_api_path, resource_for_api_path,
 )
 
 
@@ -60,6 +60,8 @@ def test_method_mapping_and_action_validation_are_explicit():
     assert normalized_actions(["view", "anything"]) is None
     assert resource_for_api_path("/api/godown-stock") == "godown_stock"
     assert resource_for_api_path("/api/godown-stock/intakes") == "godown_stock"
+    assert resource_candidates_for_api_path("/api/quotations", "ground-floor") == ("quotations", "tiles")
+    assert resource_candidates_for_api_path("/api/quotations", "first-floor") == ("quotations",)
 
 
 def test_build_grant_has_audit_fields_and_rejects_non_future_expiry():

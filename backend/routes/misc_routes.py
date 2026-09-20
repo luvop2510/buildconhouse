@@ -14,7 +14,7 @@ from auth import accessible_floor_ids, floor_for_write, floor_query, floor_scope
 from db import db
 from models import FloorCreatePayload, FloorPublic, TeamCreatePayload, TeamUpdatePayload, UserPublic, now_iso
 from services.activity_log import log_event
-from services.access_grants import grants_allow, grants_for_user, resource_for_api_path
+from services.access_grants import grants_allow, grants_for_user, resource_candidates_for_api_path
 from services.download_tokens import create_download_token
 from services.invite_service import generate_temp_password, get_invite_service, temp_password_expiry_iso
 from settings import settings
@@ -97,10 +97,11 @@ async def mint_download_token(body: DownloadTokenRequest, user: UserPublic = Dep
         raise HTTPException(status_code=403, detail="This account is not permitted to download this file")
     floor_id = floor_for_write(user)
     if user.custom_access:
-        resource = resource_for_api_path(target_path)
         grants = await grants_for_user(db, user.id)
-        if not resource or not grants_allow(
-            grants, user_id=user.id, resource=resource, action="export", floor_id=floor_id,
+        resources = resource_candidates_for_api_path(target_path, floor_id)
+        if not resources or not any(
+            grants_allow(grants, user_id=user.id, resource=resource, action="export", floor_id=floor_id)
+            for resource in resources
         ):
             raise HTTPException(status_code=403, detail="This account is not permitted to download this file")
     token = await create_download_token(user.id, user.session_id, floor_id, body.target)

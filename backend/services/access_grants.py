@@ -18,6 +18,7 @@ from uuid import uuid4
 RESOURCE_REGISTRY: dict[str, dict[str, str]] = {
     "dashboard": {"label": "Dashboard"},
     "quotations": {"label": "Quotations"},
+    "tiles": {"label": "Tile quotations"},
     "catalog": {"label": "Catalog"},
     "customers": {"label": "Customers"},
     "purchases": {"label": "Purchases"},
@@ -74,6 +75,21 @@ def resource_for_api_path(path: str) -> str | None:
         if path == prefix or path.startswith(f"{prefix}/"):
             return resource
     return None
+
+
+def resource_candidates_for_api_path(path: str, floor_id: str | None) -> tuple[str, ...]:
+    """Return every deliberately compatible resource for one API request.
+
+    Tile quotations share the quotations API, but a Ground Floor tile grant
+    must never authorize a Sanitary quotation. The explicit floor header is
+    what makes this compatibility mapping safe.
+    """
+    resource = resource_for_api_path(path)
+    if resource is None:
+        return ()
+    if resource == "quotations" and floor_id == "ground-floor":
+        return ("quotations", "tiles")
+    return (resource,)
 
 
 def utc_now_iso() -> str:

@@ -45,7 +45,7 @@ from access_profiles import profile_allows_request  # noqa: E402
 from auth import decode_token  # noqa: E402
 from services.access_grants import (  # noqa: E402
     CUSTOM_ACCESS_COMMON_PATHS, action_for_http_method, ensure_access_grant_indexes,
-    grants_allow, grants_for_user, resource_for_api_path,
+    grants_allow, grants_for_user, resource_candidates_for_api_path,
 )
 from routes.referrer_routes import router as referrer_router  # noqa: E402
 from routes.sales_data_routes import router as sales_data_router  # noqa: E402
@@ -239,15 +239,15 @@ async def enforce_access_profile(request: Request, call_next):
     if token.get("kind") == "staff" and token.get("custom_access"):
         path = request.url.path
         if path not in CUSTOM_ACCESS_COMMON_PATHS:
-            resource = resource_for_api_path(path)
             action = action_for_http_method(request.method)
             # A floor-specific grant needs a concrete explicit workspace. A
             # missing header cannot be guessed from an old device selection.
             floor_id = request.headers.get("x-floor-id")
             grants = await grants_for_user(db, token.get("sub", ""))
-            if not resource or not action or not grants_allow(
-                grants, user_id=token.get("sub", ""), resource=resource,
-                action=action, floor_id=floor_id,
+            resources = resource_candidates_for_api_path(path, floor_id)
+            if not resources or not action or not any(
+                grants_allow(grants, user_id=token.get("sub", ""), resource=resource, action=action, floor_id=floor_id)
+                for resource in resources
             ):
                 return JSONResponse(status_code=403, content={"detail": "This account is not permitted to use this function"})
     return await call_next(request)
