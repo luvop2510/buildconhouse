@@ -893,8 +893,17 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
 
   const flatRows: BuilderRow[] = useMemo(() => {
     const rows: BuilderRow[] = [];
+    // Build the room groups once. Besides avoiding an O(rooms × lines) series
+    // of filters while a quotation grows, this keeps legacy/orphaned lines
+    // visible rather than silently dropping them from the right panel.
+    const linesByRoom = new Map<string, Line[]>(s.rooms.map((room) => [room, []] as [string, Line[]]));
+    const fallbackRoom = s.rooms[0];
+    for (const line of s.lines) {
+      const targetRoom = linesByRoom.has(line.room || "") ? line.room! : fallbackRoom;
+      if (targetRoom) linesByRoom.get(targetRoom)?.push(line);
+    }
     for (const room of s.rooms) {
-      const roomLines = s.lines.filter((l) => l.room === room);
+      const roomLines = linesByRoom.get(room) || [];
       const roomSub = roomLines.reduce((sum, l) => {
         return sum + (lineBreakdownById[l.id]?.net || 0);
       }, 0);

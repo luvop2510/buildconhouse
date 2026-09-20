@@ -52,9 +52,10 @@ type OrderRow = {
 };
 
 type PaymentEntry = {
-  id: string; amount: number; mode: PayMode;
+  id: string; amount: number; mode: PayMode | "adjustment";
   reference?: string | null; note?: string | null; label?: string | null;
-  entry_type?: "payment" | "godown_stock_credit";
+  entry_type?: "payment" | "godown_stock_credit" | "additional_cost";
+  cost_name?: string | null;
   paid_at?: string | null; created_at?: string; recorded_by_name?: string | null;
 };
 
@@ -95,6 +96,12 @@ function money(n: number): string {
 }
 
 function paymentHistoryCopy(payment: PaymentEntry): { title: string; subtitle: string } {
+  if (payment.entry_type === "additional_cost") {
+    return {
+      title: `Additional cost · ${payment.cost_name || "Unnamed cost"} · ${money(payment.amount)}`,
+      subtitle: `${payment.note ? `${payment.note} · ` : ""}Recorded by ${payment.recorded_by_name || "—"}`,
+    };
+  }
   if (payment.entry_type === "godown_stock_credit") {
     return {
       title: `Moved to go-down stock · ${money(payment.amount)}`,
@@ -123,7 +130,7 @@ function paymentHistoryCopy(payment: PaymentEntry): { title: string; subtitle: s
     };
   }
   return {
-    title: `${MODE_LABELS[payment.mode]} · ${money(payment.amount)}`,
+  title: `${MODE_LABELS[payment.mode as PayMode]} · ${money(payment.amount)}`,
     subtitle: (payment.reference || payment.note)
       ? `${payment.reference || ""}${payment.reference && payment.note ? " · " : ""}${payment.note || ""}`
       : `Recorded by ${payment.recorded_by_name || "—"}`,
@@ -134,6 +141,14 @@ function dateShort(iso?: string | null): string {
   if (!iso) return "—";
   try {
     return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  } catch { return "—"; }
+}
+function dateTime(iso?: string | null): string {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleString("en-IN", {
+      day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit",
+    });
   } catch { return "—"; }
 }
 function todayIso(): string { return new Date().toISOString().slice(0, 10); }
@@ -152,11 +167,12 @@ type TabKey = "collections" | "history";
 type HistoryRow = {
   id: string; customer_id: string; customer_name?: string | null;
   invoice_number?: string | null; business_unit?: string | null; floor_id: string;
-  paid_at?: string | null; amount: number; mode: PayMode;
+  paid_at?: string | null; amount: number; mode: PayMode | "adjustment";
   reference?: string | null; recorded_by_name?: string | null;
   outstanding_before: number | null; outstanding_after: number | null;
-  status: "pending" | "completed" | "failed"; note?: string | null; label?: string | null;
-  entry_type?: "payment" | "godown_stock_credit";
+  status: "pending" | "completed" | "failed" | "adjustment"; note?: string | null; label?: string | null;
+  entry_type?: "payment" | "godown_stock_credit" | "additional_cost";
+  cost_name?: string | null;
   quotation_id?: string | null;
 };
 
@@ -355,7 +371,7 @@ export default function PaymentsScreen() {
     }
     setSavingManualExtra(true);
     try {
-      const updated = await api.patch<{ quotation_total: number; manual_extra_amount: number; manual_extra_name?: string | null; additional_cost?: NonNullable<OrderDetail["additional_costs"]>[number]; grand_total: number }>(
+      const updated = await api.patch<{ quotation_total: number; manual_extra_amount: number; manual_extra_name?: string | null; additional_cost?: NonNullable<OrderDetail["additional_costs"]>[number]; ledger_entry?: PaymentEntry; grand_total: number }>(
         `/payments/orders/${detail.id}/manual-extra`, { amount: parsed || 0, name: name || null },
       );
       setDetail((current) => current ? {
@@ -365,6 +381,7 @@ export default function PaymentsScreen() {
         percent_collected: updated.grand_total > 0
           ? Math.min(100, Math.round(current.paid / updated.grand_total * 100)) : 0,
         additional_costs: updated.additional_cost ? [...(current.additional_costs || []), updated.additional_cost] : current.additional_costs,
+        payments: updated.ledger_entry ? [updated.ledger_entry, ...current.payments] : current.payments,
         payment_status: current.paid >= updated.grand_total && updated.grand_total > 0
           ? "paid" : current.paid > 0 ? "partial" : "due",
       } : current);
@@ -749,7 +766,7 @@ export default function PaymentsScreen() {
                         const copy = paymentHistoryCopy(p);
                         return <ActivityRow
                           key={p.id}
-                          icon={MODE_ICONS[p.mode]}
+                          icon={p.entry_type === "additional_cost" ? "plus-circle" : MODE_ICONS[p.mode as PayMode]}
                           iconTone="success"
                           title={copy.title}
                           subtitle={copy.subtitle}
@@ -812,6 +829,7 @@ export default function PaymentsScreen() {
 // ─────────────────────────────────────────────────────────────────────────────
 const PAY_MODE_FILTERS: { value: string; label: string }[] = [
   { value: "all", label: "All methods" },
+  { value: "adjustment", label: "Additional costs" },
   { value: "cash", label: "Cash" },
   { value: "upi", label: "UPI" },
   { value: "bank", label: "Bank Transfer" },
@@ -888,8 +906,8 @@ function PaymentHistoryTab(props: {
       render: (r) => <CellText muted>{r.business_unit || r.floor_id}</CellText>,
     },
     {
-      key: "date", label: "PAYMENT DATE", width: 120,
-      render: (r) => <CellText>{dateShort(r.paid_at)}</CellText>,
+      key: "date", label: "DATE & TIME", width: 178,
+      render: (r) => <CellText>{dateTime(r.paid_at)}</CellText>,
     },
     {
       key: "amount", label: "AMOUNT", width: 130, align: "right",
@@ -897,7 +915,7 @@ function PaymentHistoryTab(props: {
     },
     {
       key: "method", label: "METHOD", width: 128,
-      render: (r) => <CellText muted>{r.entry_type === "godown_stock_credit" ? "Stock credit" : MODE_LABELS[r.mode] || r.mode}</CellText>,
+      render: (r) => <CellText muted>{r.entry_type === "additional_cost" ? "Additional cost" : r.entry_type === "godown_stock_credit" ? "Stock credit" : MODE_LABELS[r.mode as PayMode] || r.mode}</CellText>,
     },
     {
       key: "reference", label: "REFERENCE", width: 140,

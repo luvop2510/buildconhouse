@@ -41,7 +41,13 @@ export function QuotationPane({ compact = false, browseInline = false }: { compa
               </Pressable>
             ))}
           </View>
-        ) : <Text style={styles.sectionLabel}>Quotation · {b.s.lines.length} items</Text>}
+        ) : (
+          <View style={styles.workspaceSummary}>
+            <View style={styles.summaryDot} />
+            <Text style={styles.sectionLabel}>Quotation</Text>
+            <Text style={styles.sectionMeta}>{b.s.lines.length} {b.s.lines.length === 1 ? "product" : "products"} · {b.s.rooms.length} {b.s.rooms.length === 1 ? "room" : "rooms"}</Text>
+          </View>
+        )}
       </View>
 
       {browseInline ? <View style={[styles.body, !browsing && { display: "none" }]}><ProductExplorer showCompactFilters /></View> : null}
@@ -168,7 +174,10 @@ const styles = StyleSheet.create({
   tab: { flex: 1, minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 8 },
   tabSelected: { backgroundColor: colors.surface },
   tabLabel: { fontSize: 13, fontWeight: "700", color: colors.onSurfaceSecondary },
+  workspaceSummary: { flexDirection: "row", alignItems: "center", gap: 6, minHeight: 20 },
+  summaryDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: ds.brass },
   sectionLabel: { fontSize: 13, fontWeight: "700", color: colors.onSurface },
+  sectionMeta: { fontSize: 11, fontWeight: "600", color: colors.onSurfaceMuted },
   customerLine: { fontSize: 12, fontWeight: "600", color: colors.onSurfaceSecondary, marginTop: 4 },
   compactFields: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   compactField: {

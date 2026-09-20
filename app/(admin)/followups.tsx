@@ -106,11 +106,6 @@ type Mission = {
   greeting_name: string;
 };
 
-type Insights = {
-  calls_completed: number; whatsapps_sent: number; payments_collected: number;
-  quotations_approved: number; response_rate: number;
-};
-
 type Detail = {
   followup: Followup;
   customer: {
@@ -286,8 +281,6 @@ export default function FollowupsScreen() {
   const [loadingPage, setLoadingPage] = useState(false);
   const [stats, setStats] = useState<Stats | null>(null);
   const [mission, setMission] = useState<Mission | null>(null);
-  const [insights, setInsights] = useState<Insights | null>(null);
-  const [insightsLoading, setInsightsLoading] = useState(true);
   const [assignees, setAssignees] = useState<Assignee[]>([]);
   const [customers, setCustomers] = useState<CustomerLite[]>([]);
 
@@ -315,7 +308,10 @@ export default function FollowupsScreen() {
   const bootstrappedFloorRef = useRef<string | null>(null);
   const detailRequestVersion = useRef(0);
   const detailAbortController = useRef<AbortController | null>(null);
-  const [mobileSheet, setMobileSheet] = useState(false);
+  // Customer context is intentionally transient. Keeping it in a preview
+  // sheet preserves the original, single-workspace follow-ups experience on
+  // desktop as well as phone instead of reserving a permanent detail column.
+  const [customerPreviewOpen, setCustomerPreviewOpen] = useState(false);
 
   const [rulesSheet, setRulesSheet] = useState(false);
   const [newSheet, setNewSheet] = useState(false);
@@ -428,16 +424,13 @@ export default function FollowupsScreen() {
 
   const refreshStatsQuiet = useCallback(async () => {
     if (!selectedFloorId) return;
-    setInsightsLoading(true);
     try {
-      const [s, m, i] = await Promise.all([
+      const [s, m] = await Promise.all([
         api.get<Stats>("/followups/stats", { floorId: selectedFloorId }),
         api.get<Mission>("/followups/mission", { floorId: selectedFloorId }),
-        api.get<Insights>("/followups/insights", { floorId: selectedFloorId }),
       ]);
-      setStats(s); setMission(m); setInsights(i);
+      setStats(s); setMission(m);
     } catch { /* best-effort */ }
-    finally { setInsightsLoading(false); }
   }, [selectedFloorId]);
 
   const bootstrap = useCallback(async () => {
@@ -467,7 +460,6 @@ export default function FollowupsScreen() {
     bootstrappedFloorRef.current = selectedFloorId;
     setStats(null);
     setMission(null);
-    setInsights(null);
     didApplyListFilters.current = false;
     // A floor is a hard data boundary: any selected card, detail request, or
     // bulk selection from the prior floor would otherwise make a valid 404
@@ -477,22 +469,13 @@ export default function FollowupsScreen() {
     setSelectedId(null);
     setDetail(null);
     setLoadingDetail(false);
-    setMobileSheet(false);
+    setCustomerPreviewOpen(false);
     setSelectedIds(new Set());
     setBulkResult(null);
     (async () => {
       setLoading(true);
-      const list = await bootstrap();
+      await bootstrap();
       setLoading(false);
-      // Auto-select the #1 priority open card so the Context Panel is never
-      // an empty "Select a follow-up" placeholder on first load (desktop only
-      // — mobile keeps the sheet closed until the user taps a card).
-      if (isDesktop) {
-        const top = [...list]
-          .filter((f) => f.status === "open")
-          .sort((a, b) => b.priority_score - a.priority_score)[0];
-        if (top) { setSelectedId(top.id); loadDetail(top.id); }
-      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFloorId]);
@@ -543,7 +526,7 @@ export default function FollowupsScreen() {
         // detail panel.
         setSelectedId(null);
         setDetail(null);
-        setMobileSheet(false);
+        setCustomerPreviewOpen(false);
         void latestLoadList.current();
         toast.error("That follow-up changed elsewhere. The queue has been refreshed.");
         return;
@@ -558,8 +541,8 @@ export default function FollowupsScreen() {
   const selectCard = useCallback((f: Followup) => {
     setSelectedId(f.id);
     loadDetail(f.id);
-    if (!isDesktop) setMobileSheet(true);
-  }, [isDesktop, loadDetail]);
+    setCustomerPreviewOpen(true);
+  }, [loadDetail]);
 
   const clearSelectedDetail = useCallback(() => {
     detailRequestVersion.current += 1;
@@ -908,7 +891,7 @@ export default function FollowupsScreen() {
         }
         case "?": setShortcutHelp((v) => !v); break;
         case "Escape":
-          clearSelectedDetail(); setMobileSheet(false);
+          clearSelectedDetail(); setCustomerPreviewOpen(false);
           setCallOutcomeFor(null); setNoteFor(null); setCustomSnoozeFor(null);
           break;
         default: break;
@@ -1133,24 +1116,10 @@ export default function FollowupsScreen() {
         </View>
       ) : null}
 
-      {isPhone ? renderFollowupList(true) : isDesktop ? (
-        <View style={{ flex: 1, flexDirection: "row", gap: spacing.lg, paddingHorizontal: pagePad }}>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            {renderFollowupList(false, true)}
-          </View>
-          <ScrollView
-            style={{ width: 400 }}
-            contentContainerStyle={{ gap: spacing.md, paddingVertical: pagePad, paddingRight: pagePad }}
-            showsVerticalScrollIndicator={false}
-          >
-            <ContextPanel detail={detail} loading={loadingDetail} />
-            <InsightsPanel insights={insights} loading={insightsLoading} onRetry={() => void bootstrap()} />
-          </ScrollView>
-        </View>
-      ) : (
-        renderFollowupList(false, true)
-
-      )}
+      {/* Legacy layout: one uninterrupted follow-up workspace. Customer
+          context opens only when requested, so no desktop space is lost to a
+          persistent right-hand panel. */}
+      {renderFollowupList(isPhone, !isPhone)}
 
       {/* Mobile: floating quick-contact for the #1 priority item */}
       {!isDesktop && !isPhone && topPriorityOpen ? (
@@ -1188,11 +1157,12 @@ export default function FollowupsScreen() {
         </View>
       ) : null}
 
-      {/* Mobile: customer context bottom sheet */}
+      {/* Customer preview: opened from a card on every breakpoint. */}
       <Sheet
-        visible={!isDesktop && mobileSheet}
-        onClose={() => setMobileSheet(false)}
-        variant="bottom"
+        visible={customerPreviewOpen}
+        onClose={() => setCustomerPreviewOpen(false)}
+        variant={isPhone ? "bottom" : "modal"}
+        width={isPhone ? undefined : 720}
         title={detail?.customer?.company || detail?.customer?.name || "Customer"}
         subtitle={detail?.followup?.reason}
       >
@@ -1437,41 +1407,6 @@ function MissionHero({ mission, loading, onOpenPriority, compact }: { mission: M
         </View>
       ) : undefined}
     />
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// InsightsPanel — bottom-right insights (calls, WhatsApps, payments, response)
-// ─────────────────────────────────────────────────────────────────────────────
-function InsightsPanel({ insights, loading, onRetry }: { insights: Insights | null; loading: boolean; onRetry: () => void }) {
-  return (
-    <Panel title="Today's conversion" overline="INSIGHTS">
-      {!insights && !loading ? <View style={{ gap: spacing.sm }}><Text role="status" style={type.bodyMuted}>Conversion insights are unavailable.</Text><Button label="Retry insights" variant="secondary" onPress={onRetry} /></View> : !insights ? (
-        <View style={{ gap: spacing.sm }}>
-          <Skeleton w="100%" h={14} radius={radius.sm} />
-          <Skeleton w="100%" h={14} radius={radius.sm} />
-        </View>
-      ) : (
-        <View style={{ gap: spacing.sm }}>
-          <InsightRow icon="phone" label="Calls completed" value={String(insights.calls_completed)} />
-          <InsightRow icon="message-circle" label="WhatsApps sent" value={String(insights.whatsapps_sent)} />
-          <InsightRow icon="credit-card" label="Payments collected" value={moneyShort(insights.payments_collected)} />
-          <InsightRow icon="check-square" label="Quotations approved" value={String(insights.quotations_approved)} />
-          <InsightRow icon="activity" label="Response rate" value={`${insights.response_rate}%`} />
-        </View>
-      )}
-    </Panel>
-  );
-}
-function InsightRow({ icon, label, value }: { icon: FeatherName; label: string; value: string }) {
-  return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
-      <View style={{ width: 26, height: 26, borderRadius: 8, backgroundColor: colors.surfaceTertiary, alignItems: "center", justifyContent: "center" }}>
-        <Feather name={icon} size={13} color={colors.onSurfaceSecondary} />
-      </View>
-      <Text style={[type.bodySm, { flex: 1 }]}>{label}</Text>
-      <Text style={{ fontSize: 13, fontWeight: "700", color: colors.onSurface, fontVariant: ["tabular-nums"] }}>{value}</Text>
-    </View>
   );
 }
 
@@ -1784,7 +1719,7 @@ function FollowupCard({
 const MemoFollowupCard = memo(FollowupCard);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ContextPanel — full customer context (desktop right column / mobile sheet)
+// ContextPanel — full customer context inside the on-demand preview sheet.
 // ─────────────────────────────────────────────────────────────────────────────
 function ContextPanel({ detail, loading, embedded, compact }: { detail: Detail | null; loading: boolean; embedded?: boolean; compact?: boolean }) {
   if (loading) {
