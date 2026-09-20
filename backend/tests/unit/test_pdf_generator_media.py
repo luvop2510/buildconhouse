@@ -60,7 +60,7 @@ def test_sanitary_pdf_filename_uses_the_customer_name():
 def test_pdf_money_uses_a_portable_indian_currency_prefix_and_digit_grouping():
     assert pdf_generator.format_indian_money(12345678.9) == "1,23,45,678.90"
     assert pdf_generator.format_indian_money(-1000) == "-1,000.00"
-    assert pdf_generator._money(12345678.9) == "Rs. 1,23,45,678.90"
+    assert pdf_generator._standard_money(12345678.9) == "Rs. 1,23,45,678.90"
 
 
 def test_standard_pdf_prints_indian_currency_for_large_amounts():

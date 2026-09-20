@@ -178,6 +178,12 @@ def format_indian_money(value: object) -> str:
 
 
 def _money(value: object) -> str:
+    """PDF-safe rupee amount for document families with a verified glyph font."""
+    symbol = f"<font name='{RUPEE_FONT}'>₹</font>" if RUPEE_FONT else "Rs."
+    return f"{symbol} {format_indian_money(value)}"
+
+
+def _standard_money(value: object) -> str:
     """PDF-safe Indian currency amount for ReportLab Paragraph markup.
 
     A number of deployed ReportLab/font combinations substitute the rupee
@@ -623,22 +629,22 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
         if has_discount:
             summary_rows.append([
                 Paragraph(str(index + 1), styles["cellCenter"]), Paragraph(_ellipsize(room, 180), styles["cell"]),
-                Paragraph(_money(gross), styles["cellCenter"]), Paragraph(_money(net), styles["cellCenter"]),
+                Paragraph(_standard_money(gross), styles["cellCenter"]), Paragraph(_standard_money(net), styles["cellCenter"]),
             ])
         else:
             summary_rows.append([
                 Paragraph(str(index + 1), styles["cellCenter"]), Paragraph(_ellipsize(room, 180), styles["cell"]),
-                Paragraph(_money(net), styles["cellCenter"]),
+                Paragraph(_standard_money(net), styles["cellCenter"]),
             ])
     if has_discount:
         summary_rows.extend([
-            ["", Paragraph("<b>TOTAL</b>", styles["cellCenter"]), Paragraph(f"<b>{_money(quotation.get('subtotal', 0))}</b>", styles["cellCenter"]), Paragraph(f"<b>{_money(quotation.get('grand_total', 0))}</b>", styles["cellCenter"])],
-            ["", Paragraph("<b>SPECIAL OFFER TOTAL</b>", styles["cellCenter"]), "", Paragraph(f"<b>{_money(quotation.get('grand_total', 0))}</b>", styles["cellCenter"])],
+            ["", Paragraph("<b>TOTAL</b>", styles["cellCenter"]), Paragraph(f"<b>{_standard_money(quotation.get('subtotal', 0))}</b>", styles["cellCenter"]), Paragraph(f"<b>{_standard_money(quotation.get('grand_total', 0))}</b>", styles["cellCenter"])],
+            ["", Paragraph("<b>SPECIAL OFFER TOTAL</b>", styles["cellCenter"]), "", Paragraph(f"<b>{_standard_money(quotation.get('grand_total', 0))}</b>", styles["cellCenter"])],
         ])
     else:
         summary_rows.extend([
-            ["", Paragraph("<b>TOTAL</b>", styles["cellCenter"]), Paragraph(f"<b>{_money(quotation.get('subtotal', 0))}</b>", styles["cellCenter"])],
-            ["", Paragraph("<b>GRAND TOTAL</b>", styles["cellCenter"]), Paragraph(f"<b>{_money(quotation.get('grand_total', 0))}</b>", styles["cellCenter"])],
+            ["", Paragraph("<b>TOTAL</b>", styles["cellCenter"]), Paragraph(f"<b>{_standard_money(quotation.get('subtotal', 0))}</b>", styles["cellCenter"])],
+            ["", Paragraph("<b>GRAND TOTAL</b>", styles["cellCenter"]), Paragraph(f"<b>{_standard_money(quotation.get('grand_total', 0))}</b>", styles["cellCenter"])],
         ])
     summary_row_heights = [SUMMARY_HEADER_ROW_MM * mm] + [SUMMARY_ROW_MM * mm] * n_rooms + [SUMMARY_TOTAL_ROW_MM * mm] * 2
     summary_style_cmds = [
@@ -778,9 +784,9 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
                             cover=False,
                         ),
                         Paragraph(_ellipsize(item.get("sku"), 80), styles["itemSku"]), Paragraph(description, styles["itemDescription"]),
-                        Paragraph(_money(listed_mrp), styles["itemMoney"]), Paragraph(f"{qty:g}", styles["itemQty"]),
-                        Paragraph(_money(qty * listed_mrp), styles["itemMoney"]),
-                        Paragraph(_money(offer_rate), styles["itemMoney"]), Paragraph(_money(line_total), styles["itemMoney"]),
+                        Paragraph(_standard_money(listed_mrp), styles["itemMoney"]), Paragraph(f"{qty:g}", styles["itemQty"]),
+                        Paragraph(_standard_money(qty * listed_mrp), styles["itemMoney"]),
+                        Paragraph(_standard_money(offer_rate), styles["itemMoney"]), Paragraph(_standard_money(line_total), styles["itemMoney"]),
                     ])
                 else:
                     rows.append([
@@ -788,8 +794,8 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
                             item.get("image"), width_mm=image_width_mm, height_mm=image_height_mm, cover=False,
                         ),
                         Paragraph(_ellipsize(item.get("sku"), 80), styles["itemSku"]), Paragraph(description, styles["itemDescription"]),
-                        Paragraph(_money(base_rate), styles["itemMoney"]), Paragraph(f"{qty:g}", styles["itemQty"]),
-                        Paragraph(_money(qty * base_rate), styles["itemMoney"]),
+                        Paragraph(_standard_money(base_rate), styles["itemMoney"]), Paragraph(f"{qty:g}", styles["itemQty"]),
+                        Paragraph(_standard_money(qty * base_rate), styles["itemMoney"]),
                     ])
             block_net = sum(
                 float(item.get("qty") or 0) * float(item.get("unit_price") or 0) * (1 - float(item.get("discount_pct") or 0) / 100)
@@ -799,7 +805,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
             last_col = len(item_header) - 1
             total_row: list[object] = ["" for _ in item_header]
             total_row[total_label_col] = Paragraph("<b>TOTAL</b>", styles["cellCenter"])
-            total_row[last_col] = Paragraph(f"<b>{_money(block_net)}</b>", styles["itemMoney"])
+            total_row[last_col] = Paragraph(f"<b>{_standard_money(block_net)}</b>", styles["itemMoney"])
             rows.append(total_row)
             # A detail page has no filler product rows. Very sparse pages use
             # compact rows, retaining ordinary image frames and white space
