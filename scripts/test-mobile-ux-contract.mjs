@@ -47,19 +47,21 @@ for (const path of phoneSafeAreaRoutes) {
 }
 
 const followups = read("../app/(admin)/followups.tsx");
-assert.match(followups, /isPhone \? renderFollowupList\(true\)/);
+// Follow-ups deliberately uses one full-width workspace. Selecting a customer
+// opens a transient preview sheet rather than reserving a permanent desktop
+// context column.
+assert.match(followups, /renderFollowupList\(isPhone, !isPhone\)/);
 assert.match(followups, /const ownsScroll = phone \|\| includeWorkspaceHeader/);
 assert.match(followups, /ListHeaderComponent=\{ownsScroll/);
 assert.match(followups, /scrollEnabled=\{ownsScroll\}/);
-assert.match(followups, /isDesktop \? \(\s*<View style=\{\{ flex: 1, flexDirection: "row"/);
-assert.match(followups, /renderFollowupList\(false, true\)/);
+assert.match(followups, /const \[customerPreviewOpen, setCustomerPreviewOpen\] = useState\(false\)/);
+assert.match(followups, /visible=\{customerPreviewOpen\}/);
+assert.match(followups, /persistent right-hand panel/);
 assert.match(followups, /const listRequestVersion = useRef\(0\)/);
 assert.match(followups, /\/followups\/page\?\$\{params\.toString\(\)\}/);
 assert.match(followups, /testID="followups-previous-page"/);
 assert.match(followups, /testID="followups-next-page"/);
 assert.match(followups, /style=\{styles\.mobileDetailScroll\} contentContainerStyle=\{styles\.mobileDetailContent\}/);
-assert.match(followups, /flexBasis: "48%"/);
-assert.match(followups, /maxWidth: "48%"/);
 
 const legacyBottomSheet = read("../src/components/BottomSheet.tsx");
 assert.match(legacyBottomSheet, /import \{ Sheet \} from "@\/src\/design\/components"/);
