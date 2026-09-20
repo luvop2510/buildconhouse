@@ -526,29 +526,42 @@ export default function CustomerDetail() {
           ) : (
             <Card padding={0}>
               {quotations.map((q, i) => (
-                <Pressable
+                <View
                   key={q.id}
-                  onPress={() => router.push(`/(admin)/quotations/${q.id}` as any)}
-                  style={({ pressed, hovered }: any) => [
+                  style={[
                     styles.listRow,
                     !isDesktop && styles.listRowMobile,
-                    {
-                      borderTopWidth: i > 0 ? StyleSheet.hairlineWidth : 0,
-                      borderTopColor: colors.divider,
-                      backgroundColor: pressed ? colors.surfaceTertiary : hovered ? colors.surfaceSubtle : "transparent",
-                    },
+                    { borderTopWidth: i > 0 ? StyleSheet.hairlineWidth : 0, borderTopColor: colors.divider },
                   ]}
                 >
-                  <Text style={[type.mono, { width: isDesktop ? 120 : undefined, flexShrink: 1 }]} numberOfLines={1}>{q.number}</Text>
-                  <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-                    <Text style={type.titleSm} numberOfLines={1}>{q.items.length} items</Text>
-                    <Text style={type.caption}>{fmtDate(q.created_at)}</Text>
-                  </View>
-                  <Text style={[type.mono, { width: isDesktop ? 110 : undefined, textAlign: isDesktop ? "right" : "left", fontWeight: "700" }]} numberOfLines={1}>
-                    {money(q.grand_total)}
-                  </Text>
-                  <StatusBadge status={q.status} />
-                </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Open quotation ${q.number}`}
+                    onPress={() => router.push(`/(admin)/quotations/${q.id}` as any)}
+                    style={({ pressed, hovered }: any) => [styles.quotationOpen, {
+                      backgroundColor: pressed ? colors.surfaceTertiary : hovered ? colors.surfaceSubtle : "transparent",
+                    }]}
+                    testID={`customer-quotation-${q.id}`}
+                  >
+                    <Text style={[type.mono, { width: isDesktop ? 120 : undefined, flexShrink: 1 }]} numberOfLines={1}>{q.number}</Text>
+                    <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                      <Text style={type.titleSm} numberOfLines={1}>{q.items.length} items</Text>
+                      <Text style={type.caption}>{fmtDate(q.created_at)}</Text>
+                    </View>
+                    <Text style={[type.mono, { width: isDesktop ? 110 : undefined, textAlign: isDesktop ? "right" : "left", fontWeight: "700" }]} numberOfLines={1}>
+                      {money(q.grand_total)}
+                    </Text>
+                    <StatusBadge status={q.status} />
+                  </Pressable>
+                  <Button
+                    label={isPhone ? "Manage" : "Manage products"}
+                    icon="edit-3"
+                    variant="secondary"
+                    size="sm"
+                    onPress={() => router.push(`/(admin)/quotations/new?quotationId=${encodeURIComponent(q.id)}` as any)}
+                    testID={`manage-quotation-products-${q.id}`}
+                  />
+                </View>
               ))}
             </Card>
           )
@@ -1018,6 +1031,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     paddingHorizontal: spacing.md,
   },
+  quotationOpen: { flex: 1, minWidth: 0, minHeight: 44, flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.sm },
   deliveryIcon: {
     width: 34, height: 34, borderRadius: 17, backgroundColor: "#F3DFA3",
     alignItems: "center", justifyContent: "center",

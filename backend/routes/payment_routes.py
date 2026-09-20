@@ -694,8 +694,15 @@ async def _enrich_history_rows(docs: list[dict]) -> list[dict]:
     for d in docs:
         qq = quot_by_id.get(d.get("quotation_id"), {})
         before_after = outstanding_by_payment_id.get(d["id"])
+        # Keep non-cash ledger credits legible in both the payment-history
+        # table and the order detail timeline.  The persisted entry_type is
+        # the source of truth; this label avoids relying on a free-text note.
+        label = d.get("label")
+        if d.get("entry_type") == "godown_stock_credit":
+            label = "Moved to go-down stock"
         out.append({
             **d,
+            "label": label,
             "paid_at": d.get("paid_at") or d.get("created_at"),
             "invoice_number": qq.get("doc_number") or qq.get("number") or d.get("quotation_number"),
             "business_unit": floor_names.get(d.get("floor_id"), d.get("floor_id")),

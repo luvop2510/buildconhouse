@@ -55,6 +55,7 @@ type OrderRow = {
 type PaymentEntry = {
   id: string; amount: number; mode: PayMode;
   reference?: string | null; note?: string | null; label?: string | null;
+  entry_type?: "payment" | "godown_stock_credit";
   paid_at?: string | null; created_at?: string; recorded_by_name?: string | null;
 };
 
@@ -94,6 +95,12 @@ function money(n: number): string {
 }
 
 function paymentHistoryCopy(payment: PaymentEntry): { title: string; subtitle: string } {
+  if (payment.entry_type === "godown_stock_credit") {
+    return {
+      title: `Moved to go-down stock · ${money(payment.amount)}`,
+      subtitle: payment.note || "Customer balance reduced for returned stock.",
+    };
+  }
   // Dispatches now write a structured payment label. Prefer it over text
   // parsing so every new dispatch appears under the exact, stable label.
   if (payment.label?.trim()) {
@@ -149,6 +156,7 @@ type HistoryRow = {
   reference?: string | null; recorded_by_name?: string | null;
   outstanding_before: number | null; outstanding_after: number | null;
   status: "pending" | "completed" | "failed"; note?: string | null; label?: string | null;
+  entry_type?: "payment" | "godown_stock_credit";
   quotation_id?: string | null;
 };
 
@@ -893,7 +901,7 @@ function PaymentHistoryTab(props: {
     },
     {
       key: "method", label: "METHOD", width: 128,
-      render: (r) => <CellText muted>{MODE_LABELS[r.mode] || r.mode}</CellText>,
+      render: (r) => <CellText muted>{r.entry_type === "godown_stock_credit" ? "Stock credit" : MODE_LABELS[r.mode] || r.mode}</CellText>,
     },
     {
       key: "reference", label: "REFERENCE", width: 140,

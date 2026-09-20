@@ -7,6 +7,8 @@ type QuotationBuilderProps = {
   mode: QuotationBuilderMode;
   initialProductId?: string | null;
   initialGodownStockId?: string | null;
+  /** Existing quotation to load into the editable builder workspace. */
+  initialQuotationId?: string | null;
 };
 
 // The builder contains catalog, PDF and tile-document tooling. It is reached

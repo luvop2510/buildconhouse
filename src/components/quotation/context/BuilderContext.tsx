@@ -198,6 +198,8 @@ export type BuilderApi = {
   addFromProduct: (p: Product, variant?: ProductVariant) => void;
   updateLine: (id: string, patch: Partial<Line>, coalesceKey?: string) => void;
   removeLine: (id: string) => void;
+  /** Cancel a product with an auditable order-line adjustment when saved. */
+  cancelLine: (id: string) => Promise<boolean>;
   duplicateLine: (id: string) => void;
   moveLineToNextRoom: (id: string) => void;
   moveLine: (id: string, direction: -1 | 1) => void;
@@ -259,7 +261,7 @@ export function useBuilder(): BuilderApi {
 // -----------------------------------------------------------------------------
 // Provider
 // -----------------------------------------------------------------------------
-export function BuilderProvider({ onFinalize, initialProductId, initialGodownStockId, children }: {
+export function BuilderProvider({ onFinalize, initialProductId, initialGodownStockId, initialQuotationId, children }: {
   onFinalize?: (quotationId: string) => void;
   /** Seed the new quotation with this product on mount — used when
    *  navigating here from Catalog's "Add to quotation" CTA (product detail
@@ -268,6 +270,8 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
   initialProductId?: string | null;
   /** A lot selected on the Godown Stock page. It is claimed on first save. */
   initialGodownStockId?: string | null;
+  /** Restore this existing quotation instead of starting a new document. */
+  initialQuotationId?: string | null;
   children: React.ReactNode;
 }) {
   const { selectedFloorId, floors } = useFloorAccess();
@@ -317,6 +321,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
   const [recoveryReady, setRecoveryReady] = useState(false);
   const [recoveryBusy, setRecoveryBusy] = useState(false);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
+  const restoredInitialQuotationRef = useRef<string | null>(null);
   useUndoRedoShortcuts(history as any, true);
 
   // Autosave metadata (not undoable)
@@ -664,12 +669,20 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
   // Recovery is account/floor scoped on web and native, and never replaces
   // a document without an explicit choice. Only unacknowledged edits remain.
   useEffect(() => {
+    // An explicit customer-quotation edit must never be interrupted by an
+    // unrelated local draft recovery prompt. The requested server document is
+    // authoritative for this workflow.
+    if (initialQuotationId) {
+      setRecoveryDraft(null);
+      setRecoveryReady(true);
+      return;
+    }
     let current = true;
     void readBuilderDraft(accountId, activeFloorId).then((draft) => {
       if (current) { setRecoveryDraft(draft); setRecoveryReady(true); }
     });
     return () => { current = false; documentGeneration.current += 1; restoreRequest.current += 1; };
-  }, [accountId, activeFloorId]);
+  }, [accountId, activeFloorId, initialQuotationId]);
 
   useEffect(() => {
     if (!recoveryReady || recoveryDraft || !accountId || !activeFloorId || lastSavedStateRef.current === s) return;
@@ -733,7 +746,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
     } catch {}
   }, [activeFloorId]);
 
-  const restoreQuotation = useCallback(async (id: string) => {
+  const restoreQuotation = useCallback(async (id: string, announce = true) => {
     const request = ++restoreRequest.current;
     try {
       const doc = await api.get<any>(`/quotations/${id}`, { floorId: activeFloorId });
@@ -761,6 +774,15 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
           discount_pct: it.discount_pct ?? null,
           description: it.description, notes: it.notes,
           finish: it.finish ?? null, family_key: it.family_key ?? null,
+          // Preserve immutable godown allocation provenance when reopening a
+          // confirmed quotation. Omitting these fields would make a later
+          // unrelated edit look like a stock-source swap to the backend.
+          godown_stock_id: it.godown_stock_id ?? null,
+          godown_allocation_id: it.godown_allocation_id ?? null,
+          godown_source_customer_name: it.godown_source_customer_name ?? null,
+          godown_source_purchased_at: it.godown_source_purchased_at ?? null,
+          godown_transferred_at: it.godown_transferred_at ?? null,
+          godown_allocated_at: it.godown_allocated_at ?? null,
         })),
         rooms: doc.rooms && doc.rooms.length ? doc.rooms : [DEFAULT_ROOMS[0]],
         collapsedRooms: collapsed,
@@ -782,11 +804,20 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
       if (ui.selectedBrandId !== undefined) setSelectedBrandIdState(ui.selectedBrandId);
       if (ui.selectedCategoryId !== undefined) setSelectedCategoryIdState(ui.selectedCategoryId);
       if (ui.sortKey) setSortKey(ui.sortKey);
-      toast.success(`Restored ${doc.number}`);
+      if (announce) toast.success(`Restored ${doc.number}`);
     } catch (e: any) {
       toast.error(e?.detail || "Could not restore quotation");
     }
   }, [history, activeFloorId]);
+
+  // Customer and quotation detail pages enter this route with an explicit
+  // quotation id. Reuse the builder's normal restore path so edits, swaps,
+  // additions and removals all use the same autosave/PATCH contract.
+  useEffect(() => {
+    if (!initialQuotationId || !activeFloorId || restoredInitialQuotationRef.current === initialQuotationId) return;
+    restoredInitialQuotationRef.current = initialQuotationId;
+    void restoreQuotation(initialQuotationId);
+  }, [initialQuotationId, activeFloorId, restoreQuotation]);
 
   const deleteQuotation = useCallback(async (id = quotationId) => {
     if (!id) return false;
@@ -1056,6 +1087,34 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
     history.apply((cur) => ({ ...cur, lines: cur.lines.filter((l) => l.id !== id) }));
   }, [history]);
 
+  // Cancellation is deliberately distinct from a normal draft-line delete.
+  // For a saved customer order the backend also cancels the unfulfilled
+  // purchase line and reconciles payment/follow-up records, preserving the
+  // reason in its audit trail. A local draft has no downstream records yet.
+  const cancelLine = useCallback(async (id: string) => {
+    if (!quotationId) {
+      removeLine(id);
+      toast.success("Product removed from the draft");
+      return true;
+    }
+    try {
+      await api.post(
+        `/quotations/${quotationId}/items/${id}/cancel`,
+        { reason: "Cancelled from the customer quotation workspace" },
+        { floorId: activeFloorId },
+      );
+      await restoreQuotation(quotationId, false);
+      toast.success("Product cancelled and customer balance refreshed");
+      return true;
+    } catch (error: any) {
+      // A fulfilled purchase line or completed-payment reconciliation needs a
+      // purchasing/refund adjustment. Surface the API's concrete instruction
+      // rather than locally changing the quotation and losing that context.
+      toast.error(error?.detail || "Could not cancel this product");
+      return false;
+    }
+  }, [quotationId, activeFloorId, removeLine, restoreQuotation]);
+
   const duplicateLine = useCallback((id: string) => {
     Haptics.selectionAsync();
     history.apply((cur) => {
@@ -1247,6 +1306,15 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
         mrp: variant?.mrp ?? target.mrp,
         finish,
         family_key: target.family_key ?? src.family_key ?? null,
+        // A godown allocation is for one exact SKU. Never carry its source
+        // identifiers to a swapped product, otherwise the replacement could
+        // be fulfilled from unrelated returned stock.
+        godown_stock_id: null,
+        godown_allocation_id: null,
+        godown_source_customer_name: null,
+        godown_source_purchased_at: null,
+        godown_transferred_at: null,
+        godown_allocated_at: null,
       };
       return { ...c, lines: next };
     });
@@ -1339,7 +1407,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
     workflowBusy, generateOfficialQuotation, placeOrder,
     setCustomer, createCustomer, importCustomerFromGround, customerSwitcherOpen, setCustomerSwitcherOpen,
     setReferrer, clearReferrer, createReferrer, referrerSwitcherOpen, setReferrerSwitcherOpen,
-    addFromProduct, updateLine, removeLine, duplicateLine, moveLineToNextRoom, moveLine, moveRoom,
+    addFromProduct, updateLine, removeLine, cancelLine, duplicateLine, moveLineToNextRoom, moveLine, moveRoom,
     addRoom, renameRoom, duplicateRoom, deleteRoom, toggleCollapse, setActiveRoom, onRoomDragEnd, onLinesDragEnd,
     setProjectDiscount, setCategoryDiscount, setRoomDiscount, setNotes,
     swapItems, swapLoading, openSwap, commitSwap, closeSwap,
@@ -1367,7 +1435,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
     workflowBusy, generateOfficialQuotation, placeOrder,
     setCustomer, createCustomer, importCustomerFromGround, customerSwitcherOpen, setCustomerSwitcherOpen,
     setReferrer, clearReferrer, createReferrer, referrerSwitcherOpen, setReferrerSwitcherOpen,
-    addFromProduct, updateLine, removeLine, duplicateLine, moveLineToNextRoom, moveLine, moveRoom,
+    addFromProduct, updateLine, removeLine, cancelLine, duplicateLine, moveLineToNextRoom, moveLine, moveRoom,
     addRoom, renameRoom, duplicateRoom, deleteRoom, toggleCollapse, setActiveRoom, onRoomDragEnd, onLinesDragEnd,
     setProjectDiscount, setCategoryDiscount, setRoomDiscount, setNotes,
     swapItems, swapLoading, openSwap, commitSwap, closeSwap,

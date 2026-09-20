@@ -1114,6 +1114,13 @@ class Payment(TimestampedModel):
     status: Literal["pending", "completed", "failed"] = "completed"
     reference: Optional[str] = None            # cheque no. / UTR / short note
     note: Optional[str] = None                 # freeform note (optional)
+    # A positive ledger credit can settle an order without money changing
+    # hands, for example when material is returned to reusable godown stock.
+    # It remains a Payment row so balances and the immutable payment history
+    # use one reconciliation ledger, while the type keeps it distinguishable
+    # from an actual customer collection.
+    entry_type: Literal["payment", "godown_stock_credit"] = "payment"
+    godown_stock_id: Optional[str] = None
     paid_at: Optional[str] = None              # ISO date of receipt (defaults to created_at)
     recorded_by: Optional[str] = None          # user id
     recorded_by_name: Optional[str] = None

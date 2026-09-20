@@ -4,19 +4,24 @@ Lots are intentionally separate from tile logistics.  Each lot preserves its
 customer and original-purchase provenance and is consumed with a conditional
 quantity update, so two staff members cannot allocate the same unit.
 """
+import asyncio
+import logging
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from auth import floor_query, get_current_user, get_floor_scoped_or_404, require_min_role
-from db import db
+from db import client, db
 from pymongo import ReturnDocument
-from models import UserPublic, now_iso
+from models import Payment, UserPublic, now_iso
 from services.activity_log import log_event
+from services.analytics import cache
+from services.followup_engine import reconcile_followups
 from services.notifications import notify
 
 router = APIRouter(prefix="/godown-stock", tags=["godown-stock"])
+logger = logging.getLogger(__name__)
 
 
 async def ensure_godown_stock_indexes() -> None:
@@ -40,6 +45,129 @@ class Allocation(BaseModel):
 
 def _stock_view(lot: dict) -> dict:
     return {key: value for key, value in lot.items() if key != "_id"}
+
+
+def _transaction_unsupported(exc: Exception) -> bool:
+    """Whether a local standalone Mongo instance rejected transactions."""
+    message = str(exc)
+    return (
+        "Transaction numbers" in message
+        or "replica set" in message
+        or "IllegalOperation" in message
+    )
+
+
+def _collection_total(quotation: dict) -> float:
+    """Keep godown credits aligned with Payments' order-total semantics."""
+    history = quotation.get("payment_extra_history")
+    extras = (
+        sum(float(entry.get("amount") or 0) for entry in history)
+        if isinstance(history, list)
+        else float(quotation.get("payment_extra_amount") or 0)
+    )
+    return round(float(quotation.get("grand_total") or 0) + extras, 2)
+
+
+async def _persist_intake(
+    *, po: dict, item: dict, qty: float, reason: str, user: UserPublic,
+    lot: dict, at: str, session=None,
+) -> tuple[dict, dict | None]:
+    """Atomically reserve a source line, create the lot, and credit its order.
+
+    A sanitary purchase item's ``unit_cost`` is the effective sold unit price
+    copied from its quotation at order placement.  Moving a quantity into
+    reusable stock therefore reduces the source customer's remaining balance
+    by that exact effective value.  The resulting typed payment row is an
+    auditable credit, not a cash collection.
+    """
+    received_qty = float(item.get("qty_received") or item.get("qty") or 0)
+    source_updated = False
+    lot_inserted = False
+    payment: dict | None = None
+    try:
+        # Many existing purchase rows predate godown_transferred_qty. Mongo's
+        # $lte does not match an absent field, which made valid legacy rows
+        # fail with the misleading concurrent-change error.
+        moved = await db.purchase_orders.update_one(
+            {
+                "id": po["id"], "floor_id": po["floor_id"],
+                "items": {"$elemMatch": {
+                    "id": item["id"],
+                    "$or": [
+                        {"godown_transferred_qty": {"$lte": received_qty - qty}},
+                        {"godown_transferred_qty": {"$exists": False}},
+                    ],
+                }},
+            },
+            {"$inc": {"items.$.godown_transferred_qty": qty}, "$set": {"updated_at": at}, "$push": {
+                "items.$.godown_transfer_history": {
+                    "stock_id": lot["id"], "qty": qty, "reason": reason,
+                    "transferred_at": at, "transferred_by": user.id,
+                    "transferred_by_name": user.full_name,
+                },
+            }},
+            session=session,
+        )
+        if not moved.modified_count:
+            raise HTTPException(status_code=409, detail="This purchase item was changed while transferring it. Refresh and try again.")
+        source_updated = True
+
+        # Re-read and calculate inside the transaction so a simultaneous cash
+        # collection cannot make this ledger credit over-settle the order.
+        quotation_id = po.get("quotation_id")
+        if quotation_id:
+            quotation = await db.quotations.find_one(
+                {"id": quotation_id, "floor_id": po["floor_id"]}, {"_id": 0}, session=session,
+            )
+            if quotation and quotation.get("status") in {"ordered", "won"}:
+                paid_rows = await db.payments.aggregate([
+                    {"$match": {
+                        "quotation_id": quotation_id, "floor_id": po["floor_id"], "status": "completed",
+                    }},
+                    {"$group": {"_id": None, "total": {"$sum": "$amount"}}},
+                ], session=session).to_list(1)
+                already_settled = float(paid_rows[0].get("total") or 0) if paid_rows else 0.0
+                transferred_value = round(qty * float(item.get("unit_cost") or 0), 2)
+                credit_amount = round(min(transferred_value, max(0.0, _collection_total(quotation) - already_settled)), 2)
+                lot["transferred_value"] = transferred_value
+                lot["payment_credit_amount"] = credit_amount
+                if credit_amount > 0:
+                    payment = Payment(
+                        floor_id=po["floor_id"], quotation_id=quotation_id,
+                        quotation_number=quotation.get("number"), customer_id=quotation["customer_id"],
+                        customer_name=quotation.get("customer_name"), amount=credit_amount,
+                        mode="bank", status="completed", entry_type="godown_stock_credit",
+                        godown_stock_id=lot["id"],
+                        reference=f"Godown stock {lot['id']}",
+                        note=(
+                            f"₹{credit_amount:,.2f} balance credit — {qty:g} × {item.get('name')} "
+                            "moved to godown stock."
+                        ),
+                        paid_at=at, recorded_by=user.id, recorded_by_name=user.full_name,
+                        idempotency_key=f"godown-stock-credit:{lot['id']}",
+                    ).model_dump()
+                    lot["payment_id"] = payment["id"]
+
+        await db.godown_stock.insert_one(lot, session=session)
+        lot_inserted = True
+        if payment:
+            await db.payments.insert_one(payment, session=session)
+        return lot, payment
+    except Exception:
+        # Atlas rolls the complete write set back itself.  Only a standalone
+        # local Mongo fallback needs explicit compensation; attempting it in
+        # an already-aborted transaction can hide the original write error.
+        if session is None:
+            if payment:
+                await db.payments.delete_one({"id": payment["id"]})
+            if lot_inserted:
+                await db.godown_stock.delete_one({"id": lot["id"]})
+            if source_updated:
+                await db.purchase_orders.update_one(
+                    {"id": po["id"], "floor_id": po["floor_id"], "items.id": item["id"]},
+                    {"$inc": {"items.$.godown_transferred_qty": -qty}, "$pull": {"items.$.godown_transfer_history": {"stock_id": lot["id"]}}, "$set": {"updated_at": now_iso()}},
+                )
+        raise
 
 
 @router.get("")
@@ -91,37 +219,34 @@ async def intake_stock(body: Intake, user: UserPublic = Depends(require_min_role
         "source_purchased_at": (source_quote or {}).get("ordered_at") or (source_quote or {}).get("created_at") or po.get("created_at"),
         "reason": body.reason.strip(), "transferred_at": at, "transferred_by": user.id, "transferred_by_name": user.full_name, "allocations": [], "created_at": at, "updated_at": at,
     }
-    # Guard the source line as well as the lot. The conditional update is the
-    # concurrency boundary for repeated/partial intakes of one purchase line.
-    moved = await db.purchase_orders.update_one(
-        floor_query(user, {
-            "id": po["id"],
-            "items": {"$elemMatch": {
-                "id": item["id"],
-                "godown_transferred_qty": {"$lte": received_qty - body.qty},
-            }},
-        }),
-        {"$inc": {"items.$.godown_transferred_qty": body.qty}, "$set": {"updated_at": at}, "$push": {
-            "items.$.godown_transfer_history": {
-                "stock_id": lot["id"], "qty": body.qty, "reason": lot["reason"],
-                "transferred_at": at, "transferred_by": user.id,
-                "transferred_by_name": user.full_name,
-            },
-        }},
-    )
-    if not moved.modified_count:
-        raise HTTPException(status_code=409, detail="This purchase item was changed while transferring it. Refresh and try again.")
+    payment: dict | None = None
     try:
-        await db.godown_stock.insert_one(lot)
-    except Exception:
-        # Do not leave source quantity consumed if the lot write is rejected.
-        await db.purchase_orders.update_one(
-            floor_query(user, {"id": po["id"], "items.id": item["id"]}),
-            {"$inc": {"items.$.godown_transferred_qty": -body.qty}, "$set": {"updated_at": now_iso()}},
+        async with await client.start_session() as session:
+            async with session.start_transaction():
+                lot, payment = await _persist_intake(
+                    po=po, item=item, qty=body.qty, reason=lot["reason"], user=user,
+                    lot=lot, at=at, session=session,
+                )
+    except Exception as exc:
+        if not _transaction_unsupported(exc):
+            raise
+        # Local standalone Mongo has no transactions. _persist_intake has
+        # explicit compensating writes for this development-only fallback.
+        lot, payment = await _persist_intake(
+            po=po, item=item, qty=body.qty, reason=lot["reason"], user=user,
+            lot=lot, at=at,
         )
-        raise
-    await log_event(event_type="godown_stock.intaken", entity_type="purchase", entity_id=po["id"], actor=user, floor_id=po["floor_id"], customer_id=po.get("customer_id"), purchase_id=po["id"], summary=f"Moved {body.qty:g} × {item.get('name')} to godown stock", payload={"stock_id": lot["id"], "reason": lot["reason"], "source_purchased_at": lot["source_purchased_at"]})
-    await notify(user.id, "Godown stock added", body=f"{body.qty:g} × {item.get('name')} from {po.get('customer_name')} is available to reuse.", kind="success", link="/(admin)/godown-stock", floor_id=po["floor_id"])
+    credit_amount = float((payment or {}).get("amount") or 0)
+    await log_event(event_type="godown_stock.intaken", entity_type="purchase", entity_id=po["id"], actor=user, floor_id=po["floor_id"], customer_id=po.get("customer_id"), purchase_id=po["id"], summary=f"Moved {body.qty:g} × {item.get('name')} to godown stock", payload={"stock_id": lot["id"], "reason": lot["reason"], "source_purchased_at": lot["source_purchased_at"], "payment_credit_amount": credit_amount, "payment_id": (payment or {}).get("id")})
+    await notify(user.id, "Godown stock added", body=(f"{body.qty:g} × {item.get('name')} from {po.get('customer_name')} is available to reuse." + (f" Customer balance reduced by ₹{credit_amount:,.2f}." if credit_amount else "")), kind="success", link="/(admin)/godown-stock", floor_id=po["floor_id"])
+    try:
+        await cache.bump("payments")
+    except Exception:
+        logger.exception("cache bump failed after godown stock intake for %s", lot["id"])
+    if payment:
+        # Outstanding-balance follow-ups are derived from the same ledger.
+        # Run reconciliation after the transaction commits, never inside it.
+        asyncio.create_task(reconcile_followups())
     return _stock_view(lot)
 
 

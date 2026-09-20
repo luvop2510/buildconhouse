@@ -32,6 +32,10 @@ from services.domain_outbox import (
     enqueue_after_primary_commit,
 )
 from services.followup_engine import reconcile_followups
+from services.quotation_lifecycle import (
+    preflight_ordered_quotation_change,
+    reconcile_ordered_quotation,
+)
 from services.pricing import _resolve_line_rows, net_amount_list, normalize_tile_line_item, per_line_net_amounts, stamp_net_amounts
 from services.pagination import MAX_PAGE_LIMIT, normalize_pagination
 from services.pricing import recalc_quotation_totals as _recalc
@@ -39,6 +43,23 @@ from services.sequence import next_number
 from services.tiles_stage import can_move_to_quotation, can_place_order
 
 router = APIRouter(prefix="/quotations", tags=["quotations"])
+
+
+class QuotationLineMutation(BaseModel):
+    """A focused product edit used by the customer/order-management UI.
+
+    The full-quotation PATCH remains supported for the builder's autosave,
+    while these commands give customer support an auditable distinction
+    between adding, swapping, deleting and cancelling an ordered product.
+    """
+    item: QuotationLineItem
+    reason: str | None = None
+    silent: bool = False
+
+
+class QuotationLineRemoval(BaseModel):
+    reason: str | None = None
+    silent: bool = False
 
 
 async def _render_pdf(builder, document: dict, customer: dict, branding: dict) -> bytes:
@@ -677,6 +698,15 @@ async def update_quotation(
     if not update:
         return Quotation(**doc)
 
+    pricing_changed = any(k in update for k in (
+        "items", "project_discount_pct", "category_discounts", "room_discounts", "transportation_fee",
+    ))
+    # Confirmed orders have projections in Purchasing and Payments. Validate
+    # before committing the quotation so an in-flight/received PO line cannot
+    # be silently made inconsistent with the commercial document.
+    if pricing_changed:
+        await preflight_ordered_quotation_change(doc, {**doc, **update})
+
     # revision snapshot (unless silent autosave)
     if not body.silent:
         revisions = doc.get("revisions", [])
@@ -693,6 +723,10 @@ async def update_quotation(
 
     update["updated_at"] = datetime.now(timezone.utc).isoformat()
     await db.quotations.update_one({"id": quotation_id}, {"$set": update})
+
+    fresh = await db.quotations.find_one({"id": quotation_id}, {"_id": 0})
+    if pricing_changed:
+        await reconcile_ordered_quotation(doc, fresh, user, reason=body.reason)
 
     # Activity logging (non-silent only — silent = autosave)
     if not body.silent:
@@ -755,7 +789,6 @@ async def update_quotation(
                 summary=summary, payload=payload,
             )
 
-    fresh = await db.quotations.find_one({"id": quotation_id}, {"_id": 0})
     if "status" in update:
         # A repeated PATCH of an already-confirmed quotation is an edit, not a
         # new confirmation.  Do not close a legitimate follow-up created
@@ -765,7 +798,144 @@ async def update_quotation(
         # Event-triggered (not cron) reconciliation — a status change is
         # exactly the moment quotation-stage follow-ups should refresh/close.
         asyncio.create_task(reconcile_followups())
+    elif pricing_changed:
+        # Payment follow-ups carry the outstanding amount. They need the same
+        # immediate refresh after an ordered quotation is revised.
+        asyncio.create_task(reconcile_followups())
     return Quotation(**fresh)
+
+
+async def _apply_line_items_command(
+    quotation_id: str,
+    items: list[dict],
+    *,
+    reason: str | None,
+    silent: bool,
+    user: UserPublic,
+) -> Quotation:
+    """Route focused product commands through the canonical PATCH workflow."""
+    return await update_quotation(
+        quotation_id,
+        QuotationUpdate(items=[QuotationLineItem(**item) for item in items], reason=reason, silent=silent),
+        user,
+    )
+
+
+@router.post("/{quotation_id}/items", response_model=Quotation)
+async def add_quotation_item(
+    quotation_id: str,
+    body: QuotationLineMutation,
+    user: UserPublic = Depends(require_min_role("sales")),
+):
+    """Add a product to a draft or a still-unfulfilled confirmed order."""
+    doc = await get_floor_scoped_or_404(
+        db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0},
+    )
+    if any(item.get("id") == body.item.id for item in doc.get("items") or []):
+        raise HTTPException(status_code=409, detail="This product line already exists on the quotation.")
+    updated = await _apply_line_items_command(
+        quotation_id, [*doc.get("items", []), body.item.model_dump()],
+        reason=body.reason or "Product added", silent=body.silent, user=user,
+    )
+    await log_event(
+        event_type="quotation.product_added", entity_type="quotation", entity_id=quotation_id, actor=user,
+        floor_id=floor_inherit(doc), customer_id=doc.get("customer_id"), quotation_id=quotation_id,
+        summary=f"Added {body.item.name}", payload={"line_id": body.item.id, "sku": body.item.sku, "source": "product_command"},
+    )
+    return updated
+
+
+@router.patch("/{quotation_id}/items/{line_id}", response_model=Quotation)
+async def edit_or_swap_quotation_item(
+    quotation_id: str,
+    line_id: str,
+    body: QuotationLineMutation,
+    user: UserPublic = Depends(require_min_role("sales")),
+):
+    """Edit a line or swap it by changing ``item.product_id``.
+
+    Keeping the line id lets the UI retain selection state; the ordered-line
+    reconciler preserves the old PO item as cancelled and creates a new PO
+    item whenever the product changes.
+    """
+    doc = await get_floor_scoped_or_404(
+        db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0},
+    )
+    old = next((item for item in doc.get("items") or [] if item.get("id") == line_id), None)
+    if not old:
+        raise HTTPException(status_code=404, detail="Quotation product line not found")
+    replacement = {**body.item.model_dump(), "id": line_id}
+    items = [replacement if item.get("id") == line_id else item for item in doc.get("items") or []]
+    action = "swapped" if old.get("product_id") != replacement.get("product_id") else "updated"
+    updated = await _apply_line_items_command(
+        quotation_id, items, reason=body.reason or f"Product {action}", silent=body.silent, user=user,
+    )
+    await log_event(
+        event_type="quotation.product_swapped" if action == "swapped" else "quotation.product_updated",
+        entity_type="quotation", entity_id=quotation_id, actor=user, floor_id=floor_inherit(doc),
+        customer_id=doc.get("customer_id"), quotation_id=quotation_id,
+        summary=f"{old.get('name')} {action}" if action == "swapped" else f"Updated {replacement.get('name')}",
+        payload={"line_id": line_id, "from_product_id": old.get("product_id"), "to_product_id": replacement.get("product_id"), "reason": body.reason},
+    )
+    return updated
+
+
+async def _remove_quotation_item(
+    quotation_id: str,
+    line_id: str,
+    body: QuotationLineRemoval,
+    user: UserPublic,
+    *,
+    cancellation: bool,
+    document: dict | None = None,
+) -> Quotation:
+    doc = document or await get_floor_scoped_or_404(
+        db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0},
+    )
+    removed = next((item for item in doc.get("items") or [] if item.get("id") == line_id), None)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Quotation product line not found")
+    items = [item for item in doc.get("items") or [] if item.get("id") != line_id]
+    action = "Product cancelled" if cancellation else "Product deleted"
+    updated = await _apply_line_items_command(
+        quotation_id, items, reason=body.reason or action, silent=body.silent, user=user,
+    )
+    await log_event(
+        event_type="quotation.product_cancelled" if cancellation else "quotation.product_deleted",
+        entity_type="quotation", entity_id=quotation_id, actor=user, floor_id=floor_inherit(doc),
+        customer_id=doc.get("customer_id"), quotation_id=quotation_id,
+        summary=f"{action}: {removed.get('name')}",
+        payload={"line_id": line_id, "product_id": removed.get("product_id"), "sku": removed.get("sku"), "reason": body.reason},
+    )
+    return updated
+
+
+@router.post("/{quotation_id}/items/{line_id}/cancel", response_model=Quotation)
+async def cancel_quotation_item(
+    quotation_id: str,
+    line_id: str,
+    body: QuotationLineRemoval,
+    user: UserPublic = Depends(require_min_role("sales")),
+):
+    """Cancel a customer product while retaining the linked PO audit line."""
+    document = await get_floor_scoped_or_404(
+        db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0},
+    )
+    return await _remove_quotation_item(quotation_id, line_id, body, user, cancellation=True, document=document)
+
+
+@router.delete("/{quotation_id}/items/{line_id}", response_model=Quotation)
+async def delete_quotation_item(
+    quotation_id: str,
+    line_id: str,
+    body: QuotationLineRemoval,
+    user: UserPublic = Depends(require_min_role("sales")),
+):
+    """Delete a product line; post-order deletes remain auditable in PO history."""
+    document = await get_floor_scoped_or_404(
+        db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0},
+    )
+    return await _remove_quotation_item(quotation_id, line_id, body, user, cancellation=False, document=document)
 
 
 @router.delete("/{quotation_id}")

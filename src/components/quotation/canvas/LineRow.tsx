@@ -7,6 +7,7 @@ import { Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-na
 
 import { ProductImage } from "@/src/components/ProductImage";
 import { Badge } from "@/src/components/ui";
+import { ConfirmDialog } from "@/src/components/ds";
 import { colors, font, money, PRODUCT_IMAGE_ASPECT_RATIO, radius, type } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";
 
@@ -31,6 +32,8 @@ function LineRowImpl({
   const b = useBuilder();
   const isPhone = compact;
   const [menuOpen, setMenuOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const l = line;
   // Native number inputs emit an empty string while a salesperson replaces a
   // value. Do not turn that transient state into a persisted zero: it makes a
@@ -150,15 +153,31 @@ function LineRowImpl({
             >
               <Feather name="more-horizontal" size={18} color={colors.onSurfaceMuted} />
             </Pressable>
-          ) : <LineActions line={l} />}
+          ) : <LineActions line={l} onCancel={() => setCancelOpen(true)} />}
         </View>
-        {isPhone && menuOpen ? <View style={styles.mobileActions}><LineActions line={l} /></View> : null}
+        {isPhone && menuOpen ? <View style={styles.mobileActions}><LineActions line={l} onCancel={() => setCancelOpen(true)} /></View> : null}
       </View>
+      <ConfirmDialog
+        visible={cancelOpen}
+        onClose={() => { if (!cancelling) setCancelOpen(false); }}
+        onConfirm={async () => {
+          setCancelling(true);
+          const cancelled = await b.cancelLine(l.id);
+          setCancelling(false);
+          if (cancelled) setCancelOpen(false);
+        }}
+        title="Cancel this product?"
+        description="This removes it from the quotation and cancels any unfulfilled purchase line. Fulfilled items or completed-payment adjustments will stay unchanged and explain the next step."
+        confirmLabel="Cancel product"
+        tone="danger"
+        loading={cancelling}
+        testID={`confirm-cancel-line-${l.id}`}
+      />
     </Pressable>
   );
 }
 
-function LineActions({ line }: { line: Line }) {
+function LineActions({ line, onCancel }: { line: Line; onCancel: () => void }) {
   const b = useBuilder();
   return (
     <>
@@ -174,6 +193,9 @@ function LineActions({ line }: { line: Line }) {
       <Pressable testID={`line-move-${line.id}`} accessibilityLabel="Move to next room" onPress={() => b.moveLineToNextRoom(line.id)} style={styles.icon}>
         <Feather name="corner-up-right" size={16} color={colors.onSurfaceMuted} />
       </Pressable>
+      {b.quotationId ? <Pressable testID={`line-cancel-${line.id}`} accessibilityLabel="Cancel product" onPress={onCancel} style={styles.icon}>
+        <Feather name="x-circle" size={16} color={colors.error} />
+      </Pressable> : null}
       <Pressable testID={`line-del-${line.id}`} accessibilityLabel="Delete item" onPress={() => b.removeLine(line.id)} style={styles.icon}>
         <Feather name="trash-2" size={16} color={colors.error} />
       </Pressable>
