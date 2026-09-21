@@ -105,6 +105,9 @@ export type Line = {
    * such as a WC seat cover.  Persisted with the quotation snapshot. */
   included_for_line_id?: string | null;
   included_qty_per_parent?: number | null;
+  godown_stock_id?: string | null; godown_allocation_id?: string | null;
+  godown_source_customer_name?: string | null; godown_source_purchased_at?: string | null;
+  godown_transferred_at?: string | null; godown_allocated_at?: string | null;
 };
 
 export type SaveState = "idle" | "saving" | "saved" | "error";

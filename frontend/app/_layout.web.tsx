@@ -6,7 +6,8 @@ import { AuthProvider, useAuth } from "@/src/state/auth";
 import { staffLandingPath } from "@/src/access-profiles";
 import { colors } from "@/src/theme/tokens";
 import { ToastHost } from "@/src/components/Toast";
-import { initSentry } from "@/src/lib/monitoring";
+import { initPerformanceSignals, initSentry } from "@/src/lib/monitoring";
+import { useAppFonts } from "@/src/hooks/use-app-fonts";
 
 /**
  * Browser-only root shell.
@@ -57,7 +58,9 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 }
 
 export default function RootLayout() {
-  useEffect(() => { initSentry(); }, []);
+  const [loaded, error] = useAppFonts();
+  useEffect(() => { initSentry(); initPerformanceSignals(); }, []);
+  if (!loaded && !error) return null;
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <AuthProvider>

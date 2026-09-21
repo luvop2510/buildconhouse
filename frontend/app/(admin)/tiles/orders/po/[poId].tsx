@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { tileOrdersApi, type PurchaseOrderDetail } from "@/src/api/tileOrders";
+import { Alert } from "@/src/components/ui";
 import { toast } from "@/src/components/Toast";
 import {
   ActionBar, BackLink, Button, ButtonGroup, CenteredState, PageHeader, PageShell,
@@ -57,6 +58,7 @@ export default function BrandOrderDetailScreen() {
   const [releaseQty, setReleaseQty] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!poId) return;
@@ -95,6 +97,8 @@ export default function BrandOrderDetailScreen() {
   }, []);
 
   const releaseOne = useCallback(async (itemId: string, remaining: number) => {
+    if (submitting) return;
+    setSaveError(null);
     const rawQty = releaseQty[itemId]?.trim() ?? "";
     const qty = Number(rawQty);
     if (!rawQty || !Number.isSafeInteger(qty) || qty <= 0 || qty > remaining) {
@@ -110,15 +114,15 @@ export default function BrandOrderDetailScreen() {
       setSelected((current) => ({ ...current, [itemId]: false }));
       await load();
     } catch (e: any) {
-      toast.error(e?.detail || "Could not release material");
+      setSaveError(e?.detail || "Could not release material. Your selected quantities are retained; try again.");
     } finally {
       setSubmitting(false);
     }
-  }, [releaseQty, order?.id, order?.items, poId, load]);
+  }, [releaseQty, order?.id, order?.items, poId, load, submitting]);
 
   const columns = useMemo<Column<ReleaseItem>[]>(() => [
     {
-      key: "select", label: "", width: 60, align: "center",
+      key: "select", label: "", width: 60, align: "center", mobile: "action",
       render: (item) => {
         const selectable = item.boxes_pending > 0;
         const checked = Boolean(selected[item.id]);
@@ -149,17 +153,17 @@ export default function BrandOrderDetailScreen() {
       // the two of them split the surplus and push the row 50px past the
       // viewport, which put RELEASE QTY — the page's entire purpose — off
       // screen. One grow column keeps the total predictable.
-      key: "product", label: "TILE NAME", grow: 1, minWidth: 200,
+      key: "product", label: "TILE NAME", grow: 1, minWidth: 200, mobile: "primary",
       render: (item) => (
         <CellStack title={item.name} subtitle={tileIdentityMeta([item.series, item.size], item.sku)} />
       ),
     },
     {
-      key: "finish", label: "FINISH", width: 130,
+      key: "finish", label: "FINISH", width: 130, mobile: "hidden",
       render: (item) => <CellText muted>{item.finish || "—"}</CellText>,
     },
     { key: "ordered", label: "ORDERED", width: 104, align: "right", render: (i) => <CellNumber value={`${i.qty} ${qtyUnit(i)}`} /> },
-    { key: "released", label: "RELEASED", width: 108, align: "right", render: (i) => <CellNumber value={`${i.boxes_ready} ${qtyUnit(i)}`} /> },
+    { key: "released", label: "RELEASED", width: 108, align: "right", mobile: "hidden", render: (i) => <CellNumber value={`${i.boxes_ready} ${qtyUnit(i)}`} /> },
     {
       key: "remaining", label: "REMAINING", width: 116, align: "right",
       render: (i) => <CellNumber value={`${i.boxes_pending} ${qtyUnit(i)}`} dim={i.boxes_pending === 0} />,
@@ -168,6 +172,9 @@ export default function BrandOrderDetailScreen() {
       key: "qty", label: "RELEASE QTY", width: 156,
       render: (item) => {
         const selectable = item.boxes_pending > 0;
+        const rawQty = releaseQty[item.id] || "";
+        const qty = Number(rawQty);
+        const invalid = Boolean(rawQty) && (!Number.isSafeInteger(qty) || qty <= 0 || qty > item.boxes_pending);
         return (
           <TextInput
             testID={`tile-release-quantity-${item.id}`}
@@ -176,15 +183,17 @@ export default function BrandOrderDetailScreen() {
             onChangeText={(value) => setQuantity(item.id, value)}
             keyboardType="number-pad"
             accessibilityLabel={`Release quantity for ${item.name}`}
+            aria-invalid={invalid}
+            accessibilityHint={invalid ? `Enter a whole number from 1 to ${item.boxes_pending}.` : `Maximum ${item.boxes_pending} ${qtyUnit(item)}.`}
             placeholder={selectable ? `Max ${item.boxes_pending} ${qtyUnit(item)}` : "Complete"}
             placeholderTextColor={colors.onSurfaceSubtle}
-            style={[styles.qtyInput, !selectable ? styles.qtyInputDisabled : null]}
+            style={[styles.qtyInput, invalid ? styles.qtyInputInvalid : null, !selectable ? styles.qtyInputDisabled : null]}
           />
         );
       },
     },
     {
-      key: "status", label: "STATUS", width: 132, align: "center",
+      key: "status", label: "STATUS", width: 132, align: "center", mobile: "hidden",
       render: (item) => {
         const status = lineStatus(item);
         const tone = LINE_TONE[status.tone];
@@ -200,7 +209,7 @@ export default function BrandOrderDetailScreen() {
     {
       // Pinned so the per-line Release button stays reachable on a viewport
       // too narrow to show the whole row.
-      key: "action", label: "ACTIONS", width: 136,
+      key: "action", label: "ACTIONS", width: 136, mobile: "action",
       render: (item) => (
         item.boxes_pending > 0 ? (
           <Button
@@ -270,7 +279,8 @@ export default function BrandOrderDetailScreen() {
   };
 
   const releaseSelected = async () => {
-    if (!selectedItems.length) return;
+    if (submitting || !selectedItems.length) return;
+    setSaveError(null);
     setSubmitting(true);
     try {
       await tileOrdersApi.releaseMaterial(order.id, selectedItems);
@@ -279,7 +289,7 @@ export default function BrandOrderDetailScreen() {
       setSelected({});
       await load();
     } catch (e: any) {
-      toast.error(e?.detail || "Could not release material");
+      setSaveError(e?.detail || "Could not release material. Your selected quantities are retained; try again.");
     } finally {
       setSubmitting(false);
     }
@@ -311,6 +321,7 @@ export default function BrandOrderDetailScreen() {
         </ActionBar>
       }
     >
+      {saveError ? <Alert tone="error" title={saveError} /> : null}
       <BackLink
         label={`Back to ${order.brand_name || "Brand"}`}
         testID="tile-brand-release-back"
@@ -397,8 +408,8 @@ const styles = StyleSheet.create({
     color: colors.onSurface,
     textAlign: "right",
     backgroundColor: colors.surfaceSecondary,
-    ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as any) : null),
   },
+  qtyInputInvalid: { borderColor: colors.error, backgroundColor: colors.errorBg },
   qtyInputDisabled: { borderColor: colors.border, backgroundColor: colors.surfaceTertiary, color: colors.onSurfaceMuted },
 
   lineStatus: { height: 24, justifyContent: "center", paddingHorizontal: 10, borderRadius: radius.pill, borderWidth: 1 },

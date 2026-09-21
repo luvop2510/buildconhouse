@@ -7,9 +7,9 @@ import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Text, View } from "react-native";
 
-import { AdminPage } from "@/src/components/AdminPage";
+import { SettingsPage as AdminPage } from "@/src/components/settings/SettingsPage";
 import { Button, Card } from "@/src/components/ui";
-import { openApiFile } from "@/src/utils/downloadFile";
+import { downloadApiFile } from "@/src/utils/downloadFile";
 import { colors, spacing, type } from "@/src/theme/tokens";
 
 export default function SettingsCatalog() {
@@ -18,7 +18,8 @@ export default function SettingsCatalog() {
 
   const run = async (key: string, path: string, label: string) => {
     setBusy(key);
-    await openApiFile(path, label);
+    const filename = key === "export" ? "buildcon-catalog.xlsx" : "buildcon-catalog-backup.json";
+    await downloadApiFile(path, filename, label);
     setBusy(null);
   };
 

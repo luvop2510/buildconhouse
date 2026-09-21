@@ -1,9 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// BuildCon House · "Showroom" Design System — the single source of truth.
+// BuildCon House · Workspace Design System — the single source of truth.
 //
-// Philosophy: calm, architectural, timeless. 90–95% warm neutral; ink for
-// action; brushed brass ONLY where the eye needs guidance. If a screen feels
-// "gold", brass was overused. If it feels like a gallery, it's right.
+// Calm neutral surfaces, readable system typography and one blue action accent.
+// Legacy brass keys remain aliases so every existing module shares this palette.
 //
 // Every module MUST consume these tokens. Zero local styling downstream.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -11,29 +10,29 @@ import { Platform, StyleSheet } from "react-native";
 
 // ── Raw palette (never import this from screens — use `color`) ──────────────
 const pal = {
-  // Warm architectural neutrals — plaster, bone, limestone, ink.
+  // Neutral surfaces and contrast-tested foregrounds.
   white:   "#FFFFFF",
-  canvas:  "#F7F5F1",  // app background — warm gallery wall
-  sunken:  "#F0EDE7",  // inset fills: inputs, washes, rails
-  sunken2: "#E9E5DE",  // pressed / deeper inset
-  line:    "#E8E4DD",  // hairline
-  line2:   "#D8D3C9",  // emphasized hairline
-  ink:     "#1D1B16",  // warm near-black — text & the primary action
-  ink2:    "#57534B",  // secondary text
-  ink3:    "#8B8579",  // tertiary text, captions
-  ink4:    "#B5AFA3",  // placeholders, disabled
-  inkHover:"#33302A",
+  canvas:  "#F7F8FA",  // app background — cool porcelain
+  sunken:  "#F0F2F5",  // inset fills: inputs, washes, rails
+  sunken2: "#E5E9F0",  // pressed / deeper inset
+  line:    "#E2E6ED",  // hairline
+  line2:   "#C7CFDA",  // emphasized hairline
+  ink:     "#101828",  // graphite — text & the primary action
+  ink2:    "#475467",  // secondary text
+  ink3:    "#667085",  // tertiary text, captions
+  ink4:    "#98A2B3",  // placeholders, disabled
+  inkHover:"#1D2939",
 
-  // Brushed brass — the material accent. Guidance & emphasis only.
-  brass:      "#8C7351",
-  brassDeep:  "#6E5A3F",
-  brassTint:  "#F1EAE0",
-  brassLine:  "#D9CCB8",
+  // Action accent. Brass names are retained for source compatibility.
+  brass:      "#0066CC",
+  brassDeep:  "#004F9F",
+  brassTint:  "#EAF2FF",
+  brassLine:  "#BED6F7",
 
   // Muted status hues — always dot+word, never shouting pills.
-  ok:      "#3E7C55",
+  ok:      "#39724D",
   okTint:  "#EAF1EC",
-  warn:    "#A2691F",
+  warn:    "#8B5A16",
   warnTint:"#F6EEDF",
   risk:    "#AE4A3D",
   riskTint:"#F7ECE9",
@@ -53,17 +52,20 @@ export const color = {
   inkSoft: pal.ink3,
   inkFaint: pal.ink4,
 
-  // The primary action is brass; ink remains text/chrome.
+  // Blue indicates the primary action; graphite is reserved for text.
   action: pal.brass,
   actionHover: pal.brassDeep,
   onAction: pal.white,
 
-  // Brass — guidance & emphasis. Active nav bar, focus ring, selected marks.
+  // Accent roles. Brass keys below are compatibility aliases.
+  accent: pal.brass,
+  accentTint: pal.brassTint,
+  accentBorder: pal.brassLine,
   brass: pal.brass,
   brassDeep: pal.brassDeep,
   brassTint: pal.brassTint,
   brassLine: pal.brassLine,
-  focus: "rgba(140,115,81,0.45)",
+  focus: "#0066CC",
 
   ok: pal.ok,
   okTint: pal.okTint,
@@ -79,13 +81,13 @@ export const color = {
 
 // ── Fonts ────────────────────────────────────────────────────────────────────
 export const font = {
-  regular: Platform.OS === "web" ? "system-ui" : "Inter-Regular",
-  medium: Platform.OS === "web" ? "system-ui" : "Inter-Medium",
-  semibold: Platform.OS === "web" ? "system-ui" : "Inter-SemiBold",
-  bold: Platform.OS === "web" ? "system-ui" : "Inter-Bold",
-  display: Platform.OS === "web" ? "Georgia" : "Fraunces-Light",        // the single serif voice — greetings, auth
-  displayItalic: Platform.OS === "web" ? "Georgia" : "Fraunces-LightItalic",
-  serif: Platform.OS === "web" ? "Georgia" : "Fraunces-Regular",
+  regular: "Inter-Regular",
+  medium: "Inter-Medium",
+  semibold: "Inter-SemiBold",
+  bold: "Inter-Bold",
+  display: "Inter-SemiBold",        // headings, greetings and authentication
+  displayItalic: "Inter-Medium",
+  serif: "Fraunces-Regular",
   mono: Platform.select({ ios: "Menlo", android: "monospace", default: "ui-monospace" }) as string,
 } as const;
 
@@ -94,13 +96,13 @@ type Style = Record<string, unknown>;
 const tabular = { fontVariant: ["tabular-nums"] as any };
 
 export const text = {
-  // Display — Fraunces. Two places only: greetings and auth. Never in chrome.
-  display:   { fontFamily: font.display, fontSize: 34, lineHeight: 42, letterSpacing: -0.3, color: color.ink } as Style,
-  displaySm: { fontFamily: font.display, fontSize: 27, lineHeight: 34, letterSpacing: -0.2, color: color.ink } as Style,
+  // Display is reserved for greetings and authentication.
+  display:   { fontFamily: font.display, fontSize: 34, lineHeight: 42, fontWeight: "600", letterSpacing: -0.8, color: color.ink } as Style,
+  displaySm: { fontFamily: font.display, fontSize: 27, lineHeight: 34, fontWeight: "600", letterSpacing: -0.6, color: color.ink } as Style,
 
   // Titles
   title:    { fontFamily: font.semibold, fontSize: 19, lineHeight: 26, letterSpacing: -0.3, color: color.ink, fontWeight: "600" as const } as Style,
-  heading:  { fontFamily: font.semibold, fontSize: 16, lineHeight: 22, letterSpacing: -0.2, color: color.ink, fontWeight: "600" as const } as Style,
+  heading:  { fontFamily: font.semibold, fontSize: 18, lineHeight: 26, letterSpacing: -0.2, color: color.ink, fontWeight: "600" as const } as Style,
   rowTitle: { fontFamily: font.medium,  fontSize: 15, lineHeight: 21, letterSpacing: -0.1, color: color.ink, fontWeight: "500" as const } as Style,
 
   // Body
@@ -125,16 +127,16 @@ export const space = {
 } as const;
 
 // ── Radii ───────────────────────────────────────────────────────────────────
-export const radius = { sm: 7, md: 10, lg: 14, xl: 20, pill: 999 } as const;
+export const radius = { sm: 10, md: 12, lg: 16, xl: 20, pill: 999 } as const;
 
 // ── Elevation — exactly two levels. Everything else is hairlines. ───────────
 export const shadow = {
   raised: {
-    shadowColor: "#26221B", shadowOpacity: 0.05, shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 }, elevation: 2,
+    shadowColor: "#101828", shadowOpacity: 0.06, shadowRadius: 18,
+    shadowOffset: { width: 0, height: 6 }, elevation: 2,
   },
   overlay: {
-    shadowColor: "#26221B", shadowOpacity: 0.18, shadowRadius: 44,
+    shadowColor: "#101828", shadowOpacity: 0.16, shadowRadius: 44,
     shadowOffset: { width: 0, height: 18 }, elevation: 16,
   },
 } as const;
@@ -157,7 +159,7 @@ export const layout = {
   sidebar: 240,
   rail: 64,
   bottomBar: 62,
-  gutter: { phone: 20, tablet: 28, desktop: 40 },
+  gutter: { phone: 16, tablet: 24, desktop: 32 },
   content: 1120,          // default page max width
   contentNarrow: 760,     // reading / form pages
   // One responsive contract. Components must consume this through `useBp()`

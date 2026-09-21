@@ -2,11 +2,11 @@
 // Keep this route under `quotes` so it cannot collide with staff quotations.
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { api } from "@/src/api/client";
-import { Card, StatusBadge } from "@/src/components/ui";
+import { Card, StatusBadge, TextField } from "@/src/components/ui";
 import {
   CustomerEmpty,
   CustomerError,
@@ -37,6 +37,8 @@ export default function CustomerQuotationsList() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(false);
+  const [search, setSearch] = useState("");
+  const visibleQuotes = useMemo(() => (quotes || []).filter(quote => `${quote.number} ${quote.status}`.toLowerCase().includes(search.trim().toLowerCase())), [quotes, search]);
 
   const load = useCallback(async (signal?: AbortSignal, preserveData = false) => {
     setError(false);
@@ -75,7 +77,8 @@ export default function CustomerQuotationsList() {
       contentStyle={styles.content}
       refreshControl={{ refreshing, onRefresh, tintColor: colors.brand }}
     >
-      <CustomerSectionHeading title="All quotations" count={quotes?.length} />
+      <CustomerSectionHeading title="Your documents" count={quotes?.length} />
+      {(quotes?.length || 0) > 0 ? <TextField label="Find a quotation" placeholder="Quotation number or status" value={search} onChangeText={setSearch} testID="portal-quote-search" /> : null}
 
       {loading && !quotes ? (
         Array.from({ length: 4 }).map((_, index) => <CustomerSkeletonCard key={index} />)
@@ -95,7 +98,8 @@ export default function CustomerQuotationsList() {
               </Pressable>
             </Card>
           ) : null}
-          {quotes?.map((quote) => (
+          {quotes && visibleQuotes.length === 0 ? <CustomerEmpty title="No matching quotations" subtitle="Try another quotation number or status." /> : null}
+          {visibleQuotes.map((quote) => (
             <Card key={quote.id} testID={`quote-row-${quote.id}`} onPress={() => router.push(`/(customer)/quotes/${quote.id}`)} style={styles.quoteCard}>
               <View style={[styles.quoteRow, isPhone && styles.quoteRowPhone]}>
                 <View style={styles.quoteCopy}>
@@ -125,13 +129,13 @@ export default function CustomerQuotationsList() {
 const styles = StyleSheet.create({
   content: { paddingTop: spacing.lg },
   emptyCard: { padding: 0 },
-  quoteCard: { paddingVertical: spacing.md },
+  quoteCard: { paddingVertical: spacing.md, borderRadius: 4 },
   quoteRow: { flexDirection: "row", alignItems: "flex-start", flexWrap: "wrap", gap: spacing.md, minHeight: 76 },
   quoteCopy: { flex: 1, minWidth: 160, gap: 4 },
   quoteTotal: { ...type.titleMd, fontVariant: ["tabular-nums"] },
   quoteActions: { alignItems: "flex-end", gap: spacing.sm, minWidth: 92 },
-  quoteRowPhone: { flexDirection: "column", gap: spacing.sm },
-  quoteActionsPhone: { width: "100%", flexDirection: "row", alignItems: "center", justifyContent: "space-between", minWidth: 0, paddingTop: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  quoteRowPhone: { flexDirection: "row", gap: spacing.sm },
+  quoteActionsPhone: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", minWidth: 0, flexWrap: "wrap" },
   chevronButton: { minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" },
   refreshError: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: spacing.sm, backgroundColor: colors.errorBg, borderColor: colors.errorBorder },
   retryButton: { minHeight: 44, justifyContent: "center", paddingHorizontal: spacing.sm },

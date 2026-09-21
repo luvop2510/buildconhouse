@@ -1,5 +1,8 @@
 const MAX_REQUEST_BODY_BYTES = 1_048_576;
-const UPSTREAM_TIMEOUT_MS = 15_000;
+// The browser client allows a request 30 seconds. Give the proxy nearly that
+// full window so it does not turn a healthy-but-slow Railway response into a
+// premature 504; retain a small margin for proxying the response downstream.
+const UPSTREAM_TIMEOUT_MS = 28_000;
 
 const SECURITY_HEADERS = {
   'Content-Security-Policy': "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://*.ingest.sentry.io; form-action 'self'",

@@ -149,7 +149,7 @@ export default function CustomerOrderDetailScreen() {
   // same figure straight down the column; the product name absorbs the rest.
   const columns = useMemo<Column<CustomerOrderItem & { __poId: string }>[]>(() => [
     {
-      key: "product", label: "TILE NAME", grow: 3, minWidth: 240,
+      key: "product", label: "TILE NAME", grow: 3, minWidth: 240, mobile: "primary",
       render: (item) => (
         <CellStack
           title={item.tile_name}
@@ -158,18 +158,18 @@ export default function CustomerOrderDetailScreen() {
       ),
     },
     { key: "ordered", label: "ORDERED", width: 120, align: "right", render: (i) => <CellNumber value={`${i.boxes_ordered} ${i.quantity_unit === "Pieces" ? "pieces" : "boxes"}`} /> },
-    { key: "released", label: "RELEASED", width: 124, align: "right", render: (i) => <CellNumber value={`${i.boxes_ready} ${i.quantity_unit === "Pieces" ? "pieces" : "boxes"}`} /> },
-    { key: "godown", label: "GODOWN", width: 120, align: "right", render: (i) => <CellNumber value={`${i.boxes_godown} ${i.quantity_unit === "Pieces" ? "pieces" : "boxes"}`} /> },
-    { key: "dispatched", label: "DISPATCHED", width: 136, align: "right", render: (i) => <CellNumber value={`${i.boxes_dispatched} ${i.quantity_unit === "Pieces" ? "pieces" : "boxes"}`} /> },
+    { key: "released", label: "RELEASED", width: 124, align: "right", mobile: "hidden", render: (i) => <CellNumber value={`${i.boxes_ready} ${i.quantity_unit === "Pieces" ? "pieces" : "boxes"}`} /> },
+    { key: "godown", label: "GODOWN", width: 120, align: "right", mobile: "hidden", render: (i) => <CellNumber value={`${i.boxes_godown} ${i.quantity_unit === "Pieces" ? "pieces" : "boxes"}`} /> },
+    { key: "dispatched", label: "DISPATCHED", width: 136, align: "right", mobile: "hidden", render: (i) => <CellNumber value={`${i.boxes_dispatched} ${i.quantity_unit === "Pieces" ? "pieces" : "boxes"}`} /> },
     {
-      key: "delivered", label: "DELIVERED", width: 118, align: "right",
+      key: "delivered", label: "DELIVERED", width: 118, align: "right", mobile: "hidden",
       render: (i) => <CellNumber value={i.current_location === "Delivered" ? `${i.boxes_dispatched} ${i.quantity_unit === "Pieces" ? "pieces" : "boxes"}` : "—"} dim={i.current_location !== "Delivered"} />,
     },
     { key: "remaining", label: "REMAINING", width: 130, align: "right", render: (i) => <CellNumber value={`${i.boxes_pending} ${i.quantity_unit === "Pieces" ? "pieces" : "boxes"}`} dim={i.boxes_pending === 0} /> },
     {
       // Pinned: the three movement verbs are the reason this screen exists, so
       // they stay on screen even when the counters scroll under them.
-      key: "actions", label: "ACTIONS", width: 524, sticky: true,
+      key: "actions", label: "ACTIONS", width: 524, sticky: true, mobile: "action",
       render: (item) => <ItemActions item={item} poId={item.__poId} onOpen={setSheet} readOnly={readOnlyDeliveryLookup} />,
     },
   ], [readOnlyDeliveryLookup]);

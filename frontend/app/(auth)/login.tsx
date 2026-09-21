@@ -1,9 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Authentication — one image, one form, one button.
 // ─────────────────────────────────────────────────────────────────────────────
-import { Image } from "expo-image";
-import { LinearGradient } from "expo-linear-gradient";
-import React, { useState } from "react";
+import React, { createElement, useState } from "react";
 import {
   Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View,
 } from "react-native";
@@ -11,18 +9,18 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 
 import { Button, Field, IconButton, Input, Txt } from "@/src/design/components";
+import { NavigationTabs } from "@/src/design/NavigationTabs";
 import { BuildConLogo } from "@/src/design/BrandLogo";
 import { useBp } from "@/src/design/responsive";
-import { brand, color, font, space } from "@/src/design/tokens";
+import { color, font, space } from "@/src/design/tokens";
 import { useAuth } from "@/src/state/auth";
 
-const HERO = "https://images.pexels.com/photos/36650049/pexels-photo-36650049.jpeg?auto=compress&cs=tinysrgb&w=1600";
 
 type Mode = "staff" | "customer";
 
 export default function Login() {
   const { loginStaff, loginCustomer } = useAuth();
-  const { isPhone, isTablet, height } = useBp();
+  const { isPhone, height } = useBp();
   const compactPhone = isPhone && height < 700;
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -57,17 +55,20 @@ export default function Login() {
     }
   };
 
-  const form = (
+  const formContent = (
     <View style={{ width: "100%", maxWidth: 384, alignSelf: "center", gap: compactPhone ? space.x3 : space.x5 }}>
       <View style={{ gap: 8 }}>
-        {!isPhone ? <BuildConLogo height={44} style={{ marginBottom: 4 }} /> : null}
+        <BuildConLogo height={36} style={{ marginBottom: 16 }} />
         <Txt v="display" style={isPhone ? { fontSize: 30, lineHeight: 38 } : undefined}>
-          {mode === "staff" ? "Welcome back." : "Your project, live."}
+          {mode === "staff" ? "Staff sign-in" : "Customer sign-in"}
         </Txt>
         <Txt v="bodyMid">
-          {mode === "staff" ? "Sign in to your workspace." : "Sign in to follow your order."}
+          {mode === "staff" ? "Manage quotations, orders and customer relationships." : "Review quotations shared by your BuildCon House team."}
         </Txt>
       </View>
+
+      <NavigationTabs value={mode} options={[{ value: "staff", label: "Staff workspace" }, { value: "customer", label: "Customer portal" }]}
+        onChange={(option) => { setMode(option); setError(null); setPassword(""); }} disabled={busy} fullWidth testID="login-mode" />
 
       <View style={{ gap: compactPhone ? space.x3 : space.x4 }}>
         <Field label="Email">
@@ -81,6 +82,7 @@ export default function Login() {
             autoCorrect={false}
             autoComplete="email"
             returnKeyType="next"
+            editable={!busy}
           />
         </Field>
         <Field label="Password" error={error}>
@@ -93,82 +95,48 @@ export default function Login() {
             autoCapitalize="none"
             autoComplete="password"
             returnKeyType="go"
+            editable={!busy}
             onSubmitEditing={submit}
             invalid={!!error}
-            right={<IconButton icon={showPw ? "eye-off" : "eye"} size={30} iconSize={15} tone="soft" onPress={() => setShowPw((v) => !v)} label="Toggle password" />}
+            right={<IconButton icon={showPw ? "eye-off" : "eye"} size={30} iconSize={15} tone="soft" onPress={() => setShowPw((v) => !v)} label={showPw ? "Hide password" : "Show password"} />}
           />
         </Field>
         <Button testID="login-submit" label="Sign in" size="lg" full onPress={submit} loading={busy} />
       </View>
 
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "flex-end", marginTop: space.x1 }}>
-        <Pressable
-          testID="toggle-portal"
-          accessibilityRole="button"
-          disabled={busy}
-          onPress={() => { setMode((m) => (m === "staff" ? "customer" : "staff")); setError(null); setEmail(""); setPassword(""); }}
-          hitSlop={8}
-        >
-          <Text style={{ fontFamily: font.medium, fontSize: 13, color: color.brassDeep }}>
-            {mode === "staff" ? "Customer portal →" : "← Staff sign-in"}
-          </Text>
-        </Pressable>
-      </View>
-
       <View style={{ flexDirection: "row", justifyContent: "center", gap: space.x4 }}>
-        <Pressable testID="login-privacy-link" onPress={() => router.push("/privacy")} hitSlop={8}>
+        <Pressable accessibilityRole="link" style={{ minHeight: 44, justifyContent: "center" }} testID="login-privacy-link" onPress={() => router.push("/privacy")} hitSlop={8}>
           <Text style={{ fontFamily: font.regular, fontSize: 12, color: color.inkSoft }}>Privacy</Text>
         </Pressable>
-        <Pressable testID="login-terms-link" onPress={() => router.push("/terms")} hitSlop={8}>
+        <Pressable accessibilityRole="link" style={{ minHeight: 44, justifyContent: "center" }} testID="login-terms-link" onPress={() => router.push("/terms")} hitSlop={8}>
           <Text style={{ fontFamily: font.regular, fontSize: 12, color: color.inkSoft }}>Terms</Text>
         </Pressable>
       </View>
     </View>
   );
 
-  // ── Phone: image banner + form ──────────────────────────────────────────────
-  if (isPhone) {
-    return (
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1, backgroundColor: color.canvas }}>
-        <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-          <View style={{ height: compactPhone ? 128 : 216 }}>
-            <Image source={{ uri: HERO }} style={{ flex: 1 }} contentFit="cover" transition={300} />
-            <LinearGradient colors={["rgba(20,17,12,0.05)", "rgba(20,17,12,0.55)"]} style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0 }} />
-            <View style={{ position: "absolute", left: 20, bottom: 16, right: 20 }}>
-              <BuildConLogo height={compactPhone ? 32 : 40} />
-            </View>
-          </View>
-          <View style={{ flex: 1, padding: compactPhone ? 16 : 24, paddingTop: compactPhone ? 12 : 32, paddingBottom: Math.max(24, insets.bottom + 16) }}>
-            {form}
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    );
-  }
+  const form = Platform.OS === "web" ? createElement("form", {
+    "aria-label": mode === "staff" ? "Staff sign-in" : "Customer sign-in",
+    onSubmit: (event: React.FormEvent) => { event.preventDefault(); void submit(); },
+    style: { width: "100%", margin: 0 },
+  }, formContent, createElement("button", { type: "submit", tabIndex: -1, style: { display: "none" } }, "Sign in")) : formContent;
 
-  // ── Tablet / desktop: split panel ───────────────────────────────────────────
   return (
-    <View style={{ flex: 1, flexDirection: "row", backgroundColor: color.canvas }}>
-      <View style={{ flex: isTablet ? 0.85 : 1.1 }}>
-        <Image source={{ uri: HERO }} style={{ flex: 1 }} contentFit="cover" transition={400} />
-        <LinearGradient
-          colors={["rgba(20,17,12,0)", "rgba(20,17,12,0.62)"]}
-          start={{ x: 0.5, y: 0.35 }}
-          end={{ x: 0.5, y: 1 }}
-          style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0 }}
-        />
-        <View style={{ position: "absolute", left: 40, right: 40, bottom: 40, gap: 6 }}>
-          <Text style={{ fontFamily: font.display, fontSize: 30, lineHeight: 38, color: "#FFFFFF", letterSpacing: -0.3 }}>
-            {brand.tagline}.
-          </Text>
-          <Text style={{ fontFamily: font.regular, fontSize: 14, lineHeight: 21, color: "rgba(255,255,255,0.82)", maxWidth: 420 }}>
-            The operating system for premium sanitaryware — quotations, orders and payments in one calm place.
-          </Text>
+    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1, backgroundColor: color.canvas }}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 1, paddingHorizontal: isPhone ? 24 : 48, paddingTop: Math.max(insets.top + 24, 40), paddingBottom: Math.max(insets.bottom + 24, 40), justifyContent: "center" }}>
+        <View style={{ width: "100%", maxWidth: 1040, alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 72 }}>
+          {!isPhone ? <View style={{ flex: 1, gap: space.x5 }}>
+            <Text style={{ fontFamily: font.medium, fontSize: 12, letterSpacing: 1.4, color: color.inkMid }}>BUILDCON HOUSE</Text>
+            <Txt v="display" style={{ fontSize: 44, lineHeight: 54 }}>Every detail.
+Every delivery.</Txt>
+            <Txt v="bodyMid">One workspace for the people, products and documents behind each customer project.</Txt>
+            <View style={{ borderTopWidth: 1, borderTopColor: color.line, paddingTop: space.x5, gap: space.x3 }}>
+              <Txt v="bodyMid">Sanitary · Tiles · Kitchen · Furniture</Txt>
+            </View>
+          </View> : null}
+          <View style={{ flex: 1, minWidth: 0 }}>{form}</View>
         </View>
-      </View>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1, justifyContent: "center", padding: space.x10 }}>
-        {form}
-      </KeyboardAvoidingView>
-    </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }

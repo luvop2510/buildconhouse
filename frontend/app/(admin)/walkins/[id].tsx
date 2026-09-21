@@ -10,7 +10,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { walkinsApi, type WalkIn } from "@/src/api/walkins";
 import { toast } from "@/src/components/Toast";
 import { useBp } from "@/src/design/responsive";
-import { Avatar, Button, Card, ListRow, PageHeader, SearchField, Sheet, Skeleton, TextField } from "@/src/components/ui";
+import { Avatar, Button, Card, ErrorState, ListRow, PageHeader, SearchField, Sheet, Skeleton, TextField } from "@/src/components/ui";
 import { colors, spacing, type } from "@/src/theme/tokens";
 
 async function openUrl(url: string) {
@@ -32,6 +32,7 @@ export default function WalkInDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { isPhone } = useBp();
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [w, setW] = useState<WalkIn | null>(null);
   const [timeline, setTimeline] = useState<Record<string, any>[]>([]);
   const [notes, setNotes] = useState("");
@@ -41,11 +42,12 @@ export default function WalkInDetail() {
   const [spSearch, setSpSearch] = useState("");
 
   const load = useCallback(async () => {
+    setLoadError(null);
     try {
       const [detail, tl] = await Promise.all([walkinsApi.get(id), walkinsApi.timeline(id)]);
       setW(detail); setNotes(detail.notes || ""); setTimeline(tl);
     } catch (e: any) {
-      toast.error(e?.detail || "Could not load Walk-in");
+      setLoadError(e?.detail || "Could not load walk-in. Please retry.");
     }
   }, [id]);
 
@@ -110,7 +112,7 @@ export default function WalkInDetail() {
     return (
       <SafeAreaView style={{ flex: 1 }} edges={isPhone ? [] : ["top"]}>
         <PageHeader title="Walk-in" back={() => router.back()} />
-        <View style={{ padding: isPhone ? spacing.lg : spacing.xl }}><Skeleton h={120} /></View>
+        <View style={{ padding: isPhone ? spacing.lg : spacing.xl }}>{loadError ? <ErrorState title="Could not load walk-in" subtitle={loadError} onRetry={() => void load()} /> : <Skeleton h={120} />}</View>
       </SafeAreaView>
     );
   }

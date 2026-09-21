@@ -31,6 +31,16 @@ export type PurchaseItem = {
   age_days: number;
   blocked: boolean;
   sla_days: number;
+  godown_transferred_qty?: number;
+  godown_transfer_history?: Array<{
+    stock_id: string; qty: number; reason?: string; transferred_at?: string;
+    transferred_by?: string; transferred_by_name?: string;
+  }>;
+  godown_stock_id?: string | null;
+  godown_allocation_id?: string | null;
+  godown_source_customer_name?: string | null;
+  godown_source_purchased_at?: string | null;
+  godown_transferred_at?: string | null;
 };
 
 /** Floor-scoped customer record used by the Purchases lifecycle navigator. */

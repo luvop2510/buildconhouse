@@ -50,6 +50,7 @@ import { enqueueQuotationPersist } from "@/src/components/quotation/helpers/auto
 import { computeQuotationTotals } from "@/src/components/quotation/helpers/totals";
 import type { Customer, Product } from "@/src/components/quotation/helpers/types";
 import { Button, Card, Dropdown, TextField } from "@/src/components/ds";
+import { Disclosure } from "@/src/design/Disclosure";
 import { BuildConLogo } from "@/src/design/BrandLogo";
 import { useBp } from "@/src/design/responsive";
 import { colors, money, radius, spacing, type } from "@/src/theme/tokens";
@@ -738,7 +739,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null) {
     docId, docNumberServer, loading, restoreError, retryRestore: () => setRestoreAttempt((value) => value + 1), header, setHeaderField, rows,
     updateRow, addRow, removeRow, applyProduct, selectRowSize, loadRowSizes,
     customers, customerId, pickCustomer, setCustomerId,
-    saveState, busy, generatePdf, print, placeOrder, serverTotals, previewTotals,
+    saveState, retrySave: () => persist({ silent: true }), busy, generatePdf, print, placeOrder, serverTotals, previewTotals,
     status, stage: tilesStage(docType, status), workflowAction, runWorkflowAction, workflowError, deleteDocument,
   };
 }
@@ -758,7 +759,7 @@ function CellInput({
       value={value}
       onChangeText={onChangeText}
       placeholder={placeholder}
-      placeholderTextColor="#77777"
+      placeholderTextColor="#777777"
       multiline={multiline}
       testID={testID}
       style={[
@@ -1561,17 +1562,18 @@ const MOBILE_FIELDS: Record<TilesDocType, MobileFieldDef[]> = {
   ],
 };
 
-function SaveStatusPill({ state }: { state: "idle" | "saving" | "saved" | "error" }) {
+function SaveStatusPill({ state, onRetry }: { state: "idle" | "saving" | "saved" | "error"; onRetry: () => void }) {
   if (state === "idle") return null;
   const meta = {
     saving: { label: "Saving…", tone: colors.onSurfaceMuted, icon: "loader" as const },
     saved: { label: "All changes saved", tone: colors.success, icon: "check-circle" as const },
-    error: { label: "Couldn't save — will retry", tone: colors.error, icon: "alert-circle" as const },
+    error: { label: "Changes are not saved", tone: colors.error, icon: "alert-circle" as const },
   }[state];
   return (
-    <View style={mobileStyles.savePill}>
+    <View role={state === "error" ? "alert" : "status"} style={[mobileStyles.savePill, { flexWrap: "wrap" }]}>
       <Feather name={meta.icon} size={12} color={meta.tone} />
       <Text style={[mobileStyles.savePillText, { color: meta.tone }]}>{meta.label}</Text>
+      {state === "error" ? <Button label="Retry save" variant="secondary" onPress={onRetry} /> : null}
     </View>
   );
 }
@@ -1593,13 +1595,15 @@ function MobileRowCard({
   const fields = MOBILE_FIELDS[docType];
   return (
     <View style={mobileStyles.rowCard} testID={`mobile-row-${index}`}>
-      <Pressable onPress={onOpenPicker} style={mobileStyles.productImage} testID={`mobile-thumb-${index}`} accessibilityLabel={row.productId ? "Change product image" : "Select product image"}>
+      {row.productId ? (
+      <Pressable accessibilityRole="button" onPress={onOpenPicker} style={mobileStyles.productImage} testID={`mobile-thumb-${index}`} accessibilityLabel={row.productId ? "Change product image" : "Select product image"}>
           {row.image ? (
             <ProductImage source={row.image} contentFit="contain" frameInset={0} borderRadius={radius.md} disableSkeleton frameBackground={colors.surface} style={{ width: "100%", height: "100%" }} accessibilityLabel="Quotation product image" />
           ) : (
             <Feather name="image" size={18} color={colors.onSurfaceMuted} />
           )}
       </Pressable>
+      ) : null}
       <View style={mobileStyles.rowHeading}>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={mobileStyles.rowIndex}>Item {index + 1}</Text>
@@ -1754,14 +1758,14 @@ function MobileTilesEditor({
             contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg, paddingBottom: 116 + insets.bottom }}
             keyboardShouldPersistTaps="handled"
           >
-            <SaveStatusPill state={doc.saveState} />
-            {doc.workflowError ? <Text style={{ color: colors.error, fontSize: 13 }}>{doc.workflowError}</Text> : null}
+            <SaveStatusPill state={doc.saveState} onRetry={() => void doc.retrySave()} />
+            {doc.workflowError ? <Text role="alert" style={{ color: colors.error, fontSize: 13 }}>{doc.workflowError}</Text> : null}
 
             <Card padding={spacing.md} style={{ gap: spacing.md }}>
               <Text style={mobileStyles.sectionTitle}>CUSTOMER &amp; DETAILS</Text>
               <FormFieldCustomerName doc={doc} />
               <TextField label="Contact no." value={doc.header.phone} onChangeText={(t: string) => doc.setHeaderField("phone", t)} keyboardType="phone-pad" testID="mobile-phone" />
-              <View style={mobileStyles.fieldStack}>
+              <Disclosure title="Document details">
                 <View style={mobileStyles.fieldFull}>
                   <TextField label="Date" value={doc.header.docDate} onChangeText={(t: string) => doc.setHeaderField("docDate", t)} testID="mobile-date" />
                 </View>
@@ -1777,9 +1781,8 @@ function MobileTilesEditor({
                 <View style={mobileStyles.fieldFull}>
                   <TextField label="Prepared by" value={doc.header.preparedBy} onChangeText={(t: string) => doc.setHeaderField("preparedBy", t)} testID="mobile-prepared-by" />
                 </View>
-              </View>
+              </Disclosure>
               <TextField label={isSelection ? "Address" : "Address (required)"} value={doc.header.address} onChangeText={(t: string) => doc.setHeaderField("address", t)} multiline testID="mobile-address" />
-              {!isSelection ? <TextField label="Transportation Fee" value={doc.header.transportationFee} onChangeText={(t: string) => doc.setHeaderField("transportationFee", t)} keyboardType="decimal-pad" testID="mobile-transportation-fee" /> : null}
             </Card>
 
             <View style={{ gap: spacing.sm }}>
@@ -1797,6 +1800,7 @@ function MobileTilesEditor({
             {!isSelection ? (
               <Card padding={spacing.md} style={{ gap: 2 }}>
                 <Text style={[mobileStyles.sectionTitle, { marginBottom: 6 }]}>PRICE SUMMARY</Text>
+                <TextField label="Transportation fee" value={doc.header.transportationFee} onChangeText={(t: string) => doc.setHeaderField("transportationFee", t)} keyboardType="decimal-pad" testID="mobile-transportation-fee" />
                 <SummaryLine label="Total boxes" value={totals.boxes ? String(Math.round(totals.boxes * 100) / 100) : "—"} />
                 <SummaryLine label="Subtotal" value={money(totals.subtotal)} />
                 <SummaryLine label="Transportation" value={money(totals.transportation)} />

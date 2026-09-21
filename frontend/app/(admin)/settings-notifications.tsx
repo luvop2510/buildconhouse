@@ -7,12 +7,12 @@
 // its current rule set + live counts are surfaced honestly.
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Text, View } from "react-native";
 
 import { api } from "@/src/api/client";
-import { AdminPage } from "@/src/components/AdminPage";
-import { Card, Skeleton } from "@/src/components/ui";
+import { SettingsPage as AdminPage } from "@/src/components/settings/SettingsPage";
+import { Card, Skeleton, ErrorState, EmptyState } from "@/src/components/ui";
 import { colors, spacing, type } from "@/src/theme/tokens";
 
 type Rule = { rule_type: string; label: string; category: string; description: string; active_count: number };
@@ -41,24 +41,27 @@ export default function SettingsNotifications() {
   const router = useRouter();
   const [rules, setRules] = useState<Rule[] | null>(null);
 
-  useEffect(() => {
-    api.get<Rule[]>("/followups/config/rules").then(setRules).catch(() => setRules([]));
+  const [error, setError] = useState(false);
+  const load = useCallback(() => {
+    setError(false);
+    api.get<Rule[]>("/followups/config/rules").then(setRules).catch(() => setError(true));
   }, []);
+  useEffect(() => { load(); }, [load]);
 
   return (
     <AdminPage title="Notifications" subtitle="Channels & follow-up rules" back={() => router.back()}>
       <View style={{ gap: spacing.lg }}>
         <Card style={{ gap: spacing.md }}>
           <Text style={type.overline}>Channels</Text>
-          <IntegrationRow icon="mail" name="Email" status="Not connected" ok={false} note="No email provider is configured yet. Connecting one (e.g. SendGrid) is a setup step for a future release, not a launch blocker." />
+          <IntegrationRow icon="mail" name="Email" status="Not connected" ok={false} note="Email notifications are not enabled for this workspace." />
           <View style={{ height: 1, backgroundColor: colors.divider }} />
           <IntegrationRow icon="message-circle" name="WhatsApp" status="Manual send" ok={true} note="Follow-ups already generate a ready-to-send WhatsApp message that your team opens and sends from their own phone — there's no automated bulk sender." />
         </Card>
 
         <Card style={{ gap: spacing.sm }}>
           <Text style={type.overline}>Follow-up rules — live</Text>
-          <Text style={type.caption}>These run automatically today. This is a reference view, not an editor — tuning the thresholds is a code change, not a Settings toggle.</Text>
-          {!rules ? (
+          <Text style={type.caption}>Automatic rules and their current active follow-ups. Contact your administrator to change how rules are configured.</Text>
+          {error ? <ErrorState title="Could not load follow-up rules" onRetry={load} /> : rules?.length === 0 ? <EmptyState title="No follow-up rules configured" /> : !rules ? (
             <Skeleton w="100%" h={60} />
           ) : (
             rules.map((r, i) => (

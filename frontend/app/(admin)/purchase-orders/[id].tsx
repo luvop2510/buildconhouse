@@ -135,6 +135,16 @@ type StatusConfig = {
   labels: Record<string, string>;
 };
 
+const DEFAULT_STATUS_CONFIG: StatusConfig = {
+  columns: [],
+  transitions: {},
+  labels: {
+    draft: "Draft", awaiting_review: "Awaiting review", ordered: "Ordered", awaiting_supplier: "Awaiting supplier",
+    partial_received: "Partially received", fully_received: "Fully received", packed: "Packed",
+    ready_for_dispatch: "Ready for dispatch", cancelled: "Cancelled",
+  },
+};
+
 const STATUS_TONE: Record<PoStatus, string> = {
   draft: colors.onSurfaceMuted,
   awaiting_review: colors.warning,
@@ -209,7 +219,7 @@ function generationKey(poId: string): string {
 export default function PurchaseOrderDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { isPhone, isDesktop, isTablet } = useBp();
+  const { isPhone, isDesktop } = useBp();
   const { staff } = useAuth();
   const { roles, loading: rolesLoading, error: rolesError, refresh: refreshRoles } = useRoles();
 
@@ -244,11 +254,16 @@ export default function PurchaseOrderDetail() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [d, cfg, tl] = await Promise.all([
-        api.get<PO>(`/purchases/${id}/order-detail`),
+      // The canonical order is the only blocking request. The legacy status
+      // configuration and activity stream add controls/context, but must not
+      // make a valid purchase order disappear when either is unavailable.
+      const d = await api.get<PO>(`/purchases/${id}/order-detail`);
+      const [configResult, timelineResult] = await Promise.allSettled([
         api.get<StatusConfig>("/purchase-orders/config/statuses"),
         api.get<TimelineEvent[]>(`/activity/purchase/${id}`),
       ]);
+      const cfg = configResult.status === "fulfilled" ? configResult.value : DEFAULT_STATUS_CONFIG;
+      const tl = timelineResult.status === "fulfilled" ? timelineResult.value : [];
       setPo(d);
       setConfig(cfg);
       setTimeline(tl);
@@ -489,7 +504,7 @@ export default function PurchaseOrderDetail() {
     }
   };
 
-  if (loading && (!po || !config)) {
+  if (loading && !po) {
     return (
       <SafeAreaView style={styles.centeredState} edges={isPhone ? [] : ["top"]}>
         <LoadingState label="Loading purchase order…" />
@@ -497,7 +512,7 @@ export default function PurchaseOrderDetail() {
     );
   }
 
-  if (loadError || !po || !config) {
+  if (loadError || !po) {
     return (
       <SafeAreaView style={styles.centeredState} edges={isPhone ? [] : ["top"]}>
         <ErrorState title="Could not load purchase order" subtitle={loadError || "Purchase order not found"} onRetry={load} />
@@ -506,6 +521,11 @@ export default function PurchaseOrderDetail() {
     );
   }
 
+  const statusConfig = config || DEFAULT_STATUS_CONFIG;
+  // The admin rail consumes a substantial part of a tablet viewport. Keep
+  // this page single-column until the actual desktop tier, rather than
+  // squeezing two panes and their fixed value columns into the remainder.
+  const wideDetail = isDesktop;
   const hasRemainingChalanQty = Object.values(po.remaining_qty_by_item || {}).some((qty) => qty > 1e-6);
 
   return (
@@ -538,24 +558,24 @@ export default function PurchaseOrderDetail() {
           padding: isPhone ? spacing.lg : spacing.xl,
           paddingBottom: isPhone ? 132 : spacing.xxl,
           gap: spacing.lg,
-          flexDirection: isTablet || isDesktop ? "row" : "column",
+          flexDirection: wideDetail ? "row" : "column",
         }}
       >
         {/* Left / main column */}
-        <View style={{ flex: isTablet || isDesktop ? 1.6 : undefined, gap: spacing.lg, minWidth: 0 }}>
+        <View style={{ flex: wideDetail ? 1.6 : undefined, gap: spacing.lg, minWidth: 0 }}>
           <View>
             <Text style={[type.mono, { color: colors.onSurfaceMuted }]}>{po.number}</Text>
-            <Text style={[type.displayLg, { marginTop: 4 }]}>{po.customer_name}</Text>
+            <Text style={[type.displayLg, { marginTop: 4 }]} numberOfLines={2}>{po.customer_name}</Text>
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8, alignItems: "center" }}>
               <View style={[styles.statusPill, { backgroundColor: STATUS_TONE[po.status] + "22", borderColor: STATUS_TONE[po.status] }]}>
                 <View style={[styles.statusDot, { backgroundColor: STATUS_TONE[po.status] }]} />
                 <Text style={{ fontSize: 12, fontWeight: "700", color: STATUS_TONE[po.status] }}>
-                  {config.labels[po.status]}
+                  {statusConfig.labels[po.status]}
                 </Text>
               </View>
               {po.brand_name ? <Badge label={po.brand_name} tone="neutral" /> : null}
               {po.supplier_name ? (
-                <Text style={type.caption}>via {po.supplier_name}</Text>
+                <Text style={type.caption} numberOfLines={1}>via {po.supplier_name}</Text>
               ) : (
                 <Text style={[type.caption, { color: colors.warning }]}>No supplier</Text>
               )}
@@ -590,7 +610,7 @@ export default function PurchaseOrderDetail() {
                       <Text style={[type.mono, { width: 40 }]}>{String(i + 1).padStart(2, "0")}</Text>
                       <View style={{ flex: 1 }}>
                         <Text style={{ fontSize: 13, fontWeight: "600" }} numberOfLines={2}>{it.name}</Text>
-                        <Text style={type.caption}>{it.sku}{it.room ? ` · ${it.room}` : ""}</Text>
+                        <Text style={type.caption} numberOfLines={1}>{it.sku}{it.room ? ` · ${it.room}` : ""}</Text>
                       </View>
                       <Text style={[type.mono, { width: 70, textAlign: "right" }]}>{it.qty}</Text>
                       <View style={{ width: 90, alignItems: "flex-end" }}>
@@ -735,10 +755,10 @@ export default function PurchaseOrderDetail() {
 
                     {(chalan.reference_number || chalan.receiver_name || chalan.sender_name || chalan.dispatch_note) ? (
                       <View style={styles.chalanMeta}>
-                        {chalan.reference_number ? <Text style={type.caption}>Reference · {chalan.reference_number}</Text> : null}
-                        {chalan.receiver_name ? <Text style={type.caption}>Receiver · {chalan.receiver_name}</Text> : null}
-                        {chalan.sender_name ? <Text style={type.caption}>Supplier representative · {chalan.sender_name}</Text> : null}
-                        {chalan.dispatch_note ? <Text style={type.caption}>Dispatch note · {chalan.dispatch_note}</Text> : null}
+                        {chalan.reference_number ? <Text style={type.caption} numberOfLines={1}>Reference · {chalan.reference_number}</Text> : null}
+                        {chalan.receiver_name ? <Text style={type.caption} numberOfLines={1}>Receiver · {chalan.receiver_name}</Text> : null}
+                        {chalan.sender_name ? <Text style={type.caption} numberOfLines={1}>Supplier representative · {chalan.sender_name}</Text> : null}
+                        {chalan.dispatch_note ? <Text style={type.caption} numberOfLines={2}>Dispatch note · {chalan.dispatch_note}</Text> : null}
                       </View>
                     ) : null}
 
@@ -848,7 +868,7 @@ export default function PurchaseOrderDetail() {
         </View>
 
         {/* Right column — status timeline + activity */}
-        <View style={{ flex: isTablet || isDesktop ? 1 : undefined, gap: spacing.lg, minWidth: 0 }}>
+        <View style={{ flex: wideDetail ? 1 : undefined, gap: spacing.lg, minWidth: 0 }}>
           <Card>
             <Text style={type.overline}>Status Timeline</Text>
             <View style={{ marginTop: spacing.md, gap: spacing.md }}>
@@ -857,9 +877,9 @@ export default function PurchaseOrderDetail() {
                   <View style={[styles.statusMarker, { backgroundColor: STATUS_TONE[ev.to_status as PoStatus] || colors.onSurfaceMuted }]} />
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: 13, fontWeight: "600" }}>
-                      {config.labels[ev.to_status] || ev.to_status}
+                      {statusConfig.labels[ev.to_status] || ev.to_status}
                       {ev.from_status ? (
-                        <Text style={type.caption}> · from {config.labels[ev.from_status] || ev.from_status}</Text>
+                        <Text style={type.caption}> · from {statusConfig.labels[ev.from_status] || ev.from_status}</Text>
                       ) : null}
                     </Text>
                     <Text style={type.caption}>
@@ -887,7 +907,7 @@ export default function PurchaseOrderDetail() {
         onClose={() => setStatusOpen(false)}
         current={po.status}
         allowed={allowedNext}
-        labels={config.labels}
+        labels={statusConfig.labels}
         busy={busy}
         onConfirm={changeStatus}
       />

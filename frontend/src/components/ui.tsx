@@ -1,14 +1,16 @@
+import { Button as DesignButton } from "@/src/design/controls";
+import { Overlay } from "@/src/design/Overlay";
+import { NavigationTabs } from "@/src/design/NavigationTabs";
+import { useReducedMotion } from "@/src/hooks/use-reduced-motion";
 // BuildCon House · Design System V1 · Primitives
 // Every screen composes UI from this file. No hardcoded colors, spacing, or
 // typography allowed anywhere else. Feels closer to Linear / Stripe / Notion.
 
 import { Feather } from "@expo/vector-icons";
-import { isValidElement, useEffect, useRef } from "react";
+import { isValidElement, useEffect, useRef, useId } from "react";
 import {
   ActivityIndicator,
   Animated,
-  KeyboardAvoidingView,
-  Modal as RNModal,
   Platform,
   Pressable,
   StyleSheet,
@@ -18,7 +20,6 @@ import {
   View,
   ViewStyle,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
   colors,
@@ -30,7 +31,7 @@ import {
   spacing,
   type,
 } from "@/src/theme/tokens";
-import { color as ds, font as dsFont, statusTone, toneColor } from "@/src/design/tokens";
+import { color as ds, statusTone, toneColor } from "@/src/design/tokens";
 // The single breakpoint authority. `layout` above comes from theme/tokens,
 // which carries no `bp` — reading layout.bp there yields undefined and every
 // comparison against it silently returns false.
@@ -41,18 +42,6 @@ type FeatherName = keyof typeof Feather.glyphMap;
 // ──────────────────────────────────────────────────────────────────────────
 // Press-animated wrapper — subtle scale + opacity feedback for all touchables
 // ──────────────────────────────────────────────────────────────────────────
-export function useSpring(active: boolean, from = 1, to = 0.97) {
-  const anim = useRef(new Animated.Value(from)).current;
-  Animated.spring(anim, {
-    toValue: active ? to : from,
-    useNativeDriver: Platform.OS !== "web",
-    damping: 22,
-    stiffness: 320,
-    mass: 0.6,
-  }).start();
-  return anim;
-}
-
 // ──────────────────────────────────────────────────────────────────────────
 // Button — primary / secondary / ghost / danger / brand-light
 // ──────────────────────────────────────────────────────────────────────────
@@ -72,71 +61,7 @@ type ButtonProps = {
   style?: ViewStyle;
 };
 
-export function Button({
-  label, onPress, variant = "primary", size = "md", icon, iconRight,
-  loading, disabled, fullWidth, testID, style,
-}: ButtonProps) {
-  const { isPhone } = useBp();
-  const sizing = {
-    sm: { padV: 8,  padH: 12, fs: 13, iconSize: 14, radius: radius.sm, height: 34 },
-    md: { padV: 11, padH: 16, fs: 14, iconSize: 16, radius: radius.md, height: 44 },
-    lg: { padV: 14, padH: 20, fs: 15, iconSize: 18, radius: radius.md, height: 52 },
-  }[size];
-
-  const skin = {
-    primary:    { bg: colors.brand,           fg: colors.onBrand,           border: colors.brand },
-    secondary:  { bg: colors.surfaceSecondary, fg: colors.onSurface,         border: colors.border },
-    ghost:      { bg: "transparent",           fg: colors.onSurface,         border: "transparent" },
-    danger:     { bg: colors.error,           fg: colors.onBrand,           border: colors.error },
-    brandLight: { bg: colors.brandTint,       fg: colors.brand,             border: colors.brandBorder },
-    outline:    { bg: "transparent",           fg: colors.brand,             border: colors.brand },
-  }[variant];
-
-  return (
-    <Pressable
-      testID={testID}
-      onPress={onPress}
-      disabled={loading || disabled}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ disabled: loading || disabled }}
-      style={({ pressed }) => [
-        {
-          backgroundColor: skin.bg,
-          borderColor: skin.border,
-          borderWidth: variant === "ghost" ? 0 : 1,
-          paddingVertical: sizing.padV,
-          paddingHorizontal: sizing.padH,
-          borderRadius: sizing.radius,
-          // Keep every action comfortably tappable on phones, including the
-          // compact buttons used inside cards and list rows.
-          minHeight: isPhone ? Math.max(44, sizing.height) : sizing.height,
-          opacity: disabled ? 0.5 : pressed ? 0.88 : 1,
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 8,
-          alignSelf: fullWidth ? "stretch" : "flex-start",
-          ...(variant === "primary" || variant === "danger" ? elevation.hairline : null),
-        },
-        style,
-      ]}
-    >
-      {loading ? (
-        <ActivityIndicator color={skin.fg} size="small" />
-      ) : icon ? (
-        <Feather name={icon} size={sizing.iconSize} color={skin.fg} />
-      ) : null}
-      <Text
-        numberOfLines={1}
-        style={{ color: skin.fg, fontSize: sizing.fs, fontFamily: type.titleMd.fontFamily, fontWeight: "600", letterSpacing: -0.1, flexShrink: 1 }}
-      >
-        {label}
-      </Text>
-      {iconRight && !loading ? <Feather name={iconRight} size={sizing.iconSize} color={skin.fg} /> : null}
-    </Pressable>
-  );
-}
+export function Button({ fullWidth, ...props }: ButtonProps) { return <DesignButton {...props} full={fullWidth} />; }
 
 // ──────────────────────────────────────────────────────────────────────────
 // IconButton — circular icon-only affordance
@@ -168,13 +93,13 @@ export function IconButton({
     <Pressable
       testID={testID}
       accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
+      accessibilityLabel={accessibilityLabel || icon.replace(/-/g, " ")}
       accessibilityState={{ disabled, selected: active }}
       onPress={onPress}
       disabled={disabled}
       hitSlop={layout.hitSlop}
       style={({ pressed }) => [{
-        width: Math.max(size, 44), height: Math.max(size, 44), borderRadius: Math.max(size, 44) / 2,
+        width: Math.max(size, 44), height: Math.max(size, 44), borderRadius: radius.md,
         backgroundColor: skin.bg,
         borderWidth: tone === "ghost" ? 0 : StyleSheet.hairlineWidth,
         borderColor: skin.border,
@@ -216,10 +141,11 @@ export function Card({
     <View testID={testID} style={[
       {
         backgroundColor: skin.bg,
-        borderRadius: radius.lg,
+        borderRadius: radius.xl,
         borderWidth: skin.borderWidth,
         borderColor: skin.borderColor,
         padding: padding ?? (isPhone ? spacing.md : spacing.lg),
+        overflow: "hidden",
       },
       skin.shadow,
       style,
@@ -314,11 +240,15 @@ export function Chip({
   return (
     <Pressable
       onPress={onPress}
+      accessibilityRole={onPress ? "button" : undefined}
+      accessibilityLabel={typeof count === "number" ? `${label}, ${count}` : label}
+      aria-pressed={typeof active === "boolean" ? active : undefined}
       testID={testID}
       style={({ pressed }) => ({
-        height: 34,
+        minHeight: 44,
+        paddingVertical: 8,
         paddingHorizontal: 14,
-        borderRadius: radius.pill,
+        borderRadius: radius.md,
         borderWidth: 1,
         borderColor: active ? ds.brassLine : colors.border,
         backgroundColor: active ? ds.brassTint : colors.surfaceSecondary,
@@ -341,7 +271,7 @@ export function Chip({
       </Text>
       {typeof count === "number" ? (
         <View style={{
-          backgroundColor: active ? "rgba(140,115,81,0.16)" : colors.surfaceTertiary,
+          backgroundColor: active ? "rgba(0,102,204,0.10)" : colors.surfaceTertiary,
           paddingHorizontal: 6,
           paddingVertical: 1,
           borderRadius: radius.pill,
@@ -377,8 +307,10 @@ export function Divider({ vertical, style, inset }: { vertical?: boolean; style?
 }
 
 export function Skeleton({ w = "100%", h = 14, style, radius: r }: { w?: number | string; h?: number; style?: ViewStyle; radius?: number }) {
+  const reducedMotion = useReducedMotion();
   const pulse = useRef(new Animated.Value(0.5)).current;
   useEffect(() => {
+    if (reducedMotion) { pulse.setValue(0.7); return; }
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(pulse, { toValue: 1, duration: 900, useNativeDriver: Platform.OS !== "web" }),
@@ -387,7 +319,7 @@ export function Skeleton({ w = "100%", h = 14, style, radius: r }: { w?: number 
     );
     loop.start();
     return () => loop.stop();
-  }, [pulse]);
+  }, [pulse, reducedMotion]);
 
   return (
     <Animated.View style={[
@@ -498,130 +430,18 @@ export function ScreenTitle({
 // ──────────────────────────────────────────────────────────────────────────
 // SegmentedControl — iOS-native feel
 // ──────────────────────────────────────────────────────────────────────────
-export function SegmentedControl<T extends string>({
-  value, options, onChange, size = "md", testID, fullWidth,
-}: {
-  value: T;
-  options: { value: T; label: string; icon?: FeatherName }[];
-  onChange: (v: T) => void;
-  size?: "sm" | "md";
-  testID?: string;
-  fullWidth?: boolean;
-}) {
-  const h = size === "sm" ? 44 : 44;
-  // Full-width segmented controls are commonly used as the primary mobile
-  // workspace switcher. Let each segment actually share the available width
-  // instead of retaining a desktop-style minimum that clips longer labels.
-  const compactFullWidth = !!fullWidth;
-  return (
-    <View testID={testID} style={{
-      flexDirection: "row",
-      backgroundColor: colors.surfaceTertiary,
-      borderRadius: radius.md,
-      padding: 3,
-      height: h,
-      alignSelf: fullWidth ? "stretch" : "flex-start",
-    }}>
-      {options.map((o) => {
-        const on = o.value === value;
-        return (
-          <Pressable
-            key={String(o.value)}
-            testID={testID ? `${testID}-${o.value}` : undefined}
-            onPress={() => onChange(o.value)}
-            style={{
-              flex: 1, borderRadius: radius.sm + 2,
-              paddingHorizontal: compactFullWidth ? 6 : 12,
-              minWidth: compactFullWidth ? 0 : 60,
-              alignItems: "center", justifyContent: "center",
-              flexDirection: "row", gap: 6,
-              backgroundColor: on ? colors.surfaceSecondary : "transparent",
-              ...(on ? elevation.hairline : null),
-            }}
-          >
-            {o.icon ? <Feather name={o.icon} size={13} color={on ? colors.onSurface : colors.onSurfaceMuted} /> : null}
-            <Text
-              numberOfLines={1}
-              style={{
-                flexShrink: 1,
-                fontSize: size === "sm" ? 12 : 13,
-                fontFamily: type.titleMd.fontFamily,
-                fontWeight: on ? "600" : "500",
-                color: on ? colors.onSurface : colors.onSurfaceMuted,
-              }}
-            >
-              {o.label}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
+export function SegmentedControl<T extends string>(props: {
+  value: T; options: { value: T; label: string; icon?: FeatherName }[];
+  onChange: (value: T) => void; size?: "sm" | "md"; testID?: string; fullWidth?: boolean;
+}) { return <NavigationTabs {...props} segmented />; }
 
 // ──────────────────────────────────────────────────────────────────────────
 // Tabs — underline scrolling nav (like Linear / Notion)
 // ──────────────────────────────────────────────────────────────────────────
-export function Tabs<T extends string>({
-  value, options, onChange, testID,
-}: {
-  value: T;
-  options: { value: T; label: string; count?: number }[];
-  onChange: (v: T) => void;
-  testID?: string;
-}) {
-  return (
-    <View testID={testID} style={{
-      flexDirection: "row",
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: colors.border,
-    }}>
-      {options.map((o) => {
-        const on = o.value === value;
-        return (
-          <Pressable
-            key={String(o.value)}
-            testID={testID ? `${testID}-${o.value}` : undefined}
-            onPress={() => onChange(o.value)}
-            style={{
-              paddingVertical: 10, minHeight: 44,
-              paddingHorizontal: 4,
-              marginRight: 20,
-              borderBottomWidth: 2,
-              borderBottomColor: on ? colors.brand : "transparent",
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 6,
-            }}
-          >
-            <Text style={{
-              fontSize: 14,
-              fontFamily: type.titleMd.fontFamily,
-              fontWeight: on ? "600" : "500",
-              color: on ? colors.onSurface : colors.onSurfaceMuted,
-              letterSpacing: -0.1,
-            }}>
-              {o.label}
-            </Text>
-            {typeof o.count === "number" ? (
-              <View style={{
-                backgroundColor: on ? colors.brandTint : colors.surfaceTertiary,
-                paddingHorizontal: 6, paddingVertical: 1, borderRadius: radius.pill,
-              }}>
-                <Text style={{
-                  fontSize: 10,
-                  fontFamily: type.titleMd.fontFamily,
-                  fontWeight: "600",
-                  color: on ? colors.brand : colors.onSurfaceMuted,
-                }}>{o.count}</Text>
-              </View>
-            ) : null}
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
+export function Tabs<T extends string>(props: {
+  value: T; options: { value: T; label: string; count?: number }[];
+  onChange: (value: T) => void; testID?: string;
+}) { return <NavigationTabs {...props} />; }
 
 // ──────────────────────────────────────────────────────────────────────────
 // TextField — unified input for the whole app
@@ -637,6 +457,7 @@ export function TextField({
   onRightPress?: () => void;
   containerStyle?: ViewStyle;
 }) {
+  const descriptionId = useId();
   const showError = !!error;
   return (
     <View style={[{ gap: 6 }, containerStyle]}>
@@ -655,23 +476,26 @@ export function TextField({
           {...rest}
           accessibilityLabel={rest.accessibilityLabel || label || rest.placeholder}
           accessibilityHint={rest.accessibilityHint || (showError ? error || undefined : helper)}
+          aria-invalid={showError || undefined}
+          aria-describedby={helper || error ? descriptionId : undefined}
           placeholderTextColor={colors.onSurfaceSubtle}
           style={[{
             flex: 1,
             paddingVertical: Platform.OS === "ios" ? 12 : 8,
-            fontSize: 15,
+            fontSize: 16,
+            minWidth: 0,
             fontFamily: type.body.fontFamily,
             color: colors.onSurface,
           }, rest.style]}
         />
         {rightIcon ? (
-          <Pressable onPress={onRightPress} hitSlop={layout.hitSlop} style={{ marginLeft: 8, minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}>
+          <Pressable accessibilityRole="button" accessibilityLabel={rightIcon?.startsWith("eye") ? "Toggle password visibility" : rightIcon?.replace(/-/g, " ")} onPress={onRightPress} hitSlop={layout.hitSlop} style={{ marginLeft: 8, minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}>
             <Feather name={rightIcon} size={16} color={colors.onSurfaceMuted} />
           </Pressable>
         ) : null}
       </View>
-      {helper && !showError ? <Text style={type.caption}>{helper}</Text> : null}
-      {showError ? <Text style={[type.caption, { color: colors.error }]}>{error}</Text> : null}
+      {helper && !showError ? <Text nativeID={descriptionId} style={type.caption}>{helper}</Text> : null}
+      {showError ? <Text nativeID={descriptionId} accessibilityRole="alert" accessibilityLiveRegion="polite" style={[type.caption, { color: colors.error }]}>{error}</Text> : null}
     </View>
   );
 }
@@ -685,9 +509,11 @@ export function SearchField({ onClear, ...props }: TextInputProps & { onClear?: 
     <View style={{
       flexDirection: "row", alignItems: "center",
       backgroundColor: colors.surfaceTertiary,
-      borderRadius: radius.md,
-      paddingHorizontal: 12,
-      minHeight: 44,
+        borderRadius: radius.xl,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: colors.border,
+        paddingHorizontal: 12,
+        minHeight: 44,
     }}>
       <Feather name="search" size={15} color={colors.onSurfaceMuted} style={{ marginRight: 8 }} />
       <TextInput
@@ -695,7 +521,7 @@ export function SearchField({ onClear, ...props }: TextInputProps & { onClear?: 
         accessibilityLabel={props.accessibilityLabel || props.placeholder || "Search"}
         placeholderTextColor={colors.onSurfaceMuted}
         style={[{
-          flex: 1, fontSize: 14, fontFamily: type.body.fontFamily,
+          flex: 1, minWidth: 0, fontSize: 16, fontFamily: type.body.fontFamily,
           color: colors.onSurface, paddingVertical: 0,
         }, props.style]}
       />
@@ -1035,7 +861,7 @@ export function Alert({
   }[tone];
 
   return (
-    <View style={{
+    <View role={tone === "error" || tone === "warning" ? "alert" : "status"} aria-live={tone === "error" ? "assertive" : "polite"} style={{
       backgroundColor: map.bg,
       borderColor: map.border,
       borderWidth: 1,
@@ -1107,185 +933,15 @@ export function Icon({
 // Chrome (header + body scroll area + footer) identical for every screen.
 // ──────────────────────────────────────────────────────────────────────────
 type SheetVariant = "drawer" | "modal" | "bottom";
-export function Sheet({
-  visible, onClose, title, subtitle, variant = "drawer",
-  children, footer, width, minHeight, testID, dismissable = true, headerRight,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  title?: string;
-  subtitle?: string;
-  variant?: SheetVariant;
-  children: React.ReactNode;
-  footer?: React.ReactNode;
-  width?: number;
-  minHeight?: ViewStyle["minHeight"];
-  testID?: string;
-  dismissable?: boolean;
-  headerRight?: React.ReactNode;
-}) {
-  const { isDesktop } = useBp();
-  const insets = useSafeAreaInsets();
-  const kind: "right" | "center" | "bottom" =
-    variant === "modal" ? "center"
-    : variant === "bottom" ? "bottom"
-    : (isDesktop ? "right" : "bottom");
-
-  const panelStyle: ViewStyle = kind === "right" ? {
-    height: "100%",
-    width: width || layout.sheet.drawerWidth,
-    maxWidth: "100%",
-    borderTopLeftRadius: radius.lg,
-    borderBottomLeftRadius: radius.lg,
-    marginLeft: "auto",
-  } : kind === "center" ? {
-    width: "100%",
-    maxWidth: width || layout.sheet.modalMaxWidth,
-    maxHeight: "90%",
-    borderRadius: radius.lg,
-    alignSelf: "center",
-    marginTop: "auto",
-    marginBottom: "auto",
-  } : {
-    width: "100%",
-    minHeight,
-    maxHeight: "92%",
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
-    marginTop: "auto",
-  };
-
-  const backdropAlign: ViewStyle =
-    kind === "right"  ? { justifyContent: "flex-start", flexDirection: "row" }
-  : kind === "center" ? { justifyContent: "center", alignItems: "center", padding: spacing.lg }
-  :                     { justifyContent: "flex-end" };
-
-  return (
-    <RNModal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
-      <View style={[{ flex: 1, backgroundColor: colors.overlay, zIndex: 1000 }, backdropAlign]}>
-        {dismissable ? (
-          <Pressable
-            onPress={onClose}
-            style={StyleSheet.absoluteFillObject}
-            accessibilityRole="button"
-            accessibilityLabel="Close sheet"
-          />
-        ) : null}
-        <View
-          testID={testID}
-          accessibilityViewIsModal
-          style={[
-            { backgroundColor: colors.surfaceSecondary, overflow: "hidden", position: "relative", zIndex: 1001 },
-            elevation.high,
-            panelStyle,
-          ]}
-        >
-          {/* Header — identical everywhere */}
-          {title || onClose ? (
-            <View style={sheetStyles.header}>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                {title ? <Text numberOfLines={1} style={type.titleLg}>{title}</Text> : null}
-                {subtitle ? <Text numberOfLines={2} style={[type.bodyMuted, { marginTop: 2 }]}>{subtitle}</Text> : null}
-              </View>
-              {headerRight}
-              <IconButton icon="x" onPress={onClose} tone="ghost" size={36} accessibilityLabel="Close" testID={testID ? `${testID}-close` : undefined} />
-            </View>
-          ) : null}
-
-          {/* Body */}
-          <View style={{ flex: 1, minHeight: 0 }}>
-            {children}
-          </View>
-
-          {/* Footer — identical everywhere */}
-          {footer ? (
-            <View style={[sheetStyles.footer, kind === "bottom" ? { paddingBottom: Math.max(spacing.md, insets.bottom + spacing.xs) } : null]}>{footer}</View>
-          ) : null}
-        </View>
-      </View>
-      </KeyboardAvoidingView>
-    </RNModal>
-  );
-}
-
-const sheetStyles = StyleSheet.create({
-  header: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: spacing.md,
-    paddingHorizontal: spacing.xl,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-    minHeight: layout.sheet.headerHeight,
-  },
-  footer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-    backgroundColor: colors.surfaceSecondary,
-    minHeight: layout.sheet.footerHeight,
-  },
-});
+export function Sheet({ visible, variant = "drawer", ...props }: Omit<React.ComponentProps<typeof Overlay>, "open" | "presentation"> & {
+  visible: boolean; variant?: SheetVariant;
+}) { return <Overlay {...props} open={visible} scroll={false} presentation={variant === "modal" ? "dialog" : variant} />; }
 
 // ──────────────────────────────────────────────────────────────────────────
 // PageHeader — every screen top. Always identical chrome.
 // Optional back button, title, subtitle, action cluster (right).
 // ──────────────────────────────────────────────────────────────────────────
-export function PageHeader({
-  title, subtitle, actions, back, overline, testID, dense,
-}: {
-  title: string;
-  subtitle?: string | null;
-  actions?: React.ReactNode;
-  back?: () => void;
-  overline?: string;
-  testID?: string;
-  dense?: boolean;
-}) {
-  const { isPhone, isDesktop } = useBp();
-  const horizontal = isPhone ? spacing.lg : spacing.xl;
-  return (
-    <View
-      testID={testID}
-      style={{
-        paddingHorizontal: horizontal,
-        paddingTop: dense ? spacing.sm : isPhone ? spacing.md : spacing.lg,
-        paddingBottom: dense ? spacing.sm : isPhone ? spacing.md : spacing.lg,
-        backgroundColor: colors.surface,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: colors.border,
-        position: "relative",
-        zIndex: 20,
-      }}
-    >
-      <View style={{ flexDirection: "row", alignItems: "flex-start", flexWrap: "wrap", gap: isPhone ? spacing.sm : spacing.md }}>
-        {back ? <IconButton icon="chevron-left" onPress={back} size={44} tone="surface" accessibilityLabel="Back" /> : null}
-        <View style={{ flex: 1, minWidth: 0 }}>
-          {overline ? <Text style={[type.overline, { marginBottom: 4 }]}>{overline}</Text> : null}
-          <Text
-            numberOfLines={2}
-            style={
-              dense
-                ? type.titleLg
-              : { fontFamily: dsFont.display, fontSize: isPhone ? 23 : 28, lineHeight: isPhone ? 30 : 36, letterSpacing: -0.3, color: colors.onSurface }
-            }
-          >
-            {title}
-          </Text>
-          {subtitle ? <Text numberOfLines={2} style={[type.bodyMuted, { marginTop: 2 }]}>{subtitle}</Text> : null}
-        </View>
-        {actions ? <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, alignItems: "center", flexShrink: 0, justifyContent: isDesktop ? "flex-end" : "flex-start", width: isPhone ? "100%" : undefined }}>{actions}</View> : null}
-      </View>
-    </View>
-  );
-}
+export { PageHeader } from "@/src/design/PageHeader";
 
 // ──────────────────────────────────────────────────────────────────────────
 // HeroBanner — the "brand card" hero used on Payments, Purchases, Followups.
@@ -1421,7 +1077,7 @@ export function StatTile({
 // ──────────────────────────────────────────────────────────────────────────
 export function Table({ children, style }: { children: React.ReactNode; style?: ViewStyle }) {
   return (
-    <View style={[{
+    <View role="table" style={[{
       backgroundColor: colors.surfaceSecondary,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
@@ -1435,7 +1091,7 @@ export function Table({ children, style }: { children: React.ReactNode; style?: 
 
 export function TableHeader({ columns }: { columns: { label: string; flex?: number; width?: number; align?: "left" | "right" | "center" }[] }) {
   return (
-    <View style={{
+    <View role="row" style={{
       flexDirection: "row",
       minHeight: layout.table.headerHeight,
       alignItems: "center",
@@ -1448,6 +1104,7 @@ export function TableHeader({ columns }: { columns: { label: string; flex?: numb
       {columns.map((c, i) => (
         <Text
           key={i}
+          role="columnheader"
           numberOfLines={1}
           style={[
             type.overline,
@@ -1478,6 +1135,9 @@ export function TableRow({
   return (
     <Pressable
       testID={testID}
+      role="row"
+      tabIndex={onPress ? 0 : undefined}
+      {...(Platform.OS === "web" && onPress ? { onKeyDown: (event: React.KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onPress(); } } } : {})}
       onPress={onPress}
       style={({ pressed, hovered }: any) => [{
         flexDirection: "row",
@@ -1511,6 +1171,7 @@ export function TableCell({
   return (
     <View
       testID={testID}
+      role="cell"
       style={{
         flex: width ? undefined : (flex ?? 1),
         minWidth: 0,

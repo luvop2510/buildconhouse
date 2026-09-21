@@ -60,7 +60,8 @@ assert.match(notebookScreen, /Mark won/);
 assert.match(notebookScreen, /quotation_price: price/);
 assert.match(notebookScreen, /Move to quotation/);
 assert.match(notebookScreen, /BottomSheet/);
-assert.match(notebookScreen, /No follow-ups yet/);
+// Showroom vocabulary changed; notebook APIs and floor guards above remain unchanged.
+assert.match(notebookScreen, /No walk-ins yet/);
 assert.match(legacyView, /quotation-follow-up/);
 
 console.log("notebook model: canonical route assertions passed");

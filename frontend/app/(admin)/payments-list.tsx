@@ -1,13 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { api } from "@/src/api/client";
 import {
-  Button, Dropdown, EmptyState, PageHeader, SearchField, Skeleton,
+  Button, Dropdown, EmptyState, ErrorState, PageHeader, SearchField, Skeleton,
 } from "@/src/components/ds";
 import { CellMono, CellNumber, CellText, CellTitle, DataTable, type Column } from "@/src/components/tiles/TileTable";
-import { toast } from "@/src/components/Toast";
 import { colors, spacing, type } from "@/src/theme/tokens";
 import { useBp } from "@/src/design/responsive";
 
@@ -57,23 +56,27 @@ export default function PaymentListScreen() {
   const [sort, setSort] = useState("date_desc");
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const requestId = useRef(0);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async (nextPage = page) => {
+    const request = ++requestId.current;
     setLoading(true);
+    setLoadError(null);
     try {
       const params = new URLSearchParams({ skip: String(nextPage * PAGE_SIZE), limit: String(PAGE_SIZE), sort });
       if (query.trim()) params.set("q", query.trim());
       if (floor !== "all") params.set("business_unit", floor);
       if (mode !== "all") params.set("mode", mode);
       const response = await api.get<PaymentListResponse>(`/payments/list?${params.toString()}`);
+      if (request !== requestId.current) return;
       setRows(response.items);
       setTotal(response.total);
     } catch (error: any) {
-      toast.error(error?.detail || "Could not load payment list");
-      setRows([]);
-      setTotal(0);
-    } finally { setLoading(false); }
+      if (request !== requestId.current) return;
+      setLoadError(error?.detail || "Could not load fully paid orders.");
+    } finally { if (request === requestId.current) setLoading(false); }
   }, [floor, mode, page, query, sort]);
 
   useEffect(() => { api.get<Floor[]>("/settings/floors").then(setFloors).catch(() => setFloors([])); }, []);
@@ -82,7 +85,7 @@ export default function PaymentListScreen() {
     const timer = setTimeout(() => load(0), query ? 250 : 0);
     return () => clearTimeout(timer);
   }, [floor, mode, query, sort]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (page > 0) load(page); }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(page); }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const columns: Column<PaymentRow>[] = [
     { key: "customer", label: "Client", grow: 1, minWidth: 180, render: (row) => <CellTitle>{`${row.customer_name || "Unknown client"} · ${row.invoice_number || "—"}`}</CellTitle> },
@@ -99,7 +102,7 @@ export default function PaymentListScreen() {
   return (
     <SafeAreaView style={styles.screen} edges={isPhone ? [] : ["top"]}>
       <PageHeader
-        title="Payment List"
+        title="Fully paid orders"
         overline="PAYMENTS"
         subtitle="Complete payment history for orders paid in full (100%)."
       />
@@ -111,10 +114,10 @@ export default function PaymentListScreen() {
           <Dropdown label={SORT_OPTIONS.find((item) => item.value === sort)?.label || "Sort"} items={SORT_OPTIONS.map((item) => ({ label: item.label, onPress: () => setSort(item.value) }))} />
         </View>
 
-        {loading ? (
+        {loadError ? <ErrorState title="Could not load fully paid orders" subtitle={loadError} onRetry={() => void load()} /> : loading ? (
           <View style={{ gap: spacing.sm }}>{Array.from({ length: 6 }).map((_, index) => <Skeleton key={index} w="100%" h={54} />)}</View>
         ) : rows.length === 0 ? (
-          <EmptyState icon="check-circle" title="No fully paid orders yet" subtitle="Payment List shows entries only after the quotation reaches 100% collected." />
+          <EmptyState icon="check-circle" title={query || mode !== "all" || floor !== "all" ? "No matching payments" : "No fully paid orders yet"} subtitle={query || mode !== "all" || floor !== "all" ? "Try a different search or clear the filters." : "Payments appear here once an order is fully collected."} />
         ) : (
           <DataTable testID="payment-list-table" columns={columns} data={rows} keyExtractor={(row) => row.id} rowTestID={(row) => `payment-list-row-${row.id}`} emptyMessage="No fully paid payments found." />
         )}

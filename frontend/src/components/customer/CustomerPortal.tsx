@@ -48,13 +48,13 @@ export function CustomerHeader({
               onPress={onLogout}
               style={({ pressed }) => [styles.logoutButton, { opacity: pressed ? 0.82 : 1 }]}
             >
-              <Feather name="log-out" size={15} color={colors.onSurfaceInverse} />
+              <Feather name="log-out" size={15} color={colors.onSurface} />
               <Text style={styles.logoutLabel}>Sign out</Text>
             </Pressable>
           ) : null}
         </View>
         <Text style={styles.brandEyebrow}>Welcome</Text>
-        <Text style={styles.brandTitle} numberOfLines={3}>
+        <Text accessibilityRole="header" style={styles.brandTitle} numberOfLines={3}>
           {customerName || "Your BuildCon House portal"}
         </Text>
         <Text style={styles.brandSubtitle}>Your quotations, ready when you are.</Text>
@@ -67,7 +67,7 @@ export function CustomerHeader({
       <View style={styles.pageHeaderRow}>
         {back ? <IconButton icon="chevron-left" onPress={back} size={44} tone="surface" accessibilityLabel="Back" /> : null}
         <View style={styles.pageHeaderCopy}>
-          <Text style={styles.pageTitle} numberOfLines={3}>{title || "BuildCon House"}</Text>
+          <Text accessibilityRole="header" style={styles.pageTitle} numberOfLines={3}>{title || "BuildCon House"}</Text>
           {subtitle ? <Text style={styles.pageSubtitle} numberOfLines={3}>{subtitle}</Text> : null}
         </View>
       </View>
@@ -113,7 +113,7 @@ export function CustomerPage({
 export function CustomerSectionHeading({ title, count }: { title: string; count?: number }) {
   return (
     <View style={styles.sectionHeading}>
-      <Text style={type.overline}>{title}</Text>
+      <Text accessibilityRole="header" style={type.overline}>{title}</Text>
       {typeof count === "number" ? <Text style={type.caption}>{count}</Text> : null}
     </View>
   );
@@ -148,10 +148,10 @@ export function CustomerFooterLinks() {
   const router = useRouter();
   return (
     <View style={styles.footerLinks}>
-      <Pressable testID="portal-privacy-link" onPress={() => router.push("/privacy")} hitSlop={layout.hitSlop} style={styles.footerLinkButton}>
+      <Pressable accessibilityRole="link" testID="portal-privacy-link" onPress={() => router.push("/privacy")} hitSlop={layout.hitSlop} style={styles.footerLinkButton}>
         <Text style={styles.footerLink}>Privacy</Text>
       </Pressable>
-      <Pressable testID="portal-terms-link" onPress={() => router.push("/terms")} hitSlop={layout.hitSlop} style={styles.footerLinkButton}>
+      <Pressable accessibilityRole="link" testID="portal-terms-link" onPress={() => router.push("/terms")} hitSlop={layout.hitSlop} style={styles.footerLinkButton}>
         <Text style={styles.footerLink}>Terms</Text>
       </Pressable>
     </View>
@@ -169,29 +169,30 @@ export function formatCustomerDate(value: string | undefined, long = false) {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.surface },
-  pageContent: { width: "100%", maxWidth: 760, alignSelf: "center", padding: spacing.lg, gap: spacing.lg },
+  pageContent: { width: "100%", maxWidth: 960, alignSelf: "center", padding: spacing.lg, gap: spacing.lg },
   brandHeader: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
     paddingBottom: spacing.xl,
-    backgroundColor: colors.surfaceInverse,
+    backgroundColor: colors.surfaceSecondary,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
     gap: spacing.sm,
   },
   brandHeaderTop: { minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.md },
   logoutButton: {
     minHeight: 44,
     paddingHorizontal: spacing.md,
-    borderRadius: radius.pill,
+    borderRadius: radius.sm,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.onSurfaceSecondary,
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
   },
-  logoutLabel: { color: colors.onSurfaceInverse, fontFamily: type.bodyStrong.fontFamily, fontSize: 13, fontWeight: "600" },
-  brandEyebrow: { ...type.overline, color: colors.onSurfaceSubtle, marginTop: spacing.md },
-  brandTitle: { color: colors.onSurfaceInverse, fontFamily: type.displayMd.fontFamily, fontSize: 28, lineHeight: 34, fontWeight: "700", letterSpacing: -0.3 },
-  brandSubtitle: { ...type.bodySm, color: colors.onSurfaceSubtle },
+  logoutLabel: { color: colors.onSurface, fontFamily: type.bodyStrong.fontFamily, fontSize: 13, fontWeight: "600" },
+  brandEyebrow: { ...type.overline, color: colors.onSurfaceMuted, marginTop: spacing.md },
+  brandTitle: { color: colors.onSurface, fontFamily: type.displayMd.fontFamily, fontSize: 28, lineHeight: 34, fontWeight: "700", letterSpacing: -0.3 },
+  brandSubtitle: { ...type.bodySm, color: colors.onSurfaceMuted },
   pageHeader: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md, backgroundColor: colors.surface, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
   pageHeaderRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.sm },
   pageHeaderCopy: { flex: 1, minWidth: 0, paddingTop: spacing.sm },

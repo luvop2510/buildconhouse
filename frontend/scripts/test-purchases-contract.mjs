@@ -16,4 +16,14 @@ assert.match(screen, /minHeight: 44/);
 assert.doesNotMatch(screen, /rows\.filter\(\(candidate\) => candidate\.customer_id/);
 assert.doesNotMatch(screen, /<ScrollView[^>]*>\s*<FlatList/);
 
+// Stock is an operational availability surface. Movement audit data belongs in
+// its History action, so the row must not expose a date, mover, or its creator
+// fallback inline. It also needs enough room for all four row actions.
+const stockRow = screen.slice(screen.indexOf("function ItemRow"), screen.indexOf("function BlockedCard"));
+assert.doesNotMatch(stockRow, /fmtDate\(row\.last_moved_at\)/);
+assert.doesNotMatch(stockRow, /row\.last_moved_by_name/);
+assert.match(screen, /const TABLE_STACK = 720/);
+assert.match(stockRow, /stockRowActionsDesktop/);
+assert.match(stockRow, /stockRowActions/);
+
 console.log("Purchases mobile/API contracts passed");

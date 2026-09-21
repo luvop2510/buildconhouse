@@ -1,7 +1,8 @@
 // BuildCon House · Notifications
+import { useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { AdminPage } from "@/src/components/AdminPage";
 import { EmptyState, ErrorState, Skeleton } from "@/src/components/ui";
@@ -17,6 +18,7 @@ type N = {
   kind: "info" | "success" | "warning" | "error";
   created_at: string;
   read: boolean;
+  link?: string | null;
 };
 
 const iconMap = {
@@ -28,6 +30,7 @@ const iconMap = {
 
 export default function Notifications() {
   const { isPhone } = useBp();
+  const router = useRouter();
   const { selectedFloorId } = useFloorAccess();
   const [items, setItems] = useState<N[] | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -76,8 +79,12 @@ export default function Notifications() {
         <View style={{ gap: spacing.sm }}>
           {items.map((n) => {
             const skin = iconMap[n.kind] || iconMap.info;
+            const link = n.link && /^\/(?!\/)/.test(n.link) ? n.link : null;
             return (
-              <View
+              <Pressable
+                disabled={!link} accessibilityRole={link ? "link" : undefined}
+                accessibilityLabel={`${n.read ? "" : "Unread: "}${n.title}${link ? ". Open record" : ""}`}
+                onPress={() => link && router.push(link as any)}
                 key={n.id}
                 style={[styles.card, {
                   flexDirection: "row",
@@ -98,7 +105,7 @@ export default function Notifications() {
                       color: colors.onSurface,
                       flex: isPhone ? undefined : 1,
                       minWidth: 0,
-                    }} numberOfLines={1}>
+                    }}>
                       {n.title}
                     </Text>
                     <Text style={[type.caption, isPhone && { marginTop: 1 }]}>
@@ -106,13 +113,13 @@ export default function Notifications() {
                     </Text>
                   </View>
                   {n.body ? (
-                    <Text style={[type.bodyMuted, { marginTop: 2, fontSize: 13 }]} numberOfLines={2}>
+                    <Text style={[type.bodyMuted, { marginTop: 4 }]}>
                       {n.body}
                     </Text>
                   ) : null}
                 </View>
-                {!n.read ? <View style={styles.unreadDot} /> : null}
-              </View>
+                {link ? <Feather name="chevron-right" size={18} color={colors.onSurfaceMuted} /> : !n.read ? <View style={styles.unreadDot} /> : null}
+              </Pressable>
             );
           })}
         </View>
@@ -124,7 +131,7 @@ export default function Notifications() {
 const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.lg,
+    borderRadius: radius.sm,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     padding: spacing.md,

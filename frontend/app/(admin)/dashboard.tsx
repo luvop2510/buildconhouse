@@ -11,7 +11,7 @@ import { Linking, Platform, Pressable, RefreshControl, ScrollView, View } from "
 
 import { api } from "@/src/api/client";
 import { toast } from "@/src/components/Toast";
-import { ErrorState } from "@/src/components/ui";
+import { Alert, ErrorState } from "@/src/components/ui";
 import {
   Button, FadeIn, Hairline, IconButton, Money, Section, Skeleton, StatusWord, Txt,
 } from "@/src/design/components";
@@ -101,12 +101,12 @@ function QueueRow({
 
 // ── A business stat — label, number, whisper. Never a tile. ─────────────────
 function Stat({ label, value, note, noteTone = "soft", compactValue }: {
-  label: string; value: number; note?: string; noteTone?: "soft" | "risk" | "ok"; compactValue?: boolean;
+  label: string; value?: number | null; note?: string; noteTone?: "soft" | "risk" | "ok"; compactValue?: boolean;
 }) {
   return (
     <View style={{ gap: 3 }}>
       <Txt v="caption" tone="soft">{label}</Txt>
-      <Money value={value} size="lg" compact={compactValue} />
+      {value == null ? <Txt v="heading" tone="soft">Unavailable</Txt> : <Money value={value} size="lg" compact={compactValue} />}
       {note ? <Txt v="caption" tone={noteTone === "risk" ? "risk" : noteTone === "ok" ? "ok" : "soft"}>{note}</Txt> : null}
     </View>
   );
@@ -126,12 +126,14 @@ export default function Today() {
   const [shortages, setShortages] = useState<Shortage[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const [sectionErrors, setSectionErrors] = useState({ queue: false, recent: false });
   const requestVersion = useRef(0);
 
   const load = useCallback(async (isRefresh = false) => {
     if (!selectedFloorId) return;
     const version = ++requestVersion.current;
     setLoadError(false);
+    setSectionErrors({ queue: false, recent: false });
     if (!isRefresh) {
       setMission(null); setQueue(null); setStats(null); setPay(null); setRecent(null); setShortages([]);
     }
@@ -149,14 +151,15 @@ export default function Today() {
       api.get<{ items: Shortage[] }>("/purchases/shortages?status=awaiting_reorder", { cacheMs: 15_000 }),
     ]);
     if (version !== requestVersion.current) return;
+    setSectionErrors({ queue: fus.status === "rejected", recent: rq.status === "rejected" });
     setLoadError([m, fus, st, ps, rq, sh].some(result => result.status === "rejected"));
     if (m.status === "fulfilled") setMission(m.value);
     if (fus.status === "fulfilled") setQueue((Array.isArray(fus.value) ? fus.value : []).filter((f) => f.status === "open").slice(0, 6));
-    else setQueue([]);
+    else if (!isRefresh) setQueue([]);
     if (st.status === "fulfilled") setStats(st.value);
     if (ps.status === "fulfilled") setPay(ps.value);
     if (rq.status === "fulfilled") setRecent(rq.value);
-    else setRecent([]);
+    else if (!isRefresh) setRecent([]);
     if (sh.status === "fulfilled") setShortages(sh.value.items || []);
     setRefreshing(false);
   }, [selectedFloorId]);
@@ -213,24 +216,24 @@ export default function Today() {
       <Section eyebrow="The business" />
       <View style={isPhone ? { flexDirection: "row", flexWrap: "wrap", gap: space.x6, rowGap: space.x5 } : { gap: space.x5 }}>
         <View style={isPhone ? { width: "46%" } : undefined}>
-          <Stat label="Collected this month" value={pay?.collected_this_month ?? 0} compactValue note="payments received" />
+          <Stat label="Collected this month" value={pay?.collected_this_month} compactValue note="payments received" />
         </View>
         <View style={isPhone ? { width: "46%" } : undefined}>
           <Stat
             label="Outstanding"
-            value={pay?.total_outstanding ?? 0}
+            value={pay?.total_outstanding}
             compactValue
             note={mission && mission.overdue_payments > 0
               ? `${mission.overdue_payments} order${mission.overdue_payments === 1 ? "" : "s"} overdue`
-              : `across ${pay?.active_orders ?? 0} orders`}
+              : pay ? `across ${pay.active_orders} orders` : "order count unavailable"}
             noteTone={mission && mission.overdue_payments > 0 ? "risk" : "soft"}
           />
         </View>
         <View style={isPhone ? { width: "46%" } : undefined}>
-          <Stat label="Open pipeline" value={stats?.open_pipeline ?? 0} compactValue note={`${stats?.quotes_this_month ?? 0} quotations this month`} />
+          <Stat label="Open pipeline" value={stats?.open_pipeline} compactValue note={stats ? `${stats.quotes_this_month} quotations this month` : "quotation count unavailable"} />
         </View>
         <View style={isPhone ? { width: "46%" } : undefined}>
-          <Stat label="Won this month" value={stats?.revenue_month ?? 0} compactValue noteTone="ok" />
+          <Stat label="Won this month" value={stats?.revenue_month} compactValue noteTone="ok" />
         </View>
       </View>
 
@@ -287,7 +290,9 @@ export default function Today() {
             <Txt v="caption" tone="soft">View all</Txt>
           </Pressable>
         } />
-        {recent === null ? (
+        {sectionErrors.recent ? (
+          <Txt v="sub" tone="soft">Quotation activity is unavailable. Retry the workspace to refresh it.</Txt>
+        ) : recent === null ? (
           <View style={{ gap: 12, paddingTop: 8 }}>
             <Skeleton h={16} /><Skeleton h={16} w="80%" /><Skeleton h={16} w="90%" />
           </View>
@@ -344,6 +349,8 @@ export default function Today() {
             </View>
           ))}
         </View>
+      ) : sectionErrors.queue && queue.length === 0 ? (
+        <ErrorState title="Follow-ups unavailable" subtitle="Reconnect or retry to see your queue." onRetry={() => void load(true)} />
       ) : queue.length === 0 ? (
         <View style={{ paddingVertical: space.x8, alignItems: "center", gap: 8 }}>
           <Feather name="coffee" size={20} color={color.inkFaint} />
@@ -379,23 +386,23 @@ export default function Today() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={color.inkSoft} />}
     >
       <View style={{ width: "100%", maxWidth: 1080, alignSelf: "center", paddingHorizontal: gutter }}>
-        {loadError ? <ErrorState title="Today's workspace is incomplete" subtitle="Some operational data could not be loaded. Retry before relying on this summary." onRetry={() => void load()} /> : null}
+        {loadError ? <Alert tone="warning" title="Some information is unavailable" description="Working sections remain available below." action={<Button label="Retry" variant="secondary" onPress={() => void load(true)} />} /> : null}
         {/* ── Hero ── */}
         <FadeIn>
-          <View style={{ paddingTop: isPhone ? space.x6 : space.x12, paddingBottom: isPhone ? space.x6 : space.x10, gap: 10 }}>
+          <View style={{ paddingTop: isPhone ? space.x4 : space.x8, paddingBottom: isPhone ? space.x4 : space.x6, gap: 10 }}>
             <Txt v="eyebrow">{todayLabel()}</Txt>
             <Txt v="display" style={isPhone ? { fontSize: 28, lineHeight: 36 } : undefined}>
               {greeting()}, {name}.
             </Txt>
             {mission ? (
               <Txt v="bodyMid" style={{ fontSize: 15.5 }}>{sentence}</Txt>
-            ) : (
+            ) : loadError ? <Txt v="sub" tone="soft">Some information is unavailable. Working sections remain below.</Txt> : (
               <Skeleton w={280} h={15} style={{ marginTop: 4 }} />
             )}
             {due > 0 ? (
               <View style={{ flexDirection: "row", marginTop: space.x2 }}>
                 <Button
-                  label="Start with № 1"
+                  label="Open follow-ups"
                   icon="arrow-right"
                   onPress={() => router.push("/(admin)/followups" as any)}
                   size={isPhone ? "md" : "lg"}
@@ -407,7 +414,7 @@ export default function Today() {
 
         {/* ── Body ── */}
         <FadeIn delay={60}>
-          {!loadError ? <>
+          <>
           {isDesktop ? (
             <View style={{ flexDirection: "row", gap: space.x12 }}>
               <View style={{ flex: 1.9, minWidth: 0 }}>{upNext}</View>
@@ -421,7 +428,7 @@ export default function Today() {
               {business}
             </View>
           )}
-          </> : null}
+          </>
         </FadeIn>
       </View>
     </ScrollView>

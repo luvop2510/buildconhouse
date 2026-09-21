@@ -107,7 +107,7 @@ export default function CustomerQuotationDetail() {
           {downloadError ? (
             <Card style={styles.downloadError}>
               <Feather name="alert-circle" size={16} color={colors.error} />
-              <Text style={[type.bodyMuted, styles.downloadErrorCopy]}>The PDF could not be opened. Please try again.</Text>
+              <Text role="alert" aria-live="assertive" style={[type.bodyMuted, styles.downloadErrorCopy]}>The PDF could not be downloaded. Please try again.</Text>
             </Card>
           ) : null}
 

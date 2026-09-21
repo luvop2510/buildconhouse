@@ -9,51 +9,27 @@
 // Replaces src/components/tiles/ReadyDispatchSheets.tsx (MarkReadySheet /
 // DispatchSheet), which conflated all of this into one Brand-owned action.
 import { useState } from "react";
-import { ActivityIndicator, Linking, Platform, Pressable, Text, TextInput, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { tileOrdersApi, type CustomerOrderItem, type DispatchDestinationOverride, type PurchaseOrderItemDetail } from "@/src/api/tileOrders";
 import { toast } from "@/src/components/Toast";
+import { downloadApiFile } from "@/src/utils/downloadFile";
 import { Sheet } from "@/src/design/components";
-import { colors, radius, spacing, type } from "@/src/theme/tokens";
+import { Alert, Button, TextField } from "@/src/components/ui";
+import { colors, spacing, type } from "@/src/theme/tokens";
 import { tileIdentityMeta } from "@/src/components/tiles/tilePresentation";
 
-async function openPdf(url: string) {
-  if (Platform.OS === "web") {
-    // @ts-ignore — web only
-    window.open(url, "_blank");
-  } else {
-    await Linking.openURL(url);
-  }
-}
-
 function SheetFooter({ onCancel, onConfirm, confirmLabel, busy, disabled = false }: { onCancel: () => void; onConfirm: () => void; confirmLabel: string; busy: boolean; disabled?: boolean }) {
-  return (
-    <View style={{ flexDirection: "row", gap: spacing.sm }}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Cancel" disabled={busy} onPress={onCancel} style={{ flex: 1, padding: spacing.md, alignItems: "center", borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, opacity: busy ? 0.5 : 1 }}>
-        <Text style={type.bodyStrong}>Cancel</Text>
-      </Pressable>
-      <Pressable accessibilityRole="button" accessibilityLabel={confirmLabel} disabled={busy || disabled} onPress={onConfirm} style={{ flex: 1, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: spacing.xs, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.brand, opacity: busy || disabled ? 0.55 : 1 }}>
-        {busy ? <ActivityIndicator size="small" color={colors.onBrand} /> : null}
-        <Text style={[type.bodyStrong, { color: colors.onBrand }]}>{busy ? "Processing…" : confirmLabel}</Text>
-      </Pressable>
-    </View>
-  );
+  return <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, flex: 1 }}>
+    <Button label="Cancel" variant="secondary" disabled={busy} onPress={onCancel} style={{ flexGrow: 1 }} />
+    <Button label={confirmLabel} loading={busy} disabled={disabled} onPress={onConfirm} style={{ flexGrow: 1 }} />
+  </View>;
 }
 
 function QtyRow({ name, hint, value, onChange, error }: { name: string; hint: string; value: string; onChange: (v: string) => void; error?: string }) {
-  return (
-    <View style={{ marginBottom: spacing.md }}>
-      <Text style={type.bodyStrong}>{name}</Text>
-      <Text style={type.bodyMuted}>{hint}</Text>
-      <TextInput
-        accessibilityLabel={`Enter quantity for ${name}`}
-        keyboardType="numeric" placeholder="Boxes"
-        value={value} onChangeText={onChange}
-        style={{ borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.sm, minHeight: 44, marginTop: spacing.xs }}
-      />
-      {error ? <Text style={{ ...type.caption, color: colors.errorFg, marginTop: spacing.xs }}>{error}</Text> : null}
-    </View>
-  );
+  return <TextField label={name} accessibilityLabel={`Enter quantity for ${name}`} helper={hint}
+    keyboardType="number-pad" placeholder="Quantity" value={value} onChangeText={onChange} error={error}
+    containerStyle={{ marginBottom: spacing.md }} />;
 }
 
 // Each sheet opens with the full available quantity already filled in —
@@ -101,11 +77,14 @@ export function ReleaseMaterialSheet({ poId, items, onClose, onDone }: { poId: s
     () => prefill(items, (item) => item.id, (item) => item.boxes_pending),
   );
   const [busy, setBusy] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const validation = validateQuantities(qtyByItem, items
     .filter((item) => item.boxes_pending > 0)
     .map((item) => ({ id: item.id, name: item.name, available: item.boxes_pending })));
 
   const submit = async () => {
+    if (busy) return;
+    setSaveError(null);
     if (Object.keys(validation.errors).length || validation.formError) {
       toast.error("Fix the highlighted quantities before confirming");
       return;
@@ -116,14 +95,15 @@ export function ReleaseMaterialSheet({ poId, items, onClose, onDone }: { poId: s
       toast.success("Material released");
       onDone();
     } catch (e: any) {
-      toast.error(e?.detail || "Could not release material");
+      setSaveError(e?.detail || "Could not release material. Your quantities are retained; try again.");
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Sheet open onClose={onClose} title="Release Material" footer={<SheetFooter onCancel={onClose} onConfirm={submit} confirmLabel="Confirm Release" busy={busy} disabled={Boolean(Object.keys(validation.errors).length || validation.formError)} />}>
+    <Sheet open onClose={onClose} dismissable={!busy} title="Release Material" footer={<SheetFooter onCancel={onClose} onConfirm={submit} confirmLabel="Confirm Release" busy={busy} disabled={Boolean(Object.keys(validation.errors).length || validation.formError)} />}>
+      {saveError ? <Alert tone="error" title={saveError} /> : null}
       <View style={{ marginVertical: spacing.md }}>
         {items.filter((item) => item.boxes_pending > 0).map((item) => (
           <QtyRow
@@ -143,11 +123,14 @@ export function MoveToGodownSheet({ poId, items, onClose, onDone }: { poId: stri
     () => prefill(items, (item) => item.po_item_id, (item) => item.boxes_ready),
   );
   const [busy, setBusy] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const validation = validateQuantities(qtyByItem, items
     .filter((item) => item.boxes_ready > 0)
     .map((item) => ({ id: item.po_item_id, name: item.tile_name, available: item.boxes_ready })));
 
   const submit = async () => {
+    if (busy) return;
+    setSaveError(null);
     if (Object.keys(validation.errors).length || validation.formError) {
       toast.error("Fix the highlighted quantities before confirming");
       return;
@@ -158,14 +141,15 @@ export function MoveToGodownSheet({ poId, items, onClose, onDone }: { poId: stri
       toast.success("Moved to Godown");
       onDone();
     } catch (e: any) {
-      toast.error(e?.detail || "Could not move to Godown");
+      setSaveError(e?.detail || "Could not move to Godown. Your quantities are retained; try again.");
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Sheet open onClose={onClose} title="Move to Godown" footer={<SheetFooter onCancel={onClose} onConfirm={submit} confirmLabel="Confirm Move" busy={busy} disabled={Boolean(Object.keys(validation.errors).length || validation.formError)} />}>
+    <Sheet open onClose={onClose} dismissable={!busy} title="Move to Godown" footer={<SheetFooter onCancel={onClose} onConfirm={submit} confirmLabel="Confirm Move" busy={busy} disabled={Boolean(Object.keys(validation.errors).length || validation.formError)} />}>
+      {saveError ? <Alert tone="error" title={saveError} /> : null}
       <View style={{ marginVertical: spacing.md }}>
         {items.filter((item) => item.boxes_ready > 0).map((item) => (
           <QtyRow
@@ -188,17 +172,10 @@ const EMPTY_TRANSPORT: TransportDetails = { vehicle_number: "", driver_name: "",
 
 function TransportFields({ value, onChange }: { value: TransportDetails; onChange: (next: TransportDetails) => void }) {
   const field = (key: keyof TransportDetails, label: string, placeholder: string) => (
-    <View style={{ flex: 1, minWidth: 150 }}>
-      <Text style={type.caption}>{label}</Text>
-      <TextInput
-        accessibilityLabel={label}
-        testID={`tile-dispatch-${key.replace(/_/g, "-")}`}
-        keyboardType={key === "labor_cost" ? "decimal-pad" : "default"}
-        value={value[key]} onChangeText={(v) => onChange({ ...value, [key]: v })} placeholder={placeholder}
-        placeholderTextColor={colors.onSurfaceSubtle}
-        style={{ borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.sm, minHeight: 44, marginTop: 2 }}
-      />
-    </View>
+    <TextField label={label} testID={`tile-dispatch-${key.replace(/_/g, "-")}`}
+      keyboardType={key === "labor_cost" ? "decimal-pad" : "default"}
+      value={value[key]} onChangeText={(v) => onChange({ ...value, [key]: v })} placeholder={placeholder}
+      containerStyle={{ flex: 1, minWidth: 150 }} />
   );
   return (
     <View style={{ gap: spacing.sm, marginBottom: spacing.md }}>
@@ -230,14 +207,14 @@ function transportPayload(t: TransportDetails): DispatchDestinationOverride {
 async function submitDispatch(
   poId: string, entries: { po_item_id: string; qty: number }[],
   fn: (poId: string, entries: { po_item_id: string; qty: number }[]) => Promise<{ chalan: { id: string; [key: string]: any } }>,
-  onDone: () => void, setBusy: (b: boolean) => void,
+  onDone: () => void, setBusy: (b: boolean) => void, setError: (message: string) => void,
 ) {
   setBusy(true);
   let result: { chalan: { id: string; [key: string]: any } };
   try {
     result = await fn(poId, entries);
   } catch (e: any) {
-    toast.error(e?.detail || "Could not dispatch");
+    setError(e?.detail || e?.message || "Could not dispatch. Your quantities and transport details are retained.");
     setBusy(false);
     return;
   }
@@ -250,8 +227,8 @@ async function submitDispatch(
   onDone();
   setBusy(false);
   try {
-    const url = await tileOrdersApi.chalanPdfUrl(result.chalan.id);
-    await openPdf(url);
+    const downloaded = await downloadApiFile(`/tile-orders/chalans/${result.chalan.id}/pdf`, `Chalan-${result.chalan.id}.pdf`, "Chalan PDF");
+    if (!downloaded) toast.error("Dispatch saved. Open the Chalan PDF from the Dispatch List tab.");
   } catch {
     toast.error("Dispatch saved. Open the Chalan PDF from the Dispatch List tab.");
   }
@@ -270,24 +247,28 @@ function DispatchSheet({
   );
   const [transport, setTransport] = useState<TransportDetails>(EMPTY_TRANSPORT);
   const [busy, setBusy] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const validation = validateQuantities(qtyByItem, items
     .filter((item) => available(item) > 0)
     .map((item) => ({ id: item.po_item_id, name: item.tile_name, available: available(item) })));
 
   const submit = async () => {
+    if (busy) return;
+    setSaveError(null);
     if (Object.keys(validation.errors).length || validation.formError) {
       toast.error("Fix the highlighted quantities before confirming");
       return;
     }
     try {
-      await submitDispatch(poId, validation.entries, (id, e) => dispatch(id, e, transportPayload(transport)), onDone, setBusy);
+      await submitDispatch(poId, validation.entries, (id, e) => dispatch(id, e, transportPayload(transport)), onDone, setBusy, setSaveError);
     } catch (e: any) {
-      toast.error(e?.message || "Could not dispatch");
+      setSaveError(e?.message || "Could not dispatch");
     }
   };
 
   return (
-    <Sheet open onClose={onClose} title={title} footer={<SheetFooter onCancel={onClose} onConfirm={submit} confirmLabel="Confirm Dispatch" busy={busy} disabled={Boolean(Object.keys(validation.errors).length || validation.formError)} />}>
+    <Sheet open onClose={onClose} dismissable={!busy} title={title} footer={<SheetFooter onCancel={onClose} onConfirm={submit} confirmLabel="Confirm Dispatch" busy={busy} disabled={Boolean(Object.keys(validation.errors).length || validation.formError)} />}>
+      {saveError ? <Alert tone="error" title={saveError} /> : null}
       <View style={{ marginVertical: spacing.md }}>
         {items.filter((item) => available(item) > 0).map((item) => (
           <QtyRow

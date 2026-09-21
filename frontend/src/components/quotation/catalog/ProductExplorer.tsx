@@ -9,7 +9,7 @@ import { Image } from "expo-image";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, FlatList, LayoutChangeEvent, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
-import { EmptyState } from "@/src/components/ui";
+import { EmptyState, ErrorState } from "@/src/components/ui";
 import { ProductImage } from "@/src/components/ProductImage";
 import { colors, money, PRODUCT_IMAGE_ASPECT_RATIO, radius, spacing } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";
@@ -41,7 +41,7 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
   const b = useBuilder();
   const [paneWidth, setPaneWidth] = useState(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const numCols = quotationGridColumns(paneWidth);
+  const numCols = quotationGridColumns(paneWidth, !showCompactFilters);
   // The full-screen mobile/tablet picker needs compact cards so two complete
   // rows fit below its fixed controls. Keep the larger product imagery in the
   // desktop explorer, where visual inspection has more space.
@@ -318,6 +318,8 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
                 </View>
               ))}
             </View>
+          ) : b.productError || b.referenceError ? (
+            <ErrorState title="Products unavailable" subtitle={b.productError || b.referenceError || undefined} onRetry={() => { b.retryProducts(); b.retryReferenceData(); }} />
           ) : (
             <EmptyState icon="package" title="No products match" subtitle="Try clearing filters or a different search term." />
           )

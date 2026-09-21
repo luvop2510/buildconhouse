@@ -1,3 +1,4 @@
+import { Disclosure } from "@/src/design/Disclosure";
 // Add Customer — create-customer form. Was previously missing: the
 // "Add Customer" button on the list screen navigated to this route with no
 // screen backing it (Expo Router's [id].tsx would have caught "new" as a
@@ -14,7 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { api } from "@/src/api/client";
 import {
-  Button, Chip, PageHeader, TextField,
+  Alert, Button, Chip, PageHeader, TextField,
 } from "@/src/components/ui";
 import { toast } from "@/src/components/Toast";
 import { ReferrerField } from "@/src/components/customer/ReferrerField";
@@ -39,6 +40,7 @@ export default function NewCustomer() {
   const [gstin, setGstin] = useState("");
   const [tier, setTier] = useState<Tier>("retail");
   const [referrer, setReferrer] = useState<{ id: string; name: string; type: "architect" | "interior_designer" } | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const save = async () => {
@@ -47,6 +49,8 @@ export default function NewCustomer() {
       toast.error("Enter a customer name");
       return;
     }
+    if (saving) return;
+    setSaveError(null);
     setSaving(true);
     try {
       const payload = {
@@ -67,7 +71,7 @@ export default function NewCustomer() {
       toast.success("Customer added");
       router.replace(`/(admin)/customers/${created.id}` as any);
     } catch (e: any) {
-      toast.error(e?.detail || "Could not save customer");
+      setSaveError(e?.detail || "Could not save customer. Your entries are still here.");
     } finally {
       setSaving(false);
     }
@@ -94,6 +98,15 @@ export default function NewCustomer() {
             autoFocus
             testID="new-customer-name"
           />
+          <TextField
+            label="Phone"
+            placeholder="+91 98xxxxxxxx"
+            value={phone}
+            onChangeText={setPhone}
+            keyboardType="phone-pad"
+            testID="new-customer-phone"
+          />
+          <Disclosure title="Additional customer details">
           <ReferrerField value={referrer} onChange={setReferrer} />
           <TextField
             label="Company"
@@ -110,14 +123,6 @@ export default function NewCustomer() {
             autoCapitalize="none"
             keyboardType="email-address"
             testID="new-customer-email"
-          />
-          <TextField
-            label="Phone"
-            placeholder="+91 98xxxxxxxx"
-            value={phone}
-            onChangeText={setPhone}
-            keyboardType="phone-pad"
-            testID="new-customer-phone"
           />
           <TextField
             label="City"
@@ -180,16 +185,22 @@ export default function NewCustomer() {
             </View>
           </View>
 
+          </Disclosure>
+        </ScrollView>
+        <View style={{ width: "100%", maxWidth: 760, alignSelf: "center", paddingHorizontal: gutter, paddingVertical: spacing.lg, gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.surfaceSecondary }}>
+          {saveError ? <Alert tone="error" title={saveError} /> : null}
           <Button
             label={saving ? "Saving…" : "Save Customer"}
             variant="primary"
             size="lg"
             icon="check"
             disabled={saving}
+            loading={saving}
+            fullWidth
             onPress={save}
             testID="new-customer-save"
           />
-        </ScrollView>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

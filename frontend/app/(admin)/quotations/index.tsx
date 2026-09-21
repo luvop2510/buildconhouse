@@ -176,7 +176,11 @@ function QuotationRow({ q, onPress, canDelete, onDelete }: { q: Quotation; onPre
       accessibilityLabel={`Open quotation ${q.number} for ${q.customer_name || "unnamed customer"}`}
       testID={`quotation-${q.id}`}
       onPress={onPress}
-      style={({ pressed }) => [styles.card, { transform: [{ scale: pressed ? 0.997 : 1 }], opacity: pressed ? 0.94 : 1 }]}
+      style={({ pressed, hovered }: any) => [styles.card, {
+        backgroundColor: pressed ? colors.surfaceTertiary : hovered ? colors.surfaceSubtle : colors.surfaceSecondary,
+        borderColor: hovered ? colors.borderStrong : colors.border,
+        opacity: pressed ? 0.94 : 1,
+      }]}
     >
       {/* Row 1: number + status */}
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: spacing.sm }}>

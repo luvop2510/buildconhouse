@@ -15,6 +15,7 @@ npx tsc --noEmit
 npm run lint -- --max-warnings 0
 npm run test:quotation-media
 npm run test:quotation-contract
+npm run test:purchases-contract
 npm run test:notebook
 npm run test:mobile-ux
 npm run test:api-client

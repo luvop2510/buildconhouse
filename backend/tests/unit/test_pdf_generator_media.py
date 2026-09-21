@@ -57,10 +57,12 @@ def test_sanitary_pdf_filename_uses_the_customer_name():
     assert pdf_generator.quotation_pdf_filename('  Myruba / Sons  ') == "Myruba Sons.pdf"
 
 
-def test_pdf_money_uses_a_portable_indian_currency_prefix_and_digit_grouping():
+def test_pdf_money_uses_an_unbreakable_indian_currency_prefix_and_digit_grouping():
     assert pdf_generator.format_indian_money(12345678.9) == "1,23,45,678.90"
     assert pdf_generator.format_indian_money(-1000) == "-1,000.00"
-    assert pdf_generator._standard_money(12345678.9) == "Rs. 1,23,45,678.90"
+    money = pdf_generator._standard_money(12345678.9)
+    assert "&nbsp;1,23,45,678.90" in money
+    assert "₹" in money if pdf_generator.RUPEE_FONT else "Rs." in money
 
 
 def test_standard_pdf_prints_indian_currency_for_large_amounts():
@@ -74,7 +76,7 @@ def test_standard_pdf_prints_indian_currency_for_large_amounts():
         {"name": "Indian Currency Contract"},
     )
     text = " ".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf)).pages)
-    assert "Rs. 1,23,45,678.90" in text
+    assert "1,23,45,678.90" in text
 
 
 def test_standard_item_tables_scale_into_portrait_printable_width():

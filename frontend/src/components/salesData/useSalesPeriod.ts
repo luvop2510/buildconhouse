@@ -95,13 +95,14 @@ export function useSalesPeriod(floorId: string) {
   useEffect(() => {
     if (!floorId) return; // floor not resolved yet — never query unscoped
     let alive = true;
+    const controller = new AbortController();
     const version = selectionVersion.current;
     setServerDefault(null);
 
     (async () => {
       const [saved, server] = await Promise.all([
         readSaved(),
-        salesDataApi.defaultPeriod(floorId).catch(() => null),
+        salesDataApi.defaultPeriod(floorId, { signal: controller.signal }).catch(() => null),
       ]);
       if (!alive) return;
 
@@ -124,7 +125,7 @@ export function useSalesPeriod(floorId: string) {
       setOrigin("default");
     })();
 
-    return () => { alive = false; };
+    return () => { alive = false; controller.abort(); };
   }, [floorId]);
 
   const choose = useCallback((next: { preset: string; dateFrom?: string | null; dateTo?: string | null }) => {

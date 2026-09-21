@@ -8,10 +8,21 @@ assert.match(scaffold, /edges=\{\["top", "left", "right"\]\}/);
 assert.match(scaffold, /edges=\{\["bottom"\]\}/);
 
 const adminShell = read("../app/(admin)/_layout.tsx");
-assert.match(adminShell, /if \(contextualNotebookTabs\)/);
-assert.match(adminShell, /styles\.notebookPhoneBar/);
+// Every viewport reads the same destinations; floor and permission filtering
+// precedes the phone priority list, including the two notebook departments.
+const navigation = read("../src/design/navigation.ts");
+assert.match(adminShell, /import \{ PRIMARY, SECONDARY, TILES_ITEMS, type NavItem \} from "@\/src\/design\/navigation"/);
+assert.match(adminShell, /const all = \[\.\.\.visible\(PRIMARY\), \.\.\.tilesNav\.items, \.\.\.visible\(SECONDARY\)\]/);
+assert.match(adminShell, /const priorities = notebook \? all\.filter/);
+assert.match(adminShell, /selectedFloorId === KITCHEN_FLOOR_ID \|\| selectedFloorId === FURNITURE_FLOOR_ID/);
+assert.match(adminShell, /hasAccess\(item\.match\)/);
 assert.match(adminShell, /bottom-nav-notebook-workspace/);
-assert.doesNotMatch(adminShell, /bottom-fab-new-quotation[\s\S]{0,600}contextualNotebookTabs/);
+assert.match(adminShell, /const more = all\.filter/);
+assert.doesNotMatch(adminShell, /bottom-fab-new-quotation/);
+assert.match(navigation, /match: "quotations", floors: \[SANITARY_FLOOR_ID\]/);
+assert.match(navigation, /match: "purchases", floors: \[SANITARY_FLOOR_ID\]/);
+assert.match(navigation, /notebook\/kitchen\/quotation-follow-up/);
+assert.match(navigation, /notebook\/furniture\/quotation-follow-up/);
 
 const permissions = read("../src/hooks/use-permissions.ts");
 assert.match(permissions, /tiles:\s*"tiles"/);
@@ -36,12 +47,16 @@ for (const path of phoneSafeAreaRoutes) {
 }
 
 const followups = read("../app/(admin)/followups.tsx");
-assert.match(followups, /isPhone \? renderFollowupList\(true\)/);
-assert.match(followups, /ListHeaderComponent=\{phone/);
-assert.match(followups, /scrollEnabled=\{phone\}/);
-assert.match(followups, /style=\{styles\.mobileDetailScroll\} contentContainerStyle=\{styles\.mobileDetailContent\}/);
-assert.match(followups, /flexBasis: "48%"/);
-assert.match(followups, /maxWidth: "48%"/);
+assert.match(followups, /renderFollowupList\(isPhone, !isPhone\)/);
+assert.match(followups, /const ownsScroll = phone \|\| includeWorkspaceHeader/);
+assert.match(followups, /ListHeaderComponent=\{ownsScroll/);
+assert.match(followups, /scrollEnabled=\{ownsScroll\}/);
+assert.match(followups, /visible=\{customerPreviewOpen\}/);
+assert.match(followups, /variant=\{isPhone \? "bottom" : "modal"\}/);
+assert.match(followups, /const listRequestVersion = useRef\(0\)/);
+assert.match(followups, /\/followups\/page\?\$\{params\.toString\(\)\}/);
+assert.match(followups, /testID="followups-previous-page"/);
+assert.match(followups, /testID="followups-next-page"/);
 
 const legacyBottomSheet = read("../src/components/BottomSheet.tsx");
 assert.match(legacyBottomSheet, /import \{ Sheet \} from "@\/src\/design\/components"/);
@@ -112,4 +127,4 @@ assert.match(productModal, /edges=\{isPhone \? \["bottom"\] : \[\]\}/);
 const customProduct = read("../src/components/quotation/sheets/CustomProductSheet.tsx");
 assert.match(customProduct, /\[styles\.grid, isPhone && styles\.phoneGrid\]/);
 
-console.log("mobile shell, sheet, list ownership, quotation flow, and notebook navigation contracts: 49 assertions passed");
+console.log("mobile shell, sheet, list ownership, quotation flow, and notebook navigation contracts passed");

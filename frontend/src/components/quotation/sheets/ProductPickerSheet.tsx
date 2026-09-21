@@ -3,8 +3,9 @@
 // mobile use. Keeping this route on ProductExplorer is what gives Sanitary
 // Bathroom Add Products the same shop-style filters and two-column browsing
 // experience as the inline quotation catalog.
+import { Overlay } from "@/src/design/Overlay";
 import { Feather } from "@expo/vector-icons";
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { colors, money, spacing, type } from "@/src/theme/tokens";
@@ -17,18 +18,13 @@ export function ProductPickerSheet() {
   const b = useBuilder();
 
   return (
-    <Modal
-      visible={b.pickerSheetOpen}
-      animationType="slide"
-      onRequestClose={() => b.setPickerSheetOpen(false)}
-      presentationStyle="fullScreen"
-    >
-      <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1, backgroundColor: colors.surface }}>
+    <Overlay open={b.pickerSheetOpen} onClose={() => b.setPickerSheetOpen(false)} title="Add products" presentation="fullscreen" scroll={false} header={false}>
+      <SafeAreaView edges={[]} style={{ flex: 1, backgroundColor: colors.surface }}>
         <View style={styles.head}>
           <Pressable onPress={() => b.setPickerSheetOpen(false)} style={styles.close} testID="picker-sheet-close" accessibilityRole="button" accessibilityLabel="Close product picker">
             <Feather name="x" size={22} color={colors.onSurface} />
           </Pressable>
-          <Text style={type.titleMd}>Add products</Text>
+          <Text accessibilityRole="header" style={type.titleMd}>Add products</Text>
           <View style={{ width: 22 }} />
         </View>
         <View style={{ paddingHorizontal: 12, paddingVertical: 8 }}>
@@ -50,7 +46,7 @@ export function ProductPickerSheet() {
           </Pressable>
         </View>
       </SafeAreaView>
-    </Modal>
+    </Overlay>
   );
 }
 

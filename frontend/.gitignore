@@ -102,3 +102,6 @@ backend/backups/
 .env*
 .playwright-cli/
 output/playwright/
+
+# A separate local checkout used for recovery/reference; it is not part of this repository.
+frontend/

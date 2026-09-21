@@ -1,19 +1,19 @@
 import { Feather } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Alert as RNAlert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ActivityTimeline, TimelineEvent } from "@/src/components/ActivityTimeline";
 import { useBp } from "@/src/design/responsive";
-import { Button, Card, IconButton, PriceTag, StatusBadge } from "@/src/components/ui";
+import { Alert, Button, Card, IconButton, PageHeader, PriceTag, StatusBadge } from "@/src/components/ui";
 import { ConfirmDialog } from "@/src/components/ds";
 import { api } from "@/src/api/client";
 import { downloadApiFile } from "@/src/utils/downloadFile";
 import { colors, money, radius, spacing, type } from "@/src/theme/tokens";
 import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
 
-type Line = { id: string; sku: string; name: string; qty: number; unit_price: number; discount_pct: number | null; room?: string; description?: string | null; category_id?: string | null };
+type Line = { id: string; sku: string; name: string; qty: number; unit_price: number; discount_pct: number | null; room?: string; description?: string | null; category_id?: string | null; godown_stock_id?: string | null; godown_source_customer_name?: string | null; godown_source_purchased_at?: string | null; godown_allocated_at?: string | null };
 type Quotation = {
   id: string; number: string; customer_name: string; status: string;
   items: Line[]; rooms: string[]; subtotal: number; discount_total: number;
@@ -50,18 +50,22 @@ export default function QuotationDetail() {
   const [linkedPos, setLinkedPos] = useState<PoStub[]>([]);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [advancing, setAdvancing] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [relatedError, setRelatedError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
+    setRelatedError(false);
     try {
       const [doc, br, tl, pos] = await Promise.all([
         api.get<Quotation>(`/quotations/${id}`),
         api.get<Breakdown>(`/quotations/${id}/breakdown`).catch(() => null),
-        api.get<TimelineEvent[]>(`/activity/quotation/${id}`).catch(() => []),
-        api.get<PoStub[]>(`/purchase-orders?quotation_id=${id}`).catch(() => []),
+        api.get<TimelineEvent[]>(`/activity/quotation/${id}`).catch(() => { setRelatedError(true); return []; }),
+        api.get<PoStub[]>(`/purchase-orders?quotation_id=${id}`).catch(() => { setRelatedError(true); return []; }),
       ]);
       setQ(doc); setBreakdown(br); setTimeline(tl); setLinkedPos(pos);
     } catch (e: any) {
@@ -79,11 +83,15 @@ export default function QuotationDetail() {
   };
 
   const advance = async () => {
-    if (!q) return;
+    if (!q || advancing) return;
     const next = NEXT_STATUS[q.status];
     if (!next) return;
-    const updated = await api.patch<Quotation>(`/quotations/${id}`, { status: next, reason: `Marked ${next}` });
-    setQ(updated);
+    setAdvancing(true); setActionError(null);
+    try {
+      const updated = await api.patch<Quotation>(`/quotations/${id}`, { status: next, reason: `Marked ${next}` });
+      setQ(updated);
+    } catch (error: any) { setActionError(error?.detail || "Could not update this quotation. Try again."); }
+    finally { setAdvancing(false); }
   };
 
   const deleteQuotation = async () => {
@@ -95,7 +103,8 @@ export default function QuotationDetail() {
     } catch (e: any) {
       // Keep the dialog open so a manager can read/retry after a protected
       // order/payment response rather than losing the failure context.
-      RNAlert.alert("Delete failed", e?.detail || "Quotation could not be deleted");
+      setActionError(e?.detail || "Quotation could not be deleted");
+      setDeleteOpen(false);
     } finally { setDeleting(false); }
   };
 
@@ -110,16 +119,11 @@ export default function QuotationDetail() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
-      {/* Sticky top bar — back on left, action buttons on right */}
-      <View style={styles.topbar}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
-          <IconButton icon="chevron-left" onPress={() => router.back()} size={36} tone="surface" testID="back-btn" accessibilityLabel="Back" />
-          <View style={{ minWidth: 0, flex: 1 }}>
-            <Text style={type.overline}>Quotation</Text>
-            <Text style={[type.titleMd, { marginTop: 2 }]} numberOfLines={1}>{q.number}</Text>
-          </View>
-        </View>
+      <PageHeader title={q.number} overline="Quotation" back={() => router.back()} actions={
         <View style={{ flexDirection: "row", gap: isPhone ? 4 : 8, alignItems: "center", flexShrink: 0 }}>
+          {isPhone ? (
+            <IconButton icon="edit-3" tone="surface" onPress={() => router.push(`/(admin)/quotations/new?quotationId=${encodeURIComponent(id)}` as any)} testID="edit-quotation" accessibilityLabel="Edit quotation" />
+          ) : <Button label="Edit" icon="edit-3" variant="secondary" size="sm" onPress={() => router.push(`/(admin)/quotations/new?quotationId=${encodeURIComponent(id)}` as any)} testID="edit-quotation" />}
           {isPhone ? (
             <IconButton icon="download" tone="surface" onPress={openPdf} testID="download-pdf" accessibilityLabel="Download PDF" />
           ) : <Button label="PDF" icon="download" variant="secondary" size="sm" onPress={openPdf} testID="download-pdf" />}
@@ -128,19 +132,21 @@ export default function QuotationDetail() {
           ) : <Button label="Delete" icon="trash-2" variant="danger" size="sm" onPress={() => setDeleteOpen(true)} testID="delete-quotation" />}
           {NEXT_STATUS[q.status] ? (
             isPhone ? (
-              <IconButton icon="check" tone="brand" onPress={advance} testID="advance-status" accessibilityLabel={`Mark ${NEXT_STATUS[q.status].replace("_", " ")}`} />
+              <IconButton icon="check" tone="brand" disabled={advancing} onPress={advance} testID="advance-status" accessibilityLabel={`Mark ${NEXT_STATUS[q.status].replace("_", " ")}`} />
             ) : (
-              <Button label={isTablet ? `Mark ${NEXT_STATUS[q.status].replace("_", " ")}` : "Mark"} icon="check" size="sm" onPress={advance} testID="advance-status" />
+              <Button label={isTablet ? `Mark ${NEXT_STATUS[q.status].replace("_", " ")}` : "Mark"} icon="check" size="sm" disabled={advancing} onPress={advance} testID="advance-status" />
             )
           ) : null}
         </View>
-      </View>
+      } />
 
       <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg, paddingBottom: spacing.huge }}>
-        {/* Hero section */}
+        {actionError ? <Alert tone="error" title="Action not completed" description={actionError} /> : null}
+        {relatedError ? <Alert tone="warning" title="Some related records are unavailable" description="Order links or activity may be incomplete. Reload to refresh them." /> : null}
+        {/* Document summary */}
         <View style={styles.hero}>
           <StatusBadge status={q.status} />
-          <Text style={[type.displayLg, { marginTop: 10 }]} numberOfLines={2}>{q.customer_name || "Unknown customer"}</Text>
+          <Text accessibilityRole="header" aria-level={2} style={[type.titleLg, { marginTop: 10 }]} numberOfLines={2}>{q.customer_name || "Unknown customer"}</Text>
           <Text style={[type.bodyMuted, { marginTop: 4 }]}>
             Prepared by {q.created_by_name} · {new Date(q.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}
           </Text>
@@ -184,6 +190,7 @@ export default function QuotationDetail() {
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: 14, fontFamily: type.titleMd.fontFamily, fontWeight: "600", color: colors.onSurface }} numberOfLines={2}>{it.name}</Text>
                     <Text style={type.caption}>{it.sku}{it.room ? ` · ${it.room}` : ""}</Text>
+                    <GodownProvenance item={it} />
                   </View>
                   <Text style={[type.mono, { width: 60, textAlign: "right" }]} numberOfLines={1}>{it.qty}</Text>
                   <Text style={[type.mono, { width: 100, textAlign: "right" }]} numberOfLines={1}>{money(it.unit_price)}</Text>
@@ -213,6 +220,7 @@ export default function QuotationDetail() {
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={{ fontSize: 14, fontFamily: type.titleMd.fontFamily, fontWeight: "600", color: colors.onSurface }} numberOfLines={2}>{it.name}</Text>
                       <Text style={[type.caption, { marginTop: 2 }]}>{it.sku}{it.room ? ` · ${it.room}` : ""}</Text>
+                      <GodownProvenance item={it} />
                     </View>
                   </View>
                   <View style={styles.lineMeta}>
@@ -323,6 +331,12 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
+function GodownProvenance({ item }: { item: Line }) {
+  if (!item.godown_stock_id) return null;
+  const purchased = item.godown_source_purchased_at ? new Date(item.godown_source_purchased_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "date not recorded";
+  return <View style={styles.godownTag}><Feather name="archive" size={11} color={colors.brand} /><Text style={styles.godownText}>From godown · {item.godown_source_customer_name || "source not recorded"} · purchased {purchased}</Text></View>;
+}
+
 const styles = StyleSheet.create({
   centered: {
     flex: 1, alignItems: "center", justifyContent: "center",
@@ -357,6 +371,8 @@ const styles = StyleSheet.create({
     fontSize: 13, fontFamily: type.titleMd.fontFamily,
     fontWeight: "600", color: colors.brand,
   },
+  godownTag: { marginTop: 5, flexDirection: "row", gap: 4, padding: 6, borderRadius: 6, backgroundColor: colors.brandTint },
+  godownText: { flex: 1, fontSize: 10, lineHeight: 14, color: colors.onSurfaceSecondary },
   tableHead: {
     flexDirection: "row",
     padding: spacing.md,

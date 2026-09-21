@@ -1,6 +1,7 @@
 // Customers list — DS-aligned rebuild.
 // Uses PageHeader, HeroBanner stat row, filter chips, SearchField, and a
 // unified customer-card language shared with quotations/purchases/payments.
+import { Disclosure } from "@/src/design/Disclosure";
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -95,7 +96,7 @@ export default function Customers() {
     if (tier !== "all" && c.tier !== tier) return false;
     if (!q) return true;
     const needle = q.toLowerCase();
-    return `${c.name} ${c.company || ""} ${c.email} ${c.city || ""}`.toLowerCase().includes(needle);
+    return `${c.name} ${c.company || ""} ${c.email} ${c.phone || ""} ${c.city || ""}`.toLowerCase().includes(needle);
   }), [items, q, tier]);
 
   // Keep the mobile scroll surface light even when the legacy list endpoint
@@ -122,6 +123,7 @@ export default function Customers() {
       />
 
       <ScrollView contentContainerStyle={[styles.content, isPhone && styles.contentPhone]}>
+        <Disclosure title="Customer summary" summary="Account types and totals">
         {/* Stats */}
         <View style={[styles.statsRow, !isDesktop && styles.statsRowMobile]}>
           <StatTile
@@ -161,6 +163,8 @@ export default function Customers() {
             style={isPhone ? styles.statPhone : undefined}
           />
         </View>
+
+        </Disclosure>
 
         {/* Toolbar */}
         <View style={{ gap: spacing.md }}>

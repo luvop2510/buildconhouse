@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
-import { Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 
 import { Button, PillTabs, TextField } from "@/src/components/ui";
+import { Sheet } from "@/src/design/components";
+import { useBp } from "@/src/design/responsive";
 import { colors, spacing, type } from "@/src/theme/tokens";
 
 import { customDateRange, inclusiveEndDay } from "./periodDates";
@@ -34,6 +36,8 @@ export function SalesFilters({
   period: SelectedPeriod;
   onPeriodChange: (next: { preset: string; dateFrom?: string | null; dateTo?: string | null }) => void;
 }) {
+  const { isPhone } = useBp();
+  const [picker, setPicker] = useState<"floor" | "period" | null>(null);
   const isCustom = period.preset === "custom";
   // Starts collapsed even when the active period IS custom: the smart default
   // resolves to a custom range whenever it falls back to the last month with
@@ -62,10 +66,20 @@ export function SalesFilters({
   };
 
   return (
-    <View style={{ gap: spacing.lg }} testID="sales-data-filters">
+    <View style={{ gap: isPhone ? spacing.md : spacing.lg, paddingBottom: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border }} testID="sales-data-filters">
+      <Sheet open={!!picker} onClose={() => setPicker(null)} title={picker === "floor" ? "Business unit" : "Reporting period"}>
+        <View style={{ gap: spacing.xs }}>
+          {(picker === "floor" ? [{ value: "all", label: "All units" }, ...floors.map(f => ({ value: f.id, label: FLOOR_LABEL[f.id] || f.name }))] : [...PERIOD_PRESETS, { value: "custom", label: "Custom range" }]).map(option => <Pressable key={option.value} accessibilityRole="button" accessibilityState={{ selected: option.value === (picker === "floor" ? floorId : period.preset) }} onPress={() => {
+            if (picker === "floor") onFloorChange(option.value);
+            else if (option.value === "custom") setShowCustom(true);
+            else { setShowCustom(false); setError(null); onPeriodChange({ preset: option.value }); }
+            setPicker(null);
+          }} style={{ minHeight: 48, paddingHorizontal: spacing.md, justifyContent: "center", borderBottomWidth: 1, borderBottomColor: colors.border }}><Text style={type.bodyStrong}>{option.label}</Text></Pressable>)}
+        </View>
+      </Sheet>
       <View style={{ gap: spacing.sm }}>
         <Text style={type.overline}>Business unit</Text>
-        <PillTabs
+        {isPhone ? <Button label={floorId === "all" ? "All units" : FLOOR_LABEL[floorId] || floors.find(f => f.id === floorId)?.name || "Choose business unit"} icon="chevron-down" variant="secondary" onPress={() => setPicker("floor")} testID="sales-data-floor" /> : <PillTabs
           testID="sales-data-floor"
           value={floorId || "all"}
           onChange={onFloorChange}
@@ -73,12 +87,15 @@ export function SalesFilters({
             { value: "all", label: "All units" },
             ...floors.map((f) => ({ value: f.id, label: FLOOR_LABEL[f.id] || f.name })),
           ]}
-        />
+        />}
       </View>
 
       <View style={{ gap: spacing.sm }}>
         <Text style={type.overline}>Period · UTC</Text>
-        <PillTabs
+        {isPhone ? <View testID="sales-data-preset" style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+          <Button label={period.label} icon="chevron-down" variant="secondary" onPress={() => setPicker("period")} />
+          <Button label="Custom" variant="ghost" onPress={() => setShowCustom(true)} />
+        </View> : <PillTabs
           testID="sales-data-preset"
           value={showCustom || isCustom ? "custom" : period.preset}
           onChange={(value) => {
@@ -94,7 +111,7 @@ export function SalesFilters({
             ...PERIOD_PRESETS.map((p) => ({ value: p.value as string, label: p.label })),
             { value: "custom", label: "Custom" },
           ]}
-        />
+        />}
         {isCustom && !showCustom ? (
           <Text style={[type.caption, { color: colors.onSurfaceMuted }]}>
             Showing {period.label}

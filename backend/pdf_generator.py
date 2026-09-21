@@ -178,19 +178,19 @@ def format_indian_money(value: object) -> str:
 
 
 def _money(value: object) -> str:
-    """PDF-safe rupee amount for document families with a verified glyph font."""
+    """One unbreakable, PDF-safe Indian currency amount.
+
+    ReportLab may split an ordinary space at a narrow table-cell boundary,
+    leaving the rupee glyph above its number.  The non-breaking space keeps
+    the sign and amount together in every rate/total column.
+    """
     symbol = f"<font name='{RUPEE_FONT}'>₹</font>" if RUPEE_FONT else "Rs."
-    return f"{symbol} {format_indian_money(value)}"
+    return f"{symbol}&nbsp;{format_indian_money(value)}"
 
 
 def _standard_money(value: object) -> str:
-    """PDF-safe Indian currency amount for ReportLab Paragraph markup.
-
-    A number of deployed ReportLab/font combinations substitute the rupee
-    glyph with an oversized filled dot.  ``Rs.`` is compact, unambiguous, and
-    uses the document's base font, so it renders identically on every worker.
-    """
-    return f"Rs. {format_indian_money(value)}"
+    """PDF-safe Indian currency amount for sanitary quotation cells."""
+    return _money(value)
 
 
 def _escape(value: object) -> str:

@@ -1,3 +1,5 @@
+import { Disclosure } from "@/src/design/Disclosure";
+import { NavigationTabs } from "@/src/design/NavigationTabs";
 // Customer profile with full activity timeline across quotations, purchases,
 // and future payments. DS-aligned rebuild: PageHeader, StatTile, SegmentedControl,
 // unified list row, Avatar. Business logic preserved.
@@ -13,7 +15,7 @@ import { ActivityTimeline, TimelineEvent } from "@/src/components/ActivityTimeli
 import { useBp } from "@/src/design/responsive";
 import {
   Avatar, Badge, Button, Card, Chip, EmptyState, FormField, PageHeader,
-  SegmentedControl, Sheet, StatTile, StatusBadge, TextField,
+ Sheet, StatTile, StatusBadge, TextField,
 } from "@/src/components/ui";
 import { ConfirmDialog } from "@/src/components/ds";
 import { api } from "@/src/api/client";
@@ -142,6 +144,7 @@ export default function CustomerDetail() {
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
+  const [relatedErrors, setRelatedErrors] = useState(false);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [availableBrands, setAvailableBrands] = useState<Workspace["brands"]>([]);
   const [availableStages, setAvailableStages] = useState<Workspace["stages"]>([]);
@@ -168,12 +171,13 @@ export default function CustomerDetail() {
   const loadCore = useCallback(async () => {
     if (!id) return;
     setLoadError(null);
+    setRelatedErrors(false);
     try {
       const [c, qs, pos, tl] = await Promise.all([
         api.get<Customer>(`/customers/${id}`),
-        api.get<Quotation[]>(`/quotations`).then((all) => all.filter((q: any) => q.customer_id === id)).catch(() => []),
-        api.get<PO[]>(`/purchase-orders?customer_id=${id}`).catch(() => []),
-        api.get<TimelineEvent[]>(`/activity/customer/${id}`).catch(() => []),
+        api.get<Quotation[]>(`/quotations`).then((all) => all.filter((q: any) => q.customer_id === id)).catch(() => { setRelatedErrors(true); return []; }),
+        api.get<PO[]>(`/purchase-orders?customer_id=${id}`).catch(() => { setRelatedErrors(true); return []; }),
+        api.get<TimelineEvent[]>(`/activity/customer/${id}`).catch(() => { setRelatedErrors(true); return []; }),
       ]);
       setCustomer(c);
       setQuotations(qs);
@@ -455,54 +459,22 @@ export default function CustomerDetail() {
           </View>
         </Card>
 
+        {relatedErrors ? <View accessibilityRole="alert" style={{ gap: 8 }}><Text style={type.bodyMuted}>Some related records could not be loaded. Counts may be incomplete.</Text><Button label="Retry related records" variant="secondary" onPress={() => void loadCore()} /></View> : null}
+        <Disclosure title="Customer summary">
         {/* Stats */}
         <View style={[styles.statsRow, !isDesktop && styles.statsRowMobile]}>
-          <StatTile label="Lifetime Revenue" value={moneyShort(totalRevenue)} icon="trending-up" tone="success" sub="Won + ordered" />
-          <StatTile label="Quotations" value={String(quotations.length)} icon="file-text" tone="brand" sub="All statuses" />
-          <StatTile label="Purchase Orders" value={String(purchases.length)} icon="shopping-cart" tone="brand" sub="Across brands" />
-          <StatTile label="Activity" value={String(timeline.length)} icon="activity" tone="neutral" sub="Events logged" />
+          <StatTile label="Lifetime Revenue" value={relatedErrors ? "Unavailable" : moneyShort(totalRevenue)} icon="trending-up" tone="success" sub="Won + ordered" />
+          <StatTile label="Quotations" value={relatedErrors ? "—" : String(quotations.length)} icon="file-text" tone="brand" sub="All statuses" />
+          <StatTile label="Purchase Orders" value={relatedErrors ? "—" : String(purchases.length)} icon="shopping-cart" tone="brand" sub="Across brands" />
+          <StatTile label="Activity" value={relatedErrors ? "—" : String(timeline.length)} icon="activity" tone="neutral" sub="Events logged" />
         </View>
 
+        </Disclosure>
         {/* Tabs */}
-        {isDesktop ? (
-          <SegmentedControl
-            value={tab}
-            onChange={setTab}
-            options={[
-              { value: "overview", label: "Overview" },
-              { value: "quotations", label: `Quotations · ${quotations.length}` },
-              { value: "purchases", label: `Purchases · ${workspace?.summary.total_items ?? purchases.length}` },
-              { value: "timeline", label: "Timeline" },
-            ]}
-            fullWidth
-          />
-        ) : (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-            {[
-              { value: "overview" as const, label: "Overview", icon: "grid" as keyof typeof Feather.glyphMap },
-              { value: "quotations" as const, label: `Quotations · ${quotations.length}`, icon: "file-text" as keyof typeof Feather.glyphMap },
-              { value: "purchases" as const, label: `Purchases · ${workspace?.summary.total_items ?? purchases.length}`, icon: "shopping-cart" as keyof typeof Feather.glyphMap },
-              { value: "timeline" as const, label: "Timeline", icon: "activity" as keyof typeof Feather.glyphMap },
-            ].map((t) => (
-              <Pressable
-                key={t.value}
-                testID={`customer-tab-${t.value}`}
-                onPress={() => setTab(t.value)}
-                style={{
-                  flexDirection: "row", alignItems: "center", gap: 6,
-                  paddingHorizontal: 14, height: 38, borderRadius: 999,
-                  backgroundColor: tab === t.value ? colors.brand : colors.surfaceSecondary,
-                  borderWidth: 1, borderColor: tab === t.value ? colors.brand : colors.border,
-                }}
-              >
-                <Feather name={t.icon} size={13} color={tab === t.value ? colors.onBrand : colors.onSurfaceSecondary} />
-                <Text style={{ fontSize: 12.5, fontWeight: tab === t.value ? "700" : "500", color: tab === t.value ? colors.onBrand : colors.onSurface }} numberOfLines={1}>
-                  {t.label}
-                </Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-        )}
+        <NavigationTabs value={tab} onChange={setTab} testID="customer-tab" options={[
+          { value: "overview", label: "Overview" }, { value: "quotations", label: "Quotations" },
+          { value: "purchases", label: "Purchases" }, { value: "timeline", label: "Timeline" },
+        ]} />
 
         {/* Body */}
         {tab === "overview" ? (
@@ -549,34 +521,47 @@ export default function CustomerDetail() {
         ) : tab === "quotations" ? (
           quotations.length === 0 ? (
             <Card>
-              <EmptyState icon="file-text" title="No quotations yet" subtitle="This customer hasn't received a quotation." />
+              <EmptyState icon="file-text" title={relatedErrors ? "Quotation records unavailable" : "No quotations yet"} subtitle={relatedErrors ? "Retry related records to see this customer’s quotations." : "This customer hasn't received a quotation."} />
             </Card>
           ) : (
             <Card padding={0}>
               {quotations.map((q, i) => (
-                <Pressable
+                <View
                   key={q.id}
-                  onPress={() => router.push(`/(admin)/quotations/${q.id}` as any)}
-                  style={({ pressed, hovered }: any) => [
+                  style={[
                     styles.listRow,
                     !isDesktop && styles.listRowMobile,
-                    {
-                      borderTopWidth: i > 0 ? StyleSheet.hairlineWidth : 0,
-                      borderTopColor: colors.divider,
-                      backgroundColor: pressed ? colors.surfaceTertiary : hovered ? colors.surfaceSubtle : "transparent",
-                    },
+                    { borderTopWidth: i > 0 ? StyleSheet.hairlineWidth : 0, borderTopColor: colors.divider },
                   ]}
                 >
-                  <Text style={[type.mono, { width: isDesktop ? 120 : undefined, flexShrink: 1 }]} numberOfLines={1}>{q.number}</Text>
-                  <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-                    <Text style={type.titleSm} numberOfLines={1}>{q.items.length} items</Text>
-                    <Text style={type.caption}>{fmtDate(q.created_at)}</Text>
-                  </View>
-                  <Text style={[type.mono, { width: isDesktop ? 110 : undefined, textAlign: isDesktop ? "right" : "left", fontWeight: "700" }]} numberOfLines={1}>
-                    {money(q.grand_total)}
-                  </Text>
-                  <StatusBadge status={q.status} />
-                </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Open quotation ${q.number}`}
+                    onPress={() => router.push(`/(admin)/quotations/${q.id}` as any)}
+                    style={({ pressed, hovered }: any) => [styles.quotationOpen, {
+                      backgroundColor: pressed ? colors.surfaceTertiary : hovered ? colors.surfaceSubtle : "transparent",
+                    }]}
+                    testID={`customer-quotation-${q.id}`}
+                  >
+                    <Text style={[type.mono, { width: isDesktop ? 120 : undefined, flexShrink: 1 }]} numberOfLines={1}>{q.number}</Text>
+                    <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                      <Text style={type.titleSm} numberOfLines={1}>{q.items.length} items</Text>
+                      <Text style={type.caption}>{fmtDate(q.created_at)}</Text>
+                    </View>
+                    <Text style={[type.mono, { width: isDesktop ? 110 : undefined, textAlign: isDesktop ? "right" : "left", fontWeight: "700" }]} numberOfLines={1}>
+                      {money(q.grand_total)}
+                    </Text>
+                    <StatusBadge status={q.status} />
+                  </Pressable>
+                  <Button
+                    label={isPhone ? "Manage" : "Manage products"}
+                    icon="edit-3"
+                    variant="secondary"
+                    size="sm"
+                    onPress={() => router.push(`/(admin)/quotations/new?quotationId=${encodeURIComponent(q.id)}` as any)}
+                    testID={`manage-quotation-products-${q.id}`}
+                  />
+                </View>
               ))}
             </Card>
           )
@@ -951,7 +936,7 @@ export default function CustomerDetail() {
           </View>
         ) : (
           <Card>
-            <ActivityTimeline events={timeline} emptyLabel="Nothing yet" />
+            <ActivityTimeline events={timeline} emptyLabel={relatedErrors ? "Activity unavailable. Retry related records." : "Nothing yet"} />
           </Card>
         )}
       </ScrollView>
@@ -1046,6 +1031,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     paddingHorizontal: spacing.md,
   },
+  quotationOpen: { flex: 1, minWidth: 0, minHeight: 44, flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.sm },
   deliveryIcon: {
     width: 34, height: 34, borderRadius: 17, backgroundColor: "#F3DFA3",
     alignItems: "center", justifyContent: "center",

@@ -29,12 +29,14 @@ import { ProductPickerSheet } from "../sheets/ProductPickerSheet";
 import { ReferrerSwitcherSheet } from "../sheets/ReferrerSwitcherSheet";
 import { RoomSheet } from "../sheets/RoomSheet";
 import { SwapSheet } from "../sheets/SwapSheet";
+import { DraftRecoverySheet } from "../sheets/DraftRecoverySheet";
 import { BuilderTopbar } from "./BuilderTopbar";
 
 export function BuilderShell({ onBack }: { onBack: () => void }) {
   const b = useBuilder();
   const [w, setW] = useState(0);
   const [railCollapsed, setRailCollapsed] = useState(false);
+  const [quotationCollapsed, setQuotationCollapsed] = useState(false);
 
   useEffect(() => {
     void storage.getItem<boolean>("forge.builder.brandRail.collapsed.v1", false).then((value) => {
@@ -118,8 +120,18 @@ export function BuilderShell({ onBack }: { onBack: () => void }) {
                 above the grid. */}
             <ProductExplorer showCompactFilters={false} />
           </View>
-          <View style={{ width: quotationW, minHeight: 0, overflow: "hidden", borderLeftWidth: StyleSheet.hairlineWidth, borderColor: colors.border }}>
-            <QuotationPane compact={false} />
+          <View style={{ width: quotationCollapsed ? 44 : quotationW, minHeight: 0, overflow: "hidden", borderLeftWidth: StyleSheet.hairlineWidth, borderColor: colors.border }}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={quotationCollapsed ? "Show quotation panel" : "Hide quotation panel"}
+              accessibilityState={{ expanded: !quotationCollapsed }}
+              onPress={() => setQuotationCollapsed((value) => !value)}
+              style={styles.quotationToggle}
+              testID="builder-quotation-panel-toggle"
+            >
+              <Text style={styles.quotationToggleText}>{quotationCollapsed ? "‹" : "›"}</Text>
+            </Pressable>
+            {!quotationCollapsed ? <QuotationPane compact={false} /> : null}
           </View>
         </View>
       ) : twoPane ? (
@@ -134,6 +146,8 @@ export function BuilderShell({ onBack }: { onBack: () => void }) {
           <QuotationPane compact={compactCatalog} browseInline />
         </View>
       )}
+
+      <DraftRecoverySheet />
 
       {/* Universal sheets */}
       <ProductModal />
@@ -171,4 +185,6 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center", backgroundColor: colors.onSurface,
   },
   retryLabel: { fontSize: 13, fontWeight: "700", color: colors.surface },
+  quotationToggle: { height: 40, alignItems: "center", justifyContent: "center", borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
+  quotationToggleText: { fontSize: 24, lineHeight: 28, color: colors.onSurfaceMuted },
 });

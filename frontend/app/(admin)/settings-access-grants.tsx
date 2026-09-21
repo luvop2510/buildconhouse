@@ -5,8 +5,8 @@ import { Feather } from "@expo/vector-icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { AdminPage } from "@/src/components/AdminPage";
-import { Button, Card, Chip, EmptyState } from "@/src/components/ui";
+import { SettingsPage as AdminPage } from "@/src/components/settings/SettingsPage";
+import { Button, Card, Chip, EmptyState, ErrorState, LoadingState } from "@/src/components/ui";
 import { api } from "@/src/api/client";
 import { toast } from "@/src/components/Toast";
 import { useAuth } from "@/src/state/auth";
@@ -34,8 +34,12 @@ export default function SettingsAccessGrants() {
   const [actions, setActions] = useState<Action[]>(["view"]);
   const [grants, setGrants] = useState<Grant[] | null>(null);
   const [saving, setSaving] = useState(false);
+  const [optionsError, setOptionsError] = useState<string | null>(null);
+  const [optionsLoading, setOptionsLoading] = useState(true);
+  const [grantError, setGrantError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadOptions = useCallback(() => {
+    setOptionsLoading(true); setOptionsError(null);
     Promise.all([
       api.get<Staff[]>("/team"), api.get<Floor[]>("/settings/floors"),
       api.get<{ resources: Resource[] }>("/settings/access-grants/resources"),
@@ -43,17 +47,18 @@ export default function SettingsAccessGrants() {
       const activePeople = people.filter((person) => person.active && person.id !== me?.id);
       setStaff(activePeople); setFloors(availableFloors); setResources(catalog.resources);
       setSelectedUserId((current) => current || activePeople[0]?.id || null);
-    }).catch((error: any) => toast.error(error?.detail || "Could not load delegation controls"));
+    }).catch((error: any) => setOptionsError(error?.detail || "Could not load delegation controls")).finally(() => setOptionsLoading(false));
   }, [me?.id]);
+  useEffect(loadOptions, [loadOptions]);
 
   const loadGrants = useCallback(async () => {
     if (!selectedUserId) { setGrants([]); return; }
-    setGrants(null);
+    setGrants(null); setGrantError(null);
     try {
       const response = await api.get<{ grants: Grant[] }>(`/settings/access-grants/${selectedUserId}`);
       setGrants(response.grants);
     } catch (error: any) {
-      setGrants([]); toast.error(error?.detail || "Could not load this person's access");
+      setGrantError(error?.detail || "Could not load this person's access");
     }
   }, [selectedUserId]);
   useEffect(() => { void loadGrants(); }, [loadGrants]);
@@ -93,7 +98,7 @@ export default function SettingsAccessGrants() {
 
   return (
     <AdminPage title="Personal access" subtitle="Give each worker only the pages and actions they need">
-      {!canManage ? <EmptyState icon="lock" title="Owner or admin access required" subtitle="Ask an owner or admin to set personal access." /> : (
+      {!canManage ? <EmptyState icon="lock" title="Owner or admin access required" subtitle="Ask an owner or admin to set personal access." /> : optionsLoading ? <LoadingState label="Loading access controls…" /> : optionsError ? <ErrorState title="Access controls unavailable" subtitle={optionsError} onRetry={loadOptions} /> : (
         <View style={styles.page}>
           <Card style={styles.notice}>
             <Feather name="shield" size={18} color={colors.brand} />
@@ -118,7 +123,7 @@ export default function SettingsAccessGrants() {
           <Button label="Save personal access" icon="shield" fullWidth loading={saving} disabled={!selectedUserId || actions.length === 0 || saving} onPress={save} />
 
           <Section label="ACTIVE ACCESS">
-            {grants === null ? <ActivityIndicator color={colors.brand} /> : grants.length === 0 ? <Text style={type.caption}>This person is using their standard role access.</Text> : grants.map((grant) => (
+            {grantError ? <ErrorState title="Current access unavailable" subtitle={grantError} onRetry={() => void loadGrants()} /> : grants === null ? <ActivityIndicator color={colors.brand} /> : grants.length === 0 ? <Text style={type.caption}>This person is using their standard role access.</Text> : grants.map((grant) => (
               <Card key={grant.id} style={styles.grant}>
                 <View style={{ flex: 1, gap: 3 }}>
                   <Text style={type.bodyStrong}>{resources.find((resource) => resource.key === grant.resource)?.label || grant.resource}</Text>

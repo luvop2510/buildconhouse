@@ -11,8 +11,8 @@ import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 
-import { AdminPage } from "@/src/components/AdminPage";
-import { Button, Card } from "@/src/components/ui";
+import { SettingsPage as AdminPage } from "@/src/components/settings/SettingsPage";
+import { Button, Card, EmptyState, ErrorState } from "@/src/components/ui";
 import { toast } from "@/src/components/Toast";
 import { api } from "@/src/api/client";
 import { usePermissionMatrix } from "@/src/hooks/use-permissions";
@@ -42,7 +42,7 @@ export default function SettingsPermissions() {
   }, [data, draft]);
 
   const toggle = (role: string, moduleKey: string) => {
-    if (!isOwner) return;
+    if (!isOwner || saving) return;
     setDraft((cur) => {
       if (!cur) return cur;
       const row = { ...(cur[role] || {}) };
@@ -52,7 +52,7 @@ export default function SettingsPermissions() {
   };
 
   const save = async () => {
-    if (!draft) return;
+    if (!draft || saving || !isOwner || !dirty) return;
     setSaving(true);
     try {
       await api.put("/settings/permission-matrix", { overrides: draft });
@@ -78,7 +78,7 @@ export default function SettingsPermissions() {
     >
       {loading && !data ? (
         <ActivityIndicator color={colors.onSurfaceMuted} />
-      ) : !data || !draft ? null : (
+      ) : !data || !draft ? <ErrorState title="Could not load permissions" onRetry={refresh} /> : !data.modules.length || !data.roles.length ? <EmptyState icon="shield" title="No permission modules available" subtitle="The permission service returned no configurable modules or roles." /> : (
         <View style={{ flex: 1, gap: spacing.md }}>
           <ScrollView
             horizontal showsHorizontalScrollIndicator={false}

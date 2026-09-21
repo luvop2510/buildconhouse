@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Image, Text, View } from "react-native";
 
 import { api } from "@/src/api/client";
-import { AdminPage } from "@/src/components/AdminPage";
+import { SettingsPage as AdminPage } from "@/src/components/settings/SettingsPage";
 import { toast } from "@/src/components/Toast";
 import { Button, Card, TextField, ErrorState, LoadingState } from "@/src/components/ui";
 import { useAuth } from "@/src/state/auth";
@@ -25,11 +25,14 @@ export default function SettingsCompany() {
   const canEdit = staff?.role === "owner" || staff?.role === "admin";
   const [form, setForm] = useState<Company | null>(null);
   const [saving, setSaving] = useState(false);
+  const [savedForm, setSavedForm] = useState<Company | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const dirty = !!form && JSON.stringify(form) !== JSON.stringify(savedForm);
 
   const [loadError, setLoadError] = useState(false);
   const load = useCallback(() => {
     setLoadError(false);
-    api.get<Company>("/settings/company").then(setForm).catch(() => setLoadError(true));
+    api.get<Company>("/settings/company").then(value => { setForm(value); setSavedForm(value); }).catch(() => setLoadError(true));
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -48,14 +51,16 @@ export default function SettingsCompany() {
   };
 
   const save = async () => {
-    if (!form) return;
+    if (!form || saving || !canEdit || !dirty) return;
     setSaving(true);
+    setSaveError(null);
     try {
       const updated = await api.put<Company>("/settings/company", form);
       setForm(updated);
+      setSavedForm(updated);
       toast.show("Company profile saved");
     } catch (e: any) {
-      toast.show(e?.message || "Couldn't save");
+      setSaveError(e?.message || "Could not save. Your changes are still here; try again.");
     } finally {
       setSaving(false);
     }
@@ -83,16 +88,23 @@ export default function SettingsCompany() {
         </Card>
 
         <Card style={{ gap: spacing.md }}>
-          <TextField testID="company-name-input" label="Company name" value={form.name} onChangeText={set("name")} editable={canEdit} />
-          <TextField testID="company-tagline-input" label="Tagline" value={form.tagline} onChangeText={set("tagline")} editable={canEdit} />
-          <TextField testID="company-phone-input" label="Phone" value={form.phone} onChangeText={set("phone")} editable={canEdit} keyboardType="phone-pad" />
-          <TextField testID="company-email-input" label="Email" value={form.email} onChangeText={set("email")} editable={canEdit} keyboardType="email-address" autoCapitalize="none" />
-          <TextField testID="company-address-input" label="Address (optional)" value={form.address || ""} onChangeText={set("address")} editable={canEdit} multiline />
-          <TextField testID="company-gstin-input" label="GSTIN (optional)" value={form.gstin || ""} onChangeText={set("gstin")} editable={canEdit} autoCapitalize="characters" />
+          <TextField testID="company-name-input" label="Company name" value={form.name} onChangeText={set("name")} editable={canEdit && !saving} />
+          <TextField testID="company-tagline-input" label="Tagline" value={form.tagline} onChangeText={set("tagline")} editable={canEdit && !saving} />
+          <TextField testID="company-phone-input" label="Phone" value={form.phone} onChangeText={set("phone")} editable={canEdit && !saving} keyboardType="phone-pad" />
+          <TextField testID="company-email-input" label="Email" value={form.email} onChangeText={set("email")} editable={canEdit && !saving} keyboardType="email-address" autoCapitalize="none" />
+          <TextField testID="company-address-input" label="Address (optional)" value={form.address || ""} onChangeText={set("address")} editable={canEdit && !saving} multiline />
+          <TextField testID="company-gstin-input" label="GSTIN (optional)" value={form.gstin || ""} onChangeText={set("gstin")} editable={canEdit && !saving} autoCapitalize="characters" />
         </Card>
 
         {canEdit ? (
-          <Button testID="save-company-btn" label="Save changes" icon="check" loading={saving} onPress={save} fullWidth />
+          <View style={{ gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md }}>
+            {saveError ? <Text accessibilityRole="alert" style={[type.body, { color: colors.error }]}>{saveError}</Text> : null}
+            <Text accessibilityLiveRegion="polite" style={type.caption}>{saving ? "Saving changes…" : dirty ? "You have unsaved changes" : "All changes saved"}</Text>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+              <Button testID="save-company-btn" label="Save changes" icon="check" loading={saving} disabled={!dirty || saving} onPress={save} />
+              <Button label="Discard changes" variant="secondary" disabled={!dirty || saving} onPress={() => { setForm(savedForm); setSaveError(null); }} />
+            </View>
+          </View>
         ) : null}
       </View>
     </AdminPage>

@@ -1,4 +1,4 @@
-// AI Catalog Import — Hansgrohe / Axor / Grohe / Vitra / Geberit
+// AI Catalog Import — supplier price tables with review before import
 // Steps: pick brand → pick file → Claude extracts → human review → import
 import { Feather } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
@@ -16,7 +16,7 @@ import { colors, radius, spacing, type } from "@/src/theme/tokens";
 import { uriToBlob } from "@/src/utils/uriToBlob";
 import { useBp } from "@/src/design/responsive";
 
-const SUPPORTED = ["Hansgrohe", "Axor", "Grohe", "Vitra", "Geberit"] as const;
+const SUPPORTED = ["Hansgrohe", "Axor", "Grohe", "Vitra", "Geberit", "MCM", "GRANOLAND"] as const;
 type Brand = typeof SUPPORTED[number];
 const MISSING = "[MISSING DATA]";
 // Keep bulk edits gentle on the API and on the browser. This is deliberately
@@ -255,7 +255,7 @@ export default function CatalogImport() {
     return (
       <AdminPage
         title={`Review · ${current.supplier_name}`}
-        subtitle={`${current.filename} · ${current.total_rows} products · Powered by BuildCon Ingestion Framework`}
+        subtitle={`${current.filename} · ${current.total_rows} products · Review before importing`}
         right={
           <View style={[styles.reviewActions, isPhone && styles.reviewActionsPhone]}>
             <Button label="Discard" variant="secondary" onPress={() => setCurrent(null)} disabled={processing || changesInFlight} testID="discard-import" fullWidth={isPhone} />

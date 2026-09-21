@@ -1,3 +1,8 @@
+import { useOverlayFocus } from "./useOverlayFocus";
+import { NAVIGATION as NAV } from "./navigation";
+import { useModuleAccess } from "@/src/hooks/use-permissions";
+import { useAuth } from "@/src/state/auth";
+import { useReducedMotion } from "@/src/hooks/use-reduced-motion";
 // ─────────────────────────────────────────────────────────────────────────────
 // Command palette — the app's fast lane. ⌘K anywhere.
 // Actions + navigation instantly; customers, quotations and products as you type.
@@ -28,23 +33,6 @@ type Item = {
   run: () => void;
 };
 
-const NAV: { label: string; icon: FeatherName; href: string; kw?: string }[] = [
-  { label: "Today", icon: "sunrise", href: "/(admin)/dashboard", kw: "dashboard home" },
-  { label: "Quotations", icon: "file-text", href: "/(admin)/quotations", kw: "quotes pipeline" },
-  { label: "Catalog", icon: "package", href: "/(admin)/catalog", kw: "products catalog" },
-  { label: "Customers", icon: "users", href: "/(admin)/customers", kw: "crm accounts" },
-  { label: "Purchases", icon: "shopping-cart", href: "/(admin)/purchases", kw: "material orders" },
-  { label: "Payments", icon: "credit-card", href: "/(admin)/payments", kw: "collections outstanding" },
-  { label: "Follow-ups", icon: "phone-call", href: "/(admin)/followups", kw: "tasks calls reminders" },
-  { label: "Notifications", icon: "bell", href: "/(admin)/notifications", kw: "alerts" },
-  { label: "Team", icon: "user-check", href: "/(admin)/team", kw: "staff roles" },
-  { label: "Settings", icon: "settings", href: "/(admin)/settings", kw: "preferences" },
-  { label: "Kitchen Walk-ins", icon: "user-plus", href: "/(admin)/notebook/kitchen", kw: "notebook walk ins" },
-  { label: "Kitchen Quotation Follow-up", icon: "file-text", href: "/(admin)/notebook/kitchen/quotation-follow-up", kw: "notebook quotation follow up" },
-  { label: "Furniture Walk-ins", icon: "user-plus", href: "/(admin)/notebook/furniture", kw: "notebook walk ins" },
-  { label: "Furniture Quotation Follow-up", icon: "file-text", href: "/(admin)/notebook/furniture/quotation-follow-up", kw: "notebook quotation follow up" },
-];
-
 export function PaletteProvider({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const openPalette = useCallback(() => setOpen(true), []);
@@ -74,6 +62,13 @@ export function PaletteProvider({ children }: { children: React.ReactNode }) {
 function PaletteHost({ open, onClose }: { open: boolean; onClose: () => void }) {
   const router = useRouter();
   const { selectedFloorId } = useFloorAccess();
+  const { staff } = useAuth();
+  const hasAccess = useModuleAccess();
+  const canCustomers = hasAccess("customers");
+  const canQuotes = hasAccess("quotations") && selectedFloorId === "first-floor";
+  const canCatalog = hasAccess("catalog");
+  const panelRef = useOverlayFocus(open, onClose);
+  const reducedMotion = useReducedMotion();
   const notebookOnly = selectedFloorId === KITCHEN_FLOOR_ID || selectedFloorId === FURNITURE_FLOOR_ID;
   const { width: winW, height: winH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -93,24 +88,24 @@ function PaletteHost({ open, onClose }: { open: boolean; onClose: () => void }) 
   useEffect(() => {
     if (open) {
       setVisible(true);
-      setQ(""); setSel(0); setProducts([]);
-      Animated.timing(anim, { toValue: 1, duration: motion.standard, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+      setQ(""); setSel(0); setProducts([]); setCustomers([]); setQuotations([]);
+      Animated.timing(anim, { toValue: 1, duration: reducedMotion ? 0 : motion.standard, easing: Easing.out(Easing.cubic), useNativeDriver: Platform.OS !== "web" }).start();
       setTimeout(() => inputRef.current?.focus(), 60);
       // Prefetch light indexes once per open.
       if (!notebookOnly) {
-        api.get<any[]>("/customers").then(setCustomers).catch(() => {});
-        api.get<any[]>("/quotations").then((d: any) => setQuotations(Array.isArray(d) ? d : d?.items ?? [])).catch(() => {});
+        if (canCustomers) api.get<any[]>("/customers").then(setCustomers).catch(() => {});
+        if (canQuotes) api.get<any[]>("/quotations").then((d: any) => setQuotations(Array.isArray(d) ? d : d?.items ?? [])).catch(() => {});
       }
     } else {
-      Animated.timing(anim, { toValue: 0, duration: motion.quick, easing: Easing.in(Easing.cubic), useNativeDriver: true }).start(({ finished }) => {
+      Animated.timing(anim, { toValue: 0, duration: reducedMotion ? 0 : motion.quick, easing: Easing.in(Easing.cubic), useNativeDriver: Platform.OS !== "web" }).start(({ finished }) => {
         if (finished) setVisible(false);
       });
     }
-  }, [open, anim, notebookOnly]);
+  }, [open, anim, notebookOnly, reducedMotion, canCustomers, canQuotes]);
 
   // Product search — server-side, debounced.
   useEffect(() => {
-    if (!open || notebookOnly) return;
+    if (!open || notebookOnly || !canCatalog) return;
     if (debounce.current) clearTimeout(debounce.current);
     if (q.trim().length < 2) { setProducts([]); return; }
     const controller = new AbortController();
@@ -125,7 +120,7 @@ function PaletteHost({ open, onClose }: { open: boolean; onClose: () => void }) 
       if (debounce.current) clearTimeout(debounce.current);
       controller.abort();
     };
-  }, [q, open, notebookOnly]);
+  }, [q, open, notebookOnly, canCatalog]);
 
   const go = useCallback((href: string) => {
     onClose();
@@ -137,14 +132,16 @@ function PaletteHost({ open, onClose }: { open: boolean; onClose: () => void }) 
     const match = (s?: string) => !needle || (s ?? "").toLowerCase().includes(needle);
 
     const actions: Item[] = (notebookOnly ? [] : [
-      { key: "a-newq", section: "Actions", icon: "plus", title: "New quotation", keywords: "create quote", run: () => go("/(admin)/quotations/new") },
-      { key: "a-cust", section: "Actions", icon: "user-plus", title: "Add customer", keywords: "create client", run: () => go("/(admin)/customers") },
+      { key: "a-newq", section: "Actions", icon: "plus", title: "New quotation", keywords: "create quote", run: () => go(selectedFloorId === "ground-floor" ? "/(admin)/tiles/quotation" : "/(admin)/quotations/new") },
+      { key: "a-cust", section: "Actions", icon: "user-plus", title: "Add customer", keywords: "create client", run: () => go("/(admin)/customers/new") },
       { key: "a-pay", section: "Actions", icon: "credit-card", title: "Record a payment", keywords: "collect money", run: () => go("/(admin)/payments") },
-    ] as Item[]).filter((a) => match(a.title + " " + a.keywords));
+    ] as Item[]).filter(a => hasAccess(a.key === "a-newq" ? "quotations" : a.key === "a-cust" ? "customers" : "payments")).filter((a) => match(a.title + " " + a.keywords));
 
     const nav: Item[] = NAV
+      .filter(n => (!n.floors || n.floors.includes(selectedFloorId)) && (!n.roles || !!staff && n.roles.includes(staff.role)) && hasAccess(n.match))
+      .filter(n => !n.href.includes("/tiles") || selectedFloorId === "ground-floor")
       .filter((n) => !notebookOnly || (selectedFloorId === KITCHEN_FLOOR_ID ? n.href.includes("/notebook/kitchen") : n.href.includes("/notebook/furniture")))
-      .filter((n) => match(n.label + " " + (n.kw ?? "")))
+      .filter((n) => match(n.label + " " + n.match))
       .map((n) => ({
         key: `n-${n.href}`, section: "Go to", icon: n.icon, title: n.label, run: () => go(n.href),
       }));
@@ -175,7 +172,7 @@ function PaletteHost({ open, onClose }: { open: boolean; onClose: () => void }) 
     }));
 
     return [...actions, ...(needle ? [...cust, ...quots, ...prods] : []), ...nav];
-  }, [q, customers, quotations, products, go, notebookOnly, selectedFloorId]);
+  }, [q, customers, quotations, products, go, notebookOnly, selectedFloorId, staff, hasAccess]);
 
   // Clamp selection.
   useEffect(() => { setSel((s) => Math.min(s, Math.max(0, items.length - 1))); }, [items.length]);
@@ -204,7 +201,7 @@ function PaletteHost({ open, onClose }: { open: boolean; onClose: () => void }) 
           <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
         </Animated.View>
 
-        <Animated.View
+        <Animated.View ref={panelRef} role="dialog" aria-modal accessibilityLabel="Search workspace" tabIndex={-1}
           style={[
             {
               backgroundColor: color.surface, overflow: "hidden",
@@ -218,7 +215,6 @@ function PaletteHost({ open, onClose }: { open: boolean; onClose: () => void }) 
                   borderRadius: radius.xl,
                   transform: [
                     { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] }) },
-                    { scale: anim.interpolate({ inputRange: [0, 1], outputRange: [0.985, 1] }) },
                   ],
                 },
           ]}

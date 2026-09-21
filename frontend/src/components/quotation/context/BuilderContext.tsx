@@ -27,6 +27,7 @@ import { downloadApiFile } from "@/src/utils/downloadFile";
 
 import { computeTotals, effectivePct } from "../helpers/pricing";
 import { enqueueQuotationPersist } from "../helpers/autosave";
+import { moveWithinRoom } from "../helpers/draftRecovery";
 import { productImageList } from "../helpers/media";
 import {
   Brand, BuilderRow, BuilderState, Category, Customer, DEFAULT_ROOMS, DescSheetState, DiscountSheetState,
@@ -209,8 +210,11 @@ export type BuilderApi = {
   addFromProduct: (p: Product, variant?: ProductVariant) => void;
   updateLine: (id: string, patch: Partial<Line>, coalesceKey?: string) => void;
   removeLine: (id: string) => void;
+  /** Cancel a saved product through the auditable quotation API. */
+  cancelLine: (id: string) => Promise<boolean>;
   duplicateLine: (id: string) => void;
   moveLineToNextRoom: (id: string) => void;
+  moveLine: (id: string, direction: -1 | 1) => void;
 
   // Rooms
   addRoom: (name: string) => void;
@@ -268,13 +272,17 @@ export function useBuilder(): BuilderApi {
 // -----------------------------------------------------------------------------
 // Provider
 // -----------------------------------------------------------------------------
-export function BuilderProvider({ onFinalize, initialProductId, children }: {
+export function BuilderProvider({ onFinalize, initialProductId, initialGodownStockId, initialQuotationId, children }: {
   onFinalize?: (quotationId: string) => void;
   /** Seed the new quotation with this product on mount — used when
    *  navigating here from Catalog's "Add to quotation" CTA (product detail
    *  page / product cards) so that action actually adds the product instead
    *  of just dropping the user on an empty builder. */
   initialProductId?: string | null;
+  /** A lot selected from godown stock; it is allocated on the normal save path. */
+  initialGodownStockId?: string | null;
+  /** An existing quotation to restore directly into the workspace. */
+  initialQuotationId?: string | null;
   children: React.ReactNode;
 }) {
   const { selectedFloorId, floors } = useFloorAccess();
@@ -691,6 +699,12 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
           finish: it.finish ?? null, family_key: it.family_key ?? null,
           included_for_line_id: it.included_for_line_id ?? null,
           included_qty_per_parent: it.included_qty_per_parent ?? null,
+          godown_stock_id: it.godown_stock_id ?? null,
+          godown_allocation_id: it.godown_allocation_id ?? null,
+          godown_source_customer_name: it.godown_source_customer_name ?? null,
+          godown_source_purchased_at: it.godown_source_purchased_at ?? null,
+          godown_transferred_at: it.godown_transferred_at ?? null,
+          godown_allocated_at: it.godown_allocated_at ?? null,
         })),
         rooms: doc.rooms && doc.rooms.length ? doc.rooms : [DEFAULT_ROOMS[0]],
         collapsedRooms: collapsed,
@@ -715,6 +729,13 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
       toast.error(e?.detail || "Could not restore quotation");
     }
   }, [history, activeFloorId]);
+
+  const restoredInitialQuotationRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!initialQuotationId || !activeFloorId || restoredInitialQuotationRef.current === initialQuotationId) return;
+    restoredInitialQuotationRef.current = initialQuotationId;
+    void restoreQuotation(initialQuotationId);
+  }, [initialQuotationId, activeFloorId, restoreQuotation]);
 
   const deleteQuotation = useCallback(async (id = quotationId) => {
     if (!id) return false;
@@ -984,6 +1005,32 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
     })();
   }, [initialProductId, addFromProduct, activeFloorId]);
 
+  const appliedInitialGodownRef = useRef(false);
+  useEffect(() => {
+    if (!initialGodownStockId || !activeFloorId || appliedInitialGodownRef.current) return;
+    appliedInitialGodownRef.current = true;
+    void (async () => {
+      try {
+        const lot = await api.get<any>(`/godown-stock/${initialGodownStockId}`, { floorId: activeFloorId });
+        if (!Number(lot.available_qty)) throw new Error("This lot is no longer available");
+        history.apply((current) => ({
+          ...current,
+          lines: [...current.lines, {
+            id: `godown-${lot.id}-${Date.now()}`, product_id: lot.product_id, sku: lot.sku, name: lot.name,
+            image: lot.image || null, category_id: null, room: current.activeRoom, qty: 1, unit_price: 0,
+            mrp: null, discount_pct: null, finish: lot.finish || null, godown_stock_id: lot.id,
+            godown_source_customer_name: lot.source_customer_name || null,
+            godown_source_purchased_at: lot.source_purchased_at || null,
+            godown_transferred_at: lot.transferred_at || null,
+          }],
+        }));
+        toast.success(`${lot.name} added from godown stock — select a customer to reserve it`);
+      } catch (error: any) {
+        toast.error(error?.detail || "That godown lot is no longer available");
+      }
+    })();
+  }, [initialGodownStockId, activeFloorId, history]);
+
   const updateLine = useCallback((id: string, patch: Partial<Line>, coalesceKey?: string) =>
     history.apply(
       (cur) => {
@@ -1018,6 +1065,30 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
     });
   }, [history]);
 
+  // A saved quotation must use the cancellation endpoint so related purchase,
+  // payment and follow-up records stay reconciled. Draft lines have no linked
+  // operational records and can be removed locally.
+  const cancelLine = useCallback(async (id: string) => {
+    if (!quotationId) {
+      removeLine(id);
+      toast.success("Product removed from the draft");
+      return true;
+    }
+    try {
+      await api.post(
+        `/quotations/${quotationId}/items/${id}/cancel`,
+        { reason: "Cancelled from the customer quotation workspace" },
+        { floorId: activeFloorId },
+      );
+      await restoreQuotation(quotationId);
+      toast.success("Product cancelled and customer balance refreshed");
+      return true;
+    } catch (error: any) {
+      toast.error(error?.detail || "Could not cancel this product");
+      return false;
+    }
+  }, [quotationId, activeFloorId, removeLine, restoreQuotation]);
+
   const duplicateLine = useCallback((id: string) => {
     Haptics.selectionAsync();
     history.apply((cur) => {
@@ -1048,6 +1119,10 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
       )) };
     });
     Haptics.selectionAsync();
+  }, [history]);
+
+  const moveLine = useCallback((id: string, direction: -1 | 1) => {
+    history.apply((current) => ({ ...current, lines: moveWithinRoom(current.lines, id, direction) }));
   }, [history]);
 
   // Rooms
@@ -1319,7 +1394,7 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
     workflowBusy, generateOfficialQuotation, placeOrder,
     setCustomer, createCustomer, importCustomerFromGround, customerSwitcherOpen, setCustomerSwitcherOpen,
     setReferrer, clearReferrer, createReferrer, referrerSwitcherOpen, setReferrerSwitcherOpen,
-    addFromProduct, updateLine, removeLine, duplicateLine, moveLineToNextRoom,
+    addFromProduct, updateLine, removeLine, cancelLine, duplicateLine, moveLineToNextRoom, moveLine,
     addRoom, renameRoom, duplicateRoom, deleteRoom, toggleCollapse, setActiveRoom, onRoomDragEnd, onLinesDragEnd,
     setProjectDiscount, setCategoryDiscount, setRoomDiscount, setNotes,
     swapItems, swapLoading, openSwap, commitSwap, closeSwap,
@@ -1347,7 +1422,7 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
     workflowBusy, generateOfficialQuotation, placeOrder,
     setCustomer, createCustomer, importCustomerFromGround, customerSwitcherOpen, setCustomerSwitcherOpen,
     setReferrer, clearReferrer, createReferrer, referrerSwitcherOpen, setReferrerSwitcherOpen,
-    addFromProduct, updateLine, removeLine, duplicateLine, moveLineToNextRoom,
+    addFromProduct, updateLine, removeLine, cancelLine, duplicateLine, moveLineToNextRoom, moveLine,
     addRoom, renameRoom, duplicateRoom, deleteRoom, toggleCollapse, setActiveRoom, onRoomDragEnd, onLinesDragEnd,
     setProjectDiscount, setCategoryDiscount, setRoomDiscount, setNotes,
     swapItems, swapLoading, openSwap, commitSwap, closeSwap,

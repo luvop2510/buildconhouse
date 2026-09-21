@@ -4,7 +4,7 @@
 // app/privacy.tsx is the public, unauthenticated hosted-URL half App Store
 // Connect / Google Play Console require in their submission forms. Both
 // render PrivacyPolicyContent so the copy can't drift between them.
-import { AdminPage } from "@/src/components/AdminPage";
+import { SettingsPage as AdminPage } from "@/src/components/settings/SettingsPage";
 import { PrivacyPolicyContent } from "@/src/components/PrivacyPolicyContent";
 
 export default function SettingsPrivacy() {

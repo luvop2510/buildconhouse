@@ -265,11 +265,19 @@ export default function PurchasesScreen() {
     ]);
   }, [loadItems, loadFacets]);
 
-  const cancelItem = useCallback(async (reason?: string) => {
+  const cancelItem = useCallback(async (reason?: string, moveToGodown = false) => {
     if (!cancelTarget) return;
     try {
+      if (moveToGodown) {
+        await api.post("/godown-stock/intakes", {
+          purchase_order_id: cancelTarget.po_id,
+          purchase_item_id: cancelTarget.item_id,
+          qty: cancelTarget.qty,
+          reason: reason?.trim() || "Customer declined / cancelled item",
+        });
+      }
       await cancelPurchaseItem(cancelTarget.item_id, reason);
-      toast.success(`${cancelTarget.name} removed from active purchases`);
+      toast.success(moveToGodown ? `${cancelTarget.name} moved to godown stock and removed from active purchases` : `${cancelTarget.name} removed from active purchases`);
       setCancelTarget(null);
       await Promise.all([refreshPurchases({ strict: true }), loadCustomers(), loadShortages()]);
     } catch (e: any) {
@@ -424,8 +432,8 @@ export default function PurchasesScreen() {
               <View style={styles.mobileTitleRow}>
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.overline}>OPERATIONS · {VIEW_META[view].label.toUpperCase()}</Text>
-                  <Text style={styles.mobilePageTitle}>{isTablet ? "Purchase control" : "Purchases"}</Text>
-                  <Text style={type.bodyMuted}>{total} active items · {blockedCount ? `${blockedCount} need attention` : "all on track"}</Text>
+                  <Text accessibilityRole="header" aria-level={1} style={styles.mobilePageTitle}>{isTablet ? "Purchase control" : "Purchases"}</Text>
+                  <Text style={type.bodyMuted}>{itemsError ? "Purchase data is unavailable" : `${total} active items${blockedCount ? ` · ${blockedCount} need attention` : ""}`}</Text>
                 </View>
                 <Pressable accessibilityRole="button" accessibilityLabel="More purchase actions" onPress={() => setShowMobileActions(true)} style={styles.mobileIconButton}>
                   <Feather name="more-vertical" size={20} color={colors.onSurface} />
@@ -518,7 +526,7 @@ export default function PurchasesScreen() {
         <View style={[styles.headerRow, !isDesktop && { flexDirection: "column", alignItems: "stretch", gap: 12 }]}>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.overline}>PURCHASES · {VIEW_META[view].label.toUpperCase()}</Text>
-            <Text style={styles.pageTitle}>Purchases</Text>
+            <Text accessibilityRole="header" aria-level={1} style={styles.pageTitle}>Purchases</Text>
             <Text style={type.bodyMuted}>
               Material tracker · {activeStageCount} item{activeStageCount === 1 ? "" : "s"} across all stages · SLA {slaDays}d
             </Text>
@@ -867,6 +875,7 @@ function MobilePurchaseCard({ item, selected, compact, onSelect, onMove, onTrans
         <View style={{ minWidth: 76 }}><Text style={styles.mobileCardLabel}>QUANTITY</Text><Text style={styles.mobileCardValue}>{item.qty}</Text></View>
         <View style={{ minWidth: 82, alignItems: "flex-end" }}><Text style={styles.mobileCardLabel}>AGE</Text><Text style={[styles.mobileCardValue, item.blocked && { color: colors.error }]}>{item.age_days}d</Text></View>
       </View>
+      <GodownStatus item={item} />
       <View style={styles.mobileProgress} accessibilityLabel={`${item.stage_label}, stage ${Math.max(stageIndex + 1, 1)} of ${STAGE_ORDER.length}`}>
         {STAGE_ORDER.map((key, index) => <View key={key} style={[styles.mobileProgressDot, index <= stageIndex && styles.mobileProgressDotDone, index === stageIndex && styles.mobileProgressDotCurrent]} />)}
       </View>
@@ -1046,7 +1055,6 @@ function DispatchWorkspace({ loading, rows, onHistory, onOpenPo }: { loading: bo
         <OpsMetric label="Dispatched" value={dispatched.length} icon="truck" />
         <OpsMetric label="In transit" value={transit.length} icon="navigation" tone="warn" />
         <OpsMetric label="Delivered" value={delivered.length} icon="check-circle" tone="ok" />
-        <OpsMetric label="Returned" value={0} icon="corner-up-left" />
       </View>
       <View style={styles.workspaceCard}>
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.sm }}><Text style={styles.workspaceTitle}>Dispatch history</Text><Text style={type.caption}>Carrier status uses the linked supplier until a carrier is recorded.</Text></View>
@@ -1069,7 +1077,11 @@ function DispatchWorkspace({ loading, rows, onHistory, onOpenPo }: { loading: bo
 // how many table columns fit. Measure this container's own width instead,
 // mirroring BuilderShell's container-width responsive strategy.
 const TABLE_FULL = 900;
-const TABLE_STACK = 620;
+// A stock row has four controls (history, move, transfer, remove). The old
+// 620px cutover kept the desktop table active after those controls had already
+// exhausted the available column width inside the admin shell. Switch to the
+// card row before that point so neither the controls nor product text clip.
+const TABLE_STACK = 720;
 
 function TrackerRows({ rows, isDesktop, selected, setSelected, onMove, onTransfer, onHistory, onOpenPo, onCancel }: {
   rows: Item[]; isDesktop: boolean; selected: Set<string>; setSelected: Dispatch<SetStateAction<Set<string>>>;
@@ -1103,7 +1115,7 @@ function ItemRow(props: {
   if (!desktopTable) {
     return (
       <View style={styles.mobileRow}>
-          <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
+          <View style={styles.mobileRowTop}>
           <BulkChk checked={checked} onToggle={onToggle} />
           <ProductImage
             source={row.image}
@@ -1118,14 +1130,15 @@ function ItemRow(props: {
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={{ fontSize: 14, fontWeight: "600", color: colors.onSurface }} numberOfLines={1}>{row.name}</Text>
             <Text style={type.caption} numberOfLines={1}>{row.sku} · {row.customer_name}</Text>
+            <GodownStatus item={row} compact />
           </View>
           <StageBadge stage={row.stage} tone={row.stage_tone} label={row.stage_label} />
         </View>
-        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 8, flexWrap: "wrap", gap: 6 }}>
-          <Text style={[type.caption, { flex: 1, minWidth: 0 }]} numberOfLines={2}>
+        <View style={styles.mobileRowFooter}>
+          <Text style={[type.caption, styles.mobileRowMeta]} numberOfLines={2}>
             Qty {row.qty} · {row.brand_name} · {row.age_days}d{row.supplier_name ? ` · via ${row.supplier_name}` : ""}
           </Text>
-          <View style={{ flexDirection: "row", gap: 6 }}>
+          <View style={styles.stockRowActions}>
             <Pressable accessibilityRole="button" accessibilityLabel={`View movement history for ${row.name}`} onPress={onHistory} style={styles.mobileTransferBtn} hitSlop={6}><Feather name="clock" size={14} color={colors.onSurface} /></Pressable>
             <Pressable accessibilityRole="button" accessibilityLabel={`Move ${row.name} to another stage`} onPress={onOpenMove} style={styles.mobileMoveBtn} hitSlop={6}><Text style={styles.moveBtnText}>Move</Text></Pressable>
             <Pressable accessibilityRole="button" accessibilityLabel={`Transfer ${row.name} to another customer`} onPress={onTransfer} style={styles.mobileTransferBtn} hitSlop={6}><Feather name="repeat" size={14} color={colors.onSurface} /></Pressable>
@@ -1156,6 +1169,7 @@ function ItemRow(props: {
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={{ fontSize: 14, fontWeight: "600", color: colors.onSurface }} numberOfLines={1}>{row.name}</Text>
           <Text style={styles.mono} numberOfLines={1}>{row.sku}{compact ? ` · ${row.brand_name}` : ""}</Text>
+          <GodownStatus item={row} compact />
         </View>
       </Pressable>
       {/* Customer */}
@@ -1177,15 +1191,10 @@ function ItemRow(props: {
       <Text style={{ width: 44, textAlign: "right", fontSize: 13, fontWeight: "600", color: colors.onSurface }}>
         {row.qty}
       </Text>
-      {/* Last move — dropped below TABLE_FULL to give Product/Customer room */}
-      {!compact ? (
-        <View style={{ flex: 1.1, minWidth: 0 }}>
-          <Text style={{ fontSize: 12, color: colors.onSurface }} numberOfLines={1}>{fmtDate(row.last_moved_at)}</Text>
-          <Text style={type.caption} numberOfLines={1}>{row.last_moved_by_name || "—"}</Text>
-        </View>
-      ) : null}
-      {/* Action */}
-      <View style={{ width: 118, alignItems: "flex-end", flexDirection: "row", justifyContent: "flex-end", gap: 6 }}>
+      {/* Movement date/actor intentionally live in History, not the stock list.
+          This keeps the workspace focused on product availability and avoids
+          exposing the fallback order creator as if they made the last move. */}
+      <View style={styles.stockRowActionsDesktop}>
         <Pressable accessibilityRole="button" accessibilityLabel={`View movement history for ${row.name}`} onPress={onHistory} testID={`row-history-${row.item_id}`} hitSlop={6} style={({ pressed }) => [styles.transferBtn, pressed && { opacity: 0.85 }]}>
           <Feather name="clock" size={12} color={colors.onSurface} />
         </Pressable>
@@ -1274,7 +1283,7 @@ function CustomerPurchasePanel({ visible, loading, workspace, onClose, onMove, o
       {loading || !workspace ? (
         <View style={styles.loadingCard}><ActivityIndicator /><Text style={type.caption}>Loading customer purchases…</Text></View>
       ) : (
-        <ScrollView contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.lg }}>
+        <View style={{ gap: spacing.md, paddingBottom: spacing.lg }}>
           <View style={styles.customerPanelHero}>
             <View style={{ flex: 1, gap: 3 }}>
               <Text style={styles.actionTitle}>{workspace.customer.company || workspace.customer.name}</Text>
@@ -1296,19 +1305,34 @@ function CustomerPurchasePanel({ visible, loading, workspace, onClose, onMove, o
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.actionTitle} numberOfLines={1}>{item.name}</Text>
                   <Text style={type.caption} numberOfLines={1}>{item.sku} · {item.qty} · {item.stage_label}</Text>
+                  <GodownStatus item={item} compact />
                 </View>
                 <View style={{ gap: 5 }}>
-                  <Pressable accessibilityLabel={`Move ${item.name}`} onPress={() => onMove(item)} style={styles.customerPanelAction}><Text style={styles.customerPanelActionText}>Move</Text></Pressable>
-                  <Pressable accessibilityLabel={`Transfer ${item.name}`} onPress={() => onTransfer(item)} style={styles.customerPanelAction}><Text style={styles.customerPanelActionText}>Transfer</Text></Pressable>
-                  <Pressable accessibilityLabel={`View movement history for ${item.name}`} onPress={() => onHistory(item)} style={styles.customerPanelAction}><Text style={styles.customerPanelActionText}>History</Text></Pressable>
+                  <Pressable accessibilityRole="button" accessibilityLabel={`Move ${item.name}`} onPress={() => onMove(item)} style={styles.customerPanelAction}><Text style={styles.customerPanelActionText}>Move</Text></Pressable>
+                  <Pressable accessibilityRole="button" accessibilityLabel={`Transfer ${item.name}`} onPress={() => onTransfer(item)} style={styles.customerPanelAction}><Text style={styles.customerPanelActionText}>Transfer</Text></Pressable>
+                  <Pressable accessibilityRole="button" accessibilityLabel={`View movement history for ${item.name}`} onPress={() => onHistory(item)} style={styles.customerPanelAction}><Text style={styles.customerPanelActionText}>History</Text></Pressable>
                 </View>
               </View>
             ))}
           </View>
-        </ScrollView>
+        </View>
       )}
     </Sheet>
   );
+}
+
+function GodownStatus({ item, compact = false }: { item: Item; compact?: boolean }) {
+  if (item.godown_stock_id) {
+    const source = item.godown_source_customer_name ? ` · from ${item.godown_source_customer_name}` : "";
+    const date = item.godown_transferred_at ? ` · transferred ${fmtDate(item.godown_transferred_at)}` : "";
+    return <Text style={[styles.godownStatus, compact && styles.godownStatusCompact]} numberOfLines={1}>From godown stock{source}{date}</Text>;
+  }
+  if ((item.godown_transferred_qty || 0) > 0) {
+    const latest = item.godown_transfer_history?.[item.godown_transfer_history.length - 1];
+    const date = latest?.transferred_at ? ` · ${fmtDate(latest.transferred_at)}` : "";
+    return <Text style={[styles.godownStatus, compact && styles.godownStatusCompact]} numberOfLines={1}>{item.godown_transferred_qty} moved to godown stock{date}</Text>;
+  }
+  return null;
 }
 
 function CustomerMetric({ label, value }: { label: string; value: string }) {
@@ -1316,14 +1340,15 @@ function CustomerMetric({ label, value }: { label: string; value: string }) {
 }
 
 function CancelPurchaseModal({ item, onClose, onConfirm }: {
-  item: Item | null; onClose: () => void; onConfirm: (reason?: string) => Promise<void>;
+  item: Item | null; onClose: () => void; onConfirm: (reason?: string, moveToGodown?: boolean) => Promise<void>;
 }) {
   const [reason, setReason] = useState("");
+  const [moveToGodown, setMoveToGodown] = useState(false);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (item) setReason(""); }, [item]);
+  useEffect(() => { if (item) { setReason(""); setMoveToGodown(false); } }, [item]);
   const confirm = async () => {
     setBusy(true);
-    try { await onConfirm(reason); }
+    try { await onConfirm(reason, moveToGodown); }
     catch { /* toast is surfaced by the caller; keep this confirmation open. */ }
     finally { setBusy(false); }
   };
@@ -1334,6 +1359,10 @@ function CancelPurchaseModal({ item, onClose, onConfirm }: {
             <Text style={styles.fieldLabel}>REASON (OPTIONAL)</Text>
             <TextInput accessibilityLabel="Reason for removing purchase" value={reason} onChangeText={setReason} placeholder="Why is this product being removed?" placeholderTextColor={colors.onSurfaceMuted} style={styles.input} editable={!busy} multiline />
           </View>
+          <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: moveToGodown }} accessibilityLabel="Move product to godown stock" disabled={busy} onPress={() => setMoveToGodown((value) => !value)} style={{ marginTop: 14, flexDirection: "row", alignItems: "flex-start", gap: 9, padding: 10, borderRadius: radius.md, borderWidth: 1, borderColor: moveToGodown ? colors.brand : colors.border, backgroundColor: moveToGodown ? colors.brandTint : colors.surfaceSecondary }}>
+            <Feather name={moveToGodown ? "check-square" : "square"} size={18} color={colors.brand} />
+            <View style={{ flex: 1 }}><Text style={{ fontWeight: "700", color: colors.onSurface }}>Transfer to godown stock</Text><Text style={[type.caption, { marginTop: 2 }]}>Records the product, source customer and transfer date so it can be reused in a future quotation.</Text></View>
+          </Pressable>
     </Sheet>
   );
 }
@@ -1618,8 +1647,13 @@ const styles = StyleSheet.create({
   mobileRow: {
     padding: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
   },
-  mobileTransferBtn: { width: 44, height: 44, borderRadius: 8, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
-  mobileMoveBtn: { minWidth: 70, minHeight: 44, paddingHorizontal: 12, borderRadius: 8, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
+  mobileRowTop: { flexDirection: "row", alignItems: "flex-start", gap: 8, flexWrap: "wrap" },
+  mobileRowFooter: { marginTop: 10, gap: 8 },
+  mobileRowMeta: { minWidth: 0 },
+  stockRowActions: { flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-end", alignSelf: "flex-end", gap: 6 },
+  stockRowActionsDesktop: { width: 180, flexShrink: 0, alignItems: "flex-end", flexDirection: "row", justifyContent: "flex-end", gap: 6 },
+  mobileTransferBtn: { width: 44, height: 44, flexShrink: 0, borderRadius: 8, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
+  mobileMoveBtn: { minWidth: 70, minHeight: 44, flexShrink: 0, paddingHorizontal: 12, borderRadius: 8, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
   mobileThumb: {
     width: 68, aspectRatio: PRODUCT_IMAGE_ASPECT_RATIO, borderRadius: 8, backgroundColor: colors.surfaceTertiary,
     alignItems: "center", justifyContent: "center", overflow: "hidden",
@@ -1766,6 +1800,8 @@ const styles = StyleSheet.create({
   customerPanelImage: { width: 64, height: 64, flexShrink: 0 },
   customerPanelAction: { minWidth: 62, minHeight: 27, paddingHorizontal: 8, borderRadius: 7, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceTertiary },
   customerPanelActionText: { color: colors.onSurface, fontSize: 10, fontWeight: "800" },
+  godownStatus: { marginTop: 6, color: colors.brand, fontSize: 11, fontWeight: "700" },
+  godownStatusCompact: { marginTop: 3, fontSize: 10 },
   openPill: { minWidth: 46, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, alignItems: "center", backgroundColor: colors.surfaceTertiary },
   openPillText: { color: colors.onSurfaceSecondary, fontSize: 10.5, fontWeight: "700" },
   dispatchRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10, paddingHorizontal: 4 },
@@ -1774,7 +1810,7 @@ const styles = StyleSheet.create({
 
   // Mobile-first Purchases workspace
   mobileSafe: { flex: 1, backgroundColor: colors.surface },
-  mobileListContent: { paddingHorizontal: spacing.md, paddingTop: spacing.md, paddingBottom: spacing.md, alignItems: "center" },
+  mobileListContent: { width: "100%", paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.md, alignItems: "stretch" },
   tabletListContent: { paddingHorizontal: spacing.xl, paddingTop: spacing.xl, alignItems: "stretch" },
   mobileHeaderContent: { width: "100%", maxWidth: 1120, gap: spacing.md, paddingBottom: spacing.md },
   mobileTitleRow: { flexDirection: "row", alignItems: "center", gap: 12 },

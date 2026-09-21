@@ -4,66 +4,25 @@
 // Everything downstream (primitives, screens) references these tokens; no hardcoded hex.
 
 import { Platform } from "react-native";
+import { color, radius as designRadius, font as designFont, shadow as designShadow } from "@/src/design/tokens";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Palette (raw)
 // ─────────────────────────────────────────────────────────────────────────────
-// ⚠️ SHOWROOM REMAP — the "blue" and "gray" keys are retained for backwards
-// compatibility, but their VALUES now belong to the Showroom language
-// (src/design/tokens.ts): warm neutrals, ink action, muted statuses.
-// New code must import from @/src/design/tokens instead of this file.
+// Compatibility palette: source shared roles from the canonical design tokens.
+// Existing imports keep working without maintaining a second visual system.
 const palette = {
-  // Brass is the only accent and every primary CTA uses it.
-  blue50:  "#F1EAE0",
-  blue100: "#E6D8C2",
-  blue200: "#D9CCB8",
-  blue500: "#8C7351",
-  blue600: "#8C7351",   // primary action — brushed brass
-  blue700: "#6E5A3F",   // hover
-  blue900: "#6E5A3F",
-
-  // Warm architectural neutrals
-  gray0:   "#FFFFFF",   // cards
-  gray15:  "#F7F5F1",   // page background — warm gallery
-  gray25:  "#F2EFEA",   // hover fill / subtle surface
-  gray50:  "#F0EDE7",
-  gray75:  "#EBE7E0",
-  gray100: "#E8E4DD",   // default hairline
-  gray150: "#D8D3C9",
-  gray200: "#C8C2B6",
-  gray400: "#9B958A",
-  gray500: "#8B8579",
-  gray600: "#6B665D",
-  gray700: "#57534B",
-  gray800: "#2E2B25",
-  gray900: "#1D1B16",
-
-  // Semantic families — muted, architectural
-  green50:  "#EAF1EC",
-  green100: "#D6E5DB",
-  green600: "#3E7C55",
-  green700: "#356A49",
-
-  amber50:  "#F6EEDF",
-  amber100: "#EFE0C4",
-  amber600: "#A2691F",
-  amber700: "#8F5A1C",
-
-  red50:  "#F7ECE9",
-  red100: "#F0DAD4",
-  red600: "#AE4A3D",
-  // Phase 4 · Batch 1 (Production UI Consistency & UX Audit): was "#9A3E34"
-  // — a slightly different red than src/design/tokens.ts's `pal.risk`
-  // ("#AE4A3D"), so the "danger" color rendered two different shades
-  // depending on which design system drew it (Button danger variant vs.
-  // Showroom's danger button, status badges, etc). Unified to one value —
-  // single source of truth for every danger/error/rejected/overdue surface.
-  red700: "#AE4A3D",
-
-  sky50:  "#EEF0F1",
-  sky100: "#DEE2E4",
-  sky600: "#4F6B77",
-  sky700: "#425963",
+  blue50: color.brassTint, blue100: color.brassTint, blue200: color.brassLine,
+  blue500: color.action, blue600: color.action, blue700: color.actionHover, blue900: color.actionHover,
+  gray0: color.surface, gray15: color.canvas, gray25: color.sunken,
+  gray50: color.sunken, gray75: color.sunkenDeep, gray100: color.line,
+  gray150: color.lineStrong, gray200: color.lineStrong, gray400: color.inkFaint,
+  gray500: color.inkSoft, gray600: color.inkMid, gray700: color.inkMid,
+  gray800: color.ink, gray900: color.ink,
+  green50: color.okTint, green100: "#D6E5DB", green600: color.ok, green700: color.ok,
+  amber50: color.warnTint, amber100: "#EFE0C4", amber600: color.warn, amber700: color.warn,
+  red50: color.riskTint, red100: "#F0DAD4", red600: color.risk, red700: color.risk,
+  sky50: color.brassTint, sky100: color.brassLine, sky600: color.action, sky700: color.actionHover,
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -101,8 +60,8 @@ export const colors = {
   divider: palette.gray100,
 
   // Focus & selection — brass guidance (Showroom)
-  focusRing: "rgba(140, 115, 81, 0.42)",
-  selection: "#F1EAE0",
+  focusRing: color.focus,
+  selection: color.brassTint,
 
   // Overlays & scrims
   overlay: "rgba(26, 23, 18, 0.44)",
@@ -165,14 +124,8 @@ export const spacing = {
 // ─────────────────────────────────────────────────────────────────────────────
 // Radii — geometric, product-consistent.
 // ─────────────────────────────────────────────────────────────────────────────
-export const radius = {
-  xs: 4,
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 24,
-  pill: 999,
-} as const;
+export const radius = { xs: 4, sm: designRadius.sm, md: designRadius.lg,
+  lg: designRadius.xl, xl: designRadius.xl, pill: designRadius.pill } as const;
 
 // Shared landscape frame for all product imagery.
 export const PRODUCT_IMAGE_ASPECT_RATIO = 16 / 10;
@@ -185,55 +138,9 @@ export const PRODUCT_IMAGE_ASPECT_RATIO = 16 / 10;
 //   overlay  = e4  popovers, dropdowns lifted above sheets
 // Every card in the app uses ONE of these.
 // ─────────────────────────────────────────────────────────────────────────────
-export const elevation = {
-  none: {
-    shadowColor: "transparent",
-    shadowOpacity: 0,
-    shadowRadius: 0,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 0,
-  },
-  // e1 — resting card (very subtle, Linear/Stripe style)
-  low: {
-    shadowColor: "#0B1220",
-    shadowOpacity: 0.04,
-    shadowRadius: 3,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 1,
-  },
-  // e2 — sticky toolbars, floating pills
-  medium: {
-    shadowColor: "#0B1220",
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
-  // e3 — sheets, modals
-  high: {
-    shadowColor: "#0B1220",
-    shadowOpacity: 0.10,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 6,
-  },
-  // e4 — popovers, dropdowns lifted above sheets
-  overlay: {
-    shadowColor: "#0B1220",
-    shadowOpacity: 0.14,
-    shadowRadius: 28,
-    shadowOffset: { width: 0, height: 14 },
-    elevation: 10,
-  },
-  // Legacy alias — treat as e1
-  hairline: {
-    shadowColor: "#0B1220",
-    shadowOpacity: 0.03,
-    shadowRadius: 2,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 1,
-  },
-} as const;
+const flat = { shadowColor: "transparent", shadowOpacity: 0, shadowRadius: 0, shadowOffset: { width: 0, height: 0 }, elevation: 0 };
+export const elevation = { none: flat, low: flat, hairline: flat,
+  medium: designShadow.raised, high: designShadow.overlay, overlay: designShadow.overlay } as const;
 
 // Legacy alias — some existing screens reference `shadow.soft` etc.
 export const shadow = {
@@ -256,17 +163,17 @@ export const shadow = {
 // Every drawer, dialog, dropdown, hover, button, and page transition MUST pick one.
 // ─────────────────────────────────────────────────────────────────────────────
 export const motion = {
-  press:   { duration: 80,  easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
-  hover:   { duration: 120, easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
-  modal:   { duration: 180, easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
-  drawer:  { duration: 220, easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
-  page:    { duration: 220, easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
+  press:   { duration: 90,  easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
+  hover:   { duration: 140, easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
+  modal:   { duration: 200, easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
+  drawer:  { duration: 200, easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
+  page:    { duration: 200, easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
   // Card hover scale
   cardHoverScale: 1.01,
   // Legacy aliases
-  instant: { duration: 80,  easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
-  fast:    { duration: 120, easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
-  base:    { duration: 220, easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
+  instant: { duration: 90,  easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
+  fast:    { duration: 140, easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
+  base:    { duration: 200, easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
   slow:    { duration: 320, easing: "cubic-bezier(0.2, 0.0, 0.0, 1.0)" },
   spring:  { damping: 22, stiffness: 260, mass: 0.9 },
   springSoft: { damping: 18, stiffness: 160, mass: 0.9 },
@@ -280,14 +187,17 @@ export const motion = {
 // Fallback to system when custom files fail to load.
 // ─────────────────────────────────────────────────────────────────────────────
 const systemSans = Platform.select({ ios: "System", android: "sans-serif", default: "System" });
-const systemMono = Platform.select({ ios: "Menlo", android: "monospace", default: "Menlo" });
+const systemMono = designFont.mono;
 
 export const font = {
-  regular:  Platform.OS === "web" ? "system-ui" : "Inter-Regular",
-  medium:   Platform.OS === "web" ? "system-ui" : "Inter-Medium",
-  semibold: Platform.OS === "web" ? "system-ui" : "Inter-SemiBold",
-  bold:     Platform.OS === "web" ? "system-ui" : "Inter-Bold",
-  sans:     Platform.OS === "web" ? "system-ui" : "Inter-Regular", // default alias
+  // `useAppFonts` loads these bundled files before either root shell renders.
+  // Keep the family names platform-neutral so browser and native typography
+  // have the same metrics, weights, and hierarchy.
+  regular:  "Inter-Regular",
+  medium:   "Inter-Medium",
+  semibold: "Inter-SemiBold",
+  bold:     "Inter-Bold",
+  sans:     "Inter-Regular", // default alias
   mono:     systemMono as string,
   systemSans: systemSans as string,
 } as const;
@@ -309,9 +219,9 @@ export const type = {
 
   // Body
   bodyLg: { fontFamily: font.regular, fontSize: 16, lineHeight: 24, color: colors.onSurface, fontWeight: "400" as const },
-  body:   { fontFamily: font.regular, fontSize: 14, lineHeight: 20, color: colors.onSurface, fontWeight: "400" as const },
-  bodyStrong: { fontFamily: font.medium, fontSize: 14, lineHeight: 20, color: colors.onSurface, fontWeight: "500" as const },
-  bodyMuted: { fontFamily: font.regular, fontSize: 14, lineHeight: 20, color: colors.onSurfaceMuted, fontWeight: "400" as const },
+  body:   { fontFamily: font.regular, fontSize: 15, lineHeight: 22, color: colors.onSurface, fontWeight: "400" as const },
+  bodyStrong: { fontFamily: font.medium, fontSize: 15, lineHeight: 22, color: colors.onSurface, fontWeight: "500" as const },
+  bodyMuted: { fontFamily: font.regular, fontSize: 15, lineHeight: 22, color: colors.onSurfaceMuted, fontWeight: "400" as const },
   bodySm: { fontFamily: font.regular, fontSize: 13, lineHeight: 18, color: colors.onSurface, fontWeight: "400" as const },
 
   // Meta

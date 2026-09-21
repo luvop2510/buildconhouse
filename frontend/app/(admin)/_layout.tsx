@@ -1,3 +1,5 @@
+import { ConnectionStatus } from "@/src/design/ConnectionStatus";
+import { PRIMARY, SECONDARY, TILES_ITEMS, type NavItem } from "@/src/design/navigation";
 // ─────────────────────────────────────────────────────────────────────────────
 // BuildCon House · Shell.
 // Desktop: quiet 240px sidebar. Tablet: 64px icon rail. Phone: bottom bar.
@@ -23,46 +25,6 @@ import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { AppScaffold } from "@/src/components/mobile/AppScaffold";
 import { storage } from "@/src/utils/storage";
 import { FURNITURE_FLOOR_ID, KITCHEN_FLOOR_ID, SANITARY_FLOOR_ID, TILES_FLOOR_ID, floorDisplayLabel, floorLandingPath } from "@/src/constants/floors";
-
-type NavItem = {
-  href: string; label: string; icon: FeatherName; match: string; roles?: string[];
-  // Business units this destination exists in. Omitted = every unit.
-  // A single-unit module must be invisible from the others, not merely
-  // reachable-but-empty: the Quotation Builder is pinned to Sanitary
-  // Bathroom (every request it makes passes floorId: "first-floor"), so on
-  // Ground Floor the Quotations item listed nothing and its "New Quotation"
-  // button silently moved the user to the other business unit. Tile Orders /
-  // Quotation Tiles are the mirror image and are already handled this way by
-  // `useTilesNav`.
-  //
-  // Purchases is the same shape: the supplier-PO workflow belongs to Sanitary
-  // Bathroom, and Ground Floor runs its stock through Tile Orders instead, so
-  // the item is restricted rather than left showing an empty tracker.
-  floors?: string[];
-};
-
-const PRIMARY: NavItem[] = [
-  { href: "/(admin)/dashboard", label: "Today", icon: "sunrise", match: "dashboard" },
-  { href: "/(admin)/walkins", label: "Walk-ins", icon: "user-plus", match: "walkins" },
-  { href: "/(admin)/quotations", label: "Quotations", icon: "file-text", match: "quotations", floors: [SANITARY_FLOOR_ID] },
-  { href: "/(admin)/catalog", label: "Catalog", icon: "package", match: "catalog" },
-  { href: "/(admin)/customers", label: "Customers", icon: "users", match: "customers" },
-  { href: "/(admin)/purchases", label: "Purchases", icon: "shopping-cart", match: "purchases", floors: [SANITARY_FLOOR_ID] },
-  { href: "/(admin)/payments", label: "Payments", icon: "credit-card", match: "payments" },
-  { href: "/(admin)/payments-list", label: "Payment List", icon: "list", match: "payments-list" },
-  { href: "/(admin)/followups", label: "Follow-ups", icon: "phone-call", match: "followups" },
-  { href: "/(admin)/notebook/kitchen", label: "Kitchen Walk-ins", icon: "user-plus", match: "kitchen", floors: [KITCHEN_FLOOR_ID] },
-  { href: "/(admin)/notebook/kitchen/quotation-follow-up", label: "Quotation Follow-up", icon: "file-text", match: "quotation-follow-up", floors: [KITCHEN_FLOOR_ID] },
-  { href: "/(admin)/notebook/furniture", label: "Furniture Walk-ins", icon: "user-plus", match: "furniture", floors: [FURNITURE_FLOOR_ID] },
-  { href: "/(admin)/notebook/furniture/quotation-follow-up", label: "Quotation Follow-up", icon: "file-text", match: "quotation-follow-up", floors: [FURNITURE_FLOOR_ID] },
-];
-
-const SECONDARY: NavItem[] = [
-  { href: "/(admin)/notifications", label: "Notifications", icon: "bell", match: "notifications" },
-  { href: "/(admin)/sales-data", label: "Sales Data", icon: "trending-up", match: "sales-data" },
-  { href: "/(admin)/team", label: "Team", icon: "user-check", match: "team", roles: ["owner", "admin", "manager"] },
-  { href: "/(admin)/settings", label: "Settings", icon: "settings", match: "settings" },
-];
 
 function isNavActive(item: NavItem, segments: string[]): boolean {
   // The root notebook route is Walk-ins. It must not remain highlighted when
@@ -100,22 +62,23 @@ function SideItem({ item, active, onPress, compact = false }: { item: NavItem; a
       onPress={onPress}
       accessibilityRole="link"
       accessibilityLabel={item.label}
+        {...(Platform.OS === "web" ? { title: item.label } : {})}
       accessibilityState={{ selected: active }}
       style={({ pressed, hovered }: any) => [
         styles.sideItem,
         compact && styles.sideItemCompact,
-        { backgroundColor: active ? color.sunken : pressed || hovered ? color.hoverWash : "transparent" },
+        { backgroundColor: active ? color.accentTint : pressed || hovered ? color.hoverWash : "transparent" },
         Platform.OS === "web" ? ({ cursor: "pointer" } as any) : null,
       ]}
     >
       <View style={[styles.brassBar, { backgroundColor: active ? color.brass : "transparent" }]} />
-      <Feather name={item.icon} size={16} color={active ? color.ink : color.inkSoft} />
+      <Feather name={item.icon} size={16} color={active ? color.action : color.inkSoft} />
       {!compact ? <Text
         style={{
           fontFamily: active ? font.semibold : font.medium,
           fontWeight: active ? "600" : "500",
           fontSize: 13.5, letterSpacing: -0.1,
-          color: active ? color.ink : color.inkMid,
+          color: active ? color.actionHover : color.inkMid,
         }}
       >
         {item.label}
@@ -181,7 +144,7 @@ function FloorSwitcher({ compact = false }: { compact?: boolean }) {
       triggerLabel={`Switch workspace. Current workspace: ${currentLabel}`}
       triggerTestID="floor-switcher"
     >
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 10, height: 40, borderRadius: radius.md, backgroundColor: color.surface, borderWidth: layout.hairline, borderColor: color.line }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, height: 42, borderRadius: radius.lg, backgroundColor: color.surface, borderWidth: layout.hairline, borderColor: color.line }}>
         <Feather name="layers" size={15} color={color.brass} />
         {!compact ? <Text numberOfLines={1} style={{ flex: 1, fontFamily: font.medium, fontSize: 12.5, color: color.ink }}>{currentLabel}</Text> : null}
         <Feather name="chevron-down" size={14} color={color.inkSoft} />
@@ -191,7 +154,7 @@ function FloorSwitcher({ compact = false }: { compact?: boolean }) {
 }
 
 const FLOOR_ROUTE_SEGMENTS: Record<string, string[]> = {
-  [SANITARY_FLOOR_ID]: ["quotations", "purchases", "purchase-orders"],
+  [SANITARY_FLOOR_ID]: ["quotations", "purchases", "purchase-orders", "godown-stock"],
   [TILES_FLOOR_ID]: ["tiles", "orders"],
   [KITCHEN_FLOOR_ID]: ["kitchen"],
   [FURNITURE_FLOOR_ID]: ["furniture"],
@@ -208,14 +171,6 @@ function isRouteCompatibleWithFloor(segments: string[], floorId: string) {
 // their catalog search AND the floor stamped onto saved documents both follow
 // the active-floor request header, so opening them from another floor first
 // switches the active floor to Ground floor before navigating.
-const TILES_ITEMS: NavItem[] = [
-  { href: "/(admin)/tiles", label: "Quotation Tiles", icon: "layers", match: "tiles" },
-  // Tile Orders' read endpoints require the backend's `sales` level. Keep
-  // the selection workflow visible to a Worker, but do not link them to a
-  // screen that can only respond with a 403 / "Insufficient role".
-  { href: "/(admin)/tiles/orders", label: "Tile Orders", icon: "truck", match: "orders", roles: ["owner", "admin", "manager", "accounts", "purchase", "sales"] },
-];
-
 function useTilesNav() {
   const router = useRouter();
   const { staff } = useAuth();
@@ -303,27 +258,24 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
         ) : <SearchTrigger />}
       </View>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: space.x3, gap: 1, alignItems: collapsed ? "center" : "stretch" }} showsVerticalScrollIndicator={false}>
-        {visible(PRIMARY).map((n) => (
-          <SideItem key={n.href} item={n} active={isActive(n)} onPress={() => router.push(n.href as any)} compact={collapsed} />
-        ))}
-        {tilesNav.items.map((n) => (
-          <SideItem
-            key={n.href}
-            item={n}
-            active={n.match === "orders" ? segments.includes("orders") : segments.includes("tiles") && !segments.includes("orders")}
-            onPress={() => { void tilesNav.open(n); }}
-            compact={collapsed}
-          />
-        ))}
-        <View style={{ height: space.x5 }} />
-        {visible(SECONDARY).map((n) => (
-          <SideItem key={n.href} item={n} active={isActive(n)} onPress={() => router.push(n.href as any)} compact={collapsed} />
-        ))}
+        {(["Daily work", "Records & operations", "Management"] as const).map(group => {
+          const destinations = group === "Management" ? visible(SECONDARY)
+            : [...visible(PRIMARY), ...tilesNav.items].filter(n => {
+              const daily = ["dashboard", "walkins", "followups", "catalog", "quotations", "tiles", "kitchen", "furniture", "quotation-follow-up"].includes(n.match);
+              return group === "Daily work" ? daily : !daily;
+            });
+          return destinations.length ? <View key={group} style={{ gap: 1, marginBottom: space.x3 }}>
+            {!collapsed ? <Text style={{ fontFamily: font.semibold, fontSize: 10.5, letterSpacing: 1.05, textTransform: "uppercase", color: color.inkSoft, paddingHorizontal: space.x3, paddingVertical: space.x2 }}>{group}</Text> : null}
+            {destinations.map(n => <SideItem key={n.href} item={n} active={isActive(n)} compact={collapsed}
+              onPress={() => { if (tilesNav.items.includes(n)) void tilesNav.open(n); else router.push(n.href as any); }} />)}
+          </View> : null;
+        })}
       </ScrollView>
 
       <View style={{ padding: space.x3, gap: space.x3, alignItems: collapsed ? "center" : "stretch" }}>
         <Hairline />
         <Menu
+          triggerLabel="Account menu"
           align="left"
           items={[{
             label: "Sign out", icon: "log-out", tone: "risk",
@@ -365,15 +317,16 @@ function Rail() {
         testID={`nav-${item.match}`}
         accessibilityRole="link"
         accessibilityLabel={item.label}
+        {...(Platform.OS === "web" ? { title: item.label } : {})}
         accessibilityState={{ selected: on }}
         onPress={() => router.push(item.href as any)}
         style={({ pressed, hovered }: any) => [
           styles.railItem,
-          { backgroundColor: on ? color.sunken : pressed || hovered ? color.hoverWash : "transparent" },
+          { backgroundColor: on ? color.accentTint : pressed || hovered ? color.hoverWash : "transparent" },
         ]}
       >
         <View style={[styles.brassBarRail, { backgroundColor: on ? color.brass : "transparent" }]} />
-        <Feather name={item.icon} size={18} color={on ? color.ink : color.inkSoft} />
+        <Feather name={item.icon} size={18} color={on ? color.action : color.inkSoft} />
       </Pressable>
     );
   };
@@ -401,11 +354,11 @@ function Rail() {
               onPress={() => { void tilesNav.open(n); }}
               style={({ pressed, hovered }: any) => [
                 styles.railItem,
-                { backgroundColor: on ? color.sunken : pressed || hovered ? color.hoverWash : "transparent" },
+                { backgroundColor: on ? color.accentTint : pressed || hovered ? color.hoverWash : "transparent" },
               ]}
             >
               <View style={[styles.brassBarRail, { backgroundColor: on ? color.brass : "transparent" }]} />
-              <Feather name={n.icon} size={18} color={on ? color.ink : color.inkSoft} />
+              <Feather name={n.icon} size={18} color={on ? color.action : color.inkSoft} />
             </Pressable>
           );
         })}
@@ -416,6 +369,7 @@ function Rail() {
       </ScrollView>
       <View style={{ alignItems: "center", paddingVertical: space.x4 }}>
         <Menu
+          triggerLabel="Account menu"
           align="left"
           items={[{
             label: "Sign out", icon: "log-out", tone: "risk",
@@ -430,246 +384,67 @@ function Rail() {
 }
 
 // ── Phone bottom bar + More sheet ───────────────────────────────────────────
-const PHONE_TABS: NavItem[] = [
-  { href: "/(admin)/dashboard", label: "Home", icon: "home", match: "dashboard" },
-  // On Sanitary this starts at quotations; on Ground Floor the same slot is
-  // substituted with Tile Orders below. Both are the worker's order queue.
-  { href: "/(admin)/quotations", label: "Orders", icon: "file-text", match: "quotations", floors: [SANITARY_FLOOR_ID] },
-];
-const PHONE_TABS_RIGHT: NavItem[] = [
-  { href: "/(admin)/followups", label: "Tasks", icon: "check-square", match: "followups" },
-];
-const MORE_ITEMS: NavItem[] = [
-  { href: "/(admin)/walkins", label: "Walk-ins", icon: "user-plus", match: "walkins" },
-  { href: "/(admin)/catalog", label: "Catalog", icon: "package", match: "catalog" },
-  { href: "/(admin)/customers", label: "Customers", icon: "users", match: "customers" },
-  { href: "/(admin)/purchases", label: "Purchases", icon: "shopping-cart", match: "purchases", floors: [SANITARY_FLOOR_ID] },
-  { href: "/(admin)/payments", label: "Payments", icon: "credit-card", match: "payments" },
-  { href: "/(admin)/payments-list", label: "Payment List", icon: "list", match: "payments-list" },
-  { href: "/(admin)/notebook/kitchen", label: "Kitchen Walk-ins", icon: "user-plus", match: "kitchen", floors: [KITCHEN_FLOOR_ID] },
-  { href: "/(admin)/notebook/kitchen/quotation-follow-up", label: "Quotation Follow-up", icon: "file-text", match: "quotation-follow-up", floors: [KITCHEN_FLOOR_ID] },
-  { href: "/(admin)/notebook/furniture", label: "Furniture Walk-ins", icon: "user-plus", match: "furniture", floors: [FURNITURE_FLOOR_ID] },
-  { href: "/(admin)/notebook/furniture/quotation-follow-up", label: "Quotation Follow-up", icon: "file-text", match: "quotation-follow-up", floors: [FURNITURE_FLOOR_ID] },
-  { href: "/(admin)/notifications", label: "Notifications", icon: "bell", match: "notifications" },
-  { href: "/(admin)/sales-data", label: "Sales Data", icon: "trending-up", match: "sales-data" },
-  { href: "/(admin)/team", label: "Team", icon: "user-check", match: "team", roles: ["owner", "admin", "manager"] },
-  { href: "/(admin)/settings", label: "Settings", icon: "settings", match: "settings" },
-];
-
 function PhoneBar() {
   const router = useRouter();
   const segments = useSegments() as string[];
   const { staff, logout } = useAuth();
   const visible = useVisibleNav();
-  const hasAccess = useModuleAccess();
   const palette = usePalette();
   const tilesNav = useTilesNav();
   const { access, selectedFloorId, loading: floorLoading } = useFloorAccess();
   const { loading: permissionsLoading } = usePermissionMatrix();
   const [moreOpen, setMoreOpen] = useState(false);
-  const isActive = (item: NavItem) => isNavActive(item, segments);
-  // The footer is part of the application shell, so it must obey the same
-  // readiness boundary as the routed screen. Rendering its real destinations
-  // before the signed-in user's floor and permission matrix resolve made the
-  // icons visibly change (and briefly exposed a wrong-floor destination) on
-  // cold starts. A fixed, inert placeholder preserves the layout until the
-  // authoritative shell state is available.
   const shellReady = Boolean(staff && access && selectedFloorId && !floorLoading && !permissionsLoading);
   if (!shellReady) return <PhoneBarSkeleton />;
-
-  const visibleMore = visible(MORE_ITEMS);
-  const moreActive = visibleMore.some(isActive);
-  // The left tab slot is Quotes on Sanitary Bathroom. On Ground Floor that
-  // destination doesn't exist, so the slot takes that unit's equivalent
-  // (Quotation Tiles) rather than collapsing and leaving a hole in the bar.
-  const visiblePhoneTabs = visible(PHONE_TABS);
-  // Notebook floors are deliberately a two-page mobile workspace. Generic
-  // navigation is hidden there, so keep both pages in the fixed bottom-bar
-  // slots instead of leaving the right slot empty and burying follow-up in
-  // More. This preserves the normal five-slot alignment at every viewport.
-  const contextualNotebookTabs = selectedFloorId === KITCHEN_FLOOR_ID
-    ? {
-      primary: { href: "/(admin)/notebook/kitchen", label: "Kitchen", icon: "user-plus" as FeatherName, match: "kitchen", floors: [KITCHEN_FLOOR_ID] },
-      secondary: { href: "/(admin)/notebook/kitchen/quotation-follow-up", label: "Follow-up", icon: "file-text" as FeatherName, match: "quotation-follow-up", floors: [KITCHEN_FLOOR_ID] },
-    }
-    : selectedFloorId === FURNITURE_FLOOR_ID
-    ? {
-      primary: { href: "/(admin)/notebook/furniture", label: "Furniture", icon: "user-plus" as FeatherName, match: "furniture", floors: [FURNITURE_FLOOR_ID] },
-      secondary: { href: "/(admin)/notebook/furniture/quotation-follow-up", label: "Follow-up", icon: "file-text" as FeatherName, match: "quotation-follow-up", floors: [FURNITURE_FLOOR_ID] },
-    }
-    : null;
-  const phoneTabs = contextualNotebookTabs
-    ? [...visiblePhoneTabs.filter((item) => item.match !== "quotations"), contextualNotebookTabs.primary]
-    : visiblePhoneTabs.length < PHONE_TABS.length && tilesNav.items.length
-    ? [...visiblePhoneTabs, { ...tilesNav.items[0], label: "Orders" }]
-    : visiblePhoneTabs;
-  const phoneTabsRight = contextualNotebookTabs ? [contextualNotebookTabs.secondary] : visible(PHONE_TABS_RIGHT);
-  // The FAB is not a NavItem and isn't run through visible(), so it needs its
-  // own unit check: it used to unconditionally open the Sanitary Quotation
-  // Builder, which on Ground Floor doesn't exist for that unit and silently
-  // flipped the active business unit to Sanitary just by pressing it. Mirror
-  // phoneTabs' substitution — Sanitary gets the quotation builder, every
-  // other unit gets that unit's own Tiles nav destination via the same
-  // useTilesNav() mechanism, and if neither is available the FAB hides
-  // rather than reaching into the other unit's routes.
-  //
-  // The predicate must be POSITIVE, not `!== TILES_FLOOR_ID`: selectedFloorId
-  // starts as "" while useFloorAccess() resolves asynchronously, and a
-  // negative predicate put that unresolved state in the Sanitary branch — a
-  // multi-floor user sitting on Ground Floor who tapped + before hydration
-  // completed landed in the Sanitary Quotation Builder, which itself flips
-  // the active floor. A positive match on each concrete floor id leaves the
-  // unresolved "" state inert (no branch matches, FAB hides).
-  const fabAction = !hasAccess("quotations")
-    ? null
-    : selectedFloorId === SANITARY_FLOOR_ID
-    ? { label: "Scan or start an order", onPress: () => router.push("/(admin)/quotations/new" as any) }
-    : selectedFloorId === TILES_FLOOR_ID && tilesNav.items.length
-    ? { label: "Scan or start an order", onPress: () => { void tilesNav.open(tilesNav.items[0]); } }
-    : null;
-
-  const Tab = ({ item }: { item: NavItem }) => {
-    const on = isActive(item);
-    return (
-      <Pressable
-        testID={`bottom-nav-${item.match}`}
-        onPress={() => router.push(item.href as any)}
-        accessibilityRole="link"
-        accessibilityLabel={item.label}
-        accessibilityState={{ selected: on }}
-        style={styles.tab}
-      >
-        <View style={[styles.tabIconWrap, on && styles.tabIconWrapActive]}>
-          <Feather name={item.icon} size={19} color={on ? color.brass : color.inkFaint} />
+  const all = [...visible(PRIMARY), ...tilesNav.items, ...visible(SECONDARY)];
+  const notebook = selectedFloorId === KITCHEN_FLOOR_ID || selectedFloorId === FURNITURE_FLOOR_ID;
+  const priorities = notebook ? all.filter(item => item.href.includes('/notebook/'))
+    : ['dashboard', 'catalog', selectedFloorId === TILES_FLOOR_ID ? 'tiles' : 'quotations', 'followups']
+      .flatMap(match => all.filter(item => item.match === match));
+  const more = all.filter(item => !priorities.some(tab => tab.href === item.href));
+  const isActive = (item: NavItem) => item.match === 'tiles'
+    ? segments.includes('tiles') && !segments.includes('orders') : isNavActive(item, segments);
+  const moreActive = more.some(isActive);
+  return <>
+    <View role="navigation" accessibilityLabel="Primary" style={styles.phoneBar}>
+      {priorities.map(item => <Pressable key={item.href} testID={`bottom-nav-${item.match}`}
+        accessibilityRole="link" accessibilityLabel={item.label} accessibilityState={{ selected: isActive(item) }}
+        onPress={() => router.push(item.href as any)} style={styles.tab}>
+        <View style={[styles.tabIconWrap, isActive(item) && styles.tabIconWrapActive]}>
+          <Feather name={item.icon} size={20} color={isActive(item) ? color.action : color.inkMid} />
         </View>
-        <Text style={[styles.tabLabel, on && styles.tabLabelActive]}>{item.label}</Text>
+        <Text numberOfLines={2} style={[styles.tabLabel, isActive(item) && styles.tabLabelActive]}>
+          {notebook ? item.href.includes('quotation-follow-up') ? 'Quotation follow-up' : 'Walk-ins' : item.label}
+        </Text>
+      </Pressable>)}
+      <Pressable testID={notebook ? "bottom-nav-notebook-workspace" : "bottom-nav-more"}
+        accessibilityRole="button" accessibilityLabel="More" accessibilityState={{ expanded: moreOpen, selected: moreActive }}
+        onPress={() => setMoreOpen(true)} style={styles.tab}>
+        <View style={[styles.tabIconWrap, moreActive && styles.tabIconWrapActive]}><Feather name="menu" size={20} color={moreActive ? color.action : color.inkMid} /></View>
+        <Text style={[styles.tabLabel, moreActive && styles.tabLabelActive]}>More</Text>
       </Pressable>
-    );
-  };
-
-  // Kitchen and Furniture are intentionally compact, two-view workspaces.
-  // The generic phone footer previously left an empty FAB well between the
-  // two notebook tabs and duplicated both destinations again under More.
-  if (contextualNotebookTabs) {
-    const notebookLabel = selectedFloorId === KITCHEN_FLOOR_ID ? "Kitchen" : "Furniture";
-    const notebookMoreLabel = `${notebookLabel} workspace`;
-    return <>
-      <View style={styles.notebookPhoneBar}>
-        <Tab item={contextualNotebookTabs.primary} />
-        <Tab item={contextualNotebookTabs.secondary} />
-        <Pressable testID="bottom-nav-notebook-workspace" onPress={() => setMoreOpen(true)} accessibilityRole="button" accessibilityLabel={`Open ${notebookMoreLabel} menu`} style={styles.notebookWorkspaceTab}>
-          <View style={styles.tabIconWrap}><Feather name="layers" size={19} color={color.inkFaint} /></View>
-          <Text style={styles.tabLabel}>Workspace</Text>
-        </Pressable>
+    </View>
+    <Sheet open={moreOpen} onClose={() => setMoreOpen(false)} title="Workspace">
+      <FloorSwitcher />
+      {!notebook ? <Pressable accessibilityRole="button" accessibilityLabel="Search everything"
+        onPress={() => { setMoreOpen(false); setTimeout(palette.open, 200); }} style={styles.moreRow}>
+        <Feather name="search" size={18} color={color.inkMid} /><Text style={styles.moreLabel}>Search everything</Text>
+      </Pressable> : null}
+      {more.map(item => <Pressable key={item.href} accessibilityRole="link" accessibilityLabel={item.label}
+        {...(Platform.OS === "web" ? { title: item.label } : {})}
+        onPress={() => { setMoreOpen(false); router.push(item.href as any); }} style={styles.moreRow}>
+        <Feather name={item.icon} size={18} color={color.inkMid} /><Text style={styles.moreLabel}>{item.label}</Text>
+      </Pressable>)}
+      <Hairline />
+      <View style={[styles.moreRow, { height: 'auto', minHeight: 56 }]}><Avatar name={staff?.full_name} />
+        <View style={{ flex: 1 }}><Text style={styles.moreLabel}>{staff?.full_name}</Text><Text style={{ color: color.inkMid }}>{roleLabel[staff?.role || '']}</Text></View>
       </View>
-      <Sheet open={moreOpen} onClose={() => setMoreOpen(false)} title={notebookMoreLabel}>
-        <View style={{ paddingVertical: 6 }}><FloorSwitcher /></View>
-        <Hairline style={{ marginVertical: 6 }} />
-        <Pressable onPress={async () => { setMoreOpen(false); await logout(); router.replace("/(auth)/login"); }} accessibilityRole="button" accessibilityLabel="Sign out" style={styles.moreRow}>
-          <Feather name="log-out" size={17} color={color.risk} />
-          <Text style={[styles.moreLabel, { color: color.risk }]}>Sign out</Text>
-        </Pressable>
-      </Sheet>
-    </>;
-  }
-
-  return (
-    <>
-      <View style={styles.phoneBar}>
-        {phoneTabs.map((t) => <Tab key={t.href} item={t} />)}
-        <View style={styles.fabSlot}>
-          {fabAction ? (
-            <>
-            <Pressable
-              testID="bottom-fab-new-quotation"
-              accessibilityRole="button"
-              accessibilityLabel={fabAction.label}
-              onPress={fabAction.onPress}
-              style={({ pressed }) => [styles.fab, { transform: [{ scale: pressed ? 0.94 : 1 }] }]}
-            >
-              <Feather name="plus" size={22} color={color.onAction} />
-            </Pressable>
-            <Text style={styles.actionLabel}>Action</Text>
-            </>
-          ) : null}
-        </View>
-        {phoneTabsRight.map((t) => <Tab key={t.href} item={t} />)}
-        <Pressable
-          testID="bottom-nav-more"
-          onPress={() => setMoreOpen(true)}
-          accessibilityRole="button"
-          accessibilityLabel="More"
-          accessibilityState={{ selected: moreActive }}
-          style={styles.tab}
-        >
-          <View style={[styles.tabIconWrap, moreActive && styles.tabIconWrapActive]}>
-            <Feather name="menu" size={19} color={moreActive ? color.brass : color.inkFaint} />
-          </View>
-          <Text style={[styles.tabLabel, moreActive && styles.tabLabelActive]}>More</Text>
-        </Pressable>
-      </View>
-
-      <Sheet open={moreOpen} onClose={() => setMoreOpen(false)} title="More">
-
-        <Pressable
-          onPress={() => { setMoreOpen(false); setTimeout(palette.open, 250); }}
-          accessibilityRole="button"
-          accessibilityLabel="Search everything"
-          style={styles.moreRow}
-        >
-          <Feather name="search" size={17} color={color.inkMid} />
-          <Text style={styles.moreLabel}>Search everything</Text>
-        </Pressable>
-        <View style={{ paddingVertical: 6 }}>
-          <FloorSwitcher />
-        </View>
-        <Hairline style={{ marginVertical: 6 }} />
-        {tilesNav.items.map((n) => (
-          <Pressable
-            key={n.href}
-            onPress={() => { setMoreOpen(false); void tilesNav.open(n); }}
-            accessibilityRole="link"
-            accessibilityLabel={n.label}
-            style={styles.moreRow}
-          >
-            <Feather name={n.icon} size={17} color={color.inkMid} />
-            <Text style={styles.moreLabel}>{n.label}</Text>
-          </Pressable>
-        ))}
-        {tilesNav.items.length ? <Hairline style={{ marginVertical: 6 }} /> : null}
-        {visibleMore.map((n) => (
-          <Pressable
-            key={n.href}
-            onPress={() => { setMoreOpen(false); router.push(n.href as any); }}
-            accessibilityRole="link"
-            accessibilityLabel={n.label}
-            style={styles.moreRow}
-          >
-            <Feather name={n.icon} size={17} color={color.inkMid} />
-            <Text style={styles.moreLabel}>{n.label}</Text>
-          </Pressable>
-        ))}
-        <Hairline style={{ marginVertical: 6 }} />
-        <View style={[styles.moreRow, { justifyContent: "space-between" }]}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-            <Avatar name={staff?.full_name} size={30} />
-            <View>
-              <Text style={{ fontFamily: font.medium, fontSize: 13.5, color: color.ink }}>{staff?.full_name}</Text>
-              <Text style={{ fontFamily: font.regular, fontSize: 11.5, color: color.inkSoft }}>
-                {roleLabel[staff?.role || ""] || staff?.role}
-              </Text>
-            </View>
-          </View>
-          <Pressable
-            onPress={async () => { setMoreOpen(false); await logout(); router.replace("/(auth)/login"); }}
-            hitSlop={layout.hitSlop}
-          >
-            <Text style={{ fontFamily: font.medium, fontSize: 13, color: color.risk }}>Sign out</Text>
-          </Pressable>
-        </View>
-      </Sheet>
-    </>
-  );
+      <Pressable accessibilityRole="button" accessibilityLabel="Sign out" style={styles.moreRow}
+        onPress={async () => { setMoreOpen(false); await logout(); router.replace('/(auth)/login'); }}>
+        <Feather name="log-out" size={18} color={color.risk} /><Text style={[styles.moreLabel, { color: color.risk }]}>Sign out</Text>
+      </Pressable>
+    </Sheet>
+  </>;
 }
 
 function PhoneBarSkeleton() {
@@ -780,7 +555,7 @@ export default function AdminLayout() {
           style={{ backgroundColor: color.canvas }}
           bottomNavigation={focusedQuotation ? null : <PhoneBar />}
         >
-          <FloorAccessGate><CustomAccessRouteGate><Slot /></CustomAccessRouteGate></FloorAccessGate>
+          <ConnectionStatus /><FloorAccessGate><CustomAccessRouteGate>{isPhone && !focusedQuotation ? <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 }}><FloorSwitcher /></View> : null}<Slot /></CustomAccessRouteGate></FloorAccessGate>
         </AppScaffold>
       </PaletteProvider>
     );
@@ -789,15 +564,15 @@ export default function AdminLayout() {
   return (
     <PaletteProvider>
       <View style={{ flex: 1, flexDirection: "row", backgroundColor: color.canvas }}>
-        <View style={{
+        <View role="navigation" accessibilityLabel="Primary" style={{
           width: isTablet ? layout.rail : sidebarCollapsed ? layout.rail : layout.sidebar,
           borderRightWidth: layout.hairline, borderRightColor: color.line,
           ...(Platform.OS === "web" ? ({ transition: "width 200ms cubic-bezier(0.2, 0, 0, 1)" } as any) : {}),
         }}>
           {isTablet ? <Rail /> : <Sidebar collapsed={sidebarCollapsed} onToggle={toggleSidebar} />}
         </View>
-        <View style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
-          <FloorAccessGate><CustomAccessRouteGate><Slot /></CustomAccessRouteGate></FloorAccessGate>
+        <View role="main" accessibilityLabel="Workspace content" style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
+          <ConnectionStatus /><FloorAccessGate><CustomAccessRouteGate>{isPhone && !focusedQuotation ? <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 }}><FloorSwitcher /></View> : null}<Slot /></CustomAccessRouteGate></FloorAccessGate>
         </View>
       </View>
     </PaletteProvider>
@@ -810,8 +585,8 @@ const styles = StyleSheet.create({
   floorAccessCopy: { fontFamily: font.regular, fontSize: 13, lineHeight: 19, color: color.inkSoft, textAlign: "center", maxWidth: 360 },
   floorAccessButton: { minHeight: 44, paddingHorizontal: space.x4, borderRadius: radius.md, alignItems: "center", justifyContent: "center", backgroundColor: color.ink, marginTop: space.x1 },
   floorAccessButtonText: { fontFamily: font.medium, fontWeight: "500", fontSize: 13, color: color.onAction },
-  sidebar: { flex: 1, backgroundColor: color.canvas },
-  rail: { flex: 1, backgroundColor: color.canvas },
+  sidebar: { flex: 1, backgroundColor: color.surface },
+  rail: { flex: 1, backgroundColor: color.surface },
   monogram: {
     width: 26, height: 26, borderRadius: 7, backgroundColor: color.ink,
     alignItems: "center", justifyContent: "center",
@@ -838,10 +613,10 @@ const styles = StyleSheet.create({
     position: "absolute", left: 0, top: 8, bottom: 8, width: 2.5, borderRadius: 2,
   },
   brassBarRail: {
-    position: "absolute", left: 0, top: 10, bottom: 10, width: 2.5, borderRadius: 2,
+    position: "absolute", left: 0, top: 10, bottom: 10, width: 3, borderRadius: 3,
   },
   railItem: {
-    width: 42, height: 42, borderRadius: radius.sm,
+    width: 44, height: 44, borderRadius: radius.md,
     alignItems: "center", justifyContent: "center", overflow: "hidden",
   },
   userRow: {
@@ -862,7 +637,7 @@ const styles = StyleSheet.create({
     width: 40, height: 26, borderRadius: radius.md, alignItems: "center", justifyContent: "center",
   },
   tabIconWrapActive: { backgroundColor: color.brassTint },
-  tabLabel: { fontFamily: font.medium, fontWeight: "500", fontSize: 10.5, color: color.inkFaint, letterSpacing: 0.1 },
+  tabLabel: { fontFamily: font.medium, fontWeight: "500", fontSize: 10.5, textAlign: "center", color: color.inkMid, letterSpacing: 0.1 },
   tabLabelActive: { color: color.ink, fontWeight: "600" },
   fabSlot: { width: 68, alignItems: "center", justifyContent: "center", paddingTop: 4 },
   fab: {
@@ -870,7 +645,7 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center", marginTop: -22,
     borderWidth: 4, borderColor: color.canvas,
   },
-  actionLabel: { marginTop: -2, fontFamily: font.medium, fontSize: 10.5, color: color.inkFaint },
+  actionLabel: { marginTop: -2, fontFamily: font.medium, fontSize: 10.5, textAlign: "center", color: color.inkMid },
   navLoadingSlot: { flex: 1, alignItems: "center", justifyContent: "center", gap: 6 },
   navLoadingFabSlot: { width: 68, alignItems: "center", justifyContent: "center" },
   navLoadingIcon: { width: 20, height: 20, borderRadius: 10, backgroundColor: color.sunken },

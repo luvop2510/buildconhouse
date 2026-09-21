@@ -89,7 +89,7 @@ export function ProductImage({
   fallbackLabel,
   frameBackground = colors.surfaceTertiary,
   preferOriginal = false,
-  transition = disableSkeleton ? 0 : 160,
+  transition = 0,
 }: ProductImageProps) {
   const [frameWidth, setFrameWidth] = useState(0);
   // Normalise `source` into an ordered list of candidates. Empty / null entries

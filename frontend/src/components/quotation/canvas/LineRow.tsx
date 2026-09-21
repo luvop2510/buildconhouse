@@ -7,7 +7,8 @@ import { Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-na
 
 import { ProductImage } from "@/src/components/ProductImage";
 import { Badge } from "@/src/components/ui";
-import { colors, font, money, PRODUCT_IMAGE_ASPECT_RATIO, radius, type } from "@/src/theme/tokens";
+import { ConfirmDialog } from "@/src/components/ds";
+import { colors, font, money, radius, type } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";
 
 import { useBuilder } from "../context/BuilderContext";
@@ -30,7 +31,10 @@ function LineRowImpl({
 }) {
   const b = useBuilder();
   const isPhone = compact;
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const l = line;
   const isIncluded = !!l.included_for_line_id;
   // Native number inputs emit an empty string while a salesperson replaces a
@@ -74,11 +78,14 @@ function LineRowImpl({
   return (
     <Pressable
       onPress={focus}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
       style={[
         styles.row,
         isPhone && styles.rowPhone,
+        hovered && !isActive && !focused && styles.rowHovered,
         focused && { borderColor: ds.brassLine, backgroundColor: ds.brassTint },
-        isActive && { opacity: 0.75, transform: [{ scale: 0.99 }] },
+        isActive && { opacity: 0.75, borderColor: colors.brandBorder, backgroundColor: colors.brandTint },
       ]}
     >
       <Pressable
@@ -90,7 +97,7 @@ function LineRowImpl({
       >
         <Feather name="menu" size={14} color={colors.onSurfaceMuted} />
       </Pressable>
-      <ProductImage source={l.image} style={[styles.thumb, isPhone ? styles.thumbPhone : {}]} fallbackLabel={l.sku} />
+      <ProductImage source={l.image} style={isPhone ? [styles.thumb, styles.thumbPhone] : styles.thumb} fallbackLabel={l.sku} frameInset={5} transition={120} />
       <View style={styles.content}>
         <View style={styles.heading}>
           <View style={styles.nameGroup}>
@@ -143,28 +150,44 @@ function LineRowImpl({
               {l.discount_pct == null && eff.source !== "none" ? <Feather name="link" size={9} color={colors.onSurfaceMuted} /> : null}
             </Pressable>
 
-            {isPhone ? (
             <Pressable
               testID={`line-actions-${l.id}`}
-              accessibilityLabel="Line item actions"
-              onPress={() => setMenuOpen((open) => !open)}
-              style={styles.icon}
+              accessibilityLabel={actionsOpen ? "Hide product actions" : "Show product actions"}
+              accessibilityState={{ expanded: actionsOpen }}
+              onPress={() => setActionsOpen((open) => !open)}
+              style={({ pressed }) => [styles.icon, actionsOpen && styles.iconSelected, pressed && styles.iconPressed]}
             >
-              <Feather name="more-horizontal" size={18} color={colors.onSurfaceMuted} />
+              <Feather name={actionsOpen ? "chevron-up" : "more-horizontal"} size={18} color={actionsOpen ? ds.brassDeep : colors.onSurfaceMuted} />
             </Pressable>
-            ) : <LineActions line={l} />}
+            <RemoveLineButton line={l} onCancel={() => setCancelOpen(true)} />
           </>}
         </View>
-        {isPhone && menuOpen && !isIncluded ? <View style={styles.mobileActions}><LineActions line={l} /></View> : null}
+        {actionsOpen && !isIncluded ? <View style={styles.secondaryActions}><LineActions line={l} /></View> : null}
       </View>
+      <ConfirmDialog visible={cancelOpen} onClose={() => { if (!cancelling) setCancelOpen(false); }} onConfirm={async () => {
+        setCancelling(true);
+        const cancelled = await b.cancelLine(l.id);
+        setCancelling(false);
+        if (cancelled) setCancelOpen(false);
+      }} title="Cancel this product?" description="This removes it from the quotation and cancels any unfulfilled purchase line. Fulfilled items or completed-payment adjustments will stay unchanged and explain the next step." confirmLabel="Cancel product" tone="danger" loading={cancelling} testID={`confirm-cancel-line-${l.id}`} />
     </Pressable>
   );
+}
+
+function RemoveLineButton({ line, onCancel }: { line: Line; onCancel: () => void }) {
+  const b = useBuilder();
+  const saved = !!b.quotationId;
+  return <Pressable testID={saved ? `line-cancel-${line.id}` : `line-del-${line.id}`} accessibilityLabel={saved ? "Cancel product" : "Remove product"} onPress={saved ? onCancel : () => b.removeLine(line.id)} style={({ pressed }) => [styles.icon, styles.removeIcon, pressed && styles.removeIconPressed]}>
+    <Feather name={saved ? "x-circle" : "trash-2"} size={17} color={colors.error} />
+  </Pressable>;
 }
 
 function LineActions({ line }: { line: Line }) {
   const b = useBuilder();
   return (
     <>
+      <Pressable testID={`line-move-up-${line.id}`} accessibilityLabel="Move product up" onPress={() => b.moveLine(line.id, -1)} style={styles.icon}><Feather name="chevron-up" size={16} color={colors.onSurfaceMuted} /></Pressable>
+      <Pressable testID={`line-move-down-${line.id}`} accessibilityLabel="Move product down" onPress={() => b.moveLine(line.id, 1)} style={styles.icon}><Feather name="chevron-down" size={16} color={colors.onSurfaceMuted} /></Pressable>
       <Pressable testID={`line-desc-${line.id}`} accessibilityLabel="Edit description" onPress={() => b.setDescSheet({ line_id: line.id })} style={styles.icon}>
         <Feather name="align-left" size={16} color={colors.onSurfaceMuted} />
       </Pressable>
@@ -177,9 +200,6 @@ function LineActions({ line }: { line: Line }) {
       <Pressable testID={`line-move-${line.id}`} accessibilityLabel="Move to next room" onPress={() => b.moveLineToNextRoom(line.id)} style={styles.icon}>
         <Feather name="corner-up-right" size={16} color={colors.onSurfaceMuted} />
       </Pressable>
-      <Pressable testID={`line-del-${line.id}`} accessibilityLabel="Delete item" onPress={() => b.removeLine(line.id)} style={styles.icon}>
-        <Feather name="trash-2" size={16} color={colors.error} />
-      </Pressable>
     </>
   );
 }
@@ -191,13 +211,14 @@ const styles = StyleSheet.create({
     flexDirection: "row", gap: 10, padding: 10, borderRadius: radius.md,
     backgroundColor: colors.surfaceSecondary, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
   },
+  rowHovered: { borderColor: colors.brandBorder, backgroundColor: colors.surface, transform: [{ translateY: -1 }] },
   rowPhone: { padding: 12, gap: 8, alignItems: "flex-start" },
   dragHandle: {
     width: 20, alignItems: "center", justifyContent: "center", alignSelf: "stretch",
     marginRight: -2, marginLeft: -4,
   },
-  thumb: { width: 64, aspectRatio: PRODUCT_IMAGE_ASPECT_RATIO, borderRadius: 8, backgroundColor: colors.surfaceTertiary },
-  thumbPhone: { width: 88 },
+  thumb: { width: 56, height: 68, borderRadius: 9, backgroundColor: colors.surfaceTertiary },
+  thumbPhone: { width: 64, height: 76 },
   content: { flex: 1, minWidth: 0, gap: 4 },
   heading: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
   nameGroup: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 },
@@ -209,8 +230,12 @@ const styles = StyleSheet.create({
   miniLabel: { fontSize: 9, fontFamily: font.semibold, color: colors.onSurfaceMuted, fontWeight: "600", letterSpacing: 0.8 },
   miniVal: { fontSize: 13, fontFamily: font.medium, fontWeight: "500", color: colors.onSurface, padding: 0, minWidth: 40, fontVariant: ["tabular-nums"] },
   controls: { flexDirection: "row", gap: 6, marginTop: 2, flexWrap: "wrap" },
-  icon: { width: 44, height: 44, borderRadius: 9, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceTertiary },
-  mobileActions: { flexDirection: "row", flexWrap: "wrap", gap: 6, paddingTop: 2 },
+  icon: { width: 40, height: 40, borderRadius: 9, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceTertiary },
+  iconSelected: { backgroundColor: ds.brassTint, borderWidth: StyleSheet.hairlineWidth, borderColor: ds.brassLine },
+  iconPressed: { opacity: 0.72, transform: [{ scale: 0.96 }] },
+  removeIcon: { backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
+  removeIconPressed: { opacity: 0.72, transform: [{ scale: 0.96 }], backgroundColor: "#FDECEC" },
+  secondaryActions: { flexDirection: "row", flexWrap: "wrap", gap: 6, paddingTop: 4, borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
   total: { fontFamily: font.semibold, fontSize: 13, fontWeight: "600", color: colors.onSurface, fontVariant: ["tabular-nums"], letterSpacing: -0.1 },
   includedHint: { alignSelf: "center", fontSize: 11, color: colors.onSurfaceMuted, fontStyle: "italic" },
 });

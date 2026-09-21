@@ -13,12 +13,13 @@ import { useCallback, useEffect, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Button, Card } from "@/src/components/ui";
+import { Alert, Button, Card, ErrorState, LoadingState, PageHeader } from "@/src/components/ui";
 import { toast } from "@/src/components/Toast";
 import { api } from "@/src/api/client";
 import { colors, money, radius, spacing, type } from "@/src/theme/tokens";
 import { useBp } from "@/src/design/responsive";
 import { TILES_FLOOR_ID } from "@/src/constants/floors";
+import { Sheet } from "@/src/design/components";
 
 type PreviewItem = {
   line_id: string;
@@ -50,7 +51,10 @@ type Preview = {
   customer_name: string;
   brands: BrandCard[];
   total_value: number;
+  godown_matches?: GodownMatch[];
 };
+
+type GodownMatch = { line_id: string; product_id: string; sku: string; name: string; requested_qty: number; available_qty: number; replaceable_qty: number; source_customers: string[] };
 
 type Supplier = { id: string; name: string; brand_id?: string | null; brand_name?: string | null };
 
@@ -69,6 +73,9 @@ export default function PlaceOrderReview() {
   const [projectName, setProjectName] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [godownPromptOpen, setGodownPromptOpen] = useState(false);
+  const [godownBusy, setGodownBusy] = useState(false);
   const floorId = floor === TILES_FLOOR_ID ? TILES_FLOOR_ID : undefined;
 
   const loadPreview = useCallback(async () => {
@@ -85,6 +92,7 @@ export default function PlaceOrderReview() {
         if (b.default_supplier && b.brand_id) defaults[b.brand_id] = b.default_supplier.id;
       }
       setSupplierByBrand(defaults);
+      setGodownPromptOpen((p.godown_matches || []).length > 0);
     } catch (e: any) {
       setError(e?.detail || "Failed to load preview");
     }
@@ -104,8 +112,8 @@ export default function PlaceOrderReview() {
   );
 
   const confirm = async () => {
-    if (!preview) return;
-    setBusy(true);
+    if (!preview || busy) return;
+    setConfirmError(null); setBusy(true);
     try {
       const res = await api.post<{ purchase_orders: { id: string }[]; count: number }>(
         `/quotations/${id}/place-order/confirm`,
@@ -120,42 +128,40 @@ export default function PlaceOrderReview() {
       const isTilesDoc = preview.doc_type === "tiles_selection" || preview.doc_type === "tiles_quotation";
       router.replace((isTilesDoc ? "/(admin)/tiles/orders" : "/(admin)/purchases") as any);
     } catch (e: any) {
-      toast.error(e?.detail || "Could not place order");
+      setConfirmError(e?.detail || "Could not place order. Your supplier choices and notes are still here.");
     } finally {
       setBusy(false);
     }
   };
 
+  const useGodownStock = async () => {
+    setGodownBusy(true);
+    try {
+      const result = await api.post<{ replacements: number }>(`/quotations/${id}/use-godown-stock`, {}, { floorId });
+      toast.success(`${result.replacements} godown stock lot${result.replacements === 1 ? "" : "s"} reserved and sent to In Box`);
+      setGodownPromptOpen(false);
+      await loadPreview();
+    } catch (e: any) {
+      toast.error(e?.detail || "Could not reserve godown stock");
+    } finally { setGodownBusy(false); }
+  };
+
   if (error) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
-        <View style={{ padding: spacing.xxl, alignItems: "center", gap: spacing.md }}>
-          <Feather name="alert-triangle" size={30} color={colors.warning} />
-          <Text style={type.titleMd}>{error}</Text>
-          <Button label="Try again" onPress={() => void loadPreview()} />
-          <Button label="Back to quotation" onPress={() => router.back()} />
-        </View>
+        <PageHeader title="Review order" back={() => router.back()} />
+        <ErrorState title="Could not prepare order" subtitle={error} onRetry={() => void loadPreview()} />
       </SafeAreaView>
     );
   }
 
   if (!preview) {
-    return <View style={{ flex: 1, backgroundColor: colors.surface }} />;
+    return <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}><PageHeader title="Review order" back={() => router.back()} /><LoadingState label="Preparing items, brands and suppliers…" /></SafeAreaView>;
   }
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
-      <View style={styles.topbar}>
-        <Pressable testID="back-btn" onPress={() => router.back()} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-          <Feather name="chevron-left" size={18} color={colors.onSurface} />
-          <Text style={{ fontSize: 14, fontWeight: "500" }}>Back</Text>
-        </Pressable>
-        <View style={{ alignItems: "center" }}>
-          <Text style={{ fontSize: 12, fontWeight: "500", color: colors.onSurfaceMuted }}>Review Order</Text>
-          <Text style={[type.mono, { fontSize: 12 }]}>{preview.quotation_number}</Text>
-        </View>
-        <View style={{ width: 60 }} />
-      </View>
+      <PageHeader title="Review order" subtitle={preview.quotation_number} back={() => router.back()} />
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
@@ -163,9 +169,10 @@ export default function PlaceOrderReview() {
         keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 24}
       >
         <ScrollView contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, gap: spacing.lg, paddingBottom: spacing.xxxl + insets.bottom }} keyboardShouldPersistTaps="handled">
+        {confirmError ? <Alert tone="error" title="Order not placed" description={confirmError} /> : null}
         {/* Header summary */}
         <View>
-          <Text style={type.displayLg}>{preview.customer_name}</Text>
+          <Text accessibilityRole="header" aria-level={2} style={type.titleLg}>{preview.customer_name}</Text>
           <Text style={[type.bodyMuted, { marginTop: 4 }]}>
             {preview.brands.length} brand{preview.brands.length !== 1 ? "s" : ""} · {preview.brands.reduce((s, b) => s + b.item_count, 0)} items · {money(preview.total_value)}
           </Text>
@@ -183,7 +190,7 @@ export default function PlaceOrderReview() {
                 placeholder="e.g. Sea View Villa – Alibaug"
                 placeholderTextColor={colors.onSurfaceMuted}
                 style={styles.textInput}
-                testID="project-name"
+                testID="project-name" accessibilityLabel="Project name"
               />
             </View>
             <View>
@@ -194,7 +201,7 @@ export default function PlaceOrderReview() {
                 placeholder="YYYY-MM-DD"
                 placeholderTextColor={colors.onSurfaceMuted}
                 style={styles.textInput}
-                testID="expected-delivery"
+                testID="expected-delivery" accessibilityLabel="Expected delivery"
               />
             </View>
           </View>
@@ -282,7 +289,7 @@ export default function PlaceOrderReview() {
                     placeholderTextColor={colors.onSurfaceMuted}
                     style={[styles.textInput, { minHeight: 56 }]}
                     multiline
-                    testID={`notes-${brandKey}`}
+                    testID={`notes-${brandKey}`} accessibilityLabel={`Internal notes for ${b.brand_name}`}
                   />
                 </View>
               </View>
@@ -305,6 +312,14 @@ export default function PlaceOrderReview() {
         </View>
       </ScrollView>
       </KeyboardAvoidingView>
+      <Sheet open={godownPromptOpen} onClose={() => setGodownPromptOpen(false)} title="Products already in GoDant" width={520}
+        footer={<View style={{ flexDirection: "row", gap: spacing.sm }}><Button label="Place fresh order" variant="ghost" onPress={() => setGodownPromptOpen(false)} disabled={godownBusy} fullWidth /><Button label="Use GoDant stock" icon="archive" onPress={useGodownStock} loading={godownBusy} fullWidth /></View>}
+      >
+        <Text style={type.body}>These products are already in our GoDant. Should we replace the products with our GoDant stock items and not produce them, or place an order for the products we already have in GoDant?</Text>
+        <View style={{ marginTop: spacing.md, gap: 8 }}>
+          {(preview.godown_matches || []).map((match) => <View key={match.line_id} style={styles.godownMatch}><Feather name="archive" size={15} color={colors.brand} /><View style={{ flex: 1 }}><Text style={{ fontWeight: "700", color: colors.onSurface }}>{match.name}</Text><Text style={type.caption}>{match.sku} · {match.replaceable_qty} of {match.requested_qty} available · from {match.source_customers.join(", ")}</Text></View></View>)}
+        </View>
+      </Sheet>
     </SafeAreaView>
   );
 }
@@ -351,4 +366,5 @@ const styles = StyleSheet.create({
   confirmBarPhone: { flexDirection: "column", alignItems: "stretch" },
   confirmActions: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   confirmActionsPhone: { flexDirection: "column", alignItems: "stretch" },
+  godownMatch: { flexDirection: "row", alignItems: "flex-start", gap: 9, padding: 10, borderRadius: radius.md, backgroundColor: colors.brandTint },
 });

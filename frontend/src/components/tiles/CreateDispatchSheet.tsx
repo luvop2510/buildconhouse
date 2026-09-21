@@ -11,13 +11,14 @@
 // uses (dispatch-from-released / dispatch-from-godown), so a dispatch
 // raised here is identical in every way — Chalan, Register row, timeline.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import {
   tileOrdersApi,
   type CustomerOrderBrandGroup, type CustomerOrderCard, type CustomerOrderDetail,
 } from "@/src/api/tileOrders";
 import { toast } from "@/src/components/Toast";
+import { downloadApiFile } from "@/src/utils/downloadFile";
 import { Button, ErrorState, SearchField, Sheet } from "@/src/components/ui";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
 
@@ -188,13 +189,7 @@ export function CreateDispatchSheet({ onClose, onCreated }: { onClose: () => voi
     onClose();
     if (chalanId) {
       try {
-        const url = await tileOrdersApi.chalanPdfUrl(chalanId);
-        if (Platform.OS === "web") {
-          // @ts-ignore — web only
-          window.open(url, "_blank");
-        } else {
-          await Linking.openURL(url);
-        }
+        await downloadApiFile(`/tile-orders/chalans/${chalanId}/pdf`, `Chalan-${chalanId}.pdf`, "Chalan PDF");
       } catch {
         toast.error("Dispatch saved. Open the Chalan from the Dispatch List.");
       }

@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Platform } from "react-native";
 
+import { clearBuilderDrafts } from "@/src/components/quotation/helpers/draftStorage";
 import { api, clearToken, getToken, getTokenKind, setToken, TokenKind } from "@/src/api/client";
 import { getFloorAccess, getSelectedFloorId, resetFloorAccess, setSelectedFloorId } from "@/src/hooks/use-floor-access";
 import type { AccessProfile, PersonalGrant } from "@/src/access-profiles";
@@ -73,6 +74,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setCustomer(me);
       }
     } catch {
+      await clearBuilderDrafts();
       await clearToken();
       setStaff(null); setCustomer(null); setKind(null);
     } finally {
@@ -131,6 +133,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     try { await api.post("/auth/logout"); } catch { /* best-effort */ }
+    await clearBuilderDrafts();
     await clearToken();
     resetFloorAccess();
     setStaff(null); setCustomer(null); setKind(null);

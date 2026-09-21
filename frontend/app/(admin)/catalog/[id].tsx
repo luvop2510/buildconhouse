@@ -20,8 +20,8 @@ import { Feather } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  FlatList, LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent, Pressable,
-  ScrollView, Share, StyleSheet, Text, View,
+  ActivityIndicator, FlatList, LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent, Pressable,
+  ScrollView, Share, StyleSheet, Text, TextInput, View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -29,6 +29,7 @@ import { ProductImage } from "@/src/components/ProductImage";
 import { productImageList } from "@/src/components/quotation/helpers/media";
 import { Button, Card, IconButton, PriceTag } from "@/src/components/ui";
 import { ProductEditor } from "@/src/components/catalog/ProductEditor";
+import { toast } from "@/src/components/Toast";
 import { api } from "@/src/api/client";
 import { useAuth } from "@/src/state/auth";
 import { useBreakpoint } from "@/src/hooks/use-breakpoint";
@@ -40,15 +41,22 @@ import {
 type Product = {
   id: string; name: string; sku: string; description?: string | null;
   finish?: string | null; material?: string | null; dimensions?: string | null; warranty?: string | null;
+  size?: string | null;
   price: number; mrp: number; stock: number; images: string[]; tags: string[];
   brand_id: string; category_id: string; floor_id?: string | null;
   subcategory?: string | null; series?: string | null; family_key?: string | null;
   family_name?: string | null; variant_label?: string | null;
   finish_code?: string | null; colour?: string | null;
   image_quality?: string | null;
+  compatible_ids?: string[];
   must_buy_concealed?: boolean;
   concealed_sku?: string | null;
   concealed_skus?: string[];
+  concealed_part?: {
+    sku: string; product_id?: string | null; name?: string | null;
+    description?: string | null; unit_price?: number | null; mrp?: number | null;
+    image?: string | null; qty?: number | null;
+  } | null;
   hero_image_url?: string | null;
   gallery?: { url: string; role?: string; source_type?: string; quality?: string; family_key?: string | null; width?: number | null; height?: number | null; is_primary?: boolean }[];
   specs?: Record<string, any>;
@@ -73,10 +81,29 @@ function swatchColor(label?: string | null): string {
   if (l.includes("chrome") || l.includes("steel") || l.includes("polished")) return "#C0C5CB";
   if (l.includes("brushed") && l.includes("brass")) return "#B08D57";
   if (l.includes("brass") || l.includes("gold")) return "#C6A664";
+  if (l.includes("brown") || l.includes("red") || l.includes("rust") || l.includes("terracotta")) return "#7B3F2D";
   if (l.includes("bronze") || l.includes("copper")) return "#8C5E3C";
   if (l.includes("nickel")) return "#7C8791";
   if (l.includes("graphite") || l.includes("anthracite")) return "#3A3A3A";
   return "#D1D5DB";
+}
+
+/** Supplier imports do not have one universal compatibility column. Surface
+ * the fields that carry console/compatibility/concealment context without
+ * assuming a particular catalog adapter's schema. */
+function associatedConsoleInfo(product: Product): string | null {
+  const spec = Object.entries(product.specs || {}).find(([key, value]) =>
+    /console|compatib|conceal/i.test(key) && value !== null && value !== undefined && String(value).trim(),
+  );
+  if (spec) {
+    const [label, value] = spec;
+    return `${label}: ${Array.isArray(value) ? value.join(", ") : String(value)}`;
+  }
+  if (product.concealed_part?.sku) {
+    return `Associated conceal part · ${product.concealed_part.name || product.concealed_part.sku}`;
+  }
+  if (product.compatible_ids?.length) return `Compatibility references · ${product.compatible_ids.length}`;
+  return null;
 }
 
 export default function ProductDetail() {
@@ -97,11 +124,28 @@ export default function ProductDetail() {
   const [imageIdx, setImageIdx] = useState(0);
   const [galleryW, setGalleryW] = useState(0);
   const galleryRef = useRef<FlatList<string>>(null);
+  // A finish tap can happen before the prior product request resolves. Keep a
+  // monotonically increasing token so an older response can never overwrite
+  // the newly selected colour (and its image) after a fast sequence of taps.
+  const loadRequestRef = useRef(0);
+  const [isVariantSwitching, setIsVariantSwitching] = useState(false);
   const [pipeline, setPipeline] = useState<PipelineItem[]>([]);
   const [moveItem, setMoveItem] = useState<PipelineItem | null>(null);
   const [transferItem, setTransferItem] = useState<PipelineItem | null>(null);
   const [historyItemId, setHistoryItemId] = useState<string | null>(null);
   const [showImageManager, setShowImageManager] = useState(false);
+  const [concealSku, setConcealSku] = useState("");
+  const [concealPartProductId, setConcealPartProductId] = useState<string | null>(null);
+  const [concealCandidates, setConcealCandidates] = useState<Product[]>([]);
+  const [concealLookupLoading, setConcealLookupLoading] = useState(false);
+  const [concealLookupError, setConcealLookupError] = useState<string | null>(null);
+  const concealLookupRequestRef = useRef(0);
+  // SKU lookups are deliberately remembered for the lifetime of this screen.
+  // Operators commonly compare two or three products and then return to the
+  // original supplier SKU; that should feel instant and never lose the
+  // preview they already verified.
+  const concealLookupCacheRef = useRef(new Map<string, Product[]>());
+  const [savingConcealPart, setSavingConcealPart] = useState(false);
 
   const shareProduct = async () => {
     if (!p) return;
@@ -121,36 +165,144 @@ export default function ProductDetail() {
     po_number: it.po_number, brand_name: it.brand_name, supplier_name: it.supplier_name,
   });
 
-  const loadPipeline = async (productId: string) => {
+  const loadPipeline = async (productId: string, requestId?: number) => {
     try {
       const r = await api.get<{ items: PipelineItem[] }>(`/purchases/items?product_id=${productId}&limit=50`);
+      if (requestId !== undefined && requestId !== loadRequestRef.current) return;
       setPipeline((r.items || []).filter((it) => it.stage !== "delivered"));
-    } catch { setPipeline([]); }
+    } catch {
+      if (requestId === undefined || requestId === loadRequestRef.current) setPipeline([]);
+    }
   };
 
   const [loadError, setLoadError] = useState(false);
+
+  // The saved SKU is the source of truth. It is prefilled here only to make
+  // changing an existing relationship as quick as its initial configuration.
+  useEffect(() => {
+    setConcealSku(p?.concealed_part?.sku || "");
+    setConcealPartProductId(p?.concealed_part?.product_id || null);
+    setConcealCandidates([]);
+    setConcealLookupError(null);
+  }, [p?.id, p?.concealed_part?.sku, p?.concealed_part?.product_id]);
+
+  useEffect(() => {
+    const sku = concealSku.trim();
+    const sourceProductId = p?.id;
+    if (!sourceProductId || !sku) {
+      setConcealCandidates([]);
+      setConcealLookupError(null);
+      setConcealLookupLoading(false);
+      return;
+    }
+
+    const cacheKey = sku.toLocaleLowerCase();
+    const cached = concealLookupCacheRef.current.get(cacheKey);
+    if (cached) {
+      setConcealCandidates(cached);
+      setConcealLookupError(cached.length ? null : "No active catalog item matches this SKU.");
+      setConcealLookupLoading(false);
+      return;
+    }
+
+    const requestId = ++concealLookupRequestRef.current;
+    setConcealLookupLoading(true);
+    setConcealLookupError(null);
+    const timer = setTimeout(() => {
+      // Use the ranked Catalog search rather than a direct database lookup.
+      // It is floor-scoped, returns hydrated media, and keeps this preview on
+      // the same SKU search contract staff already use elsewhere.
+      api.get<{ items: Product[] }>(`/catalog/search?group=false&limit=12&q=${encodeURIComponent(sku)}`)
+        .then((result) => {
+          if (requestId !== concealLookupRequestRef.current) return;
+          const matches = (result.items || []).filter((item) =>
+            item.id !== sourceProductId && item.sku.trim().toLocaleLowerCase() === cacheKey,
+          );
+          concealLookupCacheRef.current.set(cacheKey, matches);
+          setConcealCandidates(matches);
+          setConcealLookupError(matches.length ? null : "No active catalog item matches this SKU.");
+        })
+        .catch(() => {
+          if (requestId === concealLookupRequestRef.current) {
+            setConcealCandidates([]);
+            setConcealLookupError("Couldn’t look up this SKU. Check the connection and try again.");
+          }
+        })
+        .finally(() => {
+          if (requestId === concealLookupRequestRef.current) setConcealLookupLoading(false);
+        });
+    }, 220);
+    return () => clearTimeout(timer);
+  }, [concealSku, p?.id]);
+
+  useEffect(() => {
+    if (!p || concealPartProductId || !concealCandidates.length) return;
+    // Preserve the write endpoint's established default: prefer a same-brand
+    // match, otherwise use the one unambiguous SKU. Multiple cross-brand
+    // matches stay unselected so the preview asks the worker to choose.
+    const sameBrand = concealCandidates.filter((candidate) => candidate.brand_id === p.brand_id);
+    const defaultCandidate = sameBrand.length === 1
+      ? sameBrand[0]
+      : concealCandidates.length === 1 ? concealCandidates[0] : null;
+    if (defaultCandidate) setConcealPartProductId(defaultCandidate.id);
+  }, [concealCandidates, concealPartProductId, p]);
+
+  const onConcealSkuChange = (value: string) => {
+    setConcealSku(value);
+    const isSavedPart = value.trim().toLocaleLowerCase() === (p?.concealed_part?.sku || "").trim().toLocaleLowerCase();
+    setConcealPartProductId(isSavedPart ? p?.concealed_part?.product_id || null : null);
+  };
+
+  const saveConcealPart = async () => {
+    if (!p || !concealSku.trim()) return;
+    setSavingConcealPart(true);
+    try {
+      const updated = await api.patch<Product>(`/products/${p.id}`, {
+        concealed_part: { sku: concealSku.trim(), product_id: concealPartProductId, qty: 1 },
+      });
+      setP((current) => current ? { ...current, ...updated } : current);
+    } catch (e: any) {
+      // The server verifies that the SKU exists on this floor and points at a
+      // single product, so a typing error can never create a broken auto-add.
+      toast.error(e?.detail || e?.message || "Couldn't save conceal part");
+    } finally {
+      setSavingConcealPart(false);
+    }
+  };
   const loadProduct = async (productId: string) => {
+    const requestId = ++loadRequestRef.current;
     setLoadError(false);
     try {
       const prod = await api.get<Product>(`/products/${productId}`);
+      if (requestId !== loadRequestRef.current) return;
       setP(prod);
-      loadPipeline(prod.id);
-      if (prod.family_key) {
-        const res = await api.get<{ items: Product[] }>(`/products?family_key=${encodeURIComponent(prod.family_key)}&limit=20`);
-        setSiblings(res.items.filter((x) => x.id !== prod.id));
+      setImageIdx(0);
+      setIsVariantSwitching(false);
+      void loadPipeline(prod.id, requestId);
+
+      // These secondary panels must not delay the selected variant's hero.
+      // Fetch independently, then apply only if this is still the selection.
+      const siblingsRequest = prod.family_key
+        ? api.get<{ items: Product[] }>(`/products?family_key=${encodeURIComponent(prod.family_key)}&limit=20`)
+        : Promise.resolve<{ items: Product[] }>({ items: [] });
+      const [siblingsResult, alternatesResult, brandsResult] = await Promise.allSettled([
+        siblingsRequest,
+        api.get<{ items: Product[] }>(`/products/${prod.id}/alternates?limit=6`),
+        api.get<Brand[]>("/brands"),
+      ]);
+      if (requestId !== loadRequestRef.current) return;
+      setSiblings(siblingsResult.status === "fulfilled" ? siblingsResult.value.items.filter((x) => x.id !== prod.id) : []);
+      setAlternates(alternatesResult.status === "fulfilled" ? alternatesResult.value.items || [] : []);
+      if (brandsResult.status === "fulfilled") {
+        const brand = brandsResult.value.find((x) => x.id === prod.brand_id);
+        setBrandName(brand?.name || "");
       }
-      try {
-        const alt = await api.get<{ items: Product[] }>(`/products/${prod.id}/alternates?limit=6`);
-        setAlternates(alt.items || []);
-      } catch { /* ignore */ }
-      try {
-        const brands = await api.get<Brand[]>("/brands");
-        const b = brands.find((x) => x.id === prod.brand_id);
-        setBrandName(b?.name || "");
-      } catch { /* ignore */ }
     } catch {
-      setP(null);
+      if (requestId !== loadRequestRef.current) return;
+      // Retain an optimistic sibling card after a transient request failure;
+      // it has the correct SKU/media and is far more useful than a blank page.
       setLoadError(true);
+      setIsVariantSwitching(false);
     }
   };
 
@@ -171,6 +323,21 @@ export default function ProductDetail() {
     // this effect is driven only by the route product id.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  const selectVariant = (variant: Product) => {
+    if (variant.id === p?.id) return;
+    // Instantly move the hero to the chosen variant's own hydrated media.
+    // The authoritative detail request below then fills in full specs without
+    // ever exposing a sibling's photo during the transition.
+    loadRequestRef.current += 1;
+    setP(variant);
+    setImageIdx(0);
+    setPipeline([]);
+    setAlternates([]);
+    setLoadError(false);
+    setIsVariantSwitching(true);
+    router.replace(`/(admin)/catalog/${variant.id}` as any);
+  };
 
   const ownImageUrls = (item: Pick<Product, "gallery" | "hero_image_url" | "images">): string[] => {
     return productImageList(item);
@@ -221,6 +388,11 @@ export default function ProductDetail() {
   const openQuotation = () => {
     if (quotationAction) router.push(quotationAction.route as any);
   };
+  const selectedConcealCandidate = concealCandidates.find((candidate) => candidate.id === concealPartProductId) || null;
+  const isSavedConcealPart = concealSku.trim().toLocaleLowerCase() === (p.concealed_part?.sku || "").trim().toLocaleLowerCase();
+  const canSaveConcealPart = !!concealSku.trim() && !concealLookupLoading && (
+    !!selectedConcealCandidate || (isSavedConcealPart && !!p.concealed_part?.product_id)
+  );
 
   const Gallery = (
     <View
@@ -240,6 +412,12 @@ export default function ProductDetail() {
                 borderRadius={0}
               />
             </View>
+            {isVariantSwitching ? (
+              <View style={styles.variantLoading} accessibilityLiveRegion="polite">
+                <ActivityIndicator size="small" color={colors.onBrand} />
+                <Text style={styles.variantLoadingText}>Updating finish</Text>
+              </View>
+            ) : null}
             {galleryUrls.length > 1 ? (
               <View style={styles.countPill}>
                 <Feather name="image" size={11} color="#fff" />
@@ -266,6 +444,7 @@ export default function ProductDetail() {
         <View style={{ backgroundColor: colors.surfaceTertiary, aspectRatio: PRODUCT_IMAGE_ASPECT_RATIO }}>
           {galleryW > 0 ? (
             <FlatList
+              key={p.id}
               ref={galleryRef}
               data={galleryUrls.length > 0 ? galleryUrls : [""]}
               keyExtractor={(_, i) => `img-${i}`}
@@ -290,6 +469,12 @@ export default function ProductDetail() {
                 </View>
               )}
             />
+          ) : null}
+          {isVariantSwitching ? (
+            <View style={styles.variantLoading} accessibilityLiveRegion="polite">
+              <ActivityIndicator size="small" color={colors.onBrand} />
+              <Text style={styles.variantLoadingText}>Updating finish</Text>
+            </View>
           ) : null}
           {galleryUrls.length > 1 ? (
             <View style={styles.pageDots}>
@@ -369,7 +554,7 @@ export default function ProductDetail() {
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             <VariantSwatch product={p} active onPress={() => {}} />
             {siblings.map((s) => (
-              <VariantSwatch key={s.id} product={s} onPress={() => router.replace(`/(admin)/catalog/${s.id}` as any)} />
+              <VariantSwatch key={s.id} product={s} onPress={() => selectVariant(s)} />
             ))}
           </View>
         </View>
@@ -393,6 +578,97 @@ export default function ProductDetail() {
             Only a thumbnail is available for this item. High-resolution imagery will be added shortly.
           </Text>
         </View>
+      ) : null}
+
+      {/* This relationship is saved on the catalog product once. Every later
+          quotation addition expands it automatically in BuilderContext. */}
+      {(p.concealed_part || canManageImages) ? (
+        <Card style={{ gap: spacing.sm, padding: spacing.md, backgroundColor: colors.surfaceSecondary }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+            <Feather name="layers" size={16} color={colors.brand} />
+            <View style={{ flex: 1 }}>
+              <Text style={type.label}>Conceal part</Text>
+              <Text style={type.caption}>
+                {p.concealed_part
+                  ? `${p.concealed_part.name || "Configured part"} · ${p.concealed_part.sku} is added automatically`
+                  : "Add the existing catalog SKU once to include it automatically in future quotations."}
+              </Text>
+            </View>
+          </View>
+          {canManageImages ? (
+            <View style={{ gap: spacing.sm }}>
+              <View style={{ flexDirection: isPhone ? "column" : "row", gap: spacing.sm, alignItems: isPhone ? "stretch" : "center" }}>
+                <TextInput
+                  value={concealSku}
+                  onChangeText={onConcealSkuChange}
+                  placeholder="Conceal-part SKU"
+                  autoCapitalize="characters"
+                  accessibilityLabel="Conceal-part SKU"
+                  testID="conceal-part-sku"
+                  style={styles.concealSkuInput}
+                />
+                <Button
+                  label={p.concealed_part ? "Update conceal part" : "Add conceal part"}
+                  onPress={saveConcealPart}
+                  loading={savingConcealPart}
+                  disabled={!canSaveConcealPart || savingConcealPart}
+                  testID="save-conceal-part"
+                />
+              </View>
+
+              {concealLookupLoading ? (
+                <View style={styles.concealLookupStatus} accessibilityLiveRegion="polite">
+                  <ActivityIndicator size="small" color={colors.brand} />
+                  <Text style={type.caption}>Looking up SKU…</Text>
+                </View>
+              ) : null}
+              {concealLookupError ? <Text style={styles.concealLookupError}>{concealLookupError}</Text> : null}
+              {concealCandidates.length ? (
+                <View style={{ gap: 6 }}>
+                  <Text style={type.caption}>
+                    {concealCandidates.length > 1 ? "Select the matching catalog item" : "Catalog preview"}
+                  </Text>
+                  {concealCandidates.map((candidate) => {
+                    const selected = candidate.id === concealPartProductId;
+                    const metadata = [candidate.series, candidate.finish || candidate.colour, candidate.size || candidate.dimensions]
+                      .filter(Boolean).join(" · ");
+                    const consoleInfo = associatedConsoleInfo(candidate);
+                    return (
+                      <Pressable
+                        key={candidate.id}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Use ${candidate.name}, SKU ${candidate.sku} as conceal part`}
+                        testID={`conceal-part-preview-${candidate.id}`}
+                        onPress={() => {
+                          setConcealSku(candidate.sku);
+                          setConcealPartProductId(candidate.id);
+                        }}
+                        style={({ pressed }) => [styles.concealPreview, selected && styles.concealPreviewSelected, pressed && { opacity: 0.78 }]}
+                      >
+                        <ProductImage
+                          source={candidate.hero_image_url || candidate.images}
+                          style={styles.concealPreviewImage}
+                          contentFit="contain"
+                          fallbackLabel={candidate.sku}
+                          disableSkeleton
+                          borderRadius={radius.sm}
+                        />
+                        <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                          <Text style={type.label} numberOfLines={2}>{candidate.name}</Text>
+                          <Text style={type.caption} numberOfLines={1}>{candidate.sku}{metadata ? ` · ${metadata}` : ""}</Text>
+                          {candidate.description ? <Text style={styles.concealPreviewDescription} numberOfLines={2}>{candidate.description}</Text> : null}
+                          {consoleInfo ? <Text style={styles.concealPreviewConsole} numberOfLines={2}>{consoleInfo}</Text> : null}
+                          <Text style={styles.concealPreviewPrice}>{money(candidate.price)}</Text>
+                        </View>
+                        {selected ? <Feather name="check-circle" size={18} color={colors.brand} /> : <Feather name="chevron-right" size={18} color={colors.onSurfaceMuted} />}
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+        </Card>
       ) : null}
 
       {/* Description */}
@@ -623,6 +899,25 @@ const styles = StyleSheet.create({
   },
   brandTag: { fontSize: 10, fontWeight: "800", color: colors.brand, letterSpacing: 1.3 },
   overline: { fontSize: 10, fontWeight: "700", letterSpacing: 1.1, color: colors.onSurfaceMuted, textTransform: "uppercase" },
+  concealSkuInput: {
+    flex: 1, minHeight: 42, borderWidth: 1, borderColor: colors.border,
+    borderRadius: radius.md, paddingHorizontal: spacing.md, color: colors.onSurface,
+    backgroundColor: colors.surface,
+  },
+  concealLookupStatus: { flexDirection: "row", alignItems: "center", gap: 7, minHeight: 22 },
+  concealLookupError: { color: colors.error, fontSize: 12, lineHeight: 17 },
+  concealPreview: {
+    flexDirection: "row", alignItems: "center", gap: 10, padding: 9,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  concealPreviewSelected: { borderColor: colors.brand, backgroundColor: colors.brandTint },
+  concealPreviewImage: {
+    width: 54, aspectRatio: PRODUCT_IMAGE_ASPECT_RATIO, backgroundColor: colors.surfaceTertiary,
+  },
+  concealPreviewDescription: { color: colors.onSurfaceSecondary, fontSize: 11, lineHeight: 15 },
+  concealPreviewConsole: { color: colors.onSurfaceSecondary, fontSize: 11, fontWeight: "700", lineHeight: 15 },
+  concealPreviewPrice: { color: colors.brand, fontSize: 12, fontWeight: "800", marginTop: 1 },
 
   pageDots: {
     position: "absolute", left: 0, right: 0, bottom: 12,
@@ -637,6 +932,12 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", gap: 4,
   },
   countPillText: { color: "#fff", fontSize: 11, fontWeight: "700" },
+  variantLoading: {
+    position: "absolute", left: 12, bottom: 12, zIndex: 2,
+    flexDirection: "row", alignItems: "center", gap: 6,
+    backgroundColor: "rgba(29,27,22,0.82)", paddingHorizontal: 10, paddingVertical: 7, borderRadius: radius.pill,
+  },
+  variantLoadingText: { color: colors.onBrand, fontSize: 11, fontWeight: "700" },
   repImageNote: { fontSize: 11, color: colors.onSurfaceMuted, fontStyle: "italic", padding: 8, textAlign: "center" },
 
   thumb: {
