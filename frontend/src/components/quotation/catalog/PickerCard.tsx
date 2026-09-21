@@ -49,6 +49,9 @@ function PickerCardImpl({ product, onQuickAdd, onLongPress, onOpenDetails }: Pro
   const selectedImages = resolveVariantImages(product, selectedVariant);
   const selectedSku = selectedVariant?.sku ?? product.sku;
   const selectedPrice = selectedVariant?.price ?? product.price;
+  const automaticParts = selectedVariant?.specs?.default_included_parts ?? product.specs?.default_included_parts;
+  const hasAutomaticPart = Array.isArray(automaticParts) && automaticParts.length > 0;
+  const hasConcealedPart = !!(selectedVariant?.concealed_part ?? product.concealed_part)?.sku;
 
   return (
     <View style={{ gap: 6 }}>
@@ -70,6 +73,11 @@ function PickerCardImpl({ product, onQuickAdd, onLongPress, onOpenDetails }: Pro
           <Text style={type.caption} numberOfLines={1}>
             {selectedSku}{variantDescriptor(selectedVariant ?? product) ? ` · ${variantDescriptor(selectedVariant ?? product)}` : ""}
           </Text>
+          {(hasAutomaticPart || hasConcealedPart) ? (
+            <Text testID={`automatic-parts-${product.id}`} style={styles.automaticPart} numberOfLines={1}>
+              {hasAutomaticPart ? "Seat cover added automatically" : "Concealed part added automatically"}
+            </Text>
+          ) : null}
         </View>
         <Text style={styles.price} numberOfLines={1}>{money(selectedPrice)}</Text>
         <QuickAddButton
@@ -105,4 +113,5 @@ const styles = StyleSheet.create({
   thumb: { width: 64, aspectRatio: PRODUCT_IMAGE_ASPECT_RATIO, borderRadius: 8, backgroundColor: colors.surfaceTertiary },
   name: { fontSize: 13, fontWeight: "600", color: colors.onSurface },
   price: { ...type.numeric, fontSize: 13, lineHeight: 18, color: colors.onSurface, flexShrink: 0 },
+  automaticPart: { fontSize: 10, lineHeight: 14, color: colors.success, fontWeight: "600" },
 });

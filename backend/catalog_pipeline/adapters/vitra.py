@@ -22,6 +22,7 @@ Iteration 1 changes:
 """
 from __future__ import annotations
 import io
+import math
 import re
 from collections import defaultdict
 
@@ -60,8 +61,13 @@ def _classify(sheet_name: str, detail: str) -> str:
     """Determine category. Prefer the more-specific `detail` field over the
     generic sheet name (Vitra ships every ceramic product on one 'CSW' sheet)."""
     detail_low = (detail or "").lower()
-    # Order: most-specific first (bidet, urinal, shower, bathtub, cistern, mixer, basin, WC, accessory)
+    # A ``WC WITH BIDET`` is still a water closet; a standalone bidet has no
+    # WC token. Check WC first so those configurations remain in one catalog
+    # category and can use the source-derived selector.
     detail_priority = [
+        ("wc",      "Water Closets"),
+        ("toilet",  "Water Closets"),
+        ("closet",  "Water Closets"),
         ("bidet",   "Bidets"),
         ("urinal",  "Urinals"),
         ("shower",  "Showers"),
@@ -76,9 +82,6 @@ def _classify(sheet_name: str, detail: str) -> str:
         ("counter", "Basins"),
         ("vanity",  "Basins"),
         ("washbasin", "Basins"),
-        ("wc",      "Water Closets"),
-        ("toilet",  "Water Closets"),
-        ("closet",  "Water Closets"),
         ("accessor","Accessories"),
     ]
     for kw, cat in detail_priority:
@@ -126,9 +129,68 @@ def _slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", (s or "").lower()).strip("-")
 
 
+def _wc_configuration(design: str, detail: str, category: str) -> tuple[str, str] | None:
+    """Return the stable option group/label for an explicit WC + bidet pair.
+
+    VitrA's CSW sheet lists the standard WC and its ``WITH BIDET`` version as
+    separate product families. Keep their colour selectors independent, but
+    attach a second source-derived configuration selector across those pairs.
+    """
+    upper = re.sub(r"\s+", " ", detail or "").strip().upper()
+    if category != "Water Closets" or "WC" not in upper or "SEAT COVER" in upper:
+        return None
+    base = re.sub(r"\s+WITH\s+BIDET\b", "", upper).strip()
+    return (
+        f"vitra:csw:configuration:{_slug(design)}:{_slug(base)}",
+        "With bidet" if base != upper else "Without bidet",
+    )
+
+
 class VitraAdapter(BrandAdapter):
     brand = "Vitra"
     supported_extensions = (".xlsx", ".xls")
+
+    def __init__(self, *, only_sheets: set[str] | None = None):
+        """Optionally restrict an import to explicitly named worksheets.
+
+        The normal registry-created adapter remains intentionally unchanged:
+        it still considers every worksheet in a Vitra workbook.  The CSW
+        re-import uses this opt-in boundary so a price-table workbook cannot
+        accidentally import its lookup/source tabs (``Sheet1`` / ``Sheet2``).
+        """
+        self.only_sheets = (
+            {name.strip().casefold() for name in only_sheets if name and name.strip()}
+            if only_sheets is not None
+            else None
+        )
+
+    def _includes_sheet(self, sheet_name: str) -> bool:
+        return self.only_sheets is None or sheet_name.casefold() in self.only_sheets
+
+    @staticmethod
+    def _cached_mrp(value, source_formula) -> tuple[object, str | None]:
+        """Validate a cached Excel price without trying to evaluate formulas.
+
+        ``openpyxl`` does not calculate VLOOKUP.  Loading with ``data_only``
+        gives us Excel's saved/cached result, which is the only safe value to
+        import.  A missing cache or an Excel error is review-only; deriving a
+        price from another sheet here would silently invent a value.
+        """
+        source = str(source_formula or "")
+        is_formula = source.startswith("=")
+        if isinstance(value, str) and value.strip().startswith("#"):
+            return MISSING, f"Source formula error in MRP cell: {value.strip()}"
+        if is_formula and value in (None, ""):
+            return MISSING, "Source formula has no cached MRP value (workbook must be recalculated in Excel)"
+        if value in (None, "", MISSING):
+            return MISSING, "Missing MRP"
+        try:
+            parsed = float(str(value).replace("₹", "").replace(",", "").replace(" ", ""))
+        except (TypeError, ValueError):
+            return MISSING, f"Invalid cached MRP value: {value!r}"
+        if not math.isfinite(parsed) or parsed <= 0:
+            return MISSING, f"Invalid cached MRP value: {value!r}"
+        return parsed, None
 
     def extract(self, data: bytes, filename: str) -> tuple[list[ProductRow], ExtractionReport]:
         report = ExtractionReport(brand=self.brand, filename=filename, source_type="excel")
@@ -140,11 +202,17 @@ class VitraAdapter(BrandAdapter):
             return rows, report
         try:
             wb = load_workbook(io.BytesIO(data), data_only=True)
+            # Keep a parallel formula view only for the opt-in targeted import.
+            # The cached workbook view above remains the authoritative source
+            # of prices; this view merely explains formula/cache failures.
+            formula_wb = (
+                load_workbook(io.BytesIO(data), data_only=False)
+                if self.only_sheets is not None
+                else None
+            )
         except Exception as e:
             report.warnings.append(f"xlsx open failed: {e}")
             return rows, report
-
-        last_design = MISSING
 
         # Extract every image with quality metadata, keyed by its EXACT
         # (sheet, row, column) anchor position — never collapsed to
@@ -159,6 +227,8 @@ class VitraAdapter(BrandAdapter):
         by_sheet_row_col: dict[tuple[str, int, int], ExtractedImage] = {}
         qrank_pre = {"excellent": 4, "good": 3, "acceptable": 2, "poor": 1}
         for sheet, row_idx, col_idx, img in extract_images_from_xlsx_ex(data):
+            if not self._includes_sheet(sheet):
+                continue
             key = (sheet, row_idx, col_idx)
             prev = by_sheet_row_col.get(key)
             if prev is None or (qrank_pre.get(img.quality, 0), img.longest_edge) > (qrank_pre.get(prev.quality, 0), prev.longest_edge):
@@ -174,7 +244,12 @@ class VitraAdapter(BrandAdapter):
         for s in anchors_by_sheet:
             anchors_by_sheet[s].sort()
 
+        price_source_issues: list[str] = []
         for ws in wb.worksheets:
+            if not self._includes_sheet(ws.title):
+                continue
+            last_design = MISSING
+            formula_ws = formula_wb[ws.title] if formula_wb is not None else None
             all_rows: list[list] = [list(r) for r in ws.iter_rows(values_only=True)]
             if len(all_rows) < 3:
                 continue
@@ -239,7 +314,16 @@ class VitraAdapter(BrandAdapter):
                         primary_sku = code_cell.splitlines()[0].strip()
                         extras = [s.strip() for s in code_cell.splitlines()[1:] if s.strip()]
                         mrp_raw = row[mrp_col] if mrp_col < len(row) else None
-                        mrp = self.to_number(mrp_raw)
+                        if formula_ws is not None:
+                            source_formula = formula_ws.cell(row=r_idx, column=mrp_col + 1).value
+                            mrp, price_issue = self._cached_mrp(mrp_raw, source_formula)
+                            if price_issue:
+                                price_source_issues.append(
+                                    f"{ws.title}!{formula_ws.cell(row=r_idx, column=mrp_col + 1).coordinate}: {price_issue}"
+                                )
+                        else:
+                            mrp = self.to_number(mrp_raw)
+                            price_issue = None
                         cat = _classify(ws.title, detail)
                         subcat = _extract_subcategory(ws.title, detail, cat)
 
@@ -299,6 +383,9 @@ class VitraAdapter(BrandAdapter):
                         specs = {}
                         if detail:
                             specs["form"] = detail
+                        configuration = _wc_configuration(design, detail, cat)
+                        if configuration:
+                            specs["configuration_group"], specs["configuration_label"] = configuration
                         if extras:
                             specs["related_codes"] = dedupe_iter(extras)
 
@@ -330,7 +417,7 @@ class VitraAdapter(BrandAdapter):
                             confidence=0.96 if mrp != MISSING and cat != MISSING else 0.7,
                         )
                         if mrp == MISSING:
-                            pr.issues.append("Missing MRP for this finish")
+                            pr.issues.append(price_issue or "Missing MRP for this finish")
                         if cat == MISSING:
                             pr.issues.append("Category not derivable from sheet + detail")
                         if not best:
@@ -375,6 +462,16 @@ class VitraAdapter(BrandAdapter):
                         f"Conflict: SKU {sku!r} appears {len(group)}x in the supplier file "
                         f"with different colour/price combinations {sorted(distinct_payloads)} — needs manual review"
                     )
+
+        if self.only_sheets is not None and not rows:
+            requested = ", ".join(sorted(self.only_sheets)) or "(none)"
+            report.warnings.append(f"No product rows parsed from requested sheet(s): {requested}")
+        if price_source_issues:
+            preview = "; ".join(price_source_issues[:5])
+            remainder = "" if len(price_source_issues) <= 5 else f" (+{len(price_source_issues) - 5} more)"
+            report.warnings.append(
+                f"{len(price_source_issues)} CSW MRP source value(s) need review: {preview}{remainder}"
+            )
 
         report.parsed_rows = len(rows)
         return rows, report

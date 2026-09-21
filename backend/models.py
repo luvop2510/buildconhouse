@@ -534,6 +534,12 @@ class QuotationLineItem(BaseModel):
     discount_pct: Optional[float] = Field(default=None, ge=0, le=100)  # None → inherit from category/project
     notes: Optional[str] = None
     description: Optional[str] = None      # inline override of product description
+    # A catalog item that was inserted automatically with a parent line, for
+    # example the seat cover selected with a VitrA WC.  These links are saved
+    # in the quotation snapshot so quantity, delete, duplicate and room-move
+    # actions remain coherent after a draft is reopened.
+    included_for_line_id: Optional[str] = None
+    included_qty_per_parent: Optional[float] = Field(default=None, gt=0)
     sort_order: int = 0
     # Tiles document fields (Ground Floor → Tiles Selection / Quotation).
     # On tiles docs `room` doubles as the free-text AREA cell, `unit_price` is

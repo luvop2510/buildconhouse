@@ -42,7 +42,28 @@ type CatalogFamily = {
   family_key?: string | null; family_name?: string | null; brand_id: string; category_id: string;
   min_price?: number; max_price?: number; sample_image?: string | null;
   variants: (ProductVariant & { colour?: string | null; variant_label?: string | null })[];
+  configuration_options?: Product["configuration_options"];
 };
+
+type DefaultIncludedPart = ConcealedPart & {
+  role?: string;
+};
+
+/**
+ * Catalog imports keep automatically supplied components in ``specs`` so
+ * they travel with each SKU/colour variant without requiring a second query.
+ * Treat malformed legacy data as absent rather than creating a zero-priced
+ * quotation line.
+ */
+function defaultIncludedParts(product: Product, variant?: ProductVariant): DefaultIncludedPart[] {
+  const raw = variant?.specs?.default_included_parts ?? product.specs?.default_included_parts;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((part): part is DefaultIncludedPart => (
+    !!part && typeof part === "object" && typeof part.sku === "string" && !!part.sku.trim()
+      && typeof part.product_id === "string" && !!part.product_id
+      && typeof part.unit_price === "number" && Number.isFinite(part.unit_price)
+  ));
+}
 
 // The catalog family endpoint deliberately returns one record per product
 // family. Adapt that compact API shape at the boundary so every picker, modal
@@ -75,6 +96,7 @@ function familyCardToProduct(family: CatalogFamily): Product | null {
     warranty: representative.warranty ?? null,
     specs: representative.specs ?? null,
     description: representative.description ?? null,
+    configuration_options: family.configuration_options ?? [],
     variants,
   };
 }
@@ -667,6 +689,8 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
           discount_pct: it.discount_pct ?? null,
           description: it.description, notes: it.notes,
           finish: it.finish ?? null, family_key: it.family_key ?? null,
+          included_for_line_id: it.included_for_line_id ?? null,
+          included_qty_per_parent: it.included_qty_per_parent ?? null,
         })),
         rooms: doc.rooms && doc.rooms.length ? doc.rooms : [DEFAULT_ROOMS[0]],
         collapsedRooms: collapsed,
@@ -888,29 +912,17 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
       const selectedProductId = variant?.id ?? p.id;
       const sku = variant?.sku ?? p.sku;
       const idx = cur.lines.findIndex((l) => l.sku === sku && l.room === cur.activeRoom);
-      if (idx >= 0) {
-        const next = [...cur.lines]; next[idx] = { ...next[idx], qty: next[idx].qty + 1 };
-        return { ...cur, lines: next };
-      }
       const variantColour = variant?.colour ?? variant?.color;
       const finish = variant?.finish ?? variantColour ?? variant?.size ?? p.finish ?? p.colour ?? null;
       const displayName = variant && (variant.finish || variantColour || variant.size)
         ? `${p.name} · ${variant.finish || variantColour || variant.size}`
         : p.name;
-      const concealed: ConcealedPart | null | undefined = variant?.concealed_part ?? p.concealed_part;
-      const hasConcealed = !!concealed?.sku && cur.lines.some((line) => line.sku === concealed.sku && line.room === cur.activeRoom);
-      const concealedLines = concealed?.product_id && !hasConcealed ? [{
-        id: `${concealed.product_id}-${Date.now()}-concealed`, product_id: concealed.product_id, sku: concealed.sku,
-        name: concealed.name || `Concealed part · ${concealed.sku}`, image: concealed.image || null,
-        category_id: p.category_id, room: cur.activeRoom, qty: concealed.qty || 1,
-        unit_price: concealed.unit_price || 0, mrp: concealed.mrp || concealed.unit_price || 0,
-        discount_pct: null, finish: null, family_key: null,
-      }] : [];
-      return {
-        ...cur,
-        lines: [...cur.lines, {
-          id: `${selectedProductId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          // A family card is merely a representative.  The quotation must
+      const now = Date.now();
+      const parent: Line = idx >= 0
+        ? { ...cur.lines[idx], qty: cur.lines[idx].qty + 1 }
+        : {
+          id: `${selectedProductId}-${now}-${Math.random().toString(36).slice(2, 6)}`,
+          // A family card is merely a representative. The quotation must
           // retain the SKU the salesperson actually chose so persistence and
           // PDF canonicalisation resolve that exact variant's media.
           product_id: selectedProductId, sku,
@@ -919,7 +931,39 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
           qty: 1, unit_price: variant?.price ?? p.price, mrp: variant?.mrp ?? p.mrp,
           discount_pct: null, finish,
           family_key: p.family_key ?? null,
-        }, ...concealedLines],
+        };
+      const baseLines = idx >= 0
+        ? cur.lines.map((line, lineIdx) => lineIdx === idx ? parent : line)
+        : [...cur.lines, parent];
+
+      // Concealed components retain their existing room-level de-duplication
+      // behaviour. Default-included components such as seat covers instead
+      // stay linked to the selected product line, so every WC quantity has
+      // its own cover quantity and that relationship survives autosave.
+      const concealed: ConcealedPart | null | undefined = variant?.concealed_part ?? p.concealed_part;
+      const hasConcealed = !!concealed?.sku && baseLines.some((line) => line.sku === concealed.sku && line.room === cur.activeRoom);
+      const concealedLines: Line[] = concealed?.product_id && !hasConcealed ? [{
+        id: `${concealed.product_id}-${now}-concealed`, product_id: concealed.product_id, sku: concealed.sku,
+        name: concealed.name || `Concealed part · ${concealed.sku}`, image: concealed.image || null,
+        category_id: p.category_id, room: cur.activeRoom, qty: concealed.qty || 1,
+        unit_price: concealed.unit_price || 0, mrp: concealed.mrp || concealed.unit_price || 0,
+        discount_pct: null, finish: null, family_key: null,
+      }] : [];
+      const includedLines: Line[] = defaultIncludedParts(p, variant).map((part, partIndex) => ({
+        id: `${part.product_id}-${now}-included-${partIndex}`,
+        product_id: part.product_id!, sku: part.sku.trim(),
+        name: part.name || `Included part · ${part.sku}`, image: part.image || null,
+        category_id: p.category_id, room: cur.activeRoom,
+        qty: parent.qty * (part.qty || 1), unit_price: part.unit_price!, mrp: part.mrp ?? part.unit_price!,
+        discount_pct: null, finish: null, family_key: null,
+        included_for_line_id: parent.id, included_qty_per_parent: part.qty || 1,
+      }));
+      // A reselect must replace the parent-linked components before appending
+      // updated quantities; it must never create duplicate covers.
+      const retained = baseLines.filter((line) => line.included_for_line_id !== parent.id);
+      return {
+        ...cur,
+        lines: [...retained, ...includedLines, ...concealedLines],
       };
     });
   }, [history]);
@@ -942,14 +986,36 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
 
   const updateLine = useCallback((id: string, patch: Partial<Line>, coalesceKey?: string) =>
     history.apply(
-      (cur) => ({ ...cur, lines: cur.lines.map((l) => (l.id === id ? { ...l, ...patch } : l)) }),
+      (cur) => {
+        const target = cur.lines.find((line) => line.id === id);
+        if (!target) return cur;
+        // Included catalog parts are controlled by their parent selection.
+        // Letting an individual cover be edited would silently break the
+        // supplier-required WC + cover relationship.
+        if (target.included_for_line_id) return cur;
+        const nextParent = { ...target, ...patch };
+        return {
+          ...cur,
+          lines: cur.lines.map((line) => {
+            if (line.id === id) return nextParent;
+            if (line.included_for_line_id === id && patch.qty != null) {
+              return { ...line, qty: nextParent.qty * (line.included_qty_per_parent || 1) };
+            }
+            return line;
+          }),
+        };
+      },
       { coalesceKey: coalesceKey ? `${coalesceKey}:${id}` : undefined },
     ),
   [history]);
 
   const removeLine = useCallback((id: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    history.apply((cur) => ({ ...cur, lines: cur.lines.filter((l) => l.id !== id) }));
+    history.apply((cur) => {
+      const target = cur.lines.find((line) => line.id === id);
+      if (!target || target.included_for_line_id) return cur;
+      return { ...cur, lines: cur.lines.filter((line) => line.id !== id && line.included_for_line_id !== id) };
+    });
   }, [history]);
 
   const duplicateLine = useCallback((id: string) => {
@@ -957,8 +1023,14 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
     history.apply((cur) => {
       const idx = cur.lines.findIndex((l) => l.id === id);
       if (idx < 0) return cur;
-      const copy = { ...cur.lines[idx], id: `${cur.lines[idx].product_id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` };
+      const original = cur.lines[idx];
+      if (original.included_for_line_id) return cur;
+      const copy = { ...original, id: `${original.product_id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, included_for_line_id: null, included_qty_per_parent: null };
+      const includedCopies = cur.lines
+        .filter((line) => line.included_for_line_id === original.id)
+        .map((line, itemIdx) => ({ ...line, id: `${line.product_id}-${Date.now()}-included-copy-${itemIdx}`, included_for_line_id: copy.id }));
       const next = [...cur.lines]; next.splice(idx + 1, 0, copy);
+      next.splice(idx + 2, 0, ...includedCopies);
       return { ...cur, lines: next };
     });
   }, [history]);
@@ -967,9 +1039,13 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
     history.apply((cur) => {
       const l = cur.lines.find((x) => x.id === id);
       if (!l) return cur;
-      const idx = cur.rooms.indexOf(l.room || "");
+      const rootId = l.included_for_line_id || l.id;
+      const root = cur.lines.find((line) => line.id === rootId) || l;
+      const idx = cur.rooms.indexOf(root.room || "");
       const nextRoom = cur.rooms[(idx + 1) % cur.rooms.length];
-      return { ...cur, lines: cur.lines.map((x) => (x.id === id ? { ...x, room: nextRoom } : x)) };
+      return { ...cur, lines: cur.lines.map((line) => (
+        line.id === rootId || line.included_for_line_id === rootId ? { ...line, room: nextRoom } : line
+      )) };
     });
     Haptics.selectionAsync();
   }, [history]);
@@ -1002,9 +1078,14 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
     history.apply((cur) => {
       let copyName = `${name} (copy)`; let i = 2;
       while (cur.rooms.includes(copyName)) copyName = `${name} (copy ${i++})`;
-      const clones = cur.lines
-        .filter((l) => l.room === name)
-        .map((l) => ({ ...l, id: `${l.product_id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, room: copyName }));
+      const sourceLines = cur.lines.filter((line) => line.room === name);
+      const idMap = new Map(sourceLines.map((line, lineIdx) => [line.id, `${line.product_id}-${Date.now()}-room-copy-${lineIdx}`]));
+      const clones = sourceLines.map((line) => ({
+        ...line,
+        id: idMap.get(line.id)!,
+        room: copyName,
+        included_for_line_id: line.included_for_line_id ? idMap.get(line.included_for_line_id) ?? null : null,
+      }));
       return { ...cur, rooms: [...cur.rooms, copyName], lines: [...cur.lines, ...clones], activeRoom: copyName };
     });
   }, [history]);
@@ -1083,12 +1164,17 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
         if (row.kind === "room-header") curRoom = row.roomName;
         else newLines.push({ ...row.line, room: curRoom });
       }
+      const roomByParent = new Map(newLines.map((line) => [line.id, line.room]));
+      for (const line of newLines) {
+        if (line.included_for_line_id) line.room = roomByParent.get(line.included_for_line_id) || line.room;
+      }
       return { ...cur, lines: newLines };
     });
   }, [history]);
 
   // Swap alternates
   const openSwap = useCallback(async (l: Line) => {
+    if (l.included_for_line_id) return;
     setSwapSheet({ line_id: l.id, product_id: l.product_id });
     setSwapLoading(true); setSwapItems([]);
     try {
@@ -1116,7 +1202,7 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
         : target.name;
       const next = [...c.lines];
       const selectedProductId = variant?.id ?? target.id;
-      next[idx] = {
+      const parent = {
         ...src,
         product_id: selectedProductId,
         sku: variant?.sku ?? target.sku,
@@ -1130,7 +1216,20 @@ export function BuilderProvider({ onFinalize, initialProductId, children }: {
         finish,
         family_key: target.family_key ?? src.family_key ?? null,
       };
-      return { ...c, lines: next };
+      next[idx] = parent;
+      // A swap is another product selection.  Replace its linked automatic
+      // components so a WC never retains the prior model's seat cover.
+      const retained = next.filter((line) => line.included_for_line_id !== parent.id);
+      const included = defaultIncludedParts(target, variant).map((part, partIndex) => ({
+        id: `${part.product_id}-${Date.now()}-included-swap-${partIndex}`,
+        product_id: part.product_id!, sku: part.sku.trim(),
+        name: part.name || `Included part · ${part.sku}`, image: part.image || null,
+        category_id: target.category_id, room: parent.room,
+        qty: parent.qty * (part.qty || 1), unit_price: part.unit_price!, mrp: part.mrp ?? part.unit_price!,
+        discount_pct: null, finish: null, family_key: null,
+        included_for_line_id: parent.id, included_qty_per_parent: part.qty || 1,
+      }));
+      return { ...c, lines: [...retained, ...included] };
     });
     setSwapSheet(null); setSwapItems([]);
   }, [history, swapSheet]);

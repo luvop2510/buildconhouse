@@ -515,6 +515,39 @@ def _hydrate_variants(product: dict, snapshot: CatalogSnapshot) -> None:
         product["variants"] = variants
 
 
+def _configuration_options(product: dict, snapshot: CatalogSnapshot) -> list[dict]:
+    """Return same-finish WC configuration choices, never changing colour."""
+    specs = product.get("specs") or {}
+    group = specs.get("configuration_group") if isinstance(specs, dict) else None
+    if not isinstance(group, str) or not group:
+        return []
+    finish = str(product.get("finish") or product.get("colour") or "").strip().casefold()
+    options: list[dict] = []
+    seen_labels: set[str] = set()
+    for candidate in snapshot.products:
+        candidate_specs = candidate.get("specs") or {}
+        if (
+            not isinstance(candidate_specs, dict)
+            or candidate_specs.get("configuration_group") != group
+            or candidate.get("floor_id") != product.get("floor_id")
+            or candidate.get("brand_id") != product.get("brand_id")
+            or candidate.get("category_id") != product.get("category_id")
+            or str(candidate.get("finish") or candidate.get("colour") or "").strip().casefold() != finish
+        ):
+            continue
+        label = str(candidate_specs.get("configuration_label") or candidate.get("name") or candidate.get("sku"))
+        if label in seen_labels:
+            continue
+        seen_labels.add(label)
+        options.append({
+            "id": candidate["id"], "sku": candidate.get("sku"), "label": label,
+            "price": candidate.get("price"), "mrp": candidate.get("mrp"),
+            "finish": candidate.get("finish") or candidate.get("colour"),
+            "image": _primary_product_image(snapshot, candidate["id"], candidate.get("family_key")),
+        })
+    return sorted(options, key=lambda option: (option["label"], option.get("sku") or "")) if len(options) > 1 else []
+
+
 def _family_variants(product: dict, snapshot: CatalogSnapshot) -> list[dict]:
     """Complete, same-floor family membership for size-aware clients.
 
@@ -537,6 +570,7 @@ def hydrate_product(product: dict, snapshot: CatalogSnapshot) -> dict:
     _apply_media(out, snapshot)
     _hydrate_concealed_part(out, snapshot)
     _hydrate_variants(out, snapshot)
+    out["configuration_options"] = _configuration_options(product, snapshot)
     out.update(_size_metadata(product, snapshot))
     out["family_variants"] = _family_variants(product, snapshot)
     return out
@@ -856,6 +890,7 @@ async def list_family_groups(
             "product_count": 0,
             "sample_image": _primary_product_image(snapshot, product["id"]),
             "sample_image_quality": product.get("image_quality"),
+            "configuration_options": _configuration_options(product, snapshot),
             "variants": [],
         })
         price = float(product.get("price") or 0)

@@ -14,6 +14,7 @@ export type ProductVariant = {
 };
 
 export type ConcealedPart = { sku: string; product_id?: string | null; name?: string | null; unit_price?: number | null; mrp?: number | null; image?: string | null; qty?: number };
+export type ProductConfigurationOption = { id: string; sku: string; label: string; price: number; mrp: number; finish?: string | null; image?: string | null };
 
 export type Product = {
   id: string; name: string; sku: string; price: number; mrp: number;
@@ -52,6 +53,8 @@ export type Product = {
   my_usage_count?: number;
   is_custom?: boolean;
   concealed_part?: ConcealedPart | null;
+  /** Same-finish WC choices such as With bidet / Without bidet. */
+  configuration_options?: ProductConfigurationOption[];
 };
 
 export type Brand = { id: string; name: string; slug?: string; product_count?: number };
@@ -98,6 +101,10 @@ export type Line = {
   description?: string | null; notes?: string | null;
   finish?: string | null;
   family_key?: string | null;
+  /** Catalog-controlled line that is automatically included with a parent,
+   * such as a WC seat cover.  Persisted with the quotation snapshot. */
+  included_for_line_id?: string | null;
+  included_qty_per_parent?: number | null;
 };
 
 export type SaveState = "idle" | "saving" | "saved" | "error";
