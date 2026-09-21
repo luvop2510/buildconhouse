@@ -36,6 +36,7 @@ function LineRowImpl({
   const [cancelling, setCancelling] = useState(false);
   const [hovered, setHovered] = useState(false);
   const l = line;
+  const isIncluded = !!l.included_for_line_id;
   // Native number inputs emit an empty string while a salesperson replaces a
   // value. Do not turn that transient state into a persisted zero: it makes a
   // normal edit look like the line has vanished and can autosave bad totals.
@@ -91,7 +92,7 @@ function LineRowImpl({
       ]}
     >
       <Pressable
-        onLongPress={drag}
+        onLongPress={isIncluded ? undefined : drag}
         delayLongPress={160}
         hitSlop={6}
         style={[styles.dragHandle, grabCursor]}
@@ -110,6 +111,7 @@ function LineRowImpl({
         <View style={styles.heading}>
           <View style={styles.nameGroup}>
             <Text style={styles.name} numberOfLines={isPhone ? 2 : 1}>{l.name}</Text>
+            {isIncluded ? <Badge tone="success" label="Included" /> : null}
             {l.finish ? <FinishSwatch finish={l.finish} size={10} /> : null}
             {badge ? <Badge tone={badge.tone} label={badge.label} /> : null}
           </View>
@@ -118,54 +120,29 @@ function LineRowImpl({
         <Text style={type.caption} numberOfLines={1}>{l.sku}</Text>
         {l.description ? <Text style={type.caption} numberOfLines={2}>{l.description}</Text> : null}
         <View style={styles.controls}>
-          <View style={styles.mini}>
-            <Text style={styles.miniLabel}>QTY</Text>
-            <TextInput
-              testID={`qty-${l.id}`}
-              value={qtyDraft}
-              keyboardType="number-pad"
-              onChangeText={setQtyDraft}
-              onBlur={commitQty}
-              onSubmitEditing={commitQty}
-              style={styles.miniVal}
-              selectTextOnFocus
-            />
-          </View>
-          <View style={styles.mini}>
-            <Text style={styles.miniLabel}>RATE</Text>
-            <TextInput
-              testID={`rate-${l.id}`}
-              value={rateDraft}
-              keyboardType="decimal-pad"
-              onChangeText={setRateDraft}
-              onBlur={commitRate}
-              onSubmitEditing={commitRate}
-              style={styles.miniVal}
-              selectTextOnFocus
-            />
-          </View>
-          <Pressable
-            testID={`disc-${l.id}`}
-            onPress={() => b.setDiscountSheet({ kind: "line", line_id: l.id })}
-            style={[styles.mini, { justifyContent: "center", flexDirection: "row", alignItems: "center", gap: 4 }]}
-          >
-            <Text style={styles.miniLabel}>DISC</Text>
-            <Text style={styles.miniVal}>{eff.pct}%</Text>
-            {l.discount_pct == null && eff.source !== "none" ? <Feather name="link" size={9} color={colors.onSurfaceMuted} /> : null}
-          </Pressable>
-
-          <Pressable
-            testID={`line-actions-${l.id}`}
-            accessibilityLabel={actionsOpen ? "Hide product actions" : "Show product actions"}
-            accessibilityState={{ expanded: actionsOpen }}
-            onPress={() => setActionsOpen((open) => !open)}
-            style={({ pressed }) => [styles.icon, actionsOpen && styles.iconSelected, pressed && styles.iconPressed]}
-          >
-            <Feather name={actionsOpen ? "chevron-up" : "more-horizontal"} size={18} color={actionsOpen ? ds.brassDeep : colors.onSurfaceMuted} />
-          </Pressable>
-          <RemoveLineButton line={l} onCancel={() => setCancelOpen(true)} />
+          {isIncluded ? (
+            <Text style={styles.includedHint}>Quantity follows its selected product</Text>
+          ) : <>
+            <View style={styles.mini}>
+              <Text style={styles.miniLabel}>QTY</Text>
+              <TextInput testID={`qty-${l.id}`} value={qtyDraft} keyboardType="number-pad" onChangeText={setQtyDraft} onBlur={commitQty} onSubmitEditing={commitQty} style={styles.miniVal} selectTextOnFocus />
+            </View>
+            <View style={styles.mini}>
+              <Text style={styles.miniLabel}>RATE</Text>
+              <TextInput testID={`rate-${l.id}`} value={rateDraft} keyboardType="decimal-pad" onChangeText={setRateDraft} onBlur={commitRate} onSubmitEditing={commitRate} style={styles.miniVal} selectTextOnFocus />
+            </View>
+            <Pressable testID={`disc-${l.id}`} onPress={() => b.setDiscountSheet({ kind: "line", line_id: l.id })} style={[styles.mini, { justifyContent: "center", flexDirection: "row", alignItems: "center", gap: 4 }]}>
+              <Text style={styles.miniLabel}>DISC</Text>
+              <Text style={styles.miniVal}>{eff.pct}%</Text>
+              {l.discount_pct == null && eff.source !== "none" ? <Feather name="link" size={9} color={colors.onSurfaceMuted} /> : null}
+            </Pressable>
+            <Pressable testID={`line-actions-${l.id}`} accessibilityLabel={actionsOpen ? "Hide product actions" : "Show product actions"} accessibilityState={{ expanded: actionsOpen }} onPress={() => setActionsOpen((open) => !open)} style={({ pressed }) => [styles.icon, actionsOpen && styles.iconSelected, pressed && styles.iconPressed]}>
+              <Feather name={actionsOpen ? "chevron-up" : "more-horizontal"} size={18} color={actionsOpen ? ds.brassDeep : colors.onSurfaceMuted} />
+            </Pressable>
+            <RemoveLineButton line={l} onCancel={() => setCancelOpen(true)} />
+          </>}
         </View>
-        {actionsOpen ? <View style={styles.secondaryActions}><LineActions line={l} /></View> : null}
+        {actionsOpen && !isIncluded ? <View style={styles.secondaryActions}><LineActions line={l} /></View> : null}
       </View>
       <ConfirmDialog
         visible={cancelOpen}
@@ -257,6 +234,7 @@ const styles = StyleSheet.create({
   miniLabel: { fontSize: 9, fontFamily: font.semibold, color: colors.onSurfaceMuted, fontWeight: "600", letterSpacing: 0.8 },
   miniVal: { fontSize: 13, fontFamily: font.medium, fontWeight: "500", color: colors.onSurface, padding: 0, minWidth: 40, fontVariant: ["tabular-nums"] },
   controls: { flexDirection: "row", gap: 6, marginTop: 2, flexWrap: "wrap" },
+  includedHint: { alignSelf: "center", fontSize: 11, color: colors.onSurfaceMuted, fontStyle: "italic" },
   icon: { width: 40, height: 40, borderRadius: 9, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceTertiary },
   iconSelected: { backgroundColor: ds.brassTint, borderWidth: StyleSheet.hairlineWidth, borderColor: ds.brassLine },
   iconPressed: { opacity: 0.72, transform: [{ scale: 0.96 }] },

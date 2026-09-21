@@ -7,6 +7,11 @@ export type ConcealedPart = {
   image?: string | null; qty?: number | null;
 };
 
+export type ProductConfigurationOption = {
+  id: string; sku: string; label: string; price: number; mrp: number;
+  finish?: string | null; image?: string | null;
+};
+
 export type ProductVariant = {
   sku: string; name?: string | null; finish?: string | null; finish_code?: string | null; size?: string | null;
   /** `colour` is the catalog API spelling; `color` remains for old clients. */
@@ -18,6 +23,7 @@ export type ProductVariant = {
   // lets a finish/colour chip switch the main image, not just the price.
   id?: string | null; image?: string | null;
   concealed_part?: ConcealedPart | null;
+  configuration_options?: ProductConfigurationOption[];
 };
 
 export type Product = {
@@ -58,6 +64,8 @@ export type Product = {
   is_custom?: boolean;
   /** Persisted once on a product and expanded whenever this SKU is quoted. */
   concealed_part?: ConcealedPart | null;
+  /** Same-finish WC choices such as With bidet / Without bidet. */
+  configuration_options?: ProductConfigurationOption[];
 };
 
 export type Brand = { id: string; name: string; slug?: string; product_count?: number };
@@ -107,6 +115,9 @@ export type Line = {
   godown_stock_id?: string | null; godown_allocation_id?: string | null;
   godown_source_customer_name?: string | null; godown_source_purchased_at?: string | null;
   godown_transferred_at?: string | null; godown_allocated_at?: string | null;
+  /** Catalog-controlled line automatically supplied with a selected parent. */
+  included_for_line_id?: string | null;
+  included_qty_per_parent?: number | null;
 };
 
 export type SaveState = "idle" | "saving" | "saved" | "error";

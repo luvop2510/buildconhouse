@@ -35,7 +35,17 @@ function productAsVariant(product: Product): ProductVariant {
     warranty: product.warranty ?? null, specs: product.specs ?? null,
     description: product.description ?? null,
     image: product.hero_image_url ?? productImageList(product)[0] ?? null,
+    concealed_part: product.concealed_part ?? null,
+    configuration_options: product.configuration_options ?? [],
   };
+}
+
+function automaticParts(product: Product, variant: ProductVariant | null): { name?: string | null; sku: string }[] {
+  const raw = variant?.specs?.default_included_parts ?? product.specs?.default_included_parts;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((part): part is { name?: string | null; sku: string } => (
+    !!part && typeof part === "object" && typeof part.sku === "string" && !!part.sku.trim()
+  ));
 }
 
 export function ProductModal() {
@@ -88,6 +98,8 @@ export function ProductModal() {
       warranty: selectedVariant.warranty ?? product.warranty,
       specs: selectedVariant.specs ?? product.specs,
       description: selectedVariant.description ?? product.description,
+      concealed_part: selectedVariant.concealed_part ?? product.concealed_part,
+      configuration_options: selectedVariant.configuration_options ?? product.configuration_options,
     };
   }, [product, selectedVariant]);
 
@@ -141,6 +153,19 @@ export function ProductModal() {
   const activeImage = heroImages[Math.min(activeImageIdx, Math.max(0, heroImages.length - 1))];
 
   if (!product || !selectedProduct) return null;
+
+  const includedParts = automaticParts(selectedProduct, selectedVariant);
+  const concealedPart = selectedVariant?.concealed_part ?? selectedProduct.concealed_part;
+  const configurationOptions = selectedProduct.configuration_options || [];
+
+  const chooseConfiguration = async (productId: string) => {
+    if (productId === selectedProduct.id) return;
+    try {
+      b.openProductModal(await api.get<Product>(`/products/${productId}`));
+    } catch {
+      toast.error("Could not load this product configuration");
+    }
+  };
 
   const commit = (closeAfter: boolean) => {
     const v = selectedVariant ?? productAsVariant(product);
@@ -267,6 +292,33 @@ export function ProductModal() {
                   </View>
                 ) : null}
 
+                {configurationOptions.length > 1 ? (
+                  <View style={{ gap: 6 }} testID="pm-configuration-options">
+                    <Text style={styles.sectionLabel}>Configuration</Text>
+                    <View style={styles.variantRow}>
+                      {configurationOptions.map((option) => {
+                        const active = option.id === selectedProduct.id;
+                        return (
+                          <Pressable
+                            key={option.id}
+                            disabled={active}
+                            onPress={() => chooseConfiguration(option.id)}
+                            style={[styles.variantChip, active && styles.variantChipActive]}
+                            testID={`pm-configuration-${option.sku}`}
+                          >
+                            <Text style={[styles.variantLabel, active && { color: colors.onBrand }]}>{option.label}</Text>
+                            {option.price !== selectedProduct.price ? (
+                              <Text style={[styles.variantDelta, active && { color: colors.onBrand }]}>
+                                {option.price > selectedProduct.price ? "+" : ""}{money(option.price - selectedProduct.price)}
+                              </Text>
+                            ) : null}
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </View>
+                ) : null}
+
                 <View style={styles.specGrid}>
                   {[
                     ["Category", (selectedProduct as any).category_name || "—"],
@@ -287,6 +339,23 @@ export function ProductModal() {
                   <View style={{ gap: 4 }}>
                     <Text style={styles.sectionLabel}>Description</Text>
                     <Text style={styles.desc}>{selectedProduct.description}</Text>
+                  </View>
+                ) : null}
+
+                {(includedParts.length > 0 || concealedPart?.sku) ? (
+                  <View style={styles.autoParts} testID="pm-automatic-parts">
+                    <Text style={styles.sectionLabel}>Added automatically</Text>
+                    {includedParts.map((part) => (
+                      <Text key={part.sku} style={styles.autoPartText}>
+                        {part.name || `Seat cover · ${part.sku}`}
+                      </Text>
+                    ))}
+                    {concealedPart?.sku ? (
+                      <Text style={styles.autoPartText}>
+                        {concealedPart.name || `Concealed part · ${concealedPart.sku}`}
+                      </Text>
+                    ) : null}
+                    <Text style={styles.autoPartHint}>Saved with this quotation when you add the product.</Text>
                   </View>
                 ) : null}
 
@@ -556,6 +625,9 @@ const styles = StyleSheet.create({
   specVal: { fontSize: 12, fontWeight: "600", color: colors.onSurface },
 
   desc: { fontSize: 12, lineHeight: 18, color: colors.onSurfaceSecondary },
+  autoParts: { gap: 4, padding: 10, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary },
+  autoPartText: { fontSize: 12, fontWeight: "600", color: colors.onSurface },
+  autoPartHint: { fontSize: 11, color: colors.onSurfaceSecondary },
 
   qtyRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
   qtyStepper: {

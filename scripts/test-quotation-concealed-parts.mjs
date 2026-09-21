@@ -16,4 +16,18 @@ assert.equal(twice.length, 2);
 assert.deepEqual(twice.map((line) => [line.product_id, line.qty]), [["trim", 2], ["body", 2]]);
 const inOtherRoom = addProductAndConcealedPart(twice, product, undefined, "Guest Bath", id, null);
 assert.equal(inOtherRoom.length, 4);
+
+const cswWc = {
+  id: "memoria-wc", sku: "5885B403H0101", name: "Memoria RIM-EX WC", price: 100180, mrp: 100180,
+  category_id: "water-closets", images: [], specs: { default_included_parts: [{
+    sku: "106-003H209", product_id: "memoria-cover", name: "Memoria seat cover", unit_price: 30430, mrp: 30430, qty: 1,
+  }] },
+};
+const cswOnce = addProductAndConcealedPart([], cswWc, undefined, "Master Bath", id, null);
+assert.deepEqual(cswOnce.map((line) => [line.product_id, line.qty, line.included_for_line_id != null]), [
+  ["memoria-wc", 1, false], ["memoria-cover", 1, true],
+]);
+const cswTwice = addProductAndConcealedPart(cswOnce, cswWc, undefined, "Master Bath", id, null);
+assert.equal(cswTwice.length, 2);
+assert.deepEqual(cswTwice.map((line) => [line.product_id, line.qty]), [["memoria-wc", 2], ["memoria-cover", 2]]);
 console.log("quotation concealed-part contract passed");

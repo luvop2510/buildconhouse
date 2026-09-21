@@ -31,7 +31,7 @@ import { downloadApiFile } from "@/src/utils/downloadFile";
 import { computeTotals, computeLineBreakdown, type LineBreakdown } from "../helpers/pricing";
 import { enqueueQuotationPersist } from "../helpers/autosave";
 import { productImageList } from "../helpers/media";
-import { addProductAndConcealedPart } from "../helpers/concealedParts";
+import { addProductAndConcealedPart, syncDefaultIncludedParts } from "../helpers/concealedParts";
 import {
   Brand, BuilderRow, BuilderState, Category, Customer, DEFAULT_ROOMS, DescSheetState, DiscountSheetState,
   INITIAL_BUILDER_STATE, Line, PickerTab, Product, ProductVariant,
@@ -45,6 +45,7 @@ type CatalogFamily = {
   family_key?: string | null; family_name?: string | null; brand_id: string; category_id: string;
   min_price?: number; max_price?: number; sample_image?: string | null;
   variants: (ProductVariant & { colour?: string | null; variant_label?: string | null })[];
+  configuration_options?: Product["configuration_options"];
 };
 
 // The catalog family endpoint deliberately returns one record per product
@@ -78,6 +79,7 @@ function familyCardToProduct(family: CatalogFamily): Product | null {
     warranty: representative.warranty ?? null,
     specs: representative.specs ?? null,
     description: representative.description ?? null,
+    configuration_options: family.configuration_options ?? [],
     variants,
   };
 }
@@ -1086,14 +1088,32 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
 
   const updateLine = useCallback((id: string, patch: Partial<Line>, coalesceKey?: string) =>
     history.apply(
-      (cur) => ({ ...cur, lines: cur.lines.map((l) => (l.id === id ? { ...l, ...patch } : l)) }),
+      (cur) => {
+        const parent = cur.lines.find((line) => line.id === id);
+        if (!parent || parent.included_for_line_id) return cur;
+        const nextParent = { ...parent, ...patch };
+        return {
+          ...cur,
+          lines: cur.lines.map((line) => {
+            if (line.id === id) return nextParent;
+            if (line.included_for_line_id === id && patch.qty != null) {
+              return { ...line, qty: nextParent.qty * (line.included_qty_per_parent || 1) };
+            }
+            return line;
+          }),
+        };
+      },
       { coalesceKey: coalesceKey ? `${coalesceKey}:${id}` : undefined },
     ),
   [history]);
 
   const removeLine = useCallback((id: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    history.apply((cur) => ({ ...cur, lines: cur.lines.filter((l) => l.id !== id) }));
+    history.apply((cur) => {
+      const target = cur.lines.find((line) => line.id === id);
+      if (!target || target.included_for_line_id) return cur;
+      return { ...cur, lines: cur.lines.filter((line) => line.id !== id && line.included_for_line_id !== id) };
+    });
   }, [history]);
 
   // Cancellation is deliberately distinct from a normal draft-line delete.
@@ -1101,6 +1121,11 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
   // purchase line and reconciles payment/follow-up records, preserving the
   // reason in its audit trail. A local draft has no downstream records yet.
   const cancelLine = useCallback(async (id: string) => {
+    const target = history.state.lines.find((line) => line.id === id);
+    if (target?.included_for_line_id) {
+      toast.error("This included part follows its selected product");
+      return false;
+    }
     if (!quotationId) {
       removeLine(id);
       toast.success("Product removed from the draft");
@@ -1122,15 +1147,20 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
       toast.error(error?.detail || "Could not cancel this product");
       return false;
     }
-  }, [quotationId, activeFloorId, removeLine, restoreQuotation]);
+  }, [quotationId, activeFloorId, removeLine, restoreQuotation, history.state.lines]);
 
   const duplicateLine = useCallback((id: string) => {
     Haptics.selectionAsync();
     history.apply((cur) => {
       const idx = cur.lines.findIndex((l) => l.id === id);
       if (idx < 0) return cur;
-      const copy = { ...cur.lines[idx], id: `${cur.lines[idx].product_id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` };
+      const original = cur.lines[idx];
+      if (original.included_for_line_id) return cur;
+      const copy = { ...original, id: `${original.product_id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, included_for_line_id: null, included_qty_per_parent: null };
+      const includedCopies = cur.lines.filter((line) => line.included_for_line_id === original.id)
+        .map((line, itemIdx) => ({ ...line, id: `${line.product_id}-${Date.now()}-included-copy-${itemIdx}`, included_for_line_id: copy.id }));
       const next = [...cur.lines]; next.splice(idx + 1, 0, copy);
+      next.splice(idx + 2, 0, ...includedCopies);
       return { ...cur, lines: next };
     });
   }, [history]);
@@ -1139,9 +1169,11 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
     history.apply((cur) => {
       const l = cur.lines.find((x) => x.id === id);
       if (!l) return cur;
-      const idx = cur.rooms.indexOf(l.room || "");
+      const rootId = l.included_for_line_id || l.id;
+      const root = cur.lines.find((line) => line.id === rootId) || l;
+      const idx = cur.rooms.indexOf(root.room || "");
       const nextRoom = cur.rooms[(idx + 1) % cur.rooms.length];
-      return { ...cur, lines: cur.lines.map((x) => (x.id === id ? { ...x, room: nextRoom } : x)) };
+      return { ...cur, lines: cur.lines.map((x) => (x.id === rootId || x.included_for_line_id === rootId ? { ...x, room: nextRoom } : x)) };
     });
     Haptics.selectionAsync();
   }, [history]);
@@ -1188,9 +1220,12 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
     history.apply((cur) => {
       let copyName = `${name} (copy)`; let i = 2;
       while (cur.rooms.includes(copyName)) copyName = `${name} (copy ${i++})`;
-      const clones = cur.lines
-        .filter((l) => l.room === name)
-        .map((l) => ({ ...l, id: `${l.product_id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, room: copyName }));
+      const sourceLines = cur.lines.filter((line) => line.room === name);
+      const idMap = new Map(sourceLines.map((line, index) => [line.id, `${line.product_id}-${Date.now()}-room-copy-${index}`]));
+      const clones = sourceLines.map((line) => ({
+        ...line, id: idMap.get(line.id)!, room: copyName,
+        included_for_line_id: line.included_for_line_id ? idMap.get(line.included_for_line_id) ?? null : null,
+      }));
       return { ...cur, rooms: [...cur.rooms, copyName], lines: [...cur.lines, ...clones], activeRoom: copyName };
     });
   }, [history]);
@@ -1269,12 +1304,17 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
         if (row.kind === "room-header") curRoom = row.roomName;
         else newLines.push({ ...row.line, room: curRoom });
       }
+      const roomByParent = new Map(newLines.map((line) => [line.id, line.room]));
+      for (const line of newLines) {
+        if (line.included_for_line_id) line.room = roomByParent.get(line.included_for_line_id) || line.room;
+      }
       return { ...cur, lines: newLines };
     });
   }, [history]);
 
   // Swap alternates
   const openSwap = useCallback(async (l: Line) => {
+    if (l.included_for_line_id) return;
     setSwapSheet({ line_id: l.id, product_id: l.product_id });
     setSwapLoading(true); setSwapItems([]);
     try {
@@ -1325,7 +1365,15 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
         godown_transferred_at: null,
         godown_allocated_at: null,
       };
-      return { ...c, lines: next };
+      const replacement = next[idx];
+      const selectedForDefaults: ProductVariant | undefined = variant;
+      return {
+        ...c,
+        lines: syncDefaultIncludedParts(
+          next, replacement, target, selectedForDefaults,
+          (productId) => `${productId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        ),
+      };
     });
     setSwapSheet(null); setSwapItems([]);
   }, [history, swapSheet]);

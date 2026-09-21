@@ -455,6 +455,7 @@ def _variant_summary(product: dict, snapshot: CatalogSnapshot) -> dict:
         "material": product.get("material"), "warranty": product.get("warranty"),
         "specs": product.get("specs") or {}, "description": product.get("description"),
         "image": _primary_product_image(snapshot, product["id"], product.get("family_key")),
+        "configuration_options": _configuration_options(product, snapshot),
     }
     # Preserve the compact response shape for ordinary variants. A finish is
     # an independently sellable SKU, though, so expose its rough-in when one
