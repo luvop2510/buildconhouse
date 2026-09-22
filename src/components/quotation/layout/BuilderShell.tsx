@@ -37,6 +37,7 @@ export function BuilderShell({ onBack }: { onBack: () => void }) {
   const [w, setW] = useState(0);
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [quotationCollapsed, setQuotationCollapsed] = useState(false);
+  const [mobileWorkspaceCollapsed, setMobileWorkspaceCollapsed] = useState(false);
 
   useEffect(() => {
     void storage.getItem<boolean>("forge.builder.brandRail.collapsed.v1", false).then((value) => {
@@ -82,7 +83,7 @@ export function BuilderShell({ onBack }: { onBack: () => void }) {
       style={{ flex: 1, backgroundColor: colors.surface }}
       onLayout={onLayout}
     >
-      <BuilderTopbar onBack={onBack} isPhone={isPhone} isDesktop={threePane} />
+      <BuilderTopbar onBack={onBack} isPhone={isPhone} isDesktop={threePane} hidden={isPhone && mobileWorkspaceCollapsed} />
 
       {b.referenceError ? (
         <View style={styles.referenceError} testID="builder-reference-error">
@@ -143,7 +144,12 @@ export function BuilderShell({ onBack }: { onBack: () => void }) {
         </View>
       ) : (
         <View style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-          <QuotationPane compact={compactCatalog} browseInline />
+          <QuotationPane
+            compact={compactCatalog}
+            browseInline
+            mobileWorkspaceCollapsed={mobileWorkspaceCollapsed}
+            onMobileWorkspaceCollapsedChange={setMobileWorkspaceCollapsed}
+          />
         </View>
       )}
 

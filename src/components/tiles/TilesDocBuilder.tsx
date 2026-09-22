@@ -676,7 +676,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null) {
       toast.show("Confirm the quotation before placing the order");
       return;
     }
-    router.push(`/(admin)/quotations/${id}/place-order?floor=${TILES_FLOOR_ID}` as any);
+    router.push(`/(admin)/tiles/place-order/${id}` as any);
   }, [busy, persist, buildItems, router, docType, status]);
 
   const workflowAction = nextTilesAction(docType, status);

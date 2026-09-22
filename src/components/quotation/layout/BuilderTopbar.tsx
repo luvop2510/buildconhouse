@@ -28,9 +28,9 @@ import { useBuilder } from "../context/BuilderContext";
 // sized real estate. Using the container measurement keeps this in sync with
 // the rest of the builder (see BuilderShell.tsx's compactCatalog comment).
 export function BuilderTopbar({
-  onBack, isPhone, isDesktop,
+  onBack, isPhone, isDesktop, hidden = false,
 }: {
-  onBack: () => void; isPhone: boolean; isDesktop: boolean;
+  onBack: () => void; isPhone: boolean; isDesktop: boolean; hidden?: boolean;
 }) {
   const b = useBuilder();
   const { staff } = useAuth();
@@ -43,6 +43,11 @@ export function BuilderTopbar({
   const revs = b.recentQuotations.find((q) => q.id === b.quotationId)?.revision_count ?? 0;
   const status = b.recentQuotations.find((q) => q.id === b.quotationId)?.status || "draft";
   const meta = statusMeta[status] || statusMeta.draft;
+
+  // Product-focus mode owns its lightweight restore control in
+  // QuotationPane. Removing this bar is what returns the phone viewport to
+  // the catalog instead of leaving a decorative title above every product.
+  if (hidden) return null;
 
   return (
     <View style={styles.bar}>

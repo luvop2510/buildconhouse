@@ -425,7 +425,6 @@ function PhoneBar() {
       </Pressable>
     </View>
     <Sheet open={moreOpen} onClose={() => setMoreOpen(false)} title="Workspace">
-      <FloorSwitcher />
       {!notebook ? <Pressable accessibilityRole="button" accessibilityLabel="Search everything"
         onPress={() => { setMoreOpen(false); setTimeout(palette.open, 200); }} style={styles.moreRow}>
         <Feather name="search" size={18} color={color.inkMid} /><Text style={styles.moreLabel}>Search everything</Text>

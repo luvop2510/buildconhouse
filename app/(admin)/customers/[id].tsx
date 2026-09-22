@@ -378,6 +378,25 @@ export default function CustomerDetail() {
     [quotations],
   );
 
+  // A tile document is owned by the Ground Floor editor. Sending it through
+  // the standard quotation routes mounts their first-floor access guard,
+  // which switches the active workspace and then fails to find the document.
+  // Keep both open and Manage on the document's own floor/editor instead.
+  const openQuotation = (quotation: Quotation) => {
+    if (quotation.doc_type === "tiles_selection" || quotation.doc_type === "tiles_quotation") {
+      router.push(`/(admin)/tiles/${quotation.doc_type === "tiles_selection" ? "selection" : "quotation"}?id=${quotation.id}` as any);
+      return;
+    }
+    router.push(`/(admin)/quotations/${quotation.id}` as any);
+  };
+  const manageQuotation = (quotation: Quotation) => {
+    if (quotation.doc_type === "tiles_selection" || quotation.doc_type === "tiles_quotation") {
+      router.push(`/(admin)/tiles/${quotation.doc_type === "tiles_selection" ? "selection" : "quotation"}?id=${quotation.id}` as any);
+      return;
+    }
+    router.push(`/(admin)/quotations/new?quotationId=${encodeURIComponent(quotation.id)}` as any);
+  };
+
   if (loadError) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
@@ -537,7 +556,7 @@ export default function CustomerDetail() {
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel={`Open quotation ${q.number}`}
-                    onPress={() => router.push(`/(admin)/quotations/${q.id}` as any)}
+                    onPress={() => openQuotation(q)}
                     style={({ pressed, hovered }: any) => [styles.quotationOpen, {
                       backgroundColor: pressed ? colors.surfaceTertiary : hovered ? colors.surfaceSubtle : "transparent",
                     }]}
@@ -558,7 +577,7 @@ export default function CustomerDetail() {
                     icon="edit-3"
                     variant="secondary"
                     size="sm"
-                    onPress={() => router.push(`/(admin)/quotations/new?quotationId=${encodeURIComponent(q.id)}` as any)}
+                    onPress={() => manageQuotation(q)}
                     testID={`manage-quotation-products-${q.id}`}
                   />
                 </View>

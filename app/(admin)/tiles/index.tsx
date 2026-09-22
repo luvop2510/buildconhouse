@@ -2,7 +2,7 @@
 // and Quotation, any stage, with two entry points to start a new one. See
 // docs/superpowers/specs/2026-07-27-quotation-tiles-workflow-design.md.
 import { Feather } from "@expo/vector-icons";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -22,6 +22,8 @@ type TilesDoc = {
 export default function QuotationTilesList() {
   useRequireFloorAccess("ground-floor");
   const router = useRouter();
+  const { view } = useLocalSearchParams<{ view?: string }>();
+  const completed = view === "completed";
   const [documents, setDocuments] = useState<Record<TilesDoc["doc_type"], TilesDoc[]> | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -41,8 +43,8 @@ export default function QuotationTilesList() {
     setLoadError(null);
     try {
       const [selections, quotations] = await Promise.all([
-        api.get<TilesDoc[]>("/quotations?doc_type=tiles_selection", { floorId: "ground-floor" }),
-        api.get<TilesDoc[]>("/quotations?doc_type=tiles_quotation", { floorId: "ground-floor" }),
+        api.get<TilesDoc[]>(`/quotations?doc_type=tiles_selection&view=${completed ? "completed" : "pending"}`, { floorId: "ground-floor" }),
+        api.get<TilesDoc[]>(`/quotations?doc_type=tiles_quotation&view=${completed ? "completed" : "pending"}`, { floorId: "ground-floor" }),
       ]);
       if (requestId !== requestIdRef.current) return;
       const newestFirst = (docs: TilesDoc[]) => [...docs].sort(
@@ -55,7 +57,7 @@ export default function QuotationTilesList() {
     } finally {
       if (requestId === requestIdRef.current) setLoading(false);
     }
-  }, []);
+  }, [completed]);
 
   useFocusEffect(useCallback(() => {
     void load();
@@ -71,9 +73,18 @@ export default function QuotationTilesList() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
-      <PageHeader title="Tile quotations" overline="Ground Floor · Tiles" actions={
+      <PageHeader title={completed ? "Completed tile documents" : "Tile quotations"} overline="Ground Floor · Tiles" actions={
         <View style={[styles.headerActions, compact && styles.headerActionsCompact]}>
           <Button
+            label={completed ? "View pending" : "View completed"}
+            variant="secondary"
+            icon={completed ? "clock" : "check-circle"}
+            onPress={() => router.push(`/(admin)/tiles?view=${completed ? "pending" : "completed"}` as any)}
+            testID="tiles-lifecycle-toggle"
+            fullWidth={compact}
+            style={compact ? styles.compactAction : undefined}
+          />
+          {!completed ? <Button
             label="Create new selection"
             variant="ghost"
             icon="grid"
@@ -81,15 +92,15 @@ export default function QuotationTilesList() {
             testID="tiles-create-selection"
             fullWidth={compact}
             style={compact ? styles.compactAction : undefined}
-          />
-          <Button
+          /> : null}
+          {!completed ? <Button
             label="Create new quotation"
             icon="layout"
             onPress={() => router.push("/(admin)/tiles/quotation" as any)}
             testID="tiles-create-quotation"
             fullWidth={compact}
             style={compact ? styles.compactAction : undefined}
-          />
+          /> : null}
         </View>
       } />
 
@@ -115,7 +126,7 @@ export default function QuotationTilesList() {
           <Text style={type.bodyMuted}>Loading quotation tiles…</Text>
         </View>
       ) : docs?.length === 0 ? (
-        <EmptyState icon="layers" title={search ? "No matching documents" : `No ${label} yet`} subtitle={search ? "Try a different customer or document number." : `Create a new ${label.slice(0, -1)} to get started.`} />
+        <EmptyState icon="layers" title={search ? "No matching documents" : `No ${completed ? "completed " : ""}${label} yet`} subtitle={search ? "Try a different customer or document number." : completed ? "Approved and order-placed selections or quotations will appear here." : `Create a new ${label.slice(0, -1)} to get started.`} />
       ) : (
         <FlatList
           data={docs}

@@ -286,8 +286,12 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
           />
         )}
         removeClippedSubviews={Platform.OS !== "web"}
-        initialNumToRender={showCompactFilters ? 8 : 16}
-        maxToRenderPerBatch={showCompactFilters ? 8 : 16}
+        // Keep a full 10–20-card working set ready on compact screens. The
+        // focused mobile workspace removes its non-product chrome, so these
+        // cards are immediately visible/reachable instead of arriving one
+        // short batch at a time.
+        initialNumToRender={showCompactFilters ? 20 : 16}
+        maxToRenderPerBatch={showCompactFilters ? 20 : 16}
         windowSize={7}
         onEndReached={() => b.loadMoreProducts()}
         onEndReachedThreshold={0.5}

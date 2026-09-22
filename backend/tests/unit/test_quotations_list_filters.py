@@ -104,6 +104,17 @@ def test_standard_filter_includes_legacy_quotations_without_doc_type(monkeypatch
     assert _flatten(fake_db.quotations.last_query)["doc_type"] == {"$in": ["standard", None]}
 
 
+def test_list_quotations_separates_pending_and_completed_lifecycle_views(monkeypatch):
+    fake_db = _FakeDb()
+    monkeypatch.setattr(quotation_routes, "db", fake_db)
+
+    asyncio.run(quotation_routes.list_quotations(view="pending", user=_user()))
+    assert _flatten(fake_db.quotations.last_query)["status"] == {"$in": ["draft", "pending_approval", "sent"]}
+
+    asyncio.run(quotation_routes.list_quotations(view="completed", user=_user()))
+    assert _flatten(fake_db.quotations.last_query)["status"] == {"$in": ["approved", "ordered", "won"]}
+
+
 def test_quotation_list_rejects_negative_skip_and_caps_limit(monkeypatch):
     fake_db = _FakeDb()
     monkeypatch.setattr(quotation_routes, "db", fake_db)

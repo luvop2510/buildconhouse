@@ -8,7 +8,7 @@
 // per brand, marks the quotation `ordered`, then we route to /purchase-orders.
 // -----------------------------------------------------------------------------
 import { Feather } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter, useSegments } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -60,6 +60,7 @@ type Supplier = { id: string; name: string; brand_id?: string | null; brand_name
 
 export default function PlaceOrderReview() {
   const { id, floor } = useLocalSearchParams<{ id: string; floor?: string }>();
+  const segments = useSegments() as string[];
   const router = useRouter();
   const { isPhone } = useBp();
   const insets = useSafeAreaInsets();
@@ -76,7 +77,10 @@ export default function PlaceOrderReview() {
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [godownPromptOpen, setGodownPromptOpen] = useState(false);
   const [godownBusy, setGodownBusy] = useState(false);
-  const floorId = floor === TILES_FLOOR_ID ? TILES_FLOOR_ID : undefined;
+  // The Ground Floor has a dedicated alias beneath /tiles so it never enters
+  // the Sanitary-only quotation route family. Keep the query-param fallback
+  // for saved deep links created before that route existed.
+  const floorId = floor === TILES_FLOOR_ID || segments.includes("tiles") ? TILES_FLOOR_ID : undefined;
 
   const loadPreview = useCallback(async () => {
     setError(null);

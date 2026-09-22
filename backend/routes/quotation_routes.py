@@ -70,6 +70,13 @@ async def _next_number() -> str:
 
 TILES_DOC_TYPES = ("tiles_selection", "tiles_quotation")
 
+# A document stops being actionable in the main workspace as soon as it has
+# been approved or an order has been placed.  ``won`` is the legacy standard
+# quotation spelling for approved, so keep it with the completed records
+# while older live documents are gradually normalised.
+PENDING_QUOTATION_STATUSES = ("draft", "pending_approval", "sent")
+COMPLETED_QUOTATION_STATUSES = ("approved", "ordered", "won")
+
 
 async def _canonicalize_item_images(items) -> list[dict]:
     """Resolve line-item images from current product media with snapshot fallback.
@@ -251,6 +258,7 @@ def _referrer_fields(referrer_type: str | None, referrer_doc: dict | None) -> di
 @router.get("")
 async def list_quotations(
     doc_type: str | None = None,
+    view: str | None = Query(None, pattern="^(pending|completed)$"),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1),
     user: UserPublic = Depends(get_current_user),
@@ -267,6 +275,10 @@ async def list_quotations(
         query["doc_type"] = {"$in": ["standard", None]}
     elif doc_type:
         query["doc_type"] = doc_type
+    if view == "pending":
+        query["status"] = {"$in": list(PENDING_QUOTATION_STATUSES)}
+    elif view == "completed":
+        query["status"] = {"$in": list(COMPLETED_QUOTATION_STATUSES)}
     # Asking for a tile document type is a Ground Floor request by
     # definition — never scope those by the caller's ambient floor.
     scoped = tiles_floor_query(user, query) if doc_type in TILES_DOC_TYPES else floor_query(user, query)

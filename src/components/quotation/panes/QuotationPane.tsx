@@ -18,10 +18,45 @@ import { RoomChipRow } from "../canvas/RoomChipRow";
 import { QuotationCanvas } from "../canvas/QuotationCanvas";
 import { BuilderFooter } from "../footer/BuilderFooter";
 
-export function QuotationPane({ compact = false, browseInline = false }: { compact?: boolean; browseInline?: boolean }) {
+export function QuotationPane({
+  compact = false,
+  browseInline = false,
+  mobileWorkspaceCollapsed = false,
+  onMobileWorkspaceCollapsedChange,
+}: {
+  compact?: boolean;
+  browseInline?: boolean;
+  mobileWorkspaceCollapsed?: boolean;
+  onMobileWorkspaceCollapsedChange?: (collapsed: boolean) => void;
+}) {
   const b = useBuilder();
   const [section, setSection] = useState<"products" | "quotation">("products");
   const browsing = browseInline && section === "products";
+
+  if (browseInline && mobileWorkspaceCollapsed) {
+    return (
+      <View style={styles.panel} testID="quotation-workspace">
+        <View style={styles.focusHead}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.focusTitle}>Products · {b.productTotal}</Text>
+            <Text style={styles.focusMeta}>{b.s.lines.length} in quotation</Text>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Show quotation workspace"
+            testID="expand-quotation-workspace"
+            onPress={() => onMobileWorkspaceCollapsedChange?.(false)}
+            style={styles.focusRestore}
+          >
+            <Text style={styles.focusRestoreLabel}>Quotation</Text>
+            <Feather name="chevron-down" size={15} color={ds.brassDeep} />
+          </Pressable>
+        </View>
+        <View style={styles.body}><ProductExplorer showCompactFilters /></View>
+        <BuilderFooter compact />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.panel} testID="quotation-workspace">
@@ -29,17 +64,29 @@ export function QuotationPane({ compact = false, browseInline = false }: { compa
         <CustomerDetails />
         <RoomChipRow />
         {browseInline ? (
-          <View style={styles.tabs} accessibilityRole="tablist">
-            {(["products", "quotation"] as const).map((key) => (
-              <Pressable key={key} accessibilityRole="tab" accessibilityState={{ selected: section === key }}
-                testID={`builder-tab-${key}`} onPress={() => setSection(key)}
-                style={[styles.tab, section === key && styles.tabSelected]}>
-                <Feather name={key === "products" ? "grid" : "file-text"} size={15} color={section === key ? ds.brassDeep : colors.onSurfaceSecondary} />
-                <Text style={[styles.tabLabel, section === key && { color: ds.brassDeep }]}>
-                  {key === "products" ? "Products" : `Quotation · ${b.s.lines.length}`}
-                </Text>
-              </Pressable>
-            ))}
+          <View style={styles.tabsRow}>
+            <View style={styles.tabs} accessibilityRole="tablist">
+              {(["products", "quotation"] as const).map((key) => (
+                <Pressable key={key} accessibilityRole="tab" accessibilityState={{ selected: section === key }}
+                  testID={`builder-tab-${key}`} onPress={() => setSection(key)}
+                  style={[styles.tab, section === key && styles.tabSelected]}>
+                  <Feather name={key === "products" ? "grid" : "file-text"} size={15} color={section === key ? ds.brassDeep : colors.onSurfaceSecondary} />
+                  <Text style={[styles.tabLabel, section === key && { color: ds.brassDeep }]}>
+                    {key === "products" ? "Products" : `Quotation · ${b.s.lines.length}`}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            {browsing ? <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Collapse quotation workspace and focus products"
+              testID="collapse-quotation-workspace"
+              onPress={() => onMobileWorkspaceCollapsedChange?.(true)}
+              style={styles.focusButton}
+            >
+              <Feather name="minimize-2" size={15} color={ds.brassDeep} />
+              <Text style={styles.focusButtonLabel}>Focus</Text>
+            </Pressable> : null}
           </View>
         ) : (
           <View style={styles.workspaceSummary}>
@@ -171,9 +218,17 @@ const styles = StyleSheet.create({
   done: { minHeight: 44, margin: 10, marginTop: 0, borderRadius: 8, backgroundColor: colors.brand, flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center" },
   doneLabel: { fontSize: 13, fontWeight: "700", color: colors.onBrand },
   tabs: { flexDirection: "row", padding: 3, borderRadius: 10, backgroundColor: colors.surfaceTertiary },
+  tabsRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   tab: { flex: 1, minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 8 },
   tabSelected: { backgroundColor: colors.surface },
   tabLabel: { fontSize: 13, fontWeight: "700", color: colors.onSurfaceSecondary },
+  focusButton: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, borderRadius: 8, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, backgroundColor: colors.surface },
+  focusButtonLabel: { fontSize: 12, fontWeight: "700", color: ds.brassDeep },
+  focusHead: { minHeight: 56, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
+  focusTitle: { fontSize: 13, fontWeight: "700", color: colors.onSurface },
+  focusMeta: { marginTop: 2, fontSize: 11, color: colors.onSurfaceSecondary },
+  focusRestore: { minHeight: 40, flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, borderRadius: 8, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, backgroundColor: colors.surface },
+  focusRestoreLabel: { fontSize: 12, fontWeight: "700", color: ds.brassDeep },
   workspaceSummary: { flexDirection: "row", alignItems: "center", gap: 6, minHeight: 20 },
   summaryDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: ds.brass },
   sectionLabel: { fontSize: 13, fontWeight: "700", color: colors.onSurface },

@@ -19,6 +19,9 @@ assert.match(adminShell, /hasAccess\(item\.match\)/);
 assert.match(adminShell, /bottom-nav-notebook-workspace/);
 assert.match(adminShell, /const more = all\.filter/);
 assert.doesNotMatch(adminShell, /bottom-fab-new-quotation/);
+// A phone has one workspace switcher, above the active page. The More sheet
+// must not mount a second copy that can race a route transition.
+assert.doesNotMatch(adminShell, /<Sheet open=\{moreOpen\}[\s\S]*?title="Workspace">\s*<FloorSwitcher/);
 assert.match(navigation, /match: "quotations", floors: \[SANITARY_FLOOR_ID\]/);
 assert.match(navigation, /match: "purchases", floors: \[SANITARY_FLOOR_ID\]/);
 assert.match(navigation, /notebook\/kitchen\/quotation-follow-up/);
@@ -119,6 +122,28 @@ assert.doesNotMatch(notebook, /<DataTable/);
 const quotationDetail = read("../app/(admin)/quotations/[id]/index.tsx");
 assert.match(quotationDetail, /isPhone \? \(\s*<IconButton icon="download"/);
 assert.match(quotationDetail, /linkedPoRowPhone/);
+
+const customerDetail = read("../app/(admin)/customers/[id].tsx");
+assert.match(customerDetail, /const openQuotation = \(quotation: Quotation\)/);
+assert.match(customerDetail, /const manageQuotation = \(quotation: Quotation\)/);
+assert.match(customerDetail, /\/\(admin\)\/tiles\/\$\{quotation\.doc_type === "tiles_selection" \? "selection" : "quotation"\}\?id=\$\{quotation\.id\}/);
+
+const quotationList = read("../app/(admin)/quotations/index.tsx");
+assert.match(quotationList, /doc_type=standard&view=\$\{completed \? "completed" : "pending"\}/);
+assert.match(quotationList, /quotations-lifecycle-toggle/);
+
+const tileList = read("../app/(admin)/tiles/index.tsx");
+assert.match(tileList, /doc_type=tiles_selection&view=\$\{completed \? "completed" : "pending"\}/);
+assert.match(tileList, /doc_type=tiles_quotation&view=\$\{completed \? "completed" : "pending"\}/);
+assert.match(tileList, /tiles-lifecycle-toggle/);
+
+const builderShell = read("../src/components/quotation/layout/BuilderShell.tsx");
+const quotationPane = read("../src/components/quotation/panes/QuotationPane.tsx");
+const explorer = read("../src/components/quotation/catalog/ProductExplorer.tsx");
+assert.match(builderShell, /mobileWorkspaceCollapsed/);
+assert.match(quotationPane, /collapse-quotation-workspace/);
+assert.match(quotationPane, /expand-quotation-workspace/);
+assert.match(explorer, /initialNumToRender=\{showCompactFilters \? 20 : 16\}/);
 
 const placeOrder = read("../app/(admin)/quotations/[id]/place-order.tsx");
 assert.match(placeOrder, /confirmBarPhone: \{ flexDirection: "column", alignItems: "stretch" \}/);

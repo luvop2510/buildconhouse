@@ -3,8 +3,8 @@
 // Optimised for phone (no cramped inline rows), tablet gets a tabular feel.
 
 import { Feather } from "@expo/vector-icons";
-import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert as RNAlert, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { AdminPage } from "@/src/components/AdminPage";
@@ -24,19 +24,25 @@ type Quotation = {
   status: string; grand_total: number; created_at: string; items: any[];
 };
 
-type Filter = "all" | "draft" | "pending_approval" | "sent" | "won" | "lost";
-const FILTERS: { key: Filter; label: string }[] = [
+type Filter = "all" | "draft" | "pending_approval" | "sent" | "approved" | "ordered" | "won";
+const PENDING_FILTERS: { key: Filter; label: string }[] = [
   { key: "all",              label: "All" },
   { key: "draft",            label: "Draft" },
   { key: "pending_approval", label: "Pending" },
   { key: "sent",             label: "Sent" },
-  { key: "won",              label: "Complete" },
-  { key: "lost",             label: "Lost" },
+];
+const COMPLETED_FILTERS: { key: Filter; label: string }[] = [
+  { key: "all",      label: "All" },
+  { key: "approved", label: "Approved" },
+  { key: "ordered",  label: "Ordered" },
+  { key: "won",      label: "Approved (legacy)" },
 ];
 
 export default function QuotationsList() {
   useRequireFloorAccess("first-floor");
   const router = useRouter();
+  const { view } = useLocalSearchParams<{ view?: string }>();
+  const completed = view === "completed";
   const { staff } = useAuth();
   const { isPhone } = useBp();
   const isTablet = !isPhone;
@@ -48,6 +54,8 @@ export default function QuotationsList() {
   const [deleting, setDeleting] = useState(false);
   const requestId = useRef(0);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => { setStatusFilter("all"); }, [completed]);
 
   const deleteQuotation = async () => {
     if (!deleteTarget) return;
@@ -65,12 +73,12 @@ export default function QuotationsList() {
     const currentRequest = ++requestId.current;
     setLoadError(null);
     try {
-      const nextItems = await api.get<Quotation[]>("/quotations?doc_type=standard");
+      const nextItems = await api.get<Quotation[]>(`/quotations?doc_type=standard&view=${completed ? "completed" : "pending"}`);
       if (currentRequest === requestId.current) setItems(nextItems);
     } catch (e: any) {
       if (currentRequest === requestId.current) setLoadError(e?.detail || "Could not load quotations");
     }
-  }, []);
+  }, [completed]);
   useFocusEffect(useCallback(() => {
     void load();
     return () => { requestId.current += 1; };
@@ -82,10 +90,9 @@ export default function QuotationsList() {
     return map;
   }, [items]);
 
+  const filters = completed ? COMPLETED_FILTERS : PENDING_FILTERS;
+
   const filtered = useMemo(() => (items || []).filter((it) => {
-    // Completed/won quotations belong in their own archive-style view so
-    // the default pipeline stays focused on work that still needs action.
-    if (statusFilter === "all" && it.status === "won") return false;
     if (statusFilter !== "all" && it.status !== statusFilter) return false;
     if (q && !`${it.number} ${it.customer_name}`.toLowerCase().includes(q.toLowerCase())) return false;
     return true;
@@ -95,21 +102,27 @@ export default function QuotationsList() {
 
   return (
     <AdminPage
-      title="Quotations"
-      subtitle={loadError ? "Pipeline unavailable" : items ? `${items.length} total · ${money(totalValue)} filtered pipeline` : "Loading pipeline…"}
+      title={completed ? "Completed quotations" : "Quotations"}
+      subtitle={loadError ? "Pipeline unavailable" : items ? `${items.length} ${completed ? "approved or ordered" : "pending"} · ${money(totalValue)} filtered` : "Loading pipeline…"}
       scroll={false}
       contentStyle={{ paddingHorizontal: 0, paddingTop: 0 }}
       right={
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Create new quotation"
-          testID="new-quotation-btn"
-          onPress={() => router.push("/(admin)/quotations/new" as any)}
-          style={({ pressed }) => [styles.cta, { opacity: pressed ? 0.88 : 1 }]}
-        >
-          <Feather name="plus" size={16} color={colors.onBrand} />
-          <Text style={styles.ctaText}>New{isTablet ? " Quotation" : ""}</Text>
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable accessibilityRole="button" accessibilityLabel={completed ? "View pending quotations" : "View completed quotations"}
+            testID="quotations-lifecycle-toggle" onPress={() => router.push(`/(admin)/quotations?view=${completed ? "pending" : "completed"}` as any)} style={styles.lifecycleLink}>
+            <Text style={styles.lifecycleText}>{completed ? "Pending" : "Completed"}</Text>
+          </Pressable>
+          {!completed ? <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Create new quotation"
+            testID="new-quotation-btn"
+            onPress={() => router.push("/(admin)/quotations/new" as any)}
+            style={({ pressed }) => [styles.cta, { opacity: pressed ? 0.88 : 1 }]}
+          >
+            <Feather name="plus" size={16} color={colors.onBrand} />
+            <Text style={styles.ctaText}>New{isTablet ? " Quotation" : ""}</Text>
+          </Pressable> : null}
+        </View>
       }
     >
       <FlatList
@@ -131,7 +144,7 @@ export default function QuotationsList() {
               onClear={() => setQ("")}
             />
             <ScrollView horizontal showsHorizontalScrollIndicator={isPhone} contentContainerStyle={{ gap: 8, paddingRight: spacing.lg }}>
-              {FILTERS.map((f) => (
+              {filters.map((f) => (
                 <Chip key={f.key} testID={`filter-${f.key}`} label={f.label} active={statusFilter === f.key} onPress={() => setStatusFilter(f.key)} count={counts[f.key]} />
               ))}
             </ScrollView>
@@ -207,6 +220,9 @@ function QuotationRow({ q, onPress, canDelete, onDelete }: { q: Quotation; onPre
 }
 
 const styles = StyleSheet.create({
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  lifecycleLink: { minHeight: 40, justifyContent: "center", paddingHorizontal: 10, borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
+  lifecycleText: { fontSize: 12, fontWeight: "700", color: colors.onSurface },
   cta: {
     flexDirection: "row", gap: 6, alignItems: "center",
     backgroundColor: ds.brass,
