@@ -49,6 +49,11 @@ class StockPriceVariant(BaseModel):
     price: float = Field(ge=0)
 
 
+class StockPricingUpdate(BaseModel):
+    unit_price: float = Field(ge=0)
+    price_variants: list[StockPriceVariant] = Field(default_factory=list, max_length=20)
+
+
 class DirectIntake(BaseModel):
     product_id: str | None = None
     qty: float = Field(gt=0)
@@ -227,6 +232,20 @@ async def sku_suggestions(prefix: str = Query(min_length=1, max_length=80), user
 @router.get("/{stock_id}")
 async def get_stock(stock_id: str, user: UserPublic = Depends(get_current_user)):
     return _stock_view(await get_floor_scoped_or_404(db.godown_stock, stock_id, user, not_found="Godown stock lot not found", projection={"_id": 0}))
+
+
+@router.patch("/{stock_id}/pricing")
+async def update_stock_pricing(stock_id: str, body: StockPricingUpdate, user: UserPublic = Depends(require_min_role("warehouse"))):
+    at = now_iso()
+    lot = await db.godown_stock.find_one_and_update(
+        floor_query(user, {"id": stock_id}),
+        {"$set": {"unit_price": body.unit_price, "price_variants": [variant.model_dump() for variant in body.price_variants], "updated_at": at}},
+        return_document=ReturnDocument.AFTER,
+    )
+    if not lot:
+        raise HTTPException(status_code=404, detail="Godown stock lot not found")
+    await log_event(event_type="godown_stock.pricing_updated", entity_type="godown_stock", entity_id=stock_id, actor=user, floor_id=lot["floor_id"], summary=f"Updated pricing for {lot['name']}", payload={"unit_price": body.unit_price, "variant_count": len(body.price_variants)})
+    return _stock_view(lot)
 
 
 @router.post("/direct-intakes")

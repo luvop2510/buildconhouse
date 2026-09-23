@@ -74,6 +74,19 @@ def test_manual_intake_requires_price(monkeypatch):
     assert exc.value.status_code == 422
 
 
+def test_existing_lot_price_can_be_completed(monkeypatch):
+    class PriceStock:
+        async def find_one_and_update(self, query, update, **_kwargs):
+            assert query["$and"][1] == {"id": "lot-1"}
+            return {"id": "lot-1", "floor_id": "first-floor", "name": "Valve", "available_qty": 2, **update["$set"]}
+
+    monkeypatch.setattr(godown, "db", SimpleNamespace(godown_stock=PriceStock()))
+    monkeypatch.setattr(godown, "log_event", lambda **_kwargs: asyncio.sleep(0))
+    row = asyncio.run(godown.update_stock_pricing("lot-1", godown.StockPricingUpdate(unit_price=50, price_variants=[{"label": "Chrome", "price": 60}]), user()))
+    assert row["stock_value"] == 100
+    assert row["price_variants"] == [{"label": "Chrome", "price": 60}]
+
+
 def test_sku_suggestions_use_literal_floor_scoped_prefix(monkeypatch):
     products = Products()
     monkeypatch.setattr(godown, "db", SimpleNamespace(products=products))

@@ -17,3 +17,4 @@ export type SkuSuggestion = { id: string; sku: string; name: string; brand_name?
 export const getSkuSuggestions = (prefix: string) => api.get<SkuSuggestion[]>(`/godown-stock/sku-suggestions?prefix=${encodeURIComponent(prefix)}`);
 export type DirectIntake = { qty: number; reason?: string; product_id?: string; sku?: string; name?: string; brand?: string; image?: string; size?: string; feature?: string; category?: string; unit_price?: number; price_variants?: { label: string; price: number }[] };
 export const addDirectGodownStock = (body: DirectIntake) => api.post<GodownLot>("/godown-stock/direct-intakes", body);
+export const updateGodownPricing = (id: string, body: { unit_price: number; price_variants: { label: string; price: number }[] }) => api.patch<GodownLot>(`/godown-stock/${encodeURIComponent(id)}/pricing`, body);

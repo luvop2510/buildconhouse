@@ -3,10 +3,11 @@ import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type DimensionValue } from "react-native";
 
-import { addDirectGodownStock, getGodownStock, getSkuSuggestions, type GodownLot, type GodownStockResponse, type SkuSuggestion } from "@/src/api/godownStock";
+import { addDirectGodownStock, getGodownStock, getSkuSuggestions, updateGodownPricing, type GodownLot, type GodownStockResponse, type SkuSuggestion } from "@/src/api/godownStock";
 import { ProductImage } from "@/src/components/ProductImage";
 import { ErrorState } from "@/src/components/ui";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
+import { useAuth } from "@/src/state/auth";
 import { toast } from "@/src/components/Toast";
 import { useBp } from "@/src/design/responsive";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
@@ -16,6 +17,7 @@ const money = (value: number) => `₹${value.toLocaleString("en-IN", { maximumFr
 
 export default function GodownStockScreen() {
   const { selectedFloorId } = useFloorAccess();
+  const { staff } = useAuth();
   const router = useRouter(); const { isPhone, isDesktop } = useBp();
   const [data, setData] = useState<GodownStockResponse | null>(null); const [q, setQ] = useState(""); const [brand, setBrand] = useState<string | null>(null); const [loading, setLoading] = useState(true); const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false); const [mode, setMode] = useState<"catalog" | "manual">("catalog");
@@ -64,21 +66,41 @@ export default function GodownStockScreen() {
     <TextInput accessibilityLabel="Search godown stock" value={q} onChangeText={setQ} placeholder="Search brand, SKU or product" style={styles.search} />
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips} accessibilityRole="tablist"><Chip label="All brands" selected={!brand} onPress={() => setBrand(null)} />{data?.brands.map(row => <Chip key={row.id || row.name} label={`${row.name} · ${row.available_qty}`} selected={brand === row.id} onPress={() => setBrand(row.id || null)} />)}</ScrollView>
     <Text accessibilityLiveRegion="polite" style={styles.result}>{lots.filter(lot => lot.available_qty > 0).length} available · {lots.filter(lot => lot.available_qty <= 0).length} completed stock cycles</Text>
-    <View style={[styles.grid, !isPhone && styles.gridWide]}>{lots.map(lot => <LotCard key={lot.id} lot={lot} width={isPhone ? "100%" : isDesktop ? "31.9%" : "48.8%"} onViewDetails={() => { if (lot.product_id) router.push(`/(admin)/catalog/${encodeURIComponent(lot.product_id)}` as any); }} onAdd={(variantIndex) => router.push(`/(admin)/quotations/new?godownStockId=${encodeURIComponent(lot.id)}${variantIndex === null ? "" : `&godownVariant=${variantIndex}`}` as any)} />)}</View>
+    <View style={[styles.grid, !isPhone && styles.gridWide]}>{lots.map(lot => <LotCard key={lot.id} lot={lot} width={isPhone ? "100%" : isDesktop ? "31.9%" : "48.8%"} canEditPricing={staff?.role !== "worker"} onUpdated={() => void load()} onViewDetails={() => { if (lot.product_id) router.push(`/(admin)/catalog/${encodeURIComponent(lot.product_id)}` as any); }} onAdd={(variantIndex) => router.push(`/(admin)/quotations/new?godownStockId=${encodeURIComponent(lot.id)}${variantIndex === null ? "" : `&godownVariant=${variantIndex}`}` as any)} />)}</View>
     {!lots.length ? <View style={styles.empty}><Feather name="archive" size={28} color={colors.onSurfaceMuted} /><Text style={type.titleMd}>No matching stock</Text><Text style={type.bodyMuted}>Try another brand or search term.</Text></View> : null}
   </ScrollView>;
 }
 function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) { return <Pressable accessibilityRole="tab" accessibilityState={{ selected }} onPress={onPress} style={[styles.chip, selected && styles.chipSelected]}><Text style={[styles.chipText, selected && styles.chipTextSelected]}>{label}</Text></Pressable>; }
-function LotCard({ lot, width, onViewDetails, onAdd }: { lot: GodownLot; width: DimensionValue; onViewDetails: () => void; onAdd: (variantIndex: number | null) => void }) {
+function LotCard({ lot, width, canEditPricing, onUpdated, onViewDetails, onAdd }: { lot: GodownLot; width: DimensionValue; canEditPricing: boolean; onUpdated: () => void; onViewDetails: () => void; onAdd: (variantIndex: number | null) => void }) {
   const [variantIndex, setVariantIndex] = useState<number | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [editingPrice, setEditingPrice] = useState(false);
+  const [draftPrice, setDraftPrice] = useState("");
+  const [draftVariants, setDraftVariants] = useState<{ label: string; price: string }[]>([]);
+  const [savingPrice, setSavingPrice] = useState(false);
   const variants = lot.price_variants || [];
   const selectedPrice = variantIndex === null ? (lot.unit_price || 0) : variants[variantIndex]?.price || 0;
   const isCatalogProduct = Boolean(lot.product_id && !lot.product_id.startsWith("godown:"));
+  const savePricing = async () => {
+    const amount = Number(draftPrice);
+    if (!draftPrice.trim() || !Number.isFinite(amount) || amount < 0 || draftVariants.some(row => !row.label.trim() || !row.price.trim() || !Number.isFinite(Number(row.price)) || Number(row.price) < 0)) { toast.error("Enter a valid unit price and variant prices"); return; }
+    setSavingPrice(true);
+    try {
+      await updateGodownPricing(lot.id, { unit_price: amount, price_variants: draftVariants.map(row => ({ label: row.label.trim(), price: Number(row.price) })) });
+      toast.success("Stock pricing updated"); setEditingPrice(false); onUpdated();
+    } catch (error: any) { toast.error(error?.detail || "Could not update stock pricing"); }
+    finally { setSavingPrice(false); }
+  };
   return <View style={[styles.card, { width }]}>
     <View style={styles.cardHead}><ProductImage source={lot.image || null} style={styles.image} fallbackLabel={lot.sku} accessibilityLabel={`${lot.name} product image`} /><View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={styles.brand}>{lot.brand_name || "Unbranded"}</Text><Text style={type.titleMd} numberOfLines={2}>{lot.name}</Text><Text style={type.caption}>{lot.sku}{lot.finish ? ` · ${lot.finish}` : ""}{lot.size ? ` · ${lot.size}` : ""}</Text></View></View>
     <View style={styles.availability}><Feather name="check-circle" size={15} color={colors.success} /><Text style={styles.available}>{lot.available_qty > 0 ? `${lot.available_qty} available` : "Fully allocated"} · {lot.stock_value == null ? "Value not recorded" : `${money(lot.stock_value)} stock value`}</Text></View>
     <Text style={type.body}>Unit price: {lot.unit_price == null ? "Not recorded" : money(lot.unit_price)}</Text>
+    {canEditPricing ? <Pressable accessibilityRole="button" accessibilityLabel={`Edit pricing for ${lot.name}`} onPress={() => { setDraftPrice(lot.unit_price == null ? "" : String(lot.unit_price)); setDraftVariants((lot.price_variants || []).map(row => ({ label: row.label, price: String(row.price) }))); setEditingPrice(!editingPrice); }}><Text style={styles.detailsText}>{editingPrice ? "Cancel price edit" : "Edit pricing"}</Text></Pressable> : null}
+    {editingPrice ? <View style={styles.manualFields}>
+      <TextInput accessibilityLabel={`Unit price for ${lot.name}`} value={draftPrice} onChangeText={setDraftPrice} keyboardType="decimal-pad" placeholder="Unit price (₹)" style={styles.search} />
+      {draftVariants.map((row, index) => <View key={index} style={styles.actions}><TextInput accessibilityLabel={`Price variant ${index + 1} label`} value={row.label} onChangeText={label => setDraftVariants(rows => rows.map((item, i) => i === index ? { ...item, label } : item))} placeholder="Variant name" style={[styles.search, { flex: 1 }]} /><TextInput accessibilityLabel={`Price variant ${index + 1} price`} value={row.price} onChangeText={variantPrice => setDraftVariants(rows => rows.map((item, i) => i === index ? { ...item, price: variantPrice } : item))} keyboardType="decimal-pad" placeholder="Price (₹)" style={[styles.search, { flex: 1 }]} /><Pressable accessibilityRole="button" accessibilityLabel={`Remove price variant ${index + 1}`} onPress={() => setDraftVariants(rows => rows.filter((_, i) => i !== index))} style={styles.details}><Feather name="x" size={16} color={colors.brand} /></Pressable></View>)}
+      <View style={styles.actions}><Pressable accessibilityRole="button" disabled={draftVariants.length >= 20} onPress={() => setDraftVariants(rows => [...rows, { label: "", price: "" }])} style={styles.details}><Text style={styles.detailsText}>Add variant</Text></Pressable><Pressable accessibilityRole="button" disabled={savingPrice} onPress={() => void savePricing()} style={styles.add}><Text style={styles.addText}>{savingPrice ? "Saving…" : "Save pricing"}</Text></Pressable></View>
+    </View> : null}
     {variants.length ? <View style={styles.chips}><Chip label={`Base · ${money(lot.unit_price || 0)}`} selected={variantIndex === null} onPress={() => setVariantIndex(null)} />{variants.map((variant, index) => <Chip key={`${variant.label}-${index}`} label={`${variant.label} · ${money(variant.price)}`} selected={variantIndex === index} onPress={() => setVariantIndex(index)} />)}</View> : null}
     <Text style={type.caption}>Arrival: {fmt(lot.transferred_at || lot.created_at)}</Text>
     <Pressable accessibilityRole="button" accessibilityLabel={`${showHistory ? "Hide" : "Show"} stock history for ${lot.name}`} onPress={() => setShowHistory(!showHistory)}><Text style={styles.detailsText}>{showHistory ? "Hide" : "Show"} stock history</Text></Pressable>
