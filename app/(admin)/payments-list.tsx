@@ -6,29 +6,24 @@ import { api } from "@/src/api/client";
 import {
   Button, Dropdown, EmptyState, ErrorState, PageHeader, SearchField, Skeleton,
 } from "@/src/components/ds";
-import { CellMono, CellNumber, CellText, CellTitle, DataTable, type Column } from "@/src/components/tiles/TileTable";
+import { CellNumber, CellText, CellTitle, DataTable, type Column } from "@/src/components/tiles/TileTable";
 import { colors, spacing, type } from "@/src/theme/tokens";
 import { useBp } from "@/src/design/responsive";
 
-type PayMode = "cash" | "upi" | "bank" | "cheque" | "card";
 type PaymentRow = {
   id: string;
   customer_name?: string | null;
-  invoice_number?: string | null;
-  business_unit?: string | null;
-  paid_at?: string | null;
-  amount: number;
-  mode: PayMode;
-  reference?: string | null;
-  recorded_by_name?: string | null;
+  number?: string | null;
+  floor_id?: string | null;
+  confirmed_at?: string | null;
+  grand_total: number;
+  received: number;
+  outstanding: number;
 };
 type Floor = { id: string; name: string };
 type PaymentListResponse = { total: number; items: PaymentRow[] };
 
 const PAGE_SIZE = 50;
-const MODE_LABELS: Record<PayMode, string> = {
-  cash: "Cash", upi: "UPI", bank: "Bank Transfer", cheque: "Cheque", card: "Credit Card",
-};
 const SORT_OPTIONS = [
   { label: "Newest first", value: "date_desc" },
   { label: "Oldest first", value: "date_asc" },
@@ -52,7 +47,6 @@ export default function PaymentListScreen() {
   const [floors, setFloors] = useState<Floor[]>([]);
   const [query, setQuery] = useState("");
   const [floor, setFloor] = useState("all");
-  const [mode, setMode] = useState("all");
   const [sort, setSort] = useState("date_desc");
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
@@ -68,8 +62,7 @@ export default function PaymentListScreen() {
       const params = new URLSearchParams({ skip: String(nextPage * PAGE_SIZE), limit: String(PAGE_SIZE), sort });
       if (query.trim()) params.set("q", query.trim());
       if (floor !== "all") params.set("business_unit", floor);
-      if (mode !== "all") params.set("mode", mode);
-      const response = await api.get<PaymentListResponse>(`/payments/list?${params.toString()}`);
+      const response = await api.get<PaymentListResponse>(`/payments/fully-paid-orders?${params.toString()}`);
       if (request !== requestId.current) return;
       setRows(response.items);
       setTotal(response.total);
@@ -77,24 +70,23 @@ export default function PaymentListScreen() {
       if (request !== requestId.current) return;
       setLoadError(error?.detail || "Could not load fully paid orders.");
     } finally { if (request === requestId.current) setLoading(false); }
-  }, [floor, mode, page, query, sort]);
+  }, [floor, page, query, sort]);
 
   useEffect(() => { api.get<Floor[]>("/settings/floors").then(setFloors).catch(() => setFloors([])); }, []);
   useEffect(() => {
     setPage(0);
     const timer = setTimeout(() => load(0), query ? 250 : 0);
     return () => clearTimeout(timer);
-  }, [floor, mode, query, sort]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [floor, query, sort]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load(page); }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const columns: Column<PaymentRow>[] = [
-    { key: "customer", label: "Client", grow: 1, minWidth: 180, render: (row) => <CellTitle>{`${row.customer_name || "Unknown client"} · ${row.invoice_number || "—"}`}</CellTitle> },
-    { key: "date", label: "Payment Date", width: 120, render: (row) => <CellText>{dateShort(row.paid_at)}</CellText> },
-    { key: "amount", label: "Amount", width: 120, align: "right", render: (row) => <CellNumber value={money(row.amount)} /> },
-    { key: "mode", label: "Method", width: 130, render: (row) => <CellText>{MODE_LABELS[row.mode] || row.mode}</CellText> },
-    { key: "reference", label: "Reference", width: 150, render: (row) => <CellMono>{row.reference || "—"}</CellMono> },
-    { key: "collector", label: "Collected By", width: 150, render: (row) => <CellText>{row.recorded_by_name || "—"}</CellText> },
-    { key: "unit", label: "Business Unit", width: 140, render: (row) => <CellText>{row.business_unit || "—"}</CellText> },
+    { key: "customer", label: "Client / Order", grow: 1, minWidth: 180, render: (row) => <CellTitle>{`${row.customer_name || "Unknown client"} · ${row.number || "—"}`}</CellTitle> },
+    { key: "date", label: "Order Date", width: 120, render: (row) => <CellText>{dateShort(row.confirmed_at)}</CellText> },
+    { key: "amount", label: "Order Total", width: 120, align: "right", render: (row) => <CellNumber value={money(row.grand_total)} /> },
+    { key: "received", label: "Received", width: 120, align: "right", render: (row) => <CellNumber value={money(row.received)} /> },
+    { key: "outstanding", label: "Outstanding", width: 120, align: "right", render: (row) => <CellNumber value={money(row.outstanding)} /> },
+    { key: "unit", label: "Business Unit", width: 140, render: (row) => <CellText>{floors.find((floor) => floor.id === row.floor_id)?.name || row.floor_id || "—"}</CellText> },
   ];
 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -104,26 +96,25 @@ export default function PaymentListScreen() {
       <PageHeader
         title="Fully paid orders"
         overline="PAYMENTS"
-        subtitle="Complete payment history for orders paid in full (100%)."
+        subtitle="One row per order once 100% of its balance has been received."
       />
       <ScrollView contentContainerStyle={[styles.content, isPhone && styles.contentPhone]}>
         <View style={styles.filters}>
           <View style={[styles.search, isPhone && styles.searchPhone]}><SearchField testID="payment-list-search" value={query} onChangeText={setQuery} onClear={() => setQuery("")} placeholder="Search client, invoice or reference…" /></View>
           <Dropdown label={floor === "all" ? "All business units" : floors.find((item) => item.id === floor)?.name || floor} items={[{ label: "All business units", onPress: () => setFloor("all") }, ...floors.map((item) => ({ label: item.name, onPress: () => setFloor(item.id) }))]} />
-          <Dropdown label={mode === "all" ? "All methods" : MODE_LABELS[mode as PayMode] || mode} items={[{ label: "All methods", onPress: () => setMode("all") }, ...Object.entries(MODE_LABELS).map(([value, label]) => ({ label, onPress: () => setMode(value) }))]} />
           <Dropdown label={SORT_OPTIONS.find((item) => item.value === sort)?.label || "Sort"} items={SORT_OPTIONS.map((item) => ({ label: item.label, onPress: () => setSort(item.value) }))} />
         </View>
 
         {loadError ? <ErrorState title="Could not load fully paid orders" subtitle={loadError} onRetry={() => void load()} /> : loading ? (
           <View style={{ gap: spacing.sm }}>{Array.from({ length: 6 }).map((_, index) => <Skeleton key={index} w="100%" h={54} />)}</View>
         ) : rows.length === 0 ? (
-          <EmptyState icon="check-circle" title={query || mode !== "all" || floor !== "all" ? "No matching payments" : "No fully paid orders yet"} subtitle={query || mode !== "all" || floor !== "all" ? "Try a different search or clear the filters." : "Payments appear here once an order is fully collected."} />
+          <EmptyState icon="check-circle" title={query || floor !== "all" ? "No matching orders" : "No fully paid orders yet"} subtitle={query || floor !== "all" ? "Try a different search or clear the filters." : "Orders appear here once they are fully collected."} />
         ) : (
           <DataTable testID="payment-list-table" columns={columns} data={rows} keyExtractor={(row) => row.id} rowTestID={(row) => `payment-list-row-${row.id}`} emptyMessage="No fully paid payments found." />
         )}
 
         <View style={[styles.pagination, isPhone && styles.paginationPhone]}>
-          <Text style={type.caption}>{total ? `${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, total)} of ${total}` : "0 payments"}</Text>
+          <Text style={type.caption}>{total ? `${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, total)} of ${total}` : "0 orders"}</Text>
           <View style={[styles.pageButtons, isPhone && styles.pageButtonsPhone]}>
             <Button label="Previous" variant="secondary" size="sm" disabled={page === 0} onPress={() => setPage((value) => Math.max(0, value - 1))} />
             <Text style={type.caption}>Page {page + 1} of {pageCount}</Text>

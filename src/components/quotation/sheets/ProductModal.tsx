@@ -57,6 +57,11 @@ export function ProductModal() {
   const { isPhone } = useBp();
   const isCompactFooter = isPhone;
   const [editorOpen, setEditorOpen] = useState(false);
+  const [concealQuery, setConcealQuery] = useState("");
+  const [concealMatches, setConcealMatches] = useState<Product[]>([]);
+  const [quotationConceal, setQuotationConceal] = useState<Product | null>(null);
+  const [stockQty, setStockQty] = useState(1);
+  const [stockBusy, setStockBusy] = useState(false);
 
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
   const [qty, setQty] = useState(1);
@@ -113,6 +118,10 @@ export function ProductModal() {
     setAlternates([]);
     setCompleteSet([]);
     setActiveImageIdx(0);
+    setConcealQuery("");
+    setConcealMatches([]);
+    setQuotationConceal(null);
+    setStockQty(1);
     (async () => {
       try {
         const [alt, set] = await Promise.all([
@@ -124,6 +133,19 @@ export function ProductModal() {
       } catch {}
     })();
   }, [product]);
+
+  useEffect(() => {
+    const query = concealQuery.trim();
+    if (!query || quotationConceal?.sku === query) { setConcealMatches([]); return; }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const result = await api.get<{ items: Product[] }>(`/products?q=${encodeURIComponent(query)}&limit=20`);
+        if (!cancelled) setConcealMatches((result.items || []).filter((item) => item.sku.toLowerCase().startsWith(query.toLowerCase()) && item.id !== selectedProduct?.id));
+      } catch { if (!cancelled) setConcealMatches([]); }
+    }, 200);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [concealQuery, quotationConceal, selectedProduct?.id]);
 
   const currentPrice = useMemo(() => {
     if (priceOverride) {
@@ -168,10 +190,17 @@ export function ProductModal() {
   };
 
   const commit = (closeAfter: boolean) => {
+    if (concealQuery.trim() && !quotationConceal) { toast.error("Select a concealed part from the catalog"); return; }
     const v = selectedVariant ?? productAsVariant(product);
     // Custom price / quantity override via a synthetic variant — keeps
     // the existing addFromProduct path a single source of truth.
-    const custom: ProductVariant = { ...v, price: currentPrice };
+    const custom: ProductVariant = { ...v, price: currentPrice,
+      concealed_part: quotationConceal ? {
+        product_id: quotationConceal.id, sku: quotationConceal.sku, name: quotationConceal.name,
+        unit_price: quotationConceal.price, mrp: quotationConceal.mrp,
+        image: productImageList(quotationConceal)[0] ?? null, qty: 1,
+      } : v.concealed_part,
+    };
     const qtyAdded = Math.max(1, Math.floor(qty));
     for (let i = 0; i < qtyAdded; i++) b.addFromProduct(product, custom);
     if (notes.trim() && b.s.lines.length) {
@@ -183,9 +212,19 @@ export function ProductModal() {
     if (closeAfter) b.closeProductModal();
   };
 
+  const moveToGodown = async () => {
+    if (stockBusy) return;
+    setStockBusy(true);
+    try {
+      await api.post("/godown-stock/direct-intakes", { product_id: selectedProduct.id, qty: stockQty });
+      toast.success(`${stockQty} × ${selectedProduct.name} added to godown stock`);
+    } catch (e: any) { toast.error(e?.detail || "Could not add to godown stock"); }
+    finally { setStockBusy(false); }
+  };
+
   return (
     <>
-    <Overlay open={open} onClose={b.closeProductModal} title={selectedProduct.name} width={960} presentation={isPhone ? "fullscreen" : "dialog"} scroll={false} header={false}>
+    <Overlay open={open && !editorOpen} onClose={b.closeProductModal} title={selectedProduct.name} width={960} presentation={isPhone ? "fullscreen" : "dialog"} scroll={false} header={false}>
         <View style={{ flex: 1, minHeight: 0 }}>
           {/* Header */}
           <View style={[styles.header, isPhone && styles.headerPhone]}>
@@ -359,6 +398,38 @@ export function ProductModal() {
                   </View>
                 ) : null}
 
+                <View style={styles.autoParts} testID="pm-quotation-conceal">
+                  <Text style={styles.sectionLabel}>Concealed part for this quotation</Text>
+                  <Text style={styles.autoPartHint}>Choose a catalog SKU for this product only.</Text>
+                  <TextInput value={concealQuery} onChangeText={(value) => { setConcealQuery(value); setQuotationConceal(null); }}
+                    placeholder="Search concealed part SKU" placeholderTextColor={colors.onSurfaceMuted}
+                    style={styles.notesInput} testID="pm-conceal-sku" autoCapitalize="characters" />
+                  {concealMatches.slice(0, 8).map((item) => (
+                    <Pressable key={item.id} onPress={() => { setQuotationConceal(item); setConcealQuery(item.sku); setConcealMatches([]); }}
+                      style={styles.stockAction} testID={`pm-conceal-option-${item.sku}`}>
+                      <Text style={styles.autoPartText}>{item.sku} · {item.name}</Text>
+                    </Pressable>
+                  ))}
+                  {quotationConceal ? <Text style={styles.autoPartText}>Selected: {quotationConceal.name}</Text> : null}
+                  {quotationConceal ? <Pressable onPress={() => { setQuotationConceal(null); setConcealQuery(""); }}><Text style={styles.autoPartHint}>Remove selection</Text></Pressable> : null}
+                </View>
+
+                <View style={styles.autoParts} testID="pm-godown-action">
+                  <Text style={styles.sectionLabel}>Godown stock</Text>
+                  <View style={styles.qtyRow}>
+                    <Text style={styles.autoPartHint}>Quantity to add</Text>
+                    <View style={styles.qtyStepper}>
+                      <Pressable onPress={() => setStockQty((n) => Math.max(1, n - 1))} style={styles.qtyBtn}><Feather name="minus" size={14} color={colors.onSurface} /></Pressable>
+                      <TextInput value={String(stockQty)} onChangeText={(value) => setStockQty(Math.max(1, Math.floor(Number(value.replace(/[^0-9]/g, "")) || 1)))} style={styles.qtyInput} keyboardType="number-pad" testID="pm-godown-qty" />
+                      <Pressable onPress={() => setStockQty((n) => n + 1)} style={styles.qtyBtn}><Feather name="plus" size={14} color={colors.onSurface} /></Pressable>
+                    </View>
+                  </View>
+                  <Pressable onPress={moveToGodown} disabled={stockBusy} style={styles.stockAction} testID="pm-add-to-godown">
+                    <Feather name="package" size={14} color={colors.onSurface} />
+                    <Text style={styles.autoPartText}>{stockBusy ? "Adding…" : "Add to godown stock"}</Text>
+                  </Pressable>
+                </View>
+
                 {/* Quantity + notes */}
                 <View style={styles.qtyRow}>
                   <Text style={styles.sectionLabel}>Quantity</Text>
@@ -502,10 +573,10 @@ export function ProductModal() {
 
     {/* Single shared Product Editor — same component used from Catalog. */}
     <ProductEditor
-      productId={product.id}
+      productId={selectedProduct.id}
       visible={editorOpen}
       onClose={() => setEditorOpen(false)}
-      onSaved={(updated) => b.patchProduct(product.id, updated)}
+      onSaved={(updated) => b.patchProduct(selectedProduct.id, updated)}
     />
 
     </>
@@ -628,6 +699,7 @@ const styles = StyleSheet.create({
   autoParts: { gap: 4, padding: 10, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary },
   autoPartText: { fontSize: 12, fontWeight: "600", color: colors.onSurface },
   autoPartHint: { fontSize: 11, color: colors.onSurfaceSecondary },
+  stockAction: { flexDirection: "row", alignItems: "center", gap: 8, minHeight: 36, paddingHorizontal: 10, borderRadius: radius.sm, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
 
   qtyRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
   qtyStepper: {

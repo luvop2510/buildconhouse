@@ -59,6 +59,7 @@ from routes.sales_workspace_routes import router as sales_workspace_router  # no
 from routes.tile_orders import router as tile_orders_router  # noqa: E402
 from routes.walkin_routes import router as walkin_router  # noqa: E402
 from routes.godown_stock_routes import ensure_godown_stock_indexes, router as godown_stock_router  # noqa: E402
+from routes.page_export_routes import router as page_export_router  # noqa: E402
 from seed import resync_catalog_if_needed, seed_if_empty  # noqa: E402
 from services import catalog_service  # noqa: E402
 from services.domain_outbox import dispatch_pending, ensure_outbox_indexes, outbox_worker  # noqa: E402
@@ -359,6 +360,7 @@ api.include_router(sales_workspace_router)
 api.include_router(tile_orders_router)
 api.include_router(walkin_router)
 api.include_router(godown_stock_router)
+api.include_router(page_export_router)
 
 app.include_router(api)
 

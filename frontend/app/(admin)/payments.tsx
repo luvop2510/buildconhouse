@@ -42,13 +42,17 @@ type Stats = {
   collected_this_month: number;
   active_orders: number;
   fully_paid: number;
+  active_total: number;
+  active_received: number;
+  earned_total: number;
+  spending_total: number;
 };
 
 type OrderRow = {
   id: string; number: string; customer_id: string; customer_name: string;
   grand_total: number; paid: number; outstanding: number;
   percent_collected: number; payment_status: "paid" | "partial" | "due";
-  confirmed_at: string; outstanding_short: string | null;
+  confirmed_at: string; outstanding_short: string | null; days_unpaid: number;
 };
 
 type PaymentEntry = {
@@ -90,6 +94,16 @@ const MODE_LABELS: Record<PayMode, string> = {
 const MODE_ICONS: Record<PayMode, keyof typeof Feather.glyphMap> = {
   cash: "dollar-sign", upi: "smartphone", bank: "briefcase", cheque: "file-text", card: "credit-card",
 };
+
+const AGING_OPTIONS = [
+  { value: "all", label: "All outstanding" },
+  { value: "5_days", label: "5+ days" },
+  { value: "1_week", label: "1+ week" },
+  { value: "1_month", label: "1+ month" },
+  { value: "6_months", label: "6+ months" },
+  { value: "over_6_months", label: "Over 6 months" },
+  { value: "custom", label: "Custom period" },
+];
 
 function money(n: number): string {
   return `₹${(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
@@ -196,6 +210,9 @@ export default function PaymentsScreen() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [q, setQ] = useState("");
+  const [agingPeriod, setAgingPeriod] = useState("all");
+  const [customMinDays, setCustomMinDays] = useState("");
+  const [customMaxDays, setCustomMaxDays] = useState("");
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<OrderDetail | null>(null);
@@ -253,7 +270,15 @@ export default function PaymentsScreen() {
     setLoadingList(true);
     setListError(null);
     try {
-      const url = query ? `/payments/orders?q=${encodeURIComponent(query)}` : "/payments/orders";
+      const params = new URLSearchParams();
+      if (query) params.set("q", query);
+      if (agingPeriod !== "all") params.set("overdue_period", agingPeriod);
+      if (agingPeriod === "custom") {
+        if (customMinDays) params.set("custom_min_days", customMinDays);
+        if (customMaxDays) params.set("custom_max_days", customMaxDays);
+        if (!customMinDays && !customMaxDays) params.delete("overdue_period");
+      }
+      const url = `/payments/orders${params.toString() ? `?${params.toString()}` : ""}`;
       const list = await api.get<OrderRow[]>(url);
       if (request !== orderRequest.current) return;
       setOrders(list);
@@ -263,7 +288,7 @@ export default function PaymentsScreen() {
     } finally {
       if (request === orderRequest.current) setLoadingList(false);
     }
-  }, [q, selectedFloorId]);
+  }, [q, agingPeriod, customMinDays, customMaxDays, selectedFloorId]);
 
   const loadDetail = useCallback(async (id: string) => {
     if (!selectedFloorId) return;
@@ -396,12 +421,11 @@ export default function PaymentsScreen() {
     }
   };
 
-  const sendWhatsAppReminder = async () => {
-    if (!detail) return;
+  const sendWhatsAppReminderFor = async (orderId: string) => {
     setWaLoading(true);
     try {
       const res = await api.get<{ wa_url: string; message: string; phone: string | null; phone_display: string | null }>(
-        `/payments/orders/${detail.id}/whatsapp-reminder`,
+        `/payments/orders/${orderId}/whatsapp-reminder`,
       );
       if (!res.phone) toast.error("No phone number on file — please add one to the customer");
       else toast.success(`Opening WhatsApp for ${res.phone_display || res.phone}`);
@@ -409,6 +433,7 @@ export default function PaymentsScreen() {
     } catch (e: any) { toast.error(e?.detail || "Could not build reminder"); }
     finally { setWaLoading(false); }
   };
+  const sendWhatsAppReminder = () => { if (detail) void sendWhatsAppReminderFor(detail.id); };
 
   const callCustomer = async () => {
     if (!detail?.customer.phone) { toast.error("No phone number on file"); return; }
@@ -496,7 +521,10 @@ export default function PaymentsScreen() {
           ? "Track outstanding balances, record payments, and send reminders."
           : "Permanent reconciliation ledger — every collected payment, reconciled exactly with Collections."}
         overline={tab === "collections" ? "COLLECTIONS" : "LEDGER"}
-        actions={tab === "collections" ? undefined : (
+        actions={tab === "collections" ? (
+          <Button label="Fully Paid Orders" icon="check-circle" variant="secondary"
+            onPress={() => router.push("/(admin)/payments-list" as any)} testID="fully-paid-orders-link" />
+        ) : (
           <Dropdown
             testID="history-export"
             label="Export"
@@ -524,19 +552,26 @@ export default function PaymentsScreen() {
 
       {tab === "collections" ? (
       <ScrollView ref={collectionsScrollRef} contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, gap: spacing.lg, paddingBottom: isPhone ? 132 : spacing.xxxl }}>
-        <Disclosure title="Collections summary" summary="Outstanding balances and payments this month">
+        <Disclosure title="Collections summary" summary="Active order target, collections and purchase spending" defaultOpen>
           {statsError ? <ErrorState title="Summary unavailable" onRetry={() => void loadStats()} /> : null}
         {/* Stats */}
         <View style={{ flexDirection: "row", gap: spacing.md, flexWrap: "wrap" }}>
-          <StatTile label="Total Outstanding" value={stats ? moneyShort(stats.total_outstanding) : "—"}
-            icon="alert-circle" tone="danger" sub="Across all active orders" />
-          <StatTile label="Collected This Month" value={stats ? moneyShort(stats.collected_this_month) : "—"}
-            icon="trending-up" tone="success" sub="Payments received" />
-          <StatTile label="Active Orders" value={stats ? String(stats.active_orders) : "—"}
-            icon="package" tone="brand" sub="Ordered · not fully paid" />
-          <StatTile label="Fully Paid" value={stats ? String(stats.fully_paid) : "—"}
-            icon="check-circle" tone="success" sub="Closed collections" />
+          <StatTile label="Earned" value={stats ? moneyShort(stats.earned_total) : "—"}
+            icon="trending-up" tone="success" sub="Received across all orders" />
+          <StatTile label="Outstanding" value={stats ? moneyShort(stats.total_outstanding) : "—"}
+            icon="alert-circle" tone="danger" sub="Pending on active orders" />
+          <StatTile label="Spending" value={stats ? moneyShort(stats.spending_total) : "—"}
+            icon="shopping-bag" tone="neutral" sub="Committed supplier purchases" />
         </View>
+        <View style={{ flexDirection: "row", gap: spacing.md, flexWrap: "wrap" }}>
+          <StatTile dense label="Total active payments" value={stats ? money(stats.active_total) : "—"}
+            icon="file-text" tone="brand" sub={`${stats?.active_orders ?? "—"} orders awaiting payment`} />
+          <StatTile dense label="Received on active orders" value={stats ? money(stats.active_received) : "—"}
+            icon="check" tone="success" sub="Partial payments received" />
+          <StatTile dense label="Still to receive" value={stats ? money(stats.total_outstanding) : "—"}
+            icon="clock" tone="danger" sub="Remaining active balance" />
+        </View>
+        <Text style={type.caption}>Fully paid orders leave these active payment totals. {stats?.fully_paid ?? "—"} fully paid orders · {stats ? money(stats.collected_this_month) : "—"} received this month.</Text>
 
         </Disclosure>
 
@@ -553,6 +588,21 @@ export default function PaymentsScreen() {
                   placeholder="Search orders…"
                   onClear={() => setQ("")}
                 />
+                <Dropdown
+                  testID="payments-aging-filter"
+                  label={AGING_OPTIONS.find((option) => option.value === agingPeriod)?.label || "All outstanding"}
+                  icon="calendar"
+                  variant="secondary"
+                  items={AGING_OPTIONS.map((option) => ({ label: option.label, onPress: () => setAgingPeriod(option.value) }))}
+                />
+                {agingPeriod === "custom" ? (
+                  <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                    <TextInput testID="payments-custom-min-days" value={customMinDays} onChangeText={(value) => setCustomMinDays(value.replace(/\D/g, ""))}
+                      keyboardType="number-pad" placeholder="From days" placeholderTextColor={colors.onSurfaceMuted} style={[styles.dateInput, { flex: 1 }]} />
+                    <TextInput testID="payments-custom-max-days" value={customMaxDays} onChangeText={(value) => setCustomMaxDays(value.replace(/\D/g, ""))}
+                      keyboardType="number-pad" placeholder="To days" placeholderTextColor={colors.onSurfaceMuted} style={[styles.dateInput, { flex: 1 }]} />
+                  </View>
+                ) : null}
                 {listError ? <ErrorState title="Could not load collections" subtitle={listError} onRetry={() => void loadOrders(q)} /> : loadingList ? (
                   <View style={{ gap: spacing.sm }}>
                     {Array.from({ length: 5 }).map((_, i) => (
@@ -569,8 +619,8 @@ export default function PaymentsScreen() {
                     ))}
                   </View>
                 ) : orders.length === 0 ? (
-                  <EmptyState icon="inbox" title={q ? "No orders match" : "No outstanding customers"}
-                    subtitle={q ? "Try another customer, order number or clear your search." : "Place an order from a quotation to start tracking payments here."} />
+                  <EmptyState icon="inbox" title={q || agingPeriod !== "all" ? "No orders match" : "No outstanding customers"}
+                    subtitle={q || agingPeriod !== "all" ? "Try another search or overdue period." : "Place an order from a quotation to start tracking payments here."} />
                 ) : (
                   <View style={{ gap: spacing.sm }}>
                     {customerCollections.map((customer) => (
@@ -579,6 +629,7 @@ export default function PaymentsScreen() {
                         customer={customer}
                         active={customer.id === selectedCustomer?.id}
                         onPress={() => selectCustomer(customer)}
+                        onRemind={() => void sendWhatsAppReminderFor([...customer.orders].sort((a, b) => b.days_unpaid - a.days_unpaid)[0].id)}
                       />
                     ))}
                   </View>
@@ -1023,10 +1074,11 @@ function PaymentHistoryTab(props: {
 // CustomerCollectionCard — a customer-first collection queue. Payment writes
 // remain safely scoped to the selected order in the detail panel.
 // ─────────────────────────────────────────────────────────────────────────────
-function CustomerCollectionCard({ customer, active, onPress }: { customer: CustomerCollection; active: boolean; onPress: () => void }) {
+function CustomerCollectionCard({ customer, active, onPress, onRemind }: { customer: CustomerCollection; active: boolean; onPress: () => void; onRemind: () => void }) {
   const collectedPercent = customer.paid + customer.outstanding <= 0 ? 0
     : Math.round(customer.paid / (customer.paid + customer.outstanding) * 100);
-  return (
+  const longestPending = Math.max(...customer.orders.map((order) => order.days_unpaid || 0));
+  return <View style={{ gap: spacing.xs }}>
     <HoverCard
       onPress={onPress}
       padding={spacing.md}
@@ -1044,11 +1096,17 @@ function CustomerCollectionCard({ customer, active, onPress }: { customer: Custo
         <Text style={type.caption} numberOfLines={1}>
           {customer.orderCount} outstanding order{customer.orderCount === 1 ? "" : "s"}
         </Text>
+        {longestPending > 0 ? (
+          <Text style={[type.caption, { color: colors.error }]}>
+            Payment pending for {longestPending} days
+          </Text>
+        ) : null}
         <ProgressBar percent={collectedPercent} tone={collectedPercent ? "warning" : "danger"} size="xs" />
         <Text style={type.caption}>{collectedPercent}% collected across open orders</Text>
       </View>
     </HoverCard>
-  );
+    <Button label={`Remind client · ${moneyShort(customer.outstanding)} due`} icon="message-circle" variant="secondary" size="sm" onPress={onRemind} />
+  </View>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

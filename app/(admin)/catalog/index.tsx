@@ -122,6 +122,8 @@ export default function Catalog() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const loadingMoreRef = useRef(false);
+  const categoryScrollRef = useRef<ScrollView>(null);
+  const categoryScrollOffset = useRef(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -399,9 +401,13 @@ export default function Catalog() {
         </View>
       </View>
 
+      <View style={styles.horizontalStrip}>
       <ScrollView
-        horizontal showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: 8, paddingRight: gridPadding, paddingVertical: 2 }}
+        ref={categoryScrollRef}
+        horizontal showsHorizontalScrollIndicator
+        onScroll={(event) => { categoryScrollOffset.current = event.nativeEvent.contentOffset.x; }}
+        scrollEventThrottle={32}
+        contentContainerStyle={{ gap: 8, paddingLeft: 32, paddingRight: gridPadding + 48, paddingVertical: 2 }}
         style={{ marginHorizontal: -gridPadding, paddingHorizontal: gridPadding }}
       >
         <CategoryPill label="All categories" icon="grid" active={!cat} onPress={() => { setCat(null); setSubcat(null); setSeries(null); }} testID="cat-all" />
@@ -416,6 +422,17 @@ export default function Catalog() {
           />
         ))}
       </ScrollView>
+      <Pressable accessibilityRole="button" accessibilityLabel="Scroll categories right"
+        testID="category-scroll-right" onPress={() => { categoryScrollOffset.current += 300; categoryScrollRef.current?.scrollTo({ x: categoryScrollOffset.current, animated: true }); }}
+        style={styles.categoryScrollRight}>
+        <Feather name="chevron-right" size={18} color={colors.onSurface} />
+      </Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Scroll categories left"
+        testID="category-scroll-left" onPress={() => { categoryScrollOffset.current = Math.max(0, categoryScrollOffset.current - 300); categoryScrollRef.current?.scrollTo({ x: categoryScrollOffset.current, animated: true }); }}
+        style={styles.categoryScrollLeft}>
+        <Feather name="chevron-left" size={18} color={colors.onSurface} />
+      </Pressable>
+      </View>
       </> : hasActiveFilters ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingRight: 8 }}>
           {brandId ? <ActiveChip label={brandById[brandId] || "Brand"} onClose={() => { setBrandId(null); setCat(null); }} /> : null}
@@ -813,6 +830,8 @@ function FilterSection({ title, children }: { title: string; children: React.Rea
 const styles = StyleSheet.create({
   skeletonGrid: { flexDirection: "row", flexWrap: "wrap" },
   horizontalStrip: { position: "relative" },
+  categoryScrollRight: { position: "absolute", right: 0, top: 0, bottom: 0, width: 32, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceSecondary },
+  categoryScrollLeft: { position: "absolute", left: 0, top: 0, bottom: 0, width: 32, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceSecondary },
   stripOverflowCue: {
     position: "absolute", top: 0, right: -2, bottom: 0, width: 30,
     alignItems: "flex-end", justifyContent: "center",

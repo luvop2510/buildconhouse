@@ -46,6 +46,7 @@ CUSTOM_ACCESS_COMMON_PATHS = frozenset({
     "/api/auth/sessions", "/api/settings/floor-access", "/api/settings/floors",
     "/api/settings/permission-matrix", "/api/roles", "/api/downloads/token",
     "/api/settings/access-grants/me",
+    "/api/exports/page.xlsx",
 })
 
 

@@ -6,12 +6,13 @@ quantity update, so two staff members cannot allocate the same unit.
 """
 import asyncio
 import logging
+import re
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from auth import floor_query, get_current_user, get_floor_scoped_or_404, require_min_role
+from auth import floor_for_write, floor_query, get_current_user, get_floor_scoped_or_404, require_min_role
 from db import client, db
 from pymongo import ReturnDocument
 from models import Payment, UserPublic, now_iso
@@ -41,6 +42,19 @@ class Intake(BaseModel):
 class Allocation(BaseModel):
     quotation_id: str
     qty: float = Field(gt=0)
+
+
+class DirectIntake(BaseModel):
+    product_id: str | None = None
+    qty: float = Field(gt=0)
+    reason: str = Field(default="Added to godown stock", min_length=2, max_length=280)
+    sku: str | None = None
+    name: str | None = None
+    brand: str | None = None
+    image: str | None = None
+    size: str | None = None
+    feature: str | None = None
+    category: str | None = None
 
 
 def _stock_view(lot: dict) -> dict:
@@ -190,9 +204,60 @@ async def list_stock(
     return {"lots": [_stock_view(lot) for lot in lots], "brands": sorted(brands.values(), key=lambda row: row["name"].lower()), "total_available_qty": sum(float(lot.get("available_qty") or 0) for lot in lots)}
 
 
+@router.get("/sku-suggestions")
+async def sku_suggestions(prefix: str = Query(min_length=1, max_length=80), user: UserPublic = Depends(get_current_user)):
+    """Literal, floor-scoped SKU prefix lookup for direct stock intake."""
+    rows = await db.products.find(
+        floor_query(user, {"sku": {"$regex": f"^{re.escape(prefix.strip())}", "$options": "i"}, "active": {"$ne": False}}),
+        {"_id": 0, "id": 1, "sku": 1, "name": 1, "brand_id": 1, "brand_name": 1, "hero_image_url": 1, "images": 1, "size": 1, "category_id": 1},
+    ).sort("sku", 1).to_list(30)
+    return [{"id": row["id"], "sku": row.get("sku"), "name": row.get("name"), "brand_name": row.get("brand_name"), "image": row.get("hero_image_url") or (row.get("images") or [None])[0], "size": row.get("size"), "category_id": row.get("category_id")} for row in rows]
+
+
 @router.get("/{stock_id}")
 async def get_stock(stock_id: str, user: UserPublic = Depends(get_current_user)):
     return _stock_view(await get_floor_scoped_or_404(db.godown_stock, stock_id, user, not_found="Godown stock lot not found", projection={"_id": 0}))
+
+
+@router.post("/direct-intakes")
+async def direct_intake(body: DirectIntake, user: UserPublic = Depends(require_min_role("warehouse"))):
+    """Add catalog or independently described material without a customer source."""
+    floor_id = floor_for_write(user)
+    product = None
+    if body.product_id:
+        product = await db.products.find_one(floor_query(user, {"id": body.product_id}), {"_id": 0})
+        if not product:
+            raise HTTPException(status_code=404, detail="Product not found on this floor")
+        # A multi-floor user may read another floor, but the intake must stay
+        # on the actual product's floor rather than their default floor.
+        floor_id = product["floor_id"]
+    elif not (body.sku and body.sku.strip() and body.name and body.name.strip()):
+        raise HTTPException(status_code=422, detail="SKU and product name are required")
+    at = now_iso()
+    lot_id = str(uuid4())
+    lot = {
+        "id": lot_id, "floor_id": floor_id,
+        # Stock-only lines use an opaque id tied to this lot. It is never
+        # inserted into catalog/products, so manual entries stay private to
+        # the godown while quotations can still identify their source.
+        "product_id": (product or {}).get("id") or f"godown:{lot_id}",
+        "sku": (product or {}).get("sku") or (body.sku or "").strip(),
+        "name": (product or {}).get("name") or (body.name or "").strip(),
+        "image": (product or {}).get("hero_image_url") or ((product or {}).get("images") or [None])[0] or body.image,
+        "size": (product or {}).get("size") or body.size,
+        "feature": (product or {}).get("feature") or body.feature,
+        "category": body.category,
+        "category_id": (product or {}).get("category_id"),
+        "brand_id": (product or {}).get("brand_id"),
+        "brand_name": (product or {}).get("brand_name") or body.brand,
+        "qty_received": body.qty, "available_qty": body.qty,
+        "reason": body.reason.strip(), "source_type": "catalog" if product else "manual",
+        "transferred_at": at, "transferred_by": user.id, "transferred_by_name": user.full_name,
+        "allocations": [], "created_at": at, "updated_at": at,
+    }
+    await db.godown_stock.insert_one(lot)
+    await log_event(event_type="godown_stock.intaken", entity_type="godown_stock", entity_id=lot["id"], actor=user, floor_id=floor_id, summary=f"Added {body.qty:g} × {lot['name']} to godown stock", payload={"source_type": lot["source_type"]})
+    return _stock_view(lot)
 
 
 @router.post("/intakes")

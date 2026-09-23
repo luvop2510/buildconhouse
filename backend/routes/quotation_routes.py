@@ -326,6 +326,20 @@ async def recent_quotations(
     return out
 
 
+async def _manual_stock_line(item: QuotationLineItem, user: UserPublic, *, floor_id: str | None = None) -> dict | None:
+    """Allow a stock-only product only when its actual godown lot backs the line.
+
+    Synthetic ids cannot be used to invent catalog products or cross floors.
+    The ordinary stock allocation path still reserves quantity atomically.
+    """
+    if not item.godown_stock_id or item.product_id != f"godown:{item.godown_stock_id}":
+        return None
+    query = {"id": item.godown_stock_id, "product_id": item.product_id, "source_type": "manual"}
+    if floor_id:
+        query["floor_id"] = floor_id
+    return await db.godown_stock.find_one(floor_query(user, query), {"_id": 0, "floor_id": 1, "category_id": 1})
+
+
 @router.post("", response_model=Quotation)
 async def create_quotation(
     body: QuotationCreate,
@@ -350,6 +364,8 @@ async def create_quotation(
             floor_query(user, {"id": it.product_id}),
             {"_id": 0, "category_id": 1, "floor_id": 1, "specs": 1},
         )
+        if not p:
+            p = await _manual_stock_line(it, user)
         if not p:
             raise HTTPException(status_code=400, detail="One or more quotation products are unavailable on this floor.")
         if not it.category_id:
@@ -608,6 +624,8 @@ async def update_quotation(
         ])
         for it, p in zip(items_typed, products, strict=True):
             if not p:
+                p = await _manual_stock_line(it, user, floor_id=doc.get("floor_id"))
+            if not p:
                 raise HTTPException(status_code=400, detail="One or more quotation products are unavailable on this quotation's floor.")
             if not it.category_id:
                 it.category_id = p.get("category_id")
@@ -615,7 +633,7 @@ async def update_quotation(
         update["items"] = [i.model_dump() for i in _normalize_tile_items(
             [QuotationLineItem(**item) for item in canonical_items], doc.get("doc_type", "standard")
         )]
-        usage_product_ids = [it.product_id for it in items_typed]
+        usage_product_ids = [it.product_id for it in items_typed if not it.product_id.startswith("godown:")]
 
     if body.rooms is not None:
         update["rooms"] = body.rooms

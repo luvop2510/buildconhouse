@@ -200,7 +200,7 @@ def _flatten_item(po: dict, it: dict, sla_days: int) -> dict:
         "stage": stage,
         "stage_label": STAGE_LABELS.get(stage, stage),
         "stage_tone": STAGE_TONES.get(stage, {"bg": "#F4F4F5", "fg": "#3F3F46"}),
-        "qty": float(it.get("qty") or 0),
+        "qty": max(0.0, float(it.get("qty") or 0) - float(it.get("godown_transferred_qty") or 0)),
         "unit_cost": float(it.get("unit_cost") or 0),
         "room": it.get("room"),
         "expected_delivery_at": po.get("expected_delivery_at"),
@@ -281,6 +281,7 @@ async def _iter_items(
         {"$match": match},
         {"$unwind": "$items"},
         {"$match": {"items.cancelled": {"$ne": True}}},
+        {"$match": {"$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$ifNull": ["$items.godown_transferred_qty", 0]}]}, 0]}}},
         {"$project": {
             "_id": 0,
             "id": 1, "number": 1, "customer_id": 1, "customer_name": 1,
@@ -392,6 +393,7 @@ def _items_page_pipeline(
         {"$match": po_match},
         {"$unwind": "$items"},
         {"$match": {"items.cancelled": {"$ne": True}}},
+        {"$match": {"$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$ifNull": ["$items.godown_transferred_qty", 0]}]}, 0]}}},
         {"$project": {
             "_id": 0,
             "item_id": "$items.id", "po_id": "$id", "po_number": "$number",
@@ -405,7 +407,7 @@ def _items_page_pipeline(
             "brand_name": {"$ifNull": ["$items.brand_name", "$brand_name"]},
             "supplier_id": 1, "supplier_name": 1,
             "stage": {"$ifNull": ["$items.stage", "order_in_company"]},
-            "qty": {"$ifNull": ["$items.qty", 0]},
+            "qty": {"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$ifNull": ["$items.godown_transferred_qty", 0]}]},
             "unit_cost": {"$ifNull": ["$items.unit_cost", 0]},
             "room": "$items.room", "expected_delivery_at": 1,
             "last_moved_at": {"$ifNull": ["$items.last_moved_at", "$created_at"]},
@@ -413,6 +415,11 @@ def _items_page_pipeline(
             "split_from_item_id": "$items.split_from_item_id",
             "transferred_from_item_id": "$items.transferred_from_item_id",
             "transferred_from_customer_id": "$items.transferred_from_customer_id",
+            "godown_transferred_qty": "$items.godown_transferred_qty",
+            "godown_transfer_history": "$items.godown_transfer_history",
+            "godown_stock_id": "$items.godown_stock_id",
+            "godown_source_customer_name": "$items.godown_source_customer_name",
+            "godown_transferred_at": "$items.godown_transferred_at",
         }},
         *([{"$match": item_match}] if item_match else []),
         {"$set": {
@@ -462,6 +469,7 @@ async def stage_catalog(user: UserPublic = Depends(get_current_user)):
         {"$match": match},
         {"$unwind": "$items"},
         {"$match": {"items.cancelled": {"$ne": True}}},
+        {"$match": {"$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$ifNull": ["$items.godown_transferred_qty", 0]}]}, 0]}}},
         {"$group": {"_id": {"$ifNull": ["$items.stage", "order_in_company"]}, "count": {"$sum": 1}}},
     ]
     rows = await db.purchase_orders.aggregate(pipeline).to_list(20)
@@ -483,6 +491,7 @@ async def brand_facets(user: UserPublic = Depends(get_current_user)):
         {"$match": match},
         {"$unwind": "$items"},
         {"$match": {"items.cancelled": {"$ne": True}}},
+        {"$match": {"$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$ifNull": ["$items.godown_transferred_qty", 0]}]}, 0]}}},
         {"$group": {
             "_id": {"id": "$brand_id", "name": "$brand_name"},
             "count": {"$sum": 1},
@@ -509,6 +518,7 @@ async def customer_facets(user: UserPublic = Depends(get_current_user)):
         {"$match": match},
         {"$unwind": "$items"},
         {"$match": {"items.cancelled": {"$ne": True}}},
+        {"$match": {"$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$ifNull": ["$items.godown_transferred_qty", 0]}]}, 0]}}},
         {"$group": {
             "_id": {"id": "$customer_id", "name": "$customer_name"},
             "count": {"$sum": 1},
@@ -543,6 +553,7 @@ async def completed_customer_facets(user: UserPublic = Depends(get_current_user)
     rows = await db.purchase_orders.aggregate([
         {"$match": match}, {"$unwind": "$items"},
         {"$match": {"items.cancelled": {"$ne": True}}},
+        {"$match": {"$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$ifNull": ["$items.godown_transferred_qty", 0]}]}, 0]}}},
         {"$group": {
             "_id": {"id": "$customer_id", "name": "$customer_name"},
             "item_count": {"$sum": 1},
@@ -626,7 +637,11 @@ async def customer_workspace(
         floor_query(user, {"customer_id": customer_id, "status": {"$in": ["open", "snoozed"]}}), {"_id": 0},
     ).sort("due_at", 1).to_list(100)
 
-    open_pos = [p for p in pos if p.get("status") != "cancelled"]
+    def visible_po_items(po: dict) -> list[dict]:
+        return [item for item in po.get("items") or [] if not item.get("cancelled") and float(item.get("qty") or 0) > float(item.get("godown_transferred_qty") or 0)]
+
+    visible_pos = [p for p in pos if visible_po_items(p)]
+    open_pos = [p for p in visible_pos if p.get("status") != "cancelled"]
     expected = sorted(
         [
             {"po_id": p["id"], "po_number": p.get("number"), "expected_delivery_at": p.get("expected_delivery_at")}
@@ -664,9 +679,9 @@ async def customer_workspace(
                 "brand_name": p.get("brand_name"), "supplier_name": p.get("supplier_name"),
                 "grand_total": p.get("grand_total"), "created_at": p.get("created_at"),
                 "expected_delivery_at": p.get("expected_delivery_at"),
-                "item_count": len(p.get("items") or []),
+                "item_count": len(visible_po_items(p)),
             }
-            for p in pos
+            for p in visible_pos
         ],
         "outstanding_items": outstanding_rows,
         "recent_activity": activity,

@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from uuid import uuid4
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import quote_plus
 
@@ -65,7 +65,7 @@ MODE_LABELS = {
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-async def _paid_by_quotation(quotation_ids: list[str], *, floor_id: str | None = None) -> dict[str, float]:
+async def _paid_by_quotation(quotation_ids: list[str], *, floor_id: str | None = None, cash_only: bool = False) -> dict[str, float]:
     """Sum completed payment amounts per quotation.
 
     A quotation context panel is anchored to one business unit.  Accepting
@@ -75,6 +75,8 @@ async def _paid_by_quotation(quotation_ids: list[str], *, floor_id: str | None =
     if not quotation_ids:
         return {}
     match: dict = {"quotation_id": {"$in": quotation_ids}, "status": "completed"}
+    if cash_only:
+        match["entry_type"] = {"$ne": "godown_stock_credit"}
     if floor_id is not None:
         match["floor_id"] = floor_id
     pipeline = [
@@ -157,6 +159,44 @@ def _iso_month(iso_ts: str) -> str:
     return (iso_ts or "")[:7]  # "2026-08"
 
 
+def _days_unpaid(confirmed_at: str | None, *, now: datetime | None = None) -> int:
+    """Calendar days since confirmation, never a negative or invalid age."""
+    if not confirmed_at:
+        return 0
+    try:
+        confirmed = datetime.fromisoformat(confirmed_at.replace("Z", "+00:00"))
+        if confirmed.tzinfo is None:
+            confirmed = confirmed.replace(tzinfo=timezone.utc)
+        business_tz = timezone(timedelta(hours=5, minutes=30))
+        today = (now or datetime.now(timezone.utc)).astimezone(business_tz).date()
+        return max(0, (today - confirmed.astimezone(business_tz).date()).days)
+    except (TypeError, ValueError):
+        return 0
+
+
+AGING_RANGES = {
+    "5_days": (5, None),
+    "1_week": (7, None),
+    "1_month": (30, None),
+    "6_months": (180, None),
+    "over_6_months": (181, None),
+}
+
+
+def _aging_range(period: str | None, minimum: int | None, maximum: int | None) -> tuple[int, int | None] | None:
+    if not isinstance(period, str) or not period:
+        return None
+    if period == "custom":
+        if minimum is None and maximum is None:
+            raise HTTPException(status_code=400, detail="Enter a custom minimum or maximum age")
+        if minimum is not None and maximum is not None and minimum > maximum:
+            raise HTTPException(status_code=400, detail="Minimum age cannot exceed maximum age")
+        return (minimum or 0, maximum)
+    if period not in AGING_RANGES:
+        raise HTTPException(status_code=400, detail="Unknown overdue period")
+    return AGING_RANGES[period]
+
+
 # ---------------------------------------------------------------------------
 # Stats (KPI cards at the top of the page)
 # ---------------------------------------------------------------------------
@@ -169,24 +209,43 @@ async def payment_stats(user: UserPublic = Depends(get_current_user)):
     ).to_list(2000)
     ids = [o["id"] for o in orders]
     paid_map = await _paid_by_quotation(ids)
+    cash_map = await _paid_by_quotation(ids, cash_only=True)
 
     total_outstanding = 0.0
+    active_total = 0.0
+    active_received = 0.0
+    earned_total = 0.0
+    settlement_credits = 0.0
     active_orders = 0
     fully_paid = 0
     for o in orders:
         grand = _collection_total(o)
         paid = paid_map.get(o["id"], 0.0)
+        cash = max(0.0, cash_map.get(o["id"], 0.0))
+        credit = max(0.0, paid - cash)
+        earned_total += min(cash, max(grand - credit, 0.0))
+        settlement_credits += credit
         status = _payment_status(paid, grand)
         if status == "paid":
             fully_paid += 1
         else:
             active_orders += 1
+            active_total += max(0.0, grand - credit)
+            active_received += min(cash, max(grand - credit, 0.0))
             total_outstanding += max(0.0, grand - paid)
+
+    # Purchase orders record supplier costs, not cash disbursements. Exclude
+    # unapproved drafts and cancelled orders from this committed spend figure.
+    purchase_rows = await db.purchase_orders.aggregate([
+        {"$match": _payment_scope_query(user, {"status": {"$nin": ["draft", "awaiting_review", "cancelled"]}})},
+        {"$group": {"_id": None, "total": {"$sum": "$grand_total"}}},
+    ]).to_list(1)
+    spending_total = float(purchase_rows[0].get("total", 0)) if purchase_rows else 0.0
 
     # Collected this month
     this_month = _iso_month(datetime.now(timezone.utc).isoformat())
     pipeline = [
-        {"$match": _payment_scope_query(user, {"status": "completed"})},
+        {"$match": _payment_scope_query(user, {"status": "completed", "entry_type": {"$ne": "godown_stock_credit"}})},
         {"$group": {"_id": {"$substr": [{"$ifNull": ["$paid_at", "$created_at"]}, 0, 7]}, "total": {"$sum": "$amount"}}},
     ]
     rows = await db.payments.aggregate(pipeline).to_list(60)
@@ -201,6 +260,11 @@ async def payment_stats(user: UserPublic = Depends(get_current_user)):
         "collected_this_month": round(collected_this_month, 2),
         "active_orders": active_orders,
         "fully_paid": fully_paid,
+        "active_total": round(active_total, 2),
+        "active_received": round(active_received, 2),
+        "earned_total": round(earned_total, 2),
+        "spending_total": round(spending_total, 2),
+        "settlement_credits": round(settlement_credits, 2),
     }
 
 
@@ -211,10 +275,14 @@ async def payment_stats(user: UserPublic = Depends(get_current_user)):
 async def list_orders(
     q: Optional[str] = None,
     status_filter: Optional[str] = Query(None, description="paid | partial | due | all"),
+    overdue_period: Optional[str] = Query(None, description="5_days | 1_week | 1_month | 6_months | over_6_months | custom"),
+    custom_min_days: Optional[int] = Query(None, ge=0),
+    custom_max_days: Optional[int] = Query(None, ge=0),
     limit: int = Query(200, ge=1, le=1000),
     user: UserPublic = Depends(get_current_user),
 ):
     """Collectable orders sorted by outstanding-first."""
+    aging = _aging_range(overdue_period, custom_min_days, custom_max_days)
     query: dict = {"status": {"$in": list(ORDER_STATUSES)}}
     if q:
         term = {"$regex": q, "$options": "i"}
@@ -224,7 +292,7 @@ async def list_orders(
 
     docs = await db.quotations.find(
         _payment_scope_query(user, query), {"_id": 0, "id": 1, "number": 1, "customer_id": 1, "customer_name": 1,
-                "grand_total": 1, "payment_extra_amount": 1, "payment_extra_history": 1, "status": 1, "updated_at": 1, "created_at": 1, "notes": 1},
+                "grand_total": 1, "payment_extra_amount": 1, "payment_extra_history": 1, "status": 1, "ordered_at": 1, "created_at": 1, "notes": 1},
     ).sort("updated_at", -1).to_list(limit * 2)
 
     ids = [d["id"] for d in docs]
@@ -237,6 +305,7 @@ async def list_orders(
         outstanding = max(0.0, grand - paid)
         pay_status = _payment_status(paid, grand)
         pct = 0 if grand <= 0 else min(100, int(round(paid / grand * 100)))
+        confirmed_at = d.get("ordered_at") or d.get("created_at")
         out.append({
             "id": d["id"],
             "number": d.get("number"),
@@ -247,7 +316,8 @@ async def list_orders(
             "outstanding": round(outstanding, 2),
             "percent_collected": pct,
             "payment_status": pay_status,       # paid | partial | due
-            "confirmed_at": d.get("updated_at") or d.get("created_at"),
+            "confirmed_at": confirmed_at,
+            "days_unpaid": _days_unpaid(confirmed_at) if outstanding > 0 else 0,
             "outstanding_short": _short_amount(outstanding) if outstanding > 0 else None,
         })
 
@@ -261,6 +331,11 @@ async def list_orders(
         out = [o for o in out if o["payment_status"] == status_filter]
     else:
         out = [o for o in out if o["payment_status"] != "paid"]
+
+    if aging:
+        minimum, maximum = aging
+        out = [o for o in out if o["outstanding"] > 0 and o["days_unpaid"] >= minimum
+               and (maximum is None or o["days_unpaid"] <= maximum)]
 
     # Sort: outstanding desc, then most recently confirmed
     out.sort(key=lambda o: (-o["outstanding"], -(o.get("confirmed_at") or "").__hash__()))
@@ -629,6 +704,49 @@ async def completed_payment_list(
     docs = await db.payments.find(query, {"_id": 0}).sort(_SORT_MAP[sort]).skip(skip).limit(limit).to_list(limit)
     response.headers["X-Total-Count"] = str(total)
     return {"total": total, "items": await _enrich_history_rows(docs)}
+
+
+@router.get("/fully-paid-orders")
+async def fully_paid_orders(
+    q: Optional[str] = None,
+    business_unit: Optional[str] = None,
+    sort: str = Query("date_desc", pattern="^(date_desc|date_asc|amount_desc|amount_asc)$"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=500),
+    user: UserPublic = Depends(get_current_user),
+):
+    """One row per settled order, even when it took several installments."""
+    query: dict = {"status": {"$in": list(ORDER_STATUSES)}}
+    if business_unit and business_unit != "all":
+        _resolve_history_floor_ids(user, business_unit)
+        query["floor_id"] = business_unit
+    if q:
+        term = {"$regex": q.strip(), "$options": "i"}
+        query["$or"] = [{"number": term}, {"customer_name": term}]
+    orders = await db.quotations.find(
+        _payment_scope_query(user, query),
+        {"_id": 0, "id": 1, "number": 1, "customer_id": 1, "customer_name": 1,
+         "floor_id": 1, "grand_total": 1, "payment_extra_amount": 1,
+         "payment_extra_history": 1, "ordered_at": 1, "created_at": 1},
+    ).to_list(5000)
+    paid_map = await _paid_by_quotation([order["id"] for order in orders])
+    settled = []
+    for order in orders:
+        total = _collection_total(order)
+        paid = paid_map.get(order["id"], 0.0)
+        if total <= 0 or paid + 1e-6 < total:
+            continue
+        settled.append({
+            "id": order["id"], "number": order.get("number"),
+            "customer_id": order.get("customer_id"), "customer_name": order.get("customer_name"),
+            "floor_id": order.get("floor_id"), "grand_total": total,
+            "received": round(paid, 2), "outstanding": 0.0,
+            "confirmed_at": order.get("ordered_at") or order.get("created_at"),
+        })
+    reverse = sort in ("date_desc", "amount_desc")
+    key = "grand_total" if sort.startswith("amount") else "confirmed_at"
+    settled.sort(key=lambda order: order.get(key) or (0 if key == "grand_total" else ""), reverse=reverse)
+    return {"total": len(settled), "items": settled[skip:skip + limit]}
 
 
 # ---------------------------------------------------------------------------

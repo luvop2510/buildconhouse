@@ -276,7 +276,10 @@ export default function PurchasesScreen() {
           reason: reason?.trim() || "Customer declined / cancelled item",
         });
       }
-      await cancelPurchaseItem(cancelTarget.item_id, reason);
+      // Intake already subtracts the transferred quantity from active views.
+      // Cancelling afterward can fail for delivered lines and leave staff with
+      // a misleading error even though the stock movement succeeded.
+      if (!moveToGodown) await cancelPurchaseItem(cancelTarget.item_id, reason);
       toast.success(moveToGodown ? `${cancelTarget.name} moved to godown stock and removed from active purchases` : `${cancelTarget.name} removed from active purchases`);
       setCancelTarget(null);
       await Promise.all([refreshPurchases({ strict: true }), loadCustomers(), loadShortages()]);

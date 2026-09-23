@@ -23,6 +23,7 @@ import { useModuleAccess, usePermissionMatrix } from "@/src/hooks/use-permission
 import { staffLandingPath } from "@/src/access-profiles";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { AppScaffold } from "@/src/components/mobile/AppScaffold";
+import { PageExcelExport } from "@/src/components/PageExcelExport";
 import { storage } from "@/src/utils/storage";
 import { FURNITURE_FLOOR_ID, KITCHEN_FLOOR_ID, SANITARY_FLOOR_ID, TILES_FLOOR_ID, floorDisplayLabel, floorLandingPath } from "@/src/constants/floors";
 
@@ -555,7 +556,7 @@ export default function AdminLayout() {
           style={{ backgroundColor: color.canvas }}
           bottomNavigation={focusedQuotation ? null : <PhoneBar />}
         >
-          <ConnectionStatus /><FloorAccessGate><CustomAccessRouteGate>{isPhone && !focusedQuotation ? <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 }}><FloorSwitcher /></View> : null}<Slot /></CustomAccessRouteGate></FloorAccessGate>
+          <ConnectionStatus /><FloorAccessGate><CustomAccessRouteGate>{isPhone && !focusedQuotation ? <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 }}><FloorSwitcher /></View> : null}<PageExcelExport /><Slot /></CustomAccessRouteGate></FloorAccessGate>
         </AppScaffold>
       </PaletteProvider>
     );
@@ -572,7 +573,7 @@ export default function AdminLayout() {
           {isTablet ? <Rail /> : <Sidebar collapsed={sidebarCollapsed} onToggle={toggleSidebar} />}
         </View>
         <View role="main" accessibilityLabel="Workspace content" style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
-          <ConnectionStatus /><FloorAccessGate><CustomAccessRouteGate>{isPhone && !focusedQuotation ? <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 }}><FloorSwitcher /></View> : null}<Slot /></CustomAccessRouteGate></FloorAccessGate>
+          <ConnectionStatus /><FloorAccessGate><CustomAccessRouteGate>{isPhone && !focusedQuotation ? <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 }}><FloorSwitcher /></View> : null}<PageExcelExport /><Slot /></CustomAccessRouteGate></FloorAccessGate>
         </View>
       </View>
     </PaletteProvider>

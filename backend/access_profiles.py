@@ -77,6 +77,10 @@ def profile_allows_request(profile: str | None, method: str, path: str) -> bool:
     path = path.split("?", 1)[0]
     if (method, path) in _COMMON or (method == "DELETE" and fullmatch(r"/api/auth/sessions/[^/]+", path)):
         return True
+    # Converts rows already visible to this user into an Excel file; it reads
+    # no server-side business records and grants no additional data access.
+    if (method, path) == ("POST", "/api/exports/page.xlsx"):
+        return True
     if profile in {GROUND_TILE_QUOTATIONS_FOLLOWUPS, SANITARY_QUOTATIONS_FOLLOWUPS}:
         return (path.startswith("/api/quotations") or path.startswith("/api/followups")
                 or _customer_for_quotation(method, path) or _catalog_read(method, path)
