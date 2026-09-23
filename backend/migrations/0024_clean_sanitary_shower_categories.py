@@ -33,7 +33,7 @@ def target_for(brand: str, source: str, name: str, subcategory: str | None = Non
                 return "Accessories"
             if "shower arm" in text and not re.search(r"head\s*shower|headshower|\bohs\b|\bsh\b.*shower arm", text):
                 return "Accessories"
-        if source == "HAND SHOWER SET" and re.search(r"hose|wall union|wall holder|wall hook|shower holder|metal tube", text):
+        if source == "HAND SHOWER SET" and "wall holder set" not in text and re.search(r"hose|wall union|wall holder|wall hook|shower holder|metal tube", text):
             return "Accessories"
     if brand in {"Hansgrohe", "Axor"} and source in {"SHOWERS", "Showers"}:
         if "basic set" in text:

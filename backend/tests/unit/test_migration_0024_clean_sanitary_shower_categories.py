@@ -12,6 +12,7 @@ def test_grohe_shower_heads_remain_and_other_parts_leave():
     assert target_for("Grohe", "SHOWER", "New Tempesta-F Trigger Spray") == "TRIGGER"
     assert target_for("Grohe", "SHOWER", "Extension cable- 5m Light Set") == "Accessories"
     assert target_for("Grohe", "HAND SHOWER SET", "Silverflex Shower Hose, 1500 mm") == "Accessories"
+    assert target_for("Grohe", "HAND SHOWER SET", "Tempesta 110 wall holder set 2-spray") is None
 
 
 def test_hansgrohe_axor_and_vitra_are_brand_scoped():
