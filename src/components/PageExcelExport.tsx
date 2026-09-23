@@ -27,6 +27,17 @@ function sectionNames(): string[] {
 function capturePage(selectedSection: string, brand: string): Section[] {
   const root = pageRoot();
   if (!root) return [];
+  const needle = brand.trim().toLocaleLowerCase();
+  if (needle && selectedSection === "all") {
+    // A catalog card or table row contains the brand and its product/order
+    // details together. Keep that complete record instead of exporting only
+    // the isolated text line that happened to contain the brand name.
+    const recordNodes = Array.from(root.querySelectorAll('tr,[role="row"],[data-testid^="family-"],[data-testid^="product-"]')) as HTMLElement[];
+    const matching = recordNodes.filter((node) => !recordNodes.some((other) => other !== node && other.contains(node)))
+      .map((node) => (node.innerText || "").split(/\n+|\t+/).map((cell) => cell.trim()).filter(Boolean))
+      .filter((row) => row.join(" ").toLocaleLowerCase().includes(needle));
+    if (matching.length) return [{ name: `Brand ${brand.trim()}`, rows: matching }];
+  }
   const headings = sectionNames();
   const raw = (root.innerText || "").split(/\n+/).map((line) => line.trim()).filter(Boolean);
   const groups: Section[] = [{ name: "Overview", rows: [] }];
@@ -46,7 +57,6 @@ function capturePage(selectedSection: string, brand: string): Section[] {
   for (const group of groups) {
     group.rows = group.rows.map((row) => row[0].includes("\t") ? row[0].split("\t").map((cell) => cell.trim()) : row);
   }
-  const needle = brand.trim().toLocaleLowerCase();
   return groups
     .filter((group) => selectedSection === "all" || group.name === selectedSection)
     .map((group) => ({ ...group, rows: needle ? group.rows.filter((row) => row.join(" ").toLocaleLowerCase().includes(needle)) : group.rows }))
