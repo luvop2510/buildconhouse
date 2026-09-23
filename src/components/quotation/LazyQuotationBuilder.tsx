@@ -7,6 +7,7 @@ type QuotationBuilderProps = {
   mode: QuotationBuilderMode;
   initialProductId?: string | null;
   initialGodownStockId?: string | null;
+  initialGodownVariant?: string | null;
   /** Existing quotation to load into the editable builder workspace. */
   initialQuotationId?: string | null;
 };

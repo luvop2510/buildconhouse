@@ -44,6 +44,11 @@ class Allocation(BaseModel):
     qty: float = Field(gt=0)
 
 
+class StockPriceVariant(BaseModel):
+    label: str = Field(min_length=1, max_length=80)
+    price: float = Field(ge=0)
+
+
 class DirectIntake(BaseModel):
     product_id: str | None = None
     qty: float = Field(gt=0)
@@ -55,10 +60,14 @@ class DirectIntake(BaseModel):
     size: str | None = None
     feature: str | None = None
     category: str | None = None
+    unit_price: float | None = Field(default=None, ge=0)
+    price_variants: list[StockPriceVariant] = Field(default_factory=list, max_length=20)
 
 
 def _stock_view(lot: dict) -> dict:
-    return {key: value for key, value in lot.items() if key != "_id"}
+    row = {key: value for key, value in lot.items() if key != "_id"}
+    row["stock_value"] = round(float(row.get("available_qty") or 0) * float(row["unit_price"]), 2) if row.get("unit_price") is not None else None
+    return row
 
 
 def _transaction_unsupported(exc: Exception) -> bool:
@@ -187,9 +196,10 @@ async def _persist_intake(
 @router.get("")
 async def list_stock(
     brand_id: str | None = None, q: str | None = None,
+    include_history: bool = False,
     user: UserPublic = Depends(get_current_user),
 ):
-    query: dict = floor_query(user, {"available_qty": {"$gt": 0}})
+    query: dict = floor_query(user, {} if include_history else {"available_qty": {"$gt": 0}})
     if brand_id:
         query["brand_id"] = brand_id
     if q and q.strip():
@@ -201,7 +211,7 @@ async def list_stock(
         row = brands.setdefault(key, {"id": lot.get("brand_id"), "name": lot.get("brand_name") or "Other", "lot_count": 0, "available_qty": 0})
         row["lot_count"] += 1
         row["available_qty"] += float(lot.get("available_qty") or 0)
-    return {"lots": [_stock_view(lot) for lot in lots], "brands": sorted(brands.values(), key=lambda row: row["name"].lower()), "total_available_qty": sum(float(lot.get("available_qty") or 0) for lot in lots)}
+    return {"lots": [_stock_view(lot) for lot in lots], "brands": sorted(brands.values(), key=lambda row: row["name"].lower()), "total_available_qty": sum(float(lot.get("available_qty") or 0) for lot in lots), "total_stock_value": round(sum(float(lot.get("available_qty") or 0) * float(lot["unit_price"]) for lot in lots if lot.get("unit_price") is not None), 2), "unpriced_lot_count": sum(1 for lot in lots if float(lot.get("available_qty") or 0) > 0 and lot.get("unit_price") is None)}
 
 
 @router.get("/sku-suggestions")
@@ -233,6 +243,8 @@ async def direct_intake(body: DirectIntake, user: UserPublic = Depends(require_m
         floor_id = product["floor_id"]
     elif not (body.sku and body.sku.strip() and body.name and body.name.strip()):
         raise HTTPException(status_code=422, detail="SKU and product name are required")
+    if not product and body.unit_price is None:
+        raise HTTPException(status_code=422, detail="Unit price is required for a product outside the catalog")
     at = now_iso()
     lot_id = str(uuid4())
     lot = {
@@ -250,6 +262,8 @@ async def direct_intake(body: DirectIntake, user: UserPublic = Depends(require_m
         "category_id": (product or {}).get("category_id"),
         "brand_id": (product or {}).get("brand_id"),
         "brand_name": (product or {}).get("brand_name") or body.brand,
+        "unit_price": body.unit_price if body.unit_price is not None else (float(product["price"]) if product and product.get("price") is not None else None),
+        "price_variants": [variant.model_dump() for variant in body.price_variants],
         "qty_received": body.qty, "available_qty": body.qty,
         "reason": body.reason.strip(), "source_type": "catalog" if product else "manual",
         "transferred_at": at, "transferred_by": user.id, "transferred_by_name": user.full_name,
@@ -280,6 +294,7 @@ async def intake_stock(body: Intake, user: UserPublic = Depends(require_min_role
     lot = {
         "id": str(uuid4()), "floor_id": po["floor_id"], "product_id": item["product_id"], "sku": item.get("sku"), "name": item.get("name"), "image": item.get("image"), "finish": item.get("finish"),
         "brand_id": item.get("brand_id") or product.get("brand_id"), "brand_name": item.get("brand_name") or po.get("brand_name"), "qty_received": body.qty, "available_qty": body.qty,
+        "unit_price": float(item.get("unit_cost") or 0), "price_variants": [],
         "source_purchase_order_id": po["id"], "source_purchase_item_id": item["id"], "source_quotation_id": po.get("quotation_id"), "source_customer_id": po.get("customer_id"), "source_customer_name": po.get("customer_name"),
         "source_purchased_at": (source_quote or {}).get("ordered_at") or (source_quote or {}).get("created_at") or po.get("created_at"),
         "reason": body.reason.strip(), "transferred_at": at, "transferred_by": user.id, "transferred_by_name": user.full_name, "allocations": [], "created_at": at, "updated_at": at,
@@ -329,7 +344,7 @@ async def allocate_stock(stock_id: str, body: Allocation, user: UserPublic = Dep
     )
     if not lot:
         raise HTTPException(status_code=409, detail="That stock is no longer available in the requested quantity")
-    line = {"id": str(uuid4()), "product_id": lot["product_id"], "sku": lot["sku"], "name": lot["name"], "image": lot.get("image"), "finish": lot.get("finish"), "qty": body.qty, "unit_price": 0, "room": None, "godown_stock_id": stock_id, "godown_allocation_id": allocation["id"], "godown_source_customer_name": lot.get("source_customer_name"), "godown_source_purchased_at": lot.get("source_purchased_at"), "godown_transferred_at": lot.get("transferred_at"), "godown_allocated_at": at}
+    line = {"id": str(uuid4()), "product_id": lot["product_id"], "sku": lot["sku"], "name": lot["name"], "image": lot.get("image"), "finish": lot.get("finish"), "qty": body.qty, "unit_price": float(lot.get("unit_price") or 0), "room": None, "godown_stock_id": stock_id, "godown_allocation_id": allocation["id"], "godown_source_customer_name": lot.get("source_customer_name"), "godown_source_purchased_at": lot.get("source_purchased_at"), "godown_transferred_at": lot.get("transferred_at"), "godown_allocated_at": at}
     await db.quotations.update_one({"id": quote["id"]}, {"$push": {"items": line}, "$set": {"updated_at": at}})
     await log_event(event_type="godown_stock.allocated", entity_type="quotation", entity_id=quote["id"], actor=user, floor_id=quote["floor_id"], customer_id=quote.get("customer_id"), quotation_id=quote["id"], summary=f"Added {body.qty:g} × {lot['name']} from godown stock", payload={"stock_id": stock_id, "allocation_id": allocation["id"], "source_customer": lot.get("source_customer_name"), "source_purchased_at": lot.get("source_purchased_at"), "allocated_at": at})
     await notify(user.id, "Godown stock allocated", body=f"{body.qty:g} × {lot['name']} was added to {quote.get('number')} for {quote.get('customer_name')}.", kind="info", link=f"/(admin)/quotations/{quote['id']}", floor_id=quote["floor_id"])

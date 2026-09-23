@@ -21,11 +21,13 @@ export function QuotationBuilder({
   mode,
   initialProductId,
   initialGodownStockId,
+  initialGodownVariant,
   initialQuotationId,
 }: {
   mode: QuotationBuilderMode;
   initialProductId?: string | null;
   initialGodownStockId?: string | null;
+  initialGodownVariant?: string | null;
   initialQuotationId?: string | null;
 }) {
   const router = useRouter();
@@ -41,6 +43,7 @@ export function QuotationBuilder({
       key={`${staff?.id}:${selectedFloorId || floors[0]?.id || ""}`}
       initialProductId={initialProductId || null}
       initialGodownStockId={initialGodownStockId || null}
+      initialGodownVariant={initialGodownVariant || null}
       initialQuotationId={initialQuotationId || null}
       onFinalize={(quotationId) => router.replace(`/(admin)/quotations/${quotationId}` as any)}
     >

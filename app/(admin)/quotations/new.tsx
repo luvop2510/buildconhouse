@@ -19,9 +19,10 @@ export default function QuotationBuilderScreen() {
   // Optional ?productId=... — set by Catalog's "Add to quotation" CTA so
   // starting a new quotation from a product's detail page actually seeds
   // that product instead of landing on an empty builder.
-  const { productId, godownStockId, quotationId } = useLocalSearchParams<{
+  const { productId, godownStockId, godownVariant, quotationId } = useLocalSearchParams<{
     productId?: string;
     godownStockId?: string;
+    godownVariant?: string;
     /** Opens an existing customer quotation in the same product workspace. */
     quotationId?: string;
   }>();
@@ -30,6 +31,7 @@ export default function QuotationBuilderScreen() {
       mode="sanitary"
       initialProductId={productId || null}
       initialGodownStockId={godownStockId || null}
+      initialGodownVariant={godownVariant ?? null}
       initialQuotationId={quotationId || null}
     />
   );

@@ -9,10 +9,11 @@
 // -----------------------------------------------------------------------------
 import { Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { api } from "@/src/api/client";
+import { storage } from "@/src/utils/storage";
 import { colors, radius, spacing } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";
 import { supplierLogoFor } from "@/src/design/BrandLogo";
@@ -25,8 +26,33 @@ export function BrandRail({ collapsed = false, onToggleCollapsed, compact = fals
   const [q, setQ] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [catCache, setCatCache] = useState<Record<string, Category[]>>({});
+  const [catOrder, setCatOrder] = useState<Record<string, string[]>>({});
+  const [draggingCategory, setDraggingCategory] = useState<string | null>(null);
   const [loadingBrandId, setLoadingBrandId] = useState<string | null>(null);
   const fetchedRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    let active = true;
+    void storage.getItem("forge.quotation.category-order", "").then((raw) => {
+      if (!active || !raw) return;
+      try { setCatOrder(JSON.parse(raw) as Record<string, string[]>); } catch { /* ignore old preferences */ }
+    });
+    return () => { active = false; };
+  }, []);
+
+  const reorderCategories = (brandId: string, sourceId: string, targetId: string, placement: "before" | "after" = "before") => {
+    const source = catCache[brandId] || [];
+    const current = catOrder[brandId] || source.map((category) => category.id);
+    const ordered = [...current.filter((id) => source.some((category) => category.id === id)), ...source.map((category) => category.id).filter((id) => !current.includes(id))];
+    if (!ordered.includes(sourceId) || !ordered.includes(targetId) || sourceId === targetId) return;
+    const next = ordered.filter((id) => id !== sourceId);
+    next.splice(next.indexOf(targetId) + (placement === "after" ? 1 : 0), 0, sourceId);
+    setCatOrder((old) => {
+      const updated = { ...old, [brandId]: next };
+      void storage.setItem("forge.quotation.category-order", JSON.stringify(updated));
+      return updated;
+    });
+  };
 
   const filteredBrands = useMemo(() => {
     const src = b.brands;
@@ -134,7 +160,11 @@ export function BrandRail({ collapsed = false, onToggleCollapsed, compact = fals
         {filteredBrands.map((br) => {
           const on = b.selectedBrandId === br.id;
           const isOpen = expanded === br.id;
-          const cats = catCache[br.id] || [];
+          const cats = [...(catCache[br.id] || [])].sort((left, right) => {
+            const order = catOrder[br.id] || [];
+            const a = order.indexOf(left.id), b = order.indexOf(right.id);
+            return (a < 0 ? Number.MAX_SAFE_INTEGER : a) - (b < 0 ? Number.MAX_SAFE_INTEGER : b);
+          });
           return (
             <View key={br.id}>
               <Pressable
@@ -181,21 +211,20 @@ export function BrandRail({ collapsed = false, onToggleCollapsed, compact = fals
                         All {br.name}
                       </Text>
                     </Pressable>
-                    {cats.map((c) => {
+                    {cats.map((c, index) => {
                       const catOn = on && b.selectedCategoryId === c.id;
                       return (
-                        <Pressable
+                        <View
                           key={c.id}
-                          onPress={() => onTapCategory(br.id, c.id)}
                           style={[styles.catItem, catOn && styles.catItemActive]}
                           testID={`rail-cat-${c.name}`}
+                          {...({ draggable: true, onDragStart: (event: any) => { event.dataTransfer?.setData("text/plain", c.id); setDraggingCategory(c.id); }, onDragOver: (event: any) => event.preventDefault(), onDrop: (event: any) => { event.preventDefault(); reorderCategories(br.id, event.dataTransfer?.getData("text/plain") || draggingCategory || "", c.id); setDraggingCategory(null); }, onDragEnd: () => setDraggingCategory(null) } as any)}
                         >
-                          <View style={[styles.catDot, catOn && { backgroundColor: ds.brass }]} />
-                          <Text style={[styles.catLabel, catOn && styles.catLabelActive]} numberOfLines={1}>
-                            {c.name}
-                          </Text>
-                          <Text style={styles.catCount}>{c.product_count || 0}</Text>
-                        </Pressable>
+                          <Pressable accessibilityRole="button" accessibilityLabel={`${c.name}, ${c.product_count || 0} products`} onPress={() => onTapCategory(br.id, c.id)} style={styles.catSelect}><View style={[styles.catDot, catOn && { backgroundColor: ds.brass }]} /><Text style={[styles.catLabel, catOn && styles.catLabelActive]} numberOfLines={1}>{c.name}</Text><Text style={styles.catCount}>{c.product_count || 0}</Text></Pressable>
+                          <Pressable accessibilityRole="button" accessibilityLabel={`Move ${c.name} to top`} disabled={index === 0} onPress={() => reorderCategories(br.id, c.id, cats[0].id)} style={styles.catMove}><Feather name="chevrons-up" size={12} color={colors.onSurfaceMuted} /></Pressable>
+                          <Pressable accessibilityRole="button" accessibilityLabel={`Move ${c.name} up`} disabled={index === 0} onPress={() => reorderCategories(br.id, c.id, cats[index - 1].id)} style={styles.catMove}><Feather name="arrow-up" size={12} color={colors.onSurfaceMuted} /></Pressable>
+                          <Pressable accessibilityRole="button" accessibilityLabel={`Move ${c.name} down`} disabled={index === cats.length - 1} onPress={() => reorderCategories(br.id, c.id, cats[index + 1].id, "after")} style={styles.catMove}><Feather name="arrow-down" size={12} color={colors.onSurfaceMuted} /></Pressable>
+                        </View>
                       );
                     })}
                   </View>
@@ -289,6 +318,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8, paddingVertical: 6, borderRadius: radius.sm, marginVertical: 1,
   },
   catItemActive: { backgroundColor: ds.sunken },
+  catSelect: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 8 },
+  catMove: { width: 20, minHeight: 28, alignItems: "center", justifyContent: "center" },
   catDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: ds.line },
   catLabel: { flex: 1, fontSize: 12, color: ds.inkSoft, fontWeight: "500" },
   catLabelActive: { color: ds.ink, fontWeight: "600" },

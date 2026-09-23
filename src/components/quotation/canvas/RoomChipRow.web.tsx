@@ -1,6 +1,6 @@
-// Browser variant: native drag gestures are not available in the web shell.
-// Keep room selection and creation stable without loading draggable-flatlist.
+// Browser variant: use HTML drag events for quotation section ordering.
 import { Feather } from "@expo/vector-icons";
+import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { colors } from "@/src/theme/tokens";
@@ -10,6 +10,8 @@ import { useBuilder } from "../context/BuilderContext";
 
 export function RoomChipRow() {
   const b = useBuilder();
+  const [draggingRoom, setDraggingRoom] = useState<string | null>(null);
+  const [dropRoom, setDropRoom] = useState<string | null>(null);
   const knownRooms = new Set(b.s.rooms);
   const fallbackRoom = b.s.rooms[0];
   const itemCountByRoom = b.s.lines.reduce<Record<string, number>>((counts, line) => {
@@ -17,13 +19,39 @@ export function RoomChipRow() {
     if (room) counts[room] = (counts[room] || 0) + 1;
     return counts;
   }, {});
+  const dropOnRoom = (target: string, source: string) => {
+    if (b.s.rooms.includes(source) && source !== target) {
+      const rooms = b.s.rooms.filter((room) => room !== source);
+      rooms.splice(rooms.indexOf(target), 0, source);
+      b.onRoomDragEnd({ data: rooms });
+    }
+    setDraggingRoom(null);
+    setDropRoom(null);
+  };
   return (
     <View style={styles.wrap}>
       <ScrollView horizontal style={{ flex: 1, minWidth: 0 }} contentContainerStyle={{ gap: 6, paddingVertical: 2 }} showsHorizontalScrollIndicator={false}>
         {b.s.rooms.map((room) => {
           const active = b.s.activeRoom === room;
           const count = itemCountByRoom[room] || 0;
-          return <Pressable key={room} accessibilityRole="button" accessibilityState={{ selected: active }} accessibilityLabel={`${room}, ${count} products`} onPress={() => b.setActiveRoom(room)} testID={`room-${room}`} style={({ pressed }) => [styles.tab, active && styles.tabActive, pressed && styles.tabPressed]}><Text numberOfLines={1} style={[styles.roomName, active && styles.roomNameActive]}>{room}</Text><View style={[styles.count, active && styles.countActive]}><Text style={[styles.countLabel, active && styles.countLabelActive]}>{count}</Text></View></Pressable>;
+          return <Pressable
+            key={room}
+            accessibilityRole="button" accessibilityState={{ selected: active }}
+            accessibilityLabel={`${room}, ${count} products. Drag to reorder quotation sections.`}
+            onPress={() => b.setActiveRoom(room)} testID={`room-${room}`}
+            style={({ pressed }) => [styles.tab, active && styles.tabActive, dropRoom === room && styles.tabDrop, pressed && styles.tabPressed]}
+            {...({
+              draggable: true,
+              onDragStart: (event: any) => {
+                event.dataTransfer?.setData("text/plain", room);
+                if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+                setDraggingRoom(room);
+              },
+              onDragOver: (event: any) => { event.preventDefault(); setDropRoom(room); },
+              onDrop: (event: any) => { event.preventDefault(); dropOnRoom(room, event.dataTransfer?.getData("text/plain") || draggingRoom || ""); },
+              onDragEnd: () => { setDraggingRoom(null); setDropRoom(null); },
+            } as any)}
+          ><Feather name="menu" size={11} color={active ? ds.brassDeep : colors.onSurfaceMuted} style={{ marginRight: 4 }} /><Text numberOfLines={1} style={[styles.roomName, active && styles.roomNameActive]}>{room}</Text><View style={[styles.count, active && styles.countActive]}><Text style={[styles.countLabel, active && styles.countLabelActive]}>{count}</Text></View></Pressable>;
         })}
       </ScrollView>
       <Pressable accessibilityRole="button" accessibilityLabel="Add room" onPress={() => { b.setRoomInput(""); b.setRoomSheet({ kind: "add" }); }} testID="add-room-btn" style={({ pressed }) => [styles.tab, styles.addRoom, pressed && styles.tabPressed]}><Feather name="plus" size={13} color={colors.onSurfaceMuted} /><Text style={styles.addRoomLabel}>Add room</Text></Pressable>
@@ -35,6 +63,7 @@ const styles = StyleSheet.create({
   wrap: { flexDirection: "row", alignItems: "center", gap: 6 },
   tab: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
   tabActive: { backgroundColor: ds.brassTint, borderColor: ds.brassLine },
+  tabDrop: { borderColor: ds.brassDeep, borderWidth: 2 },
   tabPressed: { opacity: 0.76, transform: [{ scale: 0.98 }] },
   roomName: { maxWidth: 116, fontSize: 12, fontWeight: "600", color: colors.onSurfaceSecondary },
   roomNameActive: { color: ds.brassDeep },

@@ -3,7 +3,7 @@ import { useSegments } from "expo-router";
 import React, { useMemo, useState } from "react";
 import { Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
-import { api, getToken } from "@/src/api/client";
+import { api, csrfHeaders, getToken } from "@/src/api/client";
 import { Sheet } from "@/src/design/components";
 import { color, font } from "@/src/design/tokens";
 
@@ -93,10 +93,10 @@ export function PageExcelExport() {
     setError("");
     try {
       const token = await getToken();
-      if (!token) throw new Error("Please sign in again.");
       const response = await fetch(`${api.base}/api/exports/page.xlsx`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...csrfHeaders(), "Content-Type": "application/json" },
+        credentials: "same-origin",
         body: JSON.stringify({ page, sections }),
       });
       if (!response.ok) throw new Error(`Excel export failed (${response.status}).`);

@@ -36,11 +36,14 @@ def test_direct_manual_intake_has_no_customer_source(monkeypatch):
     stock = Stock()
     monkeypatch.setattr(godown, "db", SimpleNamespace(products=Products(), godown_stock=stock))
     monkeypatch.setattr(godown, "log_event", lambda **_kwargs: asyncio.sleep(0))
-    row = asyncio.run(godown.direct_intake(godown.DirectIntake(qty=3, sku="321", name="Valve", brand="Acme", image="https://example.com/valve.jpg", size="10mm", feature="brass", category="Fittings"), user()))
+    row = asyncio.run(godown.direct_intake(godown.DirectIntake(qty=3, sku="321", name="Valve", brand="Acme", image="https://example.com/valve.jpg", size="10mm", feature="brass", category="Fittings", unit_price=125, price_variants=[{"label": "Chrome", "price": 140}]), user()))
     assert row["floor_id"] == "first-floor"
     assert row["product_id"] == f"godown:{row['id']}"
     assert row["available_qty"] == 3
     assert row["source_type"] == "manual"
+    assert row["unit_price"] == 125
+    assert row["stock_value"] == 375
+    assert row["price_variants"] == [{"label": "Chrome", "price": 140}]
     assert "source_customer_id" not in row
     assert stock.inserted[0]["id"] == row["id"]
 
@@ -61,6 +64,13 @@ def test_manual_intake_requires_sku_and_name(monkeypatch):
     monkeypatch.setattr(godown, "db", SimpleNamespace(products=Products(), godown_stock=Stock()))
     with pytest.raises(HTTPException) as exc:
         asyncio.run(godown.direct_intake(godown.DirectIntake(qty=1, sku="321"), user()))
+    assert exc.value.status_code == 422
+
+
+def test_manual_intake_requires_price(monkeypatch):
+    monkeypatch.setattr(godown, "db", SimpleNamespace(products=Products(), godown_stock=Stock()))
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(godown.direct_intake(godown.DirectIntake(qty=1, sku="321", name="Valve"), user()))
     assert exc.value.status_code == 422
 
 
