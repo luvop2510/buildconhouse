@@ -33,7 +33,7 @@ import {
 // Types
 // -----------------------------------------------------------------------------
 type Stage =
-  | "order_in_company" | "company_billing" | "in_box"
+  | "po_final" | "company_billing" | "in_box"
   | "dispatched" | "in_transit" | "delivered";
 
 type StageMeta = { key: Stage; label: string; count: number; tone: { bg: string; fg: string } };
@@ -69,11 +69,11 @@ const VIEW_META: Record<ViewMode, { label: string; icon: keyof typeof Feather.gl
   dispatch_record:  { label: "Dispatch Record", icon: "truck",     sub: "Dispatched history" },
 };
 
-const STAGE_ORDER: Stage[] = ["order_in_company", "company_billing", "in_box", "dispatched", "in_transit", "delivered"];
+const STAGE_ORDER: Stage[] = ["po_final", "company_billing", "in_box", "dispatched", "in_transit", "delivered"];
 
 // Stage tone — one calm vocabulary; overrides whatever the backend sends.
 const STAGE_TONE: Record<Stage, { bg: string; fg: string }> = {
-  order_in_company: { bg: ds.sunken,    fg: ds.inkMid },
+  po_final:         { bg: ds.sunken,    fg: ds.inkMid },
   company_billing:  { bg: ds.warnTint,  fg: ds.warn },
   in_box:           { bg: ds.sunken,    fg: ds.inkMid },
   dispatched:       { bg: ds.brassTint, fg: ds.brassDeep },
@@ -95,6 +95,7 @@ function fmtDate(iso?: string | null): string {
 }
 
 function stageName(stage: Stage): string {
+  if (stage === "po_final") return "PO Final";
   return stage.split("_").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
 }
 
@@ -168,7 +169,7 @@ export default function PurchasesScreen() {
   }, [selectedFloorId]);
 
   const toMovable = useCallback((r: Item): MovableItem => ({
-    item_id: r.item_id, sku: r.sku, name: r.name, image: r.image, qty: r.qty,
+    item_id: r.item_id, sku: r.sku, name: r.name, image: r.image, qty: r.qty, loaned_qty: r.loaned_qty,
     stage: r.stage, customer_id: r.customer_id, customer_name: r.customer_name,
     po_number: r.po_number, brand_name: r.brand_name, supplier_name: r.supplier_name,
   }), []);
@@ -879,6 +880,7 @@ function MobilePurchaseCard({ item, selected, compact, onSelect, onMove, onTrans
         <View style={{ minWidth: 82, alignItems: "flex-end" }}><Text style={styles.mobileCardLabel}>AGE</Text><Text style={[styles.mobileCardValue, item.blocked && { color: colors.error }]}>{item.age_days}d</Text></View>
       </View>
       <GodownStatus item={item} />
+      <PurchaseLoanStatus item={item} />
       <View style={styles.mobileProgress} accessibilityLabel={`${item.stage_label}, stage ${Math.max(stageIndex + 1, 1)} of ${STAGE_ORDER.length}`}>
         {STAGE_ORDER.map((key, index) => <View key={key} style={[styles.mobileProgressDot, index <= stageIndex && styles.mobileProgressDotDone, index === stageIndex && styles.mobileProgressDotCurrent]} />)}
       </View>
@@ -895,7 +897,7 @@ function MobilePurchaseCard({ item, selected, compact, onSelect, onMove, onTrans
       ) : null}
       <Sheet open={menuOpen} onClose={() => setMenuOpen(false)} title={item.name} footer={<Pressable accessibilityRole="button" accessibilityLabel="Cancel purchase actions" onPress={() => setMenuOpen(false)} style={styles.mobileSheetCancel}><Text style={styles.mobileSheetCancelText}>Cancel</Text></Pressable>}>
             <SheetAction icon="repeat" label="Move material" onPress={() => { setMenuOpen(false); onMove(); }} />
-            <SheetAction icon="shuffle" label="Transfer customer" onPress={() => { setMenuOpen(false); onTransfer(); }} />
+            {item.stage === "in_box" ? <SheetAction icon="shuffle" label="Transfer customer" onPress={() => { setMenuOpen(false); onTransfer(); }} /> : null}
             <SheetAction icon="clock" label="Movement history" onPress={() => { setMenuOpen(false); onHistory(); }} />
             <SheetAction icon="file-text" label="Open purchase order" onPress={() => { setMenuOpen(false); onOpenPo(); }} />
             {item.stage !== "delivered" ? <SheetAction icon="trash-2" label="Remove from active purchases" onPress={() => { setMenuOpen(false); onCancel(); }} /> : null}
@@ -1008,7 +1010,7 @@ function StockWorkspace({ loading, rows, shortages, stages, isDesktop, selected,
   loading: boolean; rows: Item[]; shortages: Shortage[]; stages: StageMeta[]; isDesktop: boolean; selected: Set<string>;
   setSelected: Dispatch<SetStateAction<Set<string>>>; onMove: (item: Item) => void; onTransfer: (item: Item) => void; onHistory: (id: string) => void; onOpenPo: (id: string) => void; onCancel: (item: Item) => void;
 }) {
-  const pending = rows.filter((r) => ["order_in_company", "company_billing", "in_box"].includes(r.stage));
+  const pending = rows.filter((r) => ["po_final", "company_billing", "in_box"].includes(r.stage));
   const receiving = rows.filter((r) => ["company_billing", "in_box"].includes(r.stage));
   const ready = rows.filter((r) => ["dispatched", "in_transit"].includes(r.stage));
   if (loading) return <View style={styles.loadingCard}><ActivityIndicator /><Text style={type.caption}>Loading inventory movement…</Text></View>;
@@ -1134,6 +1136,7 @@ function ItemRow(props: {
             <Text style={{ fontSize: 14, fontWeight: "600", color: colors.onSurface }} numberOfLines={1}>{row.name}</Text>
             <Text style={type.caption} numberOfLines={1}>{row.sku} · {row.customer_name}</Text>
             <GodownStatus item={row} compact />
+            <PurchaseLoanStatus item={row} compact />
           </View>
           <StageBadge stage={row.stage} tone={row.stage_tone} label={row.stage_label} />
         </View>
@@ -1144,7 +1147,7 @@ function ItemRow(props: {
           <View style={styles.stockRowActions}>
             <Pressable accessibilityRole="button" accessibilityLabel={`View movement history for ${row.name}`} onPress={onHistory} style={styles.mobileTransferBtn} hitSlop={6}><Feather name="clock" size={14} color={colors.onSurface} /></Pressable>
             <Pressable accessibilityRole="button" accessibilityLabel={`Move ${row.name} to another stage`} onPress={onOpenMove} style={styles.mobileMoveBtn} hitSlop={6}><Text style={styles.moveBtnText}>Move</Text></Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel={`Transfer ${row.name} to another customer`} onPress={onTransfer} style={styles.mobileTransferBtn} hitSlop={6}><Feather name="repeat" size={14} color={colors.onSurface} /></Pressable>
+            {row.stage === "in_box" ? <Pressable accessibilityRole="button" accessibilityLabel={`Transfer ${row.name} to another customer`} onPress={onTransfer} style={styles.mobileTransferBtn} hitSlop={6}><Feather name="repeat" size={14} color={colors.onSurface} /></Pressable> : null}
             {row.stage !== "delivered" ? <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${row.name}`} onPress={onCancel} style={styles.mobileTransferBtn} hitSlop={6}><Feather name="trash-2" size={14} color={colors.error} /></Pressable> : null}
           </View>
         </View>
@@ -1173,6 +1176,7 @@ function ItemRow(props: {
           <Text style={{ fontSize: 14, fontWeight: "600", color: colors.onSurface }} numberOfLines={1}>{row.name}</Text>
           <Text style={styles.mono} numberOfLines={1}>{row.sku}{compact ? ` · ${row.brand_name}` : ""}</Text>
           <GodownStatus item={row} compact />
+          <PurchaseLoanStatus item={row} compact />
         </View>
       </Pressable>
       {/* Customer */}
@@ -1205,9 +1209,9 @@ function ItemRow(props: {
           <Text style={styles.moveBtnText}>Move</Text>
           <Feather name="chevron-down" size={11} color={colors.onSurfaceMuted} />
         </Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel={`Transfer ${row.name} to another customer`} onPress={onTransfer} testID={`row-transfer-${row.item_id}`} hitSlop={6} style={({ pressed }) => [styles.transferBtn, pressed && { opacity: 0.85 }]}>
+        {row.stage === "in_box" ? <Pressable accessibilityRole="button" accessibilityLabel={`Transfer ${row.name} to another customer`} onPress={onTransfer} testID={`row-transfer-${row.item_id}`} hitSlop={6} style={({ pressed }) => [styles.transferBtn, pressed && { opacity: 0.85 }]}>
           <Feather name="repeat" size={12} color={colors.onSurface} />
-        </Pressable>
+        </Pressable> : null}
         {row.stage !== "delivered" ? <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${row.name}`} testID={`row-cancel-${row.item_id}`} onPress={onCancel} hitSlop={6} style={({ pressed }) => [styles.transferBtn, pressed && { opacity: 0.85 }]}><Feather name="trash-2" size={12} color={colors.error} /></Pressable> : null}
       </View>
     </View>
@@ -1248,9 +1252,9 @@ function BlockedCard({ row, onOpenMove, onTransfer, onHistory }: {
           <Text style={styles.moveBtnText}>Move</Text>
           <Feather name="chevron-down" size={11} color={colors.onSurfaceMuted} />
         </Pressable>
-        <Pressable onPress={onTransfer} style={styles.transferBtn}>
+        {row.stage === "in_box" ? <Pressable onPress={onTransfer} style={styles.transferBtn}>
           <Feather name="repeat" size={12} color={colors.onSurface} />
-        </Pressable>
+        </Pressable> : null}
       </View>
     </View>
   );
@@ -1309,10 +1313,11 @@ function CustomerPurchasePanel({ visible, loading, workspace, onClose, onMove, o
                   <Text style={styles.actionTitle} numberOfLines={1}>{item.name}</Text>
                   <Text style={type.caption} numberOfLines={1}>{item.sku} · {item.qty} · {item.stage_label}</Text>
                   <GodownStatus item={item} compact />
+                  <PurchaseLoanStatus item={item} compact />
                 </View>
                 <View style={{ gap: 5 }}>
                   <Pressable accessibilityRole="button" accessibilityLabel={`Move ${item.name}`} onPress={() => onMove(item)} style={styles.customerPanelAction}><Text style={styles.customerPanelActionText}>Move</Text></Pressable>
-                  <Pressable accessibilityRole="button" accessibilityLabel={`Transfer ${item.name}`} onPress={() => onTransfer(item)} style={styles.customerPanelAction}><Text style={styles.customerPanelActionText}>Transfer</Text></Pressable>
+                  {item.stage === "in_box" ? <Pressable accessibilityRole="button" accessibilityLabel={`Transfer ${item.name}`} onPress={() => onTransfer(item)} style={styles.customerPanelAction}><Text style={styles.customerPanelActionText}>Transfer</Text></Pressable> : null}
                   <Pressable accessibilityRole="button" accessibilityLabel={`View movement history for ${item.name}`} onPress={() => onHistory(item)} style={styles.customerPanelAction}><Text style={styles.customerPanelActionText}>History</Text></Pressable>
                 </View>
               </View>
@@ -1336,6 +1341,18 @@ function GodownStatus({ item, compact = false }: { item: Item; compact?: boolean
     return <Text style={[styles.godownStatus, compact && styles.godownStatusCompact]} numberOfLines={1}>{item.godown_transferred_qty} moved to godown stock{date}</Text>;
   }
   return null;
+}
+
+function PurchaseLoanStatus({ item, compact = false }: { item: Item; compact?: boolean }) {
+  const history = item.customer_loan_history || [];
+  const text = history.length
+    ? `Lent ${history.map((loan) => `${loan.qty} to ${loan.destination_customer_name || "another customer"}${loan.status === "returned" ? " (returned)" : ""}`).join(", ")} · original order retained`
+    : (item.loaned_qty || 0) > 0
+      ? `Lent ${item.loaned_qty} to another customer · original order retained`
+    : item.borrowed_from_customer_name
+      ? `Received from ${item.borrowed_from_customer_name} · ${item.loan_return_status === "returned" ? "returned" : item.loan_return_due ? "return due now" : "return when ordered product arrives"}`
+      : null;
+  return text ? <Text style={[styles.godownStatus, compact && styles.godownStatusCompact]} numberOfLines={compact ? 2 : undefined}>{text}</Text> : null;
 }
 
 function CustomerMetric({ label, value }: { label: string; value: string }) {
@@ -1443,7 +1460,7 @@ function SettingsModal({ visible, currentSla, onClose, onSaved }: {
               style={[styles.input, { fontSize: 16, fontWeight: "700" }]}
             />
             <Text style={{ fontSize: 11, color: colors.onSurfaceMuted, marginTop: 4 }}>
-              Any item stuck in Order in Company / Company Billing / In Box for longer than this is shown in the Today view.
+              Any item stuck in PO Final / Company Billing / In Box for longer than this is shown in the Today view.
             </Text>
           </View>
     </Sheet>

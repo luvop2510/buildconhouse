@@ -5,6 +5,11 @@ from models import PurchaseOrder, PurchaseOrderItem
 
 def test_purchase_order_item_tile_fields_default():
     item = PurchaseOrderItem(product_id="p-1", sku="SKU-1", name="Glossy Ivory 600x600", qty=20)
+    assert item.stage == "po_final"
+    assert item.loaned_qty == 0
+    assert item.loan_transfer_id is None
+    assert item.borrowed_from_customer_id is None
+    assert item.return_due_on_replenishment is False
     assert item.series is None
     assert item.size is None
     assert item.pieces_per_box is None

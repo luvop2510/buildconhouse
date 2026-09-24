@@ -92,6 +92,19 @@ def test_facet_endpoints_scope_pipeline_to_the_active_floor(monkeypatch, route_f
     assert match_stage.get("floor_id") == {"$in": ["ground-floor"]}
 
 
+def test_po_final_is_first_stage_and_legacy_stage_remains_readable(monkeypatch):
+    fake_pos = _FakePurchaseOrders()
+    monkeypatch.setattr(tracker, "db", _FakeDb(fake_pos))
+
+    stages = asyncio.run(tracker.stage_catalog(user=_user("first-floor")))
+
+    assert stages[0]["key"] == "po_final"
+    assert stages[0]["label"] == "PO Final"
+    assert "order_in_company" in {stage["key"] for stage in stages}
+    assert "po_final" in tracker.EARLY_STAGES
+    assert tracker._derive_po_status_from_stages([{"stage": "po_final"}], "draft") is None
+
+
 def test_customer_workspace_scopes_every_query_to_the_active_floor(monkeypatch):
     from auth import floor_query
 

@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from auth import floor_for_write, floor_query, get_current_user, get_floor_scoped_or_404, require_min_role
 from db import client, db
 from pymongo import ReturnDocument
-from models import Payment, UserPublic, now_iso
+from models import CustomerPublic, Payment, UserPublic, now_iso
 from services.activity_log import log_event
 from services.analytics import cache
 from services.followup_engine import reconcile_followups
@@ -30,6 +30,10 @@ async def ensure_godown_stock_indexes() -> None:
     await db.godown_stock.create_index([("floor_id", 1), ("available_qty", 1), ("brand_id", 1), ("transferred_at", -1)])
     await db.godown_stock.create_index([("floor_id", 1), ("product_id", 1), ("available_qty", 1)])
     await db.godown_stock.create_index("id", unique=True)
+    await db.godown_customer_transfers.create_index("id", unique=True)
+    await db.godown_customer_transfers.create_index("idempotency_key", unique=True, sparse=True)
+    await db.godown_customer_transfers.create_index([("floor_id", 1), ("source_customer_id", 1), ("created_at", -1)])
+    await db.godown_customer_transfers.create_index([("floor_id", 1), ("recipient_customer_id", 1), ("created_at", -1)])
 
 
 class Intake(BaseModel):
@@ -69,10 +73,81 @@ class DirectIntake(BaseModel):
     price_variants: list[StockPriceVariant] = Field(default_factory=list, max_length=20)
 
 
+class NewTransferCustomer(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    company: str | None = None
+    email: str | None = None
+    phone: str | None = None
+
+
+class CustomerTransfer(BaseModel):
+    qty: float = Field(gt=0)
+    recipient_customer_id: str | None = None
+    new_customer: NewTransferCustomer | None = None
+    recipient_purchase_item_id: str | None = None
+    reason: str | None = Field(default=None, max_length=280)
+    idempotency_key: str = Field(min_length=8, max_length=160)
+
+
+class ReturnTransfer(BaseModel):
+    note: str | None = Field(default=None, max_length=280)
+
+
 def _stock_view(lot: dict) -> dict:
     row = {key: value for key, value in lot.items() if key != "_id"}
     row["stock_value"] = round(float(row.get("available_qty") or 0) * float(row["unit_price"]), 2) if row.get("unit_price") is not None else None
+    row["transferable_qty"] = max(0.0, round(float(row.get("available_qty") or 0) - float(row.get("loaned_out_qty") or 0), 4))
     return row
+
+
+def _same_product(lot: dict, item: dict) -> str | None:
+    """Prefer catalog identity; allow the same SKU or a named manual product."""
+    if lot.get("product_id") and not str(lot["product_id"]).startswith("godown:") and lot["product_id"] == item.get("product_id"):
+        return "product_id"
+    stock_sku = str(lot.get("sku") or "").strip().casefold()
+    item_sku = str(item.get("sku") or "").strip().casefold()
+    stock_brand_id = lot.get("brand_id")
+    item_brand_id = item.get("brand_id")
+    same_brand = not (stock_brand_id and item_brand_id and stock_brand_id != item_brand_id)
+    if stock_sku and stock_sku == item_sku and same_brand:
+        return "sku"
+    stock_name = re.sub(r"\s+", " ", str(lot.get("name") or "").strip()).casefold()
+    item_name = re.sub(r"\s+", " ", str(item.get("name") or "").strip()).casefold()
+    stock_brand = str(lot.get("brand_name") or "").strip().casefold()
+    item_brand = str(item.get("brand_name") or "").strip().casefold()
+    if stock_name and stock_name == item_name and stock_brand and stock_brand == item_brand:
+        return "name_and_brand"
+    return None
+
+
+async def _po_final_matches(lot: dict) -> dict:
+    rows = await db.purchase_orders.find(
+        {"floor_id": lot["floor_id"], "items.stage": "po_final", "status": {"$ne": "cancelled"}},
+        {"_id": 0, "id": 1, "number": 1, "customer_id": 1, "customer_name": 1, "items": 1},
+    ).to_list(2000)
+    matches = []
+    for po in rows:
+        for item in po.get("items") or []:
+            if item.get("stage") != "po_final" or item.get("cancelled"):
+                continue
+            matched_by = _same_product(lot, item)
+            if not matched_by:
+                continue
+            ordered_qty = float(item.get("qty") or 0)
+            remaining_qty = max(0.0, ordered_qty - float(item.get("godown_transferred_qty") or 0) - float(item.get("godown_borrowed_qty") or 0))
+            if remaining_qty <= 0:
+                continue
+            matches.append({
+                "purchase_order_id": po["id"], "purchase_order_number": po.get("number"),
+                "purchase_item_id": item["id"], "customer_id": item.get("customer_id") or po.get("customer_id"),
+                "customer_name": item.get("customer_name") or po.get("customer_name"),
+                "product_id": item.get("product_id"), "sku": item.get("sku"), "name": item.get("name"),
+                "ordered_qty": ordered_qty, "remaining_qty": remaining_qty, "matched_by": matched_by,
+            })
+    total = sum(row["ordered_qty"] for row in matches)
+    waiting = sum(row["remaining_qty"] for row in matches)
+    transferable = max(0.0, float(lot.get("available_qty") or 0) - float(lot.get("loaned_out_qty") or 0))
+    return {"matches": matches, "total_ordered_qty": total, "transferable_qty": min(waiting, transferable)}
 
 
 def _transaction_unsupported(exc: Exception) -> bool:
@@ -210,13 +285,20 @@ async def list_stock(
     if q and q.strip():
         query["$or"] = [{"name": {"$regex": q.strip(), "$options": "i"}}, {"sku": {"$regex": q.strip(), "$options": "i"}}, {"brand_name": {"$regex": q.strip(), "$options": "i"}}]
     lots = await db.godown_stock.find(query, {"_id": 0}).sort("transferred_at", -1).to_list(500)
+    transfer_map: dict[str, list[dict]] = {}
+    if include_history and lots:
+        transfers = await db.godown_customer_transfers.find(
+            floor_query(user, {"stock_id": {"$in": [lot["id"] for lot in lots]}}), {"_id": 0},
+        ).sort("created_at", -1).to_list(2000)
+        for transfer in transfers:
+            transfer_map.setdefault(transfer["stock_id"], []).append(transfer)
     brands: dict[str, dict] = {}
     for lot in lots:
         key = lot.get("brand_id") or lot.get("brand_name") or "unbranded"
         row = brands.setdefault(key, {"id": lot.get("brand_id"), "name": lot.get("brand_name") or "Other", "lot_count": 0, "available_qty": 0})
         row["lot_count"] += 1
         row["available_qty"] += float(lot.get("available_qty") or 0)
-    return {"lots": [_stock_view(lot) for lot in lots], "brands": sorted(brands.values(), key=lambda row: row["name"].lower()), "total_available_qty": sum(float(lot.get("available_qty") or 0) for lot in lots), "total_stock_value": round(sum(float(lot.get("available_qty") or 0) * float(lot["unit_price"]) for lot in lots if lot.get("unit_price") is not None), 2), "unpriced_lot_count": sum(1 for lot in lots if float(lot.get("available_qty") or 0) > 0 and lot.get("unit_price") is None)}
+    return {"lots": [{**_stock_view(lot), "customer_transfers": transfer_map.get(lot["id"], [])} for lot in lots], "brands": sorted(brands.values(), key=lambda row: row["name"].lower()), "total_available_qty": sum(float(lot.get("available_qty") or 0) for lot in lots), "total_stock_value": round(sum(float(lot.get("available_qty") or 0) * float(lot["unit_price"]) for lot in lots if lot.get("unit_price") is not None), 2), "unpriced_lot_count": sum(1 for lot in lots if float(lot.get("available_qty") or 0) > 0 and lot.get("unit_price") is None)}
 
 
 @router.get("/sku-suggestions")
@@ -227,6 +309,192 @@ async def sku_suggestions(prefix: str = Query(min_length=1, max_length=80), user
         {"_id": 0, "id": 1, "sku": 1, "name": 1, "brand_id": 1, "brand_name": 1, "hero_image_url": 1, "images": 1, "size": 1, "category_id": 1},
     ).sort("sku", 1).to_list(30)
     return [{"id": row["id"], "sku": row.get("sku"), "name": row.get("name"), "brand_name": row.get("brand_name"), "image": row.get("hero_image_url") or (row.get("images") or [None])[0], "size": row.get("size"), "category_id": row.get("category_id")} for row in rows]
+
+
+@router.get("/customer-transfers")
+async def list_customer_transfers(customer_id: str, user: UserPublic = Depends(get_current_user)):
+    customer = await db.customers.find_one(floor_query(user, {"id": customer_id}), {"_id": 0, "id": 1})
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    rows = await db.godown_customer_transfers.find(
+        floor_query(user, {"$or": [{"source_customer_id": customer_id}, {"recipient_customer_id": customer_id}]}),
+        {"_id": 0},
+    ).sort("created_at", -1).to_list(500)
+    for row in rows:
+        row["return_due"] = await _return_due(row)
+    return {"transfers": rows}
+
+
+async def _return_due(row: dict) -> bool:
+    if row.get("status") != "awaiting_return" or not row.get("recipient_purchase_item_id"):
+        return False
+    po = await db.purchase_orders.find_one(
+        {"id": row.get("recipient_purchase_order_id"), "floor_id": row.get("floor_id")},
+        {"_id": 0, "items": 1},
+    )
+    item = next((item for item in (po or {}).get("items", []) if item.get("id") == row["recipient_purchase_item_id"]), None)
+    return bool(item and item.get("stage") not in {"po_final", "order_in_company", "company_billing"})
+
+
+@router.get("/{stock_id}/po-final-matches")
+async def po_final_matches(stock_id: str, user: UserPublic = Depends(get_current_user)):
+    lot = await get_floor_scoped_or_404(db.godown_stock, stock_id, user, not_found="Godown stock lot not found", projection={"_id": 0})
+    return await _po_final_matches(lot)
+
+
+@router.post("/{stock_id}/customer-transfers")
+async def transfer_stock_to_customer(stock_id: str, body: CustomerTransfer, user: UserPublic = Depends(require_min_role("warehouse"))):
+    """Lend stock into a customer's In Box without changing stock or payment totals."""
+    if bool(body.recipient_customer_id) == bool(body.new_customer):
+        raise HTTPException(status_code=422, detail="Choose one existing or new customer")
+    command_key = f"godown-loan:{body.idempotency_key}"
+    existing = await db.godown_customer_transfers.find_one(floor_query(user, {"idempotency_key": command_key}), {"_id": 0})
+    if existing:
+        if existing.get("stock_id") != stock_id:
+            raise HTTPException(status_code=409, detail="This transfer key was used for another stock lot")
+        return {**existing, "idempotent": True, "return_due": await _return_due(existing)}
+
+    async with await client.start_session() as session:
+        async with session.start_transaction():
+            lot = await db.godown_stock.find_one(floor_query(user, {"id": stock_id}), {"_id": 0}, session=session)
+            if not lot:
+                raise HTTPException(status_code=404, detail="Godown stock lot not found")
+            if float(lot.get("available_qty") or 0) - float(lot.get("loaned_out_qty") or 0) < body.qty:
+                raise HTTPException(status_code=409, detail="Requested quantity exceeds stock available for customer transfer")
+            if lot.get("source_purchase_order_id") and lot.get("source_purchase_item_id"):
+                source_po = await db.purchase_orders.find_one(
+                    {"id": lot["source_purchase_order_id"], "floor_id": lot["floor_id"]},
+                    {"_id": 0, "items": 1}, session=session,
+                )
+                source_item = next((item for item in (source_po or {}).get("items", []) if item.get("id") == lot["source_purchase_item_id"]), None)
+                if not source_item or source_item.get("stage") != "in_box":
+                    raise HTTPException(status_code=409, detail="Customer stock can only transfer while its source product is In Box")
+
+            recipient = None
+            created_customer = False
+            if body.recipient_customer_id:
+                recipient = await db.customers.find_one({"id": body.recipient_customer_id, "floor_id": lot["floor_id"]}, {"_id": 0}, session=session)
+                if not recipient:
+                    raise HTTPException(status_code=404, detail="Recipient customer not found on this floor")
+            else:
+                data = body.new_customer
+                assert data is not None
+                email = (data.email or "").strip().lower()
+                if email:
+                    recipient = await db.customers.find_one({"email": email}, {"_id": 0}, session=session)
+                    if recipient and recipient.get("floor_id") != lot["floor_id"]:
+                        raise HTTPException(status_code=409, detail="Customer email belongs to another floor")
+                if not recipient:
+                    recipient = CustomerPublic(
+                        name=data.name.strip(), company=(data.company or "").strip() or None,
+                        email=email or None, phone=(data.phone or "").strip() or None,
+                        floor_id=lot["floor_id"],
+                    ).model_dump()
+                    if not email:
+                        recipient.pop("email", None)
+                    await db.customers.insert_one(recipient, session=session)
+                    created_customer = True
+            if recipient["id"] == lot.get("source_customer_id"):
+                raise HTTPException(status_code=409, detail="Source and recipient customers must differ")
+
+            matched_po = None
+            matched_item = None
+            if body.recipient_purchase_item_id:
+                matched_po = await db.purchase_orders.find_one(
+                    {"floor_id": lot["floor_id"], "customer_id": recipient["id"], "items.id": body.recipient_purchase_item_id},
+                    {"_id": 0}, session=session,
+                )
+                matched_item = next((item for item in (matched_po or {}).get("items", []) if item.get("id") == body.recipient_purchase_item_id), None)
+                if not matched_item or matched_item.get("cancelled") or matched_item.get("stage") != "po_final" or not _same_product(lot, matched_item):
+                    raise HTTPException(status_code=409, detail="Recipient purchase item is no longer a matching PO Final product")
+                remaining_order_qty = float(matched_item.get("qty") or 0) - float(matched_item.get("godown_transferred_qty") or 0) - float(matched_item.get("godown_borrowed_qty") or 0)
+                if body.qty > remaining_order_qty:
+                    raise HTTPException(status_code=409, detail="Transfer quantity exceeds the recipient's ordered quantity")
+                # Reserve demand as well as supply. Two staff members cannot
+                # satisfy the same PO Final line from separate stock lots.
+                demand_reserved = await db.purchase_orders.update_one(
+                    {"id": matched_po["id"], "floor_id": lot["floor_id"], "items": {"$elemMatch": {
+                        "id": matched_item["id"], "stage": "po_final", "cancelled": {"$ne": True},
+                        "$or": [{"godown_borrowed_qty": {"$exists": False}},
+                                {"godown_borrowed_qty": {"$lte": remaining_order_qty - body.qty + float(matched_item.get("godown_borrowed_qty") or 0)}}],
+                    }}},
+                    {"$inc": {"items.$.godown_borrowed_qty": body.qty}}, session=session,
+                )
+                if not demand_reserved.modified_count:
+                    raise HTTPException(status_code=409, detail="Recipient PO Final quantity changed; refresh and try again")
+
+            # This counter limits concurrent lending; available_qty and the
+            # source purchase quantity are deliberately unchanged.
+            reserved = await db.godown_stock.update_one(
+                {"id": stock_id, "floor_id": lot["floor_id"], "$expr": {"$gte": [
+                    {"$subtract": [{"$ifNull": ["$available_qty", 0]}, {"$ifNull": ["$loaned_out_qty", 0]}]}, body.qty,
+                ]}},
+                {"$inc": {"loaned_out_qty": body.qty}, "$set": {"updated_at": now_iso()}}, session=session,
+            )
+            if not reserved.modified_count:
+                raise HTTPException(status_code=409, detail="Stock changed while transferring; refresh and try again")
+            at = now_iso()
+            recipient_name = recipient.get("company") or recipient.get("name")
+            transfer = {
+                "id": str(uuid4()), "idempotency_key": command_key, "floor_id": lot["floor_id"],
+                "stock_id": stock_id, "product_id": lot.get("product_id"), "sku": lot.get("sku"),
+                "name": lot.get("name"), "image": lot.get("image"), "qty": body.qty,
+                "source_customer_id": lot.get("source_customer_id"),
+                "source_customer_name": lot.get("source_customer_name"),
+                "recipient_customer_id": recipient["id"], "recipient_customer_name": recipient_name,
+                "recipient_purchase_order_id": (matched_po or {}).get("id"),
+                "recipient_purchase_item_id": body.recipient_purchase_item_id,
+                "recipient_inbox_stage": "in_box", "return_due_on_replenishment": True,
+                "status": "awaiting_return", "reason": body.reason,
+                "created_at": at, "created_by": user.id, "created_by_name": user.full_name,
+                "returned_at": None,
+            }
+            await db.godown_customer_transfers.insert_one(transfer, session=session)
+            await db.customers.update_one(
+                {"id": recipient["id"], "floor_id": lot["floor_id"]},
+                {"$addToSet": {"borrowed_stock_transfer_ids": transfer["id"]}}, session=session,
+            )
+            if lot.get("source_customer_id"):
+                await db.customers.update_one(
+                    {"id": lot["source_customer_id"], "floor_id": lot["floor_id"]},
+                    {"$addToSet": {"lent_stock_transfer_ids": transfer["id"]}}, session=session,
+                )
+
+    await log_event(
+        event_type="godown_stock.customer_transferred", entity_type="godown_stock", entity_id=stock_id,
+        actor=user, floor_id=lot["floor_id"], customer_id=recipient["id"],
+        summary=f"Lent {body.qty:g} × {lot.get('name')} to {recipient_name}",
+        payload={"transfer_id": transfer["id"], "source_customer_id": lot.get("source_customer_id"), "recipient_customer_id": recipient["id"]},
+    )
+    return {**transfer, "created_customer": created_customer, "return_due": False}
+
+
+@router.post("/customer-transfers/{transfer_id}/return")
+async def return_customer_transfer(transfer_id: str, body: ReturnTransfer, user: UserPublic = Depends(require_min_role("warehouse"))):
+    async with await client.start_session() as session:
+        async with session.start_transaction():
+            transfer = await db.godown_customer_transfers.find_one(floor_query(user, {"id": transfer_id}), {"_id": 0}, session=session)
+            if not transfer:
+                raise HTTPException(status_code=404, detail="Customer transfer not found")
+            if transfer["status"] == "returned":
+                return transfer
+            at = now_iso()
+            result = await db.godown_customer_transfers.update_one(
+                {"id": transfer_id, "floor_id": transfer["floor_id"], "status": "awaiting_return"},
+                {"$set": {"status": "returned", "returned_at": at, "returned_by": user.id, "return_note": body.note}}, session=session,
+            )
+            if not result.modified_count:
+                raise HTTPException(status_code=409, detail="Customer transfer changed; refresh and try again")
+            await db.godown_stock.update_one(
+                {"id": transfer["stock_id"], "floor_id": transfer["floor_id"]},
+                {"$inc": {"loaned_out_qty": -float(transfer["qty"])}, "$set": {"updated_at": at}}, session=session,
+            )
+            if transfer.get("recipient_purchase_order_id") and transfer.get("recipient_purchase_item_id"):
+                await db.purchase_orders.update_one(
+                    {"id": transfer["recipient_purchase_order_id"], "floor_id": transfer["floor_id"], "items.id": transfer["recipient_purchase_item_id"]},
+                    {"$inc": {"items.$.godown_borrowed_qty": -float(transfer["qty"])}, "$set": {"updated_at": at}}, session=session,
+                )
+    return {**transfer, "status": "returned", "returned_at": at, "returned_by": user.id, "return_note": body.note, "return_due": False}
 
 
 @router.get("/{stock_id}")
@@ -357,7 +625,9 @@ async def allocate_stock(stock_id: str, body: Allocation, user: UserPublic = Dep
     at = now_iso()
     allocation = {"id": str(uuid4()), "quotation_id": quote["id"], "quotation_number": quote.get("number"), "customer_id": quote.get("customer_id"), "customer_name": quote.get("customer_name"), "qty": body.qty, "allocated_at": at, "allocated_by": user.id, "allocated_by_name": user.full_name}
     lot = await db.godown_stock.find_one_and_update(
-        floor_query(user, {"id": stock_id, "available_qty": {"$gte": body.qty}}),
+        floor_query(user, {"id": stock_id, "$expr": {"$gte": [
+            {"$subtract": [{"$ifNull": ["$available_qty", 0]}, {"$ifNull": ["$loaned_out_qty", 0]}]}, body.qty,
+        ]}}),
         {"$inc": {"available_qty": -body.qty}, "$push": {"allocations": allocation}, "$set": {"updated_at": at}},
         return_document=ReturnDocument.AFTER,
     )

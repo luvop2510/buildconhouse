@@ -2,8 +2,9 @@
 
 A per-LINE-ITEM lifecycle tracker built on top of the PO document store.
 
-Each PO line item flows through 6 stages:
-    order_in_company → company_billing → in_box → dispatched → in_transit → delivered
+New PO line items flow through:
+    po_final → company_billing → in_box → dispatched → in_transit → delivered
+Historical order_in_company items remain valid until moved.
 
 Endpoints:
     GET  /purchases/items                     — flat cross-PO items list
@@ -62,7 +63,7 @@ from services.followup_engine import reconcile_followups
 from services.catalog_service import get_catalog_snapshot, hydrate_product
 from services.notifications import notify
 from services.sequence import next_number
-from services.transfer_workflow import execute_transfer, transfer_history
+from services.transfer_workflow import execute_transfer, mark_loans_due_for_replenishment, settle_loan_transfer, transfer_history
 
 router = APIRouter(prefix="/purchases", tags=["purchases"])
 logger = logging.getLogger("forge.purchases_tracker")
@@ -72,6 +73,7 @@ logger = logging.getLogger("forge.purchases_tracker")
 # Stage catalog — the ONE source of truth used by both backend + frontend.
 # =============================================================================
 STAGE_LABELS: dict[str, str] = {
+    "po_final":        "PO Final",
     "order_in_company": "Order in Company",
     "company_billing":  "Company Billing",
     "in_box":           "In Box",
@@ -82,6 +84,7 @@ STAGE_LABELS: dict[str, str] = {
 
 # UI tones aligned with the reference (light-mode badges).
 STAGE_TONES: dict[str, dict[str, str]] = {
+    "po_final":        {"bg": "#FFEDD5", "fg": "#9A3412"},
     "order_in_company": {"bg": "#FFEDD5", "fg": "#9A3412"},   # amber
     "company_billing":  {"bg": "#FEF3C7", "fg": "#92400E"},   # yellow
     "in_box":           {"bg": "#DBEAFE", "fg": "#1E40AF"},   # blue
@@ -90,7 +93,7 @@ STAGE_TONES: dict[str, dict[str, str]] = {
     "delivered":        {"bg": "#D1FAE5", "fg": "#065F46"},   # emerald
 }
 
-EARLY_STAGES = ("order_in_company", "company_billing", "in_box")
+EARLY_STAGES = ("po_final", "order_in_company", "company_billing", "in_box")
 DISPATCH_STAGES = ("dispatched", "in_transit", "delivered")
 
 DEFAULT_SLA_DAYS = 7
@@ -212,6 +215,14 @@ def _flatten_item(po: dict, it: dict, sla_days: int) -> dict:
         "split_from_item_id": it.get("split_from_item_id"),
         "transferred_from_item_id": it.get("transferred_from_item_id"),
         "transferred_from_customer_id": it.get("transferred_from_customer_id"),
+        "loaned_qty": float(it.get("loaned_qty") or 0),
+        "customer_loan_history": it.get("customer_loan_history") or [],
+        "loan_transfer_id": it.get("loan_transfer_id"),
+        "borrowed_from_customer_id": it.get("borrowed_from_customer_id"),
+        "borrowed_from_customer_name": it.get("borrowed_from_customer_name"),
+        "loan_return_status": it.get("loan_return_status"),
+        "loan_return_due": bool(it.get("loan_return_due")),
+        "return_due_on_replenishment": bool(it.get("return_due_on_replenishment")),
         # Sanitary godown provenance is a snapshot on the purchase item so
         # both the stock tracker and the client workspace can explain where a
         # reused product came from (or that part of this line was returned).
@@ -415,6 +426,14 @@ def _items_page_pipeline(
             "split_from_item_id": "$items.split_from_item_id",
             "transferred_from_item_id": "$items.transferred_from_item_id",
             "transferred_from_customer_id": "$items.transferred_from_customer_id",
+            "loaned_qty": {"$ifNull": ["$items.loaned_qty", 0]},
+            "customer_loan_history": {"$ifNull": ["$items.customer_loan_history", []]},
+            "loan_transfer_id": "$items.loan_transfer_id",
+            "borrowed_from_customer_id": "$items.borrowed_from_customer_id",
+            "borrowed_from_customer_name": "$items.borrowed_from_customer_name",
+            "loan_return_status": "$items.loan_return_status",
+            "loan_return_due": "$items.loan_return_due",
+            "return_due_on_replenishment": "$items.return_due_on_replenishment",
             "godown_transferred_qty": "$items.godown_transferred_qty",
             "godown_transfer_history": "$items.godown_transfer_history",
             "godown_stock_id": "$items.godown_stock_id",
@@ -932,7 +951,7 @@ def _derive_po_status_from_stages(items: list[dict], current_status: str) -> Opt
     sync is warranted (PO is cancelled, or already at/past the target).
 
     Mapping (supplier → our warehouse):
-        order_in_company / company_billing / in_box  → still "ordered" once
+        po_final / order_in_company / company_billing / in_box → still "ordered" once
             procurement has actually started moving it (was draft/awaiting_review)
         dispatched / in_transit                       → "awaiting_supplier"
         delivered (some, not all)                     → "partial_received"
@@ -959,7 +978,7 @@ def _derive_po_status_from_stages(items: list[dict], current_status: str) -> Opt
     elif any(s in ("company_billing", "in_box") for s in stages):
         target = "ordered"
     else:
-        return None  # every item still order_in_company — nothing to sync yet
+        return None  # every item is still in its initial stage
 
     if target == current_status:
         return None
@@ -1033,6 +1052,12 @@ async def _apply_stage_change(
     for _ in range(max_attempts):
         result = await _attempt_stage_change(item_id, to_stage, user, note, qty)
         if not result.get("conflict"):
+            if to_stage == "in_box" and not result.get("no_change"):
+                arrived_item_id = result.get("new_item_id") or result.get("item_id") or item_id
+                try:
+                    result["loans_due"] = (await mark_loans_due_for_replenishment(item_id=arrived_item_id, user=user))["return_due_transfer_ids"]
+                except Exception:
+                    logger.exception("Could not mark customer loan return due for item %s", arrived_item_id)
             return result
 
     logger.warning("Concurrent inventory conflict on item %s after %d attempts", item_id, max_attempts)
@@ -1081,6 +1106,10 @@ async def _attempt_stage_change(
     if move_qty > full_qty + 1e-6:
         raise HTTPException(status_code=400, detail=f"Only {full_qty} available to move")
 
+    loaned_qty = float(it.get("loaned_qty") or 0)
+    if loaned_qty > 0 and (to_stage != from_stage or move_qty < full_qty - 1e-6) and move_qty > full_qty - loaned_qty + 1e-6:
+        raise HTTPException(status_code=409, detail=f"{loaned_qty:g} units are lent to another customer and must be returned before moving them")
+
     is_partial = move_qty < full_qty - 1e-6
 
     if not is_partial and from_stage == to_stage:
@@ -1105,6 +1134,10 @@ async def _attempt_stage_change(
         new_item["id"] = new_item_id
         new_item["qty"] = move_qty
         new_item["qty_received"] = 0
+        # The original line retains every active customer loan; the moved
+        # unloaned piece must not inherit its reservation or transfer journal.
+        new_item["loaned_qty"] = 0
+        new_item["customer_loan_history"] = []
         new_item["stage"] = to_stage
         new_item["last_moved_at"] = now
         new_item["last_moved_by"] = user.id
@@ -1451,6 +1484,15 @@ async def transfer_item_command(
     )
 
 
+@router.post("/transfers/{transfer_id}/return")
+async def return_purchase_transfer(
+    transfer_id: str,
+    user: UserPublic = Depends(require_min_role("warehouse")),
+):
+    await get_floor_scoped_or_404(db.purchase_transfers, transfer_id, user, not_found="Loan transfer not found", projection={"_id": 0, "id": 1})
+    return await settle_loan_transfer(transfer_id=transfer_id, user=user)
+
+
 @router.get("/items/{item_id}/transfer-history")
 async def item_transfer_history(item_id: str, user: UserPublic = Depends(get_current_user)):
     po = await db.purchase_orders.find_one(floor_query(user, {"items.id": item_id}), {"_id": 0, "floor_id": 1})
@@ -1783,12 +1825,12 @@ async def create_po_for_shortage(
         product_id=s["product_id"], sku=s["sku"], name=s["name"], image=s.get("image"),
         qty=float(s["shortage_qty"]), unit_cost=0,
         quotation_line_id=s.get("quotation_line_id"),
-        stage="order_in_company",
+        stage="po_final",
         customer_id=s["customer_id"], customer_name=s["customer_name"],
         last_moved_at=now, last_moved_by=user.id, last_moved_by_name=user.full_name,
         stage_history=[
             PurchaseStageEvent(
-                from_stage=None, to_stage="order_in_company",
+                from_stage=None, to_stage="po_final",
                 by_user_id=user.id, by_user_name=user.full_name,
                 note="Reorder for shortage created by a customer transfer", action="create",
             )

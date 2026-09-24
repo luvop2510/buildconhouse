@@ -176,6 +176,9 @@ class CustomerPublic(CustomerBase, TimestampedModel):
     # Required here (not on CustomerBase — see the comment there) so every
     # persisted/returned customer document is guaranteed a real floor_id.
     floor_id: str
+    # References to temporary product loans; they do not affect receivables.
+    lent_stock_transfer_ids: list[str] = []
+    borrowed_stock_transfer_ids: list[str] = []
     # Set when Send Invite / Reset Password issues a temporary password — the
     # customer must set their own password on first portal login.
     must_change_password: bool = False
@@ -787,6 +790,8 @@ class SupplierCreate(BaseModel):
 
 
 PURCHASE_STAGES = (
+    "po_final",
+    # Historical orders retain this stage until a user moves them.
     "order_in_company",
     "company_billing",
     "in_box",
@@ -795,6 +800,7 @@ PURCHASE_STAGES = (
     "delivered",
 )
 PurchaseStage = Literal[
+    "po_final",
     "order_in_company",
     "company_billing",
     "in_box",
@@ -845,6 +851,8 @@ class PurchaseOrderItem(BaseModel):
     # Immutable audit trail for returned/declined sanitary material. This is
     # separate from a tile's boxes_godown logistics counter below.
     godown_transfer_history: list[dict] = []
+    # Temporary GoDown loans satisfy demand without changing ordered qty.
+    godown_borrowed_qty: float = Field(default=0, ge=0)
     # Set when the line itself is fulfilled from reusable sanitary godown
     # stock. These fields make the customer/Purchases indication self-contained.
     godown_stock_id: Optional[str] = None
@@ -858,7 +866,7 @@ class PurchaseOrderItem(BaseModel):
     sort_order: int = 0
 
     # ---- Material-tracking fields (per-line lifecycle) ----
-    stage: PurchaseStage = "order_in_company"
+    stage: PurchaseStage = "po_final"
     # Denormalized so the tracker table doesn't need a join for every row.
     customer_id: Optional[str] = None
     customer_name: Optional[str] = None
@@ -882,6 +890,18 @@ class PurchaseOrderItem(BaseModel):
     transferred_from_item_id: Optional[str] = None   # set on the destination item
     transferred_from_po_id: Optional[str] = None
     transferred_from_customer_id: Optional[str] = None
+    # Customer-to-customer stock loan bookkeeping. The source line retains its
+    # ordered quantity; these fields record the temporary allocation and the
+    # recipient's obligation to return it when its own PO arrives.
+    loaned_qty: float = Field(default=0, ge=0)
+    customer_loan_history: list[dict] = []
+    loan_replenishment_reserved_qty: float = Field(default=0, ge=0)
+    loan_transfer_id: Optional[str] = None
+    borrowed_from_customer_id: Optional[str] = None
+    borrowed_from_customer_name: Optional[str] = None
+    return_due_on_replenishment: bool = False
+    loan_return_status: Optional[str] = None
+    loan_return_due: bool = False
     # Split bookkeeping (partial-quantity stage move — e.g. "3 of 20")
     split_from_item_id: Optional[str] = None          # set on the new (moved) piece
     split_into_item_id: Optional[str] = None           # set on the remainder, if any

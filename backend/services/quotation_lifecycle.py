@@ -56,7 +56,7 @@ def purchase_item_is_mutable(item: dict) -> bool:
     if item.get("cancelled"):
         return True
     return (
-        item.get("stage", "order_in_company") == "order_in_company"
+        item.get("stage", "order_in_company") in {"po_final", "order_in_company"}
         and float(item.get("qty_received") or 0) <= _EPSILON
         and float(item.get("godown_transferred_qty") or 0) <= _EPSILON
         and float(item.get("boxes_ready") or 0) <= _EPSILON
@@ -178,7 +178,7 @@ def _po_totals(items: list[dict]) -> float:
 
 def _new_po_item(raw: dict, *, unit_cost: float, product: dict, user: UserPublic) -> dict:
     now = _now()
-    stage = "in_box" if raw.get("godown_stock_id") else "order_in_company"
+    stage = "in_box" if raw.get("godown_stock_id") else "po_final"
     return PurchaseOrderItem(
         product_id=raw["product_id"], sku=raw["sku"], name=raw["name"], image=raw.get("image"),
         finish=raw.get("finish"), category_id=raw.get("category_id"), room=raw.get("room"),

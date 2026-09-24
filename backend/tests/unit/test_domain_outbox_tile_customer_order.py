@@ -161,6 +161,8 @@ def test_standard_quotation_never_creates_customer_order(monkeypatch):
     assert fake_db.customer_orders.docs == []
     for po in fake_db.purchase_orders.docs:
         assert po["customer_order_id"] is None
+        assert all(item["stage"] == "po_final" for item in po["items"])
+        assert all(item["stage_history"][0]["to_stage"] == "po_final" for item in po["items"])
 
 
 def test_sanitary_godown_line_creates_an_in_box_purchase_item(monkeypatch):

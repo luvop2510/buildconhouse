@@ -398,11 +398,11 @@ async def _handle_order_placed(event: dict, session: Any) -> dict:
             po_items.append(PurchaseOrderItem(
                 product_id=raw["product_id"], sku=raw["sku"], name=raw["name"], image=raw.get("image"),
                 finish=raw.get("finish"), category_id=raw.get("category_id"), room=raw.get("room"),
-                qty=qty, unit_cost=unit_cost, quotation_line_id=raw.get("id"), stage="in_box" if group.get("is_godown") else "order_in_company",
+                qty=qty, unit_cost=unit_cost, quotation_line_id=raw.get("id"), stage="in_box" if group.get("is_godown") else "po_final",
                 customer_id=quotation["customer_id"], customer_name=quotation.get("customer_name", ""),
                 brand_id=group["brand_id"], brand_name=group["brand_name"],
                 last_moved_at=now, last_moved_by=event["actor_id"], last_moved_by_name=event["actor_name"],
-                stage_history=[PurchaseStageEvent(from_stage=None, to_stage="in_box" if group.get("is_godown") else "order_in_company", by_user_id=event["actor_id"], by_user_name=event["actor_name"], note=(f"Allocated from godown stock for {quotation.get('number')}" if group.get("is_godown") else f"Created from {quotation.get('number')}"), action="create")],
+                stage_history=[PurchaseStageEvent(from_stage=None, to_stage="in_box" if group.get("is_godown") else "po_final", by_user_id=event["actor_id"], by_user_name=event["actor_name"], note=(f"Allocated from godown stock for {quotation.get('number')}" if group.get("is_godown") else f"Created from {quotation.get('number')}"), action="create")],
                 godown_stock_id=raw.get("godown_stock_id"), godown_allocation_id=raw.get("godown_allocation_id"),
                 godown_source_customer_name=raw.get("godown_source_customer_name"), godown_source_purchased_at=raw.get("godown_source_purchased_at"),
                 godown_transferred_at=raw.get("godown_transferred_at"),

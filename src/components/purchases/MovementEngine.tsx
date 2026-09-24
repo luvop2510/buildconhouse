@@ -9,6 +9,7 @@
 //   GET  /purchases/items/{id}            — full movement history + lineage
 // -----------------------------------------------------------------------------
 import { Feather } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
@@ -23,7 +24,7 @@ import { PRODUCT_IMAGE_ASPECT_RATIO } from "@/src/theme/tokens";
 // Shared types
 // -----------------------------------------------------------------------------
 export type TrackerStage =
-  | "order_in_company" | "company_billing" | "in_box"
+  | "po_final" | "company_billing" | "in_box"
   | "dispatched" | "in_transit" | "delivered";
 
 export type StageMeta = {
@@ -39,6 +40,7 @@ export type MovableItem = {
   name: string;
   image?: string | null;
   qty: number;
+  loaned_qty?: number;
   stage: TrackerStage;
   customer_id?: string | null;
   customer_name?: string | null;
@@ -48,7 +50,7 @@ export type MovableItem = {
 };
 
 export const STAGE_TONE: Record<TrackerStage, { bg: string; fg: string }> = {
-  order_in_company: { bg: ds.sunken, fg: ds.inkMid },
+  po_final:         { bg: ds.sunken, fg: ds.inkMid },
   company_billing:  { bg: ds.warnTint, fg: ds.warn },
   in_box:           { bg: ds.sunken, fg: ds.inkMid },
   dispatched:       { bg: ds.brassTint, fg: ds.brassDeep },
@@ -57,7 +59,7 @@ export const STAGE_TONE: Record<TrackerStage, { bg: string; fg: string }> = {
 };
 
 const STAGE_ICON: Record<string, keyof typeof Feather.glyphMap> = {
-  order_in_company: "box", company_billing: "file-text", in_box: "archive",
+  po_final: "box", company_billing: "file-text", in_box: "archive",
   dispatched: "truck", in_transit: "navigation", delivered: "check-circle",
   create: "plus-circle", move: "arrow-right", transfer_in: "log-in",
   transfer_out: "log-out", split_in: "git-branch", split_out: "git-commit",
@@ -109,6 +111,7 @@ export function MoveStageSheet({
   onClose: () => void;
   onMoved: (result: any) => void | Promise<void>;
 }) {
+  const router = useRouter();
   const [stages, setStages] = useState<StageMeta[]>([]);
   const [target, setTarget] = useState<TrackerStage | null>(null);
   const [qty, setQty] = useState("");
@@ -154,7 +157,7 @@ export function MoveStageSheet({
       // then performs the conditional source-quantity update and records
       // customer/PO provenance atomically with the new lot.
       const detail = await api.get<{ po_id: string }>(`/purchases/items/${item.item_id}`);
-      await api.post("/godown-stock/intakes", {
+      const lot = await api.post<{ id: string }>("/godown-stock/intakes", {
         purchase_order_id: detail.po_id,
         purchase_item_id: item.item_id,
         qty: n,
@@ -163,6 +166,7 @@ export function MoveStageSheet({
       toast.success(`${n} × ${item.name} moved to godown stock`);
       await onMoved({ moved_to_godown: true, qty_moved: n });
       onClose();
+      router.push(`/(admin)/godown-stock?newStockId=${encodeURIComponent(lot.id)}` as any);
     } catch (e: any) {
       toast.error(e instanceof ApiError ? e.detail || e.message : "Could not move item to godown stock");
     } finally { setBusy(false); }
@@ -332,7 +336,7 @@ export function TransferSheet({
     if (!visible || !item) return;
     setMode("existing"); setPick(""); setCustSearch("");
     setNewName(""); setNewPhone(""); setNewEmail("");
-    setQty(String(item.qty)); setReason("");
+    setQty(String(Math.max(0, item.qty - (item.loaned_qty || 0)))); setReason("");
     setCommandKey(`transfer-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
     api.get<CustomerLite[]>("/customers").then((list) => {
       setCustomers((list || []).filter((c) => c.id !== item.customer_id));
@@ -347,11 +351,13 @@ export function TransferSheet({
 
   if (!item) return null;
   const n = Number(qty || "0");
+  const transferAvailable = Math.max(0, item.qty - (item.loaned_qty || 0));
 
   const submit = async () => {
+    if (item.stage !== "in_box") { toast.error("Products can be transferred only from In Box"); return; }
     if (mode === "existing" && !pick) { toast.error("Pick a destination customer"); return; }
     if (mode === "new" && !newName.trim()) { toast.error("Enter the new customer's name"); return; }
-    if (!n || n <= 0 || n > item.qty + 1e-6) { toast.error(`Enter a qty up to ${item.qty}`); return; }
+    if (!n || n <= 0 || n > transferAvailable + 1e-6) { toast.error(`Enter a qty up to ${transferAvailable}`); return; }
     setBusy(true);
     try {
       const payload = mode === "new"
@@ -361,7 +367,7 @@ export function TransferSheet({
         `/purchases/items/${item.item_id}/transfer`,
         payload,
       );
-      toast.success(`Transferred to ${r.destination.customer_name} · new PO ${r.destination.po_number}`);
+      toast.success(`Transfer recorded for ${r.destination?.customer_name || newName || customers.find((customer) => customer.id === pick)?.name || "customer"}`);
       await onSuccess(r);
       onClose();
     } catch (e: any) {
@@ -374,7 +380,7 @@ export function TransferSheet({
       footer={
         <View style={{ flexDirection: "row", gap: 8, justifyContent: "flex-end" }}>
           <Button label="Cancel" variant="ghost" onPress={onClose} />
-          <Button label="Transfer & create PO" icon="repeat" onPress={submit} loading={busy} testID="movement-transfer-submit" />
+          <Button label="Record transfer" icon="repeat" onPress={submit} loading={busy} disabled={item.stage !== "in_box" || transferAvailable <= 0} testID="movement-transfer-submit" />
         </View>
       }
     >
@@ -397,7 +403,7 @@ export function TransferSheet({
             </Field>
           </View>
         </View>
-        <Txt v="caption" tone="soft">Available: {item.qty}</Txt>
+        <Txt v="caption" tone="soft">Available to lend: {transferAvailable} of {item.qty} · transfer allowed only in In Box</Txt>
 
         <Tabs
           items={[{ key: "existing", label: "Existing customer" }, { key: "new", label: "Create new customer" }]}
@@ -474,7 +480,7 @@ export function TransferSheet({
         <View style={{ flexDirection: "row", gap: 6, alignItems: "flex-start", backgroundColor: ds.sunken, padding: 10, borderRadius: radius.md }}>
           <Feather name="info" size={12} color={ds.inkMid} style={{ marginTop: 1 }} />
           <Txt v="caption" tone="mid" style={{ flex: 1 }}>
-            This creates a new purchase order for the destination customer and keeps the full audit trail on both sides.
+            The original customer&apos;s order and quantity remain in place. Both customers see the transfer and the return due when the ordered product arrives. Existing payments stay unchanged.
           </Txt>
         </View>
       </View>
@@ -580,7 +586,7 @@ function STAGE_LABEL_HINT(ev: HistoryEvent): string {
 }
 function LABEL(stage: string): string {
   const map: Record<string, string> = {
-    order_in_company: "Order in Company", company_billing: "Company Billing", in_box: "In Box",
+    po_final: "PO Final", company_billing: "Company Billing", in_box: "In Box",
     dispatched: "Dispatched", in_transit: "In Transit", delivered: "Delivered",
   };
   return map[stage] || stage;

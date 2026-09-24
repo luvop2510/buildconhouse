@@ -438,7 +438,9 @@ async def create_quotation(
             "allocated_by_name": user.full_name,
         }
         lot = await db.godown_stock.find_one_and_update(
-            floor_query(user, {"id": line.godown_stock_id, "available_qty": {"$gte": line.qty}}),
+            floor_query(user, {"id": line.godown_stock_id, "$expr": {"$gte": [
+                {"$subtract": [{"$ifNull": ["$available_qty", 0]}, {"$ifNull": ["$loaned_out_qty", 0]}]}, line.qty,
+            ]}}),
             {"$inc": {"available_qty": -line.qty}, "$push": {"allocations": allocation}, "$set": {"updated_at": allocation_at}},
             return_document=ReturnDocument.AFTER,
         )
@@ -1408,13 +1410,14 @@ async def _godown_matches(doc: dict) -> list[dict]:
         return []
     lots = await db.godown_stock.find(
         {"floor_id": doc.get("floor_id"), "product_id": {"$in": product_ids}, "available_qty": {"$gt": 0}},
-        {"_id": 0, "id": 1, "product_id": 1, "available_qty": 1, "source_customer_name": 1, "transferred_at": 1},
+        {"_id": 0, "id": 1, "product_id": 1, "available_qty": 1, "loaned_out_qty": 1, "source_customer_name": 1, "transferred_at": 1},
     ).sort("transferred_at", 1).to_list(500)
     available: dict[str, float] = {}
     sources: dict[str, list[dict]] = {}
     for lot in lots:
         product_id = str(lot["product_id"])
-        available[product_id] = available.get(product_id, 0.0) + float(lot.get("available_qty") or 0)
+        free_qty = max(0.0, float(lot.get("available_qty") or 0) - float(lot.get("loaned_out_qty") or 0))
+        available[product_id] = available.get(product_id, 0.0) + free_qty
         sources.setdefault(product_id, []).append(lot)
     return [{
         "line_id": line.get("id"), "product_id": line.get("product_id"), "sku": line.get("sku"), "name": line.get("name"),
@@ -1478,10 +1481,14 @@ async def use_godown_stock(quotation_id: str, user: UserPublic = Depends(require
         lots = await db.godown_stock.find({"floor_id": doc.get("floor_id"), "product_id": raw.get("product_id"), "available_qty": {"$gt": 0}}, {"_id": 0}).sort("transferred_at", 1).to_list(100)
         for lot in lots:
             if remaining <= 1e-6: break
-            qty = min(remaining, float(lot.get("available_qty") or 0))
+            qty = min(remaining, max(0.0, float(lot.get("available_qty") or 0) - float(lot.get("loaned_out_qty") or 0)))
+            if qty <= 0:
+                continue
             at = now_iso()
             allocation = {"id": str(uuid4()), "quotation_id": doc["id"], "quotation_number": doc.get("number"), "customer_id": doc.get("customer_id"), "customer_name": doc.get("customer_name"), "qty": qty, "allocated_at": at, "allocated_by": user.id, "allocated_by_name": user.full_name}
-            claimed = await db.godown_stock.find_one_and_update({"id": lot["id"], "floor_id": doc.get("floor_id"), "available_qty": {"$gte": qty}}, {"$inc": {"available_qty": -qty}, "$push": {"allocations": allocation}, "$set": {"updated_at": at}}, return_document=ReturnDocument.AFTER)
+            claimed = await db.godown_stock.find_one_and_update({"id": lot["id"], "floor_id": doc.get("floor_id"), "$expr": {"$gte": [
+                {"$subtract": [{"$ifNull": ["$available_qty", 0]}, {"$ifNull": ["$loaned_out_qty", 0]}]}, qty,
+            ]}}, {"$inc": {"available_qty": -qty}, "$push": {"allocations": allocation}, "$set": {"updated_at": at}}, return_document=ReturnDocument.AFTER)
             if not claimed:
                 continue
             replacement = {**raw, "id": str(uuid4()), "qty": qty, "godown_stock_id": lot["id"], "godown_allocation_id": allocation["id"], "godown_source_customer_name": lot.get("source_customer_name"), "godown_source_purchased_at": lot.get("source_purchased_at"), "godown_transferred_at": lot.get("transferred_at"), "godown_allocated_at": at}

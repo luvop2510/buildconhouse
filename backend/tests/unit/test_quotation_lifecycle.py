@@ -8,6 +8,7 @@ import pytest
 from fastapi import HTTPException
 
 import services.quotation_lifecycle as lifecycle
+from models import PurchaseOrderItem, UserPublic
 
 
 class _Rows:
@@ -62,3 +63,21 @@ def test_post_order_quantity_edit_is_allowed_while_its_purchase_line_is_unfulfil
     )
 
     asyncio.run(lifecycle.preflight_ordered_quotation_change(previous, proposed))
+
+
+def test_po_final_and_legacy_initial_items_remain_editable_before_fulfilment():
+    base = {"qty_received": 0, "godown_transferred_qty": 0}
+    assert lifecycle.purchase_item_is_mutable({**base, "stage": "po_final"})
+    assert lifecycle.purchase_item_is_mutable({**base, "stage": "order_in_company"})
+    assert not lifecycle.purchase_item_is_mutable({**base, "stage": "in_box"})
+
+
+def test_quotation_revision_creates_po_final_purchase_item():
+    user = UserPublic(email="sales@forge.app", full_name="Sales", role="sales")
+    item = lifecycle._new_po_item(
+        {"id": "line-2", "product_id": "product-2", "sku": "SKU-2", "name": "Basin", "qty": 2},
+        unit_cost=100, product={"brand_id": "brand-1", "brand_name": "Brand"}, user=user,
+    )
+    assert item["stage"] == "po_final"
+    assert item["stage_history"][0]["to_stage"] == "po_final"
+    assert PurchaseOrderItem.model_validate({"product_id": "old", "sku": "OLD", "name": "Old", "stage": "order_in_company"}).stage == "order_in_company"

@@ -45,6 +45,7 @@ type PoItem = {
   unit_cost: number;
   finish?: string | null;
   stage?: string;
+  loaned_qty?: number;
 };
 
 type ChalanStage = "released" | "at_godown" | "dispatched";
@@ -158,10 +159,11 @@ const STATUS_TONE: Record<PoStatus, string> = {
 };
 
 const STAGE_LABELS: Record<string, string> = {
-  order_in_company: "Order in Company", company_billing: "Company Billing", in_box: "In Box",
+  po_final: "PO Final", order_in_company: "PO Final", company_billing: "Company Billing", in_box: "In Box",
   dispatched: "Dispatched", in_transit: "In Transit", delivered: "Delivered",
 };
 const STAGE_TONE: Record<string, { bg: string; fg: string }> = {
+  po_final: { bg: colors.surfaceTertiary, fg: colors.onSurfaceMuted },
   order_in_company: { bg: colors.surfaceTertiary, fg: colors.onSurfaceMuted },
   company_billing: { bg: "#FEF3E2", fg: colors.warning },
   in_box: { bg: colors.surfaceTertiary, fg: colors.onSurfaceMuted },
@@ -243,8 +245,8 @@ export default function PurchaseOrderDetail() {
   const [pdfError, setPdfError] = useState<{ chalan: Chalan; message: string } | null>(null);
 
   const toMovable = useCallback((it: PoItem): MovableItem => ({
-    item_id: it.id, sku: it.sku, name: it.name, image: it.image, qty: it.qty,
-    stage: (it.stage as any) || "order_in_company",
+    item_id: it.id, sku: it.sku, name: it.name, image: it.image, qty: it.qty, loaned_qty: it.loaned_qty,
+    stage: (it.stage as any) || "po_final",
     customer_id: po?.customer_id, customer_name: po?.customer_name,
     po_number: po?.number, brand_name: po?.brand_name, supplier_name: po?.supplier_name,
   }), [po]);
@@ -602,7 +604,7 @@ export default function PurchaseOrderDetail() {
             {po.items.map((it, i) => {
               const full = it.qty_received >= it.qty - 1e-6 && it.qty > 0;
               const partial = it.qty_received > 0 && !full;
-              const stage = it.stage || "order_in_company";
+              const stage = it.stage || "po_final";
               return (
                 <View key={it.id} style={{ borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border }}>
                   {isDesktop ? (
@@ -660,9 +662,9 @@ export default function PurchaseOrderDetail() {
                         <Text style={{ fontSize: 11, fontWeight: "600", color: colors.onSurface }}>Move</Text>
                         <Feather name="chevron-down" size={10} color={colors.onSurfaceMuted} />
                       </Pressable>
-                      <Pressable testID={`po-item-transfer-${it.id}`} onPress={() => setTransferItem(it)} style={styles.itemActionBtn} hitSlop={6}>
+                      {stage === "in_box" ? <Pressable testID={`po-item-transfer-${it.id}`} onPress={() => setTransferItem(it)} style={styles.itemActionBtn} hitSlop={6}>
                         <Feather name="repeat" size={12} color={colors.onSurface} />
-                      </Pressable>
+                      </Pressable> : null}
                     </View>
                   </View>
                 </View>

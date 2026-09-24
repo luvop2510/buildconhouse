@@ -1,7 +1,7 @@
 import { api } from "@/src/api/client";
 
 export type PurchaseStage =
-  | "order_in_company" | "company_billing" | "in_box"
+  | "po_final" | "company_billing" | "in_box"
   | "dispatched" | "in_transit" | "delivered";
 
 export type PurchaseItem = {
@@ -41,6 +41,15 @@ export type PurchaseItem = {
   godown_source_customer_name?: string | null;
   godown_source_purchased_at?: string | null;
   godown_transferred_at?: string | null;
+  loaned_qty?: number;
+  loan_transfer_id?: string | null;
+  lent_to_customer_name?: string | null;
+  customer_loan_history?: { transfer_id: string; qty: number; destination_customer_id?: string | null; destination_customer_name?: string | null; created_at?: string | null; status?: string | null }[];
+  borrowed_from_customer_id?: string | null;
+  borrowed_from_customer_name?: string | null;
+  loan_return_status?: "awaiting_return" | "return_due" | "returned" | null;
+  loan_return_due?: boolean;
+  return_due_on_replenishment?: boolean;
 };
 
 /** Floor-scoped customer record used by the Purchases lifecycle navigator. */
@@ -115,4 +124,8 @@ export function getPurchaseCustomerWorkspace(customerId: string, signal?: AbortS
 
 export function cancelPurchaseItem(itemId: string, reason?: string) {
   return api.post(`/purchases/items/${itemId}/cancel`, reason?.trim() ? { reason: reason.trim() } : {});
+}
+
+export function returnPurchaseLoan(transferId: string) {
+  return api.post(`/purchases/transfers/${encodeURIComponent(transferId)}/return`, {});
 }
