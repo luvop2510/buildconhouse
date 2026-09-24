@@ -339,12 +339,13 @@ def test_settle_return_releases_reservation_and_keeps_purchase_lines(monkeypatch
     assert repeat['idempotent'] is True
 
 
-def test_replenished_order_marks_matching_loan_due(monkeypatch):
+@pytest.mark.parametrize('arrival_stage', ['in_box', 'delivered'])
+def test_replenished_order_marks_matching_loan_due(monkeypatch, arrival_stage):
     db, user = setup(monkeypatch)
     ordered_po = {
         'id': 'ordered-po', 'floor_id': 'first-floor', 'customer_id': 'recipient',
         'items': [{'id': 'ordered-item', 'product_id': 'product-1', 'qty': 3,
-                   'stage': 'in_box', 'loan_replenishment_reserved_qty': 0}],
+                   'stage': arrival_stage, 'loan_replenishment_reserved_qty': 0}],
     }
     loan = {
         'id': 'loan-1', 'type': 'loan', 'status': 'awaiting_return',

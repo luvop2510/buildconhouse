@@ -15,6 +15,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import base64
 import binascii
+import logging
 from pathlib import PurePath
 from typing import Optional
 
@@ -28,8 +29,10 @@ from models import (
     PurchaseStatusPayload, UserPublic,
 )
 from services.activity_log import log_event
+from services.transfer_workflow import mark_loans_due_for_replenishment
 
 router = APIRouter(prefix="/purchase-orders", tags=["purchase-orders"])
+logger = logging.getLogger(__name__)
 
 _ATTACHMENT_MAGIC: dict[str, tuple[bytes, ...]] = {
     "application/pdf": (b"%PDF-",),
@@ -469,6 +472,10 @@ async def receive_items(
             summary=f"{sync['sku']} · auto-marked Delivered (fully received)",
             payload={"item_id": sync["item_id"], "from_stage": sync["from_stage"], "to_stage": "delivered", "source": "receive_sync"},
         )
+        try:
+            await mark_loans_due_for_replenishment(item_id=sync["item_id"], user=user)
+        except Exception:
+            logger.exception("Could not mark customer loan return due after receiving item %s", sync["item_id"])
 
     fresh = await db.purchase_orders.find_one(floor_query(user, {"id": po_id}), {"_id": 0})
     return PurchaseOrder(**fresh)

@@ -508,7 +508,7 @@ async def mark_loans_due_for_replenishment(*, item_id: str, user: UserPublic) ->
     if not po:
         raise HTTPException(status_code=404, detail="Purchase item not found")
     item = next((row for row in po.get("items", []) if row.get("id") == item_id), None)
-    if not item or item.get("stage") != "in_box" or item.get("loan_transfer_id") or item.get("cancelled"):
+    if not item or item.get("stage") not in {"in_box", "delivered"} or item.get("loan_transfer_id") or item.get("cancelled"):
         return {"item_id": item_id, "return_due_transfer_ids": []}
     customer_id = item.get("customer_id") or po.get("customer_id")
     cursor = db.purchase_transfers.find(floor_query(user, {
@@ -529,7 +529,7 @@ async def mark_loans_due_for_replenishment(*, item_id: str, user: UserPublic) ->
             async with session.start_transaction():
                 reserved = await db.purchase_orders.update_one(
                     floor_query(user, {"id": po["id"], "items": {"$elemMatch": {
-                        "id": item_id, "stage": "in_box", "cancelled": {"$ne": True},
+                        "id": item_id, "stage": item["stage"], "cancelled": {"$ne": True},
                         "qty": item["qty"],
                         "$or": [{"loan_replenishment_reserved_qty": {"$exists": False}},
                                 {"loan_replenishment_reserved_qty": {"$lte": limit}}],
