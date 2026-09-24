@@ -230,6 +230,17 @@ def test_new_customer_receives_borrowed_item_on_source_floor(monkeypatch):
     assert db.purchase_transfers.inserted[0]['created_customer'] is True
 
 
+def test_new_customer_without_email_does_not_store_null_unique_email(monkeypatch):
+    db, user = setup(monkeypatch)
+    asyncio.run(workflow._create_loan_transfer(
+        item_id='item-source', destination_customer_id=None,
+        new_customer={'name': 'No Email Recipient'}, qty=1,
+        reason=None, key='no-email-key', user=user,
+    ))
+    destination = next(c for c in db.customers.docs if c.get('name') == 'No Email Recipient')
+    assert 'email' not in destination
+
+
 def test_second_loan_cannot_reserve_units_already_lent(monkeypatch):
     db, run = create(monkeypatch, loaned=3, qty=2)
     asyncio.run(run())

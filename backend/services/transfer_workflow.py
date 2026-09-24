@@ -278,8 +278,10 @@ async def _create_loan_transfer(
                 email = (new_customer.get("email") or "").strip().lower() or None
                 if email:
                     destination = await db.customers.find_one(
-                        floor_query(user, {"email": email}), {"_id": 0}, session=session,
+                        {"email": email}, {"_id": 0}, session=session,
                     )
+                    if destination and destination.get("floor_id") != floor_inherit(source_po):
+                        raise HTTPException(status_code=409, detail="Customer email belongs to another floor")
                 if not destination:
                     name = (new_customer.get("name") or "").strip()
                     if not name:
@@ -291,6 +293,8 @@ async def _create_loan_transfer(
                         city=new_customer.get("city") or None,
                         floor_id=floor_inherit(source_po),
                     ).model_dump()
+                    if not email:
+                        destination.pop("email", None)
                     await db.customers.insert_one(destination, session=session)
                     created_customer = True
                 if destination["id"] == source_customer_id:
