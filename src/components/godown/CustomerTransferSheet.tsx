@@ -96,7 +96,7 @@ export function CustomerTransferSheet({ lot, initialMatch, onClose, onTransferre
         unit_price: priceAmount,
         discount_pct: discountAmount,
       });
-      toast.success(`${amount} ${amount === 1 ? "unit" : "units"} recorded for ${response.recipient_customer_name || name || customers.find((customer) => customer.id === customerId)?.name || "customer"}`);
+      toast.success(`${amount} ${amount === 1 ? "unit" : "units"} transferred to ${response.recipient_customer_name || name || customers.find((customer) => customer.id === customerId)?.name || "customer"} and added to In Box`);
       await onTransferred();
       onClose();
     } catch (error: any) {
@@ -111,7 +111,7 @@ export function CustomerTransferSheet({ lot, initialMatch, onClose, onTransferre
     </View>}>
     {lot ? <View style={{ gap: spacing.md, paddingBottom: spacing.md }}>
       <View style={{ gap: 3 }}><Text style={type.titleMd}>{lot.name}</Text><Text style={type.caption}>{lot.sku} · {lot.available_qty} stock · {freeQty} available to transfer{lot.source_customer_name ? ` · originally for ${lot.source_customer_name}` : ""}</Text></View>
-      <View style={noteStyle}><Feather name="info" size={16} color={colors.brand} /><Text style={[type.caption, { flex: 1 }]}>This permanently moves stock to the customer. If you select a matching PO Final order, its transferred quantity moves directly to In Box. The remaining stock quantity decreases.</Text></View>
+      <View style={noteStyle}><Feather name="info" size={16} color={colors.brand} /><Text style={[type.caption, { flex: 1 }]}>This moves stock to customer purchases in In Box and updates the amount due. A matching PO Final order is fulfilled when selected. The remaining GoDown stock quantity decreases.</Text></View>
       <View style={{ flexDirection: isPhone ? "column" : "row", gap: spacing.sm }}>
         <Pressable accessibilityRole="tab" accessibilityState={{ selected: mode === "existing" }} onPress={() => { setMode("existing"); setName(""); }} style={button(mode === "existing")}><Text style={buttonText(mode === "existing")}>Existing customer</Text></Pressable>
         <Pressable accessibilityRole="tab" accessibilityState={{ selected: mode === "new" }} onPress={() => { setMode("new"); setCustomerId(""); setPurchaseItemId(""); }} style={button(mode === "new")}><Text style={buttonText(mode === "new")}>New customer</Text></Pressable>
@@ -121,11 +121,11 @@ export function CustomerTransferSheet({ lot, initialMatch, onClose, onTransferre
       {mode === "existing" ? <View style={{ gap: spacing.sm }}>
         <TextInput accessibilityLabel="Search recipient customers" value={customerSearch} onChangeText={setCustomerSearch} placeholder="Search customers" style={inputStyle} />
         <ScrollView style={{ maxHeight: 148, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md }} keyboardShouldPersistTaps="handled">
-          {filteredCustomers.map((customer) => <Pressable key={customer.id} accessibilityRole="button" accessibilityState={{ selected: customerId === customer.id }} testID={`godown-recipient-${customer.id}`} onPress={() => { setCustomerId(customer.id); setPurchaseItemId(""); }} style={[rowStyle, customerId === customer.id && { backgroundColor: colors.brandTint }]}><Text style={[type.body, { flex: 1 }]}>{customer.company || customer.name}</Text>{customerId === customer.id ? <Feather name="check" size={16} color={colors.brand} /> : null}</Pressable>)}
+          {filteredCustomers.map((customer) => <Pressable key={customer.id} accessibilityRole="button" accessibilityState={{ selected: customerId === customer.id }} testID={`godown-recipient-${customer.id}`} onPress={() => { if (customer.id !== customerId) setPurchaseItemId(""); setCustomerId(customer.id); }} style={[rowStyle, customerId === customer.id && { backgroundColor: colors.brandTint }]}><Text style={[type.body, { flex: 1 }]}>{customer.company || customer.name}</Text>{customerId === customer.id ? <Feather name="check" size={16} color={colors.brand} /> : null}</Pressable>)}
           {!filteredCustomers.length && !loading ? <Text style={[type.caption, { padding: 12 }]}>No matching customers</Text> : null}
         </ScrollView>
         {customerId && customerMatches.length ? <View style={{ gap: 5 }}><Text style={type.overline}>MATCHING PO FINAL ORDERS</Text>{customerMatches.map((match) => <Pressable key={match.purchase_item_id} accessibilityRole="button" accessibilityState={{ selected: purchaseItemId === match.purchase_item_id }} onPress={() => { setPurchaseItemId(match.purchase_item_id); setQty(String(Math.min(freeQty, match.remaining_qty))); }} style={[rowStyle, purchaseItemId === match.purchase_item_id && { backgroundColor: colors.brandTint }]}><Text style={[type.body, { flex: 1 }]}>{match.name} · {match.remaining_qty} waiting</Text>{purchaseItemId === match.purchase_item_id ? <Feather name="check" size={16} color={colors.brand} /> : null}</Pressable>)}</View> : null}
-        {customerId ? <Text style={type.caption}>{purchaseItemId ? "The selected PO Final quantity will move to In Box." : "No order selected. This transfer will be recorded directly on the customer page."}</Text> : null}
+        {customerId ? <Text style={type.caption}>{purchaseItemId ? "The selected PO Final quantity will move to In Box." : "A purchase will be created in In Box for this customer."}</Text> : null}
       </View> : <View style={{ gap: spacing.sm }}>
         <TextInput accessibilityLabel="New customer name" value={name} onChangeText={setName} placeholder="Customer name" style={inputStyle} />
         <TextInput accessibilityLabel="New customer phone" value={phone} onChangeText={setPhone} placeholder="Phone (optional)" keyboardType="phone-pad" style={inputStyle} />

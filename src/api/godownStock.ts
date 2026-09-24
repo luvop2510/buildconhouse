@@ -17,7 +17,7 @@ export type CustomerStockTransfer = {
   id: string; stock_id: string; product_id?: string | null; sku: string; name: string; qty: number;
   source_customer_id?: string | null; source_customer_name?: string | null;
   recipient_customer_id: string; recipient_customer_name: string;
-  recipient_purchase_item_id?: string | null; recipient_inbox_stage: "in_box";
+  recipient_purchase_item_id?: string | null; recipient_inbox_stage?: "in_box" | null;
   transfer_type?: "godown_stock"; status: "completed" | "awaiting_return" | "returned"; return_due?: boolean;
   unit_price?: number; mrp?: number; discount_pct?: number; net_unit_price?: number; total?: number;
   recipient_purchase_order_id?: string | null; replacement_item_id?: string | null;

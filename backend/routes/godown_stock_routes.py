@@ -7,6 +7,7 @@ quantity update, so two staff members cannot allocate the same unit.
 import asyncio
 import logging
 import re
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -16,11 +17,15 @@ from pymongo.errors import DuplicateKeyError, PyMongoError
 from auth import floor_for_write, floor_query, get_current_user, get_floor_scoped_or_404, require_min_role
 from db import client, db
 from pymongo import ReturnDocument
-from models import CustomerPublic, Payment, UserPublic, now_iso
+from models import (
+    CustomerPublic, Payment, PurchaseOrder, PurchaseOrderItem, PurchaseStageEvent,
+    Quotation, QuotationLineItem, UserPublic, now_iso,
+)
 from services.activity_log import log_event
 from services.analytics import cache
 from services.followup_engine import reconcile_followups
 from services.notifications import notify
+from services.sequence import next_number
 
 router = APIRouter(prefix="/godown-stock", tags=["godown-stock"])
 logger = logging.getLogger(__name__)
@@ -401,6 +406,33 @@ def _replayed_transfer(existing: dict, stock_id: str, body: CustomerTransfer) ->
     return {**existing, "idempotent": True}
 
 
+async def _new_transfer_quotation(lot: dict, recipient: dict, body: CustomerTransfer,
+                                  stock_id: str, at: str, user: UserPublic, session) -> tuple[dict, QuotationLineItem]:
+    year = datetime.now(timezone.utc).year
+    number = await next_number("quotation", f"FQ-{year}-", collection="quotations", session=session)
+    unit_price = float(body.unit_price if body.unit_price is not None else lot.get("unit_price") or 0)
+    net_unit_price = round(unit_price * (1 - body.discount_pct / 100), 2)
+    line = QuotationLineItem(
+        product_id=lot.get("product_id") or f"godown:{stock_id}", sku=lot.get("sku") or "",
+        name=lot.get("name") or "Godown stock", image=lot.get("image"),
+        qty=body.qty, unit_price=unit_price,
+        mrp=float(lot.get("mrp") if lot.get("mrp") is not None else lot.get("unit_price") or 0),
+        discount_pct=body.discount_pct, net_amount=round(net_unit_price * body.qty, 2),
+        godown_stock_id=stock_id, godown_source_customer_name=lot.get("source_customer_name"),
+        godown_source_purchased_at=lot.get("source_purchased_at"), godown_transferred_at=at,
+    )
+    quote = Quotation(
+        number=number, customer_id=recipient["id"], customer_name=recipient.get("company") or recipient.get("name"),
+        status="ordered", ordered_at=at, items=[line],
+        subtotal=round(unit_price * body.qty, 2),
+        discount_total=round((unit_price - net_unit_price) * body.qty, 2),
+        grand_total=round(net_unit_price * body.qty, 2),
+        notes=f"Transferred from GoDown stock{f' — {body.reason}' if body.reason else ''}",
+        created_by=user.id, created_by_name=user.full_name, source="transfer", floor_id=lot["floor_id"],
+    ).model_dump()
+    return quote, line
+
+
 async def _transfer_stock_to_customer_once(stock_id: str, body: CustomerTransfer, user: UserPublic):
     """Consume godown stock for a customer, optionally replacing PO Final demand."""
     if bool(body.recipient_customer_id) == bool(body.new_customer):
@@ -446,6 +478,7 @@ async def _transfer_stock_to_customer_once(stock_id: str, body: CustomerTransfer
             replacement = None
             at = now_iso()
             transfer_id = str(uuid4())
+            quote = None
             mrp = float(lot.get("mrp") if lot.get("mrp") is not None else lot.get("unit_price") or 0)
             unit_price = float(body.unit_price if body.unit_price is not None else lot.get("unit_price") or 0)
             net_unit_price = round(unit_price * (1 - body.discount_pct / 100), 2)
@@ -486,6 +519,54 @@ async def _transfer_stock_to_customer_once(stock_id: str, body: CustomerTransfer
                 )
                 if not demand_reserved.modified_count:
                     raise HTTPException(status_code=409, detail="Recipient PO Final quantity changed; refresh and try again")
+                if not matched_po.get("quotation_id"):
+                    # Older/manual POs have no confirmed customer order for
+                    # Payments to display. Record this fulfilled quantity as
+                    # an amount due, without inventing a cash collection.
+                    quote, _ = await _new_transfer_quotation(lot, recipient, body, stock_id, at, user, session)
+                    quote["source_purchase_order_id"] = matched_po["id"]
+                    quote["source_item_id"] = replacement["id"]
+                    await db.quotations.insert_one(quote, session=session)
+            else:
+                # Payments reads confirmed quotations, while Purchases and the
+                # customer workspace read PO items. A direct transfer needs
+                # both records; a transfer-history row alone is invisible to
+                # those screens. Keep all writes in the stock transaction.
+                recipient_name = recipient.get("company") or recipient.get("name")
+                year = datetime.now(timezone.utc).year
+                po_number = await next_number("purchase_order", f"FPO-{year}-", collection="purchase_orders", session=session)
+                quote, quote_line = await _new_transfer_quotation(lot, recipient, body, stock_id, at, user, session)
+                replacement = PurchaseOrderItem(
+                    product_id=quote_line.product_id, sku=quote_line.sku, name=quote_line.name,
+                    image=lot.get("image"), qty=body.qty, qty_received=body.qty,
+                    unit_cost=net_unit_price, quotation_line_id=quote_line.id,
+                    stage="in_box", customer_id=recipient["id"], customer_name=recipient_name,
+                    brand_id=lot.get("brand_id"), brand_name=lot.get("brand_name") or lot.get("brand"),
+                    godown_stock_id=stock_id, godown_source_customer_name=lot.get("source_customer_name"),
+                    godown_source_purchased_at=lot.get("source_purchased_at"), godown_transferred_at=at,
+                    godown_allocated_at=at, godown_customer_transfer_id=transfer_id,
+                    godown_transfer_mrp=mrp, godown_transfer_unit_price=unit_price,
+                    godown_transfer_discount_pct=body.discount_pct,
+                    godown_transfer_net_unit_price=net_unit_price,
+                    last_moved_at=at, last_moved_by=user.id, last_moved_by_name=user.full_name,
+                    stage_history=[PurchaseStageEvent(
+                        from_stage=None, to_stage="in_box", by_user_id=user.id,
+                        by_user_name=user.full_name, note="Transferred from GoDown stock", action="transfer_in",
+                    )],
+                ).model_dump()
+                matched_po = PurchaseOrder(
+                    number=po_number, quotation_id=quote["id"], quotation_number=quote["number"],
+                    customer_id=recipient["id"], customer_name=recipient_name,
+                    brand_id=lot.get("brand_id"), brand_name=lot.get("brand_name") or lot.get("brand"),
+                    status="draft", items=[replacement],
+                    subtotal=quote["grand_total"], grand_total=quote["grand_total"],
+                    created_by=user.id, created_by_name=user.full_name, floor_id=lot["floor_id"],
+                    internal_notes="Created from GoDown stock transfer",
+                ).model_dump()
+                quote["source_purchase_order_id"] = matched_po["id"]
+                quote["source_item_id"] = replacement["id"]
+                await db.quotations.insert_one(quote, session=session)
+                await db.purchase_orders.insert_one(matched_po, session=session)
 
             reserved = await db.godown_stock.update_one(
                 {"id": stock_id, "floor_id": lot["floor_id"], "$expr": {"$gte": [
@@ -507,6 +588,7 @@ async def _transfer_stock_to_customer_once(stock_id: str, body: CustomerTransfer
                 "recipient_purchase_item_id": body.recipient_purchase_item_id,
                 "replacement_item_id": (replacement or {}).get("id"),
                 "recipient_inbox_stage": "in_box" if replacement else None,
+                "recipient_quotation_id": (quote or {}).get("id") or (matched_po or {}).get("quotation_id"),
                 "transfer_type": "godown_stock", "status": "completed", "reason": body.reason,
                 "mrp": mrp, "unit_price": unit_price, "discount_pct": body.discount_pct,
                 "net_unit_price": net_unit_price, "total": round(net_unit_price * body.qty, 2),

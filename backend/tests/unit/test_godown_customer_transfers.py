@@ -1,4 +1,4 @@
-"""GoDown transfers consume stock and replace selected PO Final demand."""
+"""GoDown transfers create customer orders or replace PO Final demand."""
 import asyncio
 from types import SimpleNamespace
 
@@ -71,10 +71,12 @@ def test_matching_po_final_reports_ordered_and_transferable_quantities(monkeypat
 def test_customer_transfer_consumes_stock_replaces_po_final_and_is_idempotent(monkeypatch):
     stock = Collection([lot()]); transfers = Collection([])
     purchases = Collection([po()]); customers = Collection([{"id": "recipient-1", "floor_id": "first-floor", "name": "Recipient"}])
-    fake_db = SimpleNamespace(godown_stock=stock, godown_customer_transfers=transfers, purchase_orders=purchases, customers=customers, payments=Collection([]))
+    fake_db = SimpleNamespace(godown_stock=stock, godown_customer_transfers=transfers, purchase_orders=purchases, customers=customers, payments=Collection([]), quotations=Collection([]))
     monkeypatch.setattr(route, "db", fake_db)
     monkeypatch.setattr(route, "client", Client())
     monkeypatch.setattr(route, "log_event", lambda **_kwargs: asyncio.sleep(0))
+    async def number(*_args, **_kwargs): return "FQ-2026-0001"
+    monkeypatch.setattr(route, "next_number", number)
     body = route.CustomerTransfer(qty=2, recipient_customer_id="recipient-1", recipient_purchase_item_id="item-1", unit_price=100, discount_pct=10, idempotency_key="request-123")
     result = asyncio.run(route.transfer_stock_to_customer("stock-1", body, user()))
     assert result["recipient_inbox_stage"] == "in_box"
@@ -91,6 +93,8 @@ def test_customer_transfer_consumes_stock_replaces_po_final_and_is_idempotent(mo
     assert purchases.rows[0]["items"][1]["godown_transfer_net_unit_price"] == 90
     assert purchases.rows[0]["items"][1]["unit_cost"] == 0
     assert result["replacement_item_id"] == purchases.rows[0]["items"][1]["id"]
+    assert result["recipient_quotation_id"] == fake_db.quotations.inserted[0]["id"]
+    assert fake_db.quotations.inserted[0]["grand_total"] == 180
     assert PurchaseOrderItem.model_validate(purchases.rows[0]["items"][1]).godown_customer_transfer_id == result["id"]
     assert purchases.updates[0][0]["items"][0]["qty"] == 3  # optimistic demand compare
     assert stock.updates[0][0]["$expr"]["$gte"][1] == 2  # atomic free-stock check
@@ -118,22 +122,75 @@ def test_customer_transfer_rejects_non_matching_po_item(monkeypatch):
     assert stock.rows[0]["loaned_out_qty"] == 0
 
 
-def test_direct_customer_transfer_has_no_loan_or_po_mutation(monkeypatch):
-    stock = Collection([lot()]); transfers = Collection([]); purchases = Collection([po()])
+def test_matching_po_with_existing_order_does_not_duplicate_amount_due(monkeypatch):
+    existing_po = po(); existing_po["quotation_id"] = "quote-1"
+    quotations = Collection([])
     monkeypatch.setattr(route, "db", SimpleNamespace(
-        godown_stock=stock, godown_customer_transfers=transfers, purchase_orders=purchases,
+        godown_stock=Collection([lot()]), godown_customer_transfers=Collection([]),
+        purchase_orders=Collection([existing_po]),
         customers=Collection([{"id": "recipient-1", "floor_id": "first-floor", "name": "Recipient"}]),
+        quotations=quotations,
     ))
     monkeypatch.setattr(route, "client", Client())
     monkeypatch.setattr(route, "log_event", lambda **_kwargs: asyncio.sleep(0))
-    body = route.CustomerTransfer(qty=5, recipient_customer_id="recipient-1", idempotency_key="direct-123")
+    body = route.CustomerTransfer(qty=1, recipient_customer_id="recipient-1", recipient_purchase_item_id="item-1", idempotency_key="existing-order-123")
+    result = asyncio.run(route.transfer_stock_to_customer("stock-1", body, user()))
+    assert result["recipient_quotation_id"] == "quote-1"
+    assert result["recipient_inbox_stage"] == "in_box"
+    assert quotations.inserted == []
+
+
+def test_direct_customer_transfer_creates_order_payment_due_and_inbox_item(monkeypatch):
+    stock = Collection([lot()]); transfers = Collection([]); purchases = Collection([po()]); quotations = Collection([])
+    fake_db = SimpleNamespace(
+        godown_stock=stock, godown_customer_transfers=transfers, purchase_orders=purchases,
+        customers=Collection([{"id": "recipient-1", "floor_id": "first-floor", "name": "Recipient"}]),
+        quotations=quotations,
+    )
+    monkeypatch.setattr(route, "db", fake_db)
+    monkeypatch.setattr(route, "client", Client())
+    monkeypatch.setattr(route, "log_event", lambda **_kwargs: asyncio.sleep(0))
+    async def number(kind, *_args, **_kwargs): return "FQ-2026-0001" if kind == "quotation" else "FPO-2026-0001"
+    monkeypatch.setattr(route, "next_number", number)
+    body = route.CustomerTransfer(qty=5, recipient_customer_id="recipient-1", unit_price=100, discount_pct=10, idempotency_key="direct-123")
     result = asyncio.run(route.transfer_stock_to_customer("stock-1", body, user()))
     assert result["recipient_purchase_item_id"] is None
-    assert result["replacement_item_id"] is None
+    assert result["replacement_item_id"] == purchases.inserted[0]["items"][0]["id"]
+    assert result["recipient_inbox_stage"] == "in_box"
+    assert result["recipient_purchase_order_id"] == purchases.inserted[0]["id"]
+    assert result["recipient_quotation_id"] == quotations.inserted[0]["id"]
     assert result["status"] == "completed"
     assert stock.rows[0]["available_qty"] == 0
     assert purchases.rows[0]["items"][0]["qty"] == 3
     assert not purchases.updates
+    assert quotations.inserted[0]["status"] == "ordered"
+    assert quotations.inserted[0]["grand_total"] == 450
+    assert quotations.inserted[0]["items"][0]["net_amount"] == 450
+    assert purchases.inserted[0]["items"][0]["stage"] == "in_box"
+    assert purchases.inserted[0]["items"][0]["unit_cost"] == 90
+    assert purchases.inserted[0]["customer_id"] == "recipient-1"
+    assert asyncio.run(route.transfer_stock_to_customer("stock-1", body, user()))["idempotent"] is True
+    assert len(quotations.inserted) == len(purchases.inserted) == 1
+
+
+def test_new_customer_transfer_creates_customer_order_and_inbox_item(monkeypatch):
+    stock = Collection([lot()]); transfers = Collection([]); purchases = Collection([])
+    customers = Collection([]); quotations = Collection([])
+    monkeypatch.setattr(route, "db", SimpleNamespace(
+        godown_stock=stock, godown_customer_transfers=transfers, purchase_orders=purchases,
+        customers=customers, quotations=quotations,
+    ))
+    monkeypatch.setattr(route, "client", Client())
+    monkeypatch.setattr(route, "log_event", lambda **_kwargs: asyncio.sleep(0))
+    async def number(kind, *_args, **_kwargs): return "FQ-2026-0002" if kind == "quotation" else "FPO-2026-0002"
+    monkeypatch.setattr(route, "next_number", number)
+    body = route.CustomerTransfer(qty=2, new_customer=route.NewTransferCustomer(name="New Customer"), unit_price=80, idempotency_key="new-customer-123")
+    result = asyncio.run(route.transfer_stock_to_customer("stock-1", body, user()))
+    assert result["created_customer"] is True
+    assert customers.inserted[0]["id"] == quotations.inserted[0]["customer_id"] == purchases.inserted[0]["customer_id"]
+    assert purchases.inserted[0]["items"][0]["stage"] == "in_box"
+    assert quotations.inserted[0]["grand_total"] == 160
+    assert stock.rows[0]["available_qty"] == 3
 
 
 def test_transfer_rejects_quantity_above_remaining_stock(monkeypatch):
