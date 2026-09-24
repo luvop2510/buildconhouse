@@ -201,17 +201,19 @@ export default function CustomerDetail() {
     if (!id || isTilesFloor) { setStockTransfers([]); return; }
     try {
       const result = await getCustomerStockTransfers(id);
-      setStockTransfers(result.transfers || []);
+      setStockTransfers((result.transfers || []).filter((transfer) =>
+        transfer.recipient_customer_id === id || (transfer.transfer_type !== "godown_stock" && transfer.status !== "completed")
+      ));
     } catch { setStockTransfers([]); }
   }, [id, isTilesFloor]);
 
-  const markStockReturned = useCallback(async (transferId: string) => {
+  const markLegacyStockReturned = useCallback(async (transferId: string) => {
     setReturningTransferId(transferId);
     try {
       await returnCustomerStockTransfer(transferId);
-      toast.success("Customer stock transfer marked returned");
+      toast.success("Borrowed stock marked returned");
       await loadStockTransfers();
-    } catch (error: any) { toast.error(error?.detail || "Could not mark stock returned"); }
+    } catch (error: any) { toast.error(error?.detail || "Could not mark borrowed stock returned"); }
     finally { setReturningTransferId(null); }
   }, [loadStockTransfers]);
 
@@ -744,16 +746,17 @@ export default function CustomerDetail() {
             ) : (
               <>
               {stockTransfers.length > 0 ? <Card style={{ gap: spacing.sm }}>
-                <Text style={type.overline}>Customer stock transfers</Text>
-                <Text style={type.caption}>These are borrowed stock records. Ordered quantities and payments stay unchanged.</Text>
+                <Text style={type.overline}>GoDown stock transfers</Text>
+                <Text style={type.caption}>Stock allocated directly to this customer, including quantity and transfer price. Earlier borrowed stock retains its return status.</Text>
                 {stockTransfers.map((transfer) => {
-                  const lent = transfer.source_customer_id === id;
-                  const otherCustomer = lent ? transfer.recipient_customer_name : transfer.source_customer_name || "GoDown stock";
+                  const legacyLoan = transfer.transfer_type !== "godown_stock" && transfer.status !== "completed";
+                  const legacySource = legacyLoan && transfer.source_customer_id === id;
                   return <View key={transfer.id} style={{ paddingVertical: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border, gap: 3 }}>
                     <Text style={type.body}>{transfer.name} · {transfer.qty} {transfer.qty === 1 ? "unit" : "units"}</Text>
-                    <Text style={type.caption}>{lent ? `Transferred to ${otherCustomer}` : `Received from ${otherCustomer}`} · In Box</Text>
-                    <Text style={type.caption}>{transfer.status === "returned" ? "Returned" : transfer.return_due ? "Ordered product arrived · return is due" : "Return this product when the ordered product arrives"}</Text>
-                    {transfer.status === "awaiting_return" && (transfer.return_due || !transfer.recipient_purchase_item_id) ? <Pressable accessibilityRole="button" accessibilityLabel={`Mark ${transfer.name} returned to ${transfer.source_customer_name || "GoDown stock"}`} disabled={returningTransferId === transfer.id} onPress={() => void markStockReturned(transfer.id)} style={[styles.itemActionBtn, { alignSelf: "flex-start", paddingHorizontal: spacing.md }]}><Text style={type.caption}>{returningTransferId === transfer.id ? "Saving…" : "Mark returned"}</Text></Pressable> : null}
+                    <Text style={type.caption}>{legacyLoan ? legacySource ? `Lent to ${transfer.recipient_customer_name}` : `Borrowed from ${transfer.source_customer_name || "GoDown stock"}` : `From GoDown stock${transfer.source_customer_name ? ` · originally from ${transfer.source_customer_name}` : ""}${transfer.recipient_purchase_item_id ? " · PO Final quantity moved to In Box" : ""}`}</Text>
+                    {legacyLoan ? <Text style={type.caption}>{transfer.status === "returned" ? "Returned" : transfer.return_due ? "Return due" : "Return when ordered stock arrives"}</Text> : <Text style={type.caption}>MRP {money(transfer.mrp ?? transfer.unit_price ?? 0)} · Selling price {money(transfer.unit_price ?? 0)} · Discount {transfer.discount_pct ?? 0}% · Net {money(transfer.net_unit_price ?? transfer.unit_price ?? 0)} per unit · Total {money(transfer.total ?? (transfer.net_unit_price ?? transfer.unit_price ?? 0) * transfer.qty)}</Text>}
+                    {transfer.reason ? <Text style={type.caption}>Note: {transfer.reason}</Text> : null}
+                    {legacyLoan && transfer.status === "awaiting_return" && (transfer.return_due || !transfer.recipient_purchase_item_id) ? <Pressable accessibilityRole="button" accessibilityLabel={`Mark borrowed ${transfer.name} returned`} disabled={returningTransferId === transfer.id} onPress={() => void markLegacyStockReturned(transfer.id)} style={[styles.itemActionBtn, { alignSelf: "flex-start", paddingHorizontal: spacing.md }]}><Text style={type.caption}>{returningTransferId === transfer.id ? "Saving…" : "Mark returned"}</Text></Pressable> : null}
                   </View>;
                 })}
               </Card> : null}
@@ -943,8 +946,8 @@ export default function CustomerDetail() {
                         <Text style={type.caption} numberOfLines={isDesktop ? 1 : 2}>
                           {p.sku} · {p.brand_name || "—"}{p.supplier_name ? ` · via ${p.supplier_name}` : ""} · Qty {p.qty}
                         </Text>
-                        {(p.customer_loan_history || []).map((loan) => <Text key={loan.transfer_id} style={type.caption}>Lent {loan.qty} to {loan.destination_customer_name || "another customer"} · {loan.status === "returned" ? "returned" : "return due when replacement arrives"}. Original order remains.</Text>)}
-                        {!p.customer_loan_history?.length && (p.loaned_qty || 0) > 0 ? <Text style={type.caption}>Lent {p.loaned_qty} to another customer. Original order remains; return due when replacement arrives.</Text> : null}
+                        {(p.customer_loan_history || []).map((loan) => <Text key={loan.transfer_id} style={type.caption}>We have lent {loan.qty} {loan.qty === 1 ? "unit" : "units"} to {loan.destination_customer_name || "another customer"} · {loan.status === "returned" ? "returned" : "available again when the replacement reaches In Box"}. This order remains visible.</Text>)}
+                        {!p.customer_loan_history?.length && (p.loaned_qty || 0) > 0 ? <Text style={type.caption}>We have lent {p.loaned_qty} {p.loaned_qty === 1 ? "unit" : "units"} to another customer. This order remains visible until the replacement reaches In Box.</Text> : null}
                         {p.borrowed_from_customer_name ? <Text style={type.caption}>Received from {p.borrowed_from_customer_name} · {p.loan_return_status === "returned" ? "returned" : "return when your ordered product arrives"}</Text> : null}
                       </View>
                     </Pressable>

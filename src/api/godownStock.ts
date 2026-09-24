@@ -9,7 +9,7 @@ export type GodownLot = {
   transferred_at?: string | null; reason?: string | null;
   transferred_by_name?: string | null; source_type?: string | null; created_at?: string | null;
   source_purchase_order_id?: string | null; source_quotation_id?: string | null;
-  unit_price?: number | null; stock_value?: number | null; price_variants?: { label: string; price: number }[];
+  mrp?: number | null; unit_price?: number | null; stock_value?: number | null; price_variants?: { label: string; price: number }[];
   allocations?: { id: string; quotation_id?: string | null; quotation_number?: string | null; customer_name?: string | null; qty: number; allocated_at: string; allocated_by_name?: string | null }[];
   customer_transfers?: CustomerStockTransfer[];
 };
@@ -18,7 +18,9 @@ export type CustomerStockTransfer = {
   source_customer_id?: string | null; source_customer_name?: string | null;
   recipient_customer_id: string; recipient_customer_name: string;
   recipient_purchase_item_id?: string | null; recipient_inbox_stage: "in_box";
-  status: "awaiting_return" | "returned"; return_due: boolean;
+  transfer_type?: "godown_stock"; status: "completed" | "awaiting_return" | "returned"; return_due?: boolean;
+  unit_price?: number; mrp?: number; discount_pct?: number; net_unit_price?: number; total?: number;
+  recipient_purchase_order_id?: string | null; replacement_item_id?: string | null;
   created_at: string; returned_at?: string | null; reason?: string | null;
 };
 export type PoFinalMatch = {
@@ -38,6 +40,7 @@ export const returnCustomerStockTransfer = (transferId: string) => api.post<Cust
 export type CustomerTransferInput = {
   qty: number; recipient_customer_id?: string; new_customer?: { name: string; phone?: string; email?: string };
   recipient_purchase_item_id?: string; reason?: string; idempotency_key: string;
+  unit_price?: number; discount_pct?: number;
 };
 export const transferGodownStockToCustomer = (stockId: string, body: CustomerTransferInput) =>
   api.post<CustomerStockTransfer>(`/godown-stock/${encodeURIComponent(stockId)}/customer-transfers`, body);

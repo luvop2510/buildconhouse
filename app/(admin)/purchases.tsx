@@ -1346,9 +1346,9 @@ function GodownStatus({ item, compact = false }: { item: Item; compact?: boolean
 function PurchaseLoanStatus({ item, compact = false }: { item: Item; compact?: boolean }) {
   const history = item.customer_loan_history || [];
   const text = history.length
-    ? `Lent ${history.map((loan) => `${loan.qty} to ${loan.destination_customer_name || "another customer"}${loan.status === "returned" ? " (returned)" : ""}`).join(", ")} · original order retained`
+    ? `We have lent ${history.map((loan) => `${loan.qty} ${loan.qty === 1 ? "unit" : "units"} to ${loan.destination_customer_name || "another customer"}${loan.status === "returned" ? " (returned)" : ""}`).join(", ")} · available again when the replacement reaches In Box`
     : (item.loaned_qty || 0) > 0
-      ? `Lent ${item.loaned_qty} to another customer · original order retained`
+      ? `We have lent ${item.loaned_qty} ${item.loaned_qty === 1 ? "unit" : "units"} to another customer · available again when the replacement reaches In Box`
     : item.borrowed_from_customer_name
       ? `Received from ${item.borrowed_from_customer_name} · ${item.loan_return_status === "returned" ? "returned" : item.loan_return_due ? "return due now" : "return when ordered product arrives"}`
       : null;

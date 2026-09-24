@@ -102,6 +102,12 @@ def _user():
     return SimpleNamespace(id="warehouse-1", full_name="Warehouse Rep")
 
 
+def test_customer_discount_does_not_carry_into_godown_mrp():
+    discounted_item = {"unit_cost": 700}
+    assert godown._stock_mrp({"mrp": 1000}, {"mrp": 900}, discounted_item) == 1000
+    assert godown._stock_mrp({}, {"mrp": 900}, discounted_item) == 900
+
+
 async def _persist(fake_db, *, qty: float = 2):
     po = fake_db.purchase_orders.po
     return await godown._persist_intake(

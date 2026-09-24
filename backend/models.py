@@ -860,6 +860,12 @@ class PurchaseOrderItem(BaseModel):
     godown_source_customer_name: Optional[str] = None
     godown_source_purchased_at: Optional[str] = None
     godown_transferred_at: Optional[str] = None
+    godown_allocated_at: Optional[str] = None
+    godown_transfer_mrp: Optional[float] = None
+    godown_transfer_unit_price: Optional[float] = None
+    godown_transfer_discount_pct: Optional[float] = None
+    godown_transfer_net_unit_price: Optional[float] = None
+    godown_customer_transfer_id: Optional[str] = None
     unit_cost: float = 0                  # final cost per unit paid to supplier
     notes: Optional[str] = None
     quotation_line_id: Optional[str] = None

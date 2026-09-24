@@ -29,7 +29,7 @@ export function Overlay({ open, onClose, title, subtitle, children, footer, head
   const content = scroll ? <ScrollView keyboardShouldPersistTaps="handled"
     style={{ flexShrink: 1 }} contentContainerStyle={{ padding: space.x5, gap: space.x3 }}>{children}</ScrollView>
     : <View style={{ flex: 1, minHeight: 0 }}>{children}</View>;
-  return <Modal visible={open} transparent animationType={reducedMotion ? 'none' : 'fade'}
+  return <Modal visible={open} transparent animationType={Platform.OS === 'web' || reducedMotion ? 'none' : 'fade'}
     onRequestClose={dismissable ? onClose : undefined} statusBarTranslucent>
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
       <View style={{ flex: 1, backgroundColor: color.scrim, justifyContent: bottom ? 'flex-end' : 'center',

@@ -18,6 +18,34 @@ async function followupsSession(page: Page) {
   // Optional summaries intentionally fail. The primary task queue must remain usable.
 }
 
+test('critical GoDown transfer records quantity, price, discount and PO Final replacement on phone and tablet', async ({ page }, info) => {
+  await mockSession(page, '/godown-stock');
+  const lot = { id: 'lot-1', product_id: 'product-1', sku: 'ABC-1', name: 'Basin mixer', brand_name: 'Brand', qty_received: 5, available_qty: 5, transferable_qty: 5, unit_price: 1000, stock_value: 5000, created_at: '2026-09-20T10:00:00Z' };
+  const match = { purchase_item_id: 'po-item-1', purchase_order_id: 'po-1', customer_id: 'customer-1', customer_name: 'Asha Customer', ordered_qty: 3, remaining_qty: 3, product_id: 'product-1', sku: 'ABC-1', name: 'Basin mixer' };
+  await page.route('**/api/godown-stock?**', route => route.fulfill({ json: { lots: [lot], brands: [], total_available_qty: 5, total_stock_value: 5000, unpriced_lot_count: 0 } }));
+  await page.route('**/api/godown-stock/lot-1/po-final-matches', route => route.fulfill({ json: { matches: [match], total_ordered_qty: 3, transferable_qty: 5 } }));
+  await page.route('**/api/customers', route => route.fulfill({ json: [{ id: 'customer-1', name: 'Asha Customer' }] }));
+  let submitted: Record<string, unknown> | null = null;
+  await page.route('**/api/godown-stock/lot-1/customer-transfers', route => {
+    submitted = route.request().postDataJSON();
+    return route.fulfill({ json: { id: 'transfer-1', stock_id: 'lot-1', sku: 'ABC-1', name: 'Basin mixer', qty: 2, recipient_customer_id: 'customer-1', recipient_customer_name: 'Asha Customer', status: 'completed', transfer_type: 'godown_stock', unit_price: 1000, mrp: 1000, discount_pct: 10, net_unit_price: 900, total: 1800 } });
+  });
+  await page.goto('/godown-stock');
+  await page.getByRole('button', { name: 'Transfer Basin mixer to a customer' }).click();
+  await page.getByTestId('godown-recipient-customer-1').click();
+  await page.getByText('Basin mixer · 3 waiting').click();
+  await page.getByTestId('godown-transfer-qty').fill('2');
+  await page.getByTestId('godown-transfer-price').fill('1000');
+  await page.getByTestId('godown-transfer-discount').fill('10');
+  await expect(page.getByTestId('godown-transfer-total')).toContainText('1,800');
+  await expect(page.getByText(/This permanently moves stock/)).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  await page.screenshot({ path: info.outputPath(`godown-transfer-${info.project.name}.png`) });
+  await page.getByTestId('godown-customer-transfer-submit').click();
+  await expect.poll(() => submitted).not.toBeNull();
+  expect(submitted).toMatchObject({ qty: 2, recipient_customer_id: 'customer-1', recipient_purchase_item_id: 'po-item-1', unit_price: 1000, discount_pct: 10 });
+});
+
 test('critical Follow-ups optional failure preserves queue and server search finds distant records', async ({ page }, info) => {
   await followupsSession(page);
   const requests: string[] = [];
