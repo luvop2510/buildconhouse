@@ -518,6 +518,7 @@ class QuotationLineItem(BaseModel):
     colour: Optional[str] = None
     category_id: Optional[str] = None      # denormalized for category-level discounts
     room: Optional[str] = None
+    area: Optional[str] = None          # presentation grouping within the room
     qty: float = Field(default=1, gt=0)
     unit_price: float = Field(default=0, ge=0)  # final selling price per unit ("offer rate")
     mrp: Optional[float] = Field(default=None, ge=0)  # catalog MRP at the time this line was added; None → PDF falls back to unit_price
@@ -902,9 +903,15 @@ class PurchaseOrderItem(BaseModel):
     loaned_qty: float = Field(default=0, ge=0)
     customer_loan_history: list[dict] = []
     loan_replenishment_reserved_qty: float = Field(default=0, ge=0)
+    loan_replenishment_promised_qty: float = Field(default=0, ge=0)
+    loan_replenishment_returned_qty: float = Field(default=0, ge=0)
+    loan_replenishment_for_customer_name: Optional[str] = None
+    loan_replenishment_status: Optional[str] = None
     loan_transfer_id: Optional[str] = None
     borrowed_from_customer_id: Optional[str] = None
     borrowed_from_customer_name: Optional[str] = None
+    borrowed_at: Optional[str] = None
+    borrowing_note: Optional[str] = None
     return_due_on_replenishment: bool = False
     loan_return_status: Optional[str] = None
     loan_return_due: bool = False

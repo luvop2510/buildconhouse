@@ -127,7 +127,7 @@ def test_intake_credits_the_source_order_and_accepts_legacy_line_without_transfe
     lot, payment = asyncio.run(_persist(fake_db))
 
     assert po["items"][0]["godown_transferred_qty"] == 2
-    assert fake_db.purchase_orders.queries[0]["items"]["$elemMatch"]["$or"][1] == {"godown_transferred_qty": {"$exists": False}}
+    assert fake_db.purchase_orders.queries[0]["items"]["$elemMatch"]["$and"][0]["$or"][1] == {"godown_transferred_qty": {"$exists": False}}
     assert lot["transferred_value"] == 500
     assert lot["payment_credit_amount"] == 500
     assert payment and payment["amount"] == 500

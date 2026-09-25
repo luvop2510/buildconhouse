@@ -11,7 +11,7 @@ from pymongo.errors import DuplicateKeyError, PyMongoError
 from auth import floor_inherit, floor_query
 from db import client, db
 from models import (
-    ActivityEvent, CustomerPublic, Followup, Payment, PurchaseOrder,
+    ActivityEvent, Followup, Payment, PurchaseOrder,
     PurchaseOrderItem, PurchaseShortage, PurchaseStageEvent, PurchaseStatusEvent,
     UserPublic,
 )
@@ -239,6 +239,8 @@ async def _create_loan_transfer(
     *, item_id: str, destination_customer_id: str | None, new_customer: dict | None,
     qty: float, reason: str | None, key: str, user: UserPublic,
 ) -> dict:
+    if new_customer:
+        raise HTTPException(status_code=409, detail="Recipient must already have this product in an active order")
     async with await client.start_session() as session:
         async with session.start_transaction():
             source_po = await db.purchase_orders.find_one(
@@ -249,7 +251,8 @@ async def _create_loan_transfer(
             item = next((i for i in source_po.get("items", []) if i.get("id") == item_id), None)
             if not item:
                 raise HTTPException(status_code=404, detail="Source item not found")
-            if item.get("cancelled") or item.get("stage") != "in_box" or item.get("loan_transfer_id"):
+            if (item.get("cancelled") or item.get("stage") != "in_box"
+                    or item.get("loan_transfer_id") or item.get("loan_replenishment_for_customer_name")):
                 raise HTTPException(status_code=409, detail="Only active In Box products can be transferred")
             source_qty = float(item.get("qty") or 0)
             loaned = float(item.get("loaned_qty") or 0)
@@ -274,35 +277,47 @@ async def _create_loan_transfer(
                 )
                 if not destination:
                     raise HTTPException(status_code=404, detail="Destination customer not found")
-            elif new_customer:
-                email = (new_customer.get("email") or "").strip().lower() or None
-                if email:
-                    destination = await db.customers.find_one(
-                        {"email": email}, {"_id": 0}, session=session,
-                    )
-                    if destination and destination.get("floor_id") != floor_inherit(source_po):
-                        raise HTTPException(status_code=409, detail="Customer email belongs to another floor")
-                if not destination:
-                    name = (new_customer.get("name") or "").strip()
-                    if not name:
-                        raise HTTPException(status_code=400, detail="New customer name is required")
-                    destination = CustomerPublic(
-                        name=name, company=new_customer.get("company") or None,
-                        email=email, phone=new_customer.get("phone") or None,
-                        address=new_customer.get("address") or None,
-                        city=new_customer.get("city") or None,
-                        floor_id=floor_inherit(source_po),
-                    ).model_dump()
-                    if not email:
-                        destination.pop("email", None)
-                    await db.customers.insert_one(destination, session=session)
-                    created_customer = True
-                if destination["id"] == source_customer_id:
-                    raise HTTPException(status_code=400, detail="Destination customer must differ from source")
             else:
-                raise HTTPException(status_code=400, detail="Choose an existing customer or provide new customer details")
+                raise HTTPException(status_code=400, detail="Choose an existing customer with this product on order")
+
+            # A loan is an advance against the recipient's existing order.  A
+            # newly created customer has no such commitment and cannot borrow.
+            matching_po = await db.purchase_orders.find_one(
+                floor_query(user, {
+                    "customer_id": destination["id"],
+                    "status": {"$ne": "cancelled"},
+                    "items": {"$elemMatch": {
+                        "product_id": item["product_id"], "cancelled": {"$ne": True},
+                        "stage": {"$nin": ["dispatched", "in_transit", "delivered"]},
+                    }},
+                }), {"_id": 0}, session=session,
+            )
+            if not matching_po:
+                raise HTTPException(status_code=409, detail="Recipient must already have this product in an active order")
+            matching_item = next(row for row in matching_po["items"]
+                                 if row.get("product_id") == item["product_id"]
+                                 and not row.get("cancelled")
+                                 and row.get("stage") not in {"dispatched", "in_transit", "delivered"})
+            promised = float(matching_item.get("loan_replenishment_promised_qty") or 0)
+            if float(matching_item.get("qty") or 0) - promised < qty:
+                raise HTTPException(status_code=409, detail="Recipient's matching order does not have enough unpromised quantity")
 
             now = now_iso()
+            promised_result = await db.purchase_orders.update_one(
+                floor_query(user, {"id": matching_po["id"], "items": {"$elemMatch": {
+                    "id": matching_item["id"], "product_id": item["product_id"],
+                    "stage": {"$nin": ["dispatched", "in_transit", "delivered"]},
+                    "cancelled": {"$ne": True},
+                    "$or": [{"loan_replenishment_promised_qty": {"$exists": False}},
+                            {"loan_replenishment_promised_qty": {"$lte": float(matching_item["qty"]) - qty}}],
+                }}}),
+                {"$inc": {"items.$.loan_replenishment_promised_qty": float(qty)},
+                 "$set": {"items.$.loan_replenishment_for_customer_name": source_customer.get("company") or source_customer.get("name"),
+                          "items.$.loan_replenishment_status": "awaiting_return", "updated_at": now}},
+                session=session,
+            )
+            if promised_result.modified_count != 1:
+                raise HTTPException(status_code=409, detail="Matching order changed; refresh and try again")
             transfer_id = str(uuid4())
             dest_item_id = str(uuid4())
             dest_name = destination.get("company") or destination.get("name")
@@ -324,7 +339,8 @@ async def _create_loan_transfer(
                 transferred_from_item_id=item_id, transferred_from_po_id=source_po["id"],
                 transferred_from_customer_id=source_customer_id,
                 loan_transfer_id=transfer_id, borrowed_from_customer_id=source_customer_id,
-                borrowed_from_customer_name=source_name, return_due_on_replenishment=True,
+                borrowed_from_customer_name=source_name, borrowed_at=now,
+                borrowing_note=reason, return_due_on_replenishment=True,
                 loan_return_status="awaiting_return", notes=note_in,
                 stage_history=[PurchaseStageEvent(
                     from_stage=None, to_stage="in_box", by_user_id=user.id,
@@ -353,6 +369,8 @@ async def _create_loan_transfer(
                 "transfer_id": transfer_id, "qty": float(qty),
                 "destination_customer_id": destination["id"],
                 "destination_customer_name": dest_name,
+                "replenishment_item_id": matching_item["id"],
+                "replenishment_po_id": matching_po["id"],
                 "destination_po_id": dest_po.id,
                 "destination_item_id": dest_item_id,
                 "created_at": now, "status": "awaiting_return",
@@ -430,10 +448,40 @@ async def settle_loan_transfer(*, transfer_id: str, user: UserPublic, reason: st
                 raise HTTPException(status_code=404, detail="Loan transfer not found")
             if loan.get("status") == "returned":
                 return {"transfer_id": transfer_id, "status": "returned", "idempotent": True}
-            if loan.get("status") not in {"awaiting_return", "return_due"}:
+            if loan.get("status") != "return_due":
                 raise HTTPException(status_code=409, detail="Loan cannot be returned in its current state")
             now = now_iso()
             qty = float(loan["qty"])
+            replenishment_item_id = loan.get("replenishment_item_id")
+            replenishment_po_id = loan.get("replenishment_po_id")
+            if not replenishment_item_id or not replenishment_po_id:
+                raise HTTPException(status_code=409, detail="A matching replacement must reach In Box before return")
+            replenishment_po = await db.purchase_orders.find_one(
+                floor_query(user, {"id": replenishment_po_id, "items.id": replenishment_item_id}),
+                {"_id": 0}, session=session,
+            )
+            replenishment_item = next((row for row in (replenishment_po or {}).get("items", [])
+                                       if row.get("id") == replenishment_item_id), None)
+            if not replenishment_item or replenishment_item.get("stage") != "in_box":
+                raise HTTPException(status_code=409, detail="Replacement is not in In Box")
+            available = (float(replenishment_item.get("qty") or 0)
+                         - float(replenishment_item.get("loan_replenishment_returned_qty") or 0)
+                         - float(replenishment_item.get("godown_transferred_qty") or 0))
+            if available < qty:
+                raise HTTPException(status_code=409, detail="Replacement quantity is unavailable")
+            consumed = await db.purchase_orders.update_one(
+                floor_query(user, {"id": replenishment_po_id, "items": {"$elemMatch": {
+                    "id": replenishment_item_id, "stage": "in_box", "cancelled": {"$ne": True},
+                    "qty": replenishment_item["qty"],
+                    "$or": [{"loan_replenishment_returned_qty": {"$exists": False}},
+                            {"loan_replenishment_returned_qty": {"$lte": float(replenishment_item["qty"]) - float(replenishment_item.get("godown_transferred_qty") or 0) - qty}}],
+                }}}),
+                {"$inc": {"items.$.loan_replenishment_returned_qty": qty},
+                 "$set": {"items.$.loan_replenishment_status": "returned", "updated_at": now}},
+                session=session,
+            )
+            if consumed.modified_count != 1:
+                raise HTTPException(status_code=409, detail="Replacement changed; refresh and try again")
             updated = await db.purchase_transfers.update_one(
                 floor_query(user, {"id": transfer_id, "type": "loan",
                                    "status": loan["status"]}),
@@ -508,11 +556,11 @@ async def mark_loans_due_for_replenishment(*, item_id: str, user: UserPublic) ->
     if not po:
         raise HTTPException(status_code=404, detail="Purchase item not found")
     item = next((row for row in po.get("items", []) if row.get("id") == item_id), None)
-    if not item or item.get("stage") not in {"in_box", "delivered"} or item.get("loan_transfer_id") or item.get("cancelled"):
+    if not item or item.get("stage") != "in_box" or item.get("loan_transfer_id") or item.get("cancelled"):
         return {"item_id": item_id, "return_due_transfer_ids": []}
     customer_id = item.get("customer_id") or po.get("customer_id")
     cursor = db.purchase_transfers.find(floor_query(user, {
-        "type": "loan", "status": "awaiting_return",
+        "type": "loan", "status": {"$in": ["awaiting_return", "return_due"]},
         "destination_customer_id": customer_id,
         "product_id": item.get("product_id"),
     }), {"_id": 0}).sort("created_at", 1)
@@ -521,8 +569,14 @@ async def mark_loans_due_for_replenishment(*, item_id: str, user: UserPublic) ->
     for loan in candidates:
         if loan.get("destination_item_id") == item_id:
             continue
+        if loan.get("replenishment_item_id") and loan["replenishment_item_id"] != item_id:
+            continue
+        if loan["status"] == "return_due":
+            await settle_loan_transfer(transfer_id=loan["id"], user=user, reason="Replacement reached In Box")
+            marked.append(loan["id"])
+            continue
         qty = float(loan["qty"])
-        limit = round(float(item.get("qty") or 0) - qty, 4)
+        limit = round(float(item.get("qty") or 0) - float(item.get("godown_transferred_qty") or 0) - qty, 4)
         if limit < 0:
             continue
         async with await client.start_session() as session:
@@ -559,4 +613,7 @@ async def mark_loans_due_for_replenishment(*, item_id: str, user: UserPublic) ->
                               "updated_at": now}}, session=session,
                 )
                 marked.append(loan["id"])
+        # Settlement is separately idempotent. A retry picks up return_due
+        # records if the process stopped between the two transactions.
+        await settle_loan_transfer(transfer_id=loan["id"], user=user, reason="Replacement reached In Box")
     return {"item_id": item_id, "return_due_transfer_ids": marked}

@@ -98,6 +98,16 @@ export function BuilderTopbar({
           <Feather name="file-text" size={14} color={colors.onSurface} />
           {isPhone ? null : <Text style={styles.workflowText}>Quotation</Text>}
         </Pressable> : null}
+        {!isPhone ? <Pressable
+          accessibilityRole="button" accessibilityLabel="Download product PPT"
+          testID="generate-product-ppt"
+          onPress={b.generateProductPpt}
+          disabled={b.workflowBusy || b.s.lines.length === 0}
+          style={({ pressed }) => [styles.workflowBtn, styles.quotationBtn, { opacity: b.workflowBusy || b.s.lines.length === 0 ? 0.45 : pressed ? 0.76 : 1 }]}
+        >
+          <Feather name="image" size={14} color={colors.onSurface} />
+          <Text style={styles.workflowText}>Product PPT</Text>
+        </Pressable> : null}
         <Pressable
           accessibilityRole="button" accessibilityLabel="Place order"
           testID="place-order"
@@ -159,6 +169,7 @@ export function BuilderTopbar({
             { label: "Redo change", icon: "corner-up-right" as const, action: b.history.redo, disabled: !b.history.canRedo },
             { label: "Preview quotation", icon: "eye" as const, action: () => setPreviewOpen(true), disabled: !b.s.lines.length },
             { label: "Generate quotation", icon: "file-text" as const, action: b.generateOfficialQuotation, disabled: b.workflowBusy || !b.s.lines.length },
+            { label: "Download product PPT", icon: "image" as const, action: b.generateProductPpt, disabled: b.workflowBusy || !b.s.lines.length },
             { label: "Place order", icon: "shopping-cart" as const, action: b.placeOrder, disabled: b.workflowBusy || !b.s.lines.length },
             { label: "Recent quotations", icon: "clock" as const, action: () => setRecentOpen(true), disabled: false },
           ].map(item => <Pressable key={item.label} accessibilityRole="button" accessibilityState={{ disabled: item.disabled }} disabled={item.disabled}

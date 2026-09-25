@@ -47,9 +47,14 @@ export type PurchaseItem = {
   customer_loan_history?: { transfer_id: string; qty: number; destination_customer_id?: string | null; destination_customer_name?: string | null; created_at?: string | null; status?: string | null }[];
   borrowed_from_customer_id?: string | null;
   borrowed_from_customer_name?: string | null;
+  borrowed_at?: string | null;
+  borrowing_note?: string | null;
   loan_return_status?: "awaiting_return" | "return_due" | "returned" | null;
   loan_return_due?: boolean;
   return_due_on_replenishment?: boolean;
+  loan_replenishment_for_customer_name?: string | null;
+  loan_replenishment_status?: "awaiting_return" | "returned" | null;
+  loan_replenishment_returned_qty?: number;
 };
 
 /** Floor-scoped customer record used by the Purchases lifecycle navigator. */

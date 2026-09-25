@@ -113,6 +113,9 @@ def _stub_side_effects(monkeypatch):
 
     monkeypatch.setattr(tracker, "_sync_po_status_with_stages", _noop_sync)
     monkeypatch.setattr(tracker, "log_event", _noop_log_event)
+    async def _no_loans(*_args, **_kwargs):
+        return {"return_due_transfer_ids": []}
+    monkeypatch.setattr(tracker, "mark_loans_due_for_replenishment", _no_loans)
 
 
 @pytest.mark.parametrize("selected_count", [1, 5, 20])

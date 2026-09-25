@@ -102,7 +102,17 @@ def test_customer_purchase_rows_subtract_transferred_quantity():
     pipeline = tracker._items_page_pipeline(view="stock", brand=None, customer=None, stage=None, q=None, product_id=None, floor_ids=["first-floor"], sla_days=7, skip=0, limit=30)
     assert any(stage.get("$match", {}).get("$expr") for stage in pipeline)
     projected = next(stage["$project"] for stage in pipeline if "$project" in stage)
-    assert projected["qty"] == {"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$ifNull": ["$items.godown_transferred_qty", 0]}]}
+    assert projected["qty"] == {"$subtract": [
+        {"$ifNull": ["$items.qty", 0]},
+        {"$add": [
+            {"$ifNull": ["$items.godown_transferred_qty", 0]},
+            {"$ifNull": ["$items.loan_replenishment_returned_qty", 0]},
+        ]},
+    ]}
+    returned = tracker._flatten_item(po, {"id": "i-2", "name": "Valve", "qty": 5,
+                                          "godown_transferred_qty": 1,
+                                          "loan_replenishment_returned_qty": 2}, 7)
+    assert returned["qty"] == 2
 
 
 def test_stock_only_quotation_line_requires_matching_lot_and_floor(monkeypatch):

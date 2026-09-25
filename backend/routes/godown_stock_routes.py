@@ -204,9 +204,14 @@ async def _persist_intake(
                 "id": po["id"], "floor_id": po["floor_id"],
                 "items": {"$elemMatch": {
                     "id": item["id"],
-                    "$or": [
-                        {"godown_transferred_qty": {"$lte": received_qty - qty}},
-                        {"godown_transferred_qty": {"$exists": False}},
+                    "$and": [
+                        {"$or": [
+                            {"godown_transferred_qty": {"$lte": received_qty - float(item.get("loan_replenishment_returned_qty") or 0) - float(item.get("loaned_qty") or 0) - qty}},
+                            {"godown_transferred_qty": {"$exists": False}},
+                        ]},
+                        ({"loan_replenishment_returned_qty": float(item["loan_replenishment_returned_qty"])}
+                         if item.get("loan_replenishment_returned_qty") else
+                         {"$or": [{"loan_replenishment_returned_qty": 0}, {"loan_replenishment_returned_qty": {"$exists": False}}]}),
                     ],
                 }},
             },
@@ -710,7 +715,7 @@ async def intake_stock(body: Intake, user: UserPublic = Depends(require_min_role
     if item.get("cancelled"):
         raise HTTPException(status_code=409, detail="A cancelled purchase item cannot be transferred to godown stock")
     received_qty = float(item.get("qty_received") or item.get("qty") or 0)
-    transferable = received_qty - float(item.get("godown_transferred_qty") or 0)
+    transferable = received_qty - float(item.get("godown_transferred_qty") or 0) - float(item.get("loan_replenishment_returned_qty") or 0) - float(item.get("loaned_qty") or 0)
     if body.qty > transferable:
         raise HTTPException(status_code=409, detail=f"Only {transferable:g} units are available to transfer")
     product = await db.products.find_one(floor_query(user, {"id": item["product_id"]}), {"_id": 0, "brand_id": 1, "floor_id": 1, "mrp": 1}) or {}

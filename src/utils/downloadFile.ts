@@ -35,6 +35,31 @@ async function fetchApiBlob(path: string, errorLabel: string, floorId?: string):
 // (the OS viewer's share sheet keeps the server-supplied name).
 export async function downloadApiFile(path: string, filename: string, errorLabel = "file", floorId?: string): Promise<boolean> {
   if (Platform.OS !== "web") {
+    if (filename.toLowerCase().endsWith(".pptx")) {
+      const blob = await fetchApiBlob(path, errorLabel, floorId);
+      if (!blob) return false;
+      try {
+        const [{ File, Paths }, Sharing] = await Promise.all([
+          import("expo-file-system"), import("expo-sharing"),
+        ]);
+        if (!await Sharing.isAvailableAsync()) {
+          toast.show("Sharing is unavailable on this device");
+          return false;
+        }
+        const safeName = filename.replace(/[\\/]/g, "").trim() || "Product PPT.pptx";
+        const file = new File(Paths.cache, `${Date.now()}-${safeName}`);
+        file.create();
+        file.write(new Uint8Array(await blob.arrayBuffer()));
+        await Sharing.shareAsync(file.uri, {
+          mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+          dialogTitle: "Save or share product PPT",
+        });
+        return true;
+      } catch {
+        toast.show(`Couldn't open the ${errorLabel}`);
+        return false;
+      }
+    }
     await openApiFile(path, errorLabel, floorId);
     return true;
   }

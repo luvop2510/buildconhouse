@@ -16,6 +16,6 @@ def test_spreadsheet_exports_treat_untrusted_names_as_text(name):
     workbook = openpyxl.load_workbook(io.BytesIO(rows_to_xlsx(rows, columns)))
     cell = workbook.active["A2"]
     assert cell.data_type == "s"
-    # XML normalizes CRLF while reading the workbook; the formula guard stays.
-    assert cell.value == "'" + name.replace("\r\n", "\n")
+    # openpyxl versions differ on CRLF normalization; the formula guard stays.
+    assert cell.value.replace("\r\n", "\n") == "'" + name.replace("\r\n", "\n")
     assert workbook.active["B2"].value == -125.5

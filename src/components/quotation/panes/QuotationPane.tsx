@@ -17,6 +17,7 @@ import { useBuilder } from "../context/BuilderContext";
 import { RoomChipRow } from "../canvas/RoomChipRow";
 import { QuotationCanvas } from "../canvas/QuotationCanvas";
 import { BuilderFooter } from "../footer/BuilderFooter";
+import { AreaGrouping } from "./AreaGrouping";
 
 export function QuotationPane({
   compact = false,
@@ -99,6 +100,7 @@ export function QuotationPane({
 
       {browseInline ? <View style={[styles.body, !browsing && { display: "none" }]}><ProductExplorer showCompactFilters /></View> : null}
       <View style={[styles.body, browsing && { display: "none" }]}>
+        <AreaGrouping />
         <QuotationCanvas compact={compact} />
       </View>
       <BuilderFooter compact={compact} />

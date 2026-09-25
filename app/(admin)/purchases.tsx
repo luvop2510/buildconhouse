@@ -170,6 +170,8 @@ export default function PurchasesScreen() {
 
   const toMovable = useCallback((r: Item): MovableItem => ({
     item_id: r.item_id, sku: r.sku, name: r.name, image: r.image, qty: r.qty, loaned_qty: r.loaned_qty,
+    loan_replenishment_for_customer_name: r.loan_replenishment_for_customer_name,
+    loan_replenishment_status: r.loan_replenishment_status,
     stage: r.stage, customer_id: r.customer_id, customer_name: r.customer_name,
     po_number: r.po_number, brand_name: r.brand_name, supplier_name: r.supplier_name,
   }), []);
@@ -860,7 +862,7 @@ function MobilePurchaseCard({ item, selected, compact, onSelect, onMove, onTrans
   const nextStage = stageIndex >= 0 ? STAGE_ORDER[stageIndex + 1] : null;
   const nextLabel = nextStage ? stageName(nextStage) : null;
   return (
-    <View style={[styles.mobilePurchaseCard, compact && styles.mobilePurchaseCardCompact, item.blocked && styles.mobilePurchaseCardBlocked]}>
+    <View style={[styles.mobilePurchaseCard, compact && styles.mobilePurchaseCardCompact, item.blocked && styles.mobilePurchaseCardBlocked, item.borrowed_from_customer_name && styles.borrowedCard]}>
       <View style={styles.mobileCardTop}>
         <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected }} accessibilityLabel={`Select ${item.name}`} onPress={onSelect} style={styles.mobileSelectTarget}>
           <View style={[styles.chk, selected && styles.chkOn]}>{selected ? <Feather name="check" size={12} color={colors.onBrand} /> : null}</View>
@@ -897,10 +899,10 @@ function MobilePurchaseCard({ item, selected, compact, onSelect, onMove, onTrans
       ) : null}
       <Sheet open={menuOpen} onClose={() => setMenuOpen(false)} title={item.name} footer={<Pressable accessibilityRole="button" accessibilityLabel="Cancel purchase actions" onPress={() => setMenuOpen(false)} style={styles.mobileSheetCancel}><Text style={styles.mobileSheetCancelText}>Cancel</Text></Pressable>}>
             <SheetAction icon="repeat" label="Move material" onPress={() => { setMenuOpen(false); onMove(); }} />
-            {item.stage === "in_box" ? <SheetAction icon="shuffle" label="Transfer customer" onPress={() => { setMenuOpen(false); onTransfer(); }} /> : null}
+            {item.stage === "in_box" && !item.loan_replenishment_for_customer_name ? <SheetAction icon="shuffle" label="Transfer customer" onPress={() => { setMenuOpen(false); onTransfer(); }} /> : null}
             <SheetAction icon="clock" label="Movement history" onPress={() => { setMenuOpen(false); onHistory(); }} />
             <SheetAction icon="file-text" label="Open purchase order" onPress={() => { setMenuOpen(false); onOpenPo(); }} />
-            {item.stage !== "delivered" ? <SheetAction icon="trash-2" label="Remove from active purchases" onPress={() => { setMenuOpen(false); onCancel(); }} /> : null}
+            {item.stage !== "delivered" && !item.loan_replenishment_for_customer_name ? <SheetAction icon="trash-2" label="Remove from active purchases" onPress={() => { setMenuOpen(false); onCancel(); }} /> : null}
       </Sheet>
     </View>
   );
@@ -1119,7 +1121,7 @@ function ItemRow(props: {
   const desktopTable = isDesktop && tableW >= TABLE_STACK;
   if (!desktopTable) {
     return (
-      <View style={styles.mobileRow}>
+      <View style={[styles.mobileRow, row.borrowed_from_customer_name && styles.borrowedCard]}>
           <View style={styles.mobileRowTop}>
           <BulkChk checked={checked} onToggle={onToggle} />
           <ProductImage
@@ -1147,8 +1149,8 @@ function ItemRow(props: {
           <View style={styles.stockRowActions}>
             <Pressable accessibilityRole="button" accessibilityLabel={`View movement history for ${row.name}`} onPress={onHistory} style={styles.mobileTransferBtn} hitSlop={6}><Feather name="clock" size={14} color={colors.onSurface} /></Pressable>
             <Pressable accessibilityRole="button" accessibilityLabel={`Move ${row.name} to another stage`} onPress={onOpenMove} style={styles.mobileMoveBtn} hitSlop={6}><Text style={styles.moveBtnText}>Move</Text></Pressable>
-            {row.stage === "in_box" ? <Pressable accessibilityRole="button" accessibilityLabel={`Transfer ${row.name} to another customer`} onPress={onTransfer} style={styles.mobileTransferBtn} hitSlop={6}><Feather name="repeat" size={14} color={colors.onSurface} /></Pressable> : null}
-            {row.stage !== "delivered" ? <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${row.name}`} onPress={onCancel} style={styles.mobileTransferBtn} hitSlop={6}><Feather name="trash-2" size={14} color={colors.error} /></Pressable> : null}
+            {row.stage === "in_box" && !row.loan_replenishment_for_customer_name ? <Pressable accessibilityRole="button" accessibilityLabel={`Transfer ${row.name} to another customer`} onPress={onTransfer} style={styles.mobileTransferBtn} hitSlop={6}><Feather name="repeat" size={14} color={colors.onSurface} /></Pressable> : null}
+            {row.stage !== "delivered" && !row.loan_replenishment_for_customer_name ? <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${row.name}`} onPress={onCancel} style={styles.mobileTransferBtn} hitSlop={6}><Feather name="trash-2" size={14} color={colors.error} /></Pressable> : null}
           </View>
         </View>
       </View>
@@ -1156,7 +1158,7 @@ function ItemRow(props: {
   }
   const compact = tableW < TABLE_FULL;
   return (
-    <View style={[styles.tr, row.blocked && { backgroundColor: ds.riskTint }]}>
+    <View style={[styles.tr, row.blocked && { backgroundColor: ds.riskTint }, row.borrowed_from_customer_name && styles.borrowedCard]}>
       <View style={{ width: 38 }}>
         <BulkChk checked={checked} onToggle={onToggle} />
       </View>
@@ -1209,10 +1211,10 @@ function ItemRow(props: {
           <Text style={styles.moveBtnText}>Move</Text>
           <Feather name="chevron-down" size={11} color={colors.onSurfaceMuted} />
         </Pressable>
-        {row.stage === "in_box" ? <Pressable accessibilityRole="button" accessibilityLabel={`Transfer ${row.name} to another customer`} onPress={onTransfer} testID={`row-transfer-${row.item_id}`} hitSlop={6} style={({ pressed }) => [styles.transferBtn, pressed && { opacity: 0.85 }]}>
+        {row.stage === "in_box" && !row.loan_replenishment_for_customer_name ? <Pressable accessibilityRole="button" accessibilityLabel={`Transfer ${row.name} to another customer`} onPress={onTransfer} testID={`row-transfer-${row.item_id}`} hitSlop={6} style={({ pressed }) => [styles.transferBtn, pressed && { opacity: 0.85 }]}>
           <Feather name="repeat" size={12} color={colors.onSurface} />
         </Pressable> : null}
-        {row.stage !== "delivered" ? <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${row.name}`} testID={`row-cancel-${row.item_id}`} onPress={onCancel} hitSlop={6} style={({ pressed }) => [styles.transferBtn, pressed && { opacity: 0.85 }]}><Feather name="trash-2" size={12} color={colors.error} /></Pressable> : null}
+        {row.stage !== "delivered" && !row.loan_replenishment_for_customer_name ? <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${row.name}`} testID={`row-cancel-${row.item_id}`} onPress={onCancel} hitSlop={6} style={({ pressed }) => [styles.transferBtn, pressed && { opacity: 0.85 }]}><Feather name="trash-2" size={12} color={colors.error} /></Pressable> : null}
       </View>
     </View>
   );
@@ -1317,7 +1319,7 @@ function CustomerPurchasePanel({ visible, loading, workspace, onClose, onMove, o
                 </View>
                 <View style={{ gap: 5 }}>
                   <Pressable accessibilityRole="button" accessibilityLabel={`Move ${item.name}`} onPress={() => onMove(item)} style={styles.customerPanelAction}><Text style={styles.customerPanelActionText}>Move</Text></Pressable>
-                  {item.stage === "in_box" ? <Pressable accessibilityRole="button" accessibilityLabel={`Transfer ${item.name}`} onPress={() => onTransfer(item)} style={styles.customerPanelAction}><Text style={styles.customerPanelActionText}>Transfer</Text></Pressable> : null}
+                  {item.stage === "in_box" && !item.loan_replenishment_for_customer_name ? <Pressable accessibilityRole="button" accessibilityLabel={`Transfer ${item.name}`} onPress={() => onTransfer(item)} style={styles.customerPanelAction}><Text style={styles.customerPanelActionText}>Transfer</Text></Pressable> : null}
                   <Pressable accessibilityRole="button" accessibilityLabel={`View movement history for ${item.name}`} onPress={() => onHistory(item)} style={styles.customerPanelAction}><Text style={styles.customerPanelActionText}>History</Text></Pressable>
                 </View>
               </View>
@@ -1345,14 +1347,16 @@ function GodownStatus({ item, compact = false }: { item: Item; compact?: boolean
 
 function PurchaseLoanStatus({ item, compact = false }: { item: Item; compact?: boolean }) {
   const history = item.customer_loan_history || [];
-  const text = history.length
+  const text = item.borrowed_from_customer_name
+    ? `BORROWED from ${item.borrowed_from_customer_name}${item.borrowed_at ? ` · ${fmtDate(item.borrowed_at)}` : ""}${item.borrowing_note ? ` · ${item.borrowing_note}` : ""}`
+    : item.loan_replenishment_for_customer_name
+      ? `RETURN RESERVED for ${item.loan_replenishment_for_customer_name} · automatically returned on In Box arrival, or move to godown stock`
+    : history.length
     ? `We have lent ${history.map((loan) => `${loan.qty} ${loan.qty === 1 ? "unit" : "units"} to ${loan.destination_customer_name || "another customer"}${loan.status === "returned" ? " (returned)" : ""}`).join(", ")} · available again when the replacement reaches In Box`
     : (item.loaned_qty || 0) > 0
       ? `We have lent ${item.loaned_qty} ${item.loaned_qty === 1 ? "unit" : "units"} to another customer · available again when the replacement reaches In Box`
-    : item.borrowed_from_customer_name
-      ? `Received from ${item.borrowed_from_customer_name} · ${item.loan_return_status === "returned" ? "returned" : item.loan_return_due ? "return due now" : "return when ordered product arrives"}`
       : null;
-  return text ? <Text style={[styles.godownStatus, compact && styles.godownStatusCompact]} numberOfLines={compact ? 2 : undefined}>{text}</Text> : null;
+  return text ? <Text style={[styles.godownStatus, styles.loanNotice, compact && styles.godownStatusCompact]} numberOfLines={compact ? 3 : undefined}>{text}</Text> : null;
 }
 
 function CustomerMetric({ label, value }: { label: string; value: string }) {
@@ -1821,6 +1825,8 @@ const styles = StyleSheet.create({
   customerPanelAction: { minWidth: 62, minHeight: 27, paddingHorizontal: 8, borderRadius: 7, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceTertiary },
   customerPanelActionText: { color: colors.onSurface, fontSize: 10, fontWeight: "800" },
   godownStatus: { marginTop: 6, color: colors.brand, fontSize: 11, fontWeight: "700" },
+  loanNotice: { alignSelf: "flex-start", backgroundColor: colors.brandTint, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 3 },
+  borrowedCard: { borderColor: colors.brand, borderWidth: 1, backgroundColor: colors.brandTint },
   godownStatusCompact: { marginTop: 3, fontSize: 10 },
   openPill: { minWidth: 46, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, alignItems: "center", backgroundColor: colors.surfaceTertiary },
   openPillText: { color: colors.onSurfaceSecondary, fontSize: 10.5, fontWeight: "700" },

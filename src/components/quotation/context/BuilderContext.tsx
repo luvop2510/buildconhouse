@@ -31,6 +31,7 @@ import { downloadApiFile } from "@/src/utils/downloadFile";
 import { computeTotals, computeLineBreakdown, type LineBreakdown } from "../helpers/pricing";
 import { enqueueQuotationPersist } from "../helpers/autosave";
 import { productImageList } from "../helpers/media";
+import { suggestedProductArea } from "../helpers/areas";
 import { addProductAndConcealedPart, syncDefaultIncludedParts } from "../helpers/concealedParts";
 import {
   Brand, BuilderRow, BuilderState, Category, Customer, DEFAULT_ROOMS, DescSheetState, DiscountSheetState,
@@ -186,6 +187,7 @@ export type BuilderApi = {
   finalize: () => Promise<void>;
   workflowBusy: boolean;
   generateOfficialQuotation: () => Promise<void>;
+  generateProductPpt: () => Promise<void>;
   placeOrder: () => Promise<void>;
 
   // Mutations — customers/lines
@@ -199,6 +201,7 @@ export type BuilderApi = {
   referrerSwitcherOpen: boolean; setReferrerSwitcherOpen: (v: boolean) => void;
   addFromProduct: (p: Product, variant?: ProductVariant) => void;
   updateLine: (id: string, patch: Partial<Line>, coalesceKey?: string) => void;
+  assignAreaToLines: (ids: string[], area: string | null) => void;
   removeLine: (id: string) => void;
   /** Cancel a product with an auditable order-line adjustment when saved. */
   cancelLine: (id: string) => Promise<boolean>;
@@ -772,7 +775,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
         },
         lines: (doc.items || []).map((it: any) => ({
           id: it.id, product_id: it.product_id, sku: it.sku, name: it.name,
-          image: it.image, category_id: it.category_id, room: it.room,
+          image: it.image, category_id: it.category_id, room: it.room, area: it.area ?? null,
           qty: it.qty, unit_price: it.unit_price, mrp: it.mrp ?? null,
           discount_pct: it.discount_pct ?? null,
           description: it.description, notes: it.notes,
@@ -1036,6 +1039,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
     Haptics.selectionAsync();
     playAddProductSound();
     history.apply((cur) => {
+      const existingIds = new Set(cur.lines.map((line) => line.id));
       return {
         ...cur,
         // One history transaction adds both the visible product and its
@@ -1045,10 +1049,13 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
           cur.lines, p, variant, cur.activeRoom,
           (productId) => `${productId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           productImageList(p)[0] ?? null,
-        ),
+        ).map((line) => existingIds.has(line.id) || line.area ? line : {
+          ...line,
+          area: suggestedProductArea(line.name, categoryById[line.category_id || ""]),
+        }),
       };
     });
-  }, [history]);
+  }, [history, categoryById]);
 
   // ---------- Seed from Catalog's "Add to quotation" CTA ----------
   const appliedInitialProductRef = useRef(false);
@@ -1079,7 +1086,8 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
         const selectedPrice = Number(variant?.price ?? lot.unit_price ?? 0);
         history.apply(cur => ({ ...cur, lines: [...cur.lines, {
           id: `godown-${lot.id}-${Date.now()}`, product_id: lot.product_id, sku: lot.sku, name: lot.name,
-          image: lot.image || null, category_id: lot.category_id || null, room: cur.activeRoom, qty: 1, unit_price: selectedPrice,
+          image: lot.image || null, category_id: lot.category_id || null, room: cur.activeRoom,
+          area: suggestedProductArea(lot.name, categoryById[lot.category_id || ""]), qty: 1, unit_price: selectedPrice,
           mrp: null, discount_pct: null, finish: lot.finish || null,
           description: variant?.label ? `Price variant: ${variant.label}` : null,
           godown_stock_id: lot.id,
@@ -1090,7 +1098,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
         toast.success(`${lot.name} added from godown stock — select a customer to reserve it`);
       } catch (e: any) { toast.error(e?.detail || "That godown lot is no longer available"); }
     })();
-  }, [initialGodownStockId, initialGodownVariant, activeFloorId, history]);
+  }, [initialGodownStockId, initialGodownVariant, activeFloorId, history, categoryById]);
 
   const updateLine = useCallback((id: string, patch: Partial<Line>, coalesceKey?: string) =>
     history.apply(
@@ -1112,6 +1120,17 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
       { coalesceKey: coalesceKey ? `${coalesceKey}:${id}` : undefined },
     ),
   [history]);
+
+  const assignAreaToLines = useCallback((ids: string[], area: string | null) => {
+    const selected = new Set(ids);
+    if (!selected.size) return;
+    const value = area?.trim() || null;
+    history.apply((cur) => ({
+      ...cur,
+      lines: cur.lines.map((line) => selected.has(line.id) || (line.included_for_line_id && selected.has(line.included_for_line_id))
+        ? { ...line, area: value } : line),
+    }));
+  }, [history]);
 
   const removeLine = useCallback((id: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1409,6 +1428,22 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
     }
   }, [persist, customers, s.customerId]);
 
+  const generateProductPpt = useCallback(async () => {
+    const persistedId = await persist();
+    if (!persistedId) return;
+    setWorkflowBusy(true);
+    try {
+      const customer = customers.find((item) => item.id === s.customerId);
+      const name = (customer?.company || customer?.name || "Customer").replace(/[\\/:*?"<>|]/g, "").trim().replace(/\s+/g, " ") || "Customer";
+      const date = new Date().toLocaleDateString("en-GB").replace(/\//g, "-");
+      await downloadApiFile(`/quotations/${persistedId}/pptx`, `${name} PPT ${date}.pptx`, "product PPT");
+    } catch (error: any) {
+      toast.error(error?.detail || "Could not generate product PPT");
+    } finally {
+      setWorkflowBusy(false);
+    }
+  }, [persist, customers, s.customerId]);
+
   const placeOrder = useCallback(async () => {
     const persistedId = await persist();
     if (!persistedId) return;
@@ -1467,10 +1502,10 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
     recentQuotations, refreshRecentQuotations, restoreQuotation, deleteQuotation, startNewQuotation,
     totals, usedCategoryIds, flatRows, lineBreakdownById, recoveryDraft, recoveryBusy, recoveryError, restoreLocalDraft, dismissRecovery,
     quotationId, quotationNumber, saveState, savedAt, saveLabel, persist, finalize,
-    workflowBusy, generateOfficialQuotation, placeOrder,
+    workflowBusy, generateOfficialQuotation, generateProductPpt, placeOrder,
     setCustomer, createCustomer, importCustomerFromGround, customerSwitcherOpen, setCustomerSwitcherOpen,
     setReferrer, clearReferrer, createReferrer, referrerSwitcherOpen, setReferrerSwitcherOpen,
-    addFromProduct, updateLine, removeLine, cancelLine, duplicateLine, moveLineToNextRoom, moveLine, moveRoom,
+    addFromProduct, updateLine, assignAreaToLines, removeLine, cancelLine, duplicateLine, moveLineToNextRoom, moveLine, moveRoom,
     addRoom, renameRoom, duplicateRoom, deleteRoom, toggleCollapse, setActiveRoom, onRoomDragEnd, onLinesDragEnd,
     setProjectDiscount, setCategoryDiscount, setRoomDiscount, setNotes,
     swapItems, swapLoading, openSwap, commitSwap, closeSwap,
@@ -1495,10 +1530,10 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
     recentQuotations, refreshRecentQuotations, restoreQuotation, deleteQuotation, startNewQuotation,
     totals, usedCategoryIds, flatRows, lineBreakdownById, recoveryDraft, recoveryBusy, recoveryError, restoreLocalDraft, dismissRecovery,
     quotationId, quotationNumber, saveState, savedAt, saveLabel, persist, finalize,
-    workflowBusy, generateOfficialQuotation, placeOrder,
+    workflowBusy, generateOfficialQuotation, generateProductPpt, placeOrder,
     setCustomer, createCustomer, importCustomerFromGround, customerSwitcherOpen, setCustomerSwitcherOpen,
     setReferrer, clearReferrer, createReferrer, referrerSwitcherOpen, setReferrerSwitcherOpen,
-    addFromProduct, updateLine, removeLine, cancelLine, duplicateLine, moveLineToNextRoom, moveLine, moveRoom,
+    addFromProduct, updateLine, assignAreaToLines, removeLine, cancelLine, duplicateLine, moveLineToNextRoom, moveLine, moveRoom,
     addRoom, renameRoom, duplicateRoom, deleteRoom, toggleCollapse, setActiveRoom, onRoomDragEnd, onLinesDragEnd,
     setProjectDiscount, setCategoryDiscount, setRoomDiscount, setNotes,
     swapItems, swapLoading, openSwap, commitSwap, closeSwap,

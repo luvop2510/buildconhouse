@@ -1,6 +1,7 @@
 """Quotation Builder API — v2 with multi-level discounts, autosave, duplicate."""
 import asyncio
 from datetime import datetime, timezone
+from urllib.parse import quote
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -23,6 +24,7 @@ from models import (
 )
 from pdf_generator import build_quotation_pdf, quotation_pdf_filename
 from pdf_tiles import build_tiles_quotation_pdf, build_tiles_selection_pdf, tiles_pdf_filename
+from services.quotation_ppt import build_product_ppt, presentation_filename
 from services import catalog_service
 from services.activity_log import log_event
 from services.domain_outbox import (
@@ -1250,6 +1252,24 @@ async def _pdf_branding() -> dict:
 
 
 # --- Official PDF command (staff) ---
+@router.get("/{quotation_id}/pptx")
+async def quotation_pptx(quotation_id: str, user: UserPublic = Depends(get_current_user)):
+    """Download the customer's image-only room and area presentation."""
+    doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0})
+    if (doc.get("doc_type") or "standard") != "standard":
+        raise HTTPException(status_code=400, detail="Product PPT is available for sanitary quotations")
+    try:
+        ppt = await run_in_threadpool(build_product_ppt, {**doc, "items": await _canonicalize_item_images(doc.get("items", []))})
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    filename = presentation_filename(doc.get("customer_name") or "Customer")
+    return StreamingResponse(
+        iter([ppt]),
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+    )
+
+
 @router.get("/{quotation_id}/pdf")
 async def quotation_pdf(quotation_id: str, user: UserPublic = Depends(get_current_user)):
     """Build the PDF, then journal QuotationGenerated before dispatching automation.

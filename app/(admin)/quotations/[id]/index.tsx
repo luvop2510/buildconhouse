@@ -81,6 +81,12 @@ export default function QuotationDetail() {
     const name = (q?.customer_name || "Customer").replace(/[\\\\/:*?\"<>|]/g, "").trim().replace(/\s+/g, " ") || "Customer";
     await downloadApiFile(`/quotations/${id}/pdf`, `${name}.pdf`, "quotation PDF");
   };
+  const openPpt = async () => {
+    if (!q) return;
+    const name = (q.customer_name || "Customer").replace(/[\\/:*?"<>|]/g, "").trim().replace(/\s+/g, " ") || "Customer";
+    const date = new Date().toLocaleDateString("en-GB").replace(/\//g, "-");
+    await downloadApiFile(`/quotations/${id}/pptx`, `${name} PPT ${date}.pptx`, "product PPT");
+  };
 
   const advance = async () => {
     if (!q || advancing) return;
@@ -127,6 +133,7 @@ export default function QuotationDetail() {
           {isPhone ? (
             <IconButton icon="download" tone="surface" onPress={openPdf} testID="download-pdf" accessibilityLabel="Download PDF" />
           ) : <Button label="PDF" icon="download" variant="secondary" size="sm" onPress={openPdf} testID="download-pdf" />}
+          {!isPhone ? <Button label="Product PPT" icon="image" variant="secondary" size="sm" onPress={openPpt} testID="download-ppt" /> : null}
           {isPhone ? (
             <IconButton icon="trash-2" tone="danger" onPress={() => setDeleteOpen(true)} testID="delete-quotation" accessibilityLabel="Delete quotation" />
           ) : <Button label="Delete" icon="trash-2" variant="danger" size="sm" onPress={() => setDeleteOpen(true)} testID="delete-quotation" />}
@@ -167,6 +174,7 @@ export default function QuotationDetail() {
               </Pressable>
             ) : null}
           </View>
+          {isPhone ? <View style={{ marginTop: 12, alignSelf: "flex-start" }}><Button label="Download product PPT" icon="image" variant="secondary" size="sm" onPress={openPpt} testID="download-ppt" /></View> : null}
         </View>
 
         {/* Line items — tablet: table, phone: stacked cards */}

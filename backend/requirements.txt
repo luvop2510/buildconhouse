@@ -72,6 +72,7 @@ pandas==3.0.3
 passlib==1.7.4
 pathspec==1.1.1
 pillow==12.3.0
+python-pptx==1.0.2
 PyMuPDF==1.28.0
 platformdirs==4.10.0
 pluggy==1.6.0

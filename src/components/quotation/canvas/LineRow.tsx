@@ -42,8 +42,10 @@ function LineRowImpl({
   // normal edit look like the line has vanished and can autosave bad totals.
   const [qtyDraft, setQtyDraft] = useState(String(l.qty));
   const [rateDraft, setRateDraft] = useState(String(l.unit_price));
+  const [areaDraft, setAreaDraft] = useState(l.area || "");
   useEffect(() => setQtyDraft(String(l.qty)), [l.qty]);
   useEffect(() => setRateDraft(String(l.unit_price)), [l.unit_price]);
+  useEffect(() => setAreaDraft(l.area || ""), [l.area]);
 
   const commitQty = () => {
     const value = qtyDraft.trim();
@@ -118,6 +120,21 @@ function LineRowImpl({
           <Text style={styles.total}>{money(total)}</Text>
         </View>
         <Text style={type.caption} numberOfLines={1}>{l.sku}</Text>
+        <View style={styles.areaRow}>
+          <Feather name="layers" size={13} color={colors.onSurfaceMuted} />
+          <TextInput
+            testID={`line-area-${l.id}`}
+            accessibilityLabel={`Presentation area for ${l.name}`}
+            value={areaDraft}
+            onChangeText={setAreaDraft}
+            onBlur={() => b.updateLine(l.id, { area: areaDraft.trim() || null }, "area")}
+            onSubmitEditing={() => b.updateLine(l.id, { area: areaDraft.trim() || null }, "area")}
+            placeholder="Area for PPT, e.g. Basin Area"
+            placeholderTextColor={colors.onSurfaceMuted}
+            returnKeyType="done"
+            style={styles.areaInput}
+          />
+        </View>
         {l.description ? <Text style={type.caption} numberOfLines={2}>{l.description}</Text> : null}
         <View style={styles.controls}>
           {isIncluded ? (
@@ -224,6 +241,8 @@ const styles = StyleSheet.create({
   thumb: { width: 56, height: 68, borderRadius: 9, backgroundColor: colors.surfaceTertiary },
   thumbPhone: { width: 64, height: 76 },
   content: { flex: 1, minWidth: 0, gap: 4 },
+  areaRow: { flexDirection: "row", alignItems: "center", gap: 6, minHeight: 36, marginTop: 2 },
+  areaInput: { flex: 1, minWidth: 0, paddingVertical: 5, paddingHorizontal: 8, borderRadius: 7, backgroundColor: colors.surfaceTertiary, color: colors.onSurface, fontSize: 12 },
   heading: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
   nameGroup: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 },
   name: { fontSize: 13, fontFamily: font.semibold, fontWeight: "600", color: colors.onSurface, flex: 1, letterSpacing: -0.1 },

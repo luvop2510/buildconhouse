@@ -20,6 +20,7 @@ import { colors, money, radius, spacing, type } from "@/src/theme/tokens";
 import { useBp } from "@/src/design/responsive";
 import { TILES_FLOOR_ID } from "@/src/constants/floors";
 import { Sheet } from "@/src/design/components";
+import { downloadApiFile } from "@/src/utils/downloadFile";
 
 type PreviewItem = {
   line_id: string;
@@ -180,6 +181,20 @@ export default function PlaceOrderReview() {
           <Text style={[type.bodyMuted, { marginTop: 4 }]}>
             {preview.brands.length} brand{preview.brands.length !== 1 ? "s" : ""} · {preview.brands.reduce((s, b) => s + b.item_count, 0)} items · {money(preview.total_value)}
           </Text>
+          {preview.doc_type === "standard" ? <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Download customer product PPT"
+            testID="review-download-ppt"
+            onPress={() => {
+              const name = (preview.customer_name || "Customer").replace(/[\\/:*?"<>|]/g, "").trim().replace(/\s+/g, " ") || "Customer";
+              const date = new Date().toLocaleDateString("en-GB").replace(/\//g, "-");
+              void downloadApiFile(`/quotations/${id}/pptx`, `${name} PPT ${date}.pptx`, "product PPT", floorId);
+            }}
+            style={{ alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 7, minHeight: 44, marginTop: 8, paddingHorizontal: 12, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border }}
+          >
+            <Feather name="image" size={16} color={colors.onSurface} />
+            <Text style={{ color: colors.onSurface, fontSize: 13, fontWeight: "600" }}>Product PPT</Text>
+          </Pressable> : null}
         </View>
 
         {/* Project / delivery */}

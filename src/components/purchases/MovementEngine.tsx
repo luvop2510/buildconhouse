@@ -14,7 +14,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
 import { ProductImage } from "@/src/components/ProductImage";
-import { Button, Field, Input, Sheet, Tabs, Txt } from "@/src/design/components";
+import { Button, Field, Input, Sheet, Txt } from "@/src/design/components";
 import { color as ds, radius, space } from "@/src/design/tokens";
 import { api, ApiError } from "@/src/api/client";
 import { toast } from "@/src/components/Toast";
@@ -41,6 +41,8 @@ export type MovableItem = {
   image?: string | null;
   qty: number;
   loaned_qty?: number;
+  loan_replenishment_for_customer_name?: string | null;
+  loan_replenishment_status?: string | null;
   stage: TrackerStage;
   customer_id?: string | null;
   customer_name?: string | null;
@@ -130,7 +132,9 @@ export function MoveStageSheet({
 
   const n = Number(qty || "0");
   const isPartial = n > 0 && n < item.qty - 1e-6;
-  const valid = !!target && n > 0 && n <= item.qty + 1e-6;
+  const returnObligation = !!item.loan_replenishment_for_customer_name;
+  const valid = !!target && n > 0 && n <= item.qty + 1e-6
+    && (!returnObligation || (!isPartial && ["po_final", "company_billing", "in_box"].includes(target)));
 
   const submit = async () => {
     if (!valid || !target) return;
@@ -173,7 +177,7 @@ export function MoveStageSheet({
   };
 
   return (
-    <Sheet open={visible} onClose={onClose} title="Move stage" width={440}
+    <Sheet open={visible} onClose={onClose} title={returnObligation ? "Replacement for customer loan" : "Move stage"} width={440}
       footer={
         <View style={{ flexDirection: "row", gap: 8, justifyContent: "flex-end" }}>
           <Button label="Cancel" variant="ghost" onPress={onClose} />
@@ -226,9 +230,10 @@ export function MoveStageSheet({
           </View>
         </View>
 
+        {returnObligation ? <Txt v="caption" tone="mid">This product is promised back to {item.loan_replenishment_for_customer_name}. It returns automatically on reaching In Box. You can move it to godown stock instead.</Txt> : null}
         <Field label="Move to stage">
           <View style={{ gap: 4 }}>
-            {stages.map((s) => {
+            {stages.filter((s) => !returnObligation || ["po_final", "company_billing", "in_box"].includes(s.key)).map((s) => {
               const disabled = s.key === item.stage && !isPartial;
               const on = target === s.key;
               return (
@@ -320,13 +325,9 @@ export function TransferSheet({
   onClose: () => void;
   onSuccess: (result: any) => void | Promise<void>;
 }) {
-  const [mode, setMode] = useState<"existing" | "new">("existing");
   const [customers, setCustomers] = useState<CustomerLite[]>([]);
   const [pick, setPick] = useState("");
   const [custSearch, setCustSearch] = useState("");
-  const [newName, setNewName] = useState("");
-  const [newPhone, setNewPhone] = useState("");
-  const [newEmail, setNewEmail] = useState("");
   const [qty, setQty] = useState("1");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -334,11 +335,10 @@ export function TransferSheet({
 
   useEffect(() => {
     if (!visible || !item) return;
-    setMode("existing"); setPick(""); setCustSearch("");
-    setNewName(""); setNewPhone(""); setNewEmail("");
+    setPick(""); setCustSearch("");
     setQty(String(Math.max(0, item.qty - (item.loaned_qty || 0)))); setReason("");
     setCommandKey(`transfer-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
-    api.get<CustomerLite[]>("/customers").then((list) => {
+    api.get<CustomerLite[]>(`/purchases/items/${item.item_id}/eligible-recipients`).then((list) => {
       setCustomers((list || []).filter((c) => c.id !== item.customer_id));
     }).catch(() => {});
   }, [visible, item]);
@@ -355,19 +355,16 @@ export function TransferSheet({
 
   const submit = async () => {
     if (item.stage !== "in_box") { toast.error("Products can be transferred only from In Box"); return; }
-    if (mode === "existing" && !pick) { toast.error("Pick a destination customer"); return; }
-    if (mode === "new" && !newName.trim()) { toast.error("Enter the new customer's name"); return; }
+    if (!pick) { toast.error("Pick a customer who already ordered this product"); return; }
     if (!n || n <= 0 || n > transferAvailable + 1e-6) { toast.error(`Enter a qty up to ${transferAvailable}`); return; }
     setBusy(true);
     try {
-      const payload = mode === "new"
-        ? { new_customer: { name: newName.trim(), phone: newPhone || undefined, email: newEmail || undefined }, qty: n, reason: reason || undefined, idempotency_key: commandKey }
-        : { destination_customer_id: pick, qty: n, reason: reason || undefined, idempotency_key: commandKey };
+      const payload = { destination_customer_id: pick, qty: n, reason: reason || undefined, idempotency_key: commandKey };
       const r = await api.post<{ destination: { po_number: string; customer_name: string } }>(
         `/purchases/items/${item.item_id}/transfer`,
         payload,
       );
-      toast.success(`Transfer recorded for ${r.destination?.customer_name || newName || customers.find((customer) => customer.id === pick)?.name || "customer"}`);
+      toast.success(`Transfer recorded for ${r.destination?.customer_name || customers.find((customer) => customer.id === pick)?.name || "customer"}`);
       await onSuccess(r);
       onClose();
     } catch (e: any) {
@@ -380,7 +377,7 @@ export function TransferSheet({
       footer={
         <View style={{ flexDirection: "row", gap: 8, justifyContent: "flex-end" }}>
           <Button label="Cancel" variant="ghost" onPress={onClose} />
-          <Button label="Record transfer" icon="repeat" onPress={submit} loading={busy} disabled={item.stage !== "in_box" || transferAvailable <= 0} testID="movement-transfer-submit" />
+          <Button label="Record transfer" icon="repeat" onPress={submit} loading={busy} disabled={item.stage !== "in_box" || transferAvailable <= 0 || !pick} testID="movement-transfer-submit" />
         </View>
       }
     >
@@ -405,13 +402,7 @@ export function TransferSheet({
         </View>
         <Txt v="caption" tone="soft">Available to lend: {transferAvailable} of {item.qty} · transfer allowed only in In Box</Txt>
 
-        <Tabs
-          items={[{ key: "existing", label: "Existing customer" }, { key: "new", label: "Create new customer" }]}
-          value={mode}
-          onChange={(k) => setMode(k as "existing" | "new")}
-        />
-
-        {mode === "existing" ? (
+        <Txt v="caption" tone="mid">Only customers with this product in an active order can receive it.</Txt>
           <View style={{ gap: 8 }}>
             <Input
               testID="transfer-customer-search"
@@ -422,7 +413,7 @@ export function TransferSheet({
             />
             <ScrollView style={{ maxHeight: 200, borderWidth: 1, borderColor: ds.line, borderRadius: radius.md }}>
               {filteredCustomers.length === 0 ? (
-                <View style={{ padding: 14 }}><Txt v="caption" tone="soft">No customers found</Txt></View>
+                <View style={{ padding: 14 }}><Txt v="caption" tone="soft">No matching customer orders found</Txt></View>
               ) : filteredCustomers.map((c) => (
                 <Pressable
                   key={c.id}
@@ -442,25 +433,6 @@ export function TransferSheet({
               ))}
             </ScrollView>
           </View>
-        ) : (
-          <View style={{ gap: 10 }}>
-            <Field label="Customer / company name">
-              <Input testID="transfer-new-name" value={newName} onChangeText={setNewName} placeholder="e.g. Malhotra Interiors" />
-            </Field>
-            <View style={{ flexDirection: "row", gap: 10 }}>
-              <View style={{ flex: 1 }}>
-                <Field label="Phone (optional)">
-                  <Input testID="transfer-new-phone" value={newPhone} onChangeText={setNewPhone} keyboardType="phone-pad" placeholder="10-digit" />
-                </Field>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Field label="Email (optional)">
-                  <Input testID="transfer-new-email" value={newEmail} onChangeText={setNewEmail} autoCapitalize="none" keyboardType="email-address" placeholder="name@company.com" />
-                </Field>
-              </View>
-            </View>
-          </View>
-        )}
 
         <Field label="Reason (optional)">
           <TextInput

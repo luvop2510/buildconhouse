@@ -203,7 +203,7 @@ def _flatten_item(po: dict, it: dict, sla_days: int) -> dict:
         "stage": stage,
         "stage_label": STAGE_LABELS.get(stage, stage),
         "stage_tone": STAGE_TONES.get(stage, {"bg": "#F4F4F5", "fg": "#3F3F46"}),
-        "qty": max(0.0, float(it.get("qty") or 0) - float(it.get("godown_transferred_qty") or 0)),
+        "qty": max(0.0, float(it.get("qty") or 0) - float(it.get("godown_transferred_qty") or 0) - float(it.get("loan_replenishment_returned_qty") or 0)),
         "unit_cost": float(it.get("unit_cost") or 0),
         "room": it.get("room"),
         "expected_delivery_at": po.get("expected_delivery_at"),
@@ -220,8 +220,13 @@ def _flatten_item(po: dict, it: dict, sla_days: int) -> dict:
         "loan_transfer_id": it.get("loan_transfer_id"),
         "borrowed_from_customer_id": it.get("borrowed_from_customer_id"),
         "borrowed_from_customer_name": it.get("borrowed_from_customer_name"),
+        "borrowed_at": it.get("borrowed_at"),
+        "borrowing_note": it.get("borrowing_note"),
         "loan_return_status": it.get("loan_return_status"),
         "loan_return_due": bool(it.get("loan_return_due")),
+        "loan_replenishment_for_customer_name": it.get("loan_replenishment_for_customer_name"),
+        "loan_replenishment_status": it.get("loan_replenishment_status"),
+        "loan_replenishment_returned_qty": float(it.get("loan_replenishment_returned_qty") or 0),
         "return_due_on_replenishment": bool(it.get("return_due_on_replenishment")),
         # Sanitary godown provenance is a snapshot on the purchase item so
         # both the stock tracker and the client workspace can explain where a
@@ -292,7 +297,7 @@ async def _iter_items(
         {"$match": match},
         {"$unwind": "$items"},
         {"$match": {"items.cancelled": {"$ne": True}}},
-        {"$match": {"$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$ifNull": ["$items.godown_transferred_qty", 0]}]}, 0]}}},
+        {"$match": {"$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$add": [{"$ifNull": ["$items.godown_transferred_qty", 0]}, {"$ifNull": ["$items.loan_replenishment_returned_qty", 0]}]}]}, 0]}}},
         {"$project": {
             "_id": 0,
             "id": 1, "number": 1, "customer_id": 1, "customer_name": 1,
@@ -404,7 +409,7 @@ def _items_page_pipeline(
         {"$match": po_match},
         {"$unwind": "$items"},
         {"$match": {"items.cancelled": {"$ne": True}}},
-        {"$match": {"$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$ifNull": ["$items.godown_transferred_qty", 0]}]}, 0]}}},
+        {"$match": {"$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$add": [{"$ifNull": ["$items.godown_transferred_qty", 0]}, {"$ifNull": ["$items.loan_replenishment_returned_qty", 0]}]}]}, 0]}}},
         {"$project": {
             "_id": 0,
             "item_id": "$items.id", "po_id": "$id", "po_number": "$number",
@@ -418,7 +423,7 @@ def _items_page_pipeline(
             "brand_name": {"$ifNull": ["$items.brand_name", "$brand_name"]},
             "supplier_id": 1, "supplier_name": 1,
             "stage": {"$ifNull": ["$items.stage", "order_in_company"]},
-            "qty": {"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$ifNull": ["$items.godown_transferred_qty", 0]}]},
+            "qty": {"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$add": [{"$ifNull": ["$items.godown_transferred_qty", 0]}, {"$ifNull": ["$items.loan_replenishment_returned_qty", 0]}]}]},
             "unit_cost": {"$ifNull": ["$items.unit_cost", 0]},
             "room": "$items.room", "expected_delivery_at": 1,
             "last_moved_at": {"$ifNull": ["$items.last_moved_at", "$created_at"]},
@@ -431,8 +436,13 @@ def _items_page_pipeline(
             "loan_transfer_id": "$items.loan_transfer_id",
             "borrowed_from_customer_id": "$items.borrowed_from_customer_id",
             "borrowed_from_customer_name": "$items.borrowed_from_customer_name",
+            "borrowed_at": "$items.borrowed_at",
+            "borrowing_note": "$items.borrowing_note",
             "loan_return_status": "$items.loan_return_status",
             "loan_return_due": "$items.loan_return_due",
+            "loan_replenishment_for_customer_name": "$items.loan_replenishment_for_customer_name",
+            "loan_replenishment_status": "$items.loan_replenishment_status",
+            "loan_replenishment_returned_qty": "$items.loan_replenishment_returned_qty",
             "return_due_on_replenishment": "$items.return_due_on_replenishment",
             "godown_transferred_qty": "$items.godown_transferred_qty",
             "godown_transfer_history": "$items.godown_transfer_history",
@@ -488,7 +498,7 @@ async def stage_catalog(user: UserPublic = Depends(get_current_user)):
         {"$match": match},
         {"$unwind": "$items"},
         {"$match": {"items.cancelled": {"$ne": True}}},
-        {"$match": {"$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$ifNull": ["$items.godown_transferred_qty", 0]}]}, 0]}}},
+        {"$match": {"$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$add": [{"$ifNull": ["$items.godown_transferred_qty", 0]}, {"$ifNull": ["$items.loan_replenishment_returned_qty", 0]}]}]}, 0]}}},
         {"$group": {"_id": {"$ifNull": ["$items.stage", "order_in_company"]}, "count": {"$sum": 1}}},
     ]
     rows = await db.purchase_orders.aggregate(pipeline).to_list(20)
@@ -510,7 +520,7 @@ async def brand_facets(user: UserPublic = Depends(get_current_user)):
         {"$match": match},
         {"$unwind": "$items"},
         {"$match": {"items.cancelled": {"$ne": True}}},
-        {"$match": {"$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$ifNull": ["$items.godown_transferred_qty", 0]}]}, 0]}}},
+        {"$match": {"$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$add": [{"$ifNull": ["$items.godown_transferred_qty", 0]}, {"$ifNull": ["$items.loan_replenishment_returned_qty", 0]}]}]}, 0]}}},
         {"$group": {
             "_id": {"id": "$brand_id", "name": "$brand_name"},
             "count": {"$sum": 1},
@@ -537,7 +547,7 @@ async def customer_facets(user: UserPublic = Depends(get_current_user)):
         {"$match": match},
         {"$unwind": "$items"},
         {"$match": {"items.cancelled": {"$ne": True}}},
-        {"$match": {"$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$ifNull": ["$items.godown_transferred_qty", 0]}]}, 0]}}},
+        {"$match": {"$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$add": [{"$ifNull": ["$items.godown_transferred_qty", 0]}, {"$ifNull": ["$items.loan_replenishment_returned_qty", 0]}]}]}, 0]}}},
         {"$group": {
             "_id": {"id": "$customer_id", "name": "$customer_name"},
             "count": {"$sum": 1},
@@ -572,7 +582,7 @@ async def completed_customer_facets(user: UserPublic = Depends(get_current_user)
     rows = await db.purchase_orders.aggregate([
         {"$match": match}, {"$unwind": "$items"},
         {"$match": {"items.cancelled": {"$ne": True}}},
-        {"$match": {"$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$ifNull": ["$items.godown_transferred_qty", 0]}]}, 0]}}},
+        {"$match": {"$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$add": [{"$ifNull": ["$items.godown_transferred_qty", 0]}, {"$ifNull": ["$items.loan_replenishment_returned_qty", 0]}]}]}, 0]}}},
         {"$group": {
             "_id": {"id": "$customer_id", "name": "$customer_name"},
             "item_count": {"$sum": 1},
@@ -657,7 +667,7 @@ async def customer_workspace(
     ).sort("due_at", 1).to_list(100)
 
     def visible_po_items(po: dict) -> list[dict]:
-        return [item for item in po.get("items") or [] if not item.get("cancelled") and float(item.get("qty") or 0) > float(item.get("godown_transferred_qty") or 0)]
+        return [item for item in po.get("items") or [] if not item.get("cancelled") and float(item.get("qty") or 0) > float(item.get("godown_transferred_qty") or 0) + float(item.get("loan_replenishment_returned_qty") or 0)]
 
     visible_pos = [p for p in pos if visible_po_items(p)]
     open_pos = [p for p in visible_pos if p.get("status") != "cancelled"]
@@ -903,6 +913,8 @@ async def _cancel_item(
         raise HTTPException(status_code=404, detail="Item not found")
     if item.get("cancelled"):
         raise HTTPException(status_code=409, detail="Item is already cancelled")
+    if item.get("loan_replenishment_for_customer_name"):
+        raise HTTPException(status_code=409, detail="This ordered product is reserved to return a customer loan; move it to godown stock instead")
     if (item.get("stage") or "order_in_company") == "delivered":
         raise HTTPException(status_code=400, detail="Delivered items cannot be cancelled")
 
@@ -1052,12 +1064,9 @@ async def _apply_stage_change(
     for _ in range(max_attempts):
         result = await _attempt_stage_change(item_id, to_stage, user, note, qty)
         if not result.get("conflict"):
-            if to_stage == "in_box" and not result.get("no_change"):
+            if to_stage == "in_box":
                 arrived_item_id = result.get("new_item_id") or result.get("item_id") or item_id
-                try:
-                    result["loans_due"] = (await mark_loans_due_for_replenishment(item_id=arrived_item_id, user=user))["return_due_transfer_ids"]
-                except Exception:
-                    logger.exception("Could not mark customer loan return due for item %s", arrived_item_id)
+                result["loans_due"] = (await mark_loans_due_for_replenishment(item_id=arrived_item_id, user=user))["return_due_transfer_ids"]
             return result
 
     logger.warning("Concurrent inventory conflict on item %s after %d attempts", item_id, max_attempts)
@@ -1098,6 +1107,8 @@ async def _attempt_stage_change(
         raise HTTPException(status_code=404, detail="Item not found")
     if it.get("cancelled"):
         raise HTTPException(status_code=409, detail="Cancelled items cannot be moved")
+    if float(it.get("loan_replenishment_promised_qty") or 0) > 0 and to_stage in {"dispatched", "in_transit", "delivered"}:
+        raise HTTPException(status_code=409, detail="This ordered product is promised back to the lending customer")
     from_stage = it.get("stage") or "order_in_company"
     full_qty = float(it.get("qty") or 0)
     move_qty = float(qty) if qty is not None else full_qty
@@ -1105,6 +1116,8 @@ async def _attempt_stage_change(
         raise HTTPException(status_code=400, detail="Move quantity must be greater than 0")
     if move_qty > full_qty + 1e-6:
         raise HTTPException(status_code=400, detail=f"Only {full_qty} available to move")
+    if float(it.get("loan_replenishment_promised_qty") or 0) > 0 and move_qty < full_qty - 1e-6:
+        raise HTTPException(status_code=409, detail="A promised replacement cannot be split")
 
     loaned_qty = float(it.get("loaned_qty") or 0)
     if loaned_qty > 0 and (to_stage != from_stage or move_qty < full_qty - 1e-6) and move_qty > full_qty - loaned_qty + 1e-6:
@@ -1482,6 +1495,25 @@ async def transfer_item_command(
         idempotency_key=body.idempotency_key,
         user=user,
     )
+
+
+@router.get("/items/{item_id}/eligible-recipients")
+async def eligible_purchase_recipients(item_id: str, user: UserPublic = Depends(get_current_user)):
+    source_po = await db.purchase_orders.find_one(floor_query(user, {"items.id": item_id}), {"_id": 0})
+    if not source_po:
+        raise HTTPException(status_code=404, detail="Source item not found")
+    item = next(row for row in source_po.get("items", []) if row.get("id") == item_id)
+    source_customer_id = item.get("customer_id") or source_po.get("customer_id")
+    matches = await db.purchase_orders.find(floor_query(user, {
+        "customer_id": {"$ne": source_customer_id},
+        "status": {"$ne": "cancelled"},
+        "items": {"$elemMatch": {"product_id": item.get("product_id"),
+                                  "cancelled": {"$ne": True},
+                                  "stage": {"$nin": ["dispatched", "in_transit", "delivered"]}}},
+    }), {"_id": 0, "customer_id": 1, "customer_name": 1}).to_list(500)
+    recipients = {po["customer_id"]: {"id": po["customer_id"], "name": po.get("customer_name") or "Customer"}
+                  for po in matches if po.get("customer_id")}
+    return sorted(recipients.values(), key=lambda row: row["name"].lower())
 
 
 @router.post("/transfers/{transfer_id}/return")

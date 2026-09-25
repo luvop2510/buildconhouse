@@ -40,18 +40,36 @@ def allowed_floor(query, floor):
 class PurchaseOrders:
     def __init__(self, source):
         self.source = source
+        self.destination = {'id': 'po-recipient', 'floor_id': 'first-floor',
+                            'customer_id': 'recipient', 'status': 'ordered',
+                            'items': [{'id': 'recipient-order-item', 'product_id': 'product-1',
+                                       'stage': 'company_billing', 'qty': 2}]}
         self.inserted = []
         self.reservation_query = None
 
     async def find_one(self, query, *_args, **_kwargs):
-        wanted = base(query).get('items.id')
+        terms = base(query)
+        if terms.get('customer_id') == self.destination['customer_id']:
+            matched = any(i['product_id'] == terms['items']['$elemMatch']['product_id']
+                          for i in self.destination['items'])
+            return deepcopy(self.destination) if matched and allowed_floor(query, 'first-floor') else None
+        wanted = terms.get('items.id')
         if allowed_floor(query, self.source['floor_id']) and any(i['id'] == wanted for i in self.source['items']):
             return deepcopy(self.source)
         return None
 
     async def update_one(self, query, update, **_kwargs):
+        terms = base(query)
+        condition = terms['items']['$elemMatch']
+        if terms['id'] == self.destination['id']:
+            row = self.destination['items'][0]
+            promised = row.get('loan_replenishment_promised_qty', 0)
+            if promised > row['qty'] - update['$inc']['items.$.loan_replenishment_promised_qty']:
+                return SimpleNamespace(modified_count=0)
+            row['loan_replenishment_promised_qty'] = promised + update['$inc']['items.$.loan_replenishment_promised_qty']
+            row['loan_replenishment_for_customer_name'] = update['$set']['items.$.loan_replenishment_for_customer_name']
+            return SimpleNamespace(modified_count=1)
         self.reservation_query = query
-        condition = base(query)['items']['$elemMatch']
         item = self.source['items'][0]
         limit = condition['$and'][0]['$or'][1]['loaned_qty']['$lte']
         godown_guard = condition['$and'][1]
@@ -160,10 +178,13 @@ def test_loan_preserves_source_quantity_and_creates_borrowed_in_box_item(monkeyp
     assert borrowed['qty'] == 2
     assert borrowed['unit_cost'] == 0
     assert borrowed['borrowed_from_customer_id'] == 'source'
+    assert borrowed['borrowed_at']
+    assert borrowed['borrowing_note'] == 'Needed now'
     assert borrowed['loan_return_status'] == 'awaiting_return'
     assert borrowed['return_due_on_replenishment'] is True
     assert db.purchase_transfers.inserted[0]['status'] == 'awaiting_return'
     assert db.purchase_transfers.inserted[0]['source_remaining_qty'] == 5
+    assert db.purchase_orders.destination['items'][0]['loan_replenishment_promised_qty'] == 2
     assert {customer for customer, _ in db.customers.updated} == {'source', 'recipient'}
     reservation = base(db.purchase_orders.reservation_query)['items']['$elemMatch']
     assert reservation['stage'] == 'in_box'
@@ -216,29 +237,45 @@ def test_destination_must_belong_to_users_floor(monkeypatch):
     assert db.purchase_orders.inserted == []
 
 
-def test_new_customer_receives_borrowed_item_on_source_floor(monkeypatch):
+def test_new_customer_cannot_borrow_without_existing_order(monkeypatch):
     db, user = setup(monkeypatch)
-    asyncio.run(workflow._create_loan_transfer(
-        item_id='item-source', destination_customer_id=None,
-        new_customer={'name': 'New Recipient', 'email': 'new@example.com'},
-        qty=1, reason=None, key='new-customer-key', user=user,
-    ))
-    destination = next(c for c in db.customers.docs if c.get('email') == 'new@example.com')
-    assert destination['floor_id'] == 'first-floor'
-    assert db.purchase_orders.inserted[0]['customer_id'] == destination['id']
-    assert db.purchase_orders.inserted[0]['items'][0]['stage'] == 'in_box'
-    assert db.purchase_transfers.inserted[0]['created_customer'] is True
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(workflow._create_loan_transfer(
+            item_id='item-source', destination_customer_id=None,
+            new_customer={'name': 'New Recipient', 'email': 'new@example.com'},
+            qty=1, reason=None, key='new-customer-key', user=user,
+        ))
+    assert exc.value.status_code == 409
+    assert db.purchase_orders.inserted == []
 
 
-def test_new_customer_without_email_does_not_store_null_unique_email(monkeypatch):
+def test_new_customer_without_email_cannot_borrow(monkeypatch):
     db, user = setup(monkeypatch)
-    asyncio.run(workflow._create_loan_transfer(
-        item_id='item-source', destination_customer_id=None,
-        new_customer={'name': 'No Email Recipient'}, qty=1,
-        reason=None, key='no-email-key', user=user,
-    ))
-    destination = next(c for c in db.customers.docs if c.get('name') == 'No Email Recipient')
-    assert 'email' not in destination
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(workflow._create_loan_transfer(
+            item_id='item-source', destination_customer_id=None,
+            new_customer={'name': 'No Email Recipient'}, qty=1,
+            reason=None, key='no-email-key', user=user,
+        ))
+    assert exc.value.status_code == 409
+
+
+def test_recipient_without_matching_product_cannot_borrow(monkeypatch):
+    db, run = create(monkeypatch)
+    db.purchase_orders.destination['items'][0]['product_id'] = 'different-product'
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(run())
+    assert exc.value.status_code == 409
+    assert db.purchase_orders.inserted == []
+
+
+def test_recipient_order_cannot_promise_more_than_its_quantity(monkeypatch):
+    db, run = create(monkeypatch)
+    db.purchase_orders.destination['items'][0]['qty'] = 1
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(run())
+    assert exc.value.status_code == 409
+    assert db.purchase_orders.inserted == []
 
 
 def test_second_loan_cannot_reserve_units_already_lent(monkeypatch):
@@ -289,16 +326,19 @@ def test_loan_handler_writes_bilateral_activity_without_payments(monkeypatch):
 def test_settle_return_releases_reservation_and_keeps_purchase_lines(monkeypatch):
     db, user = setup(monkeypatch)
     loan = {
-        'id': 'loan-1', 'type': 'loan', 'status': 'awaiting_return',
+        'id': 'loan-1', 'type': 'loan', 'status': 'return_due',
         'floor_id': 'first-floor', 'qty': 2, 'name': 'Basin',
         'source_po_id': 'po-source', 'source_item_id': 'item-source',
         'source_customer_name': 'Source',
         'destination_po_id': 'po-dest', 'destination_item_id': 'item-dest',
         'destination_customer_name': 'Recipient',
+        'replenishment_po_id': 'po-replenishment', 'replenishment_item_id': 'item-replenishment',
     }
     source = {'qty': 5, 'loaned_qty': 2, 'customer_loan_history': [
         {'transfer_id': 'loan-1', 'status': 'awaiting_return'}]}
     dest = {'qty': 2, 'loan_return_status': 'awaiting_return', 'loan_return_due': True}
+    replenishment = {'id': 'item-replenishment', 'qty': 2, 'stage': 'in_box',
+                     'loan_replenishment_returned_qty': 0}
 
     class TransferCollection:
         async def find_one(self, query, *_args, **_kwargs):
@@ -311,9 +351,14 @@ def test_settle_return_releases_reservation_and_keeps_purchase_lines(monkeypatch
             return SimpleNamespace(modified_count=1)
 
     class POCollection:
+        async def find_one(self, query, *_args, **_kwargs):
+            return {'items': [deepcopy(replenishment)]} if base(query).get('id') == 'po-replenishment' else None
+
         async def update_one(self, query, update, **_kwargs):
             po_id = base(query)['id']
-            if po_id == 'po-source':
+            if po_id == 'po-replenishment':
+                replenishment['loan_replenishment_returned_qty'] += update['$inc']['items.$.loan_replenishment_returned_qty']
+            elif po_id == 'po-source':
                 source['loaned_qty'] += update['$inc']['items.$[source].loaned_qty']
                 source['customer_loan_history'][0]['status'] = 'returned'
             elif po_id == 'po-dest':
@@ -335,12 +380,13 @@ def test_settle_return_releases_reservation_and_keeps_purchase_lines(monkeypatch
     assert dest['qty'] == 2
     assert dest['loan_return_status'] == 'returned'
     assert dest['loan_return_due'] is False
+    assert replenishment['loan_replenishment_returned_qty'] == 2
     repeat = asyncio.run(workflow.settle_loan_transfer(transfer_id='loan-1', user=user))
     assert repeat['idempotent'] is True
 
 
 @pytest.mark.parametrize('arrival_stage', ['in_box', 'delivered'])
-def test_replenished_order_marks_matching_loan_due(monkeypatch, arrival_stage):
+def test_replenished_order_returns_matching_loan_on_in_box(monkeypatch, arrival_stage):
     db, user = setup(monkeypatch)
     ordered_po = {
         'id': 'ordered-po', 'floor_id': 'first-floor', 'customer_id': 'recipient',
@@ -390,12 +436,24 @@ def test_replenished_order_marks_matching_loan_due(monkeypatch, arrival_stage):
 
     monkeypatch.setattr(workflow, 'db', SimpleNamespace(
         purchase_transfers=TransferCollection(), purchase_orders=POCollection()))
+    settled = []
+    async def settle(*, transfer_id, user, reason):
+        settled.append(transfer_id)
+        loan['status'] = 'returned'
+        return {'status': 'returned'}
+    monkeypatch.setattr(workflow, 'settle_loan_transfer', settle)
     result = asyncio.run(workflow.mark_loans_due_for_replenishment(
         item_id='ordered-item', user=user))
+    if arrival_stage == 'delivered':
+        assert result['return_due_transfer_ids'] == []
+        assert settled == []
+        return
     assert result['return_due_transfer_ids'] == ['loan-1']
     assert ordered_po['items'][0]['loan_replenishment_reserved_qty'] == 2
-    assert loan['status'] == borrowed_status['value'] == 'return_due'
+    assert loan['status'] == 'returned'
+    assert borrowed_status['value'] == 'return_due'
     assert borrowed_status['due'] is True
+    assert settled == ['loan-1']
     repeat = asyncio.run(workflow.mark_loans_due_for_replenishment(
         item_id='ordered-item', user=user))
     assert repeat['return_due_transfer_ids'] == []

@@ -388,6 +388,11 @@ async def change_status(
             status_code=400,
             detail=f"Cannot move from '{cur}' to '{body.to_status}'",
         )
+    if body.to_status in {"packed", "ready_for_dispatch"} and any(
+        float(item.get("loan_replenishment_promised_qty") or 0) > 0
+        for item in doc.get("items", []) if not item.get("cancelled")
+    ):
+        raise HTTPException(status_code=409, detail="A replacement in this order must return to the lending customer")
     patch = await _apply_status_change(doc, body.to_status, user, body.note)
     await db.purchase_orders.update_one(floor_query(user, {"id": po_id}), {"$set": patch})
     fresh = await db.purchase_orders.find_one(floor_query(user, {"id": po_id}), {"_id": 0})
@@ -421,20 +426,22 @@ async def receive_items(
                 # would keep showing "Order in Company" for a fully-received PO.
                 if clamped >= float(it.get("qty", 0)) - 1e-6 and it.get("stage") != "delivered":
                     prev_stage = it.get("stage") or "order_in_company"
+                    return_replacement = float(it.get("loan_replenishment_promised_qty") or 0) > 0
+                    next_stage = "in_box" if return_replacement else "delivered"
                     stage_ev = PurchaseStageEvent(
-                        from_stage=prev_stage, to_stage="delivered",
+                        from_stage=prev_stage, to_stage=next_stage,
                         by_user_id=user.id, by_user_name=user.full_name,
                         note="Auto-synced from PO receiving", action="move",
                     ).dict()
                     it = {
                         **it,
-                        "stage": "delivered",
+                        "stage": next_stage,
                         "last_moved_at": datetime.now(timezone.utc).isoformat(),
                         "last_moved_by": user.id,
                         "last_moved_by_name": user.full_name,
                         "stage_history": (it.get("stage_history") or []) + [stage_ev],
                     }
-                    stage_syncs.append({"item_id": it["id"], "sku": it["sku"], "from_stage": prev_stage})
+                    stage_syncs.append({"item_id": it["id"], "sku": it["sku"], "from_stage": prev_stage, "to_stage": next_stage})
         updated_items.append(it)
 
     patch: dict = {
@@ -469,13 +476,11 @@ async def receive_items(
             event_type="purchase.stage_moved",
             entity_type="purchase", entity_id=po_id, actor=user,
             customer_id=doc.get("customer_id"),
-            summary=f"{sync['sku']} · auto-marked Delivered (fully received)",
-            payload={"item_id": sync["item_id"], "from_stage": sync["from_stage"], "to_stage": "delivered", "source": "receive_sync"},
+            summary=f"{sync['sku']} · auto-marked {sync['to_stage']} (fully received)",
+            payload={"item_id": sync["item_id"], "from_stage": sync["from_stage"], "to_stage": sync["to_stage"], "source": "receive_sync"},
         )
-        try:
+        if sync["to_stage"] == "in_box":
             await mark_loans_due_for_replenishment(item_id=sync["item_id"], user=user)
-        except Exception:
-            logger.exception("Could not mark customer loan return due after receiving item %s", sync["item_id"])
 
     fresh = await db.purchase_orders.find_one(floor_query(user, {"id": po_id}), {"_id": 0})
     return PurchaseOrder(**fresh)
