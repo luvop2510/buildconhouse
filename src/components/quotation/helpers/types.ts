@@ -18,6 +18,7 @@ export type ProductVariant = {
   colour?: string | null; color?: string | null; variant_label?: string | null;
   mrp: number; price: number; stock?: number;
   dimensions?: string | null; material?: string | null; warranty?: string | null;
+  dimension_image_urls?: string[]; seat_cover_image_urls?: string[];
   specs?: Record<string, any> | null; description?: string | null;
   // Populated dynamically by the backend from family-sibling products —
   // lets a finish/colour chip switch the main image, not just the price.
@@ -53,6 +54,8 @@ export type Product = {
   stock?: number | null;
   description?: string | null;
   dimensions?: string | null;
+  dimension_image_urls?: string[];
+  seat_cover_image_urls?: string[];
   warranty?: string | null;
   specs?: Record<string, any> | null;
   // V4 ranking / badge signals (populated by /products endpoint).

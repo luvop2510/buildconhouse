@@ -280,6 +280,8 @@ def _apply_media(product: dict, snapshot: CatalogSnapshot) -> None:
     for media in rows:
         if not media.public_url:
             continue
+        if media.role in ("dimension", "seat-cover"):
+            continue
         gallery.append({
             "id": media.id,
             "family_key": media.family_key,
@@ -339,7 +341,7 @@ def _primary_product_image(snapshot: CatalogSnapshot, product_id: str, family_ke
     media_by_product = getattr(snapshot, "media_by_product", None)
     if media_by_product is not None:
         for media in _dedup_media(list(media_by_product.get(product_id, ()))):
-            if media.public_url:
+            if media.public_url and media.role not in ("dimension", "seat-cover"):
                 return media.public_url
         return None
 
@@ -354,7 +356,7 @@ def _primary_product_image(snapshot: CatalogSnapshot, product_id: str, family_ke
         int(item.get("sort_order", 100)),
     ))
     for row in rows:
-        if row.get("public_url"):
+        if row.get("public_url") and row.get("role") not in ("dimension", "seat-cover"):
             return row["public_url"]
     return None
 
@@ -452,6 +454,8 @@ def _variant_summary(product: dict, snapshot: CatalogSnapshot) -> dict:
         "colour": colour, "color": colour,
         "price": product.get("price"), "mrp": product.get("mrp"),
         "stock": product.get("stock", 0), "dimensions": product.get("dimensions"),
+        "dimension_image_urls": product.get("dimension_image_urls") or [],
+        "seat_cover_image_urls": product.get("seat_cover_image_urls") or [],
         "material": product.get("material"), "warranty": product.get("warranty"),
         "specs": product.get("specs") or {}, "description": product.get("description"),
         "image": _primary_product_image(snapshot, product["id"], product.get("family_key")),
@@ -916,7 +920,7 @@ async def list_family_groups(
         group.update(_size_metadata_for_products(family_products))
         sample_id = group["sample_product_id"]
         sample_media = snapshot.media_rows_by_product.get(sample_id, ())
-        hero = next((row for row in sample_media if row.get("public_url")), None)
+        hero = next((row for row in sample_media if row.get("public_url") and row.get("role") not in ("dimension", "seat-cover")), None)
         if hero:
             group["sample_image"] = hero["public_url"]
             group["sample_image_quality"] = hero.get("quality") or group.get("sample_image_quality")
@@ -1050,7 +1054,7 @@ async def search_catalog(
         family_products = _family_siblings(snapshot, sample) if sample else []
         family.update(_size_metadata_for_products(family_products))
         media = snapshot.media_rows_by_product.get(family["sample_product_id"], ())
-        hero = next((row for row in media if row.get("public_url")), None)
+        hero = next((row for row in media if row.get("public_url") and row.get("role") not in ("dimension", "seat-cover")), None)
         if hero:
             family["hero_image_url"] = hero.get("public_url")
             family["image_quality"] = hero.get("quality")
@@ -1085,7 +1089,7 @@ async def family_detail(family_key: str, floor_ids: Optional[list[str]] = None) 
     gallery = []
     for media in media_rows:
         media_id = media.get("id")
-        if not media.get("public_url") or media_id in seen_media:
+        if not media.get("public_url") or media_id in seen_media or media.get("role") in ("dimension", "seat-cover"):
             continue
         if media_id:
             seen_media.add(media_id)

@@ -76,6 +76,8 @@ function familyCardToProduct(family: CatalogFamily): Product | null {
     size: representative.size ?? null,
     stock: representative.stock ?? 0,
     dimensions: representative.dimensions ?? null,
+    dimension_image_urls: representative.dimension_image_urls ?? [],
+    seat_cover_image_urls: representative.seat_cover_image_urls ?? [],
     material: representative.material ?? null,
     warranty: representative.warranty ?? null,
     specs: representative.specs ?? null,
@@ -186,7 +188,7 @@ export type BuilderApi = {
   persist: () => Promise<string | null>;
   finalize: () => Promise<void>;
   workflowBusy: boolean;
-  generateOfficialQuotation: () => Promise<void>;
+  generateOfficialQuotation: (includeDimensions?: boolean) => Promise<void>;
   generateProductPpt: () => Promise<void>;
   placeOrder: () => Promise<void>;
 
@@ -871,8 +873,12 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
   const openProductModal = useCallback((p: Product) => setProductModal(p), []);
   const closeProductModal = useCallback(() => setProductModal(null), []);
   const patchProduct = useCallback((id: string, updates: Record<string, unknown>) => {
-    setProductModal((cur) => (cur && cur.id === id ? ({ ...cur, ...updates } as Product) : cur));
-    setProducts((cur) => cur.map((p) => (p.id === id ? ({ ...p, ...updates } as Product) : p)));
+    const patch = (product: Product): Product => ({
+      ...(product.id === id ? { ...product, ...updates } : product),
+      variants: product.variants?.map((variant) => variant.id === id ? { ...variant, ...updates } : variant),
+    } as Product);
+    setProductModal((cur) => cur ? patch(cur) : cur);
+    setProducts((cur) => cur.map(patch));
   }, []);
 
   // ---------- Derived ----------
@@ -1414,7 +1420,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
 
   // Builder controls issue commands only. The backend commits an EventOutbox
   // record and dispatches QuotationGenerated / OrderPlaced after commit.
-  const generateOfficialQuotation = useCallback(async () => {
+  const generateOfficialQuotation = useCallback(async (includeDimensions = false) => {
     const persistedId = await persist();
     if (!persistedId) return;
     setWorkflowBusy(true);
@@ -1422,7 +1428,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
       const customerName = customers.find((customer) => customer.id === s.customerId)?.name || "Customer";
       const safeCustomerName = customerName.replace(/[\\\\/:*?\"<>|]/g, "").trim().replace(/\s+/g, " ") || "Customer";
       const filename = `${safeCustomerName}.pdf`;
-      await downloadApiFile(`/quotations/${persistedId}/pdf`, filename, "quotation PDF");
+      await downloadApiFile(`/quotations/${persistedId}/pdf?include_dimensions=${includeDimensions}`, filename, "quotation PDF");
     } finally {
       setWorkflowBusy(false);
     }

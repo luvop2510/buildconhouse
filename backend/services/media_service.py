@@ -111,7 +111,7 @@ async def upload_and_register(
     sha1 = hashlib.sha1(data).hexdigest()
 
     # Dedupe check
-    scope_filter: dict = {"sha1": sha1, "source_type": source_type}
+    scope_filter: dict = {"sha1": sha1, "source_type": source_type, "role": role}
     if product_id:
         scope_filter["product_id"] = product_id
     elif family_key:
@@ -294,6 +294,8 @@ def _apply_media_to_product(product: dict, media: list[ProductMedia]) -> None:
     gallery: list[dict] = []
     for m in media:
         if not m.public_url:
+            continue
+        if m.role in ("dimension", "seat-cover"):
             continue
         gallery.append({
             "id": m.id, "family_key": m.family_key, "url": m.public_url, "role": m.role,

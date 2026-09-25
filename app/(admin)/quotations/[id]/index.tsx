@@ -8,6 +8,7 @@ import { ActivityTimeline, TimelineEvent } from "@/src/components/ActivityTimeli
 import { useBp } from "@/src/design/responsive";
 import { Alert, Button, Card, IconButton, PageHeader, PriceTag, StatusBadge } from "@/src/components/ui";
 import { ConfirmDialog } from "@/src/components/ds";
+import { BottomSheet } from "@/src/components/BottomSheet";
 import { api } from "@/src/api/client";
 import { downloadApiFile } from "@/src/utils/downloadFile";
 import { colors, money, radius, spacing, type } from "@/src/theme/tokens";
@@ -49,6 +50,7 @@ export default function QuotationDetail() {
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
   const [linkedPos, setLinkedPos] = useState<PoStub[]>([]);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [pdfOptionsOpen, setPdfOptionsOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [advancing, setAdvancing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -77,9 +79,9 @@ export default function QuotationDetail() {
   }, [id]);
   useEffect(() => { load(); }, [load]);
 
-  const openPdf = async () => {
+  const openPdf = async (includeDimensions: boolean) => {
     const name = (q?.customer_name || "Customer").replace(/[\\\\/:*?\"<>|]/g, "").trim().replace(/\s+/g, " ") || "Customer";
-    await downloadApiFile(`/quotations/${id}/pdf`, `${name}.pdf`, "quotation PDF");
+    await downloadApiFile(`/quotations/${id}/pdf?include_dimensions=${includeDimensions}`, `${name}.pdf`, "quotation PDF");
   };
   const openPpt = async () => {
     if (!q) return;
@@ -131,8 +133,8 @@ export default function QuotationDetail() {
             <IconButton icon="edit-3" tone="surface" onPress={() => router.push(`/(admin)/quotations/new?quotationId=${encodeURIComponent(id)}` as any)} testID="edit-quotation" accessibilityLabel="Edit quotation" />
           ) : <Button label="Edit" icon="edit-3" variant="secondary" size="sm" onPress={() => router.push(`/(admin)/quotations/new?quotationId=${encodeURIComponent(id)}` as any)} testID="edit-quotation" />}
           {isPhone ? (
-            <IconButton icon="download" tone="surface" onPress={openPdf} testID="download-pdf" accessibilityLabel="Download PDF" />
-          ) : <Button label="PDF" icon="download" variant="secondary" size="sm" onPress={openPdf} testID="download-pdf" />}
+            <IconButton icon="download" tone="surface" onPress={() => setPdfOptionsOpen(true)} testID="download-pdf" accessibilityLabel="Download PDF" />
+          ) : <Button label="PDF" icon="download" variant="secondary" size="sm" onPress={() => setPdfOptionsOpen(true)} testID="download-pdf" />}
           {!isPhone ? <Button label="Product PPT" icon="image" variant="secondary" size="sm" onPress={openPpt} testID="download-ppt" /> : null}
           {isPhone ? (
             <IconButton icon="trash-2" tone="danger" onPress={() => setDeleteOpen(true)} testID="delete-quotation" accessibilityLabel="Delete quotation" />
@@ -315,6 +317,13 @@ export default function QuotationDetail() {
           </View>
         </Card>
       </ScrollView>
+      <BottomSheet visible={pdfOptionsOpen} onClose={() => setPdfOptionsOpen(false)} title="Download quotation PDF" testID="quotation-detail-pdf-options">
+        <View style={{ gap: spacing.sm, paddingBottom: spacing.lg }}>
+          <Text style={type.bodyMuted}>Include Vitra dimension diagrams in this PDF?</Text>
+          <Button label="Include dimension photos" icon="image" onPress={() => { setPdfOptionsOpen(false); void openPdf(true); }} testID="detail-pdf-include-dimensions" />
+          <Button label="Exclude dimension photos" icon="file-text" variant="secondary" onPress={() => { setPdfOptionsOpen(false); void openPdf(false); }} testID="detail-pdf-exclude-dimensions" />
+        </View>
+      </BottomSheet>
       <ConfirmDialog
         visible={deleteOpen}
         onClose={() => setDeleteOpen(false)}

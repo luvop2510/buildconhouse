@@ -32,6 +32,8 @@ function productAsVariant(product: Product): ProductVariant {
     variant_label: product.variant_label ?? null,
     price: product.price, mrp: product.mrp, stock: product.stock ?? 0,
     dimensions: product.dimensions ?? null, material: product.material ?? null,
+    dimension_image_urls: product.dimension_image_urls ?? [],
+    seat_cover_image_urls: product.seat_cover_image_urls ?? [],
     warranty: product.warranty ?? null, specs: product.specs ?? null,
     description: product.description ?? null,
     image: product.hero_image_url ?? productImageList(product)[0] ?? null,
@@ -84,27 +86,30 @@ export function ProductModal() {
   }, [product]);
   const selectedProduct = useMemo(() => {
     if (!product || !selectedVariant) return product;
-    const variantColour = selectedVariant.colour ?? selectedVariant.color ?? product.colour;
+    const variant = product.variants?.find((candidate) => candidate.id === selectedVariant.id) ?? selectedVariant;
+    const variantColour = variant.colour ?? variant.color ?? product.colour;
     return {
       ...product,
-      id: selectedVariant.id ?? product.id,
-      name: selectedVariant.name ?? product.name,
-      sku: selectedVariant.sku,
-      finish: selectedVariant.finish ?? product.finish,
-      finish_code: selectedVariant.finish_code ?? product.finish_code,
-      variant_label: selectedVariant.variant_label ?? product.variant_label,
+      id: variant.id ?? product.id,
+      name: variant.name ?? product.name,
+      sku: variant.sku,
+      finish: variant.finish ?? product.finish,
+      finish_code: variant.finish_code ?? product.finish_code,
+      variant_label: variant.variant_label ?? product.variant_label,
       colour: variantColour,
-      size: selectedVariant.size ?? product.size,
-      price: selectedVariant.price ?? product.price,
-      mrp: selectedVariant.mrp ?? product.mrp,
-      stock: selectedVariant.stock ?? product.stock,
-      dimensions: selectedVariant.dimensions ?? product.dimensions,
-      material: selectedVariant.material ?? product.material,
-      warranty: selectedVariant.warranty ?? product.warranty,
-      specs: selectedVariant.specs ?? product.specs,
-      description: selectedVariant.description ?? product.description,
-      concealed_part: selectedVariant.concealed_part ?? product.concealed_part,
-      configuration_options: selectedVariant.configuration_options ?? product.configuration_options,
+      size: variant.size ?? product.size,
+      price: variant.price ?? product.price,
+      mrp: variant.mrp ?? product.mrp,
+      stock: variant.stock ?? product.stock,
+      dimensions: variant.dimensions ?? product.dimensions,
+      dimension_image_urls: variant.dimension_image_urls ?? product.dimension_image_urls,
+      seat_cover_image_urls: variant.seat_cover_image_urls ?? product.seat_cover_image_urls,
+      material: variant.material ?? product.material,
+      warranty: variant.warranty ?? product.warranty,
+      specs: variant.specs ?? product.specs,
+      description: variant.description ?? product.description,
+      concealed_part: variant.concealed_part ?? product.concealed_part,
+      configuration_options: variant.configuration_options ?? product.configuration_options,
     };
   }, [product, selectedVariant]);
 
@@ -373,6 +378,25 @@ export function ProductModal() {
                     </View>
                   ))}
                 </View>
+
+                {(selectedProduct.dimension_image_urls?.length || selectedProduct.seat_cover_image_urls?.length) ? (
+                  <View style={{ gap: 10 }} testID="pm-vitra-spec-photos">
+                    {([
+                      { label: "Dimension diagrams", urls: selectedProduct.dimension_image_urls || [] },
+                      { label: "Seat-cover photos", urls: selectedProduct.seat_cover_image_urls || [] },
+                    ]).filter((group) => group.urls.length > 0).map((group) => (
+                      <View key={group.label} style={{ gap: 6 }}>
+                        <Text style={styles.sectionLabel}>{group.label}</Text>
+                        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                          {group.urls.map((url, index) => (
+                            <ProductImage key={`${url}-${index}`} source={url}
+                              style={{ width: 112, height: 90 }} contentFit="contain" fallbackLabel={selectedProduct.sku} />
+                          ))}
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
 
                 {selectedProduct.description ? (
                   <View style={{ gap: 4 }}>

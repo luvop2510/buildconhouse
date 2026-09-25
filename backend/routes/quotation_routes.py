@@ -102,6 +102,8 @@ async def _canonicalize_item_images(items) -> list[dict]:
     quality_rank = {"excellent": 4, "good": 3, "acceptable": 2, "poor": 1, "missing": 0}
     grouped: dict[str, list[dict]] = {}
     for row in media_rows:
+        if row.get("role") in ("dimension", "seat-cover"):
+            continue
         grouped.setdefault(str(row.get("product_id")), []).append(row)
     for rows in grouped.values():
         rows.sort(key=lambda row: (
@@ -1230,6 +1232,33 @@ async def _pdf_items(doc: dict) -> list[dict]:
     return _enriched_items_for_pdf({**doc, "items": await _canonicalize_item_images(doc.get("items", []))})
 
 
+async def _vitra_dimension_items(items: list[dict], floor_id: str) -> list[dict]:
+    """Attach only media from the current product whose SKU still matches the line."""
+    ids = {item.get("product_id") for item in items if item.get("product_id")}
+    if not ids:
+        return items
+    vitra = await db.brands.find_one({"name": {"$regex": "^vitra$", "$options": "i"}, "floor_id": floor_id}, {"_id": 0, "id": 1})
+    if not vitra:
+        return items
+    products = await db.products.find(
+        {"id": {"$in": list(ids)}, "floor_id": floor_id, "brand_id": vitra["id"]},
+        {"_id": 0, "id": 1, "sku": 1, "dimensions": 1, "dimension_image_urls": 1, "seat_cover_image_urls": 1},
+    ).to_list(len(ids))
+    by_id = {product["id"]: product for product in products}
+    result = []
+    for item in items:
+        product = by_id.get(item.get("product_id"))
+        if product and str(product.get("sku") or "").strip() == str(item.get("sku") or "").strip():
+            result.append({**item,
+                "dimensions": product.get("dimensions"),
+                "dimension_image_urls": product.get("dimension_image_urls") or [],
+                "seat_cover_image_urls": product.get("seat_cover_image_urls") or [],
+            })
+        else:
+            result.append({**item, "dimension_image_urls": [], "seat_cover_image_urls": []})
+    return result
+
+
 # --- PDF branding (Settings > Company + Settings > PDF, merged) -----------
 async def _pdf_branding() -> dict:
     """Merge Settings > Company + Settings > PDF into the flat dict
@@ -1271,7 +1300,7 @@ async def quotation_pptx(quotation_id: str, user: UserPublic = Depends(get_curre
 
 
 @router.get("/{quotation_id}/pdf")
-async def quotation_pdf(quotation_id: str, user: UserPublic = Depends(get_current_user)):
+async def quotation_pdf(quotation_id: str, include_dimensions: bool = False, user: UserPublic = Depends(get_current_user)):
     """Build the PDF, then journal QuotationGenerated before dispatching automation.
 
     The PDF is the primary output. Its outbox record is committed first; timeline
@@ -1285,6 +1314,8 @@ async def quotation_pdf(quotation_id: str, user: UserPublic = Depends(get_curren
     _require_tiles_quotation_address(doc_type, doc.get("address_snapshot"))
     branding = await _pdf_branding()
     pdf_items = await _pdf_items(doc)
+    if include_dimensions and doc_type not in TILES_DOC_TYPES:
+        pdf_items = await _vitra_dimension_items(pdf_items, doc.get("floor_id"))
     if doc_type in TILES_DOC_TYPES:
         _require_tile_item_images(pdf_items)
     if doc_type == "tiles_selection":
@@ -1294,7 +1325,7 @@ async def quotation_pdf(quotation_id: str, user: UserPublic = Depends(get_curren
         pdf_bytes = await _render_pdf(build_tiles_quotation_pdf, {**doc, "items": pdf_items}, customer, branding)
         filename = tiles_pdf_filename(doc)
     else:
-        pdf_doc = {**doc, "items": pdf_items}
+        pdf_doc = {**doc, "items": pdf_items, "include_dimensions": include_dimensions}
         pdf_bytes = await _render_pdf(build_quotation_pdf, pdf_doc, customer, branding)
         filename = quotation_pdf_filename(doc.get("customer_name") or customer.get("name"))
     revision = len(doc.get("revisions") or [])

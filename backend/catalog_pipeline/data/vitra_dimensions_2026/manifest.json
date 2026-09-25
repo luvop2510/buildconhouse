@@ -1,0 +1,4305 @@
+{
+  "source": "ONLY FOR MM NOT MRP .xlsx",
+  "products": [
+    {
+      "code": "106-003H209",
+      "product_id": "c2cba5ac-4bd0-4bf7-95db-01fa2419e4d1",
+      "product_name": "MEMORIA SEAT COVER · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 4,
+      "dimension_images": [
+        "assets/122a7f2f7a794923.png"
+      ],
+      "seat_cover_images": [
+        "assets/24d6e9f25925e3db.png"
+      ],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 4,
+          "description": "WC Seat (soft-closing) White Quick release"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 4,
+          "description": "WC Seat (soft-closing) White Quick release"
+        }
+      ]
+    },
+    {
+      "code": "106-401H209",
+      "product_id": "5660113e-739b-4d25-93aa-883dd7016bcd",
+      "product_name": "MEMORIA SEAT COVER · Matt White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 6,
+      "dimension_images": [
+        "assets/122a7f2f7a794923.png"
+      ],
+      "seat_cover_images": [
+        "assets/24d6e9f25925e3db.png"
+      ],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 6,
+          "description": "WC Seat (soft-closing) Matt white Quick release "
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 6,
+          "description": "WC Seat (soft-closing) Matt white Quick release "
+        }
+      ]
+    },
+    {
+      "code": "106-420H209",
+      "product_id": "8f9da5e6-7c4a-444d-8536-0001783bc53d",
+      "product_name": "MEMORIA SEAT COVER · Matt Taupe / Sand Beige",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 8,
+      "dimension_images": [
+        "assets/122a7f2f7a794923.png"
+      ],
+      "seat_cover_images": [
+        "assets/6ec182e6391565a4.jpg"
+      ],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 8,
+          "description": "WC Seat (soft-closing) Matt taupe Quick release"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 8,
+          "description": "WC Seat (soft-closing) Matt taupe Quick release"
+        }
+      ]
+    },
+    {
+      "code": "106-483H209",
+      "product_id": "68095f48-0474-43e3-8339-5f39bc702bb0",
+      "product_name": "MEMORIA SEAT COVER · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 10,
+      "dimension_images": [
+        "assets/122a7f2f7a794923.png"
+      ],
+      "seat_cover_images": [
+        "assets/76b57adfc03784f2.png"
+      ],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 10,
+          "description": "WC Seat (soft-closing) Matt black Quick release"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 10,
+          "description": "WC Seat (soft-closing) Matt black Quick release"
+        }
+      ]
+    },
+    {
+      "code": "119-003H209",
+      "product_id": "bd5242e1-726c-4fa5-8d3c-fdaf2b9c0834",
+      "product_name": "EQUAL SEAT COVER · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 24,
+      "dimension_images": [
+        "assets/2bbe67c33b7fe631.png"
+      ],
+      "seat_cover_images": [
+        "assets/416ddf4c10e51580.jpeg"
+      ],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 24,
+          "description": "Equal Slim WC Seat, White, Quick release"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 24,
+          "description": "Equal Slim WC Seat, White, Quick release"
+        }
+      ]
+    },
+    {
+      "code": "119-476H209",
+      "product_id": "ec280c32-aefb-4779-8775-aea9f73b4762",
+      "product_name": "EQUAL SEAT COVER · Matt Stone Grey",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 26,
+      "dimension_images": [
+        "assets/2bbe67c33b7fe631.png"
+      ],
+      "seat_cover_images": [
+        "assets/bd3016c334a8f486.jpg"
+      ],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 26,
+          "description": "Equal Slim WC Seat, Matt Stone Gray, Quick release"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 26,
+          "description": "Equal Slim WC Seat, Matt Stone Gray, Quick release"
+        }
+      ]
+    },
+    {
+      "code": "121-003H909",
+      "product_id": "a7bce7f6-6ac8-41e4-b551-f69ec5f89dc1",
+      "product_name": "ZENTRUM ROUND SEAT COVER · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 62,
+      "dimension_images": [],
+      "seat_cover_images": [
+        "assets/fe06cadd4884cfa0.jpeg"
+      ],
+      "review_dimension_images": [
+        {
+          "path": "assets/1fdc0e83704a1c94.png",
+          "sha256": "1fdc0e83704a1c942cba7ce173eed17dcadc38f1d1a39a521dbc3958b06d1c5d",
+          "source_sha256": "1fdc0e83704a1c942cba7ce173eed17dcadc38f1d1a39a521dbc3958b06d1c5d",
+          "sheet": "Wo Bidet WC",
+          "row": 58,
+          "source_cell": "E58"
+        },
+        {
+          "path": "assets/68a26637916160c7.png",
+          "sha256": "68a26637916160c7ebb5ef72fbac9aeb29294dd628d6a3301200f4a01d179e6c",
+          "source_sha256": "68a26637916160c7ebb5ef72fbac9aeb29294dd628d6a3301200f4a01d179e6c",
+          "sheet": "Wo Bidet WC",
+          "row": 58,
+          "source_cell": "E58"
+        },
+        {
+          "path": "assets/1f9b33c6cb76405c.png",
+          "sha256": "1f9b33c6cb76405c229c09ba9f48693adf5f20916b8296f72db48659741b8952",
+          "source_sha256": "1f9b33c6cb76405c229c09ba9f48693adf5f20916b8296f72db48659741b8952",
+          "sheet": "Wo Bidet WC",
+          "row": 62,
+          "source_cell": "E62"
+        }
+      ],
+      "review_required": true,
+      "review_reason": "Same exact code has different dimension drawings on multiple workbook rows; do not import dimensions until product variant is resolved.",
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 60,
+          "description": "Universal WC seat-Round form, soft closing"
+        },
+        {
+          "sheet": "With Bidet WC",
+          "row": 64,
+          "description": "Universal WC seat-Round form, soft closing"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 58,
+          "description": "Universal WC seat-Round form, soft closing"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 62,
+          "description": "Universal WC seat-Round form, soft closing"
+        }
+      ]
+    },
+    {
+      "code": "126-003H009",
+      "product_id": "69baedf2-07d0-427d-8adf-d3dd7394f201",
+      "product_name": "PLURAL SEAT COVER · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 14,
+      "dimension_images": [
+        "assets/8994bf91f60d3a18.png"
+      ],
+      "seat_cover_images": [
+        "assets/c19ca08bc4fea422.jpg"
+      ],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 14,
+          "description": "White, WC seat, Duroplast, Soft Closing, Chrome colored detachable metal hinge, top fixing, quick release"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 14,
+          "description": "White, WC seat, Duroplast, Soft Closing, Chrome colored detachable metal hinge, top fixing, quick release"
+        }
+      ]
+    },
+    {
+      "code": "126-401H009",
+      "product_id": "7f53ee53-22b6-4c36-b1b8-8112cc65d250",
+      "product_name": "PLURAL SEAT COVER · Matt White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 16,
+      "dimension_images": [
+        "assets/8994bf91f60d3a18.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 16,
+          "description": "Soft Close, Quick-Release, with Metal Hinge, Matt White"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 16,
+          "description": "Soft Close, Quick-Release, with Metal Hinge, Matt White"
+        }
+      ]
+    },
+    {
+      "code": "126-483H009",
+      "product_id": "3490f576-e96a-4b72-bab8-e3023ba2cd71",
+      "product_name": "PLURAL SEAT COVER · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 20,
+      "dimension_images": [
+        "assets/8994bf91f60d3a18.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 20,
+          "description": "Soft Close, Quick-Release, with Metal Hinge, Matt Black"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 20,
+          "description": "Soft Close, Quick-Release, with Metal Hinge, Matt Black"
+        }
+      ]
+    },
+    {
+      "code": "130-003H209",
+      "product_id": "f3f76901-424c-49f6-a328-6d62d39cb808",
+      "product_name": "SENTO SEAT COVER · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 46,
+      "dimension_images": [
+        "assets/17135e6929599095.png"
+      ],
+      "seat_cover_images": [
+        "assets/a18da2fe23e51a39.png"
+      ],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 46,
+          "description": "SENTO SLIM WC SEAT, soft closing, quick release, White"
+        },
+        {
+          "sheet": "With Bidet WC",
+          "row": 56,
+          "description": "SENTO SLIM WC SEAT, soft closing, quick release, White"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 46,
+          "description": "SENTO SLIM WC SEAT, soft closing, quick release, White"
+        }
+      ]
+    },
+    {
+      "code": "130-401H209",
+      "product_id": "b02ad928-26be-42ce-ab74-df9f66300dec",
+      "product_name": "SENTO SEAT COVER · Matt White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 48,
+      "dimension_images": [
+        "assets/17135e6929599095.png"
+      ],
+      "seat_cover_images": [
+        "assets/a18da2fe23e51a39.png"
+      ],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 48,
+          "description": "SENTO SLIM WC SEAT, soft closing, quick release, Matt White"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 48,
+          "description": "SENTO SLIM WC SEAT, soft closing, quick release, Matt White"
+        }
+      ]
+    },
+    {
+      "code": "130-420H209",
+      "product_id": "d988d215-84fe-43d4-979b-e623104dc222",
+      "product_name": "SENTO SEAT COVER · Matt Taupe / Sand Beige",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 50,
+      "dimension_images": [
+        "assets/17135e6929599095.png"
+      ],
+      "seat_cover_images": [
+        "assets/728d75934f2a7b8d.jpeg"
+      ],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 50,
+          "description": "SENTO SLIM WC SEAT, soft closing, quick release, Matt Taupe"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 50,
+          "description": "SENTO SLIM WC SEAT, soft closing, quick release, Matt Taupe"
+        }
+      ]
+    },
+    {
+      "code": "130-476H209",
+      "product_id": "28cfc7a8-7edb-4775-a566-48a350b0fea3",
+      "product_name": "SENTO SEAT COVER · Matt Stone Grey",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 52,
+      "dimension_images": [
+        "assets/17135e6929599095.png"
+      ],
+      "seat_cover_images": [
+        "assets/7775064f3181c709.jpeg"
+      ],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 52,
+          "description": "SENTO SLIM WC SEAT, soft closing, quick release, Matt Stone Grey"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 52,
+          "description": "SENTO SLIM WC SEAT, soft closing, quick release, Matt Stone Grey"
+        }
+      ]
+    },
+    {
+      "code": "130-483H209",
+      "product_id": "5a6a8dce-1619-46b3-b98e-ff515801f32a",
+      "product_name": "SENTO SEAT COVER · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 54,
+      "dimension_images": [
+        "assets/17135e6929599095.png"
+      ],
+      "seat_cover_images": [
+        "assets/ccea14e20a8e10a5.jpeg"
+      ],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 54,
+          "description": "SENTO SLIM WC SEAT, soft closing, quick release, Matt Black"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 54,
+          "description": "SENTO SLIM WC SEAT, soft closing, quick release, Matt Black"
+        }
+      ]
+    },
+    {
+      "code": "131-003H209",
+      "product_id": "53f2562e-73ed-477c-bf17-4865dbdeef69",
+      "product_name": "INTEGRA SEAT COVER · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 66,
+      "dimension_images": [
+        "assets/69155c14284562e4.png"
+      ],
+      "seat_cover_images": [
+        "assets/a18da2fe23e51a39.png"
+      ],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 62,
+          "description": "UNIVERSAL SLIM & WRAP WC SEAT MODEL 2 - ROUND FORM  (DUROPLAST, SOFT-CLOSING, DETACHABLE METAL HINGE, TOP FIXING, ), matt white"
+        },
+        {
+          "sheet": "With Bidet WC",
+          "row": 68,
+          "description": "UNIVERSAL SLIM & WRAP WC SEAT MODEL 2 - ROUND FORM  (DUROPLAST, SOFT-CLOSING, DETACHABLE METAL HINGE, TOP FIXING, ), matt white"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 60,
+          "description": "UNIVERSAL SLIM & WRAP WC SEAT MODEL 2 - ROUND FORM  (DUROPLAST, SOFT-CLOSING, DETACHABLE METAL HINGE, TOP FIXING, ), matt white"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 66,
+          "description": "UNIVERSAL SLIM & WRAP WC SEAT MODEL 2 - ROUND FORM  (DUROPLAST, SOFT-CLOSING, DETACHABLE METAL HINGE, TOP FIXING, ), matt white"
+        }
+      ]
+    },
+    {
+      "code": "131-401H209",
+      "product_id": "5510b667-7e5d-4a1d-8ea8-11028c970054",
+      "product_name": "INTEGRA SEAT COVER · Matt White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 68,
+      "dimension_images": [
+        "assets/69155c14284562e4.png"
+      ],
+      "seat_cover_images": [
+        "assets/a18da2fe23e51a39.png"
+      ],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 70,
+          "description": "UNIVERSAL SLIM & WRAP WC SEAT MODEL 2 - ROUND FORM  (DUROPLAST, SOFT-CLOSING, DETACHABLE METAL HINGE, TOP FIXING, ), matt white"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 68,
+          "description": "UNIVERSAL SLIM & WRAP WC SEAT MODEL 2 - ROUND FORM  (DUROPLAST, SOFT-CLOSING, DETACHABLE METAL HINGE, TOP FIXING, ), matt white"
+        }
+      ]
+    },
+    {
+      "code": "131-420H209",
+      "product_id": "ae1b4f26-bfee-4756-a4e3-c1d1f6254c3a",
+      "product_name": "INTEGRA SEAT COVER · Matt Taupe / Sand Beige",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 70,
+      "dimension_images": [
+        "assets/69155c14284562e4.png"
+      ],
+      "seat_cover_images": [
+        "assets/728d75934f2a7b8d.jpeg"
+      ],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 72,
+          "description": "UNIVERSAL SLIM & WRAP WC SEAT MODEL 2 - ROUND FORM  (DUROPLAST, SOFT-CLOSING, DETACHABLE METAL HINGE, TOP FIXING, ), matt taupe"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 70,
+          "description": "UNIVERSAL SLIM & WRAP WC SEAT MODEL 2 - ROUND FORM  (DUROPLAST, SOFT-CLOSING, DETACHABLE METAL HINGE, TOP FIXING, ), matt taupe"
+        }
+      ]
+    },
+    {
+      "code": "131-483H209",
+      "product_id": "9fef4ef0-f03a-4bb2-897c-5c46b7b9ff29",
+      "product_name": "INTEGRA SEAT COVER · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 72,
+      "dimension_images": [
+        "assets/69155c14284562e4.png"
+      ],
+      "seat_cover_images": [
+        "assets/ccea14e20a8e10a5.jpeg"
+      ],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 74,
+          "description": "UNIVERSAL SLIM & WRAP WC SEAT MODEL 2 - ROUND FORM  (DUROPLAST, SOFT-CLOSING, DETACHABLE METAL HINGE, TOP FIXING, ), matt black"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 72,
+          "description": "UNIVERSAL SLIM & WRAP WC SEAT MODEL 2 - ROUND FORM  (DUROPLAST, SOFT-CLOSING, DETACHABLE METAL HINGE, TOP FIXING, ), matt black"
+        }
+      ]
+    },
+    {
+      "code": "132-003H209",
+      "product_id": "b647a9bd-c7f0-4cf1-9336-5f8b618e3f34",
+      "product_name": "METROPOLE SEAT COVER · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 28,
+      "dimension_images": [
+        "assets/2ded76008ec23b99.png"
+      ],
+      "seat_cover_images": [
+        "assets/aed925cd95d6f231.jpg"
+      ],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 28,
+          "description": "Slim WC-Seat, soft closing, quick release"
+        },
+        {
+          "sheet": "With Bidet WC",
+          "row": 36,
+          "description": "Slim WC-Seat, soft closing, quick release"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 28,
+          "description": "Slim WC-Seat, soft closing, quick release"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 36,
+          "description": "Slim WC-Seat, soft closing, quick release"
+        }
+      ]
+    },
+    {
+      "code": "132-401H209",
+      "product_id": "c66f9433-3f4e-422e-9401-e83ae798a9fc",
+      "product_name": "METROPOLE SEAT COVER · Matt White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 30,
+      "dimension_images": [
+        "assets/2ded76008ec23b99.png"
+      ],
+      "seat_cover_images": [
+        "assets/aed925cd95d6f231.jpg"
+      ],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 30,
+          "description": "Slim WC-Seat, soft closing, quick release, Matt white"
+        },
+        {
+          "sheet": "With Bidet WC",
+          "row": 38,
+          "description": "Slim WC-Seat, soft closing, quick release, Matt white"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 30,
+          "description": "Slim WC-Seat, soft closing, quick release, Matt white"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 38,
+          "description": "Slim WC-Seat, soft closing, quick release, Matt white"
+        }
+      ]
+    },
+    {
+      "code": "132-420H209",
+      "product_id": "b1a627b6-9f75-4942-8884-75ecff4c09fe",
+      "product_name": "METROPOLE SEAT COVER · Matt Taupe / Sand Beige",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 32,
+      "dimension_images": [
+        "assets/2ded76008ec23b99.png"
+      ],
+      "seat_cover_images": [
+        "assets/070b71c240dc144f.jpg"
+      ],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 32,
+          "description": "Slim WC-Seat, soft closing, quick release, Matt taupe"
+        },
+        {
+          "sheet": "With Bidet WC",
+          "row": 40,
+          "description": "Slim WC-Seat, soft closing, quick release, Matt taupe"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 32,
+          "description": "Slim WC-Seat, soft closing, quick release, Matt taupe"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 40,
+          "description": "Slim WC-Seat, soft closing, quick release, Matt taupe"
+        }
+      ]
+    },
+    {
+      "code": "132-483H209",
+      "product_id": "bf46c6d3-4b56-499b-a220-13eb474a8cb2",
+      "product_name": "METROPOLE SEAT COVER · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 34,
+      "dimension_images": [
+        "assets/2ded76008ec23b99.png"
+      ],
+      "seat_cover_images": [
+        "assets/6633d53dc1a1415e.jpg"
+      ],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 34,
+          "description": "Slim WC-Seat, soft closing, quick release, Matt Black"
+        },
+        {
+          "sheet": "With Bidet WC",
+          "row": 42,
+          "description": "Slim WC-Seat, soft closing, quick release, Matt Black"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 34,
+          "description": "Slim WC-Seat, soft closing, quick release, Matt Black"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 42,
+          "description": "Slim WC-Seat, soft closing, quick release, Matt Black"
+        }
+      ]
+    },
+    {
+      "code": "137-003H209",
+      "product_id": "85a6b2e4-020d-4262-ab96-882cbc27a099",
+      "product_name": "LIQUID SEAT COVER · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 22,
+      "dimension_images": [
+        "assets/19bb7ec12b1debed.png",
+        "assets/f2ad0dabbec405c2.png"
+      ],
+      "seat_cover_images": [
+        "assets/6748e72f5dc2c91a.png"
+      ],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 22,
+          "description": "Liquid WC Seat, Soft-Close, Metal Hinge, Top Fixing, Quick Release"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 22,
+          "description": "Liquid WC Seat, Soft-Close, Metal Hinge, Top Fixing, Quick Release"
+        }
+      ]
+    },
+    {
+      "code": "166-003H109",
+      "product_id": "c8b33eee-fbef-45f4-bf1c-892f24bdc6ad",
+      "product_name": "ISTANBUL SEAT COVER · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 12,
+      "dimension_images": [
+        "assets/46d423ed778c1577.png"
+      ],
+      "seat_cover_images": [
+        "assets/99f275033aa2c1bb.jpg"
+      ],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 12,
+          "description": "WC Seat, Duroplast, Soft-closing, detachable hinge, without LED, white"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 12,
+          "description": "WC Seat, Duroplast, Soft-closing, detachable hinge, without LED, white"
+        }
+      ]
+    },
+    {
+      "code": "191-003H209",
+      "product_id": "b8f8a84f-5c74-499d-a664-a06371ce7988",
+      "product_name": "INTEGRA SQUARE SEAT COVER · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 74,
+      "dimension_images": [
+        "assets/e50c88035e944eb6.png"
+      ],
+      "seat_cover_images": [
+        "assets/ef8fe91df0428c58.png"
+      ],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 66,
+          "description": "Slim WC- Seat, Detachable metal hinge, top fixing, soft closing, quick release"
+        },
+        {
+          "sheet": "With Bidet WC",
+          "row": 76,
+          "description": "Slim WC- Seat, Detachable metal hinge, top fixing, soft closing, quick release"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 64,
+          "description": "Slim WC- Seat, Detachable metal hinge, top fixing, soft closing, quick release"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 74,
+          "description": "Slim WC- Seat, Detachable metal hinge, top fixing, soft closing, quick release"
+        }
+      ]
+    },
+    {
+      "code": "191-420H209",
+      "product_id": "6264c97a-e5ac-4b68-9825-16c07cb830ed",
+      "product_name": "INTEGRA SQUARE SEAT COVER · Matt Taupe / Sand Beige",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 76,
+      "dimension_images": [
+        "assets/e50c88035e944eb6.png"
+      ],
+      "seat_cover_images": [
+        "assets/346d7859894ee333.jpeg"
+      ],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 78,
+          "description": "Slim WC- Seat, Detachable metal hinge, top fixing, soft closing, quick release, matt taupe"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 76,
+          "description": "Slim WC- Seat, Detachable metal hinge, top fixing, soft closing, quick release, matt taupe"
+        }
+      ]
+    },
+    {
+      "code": "191-483H209",
+      "product_id": "d69fa016-1cfd-49b0-96ca-e9eb631906ce",
+      "product_name": "INTEGRA SQUARE SEAT COVER · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 78,
+      "dimension_images": [
+        "assets/e50c88035e944eb6.png"
+      ],
+      "seat_cover_images": [
+        "assets/e54331a250102789.png"
+      ],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 80,
+          "description": "Slim WC- Seat, Detachable metal hinge, top fixing, soft closing, quick release, matt black"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 78,
+          "description": "Slim WC- Seat, Detachable metal hinge, top fixing, soft closing, quick release, matt black"
+        }
+      ]
+    },
+    {
+      "code": "230-003H009",
+      "product_id": "d17f83b4-1e5a-4918-8e8c-8b653cde3124",
+      "product_name": "NEST QUANTUM SEAT COVER · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 44,
+      "dimension_images": [
+        "assets/dc5f2d0646b93707.png"
+      ],
+      "seat_cover_images": [
+        "assets/d201d51ac140b778.png"
+      ],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 44,
+          "description": "Seat Slim, Duroplast, Top Fixation White"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 44,
+          "description": "Seat Slim, Duroplast, Top Fixation White"
+        }
+      ]
+    },
+    {
+      "code": "4280B403H0016",
+      "product_id": "a65ea1ae-6996-4ab5-ae42-b4f5ccd24db3",
+      "product_name": "MEMORIA 60 CM · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 7,
+      "dimension_images": [
+        "assets/5d900cfbe5a61a5c.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 7,
+          "description": "Countertop Basin, 60 cm, White"
+        }
+      ]
+    },
+    {
+      "code": "4334B476H1361",
+      "product_id": "3cda348c-ba98-4929-a08a-a696ab69eacd",
+      "product_name": "WATER JEWEL ROUND 400mm · Matt Stone Grey",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 154,
+      "dimension_images": [
+        "assets/a9c1d9532a562c4a.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 154,
+          "description": "Bowl 40 cm,Mat Stone Grey"
+        }
+      ]
+    },
+    {
+      "code": "4441B476H1361",
+      "product_id": "fa4bcdcb-a487-425d-9aea-ef6c161a09aa",
+      "product_name": "WATER JEWEL SQUARE 400mm · Matt Stone Grey",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 156,
+      "dimension_images": [
+        "assets/7ee3aae12cc3d356.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 156,
+          "description": "Square Bowl 40 cm,Mat Stone Grey"
+        }
+      ]
+    },
+    {
+      "code": "4442B476H1361",
+      "product_id": "2021dd7d-6671-4047-8569-e9fd84c09009",
+      "product_name": "WATER JEWEL RECTANGLE 600x400 · Matt Stone Grey",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 158,
+      "dimension_images": [
+        "assets/869da19e7c200641.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 158,
+          "description": "Rectangular Bowl, 60cm,Mat Stone Grey"
+        }
+      ]
+    },
+    {
+      "code": "4446B403H0016",
+      "product_id": "42be8cb3-438c-42c9-9a14-70275aed0d73",
+      "product_name": "MEMORIA 85 CM · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 8,
+      "dimension_images": [
+        "assets/70395268f4243f80.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 8,
+          "description": "Oval Bowl, 85 cm,White"
+        }
+      ]
+    },
+    {
+      "code": "4518B403H0075",
+      "product_id": "30ab31b3-8fd3-4d86-a113-e8588e125821",
+      "product_name": "ISTANBUL RIM-EX WC · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 11,
+      "dimension_images": [
+        "assets/c02f87fb32585145.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 11,
+          "description": "Rim-Ex Wall-Hung Wc Pan, 52 cm"
+        }
+      ]
+    },
+    {
+      "code": "4518B403H0090",
+      "product_id": "99f232d4-8197-48d6-9b63-52f7c0b3faf8",
+      "product_name": "ISTANBUL RIM-EX WC WITH BIDET · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 11,
+      "dimension_images": [
+        "assets/c02f87fb32585145.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 11,
+          "description": "Rim-Ex Wall-Hung Wc Pan, 52 cm"
+        }
+      ]
+    },
+    {
+      "code": "5339B003H0012",
+      "product_id": "5e91302b-6a68-4a79-ab96-f57430e17bcd",
+      "product_name": "S50 480mm · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 175,
+      "dimension_images": [
+        "assets/43345fb0cb830c41.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 175,
+          "description": "Undercounter Basın 48 cm"
+        }
+      ]
+    },
+    {
+      "code": "5652B403H0016",
+      "product_id": "84ed570b-f8b9-440c-9dab-d13504b0fafe",
+      "product_name": "FRAME OVAL 550mm · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 96,
+      "dimension_images": [
+        "assets/1faa2706ae7c5076.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 96,
+          "description": "Oval countertop basin, 56 cm, without tap hole, without overflow hole, white"
+        }
+      ]
+    },
+    {
+      "code": "5652B483H0016",
+      "product_id": "20b0b244-4088-4fdf-b72c-5f2d69138e67",
+      "product_name": "FRAME OVAL 550mm · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 98,
+      "dimension_images": [
+        "assets/1faa2706ae7c5076.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 98,
+          "description": "Oval countertop basin, 56 cm, without tap hole, without overflow hole, Matt black"
+        }
+      ]
+    },
+    {
+      "code": "5653B403H0016",
+      "product_id": "6dac795e-76c3-40e9-b424-f2ec04626ec7",
+      "product_name": "FRAME TV 560mm · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 99,
+      "dimension_images": [
+        "assets/b83b994c43f118de.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 99,
+          "description": "TV shaped countertop basin, 57 cm, without tap hole, without overflow hole, white"
+        }
+      ]
+    },
+    {
+      "code": "5653B483H0016",
+      "product_id": "4120d8e8-6704-4bbb-8ddb-24a7a583c96f",
+      "product_name": "FRAME TV 560mm · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 101,
+      "dimension_images": [
+        "assets/b83b994c43f118de.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 101,
+          "description": "TV shaped countertop basin, 57 cm, without tap hole, without overflow hole, Matt black"
+        }
+      ]
+    },
+    {
+      "code": "5674B403H6194",
+      "product_id": "40c0551b-d0c5-4ffd-800d-955ed2d81c97",
+      "product_name": "V-CARE COMFORT RIM-EX SMART WC · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 83,
+      "dimension_images": [
+        "assets/385d3df8a3ab5b53.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 83,
+          "description": "V-Care Comfort İntelligent Wc, 60 cm"
+        }
+      ]
+    },
+    {
+      "code": "5881B403H0563",
+      "product_id": "96e8a814-8472-48ca-8489-93003f4747e4",
+      "product_name": "MEMORIA OVAL 750mm · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 3,
+      "dimension_images": [
+        "assets/48e133e81ef7dd2c.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 3,
+          "description": "Oval bowl, 75 cm One tap hole, without overﬂow hole, White"
+        }
+      ]
+    },
+    {
+      "code": "5881B420H0563",
+      "product_id": "d1214316-d577-40c5-8120-5c52d048ee54",
+      "product_name": "MEMORIA OVAL 750mm · Matt Taupe / Sand Beige",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 5,
+      "dimension_images": [
+        "assets/48e133e81ef7dd2c.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 5,
+          "description": "Oval bowl, 75 cm One tap hole, without overﬂow hole, Matt taupe"
+        }
+      ]
+    },
+    {
+      "code": "5881B483H0563",
+      "product_id": "46c2699c-e672-45ea-9c51-709313ecafc2",
+      "product_name": "MEMORIA OVAL 750mm · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 6,
+      "dimension_images": [
+        "assets/48e133e81ef7dd2c.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 6,
+          "description": "Oval bowl, 75 cm One tap hole, without overﬂow hole, Matt Black"
+        }
+      ]
+    },
+    {
+      "code": "5885B401H0101",
+      "product_id": "4510ba57-a5a2-4299-a3fe-4df5a1ca2b22",
+      "product_name": "MEMORIA RIM-EX WC · Matt White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 5,
+      "dimension_images": [
+        "assets/9a6bcad207a7d84d.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 5,
+          "description": "Rim-Ex Wall-Hung Wc Pan, 54 cm,Matt White"
+        }
+      ]
+    },
+    {
+      "code": "5885B401H0559",
+      "product_id": "6b3293f9-042c-45b4-8172-b3d3fbc53feb",
+      "product_name": "MEMORIA RIM-EX WC WITH BIDET · Matt White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 5,
+      "dimension_images": [
+        "assets/9a6bcad207a7d84d.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 5,
+          "description": "Rim-Ex Wall-Hung Wc Pan, 54 cm,Matt White"
+        }
+      ]
+    },
+    {
+      "code": "5885B403H0101",
+      "product_id": "943e9015-7bb5-49bd-96f3-ceb385a771bd",
+      "product_name": "MEMORIA RIM-EX WC · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 3,
+      "dimension_images": [
+        "assets/9a6bcad207a7d84d.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 3,
+          "description": "Rim-Ex Wall-Hung Wc Pan, 54 cm,White"
+        }
+      ]
+    },
+    {
+      "code": "5885B403H0559",
+      "product_id": "27bac273-8669-4c35-8a13-d6ca5bebd37a",
+      "product_name": "MEMORIA RIM-EX WC WITH BIDET · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 3,
+      "dimension_images": [
+        "assets/9a6bcad207a7d84d.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 3,
+          "description": "Rim-Ex Wall-Hung Wc Pan, 54 cm,White"
+        }
+      ]
+    },
+    {
+      "code": "5885B420H0101",
+      "product_id": "f0c336e8-5851-4e4f-8d95-4d6cef560f73",
+      "product_name": "MEMORIA RIM-EX WC · Matt Taupe / Sand Beige",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 7,
+      "dimension_images": [
+        "assets/9a6bcad207a7d84d.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 7,
+          "description": "Rim-Ex Wall-Hung Wc Pan, 54 cm,Matt Taupe"
+        }
+      ]
+    },
+    {
+      "code": "5885B420H0559",
+      "product_id": "5b54b985-66bf-4f43-97b4-aabf21671dd5",
+      "product_name": "MEMORIA RIM-EX WC WITH BIDET · Matt Taupe / Sand Beige",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 7,
+      "dimension_images": [
+        "assets/9a6bcad207a7d84d.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 7,
+          "description": "Rim-Ex Wall-Hung Wc Pan, 54 cm,Matt Taupe"
+        }
+      ]
+    },
+    {
+      "code": "5885B483H0101",
+      "product_id": "00d9af4d-508d-4a11-a3d8-8e578f2c1ce8",
+      "product_name": "MEMORIA RIM-EX WC · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 9,
+      "dimension_images": [
+        "assets/9a6bcad207a7d84d.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 9,
+          "description": "Rim-Ex Wall-Hung Wc Pan, 54 cm,Matt Black"
+        }
+      ]
+    },
+    {
+      "code": "5885B483H0559",
+      "product_id": "3150a4a9-4a35-4cc0-afaa-e10d87cf3cb7",
+      "product_name": "MEMORIA RIM-EX WC WITH BIDET · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 9,
+      "dimension_images": [
+        "assets/9a6bcad207a7d84d.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 9,
+          "description": "Rim-Ex Wall-Hung Wc Pan, 54 cm,Matt Black"
+        }
+      ]
+    },
+    {
+      "code": "5991B401H0016",
+      "product_id": "88a0b4c5-9720-4d3b-bd1b-36388c668451",
+      "product_name": "OUTLINE PEBBLE 560mm · Matt White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 45,
+      "dimension_images": [
+        "assets/0d8d59b7acffa95c.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 45,
+          "description": "Pebble Bowl Washbasin, Matt White"
+        }
+      ]
+    },
+    {
+      "code": "5991B403H0016",
+      "product_id": "bd458715-3ff9-4a29-b1a1-cc9030479033",
+      "product_name": "OUTLINE PEBBLE 560mm · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 44,
+      "dimension_images": [
+        "assets/0d8d59b7acffa95c.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 44,
+          "description": "Pebble Bowl Washbasin, White"
+        }
+      ]
+    },
+    {
+      "code": "5991B476H0016",
+      "product_id": "d0f5ce65-c321-4c11-ac3f-dd8ae061b5f7",
+      "product_name": "OUTLINE PEBBLE 560mm · Matt Stone Grey",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 49,
+      "dimension_images": [
+        "assets/0d8d59b7acffa95c.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 49,
+          "description": "Pebble Bowl Washbasin, Matt Stone Grey"
+        }
+      ]
+    },
+    {
+      "code": "5991B483H0016",
+      "product_id": "96833e1a-65fd-48f0-bd7e-b0bf311d6334",
+      "product_name": "OUTLINE PEBBLE 560mm · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 51,
+      "dimension_images": [
+        "assets/0d8d59b7acffa95c.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 51,
+          "description": "Pebble Bowl Washbasin, Matt Black"
+        }
+      ]
+    },
+    {
+      "code": "5993B401H0016",
+      "product_id": "f1408e01-d60b-4687-aed2-dc36618b8487",
+      "product_name": "OUTLINE TV 620mm · Matt White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 54,
+      "dimension_images": [
+        "assets/36a406a3bcc97c6f.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 54,
+          "description": "TV Bowl Washbasin"
+        }
+      ]
+    },
+    {
+      "code": "5993B403H0016",
+      "product_id": "b8163d57-54ab-42cb-99f4-e60db68198e9",
+      "product_name": "OUTLINE TV 620mm · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 53,
+      "dimension_images": [
+        "assets/36a406a3bcc97c6f.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 53,
+          "description": "TV Bowl Washbasin"
+        }
+      ]
+    },
+    {
+      "code": "5993B476H0016",
+      "product_id": "363bf381-7540-4fbe-af0c-141ab3677a63",
+      "product_name": "OUTLINE TV 620mm · Matt Stone Grey",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 58,
+      "dimension_images": [
+        "assets/36a406a3bcc97c6f.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 58,
+          "description": "TV Bowl Washbasin"
+        }
+      ]
+    },
+    {
+      "code": "5993B483H0016",
+      "product_id": "d021a7f7-17c6-4f8e-81f0-ff359370c87a",
+      "product_name": "OUTLINE TV 620mm · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 60,
+      "dimension_images": [
+        "assets/36a406a3bcc97c6f.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 60,
+          "description": "TV Bowl Washbasin"
+        }
+      ]
+    },
+    {
+      "code": "5994B401H0016",
+      "product_id": "f8c0bdf8-75eb-4388-8f4b-360fd06ce856",
+      "product_name": "OUTLINE SQUARE 480mm · Matt White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 36,
+      "dimension_images": [
+        "assets/bf4f6f7a00d9f367.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 36,
+          "description": "Square Bowl Washbasin "
+        }
+      ]
+    },
+    {
+      "code": "5994B403H0016",
+      "product_id": "1a9bb7a0-32b2-4060-abd5-486f999ea4e2",
+      "product_name": "OUTLINE SQUARE 480mm · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 35,
+      "dimension_images": [
+        "assets/bf4f6f7a00d9f367.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 35,
+          "description": "Square Bowl Washbasin "
+        }
+      ]
+    },
+    {
+      "code": "5994B476H0016",
+      "product_id": "d49bbf02-8747-4da3-8b75-971f6fd49086",
+      "product_name": "OUTLINE SQUARE 480mm · Matt Stone Grey",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 40,
+      "dimension_images": [
+        "assets/bf4f6f7a00d9f367.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 40,
+          "description": "Square Bowl Washbasin "
+        }
+      ]
+    },
+    {
+      "code": "5994B483H0016",
+      "product_id": "fbdd3582-e848-44b3-9677-62aa8c02805a",
+      "product_name": "OUTLINE SQUARE 480mm · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 42,
+      "dimension_images": [
+        "assets/bf4f6f7a00d9f367.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 42,
+          "description": "Square Bowl Washbasin "
+        }
+      ]
+    },
+    {
+      "code": "5995B401H0016",
+      "product_id": "e43f4dd3-9af9-4cce-a77e-96c91760ca29",
+      "product_name": "OUTLINE OVAL 600mm · Matt White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 63,
+      "dimension_images": [
+        "assets/98a0ec1e3f4db6ab.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 63,
+          "description": "Oval Bowl Washbasin"
+        }
+      ]
+    },
+    {
+      "code": "5995B403H0016",
+      "product_id": "9fd9c81f-14a8-4b87-b798-89a79218e634",
+      "product_name": "OUTLINE OVAL 600mm · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 62,
+      "dimension_images": [
+        "assets/98a0ec1e3f4db6ab.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 62,
+          "description": "Oval Bowl Washbasin"
+        }
+      ]
+    },
+    {
+      "code": "5995B476H0016",
+      "product_id": "89b5da6a-cdd3-4446-bdf7-0f25ee96d6dd",
+      "product_name": "OUTLINE OVAL 600mm · Matt Stone Grey",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 67,
+      "dimension_images": [
+        "assets/98a0ec1e3f4db6ab.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 67,
+          "description": "Oval Bowl Washbasin"
+        }
+      ]
+    },
+    {
+      "code": "5995B483H0016",
+      "product_id": "c1fd093e-e56a-4368-b0c9-d106084f8168",
+      "product_name": "OUTLINE OVAL 600mm · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 69,
+      "dimension_images": [
+        "assets/98a0ec1e3f4db6ab.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 69,
+          "description": "Oval Bowl Washbasin"
+        }
+      ]
+    },
+    {
+      "code": "6069B003H0012",
+      "product_id": "48898b86-3581-42b1-bc87-17b89e9c574a",
+      "product_name": "S20 ROUND 600x450mm · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 174,
+      "dimension_images": [
+        "assets/c6c4640ec277bc6e.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 174,
+          "description": "Undercounter Basın, 52 cm"
+        }
+      ]
+    },
+    {
+      "code": "7041B003H0075",
+      "product_id": "6b270253-df61-482e-bf9c-7c08b87f470d",
+      "product_name": "INTEGRA RIM-EX WC · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 65,
+      "dimension_images": [
+        "assets/f8f780015df42092.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 65,
+          "description": "Rim-ex wall-hung WC Pan hidden fixation, 52 cm"
+        }
+      ]
+    },
+    {
+      "code": "7041B003H0090",
+      "product_id": "d0a005b3-838e-4765-bb90-c3b60888fbe4",
+      "product_name": "INTEGRA RIM-EX WC WITH BIDET · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 67,
+      "dimension_images": [
+        "assets/f8f780015df42092.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 67,
+          "description": "Rim-ex wall-hung WC Pan hidden fixation, 52 cm"
+        }
+      ]
+    },
+    {
+      "code": "7041B401H0075",
+      "product_id": "3d79677e-f206-4bf2-a7bd-17121645ead5",
+      "product_name": "INTEGRA RIM-EX WC · Matt White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 67,
+      "dimension_images": [
+        "assets/f8f780015df42092.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 67,
+          "description": "Rim-ex wall-hung WC Pan hidden fixation, 52 cm, matt white"
+        }
+      ]
+    },
+    {
+      "code": "7041B401H0090",
+      "product_id": "16bce9ca-d5a6-4283-80be-7be31cb2e0c4",
+      "product_name": "INTEGRA RIM-EX WC WITH BIDET · Matt White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 69,
+      "dimension_images": [
+        "assets/f8f780015df42092.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 69,
+          "description": "Rim-ex wall-hung WC Pan hidden fixation, 52 cm, matt white"
+        }
+      ]
+    },
+    {
+      "code": "7041B420H0075",
+      "product_id": "32479139-c36e-4e99-978f-6e91d68ab366",
+      "product_name": "INTEGRA RIM-EX WC · Matt Taupe / Sand Beige",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 69,
+      "dimension_images": [
+        "assets/f8f780015df42092.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 69,
+          "description": "Rim-ex wall-hung WC Pan hidden fixation, 52 cm, Matt taupe"
+        }
+      ]
+    },
+    {
+      "code": "7041B420H0090",
+      "product_id": "8424c7ba-994f-42d9-b037-e8bbc9cb5444",
+      "product_name": "INTEGRA RIM-EX WC WITH BIDET · Matt Taupe / Sand Beige",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 71,
+      "dimension_images": [
+        "assets/f8f780015df42092.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 71,
+          "description": "Rim-ex wall-hung WC Pan hidden fixation, 52 cm, Matt taupe"
+        }
+      ]
+    },
+    {
+      "code": "7041B483H0075",
+      "product_id": "a521901d-25d2-46c2-9831-42d46c66a34e",
+      "product_name": "INTEGRA RIM-EX WC · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 71,
+      "dimension_images": [
+        "assets/f8f780015df42092.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 71,
+          "description": "Rim-ex wall-hung WC Pan hidden fixation, 52 cm, Matt black"
+        }
+      ]
+    },
+    {
+      "code": "7041B483H0090",
+      "product_id": "ab21c813-703d-4e55-af1d-46ffd3d527bb",
+      "product_name": "INTEGRA RIM-EX WC WITH BIDET · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 73,
+      "dimension_images": [
+        "assets/f8f780015df42092.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 73,
+          "description": "Rim-ex wall-hung WC Pan hidden fixation, 52 cm, Matt black"
+        }
+      ]
+    },
+    {
+      "code": "7075B003H0016",
+      "product_id": "c864d299-1ed1-4722-b194-23c30882367e",
+      "product_name": "OPTIONS 550MM · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 159,
+      "dimension_images": [
+        "assets/ea23fceb78ec9bee.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 159,
+          "description": "Rectangular Bowl, 55X38 cm"
+        }
+      ]
+    },
+    {
+      "code": "7082B003H0075",
+      "product_id": "fb1e24d5-242b-4bd7-be7c-ddd0359a43d2",
+      "product_name": "INTEGRA SQUARE RIM-EX WC · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 73,
+      "dimension_images": [
+        "assets/c624151cf806e4e8.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 73,
+          "description": "Rim-ex Wall-Hung WC, 54 cm , hidden fixation"
+        }
+      ]
+    },
+    {
+      "code": "7082B003H0090",
+      "product_id": "305f3768-f85f-489b-91eb-f8507fd6690e",
+      "product_name": "INTEGRA SQUARE RIM-EX WC WITH BIDET · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 75,
+      "dimension_images": [
+        "assets/c624151cf806e4e8.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 75,
+          "description": "Rim-ex Wall-Hung WC, 54 cm , hidden fixation"
+        }
+      ]
+    },
+    {
+      "code": "7082B420H0075",
+      "product_id": "2773a035-be36-45a3-bb44-43d00e5d67b1",
+      "product_name": "INTEGRA SQUARE RIM-EX WC · Matt Taupe / Sand Beige",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 75,
+      "dimension_images": [
+        "assets/c624151cf806e4e8.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 75,
+          "description": "Rim-ex Wall-Hung WC, 54 cm , hidden fixation, matt taupe"
+        }
+      ]
+    },
+    {
+      "code": "7082B420H0090",
+      "product_id": "29e9bd56-67f4-4dab-bdbf-1d2fe71936af",
+      "product_name": "INTEGRA SQUARE RIM-EX WC WITH BIDET · Matt Taupe / Sand Beige",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 77,
+      "dimension_images": [
+        "assets/c624151cf806e4e8.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 77,
+          "description": "Rim-ex Wall-Hung WC, 54 cm , hidden fixation, matt taupe"
+        }
+      ]
+    },
+    {
+      "code": "7082B483H0075",
+      "product_id": "ed6783a1-2ef1-4c3e-866a-1c5ca52d62db",
+      "product_name": "INTEGRA SQUARE RIM-EX WC · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 77,
+      "dimension_images": [
+        "assets/c624151cf806e4e8.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 77,
+          "description": "Rim-ex Wall-Hung WC, 54 cm , hidden fixation, matt black"
+        }
+      ]
+    },
+    {
+      "code": "7082B483H0090",
+      "product_id": "31c866d1-e2d7-4605-aecd-5289d469dab6",
+      "product_name": "INTEGRA SQUARE RIM-EX WC WITH BIDET · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 79,
+      "dimension_images": [
+        "assets/c624151cf806e4e8.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 79,
+          "description": "Rim-ex Wall-Hung WC, 54 cm , hidden fixation, matt black"
+        }
+      ]
+    },
+    {
+      "code": "7231B403H6216",
+      "product_id": "2803f31c-f5e7-4b4c-afb3-0fcaaa261c9d",
+      "product_name": "V-CARE PRIME RIM-EX SMART WC · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 80,
+      "dimension_images": [
+        "assets/ba6ef812f9d678e4.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 80,
+          "description": "V-Care Smart Toilet Prime, Rim-ex, Wall-Hung, 62 cm, Hidden Fixation"
+        }
+      ]
+    },
+    {
+      "code": "7245B403H0075",
+      "product_id": "46d21878-45d5-4d17-b05e-4997f84c8e21",
+      "product_name": "EQUAL RIM-EX WC · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 23,
+      "dimension_images": [
+        "assets/86e3deda692a59a2.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 23,
+          "description": "Rim-ex wall-hung WC pan, 56 cm, White"
+        }
+      ]
+    },
+    {
+      "code": "7245B403H0090",
+      "product_id": "70c50b51-9ccd-4e97-bdc3-49714d2c7fc3",
+      "product_name": "EQUAL RIM-EX WC WITH BIDET · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 23,
+      "dimension_images": [
+        "assets/86e3deda692a59a2.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 23,
+          "description": "Rim-ex wall-hung WC pan, 56 cm, White"
+        }
+      ]
+    },
+    {
+      "code": "7245B476H0075",
+      "product_id": "f528861d-8a80-417d-91be-3bdb1ac420af",
+      "product_name": "EQUAL RIM-EX WC · Matt Stone Grey",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 25,
+      "dimension_images": [
+        "assets/86e3deda692a59a2.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 25,
+          "description": "Rim-ex wall-hung WC pan, 56 cm, Matt Stone Gray"
+        }
+      ]
+    },
+    {
+      "code": "7245B476H0090",
+      "product_id": "9f66fee7-abab-47a2-8eb6-46573c038ee0",
+      "product_name": "EQUAL RIM-EX WC WITH BIDET · Matt Stone Grey",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 25,
+      "dimension_images": [
+        "assets/86e3deda692a59a2.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 25,
+          "description": "Rim-ex wall-hung WC pan, 56 cm, Matt Stone Gray"
+        }
+      ]
+    },
+    {
+      "code": "7321B403H0075",
+      "product_id": "4787c067-ced0-4163-ae17-31476cef2909",
+      "product_name": "LIQUID RIM-EX WC · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 21,
+      "dimension_images": [
+        "assets/496ae90fc1a98cf2.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 21,
+          "description": "Liquid Rim-ex Wall-Hung WC, 54 cm"
+        }
+      ]
+    },
+    {
+      "code": "7321B403H0090",
+      "product_id": "8eea4f27-ecc2-4803-898f-ba43a48f32c2",
+      "product_name": "LIQUID RIM-EX WC WITH BIDET · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 21,
+      "dimension_images": [
+        "assets/496ae90fc1a98cf2.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 21,
+          "description": "Liquid Rim-ex Wall-Hung WC, 54 cm"
+        }
+      ]
+    },
+    {
+      "code": "7421B003H0016",
+      "product_id": "246b5f22-a24f-4807-a638-c67f137629ff",
+      "product_name": "OPTIONS ROUND 380mm · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 160,
+      "dimension_images": [
+        "assets/0c7ebb9597ce56eb.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 160,
+          "description": "Geo Round Bowl, 38 cm (without Overflow Hole)"
+        }
+      ]
+    },
+    {
+      "code": "7425B003H0016",
+      "product_id": "04598b01-bdd2-4db7-a8b2-7f4ae8ed38bb",
+      "product_name": "OPTIONS SOFT SQUARE 600mm · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 129,
+      "dimension_images": [],
+      "seat_cover_images": [],
+      "review_dimension_images": [
+        {
+          "path": "assets/4d8067bc16af5934.png",
+          "sha256": "4d8067bc16af5934524c4408a74928be5599249755e647b5402ee80d404dcfb5",
+          "source_sha256": "4d8067bc16af5934524c4408a74928be5599249755e647b5402ee80d404dcfb5",
+          "sheet": "Basins",
+          "row": 129,
+          "source_cell": "E129"
+        },
+        {
+          "path": "assets/7d9100465376010f.png",
+          "sha256": "7d9100465376010f3fc067be074028af7ffcaca0f807a56aa8305f76e284c2d5",
+          "source_sha256": "7d9100465376010f3fc067be074028af7ffcaca0f807a56aa8305f76e284c2d5",
+          "sheet": "Basins",
+          "row": 132,
+          "source_cell": "E132"
+        }
+      ],
+      "review_required": true,
+      "review_reason": "Same exact code has different dimension drawings on multiple workbook rows; do not import dimensions until product variant is resolved.",
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 129,
+          "description": "Soft-Square Bowl, 60cm, without tap hole, with overflow hole"
+        },
+        {
+          "sheet": "Basins",
+          "row": 132,
+          "description": "Soft-Square Bowl, 60cm, without tap hole, without overflow hole"
+        }
+      ]
+    },
+    {
+      "code": "7425B483H0016",
+      "product_id": "c118db1a-acc6-4227-8408-1ce9278c7cb2",
+      "product_name": "OPTIONS SOFT SQUARE 600mm · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 131,
+      "dimension_images": [],
+      "seat_cover_images": [],
+      "review_dimension_images": [
+        {
+          "path": "assets/4d8067bc16af5934.png",
+          "sha256": "4d8067bc16af5934524c4408a74928be5599249755e647b5402ee80d404dcfb5",
+          "source_sha256": "4d8067bc16af5934524c4408a74928be5599249755e647b5402ee80d404dcfb5",
+          "sheet": "Basins",
+          "row": 131,
+          "source_cell": "E131"
+        },
+        {
+          "path": "assets/7d9100465376010f.png",
+          "sha256": "7d9100465376010f3fc067be074028af7ffcaca0f807a56aa8305f76e284c2d5",
+          "source_sha256": "7d9100465376010f3fc067be074028af7ffcaca0f807a56aa8305f76e284c2d5",
+          "sheet": "Basins",
+          "row": 134,
+          "source_cell": "E134"
+        }
+      ],
+      "review_required": true,
+      "review_reason": "Same exact code has different dimension drawings on multiple workbook rows; do not import dimensions until product variant is resolved.",
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 131,
+          "description": "Soft-Square Bowl, 60cm, without tap hole, with overflow hole, Matt black"
+        },
+        {
+          "sheet": "Basins",
+          "row": 134,
+          "description": "Soft-Square Bowl, 60cm, without tap hole, without overflow hole, Matt black"
+        }
+      ]
+    },
+    {
+      "code": "7426B003H0001",
+      "product_id": "a645a128-dc25-4a62-b740-b6595689e0d4",
+      "product_name": "OPTIONS WITH TAP HOLE SOFT SQUARE 600mm · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 147,
+      "dimension_images": [
+        "assets/120dbd274d29d5fb.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 147,
+          "description": "Soft-Square Bowl, 60cm, with tap hole, with overflow hole"
+        }
+      ]
+    },
+    {
+      "code": "7426B420H0001",
+      "product_id": "6d0b90f4-0920-44a0-a2ff-ee337e2b3e77",
+      "product_name": "OPTIONS WITH TAP HOLE SOFT SQUARE 600mm · Matt Taupe / Sand Beige",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 148,
+      "dimension_images": [
+        "assets/120dbd274d29d5fb.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 148,
+          "description": "Soft-Square Bowl, 60cm, with tap hole, with overflow hole, Matt taupe"
+        }
+      ]
+    },
+    {
+      "code": "7426B483H0001",
+      "product_id": "d6c45bdc-d0f3-4891-82bf-89c7d109d1b6",
+      "product_name": "OPTIONS WITH TAP HOLE OVAL 550mm · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 149,
+      "dimension_images": [
+        "assets/120dbd274d29d5fb.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 149,
+          "description": "Soft-Square Bowl, 60cm, with tap hole, with overflow hole, matt black"
+        }
+      ]
+    },
+    {
+      "code": "7427B003H0016",
+      "product_id": "81c93132-0507-4030-b561-c2a1610ae643",
+      "product_name": "OPTIONS OVAL 550mm · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 135,
+      "dimension_images": [],
+      "seat_cover_images": [],
+      "review_dimension_images": [
+        {
+          "path": "assets/8920bcc7716ffd54.png",
+          "sha256": "8920bcc7716ffd543ff333f564f21aa938d698417269ff5b88f96e9afb787e94",
+          "source_sha256": "8920bcc7716ffd543ff333f564f21aa938d698417269ff5b88f96e9afb787e94",
+          "sheet": "Basins",
+          "row": 135,
+          "source_cell": "E135"
+        },
+        {
+          "path": "assets/fb52f8c9a20eca38.png",
+          "sha256": "fb52f8c9a20eca38ef59c71f5e56bf16ed6c8dc79933484912926167c15e5d8a",
+          "source_sha256": "fb52f8c9a20eca38ef59c71f5e56bf16ed6c8dc79933484912926167c15e5d8a",
+          "sheet": "Basins",
+          "row": 138,
+          "source_cell": "E138"
+        }
+      ],
+      "review_required": true,
+      "review_reason": "Same exact code has different dimension drawings on multiple workbook rows; do not import dimensions until product variant is resolved.",
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 135,
+          "description": "Oval Bowl, 55 cm, without tap hole, with overflow hole"
+        },
+        {
+          "sheet": "Basins",
+          "row": 138,
+          "description": "Oval Bowl, 55 cm, without tap hole, without overflow hole"
+        }
+      ]
+    },
+    {
+      "code": "7427B483H0016",
+      "product_id": "468d9dfb-8847-48e9-95a3-a40e1cb40002",
+      "product_name": "OPTIONS OVAL 550mm · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 137,
+      "dimension_images": [],
+      "seat_cover_images": [],
+      "review_dimension_images": [
+        {
+          "path": "assets/8920bcc7716ffd54.png",
+          "sha256": "8920bcc7716ffd543ff333f564f21aa938d698417269ff5b88f96e9afb787e94",
+          "source_sha256": "8920bcc7716ffd543ff333f564f21aa938d698417269ff5b88f96e9afb787e94",
+          "sheet": "Basins",
+          "row": 137,
+          "source_cell": "E137"
+        },
+        {
+          "path": "assets/fb52f8c9a20eca38.png",
+          "sha256": "fb52f8c9a20eca38ef59c71f5e56bf16ed6c8dc79933484912926167c15e5d8a",
+          "source_sha256": "fb52f8c9a20eca38ef59c71f5e56bf16ed6c8dc79933484912926167c15e5d8a",
+          "sheet": "Basins",
+          "row": 140,
+          "source_cell": "E140"
+        }
+      ],
+      "review_required": true,
+      "review_reason": "Same exact code has different dimension drawings on multiple workbook rows; do not import dimensions until product variant is resolved.",
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 137,
+          "description": "Oval Bowl, 55 cm, without tap hole, with overflow hole, Matt black"
+        },
+        {
+          "sheet": "Basins",
+          "row": 140,
+          "description": "Oval Bowl, 55 cm, without tap hole, without overflow hole, Matt black"
+        }
+      ]
+    },
+    {
+      "code": "7428B003H0001",
+      "product_id": "615571a5-9b98-4902-b4f7-a5556212bc5c",
+      "product_name": "OPTIONS WITH TAP HOLE OVAL 550mm · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 150,
+      "dimension_images": [
+        "assets/2637acc5d8f0afab.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 150,
+          "description": "Oval Bowl, 55 cm, with tap hole, with overflow hole"
+        }
+      ]
+    },
+    {
+      "code": "7431B003H0631",
+      "product_id": "a3203d2a-dc3c-4228-a3e7-d88cd9997709",
+      "product_name": "OPTIONS WITH TAP HOLE 500mm · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 141,
+      "dimension_images": [
+        "assets/1a0aa9949826e169.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 141,
+          "description": "Washbasin, 50cm , with tap hole, with overflow hole, back side glazed, for countertop use"
+        }
+      ]
+    },
+    {
+      "code": "7431B483H0631",
+      "product_id": "dbf54dc2-95a8-4fa0-8028-722ab59ee286",
+      "product_name": "OPTIONS WITH TAP HOLE 500mm · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 143,
+      "dimension_images": [
+        "assets/1a0aa9949826e169.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 143,
+          "description": "Washbasin, 50cm , with tap hole, with overflow hole, back side glazed, for countertop use, Matt black"
+        }
+      ]
+    },
+    {
+      "code": "7432B003H0631",
+      "product_id": "08511759-c64c-480e-81f9-ee9bc31955b4",
+      "product_name": "OPTIONS WITH TAP HOLE 600mm · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 144,
+      "dimension_images": [
+        "assets/a93b825c27c295fc.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 144,
+          "description": "Washbasin, 60cm , with tap hole, with overflow hole, back side glazed, for countertop use"
+        }
+      ]
+    },
+    {
+      "code": "7432B420H0631",
+      "product_id": "94f0de29-1573-4364-888f-9a44af4f8773",
+      "product_name": "OPTIONS WITH TAP HOLE 600mm · Matt Taupe / Sand Beige",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 145,
+      "dimension_images": [
+        "assets/a93b825c27c295fc.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 145,
+          "description": "Washbasin, 60cm , with tap hole, with overflow hole, back side glazed, for countertop use, Matt taupe"
+        }
+      ]
+    },
+    {
+      "code": "7432B483H0631",
+      "product_id": "89a4ee98-6fb9-4478-a093-4ffcd1d514bb",
+      "product_name": "OPTIONS WITH TAP HOLE 600mm · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 146,
+      "dimension_images": [
+        "assets/a93b825c27c295fc.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 146,
+          "description": "Washbasin, 60cm , with tap hole, with overflow hole, back side glazed, for countertop use, Matt black"
+        }
+      ]
+    },
+    {
+      "code": "7436B003H0012",
+      "product_id": "b4e5a2eb-b8db-426e-818d-8fc3c615edf9",
+      "product_name": "OPTIONS 500mm · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 117,
+      "dimension_images": [
+        "assets/2f74a5fa3f615b6a.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 117,
+          "description": "Square Bowl, 50 cm, without tap hole, with overflow hole"
+        }
+      ]
+    },
+    {
+      "code": "7436B483H0012",
+      "product_id": "53b00f26-6dea-47d0-bf1c-8e3149749e52",
+      "product_name": "OPTIONS 500mm · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 119,
+      "dimension_images": [
+        "assets/2f74a5fa3f615b6a.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 119,
+          "description": "Square Bowl, 50 cm, without tap hole, with overflow hole, Matt black"
+        }
+      ]
+    },
+    {
+      "code": "7439B003H0016",
+      "product_id": "e3430d42-3b6d-42d4-a562-7e4bc399e5c1",
+      "product_name": "ARCHIPLAN ROUND 400mm · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 111,
+      "dimension_images": [
+        "assets/58ae1adc8710932d.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 111,
+          "description": "White, without tap hole, without overflow hole"
+        }
+      ]
+    },
+    {
+      "code": "7440B003H0016",
+      "product_id": "ec194024-93a7-41c5-94bb-29b417a60d86",
+      "product_name": "ARCHIPLAN SQUARE 400mm · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 108,
+      "dimension_images": [
+        "assets/7b6ac6a891dffbe3.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 108,
+          "description": "Square Bowl, 40x40 cm ArchiPlan ,White"
+        }
+      ]
+    },
+    {
+      "code": "7484B003H0075",
+      "product_id": "d389f3f5-b995-4e7a-898a-7145c6a3d7d5",
+      "product_name": "ZENTRUM SQUARE SMOOTHFLUSH WC · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 63,
+      "dimension_images": [
+        "assets/e624971ba6ec5ca5.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 63,
+          "description": "SmoothFlush wall-hung WC pan, hidden fixation, 54 cm"
+        }
+      ]
+    },
+    {
+      "code": "7484B003H0090",
+      "product_id": "0d733c66-5238-43a2-9f54-25d91fcf7ff9",
+      "product_name": "ZENTRUM SQUARE SMOOTHFLUSH WC WITH BIDET · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 65,
+      "dimension_images": [
+        "assets/e624971ba6ec5ca5.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 65,
+          "description": "Wall Hung, SmoothFlush , hidden fixation 54 cm, White"
+        }
+      ]
+    },
+    {
+      "code": "7508B003H0075",
+      "product_id": "3c609f09-2334-4e9d-8a0b-4fd1e08781ce",
+      "product_name": "S20 SMOOTHFLUSH WC · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 55,
+      "dimension_images": [
+        "assets/d9a0d33759d9864a.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 55,
+          "description": "SmoothFlush Wall-Hung Wc Pan, 52 cm"
+        }
+      ]
+    },
+    {
+      "code": "7508B003H0850",
+      "product_id": "d9ebe7e8-22e5-4955-93c6-1c407d678c3d",
+      "product_name": "S20 SMOOTHFLUSH WC WITH BIDET · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 57,
+      "dimension_images": [
+        "assets/d9a0d33759d9864a.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 57,
+          "description": "SmoothFlush Wall-Hung Wc Pan, 52 cm"
+        }
+      ]
+    },
+    {
+      "code": "7510B003H0075",
+      "product_id": "3345cb12-1932-4c5c-bd71-035c6f29d5da",
+      "product_name": "S60 SMOOTHFLUSH WC · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 59,
+      "dimension_images": [
+        "assets/cc96161fe612f3fe.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 59,
+          "description": "SmoothFlush wall-hung WC pan, white"
+        }
+      ]
+    },
+    {
+      "code": "7510B003H0090",
+      "product_id": "5ed885f9-e764-4c9c-927c-4c369691143b",
+      "product_name": "S60 SMOOTHFLUSH WC WITH BIDET · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 61,
+      "dimension_images": [
+        "assets/cc96161fe612f3fe.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 61,
+          "description": "SmoothFlush wall-hung WC pan, white, with bidet function"
+        }
+      ]
+    },
+    {
+      "code": "7532B001H0673",
+      "product_id": "3dd6f862-e13c-44e9-9982-4c9d10f60a17",
+      "product_name": "NEW METROPOLE 400mm · Matt White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 72,
+      "dimension_images": [
+        "assets/c0b6031b9cc506e7.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 72,
+          "description": "Matt white, without tap hole, with overflow hole, countertop"
+        }
+      ]
+    },
+    {
+      "code": "7532B001H1082",
+      "product_id": "48d17aff-80a1-4fb9-acde-ea23ba1c425b",
+      "product_name": "METROPOLE UNDERCOUNTER 400mm · Matt White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 162,
+      "dimension_images": [
+        "assets/c0b6031b9cc506e7.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 162,
+          "description": "Matt white, without tap hole, with overflow hole, undercounter"
+        }
+      ]
+    },
+    {
+      "code": "7532B003H0673",
+      "product_id": "2c658784-cea5-488b-9713-1ae62d5e81c8",
+      "product_name": "NEW METROPOLE 400mm · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 71,
+      "dimension_images": [
+        "assets/c0b6031b9cc506e7.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 71,
+          "description": "White, without tap hole, with overflow hole, countertop"
+        }
+      ]
+    },
+    {
+      "code": "7532B003H1082",
+      "product_id": "bce63953-0a51-4b9e-8539-f70717ba486c",
+      "product_name": "METROPOLE UNDERCOUNTER 400mm · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 161,
+      "dimension_images": [
+        "assets/c0b6031b9cc506e7.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 161,
+          "description": "White, without tap hole, with overflow hole, undercounter"
+        }
+      ]
+    },
+    {
+      "code": "7532B020H1082",
+      "product_id": "1dbfba7b-7c29-49e3-904f-c87b91f8b968",
+      "product_name": "METROPOLE UNDERCOUNTER 400mm · Matt Taupe / Sand Beige",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 163,
+      "dimension_images": [
+        "assets/c0b6031b9cc506e7.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 163,
+          "description": "Matt taupe, without tap hole, with overflow hole, undercounter"
+        }
+      ]
+    },
+    {
+      "code": "7532B076H0673",
+      "product_id": "ebd983f0-732c-4a63-b420-8eb592b07573",
+      "product_name": "NEW METROPOLE 400mm · Matt Stone Grey",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 74,
+      "dimension_images": [
+        "assets/c0b6031b9cc506e7.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 74,
+          "description": "Matt stone grey, without tap hole, with overflow hole, countertop"
+        }
+      ]
+    },
+    {
+      "code": "7532B076H1082",
+      "product_id": "7fcec8c0-5dec-4680-b354-6037ae93dad6",
+      "product_name": "METROPOLE UNDERCOUNTER 400mm · Matt Stone Grey",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 164,
+      "dimension_images": [
+        "assets/c0b6031b9cc506e7.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 164,
+          "description": "Matt stone grey, without tap hole, with overflow hole, undercounter"
+        }
+      ]
+    },
+    {
+      "code": "7532B083H1082",
+      "product_id": "3b5612b7-7601-4a18-afca-2b9dd0a311cf",
+      "product_name": "METROPOLE UNDERCOUNTER 400mm · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 165,
+      "dimension_images": [
+        "assets/c0b6031b9cc506e7.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 165,
+          "description": "Matt black, without tap hole, with overflow hole, undercounter"
+        }
+      ]
+    },
+    {
+      "code": "7672B003H0101",
+      "product_id": "7b82779c-2bdc-457e-bfa3-835ec7132332",
+      "product_name": "METROPOLE RIM-EX WC · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 27,
+      "dimension_images": [
+        "assets/3c40cce3ff6f1daf.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 27,
+          "description": "Rim-Ex Wall-Hung Wc, 56 cm"
+        }
+      ]
+    },
+    {
+      "code": "7672B003H0559",
+      "product_id": "31126eb0-0434-49d5-bb7c-0fc0d91053b2",
+      "product_name": "METROPOLE RIM-EX WC WITH BIDET · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 27,
+      "dimension_images": [
+        "assets/3c40cce3ff6f1daf.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 27,
+          "description": "Rim-Ex Wall-Hung Wc, 56 cm"
+        }
+      ]
+    },
+    {
+      "code": "7672B003H1686",
+      "product_id": "979be073-3599-4229-a60f-e29fad642f9e",
+      "product_name": "METROPOLE RIM-EX WC WITH VITRAFRESH · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 35,
+      "dimension_images": [
+        "assets/3c40cce3ff6f1daf.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 35,
+          "description": "Rim-Ex Wall-Hung Wc, 56 cm, with Vitra Fresh Liquid Cleaner Tank"
+        }
+      ]
+    },
+    {
+      "code": "7672B401H0101",
+      "product_id": "e885db6f-23a7-41a0-b973-ec0e3f8353c5",
+      "product_name": "METROPOLE RIM-EX WC · Matt White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 29,
+      "dimension_images": [
+        "assets/3c40cce3ff6f1daf.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 29,
+          "description": "Rim-Ex Wall-Hung Wc, 56 cm, Matt white"
+        }
+      ]
+    },
+    {
+      "code": "7672B401H0559",
+      "product_id": "6ffb88f7-d268-4812-943f-cf48c1ea12b2",
+      "product_name": "METROPOLE RIM-EX WC WITH BIDET · Matt White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 29,
+      "dimension_images": [
+        "assets/3c40cce3ff6f1daf.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 29,
+          "description": "Rim-Ex Wall-Hung Wc, 56 cm, Matt white"
+        }
+      ]
+    },
+    {
+      "code": "7672B420H0101",
+      "product_id": "824e0243-24ed-4bfd-bcda-5db11e35249d",
+      "product_name": "METROPOLE RIM-EX WC · Matt Taupe / Sand Beige",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 31,
+      "dimension_images": [
+        "assets/3c40cce3ff6f1daf.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 31,
+          "description": "Rim-Ex Wall-Hung Wc, 56 cm, Matt taupe"
+        }
+      ]
+    },
+    {
+      "code": "7672B420H0559",
+      "product_id": "81d008c1-67b2-4000-b986-9cd0b145f9f7",
+      "product_name": "METROPOLE RIM-EX WC WITH BIDET · Matt Taupe / Sand Beige",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 31,
+      "dimension_images": [
+        "assets/3c40cce3ff6f1daf.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 31,
+          "description": "Rim-Ex Wall-Hung Wc, 56 cm, Matt taupe"
+        }
+      ]
+    },
+    {
+      "code": "7672B483H0101",
+      "product_id": "ab562543-f79c-4fc7-acdc-5d586f0f8798",
+      "product_name": "METROPOLE RIM-EX WC · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 33,
+      "dimension_images": [
+        "assets/3c40cce3ff6f1daf.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 33,
+          "description": "Rim-Ex Wall-Hung Wc, 56 cm, Matt black"
+        }
+      ]
+    },
+    {
+      "code": "7672B483H0559",
+      "product_id": "46f69e74-2a2f-4066-9496-f1279151b4bd",
+      "product_name": "METROPOLE RIM-EX WC WITH BIDET · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 33,
+      "dimension_images": [
+        "assets/3c40cce3ff6f1daf.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 33,
+          "description": "Rim-Ex Wall-Hung Wc, 56 cm, Matt black"
+        }
+      ]
+    },
+    {
+      "code": "7748B003H0101",
+      "product_id": "3ff1be41-8840-4af3-b3a6-6aa1117e51a6",
+      "product_name": "SENTO RIM-EX WC · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 45,
+      "dimension_images": [
+        "assets/e5068cb521251c0e.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 45,
+          "description": "Rim-ex wall-hung WC pan, 54 cm, White"
+        },
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 81,
+          "description": "Rim-ex wall-hung WC pan, 54 cm, White"
+        }
+      ]
+    },
+    {
+      "code": "7748B003H0559",
+      "product_id": "4cfec927-6dc1-41b8-a2f5-69828dd85bc8",
+      "product_name": "SENTO RIM-EX WC WITH BIDET · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 45,
+      "dimension_images": [
+        "assets/e5068cb521251c0e.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 45,
+          "description": "Rim-ex wall-hung WC pan, 54 cm, White"
+        }
+      ]
+    },
+    {
+      "code": "7748B401H0101",
+      "product_id": "4cac6e27-10c9-4908-8b59-de14d58dd2dc",
+      "product_name": "SENTO RIM-EX WC · Matt White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 47,
+      "dimension_images": [
+        "assets/e5068cb521251c0e.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 47,
+          "description": "Rim-ex wall-hung WC pan, 54 cm, Matt White"
+        }
+      ]
+    },
+    {
+      "code": "7748B401H0559",
+      "product_id": "43074c1c-eb85-4738-a02d-7aa53bbd969e",
+      "product_name": "SENTO RIM-EX WC WITH BIDET · Matt White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 47,
+      "dimension_images": [
+        "assets/e5068cb521251c0e.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 47,
+          "description": "Rim-ex wall-hung WC pan, 54 cm, Matt White"
+        }
+      ]
+    },
+    {
+      "code": "7748B420H0101",
+      "product_id": "2a01b1a7-ecd0-4005-9891-9f9f45a88a2e",
+      "product_name": "SENTO RIM-EX WC · Matt Taupe / Sand Beige",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 49,
+      "dimension_images": [
+        "assets/e5068cb521251c0e.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 49,
+          "description": "Rim-ex wall-hung WC pan, 54 cm, Matt Taupe"
+        }
+      ]
+    },
+    {
+      "code": "7748B420H0559",
+      "product_id": "58f13658-df19-45c6-93c1-0daff62529c7",
+      "product_name": "SENTO RIM-EX WC WITH BIDET · Matt Taupe / Sand Beige",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 49,
+      "dimension_images": [
+        "assets/e5068cb521251c0e.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 49,
+          "description": "Rim-ex wall-hung WC pan, 54 cm, Matt Taupe"
+        }
+      ]
+    },
+    {
+      "code": "7748B476H0101",
+      "product_id": "934a33ca-0469-49e1-97ba-924eaf1a996b",
+      "product_name": "SENTO RIM-EX WC · Matt Stone Grey",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 51,
+      "dimension_images": [
+        "assets/e5068cb521251c0e.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 51,
+          "description": "Rim-ex wall-hung WC pan, 54 cm, Matt Stone Gray"
+        }
+      ]
+    },
+    {
+      "code": "7748B476H0559",
+      "product_id": "64338352-5563-4668-be13-b01638be54c7",
+      "product_name": "SENTO RIM-EX WC WITH BIDET · Matt Stone Grey",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 51,
+      "dimension_images": [
+        "assets/e5068cb521251c0e.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 51,
+          "description": "Rim-ex wall-hung WC pan, 54 cm, Matt Stone Gray"
+        }
+      ]
+    },
+    {
+      "code": "7748B483H0101",
+      "product_id": "eccb10d9-6e40-481b-8d47-9d4385e5cbad",
+      "product_name": "SENTO RIM-EX WC · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 53,
+      "dimension_images": [
+        "assets/e5068cb521251c0e.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 53,
+          "description": "Rim-ex wall-hung WC pan, 54 cm, Matt Black"
+        }
+      ]
+    },
+    {
+      "code": "7748B483H0559",
+      "product_id": "09de1f42-2026-430b-99fb-a2b756a61bec",
+      "product_name": "SENTO RIM-EX WC WITH BIDET · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 53,
+      "dimension_images": [
+        "assets/e5068cb521251c0e.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 53,
+          "description": "Rim-ex wall-hung WC pan, 54 cm, Matt Black"
+        }
+      ]
+    },
+    {
+      "code": "7786B003H0075",
+      "product_id": "99e43ff0-c83a-443f-837e-206ebf3dc3a6",
+      "product_name": "ZENTRUM ROUND SMOOTHFLUSH WC · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 61,
+      "dimension_images": [
+        "assets/88f668b0e6b7fbec.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 61,
+          "description": "Cappadocia SmoothFlush Wall-Hung WC, 52 cm"
+        }
+      ]
+    },
+    {
+      "code": "7786B003H0090",
+      "product_id": "9679126b-642e-4844-b985-29d6a74484fd",
+      "product_name": "ZENTRUM ROUND SMOOTHFLUSH WC WITH BIDET · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 63,
+      "dimension_images": [
+        "assets/88f668b0e6b7fbec.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 63,
+          "description": "Cappadocia SmoothFlush Wall-Hung WC, 52 cm, with bidet function"
+        }
+      ]
+    },
+    {
+      "code": "7810B403H0016",
+      "product_id": "7171feb2-612c-43f1-b32f-bdf3929156a9",
+      "product_name": "PLURAL SQUARE LOW · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 9,
+      "dimension_images": [
+        "assets/b8630827e9ab0a88.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 9,
+          "description": "Square low bowl, 45 cm without tap hole, without overflow hole, White"
+        }
+      ]
+    },
+    {
+      "code": "7810B483H0016",
+      "product_id": "d069e5aa-3e8d-4cfa-9666-4baeb8b59038",
+      "product_name": "PLURAL SQUARE LOW · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 14,
+      "dimension_images": [
+        "assets/b8630827e9ab0a88.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 14,
+          "description": "Square low bowl,45 cm without tap hole, without overflow hole, Matt Black"
+        }
+      ]
+    },
+    {
+      "code": "7811B401H0016",
+      "product_id": "b9c6f158-ce2b-4d17-92a9-8e67f864b5c7",
+      "product_name": "PLURAL SQUARE HIGH · Matt White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 16,
+      "dimension_images": [
+        "assets/b8630827e9ab0a88.png",
+        "assets/e77980e7c63a65b9.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 16,
+          "description": "Square high bowl, 45 cm without tap hole, without overflow hole, Matt White"
+        }
+      ]
+    },
+    {
+      "code": "7811B403H0016",
+      "product_id": "f5872825-bacc-4357-8041-9830e4f5d403",
+      "product_name": "PLURAL SQUARE HIGH · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 15,
+      "dimension_images": [
+        "assets/b8630827e9ab0a88.png",
+        "assets/e77980e7c63a65b9.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 15,
+          "description": "Square high bowl, 45 cm without tap hole, without overflow hole, White"
+        }
+      ]
+    },
+    {
+      "code": "7811B483H0016",
+      "product_id": "06ca381f-ba48-49ae-ba89-937163708335",
+      "product_name": "PLURAL SQUARE HIGH · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 21,
+      "dimension_images": [
+        "assets/b8630827e9ab0a88.png",
+        "assets/e77980e7c63a65b9.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 21,
+          "description": "Square high bowl, 45 cm without tap hole, without overflow hole, Matt Black"
+        }
+      ]
+    },
+    {
+      "code": "7812B403H0016",
+      "product_id": "f8ee3f69-4243-464e-94cc-5f55bc020b89",
+      "product_name": "PLURAL TRIANGLE · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 22,
+      "dimension_images": [
+        "assets/1a70e6da93189757.png",
+        "assets/bf22ab017e64ec02.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 22,
+          "description": "Triangular low bowl, 47 cm without tap hole, without overflow hole, White"
+        }
+      ]
+    },
+    {
+      "code": "7812B483H0016",
+      "product_id": "de8c362d-d40d-412d-8241-f8ee58d0dfc0",
+      "product_name": "PLURAL TRIANGLE · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 27,
+      "dimension_images": [
+        "assets/1a70e6da93189757.png",
+        "assets/bf22ab017e64ec02.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 27,
+          "description": "Triangular low bowl, 47 cm without tap hole, without overflow hole, Matt Black"
+        }
+      ]
+    },
+    {
+      "code": "7830B401H0075",
+      "product_id": "7a7104d9-c6ed-4b94-b556-d18e40223815",
+      "product_name": "PLURAL RIM-EX WC · Matt White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 15,
+      "dimension_images": [
+        "assets/e284af74c05451cf.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 15,
+          "description": "Rim-ex Wall hung WC Pan, 55 cm, hidden fixation"
+        }
+      ]
+    },
+    {
+      "code": "7830B401H0090",
+      "product_id": "7467036f-d477-456a-b36c-5a558bca3731",
+      "product_name": "PLURAL RIM-EX WC WITH BIDET · Matt White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 15,
+      "dimension_images": [
+        "assets/e284af74c05451cf.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 15,
+          "description": "Rim-ex Wall hung WC Pan, 55 cm, hidden fixation"
+        }
+      ]
+    },
+    {
+      "code": "7830B403H0075",
+      "product_id": "8688cfa4-1fff-4e2d-a02a-524c500b17a0",
+      "product_name": "PLURAL RIM-EX WC · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 13,
+      "dimension_images": [
+        "assets/e284af74c05451cf.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 13,
+          "description": "Rim-ex Wall hung WC Pan, 55 cm, hidden fixation"
+        }
+      ]
+    },
+    {
+      "code": "7830B403H0090",
+      "product_id": "005011f5-cd0d-4757-838b-b8599d729645",
+      "product_name": "PLURAL RIM-EX WC WITH BIDET · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 13,
+      "dimension_images": [
+        "assets/e284af74c05451cf.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 13,
+          "description": "Rim-ex Wall hung WC Pan, 55 cm, hidden fixation"
+        }
+      ]
+    },
+    {
+      "code": "7830B483H0075",
+      "product_id": "c1f4d8da-15e8-4824-bde4-cd3a444e0ada",
+      "product_name": "PLURAL RIM-EX WC · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 19,
+      "dimension_images": [
+        "assets/e284af74c05451cf.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 19,
+          "description": "Rim-ex Wall hung WC Pan, 55 cm, hidden fixation"
+        }
+      ]
+    },
+    {
+      "code": "7830B483H0090",
+      "product_id": "8dae2284-c17c-4bb5-a762-8c73b4330a9a",
+      "product_name": "PLURAL RIM-EX WC WITH BIDET · Matt Black",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 19,
+      "dimension_images": [
+        "assets/e284af74c05451cf.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 19,
+          "description": "Rim-ex Wall hung WC Pan, 55 cm, hidden fixation"
+        }
+      ]
+    },
+    {
+      "code": "7870B403H0075",
+      "product_id": "34a4ea9e-a002-47b4-b6ee-ed2c214896f6",
+      "product_name": "NEST QUANTUM RIM-EX WC · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Wo Bidet WC",
+      "row": 43,
+      "dimension_images": [
+        "assets/59784daef50cdd8f.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Wo Bidet WC",
+          "row": 43,
+          "description": "QuantumFlush wall-hung WC pan, hidden fixation, 57 cm"
+        }
+      ]
+    },
+    {
+      "code": "7870B403H0090",
+      "product_id": "5c5f6395-4c38-45fa-92fd-b7e07656d7b8",
+      "product_name": "NEST QUANTUM RIM-EX WC WITH BIDET · White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "With Bidet WC",
+      "row": 43,
+      "dimension_images": [
+        "assets/59784daef50cdd8f.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "With Bidet WC",
+          "row": 43,
+          "description": "QuantumFlush, Hidden Fixation, 57 cm White, With Bidet"
+        }
+      ]
+    },
+    {
+      "code": "7991B066H0016",
+      "product_id": "e41fb113-fe8c-4c68-9589-6c0c5fd09d0d",
+      "product_name": "OUTLINE RECYCLE PEBBLE 570mm · Matt White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 52,
+      "dimension_images": [
+        "assets/0d8d59b7acffa95c.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 52,
+          "description": "Pebble Bowl Washbasin"
+        }
+      ]
+    },
+    {
+      "code": "7993B066H0016",
+      "product_id": "d7462110-3982-46af-95e4-1b43b991935d",
+      "product_name": "OUTLINE RECYCLE TV BOWL 630mm · Matt White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 61,
+      "dimension_images": [
+        "assets/36a406a3bcc97c6f.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 61,
+          "description": "TV Bowl Washbasin"
+        }
+      ]
+    },
+    {
+      "code": "7995B066H0016",
+      "product_id": "ba4c8656-201b-46d7-81a7-799ef6ac67b4",
+      "product_name": "OUTLINE RECYCLE OVAL 600mm · Matt White",
+      "brand_id": "2ddd8f43-1926-4250-aed6-ee5d638e6d69",
+      "floor_id": "first-floor",
+      "dimensions_text": null,
+      "sheet": "Basins",
+      "row": 70,
+      "dimension_images": [
+        "assets/98a0ec1e3f4db6ab.png"
+      ],
+      "seat_cover_images": [],
+      "review_dimension_images": [],
+      "review_required": false,
+      "review_reason": null,
+      "source_rows": [
+        {
+          "sheet": "Basins",
+          "row": 70,
+          "description": "Oval Bowl Washbasin"
+        }
+      ]
+    }
+  ]
+}

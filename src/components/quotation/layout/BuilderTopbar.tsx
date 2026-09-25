@@ -39,6 +39,7 @@ export function BuilderTopbar({
   const [actionsOpen, setActionsOpen] = useState(false);
   const [recentOpen, setRecentOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [pdfOptionsOpen, setPdfOptionsOpen] = useState(false);
 
   const revs = b.recentQuotations.find((q) => q.id === b.quotationId)?.revision_count ?? 0;
   const status = b.recentQuotations.find((q) => q.id === b.quotationId)?.status || "draft";
@@ -91,7 +92,7 @@ export function BuilderTopbar({
         {!isPhone ? <Pressable
           accessibilityRole="button" accessibilityLabel="Generate quotation"
           testID="generate-quotation"
-          onPress={b.generateOfficialQuotation}
+          onPress={() => setPdfOptionsOpen(true)}
           disabled={b.workflowBusy || b.s.lines.length === 0}
           style={({ pressed }) => [styles.workflowBtn, styles.quotationBtn, { opacity: b.workflowBusy || b.s.lines.length === 0 ? 0.45 : pressed ? 0.76 : 1 }]}
         >
@@ -168,7 +169,7 @@ export function BuilderTopbar({
             { label: "Undo last change", icon: "corner-up-left" as const, action: b.history.undo, disabled: !b.history.canUndo },
             { label: "Redo change", icon: "corner-up-right" as const, action: b.history.redo, disabled: !b.history.canRedo },
             { label: "Preview quotation", icon: "eye" as const, action: () => setPreviewOpen(true), disabled: !b.s.lines.length },
-            { label: "Generate quotation", icon: "file-text" as const, action: b.generateOfficialQuotation, disabled: b.workflowBusy || !b.s.lines.length },
+            { label: "Generate quotation", icon: "file-text" as const, action: () => setPdfOptionsOpen(true), disabled: b.workflowBusy || !b.s.lines.length },
             { label: "Download product PPT", icon: "image" as const, action: b.generateProductPpt, disabled: b.workflowBusy || !b.s.lines.length },
             { label: "Place order", icon: "shopping-cart" as const, action: b.placeOrder, disabled: b.workflowBusy || !b.s.lines.length },
             { label: "Recent quotations", icon: "clock" as const, action: () => setRecentOpen(true), disabled: false },
@@ -179,6 +180,23 @@ export function BuilderTopbar({
           {canManageDestructiveData(staff?.role) && b.quotationId ? <Pressable accessibilityRole="button" accessibilityLabel="Delete quotation" onPress={() => { setActionsOpen(false); setDeleteOpen(true); }} style={styles.actionRow}>
             <Feather name="trash-2" size={18} color={colors.error} /><Text style={[styles.actionLabel, { color: colors.error }]}>Delete quotation</Text>
           </Pressable> : null}
+        </View>
+      </BottomSheet>
+      <BottomSheet visible={pdfOptionsOpen} onClose={() => setPdfOptionsOpen(false)} title="Generate quotation PDF" testID="quotation-pdf-options">
+        <View style={{ gap: 8, paddingBottom: 12 }}>
+          <Text style={type.caption}>Include Vitra dimension diagrams in this PDF?</Text>
+          {[
+            { label: "Include dimension photos", include: true },
+            { label: "Exclude dimension photos", include: false },
+          ].map((option) => (
+            <Pressable key={option.label} accessibilityRole="button" disabled={b.workflowBusy}
+              testID={option.include ? "pdf-include-dimensions" : "pdf-exclude-dimensions"}
+              onPress={() => { setPdfOptionsOpen(false); void b.generateOfficialQuotation(option.include); }}
+              style={styles.actionRow}>
+              <Feather name={option.include ? "image" : "file-text"} size={18} color={colors.onSurface} />
+              <Text style={styles.actionLabel}>{option.label}</Text>
+            </Pressable>
+          ))}
         </View>
       </BottomSheet>
       <BottomSheet visible={recentOpen} onClose={() => setRecentOpen(false)} title="Recent quotations" testID="builder-recent-sheet">

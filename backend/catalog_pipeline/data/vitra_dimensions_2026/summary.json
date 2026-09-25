@@ -1,0 +1,24 @@
+{
+  "source_workbook": "ONLY FOR MM NOT MRP .xlsx",
+  "matching": "Exact normalized SKU against live first-floor Vitra catalog; no fuzzy matches.",
+  "matched_product_count": 163,
+  "safe_dimension_product_count": 158,
+  "seat_cover_product_count": 27,
+  "review_required_codes": [
+    "121-003H909",
+    "7425B003H0016",
+    "7425B483H0016",
+    "7427B003H0016",
+    "7427B483H0016"
+  ],
+  "unmatched_workbook_dimension_codes": 195,
+  "unmatched_workbook_seat_codes": [
+    "147-003H909"
+  ],
+  "notes": [
+    "The workbook contains pictures but no dimensions as text in column E; dimensions_text is null.",
+    "Multiple dimension images on one row are complementary drawing views and retained as a list.",
+    "Seat-cover EMF pictures were converted to PNG for web-compatible assets.",
+    "The five review codes keep candidate images under review_dimension_images and must not be automatically imported."
+  ]
+}

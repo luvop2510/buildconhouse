@@ -522,6 +522,13 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
     started_at = monotonic()
     b = branding or {}
     prefetch_product_images(quotation.get("items") or [])
+    if quotation.get("include_dimensions"):
+        dimension_urls = [
+            url for item in quotation.get("items") or []
+            for url in (item.get("dimension_image_urls") or []) + (item.get("seat_cover_image_urls") or [])
+            if str(url).startswith(("https://", "http://"))
+        ]
+        prefetch_urls(dimension_urls, _remote_image_bytes)
     buf = BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=PORTRAIT_A4, leftMargin=10 * mm, rightMargin=10 * mm,
@@ -828,6 +835,25 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
             table.setStyle(TableStyle(item_style_cmds))
             story.append(table)
             sr_offset += n_data_rows
+
+    if quotation.get("include_dimensions"):
+        seen: set[tuple[str, str]] = set()
+        for item in quotation.get("items") or []:
+            for field, label in (("dimension_image_urls", "DIMENSIONS"), ("seat_cover_image_urls", "SEAT COVER")):
+                for url in item.get(field) or []:
+                    key = (str(item.get("product_id")), str(url))
+                    if key in seen or not str(url).startswith(("https://", "http://")):
+                        continue
+                    seen.add(key)
+                    story.append(PageBreak())
+                    story.append(_brand_header(label, styles))
+                    story.append(Spacer(1, 6 * mm))
+                    story.append(Paragraph(_ellipsize(f"{item.get('sku') or ''}  {item.get('name') or ''}", 110), styles["itemDescription"]))
+                    if item.get("dimensions") and field == "dimension_image_urls":
+                        story.append(Spacer(1, 3 * mm))
+                        story.append(Paragraph(_ellipsize(item["dimensions"], 180), styles["itemDescription"]))
+                    story.append(Spacer(1, 8 * mm))
+                    story.append(_img(url, width_mm=175, height_mm=190))
 
     doc.build(
         story,

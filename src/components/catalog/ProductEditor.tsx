@@ -10,14 +10,17 @@
 // backend/models.py + the /quotations/{id}/items endpoint), so this editor
 // only ever changes what FUTURE additions will copy in.
 import { useEffect, useMemo, useState } from "react";
+import * as ImagePicker from "expo-image-picker";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { api } from "@/src/api/client";
+import { api, csrfHeaders, getToken } from "@/src/api/client";
 import { ProductImageManagerBody } from "@/src/components/catalog/ProductImageManager";
+import { ProductImage } from "@/src/components/ProductImage";
 import { toast } from "@/src/components/Toast";
 import { Button, Dropdown, Sheet, TextField } from "@/src/components/ds";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
 import { useBp } from "@/src/design/responsive";
+import { uriToBlob } from "@/src/utils/uriToBlob";
 
 type LookupItem = { id: string; name: string };
 
@@ -25,6 +28,7 @@ type EditableProduct = {
   id: string; name: string; sku: string; brand_id: string; category_id: string;
   family_name: string; finish: string; colour: string;
   description: string; mrp: number; price: number;
+  dimensions: string; dimension_image_urls: string[]; seat_cover_image_urls: string[];
   concealed_sku: string; concealed_name: string; concealed_price: number;
 };
 
@@ -53,6 +57,7 @@ export function ProductEditor({
   const [categories, setCategories] = useState<LookupItem[]>([]);
   const [original, setOriginal] = useState<EditableProduct | null>(null);
   const [form, setForm] = useState<EditableProduct | null>(null);
+  const [uploadingKind, setUploadingKind] = useState<"dimension" | "seat_cover" | null>(null);
 
   useEffect(() => { if (visible) setTab(initialTab); }, [visible, initialTab]);
 
@@ -73,6 +78,9 @@ export function ProductEditor({
           brand_id: prod.brand_id || "", category_id: prod.category_id || "",
           family_name: prod.family_name || "", finish: prod.finish || "", colour: prod.colour || "",
           description: prod.description || "", mrp: Number(prod.mrp) || 0, price: Number(prod.price) || 0,
+          dimensions: prod.dimensions || "",
+          dimension_image_urls: prod.dimension_image_urls || [],
+          seat_cover_image_urls: prod.seat_cover_image_urls || [],
           concealed_sku: prod.concealed_part?.sku || prod.concealed_sku || "", concealed_name: prod.concealed_part?.name || "", concealed_price: Number(prod.concealed_part?.unit_price) || 0,
         };
         setOriginal(editable);
@@ -92,7 +100,7 @@ export function ProductEditor({
     const out: Record<string, unknown> = {};
     (Object.keys(form) as (keyof EditableProduct)[]).forEach((k) => {
       if (k === "id") return;
-      if (form[k] !== original[k]) out[k] = form[k];
+      if (JSON.stringify(form[k]) !== JSON.stringify(original[k])) out[k] = form[k];
     });
     if ("concealed_sku" in out || "concealed_name" in out || "concealed_price" in out) {
       const sku = form.concealed_sku.trim();
@@ -124,6 +132,38 @@ export function ProductEditor({
 
   const brandName = brands.find((b) => b.id === form?.brand_id)?.name || "Select brand";
   const categoryName = categories.find((c) => c.id === form?.category_id)?.name || "Select category";
+  const isVitra = brandName.trim().toLowerCase() === "vitra";
+
+  const addVitraPhoto = async (kind: "dimension" | "seat_cover") => {
+    if (!productId || !form || !isVitra) return;
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) { toast.show("Photo library permission is needed"); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 1, allowsEditing: false });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    setUploadingKind(kind);
+    try {
+      const token = await getToken();
+      const mimeType = asset.mimeType || "image/jpeg";
+      const formData = new FormData();
+      formData.append("file", await uriToBlob(asset.uri), `vitra-${kind}.${mimeType.split("/")[1] || "jpg"}`);
+      const response = await fetch(`${api.base}/api/products/${productId}/vitra-media?kind=${kind}`, {
+        method: "POST", headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...csrfHeaders() }, body: formData,
+      });
+      if (!response.ok) throw new Error(await response.text() || `Upload failed (${response.status})`);
+      const updated = await response.json();
+      const fields = {
+        dimension_image_urls: updated.dimension_image_urls || [],
+        seat_cover_image_urls: updated.seat_cover_image_urls || [],
+      };
+      setForm((current) => current ? { ...current, ...fields } : current);
+      setOriginal((current) => current ? { ...current, ...fields } : current);
+      onSaved?.(updated);
+      toast.success(kind === "dimension" ? "Dimension photo added" : "Seat-cover photo added");
+    } catch (error: any) {
+      toast.error(error?.message || "Couldn't upload photo");
+    } finally { setUploadingKind(null); }
+  };
 
   return (
     <Sheet
@@ -165,9 +205,39 @@ export function ProductEditor({
           <ActivityIndicator color={colors.brand} />
         </View>
       ) : tab === "Media" ? (
-        // Same upload/replace/delete/preview component used by the
-        // standalone "Manage images" drawer — never duplicated.
-        <ProductImageManagerBody productId={form.id} />
+        <ScrollView contentContainerStyle={{ gap: spacing.lg, paddingBottom: spacing.xl }}>
+          {isVitra ? (
+            <View style={{ padding: spacing.lg, gap: spacing.md }} testID="vitra-media-editor">
+              <Text style={type.label}>Vitra specification photos · {form.sku}</Text>
+              <Text style={type.caption}>Photos are saved against this exact product code. Dimension diagrams appear in PDFs only when selected during generation.</Text>
+              {([
+                { key: "dimension_image_urls", kind: "dimension", title: "Dimension diagrams" },
+                { key: "seat_cover_image_urls", kind: "seat_cover", title: "Seat-cover photos" },
+              ] as const).map((group) => (
+                <View key={group.key} style={{ gap: spacing.sm }}>
+                  <Text style={type.label}>{group.title}</Text>
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+                    {form[group.key].map((url, index) => (
+                      <View key={`${url}-${index}`} style={{ width: 130, gap: 4 }}>
+                        <ProductImage source={url} style={{ width: 130, height: 110 }} contentFit="contain" fallbackLabel={form.sku} />
+                        <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${group.title.toLowerCase()} photo ${index + 1}`}
+                          onPress={() => set(group.key, form[group.key].filter((_, i) => i !== index))}
+                          testID={`vitra-remove-${group.kind}-${index}`}>
+                          <Text style={{ color: colors.error, fontSize: 12 }}>Remove</Text>
+                        </Pressable>
+                      </View>
+                    ))}
+                  </View>
+                  <Button label={`Add ${group.kind === "dimension" ? "dimension" : "seat-cover"} photo`}
+                    onPress={() => addVitraPhoto(group.kind)} loading={uploadingKind === group.kind}
+                    disabled={!!uploadingKind} testID={`vitra-add-${group.kind}`} />
+                </View>
+              ))}
+              {hasChanges ? <Button label="Save photo removals" onPress={save} loading={saving} testID="vitra-save-media" /> : null}
+            </View>
+          ) : null}
+          <ProductImageManagerBody productId={form.id} />
+        </ScrollView>
       ) : (
         <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }} keyboardShouldPersistTaps="handled">
           {tab === "General" ? (
@@ -201,6 +271,10 @@ export function ProductEditor({
                 label="Description" value={form.description} onChangeText={(v) => set("description", v)}
                 multiline numberOfLines={4} style={{ minHeight: 90, textAlignVertical: "top" }} testID="edit-description"
               />
+              {isVitra ? <TextField
+                label="Dimensions" value={form.dimensions} onChangeText={(v) => set("dimensions", v)}
+                multiline numberOfLines={3} style={{ minHeight: 75, textAlignVertical: "top" }} testID="edit-vitra-dimensions"
+              /> : null}
               <View style={{ gap: spacing.sm, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary }}>
                 <Text style={type.label}>Default concealed part</Text>
                 <Text style={type.caption}>Automatically added in new quotations. Replace or clear it here at any time.</Text>

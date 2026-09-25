@@ -393,6 +393,8 @@ class Product(TimestampedModel):
     size: Optional[str] = None              # e.g. "600x600mm" — tile nominal size
     material: Optional[str] = None
     dimensions: Optional[str] = None
+    dimension_image_urls: list[str] = []
+    seat_cover_image_urls: list[str] = []
     warranty: Optional[str] = None
     mrp: float = Field(ge=0)
     price: float = Field(ge=0)              # trade price
@@ -482,6 +484,9 @@ class ProductPatch(BaseModel):
     size: Optional[str] = None
     colour: Optional[str] = None
     description: Optional[str] = None
+    dimensions: Optional[str] = None
+    dimension_image_urls: Optional[list[str]] = None
+    seat_cover_image_urls: Optional[list[str]] = None
     mrp: Optional[float] = None
     price: Optional[float] = None
     specs: Optional[dict] = None
@@ -1454,7 +1459,7 @@ class CatalogImportJob(TimestampedModel):
 
 # ---------- Product Media (Iteration 2A) ----------
 MediaSourceType = Literal["supplier", "manufacturer", "internal"]
-MediaRole = Literal["hero", "gallery", "line-drawing", "lifestyle", "swatch", "spec-sheet", "cad"]
+MediaRole = Literal["hero", "gallery", "line-drawing", "lifestyle", "swatch", "spec-sheet", "cad", "dimension", "seat-cover"]
 MediaQuality = Literal["excellent", "good", "acceptable", "poor", "missing"]
 
 
