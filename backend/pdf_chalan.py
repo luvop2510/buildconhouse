@@ -15,7 +15,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import Flowable, HRFlowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-from pdf_generator import LANDSCAPE_A4, LOGO_PATH, _escape  # noqa: F401 — LOGO_PATH kept for parity with pdf_tiles imports
+from pdf_generator import LANDSCAPE_A4, LOGO_PATH, _escape, brand_partners_table  # noqa: F401 — LOGO_PATH kept for parity with pdf_tiles imports
 from pdf_tiles import DEFAULT_ADDRESS, DEFAULT_EMAIL, DEFAULT_MOBILE, _logo_flowable, _rupee
 
 INK = colors.HexColor("#111111")
@@ -107,6 +107,8 @@ def build_chalan_pdf(chalan: dict, po: dict, customer: dict, branding: dict | No
     story.append(Spacer(1, 2 * mm))
     story.append(Paragraph("CHALAN", styles["title"]))
     story.append(HRFlowable(width="100%", thickness=1.2, color=INK, spaceBefore=1 * mm, spaceAfter=3 * mm))
+    story.append(brand_partners_table(styles["cell"], col_width_mm=doc.width / mm / 6, row_height_mm=8))
+    story.append(Spacer(1, 2 * mm))
 
     customer_name = _first_value(
         po.get("customer_name"), customer.get("company"), customer.get("name"), default="Customer",
@@ -286,7 +288,9 @@ def build_tile_chalan_pdf(chalan: dict, branding: dict | None = None) -> bytes:
     heading = ParagraphStyle("tcHeading", parent=styles["Normal"], fontSize=11, leading=14, fontName="Helvetica-Bold")
     small = ParagraphStyle("tcSmall", parent=styles["Normal"], fontSize=7.5, leading=10, textColor=colors.grey)
 
-    flow: list = [_logo_flowable(45), Spacer(1, 6 * mm)]
+    flow: list = [_logo_flowable(45), Spacer(1, 3 * mm)]
+    flow.append(brand_partners_table(body, col_width_mm=doc.width / mm / 6, row_height_mm=8))
+    flow.append(Spacer(1, 3 * mm))
     flow.append(Paragraph(f"<b>Chalan No:</b> {_escape(chalan['number'])} &nbsp;&nbsp; <b>Date:</b> {chalan['generated_at'][:10]} &nbsp;&nbsp; <b>Time:</b> {chalan['generated_at'][11:16]}", body))
     flow.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey, spaceBefore=4, spaceAfter=6))
 

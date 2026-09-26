@@ -216,9 +216,9 @@ export const api = {
   // short-lived single-use download token via a normal authenticated call
   // first, instead of embedding the real JWT in the URL where it would leak
   // into browser history and server access logs.
-  authenticatedUrl: async (path: string): Promise<string> => {
+  authenticatedUrl: async (path: string, floorId?: string): Promise<string> => {
     const target = `/api${path}`;
-    const { token } = await request<{ token: string }>("POST", "/downloads/token", { target });
+    const { token } = await request<{ token: string }>("POST", "/downloads/token", { target }, { floorId });
     const sep = path.includes("?") ? "&" : "?";
     return `${BASE}/api${path}${sep}dl=${encodeURIComponent(token)}`;
   },

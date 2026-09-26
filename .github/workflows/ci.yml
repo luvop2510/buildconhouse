@@ -76,6 +76,7 @@ jobs:
         run: |
           npm run test:quotation-media
           npm run test:quotation-contract
+          npm run test:quotation-concealed-parts
           npm run test:purchases-contract
           npm run test:notebook
           npm run test:mobile-ux

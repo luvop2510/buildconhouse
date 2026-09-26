@@ -39,4 +39,23 @@ assert.deepEqual(cswOnce.map((line) => [line.product_id, line.qty, line.included
 const cswTwice = addProductAndConcealedPart(cswOnce, cswWc, undefined, "Master Bath", id, null);
 assert.equal(cswTwice.length, 2);
 assert.deepEqual(cswTwice.map((line) => [line.product_id, line.qty]), [["memoria-wc", 2], ["memoria-cover", 2]]);
+// Different quotation prices create separate parent lines. Included parts must
+// follow the line that was just added, leaving the earlier line untouched.
+const discounted = addProductAndConcealedPart(cswOnce, cswWc, {
+  sku: cswWc.sku, price: 90000, mrp: cswWc.mrp,
+}, "Master Bath", (value) => `${value}-discounted`, null);
+const regularParent = discounted.find((line) => line.product_id === cswWc.id && line.unit_price === cswWc.price);
+const discountedParent = discounted.find((line) => line.product_id === cswWc.id && line.unit_price === 90000);
+assert.equal(regularParent.qty, 1);
+assert.equal(discountedParent.qty, 1);
+assert.deepEqual(discounted.filter((line) => line.included_for_line_id === regularParent.id).map((line) => line.qty), [1]);
+assert.deepEqual(discounted.filter((line) => line.included_for_line_id === discountedParent.id).map((line) => line.qty), [1]);
+const standaloneCover = {
+  id: "memoria-cover", sku: "106-003H209", name: "Memoria seat cover",
+  price: 30430, mrp: 30430, category_id: "seat-covers",
+};
+const withStandaloneCover = addProductAndConcealedPart(cswOnce, standaloneCover, undefined, "Master Bath", (value) => `${value}-standalone`, null);
+assert.equal(withStandaloneCover.filter((line) => line.product_id === standaloneCover.id).length, 2);
+assert.equal(withStandaloneCover.find((line) => line.included_for_line_id === cswOnce[0].id).qty, 1);
+assert.equal(withStandaloneCover.find((line) => line.product_id === standaloneCover.id && !line.included_for_line_id).qty, 1);
 console.log("quotation concealed-part contract passed");

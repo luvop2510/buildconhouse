@@ -11,8 +11,8 @@ import { useFocusEffect, useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Linking, Modal, Platform, Pressable, RefreshControl, ScrollView, SectionList,
-  StyleSheet, Text, TextInput, useWindowDimensions, View,
+  Linking, Platform, Pressable, RefreshControl, ScrollView, SectionList,
+  StyleSheet, Text, TextInput, View,
   KeyboardAvoidingView,
 } from "react-native";
 import { Swipeable } from "@/src/components/Swipeable";
@@ -20,6 +20,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 
 import { api } from "@/src/api/client";
 import { useBp } from "@/src/design/responsive";
+import { Menu } from "@/src/design/navigationControls";
 import { ActivityTimeline, TimelineEvent } from "@/src/components/ActivityTimeline";
 import {
   Avatar, Badge, Button, Card, Chip, ConfirmDialog, Dropdown, EmptyState, FilterBar,
@@ -1434,68 +1435,16 @@ function IconMenuButton({ icon, tone = "surface", accessibilityLabel, items, tes
   items: { label: string; icon?: FeatherName; onPress: () => void; tone?: "default" | "danger" }[];
   testID?: string;
 }) {
-  const [open, setOpen] = useState(false);
-  const [anchor, setAnchor] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
-  const btnRef = useRef<View>(null);
-  const { width: winW, height: winH } = useWindowDimensions();
-
-  // Rendered inside a top-level Modal from MEASURED screen coordinates —
-  // never an in-place position:"absolute" child. Every FollowupCard in the
-  // list mounts its own IconMenuButton; with the old in-place approach the
-  // NEXT card down (later in DOM order, same stacking context) painted over
-  // an open menu because neither card establishes an elevated stacking
-  // context of its own. A Modal always paints above the whole screen, so
-  // this can never happen regardless of scroll position or list order.
-  const openMenu = () => {
-    const node = btnRef.current as any;
-    if (node?.measureInWindow) {
-      node.measureInWindow((x: number, y: number, w: number, h: number) => {
-        setAnchor({ x, y, w, h });
-        setOpen(true);
-      });
-    } else {
-      setAnchor({ x: 0, y: 0, w: 0, h: 0 });
-      setOpen(true);
-    }
-  };
-
-  const menuW = 200;
-  const estH = 8 + items.length * 40;
-  let top = (anchor?.y ?? 0) + (anchor?.h ?? 0) + 6;
-  if (top + estH > winH - 12) top = Math.max(12, (anchor?.y ?? 0) - estH - 6);
-  let left = anchor?.x ?? 0;
-  left = Math.min(Math.max(12, left), winW - menuW - 12);
-
   return (
-    <View>
-      <View ref={btnRef} collapsable={false}>
-        <IconButton icon={icon} onPress={openMenu} size={34} tone={tone} accessibilityLabel={accessibilityLabel} testID={testID} />
+    <Menu
+      triggerLabel={accessibilityLabel || icon.replace(/-/g, " ")}
+      triggerTestID={testID}
+      items={items.map((item) => ({ ...item, tone: item.tone === "danger" ? "risk" : "ink" }))}
+    >
+      <View style={{ width: 44, height: 44, borderRadius: radius.md, alignItems: "center", justifyContent: "center", backgroundColor: tone === "brandLight" ? colors.brandTint : colors.surfaceSecondary, borderWidth: StyleSheet.hairlineWidth, borderColor: tone === "brandLight" ? colors.brandBorder : colors.border }}>
+        <Feather name={icon} size={16} color={tone === "brandLight" ? colors.brand : colors.onSurface} />
       </View>
-      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-        <Pressable onPress={() => setOpen(false)} style={StyleSheet.absoluteFillObject as any} />
-        <View style={[{
-          position: "absolute", top, left, minWidth: menuW,
-          borderRadius: radius.md, backgroundColor: colors.surfaceSecondary,
-          borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
-          paddingVertical: 4,
-        }, elevation.overlay]}>
-          {items.map((it, i) => (
-            <Pressable
-              key={i}
-              onPress={() => { setOpen(false); it.onPress(); }}
-              style={({ pressed, hovered }: any) => ({
-                flexDirection: "row", alignItems: "center", gap: spacing.sm,
-                paddingVertical: 10, paddingHorizontal: spacing.md,
-                backgroundColor: pressed ? colors.surfaceTertiary : hovered ? colors.surfaceSubtle : "transparent",
-              })}
-            >
-              {it.icon ? <Feather name={it.icon} size={14} color={it.tone === "danger" ? colors.error : colors.onSurfaceSecondary} /> : null}
-              <Text style={{ fontSize: 13, fontWeight: "500", color: it.tone === "danger" ? colors.error : colors.onSurface }}>{it.label}</Text>
-            </Pressable>
-          ))}
-        </View>
-      </Modal>
-    </View>
+    </Menu>
   );
 }
 

@@ -263,16 +263,35 @@ async def export_orders(
         return StreamingResponse(blob, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f'attachment; filename="{filename}.xlsx"'})
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.pdfgen.canvas import Canvas
-    from pdf_generator import RUPEE_FONT, format_indian_money
+    from reportlab.lib.utils import ImageReader
+    from pdf_generator import BRAND_LOGO_DIR, BRAND_PARTNERS, RUPEE_FONT, format_indian_money
     page_width, page_height = landscape(A4)
     blob = BytesIO(); pdf = Canvas(blob, pagesize=(page_width, page_height)); pdf.setTitle("BuildCon House Executive Sales")
     text_font = RUPEE_FONT or "Helvetica"
-    pdf.setFont("Helvetica-Bold", 14); pdf.drawString(40, page_height - 38, "BuildCon House — Confirmed Orders")
-    pdf.setFont(text_font, 9); y = page_height - 63
+    def draw_report_header():
+        pdf.setFont("Helvetica-Bold", 14)
+        pdf.drawString(40, page_height - 38, "BuildCon House — Confirmed Orders")
+        cell_width = (page_width - 80) / 5
+        for row_index, names in enumerate(BRAND_PARTNERS):
+            for col_index, name in enumerate(names):
+                logo = ImageReader(str(BRAND_LOGO_DIR / f"{name}.png"))
+                width, height = logo.getSize()
+                scale = min((cell_width - 12) / width, 19 / height)
+                drawn_width, drawn_height = width * scale, height * scale
+                x = 40 + col_index * cell_width + (cell_width - drawn_width) / 2
+                y = page_height - 79 - row_index * 24 + (19 - drawn_height) / 2
+                pdf.drawImage(logo, x, y, width=drawn_width, height=drawn_height, mask="auto")
+        pdf.setFont(text_font, 9)
+
+    draw_report_header()
+    y = page_height - 120
     for row in rows[:500]:
         symbol = "₹" if RUPEE_FONT else "Rs."
         pdf.drawString(40, y, f"{row[0]}  |  {row[3]}  |  {symbol} {format_indian_money(row[5])}")
         y -= 14
-        if y < 40: pdf.showPage(); y = page_height - 40; pdf.setFont(text_font, 9)
+        if y < 40:
+            pdf.showPage()
+            draw_report_header()
+            y = page_height - 120
     pdf.save(); blob.seek(0)
     return StreamingResponse(blob, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}.pdf"'})

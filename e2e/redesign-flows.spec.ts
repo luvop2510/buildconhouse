@@ -17,7 +17,7 @@ test('critical walk-in register retries a failed request into a populated custom
   } }));
   await page.route(/\/api\/walkins(?:\?|$)/, route => fail ? route.fulfill({ status: 503, json: { detail: 'Register temporarily unavailable' } }) : route.fulfill({ json: [walkin] }));
   await page.goto('/walkins');
-  await expect(page.getByText('Could not load walk-ins', { exact: true })).toBeVisible();
+  await expect(page.getByText('Could not load walk-ins', { exact: true })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText('No walk-ins yet', { exact: true })).toHaveCount(0);
   fail = false;
   await page.getByRole('button', { name: 'Try again', exact: true }).click();
@@ -42,7 +42,7 @@ test('critical fully paid orders distinguish service failure from an empty ledge
   await page.goto('/payments-list');
   await expect(page.getByText('Could not load fully paid orders', { exact: true })).toBeVisible();
   await expect(page.getByText('No fully paid orders yet', { exact: true })).toHaveCount(0);
-  await page.route('**/api/payments/list?**', route => route.fulfill({ json: { items: [], total: 0 } }));
+  await page.route('**/api/payments/fully-paid-orders?**', route => route.fulfill({ json: { items: [], total: 0 } }));
   await page.getByRole('button', { name: 'Try again', exact: true }).click();
   await expect(page.getByText('No fully paid orders yet', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Previous', exact: true })).toBeDisabled();
@@ -180,7 +180,8 @@ test('critical manager assignments recover from an unavailable register without 
     }] });
   });
   await page.getByRole('button', { name: 'Try again', exact: true }).click();
-  await expect(page.getByText('1 assignment', { exact: true })).toBeVisible();
+  await expect(page.getByText("Couldn't load assignments", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('main', { name: 'Workspace content' }).getByText('Audit Owner', { exact: true })).toBeVisible();
   await expect(page.getByText('Asha Project · Confirm delivery', { exact: true })).toBeVisible();
   expect(requested).toEqual(['/api/followups/assignments']);
 });

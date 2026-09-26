@@ -38,7 +38,7 @@ test('critical GoDown transfer records quantity, price, discount and PO Final re
   await page.getByTestId('godown-transfer-price').fill('1000');
   await page.getByTestId('godown-transfer-discount').fill('10');
   await expect(page.getByTestId('godown-transfer-total')).toContainText('1,800');
-  await expect(page.getByText(/This permanently moves stock/)).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Transfer stock to customer' })).toContainText('The remaining GoDown stock quantity decreases.');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   await page.screenshot({ path: info.outputPath(`godown-transfer-${info.project.name}.png`) });
   await page.getByTestId('godown-customer-transfer-submit').click();

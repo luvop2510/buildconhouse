@@ -7,10 +7,12 @@ from zoneinfo import ZoneInfo
 from io import BytesIO
 import re
 import logging
+from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageOps
 from pptx import Presentation
 from pptx.dml.color import RGBColor
+from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import PP_ALIGN
 from pptx.util import Inches, Pt
 
@@ -21,6 +23,19 @@ DEFAULT_AREA = "Other Area"
 logger = logging.getLogger("forge.quotation_ppt")
 SLIDE_W = 13.333
 SLIDE_H = 7.5
+ASSET_DIR = Path(__file__).resolve().parents[1]
+PARTNER_LOGOS = (
+    ("grohe", 7.75, 3.46, 0.94, 0.43),
+    ("hansgrohe", 9.00, 3.48, 1.35, 0.34),
+    ("axor", 10.91, 3.45, 1.02, 0.43),
+    ("vitra", 7.73, 4.20, 0.92, 0.39),
+    ("geberit", 8.93, 4.22, 1.46, 0.33),
+    ("oyster", 10.93, 4.20, 1.02, 0.46),
+    ("nexion", 7.62, 5.06, 1.22, 0.43),
+    ("dimore", 9.05, 5.06, 1.35, 0.43),
+    ("qutone", 10.93, 5.13, 1.43, 0.38),
+    ("ncl_ittimi", 9.24, 6.02, 1.38, 0.61),
+)
 
 
 def presentation_filename(customer_name: str, date: str | None = None) -> str:
@@ -73,6 +88,32 @@ def _picture(slide, data: bytes, x: float, y: float, w: float, h: float) -> None
         Inches(y + inset + (h - target_h) / 2),
         width=Inches(target_w), height=Inches(target_h),
     )
+
+
+def _cover(slide, doc: dict) -> None:
+    """Reproduce the supplied 16:9 customer cover with editable names."""
+    # The reference has a soft grey right panel and a white information area.
+    panel = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(6.6), 0, Inches(6.733), Inches(SLIDE_H))
+    panel.fill.solid()
+    panel.fill.fore_color.rgb = RGBColor(248, 248, 248)
+    panel.line.fill.background()
+    # The default PowerPoint theme adds an unwanted drop shadow to rectangles.
+    for style in panel._element.xpath("./p:style"):
+        panel._element.remove(style)
+
+    customer = str(doc.get("customer_name") or "Customer").strip() or "Customer"
+    referrer = str(doc.get("referrer_name") or "").strip()
+    referrer_label = "ARCH" if doc.get("referrer_type") == "architect" else "INT"
+    _text(slide, f"CLIENT NAME: {customer.upper()}", 0.19, 0.32, 7.30, 0.35, 17)
+    _text(slide, f"{referrer_label}: {referrer.upper()}", 0.19, 0.77, 7.30, 0.35, 17)
+    _text(slide, "•  Before Gujarat housing,Nr.katariya\nmotors, 2nd 150ft ring road Rajkot-360005", 1.01, 2.92, 5.12, 0.60, 18, True)
+    _text(slide, "•  MO:-9909906652", 1.01, 3.55, 5.12, 0.34, 18, True)
+
+    house = ASSET_DIR / "buildcon_cover_logo.png"
+    slide.shapes.add_picture(str(house), Inches(7.72), Inches(1.31), width=Inches(4.92), height=Inches(1.65))
+    for name, x, y, w, h in PARTNER_LOGOS:
+        path = ASSET_DIR / "brand_logos" / f"{name}.png"
+        slide.shapes.add_picture(str(path), Inches(x), Inches(y), width=Inches(w), height=Inches(h))
 
 
 def _area_rows(items: list[dict]) -> list[tuple[str, list[dict]]]:
@@ -130,14 +171,7 @@ def build_product_ppt(doc: dict) -> bytes:
     presentation.slide_height = Inches(SLIDE_H)
     blank = presentation.slide_layouts[6]
     cover = presentation.slides.add_slide(blank)
-    customer = str(doc.get("customer_name") or "Customer").strip() or "Customer"
-    _text(cover, customer.upper(), 0.55, 0.48, 11.7, 0.85, 29, True)
-    stamp = datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d")
-    try:
-        stamp = datetime.fromisoformat(stamp).strftime("%d-%m-%Y")
-    except ValueError:
-        pass
-    _text(cover, stamp, 0.57, 1.42, 10, 0.45, 18)
+    _cover(cover, doc)
 
     rooms = list(doc.get("rooms") or [])
     for item in items:

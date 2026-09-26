@@ -3,14 +3,14 @@ by the full module at routes/purchase_routes.py. The /payments scaffold has been
 REMOVED and replaced by routes/payment_routes.py. /followups has been REMOVED and
 replaced by the full Sales Command Center module at routes/followup_routes.py."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
 import os
 from re import fullmatch
 from urllib.parse import urlsplit
 
 from access_profiles import profile_allows_request
-from auth import accessible_floor_ids, floor_for_write, floor_query, floor_scope_ids, get_current_user, hash_password, invalidate_principal_cache, normalize_staff_access, require_min_role, revoke_all_sessions
+from auth import accessible_floor_ids, floor_for_write, floor_query, floor_scope_ids, get_current_customer, get_current_session, get_current_user, hash_password, invalidate_principal_cache, normalize_staff_access, require_min_role, revoke_all_sessions
 from db import db
 from models import FloorCreatePayload, FloorPublic, TeamCreatePayload, TeamUpdatePayload, UserPublic, now_iso
 from services.activity_log import log_event
@@ -37,21 +37,31 @@ class DownloadTokenRequest(BaseModel):
 # Do not broaden this to arbitrary API paths — that would bypass the normal
 # profile/custom-grant middleware which reads the Authorization header.
 _DOWNLOAD_TARGET_PATTERNS = (
+    r"/api/quotations/[^/]+/pdf",
     r"/api/purchases/export\.xlsx",
+    r"/api/purchases/[^/]+/chalans/[^/]+/pdf",
     r"/api/payments/history/export",
     r"/api/followups/export",
     r"/api/tile-orders/history/export",
     r"/api/tile-orders/chalans/[^/]+/pdf",
 )
 
+_CUSTOMER_DOWNLOAD_TARGET_PATTERNS = (
+    r"/api/quotations/[^/]+/portal-pdf",
+    r"/api/quotations/[^/]+/portal-pdf/revision/[0-9]+",
+    r"/api/quotations/[^/]+/portal-pdf/brand/[^/]+",
+)
 
-def _download_target_path(target: str) -> str:
+
+def _download_target_path(target: str, *, customer: bool = False) -> str:
     """Validate a relative, GET-only browser-download target and return its path."""
     parsed = urlsplit(target)
     if (
         parsed.scheme or parsed.netloc or parsed.fragment
         or any(pair.split("=", 1)[0].lower() == "dl" for pair in parsed.query.split("&") if pair)
-        or not any(fullmatch(pattern, parsed.path) for pattern in _DOWNLOAD_TARGET_PATTERNS)
+        or not any(fullmatch(pattern, parsed.path) for pattern in (
+            _CUSTOMER_DOWNLOAD_TARGET_PATTERNS if customer else _DOWNLOAD_TARGET_PATTERNS
+        ))
     ):
         raise HTTPException(status_code=400, detail="Download target is not permitted")
     return parsed.path
@@ -79,7 +89,13 @@ async def _ensure_default_floors() -> None:
 
 
 @router.post("/downloads/token")
-async def mint_download_token(body: DownloadTokenRequest, user: UserPublic = Depends(get_current_user)):
+async def mint_download_token(
+    body: DownloadTokenRequest,
+    request: Request,
+    session: tuple[str, str, str] = Depends(get_current_session),
+    authorization: Optional[str] = Header(None),
+    x_floor_id: Optional[str] = Header(None, alias="X-Floor-Id"),
+):
     """Call this (normal Authorization-header request) right before opening a
     browser-download URL (PDF/xlsx export). Returns a token good for one
     download within 60 seconds — see services/download_tokens.py.
@@ -92,6 +108,18 @@ async def mint_download_token(body: DownloadTokenRequest, user: UserPublic = Dep
     `floor_query()` unrestricted for that download — the exact leak
     described in services/download_tokens.py. `floor_for_write` always
     resolves to a concrete floor."""
+    kind, subject, session_id = session
+    if kind == "customer":
+        _download_target_path(body.target, customer=True)
+        # Recheck the customer principal and password-change policy just as
+        # the PDF route does. The PDF route will also verify quotation owner.
+        await get_current_customer(request=request, authorization=authorization, dl=None)
+        token = await create_download_token(subject, session_id, None, body.target, kind="customer")
+        return {"token": token, "expires_in": 60}
+
+    user = await get_current_user(
+        request=request, authorization=authorization, x_floor_id=x_floor_id, dl=None,
+    )
     target_path = _download_target_path(body.target)
     if not profile_allows_request(user.access_profile, "GET", target_path):
         raise HTTPException(status_code=403, detail="This account is not permitted to download this file")

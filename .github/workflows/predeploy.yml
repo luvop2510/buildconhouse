@@ -46,7 +46,7 @@ jobs:
           node scripts/check-npm-audit.mjs
           npx tsc --noEmit
           npx expo lint -- --max-warnings 0
-          npm run test:quotation-media && npm run test:quotation-contract && npm run test:purchases-contract && npm run test:notebook && npm run test:mobile-ux && npm run test:api-client && npm run test:api-proxy && npm run test:sales-periods && npm run test:web-worker && node scripts/verify-tile-orders-contract.mjs
+          npm run test:quotation-media && npm run test:quotation-contract && npm run test:quotation-concealed-parts && npm run test:purchases-contract && npm run test:notebook && npm run test:mobile-ux && npm run test:api-client && npm run test:api-proxy && npm run test:sales-periods && npm run test:web-worker && node scripts/verify-tile-orders-contract.mjs
           npm run build
           npm run test:mobile-budget
       - name: Live MongoDB, Supabase and required-index check (read-only)

@@ -1,6 +1,41 @@
 import { expect, test } from '@playwright/test';
 import { mockSession } from './audit-fixtures';
 
+test('critical mobile customer PDF uses an authenticated attachment download', async ({ page, browserName }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => Object.defineProperty(navigator, 'userAgent', {
+    configurable: true,
+    value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1',
+  }));
+  await mockSession(page, '/quotes/q-mobile');
+  await page.route('**/api/portal/quotations/q-mobile', r => r.fulfill({ json: {
+    id: 'q-mobile', number: 'Q-104', status: 'sent', created_at: '2026-09-01T12:00:00Z', grand_total: 1200,
+    items: [], revisions: [], brands: [],
+  } }));
+  let tokenTarget = '';
+  await page.route('**/api/downloads/token', r => {
+    tokenTarget = r.request().postDataJSON().target;
+    return r.fulfill({ json: { token: 'mobile-pdf-token' } });
+  });
+  await page.route('**/api/quotations/q-mobile/portal-pdf?dl=mobile-pdf-token', r => r.fulfill({
+    contentType: 'application/pdf',
+    headers: { 'Content-Disposition': 'attachment; filename="Q-104.pdf"' },
+    body: '%PDF-1.4\n%%EOF',
+  }));
+  await page.goto('/quotes/q-mobile');
+  const attachment = page.waitForResponse(response => response.url().includes('/api/quotations/q-mobile/portal-pdf?dl=mobile-pdf-token'));
+  // Headless WebKit receives the attachment response but does not surface a
+  // Playwright download event for a top-level PDF navigation.
+  const download = browserName === 'webkit' ? null : page.waitForEvent('download');
+  await page.getByTestId('download-latest-pdf').click();
+  const response = await attachment;
+  expect(response.status()).toBe(200);
+  expect(response.headers()['content-disposition']).toContain('attachment; filename="Q-104.pdf"');
+  if (download) expect((await download).suggestedFilename()).toBe('Q-104.pdf');
+  expect(tokenTarget).toBe('/api/quotations/q-mobile/portal-pdf');
+  await expect(page.getByTestId('customer-quote-detail')).toBeVisible();
+});
+
 test('critical customer PDF failures recover and all document variants download', async ({ page }) => {
   await mockSession(page, '/quotes/q-portal');
   await page.route('**/api/portal/quotations/q-portal', r => r.fulfill({ json: {
@@ -89,7 +124,7 @@ test('critical collection failures recover and failed payment saves retain enter
   await expect(page.getByText('No outstanding customers', { exact: true })).toHaveCount(0);
   await page.route('**/api/payments/orders', route => route.fulfill({ json: [order] }));
   await page.route('**/api/payments/orders/q-one', route => route.fulfill({ json: { ...order, status: 'ordered', customer: { id: 'c-one', name: order.customer_name, phone: '9000000000' }, floor_id: 'first-floor', mrp: 1200.5, discounted_rate: 1200.5, quotation_total: 1200.5, manual_extra_amount: 0, payments: [] } }));
-  await page.getByRole('button', { name: 'Try again', exact: true }).click();
+  await page.getByText('Could not load collections', { exact: true }).locator('..').getByRole('button', { name: 'Try again', exact: true }).click();
   await page.getByTestId('open-record-payment').click();
   await page.getByTestId('pay-amount').fill('600.25');
   let submitted: any;

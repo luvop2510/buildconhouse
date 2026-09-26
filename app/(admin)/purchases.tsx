@@ -202,7 +202,7 @@ export default function PurchasesScreen() {
     finally { setLoadingCustomers(false); }
   }, [selectedFloorId]);
 
-  const loadItems = useCallback(async ({ throwOnError = false, append = false }: { throwOnError?: boolean; append?: boolean } = {}) => {
+  const loadItems = useCallback(async ({ throwOnError = false, append = false, quiet = false }: { throwOnError?: boolean; append?: boolean; quiet?: boolean } = {}) => {
     if (!selectedFloorId) return;
     if (append && nextSkipRef.current == null) return;
     const skip = append ? nextSkipRef.current || 0 : 0;
@@ -212,7 +212,7 @@ export default function PurchasesScreen() {
     requestController.current = controller;
     setItemsError(null);
     if (append) setLoadingMore(true);
-    else setLoading(true);
+    else if (!quiet) setLoading(true);
     try {
       const resp: PurchasesPage = await getPurchasesPage({ view, brand, q: committedQ, stage, skip, limit: isDesktop ? 100 : 30 }, controller.signal);
       if (seq !== requestSeq.current) return;
@@ -498,8 +498,8 @@ export default function PurchasesScreen() {
         <MobileFiltersSheet visible={showMobileFilters} brands={brands} stages={stages} brand={brand} stage={stage} onBrand={setBrand} onStage={setStage} onClose={() => setShowMobileFilters(false)} />
         <MobileActionsSheet visible={showMobileActions} shortages={shortages.length} onClose={() => setShowMobileActions(false)} onExport={() => { setShowMobileActions(false); doExport(); }} onShortages={() => { setShowMobileActions(false); setShowShortages(true); }} onSettings={() => { setShowMobileActions(false); setShowSettings(true); }} />
         <MoveMenu visible={showMoveMenu} stages={stages} onClose={() => setShowMoveMenu(false)} onPick={(s) => bulkMove(s)} title={`Move ${selected.size} item${selected.size === 1 ? "" : "s"}`} busy={bulkBusy} />
-        <MoveStageSheet visible={!!rowMoveTarget} item={rowMoveTarget ? toMovable(rowMoveTarget) : null} onClose={() => setRowMoveTarget(null)} onMoved={async () => { await Promise.all([loadItems(), loadFacets()]); }} />
-        <TransferSheet visible={!!transferItem} item={transferItem ? toMovable(transferItem) : null} onClose={() => setTransferItem(null)} onSuccess={async () => { await Promise.all([loadItems(), loadFacets(), loadShortages()]); }} />
+        <MoveStageSheet visible={!!rowMoveTarget} item={rowMoveTarget ? toMovable(rowMoveTarget) : null} onClose={() => setRowMoveTarget(null)} onMoved={async () => { await Promise.all([loadItems({ quiet: true, throwOnError: true }), loadFacets()]); }} />
+        <TransferSheet visible={!!transferItem} item={transferItem ? toMovable(transferItem) : null} onClose={() => setTransferItem(null)} onSuccess={async () => { await Promise.all([loadItems({ quiet: true, throwOnError: true }), loadFacets(), loadShortages()]); }} />
         <HistorySheet visible={!!historyItemId} itemId={historyItemId} onClose={() => setHistoryItemId(null)} />
         <ShortagesModal visible={showShortages} shortages={shortages} onClose={() => setShowShortages(false)} onChanged={async () => { await Promise.all([loadShortages(), loadItems(), loadFacets()]); }} />
         <SettingsModal visible={showSettings} currentSla={slaDays} onClose={() => setShowSettings(false)} onSaved={async (value) => { setSlaDays(value); setShowSettings(false); await loadItems(); }} />
@@ -804,13 +804,13 @@ export default function PurchasesScreen() {
         visible={!!rowMoveTarget}
         item={rowMoveTarget ? toMovable(rowMoveTarget) : null}
         onClose={() => setRowMoveTarget(null)}
-        onMoved={async () => { await Promise.all([loadItems(), loadFacets()]); }}
+        onMoved={async () => { await Promise.all([loadItems({ quiet: true, throwOnError: true }), loadFacets()]); }}
       />
       <TransferSheet
         visible={!!transferItem}
         item={transferItem ? toMovable(transferItem) : null}
         onClose={() => setTransferItem(null)}
-        onSuccess={async () => { await Promise.all([loadItems(), loadFacets(), loadShortages()]); }}
+        onSuccess={async () => { await Promise.all([loadItems({ quiet: true, throwOnError: true }), loadFacets(), loadShortages()]); }}
       />
       <HistorySheet
         visible={!!historyItemId}

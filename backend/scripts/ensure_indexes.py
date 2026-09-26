@@ -139,6 +139,14 @@ async def ensure_all() -> None:
     await _safe_create_index(db.users, "email", unique=True, name="users_email_unique")
     await _safe_create_index(db.quotations, "number", unique=True, name="quotations_number_unique")
     await _safe_create_index(db.purchase_orders, "number", unique=True, name="purchase_orders_number_unique")
+    await _safe_create_index(
+        db.purchase_orders, [("floor_id", 1), ("items.id", 1)],
+        name="purchase_orders_floor_item_id",
+    )
+    await _safe_create_index(
+        db.purchase_orders, [("floor_id", 1), ("items.product_id", 1), ("customer_id", 1)],
+        name="purchase_orders_floor_product_customer",
+    )
 
     # Executive Analytics: every dashboard aggregation starts with confirmed
     # order status plus floor/date, then commonly drills by owner/customer or

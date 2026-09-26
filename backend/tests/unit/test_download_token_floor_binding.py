@@ -48,6 +48,22 @@ def test_mint_records_the_active_floor(monkeypatch):
     assert tokens.stored["floor_id"] == "ground-floor"
     assert tokens.stored["session_id"] == "s1"
     assert tokens.stored["target"] == "/api/quotations/q1/pdf"
+    assert tokens.stored["kind"] == "staff"
+
+
+def test_customer_mint_records_customer_kind_without_staff_floor(monkeypatch):
+    tokens = _FakeTokens()
+    monkeypatch.setattr(download_tokens, "db", _Db(tokens))
+
+    asyncio.run(download_tokens.create_download_token(
+        "customer-1", "customer-session", None,
+        "/api/quotations/q1/portal-pdf", kind="customer",
+    ))
+
+    assert tokens.stored["kind"] == "customer"
+    assert tokens.stored["floor_id"] is None
+    assert tokens.stored["session_id"] == "customer-session"
+    assert tokens.stored["target"] == "/api/quotations/q1/portal-pdf"
 
 
 def _request(path="/api/quotations/q1/pdf?dl=tok"):
@@ -116,3 +132,33 @@ def test_a_legacy_token_without_a_floor_still_works(monkeypatch):
         user_doc=dict(OWNER),
     )
     assert user.active_floor_id is None
+
+
+def test_customer_download_token_replays_customer_session(monkeypatch):
+    async def fake_consume(_token, *, target=None):
+        assert target == "/api/quotations/q1/portal-pdf"
+        return {"kind": "customer", "user_id": "customer-1", "session_id": "customer-session"}
+
+    async def fake_principal(payload, *, kind, collection):
+        assert payload == {"sub": "customer-1", "session_id": "customer-session"}
+        assert (kind, collection) == ("customer", "customers")
+        return {"id": "customer-1", "name": "Customer", "floor_id": "first-floor"}
+
+    monkeypatch.setattr(download_tokens, "consume_download_token", fake_consume)
+    monkeypatch.setattr(auth, "_load_active_principal", fake_principal)
+    customer = asyncio.run(auth.get_current_customer(
+        request=_request("/api/quotations/q1/portal-pdf?dl=tok"), authorization=None, dl="tok",
+    ))
+    assert customer.id == "customer-1"
+
+
+def test_staff_token_cannot_authenticate_customer_pdf(monkeypatch):
+    async def fake_consume(_token, *, target=None):
+        return {"kind": "staff", "user_id": "staff-1", "session_id": "staff-session"}
+
+    monkeypatch.setattr(download_tokens, "consume_download_token", fake_consume)
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(auth.get_current_customer(
+            request=_request("/api/quotations/q1/portal-pdf?dl=tok"), authorization=None, dl="tok",
+        ))
+    assert exc.value.status_code == 401

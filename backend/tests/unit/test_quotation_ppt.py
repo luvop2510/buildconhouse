@@ -31,6 +31,8 @@ def test_ppt_groups_products_by_room_and_area_without_catalog_text(monkeypatch):
     monkeypatch.setattr(quotation_ppt, "remote_image_bytes", lambda _url: data)
     doc = {
         "customer_name": "Dineshbhai Amrutiya",
+        "referrer_name": "Uday Garala",
+        "referrer_type": "interior_designer",
         "rooms": ["Powder Room", "Utility"],
         "items": [
             {"room": "Powder Room", "area": "Basin Area", "name": "Basin", "sku": "SECRET-1", "image": "https://example.test/1.png"},
@@ -43,11 +45,25 @@ def test_ppt_groups_products_by_room_and_area_without_catalog_text(monkeypatch):
     assert len(ppt.slides) == 3
     assert round(ppt.slide_width / ppt.slide_height, 2) == round(16 / 9, 2)
     texts = [" ".join(shape.text for shape in slide.shapes if shape.has_text_frame) for slide in ppt.slides]
-    assert "DINESHBHAI AMRUTIYA" in texts[0]
+    assert "CLIENT NAME: DINESHBHAI AMRUTIYA" in texts[0]
+    assert "INT: UDAY GARALA" in texts[0]
+    assert "9909906652" in texts[0]
     assert "POWDER ROOM" in texts[1] and "Basin Area" in texts[1] and "WC Area" in texts[1]
     assert "UTILITY" in texts[2] and "Shower Area" in texts[2]
     assert all("SECRET" not in text and "Tap" not in text for text in texts)
-    assert [sum(shape.shape_type == 13 for shape in slide.shapes) for slide in ppt.slides] == [0, 3, 1]
+    assert [sum(shape.shape_type == 13 for shape in slide.shapes) for slide in ppt.slides] == [11, 3, 1]
+
+
+def test_cover_uses_architect_label_when_referrer_is_architect(monkeypatch):
+    monkeypatch.setattr(quotation_ppt, "prefetch_urls", lambda _urls: None)
+    ppt = Presentation(BytesIO(quotation_ppt.build_product_ppt({
+        "customer_name": "Another Client", "referrer_name": "Patel Studio",
+        "referrer_type": "architect", "items": [{"name": "Basin", "room": "Bath"}],
+    })))
+    cover_text = " ".join(shape.text for shape in ppt.slides[0].shapes if shape.has_text_frame)
+    assert "CLIENT NAME: ANOTHER CLIENT" in cover_text
+    assert "ARCH: PATEL STUDIO" in cover_text
+    assert "DINESHBHAI" not in cover_text
 
 
 def test_ppt_keeps_product_with_missing_image():

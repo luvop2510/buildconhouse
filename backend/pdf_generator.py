@@ -82,17 +82,18 @@ RUPEE_FONT = _register_rupee_font()
 
 BRAND_LOGO_DIR = PDF_DIR / "brand_logos"
 BRAND_PARTNERS = (
-    ("grohe", "hansgrohe", "geberit", "vitra"),
-    ("oyster", "qutone", "nexion", "dimore"),
+    ("grohe", "hansgrohe", "axor", "geberit", "vitra"),
+    ("oyster", "qutone", "nexion", "dimore", "ncl_ittimi"),
 )
 
 
-def brand_partners_table(_base_cell_style: ParagraphStyle, col_width_mm: float | None = None, grid_color=None) -> Table:
+def brand_partners_table(_base_cell_style: ParagraphStyle, col_width_mm: float | None = None, grid_color=None, row_height_mm: float = 15) -> Table:
     """Place only the supplied partner artwork in the two-row cover strip."""
     # The tiles document shares this strip at landscape width. Its legacy
     # argument describes one of six old cells, so retain the overall width.
-    cell_width = ((col_width_mm * 6 / 4) if col_width_mm else _pw(267 / 4)) * mm
-    logo_height = 11 * mm
+    columns = len(BRAND_PARTNERS[0])
+    cell_width = ((col_width_mm * 6 / columns) if col_width_mm else _pw(267 / columns)) * mm
+    logo_height = min(11, row_height_mm - 2) * mm
     rows = []
     for names in BRAND_PARTNERS:
         row = []
@@ -103,7 +104,7 @@ def brand_partners_table(_base_cell_style: ParagraphStyle, col_width_mm: float |
             scale = min((cell_width - 8 * mm) / source_width, logo_height / source_height)
             row.append(Image(str(path), width=source_width * scale, height=source_height * scale))
         rows.append(row)
-    table = Table(rows, colWidths=[cell_width] * 4, rowHeights=[15 * mm, 15 * mm])
+    table = Table(rows, colWidths=[cell_width] * columns, rowHeights=[row_height_mm * mm] * len(rows))
     table.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),

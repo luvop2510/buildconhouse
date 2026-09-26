@@ -145,8 +145,12 @@ export function MoveStageSheet({
       });
       const label = stages.find((s) => s.key === target)?.label || target;
       toast.success(r?.split ? `Moved ${r.qty_moved} of ${item.qty} to ${label}` : `Moved to ${label}`);
-      await onMoved(r);
       onClose();
+      try {
+        await onMoved(r);
+      } catch {
+        toast.error("Stage moved, but the list could not refresh");
+      }
     } catch (e: any) {
       toast.error(e instanceof ApiError ? e.detail || e.message : "Move failed");
     } finally { setBusy(false); }
@@ -168,9 +172,13 @@ export function MoveStageSheet({
         reason: note.trim() || "Customer declined / cancelled item",
       });
       toast.success(`${n} × ${item.name} moved to godown stock`);
-      await onMoved({ moved_to_godown: true, qty_moved: n });
       onClose();
       router.push(`/(admin)/godown-stock?newStockId=${encodeURIComponent(lot.id)}` as any);
+      try {
+        await onMoved({ moved_to_godown: true, qty_moved: n });
+      } catch {
+        toast.error("Stock moved, but the list could not refresh");
+      }
     } catch (e: any) {
       toast.error(e instanceof ApiError ? e.detail || e.message : "Could not move item to godown stock");
     } finally { setBusy(false); }
@@ -365,8 +373,12 @@ export function TransferSheet({
         payload,
       );
       toast.success(`Transfer recorded for ${r.destination?.customer_name || customers.find((customer) => customer.id === pick)?.name || "customer"}`);
-      await onSuccess(r);
       onClose();
+      try {
+        await onSuccess(r);
+      } catch {
+        toast.error("Transfer recorded, but the list could not refresh");
+      }
     } catch (e: any) {
       toast.error(e instanceof ApiError ? e.detail || e.message : "Transfer failed");
     } finally { setBusy(false); }

@@ -33,37 +33,51 @@ async function fetchApiBlob(path: string, errorLabel: string, floorId?: string):
 // Download an authenticated file UNDER A SPECIFIC FILENAME (the tiles
 // documents must save as "<Customer Name> <DD-MM-YYYY>.pdf", never
 // "quotation.pdf") — window.open() ignores Content-Disposition for blob:
-// URLs, so web uses an <a download> click instead. Native opens the file
-// (the OS viewer's share sheet keeps the server-supplied name).
+// URLs, so desktop web uses an <a download> click instead. Native shares a
+// named local file; mobile web uses the server's attachment response.
 export async function downloadApiFile(path: string, filename: string, errorLabel = "file", floorId?: string): Promise<boolean> {
   if (Platform.OS !== "web") {
-    if (filename.toLowerCase().endsWith(".pptx")) {
-      const blob = await fetchApiBlob(path, errorLabel, floorId);
-      if (!blob) return false;
-      try {
-        const [{ File, Paths }, Sharing] = await Promise.all([
-          import("expo-file-system"), import("expo-sharing"),
-        ]);
-        if (!await Sharing.isAvailableAsync()) {
-          toast.show("Sharing is unavailable on this device");
-          return false;
-        }
-        const safeName = filename.replace(/[\\/]/g, "").trim() || "Product PPT.pptx";
-        const file = new File(Paths.cache, `${Date.now()}-${safeName}`);
-        file.create();
-        file.write(new Uint8Array(await blob.arrayBuffer()));
-        await Sharing.shareAsync(file.uri, {
-          mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-          dialogTitle: "Save or share product PPT",
-        });
-        return true;
-      } catch {
-        toast.show(`Couldn't open the ${errorLabel}`);
+    const blob = await fetchApiBlob(path, errorLabel, floorId);
+    if (!blob) return false;
+    try {
+      const [{ File, Paths }, Sharing] = await Promise.all([
+        import("expo-file-system"), import("expo-sharing"),
+      ]);
+      if (!await Sharing.isAvailableAsync()) {
+        toast.show("Sharing is unavailable on this device");
         return false;
       }
+      const safeName = filename.replace(/[\\/]/g, "").trim() || "download";
+      const file = new File(Paths.cache, `${Date.now()}-${safeName}`);
+      file.create();
+      file.write(new Uint8Array(await blob.arrayBuffer()));
+      const extension = safeName.split(".").pop()?.toLowerCase();
+      const mimeType = extension === "pdf" ? "application/pdf"
+        : extension === "pptx" ? "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        : extension === "xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        : extension === "csv" ? "text/csv" : blob.type || "application/octet-stream";
+      await Sharing.shareAsync(file.uri, {
+        mimeType,
+        dialogTitle: `Save or share ${errorLabel}`,
+      });
+      return true;
+    } catch {
+      toast.show(`Couldn't open the ${errorLabel}`);
+      return false;
     }
-    await openApiFile(path, errorLabel, floorId);
-    return true;
+  }
+  // Mobile Safari may ignore a delayed click on a blob: download link.
+  // A tokenized attachment URL downloads through the browser's normal path.
+  const mobileBrowser = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  if (mobileBrowser && filename.toLowerCase().endsWith(".pdf")) {
+    try {
+      window.location.assign(await api.authenticatedUrl(path, floorId));
+      return true;
+    } catch {
+      toast.show(`Couldn't download the ${errorLabel}`);
+      return false;
+    }
   }
   const blob = await fetchApiBlob(path, errorLabel, floorId);
   if (!blob) return false;

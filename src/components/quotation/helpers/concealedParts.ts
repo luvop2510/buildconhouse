@@ -72,6 +72,7 @@ export function addProductAndConcealedPart<T extends LineLike>(
     ? `${product.name} · ${variant.finish || variantColour || variant.size}` : product.name;
   const addOrIncrease = (current: T[], line: T): T[] => {
     const index = current.findIndex((item) => item.product_id === line.product_id && item.room === room
+      && !item.included_for_line_id
       && !!item.exclude_dimension === !!line.exclude_dimension
       && item.unit_price === line.unit_price);
     if (index < 0) return [...current, line];
@@ -87,7 +88,9 @@ export function addProductAndConcealedPart<T extends LineLike>(
     exclude_dimension: !!variant?.exclude_dimension,
   } as T);
   const parent = next.find((line) => line.product_id === productId && line.room === room
-    && !!line.exclude_dimension === !!variant?.exclude_dimension)!;
+    && !line.included_for_line_id
+    && !!line.exclude_dimension === !!variant?.exclude_dimension
+    && line.unit_price === (variant?.price ?? product.price))!;
 
   // Seat covers are not an optional cross-sell: they follow their selected
   // WC's SKU and quantity. A re-select replaces any prior linked cover rather
