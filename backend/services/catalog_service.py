@@ -934,6 +934,8 @@ async def list_family_groups(
         sample_id = group["sample_product_id"]
         sample_media = snapshot.media_rows_by_product.get(sample_id, ())
         hero = next((row for row in sample_media if row.get("public_url") and row.get("role") not in ("dimension", "seat-cover")), None)
+        if not hero:
+            hero = next((row for row in sample_media if row.get("public_url") and row.get("role") == "seat-cover"), None)
         if hero:
             group["sample_image"] = hero["public_url"]
             group["sample_image_quality"] = hero.get("quality") or group.get("sample_image_quality")
