@@ -25,7 +25,7 @@ import { draftNeedsCopy, moveWithinRoom, type BuilderDraft } from "../helpers/dr
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import type { HistoryApi } from "@/src/hooks/useHistory";
 import { playAddProductSound } from "@/src/services/soundService";
-import { catalogReferences, CATALOG_PAGE_SIZE, fetchCatalogPage } from "@/src/services/catalogService";
+import { catalogReferences, CATALOG_PAGE_SIZE, clearCatalogCache, fetchCatalogPage } from "@/src/services/catalogService";
 import { downloadApiFile } from "@/src/utils/downloadFile";
 
 import { computeTotals, computeLineBreakdown, type LineBreakdown } from "../helpers/pricing";
@@ -295,7 +295,25 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
   const [productTotal, setProductTotal] = useState(0);
   const [productError, setProductError] = useState<string | null>(null);
   const [productRetry, setProductRetry] = useState(0);
-  const retryProducts = useCallback(() => setProductRetry(value => value + 1), []);
+  const retryProducts = useCallback(() => {
+    clearCatalogCache();
+    setProductRetry(value => value + 1);
+  }, []);
+  const lastCatalogRefresh = useRef(Date.now());
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof window === "undefined") return;
+    const refreshWhenVisible = () => {
+      if (document.visibilityState !== "visible" || Date.now() - lastCatalogRefresh.current < 60_000) return;
+      lastCatalogRefresh.current = Date.now();
+      retryProducts();
+    };
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.removeEventListener("focus", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [retryProducts]);
   const [productLoading, setProductLoading] = useState(false);
   const [productHasMore, setProductHasMore] = useState(false);
   const [productLoadingMore, setProductLoadingMore] = useState(false);
