@@ -79,7 +79,7 @@ def test_standard_pdf_prints_indian_currency_for_large_amounts():
     assert "1,23,45,678.90" in text
 
 
-def test_manual_dimension_is_printed_only_when_included():
+def test_numeric_dimension_text_is_omitted_from_description():
     pdf = pdf_generator.build_quotation_pdf(
         {
             "customer_name": "Dimension Contract",
@@ -94,8 +94,79 @@ def test_manual_dimension_is_printed_only_when_included():
         {"name": "Dimension Contract"},
     )
     text = " ".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf)).pages)
-    assert "600 x 400 mm" in text
+    assert "600 x 400 mm" not in text
     assert "720 x 360 mm" not in text
+    assert "DIMENSIONS" in text
+
+
+def test_dimension_diagrams_and_seat_cover_stay_on_item_page(monkeypatch):
+    captured = []
+    original_img = pdf_generator._img
+
+    def capture_img(url, **kwargs):
+        captured.append((url, kwargs))
+        return original_img(url, **kwargs)
+
+    monkeypatch.setattr(pdf_generator, "_remote_image_bytes", lambda _url: _png_bytes(180, 100))
+    monkeypatch.setattr(pdf_generator, "_img", capture_img)
+    item = {
+        "sku": "MEDIA-1", "name": "Seat", "room": "Bath", "qty": 1, "unit_price": 1000,
+        "image": "https://example.test/product.png",
+        "dimension_image_urls": ["https://example.test/diagram.png"],
+        "seat_cover_image_urls": ["https://example.test/seat.png"],
+        "dimension": "Forbidden dimension label",
+    }
+    quotation = {"customer_name": "Media", "items": [item], "subtotal": 1000, "grand_total": 1000, "include_dimensions": True}
+    pages = PdfReader(BytesIO(pdf_generator.build_quotation_pdf(quotation, {"name": "Media"}))).pages
+
+    assert len(pages) == 2
+    assert "DIMENSIONS" in (pages[1].extract_text() or "")
+    assert "Forbidden dimension label" not in (pages[1].extract_text() or "")
+    assert [url for url, _ in captured] == [item["image"], item["seat_cover_image_urls"][0], item["dimension_image_urls"][0]]
+    assert all(kwargs["width_mm"] == pdf_generator._pw(pdf_generator.DETAIL_MEDIA_FRAME_WIDTH_MM) for _, kwargs in captured)
+
+
+def test_seat_cover_renders_without_dimension_column_enabled(monkeypatch):
+    captured = []
+    original_img = pdf_generator._img
+    monkeypatch.setattr(pdf_generator, "_remote_image_bytes", lambda _url: _png_bytes(180, 100))
+
+    def capture_img(url, **kwargs):
+        captured.append(url)
+        return original_img(url, **kwargs)
+
+    monkeypatch.setattr(pdf_generator, "_img", capture_img)
+    item = {"sku": "SEAT-1", "name": "Seat", "room": "Bath", "qty": 1, "unit_price": 1000,
+            "image": "https://example.test/product.png", "seat_cover_image_urls": ["https://example.test/seat.png"],
+            "dimension_image_urls": ["https://example.test/diagram.png"]}
+    pdf = pdf_generator.build_quotation_pdf(
+        {"customer_name": "Seat", "items": [item], "subtotal": 1000, "grand_total": 1000, "include_dimensions": False},
+        {"name": "Seat"},
+    )
+    assert len(PdfReader(BytesIO(pdf)).pages) == 2
+    assert captured == [item["image"], item["seat_cover_image_urls"][0]]
+
+
+def test_main_seat_photo_is_not_duplicated_and_multiple_diagrams_fit(monkeypatch):
+    captured = []
+    original_img = pdf_generator._img
+    monkeypatch.setattr(pdf_generator, "_remote_image_bytes", lambda _url: _png_bytes(180, 100))
+
+    def capture_img(url, **kwargs):
+        captured.append(url)
+        return original_img(url, **kwargs)
+
+    monkeypatch.setattr(pdf_generator, "_img", capture_img)
+    diagram_urls = [f"https://example.test/diagram-{index}.png" for index in range(4)]
+    item = {"sku": "DIAGRAM-1", "name": "Seat", "room": "Bath", "qty": 1, "unit_price": 1000,
+            "image": "https://example.test/seat.png", "seat_cover_image_urls": ["https://example.test/seat.png"],
+            "dimension_image_urls": diagram_urls}
+    pdf = pdf_generator.build_quotation_pdf(
+        {"customer_name": "Diagrams", "items": [item], "subtotal": 1000, "grand_total": 1000, "include_dimensions": True},
+        {"name": "Diagrams"},
+    )
+    assert len(PdfReader(BytesIO(pdf)).pages) == 2
+    assert captured == [item["image"], *diagram_urls]
 
 
 def test_standard_item_tables_scale_into_portrait_printable_width():
@@ -473,7 +544,7 @@ def test_all_quotation_pdfs_use_forced_landscape_image_frames(monkeypatch):
     assert pdf_tiles.build_tiles_quotation_pdf(tiles, {"name": "PDF Test"}).startswith(b"%PDF-")
     assert len(rendered_sizes) == 3
     assert requested_boxes == [
-        (pdf_generator._pw(pdf_generator.PRODUCT_IMAGE_FRAME_WIDTH_MM), pdf_generator._pw(pdf_generator.PRODUCT_IMAGE_FRAME_HEIGHT_MM)),
+        (pdf_generator._pw(pdf_generator.DETAIL_MEDIA_FRAME_WIDTH_MM), pdf_generator._pw(pdf_generator.DETAIL_MEDIA_FRAME_HEIGHT_MM)),
         (pdf_tiles.SELECTION_PRODUCT_IMAGE_WIDTH_MM, pdf_tiles.SELECTION_PRODUCT_IMAGE_HEIGHT_MM),
         (pdf_tiles.QUOTATION_PRODUCT_IMAGE_WIDTH_MM, pdf_tiles.QUOTATION_PRODUCT_IMAGE_HEIGHT_MM),
     ]
@@ -509,17 +580,16 @@ def test_sanitary_pages_use_one_large_contained_image_frame(monkeypatch, count):
 
     assert len(images) == count
     for image, kwargs in images:
-        assert kwargs["cover"] is False
-        assert kwargs["width_mm"] == pdf_generator._pw(pdf_generator.PRODUCT_IMAGE_FRAME_WIDTH_MM)
-        assert kwargs["height_mm"] == pdf_generator._pw(pdf_generator.PRODUCT_IMAGE_FRAME_HEIGHT_MM)
-        assert image.drawWidth == pdf_generator._pw(pdf_generator.PRODUCT_IMAGE_FRAME_WIDTH_MM) * pdf_generator.mm
-        assert image.drawHeight == pdf_generator._pw(pdf_generator.PRODUCT_IMAGE_FRAME_HEIGHT_MM) * pdf_generator.mm
+        assert kwargs["width_mm"] == pdf_generator._pw(pdf_generator.DETAIL_MEDIA_FRAME_WIDTH_MM)
+        assert kwargs["height_mm"] == pdf_generator._pw(pdf_generator.DETAIL_MEDIA_FRAME_HEIGHT_MM)
+        assert image.drawWidth == pdf_generator._pw(pdf_generator.DETAIL_MEDIA_FRAME_WIDTH_MM) * pdf_generator.mm
+        assert image.drawHeight == pdf_generator._pw(pdf_generator.DETAIL_MEDIA_FRAME_HEIGHT_MM) * pdf_generator.mm
 
 
 def test_portrait_product_frame_fits_inside_its_scaled_table_column():
     """A product image must never intrude into article/rate cells."""
-    image_frame = pdf_generator._pw(pdf_generator.PRODUCT_IMAGE_FRAME_WIDTH_MM)
-    image_column = pdf_generator._pw(25)
+    image_frame = pdf_generator._pw(pdf_generator.DETAIL_MEDIA_FRAME_WIDTH_MM)
+    image_column = pdf_generator._pw(33)
     # More than one millimetre remains for ReportLab's 1 pt side paddings.
     assert image_frame + 1 <= image_column
 

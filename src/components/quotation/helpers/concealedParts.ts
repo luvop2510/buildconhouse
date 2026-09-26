@@ -72,7 +72,7 @@ export function addProductAndConcealedPart<T extends LineLike>(
     ? `${product.name} · ${variant.finish || variantColour || variant.size}` : product.name;
   const addOrIncrease = (current: T[], line: T): T[] => {
     const index = current.findIndex((item) => item.product_id === line.product_id && item.room === room
-      && item.dimension === line.dimension && !!item.exclude_dimension === !!line.exclude_dimension
+      && !!item.exclude_dimension === !!line.exclude_dimension
       && item.unit_price === line.unit_price);
     if (index < 0) return [...current, line];
     const next = [...current];
@@ -84,11 +84,9 @@ export function addProductAndConcealedPart<T extends LineLike>(
     image: variant?.image || primaryImage, category_id: product.category_id, room,
     qty: 1, unit_price: variant?.price ?? product.price, mrp: variant?.mrp ?? product.mrp,
     discount_pct: null, finish, family_key: product.family_key || null,
-    dimension: variant?.dimensions ?? product.dimensions ?? null,
     exclude_dimension: !!variant?.exclude_dimension,
   } as T);
   const parent = next.find((line) => line.product_id === productId && line.room === room
-    && line.dimension === (variant?.dimensions ?? product.dimensions ?? null)
     && !!line.exclude_dimension === !!variant?.exclude_dimension)!;
 
   // Seat covers are not an optional cross-sell: they follow their selected

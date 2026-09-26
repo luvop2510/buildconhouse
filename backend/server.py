@@ -73,7 +73,7 @@ from services.floor_scope import ensure_floor_scope  # noqa: E402
 
 # A non-sensitive marker used by the public health probe to verify that the
 # deployed service includes the current quotation-PDF renderer behaviour.
-PDF_RENDERER_REVISION = "sparse-contain-column-v1"
+PDF_RENDERER_REVISION = "inline-dimension-diagrams-v2"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s")
 logger = logging.getLogger("forge")

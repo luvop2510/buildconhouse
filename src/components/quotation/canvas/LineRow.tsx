@@ -43,11 +43,9 @@ function LineRowImpl({
   const [qtyDraft, setQtyDraft] = useState(String(l.qty));
   const [rateDraft, setRateDraft] = useState(String(l.unit_price));
   const [areaDraft, setAreaDraft] = useState(l.area || "");
-  const [dimensionDraft, setDimensionDraft] = useState(l.dimension || "");
   useEffect(() => setQtyDraft(String(l.qty)), [l.qty]);
   useEffect(() => setRateDraft(String(l.unit_price)), [l.unit_price]);
   useEffect(() => setAreaDraft(l.area || ""), [l.area]);
-  useEffect(() => setDimensionDraft(l.dimension || ""), [l.dimension]);
 
   const commitQty = () => {
     const value = qtyDraft.trim();
@@ -138,23 +136,12 @@ function LineRowImpl({
           />
         </View>
         <View style={styles.areaRow}>
-          <Feather name="maximize-2" size={13} color={colors.onSurfaceMuted} />
-          <TextInput
-            testID={`line-dimension-${l.id}`}
-            accessibilityLabel={`Dimension for ${l.name}`}
-            value={dimensionDraft}
-            onChangeText={setDimensionDraft}
-            onBlur={() => b.updateLine(l.id, { dimension: dimensionDraft.trim() || null }, "dimension")}
-            onSubmitEditing={() => b.updateLine(l.id, { dimension: dimensionDraft.trim() || null }, "dimension")}
-            placeholder="Add manual dimensions"
-            placeholderTextColor={colors.onSurfaceMuted}
-            maxLength={240}
-            style={styles.areaInput}
-          />
+          <Feather name="image" size={13} color={colors.onSurfaceMuted} />
+          <Text style={type.caption}>Dimension diagram in PDF</Text>
           <Pressable
             testID={`line-exclude-dimension-${l.id}`}
             accessibilityRole="checkbox"
-            accessibilityLabel={`Exclude dimension from PDF for ${l.name}`}
+            accessibilityLabel={`Exclude dimension diagram from PDF for ${l.name}`}
             accessibilityState={{ checked: !!l.exclude_dimension }}
             onPress={() => b.updateLine(l.id, { exclude_dimension: !l.exclude_dimension })}
           >

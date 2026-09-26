@@ -1402,7 +1402,6 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
         category_id: target.category_id,
         unit_price: variant?.price ?? target.price,
         mrp: variant?.mrp ?? target.mrp,
-        dimension: variant?.dimensions ?? target.dimensions ?? null,
         finish,
         family_key: target.family_key ?? src.family_key ?? null,
         // A godown allocation is for one exact SKU. Never carry its source

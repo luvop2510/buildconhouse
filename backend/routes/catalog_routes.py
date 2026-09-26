@@ -15,13 +15,7 @@ from services.pagination import MAX_PAGE_LIMIT, normalize_pagination
 router = APIRouter(tags=["catalog"])
 
 
-async def _require_vitra_brand(brand_id: str, floor_id: str) -> None:
-    brand = await db.brands.find_one({"id": brand_id, "floor_id": floor_id}, {"_id": 0, "name": 1, "slug": 1})
-    if not brand or str(brand.get("name") or brand.get("slug") or "").strip().casefold() != "vitra":
-        raise HTTPException(status_code=422, detail="Dimension diagrams and seat-cover photos are available only for Vitra products")
-
-
-async def _validate_vitra_media_urls(product_id: str, updates: dict) -> None:
+async def _validate_diagram_media_urls(product_id: str, updates: dict) -> None:
     for field, role in (("dimension_image_urls", "dimension"), ("seat_cover_image_urls", "seat-cover")):
         if field not in updates:
             continue
@@ -557,10 +551,7 @@ async def update_product(
     if not updates:
         return Product(**existing)
 
-    vitra_fields = {"dimensions", "dimension_image_urls", "seat_cover_image_urls"}
-    if vitra_fields.intersection(updates) or ("brand_id" in updates and any(existing.get(field) for field in vitra_fields)):
-        await _require_vitra_brand(updates.get("brand_id", existing["brand_id"]), existing["floor_id"])
-    await _validate_vitra_media_urls(product_id, updates)
+    await _validate_diagram_media_urls(product_id, updates)
 
     # A salesperson configures a concealed part by its supplier SKU. It must
     # resolve to one active product on this floor: quotation lines need the

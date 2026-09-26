@@ -59,6 +59,7 @@ export function ProductModal() {
   const { isPhone } = useBp();
   const isCompactFooter = isPhone;
   const [editorOpen, setEditorOpen] = useState(false);
+  const [editorTab, setEditorTab] = useState<"General" | "Media">("General");
   const [concealQuery, setConcealQuery] = useState("");
   const [concealMatches, setConcealMatches] = useState<Product[]>([]);
   const [quotationConceal, setQuotationConceal] = useState<Product | null>(null);
@@ -68,7 +69,6 @@ export function ProductModal() {
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
   const [qty, setQty] = useState(1);
   const [priceOverride, setPriceOverride] = useState<string>("");
-  const [manualDimension, setManualDimension] = useState<string>("");
   const [excludeDimension, setExcludeDimension] = useState(false);
   const [notes, setNotes] = useState<string>("");
   const [alternates, setAlternates] = useState<Product[]>([]);
@@ -121,7 +121,6 @@ export function ProductModal() {
     setSelectedVariant(null);
     setQty(1);
     setPriceOverride("");
-    setManualDimension("");
     setExcludeDimension(false);
     setNotes("");
     setAlternates([]);
@@ -204,7 +203,6 @@ export function ProductModal() {
     // Custom price / quantity override via a synthetic variant — keeps
     // the existing addFromProduct path a single source of truth.
     const custom: ProductVariant = { ...v, price: currentPrice,
-      dimensions: manualDimension.trim() || selectedProduct.dimensions || null,
       exclude_dimension: excludeDimension,
       concealed_part: quotationConceal ? {
         product_id: quotationConceal.id, sku: quotationConceal.sku, name: quotationConceal.name,
@@ -245,7 +243,7 @@ export function ProductModal() {
               <Text style={styles.sku}>{selectedProduct.sku}</Text>
             </View>
             {canEditProduct ? (
-              <Pressable onPress={() => setEditorOpen(true)} style={[styles.editBtn, isPhone && styles.editBtnPhone]} hitSlop={6} testID="product-modal-edit" accessibilityLabel="Edit product">
+              <Pressable onPress={() => { setEditorTab("General"); setEditorOpen(true); }} style={[styles.editBtn, isPhone && styles.editBtnPhone]} hitSlop={6} testID="product-modal-edit" accessibilityLabel="Edit product">
                 <Feather name="edit-2" size={14} color={colors.onSurfaceSecondary} />
                 {!isPhone ? <Text style={styles.editBtnLabel}>Edit product</Text> : null}
               </Pressable>
@@ -374,7 +372,6 @@ export function ProductModal() {
                     ["Category", (selectedProduct as any).category_name || "—"],
                     ["Collection", selectedProduct.collection || selectedProduct.series || "—"],
                     ["Finish", variantDescriptor(selectedProduct) || "—"],
-                    ["Dimensions", selectedProduct.dimensions || "—"],
                     ["Warranty", selectedProduct.warranty || "—"],
                     ["Stock", (selectedProduct.stock ?? "—") + ""],
                   ].map(([label, val]) => (
@@ -386,7 +383,7 @@ export function ProductModal() {
                 </View>
 
                 {(selectedProduct.dimension_image_urls?.length || selectedProduct.seat_cover_image_urls?.length) ? (
-                  <View style={{ gap: 10 }} testID="pm-vitra-spec-photos">
+                  <View style={{ gap: 10 }} testID="pm-spec-photos">
                     {([
                       { label: "Dimension diagrams", urls: selectedProduct.dimension_image_urls || [] },
                       { label: "Seat-cover photos", urls: selectedProduct.seat_cover_image_urls || [] },
@@ -404,17 +401,13 @@ export function ProductModal() {
                   </View>
                 ) : null}
                 <View style={{ gap: 8 }}>
-                  <Text style={styles.sectionLabel}>Quotation dimension</Text>
-                  <TextInput
-                    testID="pm-manual-dimension"
-                    accessibilityLabel="Manual product dimension for quotation"
-                    value={manualDimension}
-                    onChangeText={setManualDimension}
-                    placeholder={selectedProduct.dimensions || "Enter a dimension"}
-                    placeholderTextColor={colors.onSurfaceMuted}
-                    maxLength={240}
-                    style={styles.priceInput}
-                  />
+                  <Text style={styles.sectionLabel}>Dimension diagrams in PDF</Text>
+                  {canEditProduct ? <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Add dimension diagram"
+                    testID="pm-add-dimension-diagram"
+                    onPress={() => { setEditorTab("Media"); setEditorOpen(true); }}
+                  ><Text style={styles.specVal}>Add a custom dimension diagram</Text></Pressable> : null}
                   <Pressable
                     testID="pm-exclude-dimension"
                     accessibilityRole="checkbox"
@@ -423,7 +416,7 @@ export function ProductModal() {
                     style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
                   >
                     <Feather name={excludeDimension ? "check-square" : "square"} size={18} color={colors.onSurface} />
-                    <Text style={styles.specVal}>Exclude dimension from PDF</Text>
+                    <Text style={styles.specVal}>Exclude diagram from PDF</Text>
                   </Pressable>
                 </View>
 
@@ -628,6 +621,7 @@ export function ProductModal() {
     <ProductEditor
       productId={selectedProduct.id}
       visible={editorOpen}
+      initialTab={editorTab}
       onClose={() => setEditorOpen(false)}
       onSaved={(updated) => b.patchProduct(selectedProduct.id, updated)}
     />

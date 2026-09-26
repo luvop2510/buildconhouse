@@ -122,6 +122,9 @@ MAX_ITEM_ROWS_PER_PAGE = 10
 PRODUCT_IMAGE_ASPECT_RATIO = 16 / 10
 PRODUCT_IMAGE_FRAME_WIDTH_MM = 23.0
 PRODUCT_IMAGE_FRAME_HEIGHT_MM = 18.0
+DETAIL_MEDIA_FRAME_WIDTH_MM = 31.0
+DETAIL_MEDIA_FRAME_HEIGHT_MM = 18.0
+DETAIL_MEDIA_STACK_HEIGHT_MM = 18.0
 STANDARD_PRODUCT_IMAGE_WIDTH_MM = PRODUCT_IMAGE_FRAME_WIDTH_MM
 STANDARD_PRODUCT_IMAGE_HEIGHT_MM = PRODUCT_IMAGE_FRAME_HEIGHT_MM
 # Sparse rooms retain the same generous identification frame. They are not
@@ -264,6 +267,20 @@ def prefetch_product_images(items: Iterable[dict], *, workers: int = 6, timeout:
     if not urls:
         return
     prefetch_urls(urls, _remote_image_bytes, workers=workers, timeout=timeout)
+
+
+def _media_urls(item: dict, field: str) -> list[str]:
+    """Keep only usable, distinct manually supplied media URLs in saved order."""
+    return list(dict.fromkeys(
+        str(url) for url in item.get(field) or []
+        if str(url).startswith(("https://", "http://"))
+    ))
+
+
+def _seat_cover_urls(item: dict) -> list[str]:
+    """Avoid printing the same image twice when a seat photo is the main photo."""
+    primary = str(item.get("image") or "")
+    return [url for url in _media_urls(item, "seat_cover_image_urls") if url != primary]
 
 
 def contain_box(
@@ -522,13 +539,15 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
     started_at = monotonic()
     b = branding or {}
     prefetch_product_images(quotation.get("items") or [])
-    if quotation.get("include_dimensions"):
-        dimension_urls = [
+    if quotation.get("include_dimensions") or any(item.get("seat_cover_image_urls") for item in quotation.get("items") or []):
+        media_urls = [
             url for item in quotation.get("items") or []
-            for url in (item.get("dimension_image_urls") or []) + (item.get("seat_cover_image_urls") or [])
-            if str(url).startswith(("https://", "http://"))
+            for url in (
+                (_media_urls(item, "dimension_image_urls") if quotation.get("include_dimensions") and not item.get("exclude_dimension") else [])
+                + _seat_cover_urls(item)
+            )
         ]
-        prefetch_urls(dimension_urls, _remote_image_bytes)
+        prefetch_urls(media_urls, _remote_image_bytes)
     buf = BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=PORTRAIT_A4, leftMargin=10 * mm, rightMargin=10 * mm,
@@ -553,8 +572,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
         "cell": ParagraphStyle("cell", parent=base["Normal"], fontName="Helvetica", fontSize=8.0, leading=9.4, textColor=INK, alignment=1),
         "cellRight": ParagraphStyle("cellRight", parent=base["Normal"], fontName="Helvetica", fontSize=8.0, leading=9.4, textColor=INK, alignment=2),
         "cellCenter": ParagraphStyle("cellCenter", parent=base["Normal"], fontName="Helvetica", fontSize=8.0, leading=9.4, textColor=INK, alignment=1),
-        # 7.5 pt is the largest readable header size that keeps "PRODUCT
-        # IMAGE" on one line in its fixed 25 mm image column.
+        # Headers remain readable in the expanded image and diagram columns.
         "tableHead": ParagraphStyle("tableHead", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=7.5, leading=9.0, textColor=INK, alignment=1),
         "signature": ParagraphStyle("signature", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=7.5, leading=9, textColor=INK, alignment=2),
     }
@@ -723,26 +741,42 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
     if has_discount:
         item_header = [
             Paragraph("SR.<br/>NO.", styles["tableHead"]), Paragraph("PRODUCT IMAGE", styles["tableHead"]),
+            Paragraph("DIMENSIONS", styles["tableHead"]),
             Paragraph("ARTICLE<br/>NO.", styles["tableHead"]), Paragraph("DESCRIPTION", styles["tableHead"]),
             Paragraph("MRP<br/>(Rs.)", styles["tableHead"]), Paragraph("QTY", styles["tableHead"]),
             Paragraph("MRP<br/>TOTAL (Rs.)", styles["tableHead"]),
             Paragraph("OFFER<br/>RATE", styles["tableHead"]), Paragraph("OFFER<br/>TOTAL (Rs.)", styles["tableHead"]),
         ]
-        # The 43 mm article column holds a full 7.5 pt SKU on one line; its
-        # three millimetres come from the still-generous description column.
-        item_widths = [_pw(v) * mm for v in (12, 25, 43, 74, 24, 12, 25, 26, 26)]
+        item_widths = [_pw(v) * mm for v in (12, 33, 33, 34, 54, 22, 12, 23, 22, 22)]
     else:
         item_header = [
             Paragraph("SR.<br/>NO.", styles["tableHead"]), Paragraph("PRODUCT IMAGE", styles["tableHead"]),
+            Paragraph("DIMENSIONS", styles["tableHead"]),
             Paragraph("ARTICLE<br/>NO.", styles["tableHead"]), Paragraph("DESCRIPTION", styles["tableHead"]),
             Paragraph("RATE<br/>(Rs.)", styles["tableHead"]), Paragraph("QTY", styles["tableHead"]),
             Paragraph("TOTAL<br/>(Rs.)", styles["tableHead"]),
         ]
-        item_widths = [_pw(v) * mm for v in (12, 25, 43, 107, 28, 12, 40)]
+        item_widths = [_pw(v) * mm for v in (12, 33, 33, 34, 80, 25, 12, 38)]
     max_rows = _max_item_rows_per_page()
     for area_index, room in enumerate(room_order, 1):
         room_items = grouped.get(room, [])
-        blocks = [room_items[i:i + max_rows] for i in range(0, len(room_items), max_rows)] or [[]]
+        # Stacked photos and diagrams need more vertical space than ordinary
+        # product images. Reduce page capacity when this area contains them.
+        media_depth = max((
+            max(
+                1 + bool(_seat_cover_urls(item)),
+                len(_media_urls(item, "dimension_image_urls")) if quotation.get("include_dimensions") and not item.get("exclude_dimension") else 0,
+            )
+            for item in room_items
+        ), default=1)
+        usable_rows_mm = (
+            PAGE_H_MM - TOP_MARGIN_MM - BOTTOM_MARGIN_MM - DETAIL_BOTTOM_SAFETY_MM
+            - AREA_HEADER_BLOCK_MM - ITEM_HEADER_ROW_MM - ITEM_TOTAL_ROW_MM
+        )
+        media_frame_height_mm = min(_pw(DETAIL_MEDIA_STACK_HEIGHT_MM), (usable_rows_mm - 4) / media_depth)
+        media_row_mm = media_depth * media_frame_height_mm + 4 if media_depth > 1 else 0
+        area_max_rows = min(max_rows, max(1, int(usable_rows_mm // media_row_mm))) if media_row_mm else max_rows
+        blocks = [room_items[i:i + area_max_rows] for i in range(0, len(room_items), area_max_rows)] or [[]]
         sr_offset = 0
         for block_index, block in enumerate(blocks):
             story.append(PageBreak())
@@ -754,7 +788,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
             story.append(_brand_header(area_label, styles, style_key="areaTitle"))
             story.extend([Spacer(1, 4 * mm), HRFlowable(width="100%", thickness=1.25, color=BLUE), Spacer(1, 3 * mm)])
             n_data_rows = len(block)
-            item_row_mm = _item_row_height_mm(n_data_rows)
+            item_row_mm = max(_item_row_height_mm(n_data_rows), media_row_mm)
             # The product image always gets the same explicit frame.  This is
             # intentionally independent of the number of products in a room:
             # a single selected faucet must not look unlike the same faucet in
@@ -763,8 +797,8 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
             # the same coordinate system.  Previously it remained 23×18 mm
             # inside a 17.5 mm-wide column, physically painting across the
             # article number and pricing cells.
-            image_width_mm = _pw(PRODUCT_IMAGE_FRAME_WIDTH_MM)
-            image_height_mm = _pw(PRODUCT_IMAGE_FRAME_HEIGHT_MM)
+            image_width_mm = _pw(DETAIL_MEDIA_FRAME_WIDTH_MM)
+            image_height_mm = media_frame_height_mm
             rows: list[list[object]] = [item_header]
             for offset_in_block, item in enumerate(block):
                 sr_no = sr_offset + offset_in_block + 1
@@ -781,18 +815,22 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
                 finish = item.get("finish") or item.get("colour") or ""
                 if finish:
                     description_parts.append(f"Finish: {finish}")
-                if not item.get("exclude_dimension"):
-                    dimension = item.get("dimension") or item.get("dimensions")
-                    if dimension:
-                        description_parts.append(f"Dimension: {dimension}")
                 description = _ellipsize(" | ".join(description_parts), 210)
+                seat_urls = _seat_cover_urls(item)
+                diagram_urls = _media_urls(item, "dimension_image_urls") if quotation.get("include_dimensions") and not item.get("exclude_dimension") else []
+                primary_image = item.get("image") or (seat_urls[0] if seat_urls else None)
+                product_images: list[Flowable] = [_img(primary_image, width_mm=image_width_mm, height_mm=image_height_mm)]
+                product_images.extend(
+                    _img(url, width_mm=image_width_mm, height_mm=image_height_mm)
+                    for url in seat_urls[:1] if url != primary_image
+                )
+                diagram_images: list[Flowable] = [
+                    _img(url, width_mm=image_width_mm, height_mm=image_height_mm)
+                    for url in diagram_urls
+                ]
                 if has_discount:
                     rows.append([
-                        Paragraph(str(sr_no), styles["cellCenter"]), _img(
-                            item.get("image"),
-                            width_mm=image_width_mm, height_mm=image_height_mm,
-                            cover=False,
-                        ),
+                        Paragraph(str(sr_no), styles["cellCenter"]), product_images, diagram_images,
                         Paragraph(_ellipsize(item.get("sku"), 80), styles["itemSku"]), Paragraph(description, styles["itemDescription"]),
                         Paragraph(_standard_money(listed_mrp), styles["itemMoney"]), Paragraph(f"{qty:g}", styles["itemQty"]),
                         Paragraph(_standard_money(qty * listed_mrp), styles["itemMoney"]),
@@ -800,9 +838,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
                     ])
                 else:
                     rows.append([
-                        Paragraph(str(sr_no), styles["cellCenter"]), _img(
-                            item.get("image"), width_mm=image_width_mm, height_mm=image_height_mm, cover=False,
-                        ),
+                        Paragraph(str(sr_no), styles["cellCenter"]), product_images, diagram_images,
                         Paragraph(_ellipsize(item.get("sku"), 80), styles["itemSku"]), Paragraph(description, styles["itemDescription"]),
                         Paragraph(_standard_money(base_rate), styles["itemMoney"]), Paragraph(f"{qty:g}", styles["itemQty"]),
                         Paragraph(_standard_money(qty * base_rate), styles["itemMoney"]),
@@ -811,7 +847,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
                 float(item.get("qty") or 0) * float(item.get("unit_price") or 0) * (1 - float(item.get("discount_pct") or 0) / 100)
                 for item in block
             )
-            total_label_col = 3  # DESCRIPTION column — same position in both layouts
+            total_label_col = 4  # DESCRIPTION column — same position in both layouts
             last_col = len(item_header) - 1
             total_row: list[object] = ["" for _ in item_header]
             total_row[total_label_col] = Paragraph("<b>TOTAL</b>", styles["cellCenter"])
@@ -827,7 +863,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
                 ("BACKGROUND", (0, -1), (-1, -1), HEADER_GREY), ("ALIGN", (0, 1), (0, -1), "CENTER"),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-                ("LEFTPADDING", (1, 1), (1, -2), 1), ("RIGHTPADDING", (1, 1), (1, -2), 1),
+                ("LEFTPADDING", (1, 1), (2, -2), 1), ("RIGHTPADDING", (1, 1), (2, -2), 1),
                 ("TOPPADDING", (0, 1), (-1, -2), 0.5 * mm), ("BOTTOMPADDING", (0, 1), (-1, -2), 0.5 * mm),
                 ("TOPPADDING", (0, 0), (-1, 0), 2), ("BOTTOMPADDING", (0, 0), (-1, 0), 2),
                 ("TOPPADDING", (0, -1), (-1, -1), 2), ("BOTTOMPADDING", (0, -1), (-1, -1), 2),
@@ -838,27 +874,6 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
             table.setStyle(TableStyle(item_style_cmds))
             story.append(table)
             sr_offset += n_data_rows
-
-    if quotation.get("include_dimensions"):
-        seen: set[tuple[str, str]] = set()
-        for item in quotation.get("items") or []:
-            if item.get("exclude_dimension"):
-                continue
-            for field, label in (("dimension_image_urls", "DIMENSIONS"), ("seat_cover_image_urls", "SEAT COVER")):
-                for url in item.get(field) or []:
-                    key = (str(item.get("product_id")), str(url))
-                    if key in seen or not str(url).startswith(("https://", "http://")):
-                        continue
-                    seen.add(key)
-                    story.append(PageBreak())
-                    story.append(_brand_header(label, styles))
-                    story.append(Spacer(1, 6 * mm))
-                    story.append(Paragraph(_ellipsize(f"{item.get('sku') or ''}  {item.get('name') or ''}", 110), styles["itemDescription"]))
-                    if item.get("dimensions") and field == "dimension_image_urls":
-                        story.append(Spacer(1, 3 * mm))
-                        story.append(Paragraph(_ellipsize(item["dimensions"], 180), styles["itemDescription"]))
-                    story.append(Spacer(1, 8 * mm))
-                    story.append(_img(url, width_mm=175, height_mm=190))
 
     doc.build(
         story,

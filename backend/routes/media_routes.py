@@ -108,22 +108,21 @@ async def list_product_media(product_id: str, user: UserPublic = Depends(get_cur
     return media
 
 
-@router.post("/products/{product_id}/vitra-media", response_model=Product)
-async def upload_vitra_media(
+@router.post("/products/{product_id}/vitra-media", response_model=Product, include_in_schema=False)
+@router.post("/products/{product_id}/diagram-media", response_model=Product)
+async def upload_diagram_media(
     product_id: str,
     kind: str,
     file: UploadFile = File(...),
     user: UserPublic = Depends(require_min_role("purchase")),
 ):
-    """Attach one dimension diagram or seat-cover photo to an exact Vitra SKU."""
+    """Attach a manually selected diagram or seat-cover photo to an exact product."""
     product = await db.products.find_one(floor_query(user, {"id": product_id}), {"_id": 0})
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     if kind not in ("dimension", "seat_cover"):
         raise HTTPException(status_code=422, detail="kind must be dimension or seat_cover")
-    brand = await db.brands.find_one({"id": product["brand_id"], "floor_id": product["floor_id"]}, {"_id": 0, "name": 1, "slug": 1})
-    if not brand or str(brand.get("name") or brand.get("slug") or "").strip().casefold() != "vitra":
-        raise HTTPException(status_code=422, detail="Vitra media can only be attached to Vitra products")
+    slug, _, _, _ = await _brand_slug_for_product(product_id, user)
     data = await _read_bounded_upload(file)
     mime = file.content_type or "application/octet-stream"
     if not mime.startswith("image/"):
@@ -132,7 +131,7 @@ async def upload_vitra_media(
     field = "dimension_image_urls" if kind == "dimension" else "seat_cover_image_urls"
     try:
         media = await media_service.upload_and_register(
-            data=data, mime=mime, brand_slug="vitra", product_id=product_id,
+            data=data, mime=mime, brand_slug=slug, product_id=product_id,
             brand_id=product["brand_id"], floor_id=product["floor_id"],
             source_type="internal", role=role, uploaded_by=user.id, actor=user,
         )
@@ -162,7 +161,7 @@ async def upload_product_media(
     if source_type not in ("supplier", "manufacturer", "internal"):
         raise HTTPException(status_code=400, detail="source_type must be supplier|manufacturer|internal")
     if role in ("dimension", "seat-cover"):
-        raise HTTPException(status_code=400, detail="Use the Vitra media upload endpoint for dimension and seat-cover images")
+        raise HTTPException(status_code=400, detail="Use the diagram media upload endpoint for dimension and seat-cover images")
     slug, brand_id, family_key, floor_id = await _brand_slug_for_product(product_id, user)
     data = await _read_bounded_upload(file)
     mime = file.content_type or "application/octet-stream"
