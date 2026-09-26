@@ -21,7 +21,8 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont, TTFontFile
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.platypus import (
-    Flowable, HRFlowable, Image, KeepTogether, PageBreak, Paragraph, SimpleDocTemplate,
+    BaseDocTemplate, Flowable, Frame, HRFlowable, Image, KeepTogether, NextPageTemplate,
+    PageBreak, PageTemplate, Paragraph, SimpleDocTemplate,
     Spacer, Table, TableStyle,
 )
 from services.pdf_image_loader import image_loader_metrics, prefetch_urls, remote_image_bytes
@@ -79,22 +80,35 @@ def _register_rupee_font() -> str | None:
 
 RUPEE_FONT = _register_rupee_font()
 
-# Original page-1 partner layout from the supplied quotation template.
-BRAND_PARTNERS = [
-    [("GROHE", "Pure Freude an Wasser"), ("hansgrohe", "Life is Waterful"), ("AXOR", "Form Follows Perfection"), ("VitrA", "Design Meets Life"), ("NEXION", "The Surface Experience"), ("QUTONE", "Let's Build Together")],
-    [("DIMORE", "Reflection of Your Style"), ("Oyster", "Indulge in Luxury"), ("GEBERIT", "Engineered for Hygiene"), ("MCM ITTIMI", "Innovation into Inspiration"), ("VERANTES LIVING", "Kitchens &amp; Wardrobes"), ("IMPORTED<br/>FURNITURE", "Crafted Beyond Borders")],
-]
+BRAND_LOGO_DIR = PDF_DIR / "brand_logos"
+BRAND_PARTNERS = (
+    ("grohe", "hansgrohe", "geberit", "vitra"),
+    ("oyster", "qutone", "nexion", "dimore"),
+)
 
 
-def brand_partners_table(base_cell_style: ParagraphStyle, col_width_mm: float = 44.5, grid_color=None) -> Table:
-    """The original 2x6 partner grid used on quotation page 1."""
-    partner_style = ParagraphStyle("partner", parent=base_cell_style, fontSize=6.6, leading=8, alignment=1)
-    rows = [[Paragraph(f"<b>{name}</b><br/><font size='6.5'><i>{tagline}</i></font>", partner_style) for name, tagline in row] for row in BRAND_PARTNERS]
-    table = Table(rows, colWidths=[_pw(col_width_mm) * mm] * 6, rowHeights=[12 * mm, 12 * mm])
+def brand_partners_table(_base_cell_style: ParagraphStyle, col_width_mm: float | None = None, grid_color=None) -> Table:
+    """Place only the supplied partner artwork in the two-row cover strip."""
+    # The tiles document shares this strip at landscape width. Its legacy
+    # argument describes one of six old cells, so retain the overall width.
+    cell_width = ((col_width_mm * 6 / 4) if col_width_mm else _pw(267 / 4)) * mm
+    logo_height = 11 * mm
+    rows = []
+    for names in BRAND_PARTNERS:
+        row = []
+        for name in names:
+            path = BRAND_LOGO_DIR / f"{name}.png"
+            reader = ImageReader(str(path))
+            source_width, source_height = reader.getSize()
+            scale = min((cell_width - 8 * mm) / source_width, logo_height / source_height)
+            row.append(Image(str(path), width=source_width * scale, height=source_height * scale))
+        rows.append(row)
+    table = Table(rows, colWidths=[cell_width] * 4, rowHeights=[15 * mm, 15 * mm])
     table.setStyle(TableStyle([
-        ("GRID", (0, 0), (-1, -1), 0.35, grid_color or GRID),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 2), ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
     return table
 
@@ -123,8 +137,8 @@ PRODUCT_IMAGE_ASPECT_RATIO = 16 / 10
 PRODUCT_IMAGE_FRAME_WIDTH_MM = 23.0
 PRODUCT_IMAGE_FRAME_HEIGHT_MM = 18.0
 DETAIL_MEDIA_FRAME_WIDTH_MM = 31.0
-DETAIL_MEDIA_FRAME_HEIGHT_MM = 18.0
-DETAIL_MEDIA_STACK_HEIGHT_MM = 18.0
+DETAIL_MEDIA_FRAME_HEIGHT_MM = 30.0
+DETAIL_MEDIA_STACK_HEIGHT_MM = 30.0
 STANDARD_PRODUCT_IMAGE_WIDTH_MM = PRODUCT_IMAGE_FRAME_WIDTH_MM
 STANDARD_PRODUCT_IMAGE_HEIGHT_MM = PRODUCT_IMAGE_FRAME_HEIGHT_MM
 # Sparse rooms retain the same generous identification frame. They are not
@@ -316,8 +330,10 @@ class _ProductImageFrame(Flowable):
     the largest possible size in the landscape frame.
     """
 
-    def __init__(self, data: bytes, width_mm: float, height_mm: float):
+    def __init__(self, data: bytes, width_mm: float, height_mm: float, *, trim_whitespace: bool = True):
         super().__init__()
+        if trim_whitespace:
+            data = _trim_product_whitespace(data)
         self.reader = ImageReader(BytesIO(data))
         self.width = width_mm * mm
         self.height = height_mm * mm
@@ -343,7 +359,7 @@ class _ProductImageFrame(Flowable):
             self.canv.restoreState()
             return
         x, y, drawn_width, drawn_height = contain_box(
-            self.source_width, self.source_height, self.width, self.height, inset=1.5 * mm,
+            self.source_width, self.source_height, self.width, self.height, inset=0.35 * mm,
         )
         self.canv.drawImage(
             self.reader, x, y,
@@ -380,12 +396,41 @@ class _ImageUnavailableFrame(Flowable):
 _CoverImage = _ProductImageFrame
 
 
+def _trim_product_whitespace(data: bytes) -> bytes:
+    """Remove supplier canvas margins without cropping any visible product pixels."""
+    from PIL import Image as PILImage, ImageChops
+
+    with PILImage.open(BytesIO(data)) as opened:
+        image = opened.convert("RGB")
+    # Crop only white/near-white canvases. Other backgrounds can be part of a
+    # tile or lifestyle photograph and must remain intact.
+    corners = (image.getpixel((0, 0)), image.getpixel((image.width - 1, 0)),
+               image.getpixel((0, image.height - 1)), image.getpixel((image.width - 1, image.height - 1)))
+    if not all(min(pixel) >= 235 for pixel in corners):
+        return data
+    background = PILImage.new("RGB", image.size, "white")
+    difference = ImageChops.difference(image, background)
+    bounds = difference.point(lambda value: 255 if value > 18 else 0).getbbox()
+    if not bounds:
+        return data
+    margin = max(2, round(min(image.size) * 0.015))
+    left, top, right, bottom = bounds
+    bounds = (max(0, left - margin), max(0, top - margin),
+              min(image.width, right + margin), min(image.height, bottom + margin))
+    if (bounds[2] - bounds[0]) * (bounds[3] - bounds[1]) >= image.width * image.height * 0.90:
+        return data
+    output = BytesIO()
+    image.crop(bounds).save(output, format="PNG")
+    return output.getvalue()
+
+
 def _img(
     url: str | None,
     width_mm: float = STANDARD_PRODUCT_IMAGE_WIDTH_MM,
     height_mm: float = STANDARD_PRODUCT_IMAGE_HEIGHT_MM,
     force_landscape: bool = False,
     cover: bool = False,
+    trim_whitespace: bool = True,
 ) -> Flowable:
     """Render the supplied product image inside the quotation image cell.
 
@@ -398,7 +443,7 @@ def _img(
         if data:
             try:
                 prepared = _prepare_image_bytes(data, force_landscape=force_landscape)
-                return _ProductImageFrame(prepared, width_mm, height_mm)
+                return _ProductImageFrame(prepared, width_mm, height_mm, trim_whitespace=trim_whitespace)
             except Exception:
                 pass
     return _ImageUnavailableFrame(width_mm, height_mm)
@@ -549,11 +594,37 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
         ]
         prefetch_urls(media_urls, _remote_image_bytes)
     buf = BytesIO()
-    doc = SimpleDocTemplate(
+    estimated_rooms = len(set(quotation.get("rooms") or [
+        item.get("room") or "General" for item in quotation.get("items") or []
+    ]))
+    cover_height_mm = min(PAGE_H_MM, 215 + max(0, estimated_rooms - 1) * 6
+                          + (10 if b.get("terms_text") else 0)
+                          + (4 if b.get("signature_name") else 0))
+    doc = BaseDocTemplate(
         buf, pagesize=PORTRAIT_A4, leftMargin=10 * mm, rightMargin=10 * mm,
-        topMargin=TOP_MARGIN_MM * mm, bottomMargin=BOTTOM_MARGIN_MM * mm, title=quotation.get("number", "Quotation"),
+        topMargin=TOP_MARGIN_MM * mm, bottomMargin=BOTTOM_MARGIN_MM * mm,
+        title=quotation.get("number", "Quotation"),
         author=b.get("footer_company_name") or "Buildcon House",
     )
+    cover_size = (PORTRAIT_A4[0], cover_height_mm * mm)
+
+    def page_chrome(cv, template_doc, size):
+        cv.setPageSize(size)
+        template_doc.pagesize = size
+        _draw_quotation_page_chrome(cv, template_doc, branding=b)
+
+    doc.addPageTemplates([
+        PageTemplate(id="cover", frames=[Frame(10 * mm, BOTTOM_MARGIN_MM * mm,
+                     PORTRAIT_A4[0] - 20 * mm,
+                     (cover_height_mm - TOP_MARGIN_MM - BOTTOM_MARGIN_MM) * mm,
+                     leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)],
+                     onPage=functools.partial(page_chrome, size=cover_size)),
+        PageTemplate(id="details", frames=[Frame(10 * mm, BOTTOM_MARGIN_MM * mm,
+                     PORTRAIT_A4[0] - 20 * mm,
+                     (PAGE_H_MM - TOP_MARGIN_MM - BOTTOM_MARGIN_MM) * mm,
+                     leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)],
+                     onPage=functools.partial(page_chrome, size=PORTRAIT_A4)),
+    ])
     base = getSampleStyleSheet()
     styles = {
         "brandFallback": ParagraphStyle("brandFallback", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=14, leading=15, textColor=INK),
@@ -758,6 +829,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
         ]
         item_widths = [_pw(v) * mm for v in (12, 33, 33, 34, 80, 25, 12, 38)]
     max_rows = _max_item_rows_per_page()
+    story.append(NextPageTemplate("details"))
     for area_index, room in enumerate(room_order, 1):
         room_items = grouped.get(room, [])
         # Stacked photos and diagrams need more vertical space than ordinary
@@ -825,7 +897,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
                     for url in seat_urls[:1] if url != primary_image
                 )
                 diagram_images: list[Flowable] = [
-                    _img(url, width_mm=image_width_mm, height_mm=image_height_mm)
+                    _img(url, width_mm=image_width_mm, height_mm=image_height_mm, trim_whitespace=False)
                     for url in diagram_urls
                 ]
                 if has_discount:
@@ -875,11 +947,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
             story.append(table)
             sr_offset += n_data_rows
 
-    doc.build(
-        story,
-        onFirstPage=functools.partial(_draw_quotation_page_chrome, branding=b),
-        onLaterPages=functools.partial(_draw_quotation_page_chrome, branding=b),
-    )
+    doc.build(story)
     rendered = buf.getvalue()
     logger.info(
         "quotation_pdf_complete duration_ms=%.1f bytes=%d image_loader=%s",

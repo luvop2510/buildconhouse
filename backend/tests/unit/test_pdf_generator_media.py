@@ -57,6 +57,34 @@ def test_sanitary_pdf_filename_uses_the_customer_name():
     assert pdf_generator.quotation_pdf_filename('  Myruba / Sons  ') == "Myruba Sons.pdf"
 
 
+def test_cover_uses_supplied_logos_and_a_shorter_first_page():
+    quotation = {
+        "number": "LOGO-1", "items": [{"room": "Bath", "sku": "WC-1", "name": "WC", "qty": 1, "unit_price": 1000}],
+        "subtotal": 1000, "grand_total": 1000,
+    }
+    pages = PdfReader(BytesIO(pdf_generator.build_quotation_pdf(quotation, {"name": "Logo QA"}))).pages
+    cover = pages[0]
+    assert len(pages) == 2
+    assert float(cover.mediabox.height) < float(pages[1].mediabox.height)
+    assert len(cover.images) >= 9  # House mark plus the eight supplied partner marks.
+    text = cover.extract_text() or ""
+    assert "OUR BRAND PARTNERS" in text
+    assert all(name not in text for name in ("GROHE", "hansgrohe", "GEBERIT", "QUTONE", "IMPORTED FURNITURE"))
+
+
+def test_product_photo_whitespace_is_trimmed_but_diagram_is_left_untouched():
+    image = PILImage.new("RGB", (300, 200), "white")
+    for x in range(110, 191):
+        for y in range(40, 161):
+            image.putpixel((x, y), (180, 30, 30))
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    photo = pdf_generator._ProductImageFrame(buffer.getvalue(), 20, 20)
+    diagram = pdf_generator._ProductImageFrame(buffer.getvalue(), 20, 20, trim_whitespace=False)
+    assert photo.source_width < diagram.source_width
+    assert photo.source_height < diagram.source_height
+
+
 def test_pdf_money_uses_an_unbreakable_indian_currency_prefix_and_digit_grouping():
     assert pdf_generator.format_indian_money(12345678.9) == "1,23,45,678.90"
     assert pdf_generator.format_indian_money(-1000) == "-1,000.00"

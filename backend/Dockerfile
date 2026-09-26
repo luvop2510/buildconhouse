@@ -22,6 +22,7 @@ RUN pip install -r requirements-prod.txt
 # local environments, reports and credentials must never enter an image layer.
 COPY access_profiles.py auth.py bootstrap.py db.py middleware.py models.py models_tile_orders.py models_walkins.py pdf_chalan.py pdf_generator.py pdf_tiles.py seed.py server.py settings.py ./
 COPY buildcon_logo.png ./
+COPY brand_logos ./brand_logos
 COPY migrations ./migrations
 COPY media_storage ./media_storage
 COPY routes ./routes
