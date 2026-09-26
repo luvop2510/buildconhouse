@@ -15,6 +15,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 import httpx
 from dotenv import load_dotenv
@@ -25,6 +26,7 @@ sys.path.insert(0, str(BASE))
 load_dotenv(BASE / ".env")
 
 from db import db  # noqa: E402
+from scripts.catalog_image_enrichment import is_acceptable_asset, normalized_sku  # noqa: E402
 from scripts.media_recovery_queue import run as recovery_queue  # noqa: E402
 from services.media_quality import quality_from_dimensions  # noqa: E402
 from services.media_service import upload_and_register  # noqa: E402
@@ -37,14 +39,16 @@ _LOW_PREVIEW_PREFIX = "/mnpadding/515/515/FFFFFF/images/q_auto:low/"
 
 
 def official_asset_url(page_html: str, sku: str) -> str | None:
-    """Return a direct Salsify master only when the page identifies the SKU."""
-    if sku.lower() not in page_html.lower():
+    """Return a direct master only when both page and asset identify the SKU."""
+    if normalized_sku(sku) not in normalized_sku(page_html):
         return None
     match = _OG_IMAGE.search(page_html)
     if not match:
         return None
     image_url = html.unescape(match.group(1))
     if not image_url.startswith("https://img-salsify.mncdn.com/"):
+        return None
+    if normalized_sku(sku) not in normalized_sku(unquote(Path(urlparse(image_url).path).name)):
         return None
     return image_url.replace(_LOW_PREVIEW_PREFIX, "/images/", 1)
 
@@ -106,10 +110,10 @@ async def run(*, limit: int = 10, apply: bool = False) -> dict:
                 result["skipped"].append({"product_id": product_id, "sku": sku, "reason": str(exc)})
                 continue
             quality = quality_from_dimensions(width, height, asset.headers.get("content-type"))
-            if quality in {"missing", "poor"}:
+            if not is_acceptable_asset(width, height, asset.headers.get("content-type", "").split(";", 1)[0]):
                 result["skipped"].append({
                     "product_id": product_id, "sku": sku,
-                    "reason": f"official source remains {quality} ({width}x{height})",
+                    "reason": f"official source is below 4K ({width}x{height})",
                 })
                 continue
             item = {
