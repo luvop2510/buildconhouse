@@ -777,12 +777,15 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
                 # Normal selections wrap naturally; caps are deliberately
                 # high enough that ellipsis is a true final safeguard against
                 # unbounded pasted catalogue copy, not the normal rendering.
-                description = _ellipsize(item.get("description") or item.get("name"), 175)
+                description_parts = [str(item.get("description") or item.get("name") or "")]
                 finish = item.get("finish") or item.get("colour") or ""
                 if finish:
-                    description = _ellipsize(
-                        f"{item.get('description') or item.get('name') or ''} | Finish: {finish}", 210,
-                    )
+                    description_parts.append(f"Finish: {finish}")
+                if not item.get("exclude_dimension"):
+                    dimension = item.get("dimension") or item.get("dimensions")
+                    if dimension:
+                        description_parts.append(f"Dimension: {dimension}")
+                description = _ellipsize(" | ".join(description_parts), 210)
                 if has_discount:
                     rows.append([
                         Paragraph(str(sr_no), styles["cellCenter"]), _img(
@@ -839,6 +842,8 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
     if quotation.get("include_dimensions"):
         seen: set[tuple[str, str]] = set()
         for item in quotation.get("items") or []:
+            if item.get("exclude_dimension"):
+                continue
             for field, label in (("dimension_image_urls", "DIMENSIONS"), ("seat_cover_image_urls", "SEAT COVER")):
                 for url in item.get(field) or []:
                     key = (str(item.get("product_id")), str(url))

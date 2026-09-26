@@ -6,8 +6,9 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from io import BytesIO
 import re
+import logging
 
-from PIL import Image, ImageOps
+from PIL import Image, ImageDraw, ImageOps
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
@@ -17,6 +18,7 @@ from services.pdf_image_loader import prefetch_urls, remote_image_bytes
 
 
 DEFAULT_AREA = "Other Area"
+logger = logging.getLogger("forge.quotation_ppt")
 SLIDE_W = 13.333
 SLIDE_H = 7.5
 
@@ -81,6 +83,16 @@ def _area_rows(items: list[dict]) -> list[tuple[str, list[dict]]]:
     return list(grouped.items())
 
 
+def _missing_image() -> bytes:
+    """Keep a missing catalog photo visible without aborting the whole deck."""
+    image = Image.new("RGB", (1200, 900), "#f3f4f6")
+    draw = ImageDraw.Draw(image)
+    draw.text((470, 440), "Photo pending", fill="#4b5563")
+    output = BytesIO()
+    image.save(output, format="PNG")
+    return output.getvalue()
+
+
 def suggested_area(name: str | None) -> str:
     """Fallback for quotations created before area labels were introduced."""
     text = (name or "").lower()
@@ -97,24 +109,21 @@ def suggested_area(name: str | None) -> str:
 def build_product_ppt(doc: dict) -> bytes:
     """One cover and one or more slides per room, up to three areas per slide.
 
-    Every line requires an image. A missing or inaccessible image fails the
-    request instead of producing a deck with blank product positions.
+    Unavailable catalog photos get an explicit placeholder so the remaining
+    selected products can still be shared with the customer.
     """
     items = doc.get("items") or []
     if not items:
         raise ValueError("Add products before generating the PPT")
-    for item in items:
-        if not item.get("image"):
-            raise ValueError(f"Product image missing for {item.get('name') or 'a product'}")
-    prefetch_urls(item["image"] for item in items)
+    prefetch_urls(item["image"] for item in items if item.get("image"))
     pictures: dict[str, bytes] = {}
     for item in items:
-        url = item["image"]
+        url = item.get("image") or ""
         if url not in pictures:
             data = remote_image_bytes(url)
             if not data:
-                raise ValueError(f"Product image unavailable for {item.get('name') or 'a product'}")
-            pictures[url] = data
+                logger.warning("Product image unavailable in PPT: sku=%s", item.get("sku"))
+            pictures[url] = data or _missing_image()
 
     presentation = Presentation()
     presentation.slide_width = Inches(SLIDE_W)
@@ -166,7 +175,7 @@ def build_product_ppt(doc: dict) -> bytes:
                 for index, product in enumerate(products):
                     px = x + (index % cols) * cell_w
                     py = 1.38 + (index // cols) * cell_h
-                    _picture(slide, pictures[product["image"]], px, py, cell_w, cell_h)
+                    _picture(slide, pictures[product.get("image") or ""], px, py, cell_w, cell_h)
     stream = BytesIO()
     presentation.save(stream)
     return stream.getvalue()

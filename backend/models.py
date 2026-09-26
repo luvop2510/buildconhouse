@@ -543,6 +543,8 @@ class QuotationLineItem(BaseModel):
     discount_pct: Optional[float] = Field(default=None, ge=0, le=100)  # None → inherit from category/project
     notes: Optional[str] = None
     description: Optional[str] = None      # inline override of product description
+    dimension: Optional[str] = Field(default=None, max_length=240)
+    exclude_dimension: bool = False
     # A catalog item that was inserted automatically with a parent line, for
     # example the seat cover selected with a VitrA WC.  These links are saved
     # in the quotation snapshot so quantity, delete, duplicate and room-move

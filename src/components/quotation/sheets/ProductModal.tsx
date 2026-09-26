@@ -68,6 +68,8 @@ export function ProductModal() {
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
   const [qty, setQty] = useState(1);
   const [priceOverride, setPriceOverride] = useState<string>("");
+  const [manualDimension, setManualDimension] = useState<string>("");
+  const [excludeDimension, setExcludeDimension] = useState(false);
   const [notes, setNotes] = useState<string>("");
   const [alternates, setAlternates] = useState<Product[]>([]);
   const [completeSet, setCompleteSet] = useState<Product[]>([]);
@@ -119,6 +121,8 @@ export function ProductModal() {
     setSelectedVariant(null);
     setQty(1);
     setPriceOverride("");
+    setManualDimension("");
+    setExcludeDimension(false);
     setNotes("");
     setAlternates([]);
     setCompleteSet([]);
@@ -200,6 +204,8 @@ export function ProductModal() {
     // Custom price / quantity override via a synthetic variant — keeps
     // the existing addFromProduct path a single source of truth.
     const custom: ProductVariant = { ...v, price: currentPrice,
+      dimensions: manualDimension.trim() || selectedProduct.dimensions || null,
+      exclude_dimension: excludeDimension,
       concealed_part: quotationConceal ? {
         product_id: quotationConceal.id, sku: quotationConceal.sku, name: quotationConceal.name,
         unit_price: quotationConceal.price, mrp: quotationConceal.mrp,
@@ -397,6 +403,29 @@ export function ProductModal() {
                     ))}
                   </View>
                 ) : null}
+                <View style={{ gap: 8 }}>
+                  <Text style={styles.sectionLabel}>Quotation dimension</Text>
+                  <TextInput
+                    testID="pm-manual-dimension"
+                    accessibilityLabel="Manual product dimension for quotation"
+                    value={manualDimension}
+                    onChangeText={setManualDimension}
+                    placeholder={selectedProduct.dimensions || "Enter a dimension"}
+                    placeholderTextColor={colors.onSurfaceMuted}
+                    maxLength={240}
+                    style={styles.priceInput}
+                  />
+                  <Pressable
+                    testID="pm-exclude-dimension"
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: excludeDimension }}
+                    onPress={() => setExcludeDimension((value) => !value)}
+                    style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+                  >
+                    <Feather name={excludeDimension ? "check-square" : "square"} size={18} color={colors.onSurface} />
+                    <Text style={styles.specVal}>Exclude dimension from PDF</Text>
+                  </Pressable>
+                </View>
 
                 {selectedProduct.description ? (
                   <View style={{ gap: 4 }}>

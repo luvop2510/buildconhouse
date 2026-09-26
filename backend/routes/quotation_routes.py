@@ -1,5 +1,6 @@
 """Quotation Builder API — v2 with multi-level discounts, autosave, duplicate."""
 import asyncio
+import logging
 from datetime import datetime, timezone
 from urllib.parse import quote
 from uuid import uuid4
@@ -41,6 +42,7 @@ from services.sequence import next_number
 from services.tiles_stage import can_move_to_quotation, can_place_order
 
 router = APIRouter(prefix="/quotations", tags=["quotations"])
+logger = logging.getLogger("forge.quotations")
 
 
 class QuotationLineMutation(BaseModel):
@@ -101,8 +103,12 @@ async def _canonicalize_item_images(items) -> list[dict]:
     priority = {"manufacturer": 0, "supplier": 1, "internal": 2}
     quality_rank = {"excellent": 4, "good": 3, "acceptable": 2, "poor": 1, "missing": 0}
     grouped: dict[str, list[dict]] = {}
+    cover_fallback: dict[str, str] = {}
     for row in media_rows:
-        if row.get("role") in ("dimension", "seat-cover"):
+        if row.get("role") == "seat-cover":
+            cover_fallback.setdefault(str(row.get("product_id")), str(row.get("public_url")))
+            continue
+        if row.get("role") == "dimension":
             continue
         grouped.setdefault(str(row.get("product_id")), []).append(row)
     for rows in grouped.values():
@@ -139,7 +145,7 @@ async def _canonicalize_item_images(items) -> list[dict]:
         {**item, "image": (
             best_current_media(grouped[str(item.get("product_id"))]).get("public_url")
             if grouped.get(str(item.get("product_id")))
-            else item.get("image")
+            else item.get("image") or cover_fallback.get(str(item.get("product_id")))
         )}
         for item in raw_items
     ]
@@ -1348,7 +1354,12 @@ async def quotation_pdf(quotation_id: str, include_dimensions: bool = False, use
             event = await db.event_outbox.find_one({"idempotency_key": key}, {"_id": 0})
             if not event:
                 raise HTTPException(status_code=500, detail=f"Could not journal quotation generation: {exc}") from exc
-    await dispatch_event(event["id"])
+    try:
+        await dispatch_event(event["id"])
+    except Exception:
+        # The outbox row is already durable. Its worker will retry follow-up
+        # automation; a transient dispatcher failure must not discard the PDF.
+        logger.exception("Quotation PDF outbox dispatch deferred: quotation_id=%s", quotation_id)
     return StreamingResponse(
         iter([pdf_bytes]),
         media_type="application/pdf",

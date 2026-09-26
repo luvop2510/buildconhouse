@@ -18,7 +18,9 @@ async function fetchApiBlob(path: string, errorLabel: string, floorId?: string):
       headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(floorId ? { "X-Floor-Id": floorId } : {}) }, credentials: "same-origin",
     });
     if (!res.ok) {
-      toast.show(res.status === 404 ? `That ${errorLabel} isn't available` : `Couldn't download the ${errorLabel}`);
+      let detail = "";
+      try { detail = String((await res.json())?.detail || ""); } catch { /* non-JSON gateway response */ }
+      toast.show(detail || (res.status === 404 ? `That ${errorLabel} isn't available` : `Couldn't download the ${errorLabel}`));
       return null;
     }
     return await res.blob();

@@ -47,6 +47,18 @@ def test_family_card_variants_and_sample_use_each_products_own_primary_media(mon
     }
 
 
+def test_seat_cover_photo_is_exact_product_fallback_when_hero_is_missing():
+    cover = _product("cover")
+    other = _product("other")
+    media = _media("cover")
+    media.update(role="seat-cover", is_primary=False)
+    snapshot = _build_snapshot([cover, other], [media], [], [], [])
+    hydrated = hydrate_product(cover, snapshot)
+    assert hydrated["hero_image_url"] == "https://cdn.test/cover.jpg"
+    assert catalog_service._primary_product_image(snapshot, "cover") == "https://cdn.test/cover.jpg"
+    assert catalog_service._primary_product_image(snapshot, "other") is None
+
+
 def test_family_card_variant_switching_exposes_each_skus_business_fields(monkeypatch):
     a, b = _product("a"), _product("b")
     a.update({"stock": 3, "dimensions": "100 mm", "material": "Brass", "warranty": "5 years", "specs": {"flow": "5 l/min"}})

@@ -97,6 +97,8 @@ export function AssistantPane({ onClose }: { onClose?: () => void }) {
     || (b.assistantFocus && b.assistantFocus.kind === "product" ? b.assistantFocus.product_id : null);
 
   const { product, alternates, family, loading } = useAssistantData(productId);
+  const [dimensionDraft, setDimensionDraft] = useState("");
+  useEffect(() => setDimensionDraft(focusedLine?.dimension || ""), [focusedLine?.id, focusedLine?.dimension]);
 
   if (!productId) {
     return (
@@ -170,6 +172,7 @@ export function AssistantPane({ onClose }: { onClose?: () => void }) {
         sku: v.sku,
         name: displayName,
         unit_price: v.price ?? product.price,
+        dimension: v.dimensions ?? product.dimensions ?? null,
         finish,
         image: resolveVariantImages(product, v).images[0] ?? focusedLine.image,
       });
@@ -305,6 +308,33 @@ export function AssistantPane({ onClose }: { onClose?: () => void }) {
         )}
 
         {/* --- Specs --- */}
+        <View style={{ gap: 8 }}>
+          <Text style={type.overline}>Dimensions</Text>
+          {focusedLine ? <>
+            <TextInput
+              testID="assist-manual-dimension"
+              accessibilityLabel="Manual quotation dimension"
+              value={dimensionDraft}
+              onChangeText={setDimensionDraft}
+              onBlur={() => b.updateLine(focusedLine.id, { dimension: dimensionDraft.trim() || null }, "dimension")}
+              onSubmitEditing={() => b.updateLine(focusedLine.id, { dimension: dimensionDraft.trim() || null }, "dimension")}
+              placeholder={activeVariant?.dimensions || product.dimensions || "Enter a dimension"}
+              maxLength={240}
+              style={styles.qtyInput}
+            />
+            <Pressable
+              testID="assist-exclude-dimension"
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: !!focusedLine.exclude_dimension }}
+              onPress={() => b.updateLine(focusedLine.id, { exclude_dimension: !focusedLine.exclude_dimension })}
+              style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+            >
+              <Feather name={focusedLine.exclude_dimension ? "check-square" : "square"} size={18} color={colors.onSurface} />
+              <Text style={type.body}>Exclude dimension from PDF</Text>
+            </Pressable>
+          </> : <Text style={type.body}>{activeVariant?.dimensions || product.dimensions || "No catalog dimension"}</Text>}
+        </View>
+
         {product.specs && Object.keys(product.specs).length ? (
           <View style={{ gap: 6 }}>
             <Text style={type.overline}>Specifications</Text>

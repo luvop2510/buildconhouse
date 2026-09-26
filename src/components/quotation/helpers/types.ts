@@ -19,6 +19,7 @@ export type ProductVariant = {
   mrp: number; price: number; stock?: number;
   dimensions?: string | null; material?: string | null; warranty?: string | null;
   dimension_image_urls?: string[]; seat_cover_image_urls?: string[];
+  exclude_dimension?: boolean;
   specs?: Record<string, any> | null; description?: string | null;
   // Populated dynamically by the backend from family-sibling products —
   // lets a finish/colour chip switch the main image, not just the price.
@@ -113,6 +114,7 @@ export type Line = {
   qty: number; unit_price: number; mrp?: number | null;
   discount_pct: number | null;
   description?: string | null; notes?: string | null;
+  dimension?: string | null; exclude_dimension?: boolean;
   finish?: string | null;
   family_key?: string | null;
   godown_stock_id?: string | null; godown_allocation_id?: string | null;

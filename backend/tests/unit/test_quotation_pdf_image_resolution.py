@@ -37,6 +37,16 @@ def test_pdf_image_resolution_keeps_snapshot_when_current_media_is_missing(monke
     assert resolved[0]["image"] == "https://cdn.example.test/snapshot.jpg"
 
 
+def test_pdf_image_resolution_uses_exact_seat_cover_photo_when_no_hero(monkeypatch):
+    monkeypatch.setattr(quotation_routes, "db", _Db([
+        {"product_id": "cover", "role": "seat-cover", "public_url": "https://cdn.example.test/cover.png"},
+    ]))
+    resolved = asyncio.run(quotation_routes._canonicalize_item_images([
+        {"product_id": "cover", "image": None},
+    ]))
+    assert resolved[0]["image"] == "https://cdn.example.test/cover.png"
+
+
 def test_pdf_image_resolution_prefers_current_primary_media(monkeypatch):
     monkeypatch.setattr(quotation_routes, "db", _Db([
         {"product_id": "p1", "public_url": "https://cdn.example.test/secondary.jpg", "is_primary": False},

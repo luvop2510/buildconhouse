@@ -79,6 +79,25 @@ def test_standard_pdf_prints_indian_currency_for_large_amounts():
     assert "1,23,45,678.90" in text
 
 
+def test_manual_dimension_is_printed_only_when_included():
+    pdf = pdf_generator.build_quotation_pdf(
+        {
+            "customer_name": "Dimension Contract",
+            "items": [
+                {"sku": "DIM-1", "name": "Basin", "room": "Bath", "qty": 1, "unit_price": 1000,
+                 "dimension": "600 x 400 mm", "exclude_dimension": False},
+                {"sku": "DIM-2", "name": "WC", "room": "Bath", "qty": 1, "unit_price": 1000,
+                 "dimension": "720 x 360 mm", "exclude_dimension": True},
+            ],
+            "subtotal": 2000, "grand_total": 2000,
+        },
+        {"name": "Dimension Contract"},
+    )
+    text = " ".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf)).pages)
+    assert "600 x 400 mm" in text
+    assert "720 x 360 mm" not in text
+
+
 def test_standard_item_tables_scale_into_portrait_printable_width():
     source = Path(pdf_generator.__file__).read_text()
 

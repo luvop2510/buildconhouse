@@ -10,14 +10,14 @@ type ConcealedPart = {
 
 type ProductLike = {
   id: string; sku: string; name: string; price: number; mrp: number;
-  category_id: string; finish?: string | null; colour?: string | null;
+  category_id: string; finish?: string | null; colour?: string | null; dimensions?: string | null;
   family_key?: string | null; images?: string[]; concealed_part?: ConcealedPart | null; specs?: Record<string, unknown> | null;
 };
 
 type VariantLike = {
   id?: string | null; sku: string; price: number; mrp: number;
   finish?: string | null; colour?: string | null; color?: string | null;
-  size?: string | null; image?: string | null; concealed_part?: ConcealedPart | null; specs?: Record<string, unknown> | null;
+  size?: string | null; image?: string | null; dimensions?: string | null; exclude_dimension?: boolean; concealed_part?: ConcealedPart | null; specs?: Record<string, unknown> | null;
 };
 
 type LineLike = {
@@ -25,6 +25,7 @@ type LineLike = {
   category_id?: string | null; room?: string; qty: number; unit_price: number;
   mrp?: number | null; discount_pct: number | null; finish?: string | null;
   family_key?: string | null; description?: string | null;
+  dimension?: string | null; exclude_dimension?: boolean;
   included_for_line_id?: string | null; included_qty_per_parent?: number | null;
 };
 
@@ -70,7 +71,9 @@ export function addProductAndConcealedPart<T extends LineLike>(
   const displayName = variant && (variant.finish || variantColour || variant.size)
     ? `${product.name} · ${variant.finish || variantColour || variant.size}` : product.name;
   const addOrIncrease = (current: T[], line: T): T[] => {
-    const index = current.findIndex((item) => item.product_id === line.product_id && item.room === room);
+    const index = current.findIndex((item) => item.product_id === line.product_id && item.room === room
+      && item.dimension === line.dimension && !!item.exclude_dimension === !!line.exclude_dimension
+      && item.unit_price === line.unit_price);
     if (index < 0) return [...current, line];
     const next = [...current];
     next[index] = { ...next[index], qty: next[index].qty + line.qty };
@@ -81,8 +84,12 @@ export function addProductAndConcealedPart<T extends LineLike>(
     image: variant?.image || primaryImage, category_id: product.category_id, room,
     qty: 1, unit_price: variant?.price ?? product.price, mrp: variant?.mrp ?? product.mrp,
     discount_pct: null, finish, family_key: product.family_key || null,
+    dimension: variant?.dimensions ?? product.dimensions ?? null,
+    exclude_dimension: !!variant?.exclude_dimension,
   } as T);
-  const parent = next.find((line) => line.product_id === productId && line.room === room)!;
+  const parent = next.find((line) => line.product_id === productId && line.room === room
+    && line.dimension === (variant?.dimensions ?? product.dimensions ?? null)
+    && !!line.exclude_dimension === !!variant?.exclude_dimension)!;
 
   // Seat covers are not an optional cross-sell: they follow their selected
   // WC's SKU and quantity. A re-select replaces any prior linked cover rather

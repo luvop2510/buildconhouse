@@ -1,7 +1,6 @@
 """The exported deck must preserve grouping and contain product imagery only."""
 from io import BytesIO
 
-import pytest
 from PIL import Image
 from pptx import Presentation
 
@@ -18,6 +17,12 @@ def _image_bytes() -> bytes:
 def test_area_is_a_persisted_quotation_line_field():
     line = QuotationLineItem(product_id="p1", sku="S-1", name="Basin", room="Powder Room", area="Basin Area")
     assert line.model_dump()["area"] == "Basin Area"
+
+
+def test_dimension_options_survive_quotation_line_validation():
+    line = QuotationLineItem(product_id="p1", sku="S-1", name="Basin", dimension="600 × 400 mm", exclude_dimension=True)
+    assert line.model_dump()["dimension"] == "600 × 400 mm"
+    assert line.model_dump()["exclude_dimension"] is True
 
 
 def test_ppt_groups_products_by_room_and_area_without_catalog_text(monkeypatch):
@@ -45,9 +50,10 @@ def test_ppt_groups_products_by_room_and_area_without_catalog_text(monkeypatch):
     assert [sum(shape.shape_type == 13 for shape in slide.shapes) for slide in ppt.slides] == [0, 3, 1]
 
 
-def test_ppt_fails_when_product_has_no_image():
-    with pytest.raises(ValueError, match="image missing"):
-        quotation_ppt.build_product_ppt({"items": [{"name": "Basin", "room": "Bath"}]})
+def test_ppt_keeps_product_with_missing_image():
+    ppt = Presentation(BytesIO(quotation_ppt.build_product_ppt({"items": [{"name": "Basin", "room": "Bath"}]})))
+    assert len(ppt.slides) == 2
+    assert sum(shape.shape_type == 13 for shape in ppt.slides[1].shapes) == 1
 
 
 def test_filename_contains_only_safe_customer_name_ppt_and_date():

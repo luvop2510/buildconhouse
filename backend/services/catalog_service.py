@@ -316,6 +316,18 @@ def _apply_media(product: dict, snapshot: CatalogSnapshot) -> None:
             best_quality = product.get("image_quality") or best_quality
             hero_quality = best_quality
 
+    # A seat-cover photograph belongs to this exact SKU. If it is the only
+    # usable asset, show it as the product preview instead of an empty frame.
+    # Dimension drawings remain supplementary and never become hero photos.
+    if not hero_url:
+        cover = next((media for media in rows if media.role == "seat-cover" and media.public_url), None)
+        if cover:
+            hero_url = cover.public_url
+            hero_quality = cover.quality
+            gallery = [{"url": cover.public_url, "role": "seat-cover", "source_type": cover.source_type,
+                        "quality": cover.quality, "width": cover.width, "height": cover.height,
+                        "is_primary": False, "family_key": cover.family_key}]
+
     product["media_summary"] = {
         **summary, "best_quality": best_quality, "total": sum(summary.values()),
     }
@@ -340,10 +352,11 @@ def _primary_product_image(snapshot: CatalogSnapshot, product_id: str, family_ke
     # `variants[].image`, which is the selected-colour hero source.
     media_by_product = getattr(snapshot, "media_by_product", None)
     if media_by_product is not None:
-        for media in _dedup_media(list(media_by_product.get(product_id, ()))):
+        media_rows = _dedup_media(list(media_by_product.get(product_id, ())))
+        for media in media_rows:
             if media.public_url and media.role not in ("dimension", "seat-cover"):
                 return media.public_url
-        return None
+        return next((media.public_url for media in media_rows if media.public_url and media.role == "seat-cover"), None)
 
     # Lightweight snapshot doubles used by focused family-list tests expose
     # the raw rows only. Preserve the production ordering policy there too,
@@ -358,7 +371,7 @@ def _primary_product_image(snapshot: CatalogSnapshot, product_id: str, family_ke
     for row in rows:
         if row.get("public_url") and row.get("role") not in ("dimension", "seat-cover"):
             return row["public_url"]
-    return None
+    return next((row["public_url"] for row in rows if row.get("public_url") and row.get("role") == "seat-cover"), None)
 
 
 def _family_siblings(snapshot: CatalogSnapshot, product: dict) -> list[dict]:
@@ -1055,6 +1068,8 @@ async def search_catalog(
         family.update(_size_metadata_for_products(family_products))
         media = snapshot.media_rows_by_product.get(family["sample_product_id"], ())
         hero = next((row for row in media if row.get("public_url") and row.get("role") not in ("dimension", "seat-cover")), None)
+        if not hero:
+            hero = next((row for row in media if row.get("public_url") and row.get("role") == "seat-cover"), None)
         if hero:
             family["hero_image_url"] = hero.get("public_url")
             family["image_quality"] = hero.get("quality")
