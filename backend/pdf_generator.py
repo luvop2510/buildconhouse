@@ -268,6 +268,24 @@ def _prepare_image_bytes(data: bytes, *, force_landscape: bool = False) -> bytes
         return data
 
 
+def _rotate_portrait_for_tiles_pdf(data: bytes) -> bytes:
+    """Show portrait tile surfaces horizontally in the quotation PDF only.
+
+    Older tile media may already sit inside a white landscape canvas. Remove
+    that canvas before deciding whether the visible product needs rotation.
+    The stored image and all other document types retain their orientation.
+    """
+    from PIL import Image as PILImage
+
+    trimmed = _trim_product_whitespace(data)
+    with PILImage.open(BytesIO(trimmed)) as image:
+        if image.height <= image.width:
+            return trimmed
+        output = BytesIO()
+        image.rotate(90, expand=True).save(output, format="PNG")
+        return output.getvalue()
+
+
 def prefetch_product_images(items: Iterable[dict], *, workers: int = 6, timeout: float = 8.0) -> None:
     """Warm the bounded image cache concurrently under one total deadline.
 
@@ -326,9 +344,8 @@ class _ProductImageFrame(Flowable):
 
     Giving ReportLab a frame (rather than a differently-sized ``Image`` for
     every source) makes image placement deterministic inside table cells.  A
-    source is never rotated, stretched, or cropped: EXIF orientation is baked
-    in by :func:`_prepare_image_bytes`, then the upright source is fitted at
-    the largest possible size in the landscape frame.
+    source is fitted without stretching. Tile quotations may first rotate a
+    portrait tile surface to meet their landscape product-image layout.
     """
 
     def __init__(self, data: bytes, width_mm: float, height_mm: float, *, trim_whitespace: bool = True):
@@ -432,6 +449,7 @@ def _img(
     force_landscape: bool = False,
     cover: bool = False,
     trim_whitespace: bool = True,
+    rotate_portrait: bool = False,
 ) -> Flowable:
     """Render the supplied product image inside the quotation image cell.
 
@@ -443,8 +461,13 @@ def _img(
         data = _remote_image_bytes(str(url))
         if data:
             try:
-                prepared = _prepare_image_bytes(data, force_landscape=force_landscape)
-                return _ProductImageFrame(prepared, width_mm, height_mm, trim_whitespace=trim_whitespace)
+                prepared = _prepare_image_bytes(data, force_landscape=force_landscape and not rotate_portrait)
+                if rotate_portrait:
+                    prepared = _rotate_portrait_for_tiles_pdf(prepared)
+                return _ProductImageFrame(
+                    prepared, width_mm, height_mm,
+                    trim_whitespace=trim_whitespace and not rotate_portrait,
+                )
             except Exception:
                 pass
     return _ImageUnavailableFrame(width_mm, height_mm)

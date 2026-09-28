@@ -528,11 +528,8 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
                 item.get("image"),
                 width_mm=QUOTATION_PRODUCT_IMAGE_WIDTH_MM,
                 height_mm=QUOTATION_PRODUCT_IMAGE_HEIGHT_MM,
-                force_landscape=True,
+                rotate_portrait=True,
                 cover=True,
-                # Trimming a padded portrait asset removes its wide canvas.
-                # Preserve the complete landscape composition in the PDF.
-                trim_whitespace=False,
             ),
             Paragraph(_escape(item.get("room") or ""), styles["cell"]),
             Paragraph(_escape(item.get("name") or ""), styles["cellBold"]),

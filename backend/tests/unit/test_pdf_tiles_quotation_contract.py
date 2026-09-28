@@ -146,7 +146,19 @@ def test_tiles_quotation_portrait_media_uses_a_landscape_image_canvas(monkeypatc
     }, {"name": "Portrait Tile Contract"})
 
     assert pdf.startswith(b"%PDF-")
-    assert rendered_sources and rendered_sources[0][0] > rendered_sources[0][1]
+    assert rendered_sources == [(120, 60)]
+
+
+def test_tiles_quotation_rotates_portrait_media_inside_an_old_white_canvas():
+    padded = Image.new("RGB", (192, 120), "white")
+    padded.paste(Image.new("RGB", (60, 120), "#306090"), (66, 0))
+    source = BytesIO()
+    padded.save(source, format="PNG")
+
+    with Image.open(BytesIO(pdf_generator._rotate_portrait_for_tiles_pdf(source.getvalue()))) as rendered:
+        assert rendered.width > rendered.height
+        assert rendered.width / rendered.height > 1.5
+        assert rendered.getpixel((rendered.width // 2, rendered.height // 2)) == (48, 96, 144)
 
 
 def test_tiles_quotation_keeps_the_cover_on_page_one_and_starts_details_on_page_two():
