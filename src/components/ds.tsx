@@ -41,6 +41,7 @@ import {
   radius, spacing, statusMeta, type,
 } from "@/src/theme/tokens";
 import { useBp } from "@/src/design/responsive";
+import { useReducedMotion } from "@/src/hooks/use-reduced-motion";
 
 // Re-export every existing primitive from ui.tsx.
 // Screens should import from "@/src/components/ds" going forward.
@@ -780,16 +781,19 @@ export function Accordion({
   testID?: string;
 }) {
   const [open, setOpen] = useState(!!defaultOpen);
+  const reducedMotion = useReducedMotion();
   const rotate = useRef(new Animated.Value(defaultOpen ? 1 : 0)).current;
 
   useEffect(() => {
-    Animated.timing(rotate, {
+    const animation = Animated.timing(rotate, {
       toValue: open ? 1 : 0,
-      duration: motion.hover.duration,
+      duration: reducedMotion ? 0 : motion.hover.duration,
       easing: Easing.inOut(Easing.ease),
       useNativeDriver: Platform.OS !== "web",
-    }).start();
-  }, [open, rotate]);
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [open, reducedMotion, rotate]);
 
   const rotation = rotate.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "180deg"] });
 

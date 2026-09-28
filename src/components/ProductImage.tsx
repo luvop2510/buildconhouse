@@ -22,6 +22,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Easing, PixelRatio, Platform, StyleSheet, Text, View, ViewStyle } from "react-native";
 
 import { colors, radius, spacing } from "@/src/theme/tokens";
+import { useReducedMotion } from "@/src/hooks/use-reduced-motion";
 
 export type ProductImageProps = {
   // Accept either a single URL/data-URL or an ordered list of fallback candidates.
@@ -187,8 +188,10 @@ export function ProductImage({
 // deliberately small; big shimmer animations on lists cause jank.
 // -----------------------------------------------------------------------------
 function Skeleton() {
+  const reducedMotion = useReducedMotion();
   const opacity = useRef(new Animated.Value(0.35)).current;
   useEffect(() => {
+    if (reducedMotion) { opacity.setValue(0.7); return; }
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(opacity, { toValue: 0.7, duration: 700, useNativeDriver: Platform.OS !== "web", easing: Easing.inOut(Easing.ease) }),
@@ -197,7 +200,7 @@ function Skeleton() {
     );
     loop.start();
     return () => loop.stop();
-  }, [opacity]);
+  }, [opacity, reducedMotion]);
 
   return <Animated.View style={[StyleSheet.absoluteFill, styles.skeleton, { opacity }]} />;
 }
