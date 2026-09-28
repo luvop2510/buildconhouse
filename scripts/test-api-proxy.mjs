@@ -61,6 +61,24 @@ for (const value of ['', 'http://api.example.test', 'https://user:pass@api.examp
 
 {
   const res = response();
+  let sentHeaders;
+  const req = request({ path: ['quotations', 'q1', 'pptx'], headers: { cookie: 'forge_session=secret' } });
+  req.query.dl = 'one-use';
+  await createHandler({ backendUrl: 'https://api.example.test', fetchImpl: async (url, options) => {
+    assert.equal(url.toString(), 'https://api.example.test/api/quotations/q1/pptx?dl=one-use');
+    sentHeaders = options.headers;
+    return new Response('deck', { headers: {
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'Content-Disposition': 'attachment; filename="quote.pptx"',
+    } });
+  } })(req, res);
+  assert.equal(sentHeaders.get('authorization'), null);
+  assert.equal(res.headers['Content-Disposition'], 'attachment; filename="quote.pptx"');
+  assert.equal(res.statusCode, 200);
+}
+
+{
+  const res = response();
   await createHandler({ backendUrl: 'https://api.example.test', fetchImpl: async () => { throw new Error('offline'); } })(request(), res);
   assert.equal(res.statusCode, 502);
   assert.equal(res.payload.detail, 'The upstream API is unavailable.');

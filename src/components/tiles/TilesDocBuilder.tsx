@@ -222,6 +222,10 @@ function quantityUnitLabel(unit: TileRow["quantityUnit"]): "Box" | "Piece" {
   return unit === "Pieces" ? "Piece" : "Box";
 }
 
+function restoredQuantityUnit(value: unknown): TileRow["quantityUnit"] {
+  return ["piece", "pieces", "pc", "pcs"].includes(String(value || "").trim().toLowerCase()) ? "Pieces" : "Box";
+}
+
 // ---------------------------------------------------------------------------
 // Document state + persistence
 // ---------------------------------------------------------------------------
@@ -314,7 +318,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null) {
           rateBox: it.rate_box != null ? String(it.rate_box) : (it.unit_price != null ? String(it.unit_price) : ""),
           totalBox: it.qty ? String(it.qty) : "",
           pcsBox: it.pcs_per_box || "",
-          quantityUnit: it.quantity_unit === "Pieces" ? "Pieces" : "Box",
+          quantityUnit: restoredQuantityUnit(it.quantity_unit),
           total: it.net_amount != null ? String(it.net_amount) : "",
           totalEdited: false,
         }));
@@ -1363,7 +1367,7 @@ const selStyles = StyleSheet.create({
 // QUOTATION paper
 // ---------------------------------------------------------------------------
 // SR / PRODUCT IMAGE / AREA / PRODUCT DETAIL / SIZE / RATE-SQFT / OFFER RATE /
-// RATE-UNIT / QUANTITY / PCS-BOX / TOTAL — mirrors pdf_tiles.py's _QUO_COLS.
+// RATE-UNIT / QUANTITY / UNIT / TOTAL — mirrors pdf_tiles.py's _QUO_COLS.
 // Matches backend/pdf_tiles.py's _QUO_COLS, normalized here as proportions.
 const QUO_COLS = [10, 50, 20, 46, 21, 21, 21, 21, 19, 18, 34];
 const QUO_COL_TOTAL = QUO_COLS.reduce((total, width) => total + width, 0);
@@ -1386,7 +1390,7 @@ function QuotationPaper(doc: ReturnType<typeof useTilesDoc>) {
 
   const headLabels = [
     "SR.\nNO.", "PRODUCT IMAGE", "AREA", "PRODUCT DETAIL", "SIZE",
-    "RATE/\nSQ.FT", "OFFER\nRATE", "RATE/\nUNIT", "QUANTITY", "PCS/\nBOX", "TOTAL\n(Rs.)",
+    "RATE/\nSQ.FT", "OFFER\nRATE", "RATE/\nUNIT", "QUANTITY", "UNIT", "TOTAL\n(Rs.)",
   ];
   return (
     <View style={{ gap: spacing.lg }}>
@@ -1466,9 +1470,6 @@ function QuotationPaper(doc: ReturnType<typeof useTilesDoc>) {
                   { label: "Piece", onPress: () => doc.updateRow(row.key, { quantityUnit: "Pieces" }) },
                 ]}
               />
-              {row.quantityUnit === "Box" ? (
-                <CellInput value={row.pcsBox} onChangeText={(t) => doc.updateRow(row.key, { pcsBox: t })} placeholder="PCS" testID={`tiles-pcs-box-${index}`} />
-              ) : null}
             </View>
             <View style={[quoStyles.td, flex(10), { borderRightWidth: 0 }]}>
               <CellInput value={lineTotalInputValue(row)} onChangeText={(t) => doc.updateRow(row.key, { total: t })} testID={`tiles-total-${index}`} />
@@ -1537,7 +1538,7 @@ const quoStyles = StyleSheet.create({
 // paper views call — one document model, one autosave path, one set of
 // backend calls.
 // ---------------------------------------------------------------------------
-type MobileFieldKey = "area" | "size" | "rateSqft" | "offerRate" | "rateBox" | "totalBox" | "pcsBox" | "total";
+type MobileFieldKey = "area" | "size" | "rateSqft" | "offerRate" | "rateBox" | "totalBox" | "quantityUnit" | "total";
 type MobileFieldDef = { key: MobileFieldKey; label: string; numeric?: boolean; suffix?: string };
 
 // Mirrors SEL_COLS / QUO_COLS above — Selection intentionally carries only
@@ -1557,7 +1558,7 @@ const MOBILE_FIELDS: Record<TilesDocType, MobileFieldDef[]> = {
     { key: "offerRate", label: "Offer Rate", numeric: true },
     { key: "rateBox", label: "Rate / Unit", numeric: true },
     { key: "totalBox", label: "Quantity", numeric: true },
-    { key: "pcsBox", label: "Pieces per box" },
+    { key: "quantityUnit", label: "Unit" },
     { key: "total", label: "Line Total (Rs.)", numeric: true },
   ],
 };
@@ -1647,9 +1648,9 @@ function MobileRowCard({
                 testID={`mobile-${f.key}-${index}`}
                 mobile
               />
-            ) : f.key === "pcsBox" ? (
+            ) : f.key === "quantityUnit" ? (
               <>
-                <Text style={type.label}>Pieces / box</Text>
+                <Text style={type.label}>Unit</Text>
                 <Dropdown
                   label={quantityUnitLabel(row.quantityUnit)}
                   variant="secondary"
@@ -1659,14 +1660,6 @@ function MobileRowCard({
                     { label: "Piece", onPress: () => doc.updateRow(row.key, { quantityUnit: "Pieces" }) },
                   ]}
                 />
-                {row.quantityUnit === "Box" ? (
-                  <TextField
-                    label="Pieces per box"
-                    value={row.pcsBox}
-                    onChangeText={(t: string) => doc.updateRow(row.key, { pcsBox: t })}
-                    testID={`mobile-pcsBox-${index}`}
-                  />
-                ) : null}
               </>
             ) : (
               <TextField

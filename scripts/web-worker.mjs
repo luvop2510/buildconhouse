@@ -40,7 +40,7 @@ async function fetchAsset(request, env, pathname) {
   }
   return new Response('Not Found',{status:404});
 }
-export function createWorker(backendUrl, fetchImpl = fetch, timeoutMs = 15000) {
+export function createWorker(backendUrl, fetchImpl = fetch, timeoutMs = 28000) {
   return {async fetch(request,env) {
     const url=new URL(request.url);
     if(url.pathname.startsWith('/api/')) {
@@ -50,7 +50,11 @@ export function createWorker(backendUrl, fetchImpl = fetch, timeoutMs = 15000) {
       if(unsafe && session && (!csrf || request.headers.get('Origin')!==url.origin || request.headers.get('X-CSRF-Token')!==csrf)) return secure(failure(403,'CSRF validation failed'),true);
       const headers=new Headers(request.headers);
       headers.delete('Cookie'); headers.delete('Host');
-      if(session && !headers.has('Authorization')) {
+      // A browser attachment navigation must redeem its scoped, one-use `dl`
+      // token. Forwarding the session bearer would bypass that token and its
+      // floor binding in the backend auth dependency.
+      if(request.method==='GET' && url.searchParams.has('dl')) headers.delete('Authorization');
+      else if(session && !headers.has('Authorization')) {
         try { headers.set('Authorization','Bearer '+decodeURIComponent(session)); }
         catch { return secure(clearSession(failure(401,'Invalid session. Sign in again.')),true); }
       }

@@ -175,7 +175,7 @@ def _quantity_unit(value: object) -> str:
 
     Older quotations contain variants such as ``piece``, ``PC`` and lowercase
     values.  Treating only the exact string ``Pieces`` as pieces made those
-    rows print as boxes and put a PCS/BOX value beside the wrong unit.
+    rows print as boxes and put the wrong value in the unit column.
     """
     normalized = str(value or "Box").strip().lower()
     return "Pieces" if normalized in {"piece", "pieces", "pc", "pcs"} else "Box"
@@ -449,7 +449,7 @@ def build_tiles_selection_pdf(quotation: dict, customer: dict, branding: dict | 
 # TILES QUOTATION
 # ===========================================================================
 # SR / PRODUCT IMAGE / AREA / PRODUCT DETAIL / SIZE / RATE-SQFT / OFFER RATE /
-# RATE-BOX / TOTAL BOX / PCS-BOX / TOTAL — sums to PAGE_W_MM (194mm).
+# RATE-BOX / QUANTITY / UNIT / TOTAL — sums to PAGE_W_MM (281mm).
 _QUO_COLS = [10 * mm, 50 * mm, 20 * mm, 46 * mm, 21 * mm, 21 * mm, 21 * mm, 21 * mm, 19 * mm, 18 * mm, 34 * mm]
 # Image column width less the table's 2 mm padding on each side.
 QUOTATION_PRODUCT_IMAGE_WIDTH_MM = 46.0
@@ -511,7 +511,7 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
         Paragraph("AREA", styles["colHead"]), Paragraph("PRODUCT DETAIL", styles["colHead"]),
         Paragraph("SIZE", styles["colHead"]), Paragraph("RATE/<br/>SQ.FT", styles["colHeadRed"]),
         Paragraph("OFFER<br/>RATE", styles["colHead"]), Paragraph("RATE/<br/>UNIT", styles["colHead"]),
-        Paragraph("QUANTITY", styles["colHead"]), Paragraph("PIECES/<br/>BOX", styles["colHead"]),
+        Paragraph("QUANTITY", styles["colHead"]), Paragraph("UNIT", styles["colHead"]),
         Paragraph("TOTAL<br/>(₹)", styles["colHead"]),
     ]
     rows: list[list[object]] = [head]
@@ -528,8 +528,11 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
                 item.get("image"),
                 width_mm=QUOTATION_PRODUCT_IMAGE_WIDTH_MM,
                 height_mm=QUOTATION_PRODUCT_IMAGE_HEIGHT_MM,
-                force_landscape=_portrait_tile_size(item.get("size")),
+                force_landscape=True,
                 cover=True,
+                # Trimming a padded portrait asset removes its wide canvas.
+                # Preserve the complete landscape composition in the PDF.
+                trim_whitespace=False,
             ),
             Paragraph(_escape(item.get("room") or ""), styles["cell"]),
             Paragraph(_escape(item.get("name") or ""), styles["cellBold"]),

@@ -10,6 +10,13 @@ for(const headers of [ {'Cookie':'forge_session=secret','Origin':base}, {'Cookie
 assert.equal(calls,0);
 const good=await worker.fetch(request('/api/orders',{method:'POST',headers:{Cookie:'forge_session=secret; forge_csrf=csrf',Origin:base,'X-CSRF-Token':'csrf'}}),{});
 assert.equal(good.status,200);assert.equal(good.headers.get('Cache-Control'),'no-store');
+const attachmentWorker=createWorker('https://api.example.test',async req=>{
+  assert.equal(req.url,'https://api.example.test/api/quotations/q1/pptx?dl=one-use');
+  assert.equal(req.headers.get('Authorization'),null);
+  return new Response('deck',{headers:{'Content-Disposition':'attachment; filename="quote.pptx"'}});
+});
+const attachment=await attachmentWorker.fetch(request('/api/quotations/q1/pptx?dl=one-use',{headers:{Cookie:'forge_session=secret'}}),{});
+assert.equal(attachment.headers.get('Content-Disposition'),'attachment; filename="quote.pptx"');
 const malformed=await worker.fetch(request('/api/orders',{headers:{Cookie:'forge_session=%ZZ'}}),{});assert.equal(malformed.status,401);
 const offline=createWorker('https://api.example.test',async()=>{throw Error('offline');});assert.equal((await offline.fetch(request(),{})).status,502);
 const timeout=createWorker('https://api.example.test',req=>new Promise((resolve,reject)=>req.signal.addEventListener('abort',()=>reject(Error('timeout')))),5);

@@ -115,7 +115,10 @@ export function createHandler({ backendUrl = process.env.BACKEND_URL, fetchImpl 
     Object.entries(req.headers).forEach(([key, value]) => {
       if (!['cookie', 'host', 'connection', 'content-length'].includes(key) && value) headers.set(key, Array.isArray(value) ? value.join(', ') : value);
     });
-    if (session && !headers.has('authorization')) {
+    // Preserve the single-use download token and its floor binding. A
+    // forwarded session bearer would make backend auth ignore `dl`.
+    if (req.method === 'GET' && upstream.searchParams.has('dl')) headers.delete('authorization');
+    else if (session && !headers.has('authorization')) {
       try { headers.set('authorization', `Bearer ${decodeURIComponent(session)}`); }
       catch { return res.status(401).json({ detail: 'Invalid session. Sign in again.' }); }
     }
@@ -155,6 +158,8 @@ export function createHandler({ backendUrl = process.env.BACKEND_URL, fetchImpl 
     }
     const contentType = upstreamResponse.headers.get('content-type');
     if (contentType) res.setHeader('Content-Type', contentType);
+    const contentDisposition = upstreamResponse.headers.get('content-disposition');
+    if (contentDisposition) res.setHeader('Content-Disposition', contentDisposition);
     return res.status(upstreamResponse.status).send(Buffer.from(await upstreamResponse.arrayBuffer()));
   };
 }

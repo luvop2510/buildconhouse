@@ -552,7 +552,7 @@ export default function ProductDetail() {
             <Text style={type.caption}>{siblings.length + 1} variants</Text>
           </View>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            <VariantSwatch product={p} active onPress={() => {}} />
+            <VariantSwatch product={p} active />
             {siblings.map((s) => (
               <VariantSwatch key={s.id} product={s} onPress={() => selectVariant(s)} />
             ))}
@@ -871,12 +871,16 @@ export default function ProductDetail() {
   );
 }
 
-function VariantSwatch({ product, active, onPress }: { product: Product; active?: boolean; onPress: () => void }) {
+function VariantSwatch({ product, active, onPress }: { product: Product; active?: boolean; onPress?: () => void }) {
   const label = product.colour || product.variant_label || product.finish || "Variant";
   const c = swatchColor(label);
   return (
     <Pressable
       onPress={onPress}
+      disabled={active}
+      accessibilityRole="button"
+      accessibilityLabel={`Select ${label} variant`}
+      accessibilityState={{ selected: Boolean(active), disabled: Boolean(active) }}
       style={{
         flexDirection: "row", alignItems: "center", gap: 8,
         borderWidth: active ? 2 : 1, borderColor: active ? colors.brand : colors.border,

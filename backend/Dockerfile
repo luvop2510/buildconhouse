@@ -21,7 +21,7 @@ RUN pip install -r requirements-prod.txt
 # Allowlist runtime code and assets.  Do not copy the build context wholesale:
 # local environments, reports and credentials must never enter an image layer.
 COPY access_profiles.py auth.py bootstrap.py db.py middleware.py models.py models_tile_orders.py models_walkins.py pdf_chalan.py pdf_generator.py pdf_tiles.py seed.py server.py settings.py ./
-COPY buildcon_logo.png ./
+COPY buildcon_logo.png buildcon_cover_logo.png ./
 COPY brand_logos ./brand_logos
 COPY migrations ./migrations
 COPY media_storage ./media_storage
@@ -41,7 +41,7 @@ RUN MONGO_URL='mongodb://127.0.0.1:27017' \
     SUPABASE_PUBLIC_BUCKET='forge-products' \
     SUPABASE_PRIVATE_BUCKET='forge-private' \
     ENVIRONMENT='development' \
-    python -c 'import server; assert server.app'
+    python -c 'import server; from services.quotation_ppt import ASSET_DIR, PARTNER_LOGOS; assert server.app; assert (ASSET_DIR / "buildcon_cover_logo.png").is_file(); assert all((ASSET_DIR / "brand_logos" / (name + ".png")).is_file() for name, *_ in PARTNER_LOGOS)'
 
 RUN useradd --create-home forge && chown -R forge:forge /app
 USER forge

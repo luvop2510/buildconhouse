@@ -2,8 +2,10 @@
 
 from io import BytesIO
 
+from PIL import Image
 from pypdf import PdfReader
 
+import pdf_generator
 import pdf_tiles
 from pdf_tiles import build_tiles_quotation_pdf
 
@@ -37,7 +39,8 @@ def test_tiles_pdf_uses_rate_per_sqft_offer_rate_and_quantity_unit():
     })
 
     assert "70 ₹ 70.00" in text
-    assert "PIECES/ BOX" in text
+    assert "QUANTITY UNIT" in text
+    assert "PIECES/ BOX" not in text
     assert "2 box ₹ 4,340.00" in text
     assert "2 BOX 3" not in text
     assert "TOTAL QUANTITY 2 BOX" in text
@@ -121,6 +124,29 @@ def test_tiles_quotation_detail_rows_separate_numeric_quantity_from_unit():
     assert "15 box ₹ 1,500.00" in text
     assert "120 box ₹ 12,000.00" in text
     assert "15 piece ₹ 1,500.00" in text
+
+
+def test_tiles_quotation_portrait_media_uses_a_landscape_image_canvas(monkeypatch):
+    portrait = BytesIO()
+    Image.new("RGB", (60, 120), "#306090").save(portrait, format="PNG")
+    monkeypatch.setattr(pdf_generator, "_remote_image_bytes", lambda _url: portrait.getvalue())
+    original_img = pdf_tiles._img
+    rendered_sources: list[tuple[int, int]] = []
+
+    def capture_img(*args, **kwargs):
+        image = original_img(*args, **kwargs)
+        rendered_sources.append((image.source_width, image.source_height))
+        return image
+
+    monkeypatch.setattr(pdf_tiles, "_img", capture_img)
+    pdf = build_tiles_quotation_pdf({
+        "customer_name": "Portrait Tile Contract",
+        "items": [{"image": "https://example.test/portrait.png", "name": "Tile", "size": "600x600", "qty": 1, "unit_price": 100}],
+        "subtotal": 100,
+    }, {"name": "Portrait Tile Contract"})
+
+    assert pdf.startswith(b"%PDF-")
+    assert rendered_sources and rendered_sources[0][0] > rendered_sources[0][1]
 
 
 def test_tiles_quotation_keeps_the_cover_on_page_one_and_starts_details_on_page_two():

@@ -38,6 +38,7 @@ class DownloadTokenRequest(BaseModel):
 # profile/custom-grant middleware which reads the Authorization header.
 _DOWNLOAD_TARGET_PATTERNS = (
     r"/api/quotations/[^/]+/pdf",
+    r"/api/quotations/[^/]+/pptx",
     r"/api/purchases/export\.xlsx",
     r"/api/purchases/[^/]+/chalans/[^/]+/pdf",
     r"/api/payments/history/export",
