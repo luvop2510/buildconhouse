@@ -611,17 +611,39 @@ async def customer_workspace(
     totals (`total_items`, values, outstanding counts/values, blocked counts,
     delivered counts) are scoped to that filtered workspace item set.
     """
-    customer = await db.customers.find_one(floor_query(user, {"id": customer_id}), {"_id": 0})
+    customer, settings = await asyncio.gather(
+        db.customers.find_one(floor_query(user, {"id": customer_id}), {"_id": 0}),
+        _load_settings(),
+    )
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
 
-    settings = await _load_settings()
-    rows = await _iter_items(
-        "stock", brand, customer_id, stage, q, settings.sla_days, limit=2000,
-        floor_ids=floor_scope_ids(user),
+    async def load_workspace_rows() -> list[dict]:
+        items = await _iter_items(
+            "stock", brand, customer_id, stage, q, settings.sla_days, limit=2000,
+            floor_ids=floor_scope_ids(user),
+        )
+        await _hydrate_workspace_images(items)
+        return items
+
+    # These reads have no data dependency on each other. Fetching them in
+    # parallel removes several Atlas round trips from a commonly opened page.
+    rows, pos, activity, shortages, order_quotes, payments, followups = await asyncio.gather(
+        load_workspace_rows(),
+        db.purchase_orders.find(floor_query(user, {"customer_id": customer_id}), {"_id": 0}).sort("created_at", -1).to_list(200),
+        timeline_for(customer_id=customer_id, limit=15, floor_ids=floor_scope_ids(user)),
+        db.purchase_shortages.find(
+            floor_query(user, {"customer_id": customer_id, "status": "awaiting_reorder"}), {"_id": 0},
+        ).sort("created_at", -1).to_list(100),
+        db.quotations.find(
+            floor_query(user, {"customer_id": customer_id, "status": {"$in": ["ordered", "won"]}}),
+            {"_id": 0, "id": 1, "grand_total": 1},
+        ).to_list(500),
+        db.payments.find(floor_query(user, {"customer_id": customer_id}), {"_id": 0}).sort("created_at", -1).to_list(100),
+        db.followups.find(
+            floor_query(user, {"customer_id": customer_id, "status": {"$in": ["open", "snoozed"]}}), {"_id": 0},
+        ).sort("due_at", 1).to_list(100),
     )
-    await _hydrate_workspace_images(rows)
-    pos = await db.purchase_orders.find(floor_query(user, {"customer_id": customer_id}), {"_id": 0}).sort("created_at", -1).to_list(200)
 
     total_value = round(sum(r["qty"] * r["unit_cost"] for r in rows), 2)
     outstanding_rows = [r for r in rows if r["stage"] != "delivered"]
@@ -645,27 +667,12 @@ async def customer_workspace(
     # Customer IDs can exist on more than one business floor.  Keep the
     # activity stream in the same floor scope as the products and POs above;
     # otherwise Sanitary Bathroom movement events leak into Ground Floor.
-    activity = await timeline_for(customer_id=customer_id, limit=15, floor_ids=floor_scope_ids(user))
-
-    shortages = await db.purchase_shortages.find(
-        floor_query(user, {"customer_id": customer_id, "status": "awaiting_reorder"}), {"_id": 0},
-    ).sort("created_at", -1).to_list(100)
-
-    order_quotes = await db.quotations.find(
-        floor_query(user, {"customer_id": customer_id, "status": {"$in": ["ordered", "won"]}}),
-        {"_id": 0, "id": 1, "grand_total": 1},
-    ).to_list(500)
     from routes.payment_routes import _paid_by_quotation
     paid_map = await _paid_by_quotation([quote["id"] for quote in order_quotes])
     outstanding_balance = round(sum(
         max(0.0, float(quote.get("grand_total") or 0) - paid_map.get(quote["id"], 0.0))
         for quote in order_quotes
     ), 2)
-    payments = await db.payments.find(floor_query(user, {"customer_id": customer_id}), {"_id": 0}).sort("created_at", -1).to_list(100)
-    followups = await db.followups.find(
-        floor_query(user, {"customer_id": customer_id, "status": {"$in": ["open", "snoozed"]}}), {"_id": 0},
-    ).sort("due_at", 1).to_list(100)
-
     def visible_po_items(po: dict) -> list[dict]:
         return [item for item in po.get("items") or [] if not item.get("cancelled") and float(item.get("qty") or 0) > float(item.get("godown_transferred_qty") or 0) + float(item.get("loan_replenishment_returned_qty") or 0)]
 
