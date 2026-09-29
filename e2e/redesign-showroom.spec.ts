@@ -135,6 +135,38 @@ test('critical collection failures recover and failed payment saves retain enter
   expect(submitted).toMatchObject({ quotation_id: 'q-one', amount: 600.25, mode: 'cash' });
 });
 
+test('last customer opens payment history in view on desktop, tablet, and phone', async ({ page }) => {
+  await mockSession(page, '/payments');
+  const orders = Array.from({ length: 24 }, (_, i) => ({
+    id: `q-${i}`, number: `Q-${i}`, customer_id: `c-${i}`,
+    customer_name: `Customer ${i}`, grand_total: 1200, paid: 200,
+    outstanding: 1000, percent_collected: 17, payment_status: 'partial',
+    confirmed_at: '2026-09-01T12:00:00Z', outstanding_short: null, days_unpaid: 4,
+  }));
+  await page.route('**/api/payments/stats', route => route.fulfill({ json: {
+    earned_total: 4800, total_outstanding: 24000, spending_total: 0,
+    active_total: 28800, active_received: 4800, active_orders: 24,
+    fully_paid: 0, collected_this_month: 4800,
+  } }));
+  await page.route('**/api/payments/orders', route => route.fulfill({ json: orders }));
+  await page.route('**/api/payments/orders/q-*', route => {
+    const order = orders.find(item => route.request().url().endsWith(`/orders/${item.id}`))!;
+    return route.fulfill({ json: {
+      ...order, status: 'ordered', customer: { id: order.customer_id, name: order.customer_name },
+      floor_id: 'first-floor', mrp: 1200, discounted_rate: 1200,
+      quotation_total: 1200, manual_extra_amount: 0,
+      payments: [{ id: `p-${order.id}`, amount: 200, mode: 'cash', paid_at: '2026-09-02T12:00:00Z' }],
+    } });
+  });
+  await page.goto('/payments');
+  const lastCustomer = page.getByTestId('payment-customer-c-23');
+  await lastCustomer.scrollIntoViewIfNeeded();
+  await lastCustomer.click();
+  await expect(page.getByText('Customer 23', { exact: true }).last()).toBeVisible();
+  await expect(page.getByText('Payment history', { exact: true })).toBeInViewport();
+  await expect(page.getByTestId('open-record-payment')).toBeInViewport();
+});
+
 test('critical notifications link to existing records and offline state does not replay writes', async ({ page }) => {
   await mockSession(page, '/notifications');
   let writes = 0;

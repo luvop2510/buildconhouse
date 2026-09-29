@@ -204,7 +204,8 @@ const HISTORY_SORTS: { value: string; label: string }[] = [
 
 // ═══════════════════════════════════════════════════════════════════════════
 export default function PaymentsScreen() {
-  const { isDesktop, isPhone } = useBp();
+  const { isDesktop, isTabletLandscape, isPhone, height } = useBp();
+  const sideBySide = isDesktop || isTabletLandscape;
   const { selectedFloorId } = useFloorAccess();
   const router = useRouter();
 
@@ -241,6 +242,7 @@ export default function PaymentsScreen() {
   const [manualExtraName, setManualExtraName] = useState("");
   const [savingManualExtra, setSavingManualExtra] = useState(false);
   const collectionsScrollRef = useRef<ScrollView>(null);
+  const bodyTopRef = useRef(0);
   const detailTopRef = useRef(0);
   const shouldFocusDetailRef = useRef(false);
 
@@ -325,16 +327,16 @@ export default function PaymentsScreen() {
   }, [q, loadOrders, selectedFloorId]);
   useEffect(() => { if (selectedId) loadDetail(selectedId); else { detailRequest.current += 1; setDetail(null); } }, [selectedId, loadDetail]);
 
-  // On a phone the customer queue precedes its detail panel. Bring the chosen
-  // order into view immediately instead of leaving the collector below it.
+  // On narrow layouts the customer queue precedes its detail panel. The
+  // detail layout coordinate is relative to the body, not the ScrollView.
   useEffect(() => {
-    if (!isPhone || !detail || !shouldFocusDetailRef.current) return;
+    if (sideBySide || !detail || !shouldFocusDetailRef.current) return;
     const timer = setTimeout(() => {
-      collectionsScrollRef.current?.scrollTo({ y: detailTopRef.current, animated: !reducedMotion });
+      collectionsScrollRef.current?.scrollTo({ y: bodyTopRef.current + detailTopRef.current, animated: !reducedMotion });
       shouldFocusDetailRef.current = false;
     }, 0);
     return () => clearTimeout(timer);
-  }, [detail, isPhone, reducedMotion]);
+  }, [detail, sideBySide, reducedMotion]);
 
   const customerCollections = useMemo<CustomerCollection[]>(() => {
     const grouped = new Map<string, CustomerCollection>();
@@ -581,9 +583,10 @@ export default function PaymentsScreen() {
         </Disclosure>
 
         {/* Body */}
-        <View style={{ flexDirection: isDesktop ? "row" : "column", gap: spacing.lg, alignItems: "flex-start" }}>
+        <View onLayout={(event) => { bodyTopRef.current = event.nativeEvent.layout.y; }}
+          style={{ flexDirection: sideBySide ? "row" : "column", gap: spacing.lg, alignItems: "flex-start" }}>
           {/* Left rail */}
-          <View style={{ width: isDesktop ? 380 : "100%" }}>
+          <View style={{ width: sideBySide ? 380 : "100%" }}>
             <Panel title="Customers with balances" overline="COLLECTIONS" padding={spacing.md}>
               <View style={{ gap: spacing.md }}>
                 <SearchField
@@ -646,7 +649,10 @@ export default function PaymentsScreen() {
           {/* Right — detail */}
           <View
             onLayout={(event) => { detailTopRef.current = event.nativeEvent.layout.y; }}
-            style={{ flex: 1, gap: spacing.lg, minWidth: 0, width: isDesktop ? undefined : "100%" }}
+            style={[
+              { flex: 1, gap: spacing.lg, minWidth: 0, width: sideBySide ? undefined : "100%" },
+              sideBySide && Platform.OS === "web" && ({ position: "sticky", top: spacing.md, alignSelf: "flex-start", maxHeight: Math.max(360, height - spacing.xl * 2), overflowY: "auto" } as any),
+            ]}
           >
             {detailError ? <ErrorState title="Could not load order" subtitle={detailError} onRetry={() => selectedId && void loadDetail(selectedId)} /> : loadingDetail || !detail ? (
               <Card>
@@ -702,6 +708,40 @@ export default function PaymentsScreen() {
                   <UIAlert tone="success" title="Order fully paid"
                     description="Every rupee collected — this order is closed." />
                 )}
+
+                <Panel
+                  title="Payment history"
+                  overline="LEDGER"
+                  actions={detail.payments.length
+                    ? <Badge label={`${detail.payments.length} entries`} tone="neutral" size="sm" />
+                    : undefined}
+                >
+                  {detail.payments.length === 0 && detail.outstanding > 0 ? (
+                    <UIAlert
+                      tone="error"
+                      title={`${money(detail.outstanding)} still outstanding`}
+                      description="No payments recorded yet. Send a WhatsApp reminder or use Record Payment above."
+                    />
+                  ) : detail.payments.length === 0 ? (
+                    <EmptyState icon="check-circle" title="Fully paid"
+                      subtitle="No payments to show." tone="brand" />
+                  ) : (
+                    <View>
+                      {detail.payments.map((p, i) => {
+                        const copy = paymentHistoryCopy(p);
+                        return <ActivityRow
+                          key={p.id}
+                          icon={p.entry_type === "additional_cost" ? "plus-circle" : MODE_ICONS[p.mode as PayMode]}
+                          iconTone="success"
+                          title={copy.title}
+                          subtitle={copy.subtitle}
+                          timestamp={dateShort(p.paid_at || p.created_at)}
+                          isLast={i === detail.payments.length - 1}
+                        />;
+                      })}
+                    </View>
+                  )}
+                </Panel>
 
                   <Panel title="Add an additional cost" overline="PAYMENT ADJUSTMENT" padding={spacing.lg}>
                     <Text style={[type.body, { color: colors.onSurfaceMuted, marginBottom: spacing.md }]}>Each cost is recorded separately with its timestamp. The original quotation price remains unchanged.</Text>
@@ -801,41 +841,6 @@ export default function PaymentsScreen() {
                     <ProgressBar percent={detail.percent_collected}
                       tone={paymentTone(detail.payment_status)} size="md" />
                   </View>
-                </Panel>
-
-                {/* History */}
-                <Panel
-                  title="Payment history"
-                  overline="LEDGER"
-                  actions={detail.payments.length
-                    ? <Badge label={`${detail.payments.length} entries`} tone="neutral" size="sm" />
-                    : undefined}
-                >
-                  {detail.payments.length === 0 && detail.outstanding > 0 ? (
-                    <UIAlert
-                      tone="error"
-                      title={`${money(detail.outstanding)} still outstanding`}
-                      description="No payments recorded yet. Send a WhatsApp reminder or use Record Payment above."
-                    />
-                  ) : detail.payments.length === 0 ? (
-                    <EmptyState icon="check-circle" title="Fully paid"
-                      subtitle="No payments to show." tone="brand" />
-                  ) : (
-                    <View>
-                      {detail.payments.map((p, i) => {
-                        const copy = paymentHistoryCopy(p);
-                        return <ActivityRow
-                          key={p.id}
-                          icon={p.entry_type === "additional_cost" ? "plus-circle" : MODE_ICONS[p.mode as PayMode]}
-                          iconTone="success"
-                          title={copy.title}
-                          subtitle={copy.subtitle}
-                          timestamp={dateShort(p.paid_at || p.created_at)}
-                          isLast={i === detail.payments.length - 1}
-                        />;
-                      })}
-                    </View>
-                  )}
                 </Panel>
 
               </>
