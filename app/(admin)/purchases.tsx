@@ -10,7 +10,7 @@ import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator, FlatList, Linking, Platform, Pressable,
+  ActivityIndicator, FlatList, Platform, Pressable,
   ScrollView, StyleSheet, Text, TextInput, View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -22,6 +22,8 @@ import { Sheet } from "@/src/design/components";
 import { ProductImage } from "@/src/components/ProductImage";
 import { ErrorState } from "@/src/components/ui";
 import { toast } from "@/src/components/Toast";
+import { downloadApiFile } from "@/src/utils/downloadFile";
+import { downloadSectionExcel } from "@/src/utils/sectionExcel";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { colors, PRODUCT_IMAGE_ASPECT_RATIO, radius, shadow, spacing, type } from "@/src/theme/tokens";
 import { color as ds, font as dsFont } from "@/src/design/tokens";
@@ -346,23 +348,28 @@ export default function PurchasesScreen() {
   }, [selected, bulkBusy, refreshPurchases]);
 
   const doExport = useCallback(async () => {
-    const qs = new URLSearchParams({ view });
-    if (brand && brand !== "all") qs.set("brand", brand);
-    if (q) qs.set("q", q);
-    if (stage) qs.set("stage", stage);
     try {
-      const url = await api.authenticatedUrl(`/purchases/export.xlsx?${qs.toString()}`);
-      if (Platform.OS === "web") {
-        // @ts-ignore — web only
-        window.open(url, "_blank");
+      if (view === "customers") {
+        await downloadSectionExcel({
+          page: "Purchases",
+          section: "Customer workspaces",
+          rows: [["Customer", "Company", "Tier", "Email", "Phone", "City"], ...customers.filter(customer => `${customer.name} ${customer.company || ""} ${customer.email || ""}`.toLowerCase().includes(q.trim().toLowerCase())).map(customer => [customer.name, customer.company, customer.tier, customer.email, customer.phone, customer.city])],
+          filename: "purchases-customers.xlsx",
+          floorId: selectedFloorId,
+        });
       } else {
-        await Linking.openURL(url);
+        const qs = new URLSearchParams({ view });
+        if (brand && brand !== "all") qs.set("brand", brand);
+        if (q) qs.set("q", q);
+        if (stage) qs.set("stage", stage);
+        const downloaded = await downloadApiFile(`/purchases/export.xlsx?${qs.toString()}`, `purchases-${view}.xlsx`, `${VIEW_META[view].label} purchases Excel`, selectedFloorId);
+        if (!downloaded) return;
       }
-      toast.success("Excel export ready");
-    } catch {
-      toast.error("Export failed");
+      toast.success(`${VIEW_META[view].label} Excel export ready`);
+    } catch (error: any) {
+      toast.error(error?.message || "Export failed");
     }
-  }, [view, brand, q, stage]);
+  }, [view, brand, q, stage, customers, selectedFloorId]);
 
   // -----------------------------------
   // Derived
@@ -496,7 +503,7 @@ export default function PurchasesScreen() {
           keyboardDismissMode="on-drag"
         />
         <MobileFiltersSheet visible={showMobileFilters} brands={brands} stages={stages} brand={brand} stage={stage} onBrand={setBrand} onStage={setStage} onClose={() => setShowMobileFilters(false)} />
-        <MobileActionsSheet visible={showMobileActions} shortages={shortages.length} onClose={() => setShowMobileActions(false)} onExport={() => { setShowMobileActions(false); doExport(); }} onShortages={() => { setShowMobileActions(false); setShowShortages(true); }} onSettings={() => { setShowMobileActions(false); setShowSettings(true); }} />
+        <MobileActionsSheet visible={showMobileActions} shortages={shortages.length} exportLabel={`Export ${VIEW_META[view].label} Excel`} onClose={() => setShowMobileActions(false)} onExport={() => { setShowMobileActions(false); doExport(); }} onShortages={() => { setShowMobileActions(false); setShowShortages(true); }} onSettings={() => { setShowMobileActions(false); setShowSettings(true); }} />
         <MoveMenu visible={showMoveMenu} stages={stages} onClose={() => setShowMoveMenu(false)} onPick={(s) => bulkMove(s)} title={`Move ${selected.size} item${selected.size === 1 ? "" : "s"}`} busy={bulkBusy} />
         <MoveStageSheet visible={!!rowMoveTarget} item={rowMoveTarget ? toMovable(rowMoveTarget) : null} onClose={() => setRowMoveTarget(null)} onMoved={async () => { await Promise.all([loadItems({ quiet: true, throwOnError: true }), loadFacets()]); }} />
         <TransferSheet visible={!!transferItem} item={transferItem ? toMovable(transferItem) : null} onClose={() => setTransferItem(null)} onSuccess={async () => { await Promise.all([loadItems({ quiet: true, throwOnError: true }), loadFacets(), loadShortages()]); }} />
@@ -557,7 +564,7 @@ export default function PurchasesScreen() {
 
             <Pressable testID="export-btn" onPress={doExport} style={({ pressed }) => [styles.iconAction, pressed && { opacity: 0.85 }]}>
               <Feather name="download" size={14} color={colors.success} />
-              <Text style={{ color: colors.onSurface, fontWeight: "600", fontSize: 13 }}>Export .xlsx</Text>
+              <Text style={{ color: colors.onSurface, fontWeight: "600", fontSize: 13 }}>Export {VIEW_META[view].label} .xlsx</Text>
             </Pressable>
 
             {shortages.length > 0 ? (
@@ -936,8 +943,8 @@ function FilterOption({ label, active, onPress }: { label: string; active: boole
   return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected: active }} onPress={onPress} style={[styles.mobileFilterOption, active && styles.mobileFilterOptionActive]}><Text style={[styles.mobileFilterOptionText, active && { color: colors.brand, fontWeight: "700" }]} numberOfLines={2}>{label}</Text>{active ? <Feather name="check" size={18} color={colors.brand} /> : null}</Pressable>;
 }
 
-function MobileActionsSheet({ visible, shortages, onClose, onExport, onShortages, onSettings }: { visible: boolean; shortages: number; onClose: () => void; onExport: () => void; onShortages: () => void; onSettings: () => void }) {
-  return <Sheet open={visible} onClose={onClose} title="Purchase actions" footer={<Pressable accessibilityRole="button" accessibilityLabel="Cancel purchase actions" onPress={onClose} style={styles.mobileSheetCancel}><Text style={styles.mobileSheetCancelText}>Cancel</Text></Pressable>}><SheetAction icon="download" label="Export Excel" onPress={onExport} />{shortages > 0 ? <SheetAction icon="alert-triangle" label={`${shortages} awaiting reorder`} onPress={onShortages} /> : null}<SheetAction icon="settings" label="Tracker settings" onPress={onSettings} /></Sheet>;
+function MobileActionsSheet({ visible, shortages, exportLabel, onClose, onExport, onShortages, onSettings }: { visible: boolean; shortages: number; exportLabel: string; onClose: () => void; onExport: () => void; onShortages: () => void; onSettings: () => void }) {
+  return <Sheet open={visible} onClose={onClose} title="Purchase actions" footer={<Pressable accessibilityRole="button" accessibilityLabel="Cancel purchase actions" onPress={onClose} style={styles.mobileSheetCancel}><Text style={styles.mobileSheetCancelText}>Cancel</Text></Pressable>}><SheetAction icon="download" label={exportLabel} onPress={onExport} />{shortages > 0 ? <SheetAction icon="alert-triangle" label={`${shortages} awaiting reorder`} onPress={onShortages} /> : null}<SheetAction icon="settings" label="Tracker settings" onPress={onSettings} /></Sheet>;
 }
 
 // -----------------------------------------------------------------------------

@@ -22,6 +22,7 @@ import { canManageDestructiveData } from "@/src/constants/roles";
 import { toast } from "@/src/components/Toast";
 import { ErrorState } from "@/src/components/ui";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
+import { downloadSectionExcel } from "@/src/utils/sectionExcel";
 
 type Customer = {
   id: string;
@@ -104,6 +105,20 @@ export default function Customers() {
   // most relevant results, while the operator can reveal the rest explicitly.
   useEffect(() => { setVisibleCount(CUSTOMER_RENDER_BATCH); }, [q, tier]);
   const visibleCustomers = filtered.slice(0, visibleCount);
+  const exportCustomers = async () => {
+    try {
+      await downloadSectionExcel({
+        page: "Customers",
+        section: tier === "all" ? "Customer accounts" : `${tier.toUpperCase()} customers`,
+        rows: [
+          ["Name", "Company", "Tier", "Email", "Phone", "City"],
+          ...filtered.map(customer => [customer.name, customer.company, customer.tier, customer.email, customer.phone, customer.city]),
+        ],
+        filename: `customers-${tier}.xlsx`,
+        floorId: selectedFloorId,
+      });
+    } catch (error: any) { toast.error(error?.message || "Could not export customers"); }
+  };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
@@ -196,6 +211,7 @@ export default function Customers() {
               />
             ))}
           </ScrollView>
+          {!isTileDeliveryLookup ? <Pressable accessibilityRole="button" accessibilityLabel="Export filtered customer accounts to Excel" testID="customers-export-excel" disabled={!filtered.length} onPress={() => void exportCustomers()} style={[styles.exportButton, !filtered.length && { opacity: .45 }]}><Feather name="download" size={16} color={colors.brand} /><Text style={styles.exportText}>Export customer accounts .xlsx</Text></Pressable> : null}
         </View>
 
         {/* List */}
@@ -336,6 +352,8 @@ const styles = StyleSheet.create({
   customerMain: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: spacing.md },
   customerMainMobile: { width: "100%", alignItems: "flex-start" },
   customerActionsMobile: { width: "100%", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingTop: spacing.xs, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  exportButton: { minHeight: 44, alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.md, borderWidth: 1, borderColor: colors.brandBorder, borderRadius: radius.md, backgroundColor: colors.brandTint },
+  exportText: { ...type.caption, color: colors.brand, fontWeight: "700" },
   dot: {
     width: 3, height: 3, borderRadius: 999,
     backgroundColor: colors.onSurfaceSubtle,

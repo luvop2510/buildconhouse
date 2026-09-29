@@ -5,12 +5,14 @@ import { Text, View } from "react-native";
 import { AdminPage } from "@/src/components/AdminPage";
 import { api } from "@/src/api/client";
 import {
-  EmptyState, ErrorState, LoadingState, PillTabs, Table, TableCell, TableHeader, TableRow,
+  Button, EmptyState, ErrorState, LoadingState, PillTabs, Table, TableCell, TableHeader, TableRow,
 } from "@/src/components/ui";
 import { fmtMoney } from "@/src/design/tokens";
 import { useBp } from "@/src/design/responsive";
 import { colors, spacing, type } from "@/src/theme/tokens";
 import { TrendChart } from "@/src/components/salesData/TrendChart";
+import { downloadSectionExcel } from "@/src/utils/sectionExcel";
+import { toast } from "@/src/components/Toast";
 import {
   DATE_PRESET_LABEL, DatePreset, Granularity, presetToRange,
 } from "@/src/components/salesData/salesDataApi";
@@ -47,6 +49,11 @@ export default function BrandDetail() {
 
   useEffect(() => { load(); }, [load]);
 
+  const exportData = (section: string, rows: (string | number | null)[][]) => {
+    if (!data) return;
+    void downloadSectionExcel({ page: `Brand / ${data.brand.name}`, section, filename: `brand-${section.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.xlsx`, floorId, rows }).catch((error: unknown) => toast.show(error instanceof Error ? error.message : "Could not export brand data"));
+  };
+
   return (
     <AdminPage
       title={data?.brand.name || "Brand"}
@@ -65,11 +72,14 @@ export default function BrandDetail() {
       {!error && !data ? <LoadingState label="Loading…" /> : null}
       {data ? (
         <View style={{ gap: spacing.lg }}>
+          {data.trend.length ? <Button testID="brand-detail-trend-export-xlsx" label="Export revenue trend" icon="download" variant="secondary" onPress={() => exportData("Revenue trend", [["Period", "Revenue"], ...data.trend.map(point => [point.bucket, point.revenue])])} /> : null}
           <TrendChart points={data.trend} />
           {data.top_products.length === 0 ? (
             <EmptyState title="No product revenue in this range" />
           ) : (
-            isPhone ? (
+            <View style={{ gap: spacing.sm }}>
+            <Button testID="brand-detail-products-export-xlsx" label="Export products" icon="download" variant="secondary" onPress={() => exportData("Top products", [["Product", "SKU", "Revenue"], ...data.top_products.map(product => [product.name, product.sku, product.revenue])])} />
+            {isPhone ? (
               <View style={{ gap: spacing.xs }}>
                 {data.top_products.map((p) => (
                   <View key={p.product_id} testID={`brand-product-row-${p.product_id}`} style={{ minHeight: 56, paddingVertical: spacing.xs, borderBottomWidth: 1, borderBottomColor: colors.border, flexDirection: "row", alignItems: "center", gap: spacing.md }}>
@@ -89,7 +99,8 @@ export default function BrandDetail() {
                   <TableCell align="right">₹{fmtMoney(p.revenue)}</TableCell>
                 </TableRow>
               ))}
-            </Table>
+            </Table>}
+            </View>
           )}
         </View>
       ) : null}

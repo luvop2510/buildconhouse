@@ -6,11 +6,13 @@ import { Pressable, Text, View } from "react-native";
 import { executiveApi, type ExecutiveRow, type FeedEntry, type TodaysPriorities } from "@/src/api/executive";
 import { AdminPage } from "@/src/components/AdminPage";
 import { ActionRow } from "@/src/components/analytics/ActionRow";
-import { Card, EmptyState, ErrorState, LoadingState, PillTabs } from "@/src/components/ui";
+import { Button, Card, EmptyState, ErrorState, LoadingState, PillTabs } from "@/src/components/ui";
 import { fmtMoneyCompact } from "@/src/design/tokens";
 import { getSelectedFloorId, useFloorAccess } from "@/src/hooks/use-floor-access";
 import { useAuth } from "@/src/state/auth";
 import { colors, spacing, type } from "@/src/theme/tokens";
+import { downloadSectionExcel } from "@/src/utils/sectionExcel";
+import { toast } from "@/src/components/Toast";
 
 const FLOOR_LABEL: Record<string, string> = {
   "first-floor": "Sanitary",
@@ -158,6 +160,7 @@ export default function TodaysPrioritiesScreen() {
         <>
           {data.rows.length ? (
             <View style={{ gap: spacing.sm }} testID="today-priorities-list">
+              <Button testID="today-priorities-export-xlsx" label="Export Excel" icon="download" variant="secondary" onPress={() => void downloadSectionExcel({ page: "Today's Priorities", section: "Priorities", filename: "today-priorities.xlsx", floorId: floorId === "all" ? undefined : floorId, rows: [["Priority", "Type", "Impact", "Age (days)", "Destination"], ...data.rows.map((row, index) => [index + 1, row.headline, row.impact, row.age_days, row.destination])] }).catch((error: unknown) => toast.show(error instanceof Error ? error.message : "Could not export priorities"))} />
               {data.rows.map((row, index) => (
                 <View key={`${row.rule}-${index}`} style={{ gap: spacing.xs }}>
                   <StarBadge row={row} index={index} total={data.total} testID={`today-stars-${index}`} />
@@ -176,7 +179,10 @@ export default function TodaysPrioritiesScreen() {
 
           <Card testID="today-done" variant="flat" padding={spacing.xl}>
             <View style={{ gap: spacing.md }}>
-              <Text style={type.titleSm}>Done today</Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: spacing.sm }}>
+                <Text style={type.titleSm}>Done today</Text>
+                {data.done_today.length ? <Button testID="today-done-export-xlsx" label="Export Excel" icon="download" variant="secondary" onPress={() => void downloadSectionExcel({ page: "Today's Priorities", section: "Done today", filename: "today-done.xlsx", floorId: floorId === "all" ? undefined : floorId, rows: [["Activity", "Type", "Value", "Completed at"], ...data.done_today.map(entry => [entry.label, entry.event_type, entry.value, entry.created_at])] }).catch((error: unknown) => toast.show(error instanceof Error ? error.message : "Could not export completed work"))} /> : null}
+              </View>
               {data.done_today.length ? (
                 <View style={{ gap: spacing.xs }}>
                   {data.done_today.map((entry) => <DoneTodayRow key={entry.id} entry={entry} />)}

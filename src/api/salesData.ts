@@ -122,9 +122,11 @@ function query(filter: SalesFilter, extra: Record<string, string | number | unde
 
 export const salesDataApi = {
   revenueTrend(filter: SalesFilter, options?: SalesReadOptions) {
-    const days = filter.dateFrom && filter.dateTo ? (Date.parse(filter.dateTo) - Date.parse(filter.dateFrom)) / 86400000 : null;
-    const granularity = ["quarter", "year"].includes(filter.preset) || (days !== null && days > 62) ? "month" : "day";
+    const granularity = trendGranularity(filter);
     return api.get<{ points: { bucket: string; revenue: number }[] }>(`/analytics/revenue-trend?${query(filter, { granularity })}`, options);
+  },
+  revenueTrendExportPath(filter: SalesFilter) {
+    return `/analytics/revenue-trend?${query(filter, { granularity: trendGranularity(filter), format: "xlsx" })}`;
   },
   defaultPeriod(floorId: string, options?: SalesReadOptions) {
     const params = new URLSearchParams();
@@ -135,9 +137,15 @@ export const salesDataApi = {
   revenueByBrand(filter: SalesFilter, options?: SalesReadOptions) {
     return api.get<{ rows: BrandRevenueRow[] }>(`/analytics/revenue-by-brand?${query(filter)}`, options);
   },
+  revenueByBrandExportPath(filter: SalesFilter) {
+    return `/analytics/revenue-by-brand?${query(filter, { format: "xlsx" })}`;
+  },
 
   revenueByCustomer(filter: SalesFilter, options?: SalesReadOptions) {
     return api.get<{ rows: CustomerRevenueRow[] }>(`/analytics/revenue-by-customer?${query(filter)}`, options);
+  },
+  revenueByCustomerExportPath(filter: SalesFilter) {
+    return `/analytics/revenue-by-customer?${query(filter, { format: "xlsx" })}`;
   },
 
   bestSellingProducts(filter: SalesFilter, limit = 10, options?: SalesReadOptions) {
@@ -146,6 +154,9 @@ export const salesDataApi = {
       options,
     );
   },
+  bestSellingProductsExportPath(filter: SalesFilter) {
+    return `/analytics/best-selling-products?${query(filter, { format: "xlsx" })}`;
+  },
 
   recentOrders(filter: SalesFilter, limit = 10, options?: SalesReadOptions) {
     return api.get<{ rows: RecentOrderRow[]; total: number }>(
@@ -153,14 +164,7 @@ export const salesDataApi = {
       options,
     );
   },
-
-  /**
-   * The same canonical confirmed-order rows shown in the Sales Data table,
-   * exported without the UI's top-N limit. `query` carries the active floor
-   * and period so the workbook cannot include records outside the view the
-   * user is currently analysing.
-   */
-  salesExportPath(filter: SalesFilter) {
+  recentOrdersExportPath(filter: SalesFilter) {
     return `/analytics/recent-orders?${query(filter, { format: "xlsx" })}`;
   },
 
@@ -173,4 +177,12 @@ export const salesDataApi = {
       options,
     );
   },
+  referrersExportPath(filter: SalesFilter, type: ReferrerType) {
+    return `/analytics/referrers?${query(filter, { type, format: "xlsx" })}`;
+  },
 };
+
+function trendGranularity(filter: SalesFilter): "day" | "month" {
+  const days = filter.dateFrom && filter.dateTo ? (Date.parse(filter.dateTo) - Date.parse(filter.dateFrom)) / 86400000 : null;
+  return ["quarter", "year"].includes(filter.preset) || (days !== null && days > 62) ? "month" : "day";
+}

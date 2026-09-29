@@ -19,6 +19,7 @@ import { api } from "@/src/api/client";
 import { useBp } from "@/src/design/responsive";
 import { toast } from "@/src/components/Toast";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
+import { downloadApiFile } from "@/src/utils/downloadFile";
 import {
   Alert as UIAlert,
   Badge, Button, Card, Dropdown, EmptyState, FilterBar, FormField, ErrorState,
@@ -233,6 +234,7 @@ export default function PaymentsScreen() {
   const [waLoading, setWaLoading] = useState(false);
 
   const [showRecord, setShowRecord] = useState(false);
+  const [showMobileQueue, setShowMobileQueue] = useState(false);
   const [amount, setAmount] = useState("");
   const [payDate, setPayDate] = useState(todayIso());
   const [mode, setMode] = useState<PayMode>("cash");
@@ -327,16 +329,16 @@ export default function PaymentsScreen() {
   }, [q, loadOrders, selectedFloorId]);
   useEffect(() => { if (selectedId) loadDetail(selectedId); else { detailRequest.current += 1; setDetail(null); } }, [selectedId, loadDetail]);
 
-  // On narrow layouts the customer queue precedes its detail panel. The
-  // detail layout coordinate is relative to the body, not the ScrollView.
+  // Tablet portrait keeps the queue above the detail. Phones show only one
+  // panel at a time, so switching customers never pushes Record Payment down.
   useEffect(() => {
-    if (sideBySide || !detail || !shouldFocusDetailRef.current) return;
+    if (isPhone || sideBySide || !detail || !shouldFocusDetailRef.current) return;
     const timer = setTimeout(() => {
       collectionsScrollRef.current?.scrollTo({ y: bodyTopRef.current + detailTopRef.current, animated: !reducedMotion });
       shouldFocusDetailRef.current = false;
     }, 0);
     return () => clearTimeout(timer);
-  }, [detail, sideBySide, reducedMotion]);
+  }, [detail, isPhone, sideBySide, reducedMotion]);
 
   const customerCollections = useMemo<CustomerCollection[]>(() => {
     const grouped = new Map<string, CustomerCollection>();
@@ -355,15 +357,19 @@ export default function PaymentsScreen() {
       .sort((a, b) => b.outstanding - a.outstanding);
   }, [orders]);
 
-  const selectedCustomer = customerCollections.find((customer) => customer.id === selectedCustomerId)
-    || customerCollections.find((customer) => customer.orders.some((order) => order.id === selectedId))
+  const selectedCustomer = customerCollections.find((customer) => customer.orders.some((order) => order.id === selectedId))
+    || customerCollections.find((customer) => customer.id === selectedCustomerId)
     || null;
 
   const selectCustomer = useCallback((customer: CustomerCollection) => {
-    shouldFocusDetailRef.current = true;
+    shouldFocusDetailRef.current = !isPhone;
     setSelectedCustomerId(customer.id);
     setSelectedId(customer.orders[0]?.id || null);
-  }, []);
+    if (isPhone) {
+      setShowMobileQueue(false);
+      collectionsScrollRef.current?.scrollTo({ y: 0, animated: false });
+    }
+  }, [isPhone]);
 
   const savePayment = async () => {
     if (!detail || saving) return;
@@ -505,14 +511,12 @@ export default function PaymentsScreen() {
     try {
       const qs = historyParams();
       qs.set("fmt", fmt);
-      const url = await api.authenticatedUrl(`/payments/history/export?${qs.toString()}`);
-      if (Platform.OS === "web") {
-        // @ts-ignore — web only
-        window.open(url, "_blank");
-      } else {
-        await Linking.openURL(url);
-      }
-      toast.success("Export ready");
+      const ok = await downloadApiFile(
+        `/payments/history/export?${qs.toString()}`,
+        `Payment History ${todayIso()}.${fmt}`,
+        "payment history",
+      );
+      if (ok) toast.success("Export ready");
     } catch (e: any) {
       toast.error(e?.detail || "Could not export");
     }
@@ -557,7 +561,7 @@ export default function PaymentsScreen() {
 
       {tab === "collections" ? (
       <ScrollView ref={collectionsScrollRef} contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, gap: spacing.lg, paddingBottom: isPhone ? 132 : spacing.xxxl }}>
-        <Disclosure title="Collections summary" summary="Active order target, collections and purchase spending" defaultOpen>
+        <Disclosure title="Collections summary" summary="Active order target, collections and purchase spending" defaultOpen={!isPhone}>
           {statsError ? <ErrorState title="Summary unavailable" onRetry={() => void loadStats()} /> : null}
         {/* Stats */}
         <View style={{ flexDirection: "row", gap: spacing.md, flexWrap: "wrap" }}>
@@ -582,11 +586,22 @@ export default function PaymentsScreen() {
 
         </Disclosure>
 
+        {isPhone && selectedId ? (
+          <Button
+            testID="payments-mobile-customer-switch"
+            label={showMobileQueue ? "Back to selected order" : `Choose customer · ${selectedCustomer?.name || "none selected"}`}
+            icon={showMobileQueue ? "arrow-left" : "users"}
+            variant="secondary"
+            fullWidth
+            onPress={() => setShowMobileQueue((open) => !open)}
+          />
+        ) : null}
+
         {/* Body */}
         <View onLayout={(event) => { bodyTopRef.current = event.nativeEvent.layout.y; }}
           style={{ flexDirection: sideBySide ? "row" : "column", gap: spacing.lg, alignItems: "flex-start" }}>
           {/* Left rail */}
-          <View style={{ width: sideBySide ? 380 : "100%" }}>
+          {(!isPhone || showMobileQueue || !selectedId) && <View style={{ width: sideBySide ? 380 : "100%" }}>
             <Panel title="Customers with balances" overline="COLLECTIONS" padding={spacing.md}>
               <View style={{ gap: spacing.md }}>
                 <SearchField
@@ -604,11 +619,11 @@ export default function PaymentsScreen() {
                   items={AGING_OPTIONS.map((option) => ({ label: option.label, onPress: () => setAgingPeriod(option.value) }))}
                 />
                 {agingPeriod === "custom" ? (
-                  <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                  <View style={{ flexDirection: isPhone ? "column" : "row", gap: spacing.sm }}>
                     <TextInput testID="payments-custom-min-days" value={customMinDays} onChangeText={(value) => setCustomMinDays(value.replace(/\D/g, ""))}
-                      keyboardType="number-pad" placeholder="From days" placeholderTextColor={colors.onSurfaceMuted} style={[styles.dateInput, { flex: 1 }]} />
+                      keyboardType="number-pad" placeholder="From days" placeholderTextColor={colors.onSurfaceMuted} style={[styles.dateInput, !isPhone && { flex: 1 }]} />
                     <TextInput testID="payments-custom-max-days" value={customMaxDays} onChangeText={(value) => setCustomMaxDays(value.replace(/\D/g, ""))}
-                      keyboardType="number-pad" placeholder="To days" placeholderTextColor={colors.onSurfaceMuted} style={[styles.dateInput, { flex: 1 }]} />
+                      keyboardType="number-pad" placeholder="To days" placeholderTextColor={colors.onSurfaceMuted} style={[styles.dateInput, !isPhone && { flex: 1 }]} />
                   </View>
                 ) : null}
                 {listError ? <ErrorState title="Could not load collections" subtitle={listError} onRetry={() => void loadOrders(q)} /> : loadingList ? (
@@ -644,10 +659,10 @@ export default function PaymentsScreen() {
                 )}
               </View>
             </Panel>
-          </View>
+          </View>}
 
           {/* Right — detail */}
-          <View
+          {(!isPhone || (!showMobileQueue && !!selectedId)) && <View
             onLayout={(event) => { detailTopRef.current = event.nativeEvent.layout.y; }}
             style={[
               { flex: 1, gap: spacing.lg, minWidth: 0, width: sideBySide ? undefined : "100%" },
@@ -682,7 +697,7 @@ export default function PaymentsScreen() {
                         {detail.customer.city ? ` · ${detail.customer.city}` : ""}
                       </Text>
                     </View>
-                    <View style={{ flexDirection: "row", gap: spacing.sm, flexShrink: 0 }}>
+                    <View style={{ flexDirection: "row", gap: spacing.sm, flexShrink: 0, flexWrap: "wrap" }}>
                       <Button label="WhatsApp" icon="message-circle" variant="secondary" size="sm"
                         loading={waLoading} onPress={sendWhatsAppReminder} testID="wa-reminder-btn" />
                       <Button label="Call" icon="phone" variant="secondary" size="sm"
@@ -845,7 +860,7 @@ export default function PaymentsScreen() {
 
               </>
             )}
-          </View>
+          </View>}
         </View>
       </ScrollView>
       ) : (

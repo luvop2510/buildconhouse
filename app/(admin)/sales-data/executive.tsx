@@ -10,12 +10,14 @@ import { ComparisonLine } from "@/src/components/analytics/HistoryNote";
 import { MoneyBlockedCard } from "@/src/components/analytics/MoneyBlockedCard";
 import { MorningBrief } from "@/src/components/analytics/MorningBrief";
 import { RowList } from "@/src/components/analytics/RowList";
-import { Card, ErrorState, KpiCard, LoadingState, PillTabs } from "@/src/components/ui";
+import { Button, Card, ErrorState, KpiCard, LoadingState, PillTabs } from "@/src/components/ui";
 import { useBp } from "@/src/design/responsive";
 import { fmtMoneyCompact } from "@/src/design/tokens";
 import { getSelectedFloorId, useFloorAccess } from "@/src/hooks/use-floor-access";
 import { useAuth } from "@/src/state/auth";
 import { colors, spacing, type } from "@/src/theme/tokens";
+import { downloadSectionExcel } from "@/src/utils/sectionExcel";
+import { toast } from "@/src/components/Toast";
 
 const PRESETS = [
   { value: "today", label: "Today" },
@@ -237,7 +239,10 @@ export default function ExecutiveOverview() {
           {data.revenue_by_floor.length > 1 ? (
             <Card testID="executive-revenue-by-floor" variant="flat" padding={spacing.xl}>
               <View style={{ gap: spacing.md }}>
-                <Text style={type.titleSm}>Revenue by Floor</Text>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: spacing.sm }}>
+                  <Text style={type.titleSm}>Revenue by Floor</Text>
+                  <Button testID="executive-revenue-by-floor-export-xlsx" label="Export Excel" icon="download" variant="secondary" onPress={() => void downloadSectionExcel({ page: "Executive Overview", section: "Revenue by Floor", filename: "executive-revenue-by-floor.xlsx", floorId: floorId === "all" ? undefined : floorId, rows: [["Business unit", "Revenue", "Orders"], ...data.revenue_by_floor.map(row => [FLOOR_LABEL[row.floor_id] || row.floor_id, row.revenue, row.orders])] }).catch((error: unknown) => toast.show(error instanceof Error ? error.message : "Could not export floor revenue"))} />
+                </View>
                 <Text style={[type.caption, { color: colors.onSurfaceMuted }]}>
                   Which floor is winning?
                 </Text>

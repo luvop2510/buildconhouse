@@ -1,6 +1,6 @@
 import { Text, View } from "react-native";
 
-import { Card, EmptyState, ErrorState, LoadingState, SkeletonList } from "@/src/components/ui";
+import { Button, Card, EmptyState, ErrorState, LoadingState, SkeletonList } from "@/src/components/ui";
 import { useBp } from "@/src/design/responsive";
 import { colors, layout, spacing, type } from "@/src/theme/tokens";
 
@@ -19,7 +19,7 @@ import { colors, layout, spacing, type } from "@/src/theme/tokens";
  * block itself rather than in documentation.
  */
 export function SalesSection<T>({
-  title, question, rows, error, onRetry, emptyTitle, emptySubtitle, footer, testID, children,
+  title, question, rows, error, onRetry, onExport, emptyTitle, emptySubtitle, footer, testID, children,
 }: {
   title: string;
   question?: string;
@@ -27,6 +27,7 @@ export function SalesSection<T>({
   rows: T[] | null;
   error?: string | null;
   onRetry?: () => void;
+  onExport?: () => void;
   emptyTitle: string;
   emptySubtitle?: string;
   footer?: React.ReactNode;
@@ -45,14 +46,12 @@ export function SalesSection<T>({
   return (
     <Card testID={testID} variant="flat" padding={padding}>
       <View style={{ gap: spacing.lg }}>
-        <View style={{ gap: spacing.s4 }}>
-          {/* titleMd, not titleSm: at 15px a section heading sat only two
-              points above the 13px rows beneath it, which read as emphasis
-              rather than as a level in the hierarchy. */}
-          <Text style={type.titleMd}>{title}</Text>
-          {question ? (
-            <Text style={[type.caption, { color: colors.onSurfaceMuted }]}>{question}</Text>
-          ) : null}
+        <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "flex-start", gap: spacing.sm }}>
+          <View style={{ flex: 1, minWidth: isPhone ? "100%" : 180, gap: spacing.s4 }}>
+            <Text style={type.titleMd}>{title}</Text>
+            {question ? <Text style={[type.caption, { color: colors.onSurfaceMuted }]}>{question}</Text> : null}
+          </View>
+          {onExport ? <Button testID={`${testID}-export-xlsx`} label="Export Excel" icon="download" variant="secondary" onPress={onExport} /> : null}
         </View>
 
         {error ? (

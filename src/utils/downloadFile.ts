@@ -70,7 +70,7 @@ export async function downloadApiFile(path: string, filename: string, errorLabel
   // A tokenized attachment URL downloads through the browser's normal path.
   const mobileBrowser = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
     || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-  if (mobileBrowser && /\.(pdf|pptx)$/i.test(filename)) {
+  if (mobileBrowser && /\.(pdf|pptx|xlsx|csv)$/i.test(filename)) {
     try {
       window.location.assign(await api.authenticatedUrl(path, floorId));
       return true;

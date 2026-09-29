@@ -5,12 +5,14 @@ import { Text, View } from "react-native";
 import { AdminPage } from "@/src/components/AdminPage";
 import { api } from "@/src/api/client";
 import {
-  EmptyState, ErrorState, LoadingState, PillTabs, Table, TableCell, TableHeader, TableRow,
+  Button, EmptyState, ErrorState, LoadingState, PillTabs, Table, TableCell, TableHeader, TableRow,
 } from "@/src/components/ui";
 import { fmtMoney } from "@/src/design/tokens";
 import { useBp } from "@/src/design/responsive";
 import { colors, spacing, type } from "@/src/theme/tokens";
 import { TrendChart } from "@/src/components/salesData/TrendChart";
+import { downloadSectionExcel } from "@/src/utils/sectionExcel";
+import { toast } from "@/src/components/Toast";
 import {
   DATE_PRESET_LABEL, DatePreset, Granularity, presetToRange,
 } from "@/src/components/salesData/salesDataApi";
@@ -47,6 +49,11 @@ export default function ReferrerDetail() {
 
   useEffect(() => { load(); }, [load]);
 
+  const exportData = (section: string, rows: (string | number | null)[][]) => {
+    if (!data) return;
+    void downloadSectionExcel({ page: `Referrer / ${data.referrer.name}`, section, filename: `referrer-${section.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.xlsx`, floorId, rows }).catch((error: unknown) => toast.show(error instanceof Error ? error.message : "Could not export referrer data"));
+  };
+
   return (
     <AdminPage
       title={data?.referrer.name || "Referrer"}
@@ -65,11 +72,14 @@ export default function ReferrerDetail() {
       {!error && !data ? <LoadingState label="Loading…" /> : null}
       {data ? (
         <View style={{ gap: spacing.lg }}>
+          {data.trend.length ? <Button testID="referrer-detail-trend-export-xlsx" label="Export revenue trend" icon="download" variant="secondary" onPress={() => exportData("Revenue trend", [["Period", "Revenue"], ...data.trend.map(point => [point.bucket, point.revenue])])} /> : null}
           <TrendChart points={data.trend} />
           {data.quotations.length === 0 ? (
             <EmptyState title="No won quotations in this range" />
           ) : (
-            isPhone ? (
+            <View style={{ gap: spacing.sm }}>
+            <Button testID="referrer-detail-orders-export-xlsx" label="Export orders" icon="download" variant="secondary" onPress={() => exportData("Confirmed orders", [["Order", "Customer", "Value", "Confirmed at"], ...data.quotations.map(quote => [quote.number, quote.customer_name, quote.grand_total, quote.updated_at])])} />
+            {isPhone ? (
               <View style={{ gap: spacing.xs }}>
                 {data.quotations.map((q) => (
                   <View key={q.id} testID={`referrer-quote-row-${q.id}`} style={{ minHeight: 56, paddingVertical: spacing.xs, borderBottomWidth: 1, borderBottomColor: colors.border, flexDirection: "row", alignItems: "center", gap: spacing.md }}>
@@ -89,7 +99,8 @@ export default function ReferrerDetail() {
                   <TableCell align="right">₹{fmtMoney(q.grand_total)}</TableCell>
                 </TableRow>
               ))}
-            </Table>
+            </Table>}
+            </View>
           )}
         </View>
       ) : null}

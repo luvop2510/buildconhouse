@@ -30,6 +30,7 @@ import { toast } from "@/src/components/Toast";
 import { useAuth } from "@/src/state/auth";
 import { canManageDestructiveData } from "@/src/constants/roles";
 import { colors, icon as iconSize, money, moneyShort, PRODUCT_IMAGE_ASPECT_RATIO, radius, spacing, type } from "@/src/theme/tokens";
+import { downloadSectionExcel } from "@/src/utils/sectionExcel";
 import {
   HistorySheet, MovableItem, MoveStageSheet, STAGE_TONE, TransferSheet,
 } from "@/src/components/purchases/MovementEngine";
@@ -380,6 +381,18 @@ export default function CustomerDetail() {
     if (productFilter === "blocked") return workspace.products.filter((p) => p.blocked);
     return workspace.products;
   }, [workspace, productFilter]);
+  const exportDetail = async (section: "quotations" | "products" | "orders" | "timeline") => {
+    const rows = section === "quotations"
+      ? [["Quotation", "Status", "Items", "Total (INR)", "Created"], ...quotations.map(row => [row.number, row.status, row.items.length, row.grand_total, row.created_at])]
+      : section === "products"
+        ? [["PO", "SKU", "Product", "Brand", "Stage", "Quantity", "Unit cost (INR)", "Blocked"], ...visibleProducts.map(row => [row.po_number, row.sku, row.name, row.brand_name, row.stage_label, row.qty, row.unit_cost, row.blocked ? "Yes" : "No"])]
+        : section === "orders"
+          ? [["PO", "Status", "Brand", "Supplier", "Items", "Total (INR)", "Created"], ...(workspace?.purchase_orders || []).map(row => [row.number, row.status, row.brand_name, row.supplier_name, row.item_count, row.grand_total, row.created_at])]
+          : [["Date", "Event", "Summary", "Recorded by"], ...timeline.map(row => [row.created_at, row.event_type, row.summary, row.actor_name])];
+    try {
+      await downloadSectionExcel({ page: `Customer ${customer?.company || customer?.name || id}`, section: `Customer ${section}`, rows, filename: `customer-${id}-${section}.xlsx`, floorId: selectedFloorId });
+    } catch (error: any) { toast.error(error?.message || `Could not export ${section}`); }
+  };
 
   const hasServerFilters = useMemo(
     () => Boolean(workspaceFilters.productSearch || workspaceFilters.brandFilter || workspaceFilters.stageFilter),
@@ -536,6 +549,11 @@ export default function CustomerDetail() {
           { value: "overview", label: "Overview" }, { value: "quotations", label: "Quotations" },
           { value: "po_final", label: "PO Final" }, { value: "purchases", label: "Purchases" }, { value: "timeline", label: "Timeline" },
         ]} />
+        {tab === "quotations" || tab === "purchases" || tab === "timeline" ? <View style={styles.exportActions}>
+          {tab === "quotations" ? <Button label="Export quotations .xlsx" icon="download" variant="secondary" size="sm" disabled={!quotations.length} onPress={() => void exportDetail("quotations")} testID="customer-export-quotations" /> : null}
+          {tab === "purchases" && !isTilesFloor ? <><Button label="Export products .xlsx" icon="download" variant="secondary" size="sm" disabled={!visibleProducts.length} onPress={() => void exportDetail("products")} testID="customer-export-products" /><Button label="Export orders .xlsx" icon="download" variant="secondary" size="sm" disabled={!workspace?.purchase_orders.length} onPress={() => void exportDetail("orders")} testID="customer-export-orders" /></> : null}
+          {tab === "timeline" ? <Button label="Export activity .xlsx" icon="download" variant="secondary" size="sm" disabled={!timeline.length} onPress={() => void exportDetail("timeline")} testID="customer-export-activity" /> : null}
+        </View> : null}
 
         {/* Body */}
         {tab === "overview" ? (
@@ -889,7 +907,7 @@ export default function CustomerDetail() {
                       {hasServerFilters ? "Server filters are applied before the chips below." : "Use All, Outstanding, or Delayed on the filtered workspace."}
                     </Text>
                   </View>
-                  <View style={{ flexDirection: "row", gap: 6 }}>
+                  <View style={{ flexDirection: "row", flexWrap: isPhone ? "wrap" : "nowrap", gap: 6, maxWidth: "100%" }}>
                     <FilterChip label={`All ${workspace.products.length}`} active={productFilter === "all"} onPress={() => setProductFilter("all")} />
                     <FilterChip label={`Outstanding ${workspace.outstanding_items.length}`} active={productFilter === "outstanding"} onPress={() => setProductFilter("outstanding")} />
                     <FilterChip label={`Delayed ${workspace.summary.blocked_count}`} active={productFilter === "blocked"} onPress={() => setProductFilter("blocked")} />
@@ -1103,6 +1121,7 @@ function firstParam(value?: string | string[]): string | null {
 }
 
 const styles = StyleSheet.create({
+  exportActions: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.sm },
   statsRow: { flexDirection: "row", gap: spacing.md },
   statsRowMobile: { flexWrap: "wrap" },
   listRow: {

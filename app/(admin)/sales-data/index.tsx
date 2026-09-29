@@ -29,6 +29,8 @@ import { getSelectedFloorId, useFloorAccess } from "@/src/hooks/use-floor-access
 import { useAuth } from "@/src/state/auth";
 import { colors, layout, spacing, type } from "@/src/theme/tokens";
 import { downloadApiFile } from "@/src/utils/downloadFile";
+import { downloadSectionExcel } from "@/src/utils/sectionExcel";
+import { toast } from "@/src/components/Toast";
 
 const ANALYTICS_ROLES = ["owner", "admin", "manager"];
 const TOP_N = 10;
@@ -204,10 +206,16 @@ export default function SalesDataIndex() {
 
     void overviewRequest.finally(() => {
       if (version !== requestVersion.current || controller.signal.aborted) return;
-      const sectionRequests = (Object.keys(EMPTY_SECTIONS) as SectionKey[]).map(
-        (key) => loadSection(key, filter, version, controller.signal),
-      );
-      void Promise.all(sectionRequests).finally(() => {
+      // These endpoints each aggregate confirmed orders. Keep at most two in
+      // flight so a cold dashboard does not saturate the same database pool.
+      const queue = Object.keys(EMPTY_SECTIONS) as SectionKey[];
+      const worker = async () => {
+        while (queue.length && !controller.signal.aborted) {
+          const key = queue.shift();
+          if (key) await loadSection(key, filter, version, controller.signal);
+        }
+      };
+      void Promise.all([worker(), worker()]).finally(() => {
         if (version === requestVersion.current) setUpdating(false);
       });
     });
@@ -226,21 +234,25 @@ export default function SalesDataIndex() {
     };
   }, [load]);
 
-  const exportSalesData = useCallback(() => {
-    if (!floorId || !period) return;
-    const filter: SalesFilter = {
-      floorId,
-      preset: period.preset,
-      dateFrom: period.dateFrom,
-      dateTo: period.dateTo,
+  const exportSection = useCallback((key: SectionKey) => {
+    const filter = filterForScope();
+    if (!filter) return;
+    const paths: Record<SectionKey, string> = {
+      trend: salesDataApi.revenueTrendExportPath(filter),
+      brands: salesDataApi.revenueByBrandExportPath(filter),
+      customers: salesDataApi.revenueByCustomerExportPath(filter),
+      products: salesDataApi.bestSellingProductsExportPath(filter),
+      orders: salesDataApi.recentOrdersExportPath(filter),
+      architects: salesDataApi.referrersExportPath(filter, "architect"),
+      designers: salesDataApi.referrersExportPath(filter, "interior_designer"),
     };
     void downloadApiFile(
-      salesDataApi.salesExportPath(filter),
-      "sales-data.xlsx",
-      "sales data Excel file",
+      paths[key],
+      `sales-${key}.xlsx`,
+      `${key} Excel file`,
       floorId === "all" ? undefined : floorId,
     );
-  }, [floorId, period]);
+  }, [filterForScope, floorId]);
 
   // The role check is a plain `if` AFTER every hook call — an early return
   // before a hook would change this component's hook count between renders.
@@ -260,6 +272,15 @@ export default function SalesDataIndex() {
   const visibleFloorRevenue = (overview?.revenue_by_floor || []).filter(
     (row) => floorId === "all" || row.floor_id === floorId,
   );
+
+  const exportFloorRevenue = () => {
+    if (!visibleFloorRevenue.length) return;
+    void downloadSectionExcel({
+      page: "Sales Data", section: "Revenue by Business Unit", filename: "sales-business-units.xlsx",
+      floorId: floorId === "all" ? undefined : floorId,
+      rows: [["Business unit", "Revenue", "Orders"], ...visibleFloorRevenue.map(row => [floorName(row.floor_id), row.revenue, row.orders])],
+    }).catch((error: unknown) => toast.show(error instanceof Error ? error.message : "Could not export business-unit revenue"));
+  };
 
   const isEmptyPeriod = !!kpis && kpis.orders === 0;
   // Only offer the jump when the server actually knows of a period that has
@@ -289,14 +310,6 @@ export default function SalesDataIndex() {
             <View style={{ borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: spacing.md, flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, alignItems: "center", justifyContent: "flex-end" }}>
               {updatedAt || updating ? <Text accessibilityLiveRegion="polite" style={[type.caption, { color: colors.onSurfaceMuted, flexGrow: 1 }, isPhone && { width: "100%" }]}>{updatedAt ? `Updated ${updatedAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}` : "Preparing summary"}{updating ? " · Updating…" : ""}</Text> : null}
               <Button label="Refresh" icon="refresh-cw" variant="secondary" onPress={load} loading={updating} style={isPhone ? { flex: 1 } : undefined} />
-              <Button
-                testID="sales-data-export-xlsx"
-                label="Export Excel"
-                icon="download"
-                variant="secondary"
-                onPress={exportSalesData}
-                style={isPhone ? { flex: 1 } : undefined}
-              />
             </View>
           </View>
         </Card>
@@ -365,7 +378,7 @@ export default function SalesDataIndex() {
         </View>
       ) : null}
 
-      <SalesSection title="Revenue over time" question="Confirmed order revenue by order date · UTC" rows={sections.trend} error={sectionErrors.trend} onRetry={() => retrySection("trend")} emptyTitle={period?.preset === "all" ? "Choose a date range to see the trend" : "No trend data in this period"} testID="sales-revenue-trend">
+      <SalesSection title="Revenue over time" question="Confirmed order revenue by order date · UTC" rows={sections.trend} error={sectionErrors.trend} onRetry={() => retrySection("trend")} onExport={sections.trend?.length ? () => exportSection("trend") : undefined} emptyTitle={period?.preset === "all" ? "Choose a date range to see the trend" : "No trend data in this period"} testID="sales-revenue-trend">
         {(points) => <TrendChart points={points} />}
       </SalesSection>
 
@@ -375,11 +388,14 @@ export default function SalesDataIndex() {
       {overview ? (
         <Card testID="sales-revenue-by-floor" variant="flat" padding={sectionPadding}>
           <View style={{ gap: spacing.lg }}>
-            <View style={{ gap: spacing.s4 }}>
-              <Text style={type.titleMd}>Revenue by Business Unit</Text>
-              <Text style={[type.caption, { color: colors.onSurfaceMuted }]}>
-                {floorId === "all" ? "Confirmed revenue and orders · select a unit to focus the dashboard" : "Confirmed revenue for the selected business unit"}
-              </Text>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "flex-start", gap: spacing.sm }}>
+              <View style={{ flex: 1, minWidth: isPhone ? "100%" : 180, gap: spacing.s4 }}>
+                <Text style={type.titleMd}>Revenue by Business Unit</Text>
+                <Text style={[type.caption, { color: colors.onSurfaceMuted }]}>
+                  {floorId === "all" ? "Confirmed revenue and orders · select a unit to focus the dashboard" : "Confirmed revenue for the selected business unit"}
+                </Text>
+              </View>
+              {visibleFloorRevenue.length ? <Button testID="sales-revenue-by-floor-export-xlsx" label="Export Excel" icon="download" variant="secondary" onPress={exportFloorRevenue} /> : null}
             </View>
             {/* `/analytics/overview` always reports every accessible floor
                 here, regardless of the floor filter — it is built as a
@@ -428,6 +444,7 @@ export default function SalesDataIndex() {
         rows={sections.brands}
         error={sectionErrors.brands}
         onRetry={() => retrySection("brands")}
+        onExport={sections.brands?.length ? () => exportSection("brands") : undefined}
         emptyTitle="No brand revenue in this period"
       >
         {(rows) => useCompactRows ? (
@@ -466,6 +483,7 @@ export default function SalesDataIndex() {
         rows={sections.customers}
         error={sectionErrors.customers}
         onRetry={() => retrySection("customers")}
+        onExport={sections.customers?.length ? () => exportSection("customers") : undefined}
         emptyTitle="No customer revenue in this period"
         footer={
           sections.customers && sections.customers.length > TOP_N ? (
@@ -509,6 +527,7 @@ export default function SalesDataIndex() {
         rows={sections.architects}
         error={sectionErrors.architects}
         onRetry={() => retrySection("architects")}
+        onExport={sections.architects?.length ? () => exportSection("architects") : undefined}
         onOpen={(id) => router.push({ pathname: "/(admin)/sales-data/referrer/[id]", params: { id, floorId, preset: period?.preset, dateFrom: period?.dateFrom || "", dateTo: period?.dateTo || "" } } as never)}
       />
       <ReferrerWorkspace
@@ -517,6 +536,7 @@ export default function SalesDataIndex() {
         rows={sections.designers}
         error={sectionErrors.designers}
         onRetry={() => retrySection("designers")}
+        onExport={sections.designers?.length ? () => exportSection("designers") : undefined}
         onOpen={(id) => router.push({ pathname: "/(admin)/sales-data/referrer/[id]", params: { id, floorId, preset: period?.preset, dateFrom: period?.dateFrom || "", dateTo: period?.dateTo || "" } } as never)}
       />
 
@@ -530,6 +550,7 @@ export default function SalesDataIndex() {
         rows={sections.products}
         error={sectionErrors.products}
         onRetry={() => retrySection("products")}
+        onExport={sections.products?.length ? () => exportSection("products") : undefined}
         emptyTitle="No products sold in this period"
       >
         {(rows) => useCompactRows ? (
@@ -569,6 +590,7 @@ export default function SalesDataIndex() {
         rows={sections.orders}
         error={sectionErrors.orders}
         onRetry={() => retrySection("orders")}
+        onExport={sections.orders?.length ? () => exportSection("orders") : undefined}
         emptyTitle="No confirmed orders in this period"
         emptySubtitle="Orders appear here the moment a quotation is confirmed."
         footer={
@@ -637,12 +659,13 @@ export default function SalesDataIndex() {
  * than rendering a zero row that would imply a referrer earning nothing.
  */
 function ReferrerWorkspace({
-  title, rows, error, onRetry, onOpen, testID,
+  title, rows, error, onRetry, onExport, onOpen, testID,
 }: {
   title: string;
   rows: ReferrerSummaryRow[] | null;
   error?: string | null;
   onRetry?: () => void;
+  onExport?: () => void;
   onOpen: (referrerId: string) => void;
   testID: string;
 }) {
@@ -657,6 +680,7 @@ function ReferrerWorkspace({
       rows={rows}
       error={error}
       onRetry={onRetry}
+      onExport={onExport}
       emptyTitle="No referrals recorded in this period"
       emptySubtitle="Set 'Referred By' on a quotation and that person's business appears here."
     >

@@ -122,7 +122,7 @@ async def referrers(
     try:
         if format:
             rows = await _referrer_summary_rows(f, floors, period, type)
-            return export.export_response(rows, _REFERRER_COLUMNS, "referrers", format)
+            return export.export_response(rows, _REFERRER_COLUMNS, f"revenue-by-{type or 'referrer'}", format)
         rows = await _cached_referrer_summary_rows(f, floors, period, type)
     except FloorAccessError as exc:
         raise _floor_error_to_http(exc) from exc

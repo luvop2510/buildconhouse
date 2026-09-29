@@ -83,6 +83,8 @@ export function PoFinal({ customerId }: { customerId: string }) {
         "PO Final PDF",
       );
       if (ok) toast.success("PO Final PDF ready");
+    } catch (e: any) {
+      toast.error(e?.detail || "Could not download the PO Final PDF. Please try again.");
     } finally { setDownloading(false); }
   };
 

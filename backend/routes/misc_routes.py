@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
 import os
 from re import fullmatch
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from access_profiles import profile_allows_request
 from auth import accessible_floor_ids, floor_for_write, floor_query, floor_scope_ids, get_current_customer, get_current_session, get_current_user, hash_password, invalidate_principal_cache, normalize_staff_access, require_min_role, revoke_all_sessions
@@ -39,6 +39,9 @@ class DownloadTokenRequest(BaseModel):
 _DOWNLOAD_TARGET_PATTERNS = (
     r"/api/quotations/[^/]+/pdf",
     r"/api/quotations/[^/]+/pptx",
+    r"/api/customers/[^/]+/po-final/pdf",
+    r"/api/analytics/(?:revenue-trend|revenue-by-brand|revenue-by-customer|best-selling-products|recent-orders|referrers)",
+    r"/api/catalog/export\.xlsx",
     r"/api/purchases/export\.xlsx",
     r"/api/purchases/[^/]+/chalans/[^/]+/pdf",
     r"/api/payments/history/export",
@@ -65,6 +68,8 @@ def _download_target_path(target: str, *, customer: bool = False) -> str:
         ))
     ):
         raise HTTPException(status_code=400, detail="Download target is not permitted")
+    if parsed.path.startswith("/api/analytics/") and parse_qs(parsed.query).get("format") not in (["xlsx"], ["csv"]):
+        raise HTTPException(status_code=400, detail="Analytics download must request a file format")
     return parsed.path
 
 # Settings > System > Version. Bump manually alongside meaningful releases —

@@ -17,6 +17,10 @@ from routes.misc_routes import DownloadTokenRequest, _download_target_path
 @pytest.mark.parametrize("target", [
     "/api/quotations/quote-1/pdf?include_dimensions=true",
     "/api/quotations/quote-1/pptx",
+    "/api/customers/customer-1/po-final/pdf?quotation_id=quote-1",
+    "/api/analytics/revenue-trend?format=xlsx&granularity=month",
+    "/api/analytics/referrers?type=architect&format=xlsx",
+    "/api/catalog/export.xlsx",
     "/api/purchases/export.xlsx?stage=received",
     "/api/purchases/po-1/chalans/chalan-1/pdf",
     "/api/payments/history/export?fmt=xlsx",
@@ -43,6 +47,9 @@ def test_customer_download_token_targets_are_limited_to_portal_pdfs(target):
     "/api/quotations/quote-1/portal-pdf/brand/brand-1",
     "/api/quotations/quote-1/pptx/other",
     "/api/quotations/quote-1/pdf/other",
+    "/api/customers/customer-1/po-final/pdf/other",
+    "/api/analytics/referrers/private-data?format=xlsx",
+    "/api/analytics/revenue-trend?granularity=month",
     "/api/purchases/po-1/chalans/chalan-1/pdf/other",
     "/api/payments/orders",
     "/api/auth/users",
@@ -59,6 +66,7 @@ def test_download_token_rejects_arbitrary_or_pre_tokenized_targets(target):
 @pytest.mark.parametrize("target", [
     "/api/quotations/quote-1/pdf",
     "/api/quotations/quote-1/pptx",
+    "/api/customers/customer-1/po-final/pdf",
     "/api/purchases/po-1/chalans/chalan-1/pdf",
     "/api/quotations/quote-1/portal-pdf/revision/not-a-number",
     "/api/quotations/quote-1/portal-pdf?dl=stolen",

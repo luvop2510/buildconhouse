@@ -80,6 +80,9 @@ _SALESPEOPLE_COLUMNS: list[tuple[str, str]] = [
     ("name", "Name"), ("revenue", "Revenue"), ("orders", "Orders"),
     ("aov", "AOV"), ("conversion_pct", "Conversion %"), ("rank", "Rank"),
 ]
+_REVENUE_TREND_COLUMNS: list[tuple[str, str]] = [
+    ("bucket", "Period"), ("revenue", "Revenue"),
+]
 _CATEGORY_COLUMNS: list[tuple[str, str]] = [
     ("name", "Category"), ("revenue", "Revenue"), ("qty", "Qty"),
 ]
@@ -118,6 +121,7 @@ async def revenue_trend(
     preset: str | None = Query(None),
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
+    format: ExportFormat | None = Query(None),
     user: UserPublic = Depends(require_roles(*_ANALYTICS_ROLES)),
 ):
     f = _filter_from_query(floor_id, preset, date_from, date_to)
@@ -125,6 +129,9 @@ async def revenue_trend(
     period = _period_of(f)
     signature = f"{filter_signature(f)}:{granularity}"
     try:
+        if format:
+            points = await _revenue_trend_points(f, floors, period, granularity)
+            return export.export_response(points, _REVENUE_TREND_COLUMNS, "revenue-over-time", format)
         points = await cache.cached(
             "revenue_trend", CACHED_SURFACES["revenue_trend"], signature, floors,
             lambda: _revenue_trend_points(f, floors, period, granularity), ttl=_CACHE_TTL,

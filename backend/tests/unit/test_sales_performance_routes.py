@@ -4,8 +4,10 @@ the route functions directly with a fake user, not a live HTTP server."""
 from __future__ import annotations
 
 import pytest
+import asyncio
 
 from auth import UserPublic
+import routes.sales_performance_routes as performance_routes
 from routes.sales_performance_routes import ABOVE_THE_FOLD_PERFORMANCE, router
 
 
@@ -30,3 +32,16 @@ def test_performance_above_the_fold_contract_is_a_module_constant():
     assert set(ABOVE_THE_FOLD_PERFORMANCE) == {
         "revenue_trend", "salespeople", "funnel", "categories",
     }
+
+
+def test_revenue_trend_exports_the_requested_period_as_xlsx(monkeypatch):
+    async def points(*args):
+        return [{"bucket": "2026-09", "revenue": 1250.0}]
+
+    monkeypatch.setattr(performance_routes, "_revenue_trend_points", points)
+    response = asyncio.run(performance_routes.revenue_trend(
+        granularity="month", floor_id=None, preset="this_month", date_from=None,
+        date_to=None, format="xlsx", user=_user(),
+    ))
+    assert response.media_type == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    assert "revenue-over-time.xlsx" in response.headers["content-disposition"]
