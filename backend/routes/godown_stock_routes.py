@@ -190,7 +190,7 @@ async def _persist_intake(
     can be stale after a quotation revision; the captured value stays fixed
     when the quotation is edited again. A credit is settlement, not cash.
     """
-    received_qty = float(item.get("qty_received") or item.get("qty") or 0)
+    received_qty = float(item["qty_received"] if item.get("qty_received") is not None else item.get("qty") or 0)
     source_updated = False
     lot_inserted = False
     payment: dict | None = None
@@ -504,7 +504,9 @@ async def _transfer_stock_to_customer_once(stock_id: str, body: CustomerTransfer
                     {"_id": 0}, session=session,
                 )
                 matched_item = next((item for item in (matched_po or {}).get("items", []) if item.get("id") == body.recipient_purchase_item_id), None)
-                if not matched_item or matched_item.get("cancelled") or matched_item.get("stage") != "po_final" or not _same_product(lot, matched_item):
+                if (not matched_po or matched_po.get("status") == "cancelled" or not matched_item
+                        or matched_item.get("cancelled") or matched_item.get("stage") != "po_final"
+                        or not _same_product(lot, matched_item)):
                     raise HTTPException(status_code=409, detail="Recipient purchase item is no longer a matching PO Final product")
                 remaining_order_qty = float(matched_item.get("qty") or 0) - float(matched_item.get("godown_borrowed_qty") or 0)
                 if body.qty > remaining_order_qty:
@@ -725,7 +727,7 @@ async def intake_stock(body: Intake, user: UserPublic = Depends(require_min_role
         raise HTTPException(status_code=404, detail="Purchase order item not found")
     if item.get("cancelled"):
         raise HTTPException(status_code=409, detail="A cancelled purchase item cannot be transferred to godown stock")
-    received_qty = float(item.get("qty_received") or item.get("qty") or 0)
+    received_qty = float(item["qty_received"] if item.get("qty_received") is not None else item.get("qty") or 0)
     transferable = received_qty - float(item.get("godown_transferred_qty") or 0) - float(item.get("loan_replenishment_returned_qty") or 0) - float(item.get("loaned_qty") or 0)
     if body.qty > transferable:
         raise HTTPException(status_code=409, detail=f"Only {transferable:g} units are available to transfer")

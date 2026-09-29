@@ -5,6 +5,7 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
 
 import routes.godown_stock_routes as godown
 
@@ -189,3 +190,23 @@ def test_intake_compensates_the_source_line_when_lot_creation_fails(monkeypatch)
     item = po["items"][0]
     assert item["godown_transferred_qty"] == 0
     assert item["godown_transfer_history"] == []
+
+
+def test_explicit_zero_received_quantity_cannot_be_moved_to_stock(monkeypatch):
+    po = _po()
+    po["items"][0]["qty_received"] = 0
+    fake_db = SimpleNamespace(purchase_orders=_PurchaseOrders(po))
+    monkeypatch.setattr(godown, "db", fake_db)
+
+    async def scoped_po(*_args, **_kwargs):
+        return po
+
+    monkeypatch.setattr(godown, "get_floor_scoped_or_404", scoped_po)
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(godown.intake_stock(
+            godown.Intake(purchase_order_id="po-1", purchase_item_id="item-1", qty=1, reason="Declined"),
+            _user(),
+        ))
+    assert exc.value.status_code == 409
+    assert "Only 0 units" in exc.value.detail
+    assert fake_db.purchase_orders.queries == []

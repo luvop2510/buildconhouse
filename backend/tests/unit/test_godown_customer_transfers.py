@@ -122,6 +122,28 @@ def test_customer_transfer_rejects_non_matching_po_item(monkeypatch):
     assert stock.rows[0]["loaned_out_qty"] == 0
 
 
+def test_customer_transfer_rejects_cancelled_purchase_order(monkeypatch):
+    cancelled_po = po()
+    cancelled_po["status"] = "cancelled"
+    stock = Collection([lot()])
+    purchases = Collection([cancelled_po])
+    monkeypatch.setattr(route, "db", SimpleNamespace(
+        godown_stock=stock, godown_customer_transfers=Collection([]),
+        purchase_orders=purchases,
+        customers=Collection([{"id": "recipient-1", "floor_id": "first-floor", "name": "Recipient"}]),
+    ))
+    monkeypatch.setattr(route, "client", Client())
+    body = route.CustomerTransfer(
+        qty=1, recipient_customer_id="recipient-1", recipient_purchase_item_id="item-1",
+        idempotency_key="cancelled-po-123",
+    )
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(route.transfer_stock_to_customer("stock-1", body, user()))
+    assert exc.value.status_code == 409
+    assert purchases.updates == []
+    assert stock.rows[0]["available_qty"] == 5
+
+
 def test_matching_po_with_existing_order_does_not_duplicate_amount_due(monkeypatch):
     existing_po = po(); existing_po["quotation_id"] = "quote-1"
     quotations = Collection([])
