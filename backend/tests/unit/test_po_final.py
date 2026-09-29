@@ -96,3 +96,53 @@ def test_loan_linking_uses_exact_replenishment_item():
         {"transfer_id": "loan-b", "replenishment_po_id": "different-po", "replenishment_item_id": "ordered-item"},
     ]}]}]
     assert _linked_loan_items(source, selected) == {"loan-a": "selected-line"}
+
+
+def test_po_final_pdf_uses_quotation_product_pages_and_only_commercial_cover():
+    from io import BytesIO
+    from pypdf import PdfReader
+
+    data = {
+        "quotation_number": "Q-7", "doc_type": "standard",
+        "customer": {"name": "Alice"},
+        "items": [{"id": "line", "name": "Basin", "qty": 1, "total": 90}],
+        "items_total": 90, "total": 90, "payable_total": 100,
+        "changes": [{"description": "Internal stock transfer audit"}],
+    }
+    quotation = {"number": "Q-7", "items": [
+        {"id": "line", "name": "Basin", "sku": "B-7", "room": "Bath", "qty": 2, "unit_price": 100},
+    ], "payment_extra_history": [{"name": "Handling", "amount": 10}]}
+    payments = [{"status": "completed", "entry_type": "payment", "amount": 20, "mode": "upi"},
+                {"status": "completed", "entry_type": "godown_stock_credit", "amount": 10, "mode": "bank"},
+                {"status": "pending", "entry_type": "payment", "amount": 30, "mode": "cash"}]
+    text = " ".join(page.extract_text() or "" for page in PdfReader(BytesIO(
+        build_po_final_pdf(data, quotation=quotation, payments=payments)
+    )).pages)
+    assert "PRICE & PAYMENT SUMMARY" in text
+    assert "PRODUCT" in text and "IMAGE" in text and "B-7" in text
+    assert "Handling" in text and "80.00" in text
+    assert "GoDown stock credits (included in total)" in text
+    assert "Internal stock transfer audit" not in text
+    assert "TERMS & CONDITIONS" not in text
+    assert "Cash" not in text
+
+
+def test_po_final_tiles_pdf_uses_tile_quotation_product_table():
+    from io import BytesIO
+    from pypdf import PdfReader
+
+    data = {"quotation_number": "T-7", "doc_type": "tiles_quotation",
+            "customer": {"name": "Alice"},
+            "items": [{"id": "line", "name": "Tile", "qty": 1, "total": 120}],
+            "items_total": 120, "total": 120, "payable_total": 120}
+    quotation = {"number": "T-7", "doc_type": "tiles_quotation", "items": [
+        {"id": "line", "name": "Tile", "room": "Kitchen", "size": "600x600",
+         "qty": 2, "unit_price": 100, "rate_sqft": 25, "quantity_unit": "Box"},
+    ]}
+    text = " ".join(page.extract_text() or "" for page in PdfReader(BytesIO(
+        build_po_final_pdf(data, quotation=quotation)
+    )).pages)
+    assert "PRICE & PAYMENT SUMMARY" in text
+    assert "PRODUCT DETAILS" in text and "600x600" in text
+    assert "120.00" in text
+    assert "TERMS & CONDITIONS" not in text

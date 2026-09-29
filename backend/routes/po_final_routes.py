@@ -122,8 +122,20 @@ async def get_po_final_pdf(customer_id: str, quotation_id: str | None = Query(No
     data = await _po_final(customer_id, quotation_id, user)
     if not data["quotation_id"]:
         raise HTTPException(status_code=404, detail="No quotation exists for this customer")
-    company = await db.settings.find_one({"key": "company"}, {"_id": 0}) or {}
-    pdf = await run_in_threadpool(build_po_final_pdf, data, {"footer_company_name": company.get("name")})
+    from routes.quotation_routes import _canonicalize_item_images, _diagram_items, _pdf_branding
+
+    quotation = await get_floor_scoped_or_404(
+        db.quotations, data["quotation_id"], user, not_found="Quotation not found", projection={"_id": 0},
+    )
+    items = await _canonicalize_item_images(quotation.get("items") or [])
+    if data.get("doc_type") not in {"tiles_selection", "tiles_quotation"}:
+        items = await _diagram_items(items, quotation.get("floor_id"))
+    quotation = {**quotation, "items": items}
+    payments = await db.payments.find(
+        {"customer_id": customer_id, "quotation_id": data["quotation_id"], "floor_id": quotation.get("floor_id")},
+        {"_id": 0},
+    ).sort("created_at", 1).to_list(1000)
+    pdf = await run_in_threadpool(build_po_final_pdf, data, await _pdf_branding(), quotation, payments)
     filename = f"PO-Final-{data['quotation_number'] or customer_id}.pdf"
     return StreamingResponse(iter([pdf]), media_type="application/pdf",
                              headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})

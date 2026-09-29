@@ -33,7 +33,7 @@ from reportlab.platypus import (
 
 from pdf_generator import (
     LOGO_PATH, LOGO_RATIO, _draw_footer, _draw_room_watermark, _escape, _img, _money,
-    LANDSCAPE_A4, PRODUCT_IMAGE_ASPECT_RATIO, brand_partners_table, prefetch_product_images,
+    LANDSCAPE_A4, PRODUCT_IMAGE_ASPECT_RATIO, _po_final_payment_table, brand_partners_table, prefetch_product_images,
 )
 
 INK = colors.HexColor("#111111")
@@ -482,24 +482,39 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
     subtotal = item_subtotal
     total_quote = float(quotation.get("grand_total") or (item_subtotal + transportation_fee))
 
-    story: list = [
-        _header_block("PRODUCT QUOTATION", "Tiles &amp; Sanitaryware Solutions", styles),
-        Spacer(1, 2 * mm),
-        HRFlowable(width="100%", thickness=1.1, color=INK, spaceAfter=2.5 * mm),
-        _meta_grid(quotation, customer, styles),
-        Spacer(1, 2.5 * mm),
-        Paragraph(
-            "Dear Sir/Madam, thank you for your interest in our products. We are pleased to offer our most competitive "
-            "rates for premium tiles and sanitaryware, prepared as per your selection.",
-            styles["intro"],
-        ),
-        Spacer(1, 2.5 * mm),
-        Paragraph("PRICE SUMMARY", styles["sectionTitle"]),
-        Spacer(1, 1 * mm),
-        _price_summary_table(total_quantity, subtotal, transportation_fee, total_quote, styles),
-        Spacer(1, 2.5 * mm),
-    ]
-    story.extend(_brand_terms_signature_block(styles, b, density="compact"))
+    if quotation.get("_po_final") is not None:
+        story: list = [
+            _header_block("PRODUCT QUOTATION", "Tiles &amp; Sanitaryware Solutions", styles),
+            Spacer(1, 2 * mm),
+            HRFlowable(width="100%", thickness=1.1, color=INK, spaceAfter=2.5 * mm),
+            Paragraph(f"<b>Customer:</b> {_escape(customer.get('company') or customer.get('name') or quotation.get('customer_name'))}", styles["cell"]),
+            Paragraph(f"<b>Quotation:</b> {_escape(quotation.get('number'))}", styles["cell"]),
+            Spacer(1, 4 * mm),
+            Paragraph("PRICE &amp; PAYMENT SUMMARY", styles["sectionTitle"]),
+            Spacer(1, 2 * mm),
+            _price_summary_table(total_quantity, subtotal, transportation_fee, total_quote, styles),
+            Spacer(1, 3 * mm),
+            _po_final_payment_table(quotation, styles["cell"], PAGE_W_MM),
+        ]
+    else:
+        story: list = [
+            _header_block("PRODUCT QUOTATION", "Tiles &amp; Sanitaryware Solutions", styles),
+            Spacer(1, 2 * mm),
+            HRFlowable(width="100%", thickness=1.1, color=INK, spaceAfter=2.5 * mm),
+            _meta_grid(quotation, customer, styles),
+            Spacer(1, 2.5 * mm),
+            Paragraph(
+                "Dear Sir/Madam, thank you for your interest in our products. We are pleased to offer our most competitive "
+                "rates for premium tiles and sanitaryware, prepared as per your selection.",
+                styles["intro"],
+            ),
+            Spacer(1, 2.5 * mm),
+            Paragraph("PRICE SUMMARY", styles["sectionTitle"]),
+            Spacer(1, 1 * mm),
+            _price_summary_table(total_quantity, subtotal, transportation_fee, total_quote, styles),
+            Spacer(1, 2.5 * mm),
+        ]
+        story.extend(_brand_terms_signature_block(styles, b, density="compact"))
 
     # --- PRODUCT DETAILS (page 2+) — one flowing table, auto-paginates ------
     story.append(PageBreak())
