@@ -117,6 +117,21 @@ class _Collection:
         self._calls[f"{self._find_key}.find"] = self._calls.get(f"{self._find_key}.find", 0) + 1
         return _Cursor(self._rows, self._calls, f"{self._find_key}.to_list")
 
+    def aggregate(self, pipeline):
+        self.last_query = deepcopy(pipeline[0]["$match"])
+        self._calls[f"{self._find_key}.aggregate"] = self._calls.get(f"{self._find_key}.aggregate", 0) + 1
+        qids = set(self.last_query.get("quotation_id", {}).get("$in", []))
+        totals: dict[str, float] = {}
+        for po in self._rows:
+            qid = po.get("quotation_id")
+            if qid not in qids:
+                continue
+            totals[qid] = totals.get(qid, 0.0) + sum(
+                float(item.get("godown_transferred_qty") or 0) * float(item.get("unit_cost") or 0)
+                for item in po.get("items") or [] if not item.get("cancelled")
+            )
+        return _Cursor([{"_id": qid, "total": total} for qid, total in totals.items()], self._calls, f"{self._find_key}.aggregate.to_list")
+
 
 class _AggregatePurchaseOrders:
     def __init__(self, aggregate_rows: list[dict], po_rows: list[dict], calls: dict[str, int]):
@@ -127,8 +142,19 @@ class _AggregatePurchaseOrders:
         self.last_find_query: dict | None = None
 
     def aggregate(self, pipeline):
-        self.last_pipeline = deepcopy(pipeline)
         self._calls["purchase_orders.aggregate"] = self._calls.get("purchase_orders.aggregate", 0) + 1
+        if "quotation_id" in pipeline[0]["$match"]:
+            qids = set(pipeline[0]["$match"]["quotation_id"]["$in"])
+            totals: dict[str, float] = {}
+            for po in self._po_rows:
+                if po.get("quotation_id") in qids:
+                    qid = po["quotation_id"]
+                    totals[qid] = totals.get(qid, 0.0) + sum(
+                        float(item.get("godown_transferred_qty") or 0) * float(item.get("unit_cost") or 0)
+                        for item in po.get("items") or [] if not item.get("cancelled")
+                    )
+            return _Cursor([{"_id": qid, "total": total} for qid, total in totals.items()], self._calls, "purchase_orders.aggregate.to_list")
+        self.last_pipeline = deepcopy(pipeline)
         return _Cursor(self._aggregate_rows, self._calls, "purchase_orders.aggregate.to_list")
 
     def find(self, query, *_args, **_kwargs):
@@ -231,7 +257,7 @@ def _set_common_patches(monkeypatch, rows: list[dict], calls: dict[str, int]) ->
     monkeypatch.setattr(tracker, "_hydrate_workspace_images", lambda _rows: asyncio.sleep(0))
     monkeypatch.setattr(tracker, "_load_settings", lambda: asyncio.sleep(0, result=tracker.TrackerSettings(sla_days=7)))
     monkeypatch.setattr(tracker, "timeline_for", lambda **kwargs: _fake_timeline_for_factory(calls, **kwargs))
-    monkeypatch.setattr(payment_routes, "_paid_by_quotation", lambda ids: asyncio.sleep(0, result={quote_id: 2000.0 for quote_id in ids}))
+    monkeypatch.setattr(payment_routes, "_paid_by_quotation", lambda ids, **_kwargs: asyncio.sleep(0, result={quote_id: 2000.0 for quote_id in ids}))
 
 
 def test_workspace_without_filters_preserves_existing_shape(monkeypatch):
@@ -246,6 +272,81 @@ def test_workspace_without_filters_preserves_existing_shape(monkeypatch):
     assert calls["iter_items.args"]["stage"] is None
     assert calls["iter_items.args"]["q"] is None
     assert calls["iter_items.args"]["floor_ids"] == ["first-floor"]
+
+
+def test_order_value_keeps_loan_replacement_and_subtracts_godown_once(monkeypatch):
+    """Physical return of a borrowed product must not erase the sale."""
+    calls: dict[str, int] = {}
+    rows = [{**row, "qty": 1, "unit_cost": 100} for row in _workspace_rows()[:1]]
+    _set_common_patches(monkeypatch, rows, calls)
+    monkeypatch.setattr(payment_routes, "_paid_by_quotation", lambda ids, **kwargs: asyncio.sleep(
+        0, result={quote_id: 300.0 if kwargs.get("cash_only") else 320.0 for quote_id in ids},
+    ))
+    fake_db = tracker.db
+    fake_db.quotations = _Collection([
+        {"id": "quote-vitra", "grand_total": 300, "payment_extra_amount": 20},
+    ], calls, "quotations")
+    fake_db.purchase_orders = _Collection([
+        {"id": "original", "number": "PO-1", "status": "open", "quotation_id": "quote-vitra", "grand_total": 300,
+         "items": [
+             {"id": "returned", "qty": 1, "unit_cost": 100, "loan_replenishment_returned_qty": 1},
+             {"id": "kept", "qty": 1, "unit_cost": 100},
+             {"id": "godown", "qty": 1, "unit_cost": 100, "godown_transferred_qty": 1},
+         ]},
+        {"id": "borrowed", "number": "PO-2", "status": "draft", "grand_total": 0,
+         "items": [{"id": "loan", "qty": 1, "unit_cost": 0, "loan_transfer_id": "loan-1"}]},
+    ], calls, "purchase_orders")
+
+    workspace = asyncio.run(tracker.customer_workspace("cust-1", user=_user()))
+
+    assert workspace["summary"]["total_value"] == 100  # visible stock only
+    assert workspace["summary"]["order_value"] == 220  # sale + extra - godown
+    assert workspace["summary"]["outstanding_balance"] == 0
+    assert workspace["summary"]["refund_due"] == 80
+    assert workspace["purchase_orders"][0]["grand_total"] == 300  # historical PO amount
+    assert workspace["purchase_orders"][0]["current_order_value"] == 200
+    assert workspace["purchase_orders"][1]["current_order_value"] == 0
+
+
+def test_order_value_includes_godown_move_beyond_visible_po_page(monkeypatch):
+    calls: dict[str, int] = {}
+    _set_common_patches(monkeypatch, [], calls)
+    fake_db = tracker.db
+    fake_db.quotations = _Collection([{"id": "quote-1", "grand_total": 1000}], calls, "quotations")
+    pos = [
+        {"id": f"po-{idx}", "number": f"PO-{idx}", "status": "open", "quotation_id": "quote-1",
+         "grand_total": 0, "items": [{"id": f"item-{idx}", "qty": 1, "unit_cost": 0}]}
+        for idx in range(200)
+    ]
+    pos.append({"id": "old-godown-po", "number": "PO-old", "status": "open", "quotation_id": "quote-1",
+                "grand_total": 100, "items": [{"id": "old-item", "qty": 1, "unit_cost": 100, "godown_transferred_qty": 1}]})
+
+    class _PagedPurchaseOrders(_Collection):
+        def find(self, query, *_args, **_kwargs):
+            self.last_query = deepcopy(query)
+            parent = self
+
+            class _Page:
+                def sort(self, *_sort_args):
+                    return self
+
+                async def to_list(self, limit):
+                    parent._calls["purchase_orders.to_list"] = parent._calls.get("purchase_orders.to_list", 0) + 1
+                    return deepcopy(parent._rows[:limit])
+
+            return _Page()
+
+    fake_db.purchase_orders = _PagedPurchaseOrders(pos, calls, "purchase_orders")
+    monkeypatch.setattr(payment_routes, "_paid_by_quotation", lambda ids, **_kwargs: asyncio.sleep(
+        0, result={quote_id: 1000.0 for quote_id in ids},
+    ))
+
+    workspace = asyncio.run(tracker.customer_workspace("cust-1", user=_user()))
+
+    assert len(workspace["purchase_orders"]) == 200
+    assert workspace["summary"]["order_value"] == 900
+    assert workspace["summary"]["refund_due"] == 100
+    assert calls["purchase_orders.aggregate"] == 1
 
 
 def test_workspace_unfiltered_compatibility_retains_legacy_response_keys(monkeypatch):
@@ -395,13 +496,13 @@ def test_workspace_large_history_avoids_per_item_queries(monkeypatch):
     monkeypatch.setattr(tracker, "_hydrate_workspace_images", lambda _rows: asyncio.sleep(0))
     monkeypatch.setattr(tracker, "_load_settings", lambda: asyncio.sleep(0, result=tracker.TrackerSettings(sla_days=7)))
     monkeypatch.setattr(tracker, "timeline_for", lambda **kwargs: _fake_timeline_for_factory(calls, **kwargs))
-    monkeypatch.setattr(payment_routes, "_paid_by_quotation", lambda ids: asyncio.sleep(0, result={quote_id: 0.0 for quote_id in ids}))
+    monkeypatch.setattr(payment_routes, "_paid_by_quotation", lambda ids, **_kwargs: asyncio.sleep(0, result={quote_id: 0.0 for quote_id in ids}))
 
     workspace = asyncio.run(tracker.customer_workspace("cust-1", user=_user()))
 
     _assert_workspace_matches_rows(workspace, expected_rows)
-    assert calls["purchase_orders.aggregate"] == 1
-    assert calls["purchase_orders.aggregate.to_list"] == 1
+    assert calls["purchase_orders.aggregate"] == 2
+    assert calls["purchase_orders.aggregate.to_list"] == 2
     assert calls["customers.find_one"] == 1
     assert calls["purchase_orders.find"] == 1
     assert calls["purchase_orders.to_list"] == 1

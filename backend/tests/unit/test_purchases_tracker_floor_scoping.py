@@ -121,6 +121,10 @@ def test_customer_workspace_scopes_every_query_to_the_active_floor(monkeypatch):
             self.last_query = query
             return self
 
+        def aggregate(self, pipeline):
+            self.last_query = pipeline[0]["$match"]
+            return self
+
         def sort(self, *_args, **_kwargs):
             return self
 

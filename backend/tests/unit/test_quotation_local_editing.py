@@ -86,3 +86,6 @@ def test_ordered_quote_product_edits_do_not_touch_operational_projections(monkey
     assert edited.status == "ordered"
     assert edited.items[0].sku == "NEW"
     assert edited.grand_total == 350
+    assert {change["type"] for change in quotations.document["po_final_changes"]} == {
+        "product_adjusted", "amount_adjusted",
+    }

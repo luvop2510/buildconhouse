@@ -19,6 +19,9 @@ type PaymentRow = {
   grand_total: number;
   received: number;
   outstanding: number;
+  effective_order_total?: number;
+  cash_received?: number;
+  refund_due?: number;
 };
 type Floor = { id: string; name: string };
 type PaymentListResponse = { total: number; items: PaymentRow[] };
@@ -81,10 +84,10 @@ export default function PaymentListScreen() {
   useEffect(() => { load(page); }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const columns: Column<PaymentRow>[] = [
-    { key: "customer", label: "Client / Order", grow: 1, minWidth: 180, render: (row) => <CellTitle>{`${row.customer_name || "Unknown client"} · ${row.number || "—"}`}</CellTitle> },
+    { key: "customer", label: "Client / Order", grow: 1, minWidth: 180, render: (row) => <View><CellTitle>{`${row.customer_name || "Unknown client"} · ${row.number || "—"}`}</CellTitle>{(row.refund_due || 0) > 0 ? <Text style={[type.caption, { color: colors.error }]}>Refund due {money(row.refund_due || 0)}</Text> : null}</View> },
     { key: "date", label: "Order Date", width: 120, render: (row) => <CellText>{dateShort(row.confirmed_at)}</CellText> },
-    { key: "amount", label: "Order Total", width: 120, align: "right", render: (row) => <CellNumber value={money(row.grand_total)} /> },
-    { key: "received", label: "Received", width: 120, align: "right", render: (row) => <CellNumber value={money(row.received)} /> },
+    { key: "amount", label: "Final Order", width: 120, align: "right", render: (row) => <CellNumber value={money(row.effective_order_total ?? row.grand_total)} /> },
+    { key: "received", label: "Cash Received", width: 120, align: "right", render: (row) => <CellNumber value={money(row.cash_received ?? row.received)} /> },
     { key: "outstanding", label: "Outstanding", width: 120, align: "right", render: (row) => <CellNumber value={money(row.outstanding)} /> },
     { key: "unit", label: "Business Unit", width: 140, render: (row) => <CellText>{floors.find((floor) => floor.id === row.floor_id)?.name || row.floor_id || "—"}</CellText> },
   ];

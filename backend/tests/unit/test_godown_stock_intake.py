@@ -31,7 +31,9 @@ class _PurchaseOrders:
         self.queries.append(query)
         item = self.po["items"][0]
         if "$inc" in update:
-            item["godown_transferred_qty"] = float(item.get("godown_transferred_qty") or 0) + update["$inc"]["items.$.godown_transferred_qty"]
+            for key, amount in update["$inc"].items():
+                field = key.removeprefix("items.$.")
+                item[field] = float(item.get(field) or 0) + amount
         if "$push" in update:
             item.setdefault("godown_transfer_history", []).append(update["$push"]["items.$.godown_transfer_history"])
         if "$pull" in update:
@@ -150,6 +152,27 @@ def test_intake_credit_never_over_settles_an_already_partially_paid_order(monkey
     assert lot["transferred_value"] == 500
     assert lot["payment_credit_amount"] == 200
     assert payment and payment["amount"] == 200
+
+
+def test_intake_uses_current_quote_price_after_order_reprice(monkeypatch):
+    po = _po()
+    po["items"][0]["quotation_line_id"] = "line-1"
+    quote = {**_quote(), "grand_total": 1500, "items": [
+        {"id": "line-1", "product_id": "product-1", "name": "Mixer", "sku": "M-1",
+         "qty": 4, "unit_price": 375},
+    ]}
+    fake_db = SimpleNamespace(
+        purchase_orders=_PurchaseOrders(po), quotations=_Quotations(quote),
+        payments=_Payments(settled=0), godown_stock=_GodownStock(),
+    )
+    monkeypatch.setattr(godown, "db", fake_db)
+
+    lot, payment = asyncio.run(_persist(fake_db, qty=2))
+
+    assert lot["transferred_value"] == 750
+    assert payment and payment["amount"] == 750
+    assert po["items"][0]["godown_valued_qty"] == 2
+    assert po["items"][0]["godown_transferred_value"] == 750
 
 
 def test_intake_compensates_the_source_line_when_lot_creation_fails(monkeypatch):

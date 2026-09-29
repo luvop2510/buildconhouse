@@ -26,6 +26,9 @@ def test_tile_quotation_profile_is_limited_to_its_workflow():
     assert profile_allows_request(GROUND_TILE_QUOTATIONS_FOLLOWUPS, "POST", "/api/referrers")
     assert profile_allows_request(GROUND_TILE_QUOTATIONS_FOLLOWUPS, "POST", "/api/products/custom")
     assert profile_allows_request(GROUND_TILE_QUOTATIONS_FOLLOWUPS, "PATCH", "/api/customers/c-1")
+    assert profile_allows_request(GROUND_TILE_QUOTATIONS_FOLLOWUPS, "GET", "/api/customers/c-1/po-final")
+    assert profile_allows_request(GROUND_TILE_QUOTATIONS_FOLLOWUPS, "GET", "/api/customers/c-1/po-final/pdf")
+    assert not profile_allows_request(GROUND_TILE_QUOTATIONS_FOLLOWUPS, "POST", "/api/customers/c-1/po-final")
     assert profile_allows_request(GROUND_TILE_QUOTATIONS_FOLLOWUPS, "GET", "/api/tile-orders/customer-orders?customer_id=c-1")
     assert profile_allows_request(GROUND_TILE_QUOTATIONS_FOLLOWUPS, "GET", "/api/tile-orders/customer-orders/co-1")
     assert profile_allows_request(GROUND_TILE_QUOTATIONS_FOLLOWUPS, "GET", "/api/tile-orders/customer-orders/co-1/timeline")
@@ -48,6 +51,7 @@ def test_payment_dispatch_profile_has_the_complete_tile_orders_workspace():
 
 def test_sanitary_profiles_are_separated():
     assert profile_allows_request(SANITARY_QUOTATIONS_FOLLOWUPS, "GET", "/api/quotations")
+    assert profile_allows_request(SANITARY_QUOTATIONS_FOLLOWUPS, "GET", "/api/customers/c-1/po-final")
     assert not profile_allows_request(SANITARY_QUOTATIONS_FOLLOWUPS, "GET", "/api/purchases/items")
     assert profile_allows_request(SANITARY_PURCHASES, "GET", "/api/purchases/customers/c-1/workspace")
     assert profile_allows_request(SANITARY_PURCHASES, "GET", "/api/customers")

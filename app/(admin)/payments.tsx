@@ -39,6 +39,7 @@ type PayMode = "cash" | "upi" | "bank" | "cheque" | "card";
 
 type Stats = {
   total_outstanding: number;
+  refund_due_total?: number;
   collected_this_month: number;
   active_orders: number;
   fully_paid: number;
@@ -51,6 +52,7 @@ type Stats = {
 type OrderRow = {
   id: string; number: string; customer_id: string; customer_name: string;
   grand_total: number; paid: number; outstanding: number;
+  effective_order_total?: number; godown_transferred_value?: number; cash_received?: number; refund_due?: number;
   percent_collected: number; payment_status: "paid" | "partial" | "due";
   confirmed_at: string; outstanding_short: string | null; days_unpaid: number;
 };
@@ -73,6 +75,7 @@ type OrderDetail = {
   project_name?: string | null;
   floor_id: string; mrp: number; discounted_rate: number;
   quotation_total: number; manual_extra_amount: number; manual_extra_name?: string | null; grand_total: number;
+  effective_order_total?: number; godown_transferred_value?: number; cash_received?: number; refund_due?: number;
   additional_costs?: { id: string; name: string; amount: number; note?: string | null; created_at: string; recorded_by_name?: string | null }[];
   paid: number; outstanding: number; percent_collected: number;
   payment_status: "paid" | "partial" | "due";
@@ -413,7 +416,7 @@ export default function PaymentsScreen() {
       setManualExtra("");
       setManualExtraName("");
       toast.success("Additional cost recorded");
-      await Promise.all([loadStats(), loadOrders(q)]);
+      await Promise.all([loadStats(), loadOrders(q), loadDetail(detail.id)]);
     } catch (e: any) {
       toast.error(e?.detail || "Could not update extra cost");
     } finally {
@@ -557,9 +560,11 @@ export default function PaymentsScreen() {
         {/* Stats */}
         <View style={{ flexDirection: "row", gap: spacing.md, flexWrap: "wrap" }}>
           <StatTile label="Earned" value={stats ? moneyShort(stats.earned_total) : "—"}
-            icon="trending-up" tone="success" sub="Received across all orders" />
+            icon="trending-up" tone="success" sub="Cash retained after adjustments" />
           <StatTile label="Outstanding" value={stats ? moneyShort(stats.total_outstanding) : "—"}
             icon="alert-circle" tone="danger" sub="Pending on active orders" />
+          {(stats?.refund_due_total || 0) > 0 ? <StatTile label="Refund due" value={moneyShort(stats?.refund_due_total || 0)}
+            icon="rotate-ccw" tone="danger" sub="Review godown transfers" /> : null}
           <StatTile label="Spending" value={stats ? moneyShort(stats.spending_total) : "—"}
             icon="shopping-bag" tone="neutral" sub="Committed supplier purchases" />
         </View>
@@ -681,6 +686,8 @@ export default function PaymentsScreen() {
                 </Panel>
 
                 {/* Collection actions precede the ledger so they are usable immediately on a phone. */}
+                {(detail.refund_due || 0) > 0 ? <UIAlert tone="error" title={`Refund due · ${money(detail.refund_due || 0)}`}
+                  description="Cash received exceeds the final order value after a godown transfer. The stock credit did not send money back to the customer; review this amount before settling it." /> : null}
                 {detail.outstanding > 0 ? (
                   <Button
                     testID="open-record-payment"
@@ -691,7 +698,7 @@ export default function PaymentsScreen() {
                     fullWidth
                     onPress={() => setShowRecord(true)}
                   />
-                ) : (
+                ) : (detail.refund_due || 0) > 0 ? null : (
                   <UIAlert tone="success" title="Order fully paid"
                     description="Every rupee collected — this order is closed." />
                 )}
@@ -762,12 +769,14 @@ export default function PaymentsScreen() {
                 {/* Metrics */}
                 <View style={{ flexDirection: "row", gap: spacing.md, flexWrap: "wrap" }}>
                   <StatTile dense label="Quotation price" value={money(detail.quotation_total)} sub="Original quotation" tone="brand" />
+                  {(detail.godown_transferred_value || 0) > 0 ? <StatTile dense label="Final order value" value={money(detail.effective_order_total ?? detail.grand_total)} sub={`Godown adjustment ${money(detail.godown_transferred_value || 0)}`} tone="brand" /> : null}
                   {detail.manual_extra_amount > 0 ? (
                     <StatTile dense label="Additional cost" value={money(detail.manual_extra_amount)}
                       sub={detail.manual_extra_name || "Additional cost"} tone="neutral" />
                   ) : null}
-                  <StatTile dense label="Paid" value={money(detail.paid)}
-                    sub={`${detail.percent_collected}% of order`} tone="success" />
+                  <StatTile dense label={(detail.godown_transferred_value || 0) > 0 ? "Settled" : "Paid"} value={money(detail.paid)}
+                    sub={`${detail.percent_collected}% of order${(detail.godown_transferred_value || 0) > 0 ? " including stock credits" : ""}`} tone="success" />
+                  {(detail.godown_transferred_value || 0) > 0 ? <StatTile dense label="Cash received" value={money(detail.cash_received ?? detail.paid)} sub="Excludes stock credits" tone="neutral" /> : null}
                   <StatTile dense label="Outstanding" value={money(detail.outstanding)}
                     sub={detail.outstanding > 0 ? "Remaining balance" : "Fully paid"}
                     tone={detail.outstanding > 0 ? "danger" : "success"} />

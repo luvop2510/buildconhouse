@@ -22,6 +22,7 @@ import { api } from "@/src/api/client";
 import { returnPurchaseLoan } from "@/src/api/purchases";
 import { getCustomerStockTransfers, returnCustomerStockTransfer, type CustomerStockTransfer } from "@/src/api/godownStock";
 import { ProductImage } from "@/src/components/ProductImage";
+import { PoFinal } from "@/src/components/customers/PoFinal";
 import { tilesStageLabel } from "@/src/components/tiles/tilesStage";
 import { TILES_FLOOR_ID } from "@/src/constants/floors";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
@@ -59,20 +60,20 @@ type WorkspaceShortage = {
 type Workspace = {
   customer: Customer;
   summary: {
-    total_items: number; total_value: number; outstanding_value: number; outstanding_count: number;
-    open_pos: number; blocked_count: number; delivered_count: number; shortage_count: number;
+    total_items: number; total_value: number; order_value?: number; outstanding_value: number; outstanding_count: number;
+    open_pos: number; blocked_count: number; delivered_count: number; shortage_count: number; refund_due?: number;
   };
   shortages: WorkspaceShortage[];
   products: WorkspaceProduct[];
   brands: { id: string | null; name: string; count: number }[];
   stages: { key: string; label: string; count: number }[];
-  purchase_orders: { id: string; number: string; status: string; brand_name?: string | null; supplier_name?: string | null; grand_total: number; created_at: string; expected_delivery_at?: string | null; item_count: number }[];
+  purchase_orders: { id: string; number: string; status: string; brand_name?: string | null; supplier_name?: string | null; grand_total: number; current_order_value?: number; created_at: string; expected_delivery_at?: string | null; item_count: number }[];
   outstanding_items: WorkspaceProduct[];
   recent_activity: TimelineEvent[];
   expected_delivery: { next_at: string | null; purchase_orders: { po_id: string; po_number: string; expected_delivery_at: string }[] };
 };
 
-type Tab = "overview" | "quotations" | "purchases" | "timeline";
+type Tab = "overview" | "quotations" | "po_final" | "purchases" | "timeline";
 type ProductFilter = "all" | "outstanding" | "blocked";
 type WorkspaceServerFilters = {
   productSearch: string;
@@ -465,10 +466,10 @@ export default function CustomerDetail() {
         overline={`CUSTOMER · ${customer.tier.toUpperCase()}`}
         back={() => router.back()}
         actions={
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, maxWidth: "100%" }}>
             <Button
               icon="phone-call"
-              label="Add to Follow-ups"
+              label={isPhone ? "Follow-up" : "Add to Follow-ups"}
               variant="secondary"
               size="md"
               onPress={() => setWalkInSheet(true)}
@@ -533,7 +534,7 @@ export default function CustomerDetail() {
         {/* Tabs */}
         <NavigationTabs value={tab} onChange={setTab} testID="customer-tab" options={[
           { value: "overview", label: "Overview" }, { value: "quotations", label: "Quotations" },
-          { value: "purchases", label: "Purchases" }, { value: "timeline", label: "Timeline" },
+          { value: "po_final", label: "PO Final" }, { value: "purchases", label: "Purchases" }, { value: "timeline", label: "Timeline" },
         ]} />
 
         {/* Body */}
@@ -625,6 +626,8 @@ export default function CustomerDetail() {
               ))}
             </Card>
           )
+        ) : tab === "po_final" ? (
+          <PoFinal customerId={id} />
         ) : tab === "purchases" ? (
           <View style={{ gap: spacing.lg }}>
             {isTilesFloor ? (
@@ -826,11 +829,15 @@ export default function CustomerDetail() {
 
               {/* Purchase summary */}
               <View style={[styles.statsRow, !isDesktop && styles.statsRowMobile]}>
-                <StatTile label="Order Value" value={moneyShort(workspace.summary.total_value)} icon="shopping-bag" tone="brand" sub={`${workspace.summary.total_items} products`} />
+                <StatTile label="Order Value" value={moneyShort(workspace.summary.order_value ?? workspace.summary.total_value)} icon="shopping-bag" tone="brand" sub={`${workspace.summary.total_items} products`} />
                 <StatTile label="Outstanding" value={moneyShort(workspace.summary.outstanding_value)} icon="clock" tone="warning" sub={`${workspace.summary.outstanding_count} pending`} />
                 <StatTile label="Open POs" value={String(workspace.summary.open_pos)} icon="file-text" tone="brand" sub={`${purchases.length} total`} />
                 <StatTile label="Delayed" value={String(workspace.summary.blocked_count)} icon="alert-triangle" tone={workspace.summary.blocked_count > 0 ? "danger" : "success"} sub="Past SLA" />
               </View>
+              {(workspace.summary.refund_due || 0) > 0 ? <Card style={{ backgroundColor: colors.errorBg, borderColor: colors.errorBorder }}>
+                <Text style={type.bodyStrong}>Refund due · {money(workspace.summary.refund_due || 0)}</Text>
+                <Text style={type.caption}>Cash received exceeds the final order value after products moved to godown. Check Payments before settling the customer.</Text>
+              </Card> : null}
 
               {/* Brands + Stages breakdown */}
               <View style={{ flexDirection: isDesktop ? "row" : "column", gap: spacing.lg }}>
@@ -997,7 +1004,7 @@ export default function CustomerDetail() {
                       <Text style={type.caption}>{fmtDate(p.created_at)}{p.expected_delivery_at ? ` · ETA ${fmtDate(p.expected_delivery_at)}` : ""}</Text>
                     </View>
                       <Text style={[type.mono, { width: isDesktop ? 110 : undefined, textAlign: isDesktop ? "right" : "left", fontWeight: "700" }]}>
-                      {money(p.grand_total)}
+                      {money(p.current_order_value ?? p.grand_total)}
                     </Text>
                     <StatusBadge status={p.status} />
                   </Pressable>

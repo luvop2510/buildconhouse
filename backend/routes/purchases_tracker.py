@@ -608,8 +608,9 @@ async def customer_workspace(
     activity, and expected delivery. Everything here is derived live from the
     same PO/item documents the rest of Purchases uses — no separate cache to
     go stale. When `q`, `brand`, or `stage` filters are active, the summary
-    totals (`total_items`, values, outstanding counts/values, blocked counts,
-    delivered counts) are scoped to that filtered workspace item set.
+    inventory totals (`total_items`, `total_value`, outstanding counts/values,
+    blocked counts, delivered counts) are scoped to that filtered item set.
+    `order_value` is the customer's full confirmed commercial order value.
     """
     customer, settings = await asyncio.gather(
         db.customers.find_one(floor_query(user, {"id": customer_id}), {"_id": 0}),
@@ -637,7 +638,7 @@ async def customer_workspace(
         ).sort("created_at", -1).to_list(100),
         db.quotations.find(
             floor_query(user, {"customer_id": customer_id, "status": {"$in": ["ordered", "won"]}}),
-            {"_id": 0, "id": 1, "grand_total": 1},
+            {"_id": 0, "id": 1, "grand_total": 1, "payment_extra_amount": 1, "payment_extra_history": 1},
         ).to_list(500),
         db.payments.find(floor_query(user, {"customer_id": customer_id}), {"_id": 0}).sort("created_at", -1).to_list(100),
         db.followups.find(
@@ -646,6 +647,21 @@ async def customer_workspace(
     )
 
     total_value = round(sum(r["qty"] * r["unit_cost"] for r in rows), 2)
+    # The rows above describe currently visible purchase tracker quantities.
+    # A loan replacement is physically returned to its owner, but remains part
+    # of the recipient's confirmed sale.  Payments likewise use the confirmed
+    # quotation, so derive the commercial value from those same orders.  A
+    # transfer into godown is a genuine reduction and receives a matching
+    # payment credit; subtract its sold value once, at the source PO.
+    order_quote_ids = {quote["id"] for quote in order_quotes}
+    from routes.payment_routes import _collection_total, _godown_value_by_quotation, _paid_by_quotation
+    # The PO list above is capped for the UI.  Use a server-side group over
+    # every quote-linked PO so older godown intakes still affect the ledger.
+    godown_by_quote = await _godown_value_by_quotation(
+        list(order_quote_ids), floor_ids=floor_scope_ids(user), purchase_orders=db.purchase_orders,
+    )
+    godown_value = sum(godown_by_quote.values())
+    order_value = round(max(0.0, sum(_collection_total(quote) for quote in order_quotes) - godown_value), 2)
     outstanding_rows = [r for r in rows if r["stage"] != "delivered"]
     outstanding_value = round(sum(r["qty"] * r["unit_cost"] for r in outstanding_rows), 2)
     blocked_rows = [r for r in rows if r["blocked"]]
@@ -667,14 +683,27 @@ async def customer_workspace(
     # Customer IDs can exist on more than one business floor.  Keep the
     # activity stream in the same floor scope as the products and POs above;
     # otherwise Sanitary Bathroom movement events leak into Ground Floor.
-    from routes.payment_routes import _paid_by_quotation
     paid_map = await _paid_by_quotation([quote["id"] for quote in order_quotes])
+    cash_map = await _paid_by_quotation([quote["id"] for quote in order_quotes], cash_only=True)
     outstanding_balance = round(sum(
-        max(0.0, float(quote.get("grand_total") or 0) - paid_map.get(quote["id"], 0.0))
+        max(0.0, _collection_total(quote) - paid_map.get(quote["id"], 0.0))
+        for quote in order_quotes
+    ), 2)
+    refund_due = round(sum(
+        max(0.0, cash_map.get(quote["id"], 0.0)
+            - max(0.0, _collection_total(quote) - godown_by_quote.get(quote["id"], 0.0)))
         for quote in order_quotes
     ), 2)
     def visible_po_items(po: dict) -> list[dict]:
         return [item for item in po.get("items") or [] if not item.get("cancelled") and float(item.get("qty") or 0) > float(item.get("godown_transferred_qty") or 0) + float(item.get("loan_replenishment_returned_qty") or 0)]
+
+    def current_po_value(po: dict) -> float:
+        # A loan does not change the source PO sale.  Only stock permanently
+        # moved to godown is credited against the source customer's order.
+        from services.godown_valuation import transferred_sold_value
+        moved_value = sum(transferred_sold_value(item)
+                          for item in po.get("items") or [] if not item.get("cancelled"))
+        return round(max(0.0, float(po.get("grand_total") or 0) - moved_value), 2)
 
     visible_pos = [p for p in pos if visible_po_items(p)]
     open_pos = [p for p in visible_pos if p.get("status") != "cancelled"]
@@ -694,6 +723,7 @@ async def customer_workspace(
         "summary": {
             "total_items": len(rows),
             "total_value": total_value,
+            "order_value": order_value,
             "outstanding_value": outstanding_value,
             "outstanding_count": len(outstanding_rows),
             "open_pos": len(open_pos),
@@ -701,6 +731,7 @@ async def customer_workspace(
             "delivered_count": len(delivered_rows),
             "shortage_count": len(shortages),
             "outstanding_balance": outstanding_balance,
+            "refund_due": refund_due,
             "open_followup_count": len(followups),
         },
         "shortages": shortages,
@@ -714,6 +745,7 @@ async def customer_workspace(
                 "id": p["id"], "number": p.get("number"), "status": p.get("status"),
                 "brand_name": p.get("brand_name"), "supplier_name": p.get("supplier_name"),
                 "grand_total": p.get("grand_total"), "created_at": p.get("created_at"),
+                "current_order_value": current_po_value(p),
                 "expected_delivery_at": p.get("expected_delivery_at"),
                 "item_count": len(visible_po_items(p)),
             }
@@ -733,6 +765,7 @@ async def customer_workspace(
     if user.access_profile == "sanitary_purchases":
         response["customer"] = {"id": customer["id"], "name": customer.get("name"), "company": customer.get("company")}
         response["summary"].pop("outstanding_balance", None)
+        response["summary"].pop("refund_due", None)
         response.pop("payments", None)
         response.pop("followups", None)
         response.pop("recent_activity", None)

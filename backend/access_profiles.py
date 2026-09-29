@@ -39,7 +39,8 @@ def _customer_for_quotation(method: str, path: str) -> bool:
     """Lookup/create/update a quote's customer, never use CRM-only actions."""
     if path == "/api/customers":
         return method in {"GET", "POST"}
-    return bool(fullmatch(r"/api/customers/[^/]+", path) and method in {"GET", "PATCH"})
+    return bool((fullmatch(r"/api/customers/[^/]+", path) and method in {"GET", "PATCH"})
+                or (method == "GET" and fullmatch(r"/api/customers/[^/]+/po-final(?:/pdf)?", path)))
 
 
 def _dispatch_surface(method: str, path: str) -> bool:

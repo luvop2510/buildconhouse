@@ -128,11 +128,45 @@ def _collection_total(quotation: dict) -> float:
         if isinstance(history, list)
         else float(quotation.get("payment_extra_amount") or 0)
     )
-    return round(
-        float(quotation.get("grand_total") or 0)
-        + extras,
-        2,
-    )
+    return round(float(quotation.get("grand_total") or 0) + extras, 2)
+
+
+async def _godown_value_by_quotation(
+    quotation_ids: list[str], *, floor_id: str | None = None,
+    floor_ids: list[str] | None = None, purchase_orders=None,
+) -> dict[str, float]:
+    """Sold value removed from confirmed orders by permanent godown intakes.
+
+    The payment credit is capped at the unpaid balance.  A fully paid order
+    therefore has no credit row, yet may still have a refund due.  Purchase
+    item movement counters are the authoritative source for that difference.
+    """
+    if not quotation_ids:
+        return {}
+    query: dict = {"quotation_id": {"$in": quotation_ids}}
+    if floor_id is not None:
+        query["floor_id"] = floor_id
+    elif floor_ids is not None:
+        query["floor_id"] = {"$in": floor_ids}
+    query["items.godown_transferred_qty"] = {"$gt": 0}
+    pipeline = [
+        {"$match": query},
+        {"$unwind": "$items"},
+        {"$match": {"items.cancelled": {"$ne": True}, "items.godown_transferred_qty": {"$gt": 0}}},
+        {"$group": {"_id": "$quotation_id", "total": {"$sum": {"$add": [
+            {"$ifNull": ["$items.godown_transferred_value", 0]},
+            {"$multiply": [
+                {"$max": [0, {"$subtract": [
+                    {"$ifNull": ["$items.godown_transferred_qty", 0]},
+                    {"$ifNull": ["$items.godown_valued_qty", 0]},
+                ]}]},
+                {"$ifNull": ["$items.unit_cost", 0]},
+            ]},
+        ]}}}},
+    ]
+    collection = purchase_orders if purchase_orders is not None else db.purchase_orders
+    rows = await collection.aggregate(pipeline).to_list(len(quotation_ids) + 5)
+    return {row["_id"]: round(float(row.get("total") or 0), 2) for row in rows if row.get("_id")}
 
 
 def _fully_paid_order_ids(orders: list[dict], paid_by_order: dict[str, float]) -> list[str]:
@@ -208,13 +242,17 @@ async def payment_stats(user: UserPublic = Depends(get_current_user)):
         {"_id": 0, "id": 1, "grand_total": 1, "payment_extra_amount": 1, "payment_extra_history": 1},
     ).to_list(2000)
     ids = [o["id"] for o in orders]
-    paid_map = await _paid_by_quotation(ids)
-    cash_map = await _paid_by_quotation(ids, cash_only=True)
+    paid_map, cash_map, godown_map = await asyncio.gather(
+        _paid_by_quotation(ids),
+        _paid_by_quotation(ids, cash_only=True),
+        _godown_value_by_quotation(ids),
+    )
 
     total_outstanding = 0.0
     active_total = 0.0
     active_received = 0.0
     earned_total = 0.0
+    refund_due_total = 0.0
     settlement_credits = 0.0
     active_orders = 0
     fully_paid = 0
@@ -223,7 +261,9 @@ async def payment_stats(user: UserPublic = Depends(get_current_user)):
         paid = paid_map.get(o["id"], 0.0)
         cash = max(0.0, cash_map.get(o["id"], 0.0))
         credit = max(0.0, paid - cash)
-        earned_total += min(cash, max(grand - credit, 0.0))
+        effective_total = max(0.0, grand - godown_map.get(o["id"], 0.0))
+        earned_total += min(cash, effective_total)
+        refund_due_total += max(0.0, cash - effective_total)
         settlement_credits += credit
         status = _payment_status(paid, grand)
         if status == "paid":
@@ -263,6 +303,7 @@ async def payment_stats(user: UserPublic = Depends(get_current_user)):
         "active_total": round(active_total, 2),
         "active_received": round(active_received, 2),
         "earned_total": round(earned_total, 2),
+        "refund_due_total": round(refund_due_total, 2),
         "spending_total": round(spending_total, 2),
         "settlement_credits": round(settlement_credits, 2),
     }
@@ -296,12 +337,17 @@ async def list_orders(
     ).sort("updated_at", -1).to_list(limit * 2)
 
     ids = [d["id"] for d in docs]
-    paid_map = await _paid_by_quotation(ids)
+    paid_map, cash_map, godown_map = await asyncio.gather(
+        _paid_by_quotation(ids), _paid_by_quotation(ids, cash_only=True),
+        _godown_value_by_quotation(ids),
+    )
 
     out = []
     for d in docs:
         grand = _collection_total(d)
         paid = paid_map.get(d["id"], 0.0)
+        effective_total = max(0.0, grand - godown_map.get(d["id"], 0.0))
+        cash_received = max(0.0, cash_map.get(d["id"], 0.0))
         outstanding = max(0.0, grand - paid)
         pay_status = _payment_status(paid, grand)
         pct = 0 if grand <= 0 else min(100, int(round(paid / grand * 100)))
@@ -312,6 +358,10 @@ async def list_orders(
             "customer_id": d.get("customer_id"),
             "customer_name": d.get("customer_name"),
             "grand_total": grand,
+            "effective_order_total": round(effective_total, 2),
+            "godown_transferred_value": round(godown_map.get(d["id"], 0.0), 2),
+            "cash_received": round(cash_received, 2),
+            "refund_due": round(max(0.0, cash_received - effective_total), 2),
             "paid": round(paid, 2),
             "outstanding": round(outstanding, 2),
             "percent_collected": pct,
@@ -355,12 +405,18 @@ async def order_detail(order_id: str, user: UserPublic = Depends(get_current_use
 
     floor_id = doc.get("floor_id")
     paid_map = await _paid_by_quotation([order_id], floor_id=floor_id)
+    cash_map, godown_map = await asyncio.gather(
+        _paid_by_quotation([order_id], floor_id=floor_id, cash_only=True),
+        _godown_value_by_quotation([order_id], floor_id=floor_id),
+    )
     paid = paid_map.get(order_id, 0.0)
     quotation_total = float(doc.get("grand_total") or 0)
     extra_history = doc.get("payment_extra_history") if isinstance(doc.get("payment_extra_history"), list) else []
     manual_extra_amount = round(_collection_total({**doc, "grand_total": 0}), 2)
     manual_extra_name = doc.get("payment_extra_name") or ("Additional cost" if manual_extra_amount else None)
     grand = _collection_total(doc)
+    effective_total = max(0.0, grand - godown_map.get(order_id, 0.0))
+    cash_received = max(0.0, cash_map.get(order_id, 0.0))
     mrp = await _mrp_for_quotation(doc)
     outstanding = max(0.0, grand - paid)
 
@@ -399,6 +455,10 @@ async def order_detail(order_id: str, user: UserPublic = Depends(get_current_use
         "manual_extra_name": manual_extra_name,
         "additional_costs": extra_history,
         "grand_total": round(grand, 2),
+        "effective_order_total": round(effective_total, 2),
+        "godown_transferred_value": round(godown_map.get(order_id, 0.0), 2),
+        "cash_received": round(cash_received, 2),
+        "refund_due": round(max(0.0, cash_received - effective_total), 2),
         "paid": round(paid, 2),
         "outstanding": round(outstanding, 2),
         "percent_collected": 0 if grand <= 0 else min(100, int(round(paid / grand * 100))),
@@ -730,17 +790,27 @@ async def fully_paid_orders(
          "payment_extra_history": 1, "ordered_at": 1, "created_at": 1},
     ).to_list(5000)
     paid_map = await _paid_by_quotation([order["id"] for order in orders])
+    cash_map, godown_map = await asyncio.gather(
+        _paid_by_quotation([order["id"] for order in orders], cash_only=True),
+        _godown_value_by_quotation([order["id"] for order in orders]),
+    )
     settled = []
     for order in orders:
         total = _collection_total(order)
         paid = paid_map.get(order["id"], 0.0)
         if total <= 0 or paid + 1e-6 < total:
             continue
+        effective_total = max(0.0, total - godown_map.get(order["id"], 0.0))
+        cash_received = max(0.0, cash_map.get(order["id"], 0.0))
         settled.append({
             "id": order["id"], "number": order.get("number"),
             "customer_id": order.get("customer_id"), "customer_name": order.get("customer_name"),
             "floor_id": order.get("floor_id"), "grand_total": total,
             "received": round(paid, 2), "outstanding": 0.0,
+            "effective_order_total": round(effective_total, 2),
+            "godown_transferred_value": round(godown_map.get(order["id"], 0.0), 2),
+            "cash_received": round(cash_received, 2),
+            "refund_due": round(max(0.0, cash_received - effective_total), 2),
             "confirmed_at": order.get("ordered_at") or order.get("created_at"),
         })
     reverse = sort in ("date_desc", "amount_desc")

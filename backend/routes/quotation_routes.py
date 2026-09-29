@@ -39,6 +39,7 @@ from services.pricing import _resolve_line_rows, net_amount_list, normalize_tile
 from services.pagination import MAX_PAGE_LIMIT, normalize_pagination
 from services.pricing import recalc_quotation_totals as _recalc
 from services.sequence import next_number
+from services.po_final import _line_changes
 from services.tiles_stage import can_move_to_quotation, can_place_order
 
 router = APIRouter(prefix="/quotations", tags=["quotations"])
@@ -748,6 +749,15 @@ async def update_quotation(
 
     if not update:
         return Quotation(**doc)
+
+    # Builder autosaves intentionally skip public quotation revisions, but
+    # PO Final must still retain material product and amount edits. Record a
+    # compact audit delta only when the sale itself changed.
+    if body.silent:
+        at = datetime.now(timezone.utc).isoformat()
+        material = _line_changes(doc, {**doc, **update}, at, str(uuid4()))
+        if material:
+            update["po_final_changes"] = [*(doc.get("po_final_changes") or []), *material]
 
     # revision snapshot (unless silent autosave)
     if not body.silent:

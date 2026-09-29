@@ -26,6 +26,7 @@ from services.analytics import cache
 from services.followup_engine import reconcile_followups
 from services.notifications import notify
 from services.sequence import next_number
+from services.pricing import per_line_net_amounts
 
 router = APIRouter(prefix="/godown-stock", tags=["godown-stock"])
 logger = logging.getLogger(__name__)
@@ -185,17 +186,27 @@ async def _persist_intake(
 ) -> tuple[dict, dict | None]:
     """Atomically reserve a source line, create the lot, and credit its order.
 
-    A sanitary purchase item's ``unit_cost`` is the effective sold unit price
-    copied from its quotation at order placement.  Moving a quantity into
-    reusable stock therefore reduces the source customer's remaining balance
-    by that exact effective value.  The resulting typed payment row is an
-    auditable credit, not a cash collection.
+    Capture the current agreed selling value at movement time. PO unit_cost
+    can be stale after a quotation revision; the captured value stays fixed
+    when the quotation is edited again. A credit is settlement, not cash.
     """
     received_qty = float(item.get("qty_received") or item.get("qty") or 0)
     source_updated = False
     lot_inserted = False
     payment: dict | None = None
     try:
+        quotation_id = po.get("quotation_id")
+        quotation = await db.quotations.find_one(
+            {"id": quotation_id, "floor_id": po["floor_id"]}, {"_id": 0}, session=session,
+        ) if quotation_id else None
+        sold_unit = float(item.get("unit_cost") or 0)
+        line_id = item.get("quotation_line_id")
+        if quotation and line_id:
+            quote_line = next((line for line in quotation.get("items") or [] if line.get("id") == line_id), None)
+            if quote_line and float(quote_line.get("qty") or 0) > 0:
+                sold_unit = per_line_net_amounts(quotation).get(line_id, sold_unit * float(quote_line["qty"])) / float(quote_line["qty"])
+        transferred_value = round(qty * sold_unit, 2)
+        lot["transferred_value"] = transferred_value
         # Many existing purchase rows predate godown_transferred_qty. Mongo's
         # $lte does not match an absent field, which made valid legacy rows
         # fail with the misleading concurrent-change error.
@@ -215,9 +226,12 @@ async def _persist_intake(
                     ],
                 }},
             },
-            {"$inc": {"items.$.godown_transferred_qty": qty}, "$set": {"updated_at": at}, "$push": {
+            {"$inc": {"items.$.godown_transferred_qty": qty,
+                       "items.$.godown_valued_qty": qty,
+                       "items.$.godown_transferred_value": transferred_value}, "$set": {"updated_at": at}, "$push": {
                 "items.$.godown_transfer_history": {
                     "stock_id": lot["id"], "qty": qty, "reason": reason,
+                    "transferred_value": transferred_value,
                     "transferred_at": at, "transferred_by": user.id,
                     "transferred_by_name": user.full_name,
                 },
@@ -230,11 +244,7 @@ async def _persist_intake(
 
         # Re-read and calculate inside the transaction so a simultaneous cash
         # collection cannot make this ledger credit over-settle the order.
-        quotation_id = po.get("quotation_id")
         if quotation_id:
-            quotation = await db.quotations.find_one(
-                {"id": quotation_id, "floor_id": po["floor_id"]}, {"_id": 0}, session=session,
-            )
             if quotation and quotation.get("status") in {"ordered", "won"}:
                 paid_rows = await db.payments.aggregate([
                     {"$match": {
@@ -243,9 +253,7 @@ async def _persist_intake(
                     {"$group": {"_id": None, "total": {"$sum": "$amount"}}},
                 ], session=session).to_list(1)
                 already_settled = float(paid_rows[0].get("total") or 0) if paid_rows else 0.0
-                transferred_value = round(qty * float(item.get("unit_cost") or 0), 2)
                 credit_amount = round(min(transferred_value, max(0.0, _collection_total(quotation) - already_settled)), 2)
-                lot["transferred_value"] = transferred_value
                 lot["payment_credit_amount"] = credit_amount
                 if credit_amount > 0:
                     payment = Payment(
@@ -281,7 +289,10 @@ async def _persist_intake(
             if source_updated:
                 await db.purchase_orders.update_one(
                     {"id": po["id"], "floor_id": po["floor_id"], "items.id": item["id"]},
-                    {"$inc": {"items.$.godown_transferred_qty": -qty}, "$pull": {"items.$.godown_transfer_history": {"stock_id": lot["id"]}}, "$set": {"updated_at": now_iso()}},
+                    {"$inc": {"items.$.godown_transferred_qty": -qty,
+                               "items.$.godown_valued_qty": -qty,
+                               "items.$.godown_transferred_value": -transferred_value},
+                     "$pull": {"items.$.godown_transfer_history": {"stock_id": lot["id"]}}, "$set": {"updated_at": now_iso()}},
                 )
         raise
 
