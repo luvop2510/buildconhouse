@@ -159,6 +159,9 @@ test('last customer opens payment history in view on desktop, tablet, and phone'
     } });
   });
   await page.goto('/payments');
+  if ((page.viewportSize()?.width || 0) < 768) {
+    await page.getByTestId('payments-mobile-customer-switch').click();
+  }
   const lastCustomer = page.getByTestId('payment-customer-c-23');
   await lastCustomer.scrollIntoViewIfNeeded();
   await lastCustomer.click();
