@@ -99,9 +99,18 @@ jobs:
       - name: Release browser journeys and responsive audit
         run: npm run test:e2e:audit
       - name: Preserve browser audit evidence
+        id: browser-evidence
         if: always()
+        # Artifact storage availability must not replace the actual test result.
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: browser-audit
           path: output/playwright
-          retention-days: 14
+          retention-days: 3
+          compression-level: 9
+      - name: Report unavailable browser evidence
+        if: always() && steps.browser-evidence.outcome == 'failure'
+        run: |
+          echo "::warning::Browser audit evidence could not be uploaded; see the upload step for details. Test failures still fail this job."
+          echo "Browser audit evidence upload failed. The test results remain in the workflow logs; see the upload step for the storage/service error." >> "$GITHUB_STEP_SUMMARY"

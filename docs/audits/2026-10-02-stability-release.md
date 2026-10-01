@@ -31,3 +31,5 @@ The browser runs use the actual production export and synthetic intercepted API 
 PyJWT, pypdf, undici and brace-expansion received compatible security updates. Vercel now installs with `npm ci` and builds with `npm run build` to use the committed npm lockfile consistently. The remaining `image-size` issue belongs to the Expo 54 build toolchain and requires a separately tested toolchain migration; the existing audit policy was not broadened.
 
 Local evidence is in `output/pdf/2026-10-02-quotation-layout/` and `output/playwright/` (ignored generated artifacts).
+
+The previous GitHub CI run passed every test but failed only because GitHub artifact storage was full. Evidence upload now reports that failure as a visible warning and step summary while preserving all test/build failure gates. Artifact retention is three days with maximum compression. Existing artifacts were not deleted.
