@@ -10,6 +10,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Linking, Platform, Pressable, RefreshControl, ScrollView, View } from "react-native";
 
 import { api } from "@/src/api/client";
+import { RequiredNoteSheet, type FollowupNoteAction } from "@/src/components/followups/RequiredNoteSheet";
 import { toast } from "@/src/components/Toast";
 import { Alert, ErrorState } from "@/src/components/ui";
 import {
@@ -125,9 +126,11 @@ export default function Today() {
   const [recent, setRecent] = useState<RecentQ[] | null>(null);
   const [shortages, setShortages] = useState<Shortage[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [noteAction, setNoteAction] = useState<FollowupNoteAction | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [sectionErrors, setSectionErrors] = useState({ queue: false, recent: false });
   const requestVersion = useRef(0);
+  useEffect(() => { setNoteAction(null); }, [selectedFloorId]);
 
   const load = useCallback(async (isRefresh = false) => {
     if (!selectedFloorId) return;
@@ -181,32 +184,23 @@ export default function Today() {
   }, [mission, due]);
 
   // ── Queue actions ──────────────────────────────────────────────────────────
-  const complete = async (fu: Fu) => {
-    setQueue((q) => (q ? q.filter((x) => x.id !== fu.id) : q));
-    try {
-      await api.post(`/followups/${fu.id}/complete`);
-      toast.success(`${fu.customer_name} — marked done`);
-      api.get<Mission>("/followups/mission").then(setMission).catch(() => {});
-    } catch (e: any) {
-      toast.error(e?.message || "Could not complete");
-      load();
-    }
-  };
-  const call = async (fu: Fu) => {
-    try {
-      const r = await api.post<{ phone?: string | null }>(`/followups/${fu.id}/contact`, { channel: "call" });
-      const phone = r?.phone || fu.customer_phone;
-      if (phone) Linking.openURL(`tel:${phone.replace(/\s+/g, "")}`);
-      else toast.error("No phone number on file");
-    } catch (e: any) { toast.error(e?.message || "Could not start call"); }
-  };
-  const whatsapp = async (fu: Fu) => {
-    try {
-      const r = await api.post<{ wa_url?: string | null }>(`/followups/${fu.id}/contact`, { channel: "whatsapp" });
-      if (r?.wa_url) Linking.openURL(r.wa_url);
-      else toast.error("No WhatsApp number on file");
-    } catch (e: any) { toast.error(e?.message || "Could not open WhatsApp"); }
-  };
+  const complete = (fu: Fu) => setNoteAction({ title: "Complete follow-up", subtitle: fu.customer_name, confirmLabel: "Save and complete", execute: async (notes) => {
+    await api.post(`/followups/${fu.id}/complete`, { notes });
+    setQueue((q) => q ? q.filter((x) => x.id !== fu.id) : q);
+    toast.success(`${fu.customer_name} — marked done`);
+    void api.get<Mission>("/followups/mission").then(setMission).catch(() => {});
+  } });
+  const call = (fu: Fu) => setNoteAction({ title: "Contact customer", subtitle: fu.customer_name, confirmLabel: "Save and call", execute: async (notes) => {
+    const r = await api.post<{ phone?: string | null }>(`/followups/${fu.id}/contact`, { channel: "call", notes });
+    const phone = r?.phone || fu.customer_phone;
+    if (phone) await Linking.openURL(`tel:${phone.replace(/\s+/g, "")}`).catch(() => toast.error("Note saved. Open the phone app manually."));
+    else toast.error("No phone number on file");
+  } });
+  const whatsapp = (fu: Fu) => setNoteAction({ title: "Contact customer", subtitle: fu.customer_name, confirmLabel: "Save and open WhatsApp", execute: async (notes) => {
+    const r = await api.post<{ wa_url?: string | null }>(`/followups/${fu.id}/contact`, { channel: "whatsapp", notes });
+    if (r?.wa_url) await Linking.openURL(r.wa_url).catch(() => toast.error("Note saved. Open WhatsApp manually."));
+    else toast.error("No WhatsApp number on file");
+  } });
 
   const loading = queue === null;
 
@@ -379,6 +373,8 @@ export default function Today() {
   );
 
   return (
+    <>
+    <RequiredNoteSheet action={noteAction} onClose={() => setNoteAction(null)} />
     <ScrollView
       style={{ flex: 1, backgroundColor: color.canvas }}
       contentContainerStyle={{ paddingBottom: space.x16 }}
@@ -432,5 +428,6 @@ export default function Today() {
         </FadeIn>
       </View>
     </ScrollView>
+    </>
   );
 }

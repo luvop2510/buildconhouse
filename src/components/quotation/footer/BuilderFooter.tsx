@@ -111,7 +111,7 @@ export function BuilderFooter({ compact = false }: { compact?: boolean }) {
       <NotesAndDiscount b={b} />
       <View style={[styles.tRow, { borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border, paddingTop: 8, marginTop: -4 }]}>
         <Text style={{ fontSize: 13, fontFamily: font.medium, fontWeight: "500", color: colors.onSurfaceSecondary }}>Grand total</Text>
-        <Text style={{ fontSize: 22, fontFamily: font.regular, letterSpacing: -0.4, color: colors.onSurface, fontVariant: ["tabular-nums"] }}>{money(b.totals.grand)}</Text>
+        <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 22, fontFamily: font.regular, letterSpacing: -0.4, color: colors.onSurface, fontVariant: ["tabular-nums"], flexShrink: 1 }}>{money(b.totals.grand)}</Text>
       </View>
 
       <Pressable
@@ -134,7 +134,7 @@ function Row({ label, value, valueColor }: { label: string; value: string; value
   return (
     <View style={styles.tRow}>
       <Text style={type.caption}>{label}</Text>
-      <Text style={[{ fontFamily: font.regular, fontVariant: ["tabular-nums"] as any, fontSize: 13, color: colors.onSurface }, valueColor ? { color: valueColor } : null]}>{value}</Text>
+      <Text numberOfLines={1} style={[{ fontFamily: font.regular, fontVariant: ["tabular-nums"] as any, fontSize: 13, color: colors.onSurface, flexShrink: 0 }, valueColor ? { color: valueColor } : null]}>{value}</Text>
     </View>
   );
 }

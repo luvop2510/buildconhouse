@@ -9,6 +9,7 @@ import {
 import { CellNumber, CellText, CellTitle, DataTable, type Column } from "@/src/components/tiles/TileTable";
 import { colors, spacing, type } from "@/src/theme/tokens";
 import { useBp } from "@/src/design/responsive";
+import { useFloorAccess } from "@/src/hooks/use-floor-access";
 
 type PaymentRow = {
   id: string;
@@ -46,6 +47,8 @@ function dateShort(value?: string | null): string {
 
 export default function PaymentListScreen() {
   const { isPhone } = useBp();
+  const { selectedFloorId } = useFloorAccess();
+  const filterRef = useRef("");
   const [rows, setRows] = useState<PaymentRow[]>([]);
   const [floors, setFloors] = useState<Floor[]>([]);
   const [query, setQuery] = useState("");
@@ -58,6 +61,7 @@ export default function PaymentListScreen() {
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async (nextPage = page) => {
+    if (!selectedFloorId) return;
     const request = ++requestId.current;
     setLoading(true);
     setLoadError(null);
@@ -73,15 +77,20 @@ export default function PaymentListScreen() {
       if (request !== requestId.current) return;
       setLoadError(error?.detail || "Could not load fully paid orders.");
     } finally { if (request === requestId.current) setLoading(false); }
-  }, [floor, page, query, sort]);
+  }, [floor, page, query, sort, selectedFloorId]);
 
   useEffect(() => { api.get<Floor[]>("/settings/floors").then(setFloors).catch(() => setFloors([])); }, []);
   useEffect(() => {
-    setPage(0);
-    const timer = setTimeout(() => load(0), query ? 250 : 0);
-    return () => clearTimeout(timer);
-  }, [floor, query, sort]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { load(page); }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
+    requestId.current += 1;
+    const filters = JSON.stringify([floor, query, sort, selectedFloorId]);
+    if (filterRef.current !== filters && page !== 0) {
+      setPage(0);
+      return;
+    }
+    filterRef.current = filters;
+    const timer = setTimeout(() => void load(page), query ? 250 : 0);
+    return () => { clearTimeout(timer); requestId.current += 1; };
+  }, [floor, query, sort, selectedFloorId, page, load]);
 
   const columns: Column<PaymentRow>[] = [
     { key: "customer", label: "Client / Order", grow: 1, minWidth: 180, render: (row) => <View><CellTitle>{`${row.customer_name || "Unknown client"} · ${row.number || "—"}`}</CellTitle>{(row.refund_due || 0) > 0 ? <Text style={[type.caption, { color: colors.error }]}>Refund due {money(row.refund_due || 0)}</Text> : null}</View> },
@@ -101,7 +110,7 @@ export default function PaymentListScreen() {
         overline="PAYMENTS"
         subtitle="One row per order once 100% of its balance has been received."
       />
-      <ScrollView contentContainerStyle={[styles.content, isPhone && styles.contentPhone]}>
+      <ScrollView style={{ flex: 1, minHeight: 0 }} contentContainerStyle={[styles.content, isPhone && styles.contentPhone]}>
         <View style={styles.filters}>
           <View style={[styles.search, isPhone && styles.searchPhone]}><SearchField testID="payment-list-search" value={query} onChangeText={setQuery} onClear={() => setQuery("")} placeholder="Search client, invoice or reference…" /></View>
           <Dropdown label={floor === "all" ? "All business units" : floors.find((item) => item.id === floor)?.name || floor} items={[{ label: "All business units", onPress: () => setFloor("all") }, ...floors.map((item) => ({ label: item.name, onPress: () => setFloor(item.id) }))]} />

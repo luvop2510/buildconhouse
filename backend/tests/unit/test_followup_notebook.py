@@ -314,7 +314,7 @@ async def test_furniture_customer_edit_emits_the_customer_updated_audit_event(mo
     user = SimpleNamespace(active_floor_id="third-floor", floor_ids=["third-floor"], role="sales")
     await followup_routes.patch_notebook(
         "third-floor", "furniture-1",
-        NotebookCellPatchPayload(field="customer_name", value="After", updated_at="v1"), user,
+        NotebookCellPatchPayload(field="customer_name", value="After", updated_at="v1", notes="Corrected customer spelling"), user,
     )
     assert events[0]["event_type"] == "project_followup.customer_updated"
     assert events[0]["floor_id"] == "third-floor"
@@ -406,6 +406,22 @@ async def test_lost_outcome_requires_reason_and_closes_shared_followup():
 
 
 @pytest.mark.asyncio
+async def test_won_outcome_persists_action_note_in_same_update():
+    db = _Db(followups=[{
+        "id": "f1", "floor_id": "third-floor", "notebook_key": "third-floor:c1",
+        "customer_name": "A", "customer_phone": "9909906652", "notebook_status": "pending",
+        "status": "open", "updated_at": "v1", "is_converted": True,
+    }])
+    row = await complete_notebook_row(
+        db, user=object(), floor_id="third-floor", row_id="f1", outcome="won",
+        lost_reason=None, expected_updated_at="v1", notes="Customer accepted quotation and paid advance",
+    )
+    assert row["status"] == "won"
+    assert row["notes"] == "Customer accepted quotation and paid advance"
+    assert db.followups.rows[0]["resolution_note"] == row["notes"]
+
+
+@pytest.mark.asyncio
 async def test_notebook_partner_assignment_updates_the_lead_and_customer(monkeypatch):
     from models import NotebookReferrerPayload
     from routes import followup_routes
@@ -431,7 +447,7 @@ async def test_notebook_partner_assignment_updates_the_lead_and_customer(monkeyp
     monkeypatch.setattr(followup_routes, "log_event", _log_event)
     user = SimpleNamespace(active_floor_id="third-floor", floor_ids=["third-floor"], role="sales")
     row = await followup_routes.assign_notebook_referrer(
-        "third-floor", "f1", NotebookReferrerPayload(referrer_id="r1", updated_at="v1"), user,
+        "third-floor", "f1", NotebookReferrerPayload(referrer_id="r1", updated_at="v1", notes="Client referred by Aster Architects"), user,
     )
 
     assert row["referrer_name"] == "Aster Architects"

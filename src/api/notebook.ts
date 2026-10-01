@@ -24,14 +24,14 @@ export const notebookApi = {
     api.get<NotebookList>(`/followups/notebook/${floorId}${query(values)}`, { floorId }),
   create: (floorId: string, body: NotebookCreate) =>
     api.post<NotebookRow>(`/followups/notebook/${floorId}`, body, { floorId }),
-  patch: (floorId: string, rowId: string, field: NotebookField, value: unknown, updatedAt: string) =>
-    api.patch<NotebookRow>(`/followups/notebook/${floorId}/${rowId}`, { field, value, updated_at: updatedAt }, { floorId }),
-  convert: (floorId: string, rowId: string, body: Pick<NotebookRow, "quotation_price">, updatedAt: string) =>
+  patch: (floorId: string, rowId: string, field: NotebookField, value: unknown, updatedAt: string, notes?: string) =>
+    api.patch<NotebookRow>(`/followups/notebook/${floorId}/${rowId}`, { field, value, updated_at: updatedAt, notes }, { floorId }),
+  convert: (floorId: string, rowId: string, body: Pick<NotebookRow, "quotation_price"> & { notes: string }, updatedAt: string) =>
     api.post<NotebookRow>(`/followups/notebook/${floorId}/${rowId}/convert`, { ...body, updated_at: updatedAt }, { floorId }),
-  outcome: (floorId: string, rowId: string, outcome: "won" | "lost", updatedAt: string, lostReason?: string) =>
-    api.post<NotebookRow>(`/followups/notebook/${floorId}/${rowId}/outcome`, { outcome, updated_at: updatedAt, lost_reason: lostReason }, { floorId }),
-  assignReferrer: (floorId: string, rowId: string, referrerId: string | null, updatedAt: string) =>
-    api.put<NotebookRow>(`/followups/notebook/${floorId}/${rowId}/referrer`, { referrer_id: referrerId, updated_at: updatedAt }, { floorId }),
-  contact: (floorId: string, rowId: string, channel: "call" | "whatsapp") =>
-    api.post<{ phone?: string | null; wa_url?: string | null }>(`/followups/${rowId}/contact`, { channel }, { floorId }),
+  outcome: (floorId: string, rowId: string, outcome: "won" | "lost", updatedAt: string, notes: string, lostReason?: string) =>
+    api.post<NotebookRow>(`/followups/notebook/${floorId}/${rowId}/outcome`, { outcome, updated_at: updatedAt, notes, lost_reason: lostReason }, { floorId }),
+  assignReferrer: (floorId: string, rowId: string, referrerId: string | null, updatedAt: string, notes: string) =>
+    api.put<NotebookRow>(`/followups/notebook/${floorId}/${rowId}/referrer`, { referrer_id: referrerId, updated_at: updatedAt, notes }, { floorId }),
+  contact: (floorId: string, rowId: string, channel: "call" | "whatsapp", notes: string) =>
+    api.post<{ phone?: string | null; wa_url?: string | null }>(`/followups/${rowId}/contact`, { channel, notes }, { floorId }),
 };

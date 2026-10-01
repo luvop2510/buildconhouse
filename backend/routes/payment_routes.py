@@ -10,6 +10,7 @@ final price the customer pays, and payments accumulate against it directly.
 from __future__ import annotations
 import asyncio
 import logging
+import math
 from uuid import uuid4
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -388,7 +389,8 @@ async def list_orders(
                and (maximum is None or o["days_unpaid"] <= maximum)]
 
     # Sort: outstanding desc, then most recently confirmed
-    out.sort(key=lambda o: (-o["outstanding"], -(o.get("confirmed_at") or "").__hash__()))
+    out.sort(key=lambda o: (o.get("confirmed_at") or "", o["id"]), reverse=True)
+    out.sort(key=lambda o: -o["outstanding"])
     return out[:limit]
 
 
@@ -480,6 +482,7 @@ async def update_ground_floor_manual_extra(
         scope, {
             "_id": 0, "id": 1, "floor_id": 1, "grand_total": 1, "status": 1,
             "number": 1, "customer_id": 1, "customer_name": 1,
+            "payment_extra_amount": 1, "payment_extra_history": 1,
         },
     )
     if not quotation:
@@ -487,7 +490,10 @@ async def update_ground_floor_manual_extra(
     if quotation.get("status") not in ORDER_STATUSES:
         raise HTTPException(status_code=400, detail="Quotation is not a confirmed order yet")
 
+    if not math.isfinite(body.amount) or round(float(body.amount), 2) <= 0:
+        raise HTTPException(status_code=400, detail="Additional cost must be a finite value of at least ₹0.01")
     extra = round(float(body.amount), 2)
+    request_key = (body.idempotency_key or "").strip() or None
     name = (body.name or "").strip()
     if not name:
         raise HTTPException(status_code=422, detail="Name the additional cost")
@@ -501,6 +507,8 @@ async def update_ground_floor_manual_extra(
         "recorded_by": user.id,
         "recorded_by_name": user.full_name,
     }
+    if request_key:
+        entry["request_key"] = request_key
     # An added cost must be visible in the same permanent ledger as payments.
     # It is a debit (not a collection), so it has a distinct status and is
     # intentionally excluded by all ``status: completed`` cash aggregates.
@@ -513,8 +521,30 @@ async def update_ground_floor_manual_extra(
         additional_cost_id=entry["id"], cost_name=name, note=entry["note"],
         recorded_by=user.id, recorded_by_name=user.full_name,
     ).model_dump()
+    # The unique sparse payment key index skips missing fields, but indexes
+    # an explicit null. Cost retries dedupe via the quotation history above.
+    ledger_entry.pop("idempotency_key", None)
 
-    async def _write_extra(*, session=None):
+    def result_for(current, cost, ledger, *, added=False):
+        total = _collection_total(current) + (extra if added else 0)
+        return {
+            "quotation_total": round(float(current.get("grand_total") or 0), 2),
+            "manual_extra_amount": round(total - float(current.get("grand_total") or 0), 2),
+            "manual_extra_name": cost["name"], "additional_cost": cost,
+            "ledger_entry": ledger, "grand_total": round(total, 2),
+        }
+
+    async def _write_extra(session=None):
+        current = await db.quotations.find_one(scope, {"_id": 0}, session=session)
+        if not current or current.get("status") not in ORDER_STATUSES:
+            raise HTTPException(status_code=409, detail="Order changed; refresh before adding a cost")
+        if request_key:
+            existing = next((cost for cost in current.get("payment_extra_history", []) if cost.get("request_key") == request_key), None)
+            if existing:
+                if existing["amount"] != extra or existing["name"] != name or existing.get("note") != entry["note"]:
+                    raise HTTPException(status_code=409, detail="This additional cost request key was already used for different details")
+                ledger = await db.payments.find_one({"id": existing["id"], "floor_id": current.get("floor_id")}, {"_id": 0}, session=session)
+                return result_for(current, existing, ledger)
         await db.quotations.update_one(
             {"id": order_id, "floor_id": quotation.get("floor_id")},
             {"$push": {"payment_extra_history": entry}, "$inc": {"payment_extra_amount": extra},
@@ -522,6 +552,7 @@ async def update_ground_floor_manual_extra(
             session=session,
         )
         await db.payments.insert_one(ledger_entry, session=session)
+        return result_for(current, entry, ledger_entry, added=True)
 
     # Keep the quotation audit trail and ledger debit atomic on Atlas.  Local
     # standalone MongoDB cannot run transactions, so it uses the same safe
@@ -529,8 +560,7 @@ async def update_ground_floor_manual_extra(
     try:
         try:
             async with await client.start_session() as session:
-                async with session.start_transaction():
-                    await _write_extra(session=session)
+                result = await session.with_transaction(_write_extra)
         except Exception as exc:
             txn_unsupported = any(marker in str(exc) for marker in (
                 "Transaction numbers", "replica set", "IllegalOperation",
@@ -539,7 +569,7 @@ async def update_ground_floor_manual_extra(
                 raise
             if settings.environment == "production":
                 raise HTTPException(status_code=503, detail="Additional cost recording requires a MongoDB replica set in production")
-            await _write_extra(session=None)
+            result = await _write_extra(session=None)
     except HTTPException:
         raise
     except Exception as exc:
@@ -549,14 +579,7 @@ async def update_ground_floor_manual_extra(
         await cache.bump("payments")
     except Exception:
         logger.exception("cache bump failed after manual extra update for %s", order_id)
-    return {
-        "quotation_total": round(float(quotation.get("grand_total") or 0), 2),
-        "manual_extra_amount": round(_collection_total(quotation) + extra - float(quotation.get("grand_total") or 0), 2),
-        "manual_extra_name": name,
-        "additional_cost": entry,
-        "ledger_entry": ledger_entry,
-        "grand_total": round(_collection_total(quotation) + extra, 2),
-    }
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -568,9 +591,35 @@ async def create_payment(
     idempotency_header: Optional[str] = Header(None, alias="Idempotency-Key"),
     user: UserPublic = Depends(require_min_role("accounts")),
 ):
+    if not math.isfinite(body.amount) or round(float(body.amount), 2) <= 0:
+        raise HTTPException(status_code=400, detail="Amount must be a finite value of at least ₹0.01")
+
+    def receipt_time(value):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        except (TypeError, ValueError, AttributeError):
+            raise HTTPException(status_code=400, detail="Date received must be a valid ISO date")
+
+    if body.paid_at:
+        receipt_time(body.paid_at)
+
     idempotency_key = (idempotency_header or body.idempotency_key or "").strip() or None
+    def replay_payment(existing):
+        if existing is None:
+            return None
+        if (existing.get("quotation_id") != body.quotation_id
+                or float(existing.get("amount") or 0) != round(float(body.amount), 2)
+                or existing.get("mode") != body.mode
+                or (existing.get("reference") or None) != (body.reference or None)
+                or (existing.get("note") or None) != (body.note or None)
+                or (body.paid_at and receipt_time(existing.get("paid_at")) != receipt_time(body.paid_at))):
+            raise HTTPException(status_code=409, detail="This payment request key was already used for different payment details")
+        return existing
+
+    replay_query = _payment_scope_query(user, {"idempotency_key": idempotency_key})
     if idempotency_key:
-        existing = await db.payments.find_one({"idempotency_key": idempotency_key}, {"_id": 0})
+        existing = replay_payment(await db.payments.find_one(replay_query, {"_id": 0}))
         if existing:
             return existing
     quot = await db.quotations.find_one(_payment_scope_query(user, {"id": body.quotation_id}), {"_id": 0})
@@ -578,8 +627,6 @@ async def create_payment(
         raise HTTPException(status_code=404, detail="Order not found")
     if quot.get("status") not in ORDER_STATUSES:
         raise HTTPException(status_code=400, detail="Quotation is not a confirmed order yet")
-    if body.amount <= 0:
-        raise HTTPException(status_code=400, detail="Amount must be greater than zero")
 
     now = datetime.now(timezone.utc).isoformat()
     paid_at = body.paid_at or now
@@ -602,30 +649,41 @@ async def create_payment(
         # tiles order, and payment records must remain joinable to that order.
         floor_id=quot.get("floor_id") or floor_for_write(user),
     )
+    committed_totals: dict[str, float] = {}
+
     async def _check_and_insert(session=None):
         """Balance check + insert, optionally inside a transaction session."""
         if idempotency_key:
-            existing = await db.payments.find_one({"idempotency_key": idempotency_key}, {"_id": 0}, session=session)
+            existing = replay_payment(await db.payments.find_one(replay_query, {"_id": 0}, session=session))
             if existing:
                 return existing
+        # Snapshot reads followed by inserts into different payment documents
+        # do not conflict in MongoDB. Write the shared order first so concurrent
+        # collectors retry with its latest ledger instead of overspending it.
+        locked = await db.quotations.update_one(
+            {"id": body.quotation_id, "floor_id": payment.floor_id, "status": {"$in": list(ORDER_STATUSES)}},
+            {"$inc": {"payment_revision": 1}}, session=session,
+        )
+        if locked.matched_count != 1:
+            raise HTTPException(status_code=409, detail="Order changed; refresh it before recording payment")
         quot_now = await db.quotations.find_one(
-            {"id": body.quotation_id},
-            {"_id": 0, "grand_total": 1, "payment_extra_amount": 1, "number": 1},
+            {"id": body.quotation_id, "floor_id": payment.floor_id},
+            {"_id": 0, "grand_total": 1, "payment_extra_amount": 1, "payment_extra_history": 1, "number": 1},
             session=session,
         )
         grand = _collection_total(quot_now or {})
         paid_rows = await db.payments.aggregate([
-            {"$match": {"quotation_id": body.quotation_id, "status": "completed"}},
+            {"$match": {"quotation_id": body.quotation_id, "floor_id": payment.floor_id, "status": "completed"}},
             {"$group": {"_id": None, "total": {"$sum": "$amount"}}},
         ], session=session).to_list(1)
         already_paid = float(paid_rows[0].get("total") or 0) if paid_rows else 0.0
         outstanding_before = round(grand - already_paid, 2)
-        if round(float(body.amount), 2) > outstanding_before + 0.01:
+        if payment.amount > outstanding_before + 1e-6:
             raise HTTPException(status_code=400, detail=(
                 f"Payment of ₹{body.amount:,.2f} exceeds the outstanding balance of "
                 f"₹{max(outstanding_before, 0):,.2f} on {quot.get('number')}"
             ))
-        payment_doc = payment.dict()
+        payment_doc = payment.model_dump()
         if not idempotency_key:
             # Omit the field entirely rather than leaving an explicit None —
             # payments.payment_idempotency_key is a unique *sparse* index,
@@ -636,19 +694,19 @@ async def create_payment(
             # automation bug fixed in services/domain_outbox.py).
             payment_doc.pop("idempotency_key", None)
         await db.payments.insert_one(payment_doc, session=session)
+        committed_totals.update(grand=grand, total_paid=already_paid + payment.amount)
         return None
 
-    # Atlas transactions serialize the balance check with the insert. This
-    # prevents two simultaneous collectors from both spending the same balance.
+    # The order write serializes the balance check; with_transaction retries
+    # transient write conflicts with a fresh snapshot before inserting payment.
     # Standalone Mongo (local dev) has no transactions — fall back to the
     # unserialized check there, still protected by the idempotency unique index.
     try:
         try:
             async with await client.start_session() as session:
-                async with session.start_transaction():
-                    replay = await _check_and_insert(session=session)
-                    if replay is not None:
-                        return replay
+                replay = await session.with_transaction(_check_and_insert)
+                if replay is not None:
+                    return replay
         except HTTPException:
             raise
         except Exception as exc:
@@ -673,36 +731,38 @@ async def create_payment(
     except Exception as exc:
         # A unique-key race is safe to replay; return the committed payment.
         if idempotency_key:
-            existing = await db.payments.find_one({"idempotency_key": idempotency_key}, {"_id": 0})
+            existing = replay_payment(await db.payments.find_one(replay_query, {"_id": 0}))
             if existing:
                 return existing
         raise HTTPException(status_code=503, detail="Payment could not be committed safely") from exc
 
-    # If this settled the balance, we auto-flip the quotation to "won" ONLY if
-    # it was already an ordered/won-tracked order; otherwise we leave it as-is.
-    paid_map = await _paid_by_quotation([body.quotation_id])
-    total_paid = paid_map.get(body.quotation_id, 0.0)
-    grand = _collection_total(quot)
+    # Use the committed transaction's totals. A second database read failing
+    # after commit must never turn a received payment into a failed response.
+    total_paid = committed_totals["total_paid"]
+    grand = committed_totals["grand"]
     fully_paid = total_paid + 1e-6 >= grand
 
-    await log_event(
-        event_type="payment.recorded",
-        entity_type="payment",
-        entity_id=payment.id,
-        actor=user,
-        customer_id=quot["customer_id"],
-        quotation_id=body.quotation_id,
-        summary=(
-            f"{MODE_LABELS.get(body.mode, body.mode).title()} · "
-            f"₹{payment.amount:,.0f} received on {quot.get('number')}"
-        ),
-        payload={
-            "amount": payment.amount,
-            "mode": body.mode,
-            "reference": body.reference,
-            "fully_paid": fully_paid,
-        },
-    )
+    try:
+        await log_event(
+            event_type="payment.recorded",
+            entity_type="payment",
+            entity_id=payment.id,
+            actor=user,
+            customer_id=quot["customer_id"],
+            quotation_id=body.quotation_id,
+            summary=(
+                f"{MODE_LABELS.get(body.mode, body.mode).title()} · "
+                f"₹{payment.amount:,.0f} received on {quot.get('number')}"
+            ),
+            payload={
+                "amount": payment.amount,
+                "mode": body.mode,
+                "reference": body.reference,
+                "fully_paid": fully_paid,
+            },
+        )
+    except Exception:
+        logger.exception("activity log failed after committed payment %s", payment.id)
     try:
         await cache.bump("payments")
     except Exception:

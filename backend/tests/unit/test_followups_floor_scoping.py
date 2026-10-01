@@ -110,7 +110,7 @@ def test_log_call_reschedule_inherits_source_followup_floor(monkeypatch):
     monkeypatch.setattr(followups, "db", _Db())
 
     asyncio.run(followups.log_call(
-        "f-1", FollowupCallOutcomePayload(outcome="call_back"), user=_user("ground-floor"),
+        "f-1", FollowupCallOutcomePayload(outcome="call_back", notes="Customer requested a callback tomorrow"), user=_user("ground-floor"),
     ))
 
     assert fake_followups.inserted[0]["floor_id"] == "ground-floor"

@@ -58,6 +58,13 @@ NOTEBOOK_FLOOR_IDS = frozenset({"second-floor", "third-floor"})
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
+def _required_action_note(notes: str | None) -> str:
+    note = notes.strip() if isinstance(notes, str) else ""
+    if not note:
+        raise HTTPException(status_code=422, detail="A note is required before changing a follow-up")
+    return note
+
+
 def require_notebook_floor(floor_id: str, user: UserPublic) -> None:
     """Limit the notebook surface to its two declared floor modules."""
     require_floor_access(floor_id, user)
@@ -747,6 +754,7 @@ async def patch_notebook(
 ):
     require_notebook_floor(floor_id, user)
     field = "notebook_status" if body.field == "status" else body.field
+    action_note = _required_action_note(body.value if field == "notes" else body.notes)
     if field == "notebook_status" and isinstance(body.value, str) and body.value in {"won", "lost"}:
         raise HTTPException(status_code=422, detail="Use the explicit Won or Lost action so this outcome is recorded correctly")
     if field == "customer_phone" and body.value is not None:
@@ -759,7 +767,7 @@ async def patch_notebook(
     try:
         row = await patch_notebook_row(
             db, user=user, floor_id=floor_id, row_id=row_id,
-            patch={field: value}, expected_updated_at=body.updated_at,
+            patch={field: value, "notes": action_note}, expected_updated_at=body.updated_at,
         )
     except NotebookConflictError as error:
         raise _notebook_conflict(error)
@@ -772,7 +780,8 @@ async def patch_notebook(
         event_type, summary = "project_followup.lost", "Lost"
     await log_event(
         event_type=event_type, entity_type="followup", entity_id=row_id, actor=user,
-        customer_id=before.get("customer_id"), floor_id=floor_id, payload={"field": field, "value": value}, summary=summary,
+        customer_id=before.get("customer_id"), floor_id=floor_id, payload={"field": field, "value": value, "notes": action_note},
+        summary=summary if field == "notes" else f"{summary} — {action_note}",
     )
     if field == "notebook_status" and value == "lost":
         await log_event(
@@ -790,23 +799,24 @@ async def complete_notebook_outcome(
 ):
     """Close a Kitchen/Furniture lead with a durable Won/Lost outcome."""
     require_notebook_floor(floor_id, user)
+    notes = _required_action_note(body.notes or body.lost_reason)
     before = await db.followups.find_one(notebook_query(user, floor_id, {"id": row_id}), {"_id": 0})
     if not before:
         raise HTTPException(status_code=404, detail="Notebook row not found")
     try:
         row = await complete_notebook_row(
             db, user=user, floor_id=floor_id, row_id=row_id, outcome=body.outcome,
-            lost_reason=body.lost_reason, expected_updated_at=body.updated_at,
+            lost_reason=body.lost_reason, expected_updated_at=body.updated_at, notes=notes,
         )
     except NotebookConflictError as error:
         raise _notebook_conflict(error)
     except NotebookValidationError as error:
         raise HTTPException(status_code=422, detail=str(error))
-    summary = "Client won" if body.outcome == "won" else "Client lost"
+    summary = f"{'Client won' if body.outcome == 'won' else 'Client lost'} — {notes}"
     await log_event(
         event_type=f"project_followup.{body.outcome}", entity_type="followup", entity_id=row_id,
         actor=user, customer_id=before.get("customer_id"), floor_id=floor_id,
-        payload={"lost_reason": body.lost_reason} if body.outcome == "lost" else {}, summary=summary,
+        payload={"notes": notes, "lost_reason": body.lost_reason}, summary=summary,
     )
     return row
 
@@ -818,6 +828,7 @@ async def assign_notebook_referrer(
 ):
     """Assign/clear a directory partner on a lead and its linked customer."""
     require_notebook_floor(floor_id, user)
+    notes = _required_action_note(body.notes)
     query = notebook_query(user, floor_id, {"id": row_id})
     before = await db.followups.find_one(query, {"_id": 0})
     if not before:
@@ -828,7 +839,7 @@ async def assign_notebook_referrer(
     now = now_iso()
     result = await db.followups.update_one(
         {**query, "updated_at": body.updated_at},
-        {"$set": {**fields, "architect_interior_designer": fields["referrer_name"] or "", "updated_at": now}},
+        {"$set": {**fields, "architect_interior_designer": fields["referrer_name"] or "", "updated_at": now, "notes": notes}},
     )
     if not result.matched_count:
         changed = await db.followups.find_one(query, {"_id": 0})
@@ -839,8 +850,8 @@ async def assign_notebook_referrer(
     await log_event(
         event_type="project_followup.referrer_assigned", entity_type="followup", entity_id=row_id,
         actor=user, customer_id=before.get("customer_id"), floor_id=floor_id,
-        payload={"referrer_id": fields["referrer_id"], "referrer_type": fields["referrer_type"]},
-        summary=(f"Assigned {fields['referrer_name']}" if fields["referrer_name"] else "Cleared referrer"),
+        payload={"referrer_id": fields["referrer_id"], "referrer_type": fields["referrer_type"], "notes": notes},
+        summary=(f"Assigned {fields['referrer_name']} — {notes}" if fields["referrer_name"] else f"Cleared referrer — {notes}"),
     )
     updated = await db.followups.find_one(query, {"_id": 0})
     return serialize_notebook_row(updated)
@@ -852,13 +863,14 @@ async def convert_notebook(
     user: UserPublic = Depends(get_current_user),
 ):
     require_notebook_floor(floor_id, user)
+    notes = _required_action_note(body.notes)
     before = await db.followups.find_one(notebook_query(user, floor_id, {"id": row_id}), {"_id": 0})
     if not before:
         raise HTTPException(status_code=404, detail="Notebook row not found")
     try:
         row = await convert_notebook_row(
             db, user=user, floor_id=floor_id, row_id=row_id,
-            patch=body.model_dump(exclude={"updated_at"}, exclude_none=True), expected_updated_at=body.updated_at,
+            patch={**body.model_dump(exclude={"updated_at"}, exclude_none=True), "notes": notes}, expected_updated_at=body.updated_at,
         )
     except NotebookConflictError as error:
         raise _notebook_conflict(error)
@@ -867,7 +879,8 @@ async def convert_notebook(
     await log_event(
         event_type="project_followup.converted", entity_type="followup", entity_id=row_id, actor=user,
         customer_id=before.get("customer_id"), floor_id=floor_id,
-        summary="Converted to quotation follow-up",
+        payload={"notes": notes},
+        summary=f"Converted to quotation follow-up — {notes}",
     )
     return row
 
@@ -1063,10 +1076,12 @@ async def create_followup(body: FollowupCreate, user: UserPublic = Depends(get_c
 
 @router.patch("/{followup_id}")
 async def update_followup(followup_id: str, body: FollowupUpdate, user: UserPublic = Depends(get_current_user)):
+    notes = _required_action_note(body.notes)
     f = await db.followups.find_one(floor_query(user, {"id": followup_id}), {"_id": 0})
     if not f:
         raise HTTPException(status_code=404, detail="Follow-up not found")
     patch = body.model_dump(exclude_unset=True)
+    patch["notes"] = notes
     if "assigned_to" in patch and patch["assigned_to"]:
         au = await db.users.find_one({"id": patch["assigned_to"]}, {"_id": 0, "full_name": 1})
         patch["assigned_to_name"] = au["full_name"] if au else None
@@ -1077,17 +1092,17 @@ async def update_followup(followup_id: str, body: FollowupUpdate, user: UserPubl
         )
     if patch.get("status") == "dismissed":
         patch["completed_at"] = now_iso()
-        patch["resolution_note"] = "Dismissed — not relevant"
+        patch["resolution_note"] = notes
         await log_event(
             event_type="followup.dismissed", entity_type="followup", entity_id=followup_id, actor=user,
             customer_id=f.get("customer_id"),
             summary=f"Follow-up dismissed — {f.get('reason')}",
         )
-    if "notes" in patch and patch["notes"] and patch.get("status") != "dismissed" and "assigned_to" not in patch:
+    if "notes" in patch and patch["notes"]:
         await log_event(
             event_type="followup.note_added", entity_type="followup", entity_id=followup_id, actor=user,
             customer_id=f.get("customer_id"),
-            summary=f"Note added: {patch['notes'][:120]}",
+            payload={"notes": notes}, summary=f"Note added: {patch['notes'][:120]}",
         )
     patch["updated_at"] = now_iso()
     await db.followups.update_one(floor_query(user, {"id": followup_id}), {"$set": patch})
@@ -1098,8 +1113,10 @@ async def update_followup(followup_id: str, body: FollowupUpdate, user: UserPubl
 async def delete_followup(
     followup_id: str,
     user: UserPublic = Depends(require_min_role("manager")),
+    notes: str | None = Query(None),
 ):
     """Permanently remove a follow-up during manager data cleanup."""
+    note = _required_action_note(notes)
     f = await get_floor_scoped_or_404(
         db.followups, followup_id, user, not_found="Follow-up not found", projection={"_id": 0},
     )
@@ -1112,6 +1129,11 @@ async def delete_followup(
             {"followup_id": followup_id},
         ],
     })
+    await log_event(
+        event_type="followup.deleted", entity_type="followup", entity_id=followup_id, actor=user,
+        customer_id=f.get("customer_id"), floor_id=f.get("floor_id"),
+        payload={"notes": note}, summary=f"Follow-up deleted — {note}",
+    )
     return {"ok": True, "followup_id": followup_id, "deleted": {"followups": result.deleted_count, "activity_events": activity.deleted_count}}
 
 
@@ -1120,6 +1142,7 @@ async def delete_followup(
 # ─────────────────────────────────────────────────────────────────────────────
 @router.post("/{followup_id}/snooze")
 async def snooze_followup(followup_id: str, body: FollowupSnoozePayload, user: UserPublic = Depends(get_current_user)):
+    notes = _required_action_note(body.notes)
     f = await db.followups.find_one(floor_query(user, {"id": followup_id}), {"_id": 0})
     if not f:
         raise HTTPException(status_code=404, detail="Follow-up not found")
@@ -1140,36 +1163,38 @@ async def snooze_followup(followup_id: str, body: FollowupSnoozePayload, user: U
         until = now + timedelta(hours=1)
 
     await db.followups.update_one(floor_query(user, {"id": followup_id}), {"$set": {
-        "status": "snoozed", "snoozed_until": until.isoformat(), "updated_at": now_iso(),
+        "status": "snoozed", "snoozed_until": until.isoformat(), "updated_at": now_iso(), "notes": notes,
     }})
     await log_event(
         event_type="followup.snoozed", entity_type="followup", entity_id=followup_id, actor=user,
         customer_id=f.get("customer_id"),
-        summary=f"Snoozed until {until.strftime('%d %b, %I:%M %p')}",
+        payload={"notes": notes}, summary=f"Snoozed until {until.strftime('%d %b, %I:%M %p')} — {notes}",
     )
     return await db.followups.find_one(floor_query(user, {"id": followup_id}), {"_id": 0})
 
 
 @router.post("/{followup_id}/complete")
 async def complete_followup(followup_id: str, body: FollowupCompletePayload, user: UserPublic = Depends(get_current_user)):
+    notes = _required_action_note(body.notes)
     f = await db.followups.find_one(floor_query(user, {"id": followup_id}), {"_id": 0})
     if not f:
         raise HTTPException(status_code=404, detail="Follow-up not found")
     await db.followups.update_one(floor_query(user, {"id": followup_id}), {"$set": {
         "status": "done", "completed_at": now_iso(),
-        "notes": body.notes if body.notes is not None else f.get("notes"),
+        "notes": notes,
         "updated_at": now_iso(),
     }})
     await log_event(
         event_type="followup.completed", entity_type="followup", entity_id=followup_id, actor=user,
         customer_id=f.get("customer_id"), quotation_id=f.get("quotation_id"), purchase_id=f.get("purchase_id"),
-        summary=f"Follow-up marked complete — {f.get('reason')}",
+        payload={"notes": notes}, summary=f"Follow-up marked complete — {notes}",
     )
     return await db.followups.find_one(floor_query(user, {"id": followup_id}), {"_id": 0})
 
 
 @router.post("/{followup_id}/contact")
 async def contact_followup(followup_id: str, body: FollowupContactPayload, user: UserPublic = Depends(get_current_user)):
+    notes = _required_action_note(body.notes)
     from routes.payment_routes import _clean_phone
     from services.email_service import build_email
     from services.messaging_service import build_message
@@ -1180,13 +1205,13 @@ async def contact_followup(followup_id: str, body: FollowupContactPayload, user:
     now = now_iso()
     await db.followups.update_one(
         floor_query(user, {"id": followup_id}),
-        {"$set": {"last_contacted_at": now, "updated_at": now}, "$inc": {"contact_attempts": 1}},
+        {"$set": {"last_contacted_at": now, "updated_at": now, "notes": notes}, "$inc": {"contact_attempts": 1}},
     )
     await log_event(
         event_type="followup.contacted", entity_type="followup", entity_id=followup_id, actor=user,
         customer_id=f.get("customer_id"), quotation_id=f.get("quotation_id"), purchase_id=f.get("purchase_id"),
-        payload={"channel": body.channel},
-        summary=f"{body.channel.title()} — {f.get('customer_name')}",
+        payload={"channel": body.channel, "notes": notes},
+        summary=f"{body.channel.title()} — {f.get('customer_name')} — {notes}",
     )
     phone = _clean_phone(f.get("customer_phone"))
     result: dict = {"channel": body.channel, "phone": phone}
@@ -1218,13 +1243,14 @@ async def contact_followup(followup_id: str, body: FollowupContactPayload, user:
 
 @router.post("/{followup_id}/log-call")
 async def log_call(followup_id: str, body: FollowupCallOutcomePayload, user: UserPublic = Depends(get_current_user)):
+    notes = _required_action_note(body.notes)
     f = await db.followups.find_one(floor_query(user, {"id": followup_id}), {"_id": 0})
     if not f:
         raise HTTPException(status_code=404, detail="Follow-up not found")
     now_dt = datetime.now(timezone.utc)
     patch: dict = {
         "last_contacted_at": now_dt.isoformat(), "updated_at": now_iso(),
-        "notes": body.notes if body.notes is not None else f.get("notes"),
+        "notes": notes,
     }
     next_created = None
 
@@ -1307,7 +1333,7 @@ async def log_call(followup_id: str, body: FollowupCallOutcomePayload, user: Use
     await log_event(
         event_type="followup.call_logged", entity_type="followup", entity_id=followup_id, actor=user,
         customer_id=f.get("customer_id"), quotation_id=f.get("quotation_id"), purchase_id=f.get("purchase_id"),
-        payload={"outcome": body.outcome, "next_followup_id": next_created},
-        summary=f"Call logged — {body.outcome.replace('_', ' ').title()}",
+        payload={"outcome": body.outcome, "next_followup_id": next_created, "notes": notes},
+        summary=f"Call logged — {body.outcome.replace('_', ' ').title()} — {notes}",
     )
     return await db.followups.find_one(floor_query(user, {"id": followup_id}), {"_id": 0})

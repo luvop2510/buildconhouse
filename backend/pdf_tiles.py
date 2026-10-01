@@ -32,7 +32,7 @@ from reportlab.platypus import (
 )
 
 from pdf_generator import (
-    LOGO_PATH, LOGO_RATIO, _draw_footer, _draw_room_watermark, _escape, _img, _money,
+    LOGO_PATH, LOGO_RATIO, _draw_footer, _draw_room_watermark, _escape, _img, _money, _currency_symbol, _SingleLineParagraph,
     LANDSCAPE_A4, PRODUCT_IMAGE_ASPECT_RATIO, _po_final_payment_table, brand_partners_table, prefetch_product_images,
 )
 
@@ -341,9 +341,9 @@ def _price_summary_table(total_quantity: str, subtotal: float, transportation_fe
     TRANSPORTATION / TOTAL QUOTE."""
     rows = [
         [Paragraph("TOTAL QUANTITY", styles["sumLabel"]), Paragraph(total_quantity, styles["sumValue"])],
-        [Paragraph("SUBTOTAL (₹)", styles["sumLabel"]), Paragraph(_rupee(subtotal), styles["sumValue"])],
-        [Paragraph("TRANSPORTATION", styles["sumLabel"]), Paragraph(_rupee(transportation_fee), styles["sumValue"])],
-        [Paragraph("TOTAL QUOTE (₹)", styles["sumRed"]), Paragraph(_rupee(total_quote), styles["sumRed"])],
+        [Paragraph(f"SUBTOTAL ({_currency_symbol()})", styles["sumLabel"]), _SingleLineParagraph(_rupee(subtotal), styles["sumValue"])],
+        [Paragraph("TRANSPORTATION", styles["sumLabel"]), _SingleLineParagraph(_rupee(transportation_fee), styles["sumValue"])],
+        [Paragraph(f"TOTAL QUOTE ({_currency_symbol()})", styles["sumRed"]), _SingleLineParagraph(_rupee(total_quote), styles["sumRed"])],
     ]
     table = Table(rows, colWidths=[188 * mm, 93 * mm], rowHeights=[5.5 * mm] * 4, hAlign="CENTER")
     table.setStyle(TableStyle([
@@ -527,7 +527,7 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
         Paragraph("SIZE", styles["colHead"]), Paragraph("RATE/<br/>SQ.FT", styles["colHeadRed"]),
         Paragraph("OFFER<br/>RATE", styles["colHead"]), Paragraph("RATE/<br/>UNIT", styles["colHead"]),
         Paragraph("QUANTITY", styles["colHead"]), Paragraph("UNIT", styles["colHead"]),
-        Paragraph("TOTAL<br/>(₹)", styles["colHead"]),
+        _SingleLineParagraph(f"TOTAL ({_currency_symbol()})", styles["colHead"]),
     ]
     rows: list[list[object]] = [head]
     for index, item in enumerate(items, 1):
@@ -550,15 +550,15 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
             Paragraph(_escape(item.get("name") or ""), styles["cellBold"]),
             Paragraph(_escape(item.get("size") or ""), styles["cell"]),
             Paragraph(rate_sqft_text, styles["cellRed"]),
-            Paragraph(_money(offer_rate) if offer_rate else "", styles["cellOffer"]),
-            Paragraph(_money(rate_box) if rate_box else "", styles["cell"]),
+            _SingleLineParagraph(_money(offer_rate) if offer_rate else "", styles["cellOffer"]),
+            _SingleLineParagraph(_money(rate_box) if rate_box else "", styles["cell"]),
             # The detail table separates the count from its fulfillment unit:
             # quantity stays numeric while the adjacent column says box/piece.
             # Keep _quantity_label for the summary, where the combined unit is
             # useful, but do not duplicate it in each product row.
             Paragraph(f"{qty:g}" if qty else "", styles["cellBold"]),
             Paragraph("piece" if quantity_unit == "Pieces" else "box", styles["cellBold"]),
-            Paragraph(_money(line_total) if line_total else "", styles["cell"]),
+            _SingleLineParagraph(_money(line_total) if line_total else "", styles["cell"]),
         ])
     # Keep the grand total out of the flowing product table.  When a table
     # splits immediately before its final row, ReportLab repeats the column
@@ -566,7 +566,7 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
     # Rendering the total as its own table leaves an overflow page clean.
     total_row = ["" for _ in head]
     total_row[3] = Paragraph("<b>TOTAL</b>", styles["cell"])
-    total_row[-1] = Paragraph(f"<b>{_money(item_subtotal)}</b>", styles["cell"])
+    total_row[-1] = _SingleLineParagraph(f"<b>{_money(item_subtotal)}</b>", styles["cell"])
     style_cmds = [
         ("GRID", (0, 0), (-1, -1), 0.7, GRID),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),

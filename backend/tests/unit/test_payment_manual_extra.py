@@ -19,7 +19,7 @@ class _Quotations:
         self.doc = doc
         self.update = None
 
-    async def find_one(self, _query, _projection=None):
+    async def find_one(self, _query, _projection=None, **_kwargs):
         return self.doc
 
     async def update_one(self, query, update, session=None):
@@ -31,6 +31,11 @@ class _Payments:
         self.inserted: list[dict] = []
 
     async def insert_one(self, doc, session=None):
+        # Mirror Mongo's unique sparse semantics: absent keys are skipped,
+        # while explicit null participates in uniqueness.
+        if "idempotency_key" in doc and any("idempotency_key" in prior and prior["idempotency_key"] == doc["idempotency_key"] for prior in self.inserted):
+            from pymongo.errors import DuplicateKeyError
+            raise DuplicateKeyError("duplicate payment idempotency key")
         self.inserted.append(doc)
 
 
@@ -41,8 +46,8 @@ class _Session:
     async def __aexit__(self, *_args):
         return False
 
-    def start_transaction(self):
-        return self
+    async def with_transaction(self, callback):
+        return await callback(self)
 
 
 class _Client:
@@ -113,6 +118,7 @@ def test_additional_cost_is_appended_and_added_to_collection_total(monkeypatch):
     assert fake_db.quotations.update[1]["$set"]["payment_extra_name"] == "Labour cost"
     assert fake_db.payments.inserted == [result["ledger_entry"]]
     ledger_entry = fake_db.payments.inserted[0]
+    assert "idempotency_key" not in ledger_entry, "A null key collides with the unique sparse index on the second added cost"
     assert ledger_entry["entry_type"] == "additional_cost"
     assert ledger_entry["status"] == "adjustment"
     assert ledger_entry["mode"] == "adjustment"
@@ -156,3 +162,60 @@ def test_ledger_enrichment_shows_cost_name_actor_timestamp_and_debit_balance(mon
     assert by_id["cost-1"]["paid_at"] == "2026-09-20T11:00:00+00:00"
     assert by_id["cost-1"]["outstanding_before"] == 900
     assert by_id["cost-1"]["outstanding_after"] == 1150
+
+
+def test_additional_cost_retry_is_idempotent_and_preserves_prior_totals(monkeypatch):
+    import copy
+
+    class Quotations(_Quotations):
+        async def find_one(self, _query, _projection=None, **_kwargs):
+            return copy.deepcopy(self.doc)
+
+        async def update_one(self, query, update, session=None):
+            await super().update_one(query, update, session=session)
+            self.doc.setdefault('payment_extra_history', []).append(copy.deepcopy(update['$push']['payment_extra_history']))
+            self.doc['payment_extra_amount'] += update['$inc']['payment_extra_amount']
+
+    class Payments(_Payments):
+        async def find_one(self, query, *_args, **_kwargs):
+            return next((doc for doc in self.inserted if doc['id'] == query['id']), None)
+
+    fake_db = _Db({})
+    fake_db.quotations = Quotations({
+        'id': 'q-1', 'number': 'FQ-1', 'floor_id': 'ground-floor',
+        'customer_id': 'customer-1', 'customer_name': 'Customer One',
+        'grand_total': 1000, 'status': 'ordered', 'payment_extra_amount': 100,
+        'payment_extra_history': [{'id': 'prior', 'name': 'Prior charge', 'amount': 100}],
+    })
+    fake_db.payments = Payments()
+    monkeypatch.setattr(payment_routes, 'db', fake_db)
+    monkeypatch.setattr(payment_routes, 'cache', _Cache())
+    monkeypatch.setattr(payment_routes, 'client', _Client())
+    body = PaymentOrderExtraUpdate(amount=250, name='Labour', idempotency_key='extra-attempt-1')
+    first = asyncio.run(payment_routes.update_ground_floor_manual_extra('q-1', body, user=_user()))
+    replay = asyncio.run(payment_routes.update_ground_floor_manual_extra('q-1', body, user=_user()))
+    assert first['manual_extra_amount'] == 350
+    assert first['grand_total'] == 1350
+    assert replay['grand_total'] == 1350
+    assert replay['additional_cost']['id'] == first['additional_cost']['id']
+    assert len(fake_db.payments.inserted) == 1
+    assert len(fake_db.quotations.doc['payment_extra_history']) == 2
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(payment_routes.update_ground_floor_manual_extra('q-1', PaymentOrderExtraUpdate(amount=500, name='Labour', idempotency_key='extra-attempt-1'), user=_user()))
+    assert error.value.status_code == 409
+    assert len(fake_db.payments.inserted) == 1
+
+
+def test_two_distinct_costs_do_not_collide_on_sparse_payment_key(monkeypatch):
+    fake_db = _Db({
+        'id': 'q-1', 'number': 'FQ-1', 'floor_id': 'ground-floor',
+        'customer_id': 'customer-1', 'customer_name': 'Customer One',
+        'grand_total': 1000, 'status': 'ordered',
+    })
+    monkeypatch.setattr(payment_routes, 'db', fake_db)
+    monkeypatch.setattr(payment_routes, 'cache', _Cache())
+    monkeypatch.setattr(payment_routes, 'client', _Client())
+    for name in ('Labour', 'Delivery'):
+        asyncio.run(payment_routes.update_ground_floor_manual_extra('q-1', PaymentOrderExtraUpdate(amount=100, name=name), user=_user()))
+    assert len(fake_db.payments.inserted) == 2
+    assert all('idempotency_key' not in ledger for ledger in fake_db.payments.inserted)

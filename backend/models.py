@@ -1200,6 +1200,7 @@ class PaymentOrderExtraUpdate(BaseModel):
     amount: float = Field(gt=0)
     name: str = Field(..., min_length=1, max_length=120)
     note: Optional[str] = Field(default=None, max_length=500)
+    idempotency_key: Optional[str] = Field(default=None, max_length=200)
 
 
 # ---------- Follow-ups (Sales Command Center) ----------
@@ -1319,6 +1320,7 @@ class FollowupUpdate(BaseModel):
 
 
 class FollowupSnoozePayload(BaseModel):
+    notes: Optional[str] = None
     minutes: Optional[int] = None
     until: Optional[str] = None
     preset: Optional[Literal["15m", "1h", "tomorrow", "next_week", "custom"]] = None
@@ -1339,6 +1341,7 @@ class FollowupCallOutcomePayload(BaseModel):
 
 class FollowupContactPayload(BaseModel):
     channel: FollowupChannel
+    notes: Optional[str] = None
 
 
 class NotebookFollowupCreatePayload(BaseModel):
@@ -1360,6 +1363,7 @@ class NotebookCellPatchPayload(BaseModel):
     field: NotebookField
     value: Any = None
     updated_at: str
+    notes: Optional[str] = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -1369,12 +1373,14 @@ class NotebookConversionPayload(BaseModel):
     # Other follow-up fields remain unchanged.
     quotation_price: float
     updated_at: str
+    notes: Optional[str] = None
 
     model_config = ConfigDict(extra="forbid")
 
 
 class NotebookOutcomePayload(BaseModel):
     outcome: Literal["won", "lost"]
+    notes: Optional[str] = None
     # A lost lead is a business decision, not a cosmetic status. Require the
     # reason atomically with the transition so it cannot be bypassed by an
     # inline status edit.
@@ -1389,6 +1395,7 @@ class NotebookReferrerPayload(BaseModel):
     # resolved server-side against the floor-scoped referrer directory.
     referrer_id: Optional[str] = None
     updated_at: str
+    notes: Optional[str] = None
 
     model_config = ConfigDict(extra="forbid")
 

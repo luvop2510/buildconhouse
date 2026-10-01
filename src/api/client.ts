@@ -33,6 +33,7 @@ let tokenCache: string | null | undefined;
 let tokenKindCache: TokenKind | null | undefined;
 let floorCache: string | null | undefined;
 let requestContextVersion = 0;
+let readCacheVersion = 0;
 
 export type TokenKind = "staff" | "customer";
 
@@ -75,14 +76,15 @@ export function setRequestFloorId(floorId: string) {
 }
 
 export function clearApiResponseCache() {
+  readCacheVersion += 1;
   responseCache.clear();
+  inflightGets.clear();
 }
 
 /** Abort work from the previous identity/workspace before it can update UI. */
 export function invalidateApiRequests() {
   requestContextVersion += 1;
-  responseCache.clear();
-  inflightGets.clear();
+  clearApiResponseCache();
   activeRequests.forEach((controller) => controller.abort());
   activeRequests.clear();
 }
@@ -184,6 +186,13 @@ async function request<T>(method: string, path: string, body?: any, opts?: Reque
   }
 }
 
+/** Refreshes after a write must not reuse reads started before it committed. */
+async function mutate<T>(method: string, path: string, body?: unknown, opts?: RequestOptions): Promise<T> {
+  clearApiResponseCache();
+  try { return await request<T>(method, path, body, opts); }
+  finally { clearApiResponseCache(); }
+}
+
 export const api = {
   get: <T>(p: string, opts?: RequestOptions) => {
     // Deduplicate concurrent reads across screens/components. This is
@@ -191,6 +200,7 @@ export const api = {
     // StrictMode/remounts and overlapping effects no longer hit the backend
     // twice for the same resource.
     const key = `${opts?.floorId ?? floorCache ?? "auto"}:${p}`;
+    const cacheVersion = readCacheVersion;
     const cached = responseCache.get(key);
     if (cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.value as T);
     if (cached) responseCache.delete(key);
@@ -200,17 +210,17 @@ export const api = {
     // unmount cancels every component waiting for this resource.
     const pending = request<T>("GET", p, undefined, { ...opts, signal: undefined })
       .then((value) => {
-        if (opts?.cacheMs && opts.cacheMs > 0) responseCache.set(key, { expiresAt: Date.now() + opts.cacheMs, value });
+        if (cacheVersion === readCacheVersion && opts?.cacheMs && opts.cacheMs > 0) responseCache.set(key, { expiresAt: Date.now() + opts.cacheMs, value });
         return value;
       })
-      .finally(() => inflightGets.delete(key));
+      .finally(() => { if (inflightGets.get(key) === pending) inflightGets.delete(key); });
     inflightGets.set(key, pending);
     return abortForConsumer(pending, opts?.signal);
   },
-  post: <T>(p: string, b?: any, opts?: RequestOptions) => { responseCache.clear(); return request<T>("POST", p, b, opts); },
-  put: <T>(p: string, b?: any, opts?: RequestOptions) => { responseCache.clear(); return request<T>("PUT", p, b, opts); },
-  patch: <T>(p: string, b?: any, opts?: RequestOptions) => { responseCache.clear(); return request<T>("PATCH", p, b, opts); },
-  delete: <T>(p: string, opts?: RequestOptions) => { responseCache.clear(); return request<T>("DELETE", p, undefined, opts); },
+  post: <T>(p: string, b?: any, opts?: RequestOptions) => { return mutate<T>("POST", p, b, opts); },
+  put: <T>(p: string, b?: any, opts?: RequestOptions) => { return mutate<T>("PUT", p, b, opts); },
+  patch: <T>(p: string, b?: any, opts?: RequestOptions) => { return mutate<T>("PATCH", p, b, opts); },
+  delete: <T>(p: string, opts?: RequestOptions) => { return mutate<T>("DELETE", p, undefined, opts); },
   // Build a URL for a browser-download endpoint (PDF/xlsx). Browser
   // navigations can't send an Authorization header, so this mints a
   // short-lived single-use download token via a normal authenticated call

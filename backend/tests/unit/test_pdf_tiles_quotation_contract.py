@@ -49,6 +49,22 @@ def test_tiles_pdf_uses_rate_per_sqft_offer_rate_and_quantity_unit():
     assert "₹ 4,440.00" in text
 
 
+def test_tiles_pdf_keeps_large_amounts_and_currency_header_on_single_lines():
+    pdf = build_tiles_quotation_pdf({
+        "customer_name": "Large Amount Contract",
+        "items": [{"name": "Tile", "room": "Living", "qty": 2, "unit_price": 12345678.9,
+                   "rate_box": 12345678.9, "offer_rate": 123456.7, "quantity_unit": "Box"}],
+        "subtotal": 24691357.8, "grand_total": 24691357.8,
+    }, {"name": "Large Amount Contract"})
+    pages = PdfReader(BytesIO(pdf)).pages
+    detail_lines = [line.strip() for line in (pages[1].extract_text() or "").splitlines()]
+    symbol = "₹" if pdf_generator.RUPEE_FONT else "Rs."
+    assert f"TOTAL ({symbol})" in detail_lines
+    assert f"{symbol} 1,23,45,678.90" in detail_lines
+    assert f"{symbol} 2,46,91,357.80" in detail_lines
+    assert f"{symbol} 1,23,456.70" in detail_lines
+
+
 def test_tiles_pdf_renders_piece_as_the_quantity_unit():
     text = _pdf_text({
         "customer_name": "PDF Piece Contract",

@@ -26,6 +26,7 @@ let tokenCache: string | null | undefined;
 let tokenKindCache: TokenKind | null | undefined;
 let floorCache: string | null | undefined;
 let requestContextVersion = 0;
+let readCacheVersion = 0;
 
 export type TokenKind = "staff" | "customer";
 export class ApiError extends Error {
@@ -81,12 +82,15 @@ export function setRequestFloorId(floorId: string) {
   if (floorCache !== undefined && floorCache !== floorId) invalidateApiRequests();
   floorCache = floorId;
 }
-export function clearApiResponseCache() { responseCache.clear(); }
+export function clearApiResponseCache() {
+  readCacheVersion += 1;
+  responseCache.clear();
+  inflightGets.clear();
+}
 /** Abort work from the previous identity/workspace before it can update UI. */
 export function invalidateApiRequests() {
   requestContextVersion += 1;
-  responseCache.clear();
-  inflightGets.clear();
+  clearApiResponseCache();
   activeRequests.forEach((controller) => controller.abort());
   activeRequests.clear();
 }
@@ -154,9 +158,17 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: R
     opts?.signal?.removeEventListener("abort", abortFromCaller);
   }
 }
+/** Refreshes after a write must not reuse reads started before it committed. */
+async function mutate<T>(method: string, path: string, body?: unknown, opts?: RequestOptions): Promise<T> {
+  clearApiResponseCache();
+  try { return await request<T>(method, path, body, opts); }
+  finally { clearApiResponseCache(); }
+}
+
 export const api = {
   get: <T>(path: string, opts?: RequestOptions) => {
     const key = `${opts?.floorId ?? floorCache ?? "auto"}:${path}`;
+    const cacheVersion = readCacheVersion;
     const cached = responseCache.get(key);
     if (cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.value as T);
     if (cached) responseCache.delete(key);
@@ -164,16 +176,16 @@ export const api = {
     if (existing) return abortForConsumer(existing as Promise<T>, opts?.signal);
     // Consumer cancellation must not terminate a request shared by another view.
     const pending = request<T>("GET", path, undefined, { ...opts, signal: undefined }).then((value) => {
-      if (opts?.cacheMs && opts.cacheMs > 0) responseCache.set(key, { expiresAt: Date.now() + opts.cacheMs, value });
+      if (cacheVersion === readCacheVersion && opts?.cacheMs && opts.cacheMs > 0) responseCache.set(key, { expiresAt: Date.now() + opts.cacheMs, value });
       return value;
-    }).finally(() => inflightGets.delete(key));
+    }).finally(() => { if (inflightGets.get(key) === pending) inflightGets.delete(key); });
     inflightGets.set(key, pending);
     return abortForConsumer(pending, opts?.signal);
   },
-  post: <T>(path: string, body?: unknown, opts?: RequestOptions) => { responseCache.clear(); return request<T>("POST", path, body, opts); },
-  put: <T>(path: string, body?: unknown, opts?: RequestOptions) => { responseCache.clear(); return request<T>("PUT", path, body, opts); },
-  patch: <T>(path: string, body?: unknown, opts?: RequestOptions) => { responseCache.clear(); return request<T>("PATCH", path, body, opts); },
-  delete: <T>(path: string, opts?: RequestOptions) => { responseCache.clear(); return request<T>("DELETE", path, undefined, opts); },
+  post: <T>(path: string, body?: unknown, opts?: RequestOptions) => { return mutate<T>("POST", path, body, opts); },
+  put: <T>(path: string, body?: unknown, opts?: RequestOptions) => { return mutate<T>("PUT", path, body, opts); },
+  patch: <T>(path: string, body?: unknown, opts?: RequestOptions) => { return mutate<T>("PATCH", path, body, opts); },
+  delete: <T>(path: string, opts?: RequestOptions) => { return mutate<T>("DELETE", path, undefined, opts); },
   authenticatedUrl: async (path: string) => {
     const { token } = await request<{ token: string }>("POST", "/downloads/token", { target: `/api${path}` });
     return `${BASE}/api${path}${path.includes("?") ? "&" : "?"}dl=${encodeURIComponent(token)}`;

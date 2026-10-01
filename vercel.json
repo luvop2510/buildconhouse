@@ -1,5 +1,6 @@
 {
-  "buildCommand": "yarn build",
+  "installCommand": "npm ci",
+  "buildCommand": "npm run build",
   "outputDirectory": "dist/client",
   "headers": [
     {

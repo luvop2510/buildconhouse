@@ -117,7 +117,7 @@ function LineRowImpl({
             {l.finish ? <FinishSwatch finish={l.finish} size={10} /> : null}
             {badge ? <Badge tone={badge.tone} label={badge.label} /> : null}
           </View>
-          <Text style={styles.total}>{money(total)}</Text>
+          <Text style={styles.total} numberOfLines={1}>{money(total)}</Text>
         </View>
         <Text style={type.caption} numberOfLines={1}>{l.sku}</Text>
         <View style={styles.areaRow}>
@@ -273,5 +273,5 @@ const styles = StyleSheet.create({
   removeIcon: { backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
   removeIconPressed: { opacity: 0.72, transform: [{ scale: 0.96 }], backgroundColor: "#FDECEC" },
   secondaryActions: { flexDirection: "row", flexWrap: "wrap", gap: 6, paddingTop: 4, borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
-  total: { fontFamily: font.semibold, fontSize: 13, fontWeight: "600", color: colors.onSurface, fontVariant: ["tabular-nums"], letterSpacing: -0.1 },
+  total: { fontFamily: font.semibold, fontSize: 13, fontWeight: "600", color: colors.onSurface, fontVariant: ["tabular-nums"], letterSpacing: -0.1, flexShrink: 0 },
 });

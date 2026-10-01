@@ -195,6 +195,10 @@ def format_indian_money(value: object) -> str:
     return f"{sign}{whole}.{fraction}"
 
 
+def _currency_symbol() -> str:
+    return f"<font name='{RUPEE_FONT}'>₹</font>" if RUPEE_FONT else "Rs."
+
+
 def _money(value: object) -> str:
     """One unbreakable, PDF-safe Indian currency amount.
 
@@ -202,13 +206,49 @@ def _money(value: object) -> str:
     leaving the rupee glyph above its number.  The non-breaking space keeps
     the sign and amount together in every rate/total column.
     """
-    symbol = f"<font name='{RUPEE_FONT}'>₹</font>" if RUPEE_FONT else "Rs."
-    return f"{symbol}&nbsp;{format_indian_money(value)}"
+    return f"{_currency_symbol()}&nbsp;{format_indian_money(value)}"
 
 
 def _standard_money(value: object) -> str:
     """PDF-safe Indian currency amount for sanitary quotation cells."""
     return _money(value)
+
+
+class _SingleLineParagraph(Flowable):
+    """Fit a complete label/amount inside its cell without splitting digits.
+
+    A non-breaking space alone still permits ReportLab to split a long number.
+    Measure the rich-text fragments at their natural width, then scale the
+    complete line only when it exceeds the actual table cell width.
+    """
+
+    def __init__(self, text: str, style: ParagraphStyle):
+        super().__init__()
+        self.paragraph = Paragraph(text, style)
+        self.alignment = style.alignment
+        self.natural_width = max(1, sum(
+            stringWidth(fragment.text, fragment.fontName, fragment.fontSize)
+            for fragment in self.paragraph.frags if hasattr(fragment, "text")
+        ) + 0.1)
+        _, self.natural_height = self.paragraph.wrap(self.natural_width, 100000)
+
+    def wrap(self, availWidth: float, availHeight: float):
+        self.width = max(0.1, availWidth)
+        self.scale = min(1, self.width / self.natural_width)
+        self.height = self.natural_height * self.scale
+        return self.width, self.height
+
+    def draw(self):
+        offset = self.width - self.natural_width * self.scale
+        if self.alignment == 1:
+            offset /= 2
+        elif self.alignment != 2:
+            offset = 0
+        self.canv.saveState()
+        self.canv.translate(offset, 0)
+        self.canv.scale(self.scale, self.scale)
+        self.paragraph.drawOn(self.canv, 0, 0)
+        self.canv.restoreState()
 
 
 def _escape(value: object) -> str:
@@ -627,7 +667,7 @@ def _po_final_payment_table(quotation: dict, style: ParagraphStyle, width_mm: fl
         sections.append(("GoDown stock credits (included in total)", credits))
     sections.append(("Balance due", max(0.0, payable - received)))
     rows = [[Paragraph("DETAIL", style), Paragraph("AMOUNT", style)]]
-    rows.extend([Paragraph(_escape(label), style), Paragraph(_standard_money(amount), style)] for label, amount in sections)
+    rows.extend([Paragraph(_escape(label), style), _SingleLineParagraph(_standard_money(amount), style)] for label, amount in sections)
     table = Table(rows, colWidths=[width_mm * .72 * mm, width_mm * .28 * mm], repeatRows=1)
     table.setStyle(TableStyle([
         ("GRID", (0, 0), (-1, -1), .35, GRID),
@@ -824,12 +864,12 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
             if has_discount:
                 summary_rows.append([
                     Paragraph(str(index + 1), styles["cellCenter"]), Paragraph(_ellipsize(room, 180), styles["cell"]),
-                    Paragraph(_standard_money(gross), styles["cellCenter"]), Paragraph(_standard_money(net), styles["cellCenter"]),
+                    _SingleLineParagraph(_standard_money(gross), styles["cellCenter"]), _SingleLineParagraph(_standard_money(net), styles["cellCenter"]),
                 ])
             else:
                 summary_rows.append([
                     Paragraph(str(index + 1), styles["cellCenter"]), Paragraph(_ellipsize(room, 180), styles["cell"]),
-                    Paragraph(_standard_money(net), styles["cellCenter"]),
+                    _SingleLineParagraph(_standard_money(net), styles["cellCenter"]),
                 ])
         if has_discount:
             summary_rows.extend([
@@ -908,13 +948,17 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
     # not a hardcoded count) — no blank filler rows, ever. Continuation pages
     # of the same room repeat the brand/area header + column headers and
     # continue the SR NO sequence rather than restarting at 1.
+    show_dimensions = bool(quotation.get("include_dimensions")) and any(
+        not item.get("exclude_dimension") and _media_urls(item, "dimension_image_urls")
+        for item in quotation.get("items") or []
+    )
     if has_discount:
         item_header = [
             Paragraph("SR.<br/>NO.", styles["tableHead"]), Paragraph("PRODUCT IMAGE", styles["tableHead"]),
             Paragraph("DIMENSIONS", styles["tableHead"]),
             Paragraph("ARTICLE<br/>NO.", styles["tableHead"]), Paragraph("DESCRIPTION", styles["tableHead"]),
-            Paragraph("MRP<br/>(Rs.)", styles["tableHead"]), Paragraph("QTY", styles["tableHead"]),
-            Paragraph("MRP<br/>TOTAL (Rs.)", styles["tableHead"]),
+            _SingleLineParagraph("MRP", styles["tableHead"]), Paragraph("QTY", styles["tableHead"]),
+            _SingleLineParagraph("MRP TOTAL", styles["tableHead"]),
             Paragraph("OFFER<br/>RATE", styles["tableHead"]), Paragraph("OFFER<br/>TOTAL (Rs.)", styles["tableHead"]),
         ]
         item_widths = [_pw(v) * mm for v in (12, 33, 33, 34, 54, 22, 12, 23, 22, 22)]
@@ -927,6 +971,11 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
             Paragraph("TOTAL<br/>(Rs.)", styles["tableHead"]),
         ]
         item_widths = [_pw(v) * mm for v in (12, 33, 33, 34, 80, 25, 12, 38)]
+    if not show_dimensions:
+        del item_header[2]
+        # Give the freed diagram space to description and monetary columns.
+        widths = (12, 33, 34, 64, 28, 12, 30, 27, 27) if has_discount else (12, 33, 34, 90, 36, 12, 50)
+        item_widths = [_pw(v) * mm for v in widths]
     max_rows = _max_item_rows_per_page()
     story.append(NextPageTemplate("details"))
     for area_index, room in enumerate(room_order, 1):
@@ -1003,26 +1052,28 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
                     rows.append([
                         Paragraph(str(sr_no), styles["cellCenter"]), product_images, diagram_images,
                         Paragraph(_ellipsize(item.get("sku"), 80), styles["itemSku"]), Paragraph(description, styles["itemDescription"]),
-                        Paragraph(_standard_money(listed_mrp), styles["itemMoney"]), Paragraph(f"{qty:g}", styles["itemQty"]),
-                        Paragraph(_standard_money(qty * listed_mrp), styles["itemMoney"]),
-                        Paragraph(_standard_money(offer_rate), styles["itemMoney"]), Paragraph(_standard_money(line_total), styles["itemMoney"]),
+                        _SingleLineParagraph(_standard_money(listed_mrp), styles["itemMoney"]), Paragraph(f"{qty:g}", styles["itemQty"]),
+                        _SingleLineParagraph(_standard_money(qty * listed_mrp), styles["itemMoney"]),
+                        _SingleLineParagraph(_standard_money(offer_rate), styles["itemMoney"]), _SingleLineParagraph(_standard_money(line_total), styles["itemMoney"]),
                     ])
                 else:
                     rows.append([
                         Paragraph(str(sr_no), styles["cellCenter"]), product_images, diagram_images,
                         Paragraph(_ellipsize(item.get("sku"), 80), styles["itemSku"]), Paragraph(description, styles["itemDescription"]),
-                        Paragraph(_standard_money(base_rate), styles["itemMoney"]), Paragraph(f"{qty:g}", styles["itemQty"]),
-                        Paragraph(_standard_money(qty * base_rate), styles["itemMoney"]),
+                        _SingleLineParagraph(_standard_money(base_rate), styles["itemMoney"]), Paragraph(f"{qty:g}", styles["itemQty"]),
+                        _SingleLineParagraph(_standard_money(qty * base_rate), styles["itemMoney"]),
                     ])
+                if not show_dimensions:
+                    del rows[-1][2]
             block_net = sum(
                 float(item.get("qty") or 0) * float(item.get("unit_price") or 0) * (1 - float(item.get("discount_pct") or 0) / 100)
                 for item in block
             )
-            total_label_col = 4  # DESCRIPTION column — same position in both layouts
+            total_label_col = 4 if show_dimensions else 3  # DESCRIPTION column
             last_col = len(item_header) - 1
             total_row: list[object] = ["" for _ in item_header]
             total_row[total_label_col] = Paragraph("<b>TOTAL</b>", styles["cellCenter"])
-            total_row[last_col] = Paragraph(f"<b>{_standard_money(block_net)}</b>", styles["itemMoney"])
+            total_row[last_col] = _SingleLineParagraph(f"<b>{_standard_money(block_net)}</b>", styles["itemMoney"])
             rows.append(total_row)
             # A detail page has no filler product rows. Very sparse pages use
             # compact rows, retaining ordinary image frames and white space
@@ -1034,7 +1085,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
                 ("BACKGROUND", (0, -1), (-1, -1), HEADER_GREY), ("ALIGN", (0, 1), (0, -1), "CENTER"),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-                ("LEFTPADDING", (1, 1), (2, -2), 1), ("RIGHTPADDING", (1, 1), (2, -2), 1),
+                ("LEFTPADDING", (1, 1), (2 if show_dimensions else 1, -2), 1), ("RIGHTPADDING", (1, 1), (2 if show_dimensions else 1, -2), 1),
                 ("TOPPADDING", (0, 1), (-1, -2), 0.5 * mm), ("BOTTOMPADDING", (0, 1), (-1, -2), 0.5 * mm),
                 ("TOPPADDING", (0, 0), (-1, 0), 2), ("BOTTOMPADDING", (0, 0), (-1, 0), 2),
                 ("TOPPADDING", (0, -1), (-1, -1), 2), ("BOTTOMPADDING", (0, -1), (-1, -1), 2),

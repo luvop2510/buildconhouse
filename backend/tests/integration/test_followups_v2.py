@@ -193,14 +193,14 @@ class TestNoAnswerEscalation:
         original_score = f["priority_score"]
 
         # 1st no_answer -> +4h, no escalation
-        r1 = session.post(f"{API}/followups/{fid}/log-call", json={"outcome": "no_answer"}, headers=_h(owner_token), timeout=20)
+        r1 = session.post(f"{API}/followups/{fid}/log-call", json={"outcome": "no_answer", "notes": "Customer did not answer the call"}, headers=_h(owner_token), timeout=20)
         assert r1.status_code == 200, r1.text
         d1 = r1.json()
         assert d1["contact_attempts"] == 1
         assert d1["priority_score"] == original_score
 
         # 2nd no_answer -> escalate: due_at tomorrow 09:30, +10 score capped at 100
-        r2 = session.post(f"{API}/followups/{fid}/log-call", json={"outcome": "no_answer"}, headers=_h(owner_token), timeout=20)
+        r2 = session.post(f"{API}/followups/{fid}/log-call", json={"outcome": "no_answer", "notes": "Customer did not answer the call"}, headers=_h(owner_token), timeout=20)
         assert r2.status_code == 200, r2.text
         d2 = r2.json()
         assert d2["contact_attempts"] == 2
@@ -341,12 +341,12 @@ class TestRegressionExistingEndpoints:
         assert r2.status_code == 200
         assert r2.json()["notes"] == "TEST note"
 
-        r3 = session.post(f"{API}/followups/{fid}/snooze", json={"preset": "1h"}, headers=_h(owner_token), timeout=15)
+        r3 = session.post(f"{API}/followups/{fid}/snooze", json={"preset": "1h", "notes": "Customer requested a call after one hour"}, headers=_h(owner_token), timeout=15)
         assert r3.status_code == 200
         assert r3.json()["status"] == "snoozed"
 
         # wake it back up by patching (simulate wake_snoozed elapsed) — just re-fetch list which self-heals
-        r4 = session.post(f"{API}/followups/{fid}/contact", json={"channel": "whatsapp"}, headers=_h(owner_token), timeout=15)
+        r4 = session.post(f"{API}/followups/{fid}/contact", json={"channel": "whatsapp", "notes": "Sending the customer a follow-up message"}, headers=_h(owner_token), timeout=15)
         assert r4.status_code == 200
         assert "wa_url" in r4.json()
 
@@ -361,7 +361,7 @@ class TestRegressionExistingEndpoints:
             headers=_h(owner_token), timeout=15,
         )
         fid2 = r6.json()["id"]
-        r7 = session.patch(f"{API}/followups/{fid2}", json={"status": "dismissed"}, headers=_h(owner_token), timeout=15)
+        r7 = session.patch(f"{API}/followups/{fid2}", json={"status": "dismissed", "notes": "Duplicate reminder no longer needed"}, headers=_h(owner_token), timeout=15)
         assert r7.status_code == 200
         assert r7.json()["status"] == "dismissed"
 

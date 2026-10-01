@@ -36,6 +36,9 @@ test('critical notebook conversion retains price and concurrency token after fai
   await page.getByRole('button', { name: 'Move to quotation', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Move to quotation follow-up', exact: true });
   await dialog.getByLabel('Quotation price *', { exact: true }).fill('12500.50');
+  await expect(dialog.getByRole('button', { name: 'Move to quotation follow-up', exact: true })).toBeDisabled();
+  expect(writes).toHaveLength(0);
+  await dialog.getByLabel('Follow-up note *', { exact: true }).fill('Client approved the measurements and asked for a quotation');
   await dialog.getByRole('button', { name: 'Move to quotation follow-up', exact: true }).click();
   await expect(dialog.getByRole('alert')).toContainText('Conversion unavailable');
   await expect(dialog.getByLabel('Quotation price *', { exact: true })).toHaveValue('12500.50');
@@ -43,7 +46,10 @@ test('critical notebook conversion retains price and concurrency token after fai
   await dialog.getByRole('button', { name: 'Move to quotation follow-up', exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect(page.getByText('No walk-ins yet', { exact: true })).toBeVisible();
-  expect(writes).toEqual([{ quotation_price: 12500.5, updated_at: row.updated_at }, { quotation_price: 12500.5, updated_at: row.updated_at }]);
+  expect(writes).toEqual([
+    { quotation_price: 12500.5, notes: 'Client approved the measurements and asked for a quotation', updated_at: row.updated_at },
+    { quotation_price: 12500.5, notes: 'Client approved the measurements and asked for a quotation', updated_at: row.updated_at },
+  ]);
 });
 
 test('critical tile release keeps selected split quantities until the server accepts them', async ({ page }) => {

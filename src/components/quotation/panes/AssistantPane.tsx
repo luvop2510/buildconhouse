@@ -238,10 +238,10 @@ export function AssistantPane({ onClose }: { onClose?: () => void }) {
 
         {/* --- Pricing --- */}
         <View style={styles.priceBlock}>
-          <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8 }}>
-            <Text style={{ fontSize: 22, fontWeight: "700", fontVariant: ["tabular-nums"] }}>{money(price)}</Text>
+          <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+            <Text numberOfLines={1} style={{ fontSize: 22, fontWeight: "700", fontVariant: ["tabular-nums"], flexShrink: 0 }}>{money(price)}</Text>
             {mrp > price ? (
-              <Text style={{ fontSize: 13, color: colors.onSurfaceMuted, textDecorationLine: "line-through", fontVariant: ["tabular-nums"] }}>
+              <Text numberOfLines={1} style={{ fontSize: 13, color: colors.onSurfaceMuted, textDecorationLine: "line-through", fontVariant: ["tabular-nums"], flexShrink: 0 }}>
                 {money(mrp)}
               </Text>
             ) : null}

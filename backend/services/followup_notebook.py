@@ -328,6 +328,7 @@ async def convert_notebook_row(
 async def complete_notebook_row(
     db: Any, *, user: Any, floor_id: str, row_id: str, outcome: str,
     lost_reason: str | None, expected_updated_at: str,
+    notes: str | None = None,
 ) -> dict[str, Any]:
     """Atomically close a notebook lead and its shared Followup record."""
     query = notebook_query(user, floor_id, {"id": row_id})
@@ -351,6 +352,10 @@ async def complete_notebook_row(
         "lost_reason": (lost_reason or "").strip() if outcome == "lost" else None,
         "updated_at": now,
     }
+    if notes is not None:
+        update["notes"] = notes
+        if outcome == "won":
+            update["resolution_note"] = notes
     result = await db.followups.update_one(
         {**query, "updated_at": expected_updated_at}, {"$set": update},
     )

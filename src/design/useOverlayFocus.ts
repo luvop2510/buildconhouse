@@ -22,6 +22,8 @@ export function useOverlayFocus(open: boolean, onClose: () => void, dismissable 
   const ref = useRef<View>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
+  const dismissableRef = useRef(dismissable);
+  dismissableRef.current = dismissable;
   useEffect(() => {
     if (!open || Platform.OS !== 'web') return;
     const previous = document.activeElement as HTMLElement | null;
@@ -61,7 +63,7 @@ export function useOverlayFocus(open: boolean, onClose: () => void, dismissable 
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && panel?.contains(document.activeElement)) {
         event.preventDefault(); event.stopImmediatePropagation();
-        if (dismissable) closeRef.current();
+        if (dismissableRef.current) closeRef.current();
       }
     };
     document.addEventListener('keydown', handleKey, true);
@@ -72,6 +74,6 @@ export function useOverlayFocus(open: boolean, onClose: () => void, dismissable 
       background.forEach(restore);
       if (previous?.isConnected) previous.focus();
     };
-  }, [open, dismissable]);
+  }, [open]);
   return ref;
 }

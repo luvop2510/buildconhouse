@@ -8,7 +8,6 @@
 // ═══════════════════════════════════════════════════════════════════════════
 import { Feather } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
-import * as Haptics from "expo-haptics";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Linking, Platform, Pressable, RefreshControl, ScrollView, SectionList,
@@ -19,6 +18,7 @@ import { Swipeable } from "@/src/components/Swipeable";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/src/api/client";
+import { RequiredNoteSheet, type FollowupNoteAction } from "@/src/components/followups/RequiredNoteSheet";
 import { useBp } from "@/src/design/responsive";
 import { Menu } from "@/src/design/navigationControls";
 import { ActivityTimeline, TimelineEvent } from "@/src/components/ActivityTimeline";
@@ -319,6 +319,7 @@ export default function FollowupsScreen() {
   const [callOutcomeFor, setCallOutcomeFor] = useState<Followup | null>(null);
   const [lossActionFor, setLossActionFor] = useState<Followup | null>(null);
   const [noteFor, setNoteFor] = useState<Followup | null>(null);
+  const [noteAction, setNoteAction] = useState<FollowupNoteAction | null>(null);
   const [customSnoozeFor, setCustomSnoozeFor] = useState<Followup | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Followup | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -472,6 +473,7 @@ export default function FollowupsScreen() {
     setLoadingDetail(false);
     setCustomerPreviewOpen(false);
     setSelectedIds(new Set());
+    setNoteAction(null);
     setBulkResult(null);
     (async () => {
       setLoading(true);
@@ -553,98 +555,116 @@ export default function FollowupsScreen() {
     setLoadingDetail(false);
   }, []);
 
-  // ── Optimistic local patch helper ────────────────────────────────────────
+  // Keep the queue and the open customer detail in sync after saved changes.
   const patchLocal = useCallback((id: string, patch: Partial<Followup>) => {
     setRawItems((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch } : f)));
+    setDetail((prev) => prev?.followup.id === id ? { ...prev, followup: { ...prev.followup, ...patch } } : prev);
   }, []);
 
   // ── Actions ───────────────────────────────────────────────────────────────
-  const contact = useCallback(async (f: Followup, channel: Channel) => {
-    try {
+  const contact = useCallback((f: Followup, channel: Channel) => {
+    setNoteAction({ title: "Contact customer", subtitle: f.customer_name, confirmLabel: "Save and open contact", execute: async (notes) => {
       const res = await api.post<{ channel: string; phone?: string | null; wa_url?: string; email?: string | null }>(
-        `/followups/${f.id}/contact`, { channel },
+        `/followups/${f.id}/contact`, { channel, notes },
       );
       if (channel === "call") {
         if (!res.phone) { toast.error("No phone number on file"); return; }
-        await Linking.openURL(`tel:${res.phone}`);
+        await Linking.openURL(`tel:${res.phone}`).catch(() => toast.error("Note saved. Open the phone app manually."));
         setCallOutcomeFor(f);
       } else if (channel === "whatsapp") {
         if (!res.wa_url) { toast.error("Could not build WhatsApp message"); return; }
-        await Linking.openURL(res.wa_url);
+        await Linking.openURL(res.wa_url).catch(() => toast.error("Note saved. Open WhatsApp manually."));
         toast.success("WhatsApp opened");
       } else if (channel === "email") {
         if (!res.email) { toast.error("No email on file for this customer"); return; }
-        await Linking.openURL(`mailto:${res.email}?subject=${encodeURIComponent(f.quotation_number || f.project_name || "Following up")}`);
+        await Linking.openURL(`mailto:${res.email}?subject=${encodeURIComponent(f.quotation_number || f.project_name || "Following up")}`).catch(() => toast.error("Note saved. Open the email app manually."));
       }
-      patchLocal(f.id, { last_contacted_at: new Date().toISOString() });
-    } catch (e: any) { toast.error(e?.detail || "Action failed"); }
+      patchLocal(f.id, { last_contacted_at: new Date().toISOString(), notes });
+    } });
   }, [patchLocal]);
 
-  const completeFollowup = useCallback(async (f: Followup) => {
-    if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    patchLocal(f.id, { status: "done", bucket: "completed", completed_at: new Date().toISOString() });
-    try { await api.post(`/followups/${f.id}/complete`, {}); toast.success("Marked complete"); refreshStatsQuiet(); }
-    catch (e: any) { toast.error(e?.detail || "Could not complete"); loadList(); }
-  }, [patchLocal, refreshStatsQuiet, loadList]);
+  const completeFollowup = useCallback((f: Followup) => {
+    setNoteAction({ title: "Complete follow-up", subtitle: f.customer_name, confirmLabel: "Save and complete", execute: async (notes) => {
+      const updated = await api.post<Followup>(`/followups/${f.id}/complete`, { notes });
+      patchLocal(f.id, { ...updated, bucket: "completed" });
+      toast.success("Marked complete");
+      void refreshStatsQuiet();
+    } });
+  }, [patchLocal, refreshStatsQuiet]);
 
-  const snoozeFollowup = useCallback(async (f: Followup, preset: "15m" | "1h" | "tomorrow" | "next_week") => {
-    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    patchLocal(f.id, { status: "snoozed", bucket: "snoozed" });
-    try { await api.post(`/followups/${f.id}/snooze`, { preset }); toast.success("Snoozed"); refreshStatsQuiet(); }
-    catch (e: any) { toast.error(e?.detail || "Could not snooze"); loadList(); }
-  }, [patchLocal, refreshStatsQuiet, loadList]);
+  const snoozeFollowup = useCallback((f: Followup, preset: "15m" | "1h" | "tomorrow" | "next_week") => {
+    setNoteAction({ title: "Snooze follow-up", subtitle: f.customer_name, confirmLabel: "Save and snooze", execute: async (notes) => {
+      const updated = await api.post<Followup>(`/followups/${f.id}/snooze`, { preset, notes });
+      patchLocal(f.id, { ...updated, bucket: "snoozed" });
+      toast.success("Snoozed");
+      void refreshStatsQuiet();
+    } });
+  }, [patchLocal, refreshStatsQuiet]);
 
-  const customSnooze = useCallback(async (f: Followup, untilIso: string) => {
-    patchLocal(f.id, { status: "snoozed", bucket: "snoozed" });
+  const customSnooze = useCallback((f: Followup, untilIso: string) => {
     setCustomSnoozeFor(null);
-    try { await api.post(`/followups/${f.id}/snooze`, { until: untilIso }); toast.success("Snoozed"); refreshStatsQuiet(); }
-    catch (e: any) { toast.error(e?.detail || "Could not snooze"); loadList(); }
-  }, [patchLocal, refreshStatsQuiet, loadList]);
+    setNoteAction({ title: "Snooze follow-up", subtitle: f.customer_name, confirmLabel: "Save and snooze", execute: async (notes) => {
+      const updated = await api.post<Followup>(`/followups/${f.id}/snooze`, { until: untilIso, notes });
+      patchLocal(f.id, { ...updated, bucket: "snoozed" });
+      toast.success("Snoozed");
+      void refreshStatsQuiet();
+    } });
+  }, [patchLocal, refreshStatsQuiet]);
 
-  const pushDue = useCallback(async (f: Followup, days: number) => {
+  const pushDue = useCallback((f: Followup, days: number) => {
     const dueDate = new Date(Date.now() + days * 86400000);
     const dueIso = dueDate.toISOString();
-    const deltaDays = Math.floor((Date.UTC(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate()) - Date.UTC(new Date().getFullYear(), new Date().getMonth(), new Date().getDate())) / 86400000);
-    const newBucket: Bucket = deltaDays < 0 ? "overdue" : deltaDays === 0 ? "today" : deltaDays === 1 ? "tomorrow" : deltaDays <= 7 ? "this_week" : "later";
-    patchLocal(f.id, { due_at: dueIso, bucket: newBucket });
-    try { await api.patch(`/followups/${f.id}`, { due_at: dueIso }); toast.success(`Pushed ${days} day${days === 1 ? "" : "s"}`); refreshStatsQuiet(); }
-    catch (e: any) { toast.error(e?.detail || "Could not reschedule"); loadList(); }
-  }, [patchLocal, refreshStatsQuiet, loadList]);
+    const newBucket: Bucket = days === 1 ? "tomorrow" : days <= 7 ? "this_week" : "later";
+    setNoteAction({ title: "Reschedule follow-up", subtitle: f.customer_name, execute: async (notes) => {
+      const updated = await api.patch<Followup>(`/followups/${f.id}`, { due_at: dueIso, notes });
+      patchLocal(f.id, { ...updated, bucket: newBucket });
+      toast.success(`Pushed ${days} day${days === 1 ? "" : "s"}`);
+      void refreshStatsQuiet();
+    } });
+  }, [patchLocal, refreshStatsQuiet]);
 
-  const assignFollowup = useCallback(async (f: Followup, userId: string) => {
+  const assignFollowup = useCallback((f: Followup, userId: string) => {
     const u = assignees.find((a) => a.id === userId);
-    patchLocal(f.id, { assigned_to: userId, assigned_to_name: u?.full_name });
-    try { await api.patch(`/followups/${f.id}`, { assigned_to: userId }); toast.success(`Assigned to ${u?.full_name || "—"}`); }
-    catch (e: any) { toast.error(e?.detail || "Could not assign"); }
+    setNoteAction({ title: "Assign follow-up", subtitle: f.customer_name, execute: async (notes) => {
+      const updated = await api.patch<Followup>(`/followups/${f.id}`, { assigned_to: userId, notes });
+      patchLocal(f.id, updated);
+      toast.success(`Assigned to ${u?.full_name || "—"}`);
+    } });
   }, [assignees, patchLocal]);
 
-  const dismissFollowup = useCallback(async (f: Followup) => {
-    patchLocal(f.id, { status: "dismissed", bucket: "completed" });
-    try { await api.patch(`/followups/${f.id}`, { status: "dismissed" }); toast.success("Dismissed"); refreshStatsQuiet(); }
-    catch (e: any) { toast.error(e?.detail || "Could not dismiss"); loadList(); }
-  }, [patchLocal, refreshStatsQuiet, loadList]);
+  const dismissFollowup = useCallback((f: Followup) => {
+    setNoteAction({ title: "Dismiss follow-up", subtitle: f.customer_name, confirmLabel: "Save and dismiss", execute: async (notes) => {
+      const updated = await api.patch<Followup>(`/followups/${f.id}`, { status: "dismissed", notes });
+      patchLocal(f.id, { ...updated, bucket: "completed" });
+      toast.success("Dismissed");
+      void refreshStatsQuiet();
+    } });
+  }, [patchLocal, refreshStatsQuiet]);
 
-  const deleteFollowup = useCallback(async () => {
+  const deleteFollowup = useCallback(() => {
     if (!deleteTarget) return;
-    setDeleting(true);
-    try {
-      await api.delete(`/followups/${deleteTarget.id}`);
-      setRawItems((prev) => prev.filter((item) => item.id !== deleteTarget.id));
-      if (selectedId === deleteTarget.id) clearSelectedDetail();
-      setDeleteTarget(null);
-      toast.success("Follow-up deleted");
-      refreshStatsQuiet();
-    } catch (e: any) { toast.error(e?.detail || "Could not delete follow-up"); }
-    finally { setDeleting(false); }
+    const target = deleteTarget;
+    setDeleteTarget(null);
+    setNoteAction({ title: "Delete follow-up", subtitle: target.customer_name, confirmLabel: "Save note and delete", execute: async (notes) => {
+      setDeleting(true);
+      try {
+        await api.delete(`/followups/${target.id}?notes=${encodeURIComponent(notes)}`);
+        setRawItems((prev) => prev.filter((item) => item.id !== target.id));
+        if (selectedId === target.id) clearSelectedDetail();
+        toast.success("Follow-up deleted");
+        void refreshStatsQuiet();
+      } finally { setDeleting(false); }
+    } });
   }, [clearSelectedDetail, deleteTarget, refreshStatsQuiet, selectedId]);
 
   const saveNote = useCallback(async (f: Followup, notes: string) => {
-    patchLocal(f.id, { notes });
-    try { await api.patch(`/followups/${f.id}`, { notes }); toast.success("Note saved"); setNoteFor(null); }
+    if (!notes.trim()) { toast.error("A follow-up note is required"); return; }
+    try { const updated = await api.patch<Followup>(`/followups/${f.id}`, { notes: notes.trim() }); patchLocal(f.id, updated); toast.success("Note saved"); setNoteFor(null); }
     catch (e: any) { toast.error(e?.detail || "Could not save note"); }
   }, [patchLocal]);
 
   const logCallOutcome = useCallback(async (f: Followup, outcome: string, notes?: string, nextFollowupAt?: string) => {
+    if (!notes?.trim()) { toast.error("A follow-up note is required"); return; }
     try {
       await api.post(`/followups/${f.id}/log-call`, {
         outcome,
@@ -786,6 +806,7 @@ export default function FollowupsScreen() {
     const failedIds = ids.filter((_, index) => results[index]?.status === "rejected");
     if (succeeded.size) {
       setRawItems((prev) => prev.map((f) => succeeded.has(f.id) ? { ...f, ...request.successPatch } : f));
+      setDetail((prev) => prev && succeeded.has(prev.followup.id) ? { ...prev, followup: { ...prev.followup, ...request.successPatch } } : prev);
       void refreshStatsQuiet();
       toast.success(`${request.label} ${succeeded.size} follow-up${succeeded.size === 1 ? "" : "s"}`);
     }
@@ -796,18 +817,27 @@ export default function FollowupsScreen() {
     }
   }, [refreshStatsQuiet, selectedIds]);
 
-  const bulkSnooze = useCallback(async (preset: "1h" | "tomorrow" | "next_week") => {
-    await runBulk({ label: "Snoozed", successPatch: { status: "snoozed", bucket: "snoozed" }, execute: (id) => api.post(`/followups/${id}/snooze`, { preset }) });
-  }, [runBulk]);
+  const bulkSnooze = useCallback((preset: "1h" | "tomorrow" | "next_week") => {
+    const ids = Array.from(selectedIds);
+    setNoteAction({ title: "Snooze selected follow-ups", subtitle: `${ids.length} selected`, execute: async (notes) => {
+      await runBulk({ label: "Snoozed", successPatch: { status: "snoozed", bucket: "snoozed", notes }, execute: (id) => api.post(`/followups/${id}/snooze`, { preset, notes }) }, ids);
+    } });
+  }, [runBulk, selectedIds]);
 
-  const bulkComplete = useCallback(async () => {
-    await runBulk({ label: "Completed", successPatch: { status: "done", bucket: "completed", completed_at: new Date().toISOString() }, execute: (id) => api.post(`/followups/${id}/complete`, {}) });
-  }, [runBulk]);
+  const bulkComplete = useCallback(() => {
+    const ids = Array.from(selectedIds);
+    setNoteAction({ title: "Complete selected follow-ups", subtitle: `${ids.length} selected`, confirmLabel: "Save and complete", execute: async (notes) => {
+      await runBulk({ label: "Completed", successPatch: { status: "done", bucket: "completed", completed_at: new Date().toISOString(), notes }, execute: (id) => api.post(`/followups/${id}/complete`, { notes }) }, ids);
+    } });
+  }, [runBulk, selectedIds]);
 
-  const bulkAssign = useCallback(async (userId: string) => {
+  const bulkAssign = useCallback((userId: string) => {
     const u = assignees.find((a) => a.id === userId);
-    await runBulk({ label: `Assigned to ${u?.full_name || "—"}`, successPatch: { assigned_to: userId, assigned_to_name: u?.full_name }, execute: (id) => api.patch(`/followups/${id}`, { assigned_to: userId }) });
-  }, [assignees, runBulk]);
+    const ids = Array.from(selectedIds);
+    setNoteAction({ title: "Assign selected follow-ups", subtitle: `${ids.length} selected`, execute: async (notes) => {
+      await runBulk({ label: `Assigned to ${u?.full_name || "—"}`, successPatch: { assigned_to: userId, assigned_to_name: u?.full_name, notes }, execute: (id) => api.patch(`/followups/${id}`, { assigned_to: userId, notes }) }, ids);
+    } });
+  }, [assignees, runBulk, selectedIds]);
 
   const retryFailedBulk = useCallback(() => {
     if (!bulkResult) return;
@@ -1197,6 +1227,7 @@ export default function FollowupsScreen() {
         defaultAssignee={staff?.id} onCreate={createFollowup}
       />
       <AutomationRulesSheet visible={rulesSheet} onClose={() => setRulesSheet(false)} rules={stats?.rules || []} />
+      <RequiredNoteSheet action={noteAction} onClose={() => setNoteAction(null)} />
       <NoteSheet visible={!!noteFor} f={noteFor} onClose={() => setNoteFor(null)} onSave={saveNote} />
       <CustomSnoozeSheet visible={!!customSnoozeFor} f={customSnoozeFor} onClose={() => setCustomSnoozeFor(null)} onSave={customSnooze} />
       <ConfirmDialog
@@ -1778,7 +1809,7 @@ function CallOutcomeSheet({ visible, f, initialOutcome, onClose, onSubmit }: {
   const [nextFollowupAt, setNextFollowupAt] = useState("");
   useEffect(() => { if (visible) { setOutcome(initialOutcome || null); setNotes(""); setNextFollowupAt(""); } }, [visible, initialOutcome]);
   if (!f) return null;
-  const notesRequired = outcome === "lost";
+  const notesRequired = true;
   const pending = outcome === "pending";
   const canSave = !!outcome && (!notesRequired || !!notes.trim()) && (!pending || !!nextFollowupAt.trim());
   return (
@@ -1816,7 +1847,7 @@ function CallOutcomeSheet({ visible, f, initialOutcome, onClose, onSubmit }: {
               style={styles.textInput} testID="pending-next-followup-at" />
           </FormField>
         ) : null}
-        <FormField label={notesRequired ? "Lost reason" : "Notes"} helper={notesRequired ? "Required — explain why this client was lost." : "Optional — visible on the customer timeline"}>
+        <FormField label={outcome === "lost" ? "Lost reason" : "Follow-up note"} helper="Required — explain the outcome before saving this change.">
           <TextInput value={notes} onChangeText={setNotes} placeholder="What did the customer say?" placeholderTextColor={colors.onSurfaceMuted}
             style={styles.textArea} multiline testID="outcome-notes" />
         </FormField>
@@ -1837,7 +1868,7 @@ function NoteSheet({ visible, f, onClose, onSave }: { visible: boolean; f: Follo
       footer={<>
         <Button label="Cancel" variant="secondary" onPress={onClose} size="md" />
         <View style={{ flex: 1 }} />
-        <Button label="Save Note" variant="primary" icon="check" onPress={() => onSave(f, notes)} size="md" />
+        <Button label="Save Note" variant="primary" icon="check" disabled={!notes.trim()} onPress={() => onSave(f, notes.trim())} size="md" />
       </>}
     >
       <View style={{ padding: spacing.xl }}>

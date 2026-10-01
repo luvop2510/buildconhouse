@@ -1,5 +1,6 @@
 """Scalable owner reads preserve scope, balances and the existing response contract."""
 import asyncio
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -52,6 +53,9 @@ def owner():
 
 
 def test_records_beyond_ten_thousand_remain_discoverable_with_stable_page_order(monkeypatch):
+    # Keep the preset window aligned with this fixture after the calendar advances.
+    resolve = routes.resolve
+    monkeypatch.setattr(routes, "resolve", lambda *args: resolve(*args, now=datetime(2026, 9, 20, tzinfo=timezone.utc)))
     docs = [{"id": f"q-{i:05}", "status": "ordered", "floor_id": "ground-floor",
              "ordered_at": "2026-09-05T00:00:00+00:00", "grand_total": 100, "items": ["large-unused-payload"]}
             for i in range(10003)]

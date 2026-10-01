@@ -169,7 +169,10 @@ function dateTime(iso?: string | null): string {
     });
   } catch { return "—"; }
 }
-function todayIso(): string { return new Date().toISOString().slice(0, 10); }
+function todayIso(): string {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
 
 const paymentTone = (s: "paid" | "partial" | "due"): "success" | "warning" | "danger" =>
   s === "paid" ? "success" : s === "partial" ? "warning" : "danger";
@@ -207,8 +210,11 @@ const HISTORY_SORTS: { value: string; label: string }[] = [
 export default function PaymentsScreen() {
   const { isDesktop, isTabletLandscape, isPhone, height } = useBp();
   const sideBySide = isDesktop || isTabletLandscape;
+  const compactCostForm = isPhone || isTabletLandscape;
   const { selectedFloorId } = useFloorAccess();
   const router = useRouter();
+  const activeFloorRef = useRef(selectedFloorId);
+  activeFloorRef.current = selectedFloorId;
 
   const [tab, setTab] = useState<TabKey>("collections");
 
@@ -221,6 +227,8 @@ export default function PaymentsScreen() {
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<OrderDetail | null>(null);
+  const selectedOrderRef = useRef(selectedId);
+  selectedOrderRef.current = selectedId;
   const [loadingList, setLoadingList] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -229,6 +237,12 @@ export default function PaymentsScreen() {
   const orderRequest = useRef(0);
   const detailRequest = useRef(0);
   const statsRequest = useRef(0);
+  const historyRequest = useRef(0);
+  const paymentSavingRef = useRef(false);
+  const extraSavingRef = useRef(false);
+  const paymentAttemptRef = useRef<{ signature: string; key: string } | null>(null);
+  const historyFilterRef = useRef("");
+  const extraAttemptRef = useRef<{ signature: string; key: string } | null>(null);
   const reducedMotion = useReducedMotion();
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [waLoading, setWaLoading] = useState(false);
@@ -264,7 +278,7 @@ export default function PaymentsScreen() {
   const HISTORY_PAGE_SIZE = 50;
 
   const loadStats = useCallback(async () => {
-    if (!selectedFloorId) return;
+    if (!selectedFloorId || activeFloorRef.current !== selectedFloorId) return;
     const request = ++statsRequest.current;
     setStatsError(false);
     try { const result = await api.get<Stats>("/payments/stats"); if (request === statsRequest.current) setStats(result); }
@@ -272,7 +286,7 @@ export default function PaymentsScreen() {
   }, [selectedFloorId]);
 
   const loadOrders = useCallback(async (query: string = q) => {
-    if (!selectedFloorId) return;
+    if (!selectedFloorId || activeFloorRef.current !== selectedFloorId) return;
     const request = ++orderRequest.current;
     setLoadingList(true);
     setListError(null);
@@ -290,6 +304,7 @@ export default function PaymentsScreen() {
       if (request !== orderRequest.current) return;
       setOrders(list);
       setSelectedId((current) => list.some((order) => order.id === current) ? current : (list.length ? list[0].id : null));
+      return list;
     } catch (e: any) {
       if (request === orderRequest.current) setListError(e?.detail || "Check your connection and try again.");
     } finally {
@@ -298,7 +313,7 @@ export default function PaymentsScreen() {
   }, [q, agingPeriod, customMinDays, customMaxDays, selectedFloorId]);
 
   const loadDetail = useCallback(async (id: string) => {
-    if (!selectedFloorId) return;
+    if (!selectedFloorId || activeFloorRef.current !== selectedFloorId) return;
     const request = ++detailRequest.current;
     setLoadingDetail(true);
     setDetail(null);
@@ -307,9 +322,9 @@ export default function PaymentsScreen() {
       const d = await api.get<OrderDetail>(`/payments/orders/${id}`);
       if (request !== detailRequest.current) return;
       setDetail(d);
-      setAmount(d.outstanding > 0 ? String(Math.round(d.outstanding)) : "");
-      setManualExtra(d.manual_extra_amount ? String(d.manual_extra_amount) : "");
-      setManualExtraName(d.manual_extra_name || "");
+      setAmount(d.outstanding > 0 ? d.outstanding.toFixed(2) : "");
+      setManualExtra("");
+      setManualExtraName("");
     } catch (e: any) {
       if (request === detailRequest.current) setDetailError(e?.detail || "Check your connection and try again.");
     } finally {
@@ -318,7 +333,8 @@ export default function PaymentsScreen() {
   }, [selectedFloorId]);
 
   useEffect(() => {
-    orderRequest.current += 1; detailRequest.current += 1;
+    orderRequest.current += 1; detailRequest.current += 1; statsRequest.current += 1; historyRequest.current += 1;
+    setShowRecord(false); setPaymentError(null); paymentAttemptRef.current = null;
     setListError(null); setDetailError(null);
     setStats(null); setOrders([]); setSelectedId(null); setDetail(null); setHistoryRows([]); setHistoryTotal(0);
     loadStats();
@@ -371,32 +387,58 @@ export default function PaymentsScreen() {
     }
   }, [isPhone]);
 
+  const refreshCollections = async (orderId: string) => {
+    // Refresh the queue first: a settled order can disappear and select the next
+    // customer. Never race that selection with a detail request for the old order.
+    const [, list] = await Promise.all([loadStats(), loadOrders(q)]);
+    if (activeFloorRef.current === selectedFloorId && selectedOrderRef.current === orderId && (!list || list.some((order) => order.id === orderId))) await loadDetail(orderId);
+  };
+
   const savePayment = async () => {
-    if (!detail || saving) return;
+    if (!detail || paymentSavingRef.current) return;
     setPaymentError(null);
-    const amt = Number((amount || "").toString().replace(/[^0-9.]/g, ""));
-    if (!Number.isFinite(amt) || amt <= 0) { setPaymentError("Enter an amount greater than zero."); return; }
+    const raw = amount.trim();
+    const amt = Number(raw);
+    if (!/^\d+(?:\.\d{1,2})?$/.test(raw) || !Number.isFinite(amt) || amt <= 0) {
+      setPaymentError("Enter an amount greater than zero with at most two decimal places."); return;
+    }
+    if (amt > detail.outstanding + 0.001) {
+      setPaymentError(`The amount cannot exceed the outstanding balance of ${money(detail.outstanding)}.`); return;
+    }
+    const receivedDate = payDate ? new Date(`${payDate}T12:00:00Z`) : null;
+    if (payDate && (!/^\d{4}-\d{2}-\d{2}$/.test(payDate) || !receivedDate || Number.isNaN(receivedDate.getTime()) || receivedDate.toISOString().slice(0, 10) !== payDate)) {
+      setPaymentError("Enter a valid date received."); return;
+    }
+    const orderId = detail.id;
+    const payload = {
+      quotation_id: orderId, amount: amt, mode,
+      reference: reference.trim() || null,
+      paid_at: receivedDate?.toISOString() || null,
+    };
+    const signature = JSON.stringify(payload);
+    // Keep the same key after a lost response so retrying cannot double collect.
+    if (paymentAttemptRef.current?.signature !== signature) {
+      paymentAttemptRef.current = { signature, key: `payment:${orderId}:${Date.now()}:${Math.random().toString(36).slice(2)}` };
+    }
+    paymentSavingRef.current = true;
     setSaving(true);
     try {
-      await api.post("/payments", {
-        quotation_id: detail.id, amount: amt, mode,
-        reference: reference || null,
-        paid_at: payDate ? new Date(payDate + "T12:00:00Z").toISOString() : null,
-      });
+      await api.post("/payments", { ...payload, idempotency_key: paymentAttemptRef.current.key }, { floorId: selectedFloorId });
+      paymentAttemptRef.current = null;
       toast.success("Payment recorded");
       setShowRecord(false);
       setReference("");
       setMode("cash");
-      await Promise.all([loadStats(), loadOrders(q), loadDetail(detail.id)]);
+      await refreshCollections(orderId);
     } catch (e: any) {
-      setPaymentError(e?.detail || "Payment could not be saved. Check the payment history before retrying.");
-    } finally { setSaving(false); }
+      setPaymentError(e?.detail || "Payment could not be saved. Retry the same payment to safely check whether it was recorded.");
+    } finally { paymentSavingRef.current = false; setSaving(false); }
   };
 
   const saveManualExtra = async () => {
-    if (!detail) return;
-    const parsed = Number((manualExtra || "").replace(/[^0-9.]/g, ""));
-    if (!Number.isFinite(parsed) || parsed < 0) {
+    if (!detail || extraSavingRef.current) return;
+    const parsed = Number(manualExtra.trim());
+    if (!/^\d+(?:\.\d{1,2})?$/.test(manualExtra.trim()) || !Number.isFinite(parsed) || parsed <= 0) {
       toast.error("Enter a valid extra cost");
       return;
     }
@@ -405,29 +447,37 @@ export default function PaymentsScreen() {
       toast.error("Name the additional cost");
       return;
     }
+    const payload = { amount: parsed, name };
+    const signature = JSON.stringify({ orderId: detail.id, ...payload });
+    if (extraAttemptRef.current?.signature !== signature) {
+      extraAttemptRef.current = { signature, key: `cost:${detail.id}:${Date.now()}:${Math.random().toString(36).slice(2)}` };
+    }
+    extraSavingRef.current = true;
     setSavingManualExtra(true);
     try {
       const updated = await api.patch<{ quotation_total: number; manual_extra_amount: number; manual_extra_name?: string | null; additional_cost?: NonNullable<OrderDetail["additional_costs"]>[number]; ledger_entry?: PaymentEntry; grand_total: number }>(
-        `/payments/orders/${detail.id}/manual-extra`, { amount: parsed || 0, name: name || null },
+        `/payments/orders/${detail.id}/manual-extra`, { ...payload, idempotency_key: extraAttemptRef.current.key }, { floorId: selectedFloorId },
       );
-      setDetail((current) => current ? {
+      extraAttemptRef.current = null;
+      setDetail((current) => current?.id === detail.id ? {
         ...current,
         ...updated,
         outstanding: Math.max(0, updated.grand_total - current.paid),
         percent_collected: updated.grand_total > 0
           ? Math.min(100, Math.round(current.paid / updated.grand_total * 100)) : 0,
-        additional_costs: updated.additional_cost ? [...(current.additional_costs || []), updated.additional_cost] : current.additional_costs,
-        payments: updated.ledger_entry ? [updated.ledger_entry, ...current.payments] : current.payments,
+        additional_costs: updated.additional_cost ? [...(current.additional_costs || []).filter((cost) => cost.id !== updated.additional_cost!.id), updated.additional_cost] : current.additional_costs,
+        payments: updated.ledger_entry ? [updated.ledger_entry, ...current.payments.filter((payment) => payment.id !== updated.ledger_entry!.id)] : current.payments,
         payment_status: current.paid >= updated.grand_total && updated.grand_total > 0
           ? "paid" : current.paid > 0 ? "partial" : "due",
       } : current);
       setManualExtra("");
       setManualExtraName("");
       toast.success("Additional cost recorded");
-      await Promise.all([loadStats(), loadOrders(q), loadDetail(detail.id)]);
+      await refreshCollections(detail.id);
     } catch (e: any) {
       toast.error(e?.detail || "Could not update extra cost");
     } finally {
+      extraSavingRef.current = false;
       setSavingManualExtra(false);
     }
   };
@@ -468,7 +518,8 @@ export default function PaymentsScreen() {
   }, [historyQ, historyUnit, historyMode, historyDateFrom, historyDateTo, historySort]);
 
   const loadHistory = useCallback(async (page: number) => {
-    if (!selectedFloorId) return;
+    if (!selectedFloorId || activeFloorRef.current !== selectedFloorId) return;
+    const request = ++historyRequest.current;
     setHistoryLoading(true);
     setHistoryError(null);
     try {
@@ -476,36 +527,37 @@ export default function PaymentsScreen() {
       qs.set("skip", String(page * HISTORY_PAGE_SIZE));
       qs.set("limit", String(HISTORY_PAGE_SIZE));
       const res = await api.get<{ total: number; items: HistoryRow[] }>(`/payments/history?${qs.toString()}`);
+      if (request !== historyRequest.current) return;
       // A partial or legacy response must still leave the operator with a
       // clear, recoverable state instead of a blank ledger surface.
       setHistoryRows(Array.isArray(res?.items) ? res.items : []);
       setHistoryTotal(Number.isFinite(res?.total) ? res.total : 0);
     } catch (e: any) {
+      if (request !== historyRequest.current) return;
       const message = e?.detail || "Could not load payment history";
       setHistoryRows([]);
       setHistoryTotal(0);
       setHistoryError(message);
       toast.error(message);
     } finally {
-      setHistoryLoading(false);
+      if (request === historyRequest.current) setHistoryLoading(false);
     }
   }, [historyParams, selectedFloorId]);
 
-  // Reset to page 0 whenever a filter changes, then load exactly once.
-  // Previously switching to the ledger triggered both of these effects at
-  // once, making a slow request look like an empty (or stuck) list on mobile.
+  // A single effect handles every page, including Previous back to page one.
+  // Invalidate old reads immediately when filters, workspace or tab change.
   useEffect(() => {
+    historyRequest.current += 1;
     if (tab !== "history") return;
-    setHistoryPage(0);
-    const t = setTimeout(() => loadHistory(0), historyQ ? 260 : 0);
-    return () => clearTimeout(t);
-  }, [tab, historyQ, historyUnit, historyMode, historyDateFrom, historyDateTo, historySort, loadHistory]);
-
-  useEffect(() => {
-    // Page zero is loaded by the filter/tab effect above. Pagination is the
-    // only source of non-zero pages, so it gets one dedicated request.
-    if (tab === "history" && historyPage > 0) void loadHistory(historyPage);
-  }, [tab, historyPage, loadHistory]);
+    const filters = `${selectedFloorId}:${historyParams().toString()}`;
+    if (historyFilterRef.current !== filters && historyPage !== 0) {
+      setHistoryPage(0);
+      return;
+    }
+    historyFilterRef.current = filters;
+    const timer = setTimeout(() => void loadHistory(historyPage), historyQ ? 260 : 0);
+    return () => { clearTimeout(timer); historyRequest.current += 1; };
+  }, [tab, historyPage, historyQ, historyParams, selectedFloorId, loadHistory]);
 
   const exportHistory = async (fmt: "csv" | "xlsx") => {
     try {
@@ -560,7 +612,7 @@ export default function PaymentsScreen() {
       </View>
 
       {tab === "collections" ? (
-      <ScrollView ref={collectionsScrollRef} contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, gap: spacing.lg, paddingBottom: isPhone ? 132 : spacing.xxxl }}>
+      <ScrollView testID="payments-collections-scroll" ref={collectionsScrollRef} style={{ flex: 1, minHeight: 0 }} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, gap: spacing.lg, paddingBottom: isPhone ? 132 : spacing.xxxl }}>
         <Disclosure title="Collections summary" summary="Active order target, collections and purchase spending" defaultOpen={!isPhone}>
           {statsError ? <ErrorState title="Summary unavailable" onRetry={() => void loadStats()} /> : null}
         {/* Stats */}
@@ -663,10 +715,11 @@ export default function PaymentsScreen() {
 
           {/* Right — detail */}
           {(!isPhone || (!showMobileQueue && !!selectedId)) && <View
+            testID="payments-order-detail"
             onLayout={(event) => { detailTopRef.current = event.nativeEvent.layout.y; }}
             style={[
               { flex: 1, gap: spacing.lg, minWidth: 0, width: sideBySide ? undefined : "100%" },
-              sideBySide && Platform.OS === "web" && ({ position: "sticky", top: spacing.md, alignSelf: "flex-start", maxHeight: Math.max(360, height - spacing.xl * 2), overflowY: "auto" } as any),
+              sideBySide && Platform.OS === "web" && ({ position: "sticky", top: spacing.md, alignSelf: "flex-start", maxHeight: Math.max(280, height - 220), overflowY: "auto", overscrollBehavior: "contain" } as any),
             ]}
           >
             {detailError ? <ErrorState title="Could not load order" subtitle={detailError} onRetry={() => selectedId && void loadDetail(selectedId)} /> : loadingDetail || !detail ? (
@@ -717,7 +770,7 @@ export default function PaymentsScreen() {
                     variant="primary"
                     size="lg"
                     fullWidth
-                    onPress={() => setShowRecord(true)}
+                    onPress={() => { setPaymentError(null); setPayDate(todayIso()); setShowRecord(true); }}
                   />
                 ) : (detail.refund_due || 0) > 0 ? null : (
                   <UIAlert tone="success" title="Order fully paid"
@@ -760,7 +813,7 @@ export default function PaymentsScreen() {
 
                   <Panel title="Add an additional cost" overline="PAYMENT ADJUSTMENT" padding={spacing.lg}>
                     <Text style={[type.body, { color: colors.onSurfaceMuted, marginBottom: spacing.md }]}>Each cost is recorded separately with its timestamp. The original quotation price remains unchanged.</Text>
-                    <View style={{ flexDirection: isPhone ? "column" : "row", gap: spacing.sm, alignItems: isPhone ? "stretch" : "flex-end" }}>
+                    <View testID="payment-cost-fields" style={{ flexDirection: compactCostForm ? "column" : "row", gap: spacing.sm, alignItems: compactCostForm ? "stretch" : "flex-end" }}>
                       <View style={{ flex: 1 }}>
                         <Text style={[type.caption, { marginBottom: 6 }]}>Cost name</Text>
                         <TextInput
@@ -769,7 +822,7 @@ export default function PaymentsScreen() {
                           onChangeText={setManualExtraName}
                           placeholder="e.g. Labour cost"
                           placeholderTextColor={colors.onSurfaceMuted}
-                          style={styles.dateInput}
+                          style={[styles.dateInput, { minWidth: 0, width: "100%" }]}
                         />
                       </View>
                       <View style={{ flex: 1 }}>
@@ -781,7 +834,7 @@ export default function PaymentsScreen() {
                           keyboardType="decimal-pad"
                           placeholder="0"
                           placeholderTextColor={colors.onSurfaceMuted}
-                          style={styles.dateInput}
+                          style={[styles.dateInput, { minWidth: 0, width: "100%" }]}
                         />
                       </View>
                       <Button label="Add cost" icon="plus" variant="secondary" loading={savingManualExtra}
@@ -1024,7 +1077,7 @@ function PaymentHistoryTab(props: {
   ];
 
   return (
-    <ScrollView contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, gap: spacing.lg, paddingBottom: isPhone ? 132 : spacing.xxxl }}>
+    <ScrollView testID="payment-history-scroll" style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, gap: spacing.lg, paddingBottom: isPhone ? 132 : spacing.xxxl }}>
       <Card padding={spacing.md} style={{ gap: spacing.md }}>
         <SearchField
           testID="history-search"
@@ -1159,28 +1212,31 @@ function RecordPaymentSheet(props: {
       visible={visible}
       onClose={onClose}
       variant="drawer"
+      scroll={false}
+      dismissable={!saving}
       title="Record Payment"
       subtitle={`${detail.customer.company || detail.customer_name} · ${detail.number} · ${money(detail.outstanding)} outstanding`}
       testID="record-payment-sheet"
       footer={
         <>
-          <Button label="Cancel" variant="secondary" onPress={onClose} size="md" />
+          <Button label="Cancel" variant="secondary" onPress={onClose} disabled={saving} size="md" />
           <View style={{ flex: 1 }} />
           <Button label="Save Payment" variant="primary" icon="check"
             onPress={onSave} loading={saving} size="md" testID="save-payment" />
         </>
       }
     >
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={{ padding: spacing.xl, gap: spacing.lg }}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1, minHeight: 0 }}>
+        <ScrollView testID="record-payment-scroll" keyboardShouldPersistTaps="handled" style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ padding: spacing.xl, gap: spacing.lg }}>
           {error ? <UIAlert tone="error" title="Payment not saved" description={error} /> : null}
           <FormField label="Amount Received (₹)" required>
             <TextInput
               accessibilityLabel="Amount received in rupees"
               testID="pay-amount"
               value={amount}
-              onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ""))}
-              keyboardType="numeric"
+              editable={!saving}
+              onChangeText={setAmount}
+              keyboardType="decimal-pad"
               placeholder="e.g. 1090000"
               placeholderTextColor={colors.onSurfaceMuted}
               style={styles.numericInput}
@@ -1191,7 +1247,7 @@ function RecordPaymentSheet(props: {
           <FormField label="Date Received">
             {Platform.OS === "web" ? (
               // @ts-ignore native HTML date input
-              <input aria-label="Date received" type="date" value={payDate}
+              <input aria-label="Date received" type="date" disabled={saving} value={payDate}
                 onChange={(e: any) => setPayDate(e.target.value)}
                 style={{
                   border: `1px solid ${colors.border}`, borderRadius: radius.md,
@@ -1204,6 +1260,7 @@ function RecordPaymentSheet(props: {
               <TextInput
                 testID="pay-date"
                 value={payDate}
+                editable={!saving}
                 onChangeText={setPayDate}
                 placeholder="YYYY-MM-DD"
                 placeholderTextColor={colors.onSurfaceMuted}
@@ -1220,6 +1277,7 @@ function RecordPaymentSheet(props: {
                   <Pressable
                     key={m}
                     testID={`pay-mode-${m}`}
+                    disabled={saving}
                     onPress={() => setMode(m)}
                     style={({ pressed, hovered }: any) => ({
                       paddingHorizontal: spacing.md,
@@ -1252,6 +1310,7 @@ function RecordPaymentSheet(props: {
             <TextInput
               testID="pay-reference"
               value={reference}
+              editable={!saving}
               onChangeText={setReference}
               placeholder="Optional…"
               placeholderTextColor={colors.onSurfaceMuted}

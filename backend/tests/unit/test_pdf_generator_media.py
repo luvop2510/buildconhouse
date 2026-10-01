@@ -124,7 +124,7 @@ def test_numeric_dimension_text_is_omitted_from_description():
     text = " ".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf)).pages)
     assert "600 x 400 mm" not in text
     assert "720 x 360 mm" not in text
-    assert "DIMENSIONS" in text
+    assert "DIMENSIONS" not in text
 
 
 def test_dimension_diagrams_and_seat_cover_stay_on_item_page(monkeypatch):
@@ -172,7 +172,56 @@ def test_seat_cover_renders_without_dimension_column_enabled(monkeypatch):
         {"name": "Seat"},
     )
     assert len(PdfReader(BytesIO(pdf)).pages) == 2
+    assert "DIMENSIONS" not in PdfReader(BytesIO(pdf)).pages[1].extract_text()
     assert captured == [item["image"], item["seat_cover_image_urls"][0]]
+
+
+@pytest.mark.parametrize("include_dimensions,has_diagram,excluded,expected", [
+    (False, True, False, False),
+    (True, False, False, False),
+    (True, True, True, False),
+    (True, True, False, True),
+])
+@pytest.mark.parametrize("discounted", [False, True])
+def test_dimension_column_requires_enabled_and_included_diagrams(
+    monkeypatch, include_dimensions, has_diagram, excluded, expected, discounted,
+):
+    monkeypatch.setattr(pdf_generator, "_remote_image_bytes", lambda _url: _png_bytes(180, 100))
+    item = {
+        "sku": "DIM-COLUMN", "name": "Basin", "room": "Bath", "qty": 1,
+        "unit_price": 1000, "discount_pct": 10 if discounted else 0,
+        "exclude_dimension": excluded,
+        "dimension_image_urls": ["https://example.test/diagram.png"] if has_diagram else [],
+    }
+    pdf = pdf_generator.build_quotation_pdf(
+        {"items": [item], "include_dimensions": include_dimensions, "subtotal": 1000, "grand_total": 900 if discounted else 1000},
+        {"name": "Dimensions"},
+    )
+    pages = PdfReader(BytesIO(pdf)).pages
+    assert len(pages) == 2
+    text = pages[1].extract_text() or ""
+    assert ("DIMENSIONS" in text) == expected
+    assert "DIM-COLUMN" in text
+    assert ("900.00" if discounted else "1,000.00") in text
+
+
+@pytest.mark.parametrize("include_dimensions", [False, True])
+def test_discounted_pdf_keeps_currency_digits_and_mrp_headers_on_single_lines(monkeypatch, include_dimensions):
+    monkeypatch.setattr(pdf_generator, "_remote_image_bytes", lambda _url: _png_bytes(180, 100))
+    pdf = pdf_generator.build_quotation_pdf(
+        {"items": [{"sku": "LARGE-MRP", "name": "Premium Fixture", "room": "Bath", "qty": 2,
+                    "unit_price": 12345678.9, "mrp": 12345678.9, "discount_pct": 10,
+                    "dimension_image_urls": ["https://example.test/diagram.png"]}],
+         "include_dimensions": include_dimensions, "subtotal": 24691357.8, "grand_total": 22222222.02},
+        {"name": "Single Line"},
+    )
+    text = PdfReader(BytesIO(pdf)).pages[1].extract_text() or ""
+    lines = [line.strip() for line in text.splitlines()]
+    assert "MRP" in lines
+    assert "MRP TOTAL" in lines
+    prefix = "₹" if pdf_generator.RUPEE_FONT else "Rs."
+    for amount in ("1,23,45,678.90", "2,46,91,357.80", "1,11,11,111.01", "2,22,22,222.02"):
+        assert f"{prefix} {amount}" in lines
 
 
 def test_main_seat_photo_is_not_duplicated_and_multiple_diagrams_fit(monkeypatch):

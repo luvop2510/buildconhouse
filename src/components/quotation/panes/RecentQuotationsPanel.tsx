@@ -45,7 +45,7 @@ export function RecentQuotationsPanel() {
               </Text>
             </View>
             <View style={{ alignItems: "flex-end", gap: 2 }}>
-              <Text style={styles.amt}>{money(q.grand_total || 0)}</Text>
+              <Text style={styles.amt} numberOfLines={1}>{money(q.grand_total || 0)}</Text>
               <Text style={styles.status}>{statusTone[q.status]?.label || q.status}</Text>
               {canManageDestructiveData(staff?.role) ? (
                 <Pressable

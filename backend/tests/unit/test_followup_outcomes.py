@@ -62,7 +62,7 @@ def test_pending_outcome_creates_followup_on_requested_date(monkeypatch):
     store = _install(monkeypatch)
     due = datetime.now(timezone.utc) + timedelta(days=7)
     asyncio.run(followups.log_call(
-        "followup-1", FollowupCallOutcomePayload(outcome="pending", next_followup_at=due), _user(),
+        "followup-1", FollowupCallOutcomePayload(outcome="pending", notes="Customer requested a call next week", next_followup_at=due), _user(),
     ))
     assert store.updated["completed_outcome"] == "pending"
     assert store.inserted[0]["due_at"] == due.isoformat()

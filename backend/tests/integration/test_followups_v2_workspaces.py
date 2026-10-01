@@ -178,7 +178,7 @@ class TestContactTemplates:
         sel, _ = sel_and_quo_cards
         if not sel:
             pytest.skip("No open selection_waiting card available to test")
-        r = session.post(f"{API}/followups/{sel['id']}/contact", json={"channel": "whatsapp"}, headers=_h(owner_token), timeout=15)
+        r = session.post(f"{API}/followups/{sel['id']}/contact", json={"channel": "whatsapp", "notes": "Sending the customer a follow-up message"}, headers=_h(owner_token), timeout=15)
         assert r.status_code == 200, r.text
         name = (sel["customer_name"] or "there").split()[0]
         expected = (
@@ -191,7 +191,7 @@ class TestContactTemplates:
         _, quo = sel_and_quo_cards
         if not quo:
             pytest.skip("No open quotation_tiles_waiting card available to test")
-        r = session.post(f"{API}/followups/{quo['id']}/contact", json={"channel": "whatsapp"}, headers=_h(owner_token), timeout=15)
+        r = session.post(f"{API}/followups/{quo['id']}/contact", json={"channel": "whatsapp", "notes": "Sending the customer a follow-up message"}, headers=_h(owner_token), timeout=15)
         assert r.status_code == 200, r.text
         msg = r.json()["message"]
         assert quo["quotation_number"] in msg
