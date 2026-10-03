@@ -28,6 +28,9 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { ProductImage } from "@/src/components/ProductImage";
 import { productImageList } from "@/src/components/quotation/helpers/media";
 import { Button, Card, IconButton, PriceTag } from "@/src/components/ui";
+import { SupplierSourceDetails } from "@/src/components/catalog/SupplierSourceDetails";
+import type { CatalogEntry } from "@/src/services/catalogService";
+import { catalogProductDetailPath } from "@/src/components/quotation/helpers/catalogSource";
 import { ProductEditor } from "@/src/components/catalog/ProductEditor";
 import { toast } from "@/src/components/Toast";
 import { api } from "@/src/api/client";
@@ -42,7 +45,8 @@ type Product = {
   id: string; name: string; sku: string; description?: string | null;
   finish?: string | null; material?: string | null; dimensions?: string | null; warranty?: string | null;
   size?: string | null;
-  price: number; mrp: number; stock: number; images: string[]; tags: string[];
+  price: number; mrp: number; stock: number; images: string[]; tags: string[]; price_unknown?: boolean;
+  catalog_entries?: CatalogEntry[]; listing_id?: string | null;
   brand_id: string; category_id: string; floor_id?: string | null;
   subcategory?: string | null; series?: string | null; family_key?: string | null;
   family_name?: string | null; variant_label?: string | null;
@@ -107,7 +111,7 @@ function associatedConsoleInfo(product: Product): string | null {
 }
 
 export default function ProductDetail() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, catalogEntryId } = useLocalSearchParams<{ id: string; catalogEntryId?: string }>();
   const router = useRouter();
   const { isPhone, isWide, pad } = useBreakpoint();
   const insets = useSafeAreaInsets();
@@ -152,7 +156,7 @@ export default function ProductDetail() {
     try {
       await Share.share({
         title: p.name,
-        message: `${p.name}${p.sku ? ` (${p.sku})` : ""}${brandName ? ` · ${brandName}` : ""} · ${money(p.price)}`,
+        message: `${p.name}${p.sku ? ` (${p.sku})` : ""}${brandName ? ` · ${brandName}` : ""} · ${p.price_unknown ? "Price unavailable" : money(p.price)}`,
       });
     } catch {
       // user dismissed the native share sheet — nothing to do
@@ -273,7 +277,7 @@ export default function ProductDetail() {
     const requestId = ++loadRequestRef.current;
     setLoadError(false);
     try {
-      const prod = await api.get<Product>(`/products/${productId}`);
+      const prod = await api.get<Product>(catalogProductDetailPath(productId, catalogEntryId));
       if (requestId !== loadRequestRef.current) return;
       setP(prod);
       setImageIdx(0);
@@ -283,7 +287,7 @@ export default function ProductDetail() {
       // These secondary panels must not delay the selected variant's hero.
       // Fetch independently, then apply only if this is still the selection.
       const siblingsRequest = prod.family_key
-        ? api.get<{ items: Product[] }>(`/products?family_key=${encodeURIComponent(prod.family_key)}&limit=20`)
+        ? api.get<{ items: Product[] }>(`/products?family_key=${encodeURIComponent(prod.family_key)}&brand_id=${encodeURIComponent(prod.brand_id)}&category_id=${encodeURIComponent(prod.category_id)}&limit=100&sort=source`)
         : Promise.resolve<{ items: Product[] }>({ items: [] });
       const [siblingsResult, alternatesResult, brandsResult] = await Promise.allSettled([
         siblingsRequest,
@@ -291,7 +295,12 @@ export default function ProductDetail() {
         api.get<Brand[]>("/brands"),
       ]);
       if (requestId !== loadRequestRef.current) return;
-      setSiblings(siblingsResult.status === "fulfilled" ? siblingsResult.value.items.filter((x) => x.id !== prod.id) : []);
+      const siblingIds = new Set([prod.id]);
+      setSiblings(siblingsResult.status === "fulfilled" ? siblingsResult.value.items.filter((x) => {
+        if (siblingIds.has(x.id)) return false;
+        siblingIds.add(x.id);
+        return true;
+      }) : []);
       setAlternates(alternatesResult.status === "fulfilled" ? alternatesResult.value.items || [] : []);
       if (brandsResult.status === "fulfilled") {
         const brand = brandsResult.value.find((x) => x.id === prod.brand_id);
@@ -322,7 +331,7 @@ export default function ProductDetail() {
     // loadProduct intentionally owns its request dependencies; re-running
     // this effect is driven only by the route product id.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, catalogEntryId]);
 
   const selectVariant = (variant: Product) => {
     if (variant.id === p?.id) return;
@@ -336,7 +345,7 @@ export default function ProductDetail() {
     setAlternates([]);
     setLoadError(false);
     setIsVariantSwitching(true);
-    router.replace(`/(admin)/catalog/${variant.id}` as any);
+    router.replace(`/(admin)/catalog/${variant.id}${variant.listing_id ? `?catalogEntryId=${encodeURIComponent(variant.listing_id)}` : ""}` as any);
   };
 
   const ownImageUrls = (item: Pick<Product, "gallery" | "hero_image_url" | "images">): string[] => {
@@ -377,14 +386,14 @@ export default function ProductDetail() {
     );
   }
 
-  const savedPct = p.mrp > p.price ? Math.round((1 - p.price / p.mrp) * 100) : 0;
+  const savedPct = !p.price_unknown && p.mrp > p.price ? Math.round((1 - p.price / p.mrp) * 100) : 0;
   const showPoorHint = p.image_quality === "poor";
   const bottomBarHeight = 72;
-  const quotationAction = p.floor_id === "ground-floor"
+  const quotationAction = p.price_unknown ? null : p.floor_id === "ground-floor"
     ? { label: "Add to tile quotation", route: `/(admin)/tiles/quotation?productId=${p.id}` }
     : p.floor_id === "second-floor"
       ? null
-      : { label: "Add to quotation", route: `/(admin)/quotations/new?productId=${p.id}` };
+      : { label: "Add to quotation", route: `/(admin)/quotations/new?productId=${p.id}${p.listing_id ? `&catalogEntryId=${encodeURIComponent(p.listing_id)}` : ""}` };
   const openQuotation = () => {
     if (quotationAction) router.push(quotationAction.route as any);
   };
@@ -528,7 +537,7 @@ export default function ProductDetail() {
 
       {/* Price */}
       <View style={{ flexDirection: "row", alignItems: "baseline", gap: 12 }}>
-        <PriceTag price={p.price} mrp={p.mrp} size="xl" />
+        {p.price_unknown ? <Text style={type.bodyMuted}>Price unavailable</Text> : <PriceTag price={p.price} mrp={p.mrp} size="xl" />}
         {savedPct > 0 ? (
           <View style={styles.savePill}>
             <Text style={styles.savePillText}>SAVE {savedPct}%</Text>
@@ -683,6 +692,7 @@ export default function ProductDetail() {
       {p.description ? (
         <Text style={[type.body, { color: colors.onSurfaceSecondary, lineHeight: 22 }]}>{p.description}</Text>
       ) : null}
+      <SupplierSourceDetails entries={p.catalog_entries} />
 
       {/* Spec pairs */}
       <View style={{ gap: spacing.sm }}>

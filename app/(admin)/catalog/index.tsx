@@ -19,7 +19,7 @@ import { ProductImage } from "@/src/components/ProductImage";
 import { productImageList } from "@/src/components/quotation/helpers/media";
 import { BottomSheet } from "@/src/components/BottomSheet";
 import { Chip, EmptyState, IconButton, PriceTag, ScreenTitle, SegmentedControl, Skeleton, Button } from "@/src/components/ui";
-import { catalogReferences, fetchCatalogPage } from "@/src/services/catalogService";
+import { catalogReferences, fetchCatalogPage, mergeCatalogPage, type CatalogEntry } from "@/src/services/catalogService";
 import { useBreakpoint } from "@/src/hooks/use-breakpoint";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { colors, money, PRODUCT_IMAGE_ASPECT_RATIO, radius, spacing, type } from "@/src/theme/tokens";
@@ -27,10 +27,11 @@ import { supplierLogoFor } from "@/src/design/BrandLogo";
 import { isNearScrollEnd } from "@/src/utils/scrollEnd";
 import { Image as ExpoImage } from "expo-image";
 
-type Brand = { id: string; name: string; slug?: string };
+type Brand = { id: string; name: string; slug?: string; catalog_authoritative?: boolean };
 type Category = { id: string; name: string; slug?: string };
 type Family = {
-  family_key: string; family_name: string; brand_id: string; category_id: string;
+  family_key: string | null; family_name: string; brand_id: string; category_id: string;
+  listing_id?: string | null; sample_product_id: string; catalog_entry?: CatalogEntry | null; price_unknown?: boolean;
   subcategory?: string | null; series?: string | null;
   min_price: number; max_price: number; product_count: number;
   sample_image?: string | null; sample_image_quality?: string | null;
@@ -43,6 +44,7 @@ type Family = {
 };
 type Product = {
   id: string; name: string; sku: string; brand_id: string; category_id: string;
+  listing_id?: string | null; catalog_entry?: CatalogEntry | null; price_unknown?: boolean;
   subcategory?: string | null; series?: string | null;
   price: number; mrp: number; finish?: string | null; images: string[]; stock: number;
   image_quality?: string | null;
@@ -266,9 +268,7 @@ export default function Catalog() {
         }, currentLength, PAGE_SIZE, { floorId: selectedFloorId || undefined });
         if (requestId !== requestIdRef.current) return;
         const incoming = res.items || [];
-        const known = new Set(currentFamilies.map((item) => item.family_key));
-        const appended = incoming.filter((item) => !known.has(item.family_key));
-        const merged = [...currentFamilies, ...appended];
+        const merged = mergeCatalogPage(currentFamilies, incoming);
         setFamilies(merged); setTotal(res.total); setHasMore(merged.length < res.total && incoming.length > 0);
       } else {
         const currentProducts = products || [];
@@ -277,9 +277,7 @@ export default function Catalog() {
         }, currentLength, PAGE_SIZE, { floorId: selectedFloorId || undefined });
         if (requestId !== requestIdRef.current) return;
         const incoming = res.items || [];
-        const known = new Set(currentProducts.map((item) => item.id));
-        const appended = incoming.filter((item) => !known.has(item.id));
-        const merged = [...currentProducts, ...appended];
+        const merged = mergeCatalogPage(currentProducts, incoming);
         setProducts(merged); setTotal(res.total); setHasMore(merged.length < res.total && incoming.length > 0);
       }
     } catch {
@@ -332,13 +330,13 @@ export default function Catalog() {
         <FamilyCard
           family={item as Family}
           brandName={brandById[(item as Family).brand_id] || ""}
-          onPress={() => router.push(`/(admin)/catalog/${(item as Family).variants[0]?.id}` as any)}
+          onPress={() => router.push(`/(admin)/catalog/${(item as Family).sample_product_id || (item as Family).variants[0]?.id}${item.listing_id ? `?catalogEntryId=${encodeURIComponent(item.listing_id)}` : ""}` as any)}
         />
       ) : (
         <ProductCard
           product={item as Product}
           brandName={brandById[(item as Product).brand_id] || ""}
-          onPress={() => router.push(`/(admin)/catalog/${(item as Product).id}` as any)}
+          onPress={() => router.push(`/(admin)/catalog/${(item as Product).id}${item.listing_id ? `?catalogEntryId=${encodeURIComponent(item.listing_id)}` : ""}` as any)}
         />
       )}
     </View>
@@ -469,7 +467,7 @@ export default function Catalog() {
         key={`catalog-${mode}-${productCols}`}
         data={catalogItems}
         numColumns={productCols}
-        keyExtractor={(item) => mode === "families" ? (item as Family).family_key : (item as Product).id}
+        keyExtractor={(item) => item.listing_id || (mode === "families" ? ((item as Family).family_key || (item as Family).sample_product_id) : (item as Product).id)}
         renderItem={renderCatalogItem}
         style={{ flex: 1, minHeight: 0 }}
         ListHeaderComponent={catalogHeader}
@@ -630,7 +628,7 @@ function FamilyCard({ family: f, brandName, onPress }: { family: Family; brandNa
   const isTile = f.floor_id === "ground-floor";
   return (
     <Pressable
-      testID={`family-${f.family_key}`}
+      testID={`family-${f.listing_id || f.family_key || f.sample_product_id}`}
       onPress={onPress}
       style={({ pressed }) => [styles.card, { opacity: pressed ? 0.9 : 1 }]}
     >
@@ -653,14 +651,14 @@ function FamilyCard({ family: f, brandName, onPress }: { family: Family; brandNa
       </View>
       <View style={{ padding: 12, gap: 4 }}>
         <View style={styles.metaSlot}>
-          {(f.series || f.subcategory) ? (
-            <Text style={styles.overlineSubtle} numberOfLines={1}>{f.series || f.subcategory}</Text>
+          {(f.catalog_entry || f.series || f.subcategory) ? (
+            <Text style={styles.overlineSubtle} numberOfLines={1}>{f.catalog_entry ? [f.catalog_entry.serial_number, f.catalog_entry.category_name, f.subcategory].filter((v) => v !== null && v !== undefined && v !== "").join(" · ") : f.series || f.subcategory}</Text>
           ) : null}
         </View>
         <Text numberOfLines={2} style={styles.title}>{f.family_name}</Text>
-        {isTile && representative ? (
+        {(isTile || f.catalog_entry) && representative ? (
           <Text style={type.caption} numberOfLines={2}>
-            {[representative.sku, representative.size, representative.finish].filter(Boolean).join(" · ")}
+            {[f.catalog_entry?.source_sku || representative.sku, representative.size, representative.finish].filter(Boolean).join(" · ")}
           </Text>
         ) : null}
 
@@ -685,7 +683,7 @@ function FamilyCard({ family: f, brandName, onPress }: { family: Family; brandNa
         </View>
 
         <View style={{ marginTop: 6 }}>
-          {f.max_price > f.min_price ? (
+          {f.price_unknown ? <Text style={type.bodyMuted}>Price unavailable</Text> : f.max_price > f.min_price ? (
             <Text style={styles.priceRange} numberOfLines={1}>
               {money(f.min_price)}
               <Text style={styles.priceRangeMuted}> – {money(f.max_price)}</Text>
@@ -703,7 +701,7 @@ function FamilyCard({ family: f, brandName, onPress }: { family: Family; brandNa
 function ProductCard({ product: p, brandName, onPress }: { product: Product; brandName: string; onPress: () => void }) {
   return (
     <Pressable
-      testID={`product-${p.id}`}
+      testID={`product-${p.listing_id || p.id}`}
       onPress={onPress}
       style={({ pressed }) => [styles.card, { opacity: pressed ? 0.9 : 1 }]}
     >
@@ -718,7 +716,7 @@ function ProductCard({ product: p, brandName, onPress }: { product: Product; bra
         <View style={styles.brandOverlay}>
           <Text style={styles.brandOverlayText}>{brandName.toUpperCase()}</Text>
         </View>
-        {p.mrp > p.price ? (
+        {!p.price_unknown && p.mrp > p.price ? (
           <View style={styles.discountPill}>
             <Text style={styles.discountPillText}>−{Math.round((1 - p.price / p.mrp) * 100)}%</Text>
           </View>
@@ -726,17 +724,17 @@ function ProductCard({ product: p, brandName, onPress }: { product: Product; bra
       </View>
       <View style={{ padding: 12, gap: 4 }}>
         <View style={styles.metaSlot}>
-          {p.series ? <Text style={styles.overlineSubtle} numberOfLines={1}>{p.series}</Text> : null}
+          {p.catalog_entry || p.series ? <Text style={styles.overlineSubtle} numberOfLines={1}>{p.catalog_entry ? [p.catalog_entry.serial_number, p.catalog_entry.category_name, p.subcategory].filter((v) => v !== null && v !== undefined && v !== "").join(" · ") : p.series}</Text> : null}
         </View>
         <Text numberOfLines={2} style={styles.title}>{p.name}</Text>
-        <Text style={type.caption} numberOfLines={1}>{p.sku}{p.finish ? ` · ${p.finish}` : ""}</Text>
+        <Text style={type.caption} numberOfLines={1}>{p.catalog_entry?.source_sku || p.sku}{p.finish ? ` · ${p.finish}` : ""}</Text>
         {p.must_buy_concealed && (p.concealed_skus?.length || p.concealed_sku) ? (
           <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: "700", color: "#B45309" }}>
             Must Buy Concealed · {(p.concealed_skus?.length ? p.concealed_skus : [p.concealed_sku]).filter(Boolean).join(", ")}
           </Text>
         ) : null}
         <View style={{ marginTop: 6 }}>
-          <PriceTag price={p.price} mrp={p.mrp} size="md" />
+          {p.price_unknown ? <Text style={type.bodyMuted}>Price unavailable</Text> : <PriceTag price={p.price} mrp={p.mrp} size="md" />}
         </View>
       </View>
     </Pressable>

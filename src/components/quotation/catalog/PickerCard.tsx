@@ -15,6 +15,7 @@ import { QuickAddButton } from "../shared/QuickAddButton";
 import { resolveVariantImages } from "../helpers/media";
 import { variantDescriptor } from "../helpers/pricing";
 import type { Product, ProductVariant } from "../helpers/types";
+import { catalogPriceUnknown } from "../helpers/catalogSource";
 
 type Props = {
   product: Product;
@@ -38,6 +39,10 @@ function PickerCardImpl({ product, onQuickAdd, onLongPress, onOpenDetails }: Pro
   };
 
   const handleRowAdd = () => {
+    if (catalogPriceUnknown(product, selectedVariant)) {
+      onOpenDetails?.(selectedVariant ? { ...product, ...selectedVariant, id: selectedVariant.id || product.id, name: selectedVariant.name || product.name, price_unknown: true } : product);
+      return;
+    }
     onQuickAdd(product, selectedVariant ?? undefined);
     Haptics.selectionAsync();
     const finish = selectedVariant ? variantDescriptor(selectedVariant) : "";
@@ -79,15 +84,15 @@ function PickerCardImpl({ product, onQuickAdd, onLongPress, onOpenDetails }: Pro
             </Text>
           ) : null}
         </View>
-        <Text style={styles.price} numberOfLines={1}>{money(selectedPrice)}</Text>
-        <QuickAddButton
+        <Text style={styles.price} numberOfLines={1}>{catalogPriceUnknown(product, selectedVariant) ? "Price unavailable" : money(selectedPrice)}</Text>
+        {catalogPriceUnknown(product, selectedVariant) ? <Pressable accessibilityRole="button" accessibilityLabel="Enter selling price" onPress={handleRowAdd} hitSlop={8}><Text style={type.caption}>Set price</Text></Pressable> : <QuickAddButton
           circular
           circularSize={28}
           iconSize={16}
           onAdd={() => onQuickAdd(product, selectedVariant ?? undefined)}
           toastText={`${product.name}${selectedVariant ? ` · ${variantDescriptor(selectedVariant) || selectedVariant.sku}` : ""} added to quotation`}
           testID={`add-plus-${product.id}`}
-        />
+        />}
       </Pressable>
       <VariantSwatchStrip
         product={product}
@@ -102,7 +107,7 @@ function PickerCardImpl({ product, onQuickAdd, onLongPress, onOpenDetails }: Pro
 }
 
 export const PickerCard = memo(PickerCardImpl, (a, b) =>
-  a.product.id === b.product.id && a.product.price === b.product.price && a.product.sku === b.product.sku
+  a.product === b.product && a.onQuickAdd === b.onQuickAdd && a.onOpenDetails === b.onOpenDetails && a.onLongPress === b.onLongPress
 );
 
 const styles = StyleSheet.create({

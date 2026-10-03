@@ -23,6 +23,8 @@ import { useBuilder } from "../context/BuilderContext";
 import { productImageList, resolveVariantImages } from "../helpers/media";
 import { variantDescriptor } from "../helpers/pricing";
 import type { Product, ProductVariant } from "../helpers/types";
+import { catalogPriceUnknown, manualCatalogPrice } from "../helpers/catalogSource";
+import { SupplierSourceDetails } from "@/src/components/catalog/SupplierSourceDetails";
 
 function productAsVariant(product: Product): ProductVariant {
   return {
@@ -31,6 +33,7 @@ function productAsVariant(product: Product): ProductVariant {
     size: product.size ?? null, colour: product.colour ?? null,
     variant_label: product.variant_label ?? null,
     price: product.price, mrp: product.mrp, stock: product.stock ?? 0,
+    price_unknown: product.price_unknown,
     dimensions: product.dimensions ?? null, material: product.material ?? null,
     dimension_image_urls: product.dimension_image_urls ?? [],
     seat_cover_image_urls: product.seat_cover_image_urls ?? [],
@@ -75,6 +78,7 @@ export function ProductModal() {
   const [completeSet, setCompleteSet] = useState<Product[]>([]);
   const [zoomOpen, setZoomOpen] = useState(false);
   const [activeImageIdx, setActiveImageIdx] = useState(0);
+  const [sourceEntries, setSourceEntries] = useState<Product["catalog_entries"]>([]);
 
   // Family cards contain all sibling SKUs, including their own SKU-specific
   // commercial/specification values. A selected finish must therefore replace
@@ -101,6 +105,9 @@ export function ProductModal() {
       colour: variantColour,
       size: variant.size ?? product.size,
       price: variant.price ?? product.price,
+      price_unknown: variant.price_unknown ?? product.price_unknown,
+      listing_id: variant.listing_id,
+      catalog_entries: variant.id === product.id ? product.catalog_entries : undefined,
       mrp: variant.mrp ?? product.mrp,
       stock: variant.stock ?? product.stock,
       dimensions: variant.dimensions ?? product.dimensions,
@@ -114,6 +121,17 @@ export function ProductModal() {
       configuration_options: variant.configuration_options ?? product.configuration_options,
     };
   }, [product, selectedVariant]);
+
+  useEffect(() => {
+    setSourceEntries(selectedProduct?.catalog_entries || []);
+    if (!selectedProduct || selectedProduct.catalog_entries) return;
+    let active = true;
+    const entryParam = selectedProduct.listing_id ? `?catalog_entry_id=${encodeURIComponent(selectedProduct.listing_id)}` : "";
+    api.get<Product>(`/products/${selectedProduct.id}${entryParam}`).then((details) => {
+      if (active) setSourceEntries(details.catalog_entries || []);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [selectedProduct]);
 
   // Reset when product changes.
   useEffect(() => {
@@ -198,11 +216,20 @@ export function ProductModal() {
   };
 
   const commit = (closeAfter: boolean) => {
+    if (catalogPriceUnknown(product, selectedVariant) && manualCatalogPrice(priceOverride) === null) {
+      toast.error("Enter a selling price before adding this item");
+      return;
+    }
+    if (!Number.isFinite(currentPrice) || currentPrice < 0) {
+      toast.error("Enter a valid selling price");
+      return;
+    }
     if (concealQuery.trim() && !quotationConceal) { toast.error("Select a concealed part from the catalog"); return; }
     const v = selectedVariant ?? productAsVariant(product);
     // Custom price / quantity override via a synthetic variant — keeps
     // the existing addFromProduct path a single source of truth.
     const custom: ProductVariant = { ...v, price: currentPrice,
+      price_unknown: manualCatalogPrice(priceOverride) !== null ? false : catalogPriceUnknown(product, selectedVariant),
       exclude_dimension: excludeDimension,
       concealed_part: quotationConceal ? {
         product_id: quotationConceal.id, sku: quotationConceal.sku, name: quotationConceal.name,
@@ -285,14 +312,14 @@ export function ProductModal() {
 
                 <View style={styles.priceCard}>
                   <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8 }}>
-                    <Text style={styles.priceBig} numberOfLines={1}>{money(currentPrice)}</Text>
-                    {selectedProduct.mrp && selectedProduct.mrp > currentPrice ? (
+                    <Text style={styles.priceBig} numberOfLines={1}>{catalogPriceUnknown(product, selectedVariant) && manualCatalogPrice(priceOverride) === null ? "Price unavailable" : money(currentPrice)}</Text>
+                    {!catalogPriceUnknown(product, selectedVariant) && selectedProduct.mrp && selectedProduct.mrp > currentPrice ? (
                       <Text style={styles.mrpBig} numberOfLines={1}>{money(selectedProduct.mrp)}</Text>
                     ) : null}
                   </View>
                   <Text style={styles.priceHint}>Editable selling price · MRP shown for reference</Text>
                   <TextInput
-                    placeholder={String(selectedProduct.price)}
+                    placeholder={selectedProduct.price_unknown ? "Enter selling price" : String(selectedProduct.price)}
                     placeholderTextColor={colors.onSurfaceMuted}
                     keyboardType="numeric"
                     value={priceOverride}
@@ -305,6 +332,7 @@ export function ProductModal() {
 
               {/* Right: details */}
               <View style={[styles.right, isPhone && styles.rightPhone]}>
+                <SupplierSourceDetails entries={sourceEntries} />
                 {/* Variants / finishes */}
                 {selectableVariants.length > 1 ? (
                   <View style={{ gap: 6 }}>
@@ -522,7 +550,7 @@ export function ProductModal() {
                     >
                       <ProductImage source={productImageList(alt)} style={styles.relThumb} fallbackLabel={alt.sku} />
                       <Text style={styles.relName} numberOfLines={2}>{alt.name}</Text>
-                      <Text style={styles.relPrice}>{money(alt.price)}</Text>
+                      <Text style={styles.relPrice}>{alt.price_unknown ? "Price unavailable" : money(alt.price)}</Text>
                     </Pressable>
                   ))}
                 </ScrollView>
@@ -539,12 +567,12 @@ export function ProductModal() {
                   {completeSet.map((s) => (
                     <Pressable
                       key={s.id}
-                      onPress={() => { b.addFromProduct(s); toast.success(`${s.name} added to quotation`); }}
+                      onPress={() => { if (s.price_unknown) { b.openProductModal(s); return; } b.addFromProduct(s); toast.success(`${s.name} added to quotation`); }}
                       style={styles.relCard}
                     >
                       <ProductImage source={productImageList(s)} style={styles.relThumb} fallbackLabel={s.sku} />
                       <Text style={styles.relName} numberOfLines={2}>{s.name}</Text>
-                      <Text style={styles.relPrice}>{money(s.price)}</Text>
+                      <Text style={styles.relPrice}>{s.price_unknown ? "Price unavailable" : money(s.price)}</Text>
                     </Pressable>
                   ))}
                 </ScrollView>

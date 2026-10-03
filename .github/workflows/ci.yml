@@ -74,6 +74,7 @@ jobs:
         run: npx expo-doctor
       - name: Existing frontend contract tests
         run: |
+          npm run test:supplier-catalog
           npm run test:quotation-media
           npm run test:quotation-contract
           npm run test:quotation-concealed-parts

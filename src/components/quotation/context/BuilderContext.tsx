@@ -38,6 +38,7 @@ import {
   INITIAL_BUILDER_STATE, Line, PickerTab, Product, ProductVariant,
   RecentQuotation, Referrer, RoomDiscount, RoomSheetState, SaveState, SwapSheetState,
 } from "../helpers/types";
+import { catalogPriceUnknown, catalogProductDetailPath } from "../helpers/catalogSource";
 
 
 type SortKey = "popular" | "recent" | "price_asc" | "price_desc" | "name";
@@ -47,6 +48,8 @@ type CatalogFamily = {
   min_price?: number; max_price?: number; sample_image?: string | null;
   variants: (ProductVariant & { colour?: string | null; variant_label?: string | null })[];
   configuration_options?: Product["configuration_options"];
+  listing_id?: string | null; price_unknown?: boolean;
+  catalog_entry?: Product["catalog_entry"]; catalog_entries?: Product["catalog_entries"];
 };
 
 // The catalog family endpoint deliberately returns one record per product
@@ -68,6 +71,10 @@ function familyCardToProduct(family: CatalogFamily): Product | null {
     category_id: family.category_id,
     brand_id: family.brand_id,
     family_key: family.family_key || null,
+    listing_id: family.listing_id,
+    catalog_entry: family.catalog_entry,
+    catalog_entries: family.catalog_entries,
+    price_unknown: family.price_unknown ?? representative.price_unknown,
     images: family.sample_image ? [family.sample_image] : representative.image ? [representative.image] : [],
     finish: representative.finish ?? null,
     finish_code: representative.finish_code ?? null,
@@ -268,13 +275,14 @@ export function useBuilder(): BuilderApi {
 // -----------------------------------------------------------------------------
 // Provider
 // -----------------------------------------------------------------------------
-export function BuilderProvider({ onFinalize, initialProductId, initialGodownStockId, initialGodownVariant, initialQuotationId, children }: {
+export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEntryId, initialGodownStockId, initialGodownVariant, initialQuotationId, children }: {
   onFinalize?: (quotationId: string) => void;
   /** Seed the new quotation with this product on mount — used when
    *  navigating here from Catalog's "Add to quotation" CTA (product detail
    *  page / product cards) so that action actually adds the product instead
    *  of just dropping the user on an empty builder. */
   initialProductId?: string | null;
+  initialCatalogEntryId?: string | null;
   /** A lot selected on the Godown Stock page. It is claimed on first save. */
   initialGodownStockId?: string | null;
   initialGodownVariant?: string | null;
@@ -1060,6 +1068,11 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
   }, [setReferrer, activeFloorId]);
 
   const addFromProduct = useCallback((p: Product, variant?: ProductVariant) => {
+    if (catalogPriceUnknown(p, variant)) {
+      setProductModal(variant ? { ...p, ...variant, id: variant.id || p.id, name: variant.name || p.name, price_unknown: true } : p);
+      toast.error("Enter a selling price in product details before adding this item");
+      return;
+    }
     Haptics.selectionAsync();
     playAddProductSound();
     history.apply((cur) => {
@@ -1088,14 +1101,18 @@ export function BuilderProvider({ onFinalize, initialProductId, initialGodownSto
     appliedInitialProductRef.current = true;
     (async () => {
       try {
-        const prod = await api.get<Product>(`/products/${initialProductId}`, { floorId: activeFloorId });
+        const prod = await api.get<Product>(catalogProductDetailPath(initialProductId, initialCatalogEntryId), { floorId: activeFloorId });
+        if (prod.price_unknown) {
+          setProductModal(prod);
+          return;
+        }
         addFromProduct(prod);
         toast.success(`${prod.name} added to quotation`);
       } catch {
         toast.error("Could not add that product automatically — search for it below");
       }
     })();
-  }, [initialProductId, addFromProduct, activeFloorId]);
+  }, [initialProductId, initialCatalogEntryId, addFromProduct, activeFloorId]);
 
   const appliedInitialGodownRef = useRef(false);
   useEffect(() => {

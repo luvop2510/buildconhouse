@@ -25,7 +25,7 @@ _SNAPSHOT_MAX_AGE_SECONDS = 300.0
 _MEDIA_PRIORITY = {"internal": 0, "manufacturer": 1, "supplier": 2}
 _SEARCH_FIELDS = (
     "name", "sku", "description", "series", "family_name", "subcategory",
-    "collection", "finish", "colour", "dimensions", "size", "tags",
+    "collection", "finish", "colour", "dimensions", "size", "tags", "catalog_search_text",
 )
 # Ground Floor is exclusively the Tiles module (Qutone, Dimore, ...). Real
 # tile supplier pricelists routinely reuse one photograph across several
@@ -385,12 +385,22 @@ def _family_siblings(snapshot: CatalogSnapshot, product: dict) -> list[dict]:
     family_key = product.get("family_key")
     if not family_key:
         return [product]
-    return [
+    siblings = [
         sibling for sibling in getattr(snapshot, "products_by_family", {}).get(family_key, ())
         if sibling.get("floor_id") == product.get("floor_id")
         and sibling.get("brand_id") == product.get("brand_id")
-        and sibling.get("category_id") == product.get("category_id")
+        and _is_catalog_product(sibling, snapshot)
+        and (
+            any(e.get("category_id") == product.get("category_id") for e in sibling.get("catalog_entries") or [])
+            if product.get("catalog_entries") else sibling.get("category_id") == product.get("category_id")
+        )
     ]
+    if product.get("catalog_entries"):
+        siblings.sort(key=lambda sibling: min(
+            e.get("source_order", 0) for e in sibling["catalog_entries"]
+            if e.get("category_id") == product.get("category_id")
+        ))
+    return siblings
 
 
 def _normalise_size(value: object) -> str:
@@ -474,6 +484,11 @@ def _variant_summary(product: dict, snapshot: CatalogSnapshot) -> dict:
         "image": _primary_product_image(snapshot, product["id"], product.get("family_key")),
         "configuration_options": _configuration_options(product, snapshot),
     }
+    if product.get("price_status") is not None:
+        summary["price_unknown"] = product["price_status"] == "unspecified"
+    if product.get("catalog_entries"):
+        entry = next((e for e in product["catalog_entries"] if e.get("category_id") == product.get("category_id")), product["catalog_entries"][0])
+        summary["listing_id"] = product.get("listing_id") or entry["entry_id"]
     # Preserve the compact response shape for ordinary variants. A finish is
     # an independently sellable SKU, though, so expose its rough-in when one
     # is configured instead of inheriting the representative card's value.
@@ -519,14 +534,14 @@ def _hydrate_concealed_part(product: dict, snapshot: CatalogSnapshot) -> None:
 
 
 def _hydrate_variants(product: dict, snapshot: CatalogSnapshot) -> None:
-    if product.get("variants") or not product.get("family_key"):
+    if (product.get("variants") and not product.get("catalog_entries")) or not product.get("family_key"):
         return
     variants = []
     for sibling in _family_siblings(snapshot, product):
         if sibling["id"] == product["id"]:
             continue
         variants.append(_variant_summary(sibling, snapshot))
-    if variants:
+    if variants or product.get("catalog_entries"):
         # A colour/finish selector is only truthful if every sibling SKU can
         # be selected.  The former eight-item preview silently hid finishes in
         # larger supplier families (including 10+ finish Hansgrohe ranges).
@@ -546,6 +561,7 @@ def _configuration_options(product: dict, snapshot: CatalogSnapshot) -> list[dic
         candidate_specs = candidate.get("specs") or {}
         if (
             not isinstance(candidate_specs, dict)
+            or not _is_catalog_product(candidate, snapshot)
             or candidate_specs.get("configuration_group") != group
             or candidate.get("floor_id") != product.get("floor_id")
             or candidate.get("brand_id") != product.get("brand_id")
@@ -579,12 +595,13 @@ def _family_variants(product: dict, snapshot: CatalogSnapshot) -> list[dict]:
         rows = [product]
     return [
         _variant_summary(row, snapshot)
-        for row in sorted(rows, key=lambda item: (item.get("sku") or "", item.get("id") or ""))
+        for row in (rows if product.get("catalog_entries") else sorted(rows, key=lambda item: (item.get("sku") or "", item.get("id") or "")))
     ]
 
 
 def hydrate_product(product: dict, snapshot: CatalogSnapshot) -> dict:
     out = copy.deepcopy(product)
+    out["price_unknown"] = product.get("price_status") == "unspecified"
     _apply_media(out, snapshot)
     _hydrate_concealed_part(out, snapshot)
     _hydrate_variants(out, snapshot)
@@ -592,6 +609,72 @@ def hydrate_product(product: dict, snapshot: CatalogSnapshot) -> dict:
     out.update(_size_metadata(product, snapshot))
     out["family_variants"] = _family_variants(product, snapshot)
     return out
+
+
+def _is_catalog_product(product: dict, snapshot: CatalogSnapshot) -> bool:
+    brand = next((b for b in getattr(snapshot, "brands", ()) if b.get("id") == product.get("brand_id")), {})
+    return not brand.get("catalog_authoritative") or bool(
+        product.get("catalog_source") == brand.get("catalog_source") and product.get("catalog_entries")
+    )
+
+
+def _listing_products(snapshot: CatalogSnapshot) -> list[dict]:
+    """Project workbook rows without changing canonical IDs or stored data.
+
+    One SKU can occur in several sheets/sections. Filtering must happen after
+    expansion, otherwise its later category placements silently disappear.
+    """
+    rows = []
+    for product in snapshot.products:
+        if not _is_catalog_product(product, snapshot):
+            continue
+        entries = product.get("catalog_entries") or []
+        if not entries:
+            rows.append(product)
+            continue
+        for entry in entries:
+            row = {**product, "listing_id": entry["entry_id"], "catalog_entry": entry}
+            for field in ("category_id", "subcategory", "name", "description"):
+                if field in entry and (field == "subcategory" or entry[field] is not None):
+                    row[field] = entry[field]
+            row["source_price_unspecified"] = entry.get("mrp") is None
+            if entry.get("mrp") is not None:
+                row.update(mrp=entry["mrp"], price=entry["mrp"], price_status="known", price_source="supplier")
+            else:
+                row["price_source"] = "existing" if product.get("price_status") != "unspecified" else "unspecified"
+            rows.append(row)
+    return rows
+
+
+def _unique_listings(rows: list[dict], *, per_category: bool = False) -> list[dict]:
+    """Keep the first matching source placement, retaining every row on the SKU."""
+    seen = set()
+    out = []
+    for index, row in enumerate(rows):
+        product_id = row.get("id", index)
+        key = (product_id, row.get("category_id")) if per_category else product_id
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(row)
+    return out
+
+
+def _source_sort_key(row: dict, snapshot: CatalogSnapshot) -> tuple:
+    entry = row.get("catalog_entry") or {}
+    brand_order = next((b.get("catalog_order", 999) for b in getattr(snapshot, "brands", ())
+                        if b.get("id") == row.get("brand_id")), 999)
+    return (
+        0 if entry else 1, brand_order if brand_order is not None else 999,
+        entry.get("source_catalog") or "", entry.get("source_order", 0),
+        row.get("name") or "", row.get("listing_id") or row["id"],
+    )
+
+
+def _category_sort_key(category: dict) -> tuple:
+    order = category.get("catalog_order")
+    return (0 if order is not None else 1, order if order is not None else 999,
+            category.get("name") or "", category.get("id") or "")
 
 
 def _matches_filters(product: dict, *, brand_id: Optional[str], category_id: Optional[str],
@@ -652,17 +735,21 @@ async def list_products_page(
     snapshot = await get_catalog_snapshot()
     pattern = _compile_search(q)
     matching = [
-        product for product in snapshot.products
+        product for product in _listing_products(snapshot)
         if _matches_filters(
             product, brand_id=brand_id, category_id=category_id,
             subcategory=subcategory, series=series, family_key=family_key,
             finish=finish, colour=colour, floor_ids=floor_ids,
         ) and _matches_search(product, pattern)
     ]
+    matching.sort(key=lambda row: _source_sort_key(row, snapshot))
+    matching = _unique_listings(matching)
     total = len(matching)
     my_rows = snapshot.usage_by_user.get(user_id, {})
 
-    if sort == "price_asc":
+    if sort == "source" or (sort == "popular" and any(row.get("catalog_entry") for row in matching)):
+        matching.sort(key=lambda row: _source_sort_key(row, snapshot))
+    elif sort == "price_asc":
         matching.sort(key=lambda row: (float(row.get("price") or 0), row["id"]))
     elif sort == "price_desc":
         matching.sort(key=lambda row: (-float(row.get("price") or 0), row["id"]))
@@ -712,8 +799,9 @@ async def list_products_page(
 
 async def list_brands_with_counts(floor_ids: Optional[list[str]] = None) -> list[dict]:
     snapshot = await get_catalog_snapshot()
-    products = snapshot.products if floor_ids is None else [
-        p for p in snapshot.products if p.get("floor_id") in floor_ids
+    products = _unique_listings(_listing_products(snapshot))
+    products = products if floor_ids is None else [
+        p for p in products if p.get("floor_id") in floor_ids
     ]
     counts = Counter(row.get("brand_id") for row in products)
     brands = snapshot.brands if floor_ids is None else [
@@ -728,7 +816,7 @@ async def list_brands_with_counts(floor_ids: Optional[list[str]] = None) -> list
 async def list_categories_with_counts(brand_id: Optional[str], floor_ids: Optional[list[str]] = None) -> list[dict]:
     snapshot = await get_catalog_snapshot()
     counts = Counter(
-        row.get("category_id") for row in snapshot.products
+        row.get("category_id") for row in _unique_listings(_listing_products(snapshot), per_category=True)
         if (not brand_id or row.get("brand_id") == brand_id)
         and (floor_ids is None or row.get("floor_id") in floor_ids)
     )
@@ -737,13 +825,15 @@ async def list_categories_with_counts(brand_id: Optional[str], floor_ids: Option
         c for c in snapshot.categories if c.get("floor_id") in floor_ids
     ]
     for category in categories:
+        if brand_id and category.get("brand_id") and category["brand_id"] != brand_id:
+            continue
         count = counts.get(category.get("id"), 0)
         if brand_id and count == 0:
             continue
         row = copy.deepcopy(category)
         row["product_count"] = count
         out.append(row)
-    return out
+    return sorted(out, key=_category_sort_key)
 
 
 async def recent_or_frequent_products(
@@ -758,18 +848,22 @@ async def recent_or_frequent_products(
     out = []
     for usage in rows:
         product = snapshot.product_by_id.get(usage.get("product_id"))
-        if product and (floor_ids is None or product.get("floor_id") in floor_ids):
+        if product and _is_catalog_product(product, snapshot) and (floor_ids is None or product.get("floor_id") in floor_ids):
             out.append(hydrate_product(product, snapshot))
             if len(out) >= limit:
                 break
     return out
 
 
-async def product_by_id(product_id: str, floor_ids: Optional[list[str]] = None) -> dict | None:
+async def product_by_id(product_id: str, floor_ids: Optional[list[str]] = None,
+                        catalog_entry_id: Optional[str] = None) -> dict | None:
     snapshot = await get_catalog_snapshot()
     product = snapshot.product_by_id.get(product_id)
     if product and floor_ids is not None and product.get("floor_id") not in floor_ids:
         product = None
+    if product and catalog_entry_id:
+        product = next((row for row in _listing_products(snapshot)
+                        if row["id"] == product_id and row.get("listing_id") == catalog_entry_id), None)
     return hydrate_product(product, snapshot) if product else None
 
 
@@ -839,8 +933,9 @@ async def resolve_size_variant(
 async def hierarchy_rows(floor_ids: Optional[list[str]] = None) -> tuple[list[dict], dict[str, dict], dict[str, dict]]:
     snapshot = await get_catalog_snapshot()
     groups: dict[tuple, dict] = {}
-    products = snapshot.products if floor_ids is None else [
-        p for p in snapshot.products if p.get("floor_id") in floor_ids
+    products = _unique_listings(_listing_products(snapshot), per_category=True)
+    products = products if floor_ids is None else [
+        p for p in products if p.get("floor_id") in floor_ids
     ]
     for product in products:
         key = (
@@ -861,7 +956,7 @@ async def hierarchy_rows(floor_ids: Optional[list[str]] = None) -> tuple[list[di
         row["min_price"] = min(row["min_price"], float(product.get("price") or 0))
     return (
         list(groups.values()),
-        {row["id"]: copy.deepcopy(row) for row in snapshot.brands},
+        {row["id"]: {**copy.deepcopy(row), "product_count": len({p["id"] for p in products if p.get("brand_id") == row["id"]})} for row in snapshot.brands},
         {row["id"]: copy.deepcopy(row) for row in snapshot.categories},
     )
 
@@ -874,29 +969,32 @@ async def list_family_groups(
     snapshot = await get_catalog_snapshot()
     pattern = _compile_search(q)
     products = [
-        row for row in snapshot.products
+        row for row in _listing_products(snapshot)
         if _matches_filters(
             row, brand_id=brand_id, category_id=category_id, subcategory=subcategory,
             series=series, family_key=None, finish=None, colour=None, floor_ids=floor_ids,
         )
-        and (pattern is None or any(pattern.search(str(row.get(field) or "")) for field in (
-            "name", "family_name", "series", "subcategory", "finish", "colour", "sku",
-        )))
+        and _matches_search(row, pattern)
     ]
-    products.sort(key=lambda row: (
-        row.get("family_name") or "", row.get("colour") or "", row.get("sku") or "",
-    ))
+    products.sort(key=lambda row: _source_sort_key(row, snapshot))
+    products = _unique_listings(products)
     groups: dict[tuple[str, str | None, str | None, str | None], dict] = {}
     for product in products:
         # ``family_key`` is supplier-owned text, not a global database key;
         # keep all-floor views from merging styles across business units.
         key = (
-            product.get("family_key") or f"solo:{product['id']}", product.get("floor_id"),
+            product.get("listing_id") or product.get("family_key") or f"solo:{product['id']}", product.get("floor_id"),
             product.get("brand_id"), product.get("category_id"),
         )
         group = groups.setdefault(key, {
+            "listing_id": product.get("listing_id"),
+            "catalog_entry": product.get("catalog_entry"),
+            "catalog_entries": product.get("catalog_entries"),
+            "price_unknown": product.get("price_status") == "unspecified",
+            "source_price_unspecified": product.get("source_price_unspecified", False),
+            "price_source": product.get("price_source"),
             "family_key": product.get("family_key"),
-            "family_name": product.get("family_name") or product.get("name"),
+            "family_name": product.get("name") if product.get("catalog_entry") else product.get("family_name") or product.get("name"),
             "sample_product_id": product["id"],
             "brand_id": product.get("brand_id"),
             "category_id": product.get("category_id"),
@@ -918,18 +1016,33 @@ async def list_family_groups(
         summary = _variant_summary(product, snapshot)
         summary["image_quality"] = product.get("image_quality")
         group["variants"].append(summary)
-    ordered = sorted(groups.values(), key=lambda row: row.get("family_name") or "")
+    has_source = any(item.get("catalog_entry") for item in products)
+    ordered = sorted(groups.values(), key=lambda row: (
+        _source_sort_key({**row, "id": row["sample_product_id"], "name": row["family_name"]}, snapshot)
+        if has_source else (row.get("family_name") or "",)
+    ))
     page = copy.deepcopy(ordered[skip:skip + limit])
     for group in page:
         sample_product = snapshot.product_by_id.get(group["sample_product_id"]) if hasattr(snapshot, "product_by_id") else next(
             (product for product in products if product.get("id") == group["sample_product_id"]), None,
         )
+        if sample_product and group.get("catalog_entry"):
+            sample_product = {**sample_product, "category_id": group["category_id"], "catalog_entry": group["catalog_entry"]}
         family_products = (
             (_family_siblings(snapshot, sample_product) or [sample_product])
             if group.get("family_key") else [
                 product for product in products if product.get("id") == group.get("sample_product_id")
             ]
         )
+        if group.get("catalog_entry") and sample_product:
+            siblings = _family_siblings(snapshot, sample_product) or [sample_product]
+            # Keep the occurrence SKU first so tapping the card opens that
+            # exact row, with the remaining finish siblings still available.
+            group["variants"] = [group["variants"][0], *[
+                _variant_summary(sibling, snapshot) for sibling in siblings
+                if sibling["id"] != sample_product["id"]
+            ]]
+            group["product_count"] = len(group["variants"])
         group.update(_size_metadata_for_products(family_products))
         sample_id = group["sample_product_id"]
         sample_media = snapshot.media_rows_by_product.get(sample_id, ())
@@ -949,7 +1062,7 @@ async def facet_buckets(
 ) -> dict:
     snapshot = await get_catalog_snapshot()
     products = [
-        row for row in snapshot.products
+        row for row in _unique_listings(_listing_products(snapshot), per_category=True)
         if _matches_filters(
             row, brand_id=brand_id, category_id=category_id, subcategory=subcategory,
             series=series, family_key=None, finish=None, colour=None, floor_ids=floor_ids,
@@ -957,13 +1070,15 @@ async def facet_buckets(
     ]
 
     def bucket(field: str) -> list[dict]:
-        counts = Counter(row.get(field) for row in products if row.get(field) not in (None, ""))
+        counts = Counter(value for value, _ in {
+            (row.get(field), row.get("id", index)) for index, row in enumerate(products) if row.get(field) not in (None, "")
+        })
         return [
             {"value": value, "count": count}
             for value, count in sorted(counts.items(), key=lambda item: (-item[1], str(item[0])))[:100]
         ]
 
-    prices = [float(row.get("price") or 0) for row in products]
+    prices = [float(row.get("price") or 0) for row in products if row.get("price_status") != "unspecified"]
     return {
         "brands": bucket("brand_id"),
         "categories": bucket("category_id"),
@@ -985,12 +1100,14 @@ async def search_catalog(
     query = (q or "").strip()
     q_lower = query.lower()
     products = [
-        row for row in snapshot.products
+        row for row in _listing_products(snapshot)
         if _matches_filters(
             row, brand_id=brand_id, category_id=category_id, subcategory=subcategory,
             series=series, family_key=None, finish=None, colour=None, floor_ids=floor_ids,
         )
     ]
+    products.sort(key=lambda row: _source_sort_key(row, snapshot))
+    products = _unique_listings(products)
 
     def score(product: dict) -> float:
         sku = (product.get("sku") or "").lower()
@@ -1019,6 +1136,7 @@ async def search_catalog(
         value += 3 if q_lower in colour_l else 0
         value += 1 if q_lower in dimensions else 0
         value += 1 if q_lower in description else 0
+        value += 1 if q_lower in (product.get("catalog_search_text") or "").lower() else 0
         return value
 
     if query:
@@ -1041,11 +1159,14 @@ async def search_catalog(
     order: list[tuple[str, str | None, str | None, str | None]] = []
     for product in docs:
         key = (
-            product.get("family_key") or f"solo:{product['id']}", product.get("floor_id"),
+            product.get("listing_id") or product.get("family_key") or f"solo:{product['id']}", product.get("floor_id"),
             product.get("brand_id"), product.get("category_id"),
         )
         if key not in groups:
             groups[key] = {
+                "listing_id": product.get("listing_id"),
+                "catalog_entry": product.get("catalog_entry"),
+                "price_unknown": product.get("price_status") == "unspecified",
                 "family_key": product.get("family_key"),
                 "family_name": product.get("family_name") or product.get("name"),
                 "brand_id": product.get("brand_id"), "category_id": product.get("category_id"),
@@ -1084,17 +1205,18 @@ async def family_detail(family_key: str, floor_ids: Optional[list[str]] = None) 
     snapshot = await get_catalog_snapshot()
     candidates = [
         p for p in snapshot.products_by_family.get(family_key, ())
-        if floor_ids is None or p.get("floor_id") in floor_ids
+        if (floor_ids is None or p.get("floor_id") in floor_ids) and _is_catalog_product(p, snapshot)
     ]
     if not candidates:
         return None
     # The endpoint identifies a family by supplier key; retain the first
     # catalog namespace only when a malformed/imported key collides.
     first_candidate = candidates[0]
-    products = sorted(
-        _family_siblings(snapshot, first_candidate),
-        key=lambda row: (row.get("colour") or "", row.get("finish") or "", row.get("sku") or ""),
-    )
+    products = _family_siblings(snapshot, first_candidate)
+    if not first_candidate.get("catalog_entries"):
+        products.sort(key=lambda row: (row.get("colour") or "", row.get("finish") or "", row.get("sku") or ""))
+    if not products:
+        return None
     first = products[0]
     brand = next((copy.deepcopy(row) for row in snapshot.brands if row.get("id") == first.get("brand_id")), None)
     category = next((copy.deepcopy(row) for row in snapshot.categories if row.get("id") == first.get("category_id")), None)
@@ -1162,6 +1284,7 @@ async def alternate_products(product_id: str, user_id: str, limit: int, floor_id
     pool = [
         row for row in snapshot.products
         if row["id"] != product_id and row.get("category_id") == source.get("category_id")
+        and _is_catalog_product(row, snapshot)
         and (floor_ids is None or row.get("floor_id") in floor_ids)
     ][:400]
 
@@ -1202,6 +1325,8 @@ async def complete_set_products(product_id: str, limit: int, floor_ids: Optional
         return None
     candidates = []
     for product in snapshot.products:
+        if not _is_catalog_product(product, snapshot):
+            continue
         if product["id"] == product_id or product.get("category_id") == source.get("category_id"):
             continue
         if floor_ids is not None and product.get("floor_id") not in floor_ids:

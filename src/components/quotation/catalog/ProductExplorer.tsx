@@ -22,6 +22,7 @@ import { resolveVariantImages } from "../helpers/media";
 import { variantDescriptor } from "../helpers/pricing";
 import { quotationGridColumns } from "../helpers/responsive";
 import type { Product, ProductVariant } from "../helpers/types";
+import { catalogPriceUnknown } from "../helpers/catalogSource";
 import { isNearScrollEnd } from "@/src/utils/scrollEnd";
 
 const RECENT_SEARCHES_KEY = "forge.builder.recentSearches.v1";
@@ -409,14 +410,14 @@ function ProductGridCardImpl({ product, compact, favourite, addedQty, onToggleFa
 
         <View style={styles.priceRow}>
           <View style={styles.priceCol}>
-            <Text style={styles.price} numberOfLines={1} ellipsizeMode="clip">{money(selectedPrice)}</Text>
-            {selectedMrp && selectedMrp > selectedPrice ? (
+            <Text style={styles.price} numberOfLines={1} ellipsizeMode="clip">{catalogPriceUnknown(product, selectedVariant) ? "Price unavailable" : money(selectedPrice)}</Text>
+            {!catalogPriceUnknown(product, selectedVariant) && selectedMrp && selectedMrp > selectedPrice ? (
               <Text style={styles.mrp} numberOfLines={1} ellipsizeMode="clip">{money(selectedMrp)}</Text>
             ) : null}
           </View>
         </View>
-        <QuickAddButton onAdd={() => onQuickAdd(product, selectedVariant ?? undefined)} toastText={`${product.name}${selectedVariant ? ` · ${variantDescriptor(selectedVariant) || selectedVariant.sku}` : ""} added to quotation`}
-          testID={`add-${product.sku}`} style={styles.cardAdd} />
+        {catalogPriceUnknown(product, selectedVariant) ? <Pressable accessibilityRole="button" accessibilityLabel="Enter selling price" onPress={() => onOpenModal(selectedVariant ? { ...product, ...selectedVariant, id: selectedVariant.id || product.id, name: selectedVariant.name || product.name, price_unknown: true } : product)} style={styles.cardAdd}><Text style={styles.finishLabel}>Set price</Text></Pressable> : <QuickAddButton onAdd={() => onQuickAdd(product, selectedVariant ?? undefined)} toastText={`${product.name}${selectedVariant ? ` · ${variantDescriptor(selectedVariant) || selectedVariant.sku}` : ""} added to quotation`}
+          testID={`add-${product.sku}`} style={styles.cardAdd} />}
         {addedQty > 0 ? <Text accessibilityLiveRegion="polite" style={styles.addedLabel}>{addedQty} in this room</Text> : null}
 
         <View style={[styles.variantSlot, compact && styles.variantSlotCompact]}>

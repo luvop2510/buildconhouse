@@ -7,7 +7,16 @@
 import { api, clearApiResponseCache } from "@/src/api/client";
 
 export const CATALOG_PAGE_SIZE = 60;
-export type CatalogSort = "popular" | "recent" | "price_asc" | "price_desc" | "name";
+export type CatalogSort = "source" | "popular" | "recent" | "price_asc" | "price_desc" | "name";
+export type CatalogEntry = {
+  entry_id: string; source_catalog: string; sheet_name: string;
+  sheet_order: number; row_number: number; source_order: number;
+  serial_number?: string | number | null; category_id: string; category_name: string;
+  source_sku?: string | null; subcategory?: string | null;
+  mrp?: number | null; price_status: "known" | "unspecified";
+  name?: string | null; description?: string | null; source_status_note?: string | null;
+  source_cells?: Record<string, unknown>;
+};
 export type CatalogMode = "products" | "families";
 
 export type CatalogQuery = {
@@ -60,14 +69,15 @@ export async function fetchCatalogPage<T>(
   return cachedGet<CatalogPage<T>>(`${endpoint}?${params.toString()}`, PAGE_TTL_MS, options);
 }
 
-export function mergeCatalogPage<T extends { id?: string; family_key?: string }>(
+export function mergeCatalogPage<T extends { id?: string; family_key?: string | null; listing_id?: string | null; sample_product_id?: string }>(
   current: T[],
   incoming: T[],
 ): T[] {
-  const seen = new Set(current.map((item) => item.id || item.family_key).filter(Boolean));
+  const identity = (item: T) => item.listing_id || item.id || item.family_key || item.sample_product_id;
+  const seen = new Set(current.map(identity).filter(Boolean));
   const next = [...current];
   for (const item of incoming) {
-    const key = item.id || item.family_key;
+    const key = identity(item);
     if (!key || seen.has(key)) continue;
     seen.add(key);
     next.push(item);

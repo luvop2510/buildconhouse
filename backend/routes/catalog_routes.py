@@ -154,7 +154,7 @@ async def list_products(
     family_key: Optional[str] = None,
     finish: Optional[str] = None,
     colour: Optional[str] = None,
-    sort: str = Query("popular", description="popular | recent | price_asc | price_desc | name"),
+    sort: str = Query("popular", description="source | popular | recent | price_asc | price_desc | name; supplier catalogs default to source order"),
     limit: int = Query(60, ge=1),
     skip: int = Query(0, ge=0),
     user: UserPublic = Depends(get_current_user),
@@ -262,11 +262,11 @@ async def catalog_hierarchy(user: UserPublic = Depends(get_current_user)):
                     "product_count": sum(sub["product_count"] for sub in subs_out),
                     "subcategories": subs_out,
                 })
-            cats_out.sort(key=lambda x: x["category"].get("name", ""))
+            cats_out.sort(key=lambda x: catalog_service._category_sort_key(x["category"]))
             out.append({
                 "brand": b["brand"],
                 "category_count": len(cats_out),
-                "product_count": sum(c["product_count"] for c in cats_out),
+                "product_count": b["brand"].get("product_count", sum(c["product_count"] for c in cats_out)),
                 "categories": cats_out,
             })
         out.sort(key=lambda x: x["brand"].get("name", ""))
@@ -423,9 +423,13 @@ async def resolve_product_size_variant(
 
 
 @router.get("/products/{product_id}")
-async def get_product(product_id: str, user: UserPublic = Depends(get_current_user)):
+async def get_product(product_id: str, user: UserPublic = Depends(get_current_user),
+                      catalog_entry_id: Optional[str] = None):
     await get_floor_scoped_or_404(db.products, product_id, user, not_found="Product not found", projection={"_id": 0, "id": 1, "floor_id": 1})
-    doc = await catalog_service.product_by_id(product_id, floor_ids=None)
+    if catalog_entry_id:
+        doc = await catalog_service.product_by_id(product_id, floor_ids=None, catalog_entry_id=catalog_entry_id)
+    else:
+        doc = await catalog_service.product_by_id(product_id, floor_ids=None)
     if not doc:
         raise HTTPException(status_code=404, detail="Product not found")
     return doc

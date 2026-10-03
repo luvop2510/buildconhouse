@@ -19,8 +19,9 @@ export default function QuotationBuilderScreen() {
   // Optional ?productId=... — set by Catalog's "Add to quotation" CTA so
   // starting a new quotation from a product's detail page actually seeds
   // that product instead of landing on an empty builder.
-  const { productId, godownStockId, godownVariant, quotationId } = useLocalSearchParams<{
+  const { productId, catalogEntryId, godownStockId, godownVariant, quotationId } = useLocalSearchParams<{
     productId?: string;
+    catalogEntryId?: string;
     godownStockId?: string;
     godownVariant?: string;
     /** Opens an existing customer quotation in the same product workspace. */
@@ -30,6 +31,7 @@ export default function QuotationBuilderScreen() {
     <LazyQuotationBuilder
       mode="sanitary"
       initialProductId={productId || null}
+      initialCatalogEntryId={catalogEntryId || null}
       initialGodownStockId={godownStockId || null}
       initialGodownVariant={godownVariant ?? null}
       initialQuotationId={quotationId || null}

@@ -1,5 +1,6 @@
 // Shared types for the Quotation Builder.
 // Kept isolated so components can depend on these without touching the context.
+import type { CatalogEntry } from "../../../services/catalogService";
 
 export type ConcealedPart = {
   sku: string; product_id?: string | null; name?: string | null;
@@ -17,6 +18,8 @@ export type ProductVariant = {
   /** `colour` is the catalog API spelling; `color` remains for old clients. */
   colour?: string | null; color?: string | null; variant_label?: string | null;
   mrp: number; price: number; stock?: number;
+  price_unknown?: boolean;
+  listing_id?: string | null;
   dimensions?: string | null; material?: string | null; warranty?: string | null;
   dimension_image_urls?: string[]; seat_cover_image_urls?: string[];
   exclude_dimension?: boolean;
@@ -30,6 +33,8 @@ export type ProductVariant = {
 
 export type Product = {
   id: string; name: string; sku: string; price: number; mrp: number;
+  price_unknown?: boolean; listing_id?: string | null;
+  catalog_entry?: CatalogEntry | null; catalog_entries?: CatalogEntry[];
   finish?: string | null; finish_code?: string | null; variant_label?: string | null;
   colour?: string | null; size?: string | null; material?: string | null;
   images: string[]; category_id: string; brand_id: string;

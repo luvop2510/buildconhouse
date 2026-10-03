@@ -306,6 +306,9 @@ class Brand(TimestampedModel):
     logo_url: Optional[str] = None
     country: Optional[str] = None
     floor_id: str
+    catalog_source: Optional[str] = None
+    catalog_order: Optional[int] = None
+    catalog_authoritative: bool = False
 
 
 class Category(TimestampedModel):
@@ -314,6 +317,9 @@ class Category(TimestampedModel):
     parent_id: Optional[str] = None
     icon: Optional[str] = None
     floor_id: str
+    brand_id: Optional[str] = None
+    catalog_source: Optional[str] = None
+    catalog_order: Optional[int] = None
 
 
 class BrandCreate(BaseModel):
@@ -353,6 +359,8 @@ class ProductVariant(BaseModel):
     # the sibling product it represents.
     id: Optional[str] = None
     image: Optional[str] = None
+    listing_id: Optional[str] = None
+    price_unknown: Optional[bool] = None
     concealed_part: Optional["ConcealedPart"] = None
 
 
@@ -372,6 +380,31 @@ class ConcealedPart(BaseModel):
     mrp: Optional[float] = Field(default=None, ge=0)
     image: Optional[str] = None
     qty: float = Field(default=1, gt=0)
+
+
+class CatalogEntry(BaseModel):
+    """An exact supplier workbook placement of a canonical, sellable SKU."""
+    entry_id: str
+    source_catalog: str
+    sheet_name: str
+    sheet_order: int = Field(ge=0)
+    row_number: int = Field(ge=1)
+    source_order: int = Field(ge=0)
+    serial_number: str | int | float | None = None
+    category_id: str
+    category_name: str
+    subcategory: Optional[str] = None
+    name: Optional[str] = None
+    description: Optional[str] = None
+    mrp: Optional[float] = Field(default=None, ge=0)
+    price_status: Literal["known", "unspecified"] = "unspecified"
+    source_sku: Optional[str] = None
+    article_raw: Any = None
+    source_cells: dict = Field(default_factory=dict)
+    price_candidates: list = Field(default_factory=list)
+    price_raw: Any = None
+    discontinued_source: bool = False
+    source_status_note: Optional[str] = None
 
 
 class Product(TimestampedModel):
@@ -429,6 +462,10 @@ class Product(TimestampedModel):
     downloads: list[dict] = []              # [{title, type, url, size_bytes}] — kept for Downloads tab
     is_custom: bool = False                 # created inline from the builder (custom product flow)
     active: bool = True
+    catalog_source: Optional[str] = None
+    catalog_entries: list[CatalogEntry] = Field(default_factory=list)
+    catalog_search_text: Optional[str] = None
+    price_status: Optional[Literal["known", "existing", "unspecified"]] = None
 
 
 class ProductCreate(BaseModel):

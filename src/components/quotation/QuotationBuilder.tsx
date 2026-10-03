@@ -20,12 +20,14 @@ export type QuotationBuilderMode = "sanitary" | "tiles_selection" | "tiles_quota
 export function QuotationBuilder({
   mode,
   initialProductId,
+  initialCatalogEntryId,
   initialGodownStockId,
   initialGodownVariant,
   initialQuotationId,
 }: {
   mode: QuotationBuilderMode;
   initialProductId?: string | null;
+  initialCatalogEntryId?: string | null;
   initialGodownStockId?: string | null;
   initialGodownVariant?: string | null;
   initialQuotationId?: string | null;
@@ -42,6 +44,7 @@ export function QuotationBuilder({
     <BuilderProvider
       key={`${staff?.id}:${selectedFloorId || floors[0]?.id || ""}`}
       initialProductId={initialProductId || null}
+      initialCatalogEntryId={initialCatalogEntryId || null}
       initialGodownStockId={initialGodownStockId || null}
       initialGodownVariant={initialGodownVariant || null}
       initialQuotationId={initialQuotationId || null}
