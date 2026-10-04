@@ -23,10 +23,10 @@
 | Production Python dependency audit | No known vulnerabilities |
 | MongoDB, required indexes and Supabase bucket access | Read-only checks passed |
 | Migration dry run | No pending migrations |
-| Full responsive browser audit | 760 passed; 20 intentional skips across eight profiles |
+| Full responsive browser audit | 768 passed; 20 intentional skips across eight profiles |
 | Full media integrity scan | 789 metadata references repaired; zero metadata issues across 7,013 products and 8,925 current media rows; full byte scan complete: 8,902 objects passed; one transient failure passed on retry; eight original references restored; 11 missing references remain |
-| GitHub, Vercel and Railway release | Commit `a1735479` pushed to main; Railway deployment succeeded; Vercel production CLI deployment READY |
-| Hosted targeted browser audit | 68 passed; 20 intentional skips across eight profiles |
+| GitHub, Vercel and Railway release | Runtime commit `d3b19e46` pushed to main; exact-commit Railway deployment succeeded; Vercel production CLI deployment READY |
+| Hosted targeted browser audit | 129 passed; 20 intentional skips across eight profiles against the final production runtime, including image-only selection and access journeys |
 | Image-only picker browser regression | 8/8 profiles passed selecting and saving exact image bytes |
 | Native permission introspection | Broad image/video library access, media location, camera and microphone blocked; iOS camera/microphone usage keys absent |
 | iOS and Android production bundle exports | Passed, alongside web export; no signed builds or device certification |
@@ -43,7 +43,7 @@ Shared-file deletion is now guarded: deleting/replacing a media row or compensat
 
 The full scan started before metadata repairs and image recovery. Its initial 789 family findings are resolved by the final metadata audit. Of its 20 download failures, one passed on retry and 19 were confirmed missing. Eight original media references across four storage objects were restored from surviving copies and archived inline supplier images with identical SHA-1, dimensions, MIME and bytes. Existing IDs, fields and image precedence were unchanged. Three additional Geberit products now display verified manufacturer heroes. The final retry has 11 missing references, all displayed by active Vitra products, with zero metadata issues.
 
-Supplier source checks covered the current media, historical media snapshots, import-image blobs and 813 inline images across two archived imports. No exact surviving original was found for the following 11 entries; the checked current Vitra manufacturer routes returned HTTP 404. Verified source masters are still required. This is not a claim that no source exists elsewhere.
+Supplier source checks covered the current media, historical media snapshots, import-image blobs and 813 inline images across two archived imports. No exact surviving original was found for the following 11 entries. Expanded manufacturer India searches and Global product-page discovery found master sets for seven entries, all below true 4K; four exact Matt White Integra variants had no verified manufacturer master. None matched the historical image checksum. Several candidates also had SKU or finish ambiguity. Plural Triangle has an exact Indian H-SKU in its official asset filename, but its 2,480×1,749 hero and 3,000×3,000 close-up are below the required threshold. The [discovery manifest](2026-10-04-vitra-recovery-discovery.json) records sources, dimensions, checksums and each blocker. Verified source masters are still required. This is not a claim that no source exists elsewhere.
 
 | Brand | SKU needing source recovery |
 | --- | --- |
@@ -61,15 +61,15 @@ Supplier source checks covered the current media, historical media snapshots, im
 
 ## Production verification
 
-GitHub source release: [`a1735479`](https://github.com/yashvardhansinh2510-max/forge2.0/commit/a1735479). The Git-triggered Vercel deployment was blocked; the authenticated CLI deployment succeeded as `dpl_DDgLSLaXeo7hgSeKSkBUEsWubNXH` and is aliased to [BuildCon House](https://buildcon-house-nine.vercel.app). [Railway deployment](https://railway.com/project/29cdd543-efb5-4b41-a6d6-cd23ed2c37ee?environmentId=4b9581e2-cf69-4d0c-864e-26c8f6a7fffe) succeeded for the exact source commit. Both direct backend readiness and the deployed frontend API proxy returned HTTP 200. The hosted tablet/Payments checks passed against the canonical production URL with synthetic API interception.
+GitHub source release: [`d3b19e46`](https://github.com/yashvardhansinh2510-max/forge2.0/commit/d3b19e461185ababdf4a8cdbefc4376215f33738). The Git-triggered Vercel deployment was blocked; the authenticated CLI deployment succeeded as `dpl_A2thfcZrgpzNc4xUNJiGf3xcN2BK` and is aliased to [BuildCon House](https://buildcon-house-nine.vercel.app). [Railway deployment](https://railway.com/project/29cdd543-efb5-4b41-a6d6-cd23ed2c37ee?environmentId=4b9581e2-cf69-4d0c-864e-26c8f6a7fffe) succeeded for the exact source commit. Both direct backend readiness and the deployed frontend API proxy returned HTTP 200. The hosted tablet/Payments checks passed against the canonical production URL with synthetic API interception.
 
-[GitHub CI](https://github.com/yashvardhansinh2510-max/forge2.0/actions/runs/37201654784) passed its backend job (unit tests, security audit, static checks and Docker build); its frontend job failed at the dependency audit described below. The frontend functional evidence here was run locally and against production.
+[GitHub CI](https://github.com/yashvardhansinh2510-max/forge2.0/actions/runs/37204691467) passed its backend job (unit tests, security audit, static checks and Docker build); its frontend job failed at the dependency audit described below. The frontend functional evidence here was run locally and against production.
 
 ## Outstanding release constraints
 
 Eleven active catalog images remain unresolved as listed above. They prevent claiming a completely error-free catalog. The [official Geberit Piave article table](https://catalog.geberit.in/en-IN/product/PRO_292161) distinguishes `116.184` mixers from `116.188` thermostatic mixers; the existing local descriptions require review before any variant or functional-data changes. Restoring their identical original files did not alter that data.
 
-The npm security gate currently fails on new transitive Expo/Metro/Jest findings rooted in `braces` and `node-forge`. The registry's current releases remain affected; the [braces advisory](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) and [node-forge advisory](https://github.com/advisories/GHSA-86w9-cpqp-85rv) list no patched versions. The existing audit policy is unchanged and these failures are not suppressed. Functional test success does not constitute a clean dependency audit.
+The npm security gate currently fails on new transitive Expo/Metro/Jest findings rooted in `braces` and `node-forge`. The registry's current releases remain affected; the [braces advisory](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) and [node-forge advisory](https://github.com/advisories/GHSA-86w9-cpqp-85rv) list no patched versions. The genuine upstream fixes remain unmerged: [braces PR 72](https://github.com/micromatch/braces/pull/72) and [node-forge PR 1152](https://github.com/digitalbazaar/forge/pull/1152). The installed Expo SDK 54 packages are current for that supported SDK family; the audit's React Native 0.87 upgrade suggestion falls outside [SDK 54's supported React Native 0.81 family](https://docs.expo.dev/versions/v54.0.0/). The existing audit policy is unchanged and these failures are not suppressed. Functional test success does not constitute a clean dependency audit.
 
 The local Expo CLI reports "Not logged in" and `app.json` has no linked EAS project; an operator-owned build account is required for signed releases. Image-only picker flows now use the system selector without requiring broad library permission, following the [Expo SDK 54 API contract](https://docs.expo.dev/versions/v54.0.0/sdk/imagepicker/). The final merged permissions must still be inspected in a signed binary.
 

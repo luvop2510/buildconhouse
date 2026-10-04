@@ -1,0 +1,441 @@
+[
+  {
+    "sku": "5885B401H0101",
+    "source_page": "https://www.vitraglobal.com/wall-hung-toilets/memoria-wall-hung-wc-p-5885b401-0101",
+    "source_type": "manufacturer",
+    "asset_candidates": [
+      {
+        "official_page_asset": "https://img-salsify.mncdn.com/mnpadding/515/515/FFFFFF/images/q_auto:low/4f4ce238cbf90aefe25fb68111628e63c9d0fd09/5885B401_0101_abc2290e24b5e2256e114dd109d7aaad1216e30c-1.jpg",
+        "master_url": "https://img-salsify.mncdn.com/images/4f4ce238cbf90aefe25fb68111628e63c9d0fd09/5885B401_0101_abc2290e24b5e2256e114dd109d7aaad1216e30c-1.jpg",
+        "http_status": 200,
+        "decoded_dimensions": [
+          3517,
+          2480
+        ],
+        "format": "JPEG",
+        "sha1": "977bf8a452037c43f70cb08222ea8e8567d4499f",
+        "true_4k": false,
+        "exact_H_filename": false,
+        "historical_hash_match": false
+      }
+    ],
+    "page_status": 200,
+    "official_sku": "5885B401-0101",
+    "description": "Matt white  Memoria Wall-Hung WC 5885B401-0101: review technical and dimension information. Discover VitrA quality.",
+    "exact_H_asset_on_official_page": false,
+    "blockers": [
+      "Official page identifies hyphen SKU only; no authoritative H-to-hyphen mapping found",
+      "Manufacturer originals below true 4K gate"
+    ],
+    "outcome": "ambiguous",
+    "old_media_dimensions": [
+      166,
+      151
+    ],
+    "old_media_sha1": "a05d12e5b9e651c36cd842427352b3a0b79fe825",
+    "brand": "VitrA",
+    "floor_id": "first-floor",
+    "read_only": true,
+    "production_writes": false,
+    "india_exact_sku_search": "https://www.vitra-india.com/search?text=5885B401H0101",
+    "india_search_result": "HTTP 200; no product ownership links returned for exact SKU",
+    "historical_restore_eligible": false,
+    "replacement_eligible": false,
+    "next_source_requirement": "Exact Indian H-SKU manufacturer original at >=3840 longest edge and >=2160 each axis, or SKU-verified official hero SVG; alternatively original historical bytes matching SHA-1 a05d12e5b9e651c36cd842427352b3a0b79fe825"
+  },
+  {
+    "sku": "5885B401H0559",
+    "source_page": "https://www.vitraglobal.com/wall-hung-toilets/memoria-wall-hung-wc-p-5885b401-0559",
+    "source_type": "manufacturer",
+    "asset_candidates": [
+      {
+        "official_page_asset": "https://img-salsify.mncdn.com/mnpadding/515/515/FFFFFF/images/q_auto:low/947e430221903530c9e2f62e0225aa3d2e55cace/5885B401_0559_1b7f99e2f1a89d65a5110848509a445961a389d8-1.jpg",
+        "master_url": "https://img-salsify.mncdn.com/images/947e430221903530c9e2f62e0225aa3d2e55cace/5885B401_0559_1b7f99e2f1a89d65a5110848509a445961a389d8-1.jpg",
+        "http_status": 200,
+        "decoded_dimensions": [
+          1181,
+          1089
+        ],
+        "format": "JPEG",
+        "sha1": "d61647c134777c46588e6b1a736fa917bce694f5",
+        "true_4k": false,
+        "exact_H_filename": false,
+        "historical_hash_match": false
+      }
+    ],
+    "page_status": 200,
+    "official_sku": "5885B401-0559",
+    "description": "Matt white  Memoria Wall-hung WC 5885B401-0559: review technical and dimension information. Discover VitrA quality.",
+    "exact_H_asset_on_official_page": false,
+    "blockers": [
+      "Official page identifies hyphen SKU only; no authoritative H-to-hyphen mapping found",
+      "Manufacturer originals below true 4K gate",
+      "Official global H2 says Matt Black while Colour and JSON description say Matt white; no authoritative H-SKU mapping"
+    ],
+    "outcome": "ambiguous",
+    "old_media_dimensions": [
+      166,
+      151
+    ],
+    "old_media_sha1": "a05d12e5b9e651c36cd842427352b3a0b79fe825",
+    "brand": "VitrA",
+    "floor_id": "first-floor",
+    "read_only": true,
+    "production_writes": false,
+    "india_exact_sku_search": "https://www.vitra-india.com/search?text=5885B401H0559",
+    "india_search_result": "HTTP 200; no product ownership links returned for exact SKU",
+    "historical_restore_eligible": false,
+    "replacement_eligible": false,
+    "next_source_requirement": "Exact Indian H-SKU manufacturer original at >=3840 longest edge and >=2160 each axis, or SKU-verified official hero SVG; alternatively original historical bytes matching SHA-1 a05d12e5b9e651c36cd842427352b3a0b79fe825"
+  },
+  {
+    "sku": "7082B401H0075",
+    "source_page": "https://www.vitraglobal.com/wall-hung-toilets/integra-square-wall-hung-wc-p-7082b401-0075",
+    "source_type": "manufacturer",
+    "asset_candidates": [],
+    "page_status": 404,
+    "blockers": [
+      "No exact-SKU manufacturer product page returned by India search; tested global Matt White B401 variant route 404; official available B003/B483 alternatives differ in finish"
+    ],
+    "old_media_dimensions": [
+      136,
+      120
+    ],
+    "old_media_sha1": "3cc64e3930092ee665d380ea8be9f05cde7a034e",
+    "brand": "VitrA",
+    "floor_id": "first-floor",
+    "read_only": true,
+    "production_writes": false,
+    "india_exact_sku_search": "https://www.vitra-india.com/search?text=7082B401H0075",
+    "india_search_result": "HTTP 200; no product ownership links returned for exact SKU",
+    "historical_restore_eligible": false,
+    "replacement_eligible": false,
+    "outcome": "not_found",
+    "next_source_requirement": "Exact Indian H-SKU manufacturer original at >=3840 longest edge and >=2160 each axis, or SKU-verified official hero SVG; alternatively original historical bytes matching SHA-1 3cc64e3930092ee665d380ea8be9f05cde7a034e"
+  },
+  {
+    "sku": "7082B401H0090",
+    "source_page": "https://www.vitraglobal.com/wall-hung-toilets/integra-square-wall-hung-wc-p-7082b401-0090",
+    "source_type": "manufacturer",
+    "asset_candidates": [],
+    "page_status": 404,
+    "blockers": [
+      "No exact-SKU manufacturer product page returned by India search; tested global Matt White B401 variant route 404; official available B003/B483 alternatives differ in finish"
+    ],
+    "old_media_dimensions": [
+      136,
+      120
+    ],
+    "old_media_sha1": "3cc64e3930092ee665d380ea8be9f05cde7a034e",
+    "brand": "VitrA",
+    "floor_id": "first-floor",
+    "read_only": true,
+    "production_writes": false,
+    "india_exact_sku_search": "https://www.vitra-india.com/search?text=7082B401H0090",
+    "india_search_result": "HTTP 200; no product ownership links returned for exact SKU",
+    "historical_restore_eligible": false,
+    "replacement_eligible": false,
+    "outcome": "not_found",
+    "next_source_requirement": "Exact Indian H-SKU manufacturer original at >=3840 longest edge and >=2160 each axis, or SKU-verified official hero SVG; alternatively original historical bytes matching SHA-1 3cc64e3930092ee665d380ea8be9f05cde7a034e"
+  },
+  {
+    "sku": "7041B401H0075",
+    "source_page": "https://www.vitraglobal.com/wall-hung-toilets/integra-wall-hung-wc-p-7041b401-0075",
+    "source_type": "manufacturer",
+    "asset_candidates": [],
+    "page_status": 404,
+    "blockers": [
+      "No exact-SKU manufacturer product page returned by India search; tested global Matt White B401 variant route 404; official available B003/B483 alternatives differ in finish"
+    ],
+    "old_media_dimensions": [
+      188,
+      164
+    ],
+    "old_media_sha1": "012ad77486b9270978f5bf7ebf3a61c985662632",
+    "brand": "VitrA",
+    "floor_id": "first-floor",
+    "read_only": true,
+    "production_writes": false,
+    "india_exact_sku_search": "https://www.vitra-india.com/search?text=7041B401H0075",
+    "india_search_result": "HTTP 200; no product ownership links returned for exact SKU",
+    "historical_restore_eligible": false,
+    "replacement_eligible": false,
+    "outcome": "not_found",
+    "next_source_requirement": "Exact Indian H-SKU manufacturer original at >=3840 longest edge and >=2160 each axis, or SKU-verified official hero SVG; alternatively original historical bytes matching SHA-1 012ad77486b9270978f5bf7ebf3a61c985662632"
+  },
+  {
+    "sku": "7041B401H0090",
+    "source_page": "https://www.vitraglobal.com/wall-hung-toilets/integra-wall-hung-wc-p-7041b401-0090",
+    "source_type": "manufacturer",
+    "asset_candidates": [],
+    "page_status": 404,
+    "blockers": [
+      "No exact-SKU manufacturer product page returned by India search; tested global Matt White B401 variant route 404; official available B003/B483 alternatives differ in finish"
+    ],
+    "old_media_dimensions": [
+      188,
+      164
+    ],
+    "old_media_sha1": "012ad77486b9270978f5bf7ebf3a61c985662632",
+    "brand": "VitrA",
+    "floor_id": "first-floor",
+    "read_only": true,
+    "production_writes": false,
+    "india_exact_sku_search": "https://www.vitra-india.com/search?text=7041B401H0090",
+    "india_search_result": "HTTP 200; no product ownership links returned for exact SKU",
+    "historical_restore_eligible": false,
+    "replacement_eligible": false,
+    "outcome": "not_found",
+    "next_source_requirement": "Exact Indian H-SKU manufacturer original at >=3840 longest edge and >=2160 each axis, or SKU-verified official hero SVG; alternatively original historical bytes matching SHA-1 012ad77486b9270978f5bf7ebf3a61c985662632"
+  },
+  {
+    "sku": "7810B401H0016",
+    "source_page": "https://www.vitraglobal.com/bowl-basins/plural-bowl-p-7810b401-0016",
+    "source_type": "manufacturer",
+    "asset_candidates": [
+      {
+        "official_page_asset": "https://img-salsify.mncdn.com/mnpadding/515/515/FFFFFF/images/q_auto:low/cllezkjsozdvxiewbcnr/7810B403H0016_8f08b5f1a51e13096ff4288eda7ada0b093a8cba-1.jpg",
+        "master_url": "https://img-salsify.mncdn.com/images/cllezkjsozdvxiewbcnr/7810B403H0016_8f08b5f1a51e13096ff4288eda7ada0b093a8cba-1.jpg",
+        "http_status": 200,
+        "decoded_dimensions": [
+          2480,
+          1749
+        ],
+        "format": "JPEG",
+        "sha1": "520095508d80c39eb6f8642fcad6d9a349b68455",
+        "true_4k": false,
+        "exact_H_filename": false,
+        "historical_hash_match": false
+      }
+    ],
+    "page_status": 200,
+    "official_sku": "7810B401-0016",
+    "description": "Matt white  Plural Bowl 7810B401-0016: review technical and dimension information. Discover VitrA quality.",
+    "exact_H_asset_on_official_page": false,
+    "blockers": [
+      "Official page identifies hyphen SKU only; no authoritative H-to-hyphen mapping found",
+      "Manufacturer originals below true 4K gate",
+      "Global Matt White page hero filename identifies 7810B403H0016 White, a different finish; unsuitable substitute"
+    ],
+    "outcome": "ambiguous",
+    "old_media_dimensions": [
+      314,
+      221
+    ],
+    "old_media_sha1": "2befd92b8ca04866506f096404ddcb326490ea1d",
+    "brand": "VitrA",
+    "floor_id": "first-floor",
+    "read_only": true,
+    "production_writes": false,
+    "india_exact_sku_search": "https://www.vitra-india.com/search?text=7810B401H0016",
+    "india_search_result": "HTTP 200; no product ownership links returned for exact SKU",
+    "historical_restore_eligible": false,
+    "replacement_eligible": false,
+    "next_source_requirement": "Exact Indian H-SKU manufacturer original at >=3840 longest edge and >=2160 each axis, or SKU-verified official hero SVG; alternatively original historical bytes matching SHA-1 2befd92b8ca04866506f096404ddcb326490ea1d"
+  },
+  {
+    "sku": "7812B401H0016",
+    "source_page": "https://www.vitraglobal.com/bowl-basins/plural-bowl-p-7812b401-0016",
+    "source_type": "manufacturer",
+    "asset_candidates": [
+      {
+        "official_page_asset": "https://img-salsify.mncdn.com/mnpadding/515/515/FFFFFF/images/q_auto:low/f5f1a91a239ca8bd2ff39dd5fbc6f91f2b08fc71/7812B401H0016_2370586c362122e11f35db10089caa1af08f4676-1.jpg",
+        "master_url": "https://img-salsify.mncdn.com/images/f5f1a91a239ca8bd2ff39dd5fbc6f91f2b08fc71/7812B401H0016_2370586c362122e11f35db10089caa1af08f4676-1.jpg",
+        "http_status": 200,
+        "decoded_dimensions": [
+          2480,
+          1749
+        ],
+        "format": "JPEG",
+        "sha1": "6cac721a076ea7829459cffa2fdcffbbfec6297c",
+        "true_4k": false,
+        "exact_H_filename": true,
+        "historical_hash_match": false
+      },
+      {
+        "official_page_asset": "https://img-salsify.mncdn.com/mnpadding/515/515/FFFFFF/images/q_auto:low/kpzkpqwke8lws952yqts/7812B401_0016_Close_Up_Image_01-2.jpg",
+        "master_url": "https://img-salsify.mncdn.com/images/kpzkpqwke8lws952yqts/7812B401_0016_Close_Up_Image_01-2.jpg",
+        "http_status": 200,
+        "decoded_dimensions": [
+          3000,
+          3000
+        ],
+        "format": "JPEG",
+        "sha1": "35318f5ca59877869240153613d2ceee393c1ee7",
+        "true_4k": false,
+        "exact_H_filename": false,
+        "historical_hash_match": false
+      }
+    ],
+    "page_status": 200,
+    "official_sku": "7812B401-0016",
+    "description": "Matt white  Plural Bowl 7812B401-0016: review technical and dimension information. Discover VitrA quality.",
+    "exact_H_asset_on_official_page": true,
+    "blockers": [
+      "Manufacturer originals below true 4K gate",
+      "Official global page H2 says Matt Black while Colour and JSON description say Matt white; candidate requires manufacturer clarification even apart from dimensions"
+    ],
+    "outcome": "not_4k",
+    "old_media_dimensions": [
+      273,
+      195
+    ],
+    "old_media_sha1": "0f26d927085794eddf83ca126fef48a0034d4891",
+    "brand": "VitrA",
+    "floor_id": "first-floor",
+    "read_only": true,
+    "production_writes": false,
+    "india_exact_sku_search": "https://www.vitra-india.com/search?text=7812B401H0016",
+    "india_search_result": "HTTP 200; no product ownership links returned for exact SKU",
+    "historical_restore_eligible": false,
+    "replacement_eligible": false,
+    "next_source_requirement": "Exact Indian H-SKU manufacturer original at >=3840 longest edge and >=2160 each axis, or SKU-verified official hero SVG; alternatively original historical bytes matching SHA-1 0f26d927085794eddf83ca126fef48a0034d4891"
+  },
+  {
+    "sku": "5991B401H0016",
+    "source_page": "https://www.vitraglobal.com/bowl-basins/outline-bowl-p-5991b401-0016",
+    "source_type": "manufacturer",
+    "asset_candidates": [
+      {
+        "official_page_asset": "https://img-salsify.mncdn.com/mnpadding/515/515/FFFFFF/images/q_auto:low/c71dd35c05e371d2edecde734f0302e0649cd073/5991B401_0016_48e2c0fc75f09a3a5f3a81a04518b13fdaf0df87-1.jpg",
+        "master_url": "https://img-salsify.mncdn.com/images/c71dd35c05e371d2edecde734f0302e0649cd073/5991B401_0016_48e2c0fc75f09a3a5f3a81a04518b13fdaf0df87-1.jpg",
+        "http_status": 200,
+        "decoded_dimensions": [
+          1181,
+          792
+        ],
+        "format": "JPEG",
+        "sha1": "b57fa53a45d5af25ddcaf69b27657474324a20d6",
+        "true_4k": false,
+        "exact_H_filename": false,
+        "historical_hash_match": false
+      }
+    ],
+    "page_status": 200,
+    "official_sku": "5991B401-0016",
+    "description": "Matt white  Outline Bowl 5991B401-0016: review technical and dimension information. Discover VitrA quality.",
+    "exact_H_asset_on_official_page": false,
+    "blockers": [
+      "Official page identifies hyphen SKU only; no authoritative H-to-hyphen mapping found",
+      "Manufacturer originals below true 4K gate"
+    ],
+    "outcome": "ambiguous",
+    "old_media_dimensions": [
+      304,
+      208
+    ],
+    "old_media_sha1": "6c5b69fd3e4499b0489d035f18e73207b7f82d44",
+    "brand": "VitrA",
+    "floor_id": "first-floor",
+    "read_only": true,
+    "production_writes": false,
+    "india_exact_sku_search": "https://www.vitra-india.com/search?text=5991B401H0016",
+    "india_search_result": "HTTP 200; no product ownership links returned for exact SKU",
+    "historical_restore_eligible": false,
+    "replacement_eligible": false,
+    "next_source_requirement": "Exact Indian H-SKU manufacturer original at >=3840 longest edge and >=2160 each axis, or SKU-verified official hero SVG; alternatively original historical bytes matching SHA-1 6c5b69fd3e4499b0489d035f18e73207b7f82d44"
+  },
+  {
+    "sku": "5993B403H0016",
+    "source_page": "https://www.vitraglobal.com/bowl-basins/outline-bowl-p-5993b403-0016",
+    "source_type": "manufacturer",
+    "asset_candidates": [
+      {
+        "official_page_asset": "https://img-salsify.mncdn.com/mnpadding/515/515/FFFFFF/images/q_auto:low/cbeee956054ffb140e97790675177ecd18cb05b2/5993B403_0016_ff86bda1938e5c03132ecc54e2e4fe946177db78-1.jpg",
+        "master_url": "https://img-salsify.mncdn.com/images/cbeee956054ffb140e97790675177ecd18cb05b2/5993B403_0016_ff86bda1938e5c03132ecc54e2e4fe946177db78-1.jpg",
+        "http_status": 200,
+        "decoded_dimensions": [
+          2480,
+          1748
+        ],
+        "format": "JPEG",
+        "sha1": "38b74c67cb1f43327cd6c04c34ae3c4a08b3d197",
+        "true_4k": false,
+        "exact_H_filename": false,
+        "historical_hash_match": false
+      }
+    ],
+    "page_status": 200,
+    "official_sku": "5993B403-0016",
+    "description": "White  Outline Bowl 5993B403-0016: review technical and dimension information. Discover VitrA quality.",
+    "exact_H_asset_on_official_page": false,
+    "blockers": [
+      "Official page identifies hyphen SKU only; no authoritative H-to-hyphen mapping found",
+      "Manufacturer originals below true 4K gate"
+    ],
+    "outcome": "ambiguous",
+    "old_media_dimensions": [
+      304,
+      184
+    ],
+    "old_media_sha1": "dba83ba16cadebc5fc22535a87fdf5ced652c782",
+    "brand": "VitrA",
+    "floor_id": "first-floor",
+    "read_only": true,
+    "production_writes": false,
+    "india_exact_sku_search": "https://www.vitra-india.com/search?text=5993B403H0016",
+    "india_search_result": "HTTP 200; no product ownership links returned for exact SKU",
+    "historical_restore_eligible": false,
+    "replacement_eligible": false,
+    "next_source_requirement": "Exact Indian H-SKU manufacturer original at >=3840 longest edge and >=2160 each axis, or SKU-verified official hero SVG; alternatively original historical bytes matching SHA-1 dba83ba16cadebc5fc22535a87fdf5ced652c782"
+  },
+  {
+    "sku": "5995B403H0016",
+    "source_page": "https://www.vitraglobal.com/bowl-basins/outline-bowl-p-5995b403-0016",
+    "source_type": "manufacturer",
+    "asset_candidates": [
+      {
+        "official_page_asset": "https://img-salsify.mncdn.com/mnpadding/515/515/FFFFFF/images/q_auto:low/7ab0b8c54ede413bd019d343f5666396f78a0d3b/5995B403_0016_84223d80ea00ab5f4b667668f9291cec2243c7f2-1.jpg",
+        "master_url": "https://img-salsify.mncdn.com/images/7ab0b8c54ede413bd019d343f5666396f78a0d3b/5995B403_0016_84223d80ea00ab5f4b667668f9291cec2243c7f2-1.jpg",
+        "http_status": 200,
+        "decoded_dimensions": [
+          2480,
+          1748
+        ],
+        "format": "JPEG",
+        "sha1": "b831fc99ac6a74699fb88d44db0b1a3dbaf10011",
+        "true_4k": false,
+        "exact_H_filename": false,
+        "historical_hash_match": false
+      }
+    ],
+    "page_status": 200,
+    "official_sku": "5995B403-0016",
+    "description": "White  Outline Bowl 5995B403-0016: review technical and dimension information. Discover VitrA quality.",
+    "exact_H_asset_on_official_page": false,
+    "blockers": [
+      "Official page identifies hyphen SKU only; no authoritative H-to-hyphen mapping found",
+      "Manufacturer originals below true 4K gate"
+    ],
+    "outcome": "ambiguous",
+    "old_media_dimensions": [
+      296,
+      185
+    ],
+    "old_media_sha1": "3e706828c9533e05447c695e397e6131d9719b3f",
+    "brand": "VitrA",
+    "floor_id": "first-floor",
+    "read_only": true,
+    "production_writes": false,
+    "india_exact_sku_search": "https://www.vitra-india.com/search?text=5995B403H0016",
+    "india_search_result": "HTTP 200; no product ownership links returned for exact SKU",
+    "historical_restore_eligible": false,
+    "replacement_eligible": false,
+    "retailer_rejected": {
+      "source_page": "https://waterstoneindia.com/product/5995b403h0016-outline-table-top-wash-basin-oval-white-by-vitra-sanitaryware/",
+      "asset_url": "https://waterstoneindia.com/wp-content/uploads/2025/01/5995B403H0016-_-OUTLINE.png",
+      "decoded_dimensions": [
+        500,
+        520
+      ],
+      "sha1": "b3b185f1bb5ccaefe59a7126c12b3d94ef6d4ce4",
+      "historical_hash_match": false,
+      "blockers": [
+        "Below 4K minimum",
+        "Manufacturer distributor authorization not established",
+        "Page aggregates eight finish options; cannot infer specific finish from shared image"
+      ]
+    },
+    "next_source_requirement": "Exact Indian H-SKU manufacturer original at >=3840 longest edge and >=2160 each axis, or SKU-verified official hero SVG; alternatively original historical bytes matching SHA-1 3e706828c9533e05447c695e397e6131d9719b3f"
+  }
+]
