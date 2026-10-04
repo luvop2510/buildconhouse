@@ -111,7 +111,7 @@ async def _mrp_for_quotation(quotation: dict) -> float:
 def _payment_status(paid: float, grand: float) -> str:
     """Derived status for the order card: paid | partial | due."""
     if grand <= 0:
-        return "due"
+        return "paid"
     if paid + 1e-6 >= grand:
         return "paid"
     if paid > 0:
@@ -268,7 +268,8 @@ async def payment_stats(user: UserPublic = Depends(get_current_user)):
         settlement_credits += credit
         status = _payment_status(paid, grand)
         if status == "paid":
-            fully_paid += 1
+            if grand > 0:
+                fully_paid += 1
         else:
             active_orders += 1
             active_total += max(0.0, grand - credit)
@@ -427,7 +428,8 @@ async def order_detail(order_id: str, user: UserPublic = Depends(get_current_use
     ) or {}
 
     payments = await db.payments.find(
-        {"quotation_id": order_id, "floor_id": floor_id}, {"_id": 0},
+        {"quotation_id": order_id, "floor_id": floor_id,
+         "$nor": [{"status": "pending", "automation_key": {"$exists": True}}]}, {"_id": 0},
     ).sort("paid_at", -1).to_list(500)
     # Ensure legacy payments (without paid_at) still sort sensibly
     payments.sort(key=lambda p: (p.get("paid_at") or p.get("created_at") or ""), reverse=True)
@@ -437,6 +439,7 @@ async def order_detail(order_id: str, user: UserPublic = Depends(get_current_use
         "floor_id": floor_id,
         "number": doc.get("number"),
         "status": doc.get("status"),
+        "doc_type": doc.get("doc_type") or "standard",
         "customer": {
             "id": customer.get("id"),
             "name": customer.get("name"),
@@ -447,9 +450,9 @@ async def order_detail(order_id: str, user: UserPublic = Depends(get_current_use
             "address": customer.get("address"),
         },
         "customer_name": doc.get("customer_name"),
-        "confirmed_at": doc.get("updated_at") or doc.get("created_at"),
+        "confirmed_at": doc.get("ordered_at") or doc.get("created_at"),
         "notes": doc.get("notes"),
-        "project_name": None,
+        "project_name": doc.get("project_name"),
         "mrp": round(mrp, 2),
         "discounted_rate": round(quotation_total, 2),
         "quotation_total": round(quotation_total, 2),
@@ -814,7 +817,7 @@ async def completed_payment_list(
 ):
     """Return payment rows only for orders that are fully paid (100%)."""
     order_query = _payment_scope_query(user, {"status": {"$in": list(ORDER_STATUSES)}})
-    orders = await db.quotations.find(order_query, {"_id": 0, "id": 1, "grand_total": 1, "payment_extra_amount": 1}).to_list(5000)
+    orders = await db.quotations.find(order_query, {"_id": 0, "id": 1, "grand_total": 1, "payment_extra_amount": 1, "payment_extra_history": 1}).to_list(5000)
     paid_by_order = await _paid_by_quotation([order["id"] for order in orders])
     fully_paid_ids = _fully_paid_order_ids(orders, paid_by_order)
     floor_ids = _resolve_history_floor_ids(user, business_unit)

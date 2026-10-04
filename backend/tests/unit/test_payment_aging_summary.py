@@ -202,3 +202,41 @@ def test_fully_paid_orders_returns_one_row_per_order(monkeypatch):
     assert result["total"] == 1
     assert result["items"][0]["grand_total"] == 5000
     assert result["items"][0]["outstanding"] == 0
+
+
+def test_zero_value_confirmed_order_is_not_a_collection_action(monkeypatch):
+    monkeypatch.setattr(payments, "db", Db([
+        {"id": "free", "grand_total": 0, "status": "ordered"},
+        {"id": "open", "grand_total": 100, "status": "ordered"},
+    ]))
+    async def paid_map(_ids, **_kwargs): return {}
+    monkeypatch.setattr(payments, "_paid_by_quotation", paid_map)
+    queue = asyncio.run(payments.list_orders(status_filter=None, overdue_period=None,
+        custom_min_days=None, custom_max_days=None, limit=200, user=_user()))
+    assert [row["id"] for row in queue] == ["open"]
+    stats = asyncio.run(payments.payment_stats(user=_user()))
+    assert stats["active_orders"] == 1
+    assert stats["active_total"] == stats["total_outstanding"] == 100
+    assert stats["fully_paid"] == 0
+
+
+def test_detail_keeps_confirmation_date_and_hides_pending_automation_balances(monkeypatch):
+    quote = {"id": "q1", "number": "Q-1", "customer_id": "c1", "floor_id": "first-floor",
+             "grand_total": 1000, "status": "ordered", "created_at": "2026-08-01",
+             "ordered_at": "2026-08-05", "updated_at": "2026-10-04", "project_name": "Bath"}
+    database = Db([quote])
+    requested = []
+    class Ledger(PaymentRows):
+        def find(self, query, *_args):
+            requested.append(query)
+            return Cursor([])
+    database.payments = Ledger()
+    monkeypatch.setattr(payments, "db", database)
+    async def paid_map(_ids, **_kwargs): return {}
+    monkeypatch.setattr(payments, "_paid_by_quotation", paid_map)
+    monkeypatch.setattr(payments, "_mrp_for_quotation", lambda _quote: asyncio.sleep(0, result=1000))
+    detail = asyncio.run(payments.order_detail("q1", user=_user()))
+    assert detail["confirmed_at"] == "2026-08-05"
+    assert detail["project_name"] == "Bath"
+    assert detail["doc_type"] == "standard"
+    assert requested[0]["$nor"] == [{"status": "pending", "automation_key": {"$exists": True}}]

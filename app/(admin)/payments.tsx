@@ -7,7 +7,7 @@
 import { Disclosure } from "@/src/design/Disclosure";
 import { useReducedMotion } from "@/src/hooks/use-reduced-motion";
 import { Feather } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView,
@@ -64,10 +64,11 @@ type PaymentEntry = {
   entry_type?: "payment" | "godown_stock_credit" | "additional_cost";
   cost_name?: string | null;
   paid_at?: string | null; created_at?: string; recorded_by_name?: string | null;
+  status?: "pending" | "completed" | "failed";
 };
 
 type OrderDetail = {
-  id: string; number: string; status: string;
+  id: string; number: string; status: string; doc_type?: string;
   customer: {
     id: string; name: string; company?: string | null;
     phone?: string | null; email?: string | null; city?: string | null;
@@ -126,6 +127,9 @@ function paymentHistoryCopy(payment: PaymentEntry): { title: string; subtitle: s
       subtitle: payment.note || "Customer balance reduced for returned stock.",
     };
   }
+  if (payment.status === "failed") {
+    return { title: `Failed payment · ${money(payment.amount)}`, subtitle: payment.note || "Excluded from money received." };
+  }
   // Dispatches now write a structured payment label. Prefer it over text
   // parsing so every new dispatch appears under the exact, stable label.
   if (payment.label?.trim()) {
@@ -148,7 +152,7 @@ function paymentHistoryCopy(payment: PaymentEntry): { title: string; subtitle: s
     };
   }
   return {
-  title: `${MODE_LABELS[payment.mode as PayMode]} · ${money(payment.amount)}`,
+  title: `${payment.status === "pending" ? "Pending · " : ""}${MODE_LABELS[payment.mode as PayMode] || "Adjustment"} · ${money(payment.amount)}`,
     subtitle: (payment.reference || payment.note)
       ? `${payment.reference || ""}${payment.reference && payment.note ? " · " : ""}${payment.note || ""}`
       : `Recorded by ${payment.recorded_by_name || "—"}`,
@@ -393,6 +397,19 @@ export default function PaymentsScreen() {
     const [, list] = await Promise.all([loadStats(), loadOrders(q)]);
     if (activeFloorRef.current === selectedFloorId && selectedOrderRef.current === orderId && (!list || list.some((order) => order.id === orderId))) await loadDetail(orderId);
   };
+  const refreshOnFocus = useRef(() => {});
+  refreshOnFocus.current = () => {
+    const current = selectedOrderRef.current;
+    if (current) void refreshCollections(current);
+    else void Promise.all([loadStats(), loadOrders(q)]);
+  };
+  const hasFocused = useRef(false);
+  useFocusEffect(useCallback(() => {
+    // The initial floor/search effects load this screen. A second initial
+    // request would replace the customer queue while staff start using it.
+    if (hasFocused.current) refreshOnFocus.current();
+    else hasFocused.current = true;
+  }, []));
 
   const savePayment = async () => {
     if (!detail || paymentSavingRef.current) return;
@@ -613,28 +630,26 @@ export default function PaymentsScreen() {
 
       {tab === "collections" ? (
       <ScrollView testID="payments-collections-scroll" ref={collectionsScrollRef} style={{ flex: 1, minHeight: 0 }} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, gap: spacing.lg, paddingBottom: isPhone ? 132 : spacing.xxxl }}>
-        <Disclosure title="Collections summary" summary="Active order target, collections and purchase spending" defaultOpen={!isPhone}>
+        <Disclosure title="Collections summary" summary="Unpaid orders, cash received and remaining balance" defaultOpen={!isPhone}>
           {statsError ? <ErrorState title="Summary unavailable" onRetry={() => void loadStats()} /> : null}
         {/* Stats */}
         <View style={{ flexDirection: "row", gap: spacing.md, flexWrap: "wrap" }}>
           <StatTile label="Earned" value={stats ? moneyShort(stats.earned_total) : "—"}
             icon="trending-up" tone="success" sub="Cash retained after adjustments" />
-          <StatTile label="Outstanding" value={stats ? moneyShort(stats.total_outstanding) : "—"}
-            icon="alert-circle" tone="danger" sub="Pending on active orders" />
+          <StatTile label="Total due now" value={stats ? money(stats.total_outstanding) : "—"}
+            icon="alert-circle" tone="danger" sub="Remaining balance across unpaid orders" />
           {(stats?.refund_due_total || 0) > 0 ? <StatTile label="Refund due" value={moneyShort(stats?.refund_due_total || 0)}
             icon="rotate-ccw" tone="danger" sub="Review godown transfers" /> : null}
           <StatTile label="Spending" value={stats ? moneyShort(stats.spending_total) : "—"}
             icon="shopping-bag" tone="neutral" sub="Committed supplier purchases" />
         </View>
         <View style={{ flexDirection: "row", gap: spacing.md, flexWrap: "wrap" }}>
-          <StatTile dense label="Total active payments" value={stats ? money(stats.active_total) : "—"}
-            icon="file-text" tone="brand" sub={`${stats?.active_orders ?? "—"} orders awaiting payment`} />
+          <StatTile dense label="Value of unpaid orders" value={stats ? money(stats.active_total) : "—"}
+            icon="file-text" tone="brand" sub={`${stats?.active_orders ?? "—"} orders · includes amounts already received`} />
           <StatTile dense label="Received on active orders" value={stats ? money(stats.active_received) : "—"}
             icon="check" tone="success" sub="Partial payments received" />
-          <StatTile dense label="Still to receive" value={stats ? money(stats.total_outstanding) : "—"}
-            icon="clock" tone="danger" sub="Remaining active balance" />
         </View>
-        <Text style={type.caption}>Fully paid orders leave these active payment totals. {stats?.fully_paid ?? "—"} fully paid orders · {stats ? money(stats.collected_this_month) : "—"} received this month.</Text>
+        <Text testID="payments-summary-equation" style={type.caption}>Value of unpaid orders − received on those orders = total due now. Fully paid orders appear in Fully Paid Orders and Payment History. {stats?.fully_paid ?? "—"} fully paid orders · {stats ? money(stats.collected_this_month) : "—"} received this month.</Text>
 
         </Disclosure>
 
@@ -759,13 +774,57 @@ export default function PaymentsScreen() {
                   </View>
                 </Panel>
 
+                {selectedCustomer && selectedCustomer.orders.length > 1 ? (
+                  <Panel title="Outstanding customer orders" overline="SELECT AN ORDER" padding={spacing.md}>
+                    <Text testID="payment-customer-balance" style={[type.body, { marginBottom: spacing.md }]}>Customer total due: {money(selectedCustomer.outstanding)} across {selectedCustomer.orderCount} orders. Choose one quotation below to view, update or record its payment.</Text>
+                    <View style={{ gap: spacing.sm }}>
+                      {selectedCustomer.orders.map((order) => (
+                        <Pressable
+                          key={order.id}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Select ${order.number}`}
+                          accessibilityState={{ selected: order.id === detail.id }}
+                          aria-pressed={order.id === detail.id}
+                          testID={`payment-select-order-${order.id}`}
+                          onPress={() => {
+                            shouldFocusDetailRef.current = true;
+                            setSelectedId(order.id);
+                          }}
+                          style={({ pressed }) => [{
+                            padding: spacing.md, borderRadius: radius.md, borderWidth: 1,
+                            borderColor: order.id === detail.id ? colors.brand : colors.border,
+                            backgroundColor: order.id === detail.id ? colors.surfaceTertiary : colors.surfaceSecondary,
+                            opacity: pressed ? 0.84 : 1,
+                          }]}
+                        >
+                          <View style={{ flexDirection: "row", gap: spacing.sm, justifyContent: "space-between", alignItems: "center" }}>
+                            <View style={{ flex: 1, minWidth: 0 }}>
+                              <Text style={type.titleSm}>{order.number}</Text>
+                              <Text style={type.caption}>Order value {money(order.effective_order_total ?? order.grand_total)} · received {money(order.cash_received ?? order.paid)}</Text>
+                            </View>
+                            <Text style={{ color: colors.error, fontWeight: "800", fontVariant: ["tabular-nums"], flexShrink: 1 }}>Due {money(order.outstanding)}</Text>
+                          </View>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </Panel>
+                ) : null}
+
                 {/* Collection actions precede the ledger so they are usable immediately on a phone. */}
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+                  <Button label="Quotation & history" icon="file-text" variant="secondary" size="sm"
+                    testID="payment-open-quotation"
+                    onPress={() => router.push((detail.doc_type?.startsWith("tiles_") ? `/(admin)/tiles/orders/${detail.id}` : `/(admin)/quotations/${detail.id}`) as any)} />
+                  <Button label="Update quotation" icon="edit-3" variant="secondary" size="sm"
+                    testID="payment-edit-quotation"
+                    onPress={() => router.push((detail.doc_type === "tiles_quotation" ? `/(admin)/tiles/quotation?id=${encodeURIComponent(detail.id)}` : `/(admin)/quotations/new?quotationId=${encodeURIComponent(detail.id)}`) as any)} />
+                </View>
                 {(detail.refund_due || 0) > 0 ? <UIAlert tone="error" title={`Refund due · ${money(detail.refund_due || 0)}`}
                   description="Cash received exceeds the final order value after a godown transfer. The stock credit did not send money back to the customer; review this amount before settling it." /> : null}
                 {detail.outstanding > 0 ? (
                   <Button
                     testID="open-record-payment"
-                    label="Record Payment"
+                    label={`Record payment · ${detail.number}`}
                     icon="plus"
                     variant="primary"
                     size="lg"
@@ -799,8 +858,8 @@ export default function PaymentsScreen() {
                         const copy = paymentHistoryCopy(p);
                         return <ActivityRow
                           key={p.id}
-                          icon={p.entry_type === "additional_cost" ? "plus-circle" : MODE_ICONS[p.mode as PayMode]}
-                          iconTone="success"
+                          icon={p.entry_type === "additional_cost" ? "plus-circle" : p.status === "pending" ? "clock" : MODE_ICONS[p.mode as PayMode] || "rotate-ccw"}
+                          iconTone={p.status === "failed" ? "danger" : p.status === "pending" ? "neutral" : "success"}
                           title={copy.title}
                           subtitle={copy.subtitle}
                           timestamp={dateShort(p.paid_at || p.created_at)}
@@ -842,41 +901,9 @@ export default function PaymentsScreen() {
                     </View>
                   </Panel>
 
-                {selectedCustomer && selectedCustomer.orders.length > 1 ? (
-                  <Panel title="Outstanding customer orders" overline="SELECT AN ORDER" padding={spacing.md}>
-                    <View style={{ gap: spacing.sm }}>
-                      {selectedCustomer.orders.map((order) => (
-                        <Pressable
-                          key={order.id}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Select ${order.number}`}
-                          onPress={() => {
-                            shouldFocusDetailRef.current = true;
-                            setSelectedId(order.id);
-                          }}
-                          style={({ pressed }) => [{
-                            padding: spacing.md, borderRadius: radius.md, borderWidth: 1,
-                            borderColor: order.id === detail.id ? colors.brand : colors.border,
-                            backgroundColor: order.id === detail.id ? colors.surfaceTertiary : colors.surfaceSecondary,
-                            opacity: pressed ? 0.84 : 1,
-                          }]}
-                        >
-                          <View style={{ flexDirection: "row", gap: spacing.sm, justifyContent: "space-between", alignItems: "center" }}>
-                            <View style={{ flex: 1, minWidth: 0 }}>
-                              <Text style={type.titleSm}>{order.number}</Text>
-                              <Text style={type.caption}>{order.percent_collected}% collected · {money(order.paid)} paid</Text>
-                            </View>
-                            <Text style={{ color: colors.error, fontWeight: "800", fontVariant: ["tabular-nums"] }}>{money(order.outstanding)}</Text>
-                          </View>
-                        </Pressable>
-                      ))}
-                    </View>
-                  </Panel>
-                ) : null}
-
                 {/* Metrics */}
                 <View style={{ flexDirection: "row", gap: spacing.md, flexWrap: "wrap" }}>
-                  <StatTile dense label="Quotation price" value={money(detail.quotation_total)} sub="Original quotation" tone="brand" />
+                  <StatTile dense label="Selected quotation price" value={money(detail.quotation_total)} sub={detail.number} tone="brand" />
                   {(detail.godown_transferred_value || 0) > 0 ? <StatTile dense label="Final order value" value={money(detail.effective_order_total ?? detail.grand_total)} sub={`Godown adjustment ${money(detail.godown_transferred_value || 0)}`} tone="brand" /> : null}
                   {detail.manual_extra_amount > 0 ? (
                     <StatTile dense label="Additional cost" value={money(detail.manual_extra_amount)}

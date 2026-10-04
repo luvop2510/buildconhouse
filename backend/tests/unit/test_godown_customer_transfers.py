@@ -11,8 +11,10 @@ from routes import godown_stock_routes as route
 
 class Cursor:
     def __init__(self, rows): self.rows = rows
-    def sort(self, *_args): return self
-    async def to_list(self, _limit): return self.rows
+    def sort(self, key, direction):
+        self.rows = sorted(self.rows, key=lambda row: row.get(key) or "", reverse=direction == -1)
+        return self
+    async def to_list(self, _limit): return self.rows[:_limit]
 
 
 class Session:
@@ -28,6 +30,8 @@ class Client:
 class Collection:
     def __init__(self, rows): self.rows = rows; self.inserted = []; self.updates = []
     async def find_one(self, query, *_args, **_kwargs):
+        if "transfer_group_key" in query:
+            return next((row for row in self.rows if matches(row, query)), None)
         idem = query.get("idempotency_key") or next((part["idempotency_key"] for part in query.get("$and", []) if "idempotency_key" in part), None)
         if idem:
             return next((row for row in self.rows if row.get("idempotency_key") == idem), None)
@@ -35,7 +39,10 @@ class Collection:
         if not wanted and query.get("items.id"):
             return next((row for row in self.rows if any(item.get("id") == query["items.id"] for item in row.get("items", []))), None)
         return next((row for row in self.rows if row.get("id") == wanted), None)
-    def find(self, *_args, **_kwargs): return Cursor(self.rows)
+    def find(self, query=None, *_args, **_kwargs):
+        if query and "transfer_group_key" in query:
+            return Cursor([row for row in self.rows if matches(row, query)])
+        return Cursor(self.rows)
     async def insert_one(self, row, **_kwargs): self.inserted.append(row); self.rows.append(row)
     async def update_one(self, query, update, **_kwargs):
         self.updates.append((query, update))
@@ -46,6 +53,24 @@ class Collection:
         for key, val in update.get("$inc", {}).items(): row[key] = row.get(key, 0) + val
         row.update(update.get("$set", {}))
         return SimpleNamespace(modified_count=1)
+
+
+def matches(row, query):
+    import re
+    for key, wanted in query.items():
+        value = row.get(key)
+        if key == "items.godown_stock_id":
+            value = next((item.get("godown_stock_id") for item in row.get("items", []) if item.get("godown_stock_id")), None)
+        if isinstance(wanted, dict):
+            if "$exists" in wanted and (value is not None) != wanted["$exists"]:
+                return False
+            if "$in" in wanted and value not in wanted["$in"]:
+                return False
+            if "$regex" in wanted and not re.search(wanted["$regex"], value or ""):
+                return False
+        elif value != wanted:
+            return False
+    return True
 
 
 def user():
@@ -232,3 +257,127 @@ def test_replacement_keeps_unrelated_lines_and_drops_fulfilled_final_line():
     result = route._replacement_items(lines, "item-1", replacement, 3)
     assert [item["id"] for item in result] == ["other", "inbox"]
     assert lines[0]["qty"] == 3
+
+
+def setup_transfers(monkeypatch, quotes=None):
+    database = SimpleNamespace(
+        godown_stock=Collection([lot()]), godown_customer_transfers=Collection([]),
+        purchase_orders=Collection([]), quotations=Collection(quotes or []),
+        customers=Collection([{"id": "recipient-1", "floor_id": "first-floor", "name": "Recipient"}]),
+    )
+    monkeypatch.setattr(route, "db", database)
+    monkeypatch.setattr(route, "client", Client())
+    monkeypatch.setattr(route, "log_event", lambda **_kwargs: asyncio.sleep(0))
+    async def number(kind, *_args, **_kwargs):
+        return f"{kind}-{len(database.quotations.rows) + len(database.purchase_orders.rows) + 1}"
+    monkeypatch.setattr(route, "next_number", number)
+    return database
+
+
+def transfer_request(key, **kwargs):
+    return route.CustomerTransfer(qty=1, recipient_customer_id="recipient-1", unit_price=100,
+                                  idempotency_key=key, **kwargs)
+
+
+def test_repeated_direct_transfers_keep_one_quote_and_revision_history(monkeypatch):
+    database = setup_transfers(monkeypatch)
+    events = []
+    async def record_event(**event): events.append(event)
+    monkeypatch.setattr(route, "log_event", record_event)
+    first = asyncio.run(route.transfer_stock_to_customer("stock-1", transfer_request("first-sale"), user()))
+    second = asyncio.run(route.transfer_stock_to_customer("stock-1", transfer_request("second-sale"), user()))
+    assert first["recipient_quotation_id"] == second["recipient_quotation_id"]
+    assert len(database.quotations.inserted) == 1
+    quote = database.quotations.rows[0]
+    assert quote["grand_total"] == 200
+    assert len(quote["items"]) == 2
+    assert quote["revisions"][0]["snapshot"]["grand_total"] == 100
+    assert len(quote["revisions"][0]["snapshot"]["items"]) == 1
+    assert len(database.purchase_orders.inserted) == 2
+    assert all(po["grand_total"] == 100 for po in database.purchase_orders.inserted)
+    assert all(po["quotation_id"] == quote["id"] for po in database.purchase_orders.inserted)
+    assert database.godown_stock.rows[0]["available_qty"] == 3
+    assert database.customers.rows[0]["godown_transfer_revision"] == 2
+    assert [event["quotation_id"] for event in events] == [quote["id"], quote["id"]]
+    assert all(event["payload"]["amount"] == 100 for event in events)
+    replay = asyncio.run(route.transfer_stock_to_customer("stock-1", transfer_request("second-sale"), user()))
+    assert replay["idempotent"]
+    assert len(quote["items"]) == 2
+    assert database.customers.rows[0]["godown_transfer_revision"] == 2
+
+
+def test_new_goods_reopen_the_same_fully_paid_transfer_quote(monkeypatch):
+    import routes.payment_routes as payments
+    database = setup_transfers(monkeypatch)
+    first = asyncio.run(route.transfer_stock_to_customer("stock-1", transfer_request("paid-first"), user()))
+    monkeypatch.setattr(payments, "db", database)
+    async def paid(_ids, **_kwargs): return {first["recipient_quotation_id"]: 100}
+    monkeypatch.setattr(payments, "_paid_by_quotation", paid)
+    monkeypatch.setattr(payments, "_godown_value_by_quotation", lambda _ids: asyncio.sleep(0, result={}))
+    def queue():
+        return asyncio.run(payments.list_orders(status_filter=None, overdue_period=None,
+            custom_min_days=None, custom_max_days=None, limit=200, user=user()))
+    assert queue() == []
+    asyncio.run(route.transfer_stock_to_customer("stock-1", transfer_request("paid-extra"), user()))
+    assert len(queue()) == 1
+    assert queue()[0]["id"] == first["recipient_quotation_id"]
+    assert queue()[0]["paid"] == 100
+    assert queue()[0]["outstanding"] == 100
+
+
+def test_grouping_does_not_adopt_another_customer_floor_or_cancelled_quote(monkeypatch):
+    group = "godown-customer:first-floor:recipient-1"
+    others = [
+        {"id": "other-customer", "customer_id": "other", "floor_id": "first-floor", "status": "ordered", "transfer_group_key": group},
+        {"id": "other-floor", "customer_id": "recipient-1", "floor_id": "ground-floor", "status": "ordered", "transfer_group_key": group},
+        {"id": "cancelled", "customer_id": "recipient-1", "floor_id": "first-floor", "status": "cancelled", "transfer_group_key": group},
+        {"id": "project", "customer_id": "recipient-1", "floor_id": "first-floor", "status": "ordered", "grand_total": 500},
+    ]
+    original_ids = {quote["id"] for quote in others}
+    database = setup_transfers(monkeypatch, others)
+    result = asyncio.run(route.transfer_stock_to_customer("stock-1", transfer_request("scoped-sale"), user()))
+    assert result["recipient_quotation_id"] not in original_ids
+    assert not database.quotations.updates
+
+
+def test_append_uses_shared_pricing_and_preserves_transport_and_extra_costs(monkeypatch):
+    database = setup_transfers(monkeypatch)
+    asyncio.run(route.transfer_stock_to_customer("stock-1", transfer_request("edited-first"), user()))
+    quote = database.quotations.rows[0]
+    quote["items"][0]["discount_pct"] = None
+    quote.update(project_discount_pct=10, transportation_fee=25, grand_total=115,
+                 payment_extra_history=[{"amount": 20, "name": "Labour"}])
+    body = route.CustomerTransfer(qty=3, recipient_customer_id="recipient-1", unit_price=0.05,
+                                  discount_pct=10, idempotency_key="edited-extra")
+    result = asyncio.run(route.transfer_stock_to_customer("stock-1", body, user()))
+    # Shared pricing rounds at the line total, not at the per-unit price.
+    assert quote["grand_total"] == 115.14
+    assert quote["items"][0]["net_amount"] == 90
+    assert quote["items"][1]["net_amount"] == 0.14
+    assert result["total"] == 0.14
+    assert quote["payment_extra_history"] == [{"amount": 20, "name": "Labour"}]
+    assert quote["revisions"][0]["snapshot"]["transportation_fee"] == 25
+
+
+def test_legacy_stock_sale_adoption_preserves_quote_identity_and_old_revisions(monkeypatch):
+    database = setup_transfers(monkeypatch)
+    asyncio.run(route.transfer_stock_to_customer("stock-1", transfer_request("legacy-first"), user()))
+    quote = database.quotations.rows[0]
+    quote.pop("transfer_group_key")
+    quote["revisions"] = [{"revision_no": 1, "snapshot": {"grand_total": 80}}]
+    result = asyncio.run(route.transfer_stock_to_customer("stock-1", transfer_request("legacy-extra"), user()))
+    assert result["recipient_quotation_id"] == quote["id"]
+    assert len(database.quotations.inserted) == 1
+    assert [revision["revision_no"] for revision in quote["revisions"]] == [1, 2]
+    assert quote["grand_total"] == 200
+
+
+def test_first_transfer_with_fractional_quantity_uses_shared_rounding(monkeypatch):
+    database = setup_transfers(monkeypatch)
+    body = route.CustomerTransfer(qty=1.5, recipient_customer_id="recipient-1", unit_price=10.01,
+                                  discount_pct=10, idempotency_key="fraction-sale")
+    result = asyncio.run(route.transfer_stock_to_customer("stock-1", body, user()))
+    quote = database.quotations.rows[0]
+    assert quote["subtotal"] == 15.02
+    assert quote["discount_total"] == 1.50
+    assert quote["grand_total"] == result["total"] == 13.51

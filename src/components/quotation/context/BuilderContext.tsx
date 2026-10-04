@@ -1456,18 +1456,20 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   // Builder controls issue commands only. The backend commits an EventOutbox
   // record and dispatches QuotationGenerated / OrderPlaced after commit.
   const generateOfficialQuotation = useCallback(async (includeDimensions = false) => {
-    const persistedId = await persist();
-    if (!persistedId) return;
     setWorkflowBusy(true);
     try {
+      const persistedId = await persist();
+      if (!persistedId) return;
       const customerName = customers.find((customer) => customer.id === s.customerId)?.name || "Customer";
       const safeCustomerName = customerName.replace(/[\\\\/:*?\"<>|]/g, "").trim().replace(/\s+/g, " ") || "Customer";
       const filename = `${safeCustomerName}.pdf`;
-      await downloadApiFile(`/quotations/${persistedId}/pdf?include_dimensions=${includeDimensions}`, filename, "quotation PDF");
+      await downloadApiFile(`/quotations/${persistedId}/pdf?include_dimensions=${includeDimensions}`, filename, "quotation PDF", activeFloorId);
+    } catch (error: any) {
+      toast.error(error?.detail || "Could not download quotation PDF");
     } finally {
       setWorkflowBusy(false);
     }
-  }, [persist, customers, s.customerId]);
+  }, [persist, customers, s.customerId, activeFloorId]);
 
   const generateProductPpt = useCallback(async () => {
     const persistedId = await persist();
@@ -1477,13 +1479,13 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
       const customer = customers.find((item) => item.id === s.customerId);
       const name = (customer?.company || customer?.name || "Customer").replace(/[\\/:*?"<>|]/g, "").trim().replace(/\s+/g, " ") || "Customer";
       const date = new Date().toLocaleDateString("en-GB").replace(/\//g, "-");
-      await downloadApiFile(`/quotations/${persistedId}/pptx`, `${name} PPT ${date}.pptx`, "product PPT");
+      await downloadApiFile(`/quotations/${persistedId}/pptx`, `${name} PPT ${date}.pptx`, "product PPT", activeFloorId);
     } catch (error: any) {
       toast.error(error?.detail || "Could not generate product PPT");
     } finally {
       setWorkflowBusy(false);
     }
-  }, [persist, customers, s.customerId]);
+  }, [persist, customers, s.customerId, activeFloorId]);
 
   const placeOrder = useCallback(async () => {
     const persistedId = await persist();

@@ -37,7 +37,7 @@ export function QuotationBuilder({
   const { selectedFloorId, floors } = useFloorAccess();
 
   if (mode === "tiles_selection" || mode === "tiles_quotation") {
-    return <TilesDocBuilder docType={mode} initialProductId={initialProductId || null} />;
+    return <TilesDocBuilder docType={mode} initialProductId={initialProductId || null} initialQuotationId={initialQuotationId || null} />;
   }
 
   return (

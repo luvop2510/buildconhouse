@@ -1,16 +1,15 @@
 // Responsive helpers for the Quotation Builder product grid.
-// The picker is deliberately a two-column, shop-style catalog on every
-// supported phone and tablet width.  This keeps four choices visible in the
-// first product viewport instead of dedicating the whole surface to one item.
+// Measure the browsing pane: a tablet picker can use the whole screen while
+// an inline catalog shares space with the quotation. Keep phone cards usable
+// and use the extra tablet width for more visible products.
 export function quotationGridColumns(width: number, desktopExplorer = false): 1 | 2 | 3 | 4 | 5 {
   // 280px is below the narrowest supported mobile content area, but retaining
   // a single-column fallback means the layout is still usable in an embedded
   // or exceptionally narrow web view.
-  // On the desktop explorer, product cards are deliberately compact enough
-  // for five real choices to be visible across the browsing pane. Keep the
-  // phone/tablet picker at two columns where touch targets need more room.
+  if (width >= 720) return 5;
   if (desktopExplorer && width >= 520) return 5;
-  if (desktopExplorer && width >= 420) return 3;
+  if (width >= 576) return 4;
+  if (width >= 480 || (desktopExplorer && width >= 420)) return 3;
   if (width >= 280) return 2;
   return 1;
 }

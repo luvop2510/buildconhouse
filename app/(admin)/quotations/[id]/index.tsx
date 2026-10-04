@@ -16,7 +16,7 @@ import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
 
 type Line = { id: string; sku: string; name: string; qty: number; unit_price: number; discount_pct: number | null; room?: string; description?: string | null; category_id?: string | null; godown_stock_id?: string | null; godown_source_customer_name?: string | null; godown_source_purchased_at?: string | null; godown_allocated_at?: string | null };
 type Quotation = {
-  id: string; number: string; customer_name: string; status: string;
+  id: string; number: string; customer_name: string; status: string; floor_id?: string;
   items: Line[]; rooms: string[]; subtotal: number; discount_total: number;
   grand_total: number; created_at: string; notes?: string;
   created_by_name: string;
@@ -81,13 +81,13 @@ export default function QuotationDetail() {
 
   const openPdf = async (includeDimensions: boolean) => {
     const name = (q?.customer_name || "Customer").replace(/[\\\\/:*?\"<>|]/g, "").trim().replace(/\s+/g, " ") || "Customer";
-    await downloadApiFile(`/quotations/${id}/pdf?include_dimensions=${includeDimensions}`, `${name}.pdf`, "quotation PDF");
+    await downloadApiFile(`/quotations/${id}/pdf?include_dimensions=${includeDimensions}`, `${name}.pdf`, "quotation PDF", q?.floor_id || "first-floor");
   };
   const openPpt = async () => {
     if (!q) return;
     const name = (q.customer_name || "Customer").replace(/[\\/:*?"<>|]/g, "").trim().replace(/\s+/g, " ") || "Customer";
     const date = new Date().toLocaleDateString("en-GB").replace(/\//g, "-");
-    await downloadApiFile(`/quotations/${id}/pptx`, `${name} PPT ${date}.pptx`, "product PPT");
+    await downloadApiFile(`/quotations/${id}/pptx`, `${name} PPT ${date}.pptx`, "product PPT", q.floor_id || "first-floor");
   };
 
   const advance = async () => {

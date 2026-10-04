@@ -43,10 +43,10 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
   const [paneWidth, setPaneWidth] = useState(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const numCols = quotationGridColumns(paneWidth, !showCompactFilters);
-  // The full-screen mobile/tablet picker needs compact cards so two complete
-  // rows fit below its fixed controls. Keep the larger product imagery in the
-  // desktop explorer, where visual inspection has more space.
+  // Cap compact imagery so tablets show multiple complete rows, even when a
+  // narrow inline pane only has room for three cards across.
   const compactCards = showCompactFilters;
+  const cardWidth = Math.max(0, (paneWidth - (showCompactFilters ? 24 : 32) - (numCols - 1) * 12) / numCols);
   const brandName = useMemo(() => {
     if (!b.selectedBrandId) return "All brands";
     return b.brands.find((x) => x.id === b.selectedBrandId)?.name || "Brand";
@@ -279,6 +279,7 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
           <ProductGridCard
             product={item}
             compact={compactCards}
+            width={cardWidth || undefined}
             favourite={b.favouriteIds.includes(item.id)}
             addedQty={b.s.lines.filter(l => l.room === b.s.activeRoom && (l.product_id === item.id || item.variants?.some(v => v.id === l.product_id))).reduce((sum, l) => sum + l.qty, 0)}
             onToggleFav={() => b.toggleFavourite(item.id)}
@@ -340,6 +341,7 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
 type CardProps = {
   product: Product;
   compact: boolean;
+  width?: number;
   favourite: boolean;
   addedQty: number;
   onToggleFav: () => void;
@@ -347,7 +349,7 @@ type CardProps = {
   onOpenModal: (p: Product) => void;
 };
 
-function ProductGridCardImpl({ product, compact, favourite, addedQty, onToggleFav, onQuickAdd, onOpenModal }: CardProps) {
+function ProductGridCardImpl({ product, compact, width, favourite, addedQty, onToggleFav, onQuickAdd, onOpenModal }: CardProps) {
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
   const badges: { label: string; tone: "popular" | "frequent" | "recent" }[] = [];
   if (product.popular) badges.push({ label: "Popular", tone: "popular" });
@@ -360,12 +362,12 @@ function ProductGridCardImpl({ product, compact, favourite, addedQty, onToggleFa
 
   return (
     <View
-      style={[styles.card, compact && styles.cardCompact]}
+      style={[styles.card, compact && styles.cardCompact, width ? { width, flex: undefined, flexBasis: width, flexGrow: 0, flexShrink: 0 } : null]}
       testID={`product-card-${product.sku}`}
     >
       <View style={[styles.cardMedia, compact && styles.cardMediaCompact]}>
         <Pressable accessibilityRole="button" accessibilityLabel={`View ${product.name}`} onPress={() => onOpenModal(product)} style={styles.thumb}>
-          <ProductImage source={selectedImages.images} style={styles.thumb} fallbackLabel={selectedSku} disableSkeleton />
+          <ProductImage source={selectedImages.images} style={styles.thumb} contentFit="contain" fallbackLabel={selectedSku} disableSkeleton />
         </Pressable>
         {/* Overlay: badges + fav heart */}
         <View pointerEvents="none" style={styles.badgeRow}>
@@ -540,9 +542,9 @@ const styles = StyleSheet.create({
   },
   cardCompact: { minHeight: 0 },
   cardMedia: { aspectRatio: PRODUCT_IMAGE_ASPECT_RATIO, backgroundColor: colors.surfaceTertiary, position: "relative" },
-  // A landscape crop preserves enough product detail while allowing two rows
-  // of cards to remain visible on a standard phone viewport.
-  cardMediaCompact: { aspectRatio: PRODUCT_IMAGE_ASPECT_RATIO },
+  // Contain the full product in a fixed frame instead of making each tablet
+  // image as tall as the card width. Touch controls retain their 44px size.
+  cardMediaCompact: { height: 120, aspectRatio: undefined },
   thumb: { width: "100%", height: "100%" },
   badgeRow: { position: "absolute", top: 8, left: 8, flexDirection: "row", gap: 4 },
   badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },

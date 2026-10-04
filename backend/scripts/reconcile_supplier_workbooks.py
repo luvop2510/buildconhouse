@@ -137,6 +137,55 @@ def validate_manifest(manifest: dict) -> list[dict]:
     return rows
 
 
+def product_media_family_updates(updates: list[tuple[dict, dict]], media_rows: list[dict]) -> list[dict]:
+    """Plan family metadata changes for exact existing product owners only.
+
+    Supplier reconciliation changes family navigation without changing the
+    product's stock identity or image bytes. Keep its explicitly owned media
+    consistent, including stale metadata left by an earlier reconciliation.
+    Family-only media and other products/brands/floors are never reassigned.
+    """
+    owners = {old["id"]: (old, payload) for old, payload in updates}
+    changes = []
+    for media in media_rows:
+        owner = owners.get(media.get("product_id"))
+        if not owner:
+            continue
+        old, payload = owner
+        expected_family = payload.get("family_key")
+        if not expected_family or media.get("family_key") == expected_family:
+            continue
+        if media.get("brand_id") != old.get("brand_id") or media.get("floor_id") != old.get("floor_id"):
+            raise ValueError(f"Product-linked media has a different brand or floor: {media.get('id')}")
+        changes.append({
+            "media_id": media["id"], "product_id": old["id"],
+            "brand_id": old.get("brand_id"), "floor_id": old.get("floor_id"),
+            "before": {key: media.get(key) for key in ("family_key", "storage_key", "sha1", "width", "height")},
+            "after": {"family_key": expected_family},
+        })
+    return changes
+
+
+async def apply_product_media_family_updates(db, changes: list[dict], *, session, actor: str, created_at: str) -> None:
+    """Apply a reviewed owner-scoped plan inside its catalog transaction."""
+    from pymongo import UpdateOne
+
+    if not changes:
+        return
+    media_ops = [UpdateOne({
+        "id": change["media_id"], "product_id": change["product_id"],
+        "brand_id": change["brand_id"], "floor_id": change["floor_id"],
+        "family_key": change["before"]["family_key"],
+    }, {"$set": change["after"]}) for change in changes]
+    changed_media = await db.product_media.bulk_write(media_ops, ordered=True, session=session)
+    if changed_media.matched_count != len(changes):
+        raise RuntimeError("Product media changed during reconciliation; aborting transaction")
+    await db.media_repair_audits.insert_many([{
+        **change, "actor": actor, "created_at": created_at,
+        "reason": "Supplier reconciliation updated the exact product owner's family_key",
+    } for change in changes], ordered=True, session=session)
+
+
 async def reconcile(manifest: dict, *, execute: bool, backup_dir: Path | None) -> dict:
     from db import client, db
     from models import Category, Product
@@ -189,11 +238,15 @@ async def reconcile(manifest: dict, *, execute: bool, backup_dir: Path | None) -
                         "old_mrp": old.get("mrp"), "new_mrp": payload["mrp"]})
     source_keys = {(by_brand[name]["id"], sku) for name, sku in grouped}
     extras = [p for p in old_products if (p["brand_id"], p["sku"]) not in source_keys]
+    media = await db.product_media.find({"product_id": {"$in": [p["id"] for p in old_products]}}, {"_id": 0}).to_list(30000)
+    media_changes = product_media_family_updates(updates, media)
     report = {
         "dry_run": not execute, "source_occurrences": len(rows), "source_articles": len(grouped),
         "added": len(additions), "updated": len(updates), "categories": len(categories),
         "source_category_counts": dict(Counter(f"{r['brand']} / {r['sheet']}" for r in rows)),
         "historical_products_preserved": len(extras),
+        "product_media_family_updates": media_changes,
+        "product_media_family_update_count": len(media_changes),
         "price_unspecified_new": [p["sku"] for p in additions if p["price_status"] == "unspecified"],
         "products": summary,
     }
@@ -201,7 +254,6 @@ async def reconcile(manifest: dict, *, execute: bool, backup_dir: Path | None) -
         return report
     if backup_dir is None or backup_dir.exists():
         raise ValueError("Execution requires a new --backup-dir")
-    media = await db.product_media.find({"product_id": {"$in": [p["id"] for p in old_products]}}, {"_id": 0}).to_list(30000)
     backup_dir.mkdir(parents=True)
     for filename, data in [("products", old_products), ("brands", brands), ("categories", old_categories), ("product_media", media), ("plan", report)]:
         (backup_dir / f"{filename}.json").write_text(json.dumps(data, default=str, indent=2))
@@ -222,6 +274,8 @@ async def reconcile(manifest: dict, *, execute: bool, backup_dir: Path | None) -
                     raise RuntimeError("A product changed during reconciliation; aborting transaction")
             if additions:
                 await db.products.insert_many(additions, ordered=True, session=session)
+            await apply_product_media_family_updates(db, media_changes, session=session,
+                                                    actor="supplier-workbook-reconciliation", created_at=now)
             actual = await db.products.find(scope, {"_id": 0}, session=session).to_list(10000)
             actual_by_key = {(p["brand_id"], p["sku"]): p for p in actual}
             actual_entries = {e["entry_id"]: e for p in actual if p.get("catalog_source") in {r["workbook"] for r in rows} for e in p.get("catalog_entries", [])}

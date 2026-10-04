@@ -8,7 +8,7 @@ import pytest
 from models import Product
 from scripts.reconcile_supplier_workbooks import (
     DEFAULT_MANIFEST, canonical_article, category_slug, entry_for,
-    product_payload, validate_manifest,
+    product_payload, product_media_family_updates, validate_manifest,
 )
 
 
@@ -121,6 +121,44 @@ def test_source_family_and_raw_notes_are_retained_in_search():
     assert payload["family_key"] == "hansgrohe:12345"
     assert "Supplier row note" in payload["catalog_search_text"]
     assert payload["catalog_entries"][0]["source_status_note"] == "Supplier discontinued"
+
+
+def test_reconciliation_family_change_preserves_exact_product_photo_and_repairs_stale_metadata():
+    from services.catalog_media_integrity import find_media_integrity_issues
+
+    old = {"id": "same-stock-product", "brand_id": "hansgrohe-id", "floor_id": "first-floor", "family_key": "old-family"}
+    payload = {"family_key": "hansgrohe:71551"}
+    image = {"id": "exact-photo", "product_id": old["id"], "brand_id": old["brand_id"], "floor_id": old["floor_id"],
+             "family_key": "old-family", "storage_key": "supplier/exact-photo.webp", "sha1": "unchanged-bytes", "width": 300, "height": 500}
+    excluded = [
+        {**image, "id": "family-only", "product_id": None},
+        {**image, "id": "another-product", "product_id": "other-stock-product"},
+    ]
+    before = deepcopy(image)
+    changes = product_media_family_updates([(old, payload)], [image, *excluded])
+    assert len(changes) == 1
+    change = changes[0]
+    assert change["media_id"] == "exact-photo"
+    assert change["after"] == {"family_key": "hansgrohe:71551"}
+    assert change["before"] == {key: before[key] for key in ("family_key", "storage_key", "sha1", "width", "height")}
+    assert image == before
+    repaired = {**image, **change["after"]}
+    assert find_media_integrity_issues([{**old, **payload}], [repaired]) == []
+    assert repaired["product_id"] == image["product_id"]
+    assert repaired["storage_key"] == image["storage_key"]
+    # A rerun also fixes stale media after the product itself was already
+    # reconciled; fully consistent metadata needs no update on the next run.
+    assert product_media_family_updates([({**old, **payload}, payload)], [image]) == changes
+    assert product_media_family_updates([({**old, **payload}, payload)], [repaired]) == []
+
+
+@pytest.mark.parametrize("foreign", [{"brand_id": "another-brand"}, {"floor_id": "ground-floor"}])
+def test_reconciliation_aborts_on_ambiguous_product_media_scope(foreign):
+    product = {"id": "product", "brand_id": "brand", "floor_id": "first-floor"}
+    media = {"id": "photo", "product_id": "product", "family_key": "old", **product, **foreign}
+    media["id"] = "photo"
+    with pytest.raises(ValueError, match="different brand or floor"):
+        product_media_family_updates([(product, {"family_key": "new"})], [media])
 
 
 @pytest.mark.parametrize("stem", ["27572", "22009", "19571", "19506", "32468", "13255"])

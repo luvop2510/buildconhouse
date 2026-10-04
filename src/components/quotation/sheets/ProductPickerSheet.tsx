@@ -1,7 +1,7 @@
 // ProductPickerSheet — full-screen mobile picker.
 // Wraps the shared ProductExplorer grid, presented as a modal for one-handed
 // mobile use. Keeping this route on ProductExplorer is what gives Sanitary
-// Bathroom Add Products the same shop-style filters and two-column browsing
+// Bathroom Add Products the same shop-style filters and responsive browsing
 // experience as the inline quotation catalog.
 import { Overlay } from "@/src/design/Overlay";
 import { Feather } from "@expo/vector-icons";

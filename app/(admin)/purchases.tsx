@@ -418,6 +418,7 @@ export default function PurchasesScreen() {
                 item={item}
                 selected={selected.has(item.item_id)}
                 compact={compactPhone}
+                tablet={isTablet}
                 onSelect={() => setSelected((current) => {
                   const next = new Set(current);
                   if (next.has(item.item_id)) next.delete(item.item_id);
@@ -858,9 +859,10 @@ export default function PurchasesScreen() {
 // Phone presentation.  It deliberately owns the only vertical scroll on the
 // screen; sheets render outside the FlatList and never compete for gestures.
 // -----------------------------------------------------------------------------
-function MobilePurchaseCard({ item, selected, compact, onSelect, onMove, onTransfer, onHistory, onOpenPo, onCancel }: {
+function MobilePurchaseCard({ item, selected, compact, tablet, onSelect, onMove, onTransfer, onHistory, onOpenPo, onCancel }: {
   item: Item; selected: boolean; onSelect: () => void; onMove: () => void;
   compact: boolean;
+  tablet: boolean;
   onTransfer: () => void; onHistory: () => void; onOpenPo: () => void; onCancel: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -874,7 +876,7 @@ function MobilePurchaseCard({ item, selected, compact, onSelect, onMove, onTrans
         <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected }} accessibilityLabel={`Select ${item.name}`} onPress={onSelect} style={styles.mobileSelectTarget}>
           <View style={[styles.chk, selected && styles.chkOn]}>{selected ? <Feather name="check" size={12} color={colors.onBrand} /> : null}</View>
         </Pressable>
-        <ProductImage source={item.image} style={styles.mobileCardImage} contentFit="contain" fallbackLabel={item.sku} disableSkeleton borderRadius={8} />
+        {!tablet ? <ProductImage source={item.image} style={styles.mobileCardImage} contentFit="contain" fallbackLabel={item.sku} disableSkeleton borderRadius={8} /> : null}
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={styles.mobileCardName} numberOfLines={2}>{item.name}</Text>
           <Text style={styles.mobileCardMeta} numberOfLines={2}>{item.sku || "No SKU"} · {item.brand_name || "Unbranded"}</Text>
@@ -883,6 +885,7 @@ function MobilePurchaseCard({ item, selected, compact, onSelect, onMove, onTrans
           <Feather name="more-vertical" size={19} color={colors.onSurface} />
         </Pressable>
       </View>
+      {tablet ? <ProductImage source={item.image} style={styles.tabletCardImage} contentFit="contain" frameInset={4} fallbackLabel={item.sku} disableSkeleton borderRadius={8} testID={`purchase-image-${item.item_id}`} accessibilityLabel={`Product image for ${item.name}`} /> : null}
       <View style={styles.mobileCardDetailRow}>
         <View style={{ flex: 1, minWidth: 0 }}><Text style={styles.mobileCardLabel}>CUSTOMER</Text><Text style={styles.mobileCardValue} numberOfLines={2}>{item.customer_name || "—"}</Text></View>
         <View style={{ minWidth: 76 }}><Text style={styles.mobileCardLabel}>QUANTITY</Text><Text style={styles.mobileCardValue}>{item.qty}</Text></View>
@@ -1317,7 +1320,7 @@ function CustomerPurchasePanel({ visible, loading, workspace, onClose, onMove, o
             <Text style={styles.workspaceTitle}>Active purchase items</Text>
             {workspace.outstanding_items.length === 0 ? <Text style={type.bodyMuted}>No active purchase items.</Text> : workspace.outstanding_items.map((item, index) => (
               <View key={item.item_id} style={[styles.customerPanelItem, index > 0 && styles.customerNavDivider]}>
-                <ProductImage source={item.image} style={styles.customerPanelImage} contentFit="cover" frameInset={0} frameBackground="transparent" fallbackLabel={item.sku} borderRadius={8} />
+                <ProductImage source={item.image} style={styles.customerPanelImage} contentFit="contain" frameInset={0} frameBackground="transparent" fallbackLabel={item.sku} borderRadius={8} />
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.actionTitle} numberOfLines={1}>{item.name}</Text>
                   <Text style={type.caption} numberOfLines={1}>{item.sku} · {item.qty} · {item.stage_label}</Text>
@@ -1881,6 +1884,7 @@ const styles = StyleSheet.create({
   mobileCardTop: { flexDirection: "row", alignItems: "center", gap: 10 },
   mobileSelectTarget: { width: 44, height: 44, alignItems: "center", justifyContent: "center", marginLeft: -10 },
   mobileCardImage: { width: 80, aspectRatio: PRODUCT_IMAGE_ASPECT_RATIO, flexShrink: 0 },
+  tabletCardImage: { width: "100%", height: 120, flexShrink: 0 },
   mobileCardName: { color: colors.onSurface, fontSize: 14, lineHeight: 19, fontWeight: "800" },
   mobileCardMeta: { marginTop: 2, color: colors.onSurfaceMuted, fontSize: 11.5, lineHeight: 16 },
   mobileCardDetailRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, paddingHorizontal: 4 },

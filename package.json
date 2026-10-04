@@ -13,6 +13,7 @@
     "lint": "expo lint",
     "test:supplier-catalog": "node --experimental-strip-types --no-warnings scripts/test-catalog-source.mjs",
     "test:quotation-media": "node --experimental-strip-types --no-warnings scripts/test-quotation-media.mjs",
+    "test:downloads": "node scripts/test-download-file.mjs",
     "test:quotation-contract": "node --experimental-strip-types --no-warnings scripts/test-quotation-contract.mjs",
     "test:quotation-concealed-parts": "node --experimental-strip-types --no-warnings scripts/test-quotation-concealed-parts.mjs",
     "test:purchases-contract": "node scripts/test-purchases-contract.mjs",

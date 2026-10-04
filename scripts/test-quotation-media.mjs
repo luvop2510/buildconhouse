@@ -4,19 +4,25 @@ import { readFileSync } from "node:fs";
 import { quotationGridColumns } from "../src/components/quotation/helpers/responsive.ts";
 import { productImageList, resolveVariantImages } from "../src/components/quotation/helpers/media.ts";
 
-// Phone, tablet and wide-picker widths must all preserve the shop-style
-// two-column grid; 280px is the supported lower bound for a picker viewport.
+// Phones retain two touch-friendly columns. Tablet picker widths use the
+// available space to keep five complete choices in the first row.
 assert.equal(quotationGridColumns(280), 2);
 assert.equal(quotationGridColumns(320), 2);
 assert.equal(quotationGridColumns(375), 2);
 assert.equal(quotationGridColumns(390), 2);
 assert.equal(quotationGridColumns(430), 2);
-assert.equal(quotationGridColumns(640), 2);
-assert.equal(quotationGridColumns(768), 2);
-assert.equal(quotationGridColumns(800), 2);
-assert.equal(quotationGridColumns(810), 2);
-assert.equal(quotationGridColumns(1040), 2);
-assert.equal(quotationGridColumns(1920), 2);
+assert.equal(quotationGridColumns(479), 2);
+assert.equal(quotationGridColumns(480), 3);
+assert.equal(quotationGridColumns(575), 3);
+assert.equal(quotationGridColumns(576), 4);
+assert.equal(quotationGridColumns(640), 4);
+assert.equal(quotationGridColumns(719), 4);
+assert.equal(quotationGridColumns(720), 5);
+assert.equal(quotationGridColumns(768), 5);
+assert.equal(quotationGridColumns(800), 5);
+assert.equal(quotationGridColumns(810), 5);
+assert.equal(quotationGridColumns(1040), 5);
+assert.equal(quotationGridColumns(1920), 5);
 assert.equal(quotationGridColumns(600, true), 5);
 assert.equal(quotationGridColumns(279), 1);
 assert.deepEqual(productImageList({

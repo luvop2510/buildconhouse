@@ -98,6 +98,7 @@ def _payload(row: dict, category_id: str, old: dict, valid_skus: set[str], remov
 
 async def reconcile(*, execute: bool, backup_dir: Path | None) -> dict:
     from db import db
+    from scripts.reconcile_supplier_workbooks import apply_product_media_family_updates, product_media_family_updates
 
     rows = _source_rows()
     brand = await db.brands.find_one({"name": {"$regex": "^vitra$", "$options": "i"}, "floor_id": FLOOR_ID})
@@ -123,6 +124,13 @@ async def reconcile(*, execute: bool, backup_dir: Path | None) -> dict:
         {"sku": r["code"], "source": r["price_mrp"], "current": old_by_sku[r["code"]]["mrp"], "cell": r["price_cell"]}
         for r in rows if r["price_mrp"] is not None and _cents(r["price_mrp"]) != _cents(old_by_sku[r["code"]]["mrp"])
     ]
+    all_product_ids = [p["id"] for p in products]
+    media = await db.product_media.find({"product_id": {"$in": all_product_ids}}, {"_id": 0}).to_list(10000)
+    media_owner_updates = [(old_by_sku[row["code"]], _payload(
+        row, categories.get(CATEGORIES[row["category"]][1], {}).get("id", "planned-category"),
+        old_by_sku[row["code"]], valid_skus, removed_ids_set,
+    )) for row in rows]
+    media_changes = product_media_family_updates(media_owner_updates, media)
     report = {
         "source_products": len(rows), "current_products": len(products),
         "retained": len(rows), "deleted": len(obsolete),
@@ -130,6 +138,8 @@ async def reconcile(*, execute: bool, backup_dir: Path | None) -> dict:
         "price_changes": price_changes,
         "missing_source_price": [r["code"] for r in rows if r["price_mrp"] is None],
         "obsolete_skus": sorted(p["sku"] for p in obsolete),
+        "product_media_family_updates": media_changes,
+        "product_media_family_update_count": len(media_changes),
         "dry_run": not execute,
     }
     if not execute:
@@ -138,8 +148,6 @@ async def reconcile(*, execute: bool, backup_dir: Path | None) -> dict:
         raise RuntimeError("--backup-dir is required for execution")
     if backup_dir.exists():
         raise RuntimeError(f"Backup directory already exists: {backup_dir}")
-    all_product_ids = [p["id"] for p in products]
-    media = await db.product_media.find({"product_id": {"$in": all_product_ids}}, {"_id": 0}).to_list(10000)
     backup_dir.mkdir(parents=True)
     (backup_dir / "products.json").write_text(json.dumps(products, default=str, indent=2))
     (backup_dir / "product_media.json").write_text(json.dumps(media, default=str, indent=2))
@@ -169,6 +177,10 @@ async def reconcile(*, execute: bool, backup_dir: Path | None) -> dict:
             result = await db.products.bulk_write(updates, ordered=True, session=session)
             if result.matched_count != len(rows):
                 raise RuntimeError(f"Only {result.matched_count}/{len(rows)} retained products were matched")
+            await apply_product_media_family_updates(
+                db, media_changes, session=session, actor="vitra-workbook-reconciliation",
+                created_at=datetime.now(timezone.utc).isoformat(),
+            )
             removed_ids = [p["id"] for p in obsolete]
             if removed_ids:
                 await db.product_media.delete_many({"product_id": {"$in": removed_ids}}, session=session)

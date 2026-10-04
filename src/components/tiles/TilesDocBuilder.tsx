@@ -229,9 +229,10 @@ function restoredQuantityUnit(value: unknown): TileRow["quantityUnit"] {
 // ---------------------------------------------------------------------------
 // Document state + persistence
 // ---------------------------------------------------------------------------
-function useTilesDoc(docType: TilesDocType, initialProductId?: string | null) {
+function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, initialQuotationId?: string | null) {
   const router = useRouter();
-  const { id: routeId } = useLocalSearchParams<{ id?: string }>();
+  const { id, quotationId } = useLocalSearchParams<{ id?: string; quotationId?: string }>();
+  const routeId = initialQuotationId || id || quotationId;
   const [docId, setDocId] = useState<string | null>(null);
   const [docNumberServer, setDocNumberServer] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("draft");
@@ -1589,15 +1590,17 @@ function SummaryLine({ label, value, bold }: { label: string; value: string; bol
 }
 
 function MobileRowCard({
-  doc, row, index, docType, onOpenPicker,
+  doc, row, index, docType, onOpenPicker, fieldColumns,
 }: {
-  doc: ReturnType<typeof useTilesDoc>; row: TileRow; index: number; docType: TilesDocType; onOpenPicker: () => void;
+  doc: ReturnType<typeof useTilesDoc>; row: TileRow; index: number; docType: TilesDocType; onOpenPicker: () => void; fieldColumns: number;
 }) {
   const fields = MOBILE_FIELDS[docType];
+  const compact = fieldColumns > 1;
   return (
     <View style={mobileStyles.rowCard} testID={`mobile-row-${index}`}>
+      <View style={[mobileStyles.productHeader, compact && mobileStyles.productHeaderCompact]}>
       {row.productId ? (
-      <Pressable accessibilityRole="button" onPress={onOpenPicker} style={mobileStyles.productImage} testID={`mobile-thumb-${index}`} accessibilityLabel={row.productId ? "Change product image" : "Select product image"}>
+      <Pressable accessibilityRole="button" onPress={onOpenPicker} style={[mobileStyles.productImage, compact && mobileStyles.tabletProductImage]} testID={`mobile-thumb-${index}`} accessibilityLabel={row.productId ? "Change product image" : "Select product image"}>
           {row.image ? (
             <ProductImage source={row.image} contentFit="contain" frameInset={0} borderRadius={radius.md} disableSkeleton frameBackground={colors.surface} style={{ width: "100%", height: "100%" }} accessibilityLabel="Quotation product image" />
           ) : (
@@ -1605,7 +1608,7 @@ function MobileRowCard({
           )}
       </Pressable>
       ) : null}
-      <View style={mobileStyles.rowHeading}>
+      <View style={[mobileStyles.rowHeading, compact && mobileStyles.tabletRowHeading]}>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={mobileStyles.rowIndex}>Item {index + 1}</Text>
           {row.productId ? (
@@ -1635,10 +1638,11 @@ function MobileRowCard({
           </Pressable>
         ) : null}
       </View>
+      </View>
 
-      <View style={mobileStyles.fieldStack}>
+      <View style={[mobileStyles.fieldStack, compact && mobileStyles.fieldGrid]}>
         {fields.map((f) => (
-          <View key={f.key} style={mobileStyles.fieldFull}>
+          <View key={f.key} style={compact ? { width: fieldColumns === 3 ? "32%" : "49%", minWidth: 0 } : mobileStyles.fieldFull}>
             {f.key === "size" ? (
               <TileSizeField
                 row={row}
@@ -1679,9 +1683,12 @@ function MobileRowCard({
 }
 
 function MobileTilesEditor({
-  docType, doc, router, onDelete,
-}: { docType: TilesDocType; doc: ReturnType<typeof useTilesDoc>; router: ReturnType<typeof useRouter>; onDelete: () => void }) {
+  docType, doc, router, onDelete, workspaceWidth,
+}: { docType: TilesDocType; doc: ReturnType<typeof useTilesDoc>; router: ReturnType<typeof useRouter>; onDelete: () => void; workspaceWidth: number }) {
   const { isPhone } = useBp();
+  // The sidebar can consume tablet space. Reflow the usable editor rather
+  // than stretching phone images and stacking every field at tablet widths.
+  const fieldColumns = workspaceWidth >= 720 ? 3 : workspaceWidth >= 540 ? 2 : 1;
   const insets = useSafeAreaInsets();
   const [pickerRow, setPickerRow] = useState<string | null>(null);
   const isSelection = docType === "tiles_selection";
@@ -1756,8 +1763,10 @@ function MobileTilesEditor({
 
             <Card padding={spacing.md} style={{ gap: spacing.md }}>
               <Text style={mobileStyles.sectionTitle}>CUSTOMER &amp; DETAILS</Text>
-              <FormFieldCustomerName doc={doc} />
-              <TextField label="Contact no." value={doc.header.phone} onChangeText={(t: string) => doc.setHeaderField("phone", t)} keyboardType="phone-pad" testID="mobile-phone" />
+              <View style={[mobileStyles.fieldStack, fieldColumns > 1 && mobileStyles.fieldGrid]}>
+                <View style={fieldColumns > 1 ? mobileStyles.halfField : mobileStyles.fieldFull}><FormFieldCustomerName doc={doc} /></View>
+                <View style={fieldColumns > 1 ? mobileStyles.halfField : mobileStyles.fieldFull}><TextField label="Contact no." value={doc.header.phone} onChangeText={(t: string) => doc.setHeaderField("phone", t)} keyboardType="phone-pad" testID="mobile-phone" /></View>
+              </View>
               <Disclosure title="Document details">
                 <View style={mobileStyles.fieldFull}>
                   <TextField label="Date" value={doc.header.docDate} onChangeText={(t: string) => doc.setHeaderField("docDate", t)} testID="mobile-date" />
@@ -1781,7 +1790,7 @@ function MobileTilesEditor({
             <View style={{ gap: spacing.sm }}>
               <Text style={mobileStyles.sectionTitle}>PRODUCTS{itemCount ? ` (${itemCount})` : ""}</Text>
               {doc.rows.map((row, index) => (
-                <MobileRowCard key={row.key} doc={doc} row={row} index={index} docType={docType} onOpenPicker={() => setPickerRow(row.key)} />
+                <MobileRowCard key={row.key} doc={doc} row={row} index={index} docType={docType} fieldColumns={fieldColumns} onOpenPicker={() => setPickerRow(row.key)} />
               ))}
               <Button
                 label="Add product" icon="plus" variant="secondary" fullWidth
@@ -1887,6 +1896,8 @@ const mobileStyles = StyleSheet.create({
   },
   savePillText: { fontSize: 12, fontFamily: type.body.fontFamily, fontWeight: "600" },
   fieldStack: { gap: spacing.sm },
+  fieldGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: spacing.sm, columnGap: 0 },
+  halfField: { width: "49%", minWidth: 0 },
   fieldFull: { width: "100%" },
   sizeLoading: { minHeight: 46, paddingHorizontal: spacing.md, paddingVertical: 14, borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, color: colors.onSurfaceMuted, fontSize: 13 },
   sizeValue: { minHeight: 46, paddingHorizontal: spacing.md, paddingVertical: 14, borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, color: colors.onSurface, fontSize: 14 },
@@ -1897,6 +1908,10 @@ const mobileStyles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
     padding: spacing.md, gap: spacing.md,
   },
+  productHeader: { gap: spacing.md },
+  productHeaderCompact: { flexDirection: "row", alignItems: "center" },
+  tabletProductImage: { width: 144, flexShrink: 0 },
+  tabletRowHeading: { flex: 1, minWidth: 0 },
   productImage: {
     width: "100%", aspectRatio: TILE_IMAGE_ASPECT_RATIO, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary,
     alignItems: "center", justifyContent: "center", overflow: "hidden",
@@ -1943,9 +1958,9 @@ const mobileStyles = StyleSheet.create({
 // ---------------------------------------------------------------------------
 // Page shell — topbar with the action buttons + scrollable paper
 // ---------------------------------------------------------------------------
-export function TilesDocBuilder({ docType, initialProductId }: { docType: TilesDocType; initialProductId?: string | null }) {
+export function TilesDocBuilder({ docType, initialProductId, initialQuotationId }: { docType: TilesDocType; initialProductId?: string | null; initialQuotationId?: string | null }) {
   const router = useRouter();
-  const doc = useTilesDoc(docType, initialProductId);
+  const doc = useTilesDoc(docType, initialProductId, initialQuotationId);
   const { isPhone, isTablet } = useBp();
   const [workspaceWidth, setWorkspaceWidth] = useState(0);
   const isSelection = docType === "tiles_selection";
@@ -1983,7 +1998,7 @@ export function TilesDocBuilder({ docType, initialProductId }: { docType: TilesD
 
   return (
     <View style={{ flex: 1 }} onLayout={(event) => setWorkspaceWidth(event.nativeEvent.layout.width)}>
-      {useResponsiveEditor ? <MobileTilesEditor docType={docType} doc={doc} router={router} onDelete={confirmDelete} /> : (
+      {useResponsiveEditor ? <MobileTilesEditor docType={docType} doc={doc} router={router} onDelete={confirmDelete} workspaceWidth={workspaceWidth} /> : (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surfaceSecondary }} edges={["top"]}>
       <View style={shellStyles.topbar}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>

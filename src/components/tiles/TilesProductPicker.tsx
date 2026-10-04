@@ -4,7 +4,7 @@ import { Overlay } from "@/src/design/Overlay";
 // This intentionally shares the same search API and media resolver as the
 // sanitary quotation builder. The old text-only dialog forced workers through
 // a one-result-at-a-time flow; phones use spacious landscape product rows and
-// wider picker layouts use a two-column shop-style grid with direct add.
+// wider picker layouts use a measured grid with direct add.
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -43,7 +43,10 @@ export function TilesProductPicker({
   customerId?: string | null;
 }) {
   const { width } = useWindowDimensions();
-  const columns = tilesPickerColumns(width);
+  const [pickerWidth, setPickerWidth] = useState(0);
+  const availableWidth = pickerWidth || width;
+  const columns = tilesPickerColumns(availableWidth);
+  const cardWidth = (availableWidth - spacing.lg * 2 - spacing.md * (columns - 1)) / columns;
   const isPhonePicker = columns === 1;
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Product[]>([]);
@@ -123,7 +126,7 @@ export function TilesProductPicker({
 
   return (
     <Overlay open={open} onClose={onClose} title="Add tiles" presentation="fullscreen" scroll={false} header={false}>
-      <SafeAreaView style={styles.screen} edges={[]}>
+      <SafeAreaView style={styles.screen} edges={[]} onLayout={(event) => setPickerWidth(event.nativeEvent.layout.width)}>
         <View style={styles.header}>
           <Pressable onPress={onClose} hitSlop={12} style={styles.close} testID="tiles-picker-close" accessibilityRole="button" accessibilityLabel="Close catalog">
             <Feather name="x" size={21} color={colors.onSurface} />
@@ -153,13 +156,14 @@ export function TilesProductPicker({
           data={results}
           keyExtractor={(product) => product.id}
           numColumns={columns}
-          columnWrapperStyle={columns === 2 ? styles.gridRow : undefined}
+          columnWrapperStyle={columns > 1 ? styles.gridRow : undefined}
           contentContainerStyle={styles.grid}
           keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => (
             <TileCatalogCard
               product={item}
               compact={isPhonePicker}
+              cardWidth={cardWidth}
               onPress={() => void pick(item)}
               onPickSize={(size) => void (async () => {
                 try {
@@ -204,15 +208,15 @@ export function TilesProductPicker({
 }
 
 function TileCatalogCard({
-  product, compact, onPress, onPickSize,
+  product, compact, cardWidth, onPress, onPickSize,
 }: {
-  product: Product; compact: boolean; onPress: () => void; onPickSize: (size: string) => void;
+  product: Product; compact: boolean; cardWidth: number; onPress: () => void; onPickSize: (size: string) => void;
 }) {
   const sizes = tileSizes(product);
   const canSwitchSize = sizes.length >= 2;
   const selectedSize = String(product.size || product.dimensions || "").trim();
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.card, compact && styles.phoneCard, pressed && styles.cardPressed]} testID={`tiles-picker-card-${product.id}`} accessibilityRole="button" accessibilityLabel={`Add ${product.name}`}>
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.card, { width: cardWidth }, compact && styles.phoneCard, pressed && styles.cardPressed]} testID={`tiles-picker-card-${product.id}`} accessibilityRole="button" accessibilityLabel={`Add ${product.name}`}>
       <ProductImage source={productImageList(product)} style={[styles.image, ...(compact ? [styles.phoneImage] : [])]} fallbackLabel={product.sku} disableSkeleton contentFit="contain" />
       <View style={styles.cardBody}>
         <Text style={styles.brand} numberOfLines={1}>{product.brand_name || "Tile"}</Text>
@@ -257,7 +261,7 @@ const styles = StyleSheet.create({
   input: { flex: 1, minWidth: 0, color: colors.onSurface, fontSize: 15, paddingVertical: 8, ...(Platform.OS === "web" ? { outlineStyle: "none" } as any : {}) },
   grid: { padding: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xxxl, gap: spacing.md },
   gridRow: { gap: spacing.md },
-  card: { flex: 1, minWidth: 0, overflow: "hidden", borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
+  card: { minWidth: 0, overflow: "hidden", borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
   cardPressed: { opacity: 0.82, borderColor: colors.brand },
   image: { width: "100%", aspectRatio: TILE_IMAGE_ASPECT_RATIO, borderRadius: 0, backgroundColor: colors.surfaceTertiary },
   phoneCard: { flexDirection: "row", alignItems: "stretch", minHeight: 100 },

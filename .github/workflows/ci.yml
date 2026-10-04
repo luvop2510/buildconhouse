@@ -76,6 +76,7 @@ jobs:
         run: |
           npm run test:supplier-catalog
           npm run test:quotation-media
+          npm run test:downloads
           npm run test:quotation-contract
           npm run test:quotation-concealed-parts
           npm run test:purchases-contract

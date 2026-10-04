@@ -115,7 +115,8 @@ test('critical payment ledger reloads page one after Previous and ignores stale 
 test('critical long payment ledger scrolls to the last receipt and keeps customer switching usable', async ({ page }, info) => {
   await mockSession(page, '/payments');
   const orders = Array.from({ length: 25 }, (_, i) => ({ ...order, id: `long-order-${i}`, customer_id: `long-client-${i}`, customer_name: `Long Client ${i}` }));
-  await page.route('**/api/payments/orders', route => route.fulfill({ json: orders }));
+  let listRequests = 0;
+  await page.route('**/api/payments/orders', route => { listRequests++; return route.fulfill({ json: orders }); });
   await page.route('**/api/payments/orders/long-order-*', route => {
     const row = orders.find(item => route.request().url().endsWith(`/orders/${item.id}`))!;
     return route.fulfill({ json: { ...detail(row), payments: Array.from({ length: 35 }, (_, i) => ({
@@ -152,4 +153,61 @@ test('critical long payment ledger scrolls to the last receipt and keeps custome
   await page.screenshot({ path: info.outputPath('payments-record-sheet.png'), fullPage: false });
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(page.getByTestId('record-payment-sheet')).toHaveCount(0);
+  expect(listRequests).toBe(1); // First focus must not race the initial search load.
+});
+
+test('critical customer collection separates total due from order value and switches quotations before recording', async ({ page }) => {
+  await mockSession(page, '/payments');
+  const rows = [
+    { ...order, id: 'order-one', number: 'Q-ONE', grand_total: 500000, paid: 300000, outstanding: 200000 },
+    { ...order, id: 'order-two', number: 'Q-TWO', grand_total: 400000, paid: 150000, outstanding: 250000 },
+    { ...order, id: 'order-three', number: 'Q-THREE', grand_total: 277000, paid: 150000, outstanding: 127000 },
+  ];
+  await page.route('**/api/payments/stats', route => route.fulfill({ json: {
+    earned_total: 600000, total_outstanding: 577000, spending_total: 0, active_total: 1177000,
+    active_received: 600000, active_orders: 3, fully_paid: 0, collected_this_month: 0,
+  } }));
+  await page.route('**/api/payments/orders', route => route.fulfill({ json: rows }));
+  await page.route('**/api/payments/orders/order-*', route => {
+    const row = rows.find(item => route.request().url().endsWith(`/orders/${item.id}`))!;
+    return route.fulfill({ json: { ...detail(row), quotation_total: row.grand_total } });
+  });
+  await page.goto('/payments');
+  if ((page.viewportSize()?.width || 0) < 768) await page.getByRole('button', { name: 'Collections summary', exact: true }).click();
+  await expect(page.getByTestId('payments-summary-equation')).toContainText('= total due now');
+  await expect(page.getByTestId('payment-customer-balance')).toContainText('₹5,77,000 across 3 orders');
+  await page.getByTestId('payment-select-order-order-two').scrollIntoViewIfNeeded();
+  await page.getByTestId('payment-select-order-order-two').click();
+  await expect(page.getByTestId('open-record-payment')).toContainText('Q-TWO');
+  await expect(page.getByTestId('payment-select-order-order-two')).toHaveAttribute('aria-pressed', 'true');
+  await page.getByTestId('open-record-payment').scrollIntoViewIfNeeded();
+  await page.getByTestId('open-record-payment').click();
+  await expect(page.getByTestId('pay-amount')).toHaveValue('250000.00');
+  await expect(page.getByTestId('save-payment')).toBeInViewport();
+});
+
+test('critical returning from the canonical quotation refreshes the selected balance', async ({ page }) => {
+  await mockSession(page, '/payments');
+  let revised = false;
+  const row = () => ({ ...order, grand_total: revised ? 2500 : 1200.5, outstanding: revised ? 2500 : 1200.5 });
+  await page.route('**/api/payments/stats', route => route.fulfill({ json: {
+    earned_total: 0, total_outstanding: row().outstanding, spending_total: 0,
+    active_total: row().grand_total, active_received: 0, active_orders: 1, fully_paid: 0, collected_this_month: 0,
+  } }));
+  await page.route('**/api/payments/orders', route => route.fulfill({ json: [row()] }));
+  await page.route('**/api/payments/orders/payment-order', route => route.fulfill({ json: { ...detail(row()), quotation_total: row().grand_total } }));
+  await page.route('**/api/quotations/payment-order', route => route.fulfill({ json: {
+    ...order, status: 'ordered', created_at: '2026-09-01', created_by_name: 'Accounts',
+    items: [], rooms: [], subtotal: 1200.5, discount_total: 0,
+  } }));
+  await page.goto('/payments');
+  await page.getByTestId('payment-open-quotation').scrollIntoViewIfNeeded();
+  await page.getByTestId('payment-open-quotation').click();
+  await expect(page).toHaveURL(/\/quotations\/payment-order$/);
+  await expect(page.getByTestId('edit-quotation')).toBeVisible();
+  revised = true;
+  await page.goBack();
+  await page.getByTestId('open-record-payment').scrollIntoViewIfNeeded();
+  await page.getByTestId('open-record-payment').click();
+  await expect(page.getByTestId('pay-amount')).toHaveValue('2500.00');
 });

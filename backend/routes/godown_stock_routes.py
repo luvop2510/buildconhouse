@@ -19,14 +19,14 @@ from db import client, db
 from pymongo import ReturnDocument
 from models import (
     CustomerPublic, Payment, PurchaseOrder, PurchaseOrderItem, PurchaseStageEvent,
-    Quotation, QuotationLineItem, UserPublic, now_iso,
+    Quotation, QuotationLineItem, QuotationRevision, RoomDiscountCfg, UserPublic, now_iso,
 )
 from services.activity_log import log_event
 from services.analytics import cache
 from services.followup_engine import reconcile_followups
 from services.notifications import notify
 from services.sequence import next_number
-from services.pricing import per_line_net_amounts
+from services.pricing import per_line_net_amounts, recalc_quotation_totals, stamp_net_amounts
 
 router = APIRouter(prefix="/godown-stock", tags=["godown-stock"])
 logger = logging.getLogger(__name__)
@@ -422,31 +422,99 @@ def _replayed_transfer(existing: dict, stock_id: str, body: CustomerTransfer) ->
     return {**existing, "idempotent": True}
 
 
-async def _new_transfer_quotation(lot: dict, recipient: dict, body: CustomerTransfer,
-                                  stock_id: str, at: str, user: UserPublic, session) -> tuple[dict, QuotationLineItem]:
-    year = datetime.now(timezone.utc).year
-    number = await next_number("quotation", f"FQ-{year}-", collection="quotations", session=session)
+def _transfer_quotation_line(lot: dict, body: CustomerTransfer, stock_id: str, at: str) -> QuotationLineItem:
     unit_price = float(body.unit_price if body.unit_price is not None else lot.get("unit_price") or 0)
-    net_unit_price = round(unit_price * (1 - body.discount_pct / 100), 2)
     line = QuotationLineItem(
         product_id=lot.get("product_id") or f"godown:{stock_id}", sku=lot.get("sku") or "",
         name=lot.get("name") or "Godown stock", image=lot.get("image"),
         qty=body.qty, unit_price=unit_price,
         mrp=float(lot.get("mrp") if lot.get("mrp") is not None else lot.get("unit_price") or 0),
-        discount_pct=body.discount_pct, net_amount=round(net_unit_price * body.qty, 2),
+        discount_pct=body.discount_pct,
         godown_stock_id=stock_id, godown_source_customer_name=lot.get("source_customer_name"),
         godown_source_purchased_at=lot.get("source_purchased_at"), godown_transferred_at=at,
     )
+    line.net_amount = recalc_quotation_totals([line])["grand_total"]
+    return line
+
+
+async def _new_transfer_quotation(lot: dict, recipient: dict, body: CustomerTransfer,
+                                  stock_id: str, at: str, user: UserPublic, session) -> tuple[dict, QuotationLineItem]:
+    year = datetime.now(timezone.utc).year
+    number = await next_number("quotation", f"FQ-{year}-", collection="quotations", session=session)
+    line = _transfer_quotation_line(lot, body, stock_id, at)
     quote = Quotation(
         number=number, customer_id=recipient["id"], customer_name=recipient.get("company") or recipient.get("name"),
         status="ordered", ordered_at=at, items=[line],
-        subtotal=round(unit_price * body.qty, 2),
-        discount_total=round((unit_price - net_unit_price) * body.qty, 2),
-        grand_total=round(net_unit_price * body.qty, 2),
+        **recalc_quotation_totals([line]),
         notes=f"Transferred from GoDown stock{f' — {body.reason}' if body.reason else ''}",
         created_by=user.id, created_by_name=user.full_name, source="transfer", floor_id=lot["floor_id"],
     ).model_dump()
     return quote, line
+
+
+async def _customer_transfer_quotation(lot: dict, recipient: dict, body: CustomerTransfer,
+                                       stock_id: str, at: str, user: UserPublic, session) -> tuple[dict, QuotationLineItem, bool]:
+    """Append stock sales to the customer's transfer quote with an audit revision.
+
+    Lock the customer inside the stock transaction before selecting the quote.
+    Concurrent first transfers then conflict/retry rather than creating two
+    commercial documents. Independent project quotations are never combined.
+    Completed receipts stay attached when new goods reopen this balance.
+    """
+    await db.customers.update_one(
+        {"id": recipient["id"], "floor_id": lot["floor_id"]},
+        {"$inc": {"godown_transfer_revision": 1}}, session=session,
+    )
+    group_key = f"godown-customer:{lot['floor_id']}:{recipient['id']}"
+    current = await db.quotations.find_one(
+        {"floor_id": lot["floor_id"], "customer_id": recipient["id"],
+         "status": {"$in": ["ordered", "won"]}, "transfer_group_key": group_key},
+        {"_id": 0}, session=session,
+    )
+    if not current:
+        # Adopt a previous stock-sale document without combining historical
+        # orders. Provenance excludes project quotes and ordinary transfers.
+        legacy = await db.quotations.find({
+            "floor_id": lot["floor_id"], "customer_id": recipient["id"],
+            "status": {"$in": ["ordered", "won"]}, "source": "transfer",
+            "transfer_group_key": {"$exists": False},
+            "source_purchase_order_id": {"$exists": True},
+            "items.godown_stock_id": {"$exists": True},
+            "project_name": {"$in": [None, ""]},
+            "notes": {"$regex": "^Transferred from GoDown stock"},
+        }, {"_id": 0}, session=session).sort("created_at", -1).to_list(1)
+        current = legacy[0] if legacy else None
+    if not current:
+        quote, line = await _new_transfer_quotation(lot, recipient, body, stock_id, at, user, session)
+        quote["transfer_group_key"] = group_key
+        return quote, line, True
+    line = _transfer_quotation_line(lot, body, stock_id, at)
+    revision = QuotationRevision(
+        revision_no=len(current.get("revisions") or []) + 1, created_at=at, created_by=user.id,
+        reason=f"Added {body.qty:g} × {line.name} from GoDown stock" + (f" — {body.reason}" if body.reason else ""),
+        snapshot={key: current.get(key) for key in (
+            "items", "rooms", "notes", "status", "grand_total", "project_discount_pct",
+            "category_discounts", "room_discounts", "customer_id", "customer_name", "transportation_fee",
+        )},
+    ).model_dump()
+    items = [*(current.get("items") or []), line.model_dump()]
+    project_discount = float(current.get("project_discount_pct") or 0)
+    category_discounts = current.get("category_discounts") or {}
+    room_discounts = {key: RoomDiscountCfg(**value) for key, value in (current.get("room_discounts") or {}).items()}
+    totals = recalc_quotation_totals(
+        [QuotationLineItem(**item) for item in items], project_discount, category_discounts, room_discounts,
+    )
+    totals["grand_total"] = round(totals["grand_total"] + float(current.get("transportation_fee") or 0), 2)
+    update = {
+        "items": stamp_net_amounts(items, project_discount, category_discounts, room_discounts),
+        **totals,
+        "revisions": [*(current.get("revisions") or []), revision], "updated_at": at,
+        "transfer_group_key": group_key,
+    }
+    await db.quotations.update_one(
+        {"id": current["id"], "floor_id": lot["floor_id"]}, {"$set": update}, session=session,
+    )
+    return {**current, **update}, line, False
 
 
 async def _transfer_stock_to_customer_once(stock_id: str, body: CustomerTransfer, user: UserPublic):
@@ -541,10 +609,11 @@ async def _transfer_stock_to_customer_once(stock_id: str, body: CustomerTransfer
                     # Older/manual POs have no confirmed customer order for
                     # Payments to display. Record this fulfilled quantity as
                     # an amount due, without inventing a cash collection.
-                    quote, _ = await _new_transfer_quotation(lot, recipient, body, stock_id, at, user, session)
-                    quote["source_purchase_order_id"] = matched_po["id"]
-                    quote["source_item_id"] = replacement["id"]
-                    await db.quotations.insert_one(quote, session=session)
+                    quote, quote_line, new_quote = await _customer_transfer_quotation(lot, recipient, body, stock_id, at, user, session)
+                    if new_quote:
+                        quote["source_purchase_order_id"] = matched_po["id"]
+                        quote["source_item_id"] = replacement["id"]
+                        await db.quotations.insert_one(quote, session=session)
             else:
                 # Payments reads confirmed quotations, while Purchases and the
                 # customer workspace read PO items. A direct transfer needs
@@ -553,7 +622,7 @@ async def _transfer_stock_to_customer_once(stock_id: str, body: CustomerTransfer
                 recipient_name = recipient.get("company") or recipient.get("name")
                 year = datetime.now(timezone.utc).year
                 po_number = await next_number("purchase_order", f"FPO-{year}-", collection="purchase_orders", session=session)
-                quote, quote_line = await _new_transfer_quotation(lot, recipient, body, stock_id, at, user, session)
+                quote, quote_line, new_quote = await _customer_transfer_quotation(lot, recipient, body, stock_id, at, user, session)
                 replacement = PurchaseOrderItem(
                     product_id=quote_line.product_id, sku=quote_line.sku, name=quote_line.name,
                     image=lot.get("image"), qty=body.qty, qty_received=body.qty,
@@ -577,13 +646,14 @@ async def _transfer_stock_to_customer_once(stock_id: str, body: CustomerTransfer
                     customer_id=recipient["id"], customer_name=recipient_name,
                     brand_id=lot.get("brand_id"), brand_name=lot.get("brand_name") or lot.get("brand"),
                     status="draft", items=[replacement],
-                    subtotal=quote["grand_total"], grand_total=quote["grand_total"],
+                    subtotal=quote_line.net_amount, grand_total=quote_line.net_amount,
                     created_by=user.id, created_by_name=user.full_name, floor_id=lot["floor_id"],
                     internal_notes="Created from GoDown stock transfer",
                 ).model_dump()
-                quote["source_purchase_order_id"] = matched_po["id"]
-                quote["source_item_id"] = replacement["id"]
-                await db.quotations.insert_one(quote, session=session)
+                if new_quote:
+                    quote["source_purchase_order_id"] = matched_po["id"]
+                    quote["source_item_id"] = replacement["id"]
+                    await db.quotations.insert_one(quote, session=session)
                 await db.purchase_orders.insert_one(matched_po, session=session)
 
             reserved = await db.godown_stock.update_one(
@@ -609,7 +679,7 @@ async def _transfer_stock_to_customer_once(stock_id: str, body: CustomerTransfer
                 "recipient_quotation_id": (quote or {}).get("id") or (matched_po or {}).get("quotation_id"),
                 "transfer_type": "godown_stock", "status": "completed", "reason": body.reason,
                 "mrp": mrp, "unit_price": unit_price, "discount_pct": body.discount_pct,
-                "net_unit_price": net_unit_price, "total": round(net_unit_price * body.qty, 2),
+                "net_unit_price": net_unit_price, "total": quote_line.net_amount if quote else round(net_unit_price * body.qty, 2),
                 "created_at": at, "created_by": user.id, "created_by_name": user.full_name,
             }
             await db.godown_customer_transfers.insert_one(transfer, session=session)
@@ -617,8 +687,10 @@ async def _transfer_stock_to_customer_once(stock_id: str, body: CustomerTransfer
     await log_event(
         event_type="godown_stock.customer_transferred", entity_type="godown_stock", entity_id=stock_id,
         actor=user, floor_id=lot["floor_id"], customer_id=recipient["id"],
+        quotation_id=transfer.get("recipient_quotation_id"), purchase_id=transfer.get("recipient_purchase_order_id"),
         summary=f"Transferred {body.qty:g} × {lot.get('name')} from GoDown stock to {recipient_name}",
-        payload={"transfer_id": transfer["id"], "source_customer_id": lot.get("source_customer_id"), "recipient_customer_id": recipient["id"]},
+        payload={"transfer_id": transfer["id"], "source_customer_id": lot.get("source_customer_id"),
+                 "recipient_customer_id": recipient["id"], "qty": body.qty, "amount": transfer["total"]},
     )
     return {**transfer, "created_customer": created_customer}
 

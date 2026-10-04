@@ -186,8 +186,8 @@ export const api = {
   put: <T>(path: string, body?: unknown, opts?: RequestOptions) => { return mutate<T>("PUT", path, body, opts); },
   patch: <T>(path: string, body?: unknown, opts?: RequestOptions) => { return mutate<T>("PATCH", path, body, opts); },
   delete: <T>(path: string, opts?: RequestOptions) => { return mutate<T>("DELETE", path, undefined, opts); },
-  authenticatedUrl: async (path: string) => {
-    const { token } = await request<{ token: string }>("POST", "/downloads/token", { target: `/api${path}` });
+  authenticatedUrl: async (path: string, floorId?: string) => {
+    const { token } = await request<{ token: string }>("POST", "/downloads/token", { target: `/api${path}` }, { floorId });
     return `${BASE}/api${path}${path.includes("?") ? "&" : "?"}dl=${encodeURIComponent(token)}`;
   },
   base: BASE,

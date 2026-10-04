@@ -81,6 +81,11 @@ export function BuilderTopbar({
         </Text>
       </View>
 
+      {isPhone ? <Pressable accessibilityRole="button" accessibilityLabel="Download quotation PDF" testID="generate-quotation"
+        onPress={() => setPdfOptionsOpen(true)} disabled={b.workflowBusy || !b.s.lines.length}
+        style={[styles.iconBtn, (b.workflowBusy || !b.s.lines.length) && { opacity: 0.4 }]}>
+        <Feather name="download" size={20} color={colors.onSurface} />
+      </Pressable> : null}
       {isPhone ? <Pressable accessibilityRole="button" accessibilityLabel="Quotation actions" onPress={() => setActionsOpen(true)} style={styles.iconBtn} testID="builder-actions">
         <Feather name="more-horizontal" size={20} color={colors.onSurface} />
       </Pressable> : null}
@@ -90,14 +95,14 @@ export function BuilderTopbar({
             squeezing six touch targets into one row. */}
         {!isPhone ? <Pressable accessibilityRole="button" accessibilityLabel="Preview quotation" onPress={() => setPreviewOpen(true)} disabled={!b.s.lines.length} style={({ pressed }) => [styles.iconBtn, { opacity: !b.s.lines.length ? .35 : pressed ? .7 : 1 }]}><Feather name="eye" size={16} color={colors.onSurface} /></Pressable> : null}
         {!isPhone ? <Pressable
-          accessibilityRole="button" accessibilityLabel="Generate quotation"
+          accessibilityRole="button" accessibilityLabel="Download quotation PDF"
           testID="generate-quotation"
           onPress={() => setPdfOptionsOpen(true)}
           disabled={b.workflowBusy || b.s.lines.length === 0}
           style={({ pressed }) => [styles.workflowBtn, styles.quotationBtn, { opacity: b.workflowBusy || b.s.lines.length === 0 ? 0.45 : pressed ? 0.76 : 1 }]}
         >
           <Feather name="file-text" size={14} color={colors.onSurface} />
-          {isPhone ? null : <Text style={styles.workflowText}>Quotation</Text>}
+          {isPhone ? null : <Text style={styles.workflowText}>PDF</Text>}
         </Pressable> : null}
         {!isPhone ? <Pressable
           accessibilityRole="button" accessibilityLabel="Download product PPT"
@@ -169,7 +174,7 @@ export function BuilderTopbar({
             { label: "Undo last change", icon: "corner-up-left" as const, action: b.history.undo, disabled: !b.history.canUndo },
             { label: "Redo change", icon: "corner-up-right" as const, action: b.history.redo, disabled: !b.history.canRedo },
             { label: "Preview quotation", icon: "eye" as const, action: () => setPreviewOpen(true), disabled: !b.s.lines.length },
-            { label: "Generate quotation", icon: "file-text" as const, action: () => setPdfOptionsOpen(true), disabled: b.workflowBusy || !b.s.lines.length },
+            { label: "Download quotation PDF", icon: "download" as const, action: () => setPdfOptionsOpen(true), disabled: b.workflowBusy || !b.s.lines.length },
             { label: "Download product PPT", icon: "image" as const, action: b.generateProductPpt, disabled: b.workflowBusy || !b.s.lines.length },
             { label: "Place order", icon: "shopping-cart" as const, action: b.placeOrder, disabled: b.workflowBusy || !b.s.lines.length },
             { label: "Recent quotations", icon: "clock" as const, action: () => setRecentOpen(true), disabled: false },

@@ -8,6 +8,6 @@ import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
 
 export default function TilesQuotationScreen() {
   useRequireFloorAccess("ground-floor");
-  const { productId } = useLocalSearchParams<{ productId?: string }>();
-  return <LazyQuotationBuilder mode="tiles_quotation" initialProductId={productId || null} />;
+  const { productId, id, quotationId } = useLocalSearchParams<{ productId?: string; id?: string; quotationId?: string }>();
+  return <LazyQuotationBuilder mode="tiles_quotation" initialProductId={productId || null} initialQuotationId={id || quotationId || null} />;
 }
