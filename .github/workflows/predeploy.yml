@@ -15,6 +15,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Install PDF visual regression renderer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends poppler-utils
       - name: Backend tests and dependency audit
         working-directory: backend
         # Unit tests stay hermetic; production secrets are used only by the
