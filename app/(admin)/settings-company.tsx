@@ -39,8 +39,7 @@ export default function SettingsCompany() {
   const set = (k: keyof Company) => (v: string) => setForm((f) => (f ? { ...f, [k]: v } : f));
 
   const pickLogo = async () => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) { toast.show("Photo library permission is needed"); return; }
+    // Image-only selection uses the system picker without broad library access.
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"], quality: 0.8, base64: true, allowsEditing: true, aspect: [3, 1],
     });

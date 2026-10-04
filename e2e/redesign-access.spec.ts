@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { mockSession } from './audit-fixtures';
+import { readFileSync } from 'node:fs';
 
 for (const [path, destination] of [['/reports', '/dashboard'], ['/purchase-orders', '/purchases'], ['/notebook/kitchen/followups', '/notebook/kitchen'], ['/notebook/furniture/quotation', '/notebook/furniture/quotation-follow-up']]) {
   test(`critical compatibility URL ${path} reaches its existing workspace`, async ({ page }) => {
@@ -53,6 +54,30 @@ test('critical company settings distinguish saved, changed, failed and discarded
   await page.getByRole('button', { name: 'Discard changes', exact: true }).click();
   await expect(page.getByTestId('company-name-input')).toHaveValue(company.name);
   expect(writes).toBe(1);
+});
+
+test('critical image-only company logo selection saves the chosen image through the system picker', async ({ page }) => {
+  await mockSession(page, '/settings-company');
+  let company = { name: 'BuildCon House', tagline: '', phone: '', email: '', address: '', gstin: '', logo_base64: null as string | null };
+  let writes = 0;
+  await page.route('**/api/settings/company', route => {
+    if (route.request().method() === 'PUT') {
+      writes += 1;
+      company = route.request().postDataJSON();
+    }
+    return route.fulfill({ json: company });
+  });
+  await page.goto('/settings-company');
+  await expect(page.getByTestId('save-company-btn')).toBeDisabled();
+  const image = readFileSync('assets/images/favicon.png');
+  const chosen = page.waitForEvent('filechooser');
+  await page.getByTestId('pick-logo-btn').click();
+  await (await chosen).setFiles({ name: 'company-logo.png', mimeType: 'image/png', buffer: image });
+  await expect(page.getByTestId('save-company-btn')).toBeEnabled();
+  await page.getByTestId('save-company-btn').click();
+  await expect(page.getByTestId('save-company-btn')).toBeDisabled();
+  expect(writes).toBe(1);
+  expect(company.logo_base64).toBe(`data:image/png;base64,${image.toString('base64')}`);
 });
 
 test('critical notification rules recover from failure without inventing an empty result', async ({ page }) => {

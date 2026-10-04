@@ -12,7 +12,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.buildconhouse.app",
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "Choose your company logo for quotations",
+        "NSPhotoLibraryUsageDescription": "Choose product images or your company logo",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -23,14 +23,16 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.buildconhouse.app",
-      "permissions": [
-        "READ_MEDIA_IMAGES"
-      ],
+      "permissions": [],
       "blockedPermissions": [
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.RECORD_AUDIO",
-        "android.permission.SYSTEM_ALERT_WINDOW"
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.ACCESS_MEDIA_LOCATION"
       ]
     },
     "web": {
@@ -59,7 +61,9 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Choose your company logo for quotations"
+          "photosPermission": "Choose product images or your company logo",
+          "cameraPermission": false,
+          "microphonePermission": false
         }
       ],
       "@sentry/react-native",

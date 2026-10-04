@@ -1,6 +1,6 @@
 # Google Play release checklist
 
-Complete and record each item for the exact AAB being submitted. Do not submit while the legal-publication requirement in `frontend/src/config/legal.ts` is unresolved.
+Complete and record each item for the exact AAB being submitted. Do not submit while the legal-publication requirement in `src/config/legal.ts` is unresolved.
 
 - [ ] Publish stable, unauthenticated HTTPS URLs for `/privacy` and `/terms`; replace the legal-publication release gate with verified operator facts.
 - [ ] Complete Play Console Data safety declarations from actual collection, sharing, retention, and deletion behavior; update them if Sentry or any analytics processor is enabled.

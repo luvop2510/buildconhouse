@@ -5,7 +5,7 @@
 // automatic catalog-cache refresh). This component is the first UI consumer
 // of that pipeline — no backend redesign, purely wiring.
 //
-// Flow: pick from library -> native 16:10 crop (ImagePicker allowsEditing) ->
+// Flow: system image picker preserving source pixels ->
 // preview screen (Save / choose another / cancel) -> multipart upload.
 // "Replace" reuses the exact same pick+preview flow, just tagged with the
 // media id being swapped so the backend keeps its role/primary/position.
@@ -71,8 +71,7 @@ export function ProductImageManagerBody({
   }, [load]);
 
   const pick = async (replaceId?: string) => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) { toast.show("Photo library permission is needed"); return; }
+    // Image-only selection uses the system picker without broad library access.
     const result = await ImagePicker.launchImageLibraryAsync({
       // Preserve the original pixels for the backend's quality assessment and
       // the full-size catalog/PDF views. ProductImage uses a contain fit, so

@@ -118,6 +118,19 @@ async def upload_and_register(
         scope_filter["family_key"] = family_key
     existing = await db.product_media.find_one(scope_filter, {"_id": 0})
     if existing:
+        storage = get_media_storage()
+        if not await storage.exists(bucket=existing["bucket"], key=existing["storage_key"]):
+            # Metadata deduplication alone cannot repair a lost storage object.
+            # The normalized SHA-1 already matched this exact owner/source;
+            # restore those same bytes at its original immutable pointer.
+            await storage.upload(bucket=existing["bucket"], key=existing["storage_key"], data=data, content_type=mime)
+            await log_event(
+                event_type="product.image_restored", entity_type="product",
+                entity_id=existing.get("product_id") or existing.get("family_key") or "unknown",
+                actor=actor, actor_id=uploaded_by,
+                payload={"media_id": existing["id"], "storage_key": existing["storage_key"], "sha1": sha1},
+                summary="Restored missing storage bytes for an existing product image",
+            )
         return ProductMedia(**existing)
 
     width, height, quality = _detect_dims_and_quality(data, mime)

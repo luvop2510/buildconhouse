@@ -133,8 +133,7 @@ export function ProductEditor({
   const categoryName = categories.find((c) => c.id === form?.category_id)?.name || "Select category";
   const addDiagramPhoto = async (kind: "dimension" | "seat_cover") => {
     if (!productId || !form) return;
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) { toast.show("Photo library permission is needed"); return; }
+    // Image-only selection uses the system picker without broad library access.
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 1, allowsEditing: false });
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];

@@ -58,3 +58,42 @@ async def test_failed_upload_registration_never_deletes_sibling_file(media_fakes
         storage.delete.assert_not_awaited()
     else:
         storage.delete.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("present", [False, True])
+async def test_duplicate_upload_restores_only_missing_exact_bytes(media_fakes, present):
+    import hashlib
+    from models import ProductMedia
+    collection, storage, log = media_fakes
+    data = b"<svg xmlns='http://www.w3.org/2000/svg'/>"
+    old = ProductMedia(product_id="first", floor_id="first-floor", source_type="manufacturer", role="hero", bucket="public", storage_key="original.svg", sha1=hashlib.sha1(data).hexdigest(), mime="image/svg+xml", size_bytes=len(data), public_url="https://example.test/original.svg").model_dump()
+    collection.find_one.return_value = old
+    storage.exists = AsyncMock(return_value=present)
+    result = await service.upload_and_register(data=data, mime="image/svg+xml", brand_slug="brand", product_id="first", role="hero", is_primary=True)
+    assert result.id == old["id"]
+    collection.insert_one.assert_not_awaited()
+    storage.delete.assert_not_awaited()
+    if present:
+        storage.upload.assert_not_awaited()
+        log.assert_not_awaited()
+    else:
+        storage.upload.assert_awaited_once_with(bucket="public", key="original.svg", data=data, content_type="image/svg+xml")
+        assert log.call_args.kwargs["event_type"] == "product.image_restored"
+
+
+@pytest.mark.asyncio
+async def test_failed_duplicate_restore_preserves_existing_metadata(media_fakes):
+    import hashlib
+    from models import ProductMedia
+    collection, storage, _ = media_fakes
+    data = b"<svg/>"
+    old = ProductMedia(product_id="first", floor_id="first-floor", source_type="manufacturer", role="hero", bucket="public", storage_key="original.svg", sha1=hashlib.sha1(data).hexdigest(), mime="image/svg+xml", size_bytes=len(data)).model_dump()
+    collection.find_one.return_value = old
+    storage.exists = AsyncMock(return_value=False)
+    storage.upload.side_effect = StorageError("upload unavailable")
+    with pytest.raises(StorageError):
+        await service.upload_and_register(data=data, mime="image/svg+xml", brand_slug="brand", product_id="first", role="hero")
+    collection.insert_one.assert_not_awaited()
+    collection.delete_one.assert_not_awaited()
+    storage.delete.assert_not_awaited()
