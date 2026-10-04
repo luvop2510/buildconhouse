@@ -154,7 +154,10 @@ async def import_accepted(
     in-memory ``blob_map`` first (avoids a DB round-trip per image), then
     falls back to the ``catalog_image_blobs`` collection.
     """
+    from catalog_policy import removed_brand_identity, removed_supplier_row
     supplier = job["supplier_name"]
+    if removed_brand_identity(supplier):
+        raise ValueError("This supplier is no longer distributed")
     force_landscape_images = force_landscape_images or bool(job.get("force_landscape_images"))
     floor_id = floor_id or floor_inherit(job)
     brand_doc = await db.brands.find_one({"name": supplier, "floor_id": floor_id}, {"_id": 0})
@@ -164,30 +167,6 @@ async def import_accepted(
         b = Brand(name=supplier, slug=supplier.lower(), country=None, floor_id=floor_id)
         await db.brands.insert_one(b.model_dump())
         brand_doc = b.model_dump()
-
-    # Per-row brand override: AXOR ships inside Hansgrohe supplier files but is
-    # a genuinely separate premium brand — never merge the two. Any row whose
-    # `collection` is exactly "AXOR" gets imported under the AXOR brand
-    # instead of the job's default supplier brand. Cached by name so we only
-    # hit the DB once per distinct brand within this job.
-    brand_cache: dict[str, dict] = {supplier: brand_doc}
-
-    async def _resolve_brand(row: dict) -> dict:
-        override = str(row.get("collection") or "").strip()
-        # Canonical name "Axor" (matches the brand already seeded in the DB) —
-        # never the raw supplier-file casing, so we never accidentally create
-        # a case-variant duplicate brand doc (e.g. "AXOR" vs "Axor").
-        name = "Axor" if override.upper() == "AXOR" else supplier
-        if name in brand_cache:
-            return brand_cache[name]
-        doc = await db.brands.find_one({"name": {"$regex": f"^{re.escape(name)}$", "$options": "i"}, "floor_id": floor_id}, {"_id": 0})
-        if not doc:
-            from models import Brand
-            b = Brand(name=name, slug=name.lower(), country=None, floor_id=floor_id)
-            await db.brands.insert_one(b.model_dump())
-            doc = b.model_dump()
-        brand_cache[name] = doc
-        return doc
 
     cats = await db.categories.find({"floor_id": floor_id}, {"_id": 0}).to_list(80)
     cat_by_name = {c["name"].lower(): c for c in cats}
@@ -207,6 +186,10 @@ async def import_accepted(
 
     for r in job.get("rows", []):
         if r.get("status") != "accepted":
+            continue
+        if removed_supplier_row(r):
+            skipped += 1
+            errors.append({"row_id": r.get("row_id"), "sku": r.get("sku"), "error": "Row belongs to a supplier no longer distributed"})
             continue
         if r.get("row_id") is not None:
             attempted_row_ids.append(str(r["row_id"]))
@@ -280,7 +263,7 @@ async def import_accepted(
                 else:
                     resolved_images.append(ref)
 
-            row_brand = await _resolve_brand(r)
+            row_brand = brand_doc
             payload = {
                 "name": str(r.get("name") or "Untitled")[:200],
                 "brand_id": row_brand["id"],

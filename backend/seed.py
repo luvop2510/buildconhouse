@@ -33,7 +33,6 @@ DEMO_STAFF = [
 
 BRANDS = [
     ("Hansgrohe", "Germany"),
-    ("Axor",      "Germany"),
     ("Grohe",     "Germany"),
     ("Vitra",     "Turkey"),
     ("Geberit",   "Switzerland"),
@@ -49,7 +48,7 @@ CATEGORIES = [
     ("Flush Plates", "flush-plates"),
 ]
 
-# Demo product catalog for the 5 supplier brands we distribute.
+# Demo product catalog for the 4 supplier brands we distribute.
 # NOTE: No product imagery is seeded — the real product images ship with the
 # supplier catalog imports (see backend/catalog_pipeline). The frontend renders
 # a graceful "no image" placeholder for these demo products; once the 2026
@@ -60,11 +59,6 @@ PRODUCT_SEEDS = [
     ("Metris Single Lever Kitchen Mixer", "Faucets", "Hansgrohe", "Chrome", 32500, 24800),
     ("Croma Select S Overhead 280", "Showers", "Hansgrohe", "Chrome", 28500, 21500),
     ("Raindance Select E Hand Shower", "Showers", "Hansgrohe", "Chrome", 18500, 13800),
-    # ---- Axor ----
-    ("Axor Citterio Basin Mixer 180", "Faucets", "Axor", "Brushed Brass", 68500, 52000),
-    ("Axor Uno Single Lever Basin Mixer", "Faucets", "Axor", "Polished Chrome", 58000, 44500),
-    ("Axor Starck Organic Overhead", "Showers", "Axor", "Chrome", 82000, 62500),
-    ("Axor Massaud Wash Basin", "Basins", "Axor", "White", 145000, 112000),
     # ---- Grohe ----
     ("Grohe Essence Kitchen Mixer", "Faucets", "Grohe", "Chrome", 28900, 21500),
     ("Grohe Grandera Basin Mixer", "Faucets", "Grohe", "Warm Sunset", 42500, 32800),
@@ -105,9 +99,8 @@ async def resync_catalog_if_needed():
 
     DATA-SAFETY GUARD: never touch the catalog if it contains ANY real (non-demo)
     product. Real imports (backend/catalog_pipeline) never tag rows "demo" — only
-    PRODUCT_SEEDS below does. Without this guard, a real catalog import whose brand
-    set doesn't exactly match the 5 demo brand names (e.g. Axor folded into
-    Hansgrohe as a collection) would cause this function to WIPE the entire
+    PRODUCT_SEEDS below does. Without this guard, a real catalog import with a
+    different brand set would cause this function to WIPE the entire
     products/brands/categories collections and replace them with demo data on the
     very next backend restart. This must never happen again.
 
@@ -156,7 +149,7 @@ async def resync_catalog_if_needed():
             finish=finish,
             material="Solid Brass" if cat == "Faucets" else "Ceramic",
             dimensions="—",
-            warranty="10 years" if brand in ("Axor", "Geberit") else "5 years",
+            warranty="10 years" if brand == "Geberit" else "5 years",
             mrp=float(mrp),
             price=float(price),
             stock=25 + (i % 40),
@@ -220,7 +213,7 @@ async def seed_if_empty():
             finish=finish,
             material="Solid Brass" if cat == "Faucets" else "Ceramic",
             dimensions="—",
-            warranty="10 years" if brand in ("Axor", "Geberit") else "5 years",
+            warranty="10 years" if brand == "Geberit" else "5 years",
             mrp=float(mrp),
             price=float(price),
             stock=25 + (i % 40),
@@ -334,7 +327,6 @@ async def seed_if_empty():
     from models import Supplier
     supplier_contacts = {
         "Hansgrohe": ("Hansgrohe India Pvt. Ltd.", "Rakesh Gupta", "orders@hansgrohe.in", "+91 22 2683 4400", "Mumbai"),
-        "Axor": ("Hansgrohe India Pvt. Ltd. (AXOR)", "Rakesh Gupta", "axor@hansgrohe.in", "+91 22 2683 4400", "Mumbai"),
         "Grohe": ("LIXIL India — Grohe Division", "Priya Menon", "trade@grohe.in", "+91 124 428 0000", "Gurugram"),
         "Vitra": ("Eczacıbaşı Vitra India", "Karthik Rao", "orders@vitra.in", "+91 80 4055 8000", "Bengaluru"),
         "Geberit": ("Geberit Plumbing Technology India", "Anjali Deshpande", "sales@geberit.in", "+91 22 6739 5900", "Mumbai"),

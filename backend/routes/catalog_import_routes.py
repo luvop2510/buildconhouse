@@ -1,4 +1,4 @@
-"""AI-assisted supplier catalog import (Hansgrohe, Axor, Grohe, Vitra, Geberit).
+"""AI-assisted supplier catalog import (Hansgrohe, Grohe, Vitra, Geberit).
 
 Pipeline (via `catalog_pipeline/`):
   Upload → Adapter Extract → Validate → Certify → Human Review → Import
@@ -27,7 +27,7 @@ from services.catalog_import_jobs import claim_for_processing, enqueue
 router = APIRouter(prefix="/catalog/imports", tags=["catalog-import"])
 logger = logging.getLogger("forge.catalog_import")
 
-SUPPORTED_BRANDS = ["Hansgrohe", "Axor", "Grohe", "Vitra", "Geberit", "Oyster", "Qutone", "Dimore", "MCM", "GRANOLAND"]
+SUPPORTED_BRANDS = ["Hansgrohe", "Grohe", "Vitra", "Geberit", "Oyster", "Qutone", "Dimore", "MCM", "GRANOLAND"]
 MISSING = "[MISSING DATA]"
 
 # Security audit (Phase 1, 2026-08): supplier pricelists (PDF/XLSX) legitimately

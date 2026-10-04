@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { mockSession } from './audit-fixtures';
 
-test('critical mobile customer PDF uses an authenticated attachment download', async ({ page, browserName }) => {
+test('critical mobile customer PDF waits for a fresh save tap and recovers from generation failures', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.addInitScript(() => Object.defineProperty(navigator, 'userAgent', {
     configurable: true,
@@ -12,27 +12,25 @@ test('critical mobile customer PDF uses an authenticated attachment download', a
     id: 'q-mobile', number: 'Q-104', status: 'sent', created_at: '2026-09-01T12:00:00Z', grand_total: 1200,
     items: [], revisions: [], brands: [],
   } }));
-  let tokenTarget = '';
-  await page.route('**/api/downloads/token', r => {
-    tokenTarget = r.request().postDataJSON().target;
-    return r.fulfill({ json: { token: 'mobile-pdf-token' } });
+  let fail = true;
+  await page.route('**/api/quotations/q-mobile/portal-pdf', async r => {
+    await new Promise(resolve => setTimeout(resolve, fail ? 100 : 6000));
+    return fail ? r.fulfill({ status: 503, json: { detail: 'PDF generation failed' } }) : r.fulfill({
+      contentType: 'application/pdf', body: '%PDF-1.4\n%%EOF',
+    });
   });
-  await page.route('**/api/quotations/q-mobile/portal-pdf?dl=mobile-pdf-token', r => r.fulfill({
-    contentType: 'application/pdf',
-    headers: { 'Content-Disposition': 'attachment; filename="Q-104.pdf"' },
-    body: '%PDF-1.4\n%%EOF',
-  }));
   await page.goto('/quotes/q-mobile');
-  const attachment = page.waitForResponse(response => response.url().includes('/api/quotations/q-mobile/portal-pdf?dl=mobile-pdf-token'));
-  // Headless WebKit receives the attachment response but does not surface a
-  // Playwright download event for a top-level PDF navigation.
-  const download = browserName === 'webkit' ? null : page.waitForEvent('download');
   await page.getByTestId('download-latest-pdf').click();
-  const response = await attachment;
-  expect(response.status()).toBe(200);
-  expect(response.headers()['content-disposition']).toContain('attachment; filename="Q-104.pdf"');
-  if (download) expect((await download).suggestedFilename()).toBe('Q-104.pdf');
-  expect(tokenTarget).toBe('/api/quotations/q-mobile/portal-pdf');
+  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page).toHaveURL(/quotes\/q-mobile$/);
+  await expect(page.getByTestId('mobile-file-save')).toHaveCount(0);
+  fail = false;
+  await page.getByTestId('download-latest-pdf').click();
+  await expect(page.getByRole('dialog', { name: 'Save PDF' })).toBeVisible({ timeout: 15000 });
+  const download = page.waitForEvent('download');
+  await page.getByTestId('mobile-file-download').click();
+  expect((await download).suggestedFilename()).toBe('Q-104.pdf');
+  await expect(page.getByTestId('mobile-file-save')).toHaveCount(0);
   await expect(page.getByTestId('customer-quote-detail')).toBeVisible();
 });
 

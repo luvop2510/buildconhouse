@@ -1043,7 +1043,7 @@ const sideStyles = StyleSheet.create({
 // auto-paginates once it overflows a page.
 // ---------------------------------------------------------------------------
 const BRAND_PARTNERS: [string, string][][] = [
-  [["GROHE", "Pure Freude an Wasser"], ["hansgrohe", "Life is Waterful"], ["AXOR", "Form Follows Perfection"], ["VitrA", "Design Meets Life"], ["NEXION", "The Surface Experience"], ["QUTONE", "Let's Build Together"]],
+  [["GROHE", "Pure Freude an Wasser"], ["hansgrohe", "Life is Waterful"], ["VitrA", "Design Meets Life"], ["NEXION", "The Surface Experience"], ["QUTONE", "Let's Build Together"]],
   [["DIMORE", "Reflection of Your Style"], ["Oyster", "Indulge in Luxury"], ["GEBERIT", "Engineered for Hygiene"], ["MCM ITTIMI", "Innovation into Inspiration"], ["VERANTES LIVING", "Kitchens & Wardrobes"], ["IMPORTED FURNITURE", "Crafted Beyond Borders"]],
 ];
 

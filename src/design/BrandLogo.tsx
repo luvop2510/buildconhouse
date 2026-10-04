@@ -6,8 +6,7 @@
 //
 // Also exports the supplier brand logo map used by the Quotation Builder's
 // brand rail (and anywhere else a brand badge is rendered) — Grohe, Hansgrohe,
-// Vitra and Geberit ship real logos; AXOR has none supplied yet, callers
-// should fall back to an initials badge for that one brand only.
+// Vitra and Geberit ship real logos; unlisted brands use an initials badge.
 import { Image, ImageStyle, StyleProp } from "react-native";
 
 // Native aspect ratio of the source lockup (1414×412) — always size by height

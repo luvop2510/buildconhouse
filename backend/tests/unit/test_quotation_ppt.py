@@ -42,6 +42,8 @@ def test_ppt_groups_products_by_room_and_area_without_catalog_text(monkeypatch):
         ],
     }
     ppt = Presentation(BytesIO(quotation_ppt.build_product_ppt(doc)))
+    names = {row[0] for row in quotation_ppt.PARTNER_LOGOS}
+    assert "hansgrohe" in names and "axor" not in names
     assert len(ppt.slides) == 3
     assert round(ppt.slide_width / ppt.slide_height, 2) == round(16 / 9, 2)
     texts = [" ".join(shape.text for shape in slide.shapes if shape.has_text_frame) for slide in ppt.slides]
@@ -51,7 +53,7 @@ def test_ppt_groups_products_by_room_and_area_without_catalog_text(monkeypatch):
     assert "POWDER ROOM" in texts[1] and "Basin Area" in texts[1] and "WC Area" in texts[1]
     assert "UTILITY" in texts[2] and "Shower Area" in texts[2]
     assert all("SECRET" not in text and "Tap" not in text for text in texts)
-    assert [sum(shape.shape_type == 13 for shape in slide.shapes) for slide in ppt.slides] == [11, 3, 1]
+    assert [sum(shape.shape_type == 13 for shape in slide.shapes) for slide in ppt.slides] == [10, 3, 1]
 
 
 def test_cover_uses_architect_label_when_referrer_is_architect(monkeypatch):

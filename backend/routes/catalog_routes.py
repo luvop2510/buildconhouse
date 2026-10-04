@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from auth import floor_for_write, floor_inherit, floor_query, floor_scope_ids, get_current_user, get_floor_scoped_or_404, require_min_role
 from db import db, strip_ids
+from catalog_policy import removed_brand_document
 from models import Brand, BrandCreate, Category, CategoryCreate, Product, ProductCreate, ProductPatch, SizeVariantResolution, UserPublic
 from services import catalog_service, media_service
 from services.activity_log import log_event
@@ -33,9 +34,11 @@ async def _validate_diagram_media_urls(product_id: str, updates: dict) -> None:
 async def _require_product_relations_on_floor(brand_id: str, category_id: str, floor_id: str) -> None:
     """Keep a product's denormalized catalog hierarchy within one floor."""
     brand, category = await asyncio.gather(
-        db.brands.find_one({"id": brand_id, "floor_id": floor_id}, {"_id": 0, "id": 1}),
+        db.brands.find_one({"id": brand_id, "floor_id": floor_id}, {"_id": 0, "id": 1, "name": 1, "slug": 1}),
         db.categories.find_one({"id": category_id, "floor_id": floor_id}, {"_id": 0, "id": 1}),
     )
+    if brand and removed_brand_document(brand):
+        raise HTTPException(status_code=400, detail="This brand is no longer distributed")
     if not brand or not category:
         raise HTTPException(
             status_code=400,
@@ -71,6 +74,8 @@ async def create_brand(
     body: BrandCreate,
     user: UserPublic = Depends(require_min_role("purchase")),
 ):
+    if removed_brand_document(body.model_dump()):
+        raise HTTPException(status_code=400, detail="This brand is no longer distributed")
     if await db.brands.find_one({"slug": body.slug, "floor_id": floor_for_write(user)}):
         raise HTTPException(status_code=409, detail="A brand with this slug already exists")
     payload = body.model_dump()

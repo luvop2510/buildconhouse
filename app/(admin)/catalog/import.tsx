@@ -16,7 +16,7 @@ import { colors, radius, spacing, type } from "@/src/theme/tokens";
 import { uriToBlob } from "@/src/utils/uriToBlob";
 import { useBp } from "@/src/design/responsive";
 
-const SUPPORTED = ["Hansgrohe", "Axor", "Grohe", "Vitra", "Geberit", "MCM", "GRANOLAND"] as const;
+const SUPPORTED = ["Hansgrohe", "Grohe", "Vitra", "Geberit", "MCM", "GRANOLAND"] as const;
 type Brand = typeof SUPPORTED[number];
 const MISSING = "[MISSING DATA]";
 // Keep bulk edits gentle on the API and on the browser. This is deliberately

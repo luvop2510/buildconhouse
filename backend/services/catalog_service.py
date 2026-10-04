@@ -19,6 +19,7 @@ from time import monotonic
 from typing import Optional
 
 from db import db
+from catalog_policy import removed_brand_document
 from models import ProductMedia
 
 _SNAPSHOT_MAX_AGE_SECONDS = 300.0
@@ -69,6 +70,16 @@ def _build_snapshot(
     products: list[dict], media_rows: list[dict], brands: list[dict],
     categories: list[dict], usage_rows: list[dict],
 ) -> CatalogSnapshot:
+    excluded_brand_ids = {row["id"] for row in brands if removed_brand_document(row)}
+    brands = [row for row in brands if row["id"] not in excluded_brand_ids]
+    excluded_products = [row for row in products if row.get("brand_id") in excluded_brand_ids]
+    excluded_ids = {row["id"] for row in excluded_products}
+    excluded_families = {row.get("family_key") for row in excluded_products if row.get("family_key")}
+    products = [row for row in products if row["id"] not in excluded_ids]
+    retained_families = {row.get("family_key") for row in products if row.get("family_key")}
+    excluded_families -= retained_families
+    media_rows = [row for row in media_rows if row.get("product_id") not in excluded_ids
+                  and row.get("family_key") not in excluded_families]
     product_by_id = {row["id"]: row for row in products}
     products_by_family_raw: dict[str, list[dict]] = defaultdict(list)
     for row in products:

@@ -17,10 +17,8 @@ REGISTRY = {
     "grohe": GroheAdapter,
     "geberit": GeberitAdapter,
     "vitra": VitraAdapter,
-    # Hansgrohe (with AXOR merged as an internal collection).
+    # Hansgrohe supplier workbook.
     "hansgrohe": HansgroheAdapter,
-    # AXOR routed to Hansgrohe adapter — same file format, brand folded.
-    "axor": HansgroheAdapter,
     "oyster": OysterAdapter,
     "qutone": QutoneAdapter,
     "dimore": DimoreAdapter,

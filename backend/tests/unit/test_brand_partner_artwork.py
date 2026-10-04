@@ -1,4 +1,4 @@
-"""Every customer document embeds the ten marks from the supplied cover."""
+"""Every customer document embeds the nine active partner marks from the supplied cover."""
 
 from io import BytesIO
 
@@ -19,7 +19,10 @@ def _first_page_image_count(blob: bytes) -> int:
 
 def test_supplied_partner_set_is_complete_and_present_on_every_pdf_cover():
     names = [name for row in BRAND_PARTNERS for name in row]
-    assert len(names) == len(set(names)) == 10
+    assert len(names) == len(set(names)) == 9
+    assert "hansgrohe" in names
+    assert "axor" not in names
+    assert not (BRAND_LOGO_DIR / "axor.png").exists()
     assert all((BRAND_LOGO_DIR / f"{name}.png").is_file() for name in names)
 
     quotation = {
@@ -36,4 +39,4 @@ def test_supplied_partner_set_is_complete_and_present_on_every_pdf_cover():
         build_chalan_pdf(chalan, {"number": "PO-1", "customer_name": "Logo Check"}, customer),
         build_tile_chalan_pdf(tile_chalan),
     )
-    assert all(_first_page_image_count(document) >= 11 for document in documents)
+    assert all(_first_page_image_count(document) >= 10 for document in documents)

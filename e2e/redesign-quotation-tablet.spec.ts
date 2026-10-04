@@ -47,7 +47,7 @@ test('critical tablet quotation picker shows at least five complete products and
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 });
 
-test('critical iPad desktop browser downloads the quotation PDF with dimensions and its document floor', async ({ page, browserName }) => {
+test('critical iPad desktop browser downloads the quotation PDF with dimensions and its document floor', async ({ page }) => {
   await page.setViewportSize({ width: 834, height: 1112 });
   await page.addInitScript(() => {
     Object.defineProperty(navigator, 'userAgent', { configurable: true, value: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) AppleWebKit/605.1.15 Safari/605.1.15' });
@@ -63,23 +63,18 @@ test('critical iPad desktop browser downloads the quotation PDF with dimensions 
   await page.route('**/api/quotations/q-tablet/breakdown', r => r.fulfill({ json: { lines: [], totals: { subtotal: 1200, discount_total: 0, grand_total: 1200 }, project_discount_pct: 0, category_discounts: {} } }));
   await page.route('**/api/activity/quotation/q-tablet', r => r.fulfill({ json: [] }));
   await page.route('**/api/purchase-orders?quotation_id=q-tablet', r => r.fulfill({ json: [] }));
-  let tokenTarget = '';
-  let tokenFloor = '';
-  await page.route('**/api/downloads/token', r => {
-    tokenTarget = r.request().postDataJSON().target;
-    tokenFloor = r.request().headers()['x-floor-id'];
-    return r.fulfill({ json: { token: 'tablet-download-once' } });
-  });
   await page.route('**/api/quotations/q-tablet/pdf?**', r => r.fulfill({
     contentType: 'application/pdf', headers: { 'Content-Disposition': 'attachment; filename="Tablet Customer.pdf"' }, body: '%PDF-1.4\n%%EOF',
   }));
   await page.goto('/quotations/q-tablet');
   await page.getByTestId('download-pdf').click();
   const request = page.waitForRequest('**/api/quotations/q-tablet/pdf?**');
-  const download = browserName === 'webkit' ? null : page.waitForEvent('download');
   await page.getByTestId('detail-pdf-include-dimensions').click();
-  expect((await request).url()).toContain('include_dimensions=true&dl=tablet-download-once');
-  expect(tokenTarget).toBe('/api/quotations/q-tablet/pdf?include_dimensions=true');
-  expect(tokenFloor).toBe('first-floor');
-  if (download) expect((await download).suggestedFilename()).toBe('Tablet Customer.pdf');
+  const fetched = await request;
+  expect(fetched.url()).toContain('include_dimensions=true');
+  expect(fetched.headers()['x-floor-id']).toBe('first-floor');
+  await expect(page.getByTestId('mobile-file-save')).toBeVisible();
+  const download = page.waitForEvent('download');
+  await page.getByTestId('mobile-file-download').click();
+  expect((await download).suggestedFilename()).toBe('Tablet Customer.pdf');
 });

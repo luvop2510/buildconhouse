@@ -28,31 +28,66 @@ assert.equal(requests[0].headers["X-Floor-Id"], "ground-floor");
 assert.equal(requests[0].headers["X-CSRF-Token"], "csrf-value");
 assert.equal(JSON.parse(requests[0].body).target, `/api${path}`);
 
-// iPadOS presents a desktop Mac UA; touch capability must still select the
-// authenticated attachment path, avoiding a delayed blob/popup download.
+// Mobile fetch failures stay in the app; successful generation waits for a
+// fresh tap before handing the blob to Safari's downloader or share sheet.
 for (const navigator of [
-  { userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) Safari/605.1.15", platform: "MacIntel", maxTouchPoints: 5 },
-  { userAgent: "Mozilla/5.0 (iPad; CPU OS 17_0) Safari/605.1.15", platform: "iPad", maxTouchPoints: 5 },
+  { userAgent: "iPhone Safari", platform: "iPhone", maxTouchPoints: 5 },
+  { userAgent: "Android Chrome", platform: "Linux", maxTouchPoints: 5, dialogUnsupported: true, fileUnsupported: true },
+  { userAgent: "iPhone embedded", canShare() { throw new Error("Unsupported"); }, share: async () => {} },
+  { userAgent: "iPhone Safari", canShare: () => true, share: async () => { throw Object.assign(new Error("Cancelled"), { name: "AbortError" }); } },
+  { userAgent: "Macintosh Safari", platform: "MacIntel", maxTouchPoints: 5 },
 ]) {
   const module = { exports: {} };
-  const navigations = [];
-  const calls = [];
+  const elements = [];
   const errors = [];
+  const fetches = [];
   let fail = false;
+  let clicks = 0;
+  const makeElement = tag => {
+    const element = { tag, style: {}, children: [], setAttribute() {}, append(...items) { this.children.push(...items); },
+      appendChild(item) { this.children.push(item); }, remove() {}, close() {}, showModal() {}, focus() {}, click() { clicks++; } };
+    if (navigator.dialogUnsupported) element.showModal = undefined;
+    elements.push(element);
+    return element;
+  };
   vm.runInNewContext(compile("../src/utils/downloadFile.ts"), {
-    module, exports: module.exports, navigator,
-    require: (name) => name === "react-native" ? { Platform: { OS: "web" } } : name.includes("Toast")
+    module, exports: module.exports, navigator, File: navigator.fileUnsupported ? undefined : File, Blob,
+    require: name => name === "react-native" ? { Platform: { OS: "web" } } : name.includes("Toast")
       ? { toast: { show: value => errors.push(value) } }
-      : { api: { authenticatedUrl: async (...args) => { calls.push(args); if (fail) throw new Error("offline"); return "/api/attachment?dl=one-use-token"; } } },
-    window: { location: { assign: value => navigations.push(value) } },
-    fetch: () => { throw new Error("iPad must not fetch a blob before navigating"); },
+      : { getToken: async () => null, api: { base: "", authenticatedUrl: () => { throw new Error("Mobile downloads must not navigate to a one-use URL"); } } },
+    document: { body: makeElement("body"), createElement: makeElement },
+    URL: { createObjectURL: () => "blob:ready-pdf", revokeObjectURL() {} }, setTimeout() {},
+    fetch: async (url, options) => {
+      fetches.push({ url, options });
+      return fail ? { ok: false, status: 503, json: async () => ({ detail: "PDF generation failed" }) }
+        : { ok: true, blob: async () => new Blob(["%PDF-1.4"], { type: "application/pdf" }) };
+    },
   });
-  assert.equal(await module.exports.downloadApiFile(path, "Customer.pdf", "quotation PDF", "ground-floor"), true);
-  assert.deepEqual([...calls[0]], [path, "ground-floor"]);
-  assert.deepEqual(navigations, ["/api/attachment?dl=one-use-token"]);
+  const saving = module.exports.downloadApiFile(path, "Customer.pdf", "quotation PDF", "ground-floor");
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(clicks, 0, "the async fetch must not trigger a download without a fresh tap");
+  assert.equal(fetches[0].options.headers["X-Floor-Id"], "ground-floor");
+  assert.equal(fetches[0].options.credentials, "same-origin");
+  const share = elements.find(element => element.textContent === "Share or save");
+  if (share) {
+    share.onclick();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(errors, [], "share cancellation keeps Download available without an error");
+  }
+  elements.find(element => element.textContent === "Download").onclick();
+  assert.equal(await saving, true);
+  assert.equal(clicks, 1);
+  const anchor = elements.find(element => element.tag === "a");
+  assert.equal(anchor.href, "blob:ready-pdf");
+  assert.equal(anchor.download, "Customer.pdf");
+  assert.equal(anchor.target, "_blank");
+  const cancelled = module.exports.downloadApiFile(path, "Customer.pdf", "quotation PDF", "ground-floor");
+  await new Promise(resolve => setImmediate(resolve));
+  elements.filter(element => element.textContent === "Cancel").at(-1).onclick();
+  assert.equal(await cancelled, false);
   fail = true;
   assert.equal(await module.exports.downloadApiFile(path, "Customer.pdf", "quotation PDF", "ground-floor"), false);
-  assert.equal(navigations.length, 1);
-  assert.deepEqual(errors, ["Couldn't download the quotation PDF"]);
+  assert.deepEqual(errors, ["PDF generation failed"]);
+  assert.equal(clicks, 1);
 }
-console.log("Quotation downloads: explicit token floor binding and iPadOS attachment/retry paths passed");
+console.log("Quotation downloads: floor binding, mobile fresh-gesture save, and recoverable generation failures passed");

@@ -82,7 +82,7 @@ RUPEE_FONT = _register_rupee_font()
 
 BRAND_LOGO_DIR = PDF_DIR / "brand_logos"
 BRAND_PARTNERS = (
-    ("grohe", "hansgrohe", "axor", "geberit", "vitra"),
+    ("grohe", "hansgrohe", "geberit", "vitra"),
     ("oyster", "qutone", "nexion", "dimore", "ncl_ittimi"),
 )
 
@@ -91,7 +91,7 @@ def brand_partners_table(_base_cell_style: ParagraphStyle, col_width_mm: float |
     """Place only the supplied partner artwork in the two-row cover strip."""
     # The tiles document shares this strip at landscape width. Its legacy
     # argument describes one of six old cells, so retain the overall width.
-    columns = len(BRAND_PARTNERS[0])
+    columns = max(map(len, BRAND_PARTNERS))
     cell_width = ((col_width_mm * 6 / columns) if col_width_mm else _pw(267 / columns)) * mm
     logo_height = min(11, row_height_mm - 2) * mm
     rows = []
