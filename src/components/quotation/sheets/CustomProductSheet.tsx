@@ -4,7 +4,7 @@
 //   [ ] Inline only                → lives ONLY inside this quotation
 // In both cases a line is inserted into the current room.
 // -----------------------------------------------------------------------------
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useEffect, useState } from "react";
 import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";

@@ -16,7 +16,7 @@
 //   * Complete-the-Set (same family_key, other categories)
 //   * Quotation notes (line-level, only when a Line is focused)
 // -----------------------------------------------------------------------------
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import * as Haptics from "expo-haptics";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";

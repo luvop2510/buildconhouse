@@ -3,7 +3,7 @@ import { NavigationTabs } from "@/src/design/NavigationTabs";
 // Customer profile with full activity timeline across quotations, purchases,
 // and future payments. DS-aligned rebuild: PageHeader, StatTile, SegmentedControl,
 // unified list row, Avatar. Business logic preserved.
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {

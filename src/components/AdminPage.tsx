@@ -4,7 +4,7 @@
 // back). No hardcoded typography or spacing anywhere.
 //
 // Also exposes IconAction for right-cluster buttons (unchanged API for callers).
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { Pressable, ScrollView, StyleSheet, Text, View, ViewStyle } from "react-native";
 
 import { PageHeader } from "@/src/components/ui";

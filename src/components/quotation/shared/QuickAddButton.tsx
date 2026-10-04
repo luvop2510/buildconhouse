@@ -5,7 +5,7 @@
 // directly on the button, and (3) surfaces a bottom toast
 // — all non-blocking, the picker/grid stays exactly where it was so the
 // browsing workflow is never interrupted.
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import * as Haptics from "expo-haptics";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";

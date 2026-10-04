@@ -1,7 +1,7 @@
 // Settings > Company -- name/tagline/contact/logo. Previously these were
 // hardcoded constants (theme/tokens.ts `brand`) with no way to change them
 // at all. Editing requires admin+; other roles see a read-only view.
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";

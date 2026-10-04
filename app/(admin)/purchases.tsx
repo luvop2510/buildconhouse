@@ -6,9 +6,9 @@
 // transferred to another customer (which spawns a fresh draft PO for the
 // destination). Layout follows the FORGE V2 reference — Forge design language.
 // -----------------------------------------------------------------------------
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useRouter } from "expo-router";
-import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type Dispatch, type SetStateAction, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator, FlatList, Platform, Pressable,
   ScrollView, StyleSheet, Text, TextInput, View,
@@ -113,6 +113,8 @@ export default function PurchasesScreen() {
   const { isPhone, isTablet, isDesktop, width } = useBp();
   const { selectedFloorId } = useFloorAccess();
   const insets = useSafeAreaInsets();
+  const activeFloor = useRef(selectedFloorId);
+  activeFloor.current = selectedFloorId;
 
   // View + filter state
   const [view, setView] = useState<ViewMode>("today");
@@ -162,11 +164,21 @@ export default function PurchasesScreen() {
   const [customerWorkspace, setCustomerWorkspace] = useState<PurchaseCustomerWorkspace | null>(null);
   const [loadingWorkspace, setLoadingWorkspace] = useState(false);
 
+  useEffect(() => {
+    setItems([]); setTotal(0); setBlockedCount(0); setNextSkip(null); nextSkipRef.current = null;
+    setCustomers([]); setCustomersError(null); setLoadingCustomers(true);
+    setBrands([]); setBrandsTotal(0); setStages([]); setShortages([]);
+    setBrand("all"); setStage(""); setSelected(new Set());
+    setCustomerWorkspaceId(null); setCustomerWorkspace(null); setTransferItem(null);
+    setRowMoveTarget(null); setHistoryItemId(null); setCancelTarget(null);
+    setShowMoveMenu(false); setShowShortages(false); setBulkResponse(null); setBulkRefreshError(null);
+  }, [selectedFloorId]);
+
   const loadShortages = useCallback(async () => {
     if (!selectedFloorId) return;
     try {
       const r = await api.get<{ items: Shortage[] }>("/purchases/shortages?status=awaiting_reorder");
-      setShortages(r.items || []);
+      if (activeFloor.current === selectedFloorId) setShortages(r.items || []);
     } catch { /* soft-fail — non-critical banner */ }
   }, [selectedFloorId]);
 
@@ -188,6 +200,7 @@ export default function PurchasesScreen() {
         api.get<{ all: number; brands: BrandFacet[] }>("/purchases/brands"),
         api.get<StageMeta[]>("/purchases/stages"),
       ]);
+      if (activeFloor.current !== selectedFloorId) return;
       setBrands(b.brands); setBrandsTotal(b.all); setStages(s);
     } catch (e) {
       if (throwOnError) throw e;
@@ -199,9 +212,12 @@ export default function PurchasesScreen() {
     if (!selectedFloorId) return;
     setLoadingCustomers(true);
     setCustomersError(null);
-    try { setCustomers(await getPurchaseCustomers()); }
-    catch (e: any) { setCustomersError(e?.detail || "Could not load customers"); }
-    finally { setLoadingCustomers(false); }
+    try {
+      const loadedCustomers = await getPurchaseCustomers();
+      if (activeFloor.current === selectedFloorId) { setCustomers(loadedCustomers); setCustomersError(null); }
+    }
+    catch (e: any) { if (activeFloor.current === selectedFloorId) setCustomersError(e?.detail || "Could not load customers"); }
+    finally { if (activeFloor.current === selectedFloorId) setLoadingCustomers(false); }
   }, [selectedFloorId]);
 
   const loadItems = useCallback(async ({ throwOnError = false, append = false, quiet = false }: { throwOnError?: boolean; append?: boolean; quiet?: boolean } = {}) => {
@@ -241,7 +257,7 @@ export default function PurchasesScreen() {
   }, [view, brand, committedQ, stage, isDesktop, selectedFloorId]);
 
   useEffect(() => { loadFacets(); }, [loadFacets]);
-  useEffect(() => { loadCustomers(); }, [loadCustomers]);
+  useEffect(() => { if (view === "customers") void loadCustomers(); }, [loadCustomers, view]);
   useEffect(() => { loadShortages(); }, [loadShortages]);
   useEffect(() => {
     if (!customerWorkspaceId) { setCustomerWorkspace(null); return; }
@@ -371,6 +387,14 @@ export default function PurchasesScreen() {
     }
   }, [view, brand, q, stage, customers, selectedFloorId]);
 
+  const toggleSelected = useCallback((itemId: string) => setSelected((current) => {
+    const next = new Set(current);
+    if (next.has(itemId)) next.delete(itemId);
+    else next.add(itemId);
+    return next;
+  }), []);
+  const openPurchaseOrder = useCallback((poId: string) => router.push(`/(admin)/purchase-orders/${poId}` as any), [router]);
+
   // -----------------------------------
   // Derived
   // -----------------------------------
@@ -419,17 +443,12 @@ export default function PurchasesScreen() {
                 selected={selected.has(item.item_id)}
                 compact={compactPhone}
                 tablet={isTablet}
-                onSelect={() => setSelected((current) => {
-                  const next = new Set(current);
-                  if (next.has(item.item_id)) next.delete(item.item_id);
-                  else next.add(item.item_id);
-                  return next;
-                })}
-                onMove={() => setRowMoveTarget(item)}
-                onTransfer={() => setTransferItem(item)}
-                onHistory={() => setHistoryItemId(item.item_id)}
-                onOpenPo={() => router.push(`/(admin)/purchase-orders/${item.po_id}` as any)}
-                onCancel={() => setCancelTarget(item)}
+                onSelect={toggleSelected}
+                onMove={setRowMoveTarget}
+                onTransfer={setTransferItem}
+                onHistory={setHistoryItemId}
+                onOpenPo={openPurchaseOrder}
+                onCancel={setCancelTarget}
               />
             </View>
           )}
@@ -859,11 +878,11 @@ export default function PurchasesScreen() {
 // Phone presentation.  It deliberately owns the only vertical scroll on the
 // screen; sheets render outside the FlatList and never compete for gestures.
 // -----------------------------------------------------------------------------
-function MobilePurchaseCard({ item, selected, compact, tablet, onSelect, onMove, onTransfer, onHistory, onOpenPo, onCancel }: {
-  item: Item; selected: boolean; onSelect: () => void; onMove: () => void;
+const MobilePurchaseCard = memo(function MobilePurchaseCard({ item, selected, compact, tablet, onSelect, onMove, onTransfer, onHistory, onOpenPo, onCancel }: {
+  item: Item; selected: boolean; onSelect: (itemId: string) => void; onMove: (item: Item) => void;
   compact: boolean;
   tablet: boolean;
-  onTransfer: () => void; onHistory: () => void; onOpenPo: () => void; onCancel: () => void;
+  onTransfer: (item: Item) => void; onHistory: (itemId: string) => void; onOpenPo: (poId: string) => void; onCancel: (item: Item) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const tone = STAGE_TONE[item.stage] || item.stage_tone;
@@ -873,7 +892,7 @@ function MobilePurchaseCard({ item, selected, compact, tablet, onSelect, onMove,
   return (
     <View style={[styles.mobilePurchaseCard, compact && styles.mobilePurchaseCardCompact, item.blocked && styles.mobilePurchaseCardBlocked, item.borrowed_from_customer_name && styles.borrowedCard]}>
       <View style={styles.mobileCardTop}>
-        <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected }} accessibilityLabel={`Select ${item.name}`} onPress={onSelect} style={styles.mobileSelectTarget}>
+        <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected }} accessibilityLabel={`Select ${item.name}`} onPress={() => onSelect(item.item_id)} style={styles.mobileSelectTarget}>
           <View style={[styles.chk, selected && styles.chkOn]}>{selected ? <Feather name="check" size={12} color={colors.onBrand} /> : null}</View>
         </Pressable>
         {!tablet ? <ProductImage source={item.image} style={styles.mobileCardImage} contentFit="contain" fallbackLabel={item.sku} disableSkeleton borderRadius={8} /> : null}
@@ -897,26 +916,26 @@ function MobilePurchaseCard({ item, selected, compact, tablet, onSelect, onMove,
         {STAGE_ORDER.map((key, index) => <View key={key} style={[styles.mobileProgressDot, index <= stageIndex && styles.mobileProgressDotDone, index === stageIndex && styles.mobileProgressDotCurrent]} />)}
       </View>
       <View style={styles.mobileCardBottom}>
-        <Pressable accessibilityRole="button" accessibilityLabel={`Change stage for ${item.name}`} onPress={onMove} style={[styles.stageBadge, styles.mobileStageBadge, { backgroundColor: tone.bg }]}><Text style={{ color: tone.fg, fontWeight: "700", fontSize: 12 }} numberOfLines={1}>{item.stage_label}</Text><Feather name="chevron-down" size={13} color={tone.fg} /></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Change stage for ${item.name}`} onPress={() => onMove(item)} style={[styles.stageBadge, styles.mobileStageBadge, { backgroundColor: tone.bg }]}><Text style={{ color: tone.fg, fontWeight: "700", fontSize: 12 }} numberOfLines={1}>{item.stage_label}</Text><Feather name="chevron-down" size={13} color={tone.fg} /></Pressable>
         <Text style={styles.mobileCardPo} numberOfLines={1}>{item.po_number || "No PO"}</Text>
         {item.blocked ? <View style={styles.mobileBlockedPill}><Text style={styles.mobileBlockedText}>Blocked</Text></View> : null}
       </View>
       {nextLabel ? (
-        <Pressable accessibilityRole="button" accessibilityLabel={`Choose the next stage for ${item.name}`} onPress={onMove} style={({ pressed }) => [styles.mobileAdvance, pressed && { opacity: 0.72 }]}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Choose the next stage for ${item.name}`} onPress={() => onMove(item)} style={({ pressed }) => [styles.mobileAdvance, pressed && { opacity: 0.72 }]}>
           <Text style={styles.mobileAdvanceText}>Update stage · {nextLabel}</Text>
           <Feather name="arrow-up-right" size={15} color={colors.onBrand} />
         </Pressable>
       ) : null}
-      <Sheet open={menuOpen} onClose={() => setMenuOpen(false)} title={item.name} footer={<Pressable accessibilityRole="button" accessibilityLabel="Cancel purchase actions" onPress={() => setMenuOpen(false)} style={styles.mobileSheetCancel}><Text style={styles.mobileSheetCancelText}>Cancel</Text></Pressable>}>
-            <SheetAction icon="repeat" label="Move material" onPress={() => { setMenuOpen(false); onMove(); }} />
-            {item.stage === "in_box" && !item.loan_replenishment_for_customer_name ? <SheetAction icon="shuffle" label="Transfer customer" onPress={() => { setMenuOpen(false); onTransfer(); }} /> : null}
-            <SheetAction icon="clock" label="Movement history" onPress={() => { setMenuOpen(false); onHistory(); }} />
-            <SheetAction icon="file-text" label="Open purchase order" onPress={() => { setMenuOpen(false); onOpenPo(); }} />
-            {item.stage !== "delivered" && !item.loan_replenishment_for_customer_name ? <SheetAction icon="trash-2" label="Remove from active purchases" onPress={() => { setMenuOpen(false); onCancel(); }} /> : null}
-      </Sheet>
+      {menuOpen ? <Sheet open={menuOpen} onClose={() => setMenuOpen(false)} title={item.name} footer={<Pressable accessibilityRole="button" accessibilityLabel="Cancel purchase actions" onPress={() => setMenuOpen(false)} style={styles.mobileSheetCancel}><Text style={styles.mobileSheetCancelText}>Cancel</Text></Pressable>}>
+            <SheetAction icon="repeat" label="Move material" onPress={() => { setMenuOpen(false); onMove(item); }} />
+            {item.stage === "in_box" && !item.loan_replenishment_for_customer_name ? <SheetAction icon="shuffle" label="Transfer customer" onPress={() => { setMenuOpen(false); onTransfer(item); }} /> : null}
+            <SheetAction icon="clock" label="Movement history" onPress={() => { setMenuOpen(false); onHistory(item.item_id); }} />
+            <SheetAction icon="file-text" label="Open purchase order" onPress={() => { setMenuOpen(false); onOpenPo(item.po_id); }} />
+            {item.stage !== "delivered" && !item.loan_replenishment_for_customer_name ? <SheetAction icon="trash-2" label="Remove from active purchases" onPress={() => { setMenuOpen(false); onCancel(item); }} /> : null}
+      </Sheet> : null}
     </View>
   );
-}
+});
 
 function SheetAction({ icon, label, onPress }: { icon: keyof typeof Feather.glyphMap; label: string; onPress: () => void }) {
   return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.mobileSheetAction, pressed && { backgroundColor: colors.surfaceTertiary }]}><Feather name={icon} size={19} color={colors.onSurface} /><Text style={styles.mobileSheetActionText}>{label}</Text><Feather name="chevron-right" size={18} color={colors.onSurfaceMuted} /></Pressable>;

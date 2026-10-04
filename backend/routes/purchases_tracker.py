@@ -50,7 +50,7 @@ from models import (
     Chalan, ChalanLineItem, PurchaseCancellationEvent, PurchaseOrder, PurchaseOrderItem, PurchaseShortage, PurchaseStageEvent, PurchaseStatusEvent,
     PURCHASE_STAGES, PurchaseStage, Quotation, QuotationLineItem, UserPublic, now_iso,
 )
-from routes.purchase_routes import ALLOWED_TRANSITIONS, STATUS_LABELS
+from routes.purchase_routes import STATUS_LABELS
 from routes.quotation_routes import _next_number as _next_quotation_number, _pdf_branding
 from services.activity_log import log_event, timeline_for
 from services.chalan_stage import compute_order_stage, remaining_qty_by_item
@@ -60,8 +60,7 @@ from services.domain_outbox import (
     enqueue_after_primary_commit,
 )
 from services.followup_engine import reconcile_followups
-from services.catalog_service import get_catalog_snapshot, hydrate_product
-from services.notifications import notify
+from services.purchase_images import hydrate_purchase_images
 from services.sequence import next_number
 from services.transfer_workflow import execute_transfer, mark_loans_due_for_replenishment, settle_loan_transfer, transfer_history
 
@@ -249,18 +248,7 @@ async def _hydrate_workspace_images(rows: list[dict]) -> None:
     be empty or expired. The catalog snapshot is in memory, so this resolves
     every workspace row without N+1 database queries or cross-floor leakage.
     """
-    if not rows:
-        return
-    snapshot = await get_catalog_snapshot()
-    for row in rows:
-        product_id = row.get("product_id")
-        product = snapshot.product_by_id.get(product_id) if product_id else None
-        if not product or product.get("floor_id") != row.get("floor_id"):
-            continue
-        hero = hydrate_product(product, snapshot).get("hero_image_url")
-        if hero:
-            row["image_snapshot"] = row.get("image")
-            row["image"] = hero
+    await hydrate_purchase_images(rows)
 
 
 async def _iter_items(
@@ -279,12 +267,13 @@ async def _iter_items(
     if floor_ids is not None:
         match["floor_id"] = {"$in": floor_ids}
     if q and q.strip():
-        term = {"$regex": q, "$options": "i"}
+        term = {"$regex": re.escape(q.strip()), "$options": "i"}
         match["$or"] = [
             {"number": term},
             {"customer_name": term},
             {"items.sku": term},
             {"items.name": term},
+            {"brand_name": term},
         ]
     if brand and brand.lower() != "all":
         match["brand_id"] = brand
@@ -302,7 +291,7 @@ async def _iter_items(
             "_id": 0,
             "id": 1, "number": 1, "customer_id": 1, "customer_name": 1,
             "brand_id": 1, "brand_name": 1, "quotation_id": 1, "quotation_number": 1,
-            "created_at": 1, "created_by_name": 1, "status": 1,
+            "created_at": 1, "created_by_name": 1, "status": 1, "floor_id": 1,
             "supplier_id": 1, "supplier_name": 1, "expected_delivery_at": 1,
             "items": 1,
         }},
@@ -329,7 +318,7 @@ async def _iter_items(
     # Item-level search (for the sub-doc match already done, but also allow
     # customer_name text search post-unwind).
     if q and q.strip():
-        term = q.lower()
+        term = q.strip().lower()
         rows = [r for r in rows if any(term in str(r.get(k) or "").lower() for k in ("sku", "name", "customer_name", "po_number", "brand_name"))]
 
     if view == "today":
@@ -413,7 +402,7 @@ def _items_page_pipeline(
         {"$project": {
             "_id": 0,
             "item_id": "$items.id", "po_id": "$id", "po_number": "$number",
-            "po_status": "$status", "quotation_id": 1, "quotation_number": 1,
+            "po_status": "$status", "quotation_id": 1, "quotation_number": 1, "floor_id": 1,
             "quotation_line_id": "$items.quotation_line_id", "product_id": "$items.product_id",
             "sku": "$items.sku", "name": "$items.name", "image": "$items.image",
             "finish": "$items.finish", "colour": "$items.colour",
@@ -789,6 +778,7 @@ async def list_items(
         view, brand, customer, stage, q, settings.sla_days, limit, product_id,
         floor_ids=floor_scope_ids(user),
     )
+    await _hydrate_workspace_images(rows)
 
     blocked_count = sum(1 for r in rows if r["blocked"])
     return {
@@ -828,6 +818,7 @@ async def list_items_page(
     blocked_count = int((facet.get("blocked") or [{}])[0].get("value", 0)) if facet.get("blocked") else 0
     stage_counts = {row.get("_id"): int(row.get("count", 0)) for row in facet.get("stages") or []}
     items = [_hydrate_page_item(row, settings.sla_days) for row in facet.get("items") or []]
+    await _hydrate_workspace_images(items)
     next_skip = skip + len(items)
     has_more = next_skip < total
     return {

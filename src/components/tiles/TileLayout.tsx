@@ -1,4 +1,4 @@
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { Button as SharedButton } from "@/src/design/controls";
 import { NavigationTabs } from "@/src/design/NavigationTabs";
 import { PageHeader as SharedPageHeader } from "@/src/design/PageHeader";

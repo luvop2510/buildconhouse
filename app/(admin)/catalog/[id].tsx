@@ -16,7 +16,7 @@
 //     styled as a soft inline hint, never a screaming red alert.
 //   * Sticky bottom bar on phone: price on left, "Add to quotation" on right.
 // -----------------------------------------------------------------------------
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {

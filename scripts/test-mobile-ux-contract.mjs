@@ -115,8 +115,8 @@ assert.match(systemSettings, /<ScrollView/);
 
 const notebook = read("../src/components/notebook/NotebookScreen.tsx");
 assert.match(notebook, /const \{ isPhone \} = useBp\(\)/);
-assert.match(notebook, /<View style=\{styles\.list\}>/);
-assert.match(notebook, /<LeadCard key=\{row\.id\}/);
+assert.match(notebook, /<FlatList/);
+assert.match(notebook, /testID="notebook-list"/);
 assert.doesNotMatch(notebook, /<DataTable/);
 
 const quotationDetail = read("../app/(admin)/quotations/[id]/index.tsx");

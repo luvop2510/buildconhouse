@@ -6,7 +6,7 @@ import { Overlay } from "@/src/design/Overlay";
 // Alternatives (via /alternates) and Complete-the-set (via /complete-the-set)
 // so the salesperson can extend the quotation without leaving the modal.
 // -----------------------------------------------------------------------------
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";

@@ -1,6 +1,6 @@
 // Customer Portal — responsive quotations list (read-only).
 // Keep this route under `quotes` so it cannot collide with staff quotations.
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";

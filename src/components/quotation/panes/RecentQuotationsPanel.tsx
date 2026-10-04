@@ -1,7 +1,7 @@
 // RecentQuotationsPanel — embedded compact list in the left rail.
 // Clicking any row restores the whole builder session (customer, rooms,
 // items, discounts, UI state) via the backend GET /quotations/{id}.
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 

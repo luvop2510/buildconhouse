@@ -2,7 +2,7 @@
 // Opens from the topbar's Customer field. Switching preserves every line
 // item / room / discount already in the builder; only customer_id (and its
 // denormalised name snapshot) changes.
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 

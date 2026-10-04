@@ -6,7 +6,7 @@
 // /api/settings/permission-matrix) that controls which modules render in
 // each role's navigation. Owner-only edit; every other role sees the same
 // matrix read-only so they understand what their own role can see.
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, View } from "react-native";

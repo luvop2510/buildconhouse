@@ -30,6 +30,11 @@ assert.equal(JSON.parse(requests[0].body).target, `/api${path}`);
 
 // Mobile fetch failures stay in the app; successful generation waits for a
 // fresh tap before handing the blob to Safari's downloader or share sheet.
+for (const document of [
+  { path, filename: "Customer.pdf", label: "quotation PDF", type: "application/pdf", body: "%PDF-1.4" },
+  { path: "/quotations/q-tablet/pptx", filename: "Customer PPT 05-10-2026.pptx", label: "product PPT",
+    type: "application/vnd.openxmlformats-officedocument.presentationml.presentation", body: "PK" },
+]) {
 for (const navigator of [
   { userAgent: "iPhone Safari", platform: "iPhone", maxTouchPoints: 5 },
   { userAgent: "Android Chrome", platform: "Linux", maxTouchPoints: 5, dialogUnsupported: true, fileUnsupported: true },
@@ -60,13 +65,14 @@ for (const navigator of [
     fetch: async (url, options) => {
       fetches.push({ url, options });
       return fail ? { ok: false, status: 503, json: async () => ({ detail: "PDF generation failed" }) }
-        : { ok: true, blob: async () => new Blob(["%PDF-1.4"], { type: "application/pdf" }) };
+        : { ok: true, blob: async () => new Blob([document.body], { type: document.type }) };
     },
   });
-  const saving = module.exports.downloadApiFile(path, "Customer.pdf", "quotation PDF", "ground-floor");
+  const saving = module.exports.downloadApiFile(document.path, document.filename, document.label, "ground-floor");
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(clicks, 0, "the async fetch must not trigger a download without a fresh tap");
   assert.equal(fetches[0].options.headers["X-Floor-Id"], "ground-floor");
+  assert.equal(fetches[0].url, `/api${document.path}`);
   assert.equal(fetches[0].options.credentials, "same-origin");
   const share = elements.find(element => element.textContent === "Share or save");
   if (share) {
@@ -79,15 +85,16 @@ for (const navigator of [
   assert.equal(clicks, 1);
   const anchor = elements.find(element => element.tag === "a");
   assert.equal(anchor.href, "blob:ready-pdf");
-  assert.equal(anchor.download, "Customer.pdf");
+  assert.equal(anchor.download, document.filename);
   assert.equal(anchor.target, "_blank");
-  const cancelled = module.exports.downloadApiFile(path, "Customer.pdf", "quotation PDF", "ground-floor");
+  const cancelled = module.exports.downloadApiFile(document.path, document.filename, document.label, "ground-floor");
   await new Promise(resolve => setImmediate(resolve));
   elements.filter(element => element.textContent === "Cancel").at(-1).onclick();
   assert.equal(await cancelled, false);
   fail = true;
-  assert.equal(await module.exports.downloadApiFile(path, "Customer.pdf", "quotation PDF", "ground-floor"), false);
+  assert.equal(await module.exports.downloadApiFile(document.path, document.filename, document.label, "ground-floor"), false);
   assert.deepEqual(errors, ["PDF generation failed"]);
   assert.equal(clicks, 1);
 }
-console.log("Quotation downloads: floor binding, mobile fresh-gesture save, and recoverable generation failures passed");
+}
+console.log("PDF/PPT downloads: floor binding, mobile fresh-gesture save, and recoverable generation failures passed");

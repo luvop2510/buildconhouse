@@ -28,7 +28,9 @@
     "test:web-worker": "node scripts/test-web-worker.mjs",
     "test:sales-periods": "node --experimental-strip-types --no-warnings scripts/test-sales-periods.mjs",
     "test:monitoring-contract": "node scripts/test-monitoring-contract.mjs",
-    "test:e2e:audit": "playwright test --config playwright.audit.config.ts"
+    "test:e2e:audit": "playwright test --config playwright.audit.config.ts",
+    "test:frontend-performance": "node --experimental-strip-types --no-warnings scripts/test-frontend-performance.mjs",
+    "test:icon-fonts": "node scripts/test-icon-font-contract.mjs"
   },
   "dependencies": {
     "@expo-google-fonts/fraunces": "0.4.1",

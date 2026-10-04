@@ -1,5 +1,5 @@
 // Browser variant: use HTML drag events for quotation section ordering.
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 

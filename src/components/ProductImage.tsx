@@ -16,7 +16,7 @@
 // It is deliberately dependency-free of app state; it just needs the array of
 // candidate images (or a single string) and optional style/contentFit props.
 // -----------------------------------------------------------------------------
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { Image as ExpoImage, ImageContentFit } from "expo-image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Easing, PixelRatio, Platform, StyleSheet, Text, View, ViewStyle } from "react-native";
@@ -60,16 +60,17 @@ const CACHE_POLICY = "memory-disk" as const;
 const BLURHASH = "L6PZfSjE.AyE_3t7t7R**0o#DgR4";
 const SUPABASE_PUBLIC_OBJECT = "/storage/v1/object/public/";
 
+function transformWidth(requestedWidth: number): number {
+  return requestedWidth <= 320 ? 320 : requestedWidth <= 640 ? 640 : requestedWidth <= 1024 ? 1024 : requestedWidth <= 1600 ? 1600 : 2048;
+}
+
 export function supabaseSizedImageUrl(uri: string, requestedWidth: number): string | null {
   if (!uri.startsWith("http") || !uri.includes(SUPABASE_PUBLIC_OBJECT)) return null;
   // Preserve the bandwidth savings of Supabase transforms for thumbnails,
   // without forcing a soft 640px derivative into a desktop product gallery.
   // The value is the physical display width (CSS width × device pixel ratio),
   // rounded to a small set of cache-friendly transform sizes.
-  const width = requestedWidth <= 320 ? 320
-    : requestedWidth <= 640 ? 640
-      : requestedWidth <= 1024 ? 1024
-        : requestedWidth <= 1600 ? 1600 : 2048;
+  const width = transformWidth(requestedWidth);
   const quality = width >= 1024 ? 90 : 85;
   const rendered = uri.replace(SUPABASE_PUBLIC_OBJECT, "/storage/v1/render/image/public/");
   const separator = rendered.includes("?") ? "&" : "?";
@@ -92,7 +93,12 @@ export function ProductImage({
   preferOriginal = false,
   transition = 0,
 }: ProductImageProps) {
-  const [frameWidth, setFrameWidth] = useState(0);
+  // Fixed thumbnail frames already know their width. Avoid first requesting a
+  // default derivative and then resetting every image after layout measurement.
+  const [frameWidth, setFrameWidth] = useState(() => {
+    const declared = StyleSheet.flatten(style)?.width;
+    return typeof declared === "number" ? declared : 160;
+  });
   // Normalise `source` into an ordered list of candidates. Empty / null entries
   // are stripped so we don't waste a load attempt on them.
   const candidates: string[] = useMemo(() => {
@@ -141,7 +147,7 @@ export function ProductImage({
       accessibilityRole="image"
       onLayout={(event) => {
         const width = Math.round(event.nativeEvent.layout.width);
-        if (width > 0 && width !== frameWidth) setFrameWidth(width);
+        if (width > 0 && transformWidth(width * PixelRatio.get()) !== transformWidth(frameWidth * PixelRatio.get())) setFrameWidth(width);
       }}
     >
       <View
@@ -191,11 +197,14 @@ function Skeleton() {
   const reducedMotion = useReducedMotion();
   const opacity = useRef(new Animated.Value(0.35)).current;
   useEffect(() => {
-    if (reducedMotion) { opacity.setValue(0.7); return; }
+    // React Native Web has no native animation driver. Dozens of image
+    // placeholders otherwise schedule JS opacity updates on every frame while
+    // the tablet is also decoding images and handling scroll gestures.
+    if (Platform.OS === "web" || reducedMotion) { opacity.setValue(0.7); return; }
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(opacity, { toValue: 0.7, duration: 700, useNativeDriver: Platform.OS !== "web", easing: Easing.inOut(Easing.ease) }),
-        Animated.timing(opacity, { toValue: 0.35, duration: 700, useNativeDriver: Platform.OS !== "web", easing: Easing.inOut(Easing.ease) }),
+        Animated.timing(opacity, { toValue: 0.7, duration: 700, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
+        Animated.timing(opacity, { toValue: 0.35, duration: 700, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
       ]),
     );
     loop.start();

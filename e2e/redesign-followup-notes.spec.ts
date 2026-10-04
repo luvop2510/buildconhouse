@@ -70,7 +70,7 @@ test('critical dashboard Done stages a note before removing its task', async ({ 
   expect(writes).toEqual([{ notes: 'Customer confirmed that the delivery is complete' }]);
 });
 
-test('critical notebook Won requires an action note before closing its lead', async ({ page }) => {
+test('critical notebook Lost requires a reason and offers no manual Won action', async ({ page }) => {
   await mockSession(page, '/notebook/kitchen/quotation-follow-up');
   const lead = {
     id: 'lead-one', customer_name: 'Kitchen customer', customer_phone: '9000000000', address: '',
@@ -83,15 +83,16 @@ test('critical notebook Won requires an action note before closing its lead', as
   const writes: any[] = [];
   await page.route('**/api/followups/notebook/second-floor/lead-one/outcome', r => {
     writes.push(r.request().postDataJSON());
-    return r.fulfill({ json: { ...lead, status: 'won', notes: writes.at(-1).notes } });
+    return r.fulfill({ json: { ...lead, status: 'lost', notes: writes.at(-1).notes } });
   });
   await page.goto('/notebook/kitchen/quotation-follow-up');
-  await page.getByRole('button', { name: 'Mark won', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Mark client as won', exact: true });
-  await expect(dialog.getByRole('button', { name: 'Mark as won', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /mark.*won/i })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Lost', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Mark lead as lost', exact: true });
+  await expect(dialog.getByRole('button', { name: 'Mark as lost', exact: true })).toBeDisabled();
   expect(writes).toHaveLength(0);
-  await dialog.getByLabel('Follow-up note *', { exact: true }).fill('Client accepted the quotation and paid the advance');
-  await dialog.getByRole('button', { name: 'Mark as won', exact: true }).click();
+  await dialog.getByLabel('Lost reason *', { exact: true }).fill('Client chose another vendor');
+  await dialog.getByRole('button', { name: 'Mark as lost', exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  expect(writes).toEqual([{ outcome: 'won', updated_at: lead.updated_at, notes: 'Client accepted the quotation and paid the advance' }]);
+  expect(writes).toEqual([{ outcome: 'lost', updated_at: lead.updated_at, notes: 'Client chose another vendor', lost_reason: 'Client chose another vendor' }]);
 });

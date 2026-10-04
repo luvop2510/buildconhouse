@@ -28,7 +28,7 @@ export const notebookApi = {
     api.patch<NotebookRow>(`/followups/notebook/${floorId}/${rowId}`, { field, value, updated_at: updatedAt, notes }, { floorId }),
   convert: (floorId: string, rowId: string, body: Pick<NotebookRow, "quotation_price"> & { notes: string }, updatedAt: string) =>
     api.post<NotebookRow>(`/followups/notebook/${floorId}/${rowId}/convert`, { ...body, updated_at: updatedAt }, { floorId }),
-  outcome: (floorId: string, rowId: string, outcome: "won" | "lost", updatedAt: string, notes: string, lostReason?: string) =>
+  outcome: (floorId: string, rowId: string, outcome: "lost", updatedAt: string, notes: string, lostReason?: string) =>
     api.post<NotebookRow>(`/followups/notebook/${floorId}/${rowId}/outcome`, { outcome, updated_at: updatedAt, notes, lost_reason: lostReason }, { floorId }),
   assignReferrer: (floorId: string, rowId: string, referrerId: string | null, updatedAt: string, notes: string) =>
     api.put<NotebookRow>(`/followups/notebook/${floorId}/${rowId}/referrer`, { referrer_id: referrerId, updated_at: updatedAt, notes }, { floorId }),

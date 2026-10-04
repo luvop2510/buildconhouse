@@ -1,7 +1,7 @@
 // Quotation Tiles — single tab listing every Ground Floor tiles Selection
 // and Quotation, any stage, with two entry points to start a new one. See
 // docs/superpowers/specs/2026-07-27-quotation-tiles-workflow-design.md.
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "react-native";

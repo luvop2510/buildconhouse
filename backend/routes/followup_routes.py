@@ -1248,6 +1248,10 @@ async def log_call(followup_id: str, body: FollowupCallOutcomePayload, user: Use
     if not f:
         raise HTTPException(status_code=404, detail="Follow-up not found")
     now_dt = datetime.now(timezone.utc)
+    if body.outcome in {"won", "converted"}:
+        from services.order_confirmation import has_placed_order
+        if not await has_placed_order(db, f):
+            raise HTTPException(status_code=409, detail="Won is recorded only after an order is placed")
     patch: dict = {
         "last_contacted_at": now_dt.isoformat(), "updated_at": now_iso(),
         "notes": notes,

@@ -4,7 +4,7 @@
 // via useRoles() (auth.ROLE_HIERARCHY on the backend is the single source
 // of truth). If a role is renamed/added server-side, this screen updates
 // with zero code changes.
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useCallback, useEffect, useState } from "react";
 import {
   KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View,

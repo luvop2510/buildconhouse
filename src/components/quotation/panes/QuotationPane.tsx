@@ -5,7 +5,7 @@
 // Customer / phone / project / reference-source live in the topbar on desktop
 // and in this pane's fixed header on compact layouts, so they never disappear
 // behind the quotation canvas.
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { Keyboard, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 
 import { useState } from "react";

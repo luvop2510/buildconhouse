@@ -16,7 +16,7 @@ import { Menu } from "@/src/design/navigationControls";
 // Re-exports every existing primitive from `ui.tsx` so migrated screens only
 // need to import from this one file.
 // ═══════════════════════════════════════════════════════════════════════════
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useEffect, useRef, useState } from "react";
 import {
   Animated,

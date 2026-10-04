@@ -21,8 +21,9 @@ import {
   Section, Stat, StatRow, Toolbar,
 } from "@/src/components/tiles/TileLayout";
 import { StatusPill, WorkflowRail } from "@/src/components/tiles/TileOrderStatusUI";
+import { TileOrderProductCell } from "@/src/components/tiles/TileOrderProductCell";
 import { tileIdentityMeta } from "@/src/components/tiles/tilePresentation";
-import { CellNumber, CellStack, CellText, DataTable, type Column } from "@/src/components/tiles/TileTable";
+import { CellNumber, CellText, DataTable, type Column } from "@/src/components/tiles/TileTable";
 import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
 
@@ -155,7 +156,8 @@ export default function BrandOrderDetailScreen() {
       // screen. One grow column keeps the total predictable.
       key: "product", label: "TILE NAME", grow: 1, minWidth: 200, mobile: "primary",
       render: (item) => (
-        <CellStack title={item.name} subtitle={tileIdentityMeta([item.series, item.size], item.sku)} />
+        <TileOrderProductCell name={item.name} subtitle={tileIdentityMeta([item.series, item.size], item.sku)}
+          image={item.image} sku={item.sku} testID={`tile-supplier-product-image-${item.id}`} />
       ),
     },
     {

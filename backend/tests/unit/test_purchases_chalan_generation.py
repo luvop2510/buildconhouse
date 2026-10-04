@@ -171,10 +171,6 @@ async def _noop_log_event(**_kwargs):
     return None
 
 
-async def _noop_notify(*_args, **_kwargs):
-    return None
-
-
 async def _fake_next_number(*_args, **_kwargs):
     return "CH-0001"
 
@@ -204,7 +200,6 @@ def test_generate_chalan_happy_path(monkeypatch):
     fake_db = _FakeDb(_po())
     monkeypatch.setattr(tracker, "db", fake_db)
     monkeypatch.setattr(tracker, "log_event", _noop_log_event)
-    monkeypatch.setattr(tracker, "notify", _noop_notify)
     monkeypatch.setattr(tracker, "next_number", _fake_next_number)
 
     body = tracker.GenerateChalanBody(
@@ -226,7 +221,6 @@ def test_generate_chalan_supports_multiple_items_and_complete_release(monkeypatc
     ]))
     monkeypatch.setattr(tracker, "db", fake_db)
     monkeypatch.setattr(tracker, "log_event", _noop_log_event)
-    monkeypatch.setattr(tracker, "notify", _noop_notify)
     monkeypatch.setattr(tracker, "next_number", _fake_next_number)
 
     result = asyncio.run(tracker.generate_chalan(
@@ -248,7 +242,6 @@ def test_generate_chalan_partial_then_complete_never_exceeds_ordered_qty(monkeyp
     fake_db = _FakeDb(_po(items=[{"id": "item-1", "name": "Basin", "qty": 10}]))
     monkeypatch.setattr(tracker, "db", fake_db)
     monkeypatch.setattr(tracker, "log_event", _noop_log_event)
-    monkeypatch.setattr(tracker, "notify", _noop_notify)
     numbers = iter(["CH-0001", "CH-0002"])
 
     async def _next(*_args, **_kwargs):
@@ -401,7 +394,6 @@ def test_generate_chalan_concurrent_release_allows_one_winner_without_over_relea
     fake_db.purchase_orders._synchronize_initial_reads = 2
     monkeypatch.setattr(tracker, "db", fake_db)
     monkeypatch.setattr(tracker, "log_event", _noop_log_event)
-    monkeypatch.setattr(tracker, "notify", _noop_notify)
     number = 0
 
     async def _next(*_args, **_kwargs):
@@ -488,7 +480,6 @@ def test_generate_chalan_number_uses_hyphenated_prefix(monkeypatch):
     fake_db = _FakeDb(_po())
     monkeypatch.setattr(tracker, "db", fake_db)
     monkeypatch.setattr(tracker, "log_event", _noop_log_event)
-    monkeypatch.setattr(tracker, "notify", _noop_notify)
     monkeypatch.setattr(sequence_service, "db", _FakeSequenceDb())
 
     body = tracker.GenerateChalanBody(items=[tracker.ChalanItemInput(po_item_id="item-1", qty=15)])

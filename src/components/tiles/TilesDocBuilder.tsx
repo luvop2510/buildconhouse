@@ -34,7 +34,7 @@
 // Nothing about persistence or business logic is duplicated — only the
 // phone-width presentation differs. Both presentations always produce the
 // identical PDF, because they edit the identical document.
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {

@@ -30,6 +30,7 @@ export type CustomerOrderCard = {
 };
 
 export type CustomerOrderItem = {
+  product_id?: string | null; image?: string | null;
   po_item_id: string; tile_name: string; series: string | null; finish: string | null; size: string | null;
   sku: string | null;
   boxes_ordered: number; boxes_ready: number; boxes_godown: number; boxes_dispatched: number; boxes_pending: number; quantity_unit: "Box" | "Pieces";
@@ -67,6 +68,7 @@ export type BrandOrdersKpi = {
 };
 
 export type PurchaseOrderItemDetail = {
+  product_id?: string | null; image?: string | null;
   id: string; name: string; series: string | null; finish: string | null; size: string | null; sku: string | null;
   qty: number; boxes_ready: number; boxes_godown: number; boxes_dispatched: number; boxes_pending: number; quantity_unit: "Box" | "Pieces";
   current_location: TileLocation; overall_status: TileOverallStatus;

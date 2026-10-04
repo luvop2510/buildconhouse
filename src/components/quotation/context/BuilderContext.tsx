@@ -1472,10 +1472,10 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   }, [persist, customers, s.customerId, activeFloorId]);
 
   const generateProductPpt = useCallback(async () => {
-    const persistedId = await persist();
-    if (!persistedId) return;
     setWorkflowBusy(true);
     try {
+      const persistedId = await persist();
+      if (!persistedId) return;
       const customer = customers.find((item) => item.id === s.customerId);
       const name = (customer?.company || customer?.name || "Customer").replace(/[\\/:*?"<>|]/g, "").trim().replace(/\s+/g, " ") || "Customer";
       const date = new Date().toLocaleDateString("en-GB").replace(/\//g, "-");

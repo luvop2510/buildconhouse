@@ -49,7 +49,7 @@ export function initSentry(): void {
   const dsn = configuredDsn();
   if (!dsn || sentryReady) return;
   const tracesSampleRate = sampleRate(process.env.EXPO_PUBLIC_SENTRY_TRACES_SAMPLE_RATE, DEFAULT_TRACE_SAMPLE_RATE);
-  sentryReady = import("@sentry/react-native").then((Sentry) => {
+  const initialization = import("@sentry/react-native").then((Sentry) => {
     Sentry.init({
       dsn,
       environment: process.env.EXPO_PUBLIC_SENTRY_ENVIRONMENT || "production",
@@ -86,10 +86,13 @@ export function initSentry(): void {
       }),
     });
     return Sentry;
-  }).catch((error) => {
-    console.warn("[monitoring] Sentry configured but failed to initialize:", error);
-    sentryReady = null;
-    throw error;
+  });
+  sentryReady = initialization;
+  // Startup calls this without awaiting it. Attach a rejection handler so a
+  // monitoring SDK/configuration failure cannot become an app-level error.
+  void initialization.catch(() => {
+    console.warn("[monitoring] Sentry configured but failed to initialize.");
+    if (sentryReady === initialization) sentryReady = null;
   });
 }
 

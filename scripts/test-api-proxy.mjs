@@ -79,6 +79,18 @@ for (const value of ['', 'http://api.example.test', 'https://user:pass@api.examp
 
 {
   const res = response();
+  await createHandler({ backendUrl: 'https://api.example.test', fetchImpl: async () => new Response('{"detail":"Try later"}', {
+    status: 429, headers: { 'Content-Type': 'application/json', 'Server-Timing': 'app;dur=12.3', 'Retry-After': '60', 'X-Internal-Debug': 'private' },
+  }) })(request(), res);
+  assert.equal(res.statusCode, 429);
+  assert.equal(res.headers['Server-Timing'], 'app;dur=12.3');
+  assert.equal(res.headers['Retry-After'], '60');
+  assert.equal(res.headers['X-Internal-Debug'], undefined);
+  assert.equal(res.headers['Cache-Control'], 'no-store');
+}
+
+{
+  const res = response();
   await createHandler({ backendUrl: 'https://api.example.test', fetchImpl: async () => { throw new Error('offline'); } })(request(), res);
   assert.equal(res.statusCode, 502);
   assert.equal(res.payload.detail, 'The upstream API is unavailable.');

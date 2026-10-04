@@ -1,4 +1,4 @@
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -32,7 +32,6 @@ type Breakdown = {
 
 const NEXT_STATUS: Record<string, string> = {
   draft: "sent",
-  sent: "won",
   pending_approval: "approved",
 };
 

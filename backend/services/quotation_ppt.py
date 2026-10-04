@@ -5,6 +5,7 @@ from collections import OrderedDict
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from io import BytesIO
+from math import ceil, sqrt
 import re
 import logging
 from pathlib import Path
@@ -44,7 +45,7 @@ def presentation_filename(customer_name: str, date: str | None = None) -> str:
     return f"{name} PPT {stamp}.pptx"
 
 
-def _text(slide, value: str, x: float, y: float, w: float, h: float, size: int, bold: bool = False) -> None:
+def _text(slide, value: str, x: float, y: float, w: float, h: float, size: float, bold: bool = False) -> None:
     box = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
     frame = box.text_frame
     frame.word_wrap = True
@@ -67,16 +68,19 @@ def _image(data: bytes) -> tuple[BytesIO, float]:
         image.load()
         if image.mode not in ("RGB", "RGBA"):
             image = image.convert("RGBA" if "A" in image.getbands() else "RGB")
+        # The largest product frame is a full slide. Retaining an 8,000px
+        # catalog original makes both deck generation and tablet viewing slow.
+        image.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
         ratio = image.width / image.height
         output = BytesIO()
-        image.save(output, format="PNG", optimize=True)
+        image.save(output, format="PNG")
         output.seek(0)
         return output, ratio
 
 
-def _picture(slide, data: bytes, x: float, y: float, w: float, h: float) -> None:
-    stream, ratio = _image(data)
-    inset = 0.08
+def _picture(slide, prepared: tuple[BytesIO, float], x: float, y: float, w: float, h: float) -> None:
+    stream, ratio = prepared
+    inset = min(0.08, w * 0.08, h * 0.08)
     w -= 2 * inset
     h -= 2 * inset
     target_w = min(w, h * ratio)
@@ -123,6 +127,70 @@ def _area_rows(items: list[dict]) -> list[tuple[str, list[dict]]]:
     return list(grouped.items())
 
 
+def _room_name(value: str | None) -> str:
+    return str(value or "").strip() or "Other Room"
+
+
+def _grid(count: int, w: float, h: float) -> tuple[int, int]:
+    """Choose the largest uniform image frames that fit the available region."""
+    columns = max(range(1, count + 1), key=lambda cols: (
+        min(w / cols, (h / ceil(count / cols)) * 4 / 3),
+        -cols * ceil(count / cols),
+    ))
+    return columns, ceil(count / columns)
+
+
+def _product_urls(product: dict) -> list[str]:
+    # Concealed parts remain ordinary selected lines. Seat-cover photos may
+    # also belong to a WC itself, and must not disappear from its presentation.
+    urls = [product.get("image"), *(product.get("seat_cover_image_urls") or [])]
+    return list(dict.fromkeys(str(url).strip() for url in urls if str(url or "").strip())) or [""]
+
+
+def _sort_order(item: dict) -> float:
+    try:
+        return float(item.get("sort_order") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _room_slide(slide, room: str, items: list[dict], pictures: dict[str, tuple[BytesIO, float]]) -> None:
+    """Fit every selection into a single room slide, preserving area groups."""
+    _text(slide, room.upper(), 0.36, 0.20, 12.5, 0.5, 21)
+    areas = _area_rows(sorted(items, key=_sort_order))
+    # Most bathrooms have Basin/WC/Shower columns. Extra custom areas use
+    # additional rows, rather than causing another page for the same room.
+    area_columns = min(3, len(areas))
+    area_rows = ceil(len(areas) / area_columns)
+    band_h = 6.12 / area_rows
+    for band in range(area_rows):
+        visible = areas[band * area_columns:(band + 1) * area_columns]
+        weights = [sqrt(len(products)) for _, products in visible]
+        available_w = 12.55 - 0.32 * (len(visible) - 1)
+        x = 0.39
+        y = 0.89 + band * band_h
+        heading_h = min(0.42, band_h * 0.20)
+        for (area, products), weight in zip(visible, weights, strict=True):
+            col_w = available_w * weight / sum(weights)
+            font_size = min(17, max(7, 17 * min(col_w / 2.8, heading_h / 0.42)))
+            _text(slide, area, x + 0.05, y, col_w - 0.1, heading_h, font_size, True)
+            image_y = y + heading_h + min(0.07, band_h * 0.02)
+            image_h = band_h - heading_h - 0.10
+            cols, rows = _grid(len(products), col_w, image_h)
+            cell_w, cell_h = col_w / cols, image_h / rows
+            for index, product in enumerate(products):
+                px = x + (index % cols) * cell_w
+                py = image_y + (index // cols) * cell_h
+                urls = _product_urls(product)
+                photo_cols, photo_rows = _grid(len(urls), cell_w, cell_h)
+                for photo_index, url in enumerate(urls):
+                    _picture(slide, pictures[url],
+                             px + (photo_index % photo_cols) * cell_w / photo_cols,
+                             py + (photo_index // photo_cols) * cell_h / photo_rows,
+                             cell_w / photo_cols, cell_h / photo_rows)
+            x += col_w + 0.32
+
+
 def _missing_image() -> bytes:
     """Keep a missing catalog photo visible without aborting the whole deck."""
     image = Image.new("RGB", (1200, 900), "#f3f4f6")
@@ -147,7 +215,7 @@ def suggested_area(name: str | None) -> str:
 
 
 def build_product_ppt(doc: dict) -> bytes:
-    """One cover and one or more slides per room, up to three areas per slide.
+    """One cover and exactly one slide per nonempty room/bathroom.
 
     Unavailable catalog photos get an explicit placeholder so the remaining
     selected products can still be shared with the customer.
@@ -155,15 +223,19 @@ def build_product_ppt(doc: dict) -> bytes:
     items = doc.get("items") or []
     if not items:
         raise ValueError("Add products before generating the PPT")
-    prefetch_urls(item["image"] for item in items if item.get("image"))
-    pictures: dict[str, bytes] = {}
-    for item in items:
-        url = item.get("image") or ""
-        if url not in pictures:
-            data = remote_image_bytes(url)
-            if not data:
-                logger.warning("Product image unavailable in PPT: sku=%s", item.get("sku"))
-            pictures[url] = data or _missing_image()
+    urls = list(dict.fromkeys(url for item in items for url in _product_urls(item)))
+    prefetch_urls(url for url in urls if url)
+    pictures: dict[str, tuple[BytesIO, float]] = {}
+    placeholder = None
+    for url in urls:
+        data = remote_image_bytes(url) if url else None
+        if data:
+            pictures[url] = _image(data)
+        else:
+            logger.warning("Product image unavailable in PPT")
+            if placeholder is None:
+                placeholder = _image(_missing_image())
+            pictures[url] = placeholder
 
     presentation = Presentation()
     presentation.slide_width = Inches(SLIDE_W)
@@ -172,43 +244,18 @@ def build_product_ppt(doc: dict) -> bytes:
     cover = presentation.slides.add_slide(blank)
     _cover(cover, doc)
 
-    rooms = list(doc.get("rooms") or [])
+    rooms = list(dict.fromkeys(_room_name(room) for room in doc.get("rooms") or []))
+    grouped: OrderedDict[str, list[dict]] = OrderedDict()
     for item in items:
-        room = str(item.get("room") or "Other Room").strip() or "Other Room"
+        room = _room_name(item.get("room"))
+        grouped.setdefault(room, []).append(item)
         if room not in rooms:
             rooms.append(room)
     for room in rooms:
-        room_items = [item for item in items if (item.get("room") or "Other Room") == room]
+        room_items = grouped.get(room, [])
         if not room_items:
             continue
-        areas = _area_rows(room_items)
-        # Large groups continue on another slide, keeping all pictures large.
-        segments: list[tuple[str, list[dict]]] = []
-        for area, grouped in areas:
-            for start in range(0, len(grouped), 4):
-                segments.append((area, grouped[start:start + 4]))
-        pages: list[list[tuple[str, list[dict]]]] = []
-        for segment in segments:
-            if not pages or len(pages[-1]) >= 3 or sum(len(items) for _, items in pages[-1]) + len(segment[1]) > 6:
-                pages.append([])
-            pages[-1].append(segment)
-        for visible in pages:
-            slide = presentation.slides.add_slide(blank)
-            _text(slide, room.upper(), 0.36, 0.20, 12.5, 0.5, 21)
-            count = len(visible)
-            gap = 0.32
-            col_w = (12.55 - gap * (count - 1)) / count
-            for col, (area, products) in enumerate(visible):
-                x = 0.39 + col * (col_w + gap)
-                _text(slide, area, x + 0.05, 0.89, col_w - 0.1, 0.42, 17, True)
-                rows = 1 if len(products) <= 2 else 2 if len(products) <= 4 else 3
-                cols = 1 if len(products) == 1 else 2
-                cell_w = col_w / cols
-                cell_h = 5.80 / rows
-                for index, product in enumerate(products):
-                    px = x + (index % cols) * cell_w
-                    py = 1.38 + (index // cols) * cell_h
-                    _picture(slide, pictures[product.get("image") or ""], px, py, cell_w, cell_h)
+        _room_slide(presentation.slides.add_slide(blank), room, room_items, pictures)
     stream = BytesIO()
     presentation.save(stream)
     return stream.getvalue()

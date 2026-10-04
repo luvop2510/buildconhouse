@@ -136,6 +136,13 @@ export function createHandler({ backendUrl = process.env.BACKEND_URL, fetchImpl 
       return res.status(502).json({ detail: 'The upstream API is unavailable.' });
     }
 
+    // Keep backend processing time visible in browser diagnostics and preserve
+    // rate-limit recovery guidance, including responses handled below as JSON.
+    for (const name of ['Server-Timing', 'Retry-After']) {
+      const value = upstreamResponse.headers.get(name);
+      if (value) res.setHeader(name, value);
+    }
+
     const isLogin = upstreamResponse.ok && (path === 'auth/login' || path === 'auth/customer/login');
     if (isLogin) {
       const payload = await upstreamResponse.json();

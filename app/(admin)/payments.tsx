@@ -6,7 +6,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 import { Disclosure } from "@/src/design/Disclosure";
 import { useReducedMotion } from "@/src/hooks/use-reduced-motion";
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {

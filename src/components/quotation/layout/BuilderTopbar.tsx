@@ -7,7 +7,7 @@
 // builder to fill them in. Values persist via BuilderContext (undoable +
 // autosaved).
 // -----------------------------------------------------------------------------
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
@@ -189,7 +189,7 @@ export function BuilderTopbar({
       </BottomSheet>
       <BottomSheet visible={pdfOptionsOpen} onClose={() => setPdfOptionsOpen(false)} title="Generate quotation PDF" testID="quotation-pdf-options">
         <View style={{ gap: 8, paddingBottom: 12 }}>
-          <Text style={type.caption}>Include Vitra dimension diagrams in this PDF?</Text>
+          <Text style={type.caption}>Include product dimension diagrams in this PDF?</Text>
           {[
             { label: "Include dimension photos", include: true },
             { label: "Exclude dimension photos", include: false },

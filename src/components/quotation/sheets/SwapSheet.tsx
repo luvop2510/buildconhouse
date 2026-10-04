@@ -1,5 +1,5 @@
 // Swap alternates sheet — ranked closest-first, preserves qty/discount/room.
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 

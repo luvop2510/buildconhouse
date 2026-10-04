@@ -167,14 +167,21 @@ def test_place_order_confirm_updates_cross_floor_quotation(monkeypatch):
 
     completed_followups = []
 
-    async def _fake_complete_pre_confirmation_followups(quotation_id, quotation_number, *, session=None):
+    async def _fake_complete_pre_confirmation_followups(quotation_id, quotation_number, *, session=None, floor_id=None):
+        assert floor_id == "ground-floor"
         completed_followups.append((quotation_id, quotation_number, session))
+        return 0
+
+    async def _fake_complete_order_notebook_followups(doc, *, session=None):
+        assert doc["id"] == "q1" and doc["floor_id"] == "ground-floor"
+        assert session is not None
         return 0
 
     monkeypatch.setattr(quotation_routes, "enqueue_after_primary_commit", _fake_enqueue)
     monkeypatch.setattr(quotation_routes, "dispatch_event", _fake_dispatch)
     monkeypatch.setattr(quotation_routes, "reconcile_followups", _fake_reconcile)
     monkeypatch.setattr(quotation_routes, "_complete_pre_confirmation_followups", _fake_complete_pre_confirmation_followups)
+    monkeypatch.setattr(quotation_routes, "_complete_order_notebook_followups", _fake_complete_order_notebook_followups)
 
     # Call place_order_confirm with a quotation on a different floor (ground-floor)
     # but with a user whose ambient active floor is first-floor

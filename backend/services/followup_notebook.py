@@ -12,7 +12,7 @@ from uuid import uuid4
 
 from pymongo.errors import DuplicateKeyError
 
-from models import NotebookField, NotebookStatus, now_iso
+from models import now_iso
 
 
 NOTEBOOK_STATUSES: frozenset[str] = frozenset({"new", "pending", "won", "lost"})
@@ -160,10 +160,8 @@ def validate_notebook_patch(
         raise NotebookValidationError("Won cannot return to another status")
     if status == "lost" and not str(merged.get("notes") or "").strip():
         raise NotebookValidationError("Notes are required before marking Lost")
-    if status == "won" and previous_status == "new" and not creating:
-        # Confirmation is a client concern; the server only enforces the
-        # resulting transition and its immutable audit event.
-        pass
+    if status == "won" and previous_status != "won":
+        raise NotebookValidationError("Won is recorded only after an order is placed")
     for field in QUOTATION_FIELDS:
         if field in clean and not converted:
             raise NotebookValidationError("quotation fields require conversion")
@@ -341,6 +339,12 @@ async def complete_notebook_row(
         raise NotebookValidationError("This follow-up is already closed")
     if outcome == "lost" and not (lost_reason or "").strip():
         raise NotebookValidationError("A lost reason is required")
+    if outcome == "won":
+        from services.order_confirmation import has_placed_order
+        if not await has_placed_order(db, current, floor_id=floor_id):
+            raise NotebookValidationError("Won is recorded only after an order is placed")
+    elif outcome != "lost":
+        raise NotebookValidationError("Invalid follow-up outcome")
 
     now = now_iso()
     update = {

@@ -1,6 +1,6 @@
 // Line row — image · name/sku · finish · qty/rate/disc · actions · total.
 // Tapping the row focuses it in the Assistant pane (right pane / mobile sheet).
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import * as Haptics from "expo-haptics";
 import { memo, useEffect, useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";

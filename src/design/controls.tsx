@@ -1,5 +1,5 @@
 import React from 'react';
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { ActivityIndicator, Pressable, Text, type ViewStyle } from 'react-native';
 import { color, font, layout, radius } from './tokens';
 import { webCursor, type FeatherName } from './shared';

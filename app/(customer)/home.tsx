@@ -1,6 +1,6 @@
 // Customer Portal — responsive dashboard. This is a secure, read-only
 // document portal: customer identity, latest quotation, and support only.
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";

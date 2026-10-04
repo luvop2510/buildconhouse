@@ -1,5 +1,5 @@
 // Room header row — draggable, inline-renameable, with room actions.
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { colors, font, money, radius, type } from "@/src/theme/tokens";

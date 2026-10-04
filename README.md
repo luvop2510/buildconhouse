@@ -22,6 +22,9 @@ npm run test:api-client
 npm run test:api-proxy
 npm run test:web-worker
 npm run test:sales-periods
+npm run test:monitoring-contract
+npm run test:frontend-performance
+npm run test:icon-fonts
 npm run build
 npm run test:mobile-budget
 ```
@@ -44,4 +47,4 @@ The existing Sites binding is in `.openai/hosting.json`. Reuse this project and 
 
 Railway deploys `backend/` from `main`. Its readiness probe is `/api/health/ready`. Before deployment, run the read-only datastore/index gate and check for pending migrations. Never resolve duplicate products, apply destructive migrations or mutate live business data without confirming the exact operation with the owner.
 
-See `docs/audit-2026-09-05.md` for the current audit, validation evidence and release status.
+See [the 5 October release walkthrough](docs/audits/2026-10-05-store-release-walkthrough.md) for current fixes, measured performance, validation evidence and remaining App Store / Play Store requirements. Earlier audits remain historical records.

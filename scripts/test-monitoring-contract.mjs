@@ -23,3 +23,35 @@ assert.match(privacyPolicy, /sampled technical performance/);
 assert.match(privacyPolicy, /request\n\s*bodies, query strings/);
 
 console.log("privacy-safe monitoring contract verified.");
+
+// Run the real initialization path with a failing optional SDK. Startup must
+// continue without an unhandled rejection, and a later attempt may retry.
+const { default: ts } = await import("typescript");
+const { default: vm } = await import("node:vm");
+const module = { exports: {} };
+let attempts = 0;
+const warnings = [];
+const unhandled = [];
+const onUnhandled = error => unhandled.push(error);
+process.on("unhandledRejection", onUnhandled);
+try {
+  vm.runInNewContext(ts.transpileModule(monitoring, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText, {
+    module, exports: module.exports,
+    process: { env: { EXPO_PUBLIC_SENTRY_DSN: "https://public@example.test/1" } },
+    console: { warn: value => warnings.push(value) },
+    require: () => { attempts += 1; throw new Error("SDK failed with confidential request data"); },
+  });
+  module.exports.initSentry();
+  await new Promise(resolve => setImmediate(resolve));
+  module.exports.initSentry();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(attempts, 2, "failed initialization permits a retry");
+  assert.deepEqual(unhandled, [], "optional monitoring cannot crash app startup");
+  assert.equal(warnings.length, 2);
+  assert.ok(warnings.every(value => !value.includes("confidential")));
+} finally {
+  process.removeListener("unhandledRejection", onUnhandled);
+}
+console.log("Monitoring initialization failure/retry regression passed.");

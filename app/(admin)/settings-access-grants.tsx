@@ -1,7 +1,7 @@
 // Settings > Team > Personal access.  Unlike the legacy role visibility
 // matrix, these grants are enforced by the API and are intentionally scoped
 // to one person, one business surface, optional floor, and explicit actions.
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 

@@ -2,7 +2,7 @@
 // Uses PageHeader, HeroBanner stat row, filter chips, SearchField, and a
 // unified customer-card language shared with quotations/purchases/payments.
 import { Disclosure } from "@/src/design/Disclosure";
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {

@@ -2,7 +2,7 @@ import { useReducedMotion } from "@/src/hooks/use-reduced-motion";
 import { color, font, radius } from "@/src/design/tokens";
 // Toast — quiet ink pill, bottom of screen. Non-blocking feedback.
 // Mount <ToastHost /> once at the app root. Trigger via `toast.show(...)`.
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useEffect, useRef, useState } from "react";
 import { Animated, Easing, Platform, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";

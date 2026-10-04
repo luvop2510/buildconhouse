@@ -1,6 +1,6 @@
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { Pressable, Text, View } from "react-native";
 
 import { executiveApi, type ExecutiveRow, type FeedEntry, type TodaysPriorities } from "@/src/api/executive";

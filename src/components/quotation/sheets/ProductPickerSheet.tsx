@@ -4,7 +4,7 @@
 // Bathroom Add Products the same shop-style filters and responsive browsing
 // experience as the inline quotation catalog.
 import { Overlay } from "@/src/design/Overlay";
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 

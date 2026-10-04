@@ -4,7 +4,7 @@
 // A ranked queue (powered by the follow-up engine), the business in one quiet
 // column, and nothing else.
 // ─────────────────────────────────────────────────────────────────────────────
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Linking, Platform, Pressable, RefreshControl, ScrollView, View } from "react-native";

@@ -1,6 +1,6 @@
 // QuotationCanvas — the DnD flat list that mixes room headers + lines.
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import DraggableFlatList, { RenderItemParams } from "react-native-draggable-flatlist";
 
 import { EmptyState } from "@/src/components/ui";

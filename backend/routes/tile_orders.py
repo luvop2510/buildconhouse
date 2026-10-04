@@ -8,7 +8,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import re
 from typing import Literal, Optional
-from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -23,6 +22,7 @@ from pdf_chalan import build_tile_chalan_pdf, tile_chalan_pdf_filename
 from services.activity_log import log_event
 from services.export import export_response
 from services.sequence import next_number
+from services.purchase_images import hydrate_purchase_images
 from services.tile_movement_log import record_movement
 from services.tile_order_status import (
     ageing_band, completion_percentage, derive_current_location, derive_item_status,
@@ -1131,9 +1131,52 @@ async def list_brands(
             "has_more": page * page_size < total, "next_page": page + 1 if page * page_size < total else None}
 
 
+async def _tile_order_page(query: dict, page: int, page_size: int, sort: str) -> tuple[list[dict], dict] | None:
+    """Bound returned PO documents while retaining full-result KPI totals.
+
+    A single facet replaces sequential count/page/summary Atlas round trips.
+    The list response only needs box totals and item counts, not full image,
+    transfer or stage histories from every purchase order.
+    """
+    if not hasattr(db.purchase_orders, "aggregate"):
+        return None
+    result = await db.purchase_orders.aggregate([
+        {"$match": query},
+        {"$facet": {
+            "orders": [
+                {"$sort": {"created_at": 1 if sort != "waiting_asc" else -1, "id": 1}},
+                {"$skip": (page - 1) * page_size}, {"$limit": page_size},
+                {"$project": {"_id": 0, "id": 1, "number": 1, "customer_id": 1,
+                              "customer_name": 1, "created_at": 1, "overall_status": 1,
+                              "completion_percentage": 1, "items.qty": 1,
+                              "items.boxes_ready": 1, "items.boxes_pending": 1}},
+            ],
+            "metrics": [{"$group": {
+                "_id": None, "orders": {"$sum": 1},
+                "pending": {"$sum": {"$cond": [{"$eq": ["$overall_status", "Pending"]}, 1, 0]}},
+                "ready": {"$sum": {"$cond": [{"$eq": ["$overall_status", "Ready"]}, 1, 0]}},
+                "partially_dispatched": {"$sum": {"$cond": [{"$eq": ["$overall_status", "Partially Dispatched"]}, 1, 0]}},
+                "completed": {"$sum": {"$cond": [{"$in": ["$overall_status", ["Dispatched", "Delivered"]]}, 1, 0]}},
+                "other": {"$sum": {"$cond": [{"$in": ["$overall_status", ["Pending", "Ready", "Partially Dispatched", "Dispatched", "Delivered"]]}, 0, 1]}},
+                "boxes_pending": {"$sum": {"$ifNull": ["$pending_boxes", 0]}},
+                "boxes_ready": {"$sum": {"$ifNull": ["$ready_boxes", 0]}},
+                "boxes_dispatched": {"$sum": {"$ifNull": ["$dispatched_boxes", 0]}},
+                "oldest_pending_at": {"$min": {"$cond": [{"$eq": ["$overall_status", "Pending"]}, "$created_at", "9999-12-31T23:59:59+00:00"]}},
+            }}],
+        }},
+    ]).to_list(1)
+    facet = result[0] if result else {}
+    metric = (facet.get("metrics") or [{}])[0]
+    kpi = {key: metric.get(key, 0) for key in ("orders", "pending", "ready", "partially_dispatched", "completed")}
+    kpi["other"] = metric.get("other", 0)
+    kpi.update({key: float(metric.get(key) or 0) for key in ("boxes_pending", "boxes_ready", "boxes_dispatched")})
+    kpi["oldest_pending_days"] = waiting_days(metric["oldest_pending_at"]) if metric.get("pending") and metric.get("oldest_pending_at") else 0
+    return facet.get("orders") or [], kpi
+
+
 @router.get("/brands/{brand_id}/orders")
 async def brand_orders(
-    brand_id: str, page: int = 1, page_size: int = 20, sort: str = "waiting_desc",
+    brand_id: str, page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100), sort: str = "waiting_desc",
     status: Optional[str] = None, search: Optional[str] = None,
     user: UserPublic = Depends(require_min_role("sales")),
 ):
@@ -1143,6 +1186,8 @@ async def brand_orders(
     no separate 'expected arrival' field on PurchaseOrder today, so this is
     order_date) + `boxes_released`/`boxes_remaining` for the Ordered/
     Released/Remaining columns the Brand page shows."""
+    page = page if isinstance(page, int) else 1
+    page_size = page_size if isinstance(page_size, int) else 20
     filters: dict = {"brand_id": brand_id}
     if status:
         filters["overall_status"] = status
@@ -1153,34 +1198,16 @@ async def brand_orders(
             {"number": safe_search},
         ]
     query = tiles_floor_query(user, filters)
-    cursor = db.purchase_orders.find(query, {"_id": 0})
-    database_paging = hasattr(db.purchase_orders, "count_documents") and hasattr(cursor, "sort")
-    if database_paging:
-        total = await db.purchase_orders.count_documents(query)
-        direction = 1 if sort != "waiting_asc" else -1
-        all_pos = await cursor.sort("created_at", direction).skip((page - 1) * page_size).limit(page_size).to_list(page_size)
-        metric_docs = await db.purchase_orders.aggregate([
-            {"$match": query},
-            {"$group": {
-                "_id": None,
-                "pending": {"$sum": {"$cond": [{"$eq": ["$overall_status", "Pending"]}, 1, 0]}},
-                "ready": {"$sum": {"$cond": [{"$eq": ["$overall_status", "Ready"]}, 1, 0]}},
-                "partially_dispatched": {"$sum": {"$cond": [{"$eq": ["$overall_status", "Partially Dispatched"]}, 1, 0]}},
-                "completed": {"$sum": {"$cond": [{"$in": ["$overall_status", ["Dispatched", "Delivered"]]}, 1, 0]}},
-                "boxes_remaining": {"$sum": {"$ifNull": ["$pending_boxes", 0]}},
-                "boxes_released": {"$sum": {"$ifNull": ["$ready_boxes", 0]}},
-                "boxes_dispatched": {"$sum": {"$ifNull": ["$dispatched_boxes", 0]}},
-                "oldest_pending_at": {"$min": {"$cond": [{"$eq": ["$overall_status", "Pending"]}, "$created_at", "9999-12-31T23:59:59+00:00"]}},
-            }},
-        ]).to_list(1)
-        metric = metric_docs[0] if metric_docs else {}
-        kpi = {"orders": total, "pending": metric.get("pending", 0), "ready": metric.get("ready", 0),
-               "partially_dispatched": metric.get("partially_dispatched", 0), "completed": metric.get("completed", 0),
-               "boxes_remaining": float(metric.get("boxes_remaining") or 0), "boxes_released": float(metric.get("boxes_released") or 0),
-               "boxes_dispatched": float(metric.get("boxes_dispatched") or 0),
-               "oldest_pending_days": waiting_days(metric["oldest_pending_at"]) if metric.get("pending") and metric.get("oldest_pending_at") else 0}
+    paged = await _tile_order_page(query, page, page_size, sort)
+    database_paging = paged is not None
+    if paged is not None:
+        all_pos, kpi = paged
+        total = int(kpi["orders"])
+        kpi.pop("other", None)
+        kpi["boxes_remaining"] = kpi.pop("boxes_pending")
+        kpi["boxes_released"] = kpi.pop("boxes_ready")
     else:
-        all_pos = await cursor.to_list(5000)
+        all_pos = await db.purchase_orders.find(query, {"_id": 0}).to_list(5000)
         total = len(all_pos)
 
     if not database_paging:
@@ -1235,6 +1262,8 @@ async def purchase_order_detail(po_id: str, user: UserPublic = Depends(require_m
             delivery_phone = co.get("delivery_phone") or ""
             delivery_address = co.get("delivery_address") or ""
             delivery_city = co.get("delivery_city") or ""
+    items = [{**item, "floor_id": po.get("floor_id")} for item in po.get("items", [])]
+    await hydrate_purchase_images(items)
     return {
         "id": po["id"], "number": po.get("number"), "customer_name": po.get("customer_name"),
         "supplier_name": po.get("supplier_name"), "brand_id": po.get("brand_id"), "brand_name": po.get("brand_name"),
@@ -1244,39 +1273,51 @@ async def purchase_order_detail(po_id: str, user: UserPublic = Depends(require_m
         "items": [{
             "id": item["id"], "name": item.get("name"), "series": item.get("series"), "finish": item.get("finish"),
             "size": item.get("size"), "sku": item.get("sku"), "qty": item.get("qty"),
+            "product_id": item.get("product_id"), "image": item.get("image"),
             "boxes_ready": item.get("boxes_ready"), "boxes_godown": item.get("boxes_godown") or 0,
             "boxes_dispatched": item.get("boxes_dispatched"),
             "boxes_pending": item.get("boxes_pending"), "quantity_unit": item.get("quantity_unit") or "Box", "current_location": item.get("current_location"),
             "overall_status": item.get("overall_status"),
-        } for item in po.get("items", [])],
+        } for item in items],
     }
 
 
 @router.get("/suppliers/{supplier_id}/orders")
 async def supplier_orders(
-    supplier_id: str, page: int = 1, page_size: int = 20, sort: str = "waiting_desc",
+    supplier_id: str, page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100), sort: str = "waiting_desc",
     status: Optional[str] = None, search: Optional[str] = None,
     user: UserPublic = Depends(require_min_role("sales")),
 ):
+    page = page if isinstance(page, int) else 1
+    page_size = page_size if isinstance(page_size, int) else 20
     filters: dict = {"supplier_id": supplier_id}
     if status:
         filters["overall_status"] = status
     if search:
+        safe_search = {"$regex": re.escape(search[:80]), "$options": "i"}
         filters["$or"] = [
-            {"customer_name": {"$regex": search, "$options": "i"}},
-            {"number": {"$regex": search, "$options": "i"}},
+            {"customer_name": safe_search},
+            {"number": safe_search},
         ]
-    all_pos = await db.purchase_orders.find(tiles_floor_query(user, filters), {"_id": 0}).to_list(5000)
-
-    kpi = {"orders": len(all_pos), "pending": 0, "ready": 0, "partially_dispatched": 0, "completed": 0,
-           "boxes_pending": 0.0, "boxes_ready": 0.0, "boxes_dispatched": 0.0, "oldest_pending_days": 0}
-    for po in all_pos:
-        kpi[_STATUS_TO_KPI_KEY.get(po.get("overall_status"), "pending")] += 1
-        kpi["boxes_pending"] += float(po.get("pending_boxes") or 0)
-        kpi["boxes_ready"] += float(po.get("ready_boxes") or 0)
-        kpi["boxes_dispatched"] += float(po.get("dispatched_boxes") or 0)
-        if po.get("overall_status") == "Pending":
-            kpi["oldest_pending_days"] = max(kpi["oldest_pending_days"], waiting_days(po["created_at"]))
+    query = tiles_floor_query(user, filters)
+    paged = await _tile_order_page(query, page, page_size, sort)
+    database_paging = paged is not None
+    if paged is not None:
+        all_pos, kpi = paged
+        total = int(kpi["orders"])
+        kpi["pending"] += kpi.pop("other", 0)
+    else:
+        all_pos = await db.purchase_orders.find(query, {"_id": 0}).to_list(5000)
+        total = len(all_pos)
+        kpi = {"orders": len(all_pos), "pending": 0, "ready": 0, "partially_dispatched": 0, "completed": 0,
+               "boxes_pending": 0.0, "boxes_ready": 0.0, "boxes_dispatched": 0.0, "oldest_pending_days": 0}
+        for po in all_pos:
+            kpi[_STATUS_TO_KPI_KEY.get(po.get("overall_status"), "pending")] += 1
+            kpi["boxes_pending"] += float(po.get("pending_boxes") or 0)
+            kpi["boxes_ready"] += float(po.get("ready_boxes") or 0)
+            kpi["boxes_dispatched"] += float(po.get("dispatched_boxes") or 0)
+            if po.get("overall_status") == "Pending":
+                kpi["oldest_pending_days"] = max(kpi["oldest_pending_days"], waiting_days(po["created_at"]))
 
     rows = []
     for po in all_pos:
@@ -1288,9 +1329,11 @@ async def supplier_orders(
             "total_products": len(po.get("items", [])), "total_boxes": sum(float(i.get("qty") or 0) for i in po.get("items", [])),
             "overall_status": po.get("overall_status"), "completion_percentage": po.get("completion_percentage"),
         })
-    rows.sort(key=lambda r: r["waiting_days"], reverse=(sort != "waiting_asc"))
-    start = (page - 1) * page_size
-    return {"kpi": kpi, "orders": rows[start:start + page_size], "page": page, "page_size": page_size, "total": len(rows)}
+    if not database_paging:
+        rows.sort(key=lambda r: r["waiting_days"], reverse=(sort != "waiting_asc"))
+        rows = rows[(page - 1) * page_size:page * page_size]
+    return {"kpi": kpi, "orders": rows, "page": page, "page_size": page_size, "total": total,
+            "has_more": page * page_size < total, "next_page": page + 1 if page * page_size < total else None}
 
 
 @router.get("/suppliers/{supplier_id}/analytics")
@@ -1398,6 +1441,8 @@ async def customer_order_detail(co_id: str, user: UserPublic = Depends(require_m
     if not co:
         raise HTTPException(status_code=404, detail="Customer order not found")
     pos = await db.purchase_orders.find(tiles_floor_query(user, {"customer_order_id": co_id}), {"_id": 0}).to_list(50)
+    items_by_po = {po["id"]: [{**item, "floor_id": po.get("floor_id")} for item in po.get("items", [])] for po in pos}
+    await hydrate_purchase_images([item for items in items_by_po.values() for item in items])
     suppliers = [{
         "purchase_order_id": po["id"], "supplier_name": po.get("supplier_name") or "Unassigned",
         "brand_id": po.get("brand_id"), "brand_name": po.get("brand_name") or po.get("supplier_name") or "Unassigned",
@@ -1405,11 +1450,12 @@ async def customer_order_detail(co_id: str, user: UserPublic = Depends(require_m
         "items": [{
             "po_item_id": item["id"], "tile_name": item.get("name"), "series": item.get("series"),
             "finish": item.get("finish"), "size": item.get("size"), "sku": item.get("sku"),
+            "product_id": item.get("product_id"), "image": item.get("image"),
             "boxes_ordered": item.get("qty"), "boxes_ready": item.get("boxes_ready"),
             "boxes_godown": item.get("boxes_godown") or 0,
             "boxes_dispatched": item.get("boxes_dispatched"), "boxes_pending": item.get("boxes_pending"),
             "quantity_unit": item.get("quantity_unit") or "Box", "current_location": item.get("current_location"), "overall_status": item.get("overall_status"),
-        } for item in po.get("items", [])],
+        } for item in items_by_po[po["id"]]],
     } for po in pos]
     days = waiting_days(co["created_at"])
     return {

@@ -103,6 +103,8 @@ backend/backups/
 .playwright-cli/
 output/playwright/
 output/pdf/
+# Generated release evidence and native bundles are local artifacts.
+output/
 
 # A separate local checkout used for recovery/reference; it is not part of this repository.
 frontend/

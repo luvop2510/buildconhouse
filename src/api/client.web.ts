@@ -65,7 +65,10 @@ export async function clearToken() {
 }
 export async function getToken(): Promise<string | null> {
   if (usesDirectDevApi) {
-    if (tokenCache === undefined) tokenCache = (await browserStorage.secureGet<string>("forge.jwt", "")) || null;
+    if (tokenCache === undefined) {
+      const stored = (await browserStorage.secureGet<string>("forge.jwt", "")) || null;
+      if (tokenCache === undefined) tokenCache = stored;
+    }
     return tokenCache;
   }
   // Production web authentication is cookie-backed.
@@ -73,7 +76,10 @@ export async function getToken(): Promise<string | null> {
   return tokenCache ?? null;
 }
 export async function getTokenKind(): Promise<TokenKind | null> {
-  if (tokenKindCache === undefined) tokenKindCache = ((await browserStorage.getItem<string>(TOKEN_KIND_KEY, "")) as TokenKind) || null;
+  if (tokenKindCache === undefined) {
+    const stored = ((await browserStorage.getItem<string>(TOKEN_KIND_KEY, "")) as TokenKind) || null;
+    if (tokenKindCache === undefined) tokenKindCache = stored;
+  }
   return tokenKindCache ?? null;
 }
 export function setRequestFloorId(floorId: string) {
@@ -99,7 +105,10 @@ export function csrfHeaders(): Record<string, string> {
   return csrf ? { "X-CSRF-Token": decodeURIComponent(csrf) } : {};
 }
 async function getRequestFloorId() {
-  if (floorCache === undefined) floorCache = (await browserStorage.getItem<string>(SELECTED_FLOOR_KEY, "")) || "";
+  if (floorCache === undefined) {
+    const stored = (await browserStorage.getItem<string>(SELECTED_FLOOR_KEY, "")) || "";
+    if (floorCache === undefined) floorCache = stored;
+  }
   return floorCache;
 }
 async function request<T>(method: string, path: string, body?: unknown, opts?: RequestOptions): Promise<T> {
@@ -167,6 +176,7 @@ async function mutate<T>(method: string, path: string, body?: unknown, opts?: Re
 
 export const api = {
   get: <T>(path: string, opts?: RequestOptions) => {
+    if (opts?.signal?.aborted) return abortForConsumer(Promise.resolve(undefined as T), opts.signal);
     const key = `${opts?.floorId ?? floorCache ?? "auto"}:${path}`;
     const cacheVersion = readCacheVersion;
     const cached = responseCache.get(key);

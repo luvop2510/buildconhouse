@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+import pytest
+from fastapi import HTTPException
 
 from models import QuotationUpdate, UserPublic
 import routes.quotation_routes as quotation_routes
@@ -54,8 +56,8 @@ def test_order_confirmation_completes_existing_sales_followups(monkeypatch):
     assert next(row for row in followups.rows if row["id"] == "other-order")["status"] == "open"
 
 
-def test_direct_quotation_status_confirmation_closes_followups_once(monkeypatch):
-    """The legacy/direct status route has the same completion guarantee."""
+def test_direct_quotation_status_requires_real_place_order_confirmation(monkeypatch):
+    """A status edit must not close leads without creating a real order."""
     doc = {
         "id": "q-1", "floor_id": "first-floor", "number": "FQ-2026-0042",
         "customer_id": "c-1", "customer_name": "Customer",
@@ -88,12 +90,11 @@ def test_direct_quotation_status_confirmation_closes_followups_once(monkeypatch)
         floor_ids=["first-floor"], active_floor_id="first-floor",
     )
 
-    result = asyncio.run(
-        quotation_routes.update_quotation("q-1", QuotationUpdate(status="ordered", silent=True), user=user)
-    )
-
-    assert result.status == "ordered"
-    assert completed == [("q-1", "FQ-2026-0042", None)]
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(quotation_routes.update_quotation("q-1", QuotationUpdate(status="ordered", silent=True), user=user))
+    assert error.value.status_code == 409
+    assert doc["status"] == "draft"
+    assert completed == []
 
 
 def test_repeating_ordered_status_does_not_close_new_followups(monkeypatch):

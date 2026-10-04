@@ -72,3 +72,56 @@ for (const path of ["../src/api/client.ts", "../src/api/client.web.ts"]) {
 }
 
 console.log("API client cancellation/context contracts and 16 mutation/read race scenarios passed");
+
+// Slow device storage must never resurrect a previous identity or workspace.
+for (const path of ["../src/api/client.ts", "../src/api/client.web.ts"]) {
+  function controlledClient() {
+    const pendingStorage = new Map();
+    const requests = [];
+    const storage = {
+      secureGet: key => new Promise(resolve => pendingStorage.set(key, resolve)),
+      getItem: key => new Promise(resolve => pendingStorage.set(key, resolve)),
+      secureSet: async () => true, setItem: async () => true,
+      secureRemove: async () => true, removeItem: async () => true,
+    };
+    const module = { exports: {} };
+    vm.runInNewContext(ts.transpileModule(read(path), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    }).outputText, {
+      module, exports: module.exports, require: () => ({ storage, browserStorage: storage }),
+      __DEV__: true, process: { env: { EXPO_PUBLIC_BACKEND_URL: "https://api.example.test" } },
+      document: { cookie: "" }, AbortController, DOMException, setTimeout, clearTimeout,
+      fetch: async (url, options) => { requests.push({ url, ...options }); return { ok: true, text: async () => '{"ok":true}' }; },
+    });
+    return { client: module.exports, pendingStorage, requests };
+  }
+  for (const action of ["login", "logout"]) {
+    const { client, pendingStorage } = controlledClient();
+    const tokenRead = client.getToken();
+    const kindRead = client.getTokenKind();
+    if (action === "login") await client.setToken("new-customer-token", "customer");
+    else await client.clearToken();
+    pendingStorage.get("forge.jwt")("old-staff-token");
+    pendingStorage.get("forge.jwt.kind")("staff");
+    assert.equal(await tokenRead, action === "login" ? "new-customer-token" : null, `${path}: stale token read after ${action}`);
+    assert.equal(await kindRead, action === "login" ? "customer" : null);
+    assert.equal(await client.getToken(), action === "login" ? "new-customer-token" : null);
+  }
+  {
+    const { client, pendingStorage, requests } = controlledClient();
+    await client.setToken("staff-token", "staff");
+    const pending = client.api.get("/products", { cacheMs: 10000 });
+    await new Promise(resolve => setImmediate(resolve));
+    client.setRequestFloorId("ground-floor");
+    pendingStorage.get("forge.active-floor")("first-floor");
+    await pending;
+    assert.equal(requests[0].headers["X-Floor-Id"], "ground-floor", `${path}: stale floor read cannot override selection`);
+    await client.api.get("/brands");
+    assert.equal(requests[1].headers["X-Floor-Id"], "ground-floor");
+    const controller = new AbortController(); controller.abort();
+    await assert.rejects(client.api.get("/brands", { signal: controller.signal }), { name: "AbortError" });
+    await assert.rejects(client.api.get("/products", { signal: controller.signal }), { name: "AbortError" });
+    assert.equal(requests.length, 2, "cancelled reads must not create transports or return cached data");
+  }
+}
+console.log("API slow-storage identity/floor and cancelled-read regressions passed");

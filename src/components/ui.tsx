@@ -6,7 +6,7 @@ import { useReducedMotion } from "@/src/hooks/use-reduced-motion";
 // Every screen composes UI from this file. No hardcoded colors, spacing, or
 // typography allowed anywhere else. Feels closer to Linear / Stripe / Notion.
 
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { isValidElement, useEffect, useRef, useId } from "react";
 import {
   ActivityIndicator,

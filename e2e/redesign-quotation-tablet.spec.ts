@@ -78,3 +78,42 @@ test('critical iPad desktop browser downloads the quotation PDF with dimensions 
   await page.getByTestId('mobile-file-download').click();
   expect((await download).suggestedFilename()).toBe('Tablet Customer.pdf');
 });
+
+for (const format of ['pdf', 'pptx'] as const) {
+  test(`critical quotation ${format} download remains usable across all release viewports`, async ({ page }) => {
+    const mobile = page.viewportSize()!.width <= 1024;
+    if (mobile) await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'platform', { configurable: true, value: 'MacIntel' });
+      Object.defineProperty(navigator, 'maxTouchPoints', { configurable: true, value: 5 });
+    });
+    await mockSession(page, '/quotations/q-export', false);
+    await page.route('**/api/quotations/q-export', route => route.fulfill({ json: {
+      id: 'q-export', number: 'Q-EXPORT', customer_name: 'Export Customer', status: 'ordered', floor_id: 'first-floor',
+      items: [], rooms: [], subtotal: 1200, discount_total: 0, grand_total: 1200,
+      created_at: '2026-10-01T10:00:00Z', created_by_name: 'Audit Owner',
+    } }));
+    await page.route('**/api/quotations/q-export/breakdown', route => route.fulfill({ json: {
+      lines: [], totals: { subtotal: 1200, discount_total: 0, grand_total: 1200 }, project_discount_pct: 0, category_discounts: {},
+    } }));
+    await page.route('**/api/activity/quotation/q-export', route => route.fulfill({ json: [] }));
+    await page.route('**/api/purchase-orders?quotation_id=q-export', route => route.fulfill({ json: [] }));
+    await page.route(`**/api/quotations/q-export/${format}**`, route => route.fulfill({
+      contentType: format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      body: format === 'pdf' ? '%PDF-1.4\n%%EOF' : 'PK\u0003\u0004',
+    }));
+    await page.goto('/quotations/q-export');
+    const request = page.waitForRequest(`**/api/quotations/q-export/${format}**`);
+    const download = page.waitForEvent('download');
+    await page.getByTestId(format === 'pdf' ? 'download-pdf' : 'download-ppt').click();
+    if (format === 'pdf') await page.getByTestId('detail-pdf-exclude-dimensions').click();
+    expect((await request).headers()['x-floor-id']).toBe('first-floor');
+    if (mobile) {
+      await expect(page.getByTestId('mobile-file-save')).toBeVisible();
+      await page.getByTestId('mobile-file-download').click();
+    }
+    const filename = (await download).suggestedFilename();
+    expect(filename).toMatch(format === 'pdf' ? /^Export Customer\.pdf$/ : /^Export Customer PPT \d{2}-\d{2}-\d{4}\.pptx$/);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    await expect(page.getByTestId('download-pdf')).toBeVisible();
+  });
+}

@@ -8,7 +8,7 @@
 //   POST /purchases/items/{id}/transfer   — to an existing OR brand-new customer
 //   GET  /purchases/items/{id}            — full movement history + lineage
 // -----------------------------------------------------------------------------
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";

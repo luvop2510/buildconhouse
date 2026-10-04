@@ -56,14 +56,16 @@ export async function clearToken() {
 
 export async function getToken(): Promise<string | null> {
   if (tokenCache !== undefined) return tokenCache;
-  tokenCache = (await storage.secureGet<string>(TOKEN_KEY, "")) || null;
+  const stored = (await storage.secureGet<string>(TOKEN_KEY, "")) || null;
+  // Login/logout may finish while SecureStore is still reading the old value.
+  if (tokenCache === undefined) tokenCache = stored;
   return tokenCache;
 }
 
 export async function getTokenKind(): Promise<TokenKind | null> {
   if (tokenKindCache !== undefined) return tokenKindCache;
   const v = await storage.getItem<string>(TOKEN_KIND_KEY, "");
-  tokenKindCache = (v as TokenKind) || null;
+  if (tokenKindCache === undefined) tokenKindCache = (v as TokenKind) || null;
   return tokenKindCache;
 }
 
@@ -93,7 +95,8 @@ export function csrfHeaders(): Record<string, string> { return {}; }
 
 async function getRequestFloorId() {
   if (floorCache !== undefined) return floorCache || "";
-  floorCache = (await storage.getItem<string>(SELECTED_FLOOR_KEY, "")) || "";
+  const stored = (await storage.getItem<string>(SELECTED_FLOOR_KEY, "")) || "";
+  if (floorCache === undefined) floorCache = stored;
   return floorCache;
 }
 
@@ -195,6 +198,7 @@ async function mutate<T>(method: string, path: string, body?: unknown, opts?: Re
 
 export const api = {
   get: <T>(p: string, opts?: RequestOptions) => {
+    if (opts?.signal?.aborted) return abortForConsumer(Promise.resolve(undefined as T), opts.signal);
     // Deduplicate concurrent reads across screens/components. This is
     // intentionally in-flight only: dynamic data is never served stale, but
     // StrictMode/remounts and overlapping effects no longer hit the backend

@@ -19,7 +19,7 @@ from auth import (
 )
 from db import db
 from models import (
-    CustomerPublic, PurchaseOrder, PurchaseOrderItem, PurchaseStatusEvent, PurchaseStageEvent,
+    CustomerPublic,
     Quotation, QuotationCreate, QuotationLineItem, QuotationRevision,
     QuotationUpdate, RoomDiscountCfg, UserPublic, now_iso,
 )
@@ -36,7 +36,7 @@ from services.domain_outbox import (
 )
 from services.followup_engine import reconcile_followups
 from services.pricing import _resolve_line_rows, net_amount_list, normalize_tile_line_item, per_line_net_amounts, stamp_net_amounts
-from services.pagination import MAX_PAGE_LIMIT, normalize_pagination
+from services.pagination import normalize_pagination
 from services.pricing import recalc_quotation_totals as _recalc
 from services.sequence import next_number
 from services.po_final import _line_changes
@@ -83,24 +83,44 @@ PENDING_QUOTATION_STATUSES = ("draft", "pending_approval", "sent")
 COMPLETED_QUOTATION_STATUSES = ("approved", "ordered", "won")
 
 
-async def _canonicalize_item_images(items) -> list[dict]:
+async def _canonicalize_item_images(items, floor_id: str | None = None) -> list[dict]:
     """Resolve line-item images from current product media with snapshot fallback.
 
     Quotation rows intentionally retain an image snapshot for audit/history, but
     that snapshot can be the only image left after a catalog product or its
-    media is removed. Every live read/write and PDF render prefers current
-    product media, while retaining a valid snapshot as a fallback. The PDF
+    media is removed. Current media is eligible only for the document's exact
+    product SKU and floor; historic foreign-floor references are cleared.
+    The warmed catalog supplies ownership and media without a database roundtrip.
+    Retired/manual products retain their snapshots as a fallback. The PDF
     image pipeline normalizes old portrait assets before placing them.
     """
     raw_items = [item.model_dump() if isinstance(item, QuotationLineItem) else dict(item) for item in (items or [])]
     product_ids = {str(item.get("product_id")) for item in raw_items if item.get("product_id")}
     if not product_ids:
         return raw_items
-    media_rows = await db.product_media.find(
-        {"product_id": {"$in": list(product_ids)}, "public_url": {"$nin": [None, ""]}},
-        {"_id": 0, "product_id": 1, "public_url": 1, "is_primary": 1,
-         "role": 1, "sort_order": 1, "source_type": 1, "quality": 1},
-    ).to_list(max(len(product_ids) * 8, 100))
+    eligible_ids = product_ids
+    snapshot = None
+    if floor_id:
+        # Ownership proof and media come from the existing warmed catalog,
+        # avoiding a fresh Atlas lookup for every quotation read/autosave.
+        snapshot = await catalog_service.get_catalog_snapshot()
+        eligible_ids = set()
+        for item in raw_items:
+            product = snapshot.product_by_id.get(str(item.get("product_id")))
+            if product and product.get("floor_id") != floor_id:
+                # Malformed historic references must not render even their
+                # persisted snapshot of another department's product.
+                item.update(image=None, seat_cover_image_urls=[], dimension_image_urls=[])
+            elif product and str(product.get("sku") or "").strip() == str(item.get("sku") or "").strip():
+                eligible_ids.add(str(item.get("product_id")))
+        media_rows = [row for product_id in eligible_ids
+                      for row in snapshot.media_rows_by_product.get(product_id, ()) if row.get("public_url")]
+    else:
+        media_rows = await db.product_media.find(
+            {"product_id": {"$in": list(product_ids)}, "public_url": {"$nin": [None, ""]}},
+            {"_id": 0, "product_id": 1, "public_url": 1, "is_primary": 1,
+             "role": 1, "sort_order": 1, "source_type": 1, "quality": 1},
+        ).to_list(max(len(product_ids) * 8, 100))
     priority = {"manufacturer": 0, "supplier": 1, "internal": 2}
     quality_rank = {"excellent": 4, "good": 3, "acceptable": 2, "poor": 1, "missing": 0}
     grouped: dict[str, list[dict]] = {}
@@ -142,14 +162,21 @@ async def _canonicalize_item_images(items) -> list[dict]:
         best_quality = quality_rank.get(str(best.get("quality") or "missing").lower(), 0)
         return best if best_quality > preferred_quality else preferred
 
-    return [
-        {**item, "image": (
+    def resolved_image(item: dict):
+        product_id = str(item.get("product_id"))
+        if snapshot is not None:
+            product = snapshot.product_by_id.get(product_id)
+            if not product or product.get("floor_id") != floor_id or str(product.get("sku") or "").strip() != str(item.get("sku") or "").strip():
+                # Retired/manual products retain historical photos, but never
+                # acquire current media from an unverified or renamed SKU.
+                return item.get("image")
+        return (
             best_current_media(grouped[str(item.get("product_id"))]).get("public_url")
             if grouped.get(str(item.get("product_id")))
             else item.get("image") or cover_fallback.get(str(item.get("product_id")))
-        )}
-        for item in raw_items
-    ]
+        )
+
+    return [{**item, "image": resolved_image(item)} for item in raw_items]
 
 
 def _require_tiles_quotation_address(doc_type: str, address: str | None) -> None:
@@ -294,7 +321,23 @@ async def list_quotations(
     # definition — never scope those by the caller's ambient floor.
     scoped = tiles_floor_query(user, query) if doc_type in TILES_DOC_TYPES else floor_query(user, query)
     docs = await db.quotations.find(scoped, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
-    return docs
+    # Resolve each floor's entire page together. List responses must obey the
+    # same image ownership contract as detail/export without one lookup per
+    # quotation or an additional Atlas call.
+    by_floor: dict[str, list[tuple[int, dict]]] = {}
+    for index, doc in enumerate(docs):
+        by_floor.setdefault(floor_inherit(doc), []).append((index, doc))
+    result = list(docs)
+    for document_floor, entries in by_floor.items():
+        items = await _canonicalize_item_images(
+            [item for _, doc in entries for item in doc.get("items") or []], document_floor,
+        )
+        offset = 0
+        for index, doc in entries:
+            count = len(doc.get("items") or [])
+            result[index] = {**doc, "items": items[offset:offset + count]}
+            offset += count
+    return result
 
 
 @router.get("/recent")
@@ -367,8 +410,6 @@ async def create_quotation(
     # Client image URLs are only a convenience for the picker. Persist the
     # current canonical media URL so newly-created quotations cannot capture a
     # stale/portrait snapshot.
-    canonical_items = await _canonicalize_item_images(items)
-    items = [QuotationLineItem(**item) for item in canonical_items]
     item_floor_ids: set[str] = set()
     for it in items:
         p = await db.products.find_one(
@@ -391,6 +432,12 @@ async def create_quotation(
     # best-effort inference from client-supplied item data.
     if body.doc_type not in TILES_DOC_TYPES and len(item_floor_ids) > 1:
         raise HTTPException(status_code=400, detail="A quotation can only contain products from one floor.")
+
+    quotation_floor_id = (
+        _floor_for_tiles_document(user, item_floor_ids)
+        if body.doc_type in TILES_DOC_TYPES else _floor_id_for_new_quotation(user, item_floor_ids)
+    )
+    items = [QuotationLineItem(**item) for item in await _canonicalize_item_images(items, quotation_floor_id)]
 
     totals = _tile_totals(
         _recalc(items, body.project_discount_pct or 0, body.category_discounts or {}, body.room_discounts or {}),
@@ -426,11 +473,7 @@ async def create_quotation(
         transportation_fee=body.transportation_fee if body.doc_type in TILES_DOC_TYPES else 0,
         created_by=user.id,
         created_by_name=user.full_name,
-        floor_id=(
-            _floor_for_tiles_document(user, item_floor_ids)
-            if body.doc_type in TILES_DOC_TYPES
-            else _floor_id_for_new_quotation(user, item_floor_ids)
-        ),
+        floor_id=quotation_floor_id,
         **totals,
     )
     # A builder can be opened from a godown-stock card.  Claim the requested
@@ -507,7 +550,7 @@ async def create_quotation(
 @router.get("/{quotation_id}", response_model=Quotation)
 async def get_quotation(quotation_id: str, user: UserPublic = Depends(get_current_user)):
     doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0})
-    doc = {**doc, "items": await _canonicalize_item_images(doc.get("items", []))}
+    doc = {**doc, "items": await _canonicalize_item_images(doc.get("items", []), floor_inherit(doc))}
     return Quotation(**doc)
 
 
@@ -527,6 +570,7 @@ async def _complete_pre_confirmation_followups(
     quotation_number: str | None,
     *,
     session=None,
+    floor_id: str | None = None,
 ) -> int:
     """Close reminders that existed before this quotation became an order.
 
@@ -537,12 +581,17 @@ async def _complete_pre_confirmation_followups(
     purpose has been fulfilled by the confirmation.
     """
     completed_at = now_iso()
+    query = {
+        "quotation_id": quotation_id,
+        "status": {"$in": ["open", "snoozed"]},
+        "rule_type": {"$ne": "order_confirmed_ops"},
+        "purchase_id": None,
+        "$or": [{"notebook_key": None}, {"notebook_key": ""}],
+    }
+    if floor_id:
+        query["floor_id"] = floor_id
     result = await db.followups.update_many(
-        {
-            "quotation_id": quotation_id,
-            "status": {"$in": ["open", "snoozed"]},
-            "rule_type": {"$ne": "order_confirmed_ops"},
-        },
+        query,
         {"$set": {
             "status": "done",
             "auto_resolved": True,
@@ -558,6 +607,37 @@ async def _complete_pre_confirmation_followups(
             "updated_at": completed_at,
         }},
         session=session,
+    )
+    return int(result.modified_count)
+
+
+async def _complete_order_notebook_followups(doc: dict, *, session=None) -> int:
+    """Derive notebook Won only from this customer's committed order.
+
+    Unlinked notebook leads belong to the customer on this floor; a linked
+    notebook remains tied to its specific quotation. Operational handoffs and
+    already closed rows are never changed, including on confirmation retries.
+    """
+    if not doc.get("customer_id") or not doc.get("floor_id"):
+        return 0
+    now = now_iso()
+    result = await db.followups.update_many(
+        {
+            "floor_id": doc["floor_id"], "customer_id": doc["customer_id"],
+            "notebook_key": {"$type": "string", "$ne": ""},
+            "notebook_status": {"$in": ["new", "pending"]},
+            "status": {"$in": ["open", "snoozed"]},
+            "rule_type": {"$ne": "order_confirmed_ops"},
+            "purchase_id": None,
+            "$or": [{"quotation_id": doc["id"]}, {"quotation_id": None}, {"quotation_id": ""}],
+        },
+        {"$set": {
+            "notebook_status": "won", "status": "done", "completed_outcome": "won",
+            "auto_resolved": True, "completed_at": now, "updated_at": now,
+            "snoozed_until": None,
+            "quotation_id": doc["id"], "quotation_number": doc.get("number"),
+            "resolution_note": f"Completed automatically — order {doc.get('number') or doc['id']} was confirmed.",
+        }}, session=session,
     )
     return int(result.modified_count)
 
@@ -642,7 +722,7 @@ async def update_quotation(
                 raise HTTPException(status_code=400, detail="One or more quotation products are unavailable on this quotation's floor.")
             if not it.category_id:
                 it.category_id = p.get("category_id")
-        canonical_items = await _canonicalize_item_images(items_typed)
+        canonical_items = await _canonicalize_item_images(items_typed, floor_inherit(doc))
         update["items"] = [i.model_dump() for i in _normalize_tile_items(
             [QuotationLineItem(**item) for item in canonical_items], doc.get("doc_type", "standard")
         )]
@@ -666,6 +746,8 @@ async def update_quotation(
         requested_status = body.status
         doc_type = doc.get("doc_type", "standard")
         current_status = doc.get("status", "draft")
+        if requested_status in {"won", "ordered"} and requested_status != current_status:
+            raise HTTPException(status_code=409, detail="Use Place Order to confirm this sale; Won is recorded only after an order is placed")
         if doc_type in {"tiles_selection", "tiles_quotation"}:
             # Older deployments used the generic quotation status names. Map
             # them into the tile workflow before validating the transition so
@@ -847,11 +929,6 @@ async def update_quotation(
             )
 
     if "status" in update:
-        # A repeated PATCH of an already-confirmed quotation is an edit, not a
-        # new confirmation.  Do not close a legitimate follow-up created
-        # after the order was placed.
-        if update["status"] == "ordered" and doc.get("status") != "ordered":
-            await _complete_pre_confirmation_followups(quotation_id, doc.get("number"))
         # Event-triggered (not cron) reconciliation — a status change is
         # exactly the moment quotation-stage follow-ups should refresh/close.
         asyncio.create_task(reconcile_followups())
@@ -1245,7 +1322,7 @@ def _enriched_items_for_pdf(doc: dict) -> list[dict]:
 
 async def _pdf_items(doc: dict) -> list[dict]:
     """Return discount-enriched rows with current media URLs."""
-    return _enriched_items_for_pdf({**doc, "items": await _canonicalize_item_images(doc.get("items", []))})
+    return _enriched_items_for_pdf({**doc, "items": await _canonicalize_item_images(doc.get("items", []), floor_inherit(doc))})
 
 
 async def _diagram_items(items: list[dict], floor_id: str) -> list[dict]:
@@ -1255,14 +1332,19 @@ async def _diagram_items(items: list[dict], floor_id: str) -> list[dict]:
         return items
     products = await db.products.find(
         {"id": {"$in": list(ids)}, "floor_id": floor_id},
-        {"_id": 0, "id": 1, "sku": 1, "dimension_image_urls": 1, "seat_cover_image_urls": 1},
+        {"_id": 0, "id": 1, "sku": 1, "images": 1, "dimension_image_urls": 1, "seat_cover_image_urls": 1},
     ).to_list(len(ids))
     by_id = {product["id"]: product for product in products}
     result = []
     for item in items:
         product = by_id.get(item.get("product_id"))
         if product and str(product.get("sku") or "").strip() == str(item.get("sku") or "").strip():
+            # Older concealed articles can carry images on the product itself
+            # without product_media rows. Keep their exact SKU visible in both
+            # PDF and PPT; never substitute a family representative's picture.
+            fallback_image = next((url for url in product.get("images") or [] if str(url or "").strip()), None)
             result.append({**item,
+                "image": item.get("image") or fallback_image,
                 "dimension_image_urls": product.get("dimension_image_urls") or [],
                 "seat_cover_image_urls": product.get("seat_cover_image_urls") or [],
             })
@@ -1299,8 +1381,9 @@ async def quotation_pptx(quotation_id: str, user: UserPublic = Depends(get_curre
     doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0})
     if (doc.get("doc_type") or "standard") != "standard":
         raise HTTPException(status_code=400, detail="Product PPT is available for sanitary quotations")
+    items = await _diagram_items(await _canonicalize_item_images(doc.get("items", []), floor_inherit(doc)), floor_inherit(doc))
     try:
-        ppt = await run_in_threadpool(build_product_ppt, {**doc, "items": await _canonicalize_item_images(doc.get("items", []))})
+        ppt = await run_in_threadpool(build_product_ppt, {**doc, "items": items})
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     filename = presentation_filename(doc.get("customer_name") or "Customer")
@@ -1613,8 +1696,9 @@ async def place_order_confirm(quotation_id: str, body: PlaceOrderConfirmPayload,
                         {"$set": {"status": "ordered", "updated_at": now_iso(), **_ordered_at_patch(doc, "ordered")}},
                         session=session,
                     )
+                    await _complete_order_notebook_followups(doc, session=session)
                     await _complete_pre_confirmation_followups(
-                        quotation_id, doc.get("number"), session=session,
+                        quotation_id, doc.get("number"), session=session, floor_id=doc.get("floor_id"),
                     )
                     event = await enqueue_after_primary_commit(
                         event_type=EVENT_ORDER_PLACED,

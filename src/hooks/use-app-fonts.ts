@@ -1,31 +1,13 @@
-// App-wide font loader: Inter (text) + Expo vector icons (icon families under Expo Go).
+// App-wide font loader: Inter (text) + Feather icons (CDN fallback under Expo Go).
 // Inter is loaded from local /assets/fonts. Icon fonts fall back to CDN under Expo Go.
 import Constants, { ExecutionEnvironment } from "expo-constants";
 import { useFonts } from "expo-font";
 
 const ICON_VECTOR_VERSION = "15.1.1";
 
-const ICON_FAMILIES: Record<string, string> = {
-  anticon: "AntDesign",
-  entypo: "Entypo",
-  evilicons: "EvilIcons",
-  feather: "Feather",
-  FontAwesome: "FontAwesome",
-  Fontisto: "Fontisto",
-  foundation: "Foundation",
-  ionicons: "Ionicons",
-  "material-community": "MaterialCommunityIcons",
-  material: "MaterialIcons",
-  octicons: "Octicons",
-  "simple-line-icons": "SimpleLineIcons",
-  zocial: "Zocial",
-  "FontAwesome5Free-Regular": "FontAwesome5_Regular",
-  "FontAwesome5Free-Solid": "FontAwesome5_Solid",
-  "FontAwesome5Free-Brand": "FontAwesome5_Brands",
-  "FontAwesome6Free-Regular": "FontAwesome6_Regular",
-  "FontAwesome6Free-Solid": "FontAwesome6_Solid",
-  "FontAwesome6Free-Brand": "FontAwesome6_Brands",
-};
+// Feather is the only icon family used by the canonical app. Loading every
+// Expo icon font here delayed Expo Go startup with 18 unnecessary downloads.
+const ICON_FAMILIES: Record<string, string> = { feather: "Feather" };
 
 const cdnIconUrl = (file: string): string =>
   `https://cdn.jsdelivr.net/npm/@expo/vector-icons@${ICON_VECTOR_VERSION}/build/vendor/react-native-vector-icons/Fonts/${file}.ttf`;

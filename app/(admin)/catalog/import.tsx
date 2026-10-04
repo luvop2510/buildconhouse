@@ -1,6 +1,6 @@
 // AI Catalog Import — supplier price tables with review before import
 // Steps: pick brand → pick file → Claude extracts → human review → import
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import * as DocumentPicker from "expo-document-picker";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";

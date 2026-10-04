@@ -2,7 +2,7 @@
 // (already fully working before this screen existed) so mongo/supabase
 // connectivity, catalog counts, version, and warnings are visible in-app
 // instead of only reachable via a raw API call.
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { RefreshControl, ScrollView, Text, View } from "react-native";

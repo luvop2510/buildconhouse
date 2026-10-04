@@ -6,7 +6,7 @@
 // produced by the backend's idempotent reconciliation engine — this screen
 // only orchestrates reads + user actions, never invents data.
 // ═══════════════════════════════════════════════════════════════════════════
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useFocusEffect, useRouter } from "expo-router";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -1798,8 +1798,6 @@ const OUTCOMES: { value: string; label: string; icon: FeatherName; tone: "succes
   { value: "no_answer", label: "No Answer", icon: "phone-missed", tone: "warning" },
   { value: "rejected", label: "Rejected", icon: "thumbs-down", tone: "danger" },
   { value: "lost", label: "Lost", icon: "user-x", tone: "danger" },
-  { value: "won", label: "Won", icon: "award", tone: "success" },
-  { value: "converted", label: "Converted", icon: "award", tone: "success" },
 ];
 function CallOutcomeSheet({ visible, f, initialOutcome, onClose, onSubmit }: {
   visible: boolean; f: Followup | null; initialOutcome?: string; onClose: () => void; onSubmit: (f: Followup, outcome: string, notes?: string, nextFollowupAt?: string) => void;

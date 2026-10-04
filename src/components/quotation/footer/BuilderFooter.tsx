@@ -8,7 +8,7 @@
 // full desktop layout PLUS a second mobile summary) — which is what made
 // the phone builder feel completely broken/cluttered.
 import { useState } from "react";
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 

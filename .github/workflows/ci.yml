@@ -86,6 +86,9 @@ jobs:
           npm run test:api-proxy
           npm run test:web-worker
           npm run test:sales-periods
+          npm run test:monitoring-contract
+          npm run test:frontend-performance
+          npm run test:icon-fonts
       - name: Tile Orders workflow route contract
         run: node scripts/verify-tile-orders-contract.mjs
       - name: Lint

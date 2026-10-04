@@ -1,7 +1,7 @@
 // Browser variant: use FlatList rather than the native draggable list, which
 // depends on a Reanimated gesture runtime unavailable in the web shell.
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 
 import { EmptyState } from "@/src/components/ui";
 import { font, radius, spacing } from "@/src/theme/tokens";

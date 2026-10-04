@@ -23,8 +23,9 @@ import {
   Section, SectionHeader, Stat,
 } from "@/src/components/tiles/TileLayout";
 import { AgeingBadge, StatusPill, WorkflowRail } from "@/src/components/tiles/TileOrderStatusUI";
+import { TileOrderProductCell } from "@/src/components/tiles/TileOrderProductCell";
 import { tileIdentityMeta } from "@/src/components/tiles/tilePresentation";
-import { CellNumber, CellStack, DataTable, type Column } from "@/src/components/tiles/TileTable";
+import { CellNumber, DataTable, type Column } from "@/src/components/tiles/TileTable";
 import { Sheet } from "@/src/components/ui";
 import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
 import { useAuth } from "@/src/state/auth";
@@ -151,9 +152,10 @@ export default function CustomerOrderDetailScreen() {
     {
       key: "product", label: "TILE NAME", grow: 3, minWidth: 240, mobile: "primary",
       render: (item) => (
-        <CellStack
-          title={item.tile_name}
+        <TileOrderProductCell
+          name={item.tile_name}
           subtitle={tileIdentityMeta([item.series, item.finish, item.size], item.sku)}
+          image={item.image} sku={item.sku} testID={`tile-customer-product-image-${item.po_item_id}`}
         />
       ),
     },

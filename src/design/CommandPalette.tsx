@@ -7,7 +7,7 @@ import { useReducedMotion } from "@/src/hooks/use-reduced-motion";
 // Command palette — the app's fast lane. ⌘K anywhere.
 // Actions + navigation instantly; customers, quotations and products as you type.
 // ─────────────────────────────────────────────────────────────────────────────
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {

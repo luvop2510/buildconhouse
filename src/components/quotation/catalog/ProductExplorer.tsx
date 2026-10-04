@@ -4,7 +4,7 @@
 //
 // Uses FlatList w/ numColumns for grid layout. Search + sort + filters live
 // in the sticky header.
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { Image } from "expo-image";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, FlatList, LayoutChangeEvent, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
@@ -23,6 +23,7 @@ import { variantDescriptor } from "../helpers/pricing";
 import { quotationGridColumns } from "../helpers/responsive";
 import type { Product, ProductVariant } from "../helpers/types";
 import { catalogPriceUnknown } from "../helpers/catalogSource";
+import { catalogProductQuantity, roomProductQuantities } from "../helpers/catalogMetrics";
 import { isNearScrollEnd } from "@/src/utils/scrollEnd";
 
 const RECENT_SEARCHES_KEY = "forge.builder.recentSearches.v1";
@@ -47,6 +48,8 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
   // narrow inline pane only has room for three cards across.
   const compactCards = showCompactFilters;
   const cardWidth = Math.max(0, (paneWidth - (showCompactFilters ? 24 : 32) - (numCols - 1) * 12) / numCols);
+  const favouriteIds = useMemo(() => new Set(b.favouriteIds), [b.favouriteIds]);
+  const roomQuantities = useMemo(() => roomProductQuantities(b.s.lines, b.s.activeRoom), [b.s.lines, b.s.activeRoom]);
   const brandName = useMemo(() => {
     if (!b.selectedBrandId) return "All brands";
     return b.brands.find((x) => x.id === b.selectedBrandId)?.name || "Brand";
@@ -280,11 +283,11 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
             product={item}
             compact={compactCards}
             width={cardWidth || undefined}
-            favourite={b.favouriteIds.includes(item.id)}
-            addedQty={b.s.lines.filter(l => l.room === b.s.activeRoom && (l.product_id === item.id || item.variants?.some(v => v.id === l.product_id))).reduce((sum, l) => sum + l.qty, 0)}
-            onToggleFav={() => b.toggleFavourite(item.id)}
-            onQuickAdd={(p, v) => b.addFromProduct(p, v)}
-            onOpenModal={(p) => b.openProductModal(p)}
+            favourite={favouriteIds.has(item.id)}
+            addedQty={catalogProductQuantity(item, roomQuantities)}
+            onToggleFav={b.toggleFavourite}
+            onQuickAdd={b.addFromProduct}
+            onOpenModal={b.openProductModal}
           />
         )}
         removeClippedSubviews={Platform.OS !== "web"}
@@ -293,7 +296,7 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
         // cards are immediately visible/reachable instead of arriving one
         // short batch at a time.
         initialNumToRender={showCompactFilters ? 20 : 16}
-        maxToRenderPerBatch={showCompactFilters ? 20 : 16}
+        maxToRenderPerBatch={8}
         windowSize={7}
         onEndReached={() => b.loadMoreProducts()}
         onEndReachedThreshold={0.5}
@@ -344,7 +347,7 @@ type CardProps = {
   width?: number;
   favourite: boolean;
   addedQty: number;
-  onToggleFav: () => void;
+  onToggleFav: (id: string) => void;
   onQuickAdd: (p: Product, v?: ProductVariant) => void;
   onOpenModal: (p: Product) => void;
 };
@@ -355,7 +358,7 @@ function ProductGridCardImpl({ product, compact, width, favourite, addedQty, onT
   if (product.popular) badges.push({ label: "Popular", tone: "popular" });
   else if (product.frequently_used) badges.push({ label: "Frequently used", tone: "frequent" });
   else if (product.recently_used) badges.push({ label: "Recent", tone: "recent" });
-  const selectedImages = resolveVariantImages(product, selectedVariant);
+  const selectedImages = useMemo(() => resolveVariantImages(product, selectedVariant), [product, selectedVariant]);
   const selectedSku = selectedVariant?.sku ?? product.sku;
   const selectedPrice = selectedVariant?.price ?? product.price;
   const selectedMrp = selectedVariant?.mrp ?? product.mrp;
@@ -396,7 +399,7 @@ function ProductGridCardImpl({ product, compact, width, favourite, addedQty, onT
         </View>
         <Pressable
           accessibilityRole="button" accessibilityLabel={`${favourite ? "Remove" : "Save"} ${product.name} ${favourite ? "from" : "to"} favorites`} accessibilityState={{ selected: favourite }}
-          onPress={onToggleFav}
+          onPress={() => onToggleFav(product.id)}
           style={styles.favBtn}
           testID={`fav-${product.sku}`}
         >

@@ -610,6 +610,13 @@ def _family_variants(product: dict, snapshot: CatalogSnapshot) -> list[dict]:
     ]
 
 
+def product_hero_image(product: dict, snapshot: CatalogSnapshot) -> Optional[str]:
+    """Resolve an exact SKU preview without hydrating its family and variants."""
+    preview = dict(product)
+    _apply_media(preview, snapshot)
+    return preview.get("hero_image_url")
+
+
 def hydrate_product(product: dict, snapshot: CatalogSnapshot) -> dict:
     out = copy.deepcopy(product)
     out["price_unknown"] = product.get("price_status") == "unspecified"

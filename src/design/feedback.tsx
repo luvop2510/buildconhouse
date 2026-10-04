@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import { Animated, Easing, Platform, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useReducedMotion } from '@/src/hooks/use-reduced-motion';
 import { color, motion, space } from './tokens';

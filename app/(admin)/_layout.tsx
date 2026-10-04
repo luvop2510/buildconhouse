@@ -5,7 +5,7 @@ import { PRIMARY, SECONDARY, TILES_ITEMS, type NavItem } from "@/src/design/navi
 // Desktop: quiet 240px sidebar. Tablet: 64px icon rail. Phone: bottom bar.
 // One brass bar marks where you are. The command palette lives here (⌘K).
 // ─────────────────────────────────────────────────────────────────────────────
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { Slot, useRouter, useSegments } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";

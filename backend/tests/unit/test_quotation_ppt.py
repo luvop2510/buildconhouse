@@ -3,6 +3,7 @@ from io import BytesIO
 
 from PIL import Image
 from pptx import Presentation
+import pytest
 
 from models import QuotationLineItem
 from services import quotation_ppt
@@ -83,3 +84,66 @@ def test_unassigned_legacy_products_get_sensible_areas():
     assert quotation_ppt.suggested_area("Rainshower 300") == "Shower Area"
     assert quotation_ppt.suggested_area("Countertop basin") == "Basin Area"
     assert quotation_ppt.suggested_area("Towel rail") == "Other Area"
+
+
+@pytest.mark.parametrize("count,area_count", [(7, 1), (17, 3), (36, 4), (60, 6)])
+def test_every_room_stays_on_one_slide_with_all_images_inside_nonoverlapping_frames(monkeypatch, count, area_count):
+    monkeypatch.setattr(quotation_ppt, "prefetch_urls", lambda _urls: None)
+    monkeypatch.setattr(quotation_ppt, "remote_image_bytes", lambda _url: _image_bytes())
+    items = [{"room": "Master Bathroom", "area": f"Area {i % area_count}", "image": f"https://test/{i}.png"}
+             for i in range(count)]
+    items.append({"room": "Powder Room", "area": "WC Area", "image": "https://test/wc.png"})
+    ppt = Presentation(BytesIO(quotation_ppt.build_product_ppt({"items": items})))
+    assert len(ppt.slides) == 3
+    photos = [shape for shape in ppt.slides[1].shapes if shape.shape_type == 13]
+    assert len(photos) == count
+    for photo in photos:
+        assert 0 < photo.left < photo.left + photo.width <= ppt.slide_width
+        assert 0 < photo.top < photo.top + photo.height <= ppt.slide_height
+        assert photo.crop_left == photo.crop_right == photo.crop_top == photo.crop_bottom == 0
+    for index, first in enumerate(photos):
+        for second in photos[index + 1:]:
+            assert (first.left + first.width <= second.left or second.left + second.width <= first.left
+                    or first.top + first.height <= second.top or second.top + second.height <= first.top)
+
+
+def test_normalized_room_labels_and_duplicate_declared_rooms_never_lose_or_duplicate_products(monkeypatch):
+    monkeypatch.setattr(quotation_ppt, "prefetch_urls", lambda _urls: None)
+    ppt = Presentation(BytesIO(quotation_ppt.build_product_ppt({
+        "rooms": [" Bath ", "Bath", "Empty"],
+        "items": [{"room": " Bath "}, {"room": "Bath"}, {"room": " "}, {}],
+    })))
+    assert len(ppt.slides) == 3
+    assert [sum(shape.shape_type == 13 for shape in slide.shapes) for slide in list(ppt.slides)[1:]] == [2, 2]
+
+
+def test_seat_and_concealed_parts_are_present_and_repeated_assets_only_normalized_once(monkeypatch):
+    data = _image_bytes()
+    monkeypatch.setattr(quotation_ppt, "prefetch_urls", lambda _urls: None)
+    monkeypatch.setattr(quotation_ppt, "remote_image_bytes", lambda _url: data)
+    normalized = []
+    original = quotation_ppt._image
+
+    def prepare(image):
+        normalized.append(image)
+        return original(image)
+
+    monkeypatch.setattr(quotation_ppt, "_image", prepare)
+    ppt = Presentation(BytesIO(quotation_ppt.build_product_ppt({"items": [
+        {"room": "Bath", "name": "WC", "image": "https://test/wc.png", "seat_cover_image_urls": ["https://test/wc.png", "https://test/seat.png"]},
+        {"room": "Bath", "name": "Concealed part", "image": "https://test/rough-in.png"},
+        {"room": "Powder", "name": "WC", "image": "https://test/wc.png"},
+    ]})))
+    assert len(ppt.slides) == 3
+    assert sum(shape.shape_type == 13 for shape in ppt.slides[1].shapes) == 3
+    assert sum(shape.shape_type == 13 for shape in ppt.slides[2].shapes) == 1
+    assert len(normalized) == 3
+
+
+def test_large_portrait_product_is_resized_without_distortion_or_cropping():
+    source = BytesIO()
+    Image.new("RGB", (2000, 4000), "blue").save(source, format="PNG")
+    stream, ratio = quotation_ppt._image(source.getvalue())
+    with Image.open(stream) as image:
+        assert image.size == (800, 1600)
+        assert ratio == 0.5

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
 import routes.quotation_routes as quotation_routes
 
@@ -86,3 +87,40 @@ def test_pdf_image_resolution_keeps_the_selected_variant_not_family_representati
     assert resolved[0]["product_id"] == "variant-b"
     assert resolved[0]["sku"] == "B-SKU"
     assert resolved[0]["image"] == "https://cdn.example.test/b.jpg"
+
+
+def test_document_media_is_proven_by_exact_floor_and_sku_without_database_roundtrips(monkeypatch):
+    products = {
+        "same": {"id": "same", "floor_id": "first-floor", "sku": "SAME"},
+        "foreign": {"id": "foreign", "floor_id": "ground-floor", "sku": "FOREIGN"},
+        "changed": {"id": "changed", "floor_id": "first-floor", "sku": "NEW"},
+    }
+    async def snapshot():
+        return SimpleNamespace(product_by_id=products, media_rows_by_product={
+            key: [{"product_id": key, "public_url": f"https://cdn.test/{key}-current.png", "is_primary": True}]
+            for key in products
+        })
+    monkeypatch.setattr(quotation_routes.catalog_service, "get_catalog_snapshot", snapshot)
+    monkeypatch.setattr(quotation_routes, "db", object())  # no DB reads permitted
+    rows = asyncio.run(quotation_routes._canonicalize_item_images([
+        {"product_id": "same", "sku": "SAME", "image": "same-snapshot"},
+        {"product_id": "foreign", "sku": "FOREIGN", "image": "foreign-snapshot", "seat_cover_image_urls": ["foreign-seat"]},
+        {"product_id": "changed", "sku": "OLD", "image": "old-snapshot"},
+        {"product_id": "retired", "sku": "RETIRED", "image": "historical-snapshot"},
+        {"product_id": "godown:manual", "sku": "MANUAL", "image": "manual-snapshot"},
+    ], "first-floor"))
+    assert rows[0]["image"] == "https://cdn.test/same-current.png"
+    assert rows[1]["image"] is None
+    assert rows[1]["seat_cover_image_urls"] == rows[1]["dimension_image_urls"] == []
+    assert [row["image"] for row in rows[2:]] == ["old-snapshot", "historical-snapshot", "manual-snapshot"]
+
+
+def test_pdf_rows_never_include_a_foreign_floor_hero_or_snapshot(monkeypatch):
+    async def snapshot():
+        return SimpleNamespace(product_by_id={"foreign": {"id": "foreign", "floor_id": "ground-floor", "sku": "F"}},
+                               media_rows_by_product={"foreign": [{"product_id": "foreign", "public_url": "https://cdn.test/foreign.png"}]})
+    monkeypatch.setattr(quotation_routes.catalog_service, "get_catalog_snapshot", snapshot)
+    items = asyncio.run(quotation_routes._pdf_items({"floor_id": "first-floor", "items": [
+        {"product_id": "foreign", "sku": "F", "name": "Foreign product", "image": "https://cdn.test/foreign-snapshot.png"},
+    ]}))
+    assert items[0]["image"] is None

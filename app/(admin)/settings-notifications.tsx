@@ -5,7 +5,7 @@
 // not something to fake here. What IS real and shown below: the follow-up
 // rule engine (services/followup_engine.py) already runs continuously and
 // its current rule set + live counts are surfaced honestly.
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { Text, View } from "react-native";

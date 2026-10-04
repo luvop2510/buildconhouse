@@ -1,4 +1,4 @@
-import { Feather } from '@expo/vector-icons';
+import Feather from '@expo/vector-icons/Feather';
 import React, { useRef } from 'react';
 import { Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { color, font, radius, space } from './tokens';

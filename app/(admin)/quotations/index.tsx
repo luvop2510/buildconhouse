@@ -2,7 +2,7 @@
 // Premium card list: number pill · customer + meta · total · status.
 // Optimised for phone (no cramped inline rows), tablet gets a tabular feel.
 
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert as RNAlert, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";

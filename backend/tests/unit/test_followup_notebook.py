@@ -80,9 +80,10 @@ class _Collection:
 
 
 class _Db:
-    def __init__(self, *, customers=None, followups=None):
+    def __init__(self, *, customers=None, followups=None, quotations=None):
         self.customers = _Collection(customers)
         self.followups = _Collection(followups)
+        self.quotations = _Collection(quotations)
 
 
 def test_normalize_mobile_accepts_indian_formatting():
@@ -409,9 +410,10 @@ async def test_lost_outcome_requires_reason_and_closes_shared_followup():
 async def test_won_outcome_persists_action_note_in_same_update():
     db = _Db(followups=[{
         "id": "f1", "floor_id": "third-floor", "notebook_key": "third-floor:c1",
+        "customer_id": "c1", "quotation_id": "q1",
         "customer_name": "A", "customer_phone": "9909906652", "notebook_status": "pending",
         "status": "open", "updated_at": "v1", "is_converted": True,
-    }])
+    }], quotations=[{"id": "q1", "floor_id": "third-floor", "customer_id": "c1", "status": "ordered"}])
     row = await complete_notebook_row(
         db, user=object(), floor_id="third-floor", row_id="f1", outcome="won",
         lost_reason=None, expected_updated_at="v1", notes="Customer accepted quotation and paid advance",

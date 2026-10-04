@@ -9,7 +9,7 @@
 // preview screen (Save / choose another / cancel) -> multipart upload.
 // "Replace" reuses the exact same pick+preview flow, just tagged with the
 // media id being swapped so the backend keeps its role/primary/position.
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import * as ImagePicker from "expo-image-picker";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";

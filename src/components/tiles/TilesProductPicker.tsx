@@ -5,7 +5,7 @@ import { Overlay } from "@/src/design/Overlay";
 // sanitary quotation builder. The old text-only dialog forced workers through
 // a one-result-at-a-time flow; phones use spacious landscape product rows and
 // wider picker layouts use a measured grid with direct add.
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import * as Haptics from "expo-haptics";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {

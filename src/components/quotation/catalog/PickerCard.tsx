@@ -3,7 +3,7 @@
 // both quick-add; both flash the same success confirmation (row tint + toast)
 // so the feedback is identical regardless of which hit-target the user used.
 import * as Haptics from "expo-haptics";
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { toast } from "@/src/components/Toast";
@@ -51,7 +51,7 @@ function PickerCardImpl({ product, onQuickAdd, onLongPress, onOpenDetails }: Pro
     if (flashTimer.current) clearTimeout(flashTimer.current);
     flashTimer.current = setTimeout(() => setRowFlash(false), ROW_FLASH_MS);
   };
-  const selectedImages = resolveVariantImages(product, selectedVariant);
+  const selectedImages = useMemo(() => resolveVariantImages(product, selectedVariant), [product, selectedVariant]);
   const selectedSku = selectedVariant?.sku ?? product.sku;
   const selectedPrice = selectedVariant?.price ?? product.price;
   const automaticParts = selectedVariant?.specs?.default_included_parts ?? product.specs?.default_included_parts;

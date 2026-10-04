@@ -7,7 +7,7 @@
 // Confirm → POST /quotations/:id/place-order/confirm → server creates one PO
 // per brand, marks the quotation `ordered`, then we route to /purchase-orders.
 // -----------------------------------------------------------------------------
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useLocalSearchParams, useRouter, useSegments } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
