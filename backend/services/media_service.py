@@ -143,8 +143,12 @@ async def upload_and_register(
         # Compensating action — don't leave an orphaned object in storage
         # with no metadata row pointing at it.
         try:
-            await storage.delete(bucket=bucket, key=key)
-        except StorageError as cleanup_err:
+            # Family-scoped imports can share a content-addressed object.
+            # A failed new metadata insert must not remove a sibling's file.
+            shared = await db.product_media.find_one({"bucket": bucket, "storage_key": key}, {"_id": 0, "id": 1})
+            if not shared:
+                await storage.delete(bucket=bucket, key=key)
+        except Exception as cleanup_err:
             logger.warning("orphan cleanup after failed insert also failed (%s): %s", key, cleanup_err)
         raise
 
@@ -185,8 +189,13 @@ async def delete_media(media_id: str, *, actor: Optional[UserPublic] = None) -> 
     if not doc:
         return False
     storage = get_media_storage()
+    shared = await db.product_media.find_one({
+        "bucket": doc["bucket"], "storage_key": doc["storage_key"],
+        "id": {"$ne": media_id},
+    }, {"_id": 0, "id": 1})
     try:
-        await storage.delete(bucket=doc["bucket"], key=doc["storage_key"])
+        if not shared:
+            await storage.delete(bucket=doc["bucket"], key=doc["storage_key"])
     except StorageError as e:
         # Metadata is the recoverable pointer to the Supabase object.  Never
         # delete it after a failed storage operation or the object becomes an
