@@ -93,6 +93,7 @@ jobs:
           npm run test:monitoring-contract
           npm run test:frontend-performance
           npm run test:icon-fonts
+          npm run test:release-recovery
       - name: Tile Orders workflow route contract
         run: node scripts/verify-tile-orders-contract.mjs
       - name: Lint

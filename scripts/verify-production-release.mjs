@@ -32,7 +32,11 @@ for (const path of scripts) {
   const { response, body } = await read(path);
   assert.equal(response.status, 200, path);
   assert.match(response.headers.get('content-type') || '', /javascript/);
-  assert.match(response.headers.get('cache-control') || '', /immutable/);
+  if (new URL(path, base).pathname === '/release-recovery.js') {
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+  } else {
+    assert.match(response.headers.get('cache-control') || '', /immutable/);
+  }
   assert.doesNotMatch(body.slice(0, 100), /<!doctype|<html/i, `${path}: asset fell through to HTML`);
 }
 for (const path of ['/_expo/static/js/web/missing-release-probe.js', '/assets/missing-release-probe.ttf']) {

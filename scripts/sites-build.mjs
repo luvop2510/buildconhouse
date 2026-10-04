@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 
 // Sites packages the Expo web export as a Cloudflare-compatible worker.
@@ -26,6 +26,30 @@ expo.on('exit', async (code, signal) => {
     process.exitCode = code ?? 1;
     return;
   }
+
+  // External, synchronous bootstrap obeys script-src 'self' and runs before
+  // any external Expo runtime/chunk script, after the SSR root is parsed. Hashed app assets may change on deployment;
+  // this stable URL can recover an otherwise empty failed startup once.
+  const recoverySource = await readFile(new URL('./release-recovery.js', import.meta.url), 'utf8');
+  await writeFile('dist/client/release-recovery.js', recoverySource);
+  const injectRecovery = async (directory) => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const path = `${directory}/${entry.name}`;
+      if (entry.isDirectory()) await injectRecovery(path);
+      else if (entry.name.endsWith('.html')) {
+        const html = await readFile(path, 'utf8');
+        if (!html.includes('src="/release-recovery.js"')) {
+          const bootstrap = '<script src="/release-recovery.js"></script>';
+          const firstExpoScript = /<script\b(?=[^>]*\bsrc=["']\/_expo\/static\/js\/web\/)[^>]*>/i;
+          const injected = firstExpoScript.test(html)
+            ? html.replace(firstExpoScript, `${bootstrap}$&`)
+            : html.replace(/<head(?:\s[^>]*)?>/i, `$&${bootstrap}`);
+          await writeFile(path, injected);
+        }
+      }
+    }
+  };
+  await injectRecovery('dist/client');
 
   await mkdir('dist', { recursive: true });
   await mkdir('dist/server', { recursive: true });
