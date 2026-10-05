@@ -25,6 +25,7 @@ npm run test:sales-periods
 npm run test:monitoring-contract
 npm run test:frontend-performance
 npm run test:icon-fonts
+npm run test:release-recovery
 npm run build
 npm run test:mobile-budget
 ```
@@ -46,5 +47,7 @@ Backend unit tests must use an isolated database configuration, as in `.github/w
 The existing Sites binding is in `.openai/hosting.json`. Reuse this project and its existing access policy; do not create or substitute another site. `npm run build` generates `dist/client` and the authentication worker in `dist/server/index.js`.
 
 Railway deploys `backend/` from `main`. Its readiness probe is `/api/health/ready`. Before deployment, run the read-only datastore/index gate and check for pending migrations. Never resolve duplicate products, apply destructive migrations or mutate live business data without confirming the exact operation with the owner.
+
+After the Vercel deployment settles, run `node scripts/verify-production-release.mjs https://buildcon-house-nine.vercel.app` for read-only HTML/header/asset/API verification.
 
 See [the 5 October release walkthrough](docs/audits/2026-10-05-store-release-walkthrough.md) for current fixes, measured performance, validation evidence and remaining App Store / Play Store requirements. Earlier audits remain historical records.
