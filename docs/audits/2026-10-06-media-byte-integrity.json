@@ -1,0 +1,343 @@
+{
+  "evidence_archived_at": "2026-10-05T18:41:16.534427+00:00",
+  "display_timezone": "Asia/Kolkata",
+  "source_revision_when_archived": "6176a2d4be4f9e93182cb0cf5ba22de647a87df4",
+  "read_only_audit": true,
+  "full_baseline": {
+    "read_only": true,
+    "started_at": "2026-10-05T18:15:03.295492+00:00",
+    "finished_at": "2026-10-05T18:39:58.628234+00:00",
+    "scanned": 8479,
+    "planned": 8479,
+    "complete": true,
+    "full_scan": true,
+    "page_size": 100,
+    "concurrency": 8,
+    "issues": [
+      {
+        "media_id": "89cedb94-7aed-416a-81aa-deb29935a0dd",
+        "kind": "missing_object",
+        "detail": {
+          "error_type": "StorageError",
+          "status_code": 400
+        }
+      },
+      {
+        "media_id": "e0731c2a-c173-4658-aa84-647fbecf17b1",
+        "kind": "missing_object",
+        "detail": {
+          "error_type": "StorageError",
+          "status_code": 400
+        }
+      },
+      {
+        "media_id": "e7735019-ce75-4b89-842b-59220d9902ff",
+        "kind": "missing_object",
+        "detail": {
+          "error_type": "StorageError",
+          "status_code": 400
+        }
+      },
+      {
+        "media_id": "c8aafd2f-0ec9-4530-aee6-c29505956d0f",
+        "kind": "missing_object",
+        "detail": {
+          "error_type": "StorageError",
+          "status_code": 400
+        }
+      },
+      {
+        "media_id": "c275e25a-0011-4679-be6c-4000fafe8131",
+        "kind": "missing_object",
+        "detail": {
+          "error_type": "StorageError",
+          "status_code": 400
+        }
+      },
+      {
+        "media_id": "bec36be9-3eca-4dae-9e91-a05c92c21979",
+        "kind": "missing_object",
+        "detail": {
+          "error_type": "StorageError",
+          "status_code": 400
+        }
+      },
+      {
+        "media_id": "0ae08556-238b-4da3-b0f7-fa864ad5634f",
+        "kind": "missing_object",
+        "detail": {
+          "error_type": "StorageError",
+          "status_code": 400
+        }
+      },
+      {
+        "media_id": "b50a4a94-4b37-43d5-8d24-6cdefac8467e",
+        "kind": "missing_object",
+        "detail": {
+          "error_type": "StorageError",
+          "status_code": 400
+        }
+      },
+      {
+        "media_id": "4b8eebbf-0f97-4942-b032-c3e60c3fafb7",
+        "kind": "missing_object",
+        "detail": {
+          "error_type": "StorageError",
+          "status_code": 400
+        }
+      },
+      {
+        "media_id": "d092b4bd-e728-4ed7-8561-718f01286225",
+        "kind": "missing_object",
+        "detail": {
+          "error_type": "StorageError",
+          "status_code": 400
+        }
+      },
+      {
+        "media_id": "ae898f54-e305-4dd0-93a0-94b1203a3379",
+        "kind": "missing_object",
+        "detail": {
+          "error_type": "StorageError",
+          "status_code": 400
+        }
+      }
+    ],
+    "counts": {
+      "missing_object": 11
+    }
+  },
+  "post_recovery": {
+    "read_only": true,
+    "started_at": "2026-10-05T18:40:06.273636+00:00",
+    "finished_at": "2026-10-05T18:40:13.735550+00:00",
+    "complete": true,
+    "baseline_report": "output/operations/media-bytes-final.json",
+    "baseline_started_at": "2026-10-05T18:15:03.295492+00:00",
+    "baseline_finished_at": "2026-10-05T18:39:58.628234+00:00",
+    "baseline_scanned": 8479,
+    "current_media_rows": 8484,
+    "scope": "Rechecked every baseline issue ID and every supplied-Vitra recovery ID; recomputed all current metadata identities and selected active-product hero coverage. No repeat downloads for unchanged healthy baseline rows.",
+    "recovery_media_ids": [
+      "0bfa3746-b1b9-4085-8d13-b4fcb16d5fcc",
+      "303c734a-748a-46ea-b1bc-1129c0213dd5",
+      "4e309ba0-04c6-4b6d-a077-062b0459ba56",
+      "758d1c1d-04c9-48ec-af28-c84cdc638533",
+      "89cedb94-7aed-416a-81aa-deb29935a0dd",
+      "bec36be9-3eca-4dae-9e91-a05c92c21979",
+      "c275e25a-0011-4679-be6c-4000fafe8131",
+      "c8aafd2f-0ec9-4530-aee6-c29505956d0f",
+      "e0731c2a-c173-4658-aa84-647fbecf17b1",
+      "e7735019-ce75-4b89-842b-59220d9902ff",
+      "fda49031-daac-4440-8a3d-4d2227d03c24"
+    ],
+    "rechecked_media_ids": [
+      "0ae08556-238b-4da3-b0f7-fa864ad5634f",
+      "0bfa3746-b1b9-4085-8d13-b4fcb16d5fcc",
+      "303c734a-748a-46ea-b1bc-1129c0213dd5",
+      "4b8eebbf-0f97-4942-b032-c3e60c3fafb7",
+      "4e309ba0-04c6-4b6d-a077-062b0459ba56",
+      "758d1c1d-04c9-48ec-af28-c84cdc638533",
+      "89cedb94-7aed-416a-81aa-deb29935a0dd",
+      "ae898f54-e305-4dd0-93a0-94b1203a3379",
+      "b50a4a94-4b37-43d5-8d24-6cdefac8467e",
+      "bec36be9-3eca-4dae-9e91-a05c92c21979",
+      "c275e25a-0011-4679-be6c-4000fafe8131",
+      "c8aafd2f-0ec9-4530-aee6-c29505956d0f",
+      "d092b4bd-e728-4ed7-8561-718f01286225",
+      "e0731c2a-c173-4658-aa84-647fbecf17b1",
+      "e7735019-ce75-4b89-842b-59220d9902ff",
+      "fda49031-daac-4440-8a3d-4d2227d03c24"
+    ],
+    "scanned": 16,
+    "issues": [
+      {
+        "media_id": "0ae08556-238b-4da3-b0f7-fa864ad5634f",
+        "kind": "missing_object",
+        "detail": {
+          "error_type": "StorageError",
+          "status_code": 400
+        }
+      },
+      {
+        "media_id": "b50a4a94-4b37-43d5-8d24-6cdefac8467e",
+        "kind": "missing_object",
+        "detail": {
+          "error_type": "StorageError",
+          "status_code": 400
+        }
+      },
+      {
+        "media_id": "4b8eebbf-0f97-4942-b032-c3e60c3fafb7",
+        "kind": "missing_object",
+        "detail": {
+          "error_type": "StorageError",
+          "status_code": 400
+        }
+      },
+      {
+        "media_id": "d092b4bd-e728-4ed7-8561-718f01286225",
+        "kind": "missing_object",
+        "detail": {
+          "error_type": "StorageError",
+          "status_code": 400
+        }
+      },
+      {
+        "media_id": "ae898f54-e305-4dd0-93a0-94b1203a3379",
+        "kind": "missing_object",
+        "detail": {
+          "error_type": "StorageError",
+          "status_code": 400
+        }
+      }
+    ],
+    "counts": {
+      "missing_object": 5
+    },
+    "failure_classifications": [
+      {
+        "media_id": "0ae08556-238b-4da3-b0f7-fa864ad5634f",
+        "product_id": "a844964e-c014-45d5-b64a-538a30c5eb98",
+        "sku": "7810B401H0016",
+        "classification": "active_displayed_hero"
+      },
+      {
+        "media_id": "4b8eebbf-0f97-4942-b032-c3e60c3fafb7",
+        "product_id": "88a0b4c5-9720-4d3b-bd1b-36388c668451",
+        "sku": "5991B401H0016",
+        "classification": "active_displayed_hero"
+      },
+      {
+        "media_id": "ae898f54-e305-4dd0-93a0-94b1203a3379",
+        "product_id": "9fd9c81f-14a8-4b87-b798-89a79218e634",
+        "sku": "5995B403H0016",
+        "classification": "active_displayed_hero"
+      },
+      {
+        "media_id": "b50a4a94-4b37-43d5-8d24-6cdefac8467e",
+        "product_id": "3d19f6a3-9e33-42e7-bffb-8b56449895c7",
+        "sku": "7812B401H0016",
+        "classification": "active_displayed_hero"
+      },
+      {
+        "media_id": "d092b4bd-e728-4ed7-8561-718f01286225",
+        "product_id": "b8163d57-54ab-42cb-99f4-e60db68198e9",
+        "sku": "5993B403H0016",
+        "classification": "active_displayed_hero"
+      }
+    ],
+    "classification_counts": {
+      "active_displayed_hero": 5
+    },
+    "active_products": 6565,
+    "missing_hero_count": 122,
+    "missing_by_brand": {
+      "Geberit": 2,
+      "Vitra": 71,
+      "Oyster": 4,
+      "Nexion": 40,
+      "Renite": 1,
+      "Hansgrohe": 4
+    },
+    "missing_by_floor": {
+      "first-floor": 81,
+      "ground-floor": 41
+    },
+    "selected_hero_integrity_issue_count": 5,
+    "selected_heroes_with_integrity_issues": [
+      {
+        "product_id": "a844964e-c014-45d5-b64a-538a30c5eb98",
+        "sku": "7810B401H0016",
+        "brand": "Vitra",
+        "floor_id": "first-floor",
+        "media_id": "0ae08556-238b-4da3-b0f7-fa864ad5634f"
+      },
+      {
+        "product_id": "3d19f6a3-9e33-42e7-bffb-8b56449895c7",
+        "sku": "7812B401H0016",
+        "brand": "Vitra",
+        "floor_id": "first-floor",
+        "media_id": "b50a4a94-4b37-43d5-8d24-6cdefac8467e"
+      },
+      {
+        "product_id": "88a0b4c5-9720-4d3b-bd1b-36388c668451",
+        "sku": "5991B401H0016",
+        "brand": "Vitra",
+        "floor_id": "first-floor",
+        "media_id": "4b8eebbf-0f97-4942-b032-c3e60c3fafb7"
+      },
+      {
+        "product_id": "b8163d57-54ab-42cb-99f4-e60db68198e9",
+        "sku": "5993B403H0016",
+        "brand": "Vitra",
+        "floor_id": "first-floor",
+        "media_id": "d092b4bd-e728-4ed7-8561-718f01286225"
+      },
+      {
+        "product_id": "9fd9c81f-14a8-4b87-b798-89a79218e634",
+        "sku": "5995B403H0016",
+        "brand": "Vitra",
+        "floor_id": "first-floor",
+        "media_id": "ae898f54-e305-4dd0-93a0-94b1203a3379"
+      }
+    ],
+    "broken_displayed_hero_count": 5,
+    "broken_displayed_heroes": [
+      {
+        "product_id": "a844964e-c014-45d5-b64a-538a30c5eb98",
+        "sku": "7810B401H0016",
+        "brand": "Vitra",
+        "floor_id": "first-floor",
+        "media_id": "0ae08556-238b-4da3-b0f7-fa864ad5634f"
+      },
+      {
+        "product_id": "3d19f6a3-9e33-42e7-bffb-8b56449895c7",
+        "sku": "7812B401H0016",
+        "brand": "Vitra",
+        "floor_id": "first-floor",
+        "media_id": "b50a4a94-4b37-43d5-8d24-6cdefac8467e"
+      },
+      {
+        "product_id": "88a0b4c5-9720-4d3b-bd1b-36388c668451",
+        "sku": "5991B401H0016",
+        "brand": "Vitra",
+        "floor_id": "first-floor",
+        "media_id": "4b8eebbf-0f97-4942-b032-c3e60c3fafb7"
+      },
+      {
+        "product_id": "b8163d57-54ab-42cb-99f4-e60db68198e9",
+        "sku": "5993B403H0016",
+        "brand": "Vitra",
+        "floor_id": "first-floor",
+        "media_id": "d092b4bd-e728-4ed7-8561-718f01286225"
+      },
+      {
+        "product_id": "9fd9c81f-14a8-4b87-b798-89a79218e634",
+        "sku": "5995B403H0016",
+        "brand": "Vitra",
+        "floor_id": "first-floor",
+        "media_id": "ae898f54-e305-4dd0-93a0-94b1203a3379"
+      }
+    ],
+    "total_products_missing_or_broken_displayed_hero": 127,
+    "legacy_url_heroes_not_downloaded_by_media_row_gate": 0,
+    "limitations": "The database/storage reads are not a single point-in-time snapshot. Current evidence combines the full baseline with scoped post-recovery byte rechecks; it does not verify unreferenced storage objects or remote legacy product URLs."
+  },
+  "backend_unit_suite": {
+    "passed": 1539,
+    "warnings": 6,
+    "duration_seconds": 20.08,
+    "finished_at": "2026-10-05T18:23:22.432622+00:00",
+    "local_log": "output/operations/backend-unit-final.log"
+  },
+  "current_summary": {
+    "media_rows": 8484,
+    "media_rows_with_verified_bytes": 8479,
+    "missing_objects": 5,
+    "inactive_historical_missing_refs": 0,
+    "missing_selected_photos": 122,
+    "products_missing_or_broken_displayed_hero": 127,
+    "integrity_gate_exit_code": 1
+  }
+}

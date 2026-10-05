@@ -1,0 +1,158 @@
+{
+  "reviewed_at": "2026-10-05T12:49:18.945277+00:00",
+  "mode": "apply",
+  "items": [
+    {
+      "sku": "75020140",
+      "source_url": "https://assets.hansgrohe.com/mam/celum/celum_assets/154__hpr07305_tif.png",
+      "dimensions": [
+        3545,
+        4096
+      ],
+      "sha256": "8ddf705ba93dcd067b6812d9b801e189d285394f1b157f7b50571cdd1f5951e0",
+      "mime": "image/png",
+      "size_bytes": 3653629,
+      "product_id": "b43ac825-ab18-4bc6-b68b-519319b063a7",
+      "brand_id": "9b72519c-bfb4-4576-9e79-e85072ab4216",
+      "brand": "Hansgrohe",
+      "floor_id": "first-floor",
+      "source_page_url": "https://www.hansgrohe.com/articledetail-vivenis-single-lever-basin-mixer-110-with-pop-up-waste-set-75020140",
+      "browser_review": {
+        "method": "Codex in-app browser exact selected SKU and primary product image DOM",
+        "reviewer": "Codex catalog media agent",
+        "reviewed_at": "2026-10-05T12:49:18.945277+00:00",
+        "sku": "75020140",
+        "finish": "Brushed Bronze",
+        "matched_asset_url": "https://assets.hansgrohe.com/mam/celum/celum_assets/154__hpr07305_tif.png?format=HBW2"
+      },
+      "approval": {
+        "status": "approved",
+        "reviewer": "Codex catalog media agent",
+        "reviewed_at": "2026-10-05T12:49:18.945277+00:00"
+      },
+      "outcome": "applied",
+      "new_media_id": "76061744-9c10-460d-8c15-9416339f342b",
+      "storage_verified": true,
+      "displayed_hero_verified": true,
+      "product_identity_unchanged": true,
+      "normalized_dimensions": [
+        3545,
+        4096
+      ]
+    },
+    {
+      "sku": "75020340",
+      "source_url": "https://assets.hansgrohe.com/mam/celum/celum_assets/154__hpr07306_tif.png",
+      "dimensions": [
+        3545,
+        4096
+      ],
+      "sha256": "21771cd5c3f7a46d46b0f68a11ffef2079b5a2839fc381d7a59f7a18a8102dd0",
+      "mime": "image/png",
+      "size_bytes": 2491513,
+      "product_id": "6fb29afe-cbf9-468c-9bf9-e0c8f7b304ab",
+      "brand_id": "9b72519c-bfb4-4576-9e79-e85072ab4216",
+      "brand": "Hansgrohe",
+      "floor_id": "first-floor",
+      "source_page_url": "https://www.hansgrohe.com/articledetail-vivenis-single-lever-basin-mixer-110-with-pop-up-waste-set-75020340",
+      "browser_review": {
+        "method": "Codex in-app browser exact selected SKU and primary product image DOM",
+        "reviewer": "Codex catalog media agent",
+        "reviewed_at": "2026-10-05T12:49:18.945277+00:00",
+        "sku": "75020340",
+        "finish": "Brushed Black Chrome",
+        "matched_asset_url": "https://assets.hansgrohe.com/mam/celum/celum_assets/154__hpr07306_tif.png?format=HBW2"
+      },
+      "approval": {
+        "status": "approved",
+        "reviewer": "Codex catalog media agent",
+        "reviewed_at": "2026-10-05T12:49:18.945277+00:00"
+      },
+      "outcome": "applied",
+      "new_media_id": "88922187-7387-4b3d-aba7-2d1233d47a8a",
+      "storage_verified": true,
+      "displayed_hero_verified": true,
+      "product_identity_unchanged": true,
+      "normalized_dimensions": [
+        3545,
+        4096
+      ]
+    },
+    {
+      "sku": "75040140",
+      "source_url": "https://assets.hansgrohe.com/mam/celum/celum_assets/154__hpr09307_tif.png",
+      "dimensions": [
+        2587,
+        4096
+      ],
+      "sha256": "4d5cf4b016c4b74a6d973058e4f696e2207b99ac698add056caf37d790bb7faa",
+      "mime": "image/png",
+      "size_bytes": 2124588,
+      "product_id": "64e8cfd0-d3cc-40a0-b591-86fb06b90970",
+      "brand_id": "9b72519c-bfb4-4576-9e79-e85072ab4216",
+      "brand": "Hansgrohe",
+      "floor_id": "first-floor",
+      "source_page_url": "https://www.hansgrohe.ch/fr/articledetail-vivenis-mitigeur-monocommande-de-lavabo-250-avec-vidage-a-tirette-75040140",
+      "browser_review": {
+        "method": "Codex in-app browser exact selected SKU and primary product image DOM",
+        "reviewer": "Codex catalog media agent",
+        "reviewed_at": "2026-10-05T12:49:18.945277+00:00",
+        "sku": "75040140",
+        "finish": "Brushed Bronze",
+        "matched_asset_url": "https://assets.hansgrohe.com/mam/celum/celum_assets/154__hpr09307_tif.png?format=HBW2"
+      },
+      "approval": {
+        "status": "approved",
+        "reviewer": "Codex catalog media agent",
+        "reviewed_at": "2026-10-05T12:49:18.945277+00:00"
+      },
+      "outcome": "applied",
+      "new_media_id": "cd0f4cd8-8008-449c-8dfe-2d487d0e5236",
+      "storage_verified": true,
+      "displayed_hero_verified": true,
+      "product_identity_unchanged": true,
+      "normalized_dimensions": [
+        2587,
+        4096
+      ]
+    },
+    {
+      "sku": "75040340",
+      "source_url": "https://assets.hansgrohe.com/mam/celum/celum_assets/154__hpr09308_tif.png",
+      "dimensions": [
+        2587,
+        4096
+      ],
+      "sha256": "7d7b6f88808e428ac1199d5083b8b46e8ac563a94a921574e93ba1b88e60f4d7",
+      "mime": "image/png",
+      "size_bytes": 2284007,
+      "product_id": "cae7bc53-be7e-4de6-b469-7921f0e95957",
+      "brand_id": "9b72519c-bfb4-4576-9e79-e85072ab4216",
+      "brand": "Hansgrohe",
+      "floor_id": "first-floor",
+      "source_page_url": "https://www.hansgrohe.dk/articledetail-vivenis-1-grebs-handvaskarmatur-250-med-loeft-op-bundventil-75040340",
+      "browser_review": {
+        "method": "Codex in-app browser exact selected SKU and primary product image DOM",
+        "reviewer": "Codex catalog media agent",
+        "reviewed_at": "2026-10-05T12:49:18.945277+00:00",
+        "sku": "75040340",
+        "finish": "Brushed Black Chrome",
+        "matched_asset_url": "https://assets.hansgrohe.com/mam/celum/celum_assets/154__hpr09308_tif.png?format=HBW2"
+      },
+      "approval": {
+        "status": "approved",
+        "reviewer": "Codex catalog media agent",
+        "reviewed_at": "2026-10-05T12:49:18.945277+00:00"
+      },
+      "outcome": "applied",
+      "new_media_id": "19ab709a-3038-4f78-8cc7-90891fea393c",
+      "storage_verified": true,
+      "displayed_hero_verified": true,
+      "product_identity_unchanged": true,
+      "normalized_dimensions": [
+        2587,
+        4096
+      ]
+    }
+  ]
+}

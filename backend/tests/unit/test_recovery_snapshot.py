@@ -4,7 +4,9 @@ from datetime import datetime, timezone
 
 import pytest
 from bson import ObjectId, json_util
+from pymongo.errors import OperationFailure
 
+from scripts import recovery_snapshot
 from scripts.recovery_snapshot import export_database, pull_verified, read_manifest, restore_database, upload_verified
 
 
@@ -61,6 +63,120 @@ class Database:
 
     async def create_collection(self, name, **options):
         self.collections[name] = Collection([])
+
+
+def test_storage_quota_diagnostic_preserves_code_without_provider_details():
+    exc = OperationFailure("you are over your space quota https://user:password@host/customer", code=8000)
+    report = recovery_snapshot.safe_recovery_error(exc, phase="restore")
+    assert report == {"complete": False, "exception_type": "OperationFailure", "phase": "restore",
+                      "provider_code": 8000, "category": "storage_quota_exceeded"}
+    assert "password" not in json.dumps(report) and "customer" not in json.dumps(report)
+
+
+@pytest.mark.parametrize("message", ["Authentication failed", "space quota is not exceeded"])
+def test_generic_atlas_code_8000_is_not_assumed_to_be_quota(message):
+    assert recovery_snapshot.safe_recovery_error(OperationFailure(message, code=8000), phase="restore") == {
+        "complete": False, "exception_type": "OperationFailure", "phase": "restore", "provider_code": 8000,
+    }
+
+
+def test_quota_classifier_does_not_scan_echoed_customer_or_response_fields():
+    exc = OperationFailure("request failed", code=8000, details={
+        "errmsg": "operation rejected", "customer_note": "you are over your space quota",
+        "uri": "mongodb+srv://user:private-secret@host/customer", "codeName": {"unsafe": "value"},
+    })
+    report = recovery_snapshot.safe_recovery_error(exc, phase="restore")
+    assert "category" not in report
+    assert set(report) == {"complete", "exception_type", "phase", "provider_code"}
+    assert "private-secret" not in json.dumps(report)
+
+
+def test_malformed_provider_details_fail_closed_without_chained_traceback(monkeypatch, capsys):
+    class MalformedDetails(OperationFailure):
+        @property
+        def details(self):
+            return ["you are over your space quota", "private-customer-data"]
+
+    async def fail(*, diagnostics):
+        diagnostics["phase"] = "restore"
+        raise MalformedDetails("https://user:secret@host/customer", code=8000)
+
+    monkeypatch.setattr(recovery_snapshot, "main", fail)
+    assert recovery_snapshot.run_cli() == 1
+    output = capsys.readouterr()
+    assert json.loads(output.err) == {
+        "complete": False, "exception_type": "MalformedDetails", "phase": "restore", "provider_code": 8000,
+    }
+    assert "Traceback" not in output.err and "private-customer-data" not in output.err and "secret" not in output.err
+
+
+def test_dedicated_provider_storage_quota_code_and_errmsg_are_supported():
+    for details in ({"codeName": "StorageQuotaExceeded"},
+                    {"errmsg": "space quota has been exceeded; private-token"}):
+        report = recovery_snapshot.safe_recovery_error(OperationFailure("failed", code=8000, details=details),
+                                                       phase="backup-export")
+        assert report["category"] == "storage_quota_exceeded" and report["provider_code"] == 8000
+        assert "private-token" not in json.dumps(report)
+
+
+def test_generic_exception_cannot_disclose_messages_or_claim_provider_quota():
+    report = recovery_snapshot.safe_recovery_error(
+        RuntimeError("space quota exceeded https://user:secret@host customer-document"),
+        phase="https://secret.invalid",
+    )
+    assert report == {"complete": False, "exception_type": "RuntimeError", "phase": "unknown"}
+
+
+def test_provider_http_status_is_numeric_and_boolean_code_is_omitted():
+    class ProviderError(Exception):
+        code = True
+        response = type("Response", (), {"status_code": 503})()
+
+    report = recovery_snapshot.safe_recovery_error(ProviderError("private response body"), phase="upload")
+    assert report == {"complete": False, "exception_type": "ProviderError", "phase": "upload", "status_code": 503}
+
+
+def test_cli_failure_reports_fixed_operation_phase_and_nonzero_exit(monkeypatch, capsys):
+    async def fail(*, diagnostics):
+        diagnostics["phase"] = "backup-private-upload"
+        raise OperationFailure("you are over your space quota secret-customer-document", code=8000)
+
+    monkeypatch.setattr(recovery_snapshot, "main", fail)
+    assert recovery_snapshot.run_cli() == 1
+    output = capsys.readouterr()
+    assert output.out == "" and "secret-customer-document" not in output.err
+    assert json.loads(output.err) == {
+        "complete": False, "exception_type": "OperationFailure", "phase": "backup-private-upload",
+        "provider_code": 8000, "category": "storage_quota_exceeded",
+    }
+
+
+def test_real_cli_restore_preflight_failure_retains_phase_and_closes_client(monkeypatch, tmp_path, capsys):
+    target = Database("isolated_drill")
+
+    class Client:
+        closed = False
+
+        def __getitem__(self, name):
+            assert name == target.name
+            return target
+
+        def close(self):
+            self.closed = True
+
+    client = Client()
+    monkeypatch.setattr(recovery_snapshot, "AsyncIOMotorClient", lambda *_args, **_kwargs: client)
+    monkeypatch.setattr(recovery_snapshot, "load_dotenv", lambda *_args: None)
+    monkeypatch.setenv("MONGO_URL", "mongodb://unit-only.invalid")
+    monkeypatch.setattr(recovery_snapshot.sys, "argv", [
+        "recovery_snapshot.py", "restore", str(tmp_path / "private-customer-snapshot"),
+        "--target-db", target.name, "--confirm-database", target.name,
+    ])
+    assert recovery_snapshot.run_cli() == 1
+    output = capsys.readouterr()
+    assert json.loads(output.err) == {"complete": False, "exception_type": "FileNotFoundError", "phase": "restore"}
+    assert "private-customer-snapshot" not in output.err
+    assert target.collections == {} and client.closed
 
 
 @pytest.mark.asyncio

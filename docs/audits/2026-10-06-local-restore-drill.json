@@ -1,0 +1,49 @@
+{
+  "status": "passed",
+  "started_at": "2026-10-05T18:41:52.987205+00:00",
+  "snapshot": "recovery-20261005-goal-02",
+  "target_database": "buildcon_local_restore_drill_20261006",
+  "isolation": {
+    "bind": "127.0.0.1",
+    "standalone": true,
+    "application_or_workers_connected": false,
+    "ttl_monitor_disabled_for_snapshot_verification": true,
+    "data_directory_mode": "0700",
+    "log_file_mode": "0600"
+  },
+  "mongod_version": "7.0.39",
+  "mongod_architecture": "macOS arm64",
+  "limits": [
+    "Local standalone logical restore; does not test Atlas privileges, PITR, replica-set failover or remote retrieval.",
+    "Timing is local drill evidence, not an approved recovery time objective.",
+    "Snapshot omits user_sessions, views and system collections; media bytes require separate recovery."
+  ],
+  "snapshot_created_at": "2026-10-05T12:43:47.718685+00:00",
+  "expected_collections": 41,
+  "expected_records": 40245,
+  "restore_seconds": 7.426,
+  "verification_seconds": 3.913,
+  "restore_and_verification_seconds": 11.339,
+  "verified_collections": 41,
+  "verified_records": 40245,
+  "verified_indexes": 176,
+  "own_mongod_stopped": true,
+  "finished_at": "2026-10-05T18:42:06.539345+00:00",
+  "private_runtime_permissions_verified": true,
+  "previous_attempts": [
+    {
+      "status": "failed",
+      "failure_type": "AutoReconnect",
+      "completed_collections": 11,
+      "own_mongod_stopped": true,
+      "cause": "Transient connection failure; exact cause not established and not reproduced on fresh retry."
+    }
+  ],
+  "verification": {
+    "all_document_identities_and_canonical_bson_content": true,
+    "all_collection_counts": true,
+    "all_collection_options": true,
+    "all_index_keys_and_options": true,
+    "no_document_samples_in_report": true
+  }
+}

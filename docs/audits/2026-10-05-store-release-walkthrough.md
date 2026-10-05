@@ -1,5 +1,11 @@
 # BuildCon House release walkthrough — 5 October 2026
 
+This records the earlier release on this date. The subsequent repair pass,
+including Inter-only typography, Payments floor routing, zero-stock race
+guards, supplied-photo recovery and independent frontend CI jobs, is recorded
+in [the goal release audit](2026-10-05-goal-release.md). Measurements and CI
+behavior below describe that earlier release and are historical evidence.
+
 ## Release assessment
 
 This pass fixes confirmed performance, image-selection, order-status and export bugs. The web/backend changes are deployed and have passed focused hosted verification. Store submission remains a separate acceptance step. Signed binaries, physical-device certification and operator legal/store facts are not available from this workspace; they remain explicit release requirements.

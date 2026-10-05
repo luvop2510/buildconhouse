@@ -2,6 +2,31 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
+## Current verification update — 2026-10-06
+
+The July notes below are historical. The current active catalog has 6,565
+products across Sanitary Bathroom and Ground Floor; Ground Floor is no longer
+an empty future-data workspace. The read-only backend predeploy gate now
+passes Mongo access, required indexes and Supabase access, and the migration
+dry-run reports no pending migrations. The historical migration `0006`
+restart blocker below was resolved; repeat the current read-only gates before
+future backend promotion rather than treating the old warning as current.
+
+The latest repair pass uses shared Inter Text/TextInput defaults and Feather
+icons, synchronizes Payments document floors before navigation, preserves
+zero-stock history and rejects stale floor callbacks. Its full backend unit
+suite passes 1,549 tests. Frontend functional CI and security auditing are
+independent jobs; 27 npm findings (23 high/four moderate) still block the
+security job. Do not suppress those findings or claim overall CI is green.
+Physical devices, signed builds and legal/operator acceptance remain open.
+
+See `docs/audits/2026-10-05-goal-release.md` for current evidence, image recovery
+manifests, deployment results and operational acceptance limits. Backup data
+and credentials must stay excluded from Git, public artifacts and Docker
+contexts. Run unit tests with hermetic CI environment variables, never live
+production settings; restore drills must use an isolated empty database with
+no application or workers connected.
+
 ## What this project is
 
 FastAPI + MongoDB Atlas (cloud, not local) + Supabase (file storage) backend, Expo/React Native Web frontend (Expo Router). A multi-floor ERP for a bathroom-fittings + tiles distributor: `first-floor` (display name "The Sanitary Bathroom") holds the existing ~2,600-product sanitaryware catalog and all real business data today; `ground-floor` is the new tile section (schema/isolation work in progress, no real tile data yet); `second-floor` also exists as a floor entity but is otherwise unused so far.

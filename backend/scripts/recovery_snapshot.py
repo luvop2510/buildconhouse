@@ -9,19 +9,65 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
+import json
 import os
 import re
 import sys
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 
 from bson import json_util
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo.errors import OperationFailure
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 SAFE_NAME = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9_.-]*$")
+COMMAND_PHASES = frozenset({
+    "arguments", "configuration", "verify", "pull", "upload",
+    "backup-export", "backup-private-upload", "restore",
+})
+
+
+def safe_recovery_error(exc: Exception, *, phase: str) -> dict:
+    """Allowlist diagnostic fields; never return provider messages or bodies."""
+    detail = {
+        "complete": False,
+        "exception_type": type(exc).__name__,
+        "phase": phase if isinstance(phase, str) and phase in COMMAND_PHASES else "unknown",
+    }
+    code = getattr(exc, "code", None)
+    if type(code) is int:
+        detail["provider_code"] = code
+    status = getattr(exc, "status_code", None)
+    if status is None:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+    if type(status) is int and 100 <= status <= 599:
+        detail["status_code"] = status
+    if isinstance(exc, OperationFailure):
+        # Atlas code 8000 is generic: it is not proof of a storage quota.
+        # Inspect only the provider's errmsg, never arbitrary detail fields
+        # that could contain echoed customer data. Without details, args[0]
+        # is the original provider message rather than an appended body.
+        provider_details = exc.details
+        fields = provider_details if isinstance(provider_details, Mapping) else {}
+        message = (fields.get("errmsg", "") if provider_details is not None
+                   else exc.args[0] if exc.args else "")
+        code_name = fields.get("codeName")
+        quota_code = isinstance(code_name, str) and code_name in {
+            "StorageQuotaExceeded", "DiskQuotaExceeded", "SpaceQuotaExceeded",
+        }
+        quota_message = isinstance(message, str) and bool(re.search(
+            r"(?:\b(?:you are|database is|storage is) over (?:your |the |its )?(?:space|storage|disk) quota\b"
+            r"|\bexceeded (?:your |the |its )?(?:space|storage|disk) quota\b"
+            r"|\b(?:space|storage|disk) quota (?:has been |is )?(?:exceeded|reached|full)\b)",
+            message, flags=re.IGNORECASE,
+        ))
+        if quota_code or quota_message:
+            detail["category"] = "storage_quota_exceeded"
+    return detail
 
 
 def safe_name(name: str) -> str:
@@ -209,7 +255,9 @@ async def pull_verified(directory: Path, storage, bucket: str, snapshot: str) ->
     print("Downloaded snapshot verified; no database writes")
 
 
-async def main() -> None:
+async def main(*, diagnostics: dict | None = None) -> None:
+    diagnostics = diagnostics if diagnostics is not None else {}
+    diagnostics["phase"] = "arguments"
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     backup = commands.add_parser("backup")
@@ -228,11 +276,14 @@ async def main() -> None:
     pull.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     if args.command == "verify":
+        diagnostics["phase"] = "verify"
         manifest = read_manifest(args.snapshot)
         print(f"Snapshot verified: {len(manifest['collections'])} collections")
         return
+    diagnostics["phase"] = "configuration"
     load_dotenv(ROOT / ".env")
     if args.command in {"pull", "upload"}:
+        diagnostics["phase"] = args.command
         from media_storage.factory import get_media_storage, private_bucket
         storage = get_media_storage()
         try:
@@ -246,10 +297,13 @@ async def main() -> None:
     client = AsyncIOMotorClient(os.environ["MONGO_URL"], serverSelectionTimeoutMS=10000)
     try:
         if args.command == "restore":
+            diagnostics["phase"] = "restore"
             await restore_database(args.snapshot, client[safe_name(args.target_db)], args.confirm_database)
         else:
+            diagnostics["phase"] = "backup-export"
             await export_database(client[os.environ["DB_NAME"]], args.output)
             if args.upload_private:
+                diagnostics["phase"] = "backup-private-upload"
                 from media_storage.factory import get_media_storage, private_bucket
                 storage = get_media_storage()
                 try:
@@ -260,10 +314,15 @@ async def main() -> None:
         client.close()
 
 
-if __name__ == "__main__":
+def run_cli() -> int:
+    diagnostics = {"phase": "arguments"}
     try:
-        asyncio.run(main())
+        asyncio.run(main(diagnostics=diagnostics))
     except Exception as exc:
-        # Provider exceptions may contain credentialed URLs/response bodies.
-        print(f"Recovery operation failed ({type(exc).__name__}); no successful completion claimed", file=sys.stderr)
-        raise SystemExit(1) from None
+        print(json.dumps(safe_recovery_error(exc, phase=diagnostics["phase"])), file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(run_cli())
