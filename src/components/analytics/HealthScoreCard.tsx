@@ -1,6 +1,7 @@
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import type { HealthScore } from "@/src/api/executive";
 import { Card } from "@/src/components/ui";

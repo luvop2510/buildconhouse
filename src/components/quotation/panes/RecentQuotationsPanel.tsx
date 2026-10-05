@@ -3,7 +3,8 @@
 // items, discounts, UI state) via the backend GET /quotations/{id}.
 import Feather from "@expo/vector-icons/Feather";
 import React from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { colors, money, radius, spacing } from "@/src/theme/tokens";
 import { color as ds, statusTone } from "@/src/design/tokens";

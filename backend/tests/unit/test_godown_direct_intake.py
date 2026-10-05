@@ -95,6 +95,22 @@ def test_sku_suggestions_use_literal_floor_scoped_prefix(monkeypatch):
     assert products.query["$and"][1]["sku"]["$regex"] == r"^3\.\*"
 
 
+@pytest.mark.parametrize("history", [False, True])
+def test_stock_search_is_literal_and_keeps_floor_and_availability_scope(monkeypatch, history):
+    stock = Products()
+    monkeypatch.setattr(godown, "db", SimpleNamespace(godown_stock=stock))
+    result = asyncio.run(godown.list_stock(q="  131.221.(a+)+  ", include_history=history, user=user()))
+    assert result["lots"] == []
+    scope = stock.query if history else stock.query["$and"][0]
+    assert scope["floor_id"] == {"$in": ["first-floor"]}
+    if history:
+        assert "available_qty" not in stock.query
+    else:
+        assert stock.query["$and"][1] == {"available_qty": {"$gt": 0}}
+    assert all(next(iter(field.values()))["$regex"] == r"131\.221\.\(a\+\)\+"
+               for field in stock.query["$or"])
+
+
 def test_customer_purchase_rows_subtract_transferred_quantity():
     po = {"id": "po-1", "floor_id": "first-floor"}
     row = tracker._flatten_item(po, {"id": "i-1", "name": "Valve", "qty": 5, "godown_transferred_qty": 2}, 7)

@@ -8,9 +8,8 @@ import { Overlay } from "@/src/design/Overlay";
 import Feather from "@expo/vector-icons/Feather";
 import * as Haptics from "expo-haptics";
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  ActivityIndicator, FlatList, Platform, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View,
-} from "react-native";
+import { ActivityIndicator, FlatList, Platform, Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
+import { Text, TextInput } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { api } from "@/src/api/client";

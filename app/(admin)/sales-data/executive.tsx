@@ -1,6 +1,7 @@
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { Text, View } from "react-native";
+import { View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { executiveApi, type FeedEntry, type Overview } from "@/src/api/executive";
 import { AdminPage } from "@/src/components/AdminPage";

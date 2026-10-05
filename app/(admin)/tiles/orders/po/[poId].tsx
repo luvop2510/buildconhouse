@@ -11,7 +11,8 @@
 // a sticky bar that is always reachable without scrolling back.
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from "react-native";
+import { Text, TextInput } from "@/src/components/AppText";
 
 import { tileOrdersApi, type PurchaseOrderDetail } from "@/src/api/tileOrders";
 import { Alert } from "@/src/components/ui";

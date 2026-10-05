@@ -170,10 +170,15 @@ async def _canonicalize_item_images(items, floor_id: str | None = None) -> list[
                 # Retired/manual products retain historical photos, but never
                 # acquire current media from an unverified or renamed SKU.
                 return item.get("image")
+            if not grouped.get(product_id):
+                # A removed snapshot URL must not mask the exact catalog's
+                # surviving legacy or seat-cover photo. Ownership/SKU checks
+                # above apply before using the current product preview.
+                return catalog_service.product_hero_image(product, snapshot) or item.get("image")
         return (
             best_current_media(grouped[str(item.get("product_id"))]).get("public_url")
             if grouped.get(str(item.get("product_id")))
-            else item.get("image") or cover_fallback.get(str(item.get("product_id")))
+            else cover_fallback.get(product_id) or item.get("image")
         )
 
     return [{**item, "image": resolved_image(item)} for item in raw_items]

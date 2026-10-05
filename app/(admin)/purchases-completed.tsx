@@ -1,7 +1,8 @@
 import Feather from "@expo/vector-icons/Feather";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { api } from "@/src/api/client";

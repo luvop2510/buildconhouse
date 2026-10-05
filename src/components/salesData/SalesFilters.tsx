@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { Button, PillTabs, TextField } from "@/src/components/ui";
 import { Sheet } from "@/src/design/components";

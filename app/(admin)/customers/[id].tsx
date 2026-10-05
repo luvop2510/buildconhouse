@@ -6,9 +6,8 @@ import { NavigationTabs } from "@/src/design/NavigationTabs";
 import Feather from "@expo/vector-icons/Feather";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import {
-  ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, View,
-} from "react-native";
+import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ActivityTimeline, TimelineEvent } from "@/src/components/ActivityTimeline";

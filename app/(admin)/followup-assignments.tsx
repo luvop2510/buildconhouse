@@ -2,7 +2,8 @@
 // what assigned, how long it's been pending, and whether it's done.
 // Backend: GET /followups/assignments (require_min_role("manager")).
 import { useCallback, useEffect, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { AdminPage } from "@/src/components/AdminPage";
 import { Avatar, Badge, EmptyState, ErrorState, Skeleton } from "@/src/components/ui";

@@ -6,7 +6,8 @@
 // and in this pane's fixed header on compact layouts, so they never disappear
 // behind the quotation canvas.
 import Feather from "@expo/vector-icons/Feather";
-import { Keyboard, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
+import { Keyboard, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from "react-native";
+import { Text, TextInput } from "@/src/components/AppText";
 
 import { useState } from "react";
 import { ProductExplorer } from "../catalog/ProductExplorer";

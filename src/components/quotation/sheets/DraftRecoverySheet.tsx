@@ -1,4 +1,4 @@
-import { Text } from 'react-native';
+import { Text } from "@/src/components/AppText";
 import { Alert, Button } from '@/src/components/ui';
 import { Overlay } from '@/src/design/Overlay';
 import { colors, type } from '@/src/theme/tokens';

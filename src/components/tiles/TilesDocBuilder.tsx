@@ -37,9 +37,8 @@
 import Feather from "@expo/vector-icons/Feather";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  ActivityIndicator, Alert as RNAlert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type ViewStyle,
-} from "react-native";
+import { ActivityIndicator, Alert as RNAlert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View, type ViewStyle } from "react-native";
+import { Text, TextInput } from "@/src/components/AppText";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/src/api/client";
@@ -53,7 +52,7 @@ import { Button, Card, Dropdown, TextField } from "@/src/components/ds";
 import { Disclosure } from "@/src/design/Disclosure";
 import { BuildConLogo } from "@/src/design/BrandLogo";
 import { useBp } from "@/src/design/responsive";
-import { colors, money, radius, spacing, type } from "@/src/theme/tokens";
+import { colors, font, money, radius, spacing, type } from "@/src/theme/tokens";
 import { downloadApiFile, printApiFile } from "@/src/utils/downloadFile";
 import { TILES_FLOOR_ID } from "@/src/constants/floors";
 
@@ -68,14 +67,14 @@ const PAPER_W = 820;
 const HEAD_GREY = "#D3D3D3";
 const ZEBRA = "#F0F0F0";
 const GRID = "#8A8A8A";
-const SERIF = Platform.select({ ios: "Times New Roman", android: "serif", default: "Georgia, 'Times New Roman', serif" }) as string;
+const SERIF = font.regular; // legacy field alias; document editing uses the app font
 
 function TileImageCell({ uri }: { uri: string }) {
   const [cellWidth, setCellWidth] = useState(0);
   // A numeric size is intentional: percentage sizing in an RN-web table cell
   // can shrink to the source bitmap's intrinsic square. This guarantees every
   // quotation/selection tile is a visible 16:10 landscape strip.
-  const imageWidth = cellWidth > 0 ? Math.max(72, Math.min(cellWidth - 16, 180)) : 144;
+  const imageWidth = cellWidth > 0 ? cellWidth : 144;
   return (
     <View style={{ width: "100%", alignItems: "center", justifyContent: "center" }} onLayout={(event) => setCellWidth(event.nativeEvent.layout.width)}>
       <ProductImage

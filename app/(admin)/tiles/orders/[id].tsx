@@ -12,7 +12,8 @@
 // product line is immediately actionable.
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, ScrollView, StyleSheet, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { tileOrdersApi, type CustomerOrderDetail, type CustomerOrderItem } from "@/src/api/tileOrders";
 import { toast } from "@/src/components/Toast";

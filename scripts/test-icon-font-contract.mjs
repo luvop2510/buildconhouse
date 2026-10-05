@@ -11,15 +11,30 @@ function sourceFiles(directory) {
 let featherImports = 0;
 for (const path of [...sourceFiles('app'), ...sourceFiles('src')]) {
   const source = readFileSync(path, 'utf8');
+  if (!/AppText(?:\.native)?\.tsx$/.test(path)) {
+    for (const match of source.matchAll(/import\s*\{([^}]+)\}\s*from\s*["']react-native["']/g)) {
+      assert.doesNotMatch(match[1], /(?:^|,)\s*(?:type\s+)?(?:Text|TextInput)(?:\s+as\s+\w+)?\s*(?=,|$)/, `${path} bypasses the app text defaults`);
+    }
+  }
   // Public family entry points let Metro exclude all unused glyph maps/fonts.
   assert.doesNotMatch(source, /(?:from\s*|require\(\s*)["']@expo\/vector-icons["']/, `${path} imports the whole Expo icon catalog`);
   const imports = [...source.matchAll(/from\s*["']@expo\/vector-icons\/([^"']+)["']/g)];
   for (const match of imports) assert.equal(match[1], 'Feather', `${path} uses an unregistered icon font`);
+  // Text families must be Inter or inherit it. Icon families are registered
+  // separately above and never replaced by the text-family contract.
+  for (const match of source.matchAll(/fontFamily\s*:\s*["']([^"']+)["']/g)) {
+    assert.ok(match[1] === 'inherit' || match[1].startsWith('Inter-'), `${path} declares text family ${match[1]}`);
+  }
+  assert.doesNotMatch(source, /["'](?:Fraunces[^"']*|Menlo|monospace|ui-monospace|Times New Roman|Georgia[^"']*)["']/, `${path} declares a second text family`);
   featherImports += imports.length;
 }
 assert.ok(featherImports > 0, 'canonical app still renders Feather icons');
 const loader = readFileSync('src/hooks/use-app-fonts.ts', 'utf8');
 assert.match(loader, /const ICON_FAMILIES: Record<string, string> = \{ feather: "Feather" \};/);
-for (const family of ['Inter-Regular', 'Inter-Medium', 'Inter-SemiBold', 'Inter-Bold', 'Fraunces-Light', 'Fraunces-LightItalic', 'Fraunces-Regular']) assert.ok(loader.includes(`"${family}"`), `${family} must remain available`);
+for (const family of ['Inter-Regular', 'Inter-Medium', 'Inter-SemiBold', 'Inter-Bold']) assert.ok(loader.includes(`"${family}"`), `${family} must remain available`);
+assert.doesNotMatch(loader, /Fraunces|FRAUNCES/, 'the app loads only Inter text fonts');
+for (const path of ['src/design/tokens.ts', 'src/components/TempPasswordDialog.tsx', 'src/components/tiles/TilesDocBuilder.tsx']) {
+  assert.doesNotMatch(readFileSync(path, 'utf8'), /"(?:Fraunces[^" ]*|Menlo|monospace|Times New Roman)"|Georgia,/, `${path} uses a second text family`);
+}
 assert.match(loader, /ExecutionEnvironment\.StoreClient\s*\? iconFontMap\(\)/);
-console.log(`Icon/font contract passed: ${featherImports} public Feather imports, one Expo Go icon font, Inter/Fraunces preserved.`);
+console.log(`Icon/font contract passed: ${featherImports} public Feather imports, one Expo Go icon font, Inter only.`);

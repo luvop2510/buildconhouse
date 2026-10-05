@@ -1,6 +1,7 @@
 import Feather from "@expo/vector-icons/Feather";
 import { useRouter } from "expo-router";
-import { Linking, Pressable, Text, View } from "react-native";
+import { Linking, Pressable, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import type { ExecutiveRow, RowAction } from "@/src/api/executive";
 import { HoverCard } from "@/src/components/ds";

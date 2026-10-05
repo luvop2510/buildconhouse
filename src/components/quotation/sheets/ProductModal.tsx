@@ -8,7 +8,8 @@ import { Overlay } from "@/src/design/Overlay";
 // -----------------------------------------------------------------------------
 import Feather from "@expo/vector-icons/Feather";
 import { useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Text, TextInput } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { api } from "@/src/api/client";

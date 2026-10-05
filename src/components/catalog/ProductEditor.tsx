@@ -11,7 +11,8 @@
 // only ever changes what FUTURE additions will copy in.
 import { useEffect, useMemo, useState } from "react";
 import * as ImagePicker from "expo-image-picker";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { api, csrfHeaders, getToken } from "@/src/api/client";
 import { ProductImageManagerBody } from "@/src/components/catalog/ProductImageManager";

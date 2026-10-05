@@ -9,7 +9,8 @@
 // the phone builder feel completely broken/cluttered.
 import { useState } from "react";
 import Feather from "@expo/vector-icons/Feather";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text, TextInput } from "@/src/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors, font, money, radius, spacing, type } from "@/src/theme/tokens";

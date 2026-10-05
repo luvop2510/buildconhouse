@@ -9,7 +9,8 @@ import { View } from "react-native";
 
 import { brand, space } from "@/src/design/tokens";
 import { P, Section } from "@/src/components/LegalDocContent";
-import { legalPublicationTodo } from "@/src/config/legal";
+import { LegalPublication } from "@/src/components/LegalPublication";
+import { isLegalPublicationReady, legalNotice } from "@/src/config/legal";
 
 export function PrivacyPolicyContent() {
   return (
@@ -23,11 +24,7 @@ export function PrivacyPolicyContent() {
         <P>This notice applies to the currently published version of the app.</P>
       </Section>
 
-      <Section title="Publication requirement">
-        <P>
-          {legalPublicationTodo}
-        </P>
-      </Section>
+      <LegalPublication />
 
       <Section title="Data we collect">
         <P>Staff accounts: name, email, phone (optional), a hashed password, and role/floor
@@ -55,7 +52,7 @@ export function PrivacyPolicyContent() {
           Staff and customer account records are retained for as long as the account is active.
           Quotations, purchase orders, and payment records are retained only for the published
           retention schedule and any applicable tax, accounting, dispute-resolution, or legal
-          obligation. That schedule must be made available before this notice is published.
+          obligation. {isLegalPublicationReady ? legalNotice.retention : 'That schedule must be made available before this notice is published.'}
         </P>
       </Section>
 
@@ -82,8 +79,8 @@ export function PrivacyPolicyContent() {
       <Section title="Changes to this policy">
         <P>
           If this policy changes, the updated version will be posted at this same location with a
-          new effective date. Continued use of the app after a change takes effect means you
-          accept the updated policy, where permitted by law.
+          new effective date. Where a change requires your consent, we will request it before
+          applying that change to your data.
         </P>
       </Section>
     </View>

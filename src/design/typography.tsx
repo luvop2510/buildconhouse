@@ -1,5 +1,6 @@
 import React from 'react';
-import { Text, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
+import { View, type StyleProp, type TextStyle, type ViewStyle } from "react-native";
+import { Text } from "@/src/components/AppText";
 import { color, fmtMoney, fmtMoneyCompact, font, layout, text } from './tokens';
 
 type TxtVariant = keyof typeof text;

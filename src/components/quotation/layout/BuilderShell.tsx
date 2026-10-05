@@ -9,7 +9,8 @@
 //   * else           → Mobile: Quotation only + FAB → picker sheet, product modal
 // -----------------------------------------------------------------------------
 import { useEffect, useState } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, LayoutChangeEvent, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, LayoutChangeEvent, Platform, Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { colors } from "@/src/theme/tokens";
 import { quotationBuilderLayout } from "@/src/design/responsive";

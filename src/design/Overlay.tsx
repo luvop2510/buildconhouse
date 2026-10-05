@@ -1,6 +1,7 @@
 import Feather from '@expo/vector-icons/Feather';
 import React from 'react';
-import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View, ViewStyle, useWindowDimensions } from 'react-native';
+import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, View, ViewStyle, useWindowDimensions } from "react-native";
+import { Text } from "@/src/components/AppText";
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useReducedMotion } from '@/src/hooks/use-reduced-motion';
 import { useBp } from './responsive';

@@ -4,7 +4,8 @@ import { color, font, radius } from "@/src/design/tokens";
 // Mount <ToastHost /> once at the app root. Trigger via `toast.show(...)`.
 import Feather from "@expo/vector-icons/Feather";
 import { useEffect, useRef, useState } from "react";
-import { Animated, Easing, Platform, StyleSheet, Text, View } from "react-native";
+import { Animated, Easing, Platform, StyleSheet, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type ToastKind = "success" | "error" | "info";

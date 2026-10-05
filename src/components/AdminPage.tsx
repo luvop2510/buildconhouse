@@ -5,7 +5,8 @@
 //
 // Also exposes IconAction for right-cluster buttons (unchanged API for callers).
 import Feather from "@expo/vector-icons/Feather";
-import { Pressable, ScrollView, StyleSheet, Text, View, ViewStyle } from "react-native";
+import { Pressable, ScrollView, StyleSheet, View, ViewStyle } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { PageHeader } from "@/src/components/ui";
 import { useBp } from "@/src/design/responsive";

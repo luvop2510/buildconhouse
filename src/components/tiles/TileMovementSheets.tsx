@@ -9,7 +9,8 @@
 // Replaces src/components/tiles/ReadyDispatchSheets.tsx (MarkReadySheet /
 // DispatchSheet), which conflated all of this into one Brand-owned action.
 import { useState } from "react";
-import { Text, View } from "react-native";
+import { View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { tileOrdersApi, type CustomerOrderItem, type DispatchDestinationOverride, type PurchaseOrderItemDetail } from "@/src/api/tileOrders";
 import { toast } from "@/src/components/Toast";

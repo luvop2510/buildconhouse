@@ -52,6 +52,10 @@ class MediaStorage(ABC):
 
     # ---- reads -----------------------------------------------------------
 
+    async def require_private_bucket(self, bucket: str) -> None:
+        """Fail closed unless the provider proves the bucket is private."""
+        raise StorageError("Storage driver cannot verify private bucket visibility")
+
     @abstractmethod
     async def download(self, *, bucket: str, key: str) -> bytes:
         """Return raw object bytes using the storage provider credentials."""

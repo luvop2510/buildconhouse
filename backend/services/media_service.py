@@ -313,6 +313,7 @@ def _apply_media_to_product(product: dict, media: list[ProductMedia]) -> None:
             break
 
     hero_url: Optional[str] = None
+    hero_quality: Optional[str] = None
     gallery: list[dict] = []
     for m in media:
         if not m.public_url:
@@ -326,8 +327,10 @@ def _apply_media_to_product(product: dict, media: list[ProductMedia]) -> None:
         })
         if not hero_url and (m.is_primary or m.role == "hero"):
             hero_url = m.public_url
+            hero_quality = m.quality
     if not hero_url and gallery:
         hero_url = gallery[0]["url"]
+        hero_quality = gallery[0].get("quality")
 
     # Legacy fallback — read old base64 images from the product doc
     if not gallery and product.get("images"):
@@ -337,13 +340,26 @@ def _apply_media_to_product(product: dict, media: list[ProductMedia]) -> None:
                     "width": None, "height": None, "is_primary": i == 0}
                    for i, u in enumerate(legacy) if u]
         if gallery:
-            hero_url = legacy[0]
+            hero_url = gallery[0]["url"]
             summary["supplier"] = len(gallery)
             best_q = product.get("image_quality") or best_q
+            hero_quality = best_q
+
+    # A photograph of this exact SKU's seat cover is a usable preview when
+    # it has no ordinary product photograph. Dimension drawings stay separate.
+    if not hero_url:
+        cover = next((m for m in media if m.role == "seat-cover" and m.public_url), None)
+        if cover:
+            hero_url = cover.public_url
+            hero_quality = cover.quality
+            gallery = [{"url": cover.public_url, "role": "seat-cover", "source_type": cover.source_type,
+                        "quality": cover.quality, "width": cover.width, "height": cover.height,
+                        "is_primary": False, "family_key": cover.family_key}]
 
     product["media_summary"] = {**summary, "best_quality": best_q, "total": sum(summary.values())}
     product["hero_image_url"] = hero_url
     product["gallery"] = gallery
+    product["image_quality"] = hero_quality or best_q
 
     # Backfill the legacy `images` field from the real media pipeline.
     # The catalog import stores photos exclusively in `product_media` /
@@ -436,6 +452,7 @@ async def hydrate_variants_batch(docs: list[dict], limit_per_family: int = 8) ->
         {
             "_id": 0, "id": 1, "sku": 1, "family_key": 1, "finish": 1, "colour": 1,
             "color": 1, "size": 1, "price": 1, "mrp": 1, "stock": 1, "name": 1,
+            "floor_id": 1, "brand_id": 1, "category_id": 1, "images": 1, "image_quality": 1,
         },
     ).to_list(20000)
     if not siblings:
@@ -444,7 +461,7 @@ async def hydrate_variants_batch(docs: list[dict], limit_per_family: int = 8) ->
     sib_ids = [s["id"] for s in siblings]
     media_docs = await db.product_media.find(
         {"product_id": {"$in": sib_ids}},
-        {"_id": 0, "product_id": 1, "public_url": 1, "is_primary": 1, "sort_order": 1, "source_type": 1},
+        {"_id": 0},
     ).to_list(50000)
     prio = {"internal": 0, "manufacturer": 1, "supplier": 2}
     media_docs.sort(key=lambda m: (
@@ -452,11 +469,17 @@ async def hydrate_variants_batch(docs: list[dict], limit_per_family: int = 8) ->
         0 if m.get("is_primary") else 1,
         int(m.get("sort_order", 100)),
     ))
-    image_by_pid: dict[str, str] = {}
+    media_by_pid: dict[str, list[ProductMedia]] = {}
     for m in media_docs:
         pid = m.get("product_id")
-        if pid and pid not in image_by_pid and m.get("public_url"):
-            image_by_pid[pid] = m["public_url"]
+        if pid:
+            media_by_pid.setdefault(pid, []).append(ProductMedia(**m))
+    image_by_pid: dict[str, str] = {}
+    for sibling in siblings:
+        preview = dict(sibling)
+        _apply_media_to_product(preview, media_by_pid.get(sibling["id"], []))
+        if preview.get("hero_image_url"):
+            image_by_pid[sibling["id"]] = preview["hero_image_url"]
 
     by_family: dict[str, list[dict]] = {}
     for s in siblings:
@@ -467,6 +490,9 @@ async def hydrate_variants_batch(docs: list[dict], limit_per_family: int = 8) ->
         variants = []
         for s in fam:
             if s["id"] == d["id"]:
+                continue
+            if any(d.get(field) is not None and s.get(field) != d.get(field)
+                   for field in ("floor_id", "brand_id", "category_id")):
                 continue
             variants.append({
                 "id": s["id"], "sku": s["sku"],

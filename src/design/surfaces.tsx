@@ -1,5 +1,6 @@
 import React from 'react';
-import { Text, View, Pressable, type StyleProp, type ViewStyle } from 'react-native';
+import { View, Pressable, type StyleProp, type ViewStyle } from "react-native";
+import { Text } from "@/src/components/AppText";
 import { color, font, layout, radius, space, statusTone, toneColor, type Tone } from './tokens';
 import { Txt, Hairline } from './typography';
 import { webCursor } from './shared';

@@ -1,7 +1,8 @@
 // Browser variant: use HTML drag events for quotation section ordering.
 import Feather from "@expo/vector-icons/Feather";
 import { useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { colors } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";

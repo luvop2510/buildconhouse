@@ -3,7 +3,6 @@
 // Inspired by Linear, Stripe, Notion, Arc — never a Tailwind template.
 // Everything downstream (primitives, screens) references these tokens; no hardcoded hex.
 
-import { Platform } from "react-native";
 import { color, radius as designRadius, font as designFont, shadow as designShadow } from "@/src/design/tokens";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -186,7 +185,7 @@ export const motion = {
 // Font families — Inter loaded via expo-font (weight-specific families).
 // Fallback to system when custom files fail to load.
 // ─────────────────────────────────────────────────────────────────────────────
-const systemSans = Platform.select({ ios: "System", android: "sans-serif", default: "System" });
+const systemSans = "Inter-Regular"; // compatibility alias for old interface styles
 const systemMono = designFont.mono;
 
 export const font = {

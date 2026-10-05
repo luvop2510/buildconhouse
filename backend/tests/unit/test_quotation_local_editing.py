@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-from types import SimpleNamespace
 
 from models import QuotationUpdate, UserPublic
 from routes import quotation_routes
@@ -76,8 +75,10 @@ def test_ordered_quote_product_edits_do_not_touch_operational_projections(monkey
     monkeypatch.setattr(quotation_routes, "_track_product_usage", no_usage)
 
     async def catalog():
-        return SimpleNamespace(product_by_id={"p-1": {"id": "p-1", "sku": "NEW", "floor_id": "first-floor"}},
-                               media_rows_by_product={})
+        return quotation_routes.catalog_service._build_snapshot(
+            [{"id": "p-1", "sku": "NEW", "floor_id": "first-floor"}],
+            [], [], [], [],
+        )
     monkeypatch.setattr(quotation_routes.catalog_service, "get_catalog_snapshot", catalog)
 
     edited = asyncio.run(quotation_routes.update_quotation(

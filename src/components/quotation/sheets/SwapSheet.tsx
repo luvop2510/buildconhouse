@@ -1,7 +1,8 @@
 // Swap alternates sheet — ranked closest-first, preserves qty/discount/room.
 import Feather from "@expo/vector-icons/Feather";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { BottomSheet } from "@/src/components/BottomSheet";
 import { EmptyState } from "@/src/components/ui";

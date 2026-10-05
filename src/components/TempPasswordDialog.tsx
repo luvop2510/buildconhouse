@@ -12,7 +12,8 @@
 // needed to support that switch later.
 import * as Clipboard from "expo-clipboard";
 import { useState } from "react";
-import { Platform, Text, View } from "react-native";
+import { View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { Button, Sheet } from "@/src/components/ui";
 import { toast } from "@/src/components/Toast";
@@ -117,7 +118,7 @@ const styles = {
     fontWeight: "700" as const,
     letterSpacing: 1.5,
     color: colors.onSurface,
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    fontFamily: "Inter-Regular",
   },
   expiryRow: {
     backgroundColor: colors.surfaceSecondary,

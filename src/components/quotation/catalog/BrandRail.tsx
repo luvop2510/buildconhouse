@@ -10,7 +10,8 @@
 import Feather from "@expo/vector-icons/Feather";
 import { Image } from "expo-image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Text, TextInput } from "@/src/components/AppText";
 
 import { api } from "@/src/api/client";
 import { storage } from "@/src/utils/storage";

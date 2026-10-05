@@ -6,9 +6,8 @@
 // with zero code changes.
 import Feather from "@expo/vector-icons/Feather";
 import { useCallback, useEffect, useState } from "react";
-import {
-  KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View,
-} from "react-native";
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Switch, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { AdminPage, IconAction } from "@/src/components/AdminPage";
 import { Avatar, Badge, Button, Chip, EmptyState, ErrorState, Sheet, Skeleton, TextField } from "@/src/components/ui";

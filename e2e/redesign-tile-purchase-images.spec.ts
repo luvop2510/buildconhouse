@@ -32,6 +32,9 @@ for (const kind of ['customer', 'supplier'] as const) {
     const bounds = await frame.boundingBox();
     expect(bounds!.width).toBe(96);
     expect(bounds!.height).toBe(60);
+    const imageBounds = await frame.locator('img').boundingBox();
+    expect(imageBounds!.width).toBeCloseTo(bounds!.width, 0);
+    expect(imageBounds!.height).toBeCloseTo(bounds!.height, 0);
     await expect(page.getByTestId(`tile-${kind}-product-image-tile-two`).locator('img')).toHaveCount(0);
     const control = page.getByTestId(kind === 'customer' ? 'tile-order-dispatch-released-tile-one' : 'tile-release-quantity-tile-one');
     await expect(control).toBeVisible();

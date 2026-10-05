@@ -1,5 +1,6 @@
 """Selected finish images must use that SKU's real primary media row."""
 from services.catalog_service import _build_snapshot, hydrate_product
+from services.catalog_service import _primary_product_image
 
 
 def _product(product_id: str, sku: str) -> dict:
@@ -37,3 +38,16 @@ def test_variant_image_uses_its_primary_media_not_a_thumbnail_row():
     brown_variant = next(variant for variant in hydrated["variants"] if variant["sku"] == "BROWN-RED")
 
     assert brown_variant["image"] == "https://cdn.example/brown-red.jpg"
+
+
+def test_variant_preview_matches_product_hero_when_internal_gallery_precedes_official_primary():
+    product = _product("bronze", "BRONZE")
+    internal = _media("internal-gallery", "bronze", "https://cdn.example/internal.jpg", primary=False, sort_order=0)
+    internal["source_type"] = "internal"
+    official = _media("official-hero", "bronze", "https://cdn.example/official.jpg", primary=True, sort_order=0)
+    official["source_type"] = "manufacturer"
+    snapshot = _build_snapshot([product], [internal, official], [], [], [])
+
+    hydrated = hydrate_product(product, snapshot)
+    assert hydrated["hero_image_url"] == official["public_url"]
+    assert _primary_product_image(snapshot, "bronze") == hydrated["hero_image_url"]

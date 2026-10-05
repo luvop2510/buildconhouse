@@ -1,0 +1,76 @@
+name: Operations evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      private_backup:
+        description: Export all business collections and verify upload to private storage
+        type: boolean
+        default: false
+      latency_threshold_ms:
+        description: Proposed warm p95 alert threshold (does not establish a regional SLO)
+        default: '3000'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify probe failure behavior
+        run: node scripts/test-service-health.mjs
+      - name: Vercel availability, readiness and access boundary
+        env:
+          LATENCY_THRESHOLD: ${{ inputs.latency_threshold_ms }}
+        run: |
+          node scripts/check-service-health.mjs https://buildcon-house-nine.vercel.app output/operations/vercel.json github-hosted-unverified-region "$LATENCY_THRESHOLD"
+      - name: Railway availability, readiness and access boundary
+        if: always()
+        env:
+          LATENCY_THRESHOLD: ${{ inputs.latency_threshold_ms }}
+        run: |
+          node scripts/check-service-health.mjs https://forge20-production.up.railway.app output/operations/railway.json github-hosted-unverified-region "$LATENCY_THRESHOLD"
+      - name: Preserve non-sensitive timing evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: operations-health
+          path: output/operations/
+          retention-days: 14
+
+  private-backup:
+    if: inputs.private_backup
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements-prod.txt
+      - name: Export and verify private remote backup
+        env:
+          MONGO_URL: ${{ secrets.MONGO_URL }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_PUBLIC_BUCKET: forge-products
+          SUPABASE_PRIVATE_BUCKET: forge-private
+          MEDIA_STORAGE_DRIVER: supabase
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          ENVIRONMENT: production
+        run: |
+          snapshot_dir="backups/recovery-$(date -u +%Y%m%dT%H%M%SZ)"
+          python scripts/recovery_snapshot.py backup --output "$snapshot_dir" --upload-private
+          python scripts/recovery_snapshot.py verify "$snapshot_dir"
+      # Snapshots contain customer/account data. Never upload them as Actions artifacts.

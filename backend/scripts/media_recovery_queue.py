@@ -45,13 +45,24 @@ def media_sort_key(row: dict[str, Any]) -> tuple[int, int, int]:
     )
 
 
-def displayed_hero(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+def displayed_hero(rows: list[dict[str, Any]], product: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """Return the product's selected hero using the catalog's public-media rules."""
     public_rows = [row for row in sorted(rows, key=media_sort_key) if row.get("public_url")]
-    for row in public_rows:
+    photo_rows = [row for row in public_rows if row.get("role") not in ("dimension", "seat-cover")]
+    for row in photo_rows:
         if row.get("is_primary") or row.get("role") == "hero":
             return row
-    return public_rows[0] if public_rows else None
+    if photo_rows:
+        return photo_rows[0]
+    # The runtime still supports product-owned legacy URLs. Include these in
+    # recovery audits so a usable imported photo is not reported as missing.
+    legacy_url = next((url for url in (product or {}).get("images", []) if url), None)
+    if legacy_url:
+        return {"public_url": legacy_url, "source_type": "supplier", "role": "gallery",
+                "quality": (product or {}).get("image_quality") or "missing"}
+    # Exact-SKU seat-cover photos can preview a product; dimension diagrams
+    # remain supplementary, even when their metadata says primary/hero.
+    return next((row for row in public_rows if row.get("role") == "seat-cover"), None)
 
 
 def meets_top_notch_media_standard(row: dict[str, Any] | None) -> bool:
@@ -109,7 +120,7 @@ async def run(
     quality_counts: Counter[str] = Counter()
     brand_counts: Counter[str] = Counter()
     for product in products:
-        hero = displayed_hero(media_by_product.get(product["id"], []))
+        hero = displayed_hero(media_by_product.get(product["id"], []), product)
         quality = str(hero.get("quality") if hero else "missing")
         quality_counts[quality] += 1
         below_requested_quality = QUALITY_RANK.get(quality, 0) <= threshold

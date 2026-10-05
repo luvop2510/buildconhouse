@@ -5,7 +5,8 @@
 // honestly below instead of faking a button that does nothing safe.
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { Text, View } from "react-native";
+import { View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { SettingsPage as AdminPage } from "@/src/components/settings/SettingsPage";
 import { Button, Card } from "@/src/components/ui";

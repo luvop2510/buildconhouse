@@ -3,7 +3,8 @@
 import Feather from "@expo/vector-icons/Feather";
 import * as Haptics from "expo-haptics";
 import { memo, useEffect, useState } from "react";
-import { Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Platform, Pressable, StyleSheet, View } from "react-native";
+import { Text, TextInput } from "@/src/components/AppText";
 
 import { ProductImage } from "@/src/components/ProductImage";
 import { Badge } from "@/src/components/ui";
@@ -106,7 +107,7 @@ function LineRowImpl({
         source={l.image}
         style={isPhone ? [styles.thumb, styles.thumbPhone] : styles.thumb}
         fallbackLabel={l.sku}
-        frameInset={5}
+        frameInset={0}
         transition={120}
       />
       <View style={styles.content}>

@@ -5,7 +5,8 @@ import { Disclosure } from "@/src/design/Disclosure";
 // premium design language as Follow-ups / Tile Orders (Card/Chip/StatTile).
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Linking, Platform, ScrollView, Text, View } from "react-native";
+import { Linking, Platform, ScrollView, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { walkinsApi, type WalkIn, type WalkInsDashboard } from "@/src/api/walkins";

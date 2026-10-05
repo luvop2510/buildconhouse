@@ -262,96 +262,13 @@ def _canonical_sku_for_sha1(snapshot: CatalogSnapshot, family_key: str, sha1: st
 
 
 def _apply_media(product: dict, snapshot: CatalogSnapshot) -> None:
-    # IMPORTANT: this must resolve media for THIS product only. It used to
-    # also pool in every family sibling's media via `media_by_family` as a
-    # "helpful" fallback — but since every sibling's own media_by_product
-    # rows ALSO have their own is_primary/hero flags, a pooled+globally
-    # sorted list has no way to prefer "this exact product's own photo"
-    # over "some other colour's photo that happens to sort first". That
-    # produced the reported bug: switching finish/colour updates every text
-    # field correctly but the image can silently stay on (or jump to) a
-    # completely different variant's photo. A product must never display
-    # another variant's image — if it has none of its own, show nothing
-    # (the frontend's empty-state placeholder) rather than borrow one.
-    rows = list(snapshot.media_by_product.get(product.get("id"), ()))
-    rows = _dedup_media(rows)
+    # Both the cached catalog and database-backed endpoints use the same
+    # photo/seat-cover/legacy preview policy. Resolve only this exact product:
+    # family siblings can have different finishes and must never lend images.
+    from services.media_service import _apply_media_to_product
 
-    summary = {"supplier": 0, "manufacturer": 0, "internal": 0}
-    for media in rows:
-        summary[media.source_type] += 1
-    best_quality = "missing"
-    for quality in ("excellent", "good", "acceptable", "poor", "missing"):
-        if any(media.quality == quality for media in rows):
-            best_quality = quality
-            break
-
-    gallery: list[dict] = []
-    hero_url: Optional[str] = None
-    hero_quality: Optional[str] = None
-    for media in rows:
-        if not media.public_url:
-            continue
-        if media.role in ("dimension", "seat-cover"):
-            continue
-        gallery.append({
-            "id": media.id,
-            "family_key": media.family_key,
-            "url": media.public_url,
-            "role": media.role,
-            "source_type": media.source_type,
-            "width": media.width,
-            "height": media.height,
-            "quality": media.quality,
-            "is_primary": media.is_primary,
-        })
-        if not hero_url and (media.is_primary or media.role == "hero"):
-            hero_url = media.public_url
-            hero_quality = media.quality
-    if not hero_url and gallery:
-        hero_url = gallery[0]["url"]
-        hero_quality = gallery[0].get("quality")
-
-    if not gallery and product.get("images"):
-        legacy = product.get("images") or []
-        gallery = [
-            {
-                "url": url, "role": "gallery", "source_type": "supplier",
-                "quality": product.get("image_quality") or "missing",
-                "width": None, "height": None, "is_primary": index == 0,
-            }
-            for index, url in enumerate(legacy) if url
-        ]
-        if gallery:
-            hero_url = legacy[0]
-            summary["supplier"] = len(gallery)
-            best_quality = product.get("image_quality") or best_quality
-            hero_quality = best_quality
-
-    # A seat-cover photograph belongs to this exact SKU. If it is the only
-    # usable asset, show it as the product preview instead of an empty frame.
-    # Dimension drawings remain supplementary and never become hero photos.
-    if not hero_url:
-        cover = next((media for media in rows if media.role == "seat-cover" and media.public_url), None)
-        if cover:
-            hero_url = cover.public_url
-            hero_quality = cover.quality
-            gallery = [{"url": cover.public_url, "role": "seat-cover", "source_type": cover.source_type,
-                        "quality": cover.quality, "width": cover.width, "height": cover.height,
-                        "is_primary": False, "family_key": cover.family_key}]
-
-    product["media_summary"] = {
-        **summary, "best_quality": best_quality, "total": sum(summary.values()),
-    }
-    product["hero_image_url"] = hero_url
-    product["gallery"] = gallery
-    # Product-level importer metadata can be stale after a media repair or a
-    # manual replacement. The actual selected hero is authoritative for every
-    # consumer of a hydrated product (PDP, cards, quotations and PDFs).
-    product["image_quality"] = hero_quality or best_quality
-    if gallery:
-        product["images"] = [item["url"] for item in gallery if item.get("url")]
-    elif hero_url:
-        product["images"] = [hero_url]
+    rows = _dedup_media(list(snapshot.media_by_product.get(product.get("id"), ())))
+    _apply_media_to_product(product, rows)
 
 
 def _primary_product_image(snapshot: CatalogSnapshot, product_id: str, family_key: Optional[str] = None) -> Optional[str]:
@@ -363,11 +280,12 @@ def _primary_product_image(snapshot: CatalogSnapshot, product_id: str, family_ke
     # `variants[].image`, which is the selected-colour hero source.
     media_by_product = getattr(snapshot, "media_by_product", None)
     if media_by_product is not None:
+        from services.media_service import _apply_media_to_product
+
         media_rows = _dedup_media(list(media_by_product.get(product_id, ())))
-        for media in media_rows:
-            if media.public_url and media.role not in ("dimension", "seat-cover"):
-                return media.public_url
-        return next((media.public_url for media in media_rows if media.public_url and media.role == "seat-cover"), None)
+        preview = dict(getattr(snapshot, "product_by_id", {}).get(product_id, {}))
+        _apply_media_to_product(preview, media_rows)
+        return preview["hero_image_url"]
 
     # Lightweight snapshot doubles used by focused family-list tests expose
     # the raw rows only. Preserve the production ordering policy there too,
@@ -379,9 +297,12 @@ def _primary_product_image(snapshot: CatalogSnapshot, product_id: str, family_ke
         0 if item.get("is_primary") else 1,
         int(item.get("sort_order", 100)),
     ))
-    for row in rows:
-        if row.get("public_url") and row.get("role") not in ("dimension", "seat-cover"):
+    photos = [row for row in rows if row.get("public_url") and row.get("role") not in ("dimension", "seat-cover")]
+    for row in photos:
+        if row.get("is_primary") or row.get("role") == "hero":
             return row["public_url"]
+    if photos:
+        return photos[0]["public_url"]
     return next((row["public_url"] for row in rows if row.get("public_url") and row.get("role") == "seat-cover"), None)
 
 

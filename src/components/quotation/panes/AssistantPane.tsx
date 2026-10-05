@@ -19,7 +19,8 @@
 import Feather from "@expo/vector-icons/Feather";
 import * as Haptics from "expo-haptics";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Text, TextInput } from "@/src/components/AppText";
 
 import { api } from "@/src/api/client";
 import { ProductImage } from "@/src/components/ProductImage";

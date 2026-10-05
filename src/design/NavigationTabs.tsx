@@ -1,6 +1,7 @@
 import Feather from '@expo/vector-icons/Feather';
 import React, { useRef } from 'react';
-import { Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 import { color, font, radius, space } from './tokens';
 
 export function NavigationTabs<T extends string>({ value, options, onChange, testID, fullWidth, disabled = false, segmented = false }: {

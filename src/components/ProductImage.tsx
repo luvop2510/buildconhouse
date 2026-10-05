@@ -19,9 +19,10 @@
 import Feather from "@expo/vector-icons/Feather";
 import { Image as ExpoImage, ImageContentFit } from "expo-image";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Easing, PixelRatio, Platform, StyleSheet, Text, View, ViewStyle } from "react-native";
+import { Animated, Easing, PixelRatio, Platform, StyleSheet, View, ViewStyle } from "react-native";
+import { Text } from "@/src/components/AppText";
 
-import { colors, radius, spacing } from "@/src/theme/tokens";
+import { colors, radius } from "@/src/theme/tokens";
 import { useReducedMotion } from "@/src/hooks/use-reduced-motion";
 
 export type ProductImageProps = {
@@ -31,8 +32,7 @@ export type ProductImageProps = {
   style?: ViewStyle | ViewStyle[];
   // "cover" | "contain" | "fill" | "scale-down" — passed through to expo-image.
   contentFit?: ImageContentFit;
-  // Uniform breathing room inside the product frame. Set to 0 only for an
-  // explicitly intentional edge-to-edge crop.
+  // Optional breathing room inside the product frame; zero fills the slot.
   frameInset?: number;
   // Optional testID for e2e testing.
   testID?: string;
@@ -83,7 +83,7 @@ export function ProductImage({
   // Product frames are landscape, but their contents must remain upright.
   // `contain` preserves the source aspect ratio without distortion.
   contentFit = "contain",
-  frameInset = spacing.s4,
+  frameInset = 0,
   testID,
   accessibilityLabel = "Product image",
   disableSkeleton = false,

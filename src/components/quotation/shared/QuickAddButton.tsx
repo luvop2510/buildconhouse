@@ -8,7 +8,8 @@
 import Feather from "@expo/vector-icons/Feather";
 import * as Haptics from "expo-haptics";
 import { useEffect, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
+import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { toast } from "@/src/components/Toast";
 import { colors, radius } from "@/src/theme/tokens";

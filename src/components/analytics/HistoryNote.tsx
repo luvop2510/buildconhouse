@@ -1,4 +1,5 @@
-import { Text, View } from "react-native";
+import { View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import type { Comparison, HistoryState } from "@/src/api/executive";
 import { colors, spacing, type } from "@/src/theme/tokens";

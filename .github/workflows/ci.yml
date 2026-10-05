@@ -56,6 +56,25 @@ jobs:
         run: docker build -t buildcon-backend .
         working-directory: backend
 
+  frontend-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Verify audit gate failure handling
+        run: node scripts/test-npm-audit.mjs
+      - name: Dependency vulnerability scan (npm audit)
+        run: node scripts/check-npm-audit.mjs
+
+  # Keep this independent of frontend-security so an upstream advisory cannot
+  # hide type, build or browser regressions. Both jobs are required to pass;
+  # the security job has no continue-on-error or advisory suppressions.
   frontend:
     runs-on: ubuntu-latest
     defaults:
@@ -70,8 +89,6 @@ jobs:
           cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: npm ci
-      - name: Dependency vulnerability scan (npm audit)
-        run: node scripts/check-npm-audit.mjs
       - name: TypeScript check
         run: npx tsc --noEmit
       - name: Expo dependency and configuration check
@@ -94,6 +111,12 @@ jobs:
           npm run test:frontend-performance
           npm run test:icon-fonts
           npm run test:release-recovery
+          npm run test:npm-audit
+          npm run test:service-health
+          npm run test:app-text
+          npm run test:legal-config
+          npm run test:native-permissions
+          npm run test:stock-floor-races
       - name: Tile Orders workflow route contract
         run: node scripts/verify-tile-orders-contract.mjs
       - name: Lint

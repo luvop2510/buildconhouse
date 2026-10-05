@@ -1,6 +1,7 @@
 import Feather from '@expo/vector-icons/Feather';
 import React, { useId, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 import { color, font, space } from './tokens';
 
 /** Optional fields remain in parent state when this section is collapsed. */

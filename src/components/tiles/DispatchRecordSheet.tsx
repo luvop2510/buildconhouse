@@ -12,7 +12,8 @@
 // one row of the Dispatch List, and Delivered was unreachable from any
 // screen even though the backend modelled it.
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Text, TextInput } from "@/src/components/AppText";
 
 import { tileOrdersApi, type ChalanDetail, type DispatchDetail } from "@/src/api/tileOrders";
 import { toast } from "@/src/components/Toast";

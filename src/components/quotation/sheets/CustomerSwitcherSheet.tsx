@@ -4,7 +4,8 @@
 // denormalised name snapshot) changes.
 import Feather from "@expo/vector-icons/Feather";
 import { useEffect, useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text, TextInput } from "@/src/components/AppText";
 
 import { BottomSheet } from "@/src/components/BottomSheet";
 import { Button } from "@/src/components/ui";

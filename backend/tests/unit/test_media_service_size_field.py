@@ -61,3 +61,42 @@ def test_hydrate_variants_batch_forwards_size(monkeypatch):
     assert target["variants"], "expected sibling variant to be populated"
     sizes = {v["id"]: v.get("size") for v in target["variants"]}
     assert sizes == {"p1": "600x600mm"}
+
+
+def test_variant_preview_skips_dimension_and_internal_gallery_before_exact_hero(monkeypatch):
+    from models import ProductMedia
+    from types import SimpleNamespace
+    def media(role, source, primary, url):
+        return ProductMedia(product_id="sibling", floor_id="first-floor", role=role, source_type=source,
+                            is_primary=primary, bucket="public", storage_key=url,
+                            public_url=url, sha1="a" * 40, mime="image/png", size_bytes=1).model_dump()
+    siblings = [
+        {"id": "sibling", "sku": "EXACT", "family_key": "same", "floor_id": "first-floor", "brand_id": "brand"},
+        {"id": "foreign", "sku": "FOREIGN", "family_key": "same", "floor_id": "ground-floor", "brand_id": "brand"},
+    ]
+    rows = [media("dimension", "internal", True, "diagram"),
+            media("gallery", "internal", False, "internal-gallery"),
+            media("hero", "manufacturer", True, "exact-hero")]
+    class Media:
+        def find(self, query, projection):
+            return Cursor(rows)
+    monkeypatch.setattr(media_service, "db", SimpleNamespace(products=Products(siblings), product_media=Media()))
+    target = {"id": "target", "family_key": "same", "floor_id": "first-floor", "brand_id": "brand"}
+    asyncio.run(hydrate_variants_batch([target]))
+    assert [(v["id"], v["image"]) for v in target["variants"]] == [("sibling", "exact-hero")]
+
+
+def test_variant_preview_uses_exact_seat_cover_but_never_dimensions(monkeypatch):
+    from models import ProductMedia
+    from types import SimpleNamespace
+    siblings = [{"id": pid, "sku": pid, "family_key": "same"} for pid in ("cover", "dimension")]
+    rows = [ProductMedia(product_id=pid, floor_id="first-floor", role=role, source_type="supplier", bucket="public", storage_key=pid,
+                         public_url=pid, sha1="a"*40, mime="image/png", size_bytes=1).model_dump()
+            for pid,role in (("cover","seat-cover"),("dimension","dimension"))]
+    class Media:
+        def find(self, query, projection):
+            return Cursor(rows)
+    monkeypatch.setattr(media_service, "db", SimpleNamespace(products=Products(siblings), product_media=Media()))
+    target = {"id":"target", "family_key":"same"}
+    asyncio.run(hydrate_variants_batch([target]))
+    assert {v["id"]:v["image"] for v in target["variants"]} == {"cover":"cover", "dimension":None}

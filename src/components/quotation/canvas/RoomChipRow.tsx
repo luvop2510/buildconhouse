@@ -1,6 +1,7 @@
 // Room chip row — horizontal DnD reorder + add-room button.
 import Feather from "@expo/vector-icons/Feather";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 import DraggableFlatList, { RenderItemParams, ScaleDecorator } from "react-native-draggable-flatlist";
 
 import { colors } from "@/src/theme/tokens";

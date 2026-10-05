@@ -1,6 +1,7 @@
 import type { ComponentProps } from "react";
 import { useRouter } from "expo-router";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 import { AdminPage } from "@/src/components/AdminPage";
 import { colors, spacing, type } from "@/src/theme/tokens";
 

@@ -6,9 +6,8 @@
 // disabled instead of erroring after a tap.
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import {
-  KeyboardAvoidingView, Platform, ScrollView, Switch, Text, View,
-} from "react-native";
+import { KeyboardAvoidingView, Platform, ScrollView, Switch, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { api } from "@/src/api/client";

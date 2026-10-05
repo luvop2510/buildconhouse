@@ -1,6 +1,7 @@
 import { Redirect, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { salesWorkspaceApi, type WorkspaceData, type WorkspaceName } from "@/src/api/salesWorkspaces";
 import { AdminPage } from "@/src/components/AdminPage";

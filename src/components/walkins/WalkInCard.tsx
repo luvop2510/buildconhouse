@@ -1,7 +1,8 @@
 // Walk-in card — Phase 4 (2026-07-30). Same visual language as
 // components/tiles cards: Card + IconButton + Button.
 import { useEffect, useState } from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
+import { Pressable, View } from "react-native";
+import { Text, TextInput } from "@/src/components/AppText";
 
 import type { WalkIn } from "@/src/api/walkins";
 import { toast } from "@/src/components/Toast";

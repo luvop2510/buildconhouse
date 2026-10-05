@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
+import { Text, TextInput } from "@/src/components/AppText";
 
 import { api } from "@/src/api/client";
 import { Button, Sheet } from "@/src/components/ui";

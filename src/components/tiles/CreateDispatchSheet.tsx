@@ -11,7 +11,8 @@
 // uses (dispatch-from-released / dispatch-from-godown), so a dispatch
 // raised here is identical in every way — Chalan, Register row, timeline.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Text, TextInput } from "@/src/components/AppText";
 
 import {
   tileOrdersApi,

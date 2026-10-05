@@ -29,7 +29,7 @@ export type PoFinalMatch = {
   product_id?: string | null; name: string; sku: string;
 };
 export type GodownStockResponse = { lots: GodownLot[]; brands: { id?: string | null; name: string; lot_count: number; available_qty: number }[]; total_available_qty: number; total_stock_value: number; unpriced_lot_count: number };
-export const getGodownStock = (params = "") => api.get<GodownStockResponse>(`/godown-stock${params}`);
+export const getGodownStock = (params = "", floorId?: string) => api.get<GodownStockResponse>(`/godown-stock${params}`, { floorId });
 export type SkuSuggestion = { id: string; sku: string; name: string; brand_name?: string | null; image?: string | null; size?: string | null; category_id?: string | null };
 export const getSkuSuggestions = (prefix: string) => api.get<SkuSuggestion[]>(`/godown-stock/sku-suggestions?prefix=${encodeURIComponent(prefix)}`);
 export type DirectIntake = { qty: number; reason?: string; product_id?: string; sku?: string; name?: string; brand?: string; image?: string; size?: string; feature?: string; category?: string; unit_price?: number; price_variants?: { label: string; price: number }[] };

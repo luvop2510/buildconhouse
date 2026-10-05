@@ -7,7 +7,8 @@
 // the only columns here; tapping a row opens the order for Release only.
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { tileOrdersApi, type BrandOrderRow, type BrandOrdersKpi } from "@/src/api/tileOrders";
 import { toast } from "@/src/components/Toast";

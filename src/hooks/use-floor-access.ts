@@ -97,9 +97,10 @@ export function useFloorAccess() {
     try {
       const [value, saved] = await Promise.all([loadAccess(), getSelectedFloorId()]);
       setAccess(value);
-      const valid = saved && value.floor_ids.includes(saved) ? saved : value.floors[0]?.id || "";
+      const current = selectedFloorCache ?? saved;
+      const valid = current && value.floor_ids.includes(current) ? current : value.floors[0]?.id || "";
       setSelectedFloorIdState(valid);
-      if (valid !== saved) void setSelectedFloorId(valid);
+      if (valid !== current) void setSelectedFloorId(valid);
     } catch (cause: any) {
       setAccess(null);
       setError(cause?.detail || "We couldn't load your workspace access.");
@@ -121,9 +122,12 @@ export function useFloorAccess() {
       // both business units' records together. A saved choice wins if it is
       // still a floor this account can access.
       const fallback = value.floors[0]?.id || "";
-      const valid = saved && value.floor_ids.includes(saved) ? saved : fallback;
+      // Another mounted route may already have selected its document floor.
+      // A delayed storage snapshot must not overwrite that newer selection.
+      const current = selectedFloorCache ?? saved;
+      const valid = current && value.floor_ids.includes(current) ? current : fallback;
       setSelectedFloorIdState(valid);
-      if (valid !== saved) void setSelectedFloorId(valid);
+      if (valid !== current) void setSelectedFloorId(valid);
     }).catch((cause: any) => {
       if (!alive) return;
       setAccess(null);
@@ -178,4 +182,5 @@ export function useRequireFloorAccess(floorId: string) {
       if (selectedFloorId !== floorId) void selectFloor(floorId);
     }
   }, [access, floorId, router, selectedFloorId, selectFloor]);
+  return Boolean(access && (access.all_floors || access.floor_ids.includes(floorId)) && selectedFloorId === floorId);
 }

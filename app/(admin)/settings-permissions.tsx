@@ -9,7 +9,8 @@
 import Feather from "@expo/vector-icons/Feather";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { ActivityIndicator, ScrollView, StyleSheet, Switch, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { SettingsPage as AdminPage } from "@/src/components/settings/SettingsPage";
 import { Button, Card, EmptyState, ErrorState } from "@/src/components/ui";

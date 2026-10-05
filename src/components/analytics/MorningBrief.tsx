@@ -1,4 +1,5 @@
-import { Text, View } from "react-native";
+import { View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import type { MorningBrief as MorningBriefPayload } from "@/src/api/executive";
 import { Card } from "@/src/components/ui";

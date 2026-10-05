@@ -2,7 +2,8 @@
 import Feather from "@expo/vector-icons/Feather";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { AdminPage } from "@/src/components/AdminPage";
 import { Avatar, Card, ErrorState } from "@/src/components/ui";

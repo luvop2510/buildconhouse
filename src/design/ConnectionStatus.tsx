@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Platform, Text, View } from 'react-native';
+import { Platform, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 import { color, font } from './tokens';
 
 /** Connectivity feedback only. Reconnection never replays a business mutation. */

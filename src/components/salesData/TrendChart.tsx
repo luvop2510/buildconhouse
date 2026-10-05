@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { fmtMoney, fmtMoneyCompact } from "@/src/design/tokens";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";

@@ -14,7 +14,8 @@
 // -----------------------------------------------------------------------------
 import * as Haptics from "expo-haptics";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Platform, TextInput } from "react-native";
+import { Platform } from "react-native";
+import { TextInput } from "@/src/components/AppText";
 
 import { api } from "@/src/api/client";
 import { toast } from "@/src/components/Toast";
@@ -1121,7 +1122,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     (async () => {
       try {
         const lot = await api.get<any>(`/godown-stock/${initialGodownStockId}`, { floorId: activeFloorId });
-        if (!Number(lot.available_qty)) throw new Error("This lot is no longer available");
+        if (!(Number(lot.transferable_qty ?? lot.available_qty) > 0)) throw new Error("This lot is no longer available");
         const variantIndex = initialGodownVariant === null || initialGodownVariant === undefined ? -1 : Number(initialGodownVariant);
         const variant = Number.isInteger(variantIndex) && variantIndex >= 0 ? lot.price_variants?.[variantIndex] : null;
         const selectedPrice = Number(variant?.price ?? lot.unit_price ?? 0);

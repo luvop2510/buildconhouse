@@ -1,16 +1,8 @@
 import Feather from "@expo/vector-icons/Feather";
 import { useRouter } from "expo-router";
 import type { ComponentProps, ReactNode } from "react";
-import {
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleProp,
-  StyleSheet,
-  Text,
-  View,
-  ViewStyle,
-} from "react-native";
+import { Pressable, RefreshControl, ScrollView, StyleProp, StyleSheet, View, ViewStyle } from "react-native";
+import { Text } from "@/src/components/AppText";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Card, EmptyState, ErrorState, IconButton, Skeleton } from "@/src/components/ui";

@@ -1,5 +1,6 @@
 // Description sheet for a single line — free text printed on the PDF.
-import { StyleSheet, Text, TextInput, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { Text, TextInput } from "@/src/components/AppText";
 
 import { BottomSheet } from "@/src/components/BottomSheet";
 import { Button } from "@/src/components/ui";

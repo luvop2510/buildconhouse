@@ -5,7 +5,8 @@
 import Feather from "@expo/vector-icons/Feather";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert as RNAlert, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert as RNAlert, FlatList, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { AdminPage } from "@/src/components/AdminPage";
 import { useBp } from "@/src/design/responsive";

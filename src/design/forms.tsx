@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useId } from 'react';
-import { Text, TextInput, View, Platform } from 'react-native';
+import { View, Platform } from "react-native";
+import { Text, TextInput } from "@/src/components/AppText";
 import { color, font, radius } from './tokens';
 import { Txt } from './typography';
 

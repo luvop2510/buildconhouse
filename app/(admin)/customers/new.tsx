@@ -8,9 +8,8 @@ import { Disclosure } from "@/src/design/Disclosure";
 // (theme/tokens + components/ui, matching customers/index.tsx + [id].tsx).
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import {
-  KeyboardAvoidingView, Platform, ScrollView, Text, View,
-} from "react-native";
+import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { api } from "@/src/api/client";

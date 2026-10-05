@@ -1,5 +1,6 @@
 // Small, reusable variant chip + swatch row.
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { colors, money } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";

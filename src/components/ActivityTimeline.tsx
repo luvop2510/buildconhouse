@@ -1,7 +1,8 @@
 // Activity Timeline — renders a list of ActivityEvent docs in reverse-chrono order.
 // The UI is deliberately dense and readable: dot + timestamp + summary.
 import Feather from "@expo/vector-icons/Feather";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
 

@@ -1,7 +1,8 @@
 // Referrer switcher — searchable list of architects/interior designers +
 // inline "create new" form. Opens from the topbar's "Referred By" field.
 import { useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text, TextInput } from "@/src/components/AppText";
 
 import { BottomSheet } from "@/src/components/BottomSheet";
 import { Button } from "@/src/components/ui";

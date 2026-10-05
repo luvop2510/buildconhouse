@@ -12,7 +12,8 @@
 // into a Brand-page version (Ordered/Released/Remaining) and a
 // Customer-page version (Ordered/Released/Godown/Delivered) — no more
 // generic Ready/Dispatched/Pending counters.
-import { Text, View } from "react-native";
+import { View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
 import { useBreakpoint } from "@/src/hooks/use-breakpoint";

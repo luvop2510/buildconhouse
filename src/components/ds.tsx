@@ -18,19 +18,8 @@ import { Menu } from "@/src/design/navigationControls";
 // ═══════════════════════════════════════════════════════════════════════════
 import Feather from "@expo/vector-icons/Feather";
 import { useEffect, useRef, useState } from "react";
-import {
-  Animated,
-  Easing,
-  Image,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  StyleProp,
-  Text,
-  View,
-  ViewStyle,
-} from "react-native";
+import { Animated, Easing, Image, Platform, Pressable, ScrollView, StyleSheet, StyleProp, View, ViewStyle } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import {
   Button as _Button,

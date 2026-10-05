@@ -1,6 +1,7 @@
 import Feather from '@expo/vector-icons/Feather';
 import React from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 import { useBp } from './responsive';
 import { color, font, layout, radius, space } from './tokens';
 

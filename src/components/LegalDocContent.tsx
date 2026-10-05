@@ -1,7 +1,8 @@
 // Shared layout atoms for legal/policy documents (Privacy Policy, Terms of
 // Service) — kept separate so both documents render with identical
 // typography without duplicating the same two components twice.
-import { Text, View } from "react-native";
+import { View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { color, font } from "@/src/design/tokens";
 

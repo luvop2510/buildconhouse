@@ -4,7 +4,8 @@
 // so the feedback is identical regardless of which hit-target the user used.
 import * as Haptics from "expo-haptics";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { toast } from "@/src/components/Toast";
 import { ProductImage } from "@/src/components/ProductImage";

@@ -3,7 +3,8 @@
 // to one person, one business surface, optional floor, and explicit actions.
 import Feather from "@expo/vector-icons/Feather";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { SettingsPage as AdminPage } from "@/src/components/settings/SettingsPage";
 import { Button, Card, Chip, EmptyState, ErrorState, LoadingState } from "@/src/components/ui";

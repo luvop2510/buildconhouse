@@ -9,11 +9,8 @@
 import Feather from "@expo/vector-icons/Feather";
 import { useFocusEffect, useRouter } from "expo-router";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Linking, Platform, Pressable, RefreshControl, ScrollView, SectionList,
-  StyleSheet, Text, TextInput, View,
-  KeyboardAvoidingView,
-} from "react-native";
+import { Linking, Platform, Pressable, RefreshControl, ScrollView, SectionList, StyleSheet, View, KeyboardAvoidingView } from "react-native";
+import { Text, TextInput } from "@/src/components/AppText";
 import { Swipeable } from "@/src/components/Swipeable";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -1356,7 +1353,7 @@ function ShortcutHelpSheet({ visible, onClose }: { visible: boolean; onClose: ()
           <View key={s.keys} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
             <Text style={type.bodySm}>{s.label}</Text>
             <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.sm, backgroundColor: colors.surfaceTertiary, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border }}>
-              <Text style={{ fontSize: 12, fontWeight: "700", color: colors.onSurface, fontFamily: Platform.select({ web: "monospace", default: undefined }) }}>{s.keys}</Text>
+              <Text style={{ fontSize: 12, fontWeight: "700", color: colors.onSurface, fontFamily: type.mono.fontFamily }}>{s.keys}</Text>
             </View>
           </View>
         ))}

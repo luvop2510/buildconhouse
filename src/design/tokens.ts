@@ -6,7 +6,7 @@
 //
 // Every module MUST consume these tokens. Zero local styling downstream.
 // ─────────────────────────────────────────────────────────────────────────────
-import { Platform, StyleSheet } from "react-native";
+import { StyleSheet } from "react-native";
 
 // ── Raw palette (never import this from screens — use `color`) ──────────────
 const pal = {
@@ -87,8 +87,8 @@ export const font = {
   bold: "Inter-Bold",
   display: "Inter-SemiBold",        // headings, greetings and authentication
   displayItalic: "Inter-Medium",
-  serif: "Fraunces-Regular",
-  mono: Platform.select({ ios: "Menlo", android: "monospace", default: "ui-monospace" }) as string,
+  serif: "Inter-Regular", // compatibility alias; all interface text uses Inter
+  mono: "Inter-Regular", // numeric consumers use tabular-nums
 } as const;
 
 // ── Type scale — 4pt baseline rhythm ────────────────────────────────────────

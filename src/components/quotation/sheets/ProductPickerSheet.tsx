@@ -5,7 +5,8 @@
 // experience as the inline quotation catalog.
 import { Overlay } from "@/src/design/Overlay";
 import Feather from "@expo/vector-icons/Feather";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { colors, money, spacing, type } from "@/src/theme/tokens";

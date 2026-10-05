@@ -9,7 +9,8 @@
 // /(auth)/login by default, with an explicit carve-out for this route's
 // top-level "privacy" segment so it stays reachable without signing in.
 import { useRouter } from "expo-router";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BuildConLogo } from "@/src/design/BrandLogo";

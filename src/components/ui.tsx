@@ -8,18 +8,8 @@ import { useReducedMotion } from "@/src/hooks/use-reduced-motion";
 
 import Feather from "@expo/vector-icons/Feather";
 import { isValidElement, useEffect, useRef, useId } from "react";
-import {
-  ActivityIndicator,
-  Animated,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  TextInputProps,
-  View,
-  ViewStyle,
-} from "react-native";
+import { ActivityIndicator, Animated, Platform, Pressable, StyleSheet, TextInputProps, View, ViewStyle } from "react-native";
+import { Text, TextInput } from "@/src/components/AppText";
 
 import {
   colors,

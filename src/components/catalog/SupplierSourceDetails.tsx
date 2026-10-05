@@ -1,4 +1,5 @@
-import { Text, View } from "react-native";
+import { View } from "react-native";
+import { Text } from "@/src/components/AppText";
 import type { CatalogEntry } from "@/src/services/catalogService";
 import { supplierSourceDetails } from "@/src/components/quotation/helpers/catalogSource";
 import { colors, spacing, type } from "@/src/theme/tokens";

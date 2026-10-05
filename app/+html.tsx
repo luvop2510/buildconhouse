@@ -22,6 +22,7 @@ export default function Root({ children }: PropsWithChildren) {
           dangerouslySetInnerHTML={{
             __html: `
               html { color-scheme: light; }
+              body, input, textarea, select, button { font-family: Inter-Regular, sans-serif; }
               body { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
               :is(button, a, input, textarea, select, [role="button"], [role="link"], [role="tab"], [role="checkbox"], [tabindex]):focus-visible {
                 outline: 3px solid #0066CC !important;

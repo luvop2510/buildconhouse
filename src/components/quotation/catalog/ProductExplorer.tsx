@@ -7,7 +7,8 @@
 import Feather from "@expo/vector-icons/Feather";
 import { Image } from "expo-image";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, FlatList, LayoutChangeEvent, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, FlatList, LayoutChangeEvent, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Text, TextInput } from "@/src/components/AppText";
 
 import { EmptyState, ErrorState } from "@/src/components/ui";
 import { ProductImage } from "@/src/components/ProductImage";

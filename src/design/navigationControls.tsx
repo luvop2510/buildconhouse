@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useRef, useState } from 'react';
 import Feather from '@expo/vector-icons/Feather';
-import { Animated, Easing, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Animated, Easing, Modal, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from "react-native";
+import { Text } from "@/src/components/AppText";
 import { color, font, layout, motion, radius, shadow } from './tokens';
 import { useReducedMotion } from '@/src/hooks/use-reduced-motion';
 import { useOverlayFocus } from './useOverlayFocus';

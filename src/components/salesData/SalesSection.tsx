@@ -1,4 +1,5 @@
-import { Text, View } from "react-native";
+import { View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { Button, Card, EmptyState, ErrorState, LoadingState, SkeletonList } from "@/src/components/ui";
 import { useBp } from "@/src/design/responsive";

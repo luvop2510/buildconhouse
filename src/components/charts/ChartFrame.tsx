@@ -1,5 +1,6 @@
 import { ReactNode, useState } from "react";
-import { LayoutChangeEvent, Text, View } from "react-native";
+import { LayoutChangeEvent, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { colors, spacing, type } from "@/src/theme/tokens";
 

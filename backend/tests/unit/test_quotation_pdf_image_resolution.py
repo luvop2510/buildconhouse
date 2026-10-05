@@ -124,3 +124,27 @@ def test_pdf_rows_never_include_a_foreign_floor_hero_or_snapshot(monkeypatch):
         {"product_id": "foreign", "sku": "F", "name": "Foreign product", "image": "https://cdn.test/foreign-snapshot.png"},
     ]}))
     assert items[0]["image"] is None
+
+
+def test_exact_current_seat_cover_replaces_expired_quote_snapshot(monkeypatch):
+    monkeypatch.setattr(quotation_routes, "db", _Db([
+        {"product_id": "cover", "role": "seat-cover", "public_url": "https://cdn.test/current-cover.png"},
+    ]))
+    rows = asyncio.run(quotation_routes._canonicalize_item_images([
+        {"product_id": "cover", "image": "https://cdn.test/deleted.png"},
+    ]))
+    assert rows[0]["image"] == "https://cdn.test/current-cover.png"
+
+
+def test_exact_current_legacy_photo_replaces_expired_quote_snapshot(monkeypatch):
+    from services.catalog_service import _build_snapshot
+    current = _build_snapshot([
+        {"id": "legacy", "floor_id": "first-floor", "sku": "EXACT", "images": ["https://cdn.test/current.png"]},
+    ], [], [], [], [])
+    async def snapshot():
+        return current
+    monkeypatch.setattr(quotation_routes.catalog_service, "get_catalog_snapshot", snapshot)
+    rows = asyncio.run(quotation_routes._canonicalize_item_images([
+        {"product_id": "legacy", "sku": "EXACT", "image": "https://cdn.test/deleted.png"},
+    ], "first-floor"))
+    assert rows[0]["image"] == "https://cdn.test/current.png"

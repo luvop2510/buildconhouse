@@ -40,7 +40,7 @@ function saveMobileBrowserFile(blob: Blob, filename: string, errorLabel: string)
     Object.assign(dialog.style, {
       border: "1px solid #ddd", borderRadius: "16px", padding: "24px",
       maxWidth: "min(420px, calc(100vw - 32px))", width: "100%", boxSizing: "border-box",
-      fontFamily: "system-ui, sans-serif", color: "#202020", background: "#fff",
+      fontFamily: "Inter-Regular, sans-serif", color: "#202020", background: "#fff",
     });
     const title = document.createElement("h2");
     title.textContent = "Your file is ready";

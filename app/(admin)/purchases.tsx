@@ -9,10 +9,8 @@
 import Feather from "@expo/vector-icons/Feather";
 import { useRouter } from "expo-router";
 import { type Dispatch, type SetStateAction, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  ActivityIndicator, FlatList, Platform, Pressable,
-  ScrollView, StyleSheet, Text, TextInput, View,
-} from "react-native";
+import { ActivityIndicator, FlatList, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Text, TextInput } from "@/src/components/AppText";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/src/api/client";
@@ -904,7 +902,7 @@ const MobilePurchaseCard = memo(function MobilePurchaseCard({ item, selected, co
           <Feather name="more-vertical" size={19} color={colors.onSurface} />
         </Pressable>
       </View>
-      {tablet ? <ProductImage source={item.image} style={styles.tabletCardImage} contentFit="contain" frameInset={4} fallbackLabel={item.sku} disableSkeleton borderRadius={8} testID={`purchase-image-${item.item_id}`} accessibilityLabel={`Product image for ${item.name}`} /> : null}
+      {tablet ? <ProductImage source={item.image} style={styles.tabletCardImage} contentFit="contain" frameInset={0} fallbackLabel={item.sku} disableSkeleton borderRadius={8} testID={`purchase-image-${item.item_id}`} accessibilityLabel={`Product image for ${item.name}`} /> : null}
       <View style={styles.mobileCardDetailRow}>
         <View style={{ flex: 1, minWidth: 0 }}><Text style={styles.mobileCardLabel}>CUSTOMER</Text><Text style={styles.mobileCardValue} numberOfLines={2}>{item.customer_name || "—"}</Text></View>
         <View style={{ minWidth: 76 }}><Text style={styles.mobileCardLabel}>QUANTITY</Text><Text style={styles.mobileCardValue}>{item.qty}</Text></View>
@@ -1257,7 +1255,7 @@ function BlockedCard({ row, onOpenMove, onTransfer, onHistory }: {
       <ProductImage
         source={row.image}
         style={styles.blockedThumb}
-        contentFit="cover"
+        contentFit="contain"
         frameInset={0}
         frameBackground="transparent"
         disableSkeleton

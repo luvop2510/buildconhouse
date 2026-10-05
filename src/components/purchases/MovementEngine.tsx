@@ -11,7 +11,8 @@
 import Feather from "@expo/vector-icons/Feather";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, ScrollView, View } from "react-native";
+import { Text, TextInput } from "@/src/components/AppText";
 
 import { ProductImage } from "@/src/components/ProductImage";
 import { Button, Field, Input, Sheet, Txt } from "@/src/design/components";

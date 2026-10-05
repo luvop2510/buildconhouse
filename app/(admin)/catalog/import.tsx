@@ -4,9 +4,8 @@ import Feather from "@expo/vector-icons/Feather";
 import * as DocumentPicker from "expo-document-picker";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import {
-  ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View,
-} from "react-native";
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from "react-native";
+import { Text, TextInput } from "@/src/components/AppText";
 
 import { AdminPage } from "@/src/components/AdminPage";
 import { Badge, Button, Card, EmptyState, ErrorState } from "@/src/components/ui";

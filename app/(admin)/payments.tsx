@@ -9,16 +9,15 @@ import { useReducedMotion } from "@/src/hooks/use-reduced-motion";
 import Feather from "@expo/vector-icons/Feather";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView,
-  StyleSheet, Text, TextInput, View,
-} from "react-native";
+import { KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Text, TextInput } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { api } from "@/src/api/client";
 import { useBp } from "@/src/design/responsive";
 import { toast } from "@/src/components/Toast";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
+import { quotationDestination } from "@/src/utils/quotationNavigation";
 import { downloadApiFile } from "@/src/utils/downloadFile";
 import {
   Alert as UIAlert,
@@ -215,10 +214,25 @@ export default function PaymentsScreen() {
   const { isDesktop, isTabletLandscape, isPhone, height } = useBp();
   const sideBySide = isDesktop || isTabletLandscape;
   const compactCostForm = isPhone || isTabletLandscape;
-  const { selectedFloorId } = useFloorAccess();
+  const { selectedFloorId, selectFloor } = useFloorAccess();
   const router = useRouter();
   const activeFloorRef = useRef(selectedFloorId);
   activeFloorRef.current = selectedFloorId;
+
+  // Collections can include Ground Floor orders while Sanitary is active.
+  // Publish the document's floor before mounting its editor so its first fetch
+  // and autosave cannot use the inherited workspace header.
+  const openQuotation = async (document: { id: string; floor_id?: string | null; doc_type?: string | null }, edit = false) => {
+    if (document.floor_id && document.floor_id !== selectedFloorId) await selectFloor(document.floor_id);
+    router.push(quotationDestination(document, edit) as any);
+  };
+  const openHistoryQuotation = async (row: HistoryRow) => {
+    if (!row.quotation_id) return;
+    try {
+      const document = await api.get<{ id: string; floor_id?: string; doc_type?: string }>(`/quotations/${encodeURIComponent(row.quotation_id)}`, { floorId: row.floor_id });
+      await openQuotation({ ...document, floor_id: document.floor_id || row.floor_id });
+    } catch (cause: any) { toast.error(cause?.detail || "Could not open this quotation. Please retry."); }
+  };
 
   const [tab, setTab] = useState<TabKey>("collections");
 
@@ -814,10 +828,10 @@ export default function PaymentsScreen() {
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
                   <Button label="Quotation & history" icon="file-text" variant="secondary" size="sm"
                     testID="payment-open-quotation"
-                    onPress={() => router.push((detail.doc_type?.startsWith("tiles_") ? `/(admin)/tiles/orders/${detail.id}` : `/(admin)/quotations/${detail.id}`) as any)} />
+                    onPress={() => void openQuotation(detail)} />
                   <Button label="Update quotation" icon="edit-3" variant="secondary" size="sm"
                     testID="payment-edit-quotation"
-                    onPress={() => router.push((detail.doc_type === "tiles_quotation" ? `/(admin)/tiles/quotation?id=${encodeURIComponent(detail.id)}` : `/(admin)/quotations/new?quotationId=${encodeURIComponent(detail.id)}`) as any)} />
+                    onPress={() => void openQuotation(detail, true)} />
                 </View>
                 {(detail.refund_due || 0) > 0 ? <UIAlert tone="error" title={`Refund due · ${money(detail.refund_due || 0)}`}
                   description="Cash received exceeds the final order value after a godown transfer. The stock credit did not send money back to the customer; review this amount before settling it." /> : null}
@@ -961,7 +975,7 @@ export default function PaymentsScreen() {
           dateTo={historyDateTo} onDateToChange={setHistoryDateTo}
           sort={historySort} onSortChange={setHistorySort}
           onOpenCustomer={(id) => router.push(`/(admin)/customers/${id}` as any)}
-          onOpenOrder={(id) => router.push(`/(admin)/quotations/${id}` as any)}
+          onOpenOrder={(row) => void openHistoryQuotation(row)}
         />
       )}
 
@@ -1037,7 +1051,7 @@ function PaymentHistoryTab(props: {
   dateTo: string; onDateToChange: (v: string) => void;
   sort: string; onSortChange: (v: string) => void;
   onOpenCustomer: (customerId: string) => void;
-  onOpenOrder: (quotationId: string) => void;
+  onOpenOrder: (row: HistoryRow) => void;
 }) {
   const { isPhone } = useBp();
   const {
@@ -1158,7 +1172,7 @@ function PaymentHistoryTab(props: {
             rowMinHeight={56}
             keyExtractor={(r) => r.id}
             rowTestID={(r) => `history-row-${r.id}`}
-            onRowPress={(r) => (r.quotation_id ? onOpenOrder(r.quotation_id) : onOpenCustomer(r.customer_id))}
+            onRowPress={(r) => (r.quotation_id ? onOpenOrder(r) : onOpenCustomer(r.customer_id))}
             emptyMessage="No payments match these filters."
           />
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: spacing.sm }}>

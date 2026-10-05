@@ -8,7 +8,7 @@ import { View } from "react-native";
 
 import { brand, space } from "@/src/design/tokens";
 import { P, Section } from "@/src/components/LegalDocContent";
-import { legalPublicationTodo } from "@/src/config/legal";
+import { LegalPublication } from "@/src/components/LegalPublication";
 
 export function TermsOfServiceContent() {
   return (
@@ -20,9 +20,7 @@ export function TermsOfServiceContent() {
         </P>
       </Section>
 
-      <Section title="Publication requirement">
-        <P>{legalPublicationTodo}</P>
-      </Section>
+      <LegalPublication />
 
       <Section title="Who this applies to">
         <P>

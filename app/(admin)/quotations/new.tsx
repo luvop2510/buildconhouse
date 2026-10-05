@@ -10,12 +10,13 @@
 // can slot in without another mega file appearing.
 // -----------------------------------------------------------------------------
 import { useLocalSearchParams } from "expo-router";
+import { ActivityIndicator, View } from "react-native";
 
 import { LazyQuotationBuilder } from "@/src/components/quotation/LazyQuotationBuilder";
 import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
 
 export default function QuotationBuilderScreen() {
-  useRequireFloorAccess("first-floor");
+  const floorReady = useRequireFloorAccess("first-floor");
   // Optional ?productId=... — set by Catalog's "Add to quotation" CTA so
   // starting a new quotation from a product's detail page actually seeds
   // that product instead of landing on an empty builder.
@@ -27,6 +28,7 @@ export default function QuotationBuilderScreen() {
     /** Opens an existing customer quotation in the same product workspace. */
     quotationId?: string;
   }>();
+  if (!floorReady) return <View accessibilityLabel="Opening Sanitary quotation workspace" style={{ flex: 1, alignItems: "center", justifyContent: "center" }}><ActivityIndicator /></View>;
   return (
     <LazyQuotationBuilder
       mode="sanitary"

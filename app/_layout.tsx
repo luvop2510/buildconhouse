@@ -2,14 +2,14 @@ import { Stack, useRootNavigationState, useRouter, useSegments } from "expo-rout
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
-import { Text, View } from "react-native";
+import { View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { useAppFonts } from "@/src/hooks/use-app-fonts";
 import { AuthProvider, useAuth } from "@/src/state/auth";
 import { staffLandingPath } from "@/src/access-profiles";
-import { colors, font } from "@/src/theme/tokens";
+import { colors } from "@/src/theme/tokens";
 import { ToastHost } from "@/src/components/Toast";
 import { initPerformanceSignals, initSentry } from "@/src/lib/monitoring";
 
@@ -17,13 +17,6 @@ import { initPerformanceSignals, initSentry } from "@/src/lib/monitoring";
 // (see src/lib/monitoring.ts). Safe to call unconditionally at module load.
 initSentry();
 initPerformanceSignals();
-
-// Global default: any Text without an explicit fontFamily inherits Inter-Regular.
-// This ensures every legacy screen automatically renders with our typographic voice.
-// Individual weights (Medium/SemiBold/Bold) still opt-in explicitly via type.* tokens.
-const anyText = Text as any;
-anyText.defaultProps = anyText.defaultProps || {};
-anyText.defaultProps.style = [{ fontFamily: font.regular }, anyText.defaultProps.style];
 
 SplashScreen.preventAutoHideAsync();
 

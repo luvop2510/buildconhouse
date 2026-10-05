@@ -8,7 +8,8 @@ import { Disclosure } from "@/src/design/Disclosure";
 // pattern for the Customer-level fields.
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { type CustomerMatch, type DuplicateMatches, parseDuplicateConflict, walkinsApi } from "@/src/api/walkins";

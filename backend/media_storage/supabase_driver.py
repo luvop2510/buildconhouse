@@ -134,6 +134,15 @@ class SupabaseStorageDriver(MediaStorage):
 
     # ---- reads -----------------------------------------------------------
 
+    async def require_private_bucket(self, bucket: str) -> None:
+        from urllib.parse import quote
+        resp = await self._request(
+            "GET", f"{self.url}/storage/v1/bucket/{quote(bucket, safe='')}",
+            headers=self._headers(),
+        )
+        if resp.status_code != 200 or resp.json().get("public") is not False:
+            raise StorageError("Private bucket visibility could not be verified")
+
     async def download(self, *, bucket: str, key: str) -> bytes:
         resp = await self._request("GET", self._object_url(bucket, key), headers=self._headers())
         if resp.status_code >= 300:

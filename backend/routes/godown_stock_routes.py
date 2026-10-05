@@ -307,7 +307,9 @@ async def list_stock(
     if brand_id:
         query["brand_id"] = brand_id
     if q and q.strip():
-        query["$or"] = [{"name": {"$regex": q.strip(), "$options": "i"}}, {"sku": {"$regex": q.strip(), "$options": "i"}}, {"brand_name": {"$regex": q.strip(), "$options": "i"}}]
+        literal = re.escape(q.strip())
+        query["$or"] = [{field: {"$regex": literal, "$options": "i"}}
+                        for field in ("name", "sku", "brand_name")]
     lots = await db.godown_stock.find(query, {"_id": 0}).sort("transferred_at", -1).to_list(500)
     transfer_map: dict[str, list[dict]] = {}
     if include_history and lots:

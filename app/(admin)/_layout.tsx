@@ -8,7 +8,8 @@ import { PRIMARY, SECONDARY, TILES_ITEMS, type NavItem } from "@/src/design/navi
 import Feather from "@expo/vector-icons/Feather";
 import { Slot, useRouter, useSegments } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import {

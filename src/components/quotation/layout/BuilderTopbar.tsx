@@ -9,7 +9,8 @@
 // -----------------------------------------------------------------------------
 import Feather from "@expo/vector-icons/Feather";
 import { useState } from "react";
-import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { colors, radius, spacing, statusMeta, type } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";

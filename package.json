@@ -31,10 +31,15 @@
     "test:e2e:audit": "playwright test --config playwright.audit.config.ts",
     "test:frontend-performance": "node --experimental-strip-types --no-warnings scripts/test-frontend-performance.mjs",
     "test:icon-fonts": "node scripts/test-icon-font-contract.mjs",
-    "test:release-recovery": "node scripts/test-release-recovery.mjs"
+    "test:release-recovery": "node scripts/test-release-recovery.mjs",
+    "test:npm-audit": "node scripts/test-npm-audit.mjs",
+    "test:service-health": "node scripts/test-service-health.mjs",
+    "test:app-text": "node --experimental-strip-types --no-warnings scripts/test-app-text.mjs",
+    "test:legal-config": "node --experimental-strip-types --no-warnings scripts/test-legal-config.mjs",
+    "test:native-permissions": "node scripts/test-native-permissions.mjs",
+    "test:stock-floor-races": "node scripts/test-stock-floor-races.mjs"
   },
   "dependencies": {
-    "@expo-google-fonts/fraunces": "0.4.1",
     "@expo/metro-runtime": "6.1.2",
     "@expo/vector-icons": "15.1.1",
     "@react-native-async-storage/async-storage": "2.2.0",
@@ -81,18 +86,21 @@
   "devDependencies": {
     "@playwright/test": "1.63.0",
     "@types/react": "19.1.10",
-    "eslint": "9.25.0",
+    "eslint": "9.39.5",
     "eslint-config-expo": "10.0.0",
     "expo-doctor": "1.19.8",
     "typescript": "5.9.3"
   },
   "resolutions": {
-    "@eslint/plugin-kit": "0.3.4",
+    "@eslint/plugin-kit": "0.4.1",
     "postcss": "8.5.28",
     "uuid": "11.1.1"
   },
   "overrides": {
-    "postcss": "8.5.28"
+    "postcss": "8.5.28",
+    "xcode": {
+      "uuid": "11.1.1"
+    }
   },
   "private": true,
   "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"

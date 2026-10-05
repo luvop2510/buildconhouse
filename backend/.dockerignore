@@ -17,6 +17,7 @@ temp/
 tmp/
 output/
 outputs/
+backups/
 test_reports/
 tests/
 *.sqlite

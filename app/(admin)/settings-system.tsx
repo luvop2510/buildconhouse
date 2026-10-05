@@ -5,7 +5,8 @@
 import Feather from "@expo/vector-icons/Feather";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { RefreshControl, ScrollView, Text, View } from "react-native";
+import { RefreshControl, ScrollView, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { api } from "@/src/api/client";
 import { SettingsPage as AdminPage } from "@/src/components/settings/SettingsPage";

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from collections import deque
 from math import ceil
 from time import monotonic
@@ -56,6 +57,43 @@ class RequestLatencyTracker:
 
 
 request_latency = RequestLatencyTracker()
+
+
+def scrub_monitoring_event(event: dict, hint=None) -> dict:
+    """Allow only technical error/timing fields; SDK contexts can contain PII.
+
+    Raw exception/log messages, HTTP requests, local variables, database spans,
+    user contexts and arbitrary extras never leave the process. Function/module
+    names preserve useful grouping without transmitting file paths or values.
+    """
+    clean = {key: event[key] for key in (
+        "event_id", "timestamp", "start_timestamp", "platform", "level",
+        "release", "environment", "type",
+    ) if key in event}
+    if "transaction" in event or event.get("type") == "transaction":
+        clean.update(transaction="backend.request", spans=[])
+    values = []
+    for value in (event.get("exception") or {}).get("values", []):
+        safe_type = str(value.get("type", "Error"))
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]{0,120}", safe_type):
+            safe_type = "Error"
+        frames = []
+        for frame in (value.get("stacktrace") or {}).get("frames", []):
+            frames.append({key: item for key in ("module", "function")
+                           if isinstance((item := frame.get(key)), str)
+                           and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.<>]{0,160}", item)})
+        values.append({"type": safe_type, "value": "[redacted]",
+                       "stacktrace": {"frames": frames}})
+    if values:
+        clean["exception"] = {"values": values}
+    trace = (event.get("contexts") or {}).get("trace", {})
+    safe_trace = {key: trace[key] for key in ("trace_id", "span_id", "parent_span_id")
+                  if isinstance(trace.get(key), str)
+                  and re.fullmatch(r"[0-9a-f]{16,32}", trace[key])}
+    if safe_trace:
+        clean["contexts"] = {"trace": safe_trace}
+    clean["breadcrumbs"] = []
+    return clean
 
 
 def request_timing_enabled() -> bool:
@@ -104,14 +142,16 @@ def init_monitoring() -> dict[str, bool]:
                     FastApiIntegration(transaction_style="endpoint"),
                 ],
                 traces_sample_rate=float(os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0.1") or "0.1"),
-                # Include request headers and client IP data for richer issue
-                # context, matching the Sentry project configuration.
-                send_default_pii=True,
+                send_default_pii=False,
+                max_breadcrumbs=0,
+                include_local_variables=False,
+                before_send=scrub_monitoring_event,
+                before_send_transaction=scrub_monitoring_event,
                 environment=os.environ.get("SENTRY_ENVIRONMENT", "production"),
             )
             status["sentry"] = True
         except Exception as exc:  # noqa: BLE001 — monitoring must never block startup
-            logger.warning("Sentry configured but failed to initialize: %s", exc)
+            logger.warning("Sentry configured but failed to initialize (%s)", type(exc).__name__)
     else:
         logger.info("SENTRY_DSN not set — error monitoring disabled (safe no-op).")
 

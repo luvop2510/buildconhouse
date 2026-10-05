@@ -15,7 +15,8 @@ import { PageHeader as SharedPageHeader } from "@/src/design/PageHeader";
 // Nothing in Tile Orders should set its own horizontal page padding, its own
 // button metrics, or its own section rhythm — it comes from here.
 import { type ReactNode } from "react";
-import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Text, TextInput } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useBreakpoint } from "@/src/hooks/use-breakpoint";

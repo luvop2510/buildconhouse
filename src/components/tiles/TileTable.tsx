@@ -21,7 +21,8 @@
 // Columns marked `grow` absorb leftover width so a wide monitor fills out
 // instead of leaving a dead right-hand margin.
 import { type ReactNode, useRef, useState } from "react";
-import { FlatList, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { FlatList, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { useBreakpoint } from "@/src/hooks/use-breakpoint";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
