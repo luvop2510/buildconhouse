@@ -1,27 +1,27 @@
 {
-  "scanned_at": "2026-10-05T18:23:08.192213+00:00",
+  "scanned_at": "2026-10-06T10:11:17.170722+00:00",
   "read_only_final_audit": true,
   "active_products_scanned": 6565,
-  "current_media_rows": 8484,
+  "current_media_rows": 8489,
   "metadata_integrity_counts": {},
   "displayed_hero_quality": {
-    "acceptable": 2016,
+    "acceptable": 2017,
     "excellent": 1582,
     "good": 1031,
-    "missing": 122,
-    "poor": 1814
+    "missing": 119,
+    "poor": 1816
   },
-  "missing_hero_count": 122,
+  "missing_hero_count": 119,
   "missing_by_brand": {
     "Geberit": 2,
-    "Hansgrohe": 4,
+    "Vitra": 71,
+    "Oyster": 1,
     "Nexion": 40,
-    "Oyster": 4,
     "Renite": 1,
-    "Vitra": 71
+    "Hansgrohe": 4
   },
   "missing_by_floor": {
-    "first-floor": 81,
+    "first-floor": 78,
     "ground-floor": 41
   },
   "missing_heroes": [
@@ -751,54 +751,6 @@
       "name": "ONICE PERSIANO - Satinato (798X1598)",
       "brand": "Nexion",
       "floor_id": "ground-floor",
-      "usage_count": 0,
-      "hero_quality": "missing",
-      "hero_dimensions": [
-        null,
-        null
-      ],
-      "hero_source_type": null,
-      "hero_media_id": null,
-      "meets_top_notch_standard": false
-    },
-    {
-      "product_id": "c1283293-9c86-4d9b-acf4-85c1fcae2a26",
-      "sku": "OYSTER-BASINMIXER-CHOSHIHIGHSPOUTBESINMIXER-RG",
-      "name": "CHOSHI HIGH SPOUT BESIN MIXER - Rose Gold",
-      "brand": "Oyster",
-      "floor_id": "first-floor",
-      "usage_count": 0,
-      "hero_quality": "missing",
-      "hero_dimensions": [
-        null,
-        null
-      ],
-      "hero_source_type": null,
-      "hero_media_id": null,
-      "meets_top_notch_standard": false
-    },
-    {
-      "product_id": "8328e157-f20c-4439-97d8-b7cb067c1d9c",
-      "sku": "OYSTER-BASINMIXER-TRIBARGHIGHSPOUTBESINMIXER-BRG",
-      "name": "TRIBARG HIGH SPOUT BESIN MIXER - Brushed Rose Gold",
-      "brand": "Oyster",
-      "floor_id": "first-floor",
-      "usage_count": 0,
-      "hero_quality": "missing",
-      "hero_dimensions": [
-        null,
-        null
-      ],
-      "hero_source_type": null,
-      "hero_media_id": null,
-      "meets_top_notch_standard": false
-    },
-    {
-      "product_id": "14f4d343-3522-4b0d-a997-0fef9c0f160d",
-      "sku": "OYSTER-BASINMIXER-WHITKARHIGHSPOUT-RG",
-      "name": "WHITKAR HIGH SPOUT - Rose Gold",
-      "brand": "Oyster",
-      "floor_id": "first-floor",
       "usage_count": 0,
       "hero_quality": "missing",
       "hero_dimensions": [
@@ -2086,7 +2038,7 @@
     "75040140",
     "75040340"
   ],
-  "limitation": "Metadata coverage audited every active product. Known 11 historical object pointers retried after supplied Vitra recovery. Separate full bytes scan records definitive storage integrity in output/operations/media-bytes-final.json.",
+  "limitation": "Current coverage follows all 6565 active displayed heroes. Integrity evidence combines complete8479-row baseline with21 scoped post-recovery byte rechecks, including all baseline issues and Vitra/Oyster changes. Five selected objects still missing; no repeat downloads for unchanged healthy baseline rows. Not a transactional database/storage snapshot.",
   "new_vitra_recoveries_applied": [
     "7082B076H0075",
     "7082B076H0090",
@@ -2100,7 +2052,7 @@
     "7041B401H0075",
     "7041B401H0090"
   ],
-  "unusable_display_photo_count": 127,
+  "unusable_display_photo_count": 124,
   "unresolved_requirements": [
     {
       "product_id": "a41035f3-6fae-48d9-bcf3-bd953f51975a",
@@ -2231,9 +2183,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-LEPTISAMANIBRONZE-1198X1198-FL product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x120 cm maps explicitly to actual 1198X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Full Lappato 1198X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "0fafe5fa-7405-464e-8666-14ee69669b92",
@@ -2250,9 +2203,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-LEPTISAMANIBRONZE-1198X1198-LM product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x120 cm maps explicitly to actual 1198X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Lappato Matt 1198X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "b3086cc7-6f52-4bbe-aa3f-da162ad019d4",
@@ -2269,9 +2223,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-LEPTISAMANIBRONZE-1198X1198-SN product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x120 cm maps explicitly to actual 1198X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Supplier spelling Soft Natural differs from official Soft Naturale; exact finish equivalence and a finish-specific original must be confirmed. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Soft Natural 1198X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "5017e50b-cf94-4805-9ace-9722a0a2251f",
@@ -2288,9 +2243,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-LEPTISAMANIBRONZE-1198X1198-ST product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "mismatch",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x120 cm maps explicitly to actual 1198X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Exact supplied Satinato / 120x120 cm tuple conflicts with current product page and catalogue: Satinato is listed only in 120x180 and 120x240 cm. This is a catalogue conflict requiring supplier confirmation, not proof custom availability is impossible. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Satinato 1198X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling. First reconcile this Satinato format against the two official available sizes; retain supplied row until confirmed.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "6213e690-c8fb-4981-ab6f-43a3c995fd02",
@@ -2307,9 +2263,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-LEPTISAMANIBRONZE-1198X1798-FL product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x180 cm maps explicitly to actual 1198X1798 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Full Lappato 1198X1798 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "7545fdee-f73c-4f3f-bcb7-3a56dbc0a813",
@@ -2326,9 +2283,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-LEPTISAMANIBRONZE-1198X1798-LM product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x180 cm maps explicitly to actual 1198X1798 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Lappato Matt 1198X1798 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "079eee5b-8397-4615-8a61-758b583ac64b",
@@ -2345,9 +2303,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-LEPTISAMANIBRONZE-1198X1798-SN product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x180 cm maps explicitly to actual 1198X1798 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Supplier spelling Soft Natural differs from official Soft Naturale; exact finish equivalence and a finish-specific original must be confirmed. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Soft Natural 1198X1798 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "43499697-21aa-471c-9c96-9802fc1e9a26",
@@ -2364,9 +2323,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-LEPTISAMANIBRONZE-1198X1798-ST product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x180 cm maps explicitly to actual 1198X1798 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Satinato 1198X1798 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "37487977-b660-4916-894f-104f05cf5467",
@@ -2383,9 +2343,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-LEPTISAMANIBRONZE-1198X2398-FL product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x240 cm maps explicitly to actual 1198X2398 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Full Lappato 1198X2398 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "f0d9e354-31fa-451b-9185-42dd37f7df3b",
@@ -2402,9 +2363,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-LEPTISAMANIBRONZE-1198X2398-LM product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x240 cm maps explicitly to actual 1198X2398 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Lappato Matt 1198X2398 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "cec6dad2-a604-4946-ae01-adb44fe3c12d",
@@ -2421,9 +2383,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-LEPTISAMANIBRONZE-1198X2398-SN product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x240 cm maps explicitly to actual 1198X2398 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Supplier spelling Soft Natural differs from official Soft Naturale; exact finish equivalence and a finish-specific original must be confirmed. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Soft Natural 1198X2398 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "cf1706b2-6136-40ba-be14-5c71158d8fcf",
@@ -2440,9 +2403,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-LEPTISAMANIBRONZE-1198X2398-ST product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x240 cm maps explicitly to actual 1198X2398 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Satinato 1198X2398 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "5cfdd946-36ca-47e7-82a9-03426e8c78d3",
@@ -2459,9 +2423,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-LEPTISAMANIBRONZE-598X1198-FL product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 60x120 cm maps explicitly to actual 598X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Full Lappato 598X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "95e7edfd-edae-4e10-806a-852a6b3f69eb",
@@ -2478,9 +2443,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-LEPTISAMANIBRONZE-598X1198-LM product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 60x120 cm maps explicitly to actual 598X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Lappato Matt 598X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "f1c55f1d-2c7e-487e-90f2-7459f872fa01",
@@ -2497,9 +2463,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-LEPTISAMANIBRONZE-598X1198-SN product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 60x120 cm maps explicitly to actual 598X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Supplier spelling Soft Natural differs from official Soft Naturale; exact finish equivalence and a finish-specific original must be confirmed. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Soft Natural 598X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "3fd946ec-c056-4067-a133-cda02f87749f",
@@ -2516,9 +2483,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-LEPTISAMANIBRONZE-598X1198-ST product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "mismatch",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 60x120 cm maps explicitly to actual 598X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Exact supplied Satinato / 60x120 cm tuple conflicts with current product page and catalogue: Satinato is listed only in 120x180 and 120x240 cm. This is a catalogue conflict requiring supplier confirmation, not proof custom availability is impossible. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Satinato 598X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling. First reconcile this Satinato format against the two official available sizes; retain supplied row until confirmed.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "57b0cea7-fb05-496e-9ea5-a0206938ed9c",
@@ -2535,9 +2503,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-LEPTISAMANIBRONZE-798X1598-FL product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 80x160 cm maps explicitly to actual 798X1598 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Full Lappato 798X1598 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "48baa136-66d9-4fc8-b714-a5b3ecf41b59",
@@ -2554,9 +2523,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-LEPTISAMANIBRONZE-798X1598-LM product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 80x160 cm maps explicitly to actual 798X1598 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Lappato Matt 798X1598 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "1b2c136e-0897-46e2-a806-f3f8b75ae4a7",
@@ -2573,9 +2543,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-LEPTISAMANIBRONZE-798X1598-SN product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 80x160 cm maps explicitly to actual 798X1598 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Supplier spelling Soft Natural differs from official Soft Naturale; exact finish equivalence and a finish-specific original must be confirmed. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Soft Natural 798X1598 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "84ab34ef-a1d2-4b78-88c6-6aaa3ec80278",
@@ -2592,9 +2563,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-LEPTISAMANIBRONZE-798X1598-ST product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "mismatch",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 80x160 cm maps explicitly to actual 798X1598 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Exact supplied Satinato / 80x160 cm tuple conflicts with current product page and catalogue: Satinato is listed only in 120x180 and 120x240 cm. This is a catalogue conflict requiring supplier confirmation, not proof custom availability is impossible. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Satinato 798X1598 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling. First reconcile this Satinato format against the two official available sizes; retain supplied row until confirmed.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "d493c4c8-dd74-471c-9b53-5266dae02305",
@@ -2611,9 +2583,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-ONICEPERSIANO-1198X1198-FL product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x120 cm maps explicitly to actual 1198X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Full Lappato 1198X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "b127517a-3c02-4785-b220-5c9e75466248",
@@ -2630,9 +2603,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-ONICEPERSIANO-1198X1198-LM product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x120 cm maps explicitly to actual 1198X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Lappato Matt 1198X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "6c05e41e-84c2-4432-8e8f-e8c8491f7248",
@@ -2649,9 +2623,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-ONICEPERSIANO-1198X1198-SN product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x120 cm maps explicitly to actual 1198X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Supplier spelling Soft Natural differs from official Soft Naturale; exact finish equivalence and a finish-specific original must be confirmed. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Soft Natural 1198X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "5b5b4799-60f9-41f9-9227-48241c5b5211",
@@ -2668,9 +2643,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-ONICEPERSIANO-1198X1198-ST product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "mismatch",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x120 cm maps explicitly to actual 1198X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Exact supplied Satinato / 120x120 cm tuple conflicts with current product page and catalogue: Satinato is listed only in 120x180 and 120x240 cm. This is a catalogue conflict requiring supplier confirmation, not proof custom availability is impossible. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Satinato 1198X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling. First reconcile this Satinato format against the two official available sizes; retain supplied row until confirmed.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "70ee916d-573b-4c15-9041-2714f89a3b5f",
@@ -2687,9 +2663,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-ONICEPERSIANO-1198X1798-FL product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x180 cm maps explicitly to actual 1198X1798 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Full Lappato 1198X1798 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "b71b27a8-5f7b-45f5-b2e5-cab90eab3a25",
@@ -2706,9 +2683,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-ONICEPERSIANO-1198X1798-LM product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x180 cm maps explicitly to actual 1198X1798 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Lappato Matt 1198X1798 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "b80d1208-c883-4a41-b277-8ea18d81d70d",
@@ -2725,9 +2703,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-ONICEPERSIANO-1198X1798-SN product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x180 cm maps explicitly to actual 1198X1798 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Supplier spelling Soft Natural differs from official Soft Naturale; exact finish equivalence and a finish-specific original must be confirmed. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Soft Natural 1198X1798 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "3ebcb31c-6b37-4902-ab87-8d2f3ad70547",
@@ -2744,9 +2723,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-ONICEPERSIANO-1198X1798-ST product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x180 cm maps explicitly to actual 1198X1798 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Satinato 1198X1798 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "ecdb9a00-0da0-48b2-8a55-41bb5691b497",
@@ -2763,9 +2743,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-ONICEPERSIANO-1198X2398-FL product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x240 cm maps explicitly to actual 1198X2398 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Full Lappato 1198X2398 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "2c2cbeec-6ec7-474d-a219-ae8d5ee3aed4",
@@ -2782,9 +2763,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-ONICEPERSIANO-1198X2398-LM product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x240 cm maps explicitly to actual 1198X2398 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Lappato Matt 1198X2398 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "28aaa4ef-c431-43a5-bdcf-fadba4988df2",
@@ -2801,9 +2783,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-ONICEPERSIANO-1198X2398-SN product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x240 cm maps explicitly to actual 1198X2398 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Supplier spelling Soft Natural differs from official Soft Naturale; exact finish equivalence and a finish-specific original must be confirmed. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Soft Natural 1198X2398 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "e70f1717-28cb-42a2-9105-e664b2810789",
@@ -2820,9 +2803,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-ONICEPERSIANO-1198X2398-ST product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x240 cm maps explicitly to actual 1198X2398 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Satinato 1198X2398 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "a25f7578-9067-4acd-b684-d139dbe230fb",
@@ -2839,9 +2823,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-ONICEPERSIANO-598X1198-FL product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 60x120 cm maps explicitly to actual 598X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Full Lappato 598X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "263d68d9-44ea-425e-8d2d-f2c351ac2cd1",
@@ -2858,9 +2843,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-ONICEPERSIANO-598X1198-LM product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 60x120 cm maps explicitly to actual 598X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Lappato Matt 598X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "fb5ba043-4eea-496a-b015-a3e9fa25cd1b",
@@ -2877,9 +2863,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-ONICEPERSIANO-598X1198-SN product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 60x120 cm maps explicitly to actual 598X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Supplier spelling Soft Natural differs from official Soft Naturale; exact finish equivalence and a finish-specific original must be confirmed. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Soft Natural 598X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "5d142b88-bb78-4ec8-925a-6ac3cdb97fd4",
@@ -2896,9 +2883,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-ONICEPERSIANO-598X1198-ST product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "mismatch",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 60x120 cm maps explicitly to actual 598X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Exact supplied Satinato / 60x120 cm tuple conflicts with current product page and catalogue: Satinato is listed only in 120x180 and 120x240 cm. This is a catalogue conflict requiring supplier confirmation, not proof custom availability is impossible. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Satinato 598X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling. First reconcile this Satinato format against the two official available sizes; retain supplied row until confirmed.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "fa77003c-896d-4ff1-b0dd-d45e2d6c8d0c",
@@ -2915,9 +2903,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-ONICEPERSIANO-798X1598-FL product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 80x160 cm maps explicitly to actual 798X1598 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Full Lappato 798X1598 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "d0124790-9a6c-41f7-9a2f-6e14bb54a101",
@@ -2934,9 +2923,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-ONICEPERSIANO-798X1598-LM product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 80x160 cm maps explicitly to actual 798X1598 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Lappato Matt 798X1598 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "22309a5d-2983-4c19-bc15-3f612b37969d",
@@ -2953,9 +2943,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-ONICEPERSIANO-798X1598-SN product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 80x160 cm maps explicitly to actual 798X1598 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Supplier spelling Soft Natural differs from official Soft Naturale; exact finish equivalence and a finish-specific original must be confirmed. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Soft Natural 798X1598 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "712d6240-dfda-41c7-9e57-119820588c7e",
@@ -2972,66 +2963,10 @@
       "hero_source_type": null,
       "hero_media_id": null,
       "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Nexion SKU NEXION-ONICEPERSIANO-798X1598-ST product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
-    },
-    {
-      "product_id": "c1283293-9c86-4d9b-acf4-85c1fcae2a26",
-      "sku": "OYSTER-BASINMIXER-CHOSHIHIGHSPOUTBESINMIXER-RG",
-      "name": "CHOSHI HIGH SPOUT BESIN MIXER - Rose Gold",
-      "brand": "Oyster",
-      "floor_id": "first-floor",
-      "usage_count": 0,
-      "hero_quality": "missing",
-      "hero_dimensions": [
-        null,
-        null
-      ],
-      "hero_source_type": null,
-      "hero_media_id": null,
-      "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Oyster SKU OYSTER-BASINMIXER-CHOSHIHIGHSPOUTBESINMIXER-RG product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
-    },
-    {
-      "product_id": "8328e157-f20c-4439-97d8-b7cb067c1d9c",
-      "sku": "OYSTER-BASINMIXER-TRIBARGHIGHSPOUTBESINMIXER-BRG",
-      "name": "TRIBARG HIGH SPOUT BESIN MIXER - Brushed Rose Gold",
-      "brand": "Oyster",
-      "floor_id": "first-floor",
-      "usage_count": 0,
-      "hero_quality": "missing",
-      "hero_dimensions": [
-        null,
-        null
-      ],
-      "hero_source_type": null,
-      "hero_media_id": null,
-      "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Oyster SKU OYSTER-BASINMIXER-TRIBARGHIGHSPOUTBESINMIXER-BRG product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
-    },
-    {
-      "product_id": "14f4d343-3522-4b0d-a997-0fef9c0f160d",
-      "sku": "OYSTER-BASINMIXER-WHITKARHIGHSPOUT-RG",
-      "name": "WHITKAR HIGH SPOUT - Rose Gold",
-      "brand": "Oyster",
-      "floor_id": "first-floor",
-      "usage_count": 0,
-      "hero_quality": "missing",
-      "hero_dimensions": [
-        null,
-        null
-      ],
-      "hero_source_type": null,
-      "hero_media_id": null,
-      "meets_top_notch_standard": false,
-      "outcome": "not_found",
-      "evidence": "No exact original product photograph verified in inspected supplied source files.",
-      "next_source_requirement": "Exact Oyster SKU OYSTER-BASINMIXER-WHITKARHIGHSPOUT-RG product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+      "outcome": "mismatch",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 80x160 cm maps explicitly to actual 798X1598 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Exact supplied Satinato / 80x160 cm tuple conflicts with current product page and catalogue: Satinato is listed only in 120x180 and 120x240 cm. This is a catalogue conflict requiring supplier confirmation, not proof custom availability is impossible. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Satinato 798X1598 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling. First reconcile this Satinato format against the two official available sizes; retain supplied row until confirmed.",
+      "official_research_manifest": "docs/audits/2026-10-06-nexion-official-image-research.json"
     },
     {
       "product_id": "d1d71670-caba-4b12-a58a-c125a8753dcd",
@@ -4480,5 +4415,14 @@
       "evidence": "No exact original product photograph verified in inspected supplied source files.",
       "next_source_requirement": "Exact Vitra SKU 5995B403H0016 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
     }
+  ],
+  "new_oyster_recoveries_applied": [
+    "OYSTER-BASINMIXER-CHOSHIHIGHSPOUTBESINMIXER-RG",
+    "OYSTER-BASINMIXER-TRIBARGHIGHSPOUTBESINMIXER-BRG",
+    "OYSTER-BASINMIXER-WHITKARHIGHSPOUT-RG"
+  ],
+  "oyster_wrong_finish_corrections_applied": [
+    "OYSTER-BASINMIXER-CHOSHIHIGHSPOUTBESINMIXER-MB",
+    "OYSTER-BASINMIXER-TRIBARGHIGHSPOUTBESINMIXER-BG"
   ]
 }

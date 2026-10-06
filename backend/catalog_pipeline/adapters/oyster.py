@@ -9,9 +9,9 @@ Basin Mixer), single sheet each, one row per finish variant:
            <blank>, OFFER RATE, TOTAL)
   Row 3+ : one finish variant per row. The embedded product photo floats over
            the "Product Image" cell of that exact row — verified 1:1 row
-           anchoring across all 4 files (no side-by-side finishes sharing a
-           row, unlike Vitra), so row-only anchor matching (Hansgrohe-style)
-           is safe here.
+           ownership. A few photos begin at the bottom of the preceding
+           row; their displayed bounds, rather than the top anchor alone,
+           identify the exact finish row.
 
 Rules:
 * Category comes from the source FILENAME (one file = one category, per
@@ -42,6 +42,7 @@ Rules:
 """
 from __future__ import annotations
 import io
+import hashlib
 import re
 
 from ..base import MISSING, BrandAdapter, ExtractionReport, ProductRow, dedupe_iter
@@ -182,6 +183,46 @@ def _build_col_map(header_row: list) -> dict[str, int]:
     return col_map
 
 
+def _image_row_owners(workbook) -> dict[tuple[str, int, str], int]:
+    """Resolve only unambiguous Oyster photos mostly inside the next row.
+
+    Supplier pictures can start a few pixels before a row boundary. Never
+    search neighbouring images: require explicit two-cell bounds, row
+    heights, original raster bytes and at least 85% overlap with that row.
+    Other anchors retain the extractor's existing ownership.
+    """
+    candidates: dict[tuple[str, int, str], set[int]] = {}
+    for sheet in workbook.worksheets:
+        for picture in sheet._images:
+            start = getattr(picture.anchor, "_from", None)
+            end = getattr(picture.anchor, "to", None)
+            if start is None:
+                continue
+            if picture.format not in {"png", "jpeg", "jpg"}:
+                continue
+            try:
+                original_sha = hashlib.sha1(picture._data()).hexdigest()[:16]
+            except (OSError, ValueError):
+                continue
+            row = start.row + 1
+            owner = row
+            if end is not None and end.row == start.row + 1:
+                target = end.row + 1
+                heights = [sheet.row_dimensions[index].height for index in (row, target)]
+                if all(height is not None and height > 0 for height in heights):
+                    row_height, target_height = [height * 12700 for height in heights]
+                    if 0 <= start.rowOff <= row_height and 0 < end.rowOff <= target_height:
+                        previous_overlap = row_height - start.rowOff
+                        if end.rowOff / (previous_overlap + end.rowOff) >= 0.85:
+                            owner = target
+            candidates.setdefault((sheet.title, row, original_sha), set()).add(owner)
+    # The extractor identifies pictures by top row and decoded SHA. Two
+    # identical originals with conflicting displayed ownership cannot be
+    # distinguished by that key, so retain the existing mapping for both.
+    return {key: next(iter(owners)) for key, owners in candidates.items()
+            if len(owners) == 1 and next(iter(owners)) != key[1]}
+
+
 class OysterAdapter(BrandAdapter):
     brand = BRAND
     supported_extensions = (".xlsx", ".xls")
@@ -208,13 +249,13 @@ class OysterAdapter(BrandAdapter):
             report.warnings.append(f"xlsx open failed: {e}")
             return rows, report
 
-        # Image mapping: one photo per data row — verified 1:1 across all 4
-        # files (no side-by-side finishes sharing a row, unlike Vitra), so
-        # row-only anchoring (Hansgrohe-style) is safe. Highest-quality
-        # candidate wins if an anchor somehow has more than one blip.
+        # Respect supplied displayed row bounds before deduplicating anchors.
+        # Photos from another finish are never borrowed to fill an empty row.
+        row_owners = _image_row_owners(wb)
         sku_counts: dict[str, int] = {}
         by_sheet_row: dict[tuple[str, int], ExtractedImage] = {}
         for sheet, row_idx, _col_idx, img in extract_images_from_xlsx_ex(data):
+            row_idx = row_owners.get((sheet, row_idx, img.sha1), row_idx)
             key = (sheet, row_idx)
             prev = by_sheet_row.get(key)
             qrank = {"excellent": 4, "good": 3, "acceptable": 2, "poor": 1}

@@ -270,3 +270,74 @@ def test_extract_imports_missing_mrp_as_zero_with_needs_pricing_flag():
     assert row.specs.get("needs_pricing") is True
     assert "needs-pricing" in row.tags
     assert any("Missing MRP" in i for i in row.issues)
+
+
+def _boundary_picture_workbook(*, previous_overlap: int):
+    from openpyxl.drawing.image import Image
+    from openpyxl.drawing.spreadsheet_drawing import AnchorMarker, TwoCellAnchor
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "BASIN MIXER"
+    sheet.append(["OYSTER BASIN MIXER"])
+    sheet.append(["Sr. No.", "finishes", "Product Discription", "Product Image", "MRP"])
+    sheet.append([1, "MAAT BLACK", "Brook CP Fittings CHOSHI HIGH SPOUT BASIN MIXER", None, 100])
+    sheet.append([2, "ROSE GOLD", "Brook CP Fittings CHOSHI HIGH SPOUT BASIN MIXER", None, 110])
+    sheet.row_dimensions[3].height = sheet.row_dimensions[4].height = 82.5
+    black_bytes = _tiny_png_bytes()
+    black = Image(io.BytesIO(black_bytes))
+    black.anchor = "D3"
+    sheet.add_image(black)
+    buffer = io.BytesIO()
+    PILImage.new("RGB", (308, 297), color=(225, 150, 135)).save(buffer, format="PNG")
+    rose_bytes = buffer.getvalue()
+    rose = Image(io.BytesIO(rose_bytes))
+    rose.anchor = TwoCellAnchor(
+        _from=AnchorMarker(col=3, row=2, rowOff=1047750 - previous_overlap),
+        to=AnchorMarker(col=3, row=3, rowOff=900000),
+    )
+    sheet.add_image(rose)
+    output = io.BytesIO()
+    workbook.save(output)
+    return output.getvalue(), black_bytes, rose_bytes
+
+
+def test_boundary_picture_uses_its_displayed_finish_row_and_preserves_other_photo():
+    import base64
+
+    data, black, rose = _boundary_picture_workbook(previous_overlap=57150)
+    rows, report = OysterAdapter().extract(data, "OYSTER BASIN MIXER.xlsx")
+    by_finish = {row.finish: row for row in rows}
+    decode = lambda row: base64.b64decode(row.images[0].split(",", 1)[1])
+    assert report.images_mapped == 2
+    assert decode(by_finish["Matt Black"]) == black
+    assert decode(by_finish["Rose Gold"]) == rose
+    assert by_finish["Rose Gold"].image_meta[0]["width"] == 308
+    assert by_finish["Rose Gold"].image_meta[0]["height"] == 297
+
+
+def test_ambiguous_boundary_picture_does_not_fill_neighbouring_finish():
+    data, _, _ = _boundary_picture_workbook(previous_overlap=900000)
+    rows, report = OysterAdapter().extract(data, "OYSTER BASIN MIXER.xlsx")
+    rose = next(row for row in rows if row.finish == "Rose Gold")
+    assert report.images_mapped == 1
+    assert rose.images == []
+    assert "No image mapped from supplier file" in rose.issues
+
+
+def test_identical_bytes_with_conflicting_anchor_ownership_are_not_moved():
+    from openpyxl import load_workbook
+    from openpyxl.drawing.image import Image
+    from catalog_pipeline.adapters.oyster import _image_row_owners
+
+    data, _, rose_bytes = _boundary_picture_workbook(previous_overlap=57150)
+    workbook = load_workbook(io.BytesIO(data))
+    same_picture = Image(io.BytesIO(rose_bytes))
+    same_picture.anchor = "D3"
+    workbook.active.add_image(same_picture)
+    output = io.BytesIO()
+    workbook.save(output)
+    reloaded = load_workbook(io.BytesIO(output.getvalue()))
+    assert _image_row_owners(reloaded) == {}
+    rows, _ = OysterAdapter().extract(output.getvalue(), "OYSTER BASIN MIXER.xlsx")
+    assert next(row for row in rows if row.finish == "Rose Gold").images == []

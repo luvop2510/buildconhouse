@@ -1,6 +1,6 @@
 # Dependency security review
 
-Reviewed 2026-10-05 against the committed npm manifests, a clean installation, the current npm registry, and the GitHub advisory database.
+Initial review 2026-10-05 against the committed npm manifests, a clean installation, the current npm registry, and the GitHub advisory database.
 
 ## Remediation and verification
 
@@ -39,3 +39,20 @@ Re-run the registry/advisory check when upstream releases change, then update on
 ## Backend scope and historical preview freeze
 
 This frontend review does not replace the current backend production dependency audit. Production uses `backend/requirements-prod.txt`; `backend/requirements.txt` is an Emergent preview-environment freeze. The historical preview freeze was not a CI production installation target because its preview-only Google/protobuf requirements conflicted on Python 3.14. Use the current backend release evidence for backend dependency and operational status.
+
+## Fresh registry review — 6 October 2026
+
+Newly indexed advisories increased the unchanged graph to 34 findings (25
+high, nine moderate). Compatible lockfile updates installed compression
+1.8.2 and source-map-js 1.2.2 from their existing dependency ranges, removing
+two high root findings. A clean npm ci and the production web export passed;
+TypeScript, lint, Expo compatibility and route budgets also passed. Current
+npm audit reports **32 findings: 23 high, nine moderate, zero critical/low**.
+The earlier 27 count and SDK57 experiment above are dated evidence.
+
+The additional moderate root is sprintf-js through1.1.3, pulled through the
+React Native/Babel test-tooling graph. [GHSA-hp3w-g68c-fv3c](https://github.com/advisories/GHSA-hp3w-g68c-fv3c)
+was reviewed/updated5October and lists no patched version. It concerns
+unbounded precision format strings causing uncaught RangeError. The high
+braces/node-forge and incompatible image-size migration blockers remain.
+No finding is suppressed, and the independent security gate still fails.

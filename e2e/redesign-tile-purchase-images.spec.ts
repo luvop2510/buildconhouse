@@ -27,12 +27,16 @@ for (const kind of ['customer', 'supplier'] as const) {
     await page.goto(path);
     const frame = page.getByTestId(`tile-${kind}-product-image-tile-one`);
     await expect(frame).toBeVisible();
-    await expect(frame.locator('img')).toHaveAttribute('src', tileImage);
-    await expect(frame.locator('img')).toHaveCSS('object-fit', 'contain');
+    // Expo Image can retain the previous image while crossfading. Verify the
+    // exact current product source so a stale image cannot satisfy this test.
+    const currentImage = frame.locator(`img[src=${JSON.stringify(tileImage)}]`);
+    await expect(currentImage).toHaveCount(1);
+    await expect(currentImage).toBeVisible();
+    await expect(currentImage).toHaveCSS('object-fit', 'contain');
     const bounds = await frame.boundingBox();
     expect(bounds!.width).toBe(96);
     expect(bounds!.height).toBe(60);
-    const imageBounds = await frame.locator('img').boundingBox();
+    const imageBounds = await currentImage.boundingBox();
     expect(imageBounds!.width).toBeCloseTo(bounds!.width, 0);
     expect(imageBounds!.height).toBeCloseTo(bounds!.height, 0);
     await expect(page.getByTestId(`tile-${kind}-product-image-tile-two`).locator('img')).toHaveCount(0);

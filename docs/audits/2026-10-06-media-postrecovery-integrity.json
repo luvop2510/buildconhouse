@@ -1,0 +1,70 @@
+{
+  "read_only": true,
+  "started_at": "2026-10-06T10:11:09.767033+00:00",
+  "finished_at": "2026-10-06T10:11:17.170722+00:00",
+  "complete": true,
+  "baseline_scanned": 8479,
+  "current_media_rows": 8489,
+  "scope": "Rechecked every baseline issue ID and every supplied-Vitra and Oyster recovery ID; recomputed all current metadata identities and selected active-product hero coverage. No repeat downloads for unchanged healthy baseline rows.",
+  "scanned": 21,
+  "counts": {
+    "missing_object": 5
+  },
+  "classification_counts": {
+    "active_displayed_hero": 5
+  },
+  "active_products": 6565,
+  "missing_hero_count": 119,
+  "missing_by_brand": {
+    "Geberit": 2,
+    "Vitra": 71,
+    "Oyster": 1,
+    "Nexion": 40,
+    "Renite": 1,
+    "Hansgrohe": 4
+  },
+  "missing_by_floor": {
+    "first-floor": 78,
+    "ground-floor": 41
+  },
+  "broken_displayed_hero_count": 5,
+  "broken_displayed_heroes": [
+    {
+      "product_id": "a844964e-c014-45d5-b64a-538a30c5eb98",
+      "sku": "7810B401H0016",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "media_id": "0ae08556-238b-4da3-b0f7-fa864ad5634f"
+    },
+    {
+      "product_id": "3d19f6a3-9e33-42e7-bffb-8b56449895c7",
+      "sku": "7812B401H0016",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "media_id": "b50a4a94-4b37-43d5-8d24-6cdefac8467e"
+    },
+    {
+      "product_id": "88a0b4c5-9720-4d3b-bd1b-36388c668451",
+      "sku": "5991B401H0016",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "media_id": "4b8eebbf-0f97-4942-b032-c3e60c3fafb7"
+    },
+    {
+      "product_id": "b8163d57-54ab-42cb-99f4-e60db68198e9",
+      "sku": "5993B403H0016",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "media_id": "d092b4bd-e728-4ed7-8561-718f01286225"
+    },
+    {
+      "product_id": "9fd9c81f-14a8-4b87-b798-89a79218e634",
+      "sku": "5995B403H0016",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "media_id": "ae898f54-e305-4dd0-93a0-94b1203a3379"
+    }
+  ],
+  "total_products_missing_or_broken_displayed_hero": 124,
+  "limitations": "The database/storage reads are not a single point-in-time snapshot. Current evidence combines the full baseline with scoped post-recovery byte rechecks; it does not verify unreferenced storage objects or remote legacy product URLs."
+}

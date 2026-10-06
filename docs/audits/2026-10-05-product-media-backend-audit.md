@@ -172,3 +172,53 @@ The nine focused scanner/byte checks cover bounded downloads, atomic reports,
 provider-error redaction and failure closure for inspection, database-read
 and storage-close failures. The ordered-quotation edit regression now uses a
 real catalog snapshot instead of an incomplete test fixture.
+
+## Nexion official-source follow-up — 6 October 2026 IST
+
+The 40 missing Ground Floor Nexion rows now have current manufacturer research,
+recorded in `2026-10-06-nexion-official-image-research.json`. Both official
+product pages, matching public original-upload metadata, current 2026 Marble
+Gallery and historical official brochures were inspected. The 17 matching
+manufacturer originals decoded successfully; none meets the fresh web-source
+4K gate. The published face originals are 1400×700, the largest original edge
+is 1920, and relevant native catalogue images also fall below the gate. Page
+renders were used for visual review only. Retailer candidates inspected also
+fell below the gate; their authorization and exact row assignments were not
+established.
+
+The current catalogue explicitly maps all five nominal formats to the actual
+millimetre dimensions used in the supplied workbook (PDF page 77 / printed
+page 153). Six Satinato entries remain in conflict with the current manufacturer
+availability: both collections list Satinato only for 120×180 and 120×240 cm,
+whereas the supplied source also lists the square, 80×160 and 60×120 formats.
+These require supplier confirmation; no catalog row was removed or altered.
+Supplier “Soft Natural” versus official “Soft Naturale” still needs exact finish
+confirmation. Collection face numbers indicate graphic variation rather than
+an exact finish assignment.
+
+Exactly 40 Nexion unresolved entries were refined from the earlier supplied-file
+`not_found` result: 34 are `not_4k`, and six are `mismatch` for the finish/format
+catalogue conflict with resolution as an additional blocker. No database,
+storage or runtime changes were made. The 127 missing/unusable display-photo
+count remains unchanged. Exact native originals and supplier confirmation are
+still required; the unanswered quality question does not authorize below-gate
+web photos or cross-finish/cross-format imagery.
+
+## Oyster supplied-source follow-up — 6 October
+
+Three exact supplied missing originals were restored and two incorrect
+rose-gold assignments were corrected to Matt Black/Brushed Gold. OOXML
+bounds explain the cause: pictures mostly occupy the next finish row despite
+starting at the bottom of the previous row. The scoped adapter fix checks
+explicit bounds and row heights, requires at least85% target-row overlap,
+and retains ambiguous same-hash ownership without moving it. Three
+regressions pass, and the full backend suite passes1,552 cases. All132 rows
+in the three available source workbooks retain product identity/pricing;
+only five reviewed image assignments change, with basin coverage53→56.
+
+Current read-only coverage and21/21 affected-object byte rechecks find
+8,489 media rows,119 absent selected photos and five missing displayed
+objects: **124 known usable-photo gaps**. Both Oyster manifests record
+exact ownership, native quality and storage/display checks. Existing media
+was retained and product documents did not change. The full baseline byte
+audit remains dated evidence; no claim is made that every product is fixed.

@@ -1,0 +1,59 @@
+{
+  "reviewed_at": "2026-10-06T10:10:46.612353+00:00",
+  "scope": "Two exact supplied Oyster finish corrections",
+  "cause": "Top-anchor collision had assigned the next-row rose-gold photo to the previous finish product. Original displayed bytes and exact supplier finish photos were visually compared.",
+  "fresh_web_asset": false,
+  "native_quality_only": true,
+  "items": [
+    {
+      "sku": "OYSTER-BASINMIXER-CHOSHIHIGHSPOUTBESINMIXER-MB",
+      "product_id": "1ec1b0a8-d1e5-49c0-9eaa-c2c1075ee046",
+      "brand": "Oyster",
+      "floor_id": "first-floor",
+      "finish": "Matt Black",
+      "source_filename": "OYSTER BESIN MIXER.xlsx",
+      "source_row": 12,
+      "workbook_sha256": "bd0adec2b09c9d38fe7ce199addf293ed66d535894ac9f7e125d98fae7c4353f",
+      "source_sha256": "da6136a00d8c4ec66b55e9ab23846531b624e8d2693fee5f7acdf87776598b2e",
+      "source_dimensions": [
+        285,
+        285
+      ],
+      "previous_media_id": "6e47b910-4b9b-49f8-b55e-21a6fd462e77",
+      "previous_displayed_finish": "Rose Gold",
+      "new_media_id": "374c3cc1-3225-4206-9e27-e2ba42f4c6d7",
+      "sha1": "9e5bcc41f6d4a17f58a0d44aa7bf8c5e639c852e",
+      "quality": "poor",
+      "outcome": "applied",
+      "stored_bytes_verified": true,
+      "displayed_hero_verified": true,
+      "product_identity_unchanged": true,
+      "previous_media_preserved": true
+    },
+    {
+      "sku": "OYSTER-BASINMIXER-TRIBARGHIGHSPOUTBESINMIXER-BG",
+      "product_id": "c4224b82-0b41-4186-b0fe-a199398b6cc6",
+      "brand": "Oyster",
+      "floor_id": "first-floor",
+      "finish": "Brushed Gold",
+      "source_filename": "OYSTER BESIN MIXER.xlsx",
+      "source_row": 34,
+      "workbook_sha256": "bd0adec2b09c9d38fe7ce199addf293ed66d535894ac9f7e125d98fae7c4353f",
+      "source_sha256": "c6ea528946d253e3a00845803632bc8b878406fa31a5e8f0d2a0c08c357391db",
+      "source_dimensions": [
+        223,
+        290
+      ],
+      "previous_media_id": "582fb479-944f-4fd2-829c-0e7066c8d025",
+      "previous_displayed_finish": "Brushed Rose Gold",
+      "new_media_id": "f655b74c-f75a-46f9-ad60-3fb764ffcc42",
+      "sha1": "344b155868c6a9ee6024d61f5fdb80e50c6fcf09",
+      "quality": "poor",
+      "outcome": "applied",
+      "stored_bytes_verified": true,
+      "displayed_hero_verified": true,
+      "product_identity_unchanged": true,
+      "previous_media_preserved": true
+    }
+  ]
+}

@@ -1,0 +1,176 @@
+{
+  "reviewed_at": "2026-10-06T10:03:37.952603+00:00",
+  "scope": "Three exact Oyster basin mixer supplied originals",
+  "mode": "apply",
+  "cause": "Top-anchor-only supplier mapping collapsed two images at rows12/34/44, although second pictures occupy85%+ of exact product rows13/35/45. Geometry plus exact finish cells and visual identity prove recovery ownership. No sibling substitution.",
+  "items": [
+    {
+      "sku": "OYSTER-BASINMIXER-CHOSHIHIGHSPOUTBESINMIXER-RG",
+      "row": 13,
+      "rid": "rId11",
+      "finish": "Rose Gold",
+      "description": "CHOSHI High Spout Basin Mixer - Image 1",
+      "product_id": "c1283293-9c86-4d9b-acf4-85c1fcae2a26",
+      "brand": "Oyster",
+      "brand_id": "a7b59637-1c67-4a2d-97bc-ebb27afdcf10",
+      "floor_id": "first-floor",
+      "supplier_source_filename": "OYSTER BESIN MIXER.xlsx",
+      "workbook_sha256": "bd0adec2b09c9d38fe7ce199addf293ed66d535894ac9f7e125d98fae7c4353f",
+      "source_sheet": "BESIN MIXER",
+      "product_name_cell": "C13",
+      "finish_cell": "B13",
+      "source_product_name": "Brook CP Fittings CHOSHI HIGH SPOUT BESIN MIXER",
+      "source_media_part": "xl/media/image11.png",
+      "source_sha1": "d817f3cb340609876a1a78aa6dd65b0703717d47",
+      "source_sha256": "a843e9769908d0db1f671fc3e6ce1919915cac14aa406c23bf9249b6d9dc0973",
+      "source_dimensions": [
+        308,
+        297
+      ],
+      "source_mime": "image/png",
+      "anchor": {
+        "from_row": 12,
+        "from_row_offset_emu": 990600,
+        "previous_row_height_emu": 1047750,
+        "to_row": 13,
+        "to_row_offset_emu": 926643,
+        "target_row_overlap_ratio": 0.941909,
+        "relationship_id": "rId11",
+        "description": "CHOSHI High Spout Basin Mixer - Image 1"
+      },
+      "review": {
+        "status": "ready",
+        "method": "Exact supplied worksheet product/finish cells plus OOXML displayed bounds and visual faucet form/finish review",
+        "reviewer": "Codex media recovery agent",
+        "at": "2026-10-06T10:03:37.952603+00:00",
+        "native_quality_only": true,
+        "fresh_web_asset": false,
+        "meets_4k_web_gate": false
+      },
+      "normalized_sha1": "d817f3cb340609876a1a78aa6dd65b0703717d47",
+      "normalized_dimensions": [
+        308,
+        297
+      ],
+      "outcome": "applied",
+      "new_media_id": "5a68c4d8-9397-4a79-89ab-fe3de4801d3b",
+      "quality": "poor",
+      "stored_bytes_verified": true,
+      "displayed_hero_verified": true,
+      "product_identity_unchanged": true,
+      "previous_media_preserved": true
+    },
+    {
+      "sku": "OYSTER-BASINMIXER-TRIBARGHIGHSPOUTBESINMIXER-BRG",
+      "row": 35,
+      "rid": "rId33",
+      "finish": "Brushed Rose Gold",
+      "description": "TRIBERG High Spout Basin Mixer - Image 1",
+      "product_id": "8328e157-f20c-4439-97d8-b7cb067c1d9c",
+      "brand": "Oyster",
+      "brand_id": "a7b59637-1c67-4a2d-97bc-ebb27afdcf10",
+      "floor_id": "first-floor",
+      "supplier_source_filename": "OYSTER BESIN MIXER.xlsx",
+      "workbook_sha256": "bd0adec2b09c9d38fe7ce199addf293ed66d535894ac9f7e125d98fae7c4353f",
+      "source_sheet": "BESIN MIXER",
+      "product_name_cell": "C35",
+      "finish_cell": "B35",
+      "source_product_name": "Brook CP Fittings TRIBARG HIGH SPOUT  BESIN MIXER",
+      "source_media_part": "xl/media/image33.png",
+      "source_sha1": "cb64a1e98ac8c7a5ab1e9ec8bac1f76c1eca4010",
+      "source_sha256": "aa24e658e69b862b7e0109af52d0369cdd2e5649acda6caec306f1bac93d4022",
+      "source_dimensions": [
+        300,
+        300
+      ],
+      "source_mime": "image/png",
+      "anchor": {
+        "from_row": 34,
+        "from_row_offset_emu": 1038224,
+        "previous_row_height_emu": 1047750,
+        "to_row": 35,
+        "to_row_offset_emu": 988924,
+        "target_row_overlap_ratio": 0.990459,
+        "relationship_id": "rId33",
+        "description": "TRIBERG High Spout Basin Mixer - Image 1"
+      },
+      "review": {
+        "status": "ready",
+        "method": "Exact supplied worksheet product/finish cells plus OOXML displayed bounds and visual faucet form/finish review",
+        "reviewer": "Codex media recovery agent",
+        "at": "2026-10-06T10:03:37.952603+00:00",
+        "native_quality_only": true,
+        "fresh_web_asset": false,
+        "meets_4k_web_gate": false
+      },
+      "normalized_sha1": "cb64a1e98ac8c7a5ab1e9ec8bac1f76c1eca4010",
+      "normalized_dimensions": [
+        300,
+        300
+      ],
+      "outcome": "applied",
+      "new_media_id": "c015a2ad-f530-42ec-9d12-caa20b99f8da",
+      "quality": "poor",
+      "stored_bytes_verified": true,
+      "displayed_hero_verified": true,
+      "product_identity_unchanged": true,
+      "previous_media_preserved": true
+    },
+    {
+      "sku": "OYSTER-BASINMIXER-WHITKARHIGHSPOUT-RG",
+      "row": 45,
+      "rid": "rId43",
+      "finish": "Rose Gold",
+      "description": "WHITAKAR High Spout - Image 1",
+      "product_id": "14f4d343-3522-4b0d-a997-0fef9c0f160d",
+      "brand": "Oyster",
+      "brand_id": "a7b59637-1c67-4a2d-97bc-ebb27afdcf10",
+      "floor_id": "first-floor",
+      "supplier_source_filename": "OYSTER BESIN MIXER.xlsx",
+      "workbook_sha256": "bd0adec2b09c9d38fe7ce199addf293ed66d535894ac9f7e125d98fae7c4353f",
+      "source_sheet": "BESIN MIXER",
+      "product_name_cell": "C45",
+      "finish_cell": "B45",
+      "source_product_name": "Brook CP Fittings WHITKAR HIGH SPOUT ",
+      "source_media_part": "xl/media/image43.png",
+      "source_sha1": "af090e4799e375914ff49d049087bd6f9823d7a6",
+      "source_sha256": "de3731d8ae904f6bcbd8c3b0205d8c07a24ac77528efc6f17065d9aafa5e0da7",
+      "source_dimensions": [
+        323,
+        323
+      ],
+      "source_mime": "image/png",
+      "anchor": {
+        "from_row": 44,
+        "from_row_offset_emu": 942981,
+        "previous_row_height_emu": 1047750,
+        "to_row": 45,
+        "to_row_offset_emu": 940965,
+        "target_row_overlap_ratio": 0.899813,
+        "relationship_id": "rId43",
+        "description": "WHITAKAR High Spout - Image 1"
+      },
+      "review": {
+        "status": "ready",
+        "method": "Exact supplied worksheet product/finish cells plus OOXML displayed bounds and visual faucet form/finish review",
+        "reviewer": "Codex media recovery agent",
+        "at": "2026-10-06T10:03:37.952603+00:00",
+        "native_quality_only": true,
+        "fresh_web_asset": false,
+        "meets_4k_web_gate": false
+      },
+      "normalized_sha1": "af090e4799e375914ff49d049087bd6f9823d7a6",
+      "normalized_dimensions": [
+        323,
+        323
+      ],
+      "outcome": "applied",
+      "new_media_id": "67b5edf9-1ca7-472d-a413-cc4d4ec0c746",
+      "quality": "acceptable",
+      "stored_bytes_verified": true,
+      "displayed_hero_verified": true,
+      "product_identity_unchanged": true,
+      "previous_media_preserved": true
+    }
+  ]
+}
