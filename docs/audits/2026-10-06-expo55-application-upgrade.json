@@ -1,0 +1,54 @@
+{
+  "checked_at": "2026-10-06T15:42:33.878609+00:00",
+  "base_commit": "6c614cb1c1f026aa29526c606ad7c5b84c1b12f6",
+  "expo": "55.0.31",
+  "react_native": "0.83.10",
+  "react": "19.2.0",
+  "node_validation_version": "24.14.0",
+  "clean_install_passed": true,
+  "typecheck_passed": true,
+  "lint_passed": true,
+  "expo_doctor_checks_passed": 20,
+  "required_frontend_ci_contract_commands_passed": 24,
+  "tile_orders_contract_passed": true,
+  "production_web_export_passed": true,
+  "all_platform_javascript_exports_passed": true,
+  "mobile_javascript_budget_passed": true,
+  "initial_full_browser_run": {
+    "startTime": "2026-10-06T15:30:58.982Z",
+    "duration": 544109.887,
+    "expected": 903,
+    "skipped": 20,
+    "unexpected": 1,
+    "flaky": 0
+  },
+  "initial_browser_failure": "Unscoped View Basin locator matched a background button and active picker button before background isolation completed.",
+  "test_correction": "Both clicks scoped to the named Add products dialog; nested dialog, Escape, selection persistence and draft recovery assertions retained.",
+  "affected_workflow_browser_rerun": {
+    "startTime": "2026-10-06T15:41:12.881Z",
+    "duration": 16270.525000000001,
+    "expected": 8,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "npm_findings": {
+    "info": 0,
+    "low": 0,
+    "moderate": 8,
+    "high": 22,
+    "critical": 0,
+    "total": 30
+  },
+  "critical_shell_quote_fix_retained": true,
+  "sdk56_held": "Known Hermes regression plus application lint incompatibilities.",
+  "sdk57_held": "21/21 Expo doctor checks pass, but 219 new lint errors and explicit Node type configuration errors remain. No promotion.",
+  "obsolete_flags_removed": [
+    "newArchEnabled",
+    "android.edgeToEdgeEnabled"
+  ],
+  "unsigned_js_exports_are_native_acceptance": false,
+  "physical_device_acceptance": false,
+  "overall_goal_complete": false,
+  "package_lock_sha256": "db08030d23aeacdaa773ab24118dd0741d64280da0ae42134a820d691c6a1e27"
+}

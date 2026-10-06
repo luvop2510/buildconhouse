@@ -266,7 +266,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceTertiary,
   },
   fallback: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: "center",
     justifyContent: "center",
     gap: 2,

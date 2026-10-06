@@ -214,14 +214,14 @@ test('critical quotation picker keeps nested dialogs isolated and preserves sele
   await add.click();
   const picker = page.getByRole('dialog', { name: 'Add products', exact: true });
   await expect(picker).toBeVisible();
-  await page.getByRole('button', { name: 'View Basin', exact: true }).click();
+  await picker.getByRole('button', { name: 'View Basin', exact: true }).click();
   const product = page.getByRole('dialog', { name: 'Basin', exact: true });
   await expect(product).toBeVisible();
   await expect(picker).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(product).toHaveCount(0);
   await expect(picker).toBeVisible();
-  await page.getByRole('button', { name: 'View Basin', exact: true }).click();
+  await picker.getByRole('button', { name: 'View Basin', exact: true }).click();
   await page.getByTestId('pm-add-close').click();
   await expect(picker).toBeVisible();
   await expect(picker).toContainText('1 items in quotation');

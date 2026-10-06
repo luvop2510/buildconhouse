@@ -7,8 +7,10 @@ Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work 
 Follow-up: the compatible lockfile update to `shell-quote` 1.12.0 addresses
 newly indexed critical advisory GHSA-pqg4-j6r4-53mv; its attack regression
 test is required in frontend CI. This does not waive other npm findings.
-SDK 55/56/57 experiments remain isolated until their full application checks
-pass. Historical media ownership review found nine candidates: eight have
+SDK 55 is aligned to Expo 55.0.31 / React Native 0.83.10 after application
+checks; SDK 56/57 remain held for compatibility failures. See the precise
+browser test correction and upgrade evidence in
+`docs/audits/2026-10-06-expo55-application-upgrade.json`. Historical media ownership review found nine candidates: eight have
 wrong finishes/product forms and one lacks verified import-row provenance.
 See `docs/audits/2026-10-06-historical-media-ownership-review.json`; no photo
 was assigned from those unsafe associations.
@@ -25,7 +27,7 @@ The latest repair pass uses shared Inter Text/TextInput defaults and Feather
 icons, synchronizes Payments document floors before navigation, preserves
 zero-stock history and rejects stale floor callbacks. Its full backend unit
 suite passes 1,573 tests. Frontend functional CI and security auditing are
-independent jobs; the fresh 6 October scan has 32 npm findings (23 high/nine moderate) still block the
+independent jobs; the fresh 6 October scan has 30 npm findings (22 high/eight moderate) still block the
 security job. Do not suppress those findings or claim overall CI is green.
 Physical devices, signed builds and legal/operator acceptance remain open.
 
