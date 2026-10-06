@@ -5,6 +5,8 @@ const { FileStore } = require('metro-cache');
 const { resolve } = require("metro-resolver");
 
 const config = getDefaultConfig(__dirname);
+// Only the web font map imports WOFF2; native builds resolve its TTF sibling.
+if (!config.resolver.assetExts.includes('woff2')) config.resolver.assetExts.push('woff2');
 
 // Use a stable on-disk store (shared across web/android)
 const root = process.env.METRO_CACHE_ROOT || path.join(__dirname, '.metro-cache');

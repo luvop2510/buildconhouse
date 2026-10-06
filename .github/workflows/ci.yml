@@ -110,6 +110,7 @@ jobs:
           npm run test:monitoring-contract
           npm run test:frontend-performance
           npm run test:icon-fonts
+          npm run test:font-assets
           npm run test:release-recovery
           npm run test:npm-audit
           npm run test:shell-quote-security

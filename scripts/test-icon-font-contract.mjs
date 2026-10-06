@@ -31,7 +31,11 @@ for (const path of [...sourceFiles('app'), ...sourceFiles('src')]) {
 assert.ok(featherImports > 0, 'canonical app still renders Feather icons');
 const loader = readFileSync('src/hooks/use-app-fonts.ts', 'utf8');
 assert.match(loader, /const ICON_FAMILIES: Record<string, string> = \{ feather: "Feather" \};/);
-for (const family of ['Inter-Regular', 'Inter-Medium', 'Inter-SemiBold', 'Inter-Bold']) assert.ok(loader.includes(`"${family}"`), `${family} must remain available`);
+assert.match(loader, /import \{ INTER_FAMILY \} from "\.\/app-font-assets"/);
+for (const path of ['src/hooks/app-font-assets.ts', 'src/hooks/app-font-assets.web.ts']) {
+  const assets = readFileSync(path, 'utf8');
+  for (const family of ['Inter-Regular', 'Inter-Medium', 'Inter-SemiBold', 'Inter-Bold']) assert.ok(assets.includes(`"${family}"`), `${path}: ${family} must remain available`);
+}
 assert.doesNotMatch(loader, /Fraunces|FRAUNCES/, 'the app loads only Inter text fonts');
 for (const path of ['src/design/tokens.ts', 'src/components/TempPasswordDialog.tsx', 'src/components/tiles/TilesDocBuilder.tsx']) {
   assert.doesNotMatch(readFileSync(path, 'utf8'), /"(?:Fraunces[^" ]*|Menlo|monospace|Times New Roman)"|Georgia,/, `${path} uses a second text family`);

@@ -39,7 +39,8 @@
     "test:native-permissions": "node scripts/test-native-permissions.mjs",
     "test:stock-floor-races": "node scripts/test-stock-floor-races.mjs",
     "test:uptime-monitor": "node scripts/test-uptime-monitor.mjs",
-    "test:shell-quote-security": "node scripts/test-shell-quote-security.mjs"
+    "test:shell-quote-security": "node scripts/test-shell-quote-security.mjs",
+    "test:font-assets": "node scripts/check-font-assets.mjs"
   },
   "dependencies": {
     "@expo/metro-runtime": "~55.0.12",

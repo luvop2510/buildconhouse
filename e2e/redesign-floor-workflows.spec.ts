@@ -23,6 +23,9 @@ test('critical sanitary deep link synchronizes the floor before fetching an exis
     return route.fulfill({ json: quotationDoc('sanitary-order', 'first-floor') });
   });
   await page.goto('/quotations/new?quotationId=sanitary-order');
+  // Hosted exports load the builder lazily; assert request ordering after
+  // its workspace mounts, rather than timing the CDN download as an API call.
+  await expect(page.getByTestId('quotation-workspace')).toBeVisible({ timeout: 20_000 });
   await expect.poll(() => requestedFloors.length).toBeGreaterThan(0);
   expect(requestedFloors.every(floor => floor === 'first-floor')).toBe(true);
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('forge.active-floor') || 'null'))).toBe('first-floor');
@@ -67,7 +70,25 @@ test('critical zero-stock inventory stays listed and has no available transfer o
   await expect(page.getByRole('button', { name: 'Transfer Empty Basin Mixer to a customer' })).toBeDisabled();
   await expect(page.getByRole('button', { name: /Add Empty Basin Mixer.*to a new quotation/ })).toBeDisabled();
   expect(requestedHistory).toBe(true);
-  const families = await page.getByText('Empty Basin Mixer', { exact: true }).evaluate(element => ({ text: getComputedStyle(element).fontFamily, icons: Array.from(document.querySelectorAll('[style*="feather"]')).map(icon => getComputedStyle(icon).fontFamily) }));
+  // Checking registered, loaded FontFaces catches a failed web decoder or
+  // fallback font that a computed font-family name alone would miss.
+  const expectedFonts = ['Inter-Bold', 'Inter-Medium', 'Inter-Regular', 'Inter-SemiBold'];
+  await expect.poll(() => page.evaluate(() => [...new Set(Array.from(document.fonts as FontFaceSet & Iterable<FontFace>)
+    .map(face => face.family.replace(/["']/g, ''))
+    .filter(family => /^Inter-(Regular|Medium|SemiBold|Bold)$/.test(family)))].sort())).toEqual(expectedFonts);
+  // Responsive layouts may not render every weight. Explicitly decode each
+  // registered face; CSS and runtime registrations may contain duplicates.
+  await page.evaluate(() => Promise.all(Array.from(document.fonts as FontFaceSet & Iterable<FontFace>)
+    .filter(face => /^Inter-(Regular|Medium|SemiBold|Bold)$/.test(face.family.replace(/["']/g, '')))
+    .map(face => face.load())));
+  await expect.poll(() => page.evaluate(() => [...new Set(Array.from(document.fonts as FontFaceSet & Iterable<FontFace>)
+    .filter(face => face.status === 'loaded')
+    .map(face => face.family.replace(/["']/g, ''))
+    .filter(family => /^Inter-(Regular|Medium|SemiBold|Bold)$/.test(family)))].sort())).toEqual(expectedFonts);
+  // Icon fonts load asynchronously in the hosted export. Keep the strict
+  // family assertion, but first wait for the icon elements to render.
+  await expect.poll(() => page.locator('[style*="feather" i]').count()).toBeGreaterThan(0);
+  const families = await page.getByText('Empty Basin Mixer', { exact: true }).evaluate(element => ({ text: getComputedStyle(element).fontFamily, icons: Array.from(document.querySelectorAll('[style*="feather" i]')).map(icon => getComputedStyle(icon).fontFamily) }));
   expect(families.text).toContain('Inter-SemiBold');
   expect(families.icons.length).toBeGreaterThan(0);
   expect(families.icons.every(family => family.toLowerCase().includes('feather'))).toBe(true);

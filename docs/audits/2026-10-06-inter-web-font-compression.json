@@ -1,0 +1,287 @@
+{
+  "format": {
+    "source": "TrueType TTF",
+    "web": "WOFF2",
+    "fonttools_version": "4.66.1",
+    "brotli_version": "1.2.0",
+    "subsetting": false,
+    "recalc_timestamp": false,
+    "glyph_and_metric_transforms": false
+  },
+  "command": "output/operations/font-compression-runtime/bin/python scripts/compress-app-fonts.py --check",
+  "source_total_bytes": 1373000,
+  "web_total_bytes": 522444,
+  "verification_scope": "All glyph outlines, component transforms/flags, contour coordinates/flags, drawings, bounds, hinting instructions, Unicode cmaps, advances/bearings and complete naming/licensing, metrics and shaping tables compared after decoding. No browser rasterization, shaping-engine execution or physical-device test claimed.",
+  "conversion_caveat": "Decoded SFNT bytes are not globally identical: head checksum adjustment and bit 11 change for the compressed representation. Glyph/metric transforms are disabled to preserve all original flags. Validated font design, semantic data and every other complete table's original bytes are preserved.",
+  "unsupported_or_unequal_semantic_data": [],
+  "files": [
+    {
+      "family": "Inter-Regular",
+      "source_path": "assets/fonts/Inter-Regular.ttf",
+      "web_path": "assets/fonts/Inter-Regular.woff2",
+      "source_bytes": 342408,
+      "web_bytes": 127860,
+      "source_sha256": "a414b48aa577ef2c62ebb135341ddeef33ee26a4f5dc9f787f93c1aab08ebb50",
+      "web_sha256": "de0a6af8c504392804634ec060d3edcd4debe60b4cbb432593066c250f02fd5f",
+      "glyph_count": 2926,
+      "unicode_count": 2849,
+      "unicode_cmap_count": 4,
+      "name_record_count": 58,
+      "licensing_name_record_count": 3,
+      "checks": {
+        "woff2_container": true,
+        "table_set_preserved": true,
+        "glyph_count_and_order_preserved": true,
+        "every_glyph_outline_and_contour_preserved": true,
+        "every_component_transform_and_flags_preserved": true,
+        "every_glyph_and_component_drawing_preserved": true,
+        "glyph_bounds_and_hinting_instructions_preserved": true,
+        "glyf_and_loca_table_bytes_preserved": true,
+        "all_unicode_cmaps_preserved": true,
+        "all_cmap_table_bytes_preserved": true,
+        "horizontal_advances_and_bearings_preserved": true,
+        "metrics_and_os2_table_bytes_preserved": true,
+        "naming_and_licensing_metadata_bytes_preserved": true,
+        "gdef_gpos_gsub_shaping_table_bytes_preserved": true,
+        "stat_and_post_table_bytes_preserved": true,
+        "prep_and_gasp_table_bytes_preserved": true,
+        "head_values_preserved_except_documented_woff2_fields": true,
+        "no_subsetting_or_design_replacement": true,
+        "reproducible_conversion": true,
+        "original_ttf_bytes_unchanged": true
+      },
+      "byte_identical_decoded_tables": [
+        "GDEF",
+        "GPOS",
+        "GSUB",
+        "OS/2",
+        "STAT",
+        "cmap",
+        "gasp",
+        "glyf",
+        "hhea",
+        "hmtx",
+        "loca",
+        "maxp",
+        "name",
+        "post",
+        "prep"
+      ],
+      "representation_only_table_changes": [
+        "head"
+      ],
+      "head_representation_changes": {
+        "checkSumAdjustment": {
+          "source": 937526901,
+          "decoded": 666423733
+        },
+        "flags": {
+          "source": 3,
+          "decoded": 2051
+        }
+      },
+      "unsupported_or_unequal_semantic_data": []
+    },
+    {
+      "family": "Inter-Medium",
+      "source_path": "assets/fonts/Inter-Medium.ttf",
+      "web_path": "assets/fonts/Inter-Medium.woff2",
+      "source_bytes": 342892,
+      "web_bytes": 131092,
+      "source_sha256": "f1738576525e86db1d5cf63a6c1b56e0a7e2a2898b499ac93db95f2e7a9f9cd5",
+      "web_sha256": "884658b7613f6d70feb7648f8bfce6fb3fe0a1f13ab7af6f76c453047bdd4c30",
+      "glyph_count": 2926,
+      "unicode_count": 2849,
+      "unicode_cmap_count": 4,
+      "name_record_count": 60,
+      "licensing_name_record_count": 3,
+      "checks": {
+        "woff2_container": true,
+        "table_set_preserved": true,
+        "glyph_count_and_order_preserved": true,
+        "every_glyph_outline_and_contour_preserved": true,
+        "every_component_transform_and_flags_preserved": true,
+        "every_glyph_and_component_drawing_preserved": true,
+        "glyph_bounds_and_hinting_instructions_preserved": true,
+        "glyf_and_loca_table_bytes_preserved": true,
+        "all_unicode_cmaps_preserved": true,
+        "all_cmap_table_bytes_preserved": true,
+        "horizontal_advances_and_bearings_preserved": true,
+        "metrics_and_os2_table_bytes_preserved": true,
+        "naming_and_licensing_metadata_bytes_preserved": true,
+        "gdef_gpos_gsub_shaping_table_bytes_preserved": true,
+        "stat_and_post_table_bytes_preserved": true,
+        "prep_and_gasp_table_bytes_preserved": true,
+        "head_values_preserved_except_documented_woff2_fields": true,
+        "no_subsetting_or_design_replacement": true,
+        "reproducible_conversion": true,
+        "original_ttf_bytes_unchanged": true
+      },
+      "byte_identical_decoded_tables": [
+        "GDEF",
+        "GPOS",
+        "GSUB",
+        "OS/2",
+        "STAT",
+        "cmap",
+        "gasp",
+        "glyf",
+        "hhea",
+        "hmtx",
+        "loca",
+        "maxp",
+        "name",
+        "post",
+        "prep"
+      ],
+      "representation_only_table_changes": [
+        "head"
+      ],
+      "head_representation_changes": {
+        "checkSumAdjustment": {
+          "source": 277483555,
+          "decoded": 6374987
+        },
+        "flags": {
+          "source": 3,
+          "decoded": 2051
+        }
+      },
+      "unsupported_or_unequal_semantic_data": []
+    },
+    {
+      "family": "Inter-SemiBold",
+      "source_path": "assets/fonts/Inter-SemiBold.ttf",
+      "web_path": "assets/fonts/Inter-SemiBold.woff2",
+      "source_bytes": 343632,
+      "web_bytes": 131684,
+      "source_sha256": "f30e9d2574c3bec5144347ff965f9841c8f06857f0b7383000f8c9489a161841",
+      "web_sha256": "077cb2c686561bdb36f1203bfeaa8cc5512b27319280718063f10fb3baf162a2",
+      "glyph_count": 2926,
+      "unicode_count": 2849,
+      "unicode_cmap_count": 4,
+      "name_record_count": 60,
+      "licensing_name_record_count": 3,
+      "checks": {
+        "woff2_container": true,
+        "table_set_preserved": true,
+        "glyph_count_and_order_preserved": true,
+        "every_glyph_outline_and_contour_preserved": true,
+        "every_component_transform_and_flags_preserved": true,
+        "every_glyph_and_component_drawing_preserved": true,
+        "glyph_bounds_and_hinting_instructions_preserved": true,
+        "glyf_and_loca_table_bytes_preserved": true,
+        "all_unicode_cmaps_preserved": true,
+        "all_cmap_table_bytes_preserved": true,
+        "horizontal_advances_and_bearings_preserved": true,
+        "metrics_and_os2_table_bytes_preserved": true,
+        "naming_and_licensing_metadata_bytes_preserved": true,
+        "gdef_gpos_gsub_shaping_table_bytes_preserved": true,
+        "stat_and_post_table_bytes_preserved": true,
+        "prep_and_gasp_table_bytes_preserved": true,
+        "head_values_preserved_except_documented_woff2_fields": true,
+        "no_subsetting_or_design_replacement": true,
+        "reproducible_conversion": true,
+        "original_ttf_bytes_unchanged": true
+      },
+      "byte_identical_decoded_tables": [
+        "GDEF",
+        "GPOS",
+        "GSUB",
+        "OS/2",
+        "STAT",
+        "cmap",
+        "gasp",
+        "glyf",
+        "hhea",
+        "hmtx",
+        "loca",
+        "maxp",
+        "name",
+        "post",
+        "prep"
+      ],
+      "representation_only_table_changes": [
+        "head"
+      ],
+      "head_representation_changes": {
+        "checkSumAdjustment": {
+          "source": 651626954,
+          "decoded": 380511902
+        },
+        "flags": {
+          "source": 3,
+          "decoded": 2051
+        }
+      },
+      "unsupported_or_unequal_semantic_data": []
+    },
+    {
+      "family": "Inter-Bold",
+      "source_path": "assets/fonts/Inter-Bold.ttf",
+      "web_path": "assets/fonts/Inter-Bold.woff2",
+      "source_bytes": 344068,
+      "web_bytes": 131808,
+      "source_sha256": "c1c6ba111e8d04d392b741d194ab548186ec3c006ed7cc134be0525402520339",
+      "web_sha256": "544af70ad3b815073ae5fe121106ff2d927d1d3f8817418b53880ee75b6bdb58",
+      "glyph_count": 2926,
+      "unicode_count": 2849,
+      "unicode_cmap_count": 4,
+      "name_record_count": 58,
+      "licensing_name_record_count": 3,
+      "checks": {
+        "woff2_container": true,
+        "table_set_preserved": true,
+        "glyph_count_and_order_preserved": true,
+        "every_glyph_outline_and_contour_preserved": true,
+        "every_component_transform_and_flags_preserved": true,
+        "every_glyph_and_component_drawing_preserved": true,
+        "glyph_bounds_and_hinting_instructions_preserved": true,
+        "glyf_and_loca_table_bytes_preserved": true,
+        "all_unicode_cmaps_preserved": true,
+        "all_cmap_table_bytes_preserved": true,
+        "horizontal_advances_and_bearings_preserved": true,
+        "metrics_and_os2_table_bytes_preserved": true,
+        "naming_and_licensing_metadata_bytes_preserved": true,
+        "gdef_gpos_gsub_shaping_table_bytes_preserved": true,
+        "stat_and_post_table_bytes_preserved": true,
+        "prep_and_gasp_table_bytes_preserved": true,
+        "head_values_preserved_except_documented_woff2_fields": true,
+        "no_subsetting_or_design_replacement": true,
+        "reproducible_conversion": true,
+        "original_ttf_bytes_unchanged": true
+      },
+      "byte_identical_decoded_tables": [
+        "GDEF",
+        "GPOS",
+        "GSUB",
+        "OS/2",
+        "STAT",
+        "cmap",
+        "gasp",
+        "glyf",
+        "hhea",
+        "hmtx",
+        "loca",
+        "maxp",
+        "name",
+        "post",
+        "prep"
+      ],
+      "representation_only_table_changes": [
+        "head"
+      ],
+      "head_representation_changes": {
+        "checkSumAdjustment": {
+          "source": 3974942097,
+          "decoded": 3703822733
+        },
+        "flags": {
+          "source": 3,
+          "decoded": 2051
+        }
+      },
+      "unsupported_or_unequal_semantic_data": []
+    }
+  ]
+}

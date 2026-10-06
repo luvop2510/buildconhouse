@@ -1,0 +1,78 @@
+{
+  "checked_at": "2026-10-06T16:21:05.741772+00:00",
+  "base_commit": "a3aa13d5f9f0a6cb61458883b1b70e4ab6abd009",
+  "web_font_source_bytes": 1373000,
+  "web_font_payload_bytes": 522444,
+  "payload_reduction_percent": 61.95,
+  "glyph_subsetting": false,
+  "native_ttf_unchanged": true,
+  "conversion_reproducibility_passed": true,
+  "typecheck_passed": true,
+  "lint_passed": true,
+  "required_frontend_contract_commands_passed": 25,
+  "web_export_passed": true,
+  "web_preload_font_formats": [
+    "woff2",
+    "woff2",
+    "woff2",
+    "woff2"
+  ],
+  "mobile_javascript_budget_passed": true,
+  "initial_font_browser_run": {
+    "startTime": "2026-10-06T16:17:43.510Z",
+    "duration": 82021.103,
+    "expected": 76,
+    "skipped": 0,
+    "unexpected": 4,
+    "flaky": 0
+  },
+  "initial_font_test_issue": "Unused responsive weights remain unloaded; Firefox can register duplicate CSS/runtime faces. Test now explicitly decodes each registered face and compares unique families. No application decoder failure observed.",
+  "final_core_browser_run": {
+    "startTime": "2026-10-06T16:19:32.342Z",
+    "duration": 60253.399999999994,
+    "expected": 80,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "native_unsigned_exports": [
+    {
+      "platform": "ios",
+      "status": "passed",
+      "wall_seconds": 28.483,
+      "result_path": "output/operations/font-native-ios-20261006-result.json",
+      "inter_ttf_count": 4,
+      "inter_woff2_count": 0,
+      "hermes_bundle_bytes": 7952026
+    },
+    {
+      "platform": "android",
+      "status": "passed",
+      "wall_seconds": 32.412,
+      "result_path": "output/operations/font-native-android-20261006-result.json",
+      "inter_ttf_count": 4,
+      "inter_woff2_count": 0,
+      "hermes_bundle_bytes": 8040389
+    }
+  ],
+  "predeploy_read_only_gate_passed": true,
+  "migration_dry_run_no_pending": true,
+  "previous_sdk55_hosted_ci": {
+    "source_commit": "a3aa13d5f9f0a6cb61458883b1b70e4ab6abd009",
+    "run_id": 37490107623,
+    "frontend": "success",
+    "browser_passed": 904,
+    "browser_intentional_skips": 20,
+    "backend": "success",
+    "backend_tests_passed": 1573,
+    "security": "failure",
+    "npm_high": 22,
+    "npm_moderate": 8,
+    "npm_critical": 0,
+    "overall": "failure"
+  },
+  "regional_latency_slo_verified": false,
+  "physical_device_acceptance": false,
+  "signed_native_acceptance": false,
+  "overall_goal_complete": false
+}
