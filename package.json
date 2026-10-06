@@ -40,7 +40,8 @@
     "test:stock-floor-races": "node scripts/test-stock-floor-races.mjs",
     "test:uptime-monitor": "node scripts/test-uptime-monitor.mjs",
     "test:shell-quote-security": "node scripts/test-shell-quote-security.mjs",
-    "test:font-assets": "node scripts/check-font-assets.mjs"
+    "test:font-assets": "node scripts/check-font-assets.mjs",
+    "test:auth-provider-races": "node scripts/test-auth-provider-races.mjs"
   },
   "dependencies": {
     "@expo/metro-runtime": "~55.0.12",

@@ -125,3 +125,47 @@ for (const path of ["../src/api/client.ts", "../src/api/client.web.ts"]) {
   }
 }
 console.log("API slow-storage identity/floor and cancelled-read regressions passed");
+
+// Identity hydration belongs to the signed-in account, not the selected floor.
+// A deep link may change floors while /auth/me or personal grants are loading.
+for (const path of ['../src/api/client.ts', '../src/api/client.web.ts']) {
+  for (const identityPath of ['/auth/me', '/auth/customer/me', '/settings/access-grants/me']) {
+    const transports = [];
+    const module = { exports: {} };
+    const storage = { secureGet: async () => null, getItem: async () => 'first-floor', secureSet: async () => {}, setItem: async () => {}, secureRemove: async () => {}, removeItem: async () => {} };
+    vm.runInNewContext(ts.transpileModule(read(path), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    }).outputText, {
+      module, exports: module.exports, require: () => ({ storage, browserStorage: storage }),
+      __DEV__: true, process: { env: {} }, document: { cookie: '' },
+      AbortController, DOMException, setTimeout, clearTimeout,
+      fetch: (url, options) => new Promise(resolve => transports.push({ url, options,
+        finish: () => resolve({ ok: true, text: async () => '{"id":"fixture-identity"}' }) })),
+    });
+    const client = module.exports;
+    client.setRequestFloorId('first-floor');
+    const identity = client.api.get(identityPath);
+    const identityResult = identity.then(value => ({ value }), error => ({ error }));
+    const floorRead = client.api.get('/quotations/fixture-floor');
+    const floorResult = floorRead.then(value => ({ value }), error => ({ error }));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(transports.length, 2);
+    client.setRequestFloorId('ground-floor');
+    assert.equal(transports[0].options.signal.aborted, false, `${path} ${identityPath}: changing floors must not abort account hydration`);
+    assert.equal(transports[1].options.signal.aborted, true, `${path}: old-floor business read must still abort`);
+    transports.forEach(transport => transport.finish());
+    assert.equal((await identityResult).value.id, 'fixture-identity');
+    assert.equal((await floorResult).error.name, 'AbortError');
+    for (const transition of ['login', 'logout']) {
+      const pending = client.api.get(identityPath).then(value => ({ value }), error => ({ error }));
+      await new Promise(resolve => setImmediate(resolve));
+      const transport = transports.at(-1);
+      if (transition === 'login') await client.setToken('fixture-new-identity', 'customer');
+      else await client.clearToken();
+      assert.equal(transport.options.signal.aborted, true, `${path} ${identityPath}: ${transition} must abort old identity hydration`);
+      transport.finish();
+      assert.equal((await pending).error.name, 'AbortError');
+    }
+  }
+}
+console.log('Identity hydration survives workspace changes; login/logout still reject old identity and workspace transports.');

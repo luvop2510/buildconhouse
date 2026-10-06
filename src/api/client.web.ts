@@ -21,11 +21,12 @@ const TOKEN_KIND_KEY = "forge.jwt.kind";
 const REQUEST_TIMEOUT_MS = 30_000;
 const inflightGets = new Map<string, Promise<unknown>>();
 const responseCache = new Map<string, { expiresAt: number; value: unknown }>();
-const activeRequests = new Set<AbortController>();
+const activeRequests = new Map<AbortController, boolean>();
 let tokenCache: string | null | undefined;
 let tokenKindCache: TokenKind | null | undefined;
 let floorCache: string | null | undefined;
 let requestContextVersion = 0;
+let identityContextVersion = 0;
 let readCacheVersion = 0;
 
 export type TokenKind = "staff" | "customer";
@@ -85,7 +86,7 @@ export async function getTokenKind(): Promise<TokenKind | null> {
 export function setRequestFloorId(floorId: string) {
   // Hydration's first storage read establishes the context; it is not a
   // workspace switch and must not cancel the concurrent floor-access call.
-  if (floorCache !== undefined && floorCache !== floorId) invalidateApiRequests();
+  if (floorCache !== undefined && floorCache !== floorId) invalidateApiRequests("workspace");
   floorCache = floorId;
 }
 export function clearApiResponseCache() {
@@ -93,13 +94,25 @@ export function clearApiResponseCache() {
   responseCache.clear();
   inflightGets.clear();
 }
-/** Abort work from the previous identity/workspace before it can update UI. */
-export function invalidateApiRequests() {
+/** A workspace change preserves account validation; identity changes cancel all work. */
+export function invalidateApiRequests(scope: "identity" | "workspace" = "identity") {
   requestContextVersion += 1;
+  if (scope === "identity") identityContextVersion += 1;
   clearApiResponseCache();
-  activeRequests.forEach((controller) => controller.abort());
-  activeRequests.clear();
+  activeRequests.forEach((identityRead, controller) => {
+    if (scope === "identity" || !identityRead) {
+      controller.abort();
+      activeRequests.delete(controller);
+    }
+  });
 }
+
+// Only these exact, read-only endpoints hydrate account-wide identity/grants.
+// Business reads and every mutation retain workspace cancellation semantics.
+function isIdentityRead(method: string, path: string) {
+  return method === "GET" && ["/auth/me", "/auth/customer/me", "/settings/access-grants/me"].includes(path);
+}
+
 export function csrfHeaders(): Record<string, string> {
   const csrf = document.cookie.split("; ").find((part) => part.startsWith("forge_csrf="))?.split("=")[1];
   return csrf ? { "X-CSRF-Token": decodeURIComponent(csrf) } : {};
@@ -113,8 +126,10 @@ async function getRequestFloorId() {
 }
 async function request<T>(method: string, path: string, body?: unknown, opts?: RequestOptions): Promise<T> {
   const contextVersion = requestContextVersion;
+  const identityVersion = identityContextVersion;
+  const identityRead = isIdentityRead(method, path);
   const controller = new AbortController();
-  activeRequests.add(controller);
+  activeRequests.set(controller, identityRead);
   const token = await getToken();
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -123,7 +138,7 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: R
   }
   const floorId = opts?.floorId ?? await getRequestFloorId();
   if (floorId) headers["X-Floor-Id"] = floorId;
-  if (contextVersion !== requestContextVersion) {
+  if (identityRead ? identityVersion !== identityContextVersion : contextVersion !== requestContextVersion) {
     activeRequests.delete(controller);
     throw new DOMException("Request cancelled because the signed-in account or workspace changed.", "AbortError");
   }
@@ -153,7 +168,7 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: R
         : text || `HTTP ${response.status}`;
       throw new ApiError(response.status, typeof detail === "string" ? detail : JSON.stringify(detail), data);
     }
-    if (contextVersion !== requestContextVersion) {
+    if (identityRead ? identityVersion !== identityContextVersion : contextVersion !== requestContextVersion) {
       throw new DOMException("Request cancelled because the signed-in account or workspace changed.", "AbortError");
     }
     return data as T;

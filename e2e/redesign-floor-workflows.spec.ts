@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { mockSession } from './audit-fixtures';
+import { floors, mockSession } from './audit-fixtures';
 
 async function builderReferences(page: Page) {
   await page.route('**/api/customers', route => route.fulfill({ json: [{ id: 'client', name: 'Fixture Customer' }] }));
@@ -30,6 +30,38 @@ test('critical sanitary deep link synchronizes the floor before fetching an exis
   expect(requestedFloors.every(floor => floor === 'first-floor')).toBe(true);
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('forge.active-floor') || 'null'))).toBe('first-floor');
   await expect(page.getByTestId('quotation-workspace')).toBeVisible();
+});
+
+test('critical a floor-changing quotation deep link preserves pending identity hydration', async ({ page }) => {
+  await mockSession(page, '/tiles');
+  await builderReferences(page);
+  let releaseIdentity!: () => void;
+  let identityStarted!: () => void;
+  const held = new Promise<void>(resolve => { releaseIdentity = resolve; });
+  const started = new Promise<void>(resolve => { identityStarted = resolve; });
+  await page.route('**/api/auth/me', async route => {
+    identityStarted();
+    await held;
+    await route.fulfill({ json: { id: 'audit-owner', email: 'owner@example.test', full_name: 'Audit Owner', role: 'owner', active: true, floor_ids: floors.map(floor => floor.id) } });
+  });
+  const requestedFloors: string[] = [];
+  await page.route('**/api/quotations/pending-identity-order', route => {
+    requestedFloors.push(route.request().headers()['x-floor-id']);
+    return route.fulfill({ json: quotationDoc('pending-identity-order', 'first-floor') });
+  });
+  try {
+    await page.goto('/quotations/new?quotationId=pending-identity-order');
+    await started;
+    await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('forge.active-floor') || 'null'))).toBe('first-floor');
+    releaseIdentity();
+    await expect(page.getByTestId('quotation-workspace')).toBeVisible();
+    await expect.poll(() => requestedFloors.length).toBeGreaterThan(0);
+    expect(requestedFloors.every(floor => floor === 'first-floor')).toBe(true);
+    await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('forge.jwt.kind') || 'null'))).toBe('staff');
+    await expect(page).toHaveURL(/\/quotations\/new\?quotationId=pending-identity-order$/);
+  } finally {
+    releaseIdentity();
+  }
 });
 
 test('critical Payments update opens the Ground Floor document with its correct request floor', async ({ page }) => {

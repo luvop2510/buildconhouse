@@ -104,6 +104,7 @@ jobs:
           npm run test:notebook
           npm run test:mobile-ux
           npm run test:api-client
+          npm run test:auth-provider-races
           npm run test:api-proxy
           npm run test:web-worker
           npm run test:sales-periods

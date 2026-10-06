@@ -1,6 +1,6 @@
 // Auth store. Single React context that any screen consumes.
 // Supports staff + customer email/password login.
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Platform } from "react-native";
 
 import { clearBuilderDrafts } from "@/src/components/quotation/helpers/draftStorage";
@@ -51,77 +51,123 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [kind, setKind] = useState<TokenKind | null>(null);
   const [staff, setStaff] = useState<StaffUser | null>(null);
   const [customer, setCustomer] = useState<CustomerUser | null>(null);
+  const operationGeneration = useRef(0);
+  const credentialWrites = useRef<Promise<void>>(Promise.resolve());
+
+  // A deletion already awaiting native storage must finish before a newer
+  // login persists its credentials. Skip queued writes whose owner expired.
+  const updateCredentials = useCallback((operation: number, write: () => Promise<void>) => {
+    const pending = credentialWrites.current.catch(() => {}).then(async () => {
+      if (operationGeneration.current === operation) await write();
+    });
+    credentialWrites.current = pending;
+    return pending;
+  }, []);
 
   const hydrate = useCallback(async () => {
+    const operation = ++operationGeneration.current;
+    const isCurrent = () => operationGeneration.current === operation;
     try {
       // Restore a previously-stored session, if any.
       const k = await getTokenKind();
+      if (!isCurrent()) return;
       const token = Platform.OS === "web" ? "cookie-session" : await getToken();
+      if (!isCurrent()) return;
       if (!token || !k) {
         setStaff(null); setCustomer(null); setKind(null);
         return;
       }
-      setKind(k);
       if (k === "staff") {
         const me = await api.get<StaffUser>("/auth/me");
+        if (!isCurrent()) return;
         if (me.custom_access) {
           const access = await api.get<{ grants: PersonalGrant[] }>("/settings/access-grants/me");
+          if (!isCurrent()) return;
           me.access_grants = access.grants;
         }
-        setStaff(me);
+        setKind(k); setStaff(me); setCustomer(null);
       } else {
         const me = await api.get<CustomerUser>("/auth/customer/me");
-        setCustomer(me);
+        if (!isCurrent()) return;
+        setKind(k); setCustomer(me); setStaff(null);
       }
     } catch {
+      if (!isCurrent()) return;
       await clearBuilderDrafts();
-      await clearToken();
+      if (!isCurrent()) return;
+      await updateCredentials(operation, clearToken);
+      if (!isCurrent()) return;
       setStaff(null); setCustomer(null); setKind(null);
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, []);
+  }, [updateCredentials]);
 
-  useEffect(() => { hydrate(); }, [hydrate]);
+  useEffect(() => {
+    hydrate();
+    return () => { operationGeneration.current += 1; };
+  }, [hydrate]);
 
   const loginStaff = useCallback(async (email: string, password: string) => {
-    const res = await api.post<{ access_token: string; user: StaffUser }>("/auth/login", { email, password });
-    await setToken(res.access_token, "staff");
-    // Floor access is identity-scoped, not app-scoped. In particular, a
-    // single-floor worker's cached response must never determine what the
-    // next owner sees in the shell.
-    resetFloorAccess();
-    // Pin an active floor BEFORE any screen mounts. The previous guard only
-    // replaced an empty selection, so a floor persisted by a prior user (or
-    // a prior business unit) survived logout and every scoped request from
-    // the newly signed-in worker was rejected with "You do not have access
-    // to this floor". Keep a saved selection only when this account can use
-    // it; otherwise fall back to the first floor assigned to the account.
-    const savedFloor = await getSelectedFloorId();
-    // Owners/managers have implicit all-floor access, so their user document
-    // may intentionally have no explicit floor_ids. Resolve the authoritative
-    // visible list instead of leaving a prior user's floor selected.
-    let assignedFloors = res.user.floor_ids || [];
+    const operation = ++operationGeneration.current;
+    const isCurrent = () => operationGeneration.current === operation;
+    setLoading(true);
     try {
-      assignedFloors = (await getFloorAccess()).floor_ids;
-    } catch {
-      // Authentication must remain usable during a transient floor-settings
-      // outage; the shell will retry its normal access request after login.
+      const res = await api.post<{ access_token: string; user: StaffUser }>("/auth/login", { email, password });
+      if (!isCurrent()) return;
+      await updateCredentials(operation, () => setToken(res.access_token, "staff"));
+      if (!isCurrent()) return;
+      // Floor access is identity-scoped, not app-scoped. In particular, a
+      // single-floor worker's cached response must never determine what the
+      // next owner sees in the shell.
+      resetFloorAccess();
+      // Pin an active floor BEFORE any screen mounts. The previous guard only
+      // replaced an empty selection, so a floor persisted by a prior user (or
+      // a prior business unit) survived logout and every scoped request from
+      // the newly signed-in worker was rejected with "You do not have access
+      // to this floor". Keep a saved selection only when this account can use
+      // it; otherwise fall back to the first floor assigned to the account.
+      const savedFloor = await getSelectedFloorId();
+      if (!isCurrent()) return;
+      // Owners/managers have implicit all-floor access, so their user document
+      // may intentionally have no explicit floor_ids. Resolve the authoritative
+      // visible list instead of leaving a prior user's floor selected.
+      let assignedFloors = res.user.floor_ids || [];
+      try {
+        assignedFloors = (await getFloorAccess()).floor_ids;
+      } catch {
+        // Authentication must remain usable during a transient floor-settings
+        // outage; the shell will retry its normal access request after login.
+      }
+      if (!isCurrent()) return;
+      const activeFloor = assignedFloors.includes(savedFloor) ? savedFloor : assignedFloors[0];
+      if (activeFloor && activeFloor !== savedFloor) await setSelectedFloorId(activeFloor);
+      if (!isCurrent()) return;
+      if (res.user.custom_access) {
+        const access = await api.get<{ grants: PersonalGrant[] }>("/settings/access-grants/me");
+        if (!isCurrent()) return;
+        res.user.access_grants = access.grants;
+      }
+      setKind("staff"); setStaff(res.user); setCustomer(null);
+    } finally {
+      if (isCurrent()) setLoading(false);
     }
-    const activeFloor = assignedFloors.includes(savedFloor) ? savedFloor : assignedFloors[0];
-    if (activeFloor && activeFloor !== savedFloor) await setSelectedFloorId(activeFloor);
-    if (res.user.custom_access) {
-      const access = await api.get<{ grants: PersonalGrant[] }>("/settings/access-grants/me");
-      res.user.access_grants = access.grants;
-    }
-    setKind("staff"); setStaff(res.user); setCustomer(null);
-  }, []);
+  }, [updateCredentials]);
 
   const loginCustomer = useCallback(async (email: string, password: string) => {
-    const res = await api.post<{ access_token: string; customer: CustomerUser }>("/auth/customer/login", { email, password });
-    await setToken(res.access_token, "customer");
-    setKind("customer"); setCustomer(res.customer); setStaff(null);
-  }, []);
+    const operation = ++operationGeneration.current;
+    const isCurrent = () => operationGeneration.current === operation;
+    setLoading(true);
+    try {
+      const res = await api.post<{ access_token: string; customer: CustomerUser }>("/auth/customer/login", { email, password });
+      if (!isCurrent()) return;
+      await updateCredentials(operation, () => setToken(res.access_token, "customer"));
+      if (!isCurrent()) return;
+      setKind("customer"); setCustomer(res.customer); setStaff(null);
+    } finally {
+      if (isCurrent()) setLoading(false);
+    }
+  }, [updateCredentials]);
 
   // Called right after the "set new password" screen succeeds — avoids a
   // full re-hydrate round trip, just clears the local force-change flag so
@@ -132,12 +178,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    try { await api.post("/auth/logout"); } catch { /* best-effort */ }
-    await clearBuilderDrafts();
-    await clearToken();
-    resetFloorAccess();
-    setStaff(null); setCustomer(null); setKind(null);
-  }, []);
+    const operation = ++operationGeneration.current;
+    const isCurrent = () => operationGeneration.current === operation;
+    setLoading(true);
+    try {
+      try { await api.post("/auth/logout"); } catch { /* best-effort */ }
+      if (!isCurrent()) return;
+      await clearBuilderDrafts();
+      if (!isCurrent()) return;
+      await updateCredentials(operation, clearToken);
+      if (!isCurrent()) return;
+      resetFloorAccess();
+      setStaff(null); setCustomer(null); setKind(null);
+    } finally {
+      if (isCurrent()) setLoading(false);
+    }
+  }, [updateCredentials]);
 
   const value = useMemo(
     () => ({

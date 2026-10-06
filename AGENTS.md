@@ -2,7 +2,16 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
-## Current verification update — 2026-10-06
+## Current verification update — 2026-10-07
+
+The session repair preserves only exact account identity GETs across floor
+changes; business reads and all mutations still cancel. Login/logout still
+invalidate every old identity request. AuthProvider guards obsolete hydration
+and serializes credential writes within one provider instance. The full local
+browser suite passes 928 tests with 20 intentional skips; stronger account-name
+assertions pass all 16 sign-in cases, and 40 provider race/lifecycle cases pass.
+See `docs/audits/2026-10-07-identity-floor-hydration-race.json`. These browser and
+hook checks do not constitute physical-device or signed-native acceptance.
 
 Follow-up: the compatible lockfile update to `shell-quote` 1.12.0 addresses
 newly indexed critical advisory GHSA-pqg4-j6r4-53mv; its attack regression

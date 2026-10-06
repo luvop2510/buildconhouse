@@ -70,3 +70,29 @@ read-only Mongo/index/Supabase readiness checks passed. Migration dry-run
 reported none pending. Fresh pip-audit on production requirements reports
 no known vulnerabilities. Earlier CI failure is retained as dated evidence;
 no advisory was ignored.
+
+## Supported application and registry review — 7 October 2026
+
+The deployed application now uses Expo 55.0.31 with React Native 0.83.10.
+The compatible shell-quote 1.12.0 update removed the critical
+[GHSA-pqg4-j6r4-53mv](https://github.com/advisories/GHSA-pqg4-j6r4-53mv)
+finding, and the supported SDK55 migration removed the legacy image-size
+findings. The fresh application audit reports **30 findings: 22 high,
+eight moderate, zero critical/low**. This supersedes the earlier graph counts
+above; the security job still fails.
+
+Fresh official registry and GitHub advisory checks find no patched release
+of braces (latest 3.0.3), node-forge (1.4.0), or sprintf-js (1.1.3).
+The published decode-uri-component 0.5.0 fix falls outside the installed
+query-string 7.1.3 dependency range. No query-string 7 patch accepts it.
+Router 58.0.16, suggested by npm audit, belongs to the `next` release channel,
+with Expo 58 peers. React Native 0.87.1 also falls outside Expo SDK57's
+supported React Native 0.86 family. Neither suggestion is a supported patch
+to the deployed SDK55 application.
+
+An isolated SDK57 application candidate improves the audit to 22 findings
+(19 high, three moderate), but still has 151 lint errors under its React
+rules. Its 136 focused browser checks pass after application fixes; that
+limited result does not justify production promotion or certify a signed
+native build. SDK57 remains held. No advisory gate was weakened and no
+transitive package was replaced with a renamed or locally patched substitute.

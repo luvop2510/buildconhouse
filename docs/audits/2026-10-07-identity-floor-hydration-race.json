@@ -1,0 +1,111 @@
+{
+  "checked_at_utc": "2026-10-06T21:33:55.900221+00:00",
+  "base_commit": "3e266d64130ef069088a128f6636de9200bc208d",
+  "application_stack": "Expo55.0.31 / ReactNative0.83.10 / React19.2.0",
+  "confirmed_triggers": [
+    "A quotation deep link changes the selected floor while startup identity hydration is pending. Workspace-wide cancellation aborted /auth/me and its provider catch cleared a valid session.",
+    "A newer staff or customer login aborts old startup hydration. The obsolete provider catch could then clear the newer credentials or publish an old identity."
+  ],
+  "client_fix": {
+    "exact_preserved_get_paths": [
+      "/auth/me",
+      "/auth/customer/me",
+      "/settings/access-grants/me"
+    ],
+    "business_requests_and_all_mutations_still_cancel_on_floor_change": true,
+    "login_logout_still_cancel_all_old_identity_requests": true,
+    "pre_and_post_transport_epoch_checks": true,
+    "server_principal_session_and_floor_authorization_unchanged": true,
+    "late_identity_responses_cannot_repopulate_new_context_cache": true
+  },
+  "provider_fix": {
+    "operation_generation_guards_identity_publication_cleanup_and_loading": true,
+    "credential_deletion_and_new_writes_serialized_within_one_provider_instance": true,
+    "current_invalid_session_still_clears_drafts_and_credentials": true,
+    "no_global_remount_or_server_cookie_ordering_guarantee": true
+  },
+  "controlled_validation": {
+    "client_floor_change_before": "The held identity read was incorrectly aborted; controlled assertion failed.",
+    "client_after": "18 identity-path/client/floor-or-identity scenarios pass, alongside 16 existing mutation/read races and slow-storage/cancelled-read regressions.",
+    "provider_before": {
+      "state": "before",
+      "source_sha256": "52634c4143507dbf9af66b829f2f3769c897571c1649ef8b4bdcc4ff64fed33e",
+      "exit_code": 1,
+      "tests": 40,
+      "pass": 4,
+      "fail": 36,
+      "log": "output/operations/auth-provider-controlled-before-20261007.log"
+    },
+    "provider_after": {
+      "state": "after",
+      "source_sha256": "8dc858871ed45b2a88e12dbc8284e61fec7b96d1f0ab9f8550701fc853bf25dd",
+      "exit_code": 0,
+      "tests": 40,
+      "pass": 40,
+      "fail": 0,
+      "log": "output/operations/auth-provider-controlled-after-20261007.log"
+    },
+    "actual_login_ui_before": {
+      "tested": 2,
+      "failed": 2,
+      "failure": "staff/customer sign-in remained on /login after successful newer login"
+    },
+    "full_application_after": {
+      "passed": 928,
+      "skipped": 20,
+      "failed": 0,
+      "flaky": 0,
+      "duration_ms": 532907,
+      "profiles": 8,
+      "note": "Includes the initial staff/customer login assertions; stronger final identity assertions were subsequently verified separately."
+    },
+    "stronger_identity_assertions_initial": {
+      "passed": 13,
+      "failed": 3,
+      "cause": "Test checked phone account-avatar initials before the lazy phone menu mounted. Failure snapshots already showed the correct new-account dashboard greeting."
+    },
+    "stronger_identity_assertions_final": {
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "flaky": 0,
+      "profiles": 8,
+      "checks": "Await held route completion and React frames; assert the new staff dashboard greeting or customer account name, persisted kind and protected landing route."
+    }
+  },
+  "required_frontend_contract_commands_passed": 26,
+  "tile_orders_contract_passed": true,
+  "typecheck_passed": true,
+  "lint_zero_warnings_passed": true,
+  "production_web_export_passed": true,
+  "mobile_initial_javascript_budget_passed": true,
+  "independent_reviews": "Exact endpoint/cancellation/backend/cache review plus provider/lifecycle review; no blocking source finding remains.",
+  "npm_findings": {
+    "info": 0,
+    "low": 0,
+    "moderate": 8,
+    "high": 22,
+    "critical": 0,
+    "total": 30
+  },
+  "security_ci_unblocked": false,
+  "sdk57_promoted": false,
+  "physical_or_signed_native_acceptance": false,
+  "goal_complete": false,
+  "source_sha256": {
+    "src/api/client.ts": "a7d16563396f069ce2db62e44d7b66cb13b15d1ca9f2a1ead0b4eebb508e628c",
+    "src/api/client.web.ts": "34d27f8d6dc57a2927cc91d2a542694db6439a51d94116873e030b9c1f19f5fe",
+    "src/state/auth.tsx": "8dc858871ed45b2a88e12dbc8284e61fec7b96d1f0ab9f8550701fc853bf25dd",
+    "scripts/test-api-client-contract.mjs": "0caeb59876f4e9b84c5953898a2fed763d1e885420d40f0cd1e7c880f072273f",
+    "scripts/test-auth-provider-races.mjs": "12ccf56f6b0b1a1a17b1ec884493b72cb9525be73c0763eb01584a3443b08e1f",
+    "e2e/redesign-floor-workflows.spec.ts": "2955450a15cb0e78cada15b7d6fc0d8f9e19a9492f05d6e11cad238c6f11e763",
+    "e2e/redesign-auth-transitions.spec.ts": "c710ad2e03972ab36ddd68c0a64f08ba7984be207c3f079c24e2b9bf498e5ec9"
+  },
+  "native_unsigned_exports": {
+    "ios": true,
+    "android": true,
+    "hermes_magic_verified": true,
+    "signed_binary": false,
+    "physical_acceptance": false
+  }
+}
