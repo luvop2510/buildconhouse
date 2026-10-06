@@ -113,6 +113,7 @@ jobs:
           npm run test:release-recovery
           npm run test:npm-audit
           npm run test:service-health
+          npm run test:uptime-monitor
           npm run test:app-text
           npm run test:legal-config
           npm run test:native-permissions

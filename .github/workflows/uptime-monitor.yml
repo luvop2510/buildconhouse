@@ -1,0 +1,48 @@
+name: Public uptime monitor
+
+on:
+  schedule:
+    # Off the top of the hour to reduce scheduler congestion; timestamps are UTC.
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-uptime-monitor
+  cancel-in-progress: false
+
+jobs:
+  availability:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Verify monitoring failure and redaction policy
+        run: |
+          node scripts/test-service-health.mjs
+          node scripts/test-uptime-monitor.mjs
+      - name: Check Vercel readiness and unauthenticated access boundary
+        run: node scripts/check-uptime-monitor.mjs https://buildcon-house-nine.vercel.app output/uptime-monitor/vercel.json github-hosted-unverified-region
+      - name: Check Railway readiness and unauthenticated access boundary
+        if: always()
+        run: node scripts/check-uptime-monitor.mjs https://forge20-production.up.railway.app output/uptime-monitor/railway.json github-hosted-unverified-region
+      - name: Preserve technical availability evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: public-uptime-evidence
+          path: |
+            output/uptime-monitor/vercel.json
+            output/uptime-monitor/railway.json
+          if-no-files-found: error
+          retention-days: 14
+      # Native Actions failure notifications depend on the operator's settings.
+      # No application secrets, customer records, backups or custom messages.

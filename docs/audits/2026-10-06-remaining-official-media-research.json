@@ -1,0 +1,53 @@
+{
+  "applied": false,
+  "source_scope": "three remaining exact manufacturer variants",
+  "geberit": [
+    {
+      "sku": "131.021.SJ.6",
+      "description": "Geberit Monolith sanitary module for wall-hung WC, 101 cm, front cladding made of glass: Front: black / glass, Side cladding: black / brushed aluminium",
+      "asset_id": "DAS_2083756",
+      "asset_url": "https://images.data.geberit.com/image/upload/37/56/DAS_2083756_20220704_135833.jpg",
+      "type": "Primary Image",
+      "width": 1200,
+      "height": 1200,
+      "bytes": 142537,
+      "sha256": "79c795e108723e4ea6dc0e7842c495292e708341af3fdb551e6f273a374bc735",
+      "meets_4k": false,
+      "source_page": "https://catalog.geberit-global.com/en-GB/product/PRO_224638"
+    },
+    {
+      "sku": "131.221.SJ.7",
+      "description": "Geberit Monolith Plus sanitary module for wall-hung WC, 101 cm, front cladding made of glass: Front: black / glass, Side cladding: black / brushed aluminium",
+      "asset_id": "DAS_2087230",
+      "asset_url": "https://images.data.geberit.com/image/upload/72/30/DAS_2087230_20220706_112646.jpg",
+      "type": "Primary Image",
+      "width": 1200,
+      "height": 1200,
+      "bytes": 142537,
+      "sha256": "79c795e108723e4ea6dc0e7842c495292e708341af3fdb551e6f273a374bc735",
+      "meets_4k": false,
+      "source_page": "https://catalog.geberit-global.com/en-GB/product/PRO_2623350"
+    }
+  ],
+  "geberit_eps_native_raster_dimensions": [
+    600,
+    900
+  ],
+  "oyster": {
+    "product_name": "Brook 600 x 400 Blue Drop",
+    "variant_name": "Matt Black",
+    "source_page": "https://oysterlifestyle.com/product/brook-600-x-400-blue-drop",
+    "asset_url": "https://oxceyhwwgvcrqoucfuxh.supabase.co/storage/v1/object/public/products/1774670416617-vo5vjh.jpg",
+    "width": 2000,
+    "height": 2000,
+    "mime": "image/jpeg",
+    "bytes": 900158,
+    "sha256": "c20a3c91d8a7eb0f70a5b26d78761ab0ecbc38fce9327112c0a7ce1c1e6f0349",
+    "meets_4k": false
+  },
+  "status": "manual_review_below_4k",
+  "fresh_raster_gate": {
+    "min_short_axis": 2160,
+    "min_long_axis": 3840
+  }
+}

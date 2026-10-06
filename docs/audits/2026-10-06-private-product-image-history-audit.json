@@ -1,0 +1,13 @@
+{
+  "all_object_byte_fingerprints_scanned": 13060,
+  "missing_reference_count": 5,
+  "exact_byte_alias_count": 0,
+  "product_collection_backups_scanned": 41,
+  "historical_product_records_scanned": 132699,
+  "matching_missing_product_records": 944,
+  "unparsed_backups": 0,
+  "candidate_products": 0,
+  "embedded_data_uri_candidates": 0,
+  "applied": false,
+  "scope_note": "Exact byte aliases across the complete object archive, plus image fields in historical rows matching the current missing product ID, SKU, brand and floor. No claim about unmatched or differently identified historical rows."
+}

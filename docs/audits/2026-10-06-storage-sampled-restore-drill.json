@@ -1,0 +1,18 @@
+{
+  "completed_at": "2026-10-06T11:09:20.855173+00:00",
+  "sample_only": true,
+  "objects_verified": 3,
+  "bytes_verified": 1812971,
+  "source_buckets_unchanged": true,
+  "private_target_verified": true,
+  "full_bucket_restore": false,
+  "production_promoted": false,
+  "content_types": [
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "image/jpeg"
+  ],
+  "target_bucket": "forge-restore-drill-20261006",
+  "source_inventory_unchanged_verified": true,
+  "source_objects_checked": 13060,
+  "scope_note": "Three sampled files only; source inventory preservation is an identity/version/MIME/size check, not a full source byte audit."
+}

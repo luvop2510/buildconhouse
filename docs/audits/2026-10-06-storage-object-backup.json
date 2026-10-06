@@ -1,0 +1,22 @@
+{
+  "archive_complete": true,
+  "reference_coverage_complete": false,
+  "reference_check_performed": true,
+  "object_count": 13060,
+  "total_bytes": 1635197254,
+  "point_in_time": false,
+  "missing_reference_count": 5,
+  "started_at": "2026-10-06T10:55:22.681815+00:00",
+  "completed_at": "2026-10-06T11:50:41.681451+00:00",
+  "fresh_verification_passed": true,
+  "source_inventory_unchanged_verified": true,
+  "manifest_sha256": "4c1d5cf1cedfabafe489004e5e6bfb00eb12153abeff2a5849c1dca0f6a45342",
+  "public_objects": 12682,
+  "private_objects": 378,
+  "excluded_private_recovery_objects": 133,
+  "reference_rows": 8489,
+  "off_site_copy_completed": false,
+  "full_cloud_restore_completed": false,
+  "payloads_private_and_gitignored": true,
+  "scope_note": "All available objects in the two configured source buckets except separately verified recovery/ database archives. Five missing media objects and missing product-photo selections remain unresolved."
+}

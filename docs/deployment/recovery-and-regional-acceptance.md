@@ -89,6 +89,15 @@ than retrying over partial contents.
 .venv/bin/python scripts/media_object_snapshot.py restore-drill backups/storage-YYYYMMDDTHHMMSSZ --target-prefix restore-drills/storage-YYYYMMDDTHHMMSSZ/ --confirm-prefix restore-drills/storage-YYYYMMDDTHHMMSSZ/ --report backups/storage-YYYYMMDDTHHMMSSZ/restore-drill.json
 ```
 
+The [6 October local byte archive](../audits/2026-10-06-storage-object-backup.json)
+completed all 13,060 available objects, totaling 1,635,197,254 bytes. Final source
+inventory comparison and a fresh complete local checksum verification passed.
+Five missing media references remain listed; active products without a selected
+photo are a separate coverage gap. A [three-file cloud restore](../audits/2026-10-06-storage-sampled-restore-drill.json)
+verified 1,812,971 bytes in a newly created private bucket, including JPEGs and a
+supplier workbook. The full cloud bucket restore and encrypted independent
+copy still need operator capacity, ownership and acceptance.
+
 Drill keys preserve the original bucket/key beneath that private prefix. This
 never changes product references or publishes images. Promoting restored media
 requires an isolated application validation and an explicit production cutover
@@ -205,8 +214,28 @@ approved SLO. The region label is operator supplied and explicitly unverified.
 It stores no credentials, raw response bodies or business identifiers.
 
 The manual workflow preserves only these non-sensitive reports and fails on
-an alert condition. Configure GitHub workflow-failure notifications for the
-actual owner, and a production uptime/APM monitor for continuous coverage.
+an alert condition. `Public uptime monitor` now checks the canonical Vercel and
+Railway origins hourly, at minute 17 UTC, and supports manual dispatch. It needs
+no application secrets or installed npm dependencies. Checkout, Node setup and
+artifact actions are pinned to reviewed official v7 commit SHAs; the runner is
+Ubuntu 24.04, token permissions are read-only, and credentials are not persisted.
+
+The scheduled monitor records ten samples per endpoint. Three consecutive
+availability/readiness failures trigger a failing run; any unauthenticated 2xx
+quotation response triggers an immediate failure. Recovered isolated failures
+remain in evidence but do not trigger an availability alert. Latency percentiles
+are recorded without enforcing an unapproved SLO. Only the two fixed technical
+JSON reports become Actions artifacts; bodies, customer records, secrets and
+backup payloads are excluded. Local negative checks cover failure recovery,
+false readiness, auth exposure, malformed reports and response/credential redaction.
+
+GitHub scheduling can be delayed or dropped under load, so an hourly check is
+not a guaranteed continuous monitor. Configure Actions failure notifications for
+the actual owner and confirm a controlled test notification before accepting
+alert delivery. Scheduled-run notifications depend on the schedule actor and
+notification settings. [GitHub schedule guidance](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)
+explains the scheduling and actor constraints. A dedicated production uptime/APM
+monitor and escalation receiver still need operational acceptance.
 Suggested alerts: three consecutive readiness failures; 5xx above 1% over five
 minutes with a meaningful minimum request count; p95 above the approved SLO;
 last verified backup older than 26 hours; media integrity failures. Record

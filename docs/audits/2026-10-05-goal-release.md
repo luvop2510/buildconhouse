@@ -188,7 +188,7 @@ predeploy checks; production pip-audit is clean again. Both requirements
 pins are updated. Frontend residual32 findings still block its independent
 security job. Vercel404d8524 reached READY and Railway deployment
 4fc260b6-5fef-436d-a2b1-b73ce97b405a reached SUCCESS before this patch;
-canonical read-only route verification passed16 checks.
+canonical read-only route verification passed 16 checks.
 
 
 ## Storage recovery tooling follow-up — 6 October
@@ -197,9 +197,9 @@ The complete provider inventory contains 12,682 public objects and 511 private
 objects, including 5,323 public objects outside current product-media references.
 The separate verified database snapshots occupy 133 private `recovery/` objects;
 those are excluded explicitly from the new byte archive. The new tool preserves
-all other public/private objects, source keys, MIME types and hashes. A local
-production archive is running; only its verified completion manifest can certify
-that run. Backup payloads and inventories remain private and excluded from Git.
+all other public/private objects, source keys, MIME types and hashes. The local production archive completed with 13,060 objects totaling
+1,635,197,254 bytes; its final inventory comparison and fresh full checksum
+verification passed. Five absent media references remain explicitly unresolved. Backup payloads and inventories remain private and excluded from Git.
 
 Twenty-one recovery regressions cover nested cursor pagination, cursor loops,
 provider redaction, changing inventories, catalog checksum disagreement, tampered
@@ -215,3 +215,42 @@ checks (1,552 tests and a clean Python dependency audit) and frontend functional
 checks (904 passed, 20 intentionally skipped); the independent npm security job
 still failed on 32 findings. Hosted acceptance then passed all 80 core-floor and
 image-column cases. Physical-device and operator/legal acceptance remain open.
+
+
+The media sampled cloud restore completed on 6 October: three objects totaling
+1,812,971 bytes (JPEGs and a retained supplier workbook) were restored into a new
+private drill bucket and verified byte-for-byte, with MIME/key/size checks. The
+complete 13,060-object source identity/version inventory was unchanged after the
+drill. This is a sampled restore, not a full cloud bucket restore; the full local
+byte archive subsequently passed its final consistency/completion gate.
+See `2026-10-06-storage-sampled-restore-drill.json` for redacted evidence.
+
+The local development runtime is also updated to PyMongo 4.18.2, matching the
+production security pin; Motor construction, BSON round-tripping and pip check
+pass. CI run 37453847245 for 6a05e65a passed backend 1,573 tests and frontend 904 browser
+cases, with 20 intentional browser skips. Python dependency auditing is clean;
+32 npm findings still fail the independent security job. Both deployment URLs
+passed 16 read-only release checks; 30 Railway probes passed from an unverified
+local location.
+
+The new hourly public uptime workflow makes availability monitoring executable
+without application credentials. Alert delivery, backup-age monitoring and
+regional performance acceptance still require operator evidence. Official source
+research additionally located black-glass Geberit primary assets at 1200×1200
+(native EPS embeds 600×900) and the missing Oyster Matt Black shower asset at
+2000×2000. Exact variant provenance is retained in the research manifest; all
+three remain below the fresh-image 4K gate and were not applied.
+
+
+The [complete object archive](2026-10-06-storage-object-backup.json) covers all
+12,682 available public objects and 378 private objects outside the separately
+verified `recovery/` database archives. All bytes and stored catalog fingerprints
+passed verification. Its five missing references keep coverage incomplete, and
+this local private copy is not an independent encrypted off-site backup.
+
+The [historical image audit](2026-10-06-private-product-image-history-audit.json)
+checked byte fingerprints for every archived object and parsed all 41 retained
+product-collection backups (132,699 historical product records). None of the
+five missing-media fingerprints had another exact object copy. The 944 rows
+matching currently missing product identities/SKUs/brands/floors contained no
+image URI candidates. No historical row was applied blindly to another owner.
