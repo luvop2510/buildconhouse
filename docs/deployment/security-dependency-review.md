@@ -56,3 +56,17 @@ was reviewed/updated5October and lists no patched version. It concerns
 unbounded precision format strings causing uncaught RangeError. The high
 braces/node-forge and incompatible image-size migration blockers remain.
 No finding is suppressed, and the independent security gate still fails.
+
+## Backend advisory refresh — 6 October
+
+The fresh CI/production requirements audit found four PyMongo4.17.0
+advisories after the earlier clean scan. Both production and preview pins
+now use4.18.2, within Motor3.7.1’s declared pymongo>=4.9,<5 range. The
+[MongoDB4.18.2 release](https://github.com/mongodb/mongo-python-driver/releases/tag/4.18.2)
+patches the GridFS exact-ID issue, KMS socket endpoint issue, BSON encoding
+overflow and URI host decoding issue. The full1,552-case suite passed in an
+isolated patched runtime; BSON roundtrip/Motor construction and live
+read-only Mongo/index/Supabase readiness checks passed. Migration dry-run
+reported none pending. Fresh pip-audit on production requirements reports
+no known vulnerabilities. Earlier CI failure is retained as dated evidence;
+no advisory was ignored.

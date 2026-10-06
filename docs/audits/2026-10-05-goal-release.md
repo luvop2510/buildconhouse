@@ -178,3 +178,14 @@ Compression 1.8.2 and source-map-js 1.2.2 were installed from the compatible
 existing version ranges. Clean npm installation, TypeScript, lint, Expo
 compatibility, production web export, route budgets and affected security/UI
 contracts passed. This does not clear the remaining dependency advisories.
+
+## Backend security follow-up — 6 October
+
+The fresh CI run for404d8524 found four newly indexed PyMongo4.17.0
+advisories and stopped before backend tests. The isolated patched4.18.2
+runtime passed all1,552 tests, Motor/BSON compatibility and live read-only
+predeploy checks; production pip-audit is clean again. Both requirements
+pins are updated. Frontend residual32 findings still block its independent
+security job. Vercel404d8524 reached READY and Railway deployment
+4fc260b6-5fef-436d-a2b1-b73ce97b405a reached SUCCESS before this patch;
+canonical read-only route verification passed16 checks.
