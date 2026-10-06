@@ -38,7 +38,8 @@
     "test:legal-config": "node --experimental-strip-types --no-warnings scripts/test-legal-config.mjs",
     "test:native-permissions": "node scripts/test-native-permissions.mjs",
     "test:stock-floor-races": "node scripts/test-stock-floor-races.mjs",
-    "test:uptime-monitor": "node scripts/test-uptime-monitor.mjs"
+    "test:uptime-monitor": "node scripts/test-uptime-monitor.mjs",
+    "test:shell-quote-security": "node scripts/test-shell-quote-security.mjs"
   },
   "dependencies": {
     "@expo/metro-runtime": "6.1.2",

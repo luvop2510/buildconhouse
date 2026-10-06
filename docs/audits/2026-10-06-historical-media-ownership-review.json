@@ -1,0 +1,23 @@
+{
+  "media_backups_scanned": 42,
+  "paired_media_backups_scanned": 41,
+  "unpaired_media_backups": 1,
+  "media_records_scanned": 132724,
+  "exact_owner_records": 197,
+  "candidate_assets": 9,
+  "candidate_products": 8,
+  "catalog_import_backups_scanned": 11,
+  "applied": false,
+  "rejected_assets": 8,
+  "manual_review_assets": 1,
+  "reasons": [
+    "Two Geberit legacy candidates depict an exposed concealed frame and a different stone finish, rather than the exact black-glass module.",
+    "Six Vitra legacy candidates depict taupe, black, or white finishes conflicting with the exact current SKU finish.",
+    "The remaining white oval basin visually agrees but has no verified row-anchor provenance. Historical accepted import records contain a different, visually incorrect taupe image; product/media IDs alone cannot establish ownership."
+  ],
+  "storage_objects_read_only": true,
+  "production_writes": 0,
+  "source_commit": "29ae383a1b06cf5ed69f5d18144717b82a0c7d16",
+  "unpaired_additional_candidate_products": 0,
+  "scope_note": "Historical product_media backups paired with exact current product ID/SKU/brand/floor records, archive bytes verified against stored hashes, and visual/import provenance review. No inference about differently identified products or unverified row anchors."
+}

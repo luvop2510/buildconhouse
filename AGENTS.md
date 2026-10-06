@@ -4,6 +4,15 @@ Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work 
 
 ## Current verification update — 2026-10-06
 
+Follow-up: the compatible lockfile update to `shell-quote` 1.12.0 addresses
+newly indexed critical advisory GHSA-pqg4-j6r4-53mv; its attack regression
+test is required in frontend CI. This does not waive other npm findings.
+SDK 55/56/57 experiments remain isolated until their full application checks
+pass. Historical media ownership review found nine candidates: eight have
+wrong finishes/product forms and one lacks verified import-row provenance.
+See `docs/audits/2026-10-06-historical-media-ownership-review.json`; no photo
+was assigned from those unsafe associations.
+
 The July notes below are historical. The current active catalog has 6,565
 products across Sanitary Bathroom and Ground Floor; Ground Floor is no longer
 an empty future-data workspace. The read-only backend predeploy gate now
