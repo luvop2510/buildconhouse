@@ -2,7 +2,7 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional
+from typing import AsyncIterator, Optional
 
 
 class StorageError(Exception):
@@ -55,6 +55,11 @@ class MediaStorage(ABC):
     async def require_private_bucket(self, bucket: str) -> None:
         """Fail closed unless the provider proves the bucket is private."""
         raise StorageError("Storage driver cannot verify private bucket visibility")
+
+    async def iter_objects(self, *, bucket: str, prefix: str = "", page_size: int = 1000) -> AsyncIterator[dict]:
+        """Enumerate current objects, including nested folders, or fail closed."""
+        raise StorageError("Storage driver cannot enumerate objects")
+        yield  # pragma: no cover — makes the interface an async iterator
 
     @abstractmethod
     async def download(self, *, bucket: str, key: str) -> bytes:

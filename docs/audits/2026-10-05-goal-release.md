@@ -189,3 +189,29 @@ pins are updated. Frontend residual32 findings still block its independent
 security job. Vercel404d8524 reached READY and Railway deployment
 4fc260b6-5fef-436d-a2b1-b73ce97b405a reached SUCCESS before this patch;
 canonical read-only route verification passed16 checks.
+
+
+## Storage recovery tooling follow-up — 6 October
+
+The complete provider inventory contains 12,682 public objects and 511 private
+objects, including 5,323 public objects outside current product-media references.
+The separate verified database snapshots occupy 133 private `recovery/` objects;
+those are excluded explicitly from the new byte archive. The new tool preserves
+all other public/private objects, source keys, MIME types and hashes. A local
+production archive is running; only its verified completion manifest can certify
+that run. Backup payloads and inventories remain private and excluded from Git.
+
+Twenty-one recovery regressions cover nested cursor pagination, cursor loops,
+provider redaction, changing inventories, catalog checksum disagreement, tampered
+files, symlinks, unsafe identities, missing manifest fields, occupied/public
+restore destinations and byte/MIME-preserving isolated restores. The updated
+hermetic backend suite passes **1,573 tests**, with six existing deprecation
+warnings. This does not certify a full cloud media restore or independent
+off-site backup.
+
+Before this tooling change, commit `4ade2ad0c0f7e833352ecd72737cf38909b32c1d`
+reached Vercel READY and Railway SUCCESS. GitHub run `37448969214` passed backend
+checks (1,552 tests and a clean Python dependency audit) and frontend functional
+checks (904 passed, 20 intentionally skipped); the independent npm security job
+still failed on 32 findings. Hosted acceptance then passed all 80 core-floor and
+image-column cases. Physical-device and operator/legal acceptance remain open.

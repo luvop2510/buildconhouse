@@ -15,7 +15,7 @@ future backend promotion rather than treating the old warning as current.
 The latest repair pass uses shared Inter Text/TextInput defaults and Feather
 icons, synchronizes Payments document floors before navigation, preserves
 zero-stock history and rejects stale floor callbacks. Its full backend unit
-suite passes 1,552 tests. Frontend functional CI and security auditing are
+suite passes 1,573 tests. Frontend functional CI and security auditing are
 independent jobs; the fresh 6 October scan has 32 npm findings (23 high/nine moderate) still block the
 security job. Do not suppress those findings or claim overall CI is green.
 Physical devices, signed builds and legal/operator acceptance remain open.

@@ -8,7 +8,7 @@ when sent as both `apikey` and `Authorization: Bearer` headers.
 from __future__ import annotations
 import hashlib
 import logging
-from typing import Optional
+from typing import AsyncIterator, Optional
 
 import httpx
 
@@ -133,6 +133,56 @@ class SupabaseStorageDriver(MediaStorage):
             raise StorageError(f"Supabase delete failed [{resp.status_code}]: {resp.text}")
 
     # ---- reads -----------------------------------------------------------
+
+    async def iter_objects(self, *, bucket: str, prefix: str = "", page_size: int = 1000) -> AsyncIterator[dict]:
+        """List all nested keys using Supabase's flat, cursor-paginated API.
+
+        Unsupported provider versions fail closed rather than returning a
+        partial inventory from a delimiter-based folder listing.
+        """
+        from urllib.parse import quote
+        if type(page_size) is not int or not 1 <= page_size <= 1000:
+            raise ValueError("Invalid storage page size")
+        cursor, cursors, keys = None, set(), set()
+        while True:
+            body = {"prefix": prefix, "limit": page_size, "with_delimiter": False,
+                    "sortBy": {"column": "name", "order": "asc"}}
+            if cursor is not None:
+                body["cursor"] = cursor
+            response = await self._request("POST", f"{self.url}/storage/v1/object/list-v2/{quote(bucket, safe='')}",
+                                           headers=self._headers(), json=body)
+            if response.status_code != 200:
+                raise StorageError(f"Storage inventory failed [{response.status_code}]")
+            try:
+                page = response.json()
+            except ValueError as exc:
+                raise StorageError("Malformed storage inventory") from exc
+            if (not isinstance(page, dict) or type(page.get("hasNext")) is not bool
+                    or page.get("folders") != [] or not isinstance(page.get("objects"), list)
+                    or len(page["objects"]) > page_size):
+                raise StorageError("Malformed flat storage inventory")
+            for entry in page["objects"]:
+                key = entry.get("name") if isinstance(entry, dict) else None
+                if (not isinstance(key, str) or not key or not key.startswith(prefix)
+                        or any(part in {"", ".", ".."} for part in key.split("/"))
+                        or "\0" in key or key in keys):
+                    raise StorageError("Unsafe or repeated storage inventory entry")
+                keys.add(key)
+                metadata = entry.get("metadata")
+                if not isinstance(entry.get("id"), str) or not entry["id"] or not isinstance(metadata, dict):
+                    raise StorageError("Malformed object identity")
+                size, mime = metadata.get("size"), metadata.get("mimetype")
+                if type(size) is not int or size < 0 or not isinstance(mime, str) or not mime or any(c in mime for c in "\r\n\0"):
+                    raise StorageError("Malformed object metadata")
+                yield {"bucket": bucket, "key": key, "id": entry["id"], "size_bytes": size,
+                       "content_type": mime, "updated_at": entry.get("updated_at"),
+                       "version": entry.get("version"), "etag": metadata.get("eTag")}
+            if not page["hasNext"]:
+                break
+            cursor = page.get("nextCursor")
+            if not page["objects"] or not isinstance(cursor, str) or not cursor or cursor in cursors:
+                raise StorageError("Storage inventory cursor did not advance")
+            cursors.add(cursor)
 
     async def require_private_bucket(self, bucket: str) -> None:
         from urllib.parse import quote

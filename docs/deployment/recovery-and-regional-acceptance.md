@@ -49,6 +49,52 @@ both public product objects and private attachments separately, preserving keys,
 MIME types and hashes. Verify the media integrity gate after restore. Restoring
 metadata alone cannot recover a deleted image.
 
+`backend/scripts/media_object_snapshot.py` implements the separate byte archive.
+It enumerates both configured buckets through Supabase's flat cursor-paginated
+API, including unregistered objects and nested private source files. Unsupported
+list APIs, repeated cursors, duplicate keys and malformed metadata fail closed.
+The private `recovery/` prefix is excluded because the logical database snapshots
+there are verified separately; other retained private files remain in scope.
+
+```sh
+.venv/bin/python scripts/media_object_snapshot.py backup --output backups/storage-YYYYMMDDTHHMMSSZ --logical-snapshot backups/recovery-YYYYMMDDTHHMMSSZ
+.venv/bin/python scripts/media_object_snapshot.py verify backups/storage-YYYYMMDDTHHMMSSZ
+```
+
+The tool uses a bounded worker pool, checks catalog SHA-1 references when present,
+writes raw bytes and per-object SHA-256 hashes to 0700/0600 local storage, and
+rechecks the complete source inventory before publishing its completion manifest.
+A failed attempt retains its private partial directory for investigation; use a
+new output directory for another attempt. It does not overwrite a prior archive.
+Objects above the explicit 128 MiB limit fail the command instead of disappearing
+from the archive. Provider failures print only an exception type, never a response
+body, customer filename or credential.
+
+`archive_complete` certifies the available object inventory; it does **not** mean
+all catalog references exist. `reference_coverage_complete` stays false when a
+reference is missing, and the private manifest lists those gaps. The current
+catalog still has five missing storage objects. Deleted versions and a frozen
+point-in-time cut are outside this tool's guarantees. Copy a verified archive to
+separately controlled encrypted off-site storage and verify it again after
+retrieval before treating the local copy as a disaster-recovery backup.
+
+Restore byte archives only into a fresh, explicitly confirmed private drill
+prefix. The command validates every local file before any upload, verifies bucket
+privacy and destination emptiness, reserves the prefix with a create-only marker,
+uploads without overwriting, reads back every byte, and checks the final key/MIME/
+size inventory. Failed destinations remain quarantined; use a new prefix rather
+than retrying over partial contents.
+
+```sh
+.venv/bin/python scripts/media_object_snapshot.py restore-drill backups/storage-YYYYMMDDTHHMMSSZ --target-prefix restore-drills/storage-YYYYMMDDTHHMMSSZ/ --confirm-prefix restore-drills/storage-YYYYMMDDTHHMMSSZ/ --report backups/storage-YYYYMMDDTHHMMSSZ/restore-drill.json
+```
+
+Drill keys preserve the original bucket/key beneath that private prefix. This
+never changes product references or publishes images. Promoting restored media
+requires an isolated application validation and an explicit production cutover
+plan; a sampled drill must not be described as a full bucket restore. Check
+available destination capacity before a full cloud drill.
+
 The manual **Operations evidence** workflow optionally uploads a verified
 private snapshot using protected `production` secrets; it never uploads data as
 an artifact or automatically restores production. Run it after assigning an
