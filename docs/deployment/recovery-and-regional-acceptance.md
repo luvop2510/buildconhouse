@@ -248,7 +248,8 @@ transactions to Sentry. It excludes raw request/user/log/exception content and
 database spans. Keep DSNs/secrets in platform settings, assign retention and
 review real sampled events before completing privacy declarations.
 
-Railway currently reports region `iad` and one replica. Do not move services or
+The 7 October authenticated Railway inventory reports region `sfo` and one replica
+for the new production service. Earlier `iad` deployment evidence is historical. Do not move services or
 add replicas based on local RTT alone. From a verified India runner/mobile ISP
 and a second region, collect at least 100 representative authenticated reads
 in staging, p50/p95/p99, error rate, first/warm timing and server processing.
@@ -258,3 +259,55 @@ query plans, CDN derivatives and payload sizes before changing infrastructure.
 After any region change, repeat the same fixture/load and record cost and
 latency evidence. Browser viewport emulation does not establish regional or
 physical-device performance acceptance.
+
+
+## Operational refresh — 7 October 2026
+
+Authenticated inventory verified new Railway project
+`4d4a8d55-2e5e-43dc-b3a2-298e4455f210`, service
+`9683fa61-7c70-4fce-ba6d-210b0cff5267`, production environment
+`3ee5a85e-c436-4010-8103-8e8a49186dd1`, and domain
+`forge20-production-a8b0.up.railway.app`. Readiness probes use the new origin;
+tracing is disabled, no Sentry DSN variable is present, and there are no Railway
+webhooks. Alert receipt/escalation remains unverified.
+
+Thirty read-only health/readiness/auth probes passed at the start of this pass.
+Warm p95 was 2052 ms for health, 2798 ms for readiness and 1258 ms for denied
+unauthenticated quotations. Local geography is unverified. Railway's recent
+one-hour proxy window had zero 5xx out of 286 requests; its slowest bucket p95
+was 10788 ms. Those different windows, endpoints and sample populations cannot
+be interpreted as an authenticated India-region performance or load-test pass.
+No region or replica change was made on this evidence.
+
+Uptime run 37635419230 passed its technical probe steps but failed uploading
+reports because GitHub's artifact storage quota was exhausted. Health workflow
+summaries now preserve only allowlisted technical numeric results before upload,
+and evidence retention is three days. Uploads remain required: quota failures
+are neither suppressed nor accepted as complete release evidence. The browser
+CI artifact suppression was also removed. Existing user artifacts were not
+deleted to make quota appear resolved. Account storage/retention ownership
+and observed notification delivery remain operator blockers.
+
+A fresh verification of the available local storage archive passed all 13060
+objects and 1635197254 bytes; five unavailable catalog references remain explicit.
+The old 41-collection logical snapshot also passed its checksums. A new private
+logical export and isolated loopback restore are recorded in the latest release
+audit when complete. Neither local verification nor private storage on the same
+provider is independent off-site backup, full cloud recovery or approved RPO/RTO.
+
+The new 7 October logical export contains 41 collections and 40319 records.
+Its first private upload failed with a redacted WriteTimeout during
+backup-private-upload; that attempt is not a completed remote backup. The new
+local isolated restore passed all canonical BSON contents/identities, collection
+options and 176 index contracts in 18.184 seconds (14.961 seconds restoring).
+Its owned standalone MongoDB process was stopped; no application/workers or
+production write operations occurred. This is local restore evidence, not full
+cloud recovery, PITR, independent off-site recovery or an approved RTO. The safe
+resumable upload retry is tracked separately in the release ledger.
+
+The separately bounded private-upload attempt also failed, with redacted
+ReadError after 818.933 seconds using a 120-second per-request storage timeout.
+The production driver timeout was not changed. A remote completion manifest was
+not verified, so this new snapshot is local-only acceptance. Partial private
+chunks remain quarantined for future safe resumption. A reliable private
+remote transfer and independent encrypted off-site retrieval remain required.

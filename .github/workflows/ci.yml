@@ -120,7 +120,9 @@ jobs:
           npm run test:app-text
           npm run test:legal-config
           npm run test:native-permissions
+          npm run test:native-release-config
           npm run test:stock-floor-races
+          npm run test:history-lifecycle
       - name: Tile Orders workflow route contract
         run: node scripts/verify-tile-orders-contract.mjs
       - name: Lint
@@ -135,19 +137,37 @@ jobs:
         run: npx playwright install --with-deps chromium firefox webkit
       - name: Release browser journeys and responsive audit
         run: npm run test:e2e:audit
+      - name: Publish browser result counts in the job summary
+        if: always()
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFile, appendFile } from 'node:fs/promises';
+          let summary = '### Browser acceptance evidence\n\n';
+          try {
+            const { stats } = JSON.parse(await readFile('output/playwright/audit-results.json', 'utf8'));
+            const count = key => Number.isSafeInteger(stats?.[key]) && stats[key] >= 0 ? stats[key] : 'unavailable';
+            summary += `Expected passes: ${count('expected')}; unexpected failures: ${count('unexpected')}; flaky: ${count('flaky')}; skipped: ${count('skipped')}.\n`;
+          } catch {
+            summary += 'Browser report unavailable. Inspect the browser test step; acceptance remains unverified.\n';
+          }
+          summary += 'Browser checks do not certify signed native builds or physical devices. Required test and artifact failures still fail this job.\n';
+          console.log(summary);
+          if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, summary);
+          NODE
       - name: Preserve browser audit evidence
         id: browser-evidence
         if: always()
-        # Artifact storage availability must not replace the actual test result.
-        continue-on-error: true
+        # Retained release evidence is required. Preserve upload failures as
+        # failures so unavailable artifact storage cannot be reported as green CI.
         uses: actions/upload-artifact@v4
         with:
           name: browser-audit
           path: output/playwright
+          if-no-files-found: error
           retention-days: 3
           compression-level: 9
       - name: Report unavailable browser evidence
         if: always() && steps.browser-evidence.outcome == 'failure'
         run: |
-          echo "::warning::Browser audit evidence could not be uploaded; see the upload step for details. Test failures still fail this job."
-          echo "Browser audit evidence upload failed. The test results remain in the workflow logs; see the upload step for the storage/service error." >> "$GITHUB_STEP_SUMMARY"
+          echo "::error::Required browser audit evidence could not be uploaded; the failed upload keeps this job failing. See the upload step for details."
+          echo "Required browser audit evidence upload failed. This job remains failing even if the browser tests passed. Test results remain in workflow logs; see the upload step for the storage/service error." >> "$GITHUB_STEP_SUMMARY"

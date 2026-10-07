@@ -1,0 +1,139 @@
+{
+  "checked_at_utc": "2026-10-06T22:14:25.277891+00:00",
+  "base_commit": "4706e01d652c1a59f8570b21a3429b25d2e8ec47",
+  "application_stack": "Expo55.0.31 / ReactNative0.83.10 / React19.2.0",
+  "confirmed_production_control": {
+    "tested": 10,
+    "passed": 4,
+    "failed": 6,
+    "profiles": [
+      "desktop",
+      "phone"
+    ],
+    "business_api_requests": "globally mocked",
+    "defects": [
+      "Focused search input consumes bubbling keyboard shortcuts and arrow navigation.",
+      "Rapid reopening can retain prior session state or lose trigger focus."
+    ],
+    "note": "The held-response case failed during reopening, before its old response was released; it alone does not prove stale data was consumed."
+  },
+  "repair": {
+    "fresh_state_per_opening_and_floor": true,
+    "prior_session_close_callbacks_cannot_close_new_opening": true,
+    "product_results_tagged_by_query_and_hidden_below_threshold": true,
+    "late_response_consumers_cancelled_and_guarded": true,
+    "shared_get_transport_may_continue": true,
+    "cached_rows_filtered_by_current_permissions": true,
+    "keyboard_capture_arrow_and_enter_only_from_search_input_or_panel": true,
+    "focused_result_and_cancel_buttons_keep_native_web_keyboard_activation": true,
+    "escape_remains_overlay_wide": true,
+    "animation_and_focus_timer_cleanup": true,
+    "dependency_versions_or_visual_design_changed": false,
+    "web_uses_single_overlay_focus_without_delayed_input_refocus": true
+  },
+  "independent_review": {
+    "introduced_focused_button_enter_interception": "Caught before promotion and corrected: captured Enter previously activated the highlighted action while a different result or Cancel button held focus.",
+    "other_actionable_findings": 0,
+    "web_focus_timer_trace": "Add customer focus assertion passed at +59.9ms after Ctrl+K; Enter began at +69.5ms and wrong New quotation navigation followed. Timing supports duplicate60ms input.focus mechanism; trace does not directly record timer firing or focusin events.",
+    "final_source_review": "Capture guard and native-only delayed focus reviewed with no further introduced actionable findings."
+  },
+  "validation_status": "full_browser_passed_store_goal_still_open",
+  "acceptance_limits": [
+    "Fixture browser profiles do not constitute physical iPhone/iPad/Android acceptance.",
+    "Unsigned JS/Hermes exports do not constitute signed native or store acceptance.",
+    "Legal/operator facts and reviewer tenant remain unverified.",
+    "30 npm findings remain; security CI is not waived.",
+    "Remaining catalog photos require exact ownership and accepted source quality."
+  ],
+  "full_goal_complete": false,
+  "controlled_introduced_regression_before": {
+    "stats": {
+      "startTime": "2026-10-06T22:01:39.058Z",
+      "duration": 55143.029,
+      "expected": 0,
+      "skipped": 5,
+      "unexpected": 11,
+      "flaky": 0
+    },
+    "cases": "Two focused keyboard cases across eight browser profiles; Cancel case skips five layouts where Cancel is not rendered.",
+    "report": "output/operations/palette-focused-enter-before-20261007.json",
+    "built_source": "unreleased initial palette backport before focused-element guard",
+    "all_business_apis_mocked": true,
+    "production_promoted": false
+  },
+  "native_unsigned_exports": {
+    "scope": "Final source unsigned production JS/Hermes exports only; no signed binary, runtime or physical acceptance.",
+    "results": [
+      {
+        "platform": "ios",
+        "status": "passed",
+        "wall_seconds": 24.847,
+        "result_path": "output/operations/palette-final-native-ios-20261007-result.json",
+        "inter_ttf_count": 4,
+        "inter_woff2_count": 0,
+        "hermes_bundle_bytes": 7956255
+      },
+      {
+        "platform": "android",
+        "status": "passed",
+        "wall_seconds": 25.12,
+        "result_path": "output/operations/palette-final-native-android-20261007-result.json",
+        "inter_ttf_count": 4,
+        "inter_woff2_count": 0,
+        "hermes_bundle_bytes": 8044584
+      }
+    ],
+    "all_four_original_inter_ttf_sha256_and_bytes_verified": true,
+    "all_bundles_hermes_magic_verified": true
+  },
+  "validation_iterations": [
+    {
+      "run": "output/operations/palette-sdk55-full-browser-20261007.log",
+      "result": "Interrupted for independent focused-Enter finding before promotion."
+    },
+    {
+      "run": "output/operations/palette-final-full-browser-20261007.json",
+      "result": "Interrupted after one real desktop Tab/Enter failure with capture guard applied; three in-flight cases were interrupted. Removed competing web60ms autofocus while keeping native focus timing."
+    }
+  ],
+  "focused_browser_after": {
+    "stats": {
+      "startTime": "2026-10-06T22:06:37.110Z",
+      "duration": 69664.552,
+      "expected": 51,
+      "skipped": 5,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "all_business_api_requests_mocked": true,
+    "physical_acceptance": false,
+    "report": "output/operations/palette-focused-after-browser-20261007.json"
+  },
+  "non_browser_validation": {
+    "typecheck": "passed",
+    "lint_full_then_modified_files_after_focus_timer_change": "passed with zero warnings",
+    "required_contract_commands": 26,
+    "tile_orders_route_contract": "passed",
+    "web_export": "passed",
+    "route_gzip_budget_kib": 576,
+    "route_budget_result": "passed",
+    "read_only_backend_predeploy": "Mongo/index/Supabase pass",
+    "migration_dry_run": "no pending migrations"
+  },
+  "final_full_browser_acceptance": {
+    "stats": {
+      "startTime": "2026-10-07T15:03:04.695Z",
+      "duration": 862773.7130000001,
+      "expected": 990,
+      "skipped": 30,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "report": "output/operations/readiness-acceptance-full-browser-20261007.json",
+    "workers": 2,
+    "retries": 0,
+    "test_timeout_ms": 30000,
+    "all_business_apis_intercepted": true,
+    "physical_device_acceptance": false
+  }
+}

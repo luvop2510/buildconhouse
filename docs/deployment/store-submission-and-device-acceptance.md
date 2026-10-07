@@ -115,3 +115,40 @@ This host has no available `xcrun devicectl`/`simctl` and no `adb`; repository
 configuration lacks a linked EAS project. Browser touch/WebKit/tablet emulation
 and unsigned Hermes export test different layers. They cannot certify physical
 devices, signing, store review or native file-share behavior.
+
+
+## Fresh native and policy review — 7 October 2026
+
+The production EAS profile now targets the verified new Railway origin,
+`https://forge20-production-a8b0.up.railway.app`, matching the web CI build.
+The hermetic `test:native-release-config` command executes the actual production
+native API client against a mock transport, and fails when its configured
+backend diverges from web CI. It does not certify a signed binary or networking
+on a physical device.
+
+Fresh host checks found no mobile USB candidates, `adb`, `devicectl`, `simctl`
+or `xctrace`; only Xcode Command Line Tools are selected. There is no linked
+EAS project, installed EAS CLI or configured EXPO_TOKEN in the execution
+environment. No signing, store login, physical-device pass, screenshots from a
+signed build or reviewer account is claimed. Verified EAS/store access, real
+devices/testers and an isolated reviewer tenant were requested together once.
+No operator facts were supplied during this pass. Vercel's current production
+variable inventory contains BACKEND_URL and no legal-publication variables.
+
+[Apple account deletion guidance](https://developer.apple.com/help/app-review/guideline-reference/5-1-1-account-deletion)
+was rechecked on 7 October. For apps supporting account creation, an in-app
+initiation path is required, and an email-only support flow is not sufficient
+outside the specified highly regulated cases. Manual fulfillment can be allowed
+with clear timing and completion confirmation. The existing mailto privacy link
+is therefore not proof that Apple's account-deletion requirement is satisfied.
+Confirm the exact submitted app's account creation/provisioning behavior,
+retained-record obligations and deletion fulfillment before declaring compliance.
+[Google's deletion worksheet](https://support.google.com/googleplay/android-developer/answer/13327111)
+also requires accurate form answers and both applicable request pathways.
+The current policy/listing copy remains an operator-review draft.
+
+Submission acceptance requires signed build/version/commit identifiers; passing
+physical iPhone, iPad, Android phone and tablet records; sample-only working
+reviewer credentials; verified public contacts and legal facts; and completed
+privacy/data-safety/deletion answers for the exact submitted configuration.
+App Store submission still requires the user's explicit approval.

@@ -1,0 +1,32 @@
+{
+  "checked_at_utc": "2026-10-06T22:11:11.307130+00:00",
+  "read_only": true,
+  "business_or_image_writes": false,
+  "scope": "Current selected-hero metadata only; object bytes and product-image ownership are not revalidated by this queue.",
+  "active_products_scanned": 6565,
+  "selected_hero_quality_counts": {
+    "acceptable": 2017,
+    "excellent": 1582,
+    "good": 1031,
+    "missing": 119,
+    "poor": 1816
+  },
+  "missing_selected_heroes": 119,
+  "missing_by_brand": {
+    "Vitra": 71,
+    "Nexion": 40,
+    "Hansgrohe": 4,
+    "Geberit": 2,
+    "Renite": 1,
+    "Oyster": 1
+  },
+  "source_report_sha256": "1b4ee3e50a106fa50f623c85e9a29090a9fc6fc2b9da03adb1c0692b2fc2b947",
+  "source_report_private": "output/operations/media-coverage-20261007.json",
+  "historical_object_failures": {
+    "count": 5,
+    "last_verified_date": "2026-10-06",
+    "current_object_recheck": false
+  },
+  "full_image_acceptance_complete": false,
+  "remaining_sources_require_exact_product_ownership_and_accepted_native_quality": true
+}

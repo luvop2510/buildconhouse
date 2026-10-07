@@ -1,0 +1,1733 @@
+{
+  "checked_at_utc": "2026-10-07T14:43:34.292263+00:00",
+  "read_only": true,
+  "database_business_writes": 0,
+  "media_writes": 0,
+  "storage_writes": 0,
+  "new_recoveries_applied": 0,
+  "fresh_scope": "All current product/media metadata identity checks; byte download only for five previously unavailable displayed heroes. Previously healthy media bytes and legacy URLs not re-downloaded.",
+  "active_products": 6565,
+  "current_media_rows": 8489,
+  "selected_hero_quality_counts": {
+    "acceptable": 2017,
+    "excellent": 1582,
+    "poor": 1816,
+    "missing": 119,
+    "good": 1031
+  },
+  "missing_hero_count": 119,
+  "missing_by_brand": {
+    "Geberit": 2,
+    "Vitra": 71,
+    "Oyster": 1,
+    "Nexion": 40,
+    "Renite": 1,
+    "Hansgrohe": 4
+  },
+  "missing_by_floor": {
+    "first-floor": 78,
+    "ground-floor": 41
+  },
+  "byte_rechecked_known_unavailable_objects": 5,
+  "byte_issues": [
+    {
+      "media_id": "0ae08556-238b-4da3-b0f7-fa864ad5634f",
+      "kind": "missing_object",
+      "detail": {
+        "error_type": "StorageError",
+        "status_code": 400
+      }
+    },
+    {
+      "media_id": "b50a4a94-4b37-43d5-8d24-6cdefac8467e",
+      "kind": "missing_object",
+      "detail": {
+        "error_type": "StorageError",
+        "status_code": 400
+      }
+    },
+    {
+      "media_id": "4b8eebbf-0f97-4942-b032-c3e60c3fafb7",
+      "kind": "missing_object",
+      "detail": {
+        "error_type": "StorageError",
+        "status_code": 400
+      }
+    },
+    {
+      "media_id": "d092b4bd-e728-4ed7-8561-718f01286225",
+      "kind": "missing_object",
+      "detail": {
+        "error_type": "StorageError",
+        "status_code": 400
+      }
+    },
+    {
+      "media_id": "ae898f54-e305-4dd0-93a0-94b1203a3379",
+      "kind": "missing_object",
+      "detail": {
+        "error_type": "StorageError",
+        "status_code": 400
+      }
+    }
+  ],
+  "broken_displayed_hero_count": 5,
+  "products_without_usable_displayed_photo": 124,
+  "products_with_selected_hero_without_known_byte_failure": 6441,
+  "selected_hero_without_known_byte_failure_percent": 98.1112,
+  "coverage_does_not_prove_full_catalog_image_ownership": true,
+  "full_acceptance_complete": false,
+  "metadata_identity_issue_count": 0,
+  "first_floor_weak_or_missing_queue": {
+    "active_products": 3792,
+    "missing": 78,
+    "poor": 1458,
+    "total": 1536,
+    "private_report": "output/operations/media-recovery-first-floor-20261007.json"
+  },
+  "quality_gate": {
+    "fresh_web_raster_short_axis_min_px": 2160,
+    "fresh_web_raster_long_axis_min_px": 3840,
+    "official_exact_sku_safe_svg_accepted": true,
+    "upscaling_to_pass": false,
+    "supplied_original_restore_may_preserve_lower_native_resolution": true
+  },
+  "new_official_source_research": [
+    {
+      "sku": "47904300",
+      "finish": "Polished Red Gold",
+      "source_page": "https://pro.hansgrohe.com/articledetail-axor-myedition-plate-245-metal-47904300",
+      "asset_url": "https://assets.hansgrohe.com/mam/celum/celum_assets/154__apr06446_tif.png",
+      "identity_evidence": "Current official exact SKU page identifies finish and product-photo asset link; page reviewed via web open/click on 2026-10-07.",
+      "applied": false,
+      "checked_at_utc": "2026-10-07T14:41:03.134677+00:00",
+      "http_status": 200,
+      "width": 1695,
+      "height": 4096,
+      "mime": "image/png",
+      "bytes": 3906568,
+      "sha256": "74af7769f739067def9c6371468e4479db5aff9e638cac704430ea1ffc7411d6",
+      "passes_4k": false,
+      "outcome": "not_4k"
+    },
+    {
+      "sku": "47904340",
+      "finish": "Brushed Black Chrome PVD",
+      "source_page": "https://www.axor-design.com/dk/articledetail-axor-myedition-designplade-245-metal-47904340",
+      "asset_url": "https://assets.hansgrohe.com/mam/celum/celum_assets/154__apr06449_tif.png",
+      "identity_evidence": "Current official exact SKU page identifies finish and product-photo asset link; page reviewed via web open/click on 2026-10-07.",
+      "applied": false,
+      "checked_at_utc": "2026-10-07T14:41:26.719291+00:00",
+      "http_status": 200,
+      "width": 1695,
+      "height": 4096,
+      "mime": "image/png",
+      "bytes": 5905793,
+      "sha256": "6afd3bff78a062b7839a49626a3ee45eea2f45a4dc56fef63e44e37dcfb36397",
+      "passes_4k": false,
+      "outcome": "not_4k"
+    },
+    {
+      "sku": "27412990",
+      "finish": "Polished Gold Optic",
+      "source_page": "https://www.hansgrohe.com/articledetail-shower-arm-23-cm-27412990",
+      "asset_url": "https://assets.hansgrohe.com/mam/celum/celum_assets/154__hpa00206_tif.png",
+      "identity_evidence": "Official exact article page identifies discontinued Shower arm 23 cm / 27412990 / Polished Gold Optic and links this product photo with HBW2/HBW48 display transforms. Original fetched without display transform.",
+      "applied": false,
+      "checked_at_utc": "2026-10-07T14:42:08.940412+00:00",
+      "http_status": 200,
+      "width": 679,
+      "height": 266,
+      "mime": "image/png",
+      "bytes": 148567,
+      "sha256": "39204cdb7577485c9d41d35d20d82149cafbeaeb9ab609700b6989bbee78a653",
+      "passes_4k": false,
+      "outcome": "not_4k"
+    }
+  ],
+  "prior_sources_reused_without_repeating_full_inventory": [
+    {
+      "evidence": "docs/audits/2026-10-06-private-product-image-history-audit.json",
+      "previous_scan": {
+        "object_fingerprints": 13060,
+        "product_backups": 41,
+        "exact_byte_aliases": 0,
+        "candidate_products": 0
+      }
+    },
+    {
+      "evidence": "docs/audits/2026-10-06-historical-media-ownership-review.json",
+      "previous_scan": {
+        "candidate_assets": 9,
+        "rejected_wrong_finish_or_form": 8,
+        "manual_review_missing_row_anchor_provenance": 1,
+        "applied": false
+      }
+    },
+    {
+      "evidence": "docs/audits/2026-10-06-nexion-official-image-research.json",
+      "previous_scan": {
+        "rows": 40,
+        "manufacturer_originals": 17,
+        "passing_4k": 0,
+        "finish_format_catalog_conflicts": 6
+      }
+    },
+    {
+      "evidence": "docs/audits/2026-10-06-remaining-official-media-research.json",
+      "note": "Exact Geberit black-glass originals 1200×1200; Oyster Matt Black Brook original 2000×2000. All below 4K gate."
+    }
+  ],
+  "new_local_source_check": {
+    "scope": "Workspace backend/temp and backend/backups, excluding already exhaustively fingerprinted storage archive. Existing source mtimes/filenames inspected; no new product original input discovered since prior ownership audits.",
+    "complete_disk_inventory_repeated": false
+  },
+  "required_operator_inputs": [
+    "Exact supplier/manufacturer originals for the 124 product identifiers below, with SKU, finish, size and licensed source ownership.",
+    "Supplier reconciliation for six Nexion Satinato 60×120 / 80×160 / 120×120 size tuples: current manufacturer listing supports Satinato 120×180 / 120×240 only; supplied records retained pending facts.",
+    "Verified Vitra workbook image row-anchor ownership for the sole visually agreeing white oval basin historical candidate."
+  ],
+  "measurable_release_criteria": {
+    "missing_selected_heroes": 0,
+    "unavailable_displayed_objects": 0,
+    "unresolved_exact_sku_finish_assignments": 0,
+    "verified_post_apply_product_identity_unchanged": true,
+    "verified_post_apply_displayed_hero": true,
+    "new_external_raster_quality_gate_passed": true
+  },
+  "private_fresh_report_sha256": "bce1f1987071b6ac23f4d6053d93dc9463dd0aba969d21bc2179146edab9060c",
+  "limitations": [
+    "Reads are not a point-in-time snapshot; catalog ownership has not been re-proven for every pre-existing image.",
+    "Known unavailable objects were freshly retried; prior healthy byte checks retain their previous timestamps.",
+    "Official page direct Python downloads returned HTTP 403; web open/click retrieved current exact page evidence and official asset URLs; original asset bytes downloaded successfully.",
+    "Prior private inventory is historical evidence; no claim that uninspected external sources or new operator files are exhausted."
+  ],
+  "unresolved_requirements": [
+    {
+      "product_id": "a41035f3-6fae-48d9-bcf3-bd953f51975a",
+      "sku": "131.021.SJ.6",
+      "name": "Monolith monolith sanitary module for wall-hung WC black glass/aluminium",
+      "brand": "Geberit",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Geberit SKU 131.021.SJ.6 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "063ff5c4-1a63-45af-8b1e-f1d201d17d1d",
+      "sku": "131.221.SJ.7",
+      "name": "Monolith Plus wall-hung WC, black glass",
+      "brand": "Geberit",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Geberit SKU 131.221.SJ.7 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "6d0b90f4-0920-44a0-a2ff-ee337e2b3e77",
+      "sku": "7426B420H0001",
+      "name": "OPTIONS WITH TAP HOLE SOFT SQUARE 600mm · Matt Taupe / Sand Beige",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7426B420H0001 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "d1d71670-caba-4b12-a58a-c125a8753dcd",
+      "sku": "OYSTER-SHOWER-BROOK600X400BLUEDROP-MB",
+      "name": "BROOK 600x400 blue drop - Matt Black",
+      "brand": "Oyster",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Oyster SKU OYSTER-SHOWER-BROOK600X400BLUEDROP-MB product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "ecdb9a00-0da0-48b2-8a55-41bb5691b497",
+      "sku": "NEXION-ONICEPERSIANO-1198X2398-FL",
+      "name": "ONICE PERSIANO - Full Lappato (1198X2398)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x240 cm maps explicitly to actual 1198X2398 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Full Lappato 1198X2398 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "2c2cbeec-6ec7-474d-a219-ae8d5ee3aed4",
+      "sku": "NEXION-ONICEPERSIANO-1198X2398-LM",
+      "name": "ONICE PERSIANO - Lappato Matt (1198X2398)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x240 cm maps explicitly to actual 1198X2398 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Lappato Matt 1198X2398 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "28aaa4ef-c431-43a5-bdcf-fadba4988df2",
+      "sku": "NEXION-ONICEPERSIANO-1198X2398-SN",
+      "name": "ONICE PERSIANO - Soft Natural (1198X2398)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x240 cm maps explicitly to actual 1198X2398 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Supplier spelling Soft Natural differs from official Soft Naturale; exact finish equivalence and a finish-specific original must be confirmed. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Soft Natural 1198X2398 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k",
+        "finish_label_equivalence_unconfirmed"
+      ]
+    },
+    {
+      "product_id": "e70f1717-28cb-42a2-9105-e664b2810789",
+      "sku": "NEXION-ONICEPERSIANO-1198X2398-ST",
+      "name": "ONICE PERSIANO - Satinato (1198X2398)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x240 cm maps explicitly to actual 1198X2398 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Satinato 1198X2398 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "70ee916d-573b-4c15-9041-2714f89a3b5f",
+      "sku": "NEXION-ONICEPERSIANO-1198X1798-FL",
+      "name": "ONICE PERSIANO - Full Lappato (1198X1798)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x180 cm maps explicitly to actual 1198X1798 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Full Lappato 1198X1798 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "b71b27a8-5f7b-45f5-b2e5-cab90eab3a25",
+      "sku": "NEXION-ONICEPERSIANO-1198X1798-LM",
+      "name": "ONICE PERSIANO - Lappato Matt (1198X1798)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x180 cm maps explicitly to actual 1198X1798 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Lappato Matt 1198X1798 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "b80d1208-c883-4a41-b277-8ea18d81d70d",
+      "sku": "NEXION-ONICEPERSIANO-1198X1798-SN",
+      "name": "ONICE PERSIANO - Soft Natural (1198X1798)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x180 cm maps explicitly to actual 1198X1798 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Supplier spelling Soft Natural differs from official Soft Naturale; exact finish equivalence and a finish-specific original must be confirmed. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Soft Natural 1198X1798 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k",
+        "finish_label_equivalence_unconfirmed"
+      ]
+    },
+    {
+      "product_id": "3ebcb31c-6b37-4902-ab87-8d2f3ad70547",
+      "sku": "NEXION-ONICEPERSIANO-1198X1798-ST",
+      "name": "ONICE PERSIANO - Satinato (1198X1798)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x180 cm maps explicitly to actual 1198X1798 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Satinato 1198X1798 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "d493c4c8-dd74-471c-9b53-5266dae02305",
+      "sku": "NEXION-ONICEPERSIANO-1198X1198-FL",
+      "name": "ONICE PERSIANO - Full Lappato (1198X1198)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x120 cm maps explicitly to actual 1198X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Full Lappato 1198X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "b127517a-3c02-4785-b220-5c9e75466248",
+      "sku": "NEXION-ONICEPERSIANO-1198X1198-LM",
+      "name": "ONICE PERSIANO - Lappato Matt (1198X1198)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x120 cm maps explicitly to actual 1198X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Lappato Matt 1198X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "6c05e41e-84c2-4432-8e8f-e8c8491f7248",
+      "sku": "NEXION-ONICEPERSIANO-1198X1198-SN",
+      "name": "ONICE PERSIANO - Soft Natural (1198X1198)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x120 cm maps explicitly to actual 1198X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Supplier spelling Soft Natural differs from official Soft Naturale; exact finish equivalence and a finish-specific original must be confirmed. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Soft Natural 1198X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k",
+        "finish_label_equivalence_unconfirmed"
+      ]
+    },
+    {
+      "product_id": "5b5b4799-60f9-41f9-9227-48241c5b5211",
+      "sku": "NEXION-ONICEPERSIANO-1198X1198-ST",
+      "name": "ONICE PERSIANO - Satinato (1198X1198)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "mismatch",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x120 cm maps explicitly to actual 1198X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Exact supplied Satinato / 120x120 cm tuple conflicts with current product page and catalogue: Satinato is listed only in 120x180 and 120x240 cm. This is a catalogue conflict requiring supplier confirmation, not proof custom availability is impossible. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Satinato 1198X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling. First reconcile this Satinato format against the two official available sizes; retain supplied row until confirmed.",
+      "blockers": [
+        "finish_format_catalog_conflict",
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "fa77003c-896d-4ff1-b0dd-d45e2d6c8d0c",
+      "sku": "NEXION-ONICEPERSIANO-798X1598-FL",
+      "name": "ONICE PERSIANO - Full Lappato (798X1598)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 80x160 cm maps explicitly to actual 798X1598 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Full Lappato 798X1598 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "d0124790-9a6c-41f7-9a2f-6e14bb54a101",
+      "sku": "NEXION-ONICEPERSIANO-798X1598-LM",
+      "name": "ONICE PERSIANO - Lappato Matt (798X1598)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 80x160 cm maps explicitly to actual 798X1598 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Lappato Matt 798X1598 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "22309a5d-2983-4c19-bc15-3f612b37969d",
+      "sku": "NEXION-ONICEPERSIANO-798X1598-SN",
+      "name": "ONICE PERSIANO - Soft Natural (798X1598)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 80x160 cm maps explicitly to actual 798X1598 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Supplier spelling Soft Natural differs from official Soft Naturale; exact finish equivalence and a finish-specific original must be confirmed. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Soft Natural 798X1598 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k",
+        "finish_label_equivalence_unconfirmed"
+      ]
+    },
+    {
+      "product_id": "712d6240-dfda-41c7-9e57-119820588c7e",
+      "sku": "NEXION-ONICEPERSIANO-798X1598-ST",
+      "name": "ONICE PERSIANO - Satinato (798X1598)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "mismatch",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 80x160 cm maps explicitly to actual 798X1598 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Exact supplied Satinato / 80x160 cm tuple conflicts with current product page and catalogue: Satinato is listed only in 120x180 and 120x240 cm. This is a catalogue conflict requiring supplier confirmation, not proof custom availability is impossible. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Satinato 798X1598 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling. First reconcile this Satinato format against the two official available sizes; retain supplied row until confirmed.",
+      "blockers": [
+        "finish_format_catalog_conflict",
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "a25f7578-9067-4acd-b684-d139dbe230fb",
+      "sku": "NEXION-ONICEPERSIANO-598X1198-FL",
+      "name": "ONICE PERSIANO - Full Lappato (598X1198)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 60x120 cm maps explicitly to actual 598X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Full Lappato 598X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "263d68d9-44ea-425e-8d2d-f2c351ac2cd1",
+      "sku": "NEXION-ONICEPERSIANO-598X1198-LM",
+      "name": "ONICE PERSIANO - Lappato Matt (598X1198)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 60x120 cm maps explicitly to actual 598X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Lappato Matt 598X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "fb5ba043-4eea-496a-b015-a3e9fa25cd1b",
+      "sku": "NEXION-ONICEPERSIANO-598X1198-SN",
+      "name": "ONICE PERSIANO - Soft Natural (598X1198)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 60x120 cm maps explicitly to actual 598X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Supplier spelling Soft Natural differs from official Soft Naturale; exact finish equivalence and a finish-specific original must be confirmed. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Soft Natural 598X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k",
+        "finish_label_equivalence_unconfirmed"
+      ]
+    },
+    {
+      "product_id": "5d142b88-bb78-4ec8-925a-6ac3cdb97fd4",
+      "sku": "NEXION-ONICEPERSIANO-598X1198-ST",
+      "name": "ONICE PERSIANO - Satinato (598X1198)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "mismatch",
+      "evidence": "Official Onice Persiano product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 60x120 cm maps explicitly to actual 598X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Exact supplied Satinato / 60x120 cm tuple conflicts with current product page and catalogue: Satinato is listed only in 120x180 and 120x240 cm. This is a catalogue conflict requiring supplier confirmation, not proof custom availability is impossible. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Onice Persiano Satinato 598X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling. First reconcile this Satinato format against the two official available sizes; retain supplied row until confirmed.",
+      "blockers": [
+        "finish_format_catalog_conflict",
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "37487977-b660-4916-894f-104f05cf5467",
+      "sku": "NEXION-LEPTISAMANIBRONZE-1198X2398-FL",
+      "name": "LEPTIS AMANI BRONZE - Full Lappato (1198X2398)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x240 cm maps explicitly to actual 1198X2398 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Full Lappato 1198X2398 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "f0d9e354-31fa-451b-9185-42dd37f7df3b",
+      "sku": "NEXION-LEPTISAMANIBRONZE-1198X2398-LM",
+      "name": "LEPTIS AMANI BRONZE - Lappato Matt (1198X2398)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x240 cm maps explicitly to actual 1198X2398 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Lappato Matt 1198X2398 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "cec6dad2-a604-4946-ae01-adb44fe3c12d",
+      "sku": "NEXION-LEPTISAMANIBRONZE-1198X2398-SN",
+      "name": "LEPTIS AMANI BRONZE - Soft Natural (1198X2398)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x240 cm maps explicitly to actual 1198X2398 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Supplier spelling Soft Natural differs from official Soft Naturale; exact finish equivalence and a finish-specific original must be confirmed. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Soft Natural 1198X2398 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k",
+        "finish_label_equivalence_unconfirmed"
+      ]
+    },
+    {
+      "product_id": "cf1706b2-6136-40ba-be14-5c71158d8fcf",
+      "sku": "NEXION-LEPTISAMANIBRONZE-1198X2398-ST",
+      "name": "LEPTIS AMANI BRONZE - Satinato (1198X2398)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x240 cm maps explicitly to actual 1198X2398 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Satinato 1198X2398 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "6213e690-c8fb-4981-ab6f-43a3c995fd02",
+      "sku": "NEXION-LEPTISAMANIBRONZE-1198X1798-FL",
+      "name": "LEPTIS AMANI BRONZE - Full Lappato (1198X1798)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x180 cm maps explicitly to actual 1198X1798 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Full Lappato 1198X1798 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "7545fdee-f73c-4f3f-bcb7-3a56dbc0a813",
+      "sku": "NEXION-LEPTISAMANIBRONZE-1198X1798-LM",
+      "name": "LEPTIS AMANI BRONZE - Lappato Matt (1198X1798)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x180 cm maps explicitly to actual 1198X1798 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Lappato Matt 1198X1798 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "079eee5b-8397-4615-8a61-758b583ac64b",
+      "sku": "NEXION-LEPTISAMANIBRONZE-1198X1798-SN",
+      "name": "LEPTIS AMANI BRONZE - Soft Natural (1198X1798)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x180 cm maps explicitly to actual 1198X1798 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Supplier spelling Soft Natural differs from official Soft Naturale; exact finish equivalence and a finish-specific original must be confirmed. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Soft Natural 1198X1798 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k",
+        "finish_label_equivalence_unconfirmed"
+      ]
+    },
+    {
+      "product_id": "43499697-21aa-471c-9c96-9802fc1e9a26",
+      "sku": "NEXION-LEPTISAMANIBRONZE-1198X1798-ST",
+      "name": "LEPTIS AMANI BRONZE - Satinato (1198X1798)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x180 cm maps explicitly to actual 1198X1798 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Satinato 1198X1798 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "9defe5aa-bb9a-4f61-b3e5-783e7795dba1",
+      "sku": "NEXION-LEPTISAMANIBRONZE-1198X1198-FL",
+      "name": "LEPTIS AMANI BRONZE - Full Lappato (1198X1198)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x120 cm maps explicitly to actual 1198X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Full Lappato 1198X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "0fafe5fa-7405-464e-8666-14ee69669b92",
+      "sku": "NEXION-LEPTISAMANIBRONZE-1198X1198-LM",
+      "name": "LEPTIS AMANI BRONZE - Lappato Matt (1198X1198)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x120 cm maps explicitly to actual 1198X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Lappato Matt 1198X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "b3086cc7-6f52-4bbe-aa3f-da162ad019d4",
+      "sku": "NEXION-LEPTISAMANIBRONZE-1198X1198-SN",
+      "name": "LEPTIS AMANI BRONZE - Soft Natural (1198X1198)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x120 cm maps explicitly to actual 1198X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Supplier spelling Soft Natural differs from official Soft Naturale; exact finish equivalence and a finish-specific original must be confirmed. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Soft Natural 1198X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k",
+        "finish_label_equivalence_unconfirmed"
+      ]
+    },
+    {
+      "product_id": "5017e50b-cf94-4805-9ace-9722a0a2251f",
+      "sku": "NEXION-LEPTISAMANIBRONZE-1198X1198-ST",
+      "name": "LEPTIS AMANI BRONZE - Satinato (1198X1198)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "mismatch",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 120x120 cm maps explicitly to actual 1198X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Exact supplied Satinato / 120x120 cm tuple conflicts with current product page and catalogue: Satinato is listed only in 120x180 and 120x240 cm. This is a catalogue conflict requiring supplier confirmation, not proof custom availability is impossible. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Satinato 1198X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling. First reconcile this Satinato format against the two official available sizes; retain supplied row until confirmed.",
+      "blockers": [
+        "finish_format_catalog_conflict",
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "57b0cea7-fb05-496e-9ea5-a0206938ed9c",
+      "sku": "NEXION-LEPTISAMANIBRONZE-798X1598-FL",
+      "name": "LEPTIS AMANI BRONZE - Full Lappato (798X1598)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 80x160 cm maps explicitly to actual 798X1598 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Full Lappato 798X1598 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "48baa136-66d9-4fc8-b714-a5b3ecf41b59",
+      "sku": "NEXION-LEPTISAMANIBRONZE-798X1598-LM",
+      "name": "LEPTIS AMANI BRONZE - Lappato Matt (798X1598)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 80x160 cm maps explicitly to actual 798X1598 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Lappato Matt 798X1598 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "1b2c136e-0897-46e2-a806-f3f8b75ae4a7",
+      "sku": "NEXION-LEPTISAMANIBRONZE-798X1598-SN",
+      "name": "LEPTIS AMANI BRONZE - Soft Natural (798X1598)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 80x160 cm maps explicitly to actual 798X1598 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Supplier spelling Soft Natural differs from official Soft Naturale; exact finish equivalence and a finish-specific original must be confirmed. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Soft Natural 798X1598 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k",
+        "finish_label_equivalence_unconfirmed"
+      ]
+    },
+    {
+      "product_id": "84ab34ef-a1d2-4b78-88c6-6aaa3ec80278",
+      "sku": "NEXION-LEPTISAMANIBRONZE-798X1598-ST",
+      "name": "LEPTIS AMANI BRONZE - Satinato (798X1598)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "mismatch",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 80x160 cm maps explicitly to actual 798X1598 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Exact supplied Satinato / 80x160 cm tuple conflicts with current product page and catalogue: Satinato is listed only in 120x180 and 120x240 cm. This is a catalogue conflict requiring supplier confirmation, not proof custom availability is impossible. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Satinato 798X1598 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling. First reconcile this Satinato format against the two official available sizes; retain supplied row until confirmed.",
+      "blockers": [
+        "finish_format_catalog_conflict",
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "5cfdd946-36ca-47e7-82a9-03426e8c78d3",
+      "sku": "NEXION-LEPTISAMANIBRONZE-598X1198-FL",
+      "name": "LEPTIS AMANI BRONZE - Full Lappato (598X1198)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 60x120 cm maps explicitly to actual 598X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Full Lappato 598X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "95e7edfd-edae-4e10-806a-852a6b3f69eb",
+      "sku": "NEXION-LEPTISAMANIBRONZE-598X1198-LM",
+      "name": "LEPTIS AMANI BRONZE - Lappato Matt (598X1198)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 60x120 cm maps explicitly to actual 598X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Lappato Matt 598X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "f1c55f1d-2c7e-487e-90f2-7459f872fa01",
+      "sku": "NEXION-LEPTISAMANIBRONZE-598X1198-SN",
+      "name": "LEPTIS AMANI BRONZE - Soft Natural (598X1198)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 60x120 cm maps explicitly to actual 598X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Supplier spelling Soft Natural differs from official Soft Naturale; exact finish equivalence and a finish-specific original must be confirmed. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Soft Natural 598X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling.",
+      "blockers": [
+        "not_4k",
+        "finish_label_equivalence_unconfirmed"
+      ]
+    },
+    {
+      "product_id": "3fd946ec-c056-4067-a133-cda02f87749f",
+      "sku": "NEXION-LEPTISAMANIBRONZE-598X1198-ST",
+      "name": "LEPTIS AMANI BRONZE - Satinato (598X1198)",
+      "brand": "Nexion",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "mismatch",
+      "evidence": "Official Amani Bronze product page, original WordPress uploads, and current 2026 Marble Gallery catalogue inspected. Nominal 60x120 cm maps explicitly to actual 598X1198 mm (catalogue PDF page 77 / printed page 153). Published face originals are 1400x700; all 17 matching manufacturer originals decoded, largest edge 1920; relevant native catalogue photos are also below the required 2160 px both axes / 3840 px long edge. Exact supplied Satinato / 60x120 cm tuple conflicts with current product page and catalogue: Satinato is listed only in 120x180 and 120x240 cm. This is a catalogue conflict requiring supplier confirmation, not proof custom availability is impossible. Collection face numbers identify graphic variations; they are not a verified exact finish/format photograph assignment. No asset uploaded and no product edited.",
+      "next_source_requirement": "Exact Amani Bronze Satinato 598X1198 mm original with manufacturer/supplier confirmation of exact finish and format, native 2160 px on both axes and 3840 px long edge for a fresh web source; no cross-finish/cross-format borrowing or upscaling. First reconcile this Satinato format against the two official available sizes; retain supplied row until confirmed.",
+      "blockers": [
+        "finish_format_catalog_conflict",
+        "not_4k"
+      ]
+    },
+    {
+      "product_id": "a0a4254c-0f6b-4ac7-aa5e-790e34f660e0",
+      "sku": "RENITE-KEMIKHL1P16-600X1200-MT",
+      "name": "KEMIK HL 1 P-16 - Matt (600X1200)",
+      "brand": "Renite",
+      "floor_id": "ground-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Renite SKU RENITE-KEMIKHL1P16-600X1200-MT product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "f0c336e8-5851-4e4f-8d95-4d6cef560f73",
+      "sku": "5885B420H0101",
+      "name": "MEMORIA RIM-EX WC · Matt Taupe / Sand Beige",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "ambiguous",
+      "evidence": "WC worksheet and photograph show taupe; Sheet1 description for exact SKU says Matt Black. Resolve source contradiction before assignment.",
+      "next_source_requirement": "Exact Vitra SKU 5885B420H0101 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "5b54b985-66bf-4f43-97b4-aabf21671dd5",
+      "sku": "5885B420H0559",
+      "name": "MEMORIA RIM-EX WC WITH BIDET · Matt Taupe / Sand Beige",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "ambiguous",
+      "evidence": "WC worksheet and photograph show taupe; Sheet1 description for exact SKU says Matt Black. Resolve source contradiction before assignment.",
+      "next_source_requirement": "Exact Vitra SKU 5885B420H0559 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "7f53ee53-22b6-4c36-b1b8-8112cc65d250",
+      "sku": "126-401H009",
+      "name": "PLURAL SEAT COVER · Matt White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "mismatch",
+      "evidence": "Workbook adapter candidate visually depicts complete WC assembly, not this exact seat-cover accessory.",
+      "next_source_requirement": "Exact Vitra SKU 126-401H009 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "a514715d-53a0-40e6-b59a-73efb121e2c4",
+      "sku": "126-422H009",
+      "name": "PLURAL SEAT COVER · Matt Taupe / Sand Beige",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "mismatch",
+      "evidence": "Workbook adapter candidate visually depicts complete WC assembly, not this exact seat-cover accessory.",
+      "next_source_requirement": "Exact Vitra SKU 126-422H009 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "3490f576-e96a-4b72-bab8-e3023ba2cd71",
+      "sku": "126-483H009",
+      "name": "PLURAL SEAT COVER · Matt Black",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "mismatch",
+      "evidence": "Workbook adapter candidate visually depicts complete WC assembly, not this exact seat-cover accessory.",
+      "next_source_requirement": "Exact Vitra SKU 126-483H009 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "ffa33239-d764-4457-bb17-5eb3f2f79af8",
+      "sku": "207-003H209",
+      "name": "METROPOLE SQUARE QUANTUM SEAT COVER · White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "mismatch",
+      "evidence": "Workbook adapter candidate visually depicts complete WC assembly, not this exact seat-cover accessory.",
+      "next_source_requirement": "Exact Vitra SKU 207-003H209 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "00a561c1-e98b-48a4-8708-348a5057725d",
+      "sku": "207-401H209",
+      "name": "METROPOLE SQUARE QUANTUM SEAT COVER · Matt White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "mismatch",
+      "evidence": "Workbook adapter candidate visually depicts complete WC assembly, not this exact seat-cover accessory.",
+      "next_source_requirement": "Exact Vitra SKU 207-401H209 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "c22ca5d2-7a13-45fe-ba99-b76dab64f2c6",
+      "sku": "207-422H209",
+      "name": "METROPOLE SQUARE QUANTUM SEAT COVER · Matt Taupe / Sand Beige",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "mismatch",
+      "evidence": "Workbook adapter candidate visually depicts complete WC assembly, not this exact seat-cover accessory.",
+      "next_source_requirement": "Exact Vitra SKU 207-422H209 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "7321dd96-1cc6-4f82-9e11-14ecbfa5a642",
+      "sku": "207-476H209",
+      "name": "METROPOLE SQUARE QUANTUM SEAT COVER · Matt Stone Grey",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "mismatch",
+      "evidence": "Workbook adapter candidate visually depicts complete WC assembly, not this exact seat-cover accessory.",
+      "next_source_requirement": "Exact Vitra SKU 207-476H209 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "075f2410-7f2a-4a37-b4a2-f3fe2472d897",
+      "sku": "207-483H209",
+      "name": "METROPOLE SQUARE QUANTUM SEAT COVER · Matt Black",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "mismatch",
+      "evidence": "Workbook adapter candidate visually depicts complete WC assembly, not this exact seat-cover accessory.",
+      "next_source_requirement": "Exact Vitra SKU 207-483H209 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "3cfe7c90-81ea-4f73-a586-1fb4555b5ef0",
+      "sku": "208-003H209",
+      "name": "METROPOLE ROUND QUANTUM SEAT COVER · White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "mismatch",
+      "evidence": "Workbook adapter candidate visually depicts complete WC assembly, not this exact seat-cover accessory.",
+      "next_source_requirement": "Exact Vitra SKU 208-003H209 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "88b09ed9-f81d-4be3-9066-1e2095432fe4",
+      "sku": "208-401H209",
+      "name": "METROPOLE ROUND QUANTUM SEAT COVER · Matt White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "mismatch",
+      "evidence": "Workbook adapter candidate visually depicts complete WC assembly, not this exact seat-cover accessory.",
+      "next_source_requirement": "Exact Vitra SKU 208-401H209 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "0b748fc4-7eb2-4545-933a-65d4b4e7e120",
+      "sku": "208-422H209",
+      "name": "METROPOLE ROUND QUANTUM SEAT COVER · Matt Taupe / Sand Beige",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "mismatch",
+      "evidence": "Workbook adapter candidate visually depicts complete WC assembly, not this exact seat-cover accessory.",
+      "next_source_requirement": "Exact Vitra SKU 208-422H209 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "be86d7af-45d1-43e3-b27f-db4d84fd41cd",
+      "sku": "208-476H209",
+      "name": "METROPOLE ROUND QUANTUM SEAT COVER · Matt Stone Grey",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "mismatch",
+      "evidence": "Workbook adapter candidate visually depicts complete WC assembly, not this exact seat-cover accessory.",
+      "next_source_requirement": "Exact Vitra SKU 208-476H209 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "8f0179a6-abf0-4b9b-8f4c-2424f6ae59c2",
+      "sku": "208-483H209",
+      "name": "METROPOLE ROUND QUANTUM SEAT COVER · Matt Black",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "mismatch",
+      "evidence": "Workbook adapter candidate visually depicts complete WC assembly, not this exact seat-cover accessory.",
+      "next_source_requirement": "Exact Vitra SKU 208-483H209 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "772f253e-9d37-4867-8efb-82db4f417ba1",
+      "sku": "191-401H209",
+      "name": "INTEGRA SQUARE SEAT COVER · Matt White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "mismatch",
+      "evidence": "Workbook adapter candidate visually depicts complete WC assembly, not this exact seat-cover accessory.",
+      "next_source_requirement": "Exact Vitra SKU 191-401H209 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "90384928-8be2-4cd7-8a59-0d8f73e2d16d",
+      "sku": "191-076H209",
+      "name": "INTEGRA SQUARE SEAT COVER · Matt Stone Grey",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "mismatch",
+      "evidence": "Workbook adapter candidate visually depicts complete WC assembly, not this exact seat-cover accessory.",
+      "next_source_requirement": "Exact Vitra SKU 191-076H209 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "b7c7af4b-3131-4435-9d28-7e0ec76c04f7",
+      "sku": "177-003H209",
+      "name": "S20 SEAT COVER · White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "mismatch",
+      "evidence": "Workbook adapter candidate visually depicts complete WC assembly, not this exact seat-cover accessory.",
+      "next_source_requirement": "Exact Vitra SKU 177-003H209 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "96e8a814-8472-48ca-8489-93003f4747e4",
+      "sku": "5881B403H0563",
+      "name": "MEMORIA OVAL 750mm · White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 5881B403H0563 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "7fd39b2a-62bc-4c1b-9095-fc050aa8465f",
+      "sku": "7810B422H0016",
+      "name": "PLURAL SQUARE LOW · Matt Taupe / Sand Beige",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7810B422H0016 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "7092aee6-5c88-4788-98b2-c0c7583ca813",
+      "sku": "7811B422H0016",
+      "name": "PLURAL SQUARE HIGH · Matt Taupe / Sand Beige",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7811B422H0016 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "4095e404-9981-4f06-9050-84a1a6fba5dc",
+      "sku": "7812B422H0016",
+      "name": "PLURAL TRIANGLE · Matt Taupe / Sand Beige",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7812B422H0016 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "55f33fec-8bd2-41a4-9428-7c5faf73e810",
+      "sku": "5994B422H0016",
+      "name": "OUTLINE SQUARE 480mm · Matt Taupe / Sand Beige",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 5994B422H0016 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "f02f79d1-cc11-4e7a-b674-1f92b11cf6c0",
+      "sku": "5991B422H0016",
+      "name": "OUTLINE PEBBLE 560mm · Matt Taupe / Sand Beige",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 5991B422H0016 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "a356fce9-236e-4f65-aaf8-d0fe3de3f4a3",
+      "sku": "5993B422H0016",
+      "name": "OUTLINE TV 620mm · Matt Taupe / Sand Beige",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 5993B422H0016 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "c1311754-1b09-4b11-8fc9-373f70dc299e",
+      "sku": "5995B422H0016",
+      "name": "OUTLINE OVAL 600mm · Matt Taupe / Sand Beige",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 5995B422H0016 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "795391a4-2786-48a7-b6d2-cd0b3f4da34a",
+      "sku": "7532B422H7214",
+      "name": "NEW METROPOLE 400mm · Matt Taupe / Sand Beige",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7532B422H7214 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "ebd983f0-732c-4a63-b420-8eb592b07573",
+      "sku": "7532B076H0673",
+      "name": "NEW METROPOLE 400mm · Matt Stone Grey",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7532B076H0673 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "3d0439f3-05ec-4d75-b24b-50ed746049d3",
+      "sku": "7532B483H7214",
+      "name": "NEW METROPOLE 400mm · Matt Black",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7532B483H7214 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "45362b01-52d5-4a99-b983-3e33e52fdf5b",
+      "sku": "7535B403H7214",
+      "name": "NEW METROPOLE 600mm · White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7535B403H7214 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "281eb892-ee4c-4dfa-8594-dc163d2fce21",
+      "sku": "7535B001H0673",
+      "name": "NEW METROPOLE 600mm · Matt White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7535B001H0673 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "a0fe60f0-c21c-4b70-9b0a-7f08acfeaadd",
+      "sku": "7535B422H7214",
+      "name": "NEW METROPOLE 600mm · Matt Taupe / Sand Beige",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7535B422H7214 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "50a50639-e8b5-4570-a444-6f6119cb53a6",
+      "sku": "7535B476H7214",
+      "name": "NEW METROPOLE 600mm · Matt Stone Grey",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7535B476H7214 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "2e6e5dec-5443-40da-b410-0ae376290571",
+      "sku": "7535B483H7214",
+      "name": "NEW METROPOLE 600mm · Matt Black",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7535B483H7214 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "80119f01-7a5a-4487-be26-90cfc4626d8d",
+      "sku": "7536B403H7214",
+      "name": "NEW METROPOLE 800mm · White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7536B403H7214 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "692bba57-850a-4aae-af6c-f1ae404817a4",
+      "sku": "7536B422H7214",
+      "name": "NEW METROPOLE 800mm · Matt Taupe / Sand Beige",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7536B422H7214 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "eeaf54a3-421f-46c3-bff8-c007e364ef0f",
+      "sku": "7536B476H7214",
+      "name": "NEW METROPOLE 800mm · Matt Stone Grey",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7536B476H7214 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "55d5c573-f114-4e5c-880f-853f51be5704",
+      "sku": "7536B483H7214",
+      "name": "NEW METROPOLE 800mm · Matt Black",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7536B483H7214 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "d52e7958-7182-4b6c-92c0-6d4ea8480d16",
+      "sku": "7535B403H7216",
+      "name": "METROPOLE UNDERCOUNTER 600mm · White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7535B403H7216 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "18084f04-22f7-4e70-b3e1-df09340e4614",
+      "sku": "7535B422H7216",
+      "name": "METROPOLE UNDERCOUNTER 600mm · Matt Taupe / Sand Beige",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7535B422H7216 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "804fbc80-dec1-4775-a6ce-69e5cad0beb0",
+      "sku": "7535B476H7216",
+      "name": "METROPOLE UNDERCOUNTER 600mm · Matt Stone Grey",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7535B476H7216 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "921c2db0-e894-4d72-a144-449ae8688689",
+      "sku": "7535B483H7216",
+      "name": "METROPOLE UNDERCOUNTER 600mm · Matt Black",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7535B483H7216 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "769d4766-22ae-41e9-b748-20a5749ce28a",
+      "sku": "7536B403H7216",
+      "name": "METROPOLE UNDERCOUNTER 800mm · White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7536B403H7216 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "d10c2170-40bc-4a95-99e8-b8b6082c7be4",
+      "sku": "7536B422H7216",
+      "name": "METROPOLE UNDERCOUNTER 800mm · Matt Taupe / Sand Beige",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7536B422H7216 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "5dd1e22a-69ec-45a4-8e14-05964c5593fc",
+      "sku": "7536B476H7216",
+      "name": "METROPOLE UNDERCOUNTER 800mm · Matt Stone Grey",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7536B476H7216 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "ee7711c3-f1b2-419a-ae49-c89b05711334",
+      "sku": "7536B483H7216",
+      "name": "METROPOLE UNDERCOUNTER 800mm · Matt Black",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7536B483H7216 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "48d17aff-80a1-4fb9-acde-ea23ba1c425b",
+      "sku": "7532B001H1082",
+      "name": "METROPOLE UNDERCOUNTER 400mm · Matt White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7532B001H1082 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "39937ef5-19de-4bc8-8d84-96174b516c28",
+      "sku": "7436B422H0012",
+      "name": "OPTIONS 500mm · Matt Taupe / Sand Beige",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7436B422H0012 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "c7e16c29-b28c-46c0-9cdb-217d18a5189f",
+      "sku": "7434B003H0012",
+      "name": "OPTIONS 600mm · White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7434B003H0012 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "caf09cee-727f-4289-9edb-d3c65a093548",
+      "sku": "7434B420H0012",
+      "name": "OPTIONS 600mm · Matt Taupe / Sand Beige",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7434B420H0012 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "04d04e6a-59d8-4ab7-95a8-dbd52a1f9dd8",
+      "sku": "7434B483H0012",
+      "name": "OPTIONS 600mm · Matt Black",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7434B483H0012 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "aa3dcf71-8f00-4e9e-a044-076feee406f4",
+      "sku": "7425B422H0016",
+      "name": "OPTIONS SOFT SQUARE 600mm · Matt Taupe / Sand Beige",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7425B422H0016 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "72f66154-5e8a-4855-8e7d-0bab040ec1ef",
+      "sku": "7425B476H0016",
+      "name": "OPTIONS SOFT SQUARE 600mm · Matt Stone Grey",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7425B476H0016 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "8834cd79-b64e-43f2-b4e4-79f189a9714a",
+      "sku": "7427B422H0016",
+      "name": "OPTIONS OVAL 550mm · Matt Taupe / Sand Beige",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7427B422H0016 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "246b5f22-a24f-4807-a638-c67f137629ff",
+      "sku": "7421B003H0016",
+      "name": "OPTIONS ROUND 380mm · White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7421B003H0016 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "589c5f27-cdbb-423b-b334-ab3149e88b47",
+      "sku": "7431B422H0631",
+      "name": "OPTIONS WITH TAP HOLE 500mm · Matt Taupe / Sand Beige",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7431B422H0631 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "08511759-c64c-480e-81f9-ee9bc31955b4",
+      "sku": "7432B003H0631",
+      "name": "OPTIONS WITH TAP HOLE 600mm · White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7432B003H0631 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "94f0de29-1573-4364-888f-9a44af4f8773",
+      "sku": "7432B420H0631",
+      "name": "OPTIONS WITH TAP HOLE 600mm · Matt Taupe / Sand Beige",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7432B420H0631 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "89a4ee98-6fb9-4478-a093-4ffcd1d514bb",
+      "sku": "7432B483H0631",
+      "name": "OPTIONS WITH TAP HOLE 600mm · Matt Black",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7432B483H0631 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "1c91ef4f-4f9c-4279-a16d-b291df9706f6",
+      "sku": "7428B422H0001",
+      "name": "OPTIONS WITH TAP HOLE OVAL 550mm · Matt Taupe / Sand Beige",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7428B422H0001 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "d6c45bdc-d0f3-4891-82bf-89c7d109d1b6",
+      "sku": "7426B483H0001",
+      "name": "OPTIONS WITH TAP HOLE OVAL 550mm · Matt Black",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 7426B483H0001 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "c61f6bf2-1869-4d5e-beee-5ff3de91bbc2",
+      "sku": "8313B003-0001",
+      "name": "M-Line with Tap Hole 52x40 · White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 8313B003-0001 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "1ca46e7a-78f3-436a-94a0-f3c144a57343",
+      "sku": "8314B003-0001",
+      "name": "M-Line with Tap Hole 60x45 · White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 8314B003-0001 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "71e31e29-86f5-43df-9cd0-387320217cdf",
+      "sku": "8315B003-0001",
+      "name": "M-Line with Tap Hole 50x42 · White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 8315B003-0001 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "fe9a7675-26de-4a2e-9de7-21a47a519f95",
+      "sku": "8317B003-0001",
+      "name": "M-Line with Tap Hole 42x42 · White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 8317B003-0001 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "e07d459c-bded-4849-828f-9ec098131740",
+      "sku": "8316B003-0016",
+      "name": "M-Line Countertop 50x38 · White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 8316B003-0016 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "90ca51fb-1409-4fe0-89ac-bf2ee07ecc6f",
+      "sku": "8318B003-0016",
+      "name": "M-Line Countertop 40x40 · White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 8318B003-0016 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "f6e73447-0d9e-491b-aa8d-4fb9366b0ca0",
+      "sku": "8341B003-0016",
+      "name": "M-Line Countertop 58x38 · White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 8341B003-0016 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "e1b4575c-31d0-4647-9824-a02d58ef6d88",
+      "sku": "8342B003-0016",
+      "name": "M-Line Countertop 60x40 · White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 8342B003-0016 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "fed5b219-ad06-4208-aba0-a83e5e5b7fee",
+      "sku": "8343B003-0016",
+      "name": "M-Line Countertop 70x45 · White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_found",
+      "evidence": "No exact original product photograph verified in inspected supplied source files.",
+      "next_source_requirement": "Exact Vitra SKU 8343B003-0016 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "1dc17e2f-6da5-4dc7-9e8a-7d5e95bb33f6",
+      "sku": "47904140",
+      "name": "AXOR MyEdition Plate 245 Metal BBR",
+      "brand": "Hansgrohe",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Exact official plate original found at 1695 × 4096; below required 2160px short edge for externally discovered recovery.",
+      "next_source_requirement": "Exact Hansgrohe SKU 47904140 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution."
+    },
+    {
+      "product_id": "f835dbff-2eb3-4995-9aa4-04e10365639e",
+      "sku": "47904340",
+      "name": "AXOR MyEdition Plate 245 Metal BBC",
+      "brand": "Hansgrohe",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Exact official SKU/finish photo verified and decoded on 7 October: 1695 × 4096; below native 2160px both axes / 3840px longest edge gate.",
+      "next_source_requirement": "Exact Hansgrohe SKU 47904340 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution.",
+      "source_page": "https://www.axor-design.com/dk/articledetail-axor-myedition-designplade-245-metal-47904340",
+      "asset_url": "https://assets.hansgrohe.com/mam/celum/celum_assets/154__apr06449_tif.png",
+      "source_dimensions": [
+        1695,
+        4096
+      ],
+      "source_sha256": "6afd3bff78a062b7839a49626a3ee45eea2f45a4dc56fef63e44e37dcfb36397"
+    },
+    {
+      "product_id": "9c8a3920-f03b-48b9-87e3-80dee0b83c8d",
+      "sku": "47904300",
+      "name": "AXOR MyEdition Plate 245 Metal PRG",
+      "brand": "Hansgrohe",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Exact official SKU/finish photo verified and decoded on 7 October: 1695 × 4096; below native 2160px both axes / 3840px longest edge gate.",
+      "next_source_requirement": "Exact Hansgrohe SKU 47904300 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution.",
+      "source_page": "https://pro.hansgrohe.com/articledetail-axor-myedition-plate-245-metal-47904300",
+      "asset_url": "https://assets.hansgrohe.com/mam/celum/celum_assets/154__apr06446_tif.png",
+      "source_dimensions": [
+        1695,
+        4096
+      ],
+      "source_sha256": "74af7769f739067def9c6371468e4479db5aff9e638cac704430ea1ffc7411d6"
+    },
+    {
+      "product_id": "fe4bcd54-f05b-4373-9f8b-0b8c8e71d54c",
+      "sku": "27412990",
+      "name": "Shower arm 23 cm PGO",
+      "brand": "Hansgrohe",
+      "floor_id": "first-floor",
+      "display_failure": "missing_hero",
+      "outcome": "not_4k",
+      "evidence": "Exact official SKU/finish photo verified and decoded on 7 October: 679 × 266; below native 2160px both axes / 3840px longest edge gate.",
+      "next_source_requirement": "Exact Hansgrohe SKU 27412990 product/finish original from provided source, or exact manufacturer/authorized distributor original meeting 4K gate (2160 px both axes, 3840 px long edge); no sibling or assembly substitution.",
+      "source_page": "https://www.hansgrohe.com/articledetail-shower-arm-23-cm-27412990",
+      "asset_url": "https://assets.hansgrohe.com/mam/celum/celum_assets/154__hpa00206_tif.png",
+      "source_dimensions": [
+        679,
+        266
+      ],
+      "source_sha256": "39204cdb7577485c9d41d35d20d82149cafbeaeb9ab609700b6989bbee78a653"
+    },
+    {
+      "product_id": "a844964e-c014-45d5-b64a-538a30c5eb98",
+      "sku": "7810B401H0016",
+      "name": "PLURAL SQUARE LOW · Matt White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "media_id": "0ae08556-238b-4da3-b0f7-fa864ad5634f",
+      "display_failure": "unavailable_stored_object",
+      "outcome": "not_found",
+      "evidence": "Current read-only storage recheck returned HTTP 400. Prior exhaustive private byte/history audit found no exact byte aliases. Exact supplied-workbook row lacked an accepted usable source photo.",
+      "next_source_requirement": "Exact Vitra SKU/finish original and source provenance, or authoritative original bytes matching existing stored media hash; no sibling finish substitution."
+    },
+    {
+      "product_id": "3d19f6a3-9e33-42e7-bffb-8b56449895c7",
+      "sku": "7812B401H0016",
+      "name": "PLURAL TRIANGLE · Matt White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "media_id": "b50a4a94-4b37-43d5-8d24-6cdefac8467e",
+      "display_failure": "unavailable_stored_object",
+      "outcome": "not_found",
+      "evidence": "Current read-only storage recheck returned HTTP 400. Prior exhaustive private byte/history audit found no exact byte aliases. Exact supplied-workbook row lacked an accepted usable source photo.",
+      "next_source_requirement": "Exact Vitra SKU/finish original and source provenance, or authoritative original bytes matching existing stored media hash; no sibling finish substitution."
+    },
+    {
+      "product_id": "88a0b4c5-9720-4d3b-bd1b-36388c668451",
+      "sku": "5991B401H0016",
+      "name": "OUTLINE PEBBLE 560mm · Matt White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "media_id": "4b8eebbf-0f97-4942-b032-c3e60c3fafb7",
+      "display_failure": "unavailable_stored_object",
+      "outcome": "not_found",
+      "evidence": "Current read-only storage recheck returned HTTP 400. Prior exhaustive private byte/history audit found no exact byte aliases. Exact supplied-workbook row lacked an accepted usable source photo.",
+      "next_source_requirement": "Exact Vitra SKU/finish original and source provenance, or authoritative original bytes matching existing stored media hash; no sibling finish substitution."
+    },
+    {
+      "product_id": "b8163d57-54ab-42cb-99f4-e60db68198e9",
+      "sku": "5993B403H0016",
+      "name": "OUTLINE TV 620mm · White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "media_id": "d092b4bd-e728-4ed7-8561-718f01286225",
+      "display_failure": "unavailable_stored_object",
+      "outcome": "not_found",
+      "evidence": "Current read-only storage recheck returned HTTP 400. Prior exhaustive private byte/history audit found no exact byte aliases. Exact supplied-workbook row lacked an accepted usable source photo.",
+      "next_source_requirement": "Exact Vitra SKU/finish original and source provenance, or authoritative original bytes matching existing stored media hash; no sibling finish substitution."
+    },
+    {
+      "product_id": "9fd9c81f-14a8-4b87-b798-89a79218e634",
+      "sku": "5995B403H0016",
+      "name": "OUTLINE OVAL 600mm · White",
+      "brand": "Vitra",
+      "floor_id": "first-floor",
+      "media_id": "ae898f54-e305-4dd0-93a0-94b1203a3379",
+      "display_failure": "unavailable_stored_object",
+      "outcome": "not_found",
+      "evidence": "Current read-only storage recheck returned HTTP 400. Prior exhaustive private byte/history audit found no exact byte aliases. Exact supplied-workbook row lacked an accepted usable source photo.",
+      "next_source_requirement": "Exact Vitra SKU/finish original and source provenance, or authoritative original bytes matching existing stored media hash; no sibling finish substitution."
+    }
+  ]
+}

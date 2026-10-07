@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { Platform, View } from 'react-native';
 
 // Reference counting keeps underlying dialogs isolated when another opens above them.
@@ -21,9 +21,13 @@ function restore(element: HTMLElement) {
 export function useOverlayFocus(open: boolean, onClose: () => void, dismissable = true) {
   const ref = useRef<View>(null);
   const closeRef = useRef(onClose);
-  closeRef.current = onClose;
   const dismissableRef = useRef(dismissable);
-  dismissableRef.current = dismissable;
+  // Event listeners belong to the committed overlay. An interrupted render
+  // must not replace its close callback or dismissal policy.
+  useLayoutEffect(() => {
+    closeRef.current = onClose;
+    dismissableRef.current = dismissable;
+  }, [onClose, dismissable]);
   useEffect(() => {
     if (!open || Platform.OS !== 'web') return;
     const previous = document.activeElement as HTMLElement | null;

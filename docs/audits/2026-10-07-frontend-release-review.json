@@ -1,0 +1,156 @@
+{
+  "checked_at_utc": "2026-10-07T14:59:02.728439+00:00",
+  "base_commit": "cada5df882a59f8eac257e2fb5ff3eb405cff206",
+  "application_stack": "Expo 55.0.31 / React Native 0.83.10 / React 19.2.0",
+  "preserved_prior_work": [
+    "src/design/CommandPalette.tsx",
+    "e2e/redesign-command-palette.spec.ts"
+  ],
+  "palette_review": {
+    "additional_actionable_findings": 1,
+    "reviewed_behavior": [
+      "fresh keyed opening and floor session",
+      "abort and guard obsolete requests",
+      "query-tagged product results",
+      "captured shortcuts scoped to input or panel",
+      "focused result/Cancel retains activation",
+      "single web focus owner and cleaned native focus timer"
+    ],
+    "prior_focused_evidence": {
+      "passed": 51,
+      "skipped": 5,
+      "unexpected": 0,
+      "report": "output/operations/palette-focused-after-browser-20261007.json"
+    },
+    "interrupted_full_runner": {
+      "config": "output/operations/palette-acceptance-full.config.ts",
+      "log": "output/operations/palette-acceptance-full-browser-20261007.log",
+      "completed_json_present": false,
+      "log_last_case": 668,
+      "active_process_found": false,
+      "retained": true,
+      "not_counted_as_completed_acceptance": true
+    },
+    "nested_escape": {
+      "before_evidence": "output/release-review/nested-escape.json",
+      "trigger": "Reduced motion, phone quotation-actions sheet, Ctrl+K, Escape from focused palette textbox.",
+      "before_result": "Both palette and underlying quotation actions dismissed by a single key gesture.",
+      "cause": "Palette keydown closes and restores underlying focus before the same Escape keyup dismisses that underlying overlay.",
+      "repair": "Palette delegates Escape solely to shared captured keyup overlay handler, which stops the event after the top overlay handles it. Native Modal onRequestClose remains.",
+      "regression": "e2e/redesign-command-palette.spec.ts: reduced-motion first Escape preserves underlying sheet and restores its focus; second distinct Escape closes remaining sheet and restores original trigger.",
+      "focused_browser_status": "Passed all3 applicable phone profiles in final rebuilt focused report; first Escape preserves underlying sheet and second distinct Escape dismisses it."
+    }
+  },
+  "proven_repairs": {
+    "history": "Present, past, future and coalescing metadata share one state; hook stack transitions avoid replayable updater side effects and queued undo uses the latest document.",
+    "overlay": "Close callback and dismissal policy update in a layout effect after commit so an abandoned render cannot change the active event listener.",
+    "source_of_candidates": "output/operations/sdk57-remediation-20261006; independently reproduced against supported SDK55 source",
+    "sdk57_promoted": false,
+    "replace_and_skip_history_semantics_preserved": true,
+    "quotation_actions_accessibility": "BuilderTopbar Quotation actions rows now use explicit accessibilityLabel=item.label, removing icon glyphs from spoken action names. History tests retain exact accessible name assertions and select the visible rendered actions control rather than assuming the raw viewport breakpoint."
+  },
+  "controlled_validation": {
+    "runner": "node scripts/test-history-lifecycle.mjs",
+    "before": {
+      "source": "HEAD versions saved to output/operations/frontend-{history,overlay}-control-20261007.ts",
+      "tests": 15,
+      "passed": 9,
+      "failed": 6,
+      "exit_code": 1,
+      "log": "output/operations/frontend-history-lifecycle-before-20261007.log"
+    },
+    "after": {
+      "tests": 15,
+      "passed": 15,
+      "failed": 0,
+      "exit_code": 0,
+      "log": "output/operations/frontend-history-lifecycle-after-20261007.log"
+    },
+    "test_model": "Actual-source TypeScript executed with controlled hooks; updater replay, queued events and commit/abandoned-render scheduling. This is a hermetic behavior model, not a React renderer or physical device.",
+    "typecheck": "passed",
+    "targeted_lint_zero_warnings": "passed"
+  },
+  "browser_validation": {
+    "new_journey": "e2e/redesign-history.spec.ts",
+    "scope": "Actual quotation fields and responsive toolbar/actions sheet; undo, redo, branch clearing, initial and final disabled state. Every API intercepted.",
+    "full_suite_status": "Passed 990, 30 intentional skips, zero unexpected/flaky",
+    "physical_acceptance": false,
+    "focused_initial": {
+      "report": "output/operations/readiness-focused-browser-20261007.log",
+      "passed": 58,
+      "skipped": 10,
+      "failed": 4,
+      "failures": "New history test failed before mutation: phone action accessible names included spoken icon glyph; 768px test assumed viewport breakpoint rather than actual builder container control.",
+      "application_history_failure_proven": false,
+      "nested_escape_all_applicable_profiles_passed": true
+    },
+    "focused_after_labels": {
+      "log": "output/operations/readiness-release-focused-browser-20261007.log",
+      "passed": 60,
+      "skipped": 10,
+      "failed": 2,
+      "history_failure": "Phone initial disabled check and small-phone disabled future check sent Escape before asserting the newly rendered sheet had acquired focus. No history field assertion failed.",
+      "trace_evidence": "Phone trace: disabled assertion ended11456ms, Escape began11456.3ms; no focus-ready assertion existed. Timing is consistent with deferred focus setup but does not itself record the timer callback.",
+      "test_correction": "Await observable exact Close button focus on each sheet opening before action/disabled checks and Escape. No sleeps or source change."
+    },
+    "focused_final": {
+      "report": "output/operations/readiness-acceptance-focused-browser-20261007.json",
+      "stats": {
+        "startTime": "2026-10-07T14:57:21.607Z",
+        "duration": 58618.032999999996,
+        "expected": 62,
+        "skipped": 10,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "expected": 62,
+      "skipped": 10,
+      "unexpected": 0,
+      "flaky": 0,
+      "scope": "Final rebuilt source palette8 cases and quotation history1 case across8 browser profiles; two mobile-only palette cases intentionally skip5 non-phone layouts each. All business API requests intercepted.",
+      "physical_acceptance": false
+    }
+  },
+  "limits": [
+    "Unsigned exports and browser profiles do not certify signed native or physical-device acceptance.",
+    "BuilderContext existing line-ID mutators call Date.now/Math.random inside updater callbacks. The hook repair removes hook-owned side effects; it does not assert all caller-provided mutators are pure.",
+    "Security, legal/operator facts, original media and reviewer account remain separately gated."
+  ],
+  "owned_files": [
+    "src/design/CommandPalette.tsx",
+    "e2e/redesign-command-palette.spec.ts",
+    "src/hooks/useHistory.ts",
+    "src/design/useOverlayFocus.ts",
+    "scripts/test-history-lifecycle.mjs",
+    "e2e/redesign-history.spec.ts",
+    "docs/audits/2026-10-07-frontend-release-review.json",
+    "src/components/quotation/layout/BuilderTopbar.tsx"
+  ],
+  "source_sha256": {
+    "src/design/CommandPalette.tsx": "6958b70e4dc0cf86f293ba5b5e13aab784d49503bbadee656f2259645d17ce44",
+    "e2e/redesign-command-palette.spec.ts": "d1c93c463e7445371b1d2949634d1e9ff1557e8399ecc28fb0a47eed298ac90d",
+    "src/hooks/useHistory.ts": "59c4d30742210bca5de5374cf940a9966f918a3586a3aa15ed3e546e0c99b690",
+    "src/design/useOverlayFocus.ts": "989a3e2f4c622e6196383ad8790cec3872efe05ad8e4a4f86a2210b7b2d0f062",
+    "scripts/test-history-lifecycle.mjs": "bf4b17ca4369436c8762da719ceab64b14df414ef7e743515270833980ed5133",
+    "e2e/redesign-history.spec.ts": "7849018013860d6e9972b1ac420afa2f175c072754416700d04bf2308c5e2033",
+    "src/components/quotation/layout/BuilderTopbar.tsx": "b2b9ecf4ae641f25f9e59e623a4d3b66d52df6ff837d5ed667a9153d6cc2df09"
+  },
+  "goal_complete": false,
+  "final_full_browser_acceptance": {
+    "stats": {
+      "startTime": "2026-10-07T15:03:04.695Z",
+      "duration": 862773.7130000001,
+      "expected": 990,
+      "skipped": 30,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "report": "output/operations/readiness-acceptance-full-browser-20261007.json",
+    "workers": 2,
+    "retries": 0,
+    "test_timeout_ms": 30000,
+    "all_business_apis_intercepted": true,
+    "physical_device_acceptance": false
+  },
+  "validation_status": "full_browser_passed_store_goal_still_open"
+}

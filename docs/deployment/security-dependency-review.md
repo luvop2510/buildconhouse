@@ -91,8 +91,43 @@ supported React Native 0.86 family. Neither suggestion is a supported patch
 to the deployed SDK55 application.
 
 An isolated SDK57 application candidate improves the audit to 22 findings
-(19 high, three moderate), but still has 151 lint errors under its React
-rules. Its 136 focused browser checks pass after application fixes; that
-limited result does not justify production promotion or certify a signed
-native build. SDK57 remains held. No advisory gate was weakened and no
+(19 high, three moderate). Its fresh full lint scan initially found 151 errors.
+A 7 October cleanup reduced the full scan to 120 errors with zero warnings;
+then targeted fixes removed the remaining two memoization findings. Merging
+those targeted results with the full scan leaves 118 state-effect errors.
+Candidate typecheck and actual-source lifecycle/history/API fixtures pass.
+The earlier 136 focused browser checks preceded this latest cleanup and do
+not certify the final candidate, a signed native build or physical devices.
+SDK57 remains held. No advisory gate was weakened and no
 transitive package was replaced with a renamed or locally patched substitute.
+
+## Required CI and dependency refresh — 7 October 2026
+
+A fresh npm audit still reports **30 findings: 22 high, eight moderate,
+zero critical/low**. Official registry and advisory checks still find no
+published patch for braces 3.0.3, node-forge 1.4.0 or sprintf-js 1.1.3.
+The decoder and framework compatibility limits above remain. No dependency
+override, advisory exclusion or local substitute was added. A fresh production
+requirements pip-audit resolved 44 packages with zero known vulnerabilities.
+
+[Main CI run 37635145278](https://github.com/yashvardhansinh2510-max/forge2.0/actions/runs/37635145278)
+tested exact commit `cada5df882a59f8eac257e2fb5ff3eb405cff206`: backend and
+frontend functional jobs passed, while `frontend-security` failed on the
+22 high findings. This is evidence for that commit, not for the pending
+release changes. Required frontend CI now also invokes
+`test:native-release-config` and `test:history-lifecycle`; these use hermetic
+transport and lifecycle fixtures and do not certify physical devices.
+
+The run's browser evidence upload also failed because the GitHub Actions
+artifact storage quota was exhausted; the previous workflow suppressed that
+failure. The pending CI change removes that suppression, requires artifact
+files, and publishes browser result counts in the job summary before upload.
+Required artifact uploads must pass alongside tests and the security job
+before declaring CI green. Storage quota remains an operator blocker; no
+stored artifacts were deleted and no account settings were changed.
+
+The release-readiness ledger references the managed
+`2026-10-07-security-ci-refresh.json` report and its exact retained npm,
+pip-audit, registry and GitHub CI outputs. Codex Security's artifact-storage
+policy places that evidence in its managed local collection; this source
+review does not claim a repository audit report was written.

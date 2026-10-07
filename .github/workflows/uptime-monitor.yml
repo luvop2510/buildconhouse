@@ -34,6 +34,9 @@ jobs:
       - name: Check Railway readiness and unauthenticated access boundary
         if: always()
         run: node scripts/check-uptime-monitor.mjs https://forge20-production-a8b0.up.railway.app output/uptime-monitor/railway.json github-hosted-unverified-region
+      - name: Publish technical results in the job summary
+        if: always()
+        run: node scripts/summarize-health-evidence.mjs output/uptime-monitor/vercel.json output/uptime-monitor/railway.json
       - name: Preserve technical availability evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -43,6 +46,6 @@ jobs:
             output/uptime-monitor/vercel.json
             output/uptime-monitor/railway.json
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
       # Native Actions failure notifications depend on the operator's settings.
       # No application secrets, customer records, backups or custom messages.

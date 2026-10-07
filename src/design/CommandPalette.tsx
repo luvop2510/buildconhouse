@@ -32,34 +32,42 @@ type Item = {
 };
 
 export function PaletteProvider({ children }: { children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
-  const openPalette = useCallback(() => setOpen(true), []);
+  const [session, setSession] = useState({ open: false, id: 0 });
+  const openPalette = useCallback(() => setSession((current) => current.open
+    ? current : { open: true, id: current.id + 1 }), []);
   const value = useMemo(() => ({ open: openPalette }), [openPalette]);
 
-  // Global ⌘K / Ctrl+K on web.
+  // Capture shortcuts before web TextInput stops bubbling keydown events.
   useEffect(() => {
     if (Platform.OS !== "web") return;
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        setOpen((v) => !v);
+        setSession((current) => ({
+          open: !current.open, id: current.open ? current.id : current.id + 1,
+        }));
       }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, []);
 
   return (
     <PaletteContext.Provider value={value}>
       {children}
-      <PaletteHost open={open} onClose={() => setOpen(false)} />
+      <PaletteHost key={session.id} open={session.open} onClose={() => setSession((current) =>
+        current.id === session.id ? { ...current, open: false } : current)} />
     </PaletteContext.Provider>
   );
 }
 
-function PaletteHost({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const router = useRouter();
+function PaletteHost(props: { open: boolean; onClose: () => void }) {
   const { selectedFloorId } = useFloorAccess();
+  return <PaletteSession key={selectedFloorId} {...props} selectedFloorId={selectedFloorId} />;
+}
+
+function PaletteSession({ open, onClose, selectedFloorId }: { open: boolean; onClose: () => void; selectedFloorId: string }) {
+  const router = useRouter();
   const { staff } = useAuth();
   const hasAccess = useModuleAccess();
   const canCustomers = hasAccess("customers");
@@ -76,49 +84,63 @@ function PaletteHost({ open, onClose }: { open: boolean; onClose: () => void }) 
   const [sel, setSel] = useState(0);
   const [customers, setCustomers] = useState<any[]>([]);
   const [quotations, setQuotations] = useState<any[]>([]);
-  const [products, setProducts] = useState<any[]>([]);
+  const [productResult, setProductResult] = useState<{ query: string; items: any[] }>({ query: "", items: [] });
   const inputRef = useRef<TextInput>(null);
   const anim = useRef(new Animated.Value(0)).current;
   const [visible, setVisible] = useState(open);
-  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const productQuery = q.trim();
 
-  // Open/close animation + focus.
+  // Each opening and floor gets a fresh session; only exit visibility outlives open.
   useEffect(() => {
-    if (open) {
-      setVisible(true);
-      setQ(""); setSel(0); setProducts([]); setCustomers([]); setQuotations([]);
-      Animated.timing(anim, { toValue: 1, duration: reducedMotion ? 0 : motion.standard, easing: Easing.out(Easing.cubic), useNativeDriver: Platform.OS !== "web" }).start();
-      setTimeout(() => inputRef.current?.focus(), 60);
-      // Prefetch light indexes once per open.
-      if (!notebookOnly) {
-        if (canCustomers) api.get<any[]>("/customers").then(setCustomers).catch(() => {});
-        if (canQuotes) api.get<any[]>("/quotations").then((d: any) => setQuotations(Array.isArray(d) ? d : d?.items ?? [])).catch(() => {});
-      }
-    } else {
-      Animated.timing(anim, { toValue: 0, duration: reducedMotion ? 0 : motion.quick, easing: Easing.in(Easing.cubic), useNativeDriver: Platform.OS !== "web" }).start(({ finished }) => {
-        if (finished) setVisible(false);
-      });
-    }
-  }, [open, anim, notebookOnly, reducedMotion, canCustomers, canQuotes]);
+    const animation = Animated.timing(anim, {
+      toValue: open ? 1 : 0,
+      duration: reducedMotion ? 0 : open ? motion.standard : motion.quick,
+      easing: open ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
+      useNativeDriver: Platform.OS !== "web",
+    });
+    animation.start(({ finished }) => {
+      if (finished && !open) setVisible(false);
+    });
+    // Web overlay focus is established once by useOverlayFocus. A second
+    // delayed focus would steal focus from someone already tabbing to a result.
+    const focusTimer = open && Platform.OS !== "web" ? setTimeout(() => inputRef.current?.focus(), 60) : undefined;
+    return () => {
+      animation.stop();
+      if (focusTimer !== undefined) clearTimeout(focusTimer);
+    };
+  }, [open, anim, reducedMotion]);
 
-  // Product search — server-side, debounced.
+  // Scope prefetches to this open session; cancelled responses cannot repopulate it.
   useEffect(() => {
-    if (!open || notebookOnly || !canCatalog) return;
-    if (debounce.current) clearTimeout(debounce.current);
-    if (q.trim().length < 2) { setProducts([]); return; }
+    if (!open || !selectedFloorId || notebookOnly) return;
     const controller = new AbortController();
-    debounce.current = setTimeout(() => {
-      api.get<any>(`/products?q=${encodeURIComponent(q.trim())}&limit=5`, { signal: controller.signal })
-        .then((d) => setProducts(d?.items ?? []))
-        .catch((error) => {
-          if (!controller.signal.aborted) setProducts([]);
+    if (canCustomers) api.get<any[]>("/customers", { signal: controller.signal })
+      .then((data) => { if (!controller.signal.aborted) setCustomers(data); }).catch(() => {});
+    if (canQuotes) api.get<any[]>("/quotations", { signal: controller.signal })
+      .then((data: any) => {
+        if (!controller.signal.aborted) setQuotations(Array.isArray(data) ? data : data?.items ?? []);
+      }).catch(() => {});
+    return () => controller.abort();
+  }, [open, selectedFloorId, notebookOnly, canCustomers, canQuotes]);
+
+  // Product search — server-side, debounced. Query tagging hides mismatched results.
+  useEffect(() => {
+    if (!open || !selectedFloorId || notebookOnly || !canCatalog || productQuery.length < 2) return;
+    const controller = new AbortController();
+    const debounce = setTimeout(() => {
+      api.get<any>(`/products?q=${encodeURIComponent(productQuery)}&limit=5`, { signal: controller.signal })
+        .then((data) => {
+          if (!controller.signal.aborted) setProductResult({ query: productQuery, items: data?.items ?? [] });
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) setProductResult({ query: productQuery, items: [] });
         });
     }, 180);
     return () => {
-      if (debounce.current) clearTimeout(debounce.current);
+      clearTimeout(debounce);
       controller.abort();
     };
-  }, [q, open, notebookOnly, canCatalog]);
+  }, [productQuery, open, selectedFloorId, notebookOnly, canCatalog]);
 
   const go = useCallback((href: string) => {
     onClose();
@@ -144,7 +166,7 @@ function PaletteHost({ open, onClose }: { open: boolean; onClose: () => void }) 
         key: `n-${n.href}`, section: "Go to", icon: n.icon, title: n.label, run: () => go(n.href),
       }));
 
-    const cust: Item[] = notebookOnly || !needle ? [] : customers
+    const cust: Item[] = notebookOnly || !canCustomers || !needle ? [] : customers
       .filter((c) => match(`${c.name} ${c.company ?? ""} ${c.city ?? ""} ${c.email ?? ""}`))
       .slice(0, 4)
       .map((c) => ({
@@ -153,7 +175,7 @@ function PaletteHost({ open, onClose }: { open: boolean; onClose: () => void }) 
         run: () => go(`/(admin)/customers/${c.id}`),
       }));
 
-    const quots: Item[] = notebookOnly || !needle ? [] : quotations
+    const quots: Item[] = notebookOnly || !canQuotes || !needle ? [] : quotations
       .filter((x) => match(`${x.number} ${x.customer_name ?? ""}`))
       .slice(0, 4)
       .map((x) => ({
@@ -163,6 +185,8 @@ function PaletteHost({ open, onClose }: { open: boolean; onClose: () => void }) 
         run: () => go(`/(admin)/quotations/${x.id}`),
       }));
 
+    const products = canCatalog && productQuery.length >= 2 && productResult.query === productQuery
+      ? productResult.items : [];
     const prods: Item[] = notebookOnly ? [] : products.slice(0, 5).map((p) => ({
       key: `p-${p.id}`, section: "Products", icon: "package", title: p.name,
       sub: p.sku, meta: p.price ? `₹${fmtMoneyCompact(p.price)}` : undefined,
@@ -170,23 +194,31 @@ function PaletteHost({ open, onClose }: { open: boolean; onClose: () => void }) 
     }));
 
     return [...actions, ...(needle ? [...cust, ...quots, ...prods] : []), ...nav];
-  }, [q, customers, quotations, products, go, notebookOnly, selectedFloorId, staff, hasAccess]);
+  }, [q, customers, quotations, productQuery, productResult, canCatalog, go, notebookOnly, selectedFloorId, staff, hasAccess, canCustomers, canQuotes]);
 
-  // Clamp selection.
+  // Keep selection valid as asynchronous results change.
   useEffect(() => { setSel((s) => Math.min(s, Math.max(0, items.length - 1))); }, [items.length]);
 
-  // Web keyboard navigation while open.
+  // Capture navigation before web TextInput consumes it; only the focused overlay acts.
   useEffect(() => {
     if (Platform.OS !== "web" || !open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") { e.preventDefault(); onClose(); }
-      else if (e.key === "ArrowDown") { e.preventDefault(); setSel((s) => Math.min(s + 1, items.length - 1)); }
+      const panel = panelRef.current as unknown as HTMLElement | null;
+      if (!panel?.contains(document.activeElement) || e.isComposing) return;
+      // useOverlayFocus dismisses on keyup and stops that event after the
+      // top overlay handles it. Closing on keydown would restore focus into
+      // an underlying dialog before the same Escape's keyup reaches it.
+      // Tabbable results and Cancel keep their own keyboard activation. Selection
+      // belongs to the search input; Tab focus can point at a different action.
+      const input = inputRef.current as unknown as HTMLElement | null;
+      if (document.activeElement !== input && document.activeElement !== panel) return;
+      if (e.key === "ArrowDown") { e.preventDefault(); setSel((s) => Math.min(s + 1, Math.max(0, items.length - 1))); }
       else if (e.key === "ArrowUp") { e.preventDefault(); setSel((s) => Math.max(s - 1, 0)); }
       else if (e.key === "Enter") { e.preventDefault(); items[sel]?.run(); }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, items, sel, onClose]);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [open, items, sel, onClose, panelRef]);
 
   if (!visible) return null;
 

@@ -179,7 +179,7 @@ export function BuilderTopbar({
             { label: "Download product PPT", icon: "image" as const, action: b.generateProductPpt, disabled: b.workflowBusy || !b.s.lines.length },
             { label: "Place order", icon: "shopping-cart" as const, action: b.placeOrder, disabled: b.workflowBusy || !b.s.lines.length },
             { label: "Recent quotations", icon: "clock" as const, action: () => setRecentOpen(true), disabled: false },
-          ].map(item => <Pressable key={item.label} accessibilityRole="button" accessibilityState={{ disabled: item.disabled }} disabled={item.disabled}
+          ].map(item => <Pressable key={item.label} accessibilityRole="button" accessibilityLabel={item.label} accessibilityState={{ disabled: item.disabled }} disabled={item.disabled}
             onPress={() => { setActionsOpen(false); item.action(); }} style={[styles.actionRow, item.disabled && { opacity: 0.4 }]}>
             <Feather name={item.icon} size={18} color={colors.onSurface} /><Text style={styles.actionLabel}>{item.label}</Text>
           </Pressable>)}

@@ -4,6 +4,29 @@ Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work 
 
 ## Current verification update — 2026-10-07
 
+The latest App Store readiness repair preserves and releases the prior workspace
+search fixes, adds atomic undo/redo history and committed overlay callback refs,
+fixes nested reduced-motion Escape dismissal and labels mobile quotation actions.
+Final rebuilt local browser acceptance: **990 passed, 30 intentional skips**,
+zero failures/flakes, two workers, unchanged deadlines and no retries. Backend
+unit suite: **1573 passed**. All 28 required frontend contracts, TypeScript,
+zero-warning lint, Expo Doctor 20/20 and route budgets pass. Native EAS production
+now targets `https://forge20-production-a8b0.up.railway.app`; unsigned Hermes
+exports are verified, but signing and physical devices remain unverified.
+
+Current npm audit remains 30 findings (22 high/eight moderate). Required GitHub
+artifact uploads also fail storage quota; browser artifact suppression was
+removed. Current media acceptance still has 119 missing heroes plus five absent
+objects. New local recovery verifies 41 collections/40319 records/176 indexes in
+18.184 seconds; all private-upload attempts for this new snapshot failed and no
+remote completion is claimed. Do not repeat the constrained cloud drill or
+substitute ambiguous product photos. See
+`docs/audits/2026-10-07-release-readiness.md` and its final deployment ledger before
+reusing older host evidence; the new Railway production service runs in `sfo`.
+Legal/operator facts, reviewer tenant, real devices/signing, off-site capacity,
+regional runners and observed alert receipt were requested together once.
+App Store submission requires user approval after the remaining gates pass.
+
 The session repair preserves only exact account identity GETs across floor
 changes; business reads and all mutations still cancel. Login/logout still
 invalidate every old identity request. AuthProvider guards obsolete hydration
