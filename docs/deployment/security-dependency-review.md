@@ -131,3 +131,20 @@ The release-readiness ledger references the managed
 pip-audit, registry and GitHub CI outputs. Codex Security's artifact-storage
 policy places that evidence in its managed local collection; this source
 review does not claim a repository audit report was written.
+
+## Supported-remediation delta check — 8 October 2026
+
+Fresh official registry and advisory metadata still list braces 3.0.3,
+node-forge 1.4.0 and sprintf-js 1.1.3 as latest, with no patched version.
+Expo SDK55 remains at 55.0.31 with React Native 0.83.10. The newest SDK57
+release is 57.0.27 with React Native 0.86.3; its compatible CLI 57.0.28
+still requires node-forge, and Metro's file-map/micromatch graph still
+requires braces 3.0.3. Both supported Router families retain query-string 7.
+SDK57 promotion therefore cannot clear the current high-severity gate.
+
+This was a metadata-only delta check; the last full application audit count
+remains the dated 30 findings above. No full audit, application tests or
+manifest/lockfile changes were repeated. The managed
+`2026-10-08-supported-remediation-check.json` report retains the official
+package, advisory and SDK compatibility evidence for the release ledger.
+No supported dependency change that clears these blockers is available.

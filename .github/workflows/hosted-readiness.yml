@@ -1,0 +1,84 @@
+name: Hosted startup readiness
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hosted-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Install hosted audit browsers
+        run: npx playwright install --with-deps chromium firefox webkit
+      - name: Run fixture-only hosted startup journeys
+        run: npx playwright test --config playwright.hosted-readiness.config.ts
+      - name: Publish numeric hosted results
+        if: always()
+        env:
+          CHECKED_OUT_SHA: ${{ github.sha }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFile, writeFile, mkdir, appendFile } from 'node:fs/promises';
+          const directory = 'output/playwright/hosted-readiness';
+          const evidence = {
+            checked_out_sha: process.env.CHECKED_OUT_SHA,
+            target: 'https://buildcon-house-nine.vercel.app',
+            deployed_sha_verified: false,
+            runner_region_verified: false,
+            report_available: false,
+            planned: 72,
+            expected: 0,
+            unexpected: 0,
+            flaky: 0,
+            skipped: 0,
+            observed: 0,
+            acceptance: 'UNVERIFIED',
+          };
+          try {
+            const { stats } = JSON.parse(await readFile(`${directory}/results.json`, 'utf8'));
+            for (const key of ['expected', 'unexpected', 'flaky', 'skipped']) {
+              if (!Number.isSafeInteger(stats?.[key]) || stats[key] < 0) throw new Error(`Invalid ${key} count`);
+              evidence[key] = stats[key];
+            }
+            evidence.observed = evidence.expected + evidence.unexpected + evidence.flaky + evidence.skipped;
+            evidence.report_available = true;
+            evidence.acceptance = evidence.observed === evidence.planned && evidence.expected === 62 && evidence.skipped === 10 && evidence.unexpected === 0 && evidence.flaky === 0 ? 'PASS' : 'FAIL';
+          } catch (error) {
+            evidence.report_error = error.message;
+          }
+          await mkdir(directory, { recursive: true });
+          await writeFile(`${directory}/summary.json`, JSON.stringify(evidence, null, 2));
+          console.log(JSON.stringify(evidence));
+          const summary = `### Hosted startup readiness\n\nCheckout SHA: ${evidence.checked_out_sha}. Target: ${evidence.target}.\n\nAcceptance: ${evidence.acceptance}; report available: ${evidence.report_available}. Planned: ${evidence.planned}; observed: ${evidence.observed}; expected passes: ${evidence.expected}; unexpected failures: ${evidence.unexpected}; flaky: ${evidence.flaky}; skipped: ${evidence.skipped}.\n\nPASS requires 62 expected passes, exactly 10 existing conditional skips, 72 observed cases, 0 unexpected failures and 0 flaky cases. Missing reports leave acceptance unverified; zero observed counts do not mean a successful run. Criteria remain 30 seconds per test, 5 seconds per assertion, 2 workers and 0 retries. Every API request is mocked. Deployed SHA and runner region require separate verification. Required browser and artifact failures still fail this job.\n`;
+          console.log(summary);
+          if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, summary);
+          if (evidence.acceptance !== 'PASS') process.exitCode = 1;
+          NODE
+      - name: Preserve required hosted evidence
+        id: hosted-evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hosted-readiness-${{ github.sha }}
+          path: output/playwright/hosted-readiness/
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 9
+      - name: Report unavailable hosted evidence
+        if: always() && steps.hosted-evidence.outcome == 'failure'
+        run: |
+          echo "::error::Required hosted evidence upload failed; this job remains failing. Numeric results remain in workflow logs and the job summary."
+          echo "Required hosted evidence upload failed. Inspect the upload step for the storage/service error; this job remains failing even if all browser cases passed." >> "$GITHUB_STEP_SUMMARY"
