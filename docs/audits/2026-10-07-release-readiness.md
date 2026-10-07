@@ -171,3 +171,13 @@ Vercel ID/URL, canonical alias, Railway deployment/source SHA, CI results and
 post-deploy read-only evidence are recorded after push in ignored
 `output/operations/readiness-deployment-final-20261007.json`. No App Store
 submission is authorized by the web/backend promotion.
+
+The promotion preflight initially failed its eight-second MongoDB server
+selection check. The migration dry-run still reported none pending; 30 live
+Railway availability/readiness/auth probes passed. A fresh read-only predeploy
+recheck then passed MongoDB, required indexes and Supabase without changing
+timeouts or criteria. Both attempts are retained. The exact transient cause is
+not established; the failed attempt is not presented as a pass. Application
+repair commit: `61a49aa0ca6d190e3a081ec417a49de1e8a20ba5`. The checkout's
+existing `codex/godown-stock-release` branch is preserved; the reviewed descendant
+is pushed explicitly to origin/main without forcing history.
