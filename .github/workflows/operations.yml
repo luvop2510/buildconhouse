@@ -7,6 +7,10 @@ on:
         description: Export all business collections and verify upload to private storage
         type: boolean
         default: false
+      expected_source_fingerprint:
+        description: Required for private backup; source identity fingerprint from the independently verified current production environment
+        type: string
+        default: ''
       latency_threshold_ms:
         description: Proposed warm p95 alert threshold (does not establish a regional SLO)
         default: '3000'
@@ -51,6 +55,7 @@ jobs:
     if: inputs.private_backup
     runs-on: ubuntu-latest
     environment: production
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: backend
@@ -60,6 +65,13 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r requirements-prod.txt
+      - name: Verify private backup source identity before export
+        env:
+          MONGO_URL: ${{ secrets.MONGO_URL }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          EXPECTED_SOURCE_FINGERPRINT: ${{ inputs.expected_source_fingerprint }}
+        run: python scripts/verify_backup_source.py
       - name: Export and verify private remote backup
         env:
           MONGO_URL: ${{ secrets.MONGO_URL }}
@@ -73,7 +85,7 @@ jobs:
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           ENVIRONMENT: production
         run: |
-          snapshot_dir="backups/recovery-$(date -u +%Y%m%dT%H%M%SZ)"
+          snapshot_dir="backups/recovery-$(date -u +%Y%m%dT%H%M%SZ)-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           python scripts/recovery_snapshot.py backup --output "$snapshot_dir" --upload-private
           python scripts/recovery_snapshot.py verify "$snapshot_dir"
       # Snapshots contain customer/account data. Never upload them as Actions artifacts.
