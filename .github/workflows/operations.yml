@@ -35,7 +35,7 @@ jobs:
         env:
           LATENCY_THRESHOLD: ${{ inputs.latency_threshold_ms }}
         run: |
-          node scripts/check-service-health.mjs https://forge20-production.up.railway.app output/operations/railway.json github-hosted-unverified-region "$LATENCY_THRESHOLD"
+          node scripts/check-service-health.mjs https://forge20-production-a8b0.up.railway.app output/operations/railway.json github-hosted-unverified-region "$LATENCY_THRESHOLD"
       - name: Preserve non-sensitive timing evidence
         if: always()
         uses: actions/upload-artifact@v4

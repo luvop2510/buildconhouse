@@ -127,7 +127,7 @@ jobs:
         run: npx expo lint -- --max-warnings 0
       - name: Production web export
         env:
-          BACKEND_URL: https://forge20-production.up.railway.app
+          BACKEND_URL: https://forge20-production-a8b0.up.railway.app
         run: npm run build
       - name: Mobile initial-JavaScript budget
         run: npm run test:mobile-budget

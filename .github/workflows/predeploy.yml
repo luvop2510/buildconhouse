@@ -44,7 +44,7 @@ jobs:
       - name: Frontend checks, tests, build and bundle budget
         working-directory: .
         env:
-          BACKEND_URL: https://forge20-production.up.railway.app
+          BACKEND_URL: https://forge20-production-a8b0.up.railway.app
         run: |
           npm ci
           node scripts/check-npm-audit.mjs
