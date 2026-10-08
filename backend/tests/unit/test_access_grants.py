@@ -95,7 +95,13 @@ async def test_custom_access_middleware_allows_only_granted_floor_and_action(mon
     monkeypatch.setattr(server, "decode_token", lambda _token: {
         "kind": "staff", "sub": "worker-1", "custom_access": True, "access_profile": None,
     })
-    monkeypatch.setattr(server, "grants_for_user", grants)
+    import auth
+    async def principal(*_args, **_kwargs):
+        return {"id": "worker-1", "email": "worker@example.com", "full_name": "Worker", "role": "worker",
+                "floor_ids": ["ground-floor", "first-floor"], "custom_access": True}
+    monkeypatch.setattr(auth, "decode_token", server.decode_token)
+    monkeypatch.setattr(auth, "_load_active_principal", principal)
+    monkeypatch.setattr(auth, "grants_for_user", grants)
 
     async def next_handler(_request):
         return Response(status_code=204)

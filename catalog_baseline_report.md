@@ -3,7 +3,7 @@
 **Date**: 2026-07-12  
 **Viewport Tested**: Desktop 1920x800  
 **URL**: https://buildcon-preview.preview.emergentagent.com  
-**Credentials**: owner@forge.app / Forge@2026  
+**Credentials**: owner@forge.app / [legacy password removed; use injected test credentials]
 
 ---
 

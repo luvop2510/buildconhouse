@@ -76,3 +76,43 @@ def test_memory_fallback_never_exceeds_its_key_bound(monkeypatch):
 
     assert len(rate_limit._attempts) == 2
     assert "three" in rate_limit._attempts
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("shared", [False, True])
+async def test_concurrent_logins_reserve_before_lookup_and_password_check(monkeypatch, shared):
+    from routes import auth_routes
+    from models import LoginPayload
+    from starlette.requests import Request
+
+    redis = _AtomicRedis() if shared else None
+    monkeypatch.setattr(rate_limit, "_redis_client", lambda: redis)
+    lookups = []
+    comparisons = []
+
+    class Users:
+        async def find_one(self, query, projection):
+            lookups.append(query)
+            # All admitted requests suspend before their password is checked.
+            await asyncio.sleep(0.01)
+            return {"password_hash": "test-hash"}
+
+    class Database:
+        users = Users()
+
+    monkeypatch.setattr(auth_routes, "db", Database())
+    monkeypatch.setattr(auth_routes, "verify_password", lambda password, hashed: comparisons.append(password) or False)
+    request = Request({"type": "http", "client": ("203.0.113.8", 1234), "headers": []})
+    outcomes = await asyncio.gather(*[
+        auth_routes.staff_login(LoginPayload(email="person@example.com", password=f"guess-{i}"), request)
+        for i in range(64)
+    ], return_exceptions=True)
+    assert len(lookups) == len(comparisons) == rate_limit._PER_KEY_LIMIT
+    assert sum(getattr(value, "status_code", None) == 401 for value in outcomes) == rate_limit._PER_KEY_LIMIT
+    assert sum(getattr(value, "status_code", None) == 429 for value in outcomes) == 64 - rate_limit._PER_KEY_LIMIT
+
+
+def test_new_identifier_prechecks_do_not_grow_memory():
+    for index in range(rate_limit._MAX_TRACKED_KEYS + 10):
+        rate_limit._check_memory([(f"never-recorded-{index}", 8)])
+    assert rate_limit._attempts == {}

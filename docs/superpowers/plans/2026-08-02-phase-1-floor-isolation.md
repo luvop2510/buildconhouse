@@ -318,7 +318,7 @@ Change `floor_id: str = "first-floor"` to `floor_id: str` where Step 1 found no 
 - [ ] **Step 4: Run the full suite and the isolation probe**
 
 ```bash
-cd "/Users/yashvardhansinhjhala/buildcon house/forge2.0/backend" && ./.venv/bin/python -m pytest tests/unit -q 2>&1 | tail -15 && FORGE_PROBE_PASSWORD='Forge@2026' ./.venv/bin/python -m scripts.probe_floor_isolation
+cd "/Users/yashvardhansinhjhala/buildcon house/forge2.0/backend" && ./.venv/bin/python -m pytest tests/unit -q 2>&1 | tail -15 && FORGE_PROBE_PASSWORD='[legacy password removed; use injected test credentials]' ./.venv/bin/python -m scripts.probe_floor_isolation
 ```
 Expected: suite green, probe 10/10. A required field can break deserialization of existing documents — if any probe endpoint 500s, a stored record is missing the field and that is a real finding.
 

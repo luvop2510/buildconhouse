@@ -24,7 +24,7 @@ Performance Sprint 3 testing was requested to measure authenticated baseline per
 ```bash
 curl -X POST http://localhost:8001/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"owner@forge.app","password":"Forge@2026"}'
+  -d '{"email":"owner@forge.app","password":"[legacy password removed; use injected test credentials]"}'
 ```
 
 **Response:**
@@ -53,7 +53,7 @@ curl -X POST http://localhost:8001/api/auth/login \
 
 The login page loads correctly at `/login` with:
 - ✅ Email field accepts input: `owner@forge.app`
-- ✅ Password field accepts input: `Forge@2026`
+- ✅ Password field accepts input: `[legacy password removed; use injected test credentials]`
 - ✅ "Sign in" button is VISIBLE in the UI
 - ❌ "Sign in" button is NOT CLICKABLE via Playwright automation
 

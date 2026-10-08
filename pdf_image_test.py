@@ -4,6 +4,7 @@ Additional test to verify product image handling in PDF generation
 - Test with products that have images
 - Test with products that have no images (fallback)
 """
+import os
 
 import requests
 import sys
@@ -11,7 +12,7 @@ from io import BytesIO
 from PyPDF2 import PdfReader
 
 BASE_URL = "https://buildcon-preview.preview.emergentagent.com/api"
-CREDENTIALS = {"email": "owner@forge.app", "password": "Forge@2026"}
+CREDENTIALS = {"email": "owner@forge.app", "password": os.environ["FORGE_TEST_OWNER_PASSWORD"]}
 
 def authenticate():
     """Get JWT token"""

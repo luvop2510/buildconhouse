@@ -31,6 +31,7 @@ import base64
 import hashlib
 import logging
 import os
+from pathlib import Path
 import subprocess
 import tempfile
 import zipfile
@@ -161,17 +162,17 @@ def _convert_emf_to_png(emf_bytes: bytes) -> Optional[bytes]:
     delegate cannot parse (real EMF headers vs faked-WMF).
     """
     try:
-        with tempfile.NamedTemporaryFile(suffix=".emf", delete=False) as inp:
-            inp.write(emf_bytes)
-            inp.flush()
-            svg_path = tempfile.mktemp(suffix=".svg")
+        with tempfile.TemporaryDirectory(prefix="forge-emf-") as directory:
+            inp = Path(directory) / "source.emf"
+            inp.write_bytes(emf_bytes)
+            svg_path = str(Path(directory) / "converted.svg")
             r1 = subprocess.run(
-                ["emf2svg-conv", "-i", inp.name, "-o", svg_path],
+                ["emf2svg-conv", "-i", str(inp), "-o", svg_path],
                 capture_output=True, timeout=10,
             )
             if r1.returncode != 0 or not os.path.exists(svg_path):
                 return None
-            png_path = tempfile.mktemp(suffix=".png")
+            png_path = str(Path(directory) / "converted.png")
             r2 = subprocess.run(
                 ["rsvg-convert", "-w", "4096", "-o", png_path, svg_path],
                 capture_output=True, timeout=10,
@@ -198,12 +199,12 @@ def _convert_wmf_to_png(wmf_bytes: bytes) -> Optional[bytes]:
     /etc/ImageMagick-6/policy.xml. Falls back to None on any failure.
     """
     try:
-        with tempfile.NamedTemporaryFile(suffix=".wmf", delete=False) as inp:
-            inp.write(wmf_bytes)
-            inp.flush()
-            out = tempfile.mktemp(suffix=".png")
+        with tempfile.TemporaryDirectory(prefix="forge-wmf-") as directory:
+            inp = Path(directory) / "source.wmf"
+            inp.write_bytes(wmf_bytes)
+            out = str(Path(directory) / "converted.png")
             r = subprocess.run(
-                ["convert", "-density", "300", f"wmf:{inp.name}", out],
+                ["convert", "-density", "300", f"wmf:{inp}", out],
                 capture_output=True, timeout=10,
             )
             if r.returncode != 0 or not os.path.exists(out):

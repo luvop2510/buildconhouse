@@ -125,7 +125,7 @@ backend:
             Backend now healthy: GET /api/health/system reports mongo connected (not local),
             supabase connected, counts products=2966/customers=8/quotations=53/purchase_orders=35/
             payments=19/followups=87/users=8/brands=5/categories=26, 0 warnings, healthy=true.
-            Login verified via curl (owner@forge.app/Forge@2026 → valid JWT).
+            Login verified via curl (owner@forge.app/[legacy password removed; use injected test credentials] → valid JWT).
 
             SECURITY AUDIT (full static review of all 120 endpoints across 14 route files,
             cross-referencing every @router decorator against its auth dependency by hand):
@@ -198,7 +198,7 @@ backend:
             ═══════════════════════════════════════════════════════════════════════════
             
             ✅ A1. Authentication & Login:
-            • POST /api/auth/login with owner@forge.app / Forge@2026: 200 OK
+            • POST /api/auth/login with owner@forge.app / [legacy password removed; use injected test credentials]: 200 OK
             • Valid JWT token received (297 chars)
             • User: Aarav Kapoor (owner@forge.app), Role: owner
             
@@ -380,8 +380,8 @@ backend:
             ✅ 1b. Password change with correct current password: 200 OK, changed=true
             ✅ 1b. New password works for login (verified with POST /api/auth/login)
             ✅ 1b. Old password no longer works (401 as expected)
-            ✅ 1c. Password changed back to Forge@2026 successfully
-            ✅ 1c. Original password (Forge@2026) works again (verified)
+            ✅ 1c. Password changed back to [legacy password removed; use injected test credentials] successfully
+            ✅ 1c. Original password ([legacy password removed; use injected test credentials]) works again (verified)
             ✅ 1d. No auth token: 401 (correct)
             
             VERIFIED: Password change flow works correctly with proper validation, old password
@@ -616,7 +616,7 @@ frontend:
             Tile Orders Workflow Redesign - End-to-End Browser Testing COMPLETE (2026-07-30)
             
             Comprehensive browser verification completed via Playwright automation (desktop viewport 1920x1080).
-            Login: owner@forge.app / Forge@2026 (staff account with full access).
+            Login: owner@forge.app / [legacy password removed; use injected test credentials] (staff account with full access).
             ALL CORE WORKFLOW REQUIREMENTS VERIFIED (100% pass rate on structural/navigation checks).
             
             ═══════════════════════════════════════════════════════════════════════════
@@ -736,7 +736,7 @@ frontend:
             Tile Orders Partial Quantity Math Verification COMPLETE (2026-07-30)
             
             Focused end-to-end test of partial quantity operations on a single target record.
-            Login: owner@forge.app / Forge@2026 (patient login with 8-10 second wait resolved previous timing issue).
+            Login: owner@forge.app / [legacy password removed; use injected test credentials] (patient login with 8-10 second wait resolved previous timing issue).
             ALL 8 STEPS PASSED (100% math accuracy verified).
             
             ═══════════════════════════════════════════════════════════════════════════
@@ -2029,7 +2029,7 @@ frontend:
             
             ✅ TEST 1 - Login Flow:
             • Login page loaded at /login
-            • Credentials filled: owner@forge.app / Forge@2026
+            • Credentials filled: owner@forge.app / [legacy password removed; use injected test credentials]
             • Clicked "Sign in" button (testID="login-submit")
             • POST /api/auth/login returned 200 OK
             
@@ -2130,7 +2130,7 @@ frontend:
             ═══════════════════════════════════════════════════════════════════════════
             
             ✅ LOGIN:
-            • Successfully authenticates with owner@forge.app / Forge@2026
+            • Successfully authenticates with owner@forge.app / [legacy password removed; use injected test credentials]
             • Redirects to dashboard after login
             • JWT token stored correctly
             • No console errors during login
@@ -2268,7 +2268,7 @@ frontend:
             ═══════════════════════════════════════════════════════════════════════════
             
             ✅ LOGIN FLOW:
-            • Credentials filled: owner@forge.app / Forge@2026
+            • Credentials filled: owner@forge.app / [legacy password removed; use injected test credentials]
             • POST /api/auth/login: 200 OK
             • Successfully navigated from /login to /dashboard
             • JWT token stored correctly
@@ -2395,7 +2395,7 @@ frontend:
             
             ✅ PASS (10/10 testable items):
             1. Backend health check via app
-            2. Login flow (owner@forge.app / Forge@2026)
+            2. Login flow (owner@forge.app / [legacy password removed; use injected test credentials])
             3. Dashboard loads with real data (greeting + stats)
             4. Phone navigation (390x844) - bottom tab bar
             5. Tablet navigation (810x1080) - icon-only rail
@@ -2562,7 +2562,7 @@ agent_communication:
       message: |
         Phase 1 of the Showroom design reboot is implemented and visually verified by the main agent.
         Frontend testing NOT yet run — awaiting explicit user permission per protocol.
-        Credentials: owner@forge.app / Forge@2026 (staff), customer@forge.app / Forge@2026 (customer portal).
+        Credentials: owner@forge.app / [legacy password removed; use injected test credentials] (staff), customer@forge.app / [legacy password removed; use injected test credentials] (customer portal).
         Catalog restoration is BLOCKED on user: needs SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY and the 4
         supplier source files; do NOT seed replacement demo catalog data beyond the existing 20 demo products.
     - agent: "testing"
@@ -2658,7 +2658,7 @@ agent_communication:
         AUDIT RESULTS:
         
         ✅ WORKING:
-        • Login flow (owner@forge.app / Forge@2026)
+        • Login flow (owner@forge.app / [legacy password removed; use injected test credentials])
         • Desktop sidebar navigation (full labels)
         • Phone bottom tab bar (Today/Quotes/FAB/Tasks/More)
         • Dashboard loads with greeting "Good morning, Aarav"
@@ -2700,7 +2700,7 @@ agent_communication:
         
         ✅ PASS (10/10 testable items):
         • Backend health check via app (no more "Unexpected token '<'" errors)
-        • Login flow successful (owner@forge.app / Forge@2026)
+        • Login flow successful (owner@forge.app / [legacy password removed; use injected test credentials])
         • Dashboard loads with real data (greeting "Good morning, Aarav" + stats)
         • Phone navigation (390x844): bottom tab bar with Today/Quotes/FAB/Tasks/More
         • Tablet navigation (810x1080): icon-only rail present (~64px width, NOT full sidebar)
@@ -2738,7 +2738,7 @@ agent_communication:
         critical bug where users got stuck on /login after clicking "Sign in" is now RESOLVED.
         
         KEY FINDINGS:
-        ✅ Login flow works: owner@forge.app / Forge@2026 → POST /api/auth/login (200 OK)
+        ✅ Login flow works: owner@forge.app / [legacy password removed; use injected test credentials] → POST /api/auth/login (200 OK)
         ✅ Navigation successful: /login → /dashboard (no longer stuck)
         ✅ Token persistence: JWT stored in localStorage (forge.jwt + forge.jwt.kind)
         ✅ Direct /catalog navigation: works without 401 errors
@@ -2841,8 +2841,8 @@ backend:
             live: backup produced 10 files with correct counts, restore --dry-run matched exactly.
             backend/backups/ added to .gitignore (data, not code — will be redirected to a persistent
             Supabase bucket once Supabase creds are supplied, so backups themselves survive resets).
-            Populated /app/memory/test_credentials.md (was missing) with owner@forge.app / Forge@2026
-            and customer@forge.app / Forge@2026.
+            Populated /app/memory/test_credentials.md (was missing) with owner@forge.app / [legacy password removed; use injected test credentials]
+            and customer@forge.app / [legacy password removed; use injected test credentials].
             STILL BLOCKED ON USER (cannot proceed without these — see agent_communication):
             (1) MongoDB Atlas connection string (to replace local Mongo permanently),
             (2) Supabase SUPABASE_URL/SERVICE_ROLE_KEY/ANON_KEY (project URL already known from
@@ -2866,7 +2866,7 @@ backend:
             • Status: 200 OK
             • Response: {"status": "ok"}
             
-            ✅ TEST 2 - POST /api/auth/login (owner@forge.app / Forge@2026):
+            ✅ TEST 2 - POST /api/auth/login (owner@forge.app / [legacy password removed; use injected test credentials]):
             • Status: 200 OK
             • Valid JWT token returned
             • User data: Aarav Kapoor (owner@forge.app, role=owner)
@@ -2968,7 +2968,7 @@ agent_communication:
         request. ALL 9 TEST AREAS PASSED (100% success rate).
         
         PART A — Full Regression Smoke Test (5/5 PASSED):
-        ✅ A1. Login: owner@forge.app / Forge@2026 → valid JWT (297 chars)
+        ✅ A1. Login: owner@forge.app / [legacy password removed; use injected test credentials] → valid JWT (297 chars)
         ✅ A2. Catalog: brands=5, categories=26, products total=2966 (real data, NOT demo)
         ✅ A3. Business endpoints: quotations, customers, payments/stats, purchase-orders,
             followups/stats all 200 OK
@@ -3118,7 +3118,7 @@ agent_communication:
         AUTHENTICATION BUG DETAILS:
         • Backend login API works: POST /api/auth/login returns 200 OK with valid JWT token
         • Frontend login flow is BROKEN: After clicking "Sign in" with correct credentials (owner@forge.app / 
-          Forge@2026), the page stays stuck on /login with no redirect to dashboard
+          [legacy password removed; use injected test credentials]), the page stays stuck on /login with no redirect to dashboard
         • No error messages displayed to user
         • Tested 5 different approaches (standard login, manual entry, token injection with various methods) - 
           all failed
@@ -3374,7 +3374,7 @@ backend:
           comment: "User reported 'Failed to fetch' error when using Forge Expo web app. Root cause: frontend/.env had EXPO_PUBLIC_BACKEND_URL=http://localhost:8001, which from browser tries to hit user's local machine (not container). Fix applied: (1) frontend/.env now has EXPO_PUBLIC_BACKEND_URL= (empty string), (2) frontend/src/api/client.ts line 4-5 changed to const BASE = process.env.EXPO_PUBLIC_BACKEND_URL || '', (3) Restarted expo supervisor. Kubernetes ingress routes /api/* to backend on port 8001 automatically, so BASE must be empty (same-origin)."
         - working: true
           agent: "testing"
-          comment: "Bug fix VERIFIED — All checks passed. ✅ Login successful with owner@forge.app / Forge@2026, redirected to dashboard. ✅ NO 'Failed to fetch' errors in console (0 errors, 3 warnings). ✅ All 7 API requests are same-origin (https://buildcon-preview.preview.emergentagent.com/api/*). ✅ NO localhost:8001 requests detected. ✅ Catalog page loaded successfully (shows 0 families - expected as products not yet imported). ✅ Network requests verified: POST /api/auth/login (200), GET /api/dashboard/stats (200), GET /api/brands (200), GET /api/categories (200), GET /api/catalog/hierarchy (200), GET /api/auth/me (200), GET /api/products/families?limit=60 (200). All endpoints returning HTTP 200. Bug completely resolved - frontend now uses same-origin requests and Kubernetes ingress correctly routes to backend."
+          comment: "Bug fix VERIFIED — All checks passed. ✅ Login successful with owner@forge.app / [legacy password removed; use injected test credentials], redirected to dashboard. ✅ NO 'Failed to fetch' errors in console (0 errors, 3 warnings). ✅ All 7 API requests are same-origin (https://buildcon-preview.preview.emergentagent.com/api/*). ✅ NO localhost:8001 requests detected. ✅ Catalog page loaded successfully (shows 0 families - expected as products not yet imported). ✅ Network requests verified: POST /api/auth/login (200), GET /api/dashboard/stats (200), GET /api/brands (200), GET /api/categories (200), GET /api/catalog/hierarchy (200), GET /api/auth/me (200), GET /api/products/families?limit=60 (200). All endpoints returning HTTP 200. Bug completely resolved - frontend now uses same-origin requests and Kubernetes ingress correctly routes to backend."
 
 frontend:
   - task: "Quotation Builder 2.0 Phase 1A — undo/redo, DnD, variants, alternates"
@@ -3548,7 +3548,7 @@ frontend:
             🚨 CRITICAL AUTH BUG DETAILS:
             • Backend login API works perfectly: POST /api/auth/login returns 200 OK with valid JWT token
             • BUT: Frontend login flow is completely broken - users cannot log in via the UI
-            • After clicking "Sign in" button with correct credentials (owner@forge.app / Forge@2026), the page stays stuck on /login
+            • After clicking "Sign in" button with correct credentials (owner@forge.app / [legacy password removed; use injected test credentials]), the page stays stuck on /login
             • No redirect to dashboard occurs, even after 15+ seconds wait
             • No error messages displayed to user
             • Token is generated by backend but frontend doesn't process it correctly
@@ -3987,7 +3987,7 @@ frontend:
             ═══════════════════════════════════════════════════════════════════════════════
             • App loads correctly at root URL — login screen displays with no blank page or error overlay
             • Zero console errors on initial load
-            • Login successful with owner@forge.app / Forge@2026
+            • Login successful with owner@forge.app / [legacy password removed; use injected test credentials]
             • Navigation to /quotations/new successful
             
             ═══════════════════════════════════════════════════════════════════════════════
@@ -4480,7 +4480,7 @@ agent_communication:
         (9) Config — GET /api/purchase-orders/config/statuses returns columns + transitions + labels.
         (10) Attachments — POST /api/purchase-orders/{id}/attachments with base64 data_url stores attachment; new event 'purchase.attachment_added' logged.
         (11) Regression on existing endpoints — /api/quotations create/patch/duplicate/pdf/breakdown, /api/customers, /api/products/alternates all still green.
-        Credentials in /app/memory/test_credentials.md (owner@forge.app / Forge@2026). Note: /app/backend/.env and /app/frontend/.env had gone missing on this container — restored during this session; MONGO_URL=mongodb://localhost:27017, DB_NAME=forge, JWT_SECRET set.
+        Credentials in /app/memory/test_credentials.md (owner@forge.app / [legacy password removed; use injected test credentials]). Note: /app/backend/.env and /app/frontend/.env had gone missing on this container — restored during this session; MONGO_URL=mongodb://localhost:27017, DB_NAME=forge, JWT_SECRET set.
     - agent: "testing"
       message: |
         Production Milestone 1 Regression Testing COMPLETE — 37/39 tests PASSED (94.9% success rate).
@@ -4504,7 +4504,7 @@ agent_communication:
         
         Recommendation: Main agent should investigate the FastAPI Query parameter handling in list_purchase_orders endpoint. The issue is isolated to filtering only - all other functionality is production-ready.
     - agent: "main"
-      message: "Iteration 3 (backend catalog fixes) shipped and green. Now iteration 4 — Quotation Builder 2.0 Phase 1A. Please regression-test both the new alternates endpoint and the new builder screen. Backend: verify /api/products/{id}/alternates returns 200 with the shape {source_product_id, items, tiers}, that items respect the 3-tier ordering, and that 404 is returned for a missing source id. Frontend: on the /(admin)/quotations/new screen — add products, use both button + keyboard undo/redo (cmd+z, cmd+shift+z), open the swap sheet from a line's swap icon, drag-reorder items via the menu handle, drag-reorder rooms via the room chip. History depth is shown as `N steps` in the header subtitle. Credentials in /app/memory/test_credentials.md (owner@forge.app / Forge@2026)."
+      message: "Iteration 3 (backend catalog fixes) shipped and green. Now iteration 4 — Quotation Builder 2.0 Phase 1A. Please regression-test both the new alternates endpoint and the new builder screen. Backend: verify /api/products/{id}/alternates returns 200 with the shape {source_product_id, items, tiers}, that items respect the 3-tier ordering, and that 404 is returned for a missing source id. Frontend: on the /(admin)/quotations/new screen — add products, use both button + keyboard undo/redo (cmd+z, cmd+shift+z), open the swap sheet from a line's swap icon, drag-reorder items via the menu handle, drag-reorder rooms via the room chip. History depth is shown as `N steps` in the header subtitle. Credentials in /app/memory/test_credentials.md (owner@forge.app / [legacy password removed; use injected test credentials])."
     - agent: "main"
       message: "Iteration 4 · Phase 1A ACCEPTANCE pass. Applied a polish patch on top of the earlier builder (see status_history for the full list). Priority now is: (1) BACKEND — regression test /api/products/{id}/alternates: assert 200 + shape {source_product_id, items, tiers}, tiers integer counts, 404 on missing product, items ordered so any same-brand/family entry precedes cross-brand entries (rank check); also spot-check that /api/quotations POST + PATCH silent still work (autosave path). (2) FRONTEND (only if user asks): full builder regression at 390×844 (phone), 1024×1366 (tablet, HIGHEST PRIORITY), 1440×900 (desktop). Verify undo/redo depth across every mutation type, DnD of rooms + lines, inline room rename (new — edit-icon on room header toggles TextInput), inline notes (new — footer of receipt panel), variant chips (finish + swatch + ±₹ badge), alternate swap preserving qty/discount/notes/room/tax, keyboard shortcuts, autosave (Saved · HH:MM label). Credentials: /app/memory/test_credentials.md."
     - agent: "testing"
@@ -4516,11 +4516,11 @@ agent_communication:
     - agent: "testing"
       message: "P1/P2 Recovery Verification COMPLETE — ALL 21 TESTS PASSED (100% success rate). ✅ Priority 1 (Product Catalog Regression): 11/11 passed — catalog returns exactly 20 items, all have 'images' field present (empty list is valid), NO unsplash.com or pexels.com URLs found in any product, search filter (?q=grohe returned 8 items), brand filter works (returned 4 items for first brand), category filter works (returned 1 item for first category), product detail includes 'variants' field, HAN-FAU-001 has 3 variants and HAN-FAU-002 has 2 variants (seeded for chip verification), recent/frequent endpoints return 200 with arrays (4 items each), alternates endpoint returns correct shape {source_product_id, items, tiers} with 5 items and tiers {family:0, brand_category:1, category:5}. ✅ Priority 2 (Catalog Import Pipeline Smoke): 3/3 passed — GET /api/catalog/imports/config/brands returns all 5 expected brands (Hansgrohe, Axor, Grohe, Vitra, Geberit), GET /api/catalog/imports returns empty array (0 jobs), unauthenticated request returns 401 (auth required). ✅ Priority 3 (Quotation Regression): 4/4 passed — POST /api/quotations creates quotation with 201, PATCH with silent=true returns 200 and persists notes, quotation line item with null image field doesn't crash backend, alternates endpoint works correctly when source product has images=[] (returned 6 items). ✅ Priority 4 (Pipeline Importability Python Check): PASSED — all brand adapters resolve correctly (grohe→GroheAdapter, hansgrohe→GroheAdapter, axor→GroheAdapter, vitra→VitraAdapter, geberit→GeberitAdapter), catalog_pipeline.certifier.validate importable, catalog_pipeline.image_extractor functions (extract_images_from_pdf, extract_images_from_xlsx) importable. ProductImage/seed patch successfully deployed with ZERO regressions. Backend catalog and pipeline are healthy."
     - agent: "main"
-      message: "User reported 'Failed to fetch' error when using Forge Expo web app. Root cause suspected: frontend/.env had EXPO_PUBLIC_BACKEND_URL=http://localhost:8001, which from browser tries to hit user's local machine (not container). Applied fix: (1) frontend/.env now has EXPO_PUBLIC_BACKEND_URL= (empty string), (2) frontend/src/api/client.ts line 4-5 changed to const BASE = process.env.EXPO_PUBLIC_BACKEND_URL || '', (3) Restarted expo supervisor. Kubernetes ingress routes /api/* to backend on port 8001 automatically, so BASE must be empty (same-origin). Please verify: (1) Login with owner@forge.app / Forge@2026 succeeds, (2) Dashboard loads, (3) Navigate to catalog screen, (4) Verify products list loads (may be empty), (5) Confirm request URLs are same-origin (preview URL) not localhost:8001, (6) Check browser console for 'Failed to fetch' errors."
+      message: "User reported 'Failed to fetch' error when using Forge Expo web app. Root cause suspected: frontend/.env had EXPO_PUBLIC_BACKEND_URL=http://localhost:8001, which from browser tries to hit user's local machine (not container). Applied fix: (1) frontend/.env now has EXPO_PUBLIC_BACKEND_URL= (empty string), (2) frontend/src/api/client.ts line 4-5 changed to const BASE = process.env.EXPO_PUBLIC_BACKEND_URL || '', (3) Restarted expo supervisor. Kubernetes ingress routes /api/* to backend on port 8001 automatically, so BASE must be empty (same-origin). Please verify: (1) Login with owner@forge.app / [legacy password removed; use injected test credentials] succeeds, (2) Dashboard loads, (3) Navigate to catalog screen, (4) Verify products list loads (may be empty), (5) Confirm request URLs are same-origin (preview URL) not localhost:8001, (6) Check browser console for 'Failed to fetch' errors."
     - agent: "testing"
-      message: "Bug Fix Verification COMPLETE — 'Failed to fetch' error RESOLVED. ✅ All verification checks passed: (1) Login successful with owner@forge.app / Forge@2026, redirected to dashboard at /dashboard. (2) Dashboard loaded showing 'Good evening, Aarav' with stats (Revenue ₹0.00, Open Pipeline ₹0.00, Quotes 0, Pending Approval 0). (3) Catalog page loaded successfully at /catalog showing '0 families' with filters (All categories, All brands, Families/All variants toggle, AI Import button). (4) Catalog empty state displayed: 'No families match - Try clearing filters or switch to All variants view' (expected - products not yet imported per review request). (5) Network analysis: 7 API requests detected, ALL same-origin (https://buildcon-preview.preview.emergentagent.com/api/*), ZERO localhost:8001 requests. (6) Console clean: 0 errors, 3 warnings (non-critical), ZERO 'Failed to fetch' errors. ✅ Verified API endpoints: POST /api/auth/login (200), GET /api/dashboard/stats (200), GET /api/brands (200), GET /api/categories (200), GET /api/catalog/hierarchy (200), GET /api/auth/me (200), GET /api/products/families?limit=60 (200). Fix working perfectly - frontend now uses same-origin requests (empty EXPO_PUBLIC_BACKEND_URL) and Kubernetes ingress correctly routes /api/* to backend. User can now use the app without 'Failed to fetch' errors."
+      message: "Bug Fix Verification COMPLETE — 'Failed to fetch' error RESOLVED. ✅ All verification checks passed: (1) Login successful with owner@forge.app / [legacy password removed; use injected test credentials], redirected to dashboard at /dashboard. (2) Dashboard loaded showing 'Good evening, Aarav' with stats (Revenue ₹0.00, Open Pipeline ₹0.00, Quotes 0, Pending Approval 0). (3) Catalog page loaded successfully at /catalog showing '0 families' with filters (All categories, All brands, Families/All variants toggle, AI Import button). (4) Catalog empty state displayed: 'No families match - Try clearing filters or switch to All variants view' (expected - products not yet imported per review request). (5) Network analysis: 7 API requests detected, ALL same-origin (https://buildcon-preview.preview.emergentagent.com/api/*), ZERO localhost:8001 requests. (6) Console clean: 0 errors, 3 warnings (non-critical), ZERO 'Failed to fetch' errors. ✅ Verified API endpoints: POST /api/auth/login (200), GET /api/dashboard/stats (200), GET /api/brands (200), GET /api/categories (200), GET /api/catalog/hierarchy (200), GET /api/auth/me (200), GET /api/products/families?limit=60 (200). Fix working perfectly - frontend now uses same-origin requests (empty EXPO_PUBLIC_BACKEND_URL) and Kubernetes ingress correctly routes /api/* to backend. User can now use the app without 'Failed to fetch' errors."
     - agent: "main"
-      message: "Quotation Builder V4 shipped. Please regression-test the NEW V4 backend endpoints. Focus ONLY on V4 additions plus a small smoke test that existing endpoints still work. Credentials in /app/memory/test_credentials.md — owner@forge.app / Forge@2026. API base URL: https://buildcon-preview.preview.emergentagent.com/api. PRIORITY 1 — V4 catalog additions: (1.1) GET /api/brands must return 5 brands with product_count field, sum equals total active products. (1.2) GET /api/categories returns categories with product_count. (1.3) GET /api/categories?brand_id=<Hansgrohe_id> returns ONLY categories where Hansgrohe has products (product_count > 0), fake brand_id returns []. (1.4) GET /api/products?limit=5&sort=popular returns {total, items} with NEW fields: popular, frequently_used, recently_used, usage_count, my_usage_count. (1.5-1.8) Test sort options: recent, price_asc, price_desc, name. (1.9) GET /api/products?q=chrome search. (1.10) GET /api/products?brand_id=X&category_id=Y combined filters. PRIORITY 2 — Custom product: (2.1) POST /api/products/custom creates with is_custom=true, tags contains 'custom'. (2.2) Same SKU auto-suffixes. (2.3) is_custom=false + duplicate SKU returns 409. (2.4) Search finds custom product. (2.5) Auth required. PRIORITY 3 — Complete the set: (3.1) GET /api/products/{id}/complete-the-set returns {source_product_id, items}. (3.2) Non-existent id returns 404. (3.3) Auth required. PRIORITY 4 — Recent Quotations: (4.1) GET /api/quotations/recent?limit=5 returns array with required fields (id, number, customer_name, project_name, phone, grand_total, status, revision_count, updated_at). (4.2) Ordered by updated_at DESC. (4.3) Auth required. PRIORITY 5 — V4 quotation fields: (5.1) POST /api/quotations with {project_name, phone_snapshot, reference_source} persists all three. (5.2) GET verifies fields intact. (5.3) PATCH with ui_state persists all keys. (5.4) PATCH project_name preserves phone_snapshot. (5.5) PATCH silent=true does NOT create revision. (5.6) PATCH silent=false creates revision. PRIORITY 6 — Smoke regression: (6.1) POST /api/quotations existing shape works. (6.2) GET /api/products/{id}/alternates returns correct shape. (6.3) GET /api/purchase-orders returns 200. (6.4) GET /api/payments/stats returns 200. (6.5) GET /api/quotations/{id}/place-order/preview works. (6.6) POST /api/quotations/{id}/duplicate works."
+      message: "Quotation Builder V4 shipped. Please regression-test the NEW V4 backend endpoints. Focus ONLY on V4 additions plus a small smoke test that existing endpoints still work. Credentials in /app/memory/test_credentials.md — owner@forge.app / [legacy password removed; use injected test credentials]. API base URL: https://buildcon-preview.preview.emergentagent.com/api. PRIORITY 1 — V4 catalog additions: (1.1) GET /api/brands must return 5 brands with product_count field, sum equals total active products. (1.2) GET /api/categories returns categories with product_count. (1.3) GET /api/categories?brand_id=<Hansgrohe_id> returns ONLY categories where Hansgrohe has products (product_count > 0), fake brand_id returns []. (1.4) GET /api/products?limit=5&sort=popular returns {total, items} with NEW fields: popular, frequently_used, recently_used, usage_count, my_usage_count. (1.5-1.8) Test sort options: recent, price_asc, price_desc, name. (1.9) GET /api/products?q=chrome search. (1.10) GET /api/products?brand_id=X&category_id=Y combined filters. PRIORITY 2 — Custom product: (2.1) POST /api/products/custom creates with is_custom=true, tags contains 'custom'. (2.2) Same SKU auto-suffixes. (2.3) is_custom=false + duplicate SKU returns 409. (2.4) Search finds custom product. (2.5) Auth required. PRIORITY 3 — Complete the set: (3.1) GET /api/products/{id}/complete-the-set returns {source_product_id, items}. (3.2) Non-existent id returns 404. (3.3) Auth required. PRIORITY 4 — Recent Quotations: (4.1) GET /api/quotations/recent?limit=5 returns array with required fields (id, number, customer_name, project_name, phone, grand_total, status, revision_count, updated_at). (4.2) Ordered by updated_at DESC. (4.3) Auth required. PRIORITY 5 — V4 quotation fields: (5.1) POST /api/quotations with {project_name, phone_snapshot, reference_source} persists all three. (5.2) GET verifies fields intact. (5.3) PATCH with ui_state persists all keys. (5.4) PATCH project_name preserves phone_snapshot. (5.5) PATCH silent=true does NOT create revision. (5.6) PATCH silent=false creates revision. PRIORITY 6 — Smoke regression: (6.1) POST /api/quotations existing shape works. (6.2) GET /api/products/{id}/alternates returns correct shape. (6.3) GET /api/purchase-orders returns 200. (6.4) GET /api/payments/stats returns 200. (6.5) GET /api/quotations/{id}/place-order/preview works. (6.6) POST /api/quotations/{id}/duplicate works."
     - agent: "testing"
       message: |
         Quotation Builder V4 Backend Regression Testing COMPLETE — ALL 63 TESTS PASSED (100% success rate).
@@ -4579,7 +4579,7 @@ agent_communication:
         ALL V4 ADDITIONS WORKING PERFECTLY. NO REGRESSIONS DETECTED. Backend is production-ready.
 
     - agent: "main"
-      message: "Git-history rewrite applied to remove large files (backend/temp/**, *.xlsx, *.pdf) that exceeded GitHub's 100MB limit. Changes: (1) Added backend/temp/**, *.xlsx, *.pdf to .gitignore, (2) Used git filter-repo to purge these files from entire git history, (3) .git folder shrank from 318 MB → 2.3 MB, (4) Recreated empty /app/backend/temp/ with .gitkeep sentinel, (5) Restarted backend and expo supervisors. MongoDB catalog data confirmed intact (Vitra 250, Grohe 854, Geberit 496, Hansgrohe 1272 = 2,872 total products). Images stored in product_media collection with Supabase URLs. Please verify app still works end-to-end: (1) Login with owner@forge.app / Forge@2026, (2) Navigate to catalog screen, (3) Verify products list loads with 200 status (~2,872 products), (4) Verify product images from Supabase (NOT base64), (5) Open at least one Vitra and one Hansgrohe product, (6) Check console for errors, (7) Verify /api/health returns 200."
+      message: "Git-history rewrite applied to remove large files (backend/temp/**, *.xlsx, *.pdf) that exceeded GitHub's 100MB limit. Changes: (1) Added backend/temp/**, *.xlsx, *.pdf to .gitignore, (2) Used git filter-repo to purge these files from entire git history, (3) .git folder shrank from 318 MB → 2.3 MB, (4) Recreated empty /app/backend/temp/ with .gitkeep sentinel, (5) Restarted backend and expo supervisors. MongoDB catalog data confirmed intact (Vitra 250, Grohe 854, Geberit 496, Hansgrohe 1272 = 2,872 total products). Images stored in product_media collection with Supabase URLs. Please verify app still works end-to-end: (1) Login with owner@forge.app / [legacy password removed; use injected test credentials], (2) Navigate to catalog screen, (3) Verify products list loads with 200 status (~2,872 products), (4) Verify product images from Supabase (NOT base64), (5) Open at least one Vitra and one Hansgrohe product, (6) Check console for errors, (7) Verify /api/health returns 200."
     - agent: "testing"
       message: "Purchases Module regression COMPLETE — 37/39 tests PASSED. All critical paths green (suppliers, place-order preview/confirm, PO lifecycle, receive auto-transitions, dashboard, activity feed, attachments, regression on existing quotation/customer/alternates endpoints). Only 2 minor bugs: /api/purchase-orders?status= and ?brand_id= filters ignored (root cause was route shadowing by an old scaffold in misc_routes.py — GET /purchase-orders registered without prefix, matched before the new prefixed router)."
     - agent: "main"
@@ -5006,7 +5006,7 @@ agent_communication:
           (b) a DESIGN GAP vs the user's requested behavior (e.g. no "change customer" endpoint exists; PO status
               and item stage are two disconnected systems; approval doesn't auto-create a purchase) — these are
               architecture decisions main agent will bring back to the user, not something to flag as a simple bug.
-        Use owner@forge.app / Forge@2026 for full-privilege testing; sales@forge.app / accounts@forge.app /
+        Use owner@forge.app / [legacy password removed; use injected test credentials] for full-privilege testing; sales@forge.app / accounts@forge.app /
         manager@forge.app for role-guard testing (see /app/memory/test_credentials.md). Be exhaustive — this is
         the primary audit the rest of the sprint depends on. Return concrete request/response evidence, not just
         pass/fail labels.
@@ -5166,7 +5166,7 @@ agent_communication:
         • App loads correctly (no blank page, no error overlay, no red screen errors)
         • Login screen displays properly
         • Zero console errors
-        • Login successful with owner@forge.app / Forge@2026
+        • Login successful with owner@forge.app / [legacy password removed; use injected test credentials]
         
         ✅ LAYOUT & RESPONSIVE — PASS:
         • Desktop (1920px): 3-pane layout working correctly
@@ -5535,8 +5535,8 @@ frontend:
               media, 12 legitimate cross-brand collisions (documented/expected), 8 missing images
               (informational, pre-existing).
             • Sample Supabase image public_url returns HTTP 200 with real bytes.
-            • Staff login (owner@forge.app/Forge@2026) works, returns valid JWT + user doc.
-            • Customer portal login (customer@forge.app/Forge@2026 via /api/auth/customer/login —
+            • Staff login (owner@forge.app/[legacy password removed; use injected test credentials]) works, returns valid JWT + user doc.
+            • Customer portal login (customer@forge.app/[legacy password removed; use injected test credentials] via /api/auth/customer/login —
               note: separate endpoint from staff /api/auth/login) works.
             • Google OAuth endpoints (/api/auth/google/staff, /api/auth/google/customer) exist and
               are wired to verify_google_session — not independently testable without a real
@@ -5718,7 +5718,7 @@ frontend:
 agent_communication:
     - agent: "main"
       message: |
-        Please verify Phase 5 mobile Tasks/Follow-ups. Use owner@forge.app / Forge@2026. Check 390x844 phone first:
+        Please verify Phase 5 mobile Tasks/Follow-ups. Use owner@forge.app / [legacy password removed; use injected test credentials]. Check 390x844 phone first:
         login, go to /followups, confirm compact header, brass + action, brass bottom FAB, bottom nav is usable, KPI row scrolls horizontally,
         filters and task cards scroll without overlap, New Follow-up opens as a keyboard-safe bottom sheet. Also spot-check tablet/desktop that
         Follow-ups still loads and desktop actions remain visible.
@@ -5802,7 +5802,7 @@ agent_communication:
         but the product grid is completely broken — it never loads products despite successful API calls.
         
         WHAT WORKS:
-        ✅ Login flow (owner@forge.app / Forge@2026)
+        ✅ Login flow (owner@forge.app / [legacy password removed; use injected test credentials])
         ✅ 3-pane builder shell renders
         ✅ Brand rail shows all 5 brands with correct counts (2966 total products)
         ✅ Backend API returns 200 OK with full product data
@@ -5837,7 +5837,7 @@ agent_communication:
     - agent: "main"
       message: |
         Environment was recovered for validation using user-supplied credentials. Please rerun backend smoke for health,
-        owner login (owner@forge.app / Forge@2026), /api/brands, /api/categories, and /api/products?limit=20.
+        owner login (owner@forge.app / [legacy password removed; use injected test credentials]), /api/brands, /api/categories, and /api/products?limit=20.
         Note: previous local checks showed 20 products returned from the configured buildcon database, not 2,966.
 
         ❌ Product count shows "0 products" despite API returning 2966 products
@@ -5928,7 +5928,7 @@ test_plan:
 agent_communication:
     - agent: "main"
       message: |
-        Please verify Phase 1 only. Use owner@forge.app / Forge@2026. Backend was not modified.
+        Please verify Phase 1 only. Use owner@forge.app / [legacy password removed; use injected test credentials]. Backend was not modified.
         Required responsive checks: desktop builder shows collapsible/expandable brand rail, no duplicate BuildCon House branding,
         brand→category accordion, 3 product cards per row, product grid loads/scrolls/infinite-scrolls; tablet shows 2 columns where
         product picker/grid is available; mobile product picker/quotation builder has 1-column product list and no overlap/clipping.
@@ -5959,7 +5959,7 @@ agent_communication:
         
         API ENDPOINTS TESTED (all failed):
         ❌ GET /api/health - 502 Bad Gateway (HTML error page from Cloudflare)
-        ❌ POST /api/auth/login (owner@forge.app / Forge@2026) - 502 Bad Gateway
+        ❌ POST /api/auth/login (owner@forge.app / [legacy password removed; use injected test credentials]) - 502 Bad Gateway
         ❌ GET /api/catalog/brands - 502 Bad Gateway
         ❌ GET /api/products?limit=20 - 502 Bad Gateway
         ❌ GET /api/quotations - 502 Bad Gateway
@@ -6805,7 +6805,7 @@ frontend:
             
             ❌ AUTHENTICATION SYSTEM COMPLETELY BROKEN:
             • Backend API works perfectly: POST /api/auth/login returns 200 OK with valid JWT token
-            • Frontend login form accepts credentials (owner@forge.app / Forge@2026)
+            • Frontend login form accepts credentials (owner@forge.app / [legacy password removed; use injected test credentials])
             • BUT: After clicking "Sign in", page stays stuck on /login indefinitely
             • No redirect to dashboard occurs
             • Token injection attempts also failed (tried localStorage, sessionStorage, IndexedDB)
@@ -6924,7 +6924,7 @@ backend:
             ✅ warnings: [] (empty, no red flags)
             
             TEST 5: Regression Smoke
-            ✅ Login successful with owner@forge.app / Forge@2026
+            ✅ Login successful with owner@forge.app / [legacy password removed; use injected test credentials]
             ✅ GET /api/brands: 5 brands (Hansgrohe, Axor, Grohe, Geberit, Vitra) — production data confirmed
             ✅ GET /api/categories: 26 categories
             ✅ GET /api/products?limit=20: total=2966, items=20 with valid production brand references
@@ -7464,7 +7464,7 @@ agent_communication:
         
         **Frontend Login UI:** ❌ COMPLETELY BROKEN
         • Login page loads correctly at /login
-        • Email/password fields accept credentials (owner@forge.app / Forge@2026)
+        • Email/password fields accept credentials (owner@forge.app / [legacy password removed; use injected test credentials])
         • "Sign in" button is VISIBLE but NOT CLICKABLE via Playwright
         • Tried 5 different selectors: button[data-testid="login-submit"], button[type="submit"],
           button:has-text("Sign in"), button >> text="Sign in", button (generic)
@@ -7672,7 +7672,7 @@ frontend:
             ❌ CRITICAL BLOCKER: Frontend authentication system completely broken
             
             ATTEMPTED VERIFICATION SCOPE (per user request):
-            1. Login as owner@forge.app / Forge@2026
+            1. Login as owner@forge.app / [legacy password removed; use injected test credentials]
             2. Navigate to Quotation Builder (/quotations/new)
             3. Verify Quotation and Place Order buttons visible and adjacent in topbar
             4. Verify buttons enabled when quotation has products
@@ -7942,7 +7942,7 @@ frontend:
           ❌ CRITICAL BUG: Infinite scroll completely non-functional - only 60 products accessible out of 2,966
           
           TESTED REQUIREMENTS:
-          ✅ Login with owner@forge.app / Forge@2026: SUCCESS
+          ✅ Login with owner@forge.app / [legacy password removed; use injected test credentials]: SUCCESS
           ✅ Navigate to /catalog: SUCCESS
           ✅ Switch to Variants mode: SUCCESS
           ✅ Count displays "2,966 products": SUCCESS
@@ -8015,7 +8015,7 @@ test_plan:
 agent_communication:
     - agent: "main"
       message: |
-        Production Sprint Objective 2 implementation is ready for verification. First confirm backend production connectivity and product API pagination remains 2,966 unique product IDs across skip/limit=60 pages with working search/brand/category filters. Then frontend verification must log in with owner@forge.app / Forge@2026, open /catalog, switch to Variants, scroll until the UI says Showing all 2,966 products, inspect that the final rendered product is reachable, and verify no duplicate product-card test IDs. Also check a search and one brand/category selection reset to the correct filtered first page and can reach their own end. Preserve all existing testing-protocol content.
+        Production Sprint Objective 2 implementation is ready for verification. First confirm backend production connectivity and product API pagination remains 2,966 unique product IDs across skip/limit=60 pages with working search/brand/category filters. Then frontend verification must log in with owner@forge.app / [legacy password removed; use injected test credentials], open /catalog, switch to Variants, scroll until the UI says Showing all 2,966 products, inspect that the final rendered product is reachable, and verify no duplicate product-card test IDs. Also check a search and one brand/category selection reset to the correct filtered first page and can reach their own end. Preserve all existing testing-protocol content.
 backend:
   - task: "Production Sprint Objective 2 — Backend catalog pagination contract verification"
     implemented: true
@@ -8033,7 +8033,7 @@ backend:
             ✅ ALL 6 TESTS PASSED (100% success rate)
             
             TEST 1: Authentication
-            ✅ Login successful with owner@forge.app / Forge@2026
+            ✅ Login successful with owner@forge.app / [legacy password removed; use injected test credentials]
             ✅ JWT token received and validated
             ✅ Role: owner
             
@@ -8190,7 +8190,7 @@ frontend:
           Attempted comprehensive testing of catalog infinite-scroll fix but encountered SHOWSTOPPER authentication issues that prevent ANY catalog testing.
           
           ❌ CRITICAL ISSUE 1: Login Flow Completely Broken
-          • Frontend login form accepts credentials (owner@forge.app / Forge@2026)
+          • Frontend login form accepts credentials (owner@forge.app / [legacy password removed; use injected test credentials])
           • Backend API works perfectly: curl POST /api/auth/login returns 200 OK with valid JWT
           • BUT frontend receives HTML response instead of JSON: "Unexpected token '<', "<!DOCTYPE "... is not valid JSON"
           • Error visible in UI: "Unexpected token '<', "<!DOCTYPE "... is not valid JSON"
@@ -8254,7 +8254,7 @@ test_plan:
 agent_communication:
     - agent: "main"
       message: |
-        Retest Catalog at 1920x800 after the web FlatList layout repair. Login owner@forge.app / Forge@2026, switch /catalog to Variants, assert page is genuinely scrollable, track network calls for skip=60 through skip=2940, reach `catalog-end-of-list` with exactly `Showing all 2,966 products`, and assert accumulated unique product IDs = 2966. Recheck q=basin and a >60-result brand filter append pages without duplicate IDs. No writes.
+        Retest Catalog at 1920x800 after the web FlatList layout repair. Login owner@forge.app / [legacy password removed; use injected test credentials], switch /catalog to Variants, assert page is genuinely scrollable, track network calls for skip=60 through skip=2940, reach `catalog-end-of-list` with exactly `Showing all 2,966 products`, and assert accumulated unique product IDs = 2966. Recheck q=basin and a >60-result brand filter append pages without duplicate IDs. No writes.
     - agent: "testing"
       message: |
         CRITICAL BLOCKER: Catalog Infinite-Scroll Test FAILED — Authentication System Broken (2026-07-12)
@@ -8264,7 +8264,7 @@ agent_communication:
         === CRITICAL ISSUES ===
         
         1. **Login Flow Completely Broken**
-           - Frontend login form submits owner@forge.app / Forge@2026
+           - Frontend login form submits owner@forge.app / [legacy password removed; use injected test credentials]
            - Backend API works: curl POST /api/auth/login → 200 OK with valid JWT
            - Frontend receives HTML instead of JSON: "Unexpected token '<', "<!DOCTYPE "... is not valid JSON"
            - User stuck on /login page, error message visible in UI
@@ -8352,7 +8352,7 @@ backend:
         comment: |
           ✅ PRODUCTION SPRINT OBJECTIVE 1 VERIFICATION COMPLETE — ALL TESTS PASSED (2026-07-12)
           
-          Authenticated as owner@forge.app / Forge@2026 and tested GET /api/quotations/{id}/pdf endpoint
+          Authenticated as owner@forge.app / [legacy password removed; use injected test credentials] and tested GET /api/quotations/{id}/pdf endpoint
           with existing quotations from the database. No quotations or database were mutated during testing.
           
           === CORE PDF GENERATION TESTS ===
@@ -8434,7 +8434,7 @@ agent_communication:
         ✅ PRODUCTION SPRINT OBJECTIVE 1 COMPLETE — ALL TESTS PASSED (2026-07-12)
         
         Executed comprehensive verification of GET /api/quotations/{id}/pdf endpoint per review request.
-        Authenticated as owner@forge.app / Forge@2026 and tested with existing quotations from database.
+        Authenticated as owner@forge.app / [legacy password removed; use injected test credentials] and tested with existing quotations from database.
         No mutations performed (read-only testing as requested).
         
         === TEST RESULTS SUMMARY ===
@@ -8514,7 +8514,7 @@ frontend:
           ✓ Preview URL accessible: https://buildcon-preview.preview.emergentagent.com
           ✓ Login page loads correctly at /login
           ✓ Login form renders with email/password fields
-          ✓ Credentials filled successfully: owner@forge.app / Forge@2026
+          ✓ Credentials filled successfully: owner@forge.app / [legacy password removed; use injected test credentials]
           ✗ "Sign in" button NOT accessible via Playwright automation
           
           ROOT CAUSE:
@@ -8565,7 +8565,7 @@ test_plan:
 agent_communication:
     - agent: "main"
       message: |
-        Perform one focused real-running-app Catalog verification only. Owner credentials are owner@forge.app / Forge@2026. Do not investigate authentication/proxy if login cannot complete; report it as browser-verification unavailable and stop. If it works, test Variants mode through product #2966, infinite requests, duplicates, search, brand/category filtering, images, and leaving/re-entering Catalog scroll restoration. Do not make writes.
+        Perform one focused real-running-app Catalog verification only. Owner credentials are owner@forge.app / [legacy password removed; use injected test credentials]. Do not investigate authentication/proxy if login cannot complete; report it as browser-verification unavailable and stop. If it works, test Variants mode through product #2966, infinite requests, duplicates, search, brand/category filtering, images, and leaving/re-entering Catalog scroll restoration. Do not make writes.
     - agent: "testing"
       message: |
         Browser Verification UNAVAILABLE (2026-07-12)
@@ -8626,7 +8626,7 @@ backend:
             Purchases Sprint Objective 4 Backend Verification COMPLETE (2026-07-12) — ALL TESTS PASSED
             
             Executed comprehensive READ-ONLY verification of Purchases API endpoints per review request.
-            Authenticated as owner@forge.app / Forge@2026. No mutations performed.
+            Authenticated as owner@forge.app / [legacy password removed; use injected test credentials]. No mutations performed.
             
             ✅ TEST 1 - GET /purchases/items?view=today: PASS
             • Returned 46 items
@@ -8746,7 +8746,7 @@ backend:
             Customer Portal Backend Endpoint Testing COMPLETE (2026-08) — ALL TESTS PASSED (5/5)
             
             Comprehensive verification of NEW/CHANGED customer-scoped quotation endpoints per review request.
-            Authenticated as customer@forge.app / Forge@2026 (customer portal) and owner@forge.app / Forge@2026 (staff).
+            Authenticated as customer@forge.app / [legacy password removed; use injected test credentials] (customer portal) and owner@forge.app / [legacy password removed; use injected test credentials] (staff).
             Base URL: https://buildcon-preview.preview.emergentagent.com/api
             
             ═══════════════════════════════════════════════════════════════════════════
@@ -8988,8 +8988,8 @@ agent_communication:
         
         === AUTHENTICATION ===
         
-        ✅ Customer login: customer@forge.app / Forge@2026 via POST /api/auth/customer/login
-        ✅ Staff login: owner@forge.app / Forge@2026 via POST /api/auth/login
+        ✅ Customer login: customer@forge.app / [legacy password removed; use injected test credentials] via POST /api/auth/customer/login
+        ✅ Staff login: owner@forge.app / [legacy password removed; use injected test credentials] via POST /api/auth/login
         
         === CONCLUSION ===
         
@@ -9004,7 +9004,7 @@ agent_communication:
         
         Executed comprehensive READ-ONLY backend verification per review request:
         "Regression-test Purchases Sprint Objective 4 against the accepted existing backend only;
-        do not mutate/create test records. Authenticate as owner@forge.app / Forge@2026."
+        do not mutate/create test records. Authenticate as owner@forge.app / [legacy password removed; use injected test credentials]."
         
         === KEY RESULTS ===
         
@@ -9131,7 +9131,7 @@ agent_communication:
            supabase.connected=true, counts.products=2966) and that the error fields are still null
            in the healthy case (sanitization only changes the shape when an error string exists).
 
-        Credentials: owner@forge.app / Forge@2026 (staff, role=owner) — see
+        Credentials: owner@forge.app / [legacy password removed; use injected test credentials] (staff, role=owner) — see
         /app/memory/test_credentials.md. Please do NOT mutate/delete real catalog or quotation
         data beyond what's needed for the 4 hardening checks above (upload/import tests can use
         small throwaway test files).
@@ -9237,8 +9237,8 @@ agent_communication:
         until remaining functional modules are complete — do NOT start it without new
         instruction. Component Consistency Matrix + orphan-component list delivered at
         /app/memory/design_system_inventory.md for a future cleanup sprint (not this one).
-        Credentials unchanged: owner@forge.app / Forge@2026 (staff), customer@forge.app /
-        Forge@2026 (customer portal) — also now recorded in /app/memory/test_credentials.md.
+        Credentials unchanged: owner@forge.app / [legacy password removed; use injected test credentials] (staff), customer@forge.app /
+        [legacy password removed; use injected test credentials] (customer portal) — also now recorded in /app/memory/test_credentials.md.
 
 backend:
   - task: "Phase 5 — Customer Portal backend: quotation detail, revision PDF, brand-wise PDF endpoints"
@@ -9371,7 +9371,7 @@ agent_communication:
         Phase 5 (minimal Customer Portal) + Reports removal delivered and backend-tested
         (5/5 passed). Found and fixed a real route-collision bug (customer quotation detail
         page crashed on browser refresh) before handing off — details in status_history above.
-        customer@forge.app / Forge@2026 remains the test customer account; test_credentials.md
+        customer@forge.app / [legacy password removed; use injected test credentials] remains the test customer account; test_credentials.md
         already has this. Awaiting user go-ahead on (a) frontend testing agent for this batch,
         and (b) starting the Settings phase next (every section functional, no placeholders) —
         this is a large enough scope that I want to confirm before diving in.
@@ -9393,7 +9393,7 @@ agent_communication:
         7. Regression check ✅ (health + PDF generation still working)
         
         KEY VERIFICATIONS:
-        • Password change: Old password invalidated, new password works, reverted to Forge@2026
+        • Password change: Old password invalidated, new password works, reverted to [legacy password removed; use injected test credentials]
         • Company/PDF settings: Defaults match spec, updates work, reverted to defaults
         • Catalog backup: Returns 2966 products with correct structure
         • Excel export: Valid .xlsx file with reasonable size
@@ -9435,7 +9435,7 @@ backend:
             /api/health/system: mongo connected (Atlas, not local), supabase connected, healthy=true,
             counts products=2966/customers=9/quotations=62/purchase_orders=37/payments=21/
             followups=101/users=9 — real production data intact, zero data loss. Verified owner
-            login (owner@forge.app/Forge@2026) via curl.
+            login (owner@forge.app/[legacy password removed; use injected test credentials]) via curl.
 
             FEATURE: "Final Administration capability" per user's explicit spec — Team Management
             (Settings > Team, admin-only) + Customer Portal account management, with NO hardcoded
@@ -9626,7 +9626,7 @@ backend:
             ✅ 4.6 GET /api/payments/stats with auth returns 200
             ✅ 4.5 GET /api/followups/stats without auth returns 401 (correct)
             ✅ 4.6 GET /api/followups/stats with auth returns 200
-            ✅ 4.7 Owner login still works (owner@forge.app / Forge@2026)
+            ✅ 4.7 Owner login still works (owner@forge.app / [legacy password removed; use injected test credentials])
             ✅ 4.8 Owner account has no must_change_password flag (correct for existing account)
             
             ═══════════════════════════════════════════════════════════════════════════
@@ -10231,7 +10231,7 @@ backend:
             TEST 1: AUTHENTICATION ✅ PASS
             ═══════════════════════════════════════════════════════════════════════════
             
-            ✅ POST /api/auth/login with owner@forge.app / Forge@2026: 200 OK
+            ✅ POST /api/auth/login with owner@forge.app / [legacy password removed; use injected test credentials]: 200 OK
             ✅ Valid JWT token received
             ✅ User: owner@forge.app, Role: owner
             
@@ -10511,7 +10511,7 @@ backend:
             ═══════════════════════════════════════════════════════════════════════════
             TEST 1: AUTHENTICATION ✅ PASS (1/1)
             ═══════════════════════════════════════════════════════════════════════════
-            ✅ POST /api/auth/login with owner@forge.app / Forge@2026 → 200 OK
+            ✅ POST /api/auth/login with owner@forge.app / [legacy password removed; use injected test credentials] → 200 OK
             • Valid JWT token received
             • User: owner@forge.app, Role: owner
             
@@ -10738,7 +10738,7 @@ backend:
             ═══════════════════════════════════════════════════════════════════════════
             TEST 1: AUTHENTICATION ✅ PASS (3/3)
             ═══════════════════════════════════════════════════════════════════════════
-            ✅ POST /api/auth/login owner@forge.app/Forge@2026 → 200 OK
+            ✅ POST /api/auth/login owner@forge.app/[legacy password removed; use injected test credentials] → 200 OK
             ✅ Valid JWT token received (297 chars)
             ✅ User: owner@forge.app, Role: owner
             
@@ -11097,7 +11097,7 @@ agent_communication:
             TEST 1: AUTHENTICATION ✅ PASS
             ═══════════════════════════════════════════════════════════════════════════
             
-            ✅ POST /api/auth/login with owner@forge.app / Forge@2026: 200 OK
+            ✅ POST /api/auth/login with owner@forge.app / [legacy password removed; use injected test credentials]: 200 OK
             ✅ User: Aarav Kapoor (owner@forge.app), Role: owner
             ✅ Valid JWT token received
             
@@ -11453,7 +11453,7 @@ agent_communication:
             TEST 1: AUTHENTICATION ✅ PASS
             ═══════════════════════════════════════════════════════════════════════════
             
-            ✅ POST /api/auth/login owner@forge.app/Forge@2026: 200 OK
+            ✅ POST /api/auth/login owner@forge.app/[legacy password removed; use injected test credentials]: 200 OK
             • User: Aarav Kapoor (owner@forge.app), Role: owner
             • Valid JWT token received
             
@@ -11615,7 +11615,7 @@ agent_communication:
           comment: |
             Quotation Builder Cross-Viewport Testing COMPLETED (2026-07-14)
             Tested at 3 viewports: PHONE (390x844), TABLET (810x1080), DESKTOP (1440x900)
-            Login: owner@forge.app / Forge@2026
+            Login: owner@forge.app / [legacy password removed; use injected test credentials]
         
         - working: true
           agent: "testing"
@@ -12560,7 +12560,7 @@ frontend:
             TEST RESULTS
             ═══════════════════════════════════════════════════════════════════════════
             
-            ✅ STEP 1: Login successful (owner@forge.app / Forge@2026)
+            ✅ STEP 1: Login successful (owner@forge.app / [legacy password removed; use injected test credentials])
             ✅ STEP 2: Navigated to /catalog page
             ✅ STEP 3: Opened product detail page (1-Handle Bath/Shower Mixer, Concealed Body)
             ✅ STEP 4: Clicked edit icon (testID="manage-images-btn"), drawer opened
@@ -12891,7 +12891,7 @@ backend:
             must_change_password=false and a permanent password hash (via the app's
             own auth.hash_password, verified with auth.verify_password) directly on
             that customer record. Verified end-to-end via
-            POST /api/auth/customer/login with customer@forge.app / Forge@2026 -> 200
+            POST /api/auth/customer/login with customer@forge.app / [legacy password removed; use injected test credentials] -> 200
             with a valid access_token. Credentials recorded in
             /app/memory/test_credentials.md. Please test the FULL customer portal login
             flow through the UI (not just the API) with these credentials, and confirm
@@ -12985,7 +12985,7 @@ agent_communication:
         complete. Please run backend testing focused on: payment overpayment
         rejection, place-order unit_cost reflecting room/category/project discounts
         (not just per-line discount_pct), the customer portal demo login
-        (customer@forge.app / Forge@2026), and that new Payment/Order/Follow-up
+        (customer@forge.app / [legacy password removed; use injected test credentials]), and that new Payment/Order/Follow-up
         events actually produce rows in GET /api/notifications. Also please verify
         no regressions in the standard quotation/PDF/payment/purchase-order flows
         since services/pricing.py was extracted out of quotation_routes.py (pure
@@ -13088,7 +13088,7 @@ agent_communication:
             ✅ Login Successful:
                • POST /api/auth/customer/login: 200 OK
                • Email: customer@forge.app
-               • Password: Forge@2026
+               • Password: [legacy password removed; use injected test credentials]
                • Customer: Rajesh Malhotra (Malhotra Interiors)
                • must_change_password: false ✓
             
@@ -13134,7 +13134,7 @@ agent_communication:
             • Payment overpayment validation: WORKING (400 on overpayment, 200 on valid payment)
             • Discount preservation: WORKING (PO unit_cost reflects project/room/category discounts)
             • Notification generation: WORKING (payment notifications created correctly)
-            • Customer portal login: WORKING (customer@forge.app / Forge@2026 works, portal_enabled=true)
+            • Customer portal login: WORKING (customer@forge.app / [legacy password removed; use injected test credentials] works, portal_enabled=true)
             • Regression check: PASSED (all GET endpoints, PDF generation working)
             • Data cleanup: VERIFIED (4 customers, no test junk, correct counts)
             
@@ -13204,7 +13204,7 @@ agent_communication:
             must_change_password=false and a permanent password hash (via the app's
             own auth.hash_password, verified with auth.verify_password) directly on
             that customer record. Verified end-to-end via
-            POST /api/auth/customer/login with customer@forge.app / Forge@2026 -> 200
+            POST /api/auth/customer/login with customer@forge.app / [legacy password removed; use injected test credentials] -> 200
             with a valid access_token. Credentials recorded in
             /app/memory/test_credentials.md. Please test the FULL customer portal login
             flow through the UI (not just the API) with these credentials, and confirm
@@ -13212,7 +13212,7 @@ agent_communication:
             account.
         - working: true
           agent: "testing"
-          comment: "Customer portal demo login verified working. customer@forge.app / Forge@2026 login successful, portal endpoints accessible, must_change_password=false. See Sprint 1 comprehensive test results above."
+          comment: "Customer portal demo login verified working. customer@forge.app / [legacy password removed; use injected test credentials] login successful, portal endpoints accessible, must_change_password=false. See Sprint 1 comprehensive test results above."
 
   - task: "Sprint 1/3 — Data quality: removed test/QA pollution from buildcon_house"
     implemented: true
@@ -13276,7 +13276,7 @@ agent_communication:
             • Multiple API endpoints returning 401: /api/brands, /api/customers, /api/categories
             • Browser URL remains at /login after successful API response (no navigation occurs)
             • No navigation to dashboard or quotation builder occurs
-            • "Use demo account" link successfully fills credentials (owner@forge.app / Forge@2026)
+            • "Use demo account" link successfully fills credentials (owner@forge.app / [legacy password removed; use injected test credentials])
             • Sign in button click executes (via JavaScript) but login flow does not complete
             
             ATTEMPTED SOLUTIONS:
@@ -13320,7 +13320,7 @@ agent_communication:
             • CANNOT access any authenticated routes in the application
             • This is a PRODUCTION-BLOCKING issue for App Store submission (reviewers cannot log in)
             
-            NOTE: Customer portal login (customer@forge.app / Forge@2026) was verified working
+            NOTE: Customer portal login (customer@forge.app / [legacy password removed; use injected test credentials]) was verified working
             in Sprint 1 testing via direct API calls. This issue is specific to STAFF login via
             the web UI, suggesting the problem is in the frontend auth flow, not the backend API.
             
@@ -13509,7 +13509,7 @@ agent_communication:
         complete. Please run backend testing focused on: payment overpayment
         rejection, place-order unit_cost reflecting room/category/project discounts
         (not just per-line discount_pct), the customer portal demo login
-        (customer@forge.app / Forge@2026), and that new Payment/Order/Follow-up
+        (customer@forge.app / [legacy password removed; use injected test credentials]), and that new Payment/Order/Follow-up
         events actually produce rows in GET /api/notifications. Also please verify
         no regressions in the standard quotation/PDF/payment/purchase-order flows
         since services/pricing.py was extracted out of quotation_routes.py (pure
@@ -13541,7 +13541,7 @@ agent_communication:
            • Notifications.py service properly wired into payment_routes.py
         
         ✅ TEST 4: Customer Portal Demo Login (3/3 checks)
-           • customer@forge.app / Forge@2026 login successful (200 OK)
+           • customer@forge.app / [legacy password removed; use injected test credentials] login successful (200 OK)
            • must_change_password=false (correct)
            • Portal endpoints accessible (16 quotations retrieved)
         
@@ -13574,7 +13574,7 @@ agent_communication:
         However, discovered a PRODUCTION-BLOCKING authentication issue that prevents access to
         the quotation builder and all authenticated routes:
         
-        🔴 CRITICAL ISSUE: Staff login (owner@forge.app / Forge@2026) fails to persist JWT token
+        🔴 CRITICAL ISSUE: Staff login (owner@forge.app / [legacy password removed; use injected test credentials]) fails to persist JWT token
         
         EVIDENCE:
         • Login API succeeds: POST /api/auth/login HTTP/1.1" 200 OK (backend working)
@@ -13669,7 +13669,7 @@ agent_communication:
         per the review request.
         
         BACKEND AUTHENTICATION VERIFICATION (PASSED):
-        ✅ POST /api/auth/login with owner@forge.app / Forge@2026: 200 OK
+        ✅ POST /api/auth/login with owner@forge.app / [legacy password removed; use injected test credentials]: 200 OK
         ✅ Valid JWT token received and can access protected endpoints
         ✅ GET /api/brands with token: 200 OK (5 brands)
         ✅ GET /api/products with token: 200 OK (2601 products)
@@ -13719,7 +13719,7 @@ agent_communication:
         
         OPTION 1: Main agent performs manual testing
         • Open https://buildcon-preview.preview.emergentagent.com in browser
-        • Login with owner@forge.app / Forge@2026
+        • Login with owner@forge.app / [legacy password removed; use injected test credentials]
         • Navigate to /(admin)/quotations/new
         • Manually verify the 11 checkpoints (a-k) at each of the 6 breakpoints
         
@@ -13978,7 +13978,7 @@ frontend:
             by the user — corrected automatically, consistent with this project's documented
             history of this exact mistake). Reinstalled backend requirements. GET
             /api/health/system -> healthy=true, Atlas connected, Supabase connected. Regenerated
-            JWT_SECRET (invalidates old sessions only). Login verified (owner@forge.app/Forge@2026).
+            JWT_SECRET (invalidates old sessions only). Login verified (owner@forge.app/[legacy password removed; use injected test credentials]).
 
             User approved a 5-sprint roadmap (cross-device/mobile UX audit highest priority ->
             catalog quality -> UI consistency -> store readiness), explicitly scoped THIS session
@@ -15618,7 +15618,7 @@ agent_communication:
       Supabase Storage: 0 products leaked into first-floor (Sanitary Bathroom),
       0 duplicate SKUs, integrity_guard reports ok=true, sample image returns
       HTTP 200 from Supabase. Please verify at the API layer (authenticated,
-      using owner@forge.app / Forge@2026 from memory/test_credentials.md):
+      using owner@forge.app / [legacy password removed; use injected test credentials] from memory/test_credentials.md):
       1) GET /api/products?brand_id=<Nexion> and /api/catalog/search?q=... find
          Nexion products by name, sku, size, and finish, scoped correctly to
          ground-floor for a ground-floor-scoped user.
@@ -15717,7 +15717,7 @@ frontend:
             Tiles Selection & Quotation Mobile Editor Verification COMPLETE (2026-08-03)
             
             Comprehensive multi-viewport testing via Playwright automation.
-            Login: owner@forge.app / Forge@2026
+            Login: owner@forge.app / [legacy password removed; use injected test credentials]
             ALL TESTS PASSED (100% success rate, 0 regressions, 0 console errors).
             
             ═══════════════════════════════════════════════════════════════════════════
@@ -15892,7 +15892,7 @@ agent_communication:
       2. Phone (375px, 390px, 430px): Confirm new mobile editor renders with NO overflow,
          all fields present, product picker works, customer autocomplete works
       
-      Login: owner@forge.app / Forge@2026 (see /app/memory/test_credentials.md)
+      Login: owner@forge.app / [legacy password removed; use injected test credentials] (see /app/memory/test_credentials.md)
       Routes: /(admin)/tiles/selection and /(admin)/tiles/quotation
   - agent: "testing"
     message: |
@@ -15929,7 +15929,7 @@ backend:
             Environment Restore Smoke Test COMPLETE (2026-08-04)
             
             Basic smoke test performed after environment (.env) restore to verify app functionality.
-            Login credentials: owner@forge.app / Forge@2026 (from /app/memory/test_credentials.md)
+            Login credentials: owner@forge.app / [legacy password removed; use injected test credentials] (from /app/memory/test_credentials.md)
             ALL CHECKS PASSED (100% success rate).
             
             ═══════════════════════════════════════════════════════════════════════════
@@ -15958,7 +15958,7 @@ backend:
             ═══════════════════════════════════════════════════════════════════════════
             
             ✅ Email field accepts input: owner@forge.app
-            ✅ Password field accepts input: Forge@2026
+            ✅ Password field accepts input: [legacy password removed; use injected test credentials]
             ✅ Sign In button clickable
             ✅ Login successful (no error messages)
             ✅ Redirected to dashboard: /dashboard
@@ -16041,7 +16041,7 @@ agent_communication:
         
         Verified after .env restore:
         ✅ Login page renders correctly (logo, fields, button, hero image)
-        ✅ Login flow works (owner@forge.app / Forge@2026)
+        ✅ Login flow works (owner@forge.app / [legacy password removed; use injected test credentials])
         ✅ Dashboard renders correctly (nav, KPIs, follow-ups, business metrics)
         ✅ No blank/white screens
         ✅ No error messages
@@ -16091,7 +16091,7 @@ agent_communication:
         and GET /api/catalog/facets still work correctly on both floors;
         (4) general smoke of quotations/customers/payments endpoints to
         confirm no regression from the adapter registry change. Credentials
-        in /app/memory/test_credentials.md (owner@forge.app / Forge@2026).
+        in /app/memory/test_credentials.md (owner@forge.app / [legacy password removed; use injected test credentials]).
     - agent: "testing"
       message: |
         MODULO catalog import backend testing COMPLETE (2026-08-04).

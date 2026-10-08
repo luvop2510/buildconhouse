@@ -3,6 +3,7 @@
 Backend Smoke Test - Phase 1 UI Polish Backend Health Check
 Tests the specific endpoints needed by Quotation Builder
 """
+import os
 
 import requests
 import json
@@ -28,18 +29,18 @@ def test_health():
         return False
 
 def test_auth_login():
-    """Test auth login with owner@forge.app / Forge@2026"""
+    """Test auth login with owner@forge.app / [legacy credential removed]"""
     print("\n=== Testing POST /api/auth/login ===")
     try:
         response = requests.post(
             f"{BASE_URL}/api/auth/login",
-            json={"email": "owner@forge.app", "password": "Forge@2026"},
+            json={"email": "owner@forge.app", "password": os.environ["FORGE_TEST_OWNER_PASSWORD"]},
             timeout=10
         )
         print(f"Status: {response.status_code}")
         if response.status_code == 200:
             data = response.json()
-            print(f"Response: {json.dumps(data, indent=2)[:300]}")
+            print("Login successful (credential response omitted)")
             return data.get("access_token")
         else:
             print(f"Response: {response.text[:200]}")

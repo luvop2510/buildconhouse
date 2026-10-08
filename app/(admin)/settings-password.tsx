@@ -20,7 +20,7 @@ export default function SettingsPassword() {
 
   const submit = async () => {
     setError(null);
-    if (next.length < 8) { setError("New password must be at least 8 characters"); return; }
+    if (next.length < 12) { setError("New password must be at least 12 characters"); return; }
     if (next !== confirm) { setError("Passwords don't match"); return; }
     setSaving(true);
     try {
@@ -39,7 +39,7 @@ export default function SettingsPassword() {
       <View style={{ gap: spacing.lg }}>
         <Card style={{ gap: spacing.md }}>
           <TextField testID="current-password-input" label="Current password" value={current} onChangeText={setCurrent} secureTextEntry placeholder="••••••••" autoCapitalize="none" />
-          <TextField testID="new-password-input" label="New password" value={next} onChangeText={setNext} secureTextEntry placeholder="At least 8 characters" autoCapitalize="none" />
+          <TextField testID="new-password-input" label="New password" value={next} onChangeText={setNext} secureTextEntry placeholder="At least 12 characters" autoCapitalize="none" />
           <TextField testID="confirm-password-input" label="Confirm new password" value={confirm} onChangeText={setConfirm} secureTextEntry placeholder="Re-enter new password" autoCapitalize="none" error={error} />
           <Button testID="save-password-btn" label="Update password" icon="lock" loading={saving} onPress={submit} fullWidth />
         </Card>

@@ -13,6 +13,8 @@ from fastapi import Depends, Header, HTTPException, Query, Request
 from db import db
 from models import Role, UserPublic, CustomerPublic
 from settings import settings
+from access_profiles import profile_allows_request
+from services.access_grants import action_for_api_request, granted_floor_ids, grants_for_user, is_common_access_request
 
 JWT_SECRET = settings.jwt_secret
 JWT_ALG = settings.jwt_algorithm
@@ -126,8 +128,9 @@ async def _load_active_principal(payload: dict, *, kind: str, collection: str) -
         "revoked": {"$ne": True},
     }
     session_doc, principal = await asyncio.gather(
-        db.user_sessions.find_one(session_filter, {"_id": 0, "id": 1}),
-        db[collection].find_one({"id": subject}, {"_id": 0, "password_hash": 0}),
+        db.user_sessions.find_one(session_filter, {"_id": 0, "id": 1, "mfa_verified": 1, "mfa_version": 1}),
+        db[collection].find_one({"id": subject}, {"_id": 0, "password_hash": 0,
+            "mfa_secret_encrypted": 0, "mfa_pending": 0, "mfa_recovery_hashes": 0}),
     )
     if not session_doc:
         raise HTTPException(status_code=401, detail="Session expired or was signed out. Please sign in again.")
@@ -141,6 +144,11 @@ async def _load_active_principal(payload: dict, *, kind: str, collection: str) -
         raise HTTPException(status_code=401, detail=(
             "User not found or inactive" if kind == "staff" else "Customer not found"
         ))
+    if kind == "staff" and principal.get("mfa_enabled") and (
+        session_doc.get("mfa_verified") is not True
+        or session_doc.get("mfa_version") != principal.get("mfa_version", 0)
+    ):
+        raise HTTPException(status_code=401, detail="Second-factor verification is required. Please sign in again.")
     _cache_principal(kind, subject, session_id, principal)
     return principal
 
@@ -157,6 +165,35 @@ def _enforce_password_change(principal: dict, request: Request | None, *, kind: 
     }
     if path not in allowed:
         raise HTTPException(status_code=403, detail="password_change_required")
+
+
+async def authorize_staff_request(user: UserPublic, request: Request | None) -> UserPublic:
+    """Bind current profile/grants to every staff authentication path.
+
+    Request-local floor constraints are private model metadata: response and
+    persisted user fields retain the account's normal assignments.
+    """
+    if request is None:
+        if user.custom_access:
+            raise HTTPException(status_code=403, detail="Custom access requires request context")
+        return user
+    path = request.url.path
+    if not profile_allows_request(user.access_profile, request.method, path):
+        raise HTTPException(status_code=403, detail="This account is not permitted to use this function")
+    if user.custom_access and not is_common_access_request(request.method, path):
+        action = action_for_api_request(request.method, path, request.query_params)
+        cached_grants = getattr(request.state, "staff_access_grants", None)
+        if cached_grants and cached_grants[0] == user.id:
+            grants = cached_grants[1]
+        else:
+            grants = await grants_for_user(db, user.id)
+            request.state.staff_access_grants = (user.id, grants)
+        floors = granted_floor_ids(grants, user_id=user.id, path=path, action=action) if action else []
+        object.__setattr__(user, "_custom_grant_floor_ids", floors)
+        permitted = accessible_floor_ids(user)
+        if permitted == [] or (user.active_floor_id and permitted is not None and user.active_floor_id not in permitted):
+            raise HTTPException(status_code=403, detail="This account is not permitted to use this function")
+    return user
 
 
 def _device_label(user_agent: Optional[str]) -> str:
@@ -243,6 +280,7 @@ async def get_current_user(
             {"sub": record["user_id"], "session_id": record.get("session_id")},
             kind="staff", collection="users",
         )
+        _enforce_password_change(doc, request, kind="staff")
         user = apply_effective_floor_ids(UserPublic(**doc))
         # The header wins when present (it can be, for a fetch()-based
         # download); otherwise replay the floor recorded at mint time so the
@@ -253,7 +291,8 @@ async def get_current_user(
             if allowed is not None and effective_floor not in allowed:
                 raise HTTPException(status_code=403, detail="You do not have access to this floor")
             user.active_floor_id = effective_floor
-        return user
+        user.session_id = record.get("session_id")
+        return await authorize_staff_request(user, request)
     if not token:
         raise HTTPException(status_code=401, detail="Missing bearer token")
     payload = decode_token(token)
@@ -268,7 +307,7 @@ async def get_current_user(
         if allowed is not None and x_floor_id not in allowed:
             raise HTTPException(status_code=403, detail="You do not have access to this floor")
         user.active_floor_id = x_floor_id
-    return user
+    return await authorize_staff_request(user, request)
 
 
 async def get_current_customer(
@@ -287,12 +326,16 @@ async def get_current_customer(
             {"sub": record["user_id"], "session_id": record.get("session_id")},
             kind="customer", collection="customers",
         )
+        if not doc.get("portal_enabled"):
+            raise HTTPException(status_code=403, detail="Portal access is disabled")
         _enforce_password_change(doc, request, kind="customer")
         return CustomerPublic(**doc)
     payload = decode_token(_extract_token(authorization))
     if payload.get("kind") != "customer":
         raise HTTPException(status_code=403, detail="Not a customer token")
     doc = await _load_active_principal(payload, kind="customer", collection="customers")
+    if not doc.get("portal_enabled"):
+        raise HTTPException(status_code=403, detail="Portal access is disabled")
     _enforce_password_change(doc, request, kind="customer")
     return CustomerPublic(**doc)
 
@@ -451,12 +494,17 @@ def accessible_floor_ids(user: UserPublic) -> list[str] | None:
     profile = getattr(user, "access_profile", None)
     profile_floors = profile_floor_ids(profile)
     if profile_floors is not None:
-        return profile_floors
+        allowed = profile_floors
     # A malformed legacy profile is fail-closed, rather than becoming a
     # normal staff account through an accidental typo or partial migration.
-    if profile is not None:
-        return []
-    return None if has_all_floor_access(user) else list(user.floor_ids or [])
+    elif profile is not None:
+        allowed = []
+    else:
+        allowed = None if has_all_floor_access(user) else list(user.floor_ids or [])
+    granted = getattr(user, "_custom_grant_floor_ids", None)
+    if granted is not None:
+        return list(granted) if allowed is None else [floor for floor in allowed if floor in granted]
+    return allowed
 
 
 def _resolve_floor_scope(user: UserPublic) -> list[str]:

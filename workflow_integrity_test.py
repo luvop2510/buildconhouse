@@ -4,6 +4,7 @@ Tests for purchases_tracker.py transfer workflow, shortage tracking, and followu
 
 Focus: POST /api/purchases/items/{item_id}/transfer and related shortage/followup endpoints
 """
+import os
 
 import requests
 import json
@@ -14,7 +15,7 @@ BASE_URL = "https://buildcon-preview.preview.emergentagent.com/api"
 
 # Test credentials
 OWNER_EMAIL = "owner@forge.app"
-OWNER_PASSWORD = "Forge@2026"
+OWNER_PASSWORD = os.environ["FORGE_TEST_OWNER_PASSWORD"]
 
 # Global state
 token: Optional[str] = None

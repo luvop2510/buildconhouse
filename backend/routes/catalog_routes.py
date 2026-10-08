@@ -1,4 +1,6 @@
 """Product / Brand / Category endpoints + AI-assisted catalog import stub."""
+
+from services.export import spreadsheet_cell
 import asyncio
 from datetime import datetime, timezone
 from typing import Optional
@@ -675,21 +677,21 @@ async def export_catalog_xlsx(user: UserPublic = Depends(require_min_role("manag
     headers = ["SKU", "Name", "Brand", "Category", "Series", "Finish", "MRP", "Trade Price", "Stock", "Warranty"]
     header_fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
     for col, h in enumerate(headers, start=1):
-        cell = ws.cell(row=4, column=col, value=h)
+        cell = ws.cell(row=4, column=col, value=spreadsheet_cell(h))
         cell.font = Font(bold=True, color="374151", size=11)
         cell.fill = header_fill
 
     for i, p in enumerate(products, start=5):
-        ws.cell(row=i, column=1, value=p.get("sku"))
-        ws.cell(row=i, column=2, value=p.get("name"))
-        ws.cell(row=i, column=3, value=brands.get(p.get("brand_id"), ""))
-        ws.cell(row=i, column=4, value=categories.get(p.get("category_id"), ""))
-        ws.cell(row=i, column=5, value=p.get("series"))
-        ws.cell(row=i, column=6, value=p.get("finish"))
-        ws.cell(row=i, column=7, value=p.get("mrp"))
-        ws.cell(row=i, column=8, value=p.get("price"))
-        ws.cell(row=i, column=9, value=p.get("stock"))
-        ws.cell(row=i, column=10, value=p.get("warranty"))
+        ws.cell(row=i, column=1, value=spreadsheet_cell(p.get("sku")))
+        ws.cell(row=i, column=2, value=spreadsheet_cell(p.get("name")))
+        ws.cell(row=i, column=3, value=spreadsheet_cell(brands.get(p.get("brand_id"), "")))
+        ws.cell(row=i, column=4, value=spreadsheet_cell(categories.get(p.get("category_id"), "")))
+        ws.cell(row=i, column=5, value=spreadsheet_cell(p.get("series")))
+        ws.cell(row=i, column=6, value=spreadsheet_cell(p.get("finish")))
+        ws.cell(row=i, column=7, value=spreadsheet_cell(p.get("mrp")))
+        ws.cell(row=i, column=8, value=spreadsheet_cell(p.get("price")))
+        ws.cell(row=i, column=9, value=spreadsheet_cell(p.get("stock")))
+        ws.cell(row=i, column=10, value=spreadsheet_cell(p.get("warranty")))
 
     widths = [16, 40, 16, 18, 16, 16, 10, 12, 8, 16]
     for i, w in enumerate(widths, start=1):

@@ -29,7 +29,7 @@ API_BASE = f"{BASE_URL}/api"
 
 # Test credentials
 TEST_EMAIL = "owner@forge.app"
-TEST_PASSWORD = "Forge@2026"
+TEST_PASSWORD = os.environ["FORGE_TEST_OWNER_PASSWORD"]
 
 class TestResult:
     def __init__(self):
@@ -76,7 +76,7 @@ def login() -> str:
         print(f"❌ Login failed: {resp.status_code} {resp.text}")
         sys.exit(1)
     token = resp.json().get("access_token")
-    print(f"✅ Login successful, token: {token[:20]}...")
+    print("✅ Login successful (credential response omitted)")
     return token
 
 def headers(token: str) -> dict:

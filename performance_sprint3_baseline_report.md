@@ -32,7 +32,7 @@
 
 ### Test Credentials
 - **Email:** owner@forge.app
-- **Password:** Forge@2026
+- **Password:** [legacy password removed; use injected test credentials]
 - **Backend API:** ✅ Working (returns valid JWT)
 - **Frontend Login:** ❌ Broken (form submission fails, token injection fails)
 

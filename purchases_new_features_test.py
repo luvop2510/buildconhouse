@@ -7,7 +7,7 @@ Tests ONLY the newly added/changed Purchases endpoints as per review request:
 3. SUPPLIER PASSTHROUGH + product_id FILTER — GET /api/purchases/items with supplier fields and product_id filter
 4. TRANSFER TO EXISTING CUSTOMER — POST /api/purchases/items/{item_id}/transfer
 
-Test credentials: owner@forge.app / Forge@2026
+Test credentials: owner@forge.app / [legacy credential removed]
 Backend URL: Uses REACT_APP_BACKEND_URL from frontend/.env (empty = same-origin)
 """
 import os
@@ -41,7 +41,7 @@ API_BASE = f"{BASE_URL}/api"
 
 # Test credentials from /app/memory/test_credentials.md
 TEST_EMAIL = "owner@forge.app"
-TEST_PASSWORD = "Forge@2026"
+TEST_PASSWORD = os.environ["FORGE_TEST_OWNER_PASSWORD"]
 
 class TestResult:
     def __init__(self):

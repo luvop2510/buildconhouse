@@ -102,7 +102,7 @@ Run: `cd backend && FORGE_PROBE_PASSWORD='…' ./.venv/bin/python -m scripts.pro
 ## Risks and known limitations
 
 **Open release blockers (unchanged, owner-deferred):**
-- `owner@forge.app` still accepts the git-tracked demo password `Forge@2026`; `/api/health` reports `degraded`. Hard blocker for any real-customer deployment. QA currently depends on it.
+- `owner@forge.app` still accepts the git-tracked demo password `[legacy password removed; use injected test credentials]`; `/api/health` reports `degraded`. Hard blocker for any real-customer deployment. QA currently depends on it.
 - The live database contains test fixtures — all 6 Ground Floor tile orders (`Task18`/`Task19`/`TEST_LC4_*`), 7 more on Sanitary, 118 synthetic activity events referencing ids that resolve to nothing, and a `ZZTEST TILES E2E` follow-up ranked #1 on the Ground Floor dashboard. No delete endpoints exist for these collections.
 
 **Accepted, logged, not fixed:**

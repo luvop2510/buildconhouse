@@ -5,6 +5,7 @@ from typing import Any, Literal, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from services.password_policy import validate_new_password
 
 
 Role = Literal[
@@ -66,10 +67,14 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    password: str
+    password: str = Field(min_length=12, max_length=72)
+
+    _password_policy = field_validator("password")(validate_new_password)
 
 
 class UserPublic(UserBase, TimestampedModel):
+    mfa_enabled: bool = False
+    mfa_version: int = 0
     # Set when Team > Reset Password issues a temporary password — the staff
     # member must set their own password before using the app further.
     must_change_password: bool = False
@@ -89,6 +94,14 @@ class UserInDB(UserPublic):
 class LoginPayload(BaseModel):
     email: EmailStr
     password: str
+    mfa_code: Optional[str] = Field(default=None, max_length=6)
+    recovery_code: Optional[str] = Field(default=None, max_length=40)
+
+
+class MFAProofPayload(BaseModel):
+    current_password: str = Field(min_length=1, max_length=1024)
+    mfa_code: Optional[str] = Field(default=None, max_length=6)
+    recovery_code: Optional[str] = Field(default=None, max_length=40)
 
 
 class TokenResponse(BaseModel):
@@ -143,6 +156,11 @@ class CustomerBase(BaseModel):
 
 class CustomerCreate(CustomerBase):
     password: Optional[str] = Field(default=None, min_length=12, max_length=72)  # for portal login
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_policy(cls, value):
+        return validate_new_password(value) if value is not None else value
 
 
 class CustomerUpdatePayload(BaseModel):
@@ -204,6 +222,11 @@ class ChangePasswordPayload(BaseModel):
     current_password: str = Field(..., max_length=72)
     new_password: str = Field(..., min_length=12, max_length=72)
 
+    @field_validator("new_password")
+    @classmethod
+    def validate_password_policy(cls, value):
+        return validate_new_password(value) if value is not None else value
+
 
 # ---------- Team management (Settings) ----------
 class TeamCreatePayload(BaseModel):
@@ -214,6 +237,11 @@ class TeamCreatePayload(BaseModel):
     password: str = Field(..., min_length=12, max_length=72)
     floor_ids: list[str] = Field(default_factory=list)
     access_profile: Optional[AccessProfile] = None
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_policy(cls, value):
+        return validate_new_password(value) if value is not None else value
 
 
 class TeamUpdatePayload(BaseModel):

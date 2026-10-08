@@ -4,12 +4,26 @@ request, and must reject non-standard ports."""
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
+import ipaddress
+import socket
 
 import httpx
 import pytest
 from fastapi import HTTPException
 
 from routes.catalog_import_routes import _fetch_public_url, _source_type_and_validate_adapter, _validate_public_host
+
+
+@pytest.fixture(autouse=True)
+def public_dns(monkeypatch):
+    def resolve(host, *_args):
+        try:
+            address = str(ipaddress.ip_address(host))
+        except ValueError:
+            address = "93.184.216.34"
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, 0))]
+    monkeypatch.setattr(socket, "getaddrinfo", resolve)
 
 
 def test_validate_public_host_accepts_default_https():
@@ -59,6 +73,9 @@ class _FakeResponse:
     def raise_for_status(self):
         pass
 
+    async def aiter_bytes(self):
+        yield self.content
+
 
 def test_fetch_public_url_rejects_redirect_to_private_address(monkeypatch):
     """A URL that passes the initial guard but 302s to a private address must
@@ -66,13 +83,16 @@ def test_fetch_public_url_rejects_redirect_to_private_address(monkeypatch):
     follow_redirects=True previously followed it unchecked."""
     calls = {"n": 0}
 
-    async def fake_get(_self, url):
+    @asynccontextmanager
+    async def fake_stream(_self, method, url):
+        assert method == "GET"
         calls["n"] += 1
         if calls["n"] == 1:
-            return _FakeResponse(302, headers={"location": "http://169.254.169.254/latest/meta-data"})
+            yield _FakeResponse(302, headers={"location": "http://169.254.169.254/latest/meta-data"})
+            return
         raise AssertionError("should never reach the redirect target")
 
-    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+    monkeypatch.setattr(httpx.AsyncClient, "stream", fake_stream)
 
     with pytest.raises(HTTPException) as exc:
         asyncio.run(_fetch_public_url("https://example.com/pricelist.pdf"))
@@ -83,16 +103,19 @@ def test_fetch_public_url_rejects_redirect_to_private_address(monkeypatch):
 def test_fetch_public_url_follows_public_to_public_redirect(monkeypatch):
     calls = {"n": 0}
 
-    async def fake_get(_self, url):
+    @asynccontextmanager
+    async def fake_stream(_self, method, url):
+        assert method == "GET"
         calls["n"] += 1
         if calls["n"] == 1:
             # Same host as the original request — a real, always-resolvable
             # domain (avoids depending on a made-up subdomain's DNS record
             # existing in whatever environment runs this test).
-            return _FakeResponse(302, headers={"location": "https://example.com/pricelist-final.pdf"})
-        return _FakeResponse(200, content=b"file-bytes")
+            yield _FakeResponse(302, headers={"location": "https://example.com/pricelist-final.pdf"})
+        else:
+            yield _FakeResponse(200, content=b"file-bytes")
 
-    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+    monkeypatch.setattr(httpx.AsyncClient, "stream", fake_stream)
 
     result = asyncio.run(_fetch_public_url("https://example.com/redirect"))
     assert result == b"file-bytes"

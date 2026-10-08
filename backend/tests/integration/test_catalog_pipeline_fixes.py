@@ -10,7 +10,7 @@ Fix B: Certifier no longer rejects legitimate cross-family SKU listings.
 
 Also verifies:
 - /api/health responds 200
-- POST /api/auth/login returns a JWT for owner@forge.app / Forge@2026
+- POST /api/auth/login returns a JWT for owner@forge.app / [legacy credential removed]
 - Public endpoints /api/catalog/imports/from-url and
   /api/catalog/imports/{id}/approve are wired and reject bad input as expected.
 """
@@ -245,7 +245,7 @@ class TestHealthAndAuth:
     def test_owner_login_returns_jwt(self, api_client):
         r = api_client.post(
             f"{BASE_URL}/api/auth/login",
-            json={"email": "owner@forge.app", "password": "Forge@2026"},
+            json={"email": "owner@forge.app", "password": os.environ["FORGE_TEST_OWNER_PASSWORD"]},
             timeout=20,
         )
         assert r.status_code == 200, r.text

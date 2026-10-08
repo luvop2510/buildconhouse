@@ -101,9 +101,10 @@ for (const path of ["../src/api/client.ts", "../src/api/client.web.ts"]) {
     const kindRead = client.getTokenKind();
     if (action === "login") await client.setToken("new-customer-token", "customer");
     else await client.clearToken();
-    pendingStorage.get("forge.jwt")("old-staff-token");
+    if (path.endsWith("client.ts")) pendingStorage.get("forge.jwt")("old-staff-token");
+    else assert.equal(pendingStorage.has("forge.jwt"), false, "browser credentials must never hydrate from persistent storage");
     pendingStorage.get("forge.jwt.kind")("staff");
-    assert.equal(await tokenRead, action === "login" ? "new-customer-token" : null, `${path}: stale token read after ${action}`);
+    assert.equal(await tokenRead, path.endsWith("client.ts") && action === "login" ? "new-customer-token" : null, `${path}: stale token read after ${action}`);
     assert.equal(await kindRead, action === "login" ? "customer" : null);
     assert.equal(await client.getToken(), action === "login" ? "new-customer-token" : null);
   }

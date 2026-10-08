@@ -62,7 +62,7 @@ def base_url() -> str:
 @pytest.fixture(scope="session")
 def auth_headers(base_url: str) -> dict[str, str]:
     email = "owner@forge.app"
-    password = "Forge@2026"
+    password = os.environ["FORGE_TEST_OWNER_PASSWORD"]
     last_error: Exception | None = None
     r = None
     for _ in range(3):

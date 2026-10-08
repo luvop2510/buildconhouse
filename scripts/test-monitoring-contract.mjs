@@ -55,3 +55,31 @@ try {
   process.removeListener("unhandledRejection", onUnhandled);
 }
 console.log("Monitoring initialization failure/retry regression passed.");
+
+let configuration;
+const safeModule = { exports: {} };
+vm.runInNewContext(ts.transpileModule(monitoring, {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText, {
+  module: safeModule, exports: safeModule.exports,
+  process: { env: { EXPO_PUBLIC_SENTRY_DSN: "https://public@example.test/1" } },
+  console, require: () => ({ init: options => { configuration = options; } }),
+});
+safeModule.exports.initSentry();
+await new Promise(resolve => setImmediate(resolve));
+const confidential = "CONFIDENTIAL_CREDENTIAL";
+const event = { message: confidential, extra: { password: confidential }, tags: { secret: confidential },
+  user: { email: confidential }, request: { body: confidential }, breadcrumbs: [{ message: confidential }],
+  transaction: '/customers/private-customer-id', contexts: { custom: { secret: confidential } },
+  spans: [{ description: confidential }], exception: { values: [{ value: confidential,
+    stacktrace: { frames: [{ filename: `https://example.test/index.js?token=${confidential}`, lineno: 12, vars: { secret: confidential }, context_line: confidential }] } }] } };
+for (const callback of [configuration.beforeSend, configuration.beforeSendTransaction]) {
+  const safe = callback(event);
+  assert.ok(!JSON.stringify(safe).includes(confidential), 'telemetry must discard arbitrary credential-bearing fields');
+  assert.equal(safe.exception.values[0].stacktrace.frames[0].lineno, 12);
+}
+const metric = configuration.beforeSend({ message: 'web_vital', tags: { metric: 'lcp_ms', route: '/customers/private-customer-id' }, extra: { value: 42, secret: confidential } });
+assert.equal(metric.extra.value,42);
+assert.equal(metric.tags.route,'/customers/:id');
+assert.ok(!JSON.stringify(metric).includes(confidential));
+console.log('Telemetry allowlist preserves numeric metrics and removes credential-bearing event fields.');

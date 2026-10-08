@@ -3,6 +3,7 @@
 Phase 9 Production Readiness Testing - Rate Limiting & Monitoring
 Focused regression test for login rate limiting and monitoring integration
 """
+import os
 
 import requests
 import json
@@ -12,7 +13,7 @@ from datetime import datetime
 # Configuration - Use the correct backend URL from frontend/.env
 BASE_URL = "https://buildcon-preview.preview.emergentagent.com/api"
 OWNER_EMAIL = "owner@forge.app"
-OWNER_PASSWORD = "Forge@2026"
+OWNER_PASSWORD = os.environ["FORGE_TEST_OWNER_PASSWORD"]
 CUSTOMER_EMAIL = "qa.customer@example.com"
 CUSTOMER_ID = "fa9ecda6-a659-42cb-b19b-cb2979164532"
 

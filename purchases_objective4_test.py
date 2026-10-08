@@ -2,6 +2,7 @@
 Purchases Sprint Objective 4 — Backend Read Contracts Verification
 READ-ONLY testing of Purchases API endpoints
 """
+import os
 import requests
 import json
 from typing import Dict, Any, List
@@ -11,7 +12,7 @@ BASE_URL = "http://127.0.0.1:8001/api"
 
 # Test credentials
 OWNER_EMAIL = "owner@forge.app"
-OWNER_PASSWORD = "Forge@2026"
+OWNER_PASSWORD = os.environ["FORGE_TEST_OWNER_PASSWORD"]
 
 class PurchasesTestRunner:
     def __init__(self):

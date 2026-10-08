@@ -142,7 +142,7 @@ def test_customer_download_token_replays_customer_session(monkeypatch):
     async def fake_principal(payload, *, kind, collection):
         assert payload == {"sub": "customer-1", "session_id": "customer-session"}
         assert (kind, collection) == ("customer", "customers")
-        return {"id": "customer-1", "name": "Customer", "floor_id": "first-floor"}
+        return {"id": "customer-1", "name": "Customer", "floor_id": "first-floor", "portal_enabled": True}
 
     monkeypatch.setattr(download_tokens, "consume_download_token", fake_consume)
     monkeypatch.setattr(auth, "_load_active_principal", fake_principal)

@@ -6,13 +6,14 @@ Pipeline (via `catalog_pipeline/`):
 from __future__ import annotations
 import hashlib
 import logging
+import math
 import re
 from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
 
-from auth import floor_for_write, floor_query, get_current_user, require_min_role
+from auth import ROLE_HIERARCHY, floor_for_write, floor_query, get_current_user, require_min_role
 from catalog_pipeline.adapters import get_adapter
 from catalog_pipeline.orchestrator import _offload_row_images, rollback_job, run_pipeline
 from db import db
@@ -22,13 +23,20 @@ from models import CatalogImportJob, UserPublic
 from settings import settings
 
 from services import catalog_service
-from services.catalog_import_jobs import claim_for_processing, enqueue
+from services.catalog_import_jobs import ROW_OUTCOME_RESERVE_BYTES, claim_for_processing, enqueue, ensure_catalog_document_size, row_version_query
 
 router = APIRouter(prefix="/catalog/imports", tags=["catalog-import"])
 logger = logging.getLogger("forge.catalog_import")
 
 SUPPORTED_BRANDS = ["Hansgrohe", "Grohe", "Vitra", "Geberit", "Oyster", "Qutone", "Dimore", "MCM", "GRANOLAND"]
 MISSING = "[MISSING DATA]"
+
+
+async def _require_import_approver(user: UserPublic = Depends(get_current_user)) -> UserPublic:
+    """Catalog grants cannot replace the independent manager approval tier."""
+    if ROLE_HIERARCHY.get(user.role, 0) < ROLE_HIERARCHY["manager"]:
+        raise HTTPException(status_code=403, detail="Manager approval is required for catalog imports")
+    return user
 
 # Security audit (Phase 1, 2026-08): supplier pricelists (PDF/XLSX) legitimately
 # run tens of MB with embedded imagery — cap generously but not unbounded.
@@ -105,16 +113,24 @@ async def _fetch_public_url(url: str, *, max_redirects: int = 5) -> bytes:
                 _validate_public_host(current)
             except HTTPException:
                 if hop > 0:
-                    logger.warning("SSRF guard blocked redirect to non-public address: %s", current)
+                    logger.warning("Catalog URL redirect blocked by the public-address guard")
                 raise
-            r = await client.get(current)
-            if r.status_code in (301, 302, 303, 307, 308) and r.headers.get("location"):
-                current = str(httpx.URL(current).join(r.headers["location"]))
-                continue
-            r.raise_for_status()
-            if len(r.content) > MAX_IMPORT_BYTES:
-                raise HTTPException(status_code=413, detail=f"Fetched file exceeds {MAX_IMPORT_BYTES // (1024 * 1024)}MB limit")
-            return r.content
+            async with client.stream("GET", current) as response:
+                if response.status_code in (301, 302, 303, 307, 308) and response.headers.get("location"):
+                    current = str(httpx.URL(current).join(response.headers["location"]))
+                    continue
+                response.raise_for_status()
+                declared = response.headers.get("content-length")
+                if declared and int(declared) > MAX_IMPORT_BYTES:
+                    raise HTTPException(status_code=413, detail="Fetched supplier file exceeds the size limit")
+                chunks: list[bytes] = []
+                total = 0
+                async for chunk in response.aiter_bytes():
+                    total += len(chunk)
+                    if total > MAX_IMPORT_BYTES:
+                        raise HTTPException(status_code=413, detail="Fetched supplier file exceeds the size limit")
+                    chunks.append(chunk)
+                return b"".join(chunks)
     raise HTTPException(status_code=502, detail="Too many redirects while fetching URL")
 
 
@@ -161,8 +177,10 @@ async def _persist_job(brand: str, filename: str, source_type: str, result: dict
         floor_id=floor_for_write(user),
     )
     doc = job.dict()
+    doc["rows_version"] = 0
     doc["extraction"] = result["extraction"]
     doc["certification"] = result["certification"]
+    ensure_catalog_document_size({**doc, "approved_rows": doc["rows"]}, reserve_bytes=len(doc["rows"]) * ROW_OUTCOME_RESERVE_BYTES)
     await db.catalog_imports.insert_one(doc)
     doc.pop("_id", None)
     return doc
@@ -170,7 +188,7 @@ async def _persist_job(brand: str, filename: str, source_type: str, result: dict
 
 @router.get("")
 async def list_jobs(user: UserPublic = Depends(require_min_role("purchase"))):
-    docs = await db.catalog_imports.find(floor_query(user), {"_id": 0, "rows": 0}).sort("created_at", -1).to_list(200)
+    docs = await db.catalog_imports.find(floor_query(user), {"_id": 0, "rows": 0, "approved_rows": 0}).sort("created_at", -1).to_list(200)
     return docs
 
 
@@ -178,7 +196,7 @@ async def list_jobs(user: UserPublic = Depends(require_min_role("purchase"))):
 async def get_job(job_id: str, user: UserPublic = Depends(require_min_role("purchase"))):
     # Unapproved rows carry unverified MRP/dealer pricing — same access tier
     # as every mutating endpoint on this resource, not every authenticated user.
-    doc = await db.catalog_imports.find_one(floor_query(user, {"id": job_id}), {"_id": 0})
+    doc = await db.catalog_imports.find_one(floor_query(user, {"id": job_id}), {"_id": 0, "approved_rows": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Import job not found")
     return doc
@@ -232,8 +250,8 @@ async def import_from_url(
         data = await _fetch_public_url(url)
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Could not fetch file: {e}") from e
+    except Exception:
+        raise HTTPException(status_code=502, detail="Could not fetch supplier file") from None
 
     source_type = _source_type_and_validate_adapter(brand, filename)
 
@@ -259,7 +277,7 @@ def _coerce_row_patch_value(key: str, value):
             num = float(value)
         except (TypeError, ValueError):
             raise HTTPException(status_code=400, detail=f"{key} must be a number, got {value!r}")
-        if num < 0:
+        if not math.isfinite(num) or num < 0:
             raise HTTPException(status_code=400, detail=f"{key} cannot be negative")
         return num
     if key == "issues":
@@ -279,6 +297,9 @@ async def update_row(
     doc = await db.catalog_imports.find_one(floor_query(user, {"id": job_id}), {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Import job not found")
+    editable_states = ["classified", "reviewed", "partial_failed", "failed"]
+    if doc.get("status") not in editable_states:
+        raise HTTPException(status_code=409, detail="Only jobs awaiting manager review can be edited")
     rows = doc.get("rows", [])
     validated = {k: _coerce_row_patch_value(k, v) for k, v in patch.items()}
     for r in rows:
@@ -287,7 +308,14 @@ async def update_row(
             break
     else:
         raise HTTPException(status_code=404, detail="Row not found")
-    await db.catalog_imports.update_one(floor_query(user, {"id": job_id}), {"$set": {"rows": rows}})
+    ensure_catalog_document_size({**doc, "rows": rows, "approved_rows": rows}, reserve_bytes=len(rows) * ROW_OUTCOME_RESERVE_BYTES)
+    query = floor_query(user, {"id": job_id, "status": {"$in": editable_states}, **row_version_query(doc)})
+    changed = await db.catalog_imports.update_one(query, {
+        "$set": {"rows": rows, "status": "reviewed"}, "$inc": {"rows_version": 1},
+        "$unset": {"approved_rows": "", "approved_version": "", "approved_by": ""},
+    })
+    if changed.modified_count != 1:
+        raise HTTPException(status_code=409, detail="The job changed during editing; refresh and retry")
     return {"ok": True}
 
 
@@ -298,13 +326,13 @@ async def approve_and_import(
     # must not also be the one who approves it into the live catalog —
     # auth.py's documented capability matrix already lists catalog-import
     # approval as a manager action; this endpoint now matches it.
-    user: UserPublic = Depends(require_min_role("manager")),
+    user: UserPublic = Depends(_require_import_approver),
 ):
     doc = await db.catalog_imports.find_one(floor_query(user, {"id": job_id}), {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Import job not found")
 
-    claimed = await claim_for_processing(job_id, floor_query(user, {"id": job_id}))
+    claimed = await claim_for_processing(job_id, floor_query(user, {"id": job_id}), reviewed_job=doc, actor_id=user.id)
     if not claimed:
         current = await db.catalog_imports.find_one(floor_query(user, {"id": job_id}), {"_id": 0, "status": 1, "import_progress": 1})
         if current and current.get("status") == "processing":
@@ -317,7 +345,7 @@ async def approve_and_import(
 @router.post("/{job_id}/rows/{row_id}/retry")
 async def retry_failed_row(
     job_id: str, row_id: str,
-    user: UserPublic = Depends(require_min_role("manager")),
+    user: UserPublic = Depends(_require_import_approver),
 ):
     doc = await db.catalog_imports.find_one(floor_query(user, {"id": job_id}), {"_id": 0})
     if not doc:
@@ -329,13 +357,9 @@ async def retry_failed_row(
     if row.get("import_state") != "failed":
         raise HTTPException(status_code=409, detail="Only failed rows can be retried")
     row.update({"import_state": None, "import_error": None, "imported_at": None})
-    claimed = await claim_for_processing(job_id, floor_query(user, {"id": job_id}))
+    claimed = await claim_for_processing(job_id, floor_query(user, {"id": job_id}), reviewed_job=doc, actor_id=user.id, rows=rows)
     if not claimed:
-        # A concurrent retry/approval owns the worker; persist the retry request
-        # and let that worker pick it up rather than launching duplicate writes.
-        await db.catalog_imports.update_one(floor_query(user, {"id": job_id}), {"$set": {"rows": rows}})
-        return {"job_id": job_id, "status": "processing"}
-    await db.catalog_imports.update_one(floor_query(user, {"id": job_id}), {"$set": {"rows": rows}})
+        raise HTTPException(status_code=409, detail="The job changed or is already processing; refresh and retry")
     await enqueue(job_id, user.id)
     return {"job_id": job_id, "status": "processing"}
 
@@ -343,7 +367,7 @@ async def retry_failed_row(
 @router.post("/{job_id}/rollback")
 async def rollback(
     job_id: str,
-    user: UserPublic = Depends(require_min_role("manager")),
+    user: UserPublic = Depends(_require_import_approver),
 ):
     doc = await db.catalog_imports.find_one(floor_query(user, {"id": job_id}), {"_id": 0, "id": 1})
     if not doc:

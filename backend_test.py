@@ -4,6 +4,7 @@ Backend Testing Script for BuildCon House - Qutone Catalog EXTENSION Verificatio
 Tests the merge of QUTONE2.xlsx (14 new products) into the EXISTING Qutone brand.
 Must verify: NO new brand created, 466 total Qutone products (452 old + 14 new), floor isolation.
 """
+import os
 
 import requests
 import json
@@ -15,7 +16,7 @@ BASE_URL = "https://buildcon-preview.preview.emergentagent.com/api"
 
 # Test credentials from /app/memory/test_credentials.md
 TEST_EMAIL = "owner@forge.app"
-TEST_PASSWORD = "Forge@2026"
+TEST_PASSWORD = os.environ["FORGE_TEST_OWNER_PASSWORD"]
 
 # ANSI color codes for output
 GREEN = "\033[92m"

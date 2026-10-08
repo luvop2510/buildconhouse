@@ -437,7 +437,7 @@ Package `com.buildconhouse.app`, edge-to-edge, adaptive icon, `READ_MEDIA_IMAGES
 
 ### Known issues
 
-1. **`owner@forge.app` is on the publicly-known demo password.** `/api/health` currently returns `degraded` and startup logs `CRITICAL`. This is a real `bcrypt.checkpw` match against `Forge@2026`, a string that lives in the git-tracked `backend/seed.py`. It is the highest-privilege account in the system. Fix is one command (see §6). **Hard blocker for any real-customer deployment.**
+1. **`owner@forge.app` is on the publicly-known demo password.** `/api/health` currently returns `degraded` and startup logs `CRITICAL`. This is a real `bcrypt.checkpw` match against `[legacy password removed; use injected test credentials]`, a string that lives in the git-tracked `backend/seed.py`. It is the highest-privilege account in the system. Fix is one command (see §6). **Hard blocker for any real-customer deployment.**
 2. **Test fixtures in the production database.** All 6 Ground Floor tile customer orders are test records (`Task18 Test Customer`, `Task19 MultiSupplier Test`, `TEST_LC4_*`); 7 more sit on first-floor with 2 ready batches, 4 dispatches, 4 chalans and 17 material movements (invisible by construction, still stored); 118 synthetic `followup.call_logged` activity events reference ids that resolve to nothing; a follow-up card named `ZZTEST TILES E2E` is the #1 Ground Floor priority. Clearing these needs new endpoints or a reviewed cleanup script.
 3. **Sentry and PostHog are wired but inert** — no DSN or key is set, so a production crash currently goes nowhere.
 4. **Executive Analytics and Sales Data figures do not reconcile.** Different generations, different definitions. Accepted, not a bug.

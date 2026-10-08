@@ -16,6 +16,7 @@ export type StaffUser = {
   active: boolean;
   avatar_url?: string | null;
   must_change_password?: boolean;
+  mfa_enabled?: boolean;
   floor_ids: string[];
   access_profile?: AccessProfile | null;
   custom_access?: boolean;
@@ -38,7 +39,7 @@ type AuthState = {
   kind: TokenKind | null;
   staff: StaffUser | null;
   customer: CustomerUser | null;
-  loginStaff: (email: string, password: string) => Promise<void>;
+  loginStaff: (email: string, password: string, factor?: { mfa_code?: string; recovery_code?: string }) => Promise<void>;
   loginCustomer: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   markPasswordChanged: () => void;
@@ -108,12 +109,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => { operationGeneration.current += 1; };
   }, [hydrate]);
 
-  const loginStaff = useCallback(async (email: string, password: string) => {
+  const loginStaff = useCallback(async (email: string, password: string, factor?: { mfa_code?: string; recovery_code?: string }) => {
     const operation = ++operationGeneration.current;
     const isCurrent = () => operationGeneration.current === operation;
     setLoading(true);
     try {
-      const res = await api.post<{ access_token: string; user: StaffUser }>("/auth/login", { email, password });
+      const res = await api.post<{ access_token: string; user: StaffUser }>("/auth/login", { email, password, ...factor });
       if (!isCurrent()) return;
       await updateCredentials(operation, () => setToken(res.access_token, "staff"));
       if (!isCurrent()) return;

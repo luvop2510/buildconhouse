@@ -173,7 +173,7 @@ Tile Orders returns the same 6 Ground Floor orders **regardless of the header se
 SECURITY: demo account(s) still have the known default password: owner@forge.app
 ```
 
-This is a real `bcrypt.checkpw` match, not a heuristic — the highest-privilege account in the system currently accepts `Forge@2026`, a string that lives in a **git-tracked file** (`backend/seed.py`). Memory records this account being rotated on 2026-07-17 and again on 2026-07-20, so something has reset it since.
+This is a real `bcrypt.checkpw` match, not a heuristic — the highest-privilege account in the system currently accepts `[legacy password removed; use injected test credentials]`, a string that lives in a **git-tracked file** (`backend/seed.py`). Memory records this account being rotated on 2026-07-17 and again on 2026-07-20, so something has reset it since.
 
 You chose to leave this until after testing, which is why the QA above could log in. **It is a hard blocker for any real-customer deployment.** The fix is one command:
 

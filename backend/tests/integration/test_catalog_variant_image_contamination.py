@@ -30,7 +30,7 @@ def api_client():
     s.headers.update({"Content-Type": "application/json"})
     r = s.post(
         f"{BASE_URL}/api/auth/login",
-        json={"email": "owner@forge.app", "password": "Forge@2026"},
+        json={"email": "owner@forge.app", "password": os.environ["FORGE_TEST_OWNER_PASSWORD"]},
         timeout=40,
     )
     assert r.status_code == 200, r.text

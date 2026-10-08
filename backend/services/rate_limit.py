@@ -68,7 +68,10 @@ _attempts: dict[str, list[float]] = {}
 def _prune(key: str, now: float) -> list[float]:
     window_start = now - _WINDOW_SECONDS
     hits = [t for t in _attempts.get(key, []) if t > window_start]
-    _attempts[key] = hits
+    if hits:
+        _attempts[key] = hits
+    else:
+        _attempts.pop(key, None)
     return hits
 
 
@@ -125,7 +128,7 @@ def _redis_client():
         import redis.asyncio as redis_asyncio
         _redis = redis_asyncio.from_url(url, decode_responses=True, socket_connect_timeout=3)
     except Exception as exc:  # noqa: BLE001 — rate limiting must never block startup
-        logger.warning("REDIS_URL set but client failed to initialize; falling back to in-memory: %s", exc)
+        logger.warning("Redis client initialization failed; using bounded local fallback (%s)", type(exc).__name__)
         _redis = None
     return _redis
 
@@ -134,7 +137,7 @@ async def _check_redis(r, limits: list[tuple[str, int]]) -> None:
     try:
         counts = await r.mget([key for key, _ in limits])
     except Exception as exc:  # noqa: BLE001 — a Redis outage must not take down login
-        logger.warning("Redis unavailable for rate-limit check; using bounded local fallback: %s", exc)
+        logger.warning("Redis unavailable for rate-limit check; using bounded local fallback (%s)", type(exc).__name__)
         _check_memory(limits)
         return
     for (_key, limit), count in zip(limits, counts):
@@ -165,7 +168,7 @@ async def _record_redis(r, keys: list[str], limits: list[int]) -> None:
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001 — best-effort; a Redis outage must not break login
-        logger.warning("Redis unavailable for rate-limit record; using bounded local fallback: %s", exc)
+        logger.warning("Redis unavailable for rate-limit record; using bounded local fallback (%s)", type(exc).__name__)
         _record_memory(keys, limits)
 
 
@@ -173,12 +176,22 @@ async def _clear_redis(r, keys: list[str]) -> None:
     try:
         await r.delete(*keys)
     except Exception as exc:  # noqa: BLE001
-        logger.debug("Redis unavailable for rate-limit clear, ignored: %s", exc)
+        logger.debug("Redis unavailable for rate-limit clear (%s)", type(exc).__name__)
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+async def reserve_login_attempt(ip: str | None, identifier: str) -> None:
+    """Admit one password comparison atomically, before any awaited lookup.
+
+    The slot counts immediately so a concurrent wave cannot all pass a
+    read-only precheck. Success clears the account buckets; the IP ceiling
+    still limits repeated successful authentication work.
+    """
+    await record_login_failure(ip, identifier)
+
+
 async def check_login_rate_limit(ip: str | None, identifier: str) -> None:
     """Call BEFORE attempting a password check. Raises 429 if the
     per-(ip,identifier), per-ip, OR the IP-independent per-email ceiling is

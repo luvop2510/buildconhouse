@@ -28,6 +28,9 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
+  const [mfaRequired, setMfaRequired] = useState(false);
+  const [factor, setFactor] = useState("");
+  const [useRecovery, setUseRecovery] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,7 +41,7 @@ export default function Login() {
     setBusy(true); setError(null);
     try {
       if (mode === "staff") {
-        await loginStaff(email.trim(), password);
+        await loginStaff(email.trim(), password, mfaRequired ? (useRecovery ? { recovery_code: factor.trim() } : { mfa_code: factor.trim() }) : undefined);
       } else {
         await loginCustomer(email.trim(), password);
       }
@@ -49,6 +52,7 @@ export default function Login() {
       // destination, and on web that double-navigation could leave the app
       // stuck on /login with a valid session already in memory.
     } catch (e: any) {
+      if (e?.detail === "mfa_required" || e?.message === "mfa_required") { setMfaRequired(true); setBusy(false); return; }
       setError(e?.message === "Invalid credentials" ? "That email and password don't match." : e?.message || "Sign-in failed. Try again.");
       setBusy(false);
     }
@@ -67,14 +71,14 @@ export default function Login() {
       </View>
 
       <NavigationTabs value={mode} options={[{ value: "staff", label: "Staff workspace" }, { value: "customer", label: "Customer portal" }]}
-        onChange={(option) => { setMode(option); setError(null); setPassword(""); }} disabled={busy} fullWidth testID="login-mode" />
+        onChange={(option) => { setMode(option); setError(null); setPassword(""); setMfaRequired(false); setFactor(""); }} disabled={busy} fullWidth testID="login-mode" />
 
       <View style={{ gap: compactPhone ? space.x3 : space.x4 }}>
         <Field label="Email">
           <Input
             testID="login-email"
             value={email}
-            onChangeText={(v) => { setEmail(v); setError(null); }}
+            onChangeText={(v) => { setEmail(v); setError(null); setMfaRequired(false); setFactor(""); }}
             placeholder="you@company.com"
             keyboardType="email-address"
             autoCapitalize="none"
@@ -100,6 +104,16 @@ export default function Login() {
             right={<IconButton icon={showPw ? "eye-off" : "eye"} size={30} iconSize={15} tone="soft" onPress={() => setShowPw((v) => !v)} label={showPw ? "Hide password" : "Show password"} />}
           />
         </Field>
+        {mode === "staff" && mfaRequired ? <View style={{ gap: space.x3 }}>
+          <Txt v="bodyMid">Enter a code from your authenticator app to finish signing in.</Txt>
+          <Field label={useRecovery ? "Recovery code" : "Authenticator code"}>
+            <Input testID="login-mfa-code" value={factor} onChangeText={setFactor} autoCapitalize="none" autoCorrect={false}
+              keyboardType={useRecovery ? "default" : "number-pad"} maxLength={useRecovery ? 40 : 6}
+              placeholder={useRecovery ? "Saved recovery code" : "6-digit code"} editable={!busy} onSubmitEditing={submit} />
+          </Field>
+          <Button testID="login-mfa-recovery" label={useRecovery ? "Use authenticator code" : "Use a recovery code"}
+            onPress={() => { setUseRecovery(!useRecovery); setFactor(""); setError(null); }} disabled={busy} />
+        </View> : null}
         <Button testID="login-submit" label="Sign in" size="lg" full onPress={submit} loading={busy} />
       </View>
 

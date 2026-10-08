@@ -32,12 +32,17 @@ expo.on('exit', async (code, signal) => {
   // this stable URL can recover an otherwise empty failed startup once.
   const recoverySource = await readFile(new URL('./release-recovery.js', import.meta.url), 'utf8');
   await writeFile('dist/client/release-recovery.js', recoverySource);
+  await writeFile('dist/client/expo-hydrate.js', 'globalThis.__EXPO_ROUTER_HYDRATE__=true;\n');
   const injectRecovery = async (directory) => {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       const path = `${directory}/${entry.name}`;
       if (entry.isDirectory()) await injectRecovery(path);
       else if (entry.name.endsWith('.html')) {
-        const html = await readFile(path, 'utf8');
+        const originalHtml = await readFile(path, 'utf8');
+        // Expo emits a tiny inline hydration flag. Externalize that exact
+        // bootstrap so the production script-src 'self' policy can execute
+        // it without permitting arbitrary inline scripts.
+        const html = originalHtml.replace(/<script\b(?![^>]*\bsrc=)[^>]*>\s*globalThis\.__EXPO_ROUTER_HYDRATE__=true;\s*<\/script>/g, '<script src="/expo-hydrate.js"></script>');
         if (!html.includes('src="/release-recovery.js"')) {
           const bootstrap = '<script src="/release-recovery.js"></script>';
           const firstExpoScript = /<script\b(?=[^>]*\bsrc=["']\/_expo\/static\/js\/web\/)[^>]*>/i;
@@ -45,7 +50,7 @@ expo.on('exit', async (code, signal) => {
             ? html.replace(firstExpoScript, `${bootstrap}$&`)
             : html.replace(/<head(?:\s[^>]*)?>/i, `$&${bootstrap}`);
           await writeFile(path, injected);
-        }
+        } else if (html !== originalHtml) await writeFile(path, html);
       }
     }
   };

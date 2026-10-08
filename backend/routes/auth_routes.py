@@ -1,5 +1,6 @@
 """Staff + customer authentication endpoints."""
 from typing import Optional
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
@@ -10,11 +11,13 @@ from auth import (
 from db import db
 from models import (
     ChangePasswordPayload, CustomerLoginPayload, CustomerPublic, CustomerTokenResponse,
-    LoginPayload, SessionInfo, TokenResponse, UserPublic, now_iso,
+    LoginPayload, MFAProofPayload, SessionInfo, TokenResponse, UserPublic, now_iso,
 )
 from services.activity_log import log_event
 from services.invite_service import is_temp_password_expired
-from services.rate_limit import check_login_rate_limit, clear_login_attempts, record_login_failure
+from services.rate_limit import clear_login_attempts, reserve_login_attempt
+from services import mfa
+from services.password_policy import is_known_default_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -48,22 +51,25 @@ async def _revoke_other_sessions(kind: str, user_id: str, authorization: Optiona
 @router.post("/login", response_model=TokenResponse)
 async def staff_login(body: LoginPayload, request: Request):
     ip = _client_ip(request)
-    await check_login_rate_limit(ip, body.email)
+    await reserve_login_attempt(ip, body.email)
+    if is_known_default_password(body.password):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
     doc = await db.users.find_one({"email": body.email.lower()}, {"_id": 0})
     if not doc or not verify_password(body.password, doc.get("password_hash", "")):
-        await record_login_failure(ip, body.email)
         raise HTTPException(status_code=401, detail="Invalid email or password")
     if not doc.get("active", True):
-        await record_login_failure(ip, body.email)
         raise HTTPException(status_code=403, detail="Account disabled")
     if doc.get("must_change_password") and is_temp_password_expired(doc.get("temp_password_expires_at")):
-        await record_login_failure(ip, body.email)
         raise HTTPException(
             status_code=401,
             detail="This temporary password has expired. Ask an admin to reset it again.",
         )
+    if doc.get("mfa_enabled"):
+        await mfa.consume_factor(doc, body.mfa_code, body.recovery_code)
     await clear_login_attempts(ip, body.email)
-    sid = await create_session("staff", doc["id"], request, login_method="password")
+    sid = await create_session("staff", doc["id"], request, login_method="password+mfa" if doc.get("mfa_enabled") else "password")
+    if doc.get("mfa_enabled"):
+        await db.user_sessions.update_one({"id": sid}, {"$set": {"mfa_verified": True, "mfa_version": doc.get("mfa_version", 0)}})
     token = create_token(doc["id"], "staff", {
         "role": doc["role"], "session_id": sid, "access_profile": doc.get("access_profile"),
         "custom_access": bool(doc.get("custom_access")),
@@ -99,10 +105,9 @@ async def staff_change_password(
     user's own id rather than email so it's scoped per-account regardless of
     what email is on file."""
     ip = _client_ip(request)
-    await check_login_rate_limit(ip, f"staff-pw:{user.id}")
+    await reserve_login_attempt(ip, f"staff-pw:{user.id}")
     doc = await db.users.find_one({"id": user.id}, {"_id": 0, "password_hash": 1})
     if not doc or not verify_password(body.current_password, doc.get("password_hash", "")):
-        await record_login_failure(ip, f"staff-pw:{user.id}")
         raise HTTPException(status_code=401, detail="Current password is incorrect")
     await clear_login_attempts(ip, f"staff-pw:{user.id}")
     await db.users.update_one(
@@ -122,16 +127,15 @@ async def staff_change_password(
 @router.post("/customer/login", response_model=CustomerTokenResponse)
 async def customer_login(body: CustomerLoginPayload, request: Request):
     ip = _client_ip(request)
-    await check_login_rate_limit(ip, body.email)
+    await reserve_login_attempt(ip, body.email)
+    if is_known_default_password(body.password):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
     doc = await db.customers.find_one({"email": body.email.lower()}, {"_id": 0})
     if not doc or not doc.get("password_hash") or not verify_password(body.password, doc["password_hash"]):
-        await record_login_failure(ip, body.email)
         raise HTTPException(status_code=401, detail="Invalid email or password")
     if not doc.get("portal_enabled"):
-        await record_login_failure(ip, body.email)
         raise HTTPException(status_code=403, detail="Portal access is disabled for this account. Contact your account manager.")
     if doc.get("must_change_password") and is_temp_password_expired(doc.get("temp_password_expires_at")):
-        await record_login_failure(ip, body.email)
         raise HTTPException(
             status_code=401,
             detail="This temporary password has expired. Ask your account manager to resend the invite.",
@@ -159,10 +163,9 @@ async def customer_change_password(
     Send Invite / Reset Password issued a temporary one. Same rate-limit
     reasoning as staff_change_password above."""
     ip = _client_ip(request)
-    await check_login_rate_limit(ip, f"customer-pw:{cust.id}")
+    await reserve_login_attempt(ip, f"customer-pw:{cust.id}")
     doc = await db.customers.find_one({"id": cust.id}, {"_id": 0, "password_hash": 1})
     if not doc or not doc.get("password_hash") or not verify_password(body.current_password, doc["password_hash"]):
-        await record_login_failure(ip, f"customer-pw:{cust.id}")
         raise HTTPException(status_code=401, detail="Current password is incorrect")
     await clear_login_attempts(ip, f"customer-pw:{cust.id}")
     await db.customers.update_one(
@@ -252,3 +255,108 @@ async def revoke_one_session(session_id: str, session: tuple[str, str, str] = De
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Session not found")
     return {"revoked": True}
+
+
+# MFA applies to every enrolled staff account, including owner/admin. Unenrolled
+# operators remain usable until enrollment is completed with password + TOTP.
+async def _mfa_password(body: MFAProofPayload, request: Request, user: UserPublic) -> dict:
+    await reserve_login_attempt(_client_ip(request), f"staff-mfa:{user.id}")
+    doc = await db.users.find_one({"id": user.id}, {"_id": 0})
+    if not doc or not verify_password(body.current_password, doc.get("password_hash", "")):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+    return doc
+
+
+async def _mfa_sessions(user: UserPublic, version: int, enabled: bool) -> None:
+    # Never revive a session concurrently revoked by password reset or logout.
+    invalidate_principal_cache("staff", user.id)
+    query = {"user_type": "staff", "user_id": user.id, "revoked": {"$ne": True}}
+    if user.session_id:
+        query["id"] = {"$ne": user.session_id}
+    await db.user_sessions.update_many(query, {"$set": {"revoked": True}})
+    if user.session_id:
+        await db.user_sessions.update_one(
+            {"id": user.session_id, "user_type": "staff", "user_id": user.id, "revoked": {"$ne": True}},
+            {"$set": {"mfa_verified": enabled, "mfa_version": version}},
+        )
+
+
+@router.get("/mfa/status")
+async def mfa_status(user: UserPublic = Depends(get_current_user)):
+    doc = await db.users.find_one({"id": user.id}, {"_id": 0, "mfa_enabled": 1, "mfa_recovery_hashes": 1}) or {}
+    return {"enabled": bool(doc.get("mfa_enabled")), "recovery_codes_remaining": len(doc.get("mfa_recovery_hashes", []))}
+
+
+@router.post("/mfa/enroll")
+async def mfa_enroll(body: MFAProofPayload, request: Request, user: UserPublic = Depends(get_current_user)):
+    doc = await _mfa_password(body, request, user)
+    if doc.get("mfa_enabled"):
+        raise HTTPException(status_code=409, detail="Authenticator MFA is already enabled")
+    pending, public = mfa.pending_enrollment(user.id, user.email)
+    result = await db.users.update_one(
+        {"id": user.id, "mfa_enabled": {"$ne": True}, "password_hash": doc["password_hash"]},
+        {"$set": {"mfa_pending": pending}},
+    )
+    if result.matched_count != 1:
+        raise HTTPException(status_code=409, detail="Account changed; restart enrollment")
+    return public
+
+
+@router.post("/mfa/confirm")
+async def mfa_confirm(body: MFAProofPayload, request: Request, user: UserPublic = Depends(get_current_user)):
+    doc = await _mfa_password(body, request, user)
+    pending = doc.get("mfa_pending") or {}
+    expires = pending.get("expires_at")
+    if isinstance(expires, datetime) and expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    if doc.get("mfa_enabled") or not isinstance(expires, datetime) or expires <= datetime.now(timezone.utc):
+        raise HTTPException(status_code=409, detail="Enrollment expired; restart setup")
+    secret = mfa.decrypt_secret(pending.get("secret_encrypted", ""), user.id)
+    counter = mfa.matching_counter(secret, body.mfa_code or "")
+    if counter is None or body.recovery_code:
+        raise HTTPException(status_code=401, detail="Enter a valid authenticator code")
+    codes, hashed = mfa.new_recovery_codes()
+    result = await db.users.update_one(
+        {"id": user.id, "mfa_enabled": {"$ne": True}, "password_hash": doc["password_hash"],
+         "mfa_pending.secret_encrypted": pending["secret_encrypted"], "mfa_pending.expires_at": {"$gt": datetime.now(timezone.utc)}},
+        {"$set": {"mfa_enabled": True, "mfa_secret_encrypted": pending["secret_encrypted"],
+                  "mfa_recovery_hashes": hashed, "mfa_last_counter": counter},
+         "$inc": {"mfa_version": 1}, "$unset": {"mfa_pending": ""}},
+    )
+    if result.modified_count != 1:
+        raise HTTPException(status_code=409, detail="Enrollment changed; restart setup")
+    await _mfa_sessions(user, doc.get("mfa_version", 0) + 1, True)
+    await log_event(event_type="user.mfa_updated", entity_type="user", entity_id=user.id, actor=user, summary="Authenticator security updated")
+    return {"enabled": True, "recovery_codes": codes}
+
+
+@router.post("/mfa/recovery")
+async def mfa_recovery(body: MFAProofPayload, request: Request, user: UserPublic = Depends(get_current_user)):
+    doc = await _mfa_password(body, request, user)
+    await mfa.consume_factor(doc, body.mfa_code, body.recovery_code)
+    codes, hashed = mfa.new_recovery_codes()
+    result = await db.users.update_one(
+        {"id": user.id, "mfa_enabled": True, "mfa_version": doc.get("mfa_version", 0), "password_hash": doc["password_hash"]},
+        {"$set": {"mfa_recovery_hashes": hashed}, "$inc": {"mfa_version": 1}},
+    )
+    if result.modified_count != 1:
+        raise HTTPException(status_code=409, detail="Account changed; try again")
+    await _mfa_sessions(user, doc.get("mfa_version", 0) + 1, True)
+    await log_event(event_type="user.mfa_updated", entity_type="user", entity_id=user.id, actor=user, summary="Authenticator security updated")
+    return {"enabled": True, "recovery_codes": codes}
+
+
+@router.post("/mfa/disable")
+async def mfa_disable(body: MFAProofPayload, request: Request, user: UserPublic = Depends(get_current_user)):
+    doc = await _mfa_password(body, request, user)
+    await mfa.consume_factor(doc, body.mfa_code, body.recovery_code)
+    result = await db.users.update_one(
+        {"id": user.id, "mfa_enabled": True, "mfa_version": doc.get("mfa_version", 0), "password_hash": doc["password_hash"]},
+        {"$set": {"mfa_enabled": False}, "$inc": {"mfa_version": 1},
+         "$unset": {"mfa_secret_encrypted": "", "mfa_recovery_hashes": "", "mfa_last_counter": "", "mfa_pending": ""}},
+    )
+    if result.modified_count != 1:
+        raise HTTPException(status_code=409, detail="Account changed; try again")
+    await _mfa_sessions(user, doc.get("mfa_version", 0) + 1, False)
+    await log_event(event_type="user.mfa_disabled", entity_type="user", entity_id=user.id, actor=user, summary="Authenticator MFA disabled")
+    return {"enabled": False}

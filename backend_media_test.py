@@ -15,7 +15,7 @@ import httpx
 BACKEND_URL = os.getenv("BACKEND_URL", "https://buildcon-preview.preview.emergentagent.com")
 API_BASE = f"{BACKEND_URL}/api"
 LOGIN_EMAIL = "owner@forge.app"
-LOGIN_PASSWORD = "Forge@2026"
+LOGIN_PASSWORD = os.environ["FORGE_TEST_OWNER_PASSWORD"]
 
 # Global token storage
 AUTH_TOKEN = None
@@ -42,7 +42,7 @@ def login():
     data = response.json()
     AUTH_TOKEN = data.get("token") or data.get("access_token")
     if not AUTH_TOKEN:
-        print(f"❌ No token in response: {data}")
+        print("❌ No token in response (credential response omitted)")
         sys.exit(1)
     print(f"✅ Login successful")
     print(f"   User: {data.get('user', {}).get('full_name')} ({data.get('user', {}).get('email')})")

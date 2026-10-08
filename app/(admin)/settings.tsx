@@ -204,6 +204,12 @@ export default function Settings() {
           <Text style={[type.bodyMuted, { flex: 1 }]}>Change password</Text>
           <Feather name="chevron-right" size={16} color={colors.onSurfaceMuted} />
         </Pressable>
+        <Pressable testID="settings-nav-mfa" accessibilityRole="link" accessibilityLabel="Authenticator MFA"
+          onPress={() => router.push("/(admin)/settings-mfa" as any)} style={styles.row}>
+          <View style={styles.itemIcon}><Feather name="shield" size={14} color={colors.onSurfaceMuted} /></View>
+          <Text style={[type.bodyMuted, { flex: 1 }]}>Authenticator MFA</Text>
+          <Feather name="chevron-right" size={16} color={colors.onSurfaceMuted} />
+        </Pressable>
         {sessionsError ? <ErrorState title="Couldn't load active sessions" subtitle="Your session list is unavailable. Retry to review signed-in devices." onRetry={loadSessions} /> : !sessionsLoading && sessions.length === 0 ? (
           <Text style={[type.bodyMuted, { padding: spacing.md, paddingTop: 0 }]}>No active sessions found.</Text>
         ) : sessions.map((s) => (

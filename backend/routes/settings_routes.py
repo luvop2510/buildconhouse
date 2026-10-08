@@ -16,7 +16,7 @@ from io import BytesIO
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
-from auth import get_current_user, require_min_role
+from auth import floor_query, get_current_user, require_min_role
 from db import db
 from models import CompanySettings, PDFSettings, UserPublic, now_iso
 
@@ -78,13 +78,13 @@ CATALOG_BACKUP_COLLECTIONS = ["products", "brands", "categories"]
 
 
 @router.get("/catalog-backup")
-async def catalog_backup(_: UserPublic = Depends(require_min_role("admin"))):
+async def catalog_backup(user: UserPublic = Depends(require_min_role("admin"))):
     payload: dict[str, object] = {
         "exported_at": now_iso(),
         "source": "forge-catalog-backup",
     }
     for name in CATALOG_BACKUP_COLLECTIONS:
-        payload[name] = await db[name].find({}, {"_id": 0}).to_list(10000)
+        payload[name] = await db[name].find(floor_query(user), {"_id": 0}).to_list(10000)
     buf = BytesIO(json.dumps(payload, default=str, indent=2).encode("utf-8"))
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M")
     return StreamingResponse(

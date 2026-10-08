@@ -24,7 +24,7 @@ Also newly added as part of this pass: a lightweight, real migration system (`ba
 
 ## CRITICAL
 
-**1. Demo credentials are still live in production data.** `owner@forge.app` … `worker@forge.app` with the publicly-known password `Forge@2026` remain active in the live `buildcon_house` Atlas database. Full administrative account takeover requires no exploit, just the password. (Carried forward from the 2026-07-16 audit and from this session's memory — reconfirmed still open.)
+**1. Demo credentials are still live in production data.** `owner@forge.app` … `worker@forge.app` with the publicly-known password `[legacy password removed; use injected test credentials]` remain active in the live `buildcon_house` Atlas database. Full administrative account takeover requires no exploit, just the password. (Carried forward from the 2026-07-16 audit and from this session's memory — reconfirmed still open.)
 
 **2. SSRF guard in catalog import is defeated by its own HTTP client.** `routes/catalog_import_routes.py`'s `_guard_public_url` (lines 30-53) validates that the *initial* hostname resolves to a public IP specifically to block cloud-metadata SSRF — but the actual fetch (lines 129-133) uses `httpx.AsyncClient(follow_redirects=True)` with no re-validation of the redirect target, and the guard's own DNS lookup and the later fetch's DNS lookup are two independent resolutions (classic DNS-rebinding gap). Any authenticated "purchase"-role account can submit a URL that redirects to `169.254.169.254` or another private address and the request goes through unchecked. This is a live security-control bypass reachable in normal usage, not an edge case.
 

@@ -13,8 +13,6 @@ from media_storage.factory import private_bucket
 from models import Product
 
 from .base import MISSING
-from .certifier import validate
-from .adapters import get_adapter
 
 logger = logging.getLogger("forge.catalog_pipeline")
 
@@ -107,7 +105,7 @@ async def _resolve_blob(ref: str, blob_map: dict[str, str] | None = None) -> str
     try:
         raw = await get_media_storage().download(bucket=doc["bucket"], key=doc["storage_key"])
     except Exception as exc:  # noqa: BLE001
-        logger.warning("staged import image could not be downloaded sha1=%s: %s", sha1, exc)
+        logger.warning("Staged catalog image download failed error_type=%s", type(exc).__name__)
         return None
     mime = str(doc.get("mime") or "image/png")
     return f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
@@ -115,27 +113,8 @@ async def _resolve_blob(ref: str, blob_map: dict[str, str] | None = None) -> str
 
 async def run_pipeline(brand: str, filename: str, data: bytes) -> dict:
     """Extract + validate + certify. Returns everything the UI needs to render Review."""
-    adapter = get_adapter(brand)
-    rows, extraction = adapter.extract(data, filename)
-    validated_rows, cert = validate(rows)
-
-    # Auto-accept high-confidence rows so the reviewer only sees the exceptions
-    for r in validated_rows:
-        if r.image_quality in {"poor", "missing"} and not any("image requires review" in issue.lower() for issue in r.issues):
-            r.issues.append(f"Image requires review ({r.image_quality})")
-        if (
-            r.status == "pending"
-            and r.confidence >= 0.85
-            and r.sku != MISSING and r.mrp != MISSING and r.category != MISSING
-            and r.image_quality in {"excellent", "good", "acceptable"}
-        ):
-            r.status = "accepted"
-
-    return {
-        "extraction": extraction.__dict__,
-        "certification": cert.to_public(),
-        "rows": [r.to_public() for r in validated_rows],
-    }
+    from .isolated_parser import extract_isolated
+    return await extract_isolated(brand, filename, data)
 
 
 async def import_accepted(
@@ -353,8 +332,8 @@ async def import_accepted(
             # One malformed row (bad price, bad category) must never abort
             # the rest of a multi-hundred-row batch — record it and continue.
             failed += 1
-            errors.append({"row_id": r.get("row_id"), "sku": r.get("sku"), "error": str(e)})
-            logger.warning("catalog import row failed job=%s row=%s: %s", job_id, r.get("row_id"), e)
+            errors.append({"row_id": r.get("row_id"), "sku": r.get("sku"), "error": f"Catalog row could not be imported ({type(e).__name__})"})
+            logger.warning("Catalog import row failed job=%s row=%s error_type=%s", job_id, r.get("row_id"), type(e).__name__)
 
     if snapshots:
         for i in range(0, len(snapshots), 200):
@@ -403,7 +382,7 @@ async def _upload_supplier_images(
                 force_landscape=force_landscape_images,
             )
         except Exception as e:  # noqa: BLE001
-            logger.warning("supplier image upload failed for %s idx=%d: %s", product_id, i, e)
+            logger.warning("Supplier image upload failed product=%s index=%d error_type=%s", product_id, i, type(e).__name__)
 
 
 async def rollback_job(job_id: str) -> dict:

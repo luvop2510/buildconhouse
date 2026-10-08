@@ -43,6 +43,7 @@ async function fetchAsset(request, env, pathname) {
 export function createWorker(backendUrl, fetchImpl = fetch, timeoutMs = 28000) {
   return {async fetch(request,env) {
     const url=new URL(request.url);
+    if (/\.map$/i.test(url.pathname)) return secure(failure(404,'Not Found'));
     if(url.pathname.startsWith('/api/')) {
       const session=cookie(request,'forge_session');
       const unsafe=!['GET','HEAD','OPTIONS'].includes(request.method);

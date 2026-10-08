@@ -35,7 +35,7 @@ in CI yet, and what enabling it later would take.
   ephemeral staging deployment torn down after the run — **never the shared
   production Atlas cluster**.
 - Seeded, disposable test fixtures (created by the CI job itself, scoped to
-  that run) instead of `Forge@2026` / any credential that also exists in a
+  that run) instead of `[legacy password removed; use injected test credentials]` / any credential that also exists in a
   real environment.
 - The 7 files parameterized on `BASE_URL` already (`EXPO_PUBLIC_BACKEND_URL`
   env var) — pointing them at a CI-local stack instead of the Emergent

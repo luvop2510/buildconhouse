@@ -53,7 +53,9 @@ export async function setToken(token: string, kind: TokenKind) {
   // storage: any future XSS would otherwise be able to exfiltrate it.
   tokenCache = usesDirectDevApi ? token : null;
   tokenKindCache = kind;
-  if (usesDirectDevApi) await browserStorage.secureSet("forge.jwt", token);
+  // Even direct development keeps credentials only in memory. Remove any
+  // token left by earlier builds so persisted secrets cannot survive logout.
+  await browserStorage.secureRemove("forge.jwt");
   await browserStorage.setItem(TOKEN_KIND_KEY, kind);
 }
 export async function clearToken() {
@@ -61,16 +63,13 @@ export async function clearToken() {
   tokenCache = null;
   tokenKindCache = null;
   responseCache.clear();
-  if (usesDirectDevApi) await browserStorage.secureRemove("forge.jwt");
+  await browserStorage.secureRemove("forge.jwt");
   await browserStorage.removeItem(TOKEN_KIND_KEY);
 }
 export async function getToken(): Promise<string | null> {
   if (usesDirectDevApi) {
-    if (tokenCache === undefined) {
-      const stored = (await browserStorage.secureGet<string>("forge.jwt", "")) || null;
-      if (tokenCache === undefined) tokenCache = stored;
-    }
-    return tokenCache;
+    if (tokenCache === undefined) tokenCache = null;
+    return tokenCache ?? null;
   }
   // Production web authentication is cookie-backed.
   if (tokenCache === undefined) tokenCache = null;

@@ -17,7 +17,7 @@
 - **The untracked `docs/superpowers/plans/2026-08-01-executive-os-phase-2.md`** belongs to the frozen Executive OS workstream. It gets its own clearly-labelled commit and must **not** ride along in the Phase 0 baseline commit.
 - **Backend on `:8010` does not auto-reload.** Any `backend/*.py` edit requires a restart to take effect. Confirm with `ps -o lstart` that process start time is later than the newest edited file's mtime.
 - **No `pytest-asyncio` in this repo.** `@pytest.mark.asyncio` silently skips. Async tests use `asyncio.run(...)` inside a sync test function.
-- **Probe credential:** `owner@forge.app` / `Forge@2026`. This works today and is itself the Phase 6 release blocker — do not "fix" it in this phase; QA depends on it.
+- **Probe credential:** `owner@forge.app` / `[legacy password removed; use injected test credentials]`. This works today and is itself the Phase 6 release blocker — do not "fix" it in this phase; QA depends on it.
 - **Commit only at Task 7**, and only if every prior task is PASS or has a recorded, re-verified fix.
 
 ---
@@ -203,7 +203,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default="http://127.0.0.1:8010")
     parser.add_argument("--email", default="owner@forge.app")
-    parser.add_argument("--password", default="Forge@2026")
+    parser.add_argument("--password", default="[legacy password removed; use injected test credentials]")
     args = parser.parse_args()
 
     # One loop for the entire run -- see _floors_from_db().
@@ -308,7 +308,7 @@ Expected: a non-zero closed count (the report observed 83). This proves the coll
 
 Run:
 ```bash
-cd "/Users/yashvardhansinhjhala/buildcon house/forge2.0/backend" && T=$(curl -s -X POST 127.0.0.1:8010/api/auth/login -H 'Content-Type: application/json' -d '{"email":"owner@forge.app","password":"Forge@2026"}' | ./.venv/bin/python -c 'import sys,json;print(json.load(sys.stdin)["access_token"])') && curl -s -X POST 127.0.0.1:8010/api/followups/reconcile -H "Authorization: Bearer $T" -H "X-Floor-Id: ground-floor"
+cd "/Users/yashvardhansinhjhala/buildcon house/forge2.0/backend" && T=$(curl -s -X POST 127.0.0.1:8010/api/auth/login -H 'Content-Type: application/json' -d '{"email":"owner@forge.app","password":"[legacy password removed; use injected test credentials]"}' | ./.venv/bin/python -c 'import sys,json;print(json.load(sys.stdin)["access_token"])') && curl -s -X POST 127.0.0.1:8010/api/followups/reconcile -H "Authorization: Bearer $T" -H "X-Floor-Id: ground-floor"
 ```
 Expected: a JSON summary object (created/resolved/unchanged counts), **not** a 500 and not an `E11000` error. A completed pass against a database that contains closed source_keys is the actual proof.
 

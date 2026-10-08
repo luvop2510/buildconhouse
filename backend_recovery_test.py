@@ -3,6 +3,7 @@
 Backend Recovery & Health System Test
 Tests the new /api/health/system endpoint and smoke regression after full outage recovery.
 """
+import os
 import requests
 import json
 from typing import Dict, Optional
@@ -10,7 +11,7 @@ from typing import Dict, Optional
 # Configuration
 BASE_URL = "https://buildcon-preview.preview.emergentagent.com/api"
 PRIMARY_EMAIL = "owner@forge.app"
-PRIMARY_PASSWORD = "Forge@2026"
+PRIMARY_PASSWORD = os.environ["FORGE_TEST_OWNER_PASSWORD"]
 
 # Global state
 auth_token = None
@@ -230,7 +231,7 @@ def test_smoke_regression():
     print("TEST 2: SMOKE REGRESSION - Core flows")
     print("="*80)
     
-    # Test 2.1: POST /api/auth/login with owner@forge.app / Forge@2026
+    # Test 2.1: POST /api/auth/login with owner@forge.app / [legacy credential removed]
     try:
         response = requests.post(
             f"{BASE_URL}/auth/login",

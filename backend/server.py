@@ -6,14 +6,15 @@ from contextlib import asynccontextmanager
 from time import monotonic
 from typing import Any
 
-from fastapi import APIRouter, FastAPI, Request
+from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 
 from middleware import SecurityHeadersMiddleware
+from services.request_limits import RequestBodyLimitMiddleware
 
-from bootstrap import _check_demo_accounts, run_bootstrap
+from bootstrap import LEGACY_DEMO_PASSWORD, _check_demo_accounts, run_bootstrap
 from settings import settings
 from services.monitoring import (
     init_monitoring,
@@ -42,12 +43,8 @@ from routes.settings_routes import router as settings_router  # noqa: E402
 from routes.roles_routes import router as roles_router  # noqa: E402
 from routes.permissions_routes import router as permissions_router  # noqa: E402
 from routes.access_grants_routes import router as access_grants_router  # noqa: E402
-from access_profiles import profile_allows_request  # noqa: E402
-from auth import decode_token  # noqa: E402
-from services.access_grants import (  # noqa: E402
-    CUSTOM_ACCESS_COMMON_PATHS, action_for_http_method, ensure_access_grant_indexes,
-    grants_allow, grants_for_user, resource_candidates_for_api_path,
-)
+from auth import decode_token, get_current_user, revoke_all_sessions, verify_password  # noqa: E402
+from services.access_grants import ensure_access_grant_indexes  # noqa: E402
 from routes.referrer_routes import router as referrer_router  # noqa: E402
 from routes.sales_data_routes import router as sales_data_router  # noqa: E402
 from routes.executive_analytics_routes import router as executive_analytics_router  # noqa: E402
@@ -102,6 +99,38 @@ async def _seed_automation_rules() -> None:
     from services.automation_rules import ensure_seeded
     await ensure_seeded()
 
+
+_CREDENTIAL_SCAN_BATCH_SIZE = 100
+
+
+async def _revoke_published_default_sessions() -> None:
+    """Scan every account at runtime without retaining hash sets or blocking the loop.
+
+    Keyset pagination bounds memory; one off-thread bcrypt comparison at a
+    time bounds CPU concurrency. Account names and credential values never
+    enter diagnostics. This deliberately does not mutate preflight helpers
+    or passwords and also covers renamed staff and customer portal accounts.
+    """
+    revoked_accounts = 0
+    for kind, collection_name in (("staff", "users"), ("customer", "customers")):
+        last_id = None
+        while True:
+            query = {"password_hash": {"$exists": True}, "id": {"$type": "string"}}
+            if last_id is not None:
+                query["id"]["$gt"] = last_id
+            accounts = await getattr(db, collection_name).find(
+                query, {"_id": 0, "id": 1, "password_hash": 1},
+            ).sort("id", 1).limit(_CREDENTIAL_SCAN_BATCH_SIZE).to_list(_CREDENTIAL_SCAN_BATCH_SIZE)
+            if not accounts:
+                break
+            for account in accounts:
+                if await asyncio.to_thread(verify_password, LEGACY_DEMO_PASSWORD, account.get("password_hash", "")):
+                    await revoke_all_sessions(kind, account["id"])
+                    revoked_accounts += 1
+            last_id = accounts[-1]["id"]
+    if revoked_accounts:
+        logger.warning("Revoked sessions for %d account(s) using the published default credential", revoked_accounts)
+
 async def _startup(app: FastAPI) -> None:
     """Run readiness work that must finish before accepting requests."""
     preflight = await run_bootstrap(enforce_indexes=False)
@@ -128,6 +157,7 @@ async def _startup(app: FastAPI) -> None:
     preflight = await run_bootstrap()
     preflight.require_healthy()
     _cache_demo_check_from_bootstrap(preflight.checks)
+    await _revoke_published_default_sessions()
     await ensure_floor_scope()
     await seed_if_empty()
     await resync_catalog_if_needed()
@@ -234,24 +264,15 @@ async def enforce_access_profile(request: Request, call_next):
     except Exception:
         # Route dependencies supply the canonical authentication response.
         return await call_next(request)
-    if token.get("kind") == "staff" and not profile_allows_request(
-        token.get("access_profile"), request.method, request.url.path,
-    ):
-        return JSONResponse(status_code=403, content={"detail": "This account is not permitted to use this function"})
-    if token.get("kind") == "staff" and token.get("custom_access"):
-        path = request.url.path
-        if path not in CUSTOM_ACCESS_COMMON_PATHS:
-            action = action_for_http_method(request.method)
-            # A floor-specific grant needs a concrete explicit workspace. A
-            # missing header cannot be guessed from an old device selection.
-            floor_id = request.headers.get("x-floor-id")
-            grants = await grants_for_user(db, token.get("sub", ""))
-            resources = resource_candidates_for_api_path(path, floor_id)
-            if not resources or not action or not any(
-                grants_allow(grants, user_id=token.get("sub", ""), resource=resource, action=action, floor_id=floor_id)
-                for resource in resources
-            ):
-                return JSONResponse(status_code=403, content={"detail": "This account is not permitted to use this function"})
+    if token.get("kind") == "staff":
+        # Current principal state is authoritative; token claims may predate
+        # a changed profile/custom allocation. The dependency also applies
+        # this policy when a browser redeems a download token without Bearer.
+        try:
+            await get_current_user(request=request, authorization=authorization,
+                                   x_floor_id=request.headers.get("x-floor-id"), dl=None)
+        except HTTPException as exc:
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
     return await call_next(request)
 
 # TTL-cached demo-account detection for /api/health — reuses the same
@@ -384,19 +405,16 @@ async def trigger_error():
 # Security headers (defense-in-depth, no behavior change for existing
 # clients) — registered before CORSMiddleware so CORS stays the outermost
 # middleware, unchanged from its current behavior.
+app.add_middleware(RequestBodyLimitMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 # Mobile clients and the hosted web app receive several JSON-heavy responses.
 # Compress them at the API boundary; images already use their native formats.
 app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=6)
 
-# Security audit (Phase 1, 2026-08): Forge authenticates exclusively via a
-# Bearer JWT stored client-side (see frontend/src/api/client.ts) — it never
-# relies on cookies. `allow_credentials=True` combined with a wildcard origin
-# is therefore both unnecessary AND flagged by every CORS scanner as unsafe
-# (the two are mutually contradictory per the Fetch spec; browsers silently
-# ignore the wildcard when credentials are requested). Preview URLs are
-# dynamic per-session, so an allowlist of origins is not viable here — the
-# safe fix is to disable credentialed CORS entirely, not to restrict origins.
+# The API receives bearer credentials. Production browser cookies terminate
+# at the same-origin proxies, which enforce Origin/CSRF and translate them to
+# bearer credentials. Native clients use SecureStore. Cross-origin API access
+# therefore never enables ambient browser cookies.
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=False,

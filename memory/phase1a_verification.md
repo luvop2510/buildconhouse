@@ -3,7 +3,7 @@
 **Date:** 2026-07-04
 **Iteration:** 4 (Quotation Builder 2.0 Phase 1A — polish + verification)
 **Reviewer:** main agent (with deep_testing_backend_v2 for backend)
-**Credentials used:** `owner@forge.app / Forge@2026` (see `/app/memory/test_credentials.md`)
+**Credentials used:** `owner@forge.app / [legacy password removed; use injected test credentials]` (see `/app/memory/test_credentials.md`)
 
 ---
 

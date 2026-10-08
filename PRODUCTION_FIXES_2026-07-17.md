@@ -10,7 +10,7 @@ Supabase storage, real HTTP requests against a booted backend — not mocks, not
 
 ## Critical (5/5 fixed)
 
-1. **Live demo credentials rotated.** `owner@forge.app`/`Forge@2026` and 7 sibling accounts were
+1. **Live demo credentials rotated.** `owner@forge.app`/`[legacy password removed; use injected test credentials]` and 7 sibling accounts were
    live in production with a password printed throughout the repo's test files. Ran
    `scripts/rotate_demo_credentials.py --apply` — found and fixed a real bug in it first (temp
    password expiry was set to *now*, not now+72h, so the new password would have been rejected as

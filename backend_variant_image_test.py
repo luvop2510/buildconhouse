@@ -9,6 +9,7 @@ Tests the fix for variant/media image cross-contamination across the product cat
 Root cause: _apply_media in catalog_service.py pooled sibling variants' images together
 instead of resolving each product's own image.
 """
+import os
 
 import requests
 import sys
@@ -19,7 +20,7 @@ BASE_URL = "https://buildcon-preview.preview.emergentagent.com/api"
 
 # Test credentials from review request
 TEST_EMAIL = "owner@forge.app"
-TEST_PASSWORD = "Forge@2026"
+TEST_PASSWORD = os.environ["FORGE_TEST_OWNER_PASSWORD"]
 
 # Global auth token
 AUTH_TOKEN = None
@@ -64,7 +65,7 @@ def get_headers() -> Dict[str, str]:
 
 
 def test_1_auth_login():
-    """TEST 1: Authentication - POST /api/auth/login owner@forge.app/Forge@2026 -> 200"""
+    """TEST 1: Authentication - POST /api/auth/login owner@forge.app/[legacy credential removed] -> 200"""
     global AUTH_TOKEN
     print("\n" + "="*80)
     print("TEST 1: AUTHENTICATION")

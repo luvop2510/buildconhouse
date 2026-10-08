@@ -32,7 +32,7 @@ Verified against the live stack (backend on Atlas `buildcon_house`, 2,601 produc
 
 ## Still required before charging customers (in priority order)
 
-1. **Rotate the owner credentials.** `owner@forge.app` / `Forge@2026` is live in the production database and printed throughout the repo's test files. Rotate every `*@forge.app` account password (or deactivate unused ones) before any public exposure. Verified this session that the known password still logs in.
+1. **Rotate the owner credentials.** `owner@forge.app` / `[legacy password removed; use injected test credentials]` is live in the production database and printed throughout the repo's test files. Rotate every `*@forge.app` account password (or deactivate unused ones) before any public exposure. Verified this session that the known password still logs in.
 2. **JWT download tokens in URLs** (`?_t=` in `src/api/client.ts` / `auth.py`) — replace with short-lived single-use download tokens; URLs leak into logs/history.
 3. **Shared rate limiting** — login limiter is per-process (`services/rate_limit.py`); use Redis or an edge/WAF limit for multi-replica deploys.
 4. **Migrations** — bootstrap + one-off scripts exist but there is no versioned migration history; adopt a numbered-migration runner before schema changes on live data.

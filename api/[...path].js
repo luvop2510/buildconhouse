@@ -103,7 +103,7 @@ export function createHandler({ backendUrl = process.env.BACKEND_URL, fetchImpl 
     try { body = unsafe ? await readBody(req) : undefined; }
     catch (error) {
       if (error instanceof BodyTooLargeError) return res.status(413).json({ detail: 'Request body exceeds the 1 MiB limit.' });
-      console.error('Web API proxy request-body error:', error);
+      console.error('Web API proxy request-body error:', error?.name || 'Error');
       return res.status(400).json({ detail: 'Unable to read request body.' });
     }
 

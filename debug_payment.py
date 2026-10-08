@@ -2,12 +2,13 @@
 """
 Debug payment overpayment validation
 """
+import os
 import requests
 import json
 
 BACKEND_URL = "https://buildcon-preview.preview.emergentagent.com/api"
 OWNER_EMAIL = "owner@forge.app"
-OWNER_PASSWORD = "Forge@2026"
+OWNER_PASSWORD = os.environ["FORGE_TEST_OWNER_PASSWORD"]
 
 # Login
 login_response = requests.post(f"{BACKEND_URL}/auth/login", json={

@@ -44,7 +44,7 @@ def _detect_dims_and_quality(data: bytes, mime: str) -> tuple[Optional[int], Opt
         w, h = img.size
         return w, h, quality_from_dimensions(w, h, mime)  # type: ignore[return-value]
     except Exception as e:  # noqa: BLE001
-        logger.warning("image inspect failed: %s", e)
+        logger.warning("Image inspection failed error_type=%s", type(e).__name__)
         return None, None, "acceptable"
 
 
@@ -111,7 +111,7 @@ async def upload_and_register(
     sha1 = hashlib.sha1(data).hexdigest()
 
     # Dedupe check
-    scope_filter: dict = {"sha1": sha1, "source_type": source_type, "role": role}
+    scope_filter: dict = {"sha1": sha1, "source_type": source_type, "role": role, "floor_id": floor_id, "brand_id": brand_id}
     if product_id:
         scope_filter["product_id"] = product_id
     elif family_key:
@@ -162,12 +162,12 @@ async def upload_and_register(
             if not shared:
                 await storage.delete(bucket=bucket, key=key)
         except Exception as cleanup_err:
-            logger.warning("orphan cleanup after failed insert also failed (%s): %s", key, cleanup_err)
+            logger.warning("Media cleanup after failed registration failed error_type=%s", type(cleanup_err).__name__)
         raise
 
     # If this is the new primary, demote others
     if is_primary:
-        await _demote_other_primaries(product_id=product_id, family_key=family_key, keep_id=doc.id)
+        await _demote_other_primaries(product_id=product_id, family_key=family_key, keep_id=doc.id, floor_id=floor_id, brand_id=brand_id)
 
     await log_event(
         event_type="product.image_uploaded",
@@ -186,8 +186,9 @@ async def upload_and_register(
 
 async def _demote_other_primaries(
     *, product_id: Optional[str], family_key: Optional[str], keep_id: str,
+    floor_id: str, brand_id: Optional[str],
 ) -> None:
-    filt: dict = {"id": {"$ne": keep_id}, "is_primary": True}
+    filt: dict = {"id": {"$ne": keep_id}, "is_primary": True, "floor_id": floor_id, "brand_id": brand_id}
     if product_id:
         filt["product_id"] = product_id
     elif family_key:
@@ -213,7 +214,7 @@ async def delete_media(media_id: str, *, actor: Optional[UserPublic] = None) -> 
         # Metadata is the recoverable pointer to the Supabase object.  Never
         # delete it after a failed storage operation or the object becomes an
         # untraceable orphan that cannot be restored or retried safely.
-        logger.error("storage delete failed; preserving media metadata for retry: %s", e)
+        logger.error("Media storage deletion failed; metadata preserved error_type=%s", type(e).__name__)
         raise
     await db.product_media.delete_one({"id": media_id})
     # The `product_media` row is gone after this point — capture a snapshot

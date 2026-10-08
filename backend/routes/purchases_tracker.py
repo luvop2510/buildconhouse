@@ -23,6 +23,8 @@ Endpoints:
 The tracker does NOT concern itself with taxes — Forge uses final prices only.
 """
 from __future__ import annotations
+
+from services.export import spreadsheet_cell
 import asyncio
 import hashlib
 import io
@@ -2680,23 +2682,23 @@ async def export_xlsx(
     ]
     header_fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
     for col, h in enumerate(headers, start=1):
-        cell = ws.cell(row=4, column=col, value=h)
+        cell = ws.cell(row=4, column=col, value=spreadsheet_cell(h))
         cell.font = Font(bold=True, color="374151", size=11)
         cell.fill = header_fill
         cell.alignment = Alignment(vertical="center")
 
     for i, r in enumerate(rows, start=5):
-        ws.cell(row=i, column=1, value=r.get("po_number"))
-        ws.cell(row=i, column=2, value=r.get("sku"))
-        ws.cell(row=i, column=3, value=r.get("name"))
-        ws.cell(row=i, column=4, value=r.get("customer_name"))
-        ws.cell(row=i, column=5, value=r.get("brand_name"))
-        ws.cell(row=i, column=6, value=r.get("stage_label"))
-        ws.cell(row=i, column=7, value=r.get("qty"))
-        ws.cell(row=i, column=8, value=r.get("last_moved_at"))
-        ws.cell(row=i, column=9, value=r.get("last_moved_by_name"))
-        ws.cell(row=i, column=10, value=r.get("age_days"))
-        ws.cell(row=i, column=11, value="Yes" if r.get("blocked") else "")
+        ws.cell(row=i, column=1, value=spreadsheet_cell(r.get("po_number")))
+        ws.cell(row=i, column=2, value=spreadsheet_cell(r.get("sku")))
+        ws.cell(row=i, column=3, value=spreadsheet_cell(r.get("name")))
+        ws.cell(row=i, column=4, value=spreadsheet_cell(r.get("customer_name")))
+        ws.cell(row=i, column=5, value=spreadsheet_cell(r.get("brand_name")))
+        ws.cell(row=i, column=6, value=spreadsheet_cell(r.get("stage_label")))
+        ws.cell(row=i, column=7, value=spreadsheet_cell(r.get("qty")))
+        ws.cell(row=i, column=8, value=spreadsheet_cell(r.get("last_moved_at")))
+        ws.cell(row=i, column=9, value=spreadsheet_cell(r.get("last_moved_by_name")))
+        ws.cell(row=i, column=10, value=spreadsheet_cell(r.get("age_days")))
+        ws.cell(row=i, column=11, value=spreadsheet_cell("Yes" if r.get("blocked") else ""))
 
     # Column widths — heuristic
     widths = [16, 14, 40, 26, 14, 20, 8, 24, 20, 12, 10]

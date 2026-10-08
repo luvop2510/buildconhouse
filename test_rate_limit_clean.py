@@ -2,13 +2,14 @@
 """
 Clean rate limit test - wait for window to expire first
 """
+import os
 
 import requests
 import time
 
 BASE_URL = "https://buildcon-preview.preview.emergentagent.com/api"
 OWNER_EMAIL = "owner@forge.app"
-OWNER_PASSWORD = "Forge@2026"
+OWNER_PASSWORD = os.environ["FORGE_TEST_OWNER_PASSWORD"]
 
 print("="*80)
 print("CLEAN RATE LIMIT TEST")

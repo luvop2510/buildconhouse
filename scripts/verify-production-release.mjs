@@ -23,6 +23,7 @@ for (const path of ['/login', '/privacy', '/terms', '/notebook/kitchen/quotation
   const { response, body } = await read(path);
   assert.equal(response.status, 200, path);
   assert.match(response.headers.get('content-security-policy') || '', /frame-ancestors/);
+  assert.match(response.headers.get('content-security-policy') || '', /script-src 'self'/);
   assert.equal(response.headers.get('x-frame-options'), 'SAMEORIGIN');
   assert.equal(response.headers.get('cache-control'), 'no-store', `${path}: stale HTML must not be cached`);
   for (const match of body.matchAll(/<script\b[^>]*\bsrc=["']([^"']+)["']/g)) scripts.add(match[1]);
@@ -43,6 +44,10 @@ for (const path of ['/_expo/static/js/web/missing-release-probe.js', '/assets/mi
   const { response } = await read(path);
   assert.equal(response.status, 404, `${path}: missing assets must not become successful HTML`);
   assert.equal(response.headers.get('cache-control'), 'no-store');
+}
+for (const path of ['/assets/security-probe.js.map', '/assets/security-probe.js.MAP']) {
+  const { response } = await read(path);
+  assert.equal(response.status,404,`${path}: source maps must not be published`);
 }
 for (const path of ['/api/health', '/api/health/ready', '/api/quotations']) {
   const { response, body } = await read(path);

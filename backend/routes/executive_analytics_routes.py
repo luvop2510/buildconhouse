@@ -6,6 +6,8 @@ match so cards, tables and exports cannot drift from the books.
 """
 from __future__ import annotations
 
+from services.export import spreadsheet_cell
+
 import csv
 from datetime import datetime, timedelta, timezone
 from io import BytesIO, StringIO
@@ -253,12 +255,12 @@ async def export_orders(
     headers = ["Order", "Confirmed at", "Floor", "Customer", "Salesperson", "Revenue", "Status"]
     filename = f"buildcon-executive-sales-{preset}"
     if format == "csv":
-        output = StringIO(); writer = csv.writer(output); writer.writerow(headers); writer.writerows(rows)
+        output = StringIO(); writer = csv.writer(output); writer.writerow([spreadsheet_cell(value) for value in headers]); writer.writerows([[spreadsheet_cell(value) for value in row] for row in rows])
         return StreamingResponse(iter([output.getvalue()]), media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}.csv"'})
     if format == "xlsx":
         from openpyxl import Workbook
-        book = Workbook(); sheet = book.active; sheet.title = "Confirmed Orders"; sheet.append(headers)
-        for row in rows: sheet.append(row)
+        book = Workbook(); sheet = book.active; sheet.title = "Confirmed Orders"; sheet.append([spreadsheet_cell(value) for value in headers])
+        for row in rows: sheet.append([spreadsheet_cell(value) for value in row])
         blob = BytesIO(); book.save(blob); blob.seek(0)
         return StreamingResponse(blob, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f'attachment; filename="{filename}.xlsx"'})
     from reportlab.lib.pagesizes import A4, landscape

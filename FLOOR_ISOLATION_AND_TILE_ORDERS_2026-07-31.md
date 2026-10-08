@@ -190,7 +190,7 @@ timeline) executes end-to-end and survives restarts; every download works again.
    7 Vitra POs + 15 movement rows (`Task19 SingleSupplier Test`, `TEST_LC4_*`), plus the ground-floor
    `Task18/Task19/TEST_LC4/ZZTEST` orders. Invisible in the Tiles module now, but still real rows.
    Say the word and I'll write a scoped cleanup script.
-2. **`owner@forge.app` is back on the publicly known password `Forge@2026`** — `/api/health` reports
+2. **`owner@forge.app` is back on the publicly known password `[legacy password removed; use injected test credentials]`** — `/api/health` reports
    `degraded` for exactly this. The test harness appears to have reset it. Rotate before go-live.
 3. **Legacy endpoints, dead from the UI but still unit-tested** — `/purchases/orders/customer-view`,
    `/orders/company-view`, `/{po_id}/order-detail`, `/{po_id}/chalans*`, `/dispatch-record`,

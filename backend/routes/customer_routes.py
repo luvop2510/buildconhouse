@@ -248,6 +248,8 @@ async def update_customer(
         raise HTTPException(status_code=400, detail="Nothing to update")
     patch["updated_at"] = now_iso()
     await db.customers.update_one({"id": customer_id}, {"$set": patch})
+    if patch.get("portal_enabled") is False:
+        await revoke_all_sessions("customer", customer_id)
 
     if "portal_enabled" in patch and patch["portal_enabled"] != existing.get("portal_enabled", False):
         await log_event(

@@ -2,7 +2,7 @@
 
 ## Test Configuration
 - **URL**: https://buildcon-preview.preview.emergentagent.com
-- **Login**: owner@forge.app / Forge@2026
+- **Login**: owner@forge.app / [legacy password removed; use injected test credentials]
 - **Test Path**: `/(admin)/quotations/new`
 
 ## Backend Verification (Automated - PASSED ✅)
@@ -25,7 +25,7 @@ Test the FULL add-to-quotation flow at these 3 sizes, one at a time (fresh visit
 2. Toggle device toolbar (Ctrl+Shift+M or Cmd+Shift+M)
 3. Set custom dimensions for the current test size
 4. Navigate to: `https://buildcon-preview.preview.emergentagent.com/login`
-5. Login with: owner@forge.app / Forge@2026
+5. Login with: owner@forge.app / [legacy password removed; use injected test credentials]
 6. Navigate to: `/(admin)/quotations/new`
 
 ### Checkpoint (a): Open the catalog

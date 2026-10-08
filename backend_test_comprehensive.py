@@ -3,6 +3,7 @@
 STABILIZATION SPRINT - Comprehensive Backend Audit
 All 6 focus areas with detailed request/response evidence.
 """
+import os
 import requests
 import json
 import time
@@ -10,9 +11,9 @@ from datetime import datetime, timedelta
 
 BASE_URL = "https://buildcon-preview.preview.emergentagent.com/api"
 PRIMARY_EMAIL = "owner@forge.app"
-PRIMARY_PASSWORD = "Forge@2026"
+PRIMARY_PASSWORD = os.environ["FORGE_TEST_OWNER_PASSWORD"]
 SALES_EMAIL = "sales@forge.app"
-SALES_PASSWORD = "Forge@2026"
+SALES_PASSWORD = os.environ["FORGE_TEST_OWNER_PASSWORD"]
 
 auth_token = None
 sales_token = None

@@ -35,7 +35,7 @@ cd frontend && npx tsc --noEmit
 ## 3. Floor-isolation probe (final gate)
 
 ```
-cd backend && FORGE_PROBE_PASSWORD='Forge@2026' ./.venv/bin/python -m scripts.probe_floor_isolation
+cd backend && FORGE_PROBE_PASSWORD='[legacy password removed; use injected test credentials]' ./.venv/bin/python -m scripts.probe_floor_isolation
 ```
 
 **Observed: 10/10 endpoints isolated correctly, exit 0.**

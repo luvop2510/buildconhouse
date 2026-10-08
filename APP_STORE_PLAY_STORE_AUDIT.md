@@ -97,7 +97,7 @@ The following can only be confirmed against a real signed build and/or console a
 - Target SDK/API level actually compiled into the Android build (Play requires targeting a recent API level — 34/35 as of 2025 policy — for new submissions and updates).
 - App Store Connect / Play Console listing state: name availability, screenshots per required device size, description/keywords, support and marketing URLs, age rating questionnaire answers, App Privacy "nutrition label" answers, Play Data Safety form answers, ads declaration.
 - Whether Play App Signing is enrolled and who holds the upload key.
-- Whether a review-account (fresh, non-production credentials) has been prepared for App Store/Play reviewers — under no circumstances should the currently-live `owner@forge.app` / `Forge@2026` demo credential (flagged as a P0 in `PRODUCTION_READINESS_AUDIT.md`) be handed to a reviewer or left active at all by launch.
+- Whether a review-account (fresh, non-production credentials) has been prepared for App Store/Play reviewers — under no circumstances should the currently-live `owner@forge.app` / `[legacy password removed; use injected test credentials]` demo credential (flagged as a P0 in `PRODUCTION_READINESS_AUDIT.md`) be handed to a reviewer or left active at all by launch.
 - Real-device performance (cold start time, catalog-grid scroll performance at `initialNumToRender={120}` per `MOBILE_UX_AUDIT.md`, memory behavior on low-end Android) — nothing here was profiled on-device.
 
 ---
@@ -109,7 +109,7 @@ The following can only be confirmed against a real signed build and/or console a
 - [ ] Regenerate `icon.png`/`adaptive-icon.png` at 1024×1024, no alpha channel.
 - [ ] Confirm the production build's `EXPO_PUBLIC_BACKEND_URL` is `https://` — never paper over with an ATS/cleartext exception.
 - [ ] Pick one canonical build/submit path (EAS directly, or Emergent's pipeline) and confirm who has access to the resulting App Store Connect / Play Console app records.
-- [ ] Rotate the live demo credential (`owner@forge.app` / `Forge@2026`) before any reviewer or public build exists; prepare a fresh, scoped reviewer account instead.
+- [ ] Rotate the live demo credential (`owner@forge.app` / `[legacy password removed; use injected test credentials]`) before any reviewer or public build exists; prepare a fresh, scoped reviewer account instead.
 - [ ] Decide and document a v1 stance on: push notifications, deep-linking beyond OAuth return, offline UX, and whether Sentry/PostHog will actually be enabled — then make store-listing copy and privacy answers match whatever was decided.
 - [ ] Add at minimum a "request account/data deletion" path (support email is enough) and answer Play's Data Safety questionnaire accordingly.
 - [ ] Run a VoiceOver pass (iOS) and TalkBack pass (Android) against the touch-target and truncation issues already catalogued in `MOBILE_UX_AUDIT.md`.

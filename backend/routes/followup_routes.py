@@ -9,6 +9,8 @@ No new business logic is duplicated — this module is orchestration + reads.
 """
 from __future__ import annotations
 
+from services.export import spreadsheet_cell
+
 import asyncio
 import base64
 import binascii
@@ -361,13 +363,13 @@ async def export_followups(
     if format == "csv":
         buf = io.StringIO()
         writer = csv.writer(buf)
-        writer.writerow(["Customer", "Phone", "Type", "Reason", "Next Action", "Value", "Priority", "Score", "Due", "Status", "Assigned To"])
+        writer.writerow([spreadsheet_cell(value) for value in ["Customer", "Phone", "Type", "Reason", "Next Action", "Value", "Priority", "Score", "Due", "Status", "Assigned To"]])
         for d in rows:
-            writer.writerow([
+            writer.writerow([spreadsheet_cell(value) for value in [
                 d.get("customer_name"), d.get("customer_phone"), d.get("category"), d.get("reason"),
                 d.get("next_action"), d.get("value"), d.get("effective_priority_level") or d.get("priority_level"),
                 d.get("priority_score"), d.get("due_at"), d.get("status"), d.get("assigned_to_name"),
-            ])
+            ]])
         mem = io.BytesIO(buf.getvalue().encode("utf-8"))
         return StreamingResponse(mem, media_type="text/csv", headers={
             "Content-Disposition": f'attachment; filename="followups-{stamp}.csv"',
@@ -386,22 +388,22 @@ async def export_followups(
     headers = ["Customer", "Phone", "Type", "Reason", "Next Action", "Value (₹)", "Priority", "Score", "Due", "Status", "Assigned To"]
     header_fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
     for col, h in enumerate(headers, start=1):
-        cell = ws.cell(row=4, column=col, value=h)
+        cell = ws.cell(row=4, column=col, value=spreadsheet_cell(h))
         cell.font = Font(bold=True, color="374151", size=11)
         cell.fill = header_fill
 
     for i, d in enumerate(rows, start=5):
-        ws.cell(row=i, column=1, value=d.get("customer_name"))
-        ws.cell(row=i, column=2, value=d.get("customer_phone"))
-        ws.cell(row=i, column=3, value=d.get("category"))
-        ws.cell(row=i, column=4, value=d.get("reason"))
-        ws.cell(row=i, column=5, value=d.get("next_action"))
-        ws.cell(row=i, column=6, value=d.get("value"))
-        ws.cell(row=i, column=7, value=(d.get("effective_priority_level") or d.get("priority_level")))
-        ws.cell(row=i, column=8, value=d.get("priority_score"))
-        ws.cell(row=i, column=9, value=d.get("due_at"))
-        ws.cell(row=i, column=10, value=d.get("status"))
-        ws.cell(row=i, column=11, value=d.get("assigned_to_name"))
+        ws.cell(row=i, column=1, value=spreadsheet_cell(d.get("customer_name")))
+        ws.cell(row=i, column=2, value=spreadsheet_cell(d.get("customer_phone")))
+        ws.cell(row=i, column=3, value=spreadsheet_cell(d.get("category")))
+        ws.cell(row=i, column=4, value=spreadsheet_cell(d.get("reason")))
+        ws.cell(row=i, column=5, value=spreadsheet_cell(d.get("next_action")))
+        ws.cell(row=i, column=6, value=spreadsheet_cell(d.get("value")))
+        ws.cell(row=i, column=7, value=(spreadsheet_cell(d.get("effective_priority_level") or d.get("priority_level"))))
+        ws.cell(row=i, column=8, value=spreadsheet_cell(d.get("priority_score")))
+        ws.cell(row=i, column=9, value=spreadsheet_cell(d.get("due_at")))
+        ws.cell(row=i, column=10, value=spreadsheet_cell(d.get("status")))
+        ws.cell(row=i, column=11, value=spreadsheet_cell(d.get("assigned_to_name")))
 
     for i, w in enumerate([22, 16, 12, 44, 22, 12, 10, 8, 22, 12, 18], start=1):
         ws.column_dimensions[get_column_letter(i)].width = w

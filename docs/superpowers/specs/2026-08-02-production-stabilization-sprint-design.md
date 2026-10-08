@@ -431,7 +431,7 @@ permissions, polished UI, stability. **Store assets are not generated** — only
 the application itself is made ready for review.
 
 Known open items entering this phase, from prior sessions:
-- `owner@forge.app` is back on the git-tracked demo password `Forge@2026`;
+- `owner@forge.app` is back on the git-tracked demo password `[legacy password removed; use injected test credentials]`;
   `/api/health` reports `degraded`. **Hard release blocker.**
 - The live database contains test fixtures (`Task18`/`Task19`/`TEST_LC4_*`
   orders, 118 synthetic activity events, a `ZZTEST TILES E2E` follow-up ranked

@@ -5,13 +5,13 @@ imports the supabase driver directly.
 """
 from __future__ import annotations
 import logging
-from typing import Optional
+from typing import Optional, get_args
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from auth import floor_inherit, floor_query, floor_scope_ids, get_current_user, require_min_role
 from db import db
-from models import Product, ProductMedia, UserPublic
+from models import MediaRole, Product, ProductMedia, UserPublic
 from services import catalog_service, media_service
 from services.product_image_normalizer import ProductImageNormalizationError
 
@@ -87,13 +87,17 @@ async def _brand_slug_for_product(product_id: str, user: UserPublic) -> tuple[st
 
 
 async def _assert_media_access(media_id: str, user: UserPublic) -> dict:
-    doc = await db.product_media.find_one({"id": media_id}, {"_id": 0})
+    doc = await db.product_media.find_one(floor_query(user, {"id": media_id}), {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Media not found")
     if doc.get("product_id"):
-        allowed = await db.products.find_one(floor_query(user, {"id": doc["product_id"]}), {"_id": 0, "id": 1})
+        allowed = await db.products.find_one(floor_query(user, {"id": doc["product_id"], "floor_id": doc["floor_id"]}), {"_id": 0, "id": 1})
     else:
-        allowed = await db.products.find_one(floor_query(user, {"family_key": doc.get("family_key")}), {"_id": 0, "id": 1})
+        if not doc.get("family_key") or not doc.get("brand_id"):
+            raise HTTPException(status_code=404, detail="Media not found")
+        allowed = await db.products.find_one(floor_query(user, {
+            "family_key": doc["family_key"], "floor_id": doc["floor_id"], "brand_id": doc["brand_id"],
+        }), {"_id": 0, "id": 1})
     if not allowed:
         raise HTTPException(status_code=404, detail="Media not found")
     return doc
@@ -160,6 +164,8 @@ async def upload_product_media(
 ):
     if source_type not in ("supplier", "manufacturer", "internal"):
         raise HTTPException(status_code=400, detail="source_type must be supplier|manufacturer|internal")
+    if role not in get_args(MediaRole):
+        raise HTTPException(status_code=400, detail="Unsupported media role")
     if role in ("dimension", "seat-cover"):
         raise HTTPException(status_code=400, detail="Use the diagram media upload endpoint for dimension and seat-cover images")
     slug, brand_id, family_key, floor_id = await _brand_slug_for_product(product_id, user)
@@ -224,6 +230,8 @@ async def upload_family_media(
 ):
     if source_type not in ("supplier", "manufacturer", "internal"):
         raise HTTPException(status_code=400, detail="source_type must be supplier|manufacturer|internal")
+    if role not in get_args(MediaRole):
+        raise HTTPException(status_code=400, detail="Unsupported media role")
     # Look up any product in this family to pick a brand slug
     sample = await db.products.find_one(floor_query(user, {"family_key": family_key}), {"_id": 0, "brand_id": 1, "floor_id": 1})
     if not sample:
@@ -268,11 +276,17 @@ async def patch_media(
     if not updates:
         raise HTTPException(status_code=400, detail="No supported fields to update")
     doc = await _assert_media_access(media_id, user)
+    try:
+        normalized = ProductMedia(**{**doc, **updates}).model_dump()
+        updates = {key: normalized[key] for key in updates}
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid media metadata") from None
     await db.product_media.update_one({"id": media_id}, {"$set": updates})
     if updates.get("is_primary"):
         await media_service._demote_other_primaries(  # type: ignore[attr-defined]
             product_id=doc.get("product_id"),
             family_key=doc.get("family_key"),
+            floor_id=doc["floor_id"], brand_id=doc.get("brand_id"),
             keep_id=media_id,
         )
     catalog_service.schedule_catalog_refresh()

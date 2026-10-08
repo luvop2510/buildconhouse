@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from re import fullmatch
+from services.access_grants import MFA_ACCOUNT_REQUESTS
 
 GROUND_TILE_QUOTATIONS_FOLLOWUPS = "ground_tile_quotations_followups"
 GROUND_PAYMENTS_DISPATCHES = "ground_payments_dispatches"
@@ -23,7 +24,7 @@ _COMMON = {
     ("POST", "/api/auth/sessions/logout-all"),
     ("GET", "/api/settings/floor-access"), ("GET", "/api/settings/floors"),
     ("GET", "/api/settings/permission-matrix"), ("GET", "/api/roles"),
-}
+} | MFA_ACCOUNT_REQUESTS
 
 
 def _catalog_read(method: str, path: str) -> bool:

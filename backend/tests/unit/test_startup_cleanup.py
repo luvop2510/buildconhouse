@@ -50,6 +50,7 @@ async def test_startup_failure_after_worker_start_cleans_up_resources(monkeypatc
             client_closed = True
 
     monkeypatch.setattr(server, "run_bootstrap", bootstrap)
+    monkeypatch.setattr(server, "_revoke_published_default_sessions", noop)
     monkeypatch.setattr(server, "pending_migrations", pending)
     monkeypatch.setattr(server, "run_migrations", noop)
     monkeypatch.setattr(server, "ensure_floor_scope", noop)

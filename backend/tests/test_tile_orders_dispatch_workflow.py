@@ -20,7 +20,7 @@ if not BASE_URL:
     BASE_URL = "http://localhost:8001"
 
 OWNER_EMAIL = "owner@forge.app"
-OWNER_PASSWORD = "Forge@2026"
+OWNER_PASSWORD = os.environ["FORGE_TEST_OWNER_PASSWORD"]
 
 
 @pytest.fixture(scope="module")

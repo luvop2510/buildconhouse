@@ -1,15 +1,10 @@
-"""Declarative, per-user access grants.
-
-This module deliberately contains no route-specific policy.  Routes opt into
-it through ``require_capability`` during the incremental migration from the
-legacy role-only checks.  Until then it is safe to create and review grants
-without changing any existing authorization decision.
-"""
+"""Server-enforced per-user capabilities and explicit API operation policy."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any, Iterable
 from uuid import uuid4
+from re import fullmatch
 
 
 # Resource names are stable API/UI concepts, not URL prefixes.  Keeping this
@@ -48,6 +43,83 @@ CUSTOM_ACCESS_COMMON_PATHS = frozenset({
     "/api/settings/access-grants/me",
     "/api/exports/page.xlsx",
 })
+
+
+def is_common_access_request(method: str, path: str) -> bool:
+    """Shell/session exemptions are actions, never unrestricted URL prefixes."""
+    method = method.upper()
+    if (method, path) in MFA_ACCOUNT_REQUESTS:
+        return True
+    if method == "GET":
+        return path in CUSTOM_ACCESS_COMMON_PATHS - {"/api/downloads/token", "/api/exports/page.xlsx", "/api/auth/logout", "/api/auth/change-password"}
+    if method == "POST":
+        return path in {"/api/auth/logout", "/api/auth/change-password", "/api/auth/sessions/logout-all", "/api/downloads/token", "/api/exports/page.xlsx"}
+    return method == "DELETE" and fullmatch(r"/api/auth/sessions/[^/]+", path) is not None
+
+
+MFA_ACCOUNT_REQUESTS = frozenset({
+    ("GET", "/api/auth/mfa/status"),
+    ("POST", "/api/auth/mfa/enroll"), ("POST", "/api/auth/mfa/confirm"),
+    ("POST", "/api/auth/mfa/disable"), ("POST", "/api/auth/mfa/recovery"),
+})
+
+# These POST commands modify existing business records. Full matching keeps
+# unrelated child creation routes and future endpoints from inheriting an
+# action merely because their name contains "move", "cancel", or "confirm".
+POST_UPDATE_ROUTE_PATTERNS = (
+    r"/api/quotations/[^/]+/items/[^/]+/cancel",
+    r"/api/quotations/[^/]+/move-to-quotation",
+    r"/api/quotations/[^/]+/place-order/confirm",
+    r"/api/quotations/[^/]+/use-godown-stock",
+    r"/api/purchases/items/[^/]+/move",
+    r"/api/purchases/items/[^/]+/cancel",
+    r"/api/purchases/items/bulk-move",
+    r"/api/purchases/items/[^/]+/transfer",
+    r"/api/purchases/legacy/items/[^/]+/transfer",
+    r"/api/purchases/transfers/[^/]+/return",
+    r"/api/purchases/settings",
+    r"/api/purchases/shortages/[^/]+/dismiss",
+    r"/api/purchases/[^/]+/chalans/[^/]+/godown-received",
+    r"/api/purchases/[^/]+/chalans/[^/]+/dispatch",
+    r"/api/purchase-orders/[^/]+/status",
+    r"/api/purchase-orders/[^/]+/receive",
+    r"/api/tile-orders/purchase-orders/[^/]+/ready",
+    r"/api/tile-orders/purchase-orders/[^/]+/items/move-to-godown",
+    r"/api/tile-orders/dispatches/[^/]+/godown-received",
+    r"/api/tile-orders/dispatches/[^/]+/delivered",
+    r"/api/godown-stock/customer-transfers/[^/]+/return",
+)
+
+
+def action_for_api_request(method: str, path: str, query=None) -> str | None:
+    """Exports require the export capability even for direct authenticated GETs."""
+    method = method.upper()
+    if method == "POST" and any(fullmatch(pattern, path) for pattern in POST_UPDATE_ROUTE_PATTERNS):
+        return "update"
+    if method in {"GET", "HEAD"}:
+        if path.endswith(("/pdf", "/pptx", "/export", "/export.xlsx")):
+            return "export"
+        if path.startswith("/api/analytics/") and query and query.get("format") in {"csv", "xlsx"}:
+            return "export"
+    return action_for_http_method(method)
+
+
+def granted_floor_ids(grants, *, user_id: str, path: str, action: str) -> list[str] | None:
+    """Floors authorized for this operation; None represents an explicit global grant."""
+    floors = []
+    for grant in grants:
+        floor = grant.get("floor_id")
+        # Ground-floor tile grants cannot widen the shared quotations API to
+        # another floor, including when the stored grant is organization-wide.
+        resources = resource_candidates_for_api_path(path, floor)
+        if grant.get("resource") == "tiles" and floor is None:
+            floor = "ground-floor"
+            resources = resource_candidates_for_api_path(path, floor)
+        if any(grant_allows(grant, user_id=user_id, resource=resource, action=action, floor_id=floor) for resource in resources):
+            if floor is None:
+                return None
+            floors.append(floor)
+    return list(dict.fromkeys(floors))
 
 
 def resource_for_api_path(path: str) -> str | None:

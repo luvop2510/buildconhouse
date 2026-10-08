@@ -30,13 +30,32 @@ function routeTemplate(pathname: string): string {
   return `/${segments.map((segment) => SAFE_ROUTE_SEGMENTS.has(segment) ? segment : ":id").join("/")}`;
 }
 
-function scrubText(value: string | undefined): string | undefined {
-  if (!value) return value;
-  return value
-    .replace(/\?.*$/, "")
-    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[redacted-email]")
-    .replace(/\+?\d[\d\s().-]{7,}\d/g, "[redacted-phone]")
-    .replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, "[redacted-id]");
+function safeEvent(event: any): any {
+  const trace = event.contexts?.trace;
+  const metric = event.tags?.metric;
+  const isMetric = event.message === "web_vital" && ["dom_content_loaded_ms", "load_ms", "lcp_ms", "cls", "inp_ms", "long_task_ms"].includes(metric);
+  // An allowlist is essential: SDK extras, exception messages, source context,
+  // span descriptions and tags may contain credentials or customer records.
+  return {
+    event_id: /^[a-f0-9]{32}$/i.test(event.event_id || "") ? event.event_id : undefined,
+    timestamp: Number.isFinite(event.timestamp) ? event.timestamp : undefined,
+    platform: "javascript",
+    level: ["error", "warning", "info", "fatal", "debug"].includes(event.level) ? event.level : "error",
+    request: undefined, user: undefined, breadcrumbs: [],
+    message: isMetric ? "web_vital" : undefined,
+    tags: isMetric ? { metric, route: routeTemplate(event.tags?.route || "/") } : undefined,
+    extra: isMetric && Number.isFinite(event.extra?.value) ? { value: event.extra.value } : undefined,
+    contexts: trace && /^[a-f0-9]{32}$/i.test(trace.trace_id || "") && /^[a-f0-9]{16}$/i.test(trace.span_id || "")
+      ? { trace: { trace_id: trace.trace_id, span_id: trace.span_id } } : undefined,
+    exception: event.exception ? { values: event.exception.values?.slice(0, 5).map((value: any) => ({
+      type: "Error", value: "Exception details omitted for privacy",
+      stacktrace: value.stacktrace ? { frames: value.stacktrace.frames?.slice(-50).map((frame: any) => ({
+        filename: typeof frame.filename === "string" ? frame.filename.split(/[?#]/)[0].split("/").pop()?.replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 120) : undefined,
+        lineno: Number.isInteger(frame.lineno) ? frame.lineno : undefined,
+        colno: Number.isInteger(frame.colno) ? frame.colno : undefined,
+      })) } : undefined,
+    })) } : undefined,
+  };
 }
 
 /** Whether this build is configured to emit production monitoring. */
@@ -58,32 +77,13 @@ export function initSentry(): void {
       maxBreadcrumbs: 0,
       tracesSampleRate,
       beforeSendTransaction: (event: any) => ({
-        ...event,
+        ...safeEvent(event),
+        type: "transaction",
         transaction: routeTemplate(event.transaction || "/"),
-        request: undefined,
-        user: undefined,
-        breadcrumbs: [],
+        start_timestamp: Number.isFinite(event.start_timestamp) ? event.start_timestamp : undefined,
+        spans: [],
       }),
-      beforeSend: (event: any) => ({
-        ...event,
-        request: undefined,
-        user: undefined,
-        breadcrumbs: [],
-        exception: event.exception ? {
-          ...event.exception,
-          values: event.exception.values?.map((value: any) => ({
-            ...value,
-            value: scrubText(value.value),
-            stacktrace: value.stacktrace ? {
-              ...value.stacktrace,
-              frames: value.stacktrace.frames?.map((frame: any) => ({
-                ...frame,
-                filename: scrubText(frame.filename),
-              })),
-            } : undefined,
-          })),
-        } : undefined,
-      }),
+      beforeSend: safeEvent,
     });
     return Sentry;
   });

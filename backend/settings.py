@@ -7,6 +7,8 @@ overrides values injected by the platform.
 from __future__ import annotations
 
 import os
+import base64
+import binascii
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
@@ -48,6 +50,7 @@ class Settings:
     allow_demo_seed: bool
     environment: str
     demo_password: str | None
+    mfa_encryption_key: str | None = None
 
     def readiness_flags(self) -> dict[str, bool]:
         """Safe, non-secret status values for diagnostics and health responses."""
@@ -104,6 +107,15 @@ def load_settings(
     mongo_url = _required(env, "MONGO_URL")
     db_name = _required(env, "DB_NAME")
     jwt_secret = _required(env, "JWT_SECRET")
+    mfa_encryption_key = (env.get("MFA_ENCRYPTION_KEY") or "").strip() or None
+    if mfa_encryption_key:
+        try:
+            decoded_key = base64.b64decode(mfa_encryption_key, altchars=b"-_", validate=True)
+            valid_key = len(decoded_key) == 32 and base64.urlsafe_b64encode(decoded_key).decode() == mfa_encryption_key
+        except (ValueError, binascii.Error):
+            valid_key = False
+        if not valid_key:
+            raise ConfigurationError("MFA_ENCRYPTION_KEY must be a canonical URL-safe base64 Fernet key containing 32 bytes.")
     supabase_url = _required(env, "SUPABASE_URL").rstrip("/")
     service_key = _required(env, "SUPABASE_SERVICE_ROLE_KEY")
     anon_key = _required(env, "SUPABASE_ANON_KEY")
@@ -187,6 +199,7 @@ def load_settings(
         allow_demo_seed=allow_demo_seed,
         environment=environment,
         demo_password=demo_password,
+        mfa_encryption_key=mfa_encryption_key,
     )
 
 

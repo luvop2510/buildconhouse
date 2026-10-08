@@ -2,13 +2,14 @@
 """
 Focused test for rate limiting - testing the exact scenario from review request
 """
+import os
 
 import requests
 import time
 
 BASE_URL = "https://buildcon-preview.preview.emergentagent.com/api"
 OWNER_EMAIL = "owner@forge.app"
-OWNER_PASSWORD = "Forge@2026"
+OWNER_PASSWORD = os.environ["FORGE_TEST_OWNER_PASSWORD"]
 
 print("="*80)
 print("FOCUSED RATE LIMIT TEST")

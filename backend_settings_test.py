@@ -3,6 +3,7 @@
 Backend Settings Endpoints Testing
 Tests new Settings backend endpoints for Forge/BuildCon House app
 """
+import os
 import base64
 import json
 import sys
@@ -15,7 +16,7 @@ BASE_URL = "http://localhost:8001/api"
 
 # Test credentials from /app/memory/test_credentials.md
 OWNER_EMAIL = "owner@forge.app"
-OWNER_PASSWORD = "Forge@2026"
+OWNER_PASSWORD = os.environ["FORGE_TEST_OWNER_PASSWORD"]
 
 # Global token storage
 AUTH_TOKEN: Optional[str] = None
@@ -52,9 +53,9 @@ def log_info(msg: str):
 # =============================================================================
 
 def test_login():
-    """Login with owner@forge.app/Forge@2026 to get auth token"""
+    """Login with owner@forge.app/[legacy credential removed] to get auth token"""
     global AUTH_TOKEN, OWNER_USER_ID
-    log_test("Setup: Login with owner@forge.app / Forge@2026")
+    log_test("Setup: Login with owner@forge.app / [legacy credential removed]")
     
     try:
         resp = requests.post(
@@ -168,7 +169,7 @@ def test_change_password():
         log_fail(f"1b. Exception: {e}")
         all_passed = False
     
-    # Test 1c: Change password back to original (Forge@2026)
+    # Test 1c: Change password back to original ([legacy credential removed])
     try:
         # Login with new password to get fresh token
         login_resp = requests.post(
@@ -189,7 +190,7 @@ def test_change_password():
             )
             
             if resp.status_code == 200 and resp.json().get("changed") is True:
-                log_pass(f"1c. Password changed back to Forge@2026 successfully")
+                log_pass(f"1c. Password changed back to [legacy credential removed] successfully")
                 
                 # Verify original password works again
                 verify_resp = requests.post(
@@ -199,7 +200,7 @@ def test_change_password():
                 )
                 
                 if verify_resp.status_code == 200:
-                    log_pass("1c. Original password (Forge@2026) works again")
+                    log_pass("1c. Original password ([legacy credential removed]) works again")
                 else:
                     log_fail(f"1c. Original password doesn't work: {verify_resp.status_code}")
                     all_passed = False

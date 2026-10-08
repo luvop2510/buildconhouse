@@ -3,6 +3,7 @@
 Customer Portal Backend Endpoint Testing
 Tests customer-scoped quotation endpoints with authentication
 """
+import os
 import json
 import sys
 from typing import Optional
@@ -14,9 +15,9 @@ BASE_URL = "https://buildcon-preview.preview.emergentagent.com/api"
 
 # Test credentials from /app/memory/test_credentials.md
 CUSTOMER_EMAIL = "customer@forge.app"
-CUSTOMER_PASSWORD = "Forge@2026"
+CUSTOMER_PASSWORD = os.environ["FORGE_TEST_OWNER_PASSWORD"]
 STAFF_EMAIL = "owner@forge.app"
-STAFF_PASSWORD = "Forge@2026"
+STAFF_PASSWORD = os.environ["FORGE_TEST_OWNER_PASSWORD"]
 
 # Global token storage
 CUSTOMER_TOKEN: Optional[str] = None
