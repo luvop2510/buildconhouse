@@ -33,7 +33,7 @@ for (const path of scripts) {
   const { response, body } = await read(path);
   assert.equal(response.status, 200, path);
   assert.match(response.headers.get('content-type') || '', /javascript/);
-  if (new URL(path, base).pathname === '/release-recovery.js') {
+  if (['/release-recovery.js', '/expo-hydrate.js'].includes(new URL(path, base).pathname)) {
     assert.equal(response.headers.get('cache-control'), 'no-store');
   } else {
     assert.match(response.headers.get('cache-control') || '', /immutable/);
