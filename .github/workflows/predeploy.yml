@@ -50,6 +50,8 @@ jobs:
           node scripts/check-npm-audit.mjs
           npx tsc --noEmit
           npx expo lint -- --max-warnings 0
+          npm run test:customer-draft-reset
+          npm run test:quotation-whatsapp
           npm run test:quotation-media && npm run test:downloads && npm run test:quotation-contract && npm run test:quotation-concealed-parts && npm run test:purchases-contract && npm run test:notebook && npm run test:mobile-ux && npm run test:api-client && npm run test:api-proxy && npm run test:sales-periods && npm run test:monitoring-contract && npm run test:frontend-performance && npm run test:icon-fonts && npm run test:release-recovery && npm run test:web-worker && node scripts/verify-tile-orders-contract.mjs
           npm run build
           npm run test:mobile-budget

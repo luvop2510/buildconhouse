@@ -22,6 +22,7 @@ from services.sequence import next_number
 from services.tile_movement_log import record_movement
 from services.tile_order_status import rollup_status
 from services.customer_data_reset import customer_reset_maintenance
+from services.quotation_shares import cleanup_expired_shares
 from pymongo import ReturnDocument
 
 EVENT_QUOTATION_GENERATED = "QuotationGenerated"
@@ -690,9 +691,14 @@ async def outbox_worker() -> None:
     isolated so one bad event or a transient DB error can't kill the loop."""
     import logging
     logger = logging.getLogger("forge.outbox")
+    next_share_cleanup = 0.0
     while True:
         try:
             await dispatch_pending()
+            now = datetime.now(timezone.utc).timestamp()
+            if not customer_reset_maintenance() and now >= next_share_cleanup:
+                await cleanup_expired_shares()
+                next_share_cleanup = now + 3600
         except asyncio.CancelledError:
             raise
         except Exception:

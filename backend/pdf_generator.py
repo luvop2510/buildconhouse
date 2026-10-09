@@ -7,6 +7,7 @@ from decimal import Decimal, InvalidOperation
 import functools
 from io import BytesIO
 import logging
+from math import atan2, cos, degrees, sin
 from pathlib import Path
 from time import monotonic
 from typing import Iterable
@@ -535,23 +536,47 @@ def _draw_footer(cv, doc, branding: dict | None = None) -> None:
     cv.restoreState()
 
 
-# The approved page-one template uses a compact, diagonal watermark behind the
-# commercial content.  A page-wide horizontal logo competed with the summary
-# table and made the BuildCon mark look clipped rather than intentional.
-WATERMARK_MAX_PAGE_WIDTH = 0.44
-WATERMARK_ANGLE_DEGREES = 24
+# Use each page's actual diagonal, including the shorter sanitary cover. The
+# inset accommodates printer margins while retaining the whole original mark.
+WATERMARK_PAGE_INSET = 4 * mm
+WATERMARK_INK_STRENGTH = 0.28
+
+
+def watermark_angle(page_width: float, page_height: float) -> float:
+    return degrees(atan2(page_height, page_width))
 
 
 def watermark_geometry(page_width: float, page_height: float) -> tuple[float, float, float, float]:
-    """Return a centred, unclipped placement for the original house logo.
+    """Fit the largest complete logo along the diagonal of this page.
 
-    The logo is intentionally a wide lock-up.  Sizing it from page height
-    makes it wider than landscape A4 and causes ReportLab to clip its sides,
-    so use the available page width as the limiting dimension instead.
+    Account for the rotated rectangle, not just its long edge; otherwise a
+    diagonal-length image loses its outer letters/tagline at the paper edges.
     """
-    width = page_width * WATERMARK_MAX_PAGE_WIDTH
+    angle = atan2(page_height, page_width)
+    width = min(
+        (page_width - 2 * WATERMARK_PAGE_INSET) / (cos(angle) + sin(angle) / LOGO_RATIO),
+        (page_height - 2 * WATERMARK_PAGE_INSET) / (sin(angle) + cos(angle) / LOGO_RATIO),
+    )
     height = width / LOGO_RATIO
     return (page_width - width) / 2, (page_height - height) / 2, width, height
+
+
+@functools.lru_cache(maxsize=4)
+def _print_watermark_image(path: str, modified_ns: int) -> ImageReader:
+    """Bake pale ink into RGB pixels so PDF print engines need no alpha.
+
+    The previous 7.5% PDF transparency made the logo almost white and depended
+    on printer transparency handling. This image is painted before page content
+    on white paper, with no PDF soft mask or graphics-state opacity.
+    """
+    from PIL import Image as PILImage
+
+    with PILImage.open(path) as source:
+        rgba = source.convert("RGBA")
+    white = PILImage.new("RGBA", rgba.size, "white")
+    original = PILImage.alpha_composite(white, rgba).convert("RGB")
+    printable = PILImage.blend(white.convert("RGB"), original, WATERMARK_INK_STRENGTH)
+    return ImageReader(printable)
 
 
 def _draw_room_watermark(cv, doc, branding: dict | None = None) -> None:
@@ -561,17 +586,14 @@ def _draw_room_watermark(cv, doc, branding: dict | None = None) -> None:
     if not LOGO_PATH.exists():
         return
     cv.saveState()
-    # Keep the complete original logo inside the landscape sheet.  This is a
-    # watermark, not a cover image: clipping any edge changes the logo.
-    if hasattr(cv, "setFillAlpha"):
-        cv.setFillAlpha(0.075)
     page_width, page_height = doc.pagesize
     watermark_x, watermark_y, watermark_w, watermark_h = watermark_geometry(page_width, page_height)
     watermark_cx = watermark_x + watermark_w / 2
     watermark_cy = watermark_y + watermark_h / 2
     cv.translate(watermark_cx, watermark_cy)
-    cv.rotate(WATERMARK_ANGLE_DEGREES)
-    cv.drawImage(str(LOGO_PATH), -watermark_w / 2, -watermark_h / 2, width=watermark_w, height=watermark_h, mask="auto")
+    cv.rotate(watermark_angle(page_width, page_height))
+    image = _print_watermark_image(str(LOGO_PATH), LOGO_PATH.stat().st_mtime_ns)
+    cv.drawImage(image, -watermark_w / 2, -watermark_h / 2, width=watermark_w, height=watermark_h)
     cv.restoreState()
 
 
@@ -888,7 +910,9 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
         ]
         for r in range(2, n_rooms + 1, 2):  # zebra every 2nd room row (1-indexed data rows)
-            summary_style_cmds.append(("BACKGROUND", (0, r), (-1, r), ZEBRA))
+            # Retain the alternating serial-number cue without painting over
+            # the diagonal background across the complete room row.
+            summary_style_cmds.append(("BACKGROUND", (0, r), (0, r), ZEBRA))
         summary = Table(summary_rows, colWidths=summary_col_widths, rowHeights=summary_row_heights, repeatRows=1)
         summary.setStyle(TableStyle(summary_style_cmds))
         story.extend([summary, Spacer(1, 2 * mm), Paragraph("OUR BRAND PARTNERS", styles["section"]), Spacer(1, 0.8 * mm)])
@@ -1091,7 +1115,7 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
                 ("TOPPADDING", (0, -1), (-1, -1), 2), ("BOTTOMPADDING", (0, -1), (-1, -1), 2),
             ]
             for r in range(2, n_data_rows + 1, 2):  # zebra every 2nd item row
-                item_style_cmds.append(("BACKGROUND", (0, r), (-1, r), ZEBRA))
+                item_style_cmds.append(("BACKGROUND", (0, r), (0, r), ZEBRA))
             table = Table(rows, colWidths=item_widths, rowHeights=row_heights, repeatRows=1)
             table.setStyle(TableStyle(item_style_cmds))
             story.append(table)

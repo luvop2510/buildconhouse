@@ -20,7 +20,7 @@ def customer_reset_maintenance() -> bool:
 
 # These collections contain customer workflows, including deleted/legacy rows.
 CUSTOMER_COLLECTIONS = (
-    "customers", "quotations", "customer_orders", "walkins", "followups",
+    "customers", "quotations", "quotation_shares", "customer_orders", "walkins", "followups",
     "payments", "ready_batches", "dispatches", "chalans",
     "purchase_shortages", "purchase_transfers", "godown_customer_transfers",
 )
@@ -67,6 +67,10 @@ async def reset_customer_data(database, client, *, request_id: str) -> dict:
                 key = attachment.get("storage_key")
                 if key and key.startswith("purchase-orders/" + purchase.get("id", "") + "/"):
                     storage_keys.append(key)
+        async for share in database.quotation_shares.find({}, session=session):
+            key = share.get("storage_key")
+            if key and key.startswith("quotation-shares/"):
+                storage_keys.append(key)
         # Delete queued events in the same transaction as their source records,
         # so a later deployment cannot recreate the workflows.
         queries = {name: {} for name in CUSTOMER_COLLECTIONS}
@@ -84,7 +88,9 @@ async def reset_customer_data(database, client, *, request_id: str) -> dict:
                     {"link": {"$regex": r"^/(?:\(admin\)/)?godown-stock(?:[/?]|$)"}},
                     {"$or": [{field: {"$regex": name_pattern}} for field in ("title", "body")]},
                 ]}] if name_pattern else [])]},
-            "user_sessions": {"user_type": "customer"},
+            # Accounts and credentials stay intact. Close existing sessions so
+            # an old open editor cannot re-save a removed customer snapshot.
+            "user_sessions": {},
             "download_tokens": {"$or": [{"kind": "customer"},
                 {"target": {"$regex": r"^/api/(?:quotations|purchases|tiles)"}}]},
         })

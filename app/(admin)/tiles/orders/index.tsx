@@ -917,7 +917,7 @@ const styles = StyleSheet.create({
   navigatorLabel: { ...type.overline, color: colors.onSurfaceMuted, letterSpacing: 1 },
   navigatorCards: { flexDirection: "row", flexWrap: "wrap", gap: spacing.s12 },
   navigatorCard: {
-    flexBasis: 250, flexGrow: 1, minWidth: 0, minHeight: 104, padding: spacing.lg,
+    flexBasis: 220, flexGrow: 1, minWidth: 0, minHeight: 104, padding: spacing.lg,
     borderWidth: 1, borderColor: colors.border, borderRadius: radius.md,
     backgroundColor: colors.surfaceSecondary, flexDirection: "row", alignItems: "flex-start", gap: spacing.s12,
   },

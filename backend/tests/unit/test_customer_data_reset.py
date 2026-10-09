@@ -160,7 +160,7 @@ def test_reset_removes_all_floors_but_preserves_catalog_staff_and_restock(monkey
     assert all(db[name].rows == [] for name in CUSTOMER_COLLECTIONS)
     assert db.products.rows == catalog
     assert db.purchase_orders.rows == [{'id': 'restock-po', 'supplier_id': 'keep-supplier'}]
-    assert db.user_sessions.rows == [{'id': 'staff-session', 'user_type': 'staff'}]
+    assert db.user_sessions.rows == []
     assert db.notifications.rows == [{'id': 'catalog-notification', 'link': '/catalog'}]
     assert {row['id'] for row in db.activity_events.rows} == {'catalog-event', 'restock-event'}
     assert db.event_outbox.rows == [{'event_type': 'CatalogImported'}]

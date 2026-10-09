@@ -42,6 +42,8 @@
     "test:shell-quote-security": "node scripts/test-shell-quote-security.mjs",
     "test:font-assets": "node scripts/check-font-assets.mjs",
     "test:auth-provider-races": "node scripts/test-auth-provider-races.mjs",
+    "test:customer-draft-reset": "node scripts/test-customer-draft-reset.mjs",
+    "test:quotation-whatsapp": "node --experimental-strip-types --no-warnings scripts/test-quotation-whatsapp.mjs",
     "test:native-release-config": "node scripts/test-native-release-config.mjs",
     "test:history-lifecycle": "node scripts/test-history-lifecycle.mjs"
   },

@@ -200,12 +200,11 @@ export function DataTable<T>({
   const shellRef = useRef<View>(null);
   const windowHeight = useWindowDimensions().height;
   const { isPhone, bp } = useBreakpoint();
-  // A portrait tablet has enough room for a spacious card, but not for an
-  // operational table with seven counters and several verbs. Keeping the
-  // desktop table there made the primary actions live behind horizontal
-  // scrolling. Landscape tablets retain the dense table; portrait tablets
-  // use the same labelled, touch-first records as phones.
-  const useCardRows = isPhone || bp === "tabletPortrait";
+  // Sidebar expansion and nested cards change the usable table width without
+  // changing the viewport tier. Keep names and actions readable in that space.
+  const useCardRows = isPhone || (availableWidth > 0
+    ? availableWidth < 900
+    : bp === "tabletPortrait");
   const scrollThreshold = columns.reduce((total, column) => total + columnFloor(column), 0);
 
   // Pinning is only a help while the pinned column leaves room to read the
@@ -230,7 +229,7 @@ export function DataTable<T>({
     const renderMobileRow = (item: T, index: number) => {
       const selected = isRowSelected?.(item, index) ?? false;
       const primary = columns.filter((column) => column.mobile === "primary");
-      const details = columns.filter((column) => column.label && column.mobile !== "primary" && column.mobile !== "action" && column.mobile !== "hidden");
+      const details = columns.filter((column) => column.label && column.mobile !== "primary" && column.mobile !== "action" && (column.mobile !== "hidden" || !isPhone));
       const actions = columns.filter((column) => column.mobile === "action" || (!column.label && column.mobile !== "hidden"));
       const content = (
         <View style={styles.mobileCardContent}>
@@ -274,7 +273,8 @@ export function DataTable<T>({
         ref={shellRef}
         style={[styles.mobileListShell, fillViewport && bodyMaxHeight ? { height: bodyMaxHeight } : null]}
         testID={testID}
-        onLayout={() => {
+        onLayout={(event) => {
+          setAvailableWidth(event.nativeEvent.layout.width);
           if (!fillViewport) return;
           shellRef.current?.measureInWindow((_x, y) => {
             setBodyMaxHeight(Math.max(MIN_BODY_HEIGHT, windowHeight - y - VIEWPORT_BOTTOM_GUTTER));

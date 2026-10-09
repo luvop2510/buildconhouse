@@ -3,6 +3,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 from contextlib import asynccontextmanager
 from time import monotonic
 from typing import Any
@@ -69,11 +70,12 @@ from migrations.runner import pending_migrations, run_migrations  # noqa: E402
 from services.followup_engine import reconcile_followups  # noqa: E402
 from services.floor_scope import ensure_floor_scope  # noqa: E402
 from services.customer_data_reset import customer_reset_maintenance, reset_customer_data, cleanup_reset_files  # noqa: E402
+from services.quotation_shares import ensure_quotation_share_indexes  # noqa: E402
 
 
 # A non-sensitive marker used by the public health probe to verify that the
 # deployed service includes the current quotation-PDF renderer behaviour.
-PDF_RENDERER_REVISION = "po-final-quotation-layout-v1"
+PDF_RENDERER_REVISION = "diagonal-print-watermark-v2"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s")
 logger = logging.getLogger("forge")
@@ -168,6 +170,7 @@ async def _startup(app: FastAPI) -> None:
     await ensure_godown_stock_indexes()
     await ensure_transfer_indexes()
     await ensure_download_token_indexes()
+    await ensure_quotation_share_indexes()
     await ensure_access_grant_indexes(db)
     reset_request = os.environ.get("FORGE_CUSTOMER_RESET_REQUEST", "")
     if reset_request:
@@ -272,6 +275,12 @@ async def record_api_request_timing(request: Request, call_next):
 @app.middleware("http")
 async def enforce_access_profile(request: Request, call_next):
     """Apply a fail-closed API allow-list before any restricted route runs."""
+    # This exact capability route authenticates by its random, expiring token.
+    # An unrelated viewer's stale staff cookie must not invalidate the link.
+    if request.method in {"GET", "HEAD"} and re.fullmatch(
+        r"/api/quotations/shared-pdf/[A-Za-z0-9_-]{43}", request.url.path
+    ):
+        return await call_next(request)
     if request.method == "OPTIONS" or not request.url.path.startswith("/api/"):
         return await call_next(request)
     authorization = request.headers.get("authorization", "")

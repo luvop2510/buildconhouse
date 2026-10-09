@@ -1,3 +1,5 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 import { storage } from "@/src/utils/storage";
 import { parseBuilderDraft, type BuilderDraft } from "./draftRecovery";
 
@@ -46,4 +48,32 @@ export async function clearBuilderDrafts() {
   } catch { /* malformed registry */ }
   await storage.removeItem(INDEX);
   await storage.removeItem("forge.builder.snapshot.v4");
+}
+
+// This release intentionally clears customer workflows. Remove actual previous
+// client draft data before publishing an identity that could restore it. The
+// marker preserves quotations created after the reset on subsequent startups.
+const RESET_MARKER = "forge.builder.customerResetEpoch.v1";
+const CUSTOMER_RESET_EPOCH = "customer-reset-20261010";
+let resetMigration: Promise<void> | null = null;
+
+export function ensureBuilderDraftReset(): Promise<void> {
+  if (resetMigration) return resetMigration;
+  resetMigration = (async () => {
+    if (await storage.getItem<string | null>(RESET_MARKER, null) === CUSTOMER_RESET_EPOCH) return;
+    epoch += 1;
+    await queue.catch(() => {});
+    // Enumerate the underlying store as well as removing the old registry:
+    // interrupted historical writes can leave a draft without an index entry.
+    const keys = await AsyncStorage.getAllKeys();
+    const customerKeys = keys.filter((key) => key.startsWith(`${PREFIX}.`) || key === "forge.builder.snapshot.v4");
+    const removed = await Promise.all(customerKeys.map((key) => storage.removeItem(key)));
+    if (removed.some((ok) => !ok) || !await storage.setItem(RESET_MARKER, CUSTOMER_RESET_EPOCH)) {
+      throw new Error("Could not clear previous quotation drafts. Please retry signing in.");
+    }
+  })().catch((error) => {
+    resetMigration = null;
+    throw error;
+  });
+  return resetMigration;
 }

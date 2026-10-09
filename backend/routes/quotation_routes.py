@@ -1399,17 +1399,8 @@ async def quotation_pptx(quotation_id: str, user: UserPublic = Depends(get_curre
     )
 
 
-@router.get("/{quotation_id}/pdf")
-async def quotation_pdf(quotation_id: str, include_dimensions: bool = False, user: UserPublic = Depends(get_current_user)):
-    """Build the PDF, then journal QuotationGenerated before dispatching automation.
-
-    The PDF is the primary output. Its outbox record is committed first; timeline
-    and follow-up handlers only run after that commit succeeds.
-    """
-    doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0})
-    customer = await db.customers.find_one(
-        {"id": doc["customer_id"], "floor_id": doc.get("floor_id")}, {"_id": 0, "password_hash": 0},
-    ) or {}
+async def _build_quotation_file(doc: dict, customer: dict, include_dimensions: bool = False) -> tuple[bytes, str]:
+    """Use the same PDF render contract for downloads and customer snapshots."""
     doc_type = doc.get("doc_type") or "standard"
     _require_tiles_quotation_address(doc_type, doc.get("address_snapshot"))
     branding = await _pdf_branding()
@@ -1428,6 +1419,23 @@ async def quotation_pdf(quotation_id: str, include_dimensions: bool = False, use
         pdf_doc = {**doc, "items": pdf_items, "include_dimensions": include_dimensions}
         pdf_bytes = await _render_pdf(build_quotation_pdf, pdf_doc, customer, branding)
         filename = quotation_pdf_filename(doc.get("customer_name") or customer.get("name"))
+    return pdf_bytes, filename
+
+
+@router.get("/{quotation_id}/pdf")
+async def quotation_pdf(quotation_id: str, include_dimensions: bool = False, user: UserPublic = Depends(get_current_user)):
+    """Build the PDF, then journal QuotationGenerated before dispatching automation.
+
+    The PDF is the primary output. Its outbox record is committed first; timeline
+    and follow-up handlers only run after that commit succeeds.
+    """
+    doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0})
+    customer = await db.customers.find_one(
+        {"id": doc["customer_id"], "floor_id": doc.get("floor_id")}, {"_id": 0, "password_hash": 0},
+    ) or {}
+    doc_type = doc.get("doc_type") or "standard"
+    _require_tiles_quotation_address(doc_type, doc.get("address_snapshot"))
+    pdf_bytes, filename = await _build_quotation_file(doc, customer, include_dimensions)
     revision = len(doc.get("revisions") or [])
     key = f"quotation-generated:{quotation_id}:revision:{revision}"
     event = await db.event_outbox.find_one({"idempotency_key": key}, {"_id": 0})
@@ -1750,3 +1758,43 @@ async def workflow_status(
     timeline = await db.activity_events.find({"quotation_id": quotation_id, "floor_id": floor_id, "automation_key": {"$exists": True}}, {"_id": 0}).sort("created_at", 1).to_list(100)
     followups = await db.followups.find({"quotation_id": quotation_id, "floor_id": floor_id, "automation_key": {"$exists": True}}, {"_id": 0}).sort("created_at", 1).to_list(100)
     return {"quotation_id": quotation_id, "quotation_total": round(float(quotation.get("grand_total") or 0), 2), "events": events, "purchase_orders": purchase_orders, "payments": payments, "timeline": timeline, "followups": followups}
+
+
+# Customer sharing deliberately uses an opaque, expiring capability rather
+# than a staff JWT or the authenticated download token (which is single-use).
+@router.post("/{quotation_id}/whatsapp-draft")
+async def quotation_whatsapp_draft(quotation_id: str, include_dimensions: bool = False,
+                                   user: UserPublic = Depends(get_current_user)):
+    from services.quotation_shares import create_share, whatsapp_phone
+    doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user,
+                                      not_found="Quotation not found", projection={"_id": 0})
+    customer = await db.customers.find_one(
+        {"id": doc["customer_id"], "floor_id": doc.get("floor_id")}, {"_id": 0, "password_hash": 0},
+    )
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    phone = whatsapp_phone(customer.get("phone"))
+    if not phone:
+        raise HTTPException(status_code=422, detail="Add a valid WhatsApp phone number to the customer's contact details first")
+    pdf_bytes, filename = await _build_quotation_file(doc, customer, include_dimensions)
+    shared = await create_share(doc, pdf_bytes, filename, user.id)
+    # Creating/opening a draft cannot prove delivery and never marks it sent.
+    return {**shared, "phone": phone, "customer_name": customer.get("name") or doc.get("customer_name") or "Customer"}
+
+
+@router.api_route("/shared-pdf/{token}", methods=["GET", "HEAD"])
+async def shared_quotation_pdf(token: str):
+    from services.quotation_shares import read_share
+    pdf_bytes, filename = await read_share(token)
+    return StreamingResponse(iter([pdf_bytes]), media_type="application/pdf", headers={
+        "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
+        "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff",
+    })
+
+
+@router.delete("/{quotation_id}/whatsapp-draft")
+async def revoke_quotation_whatsapp_drafts(quotation_id: str, user: UserPublic = Depends(get_current_user)):
+    from services.quotation_shares import revoke_shares
+    doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user, not_found="Quotation not found")
+    await revoke_shares(doc["id"], doc.get("floor_id"))
+    return {"revoked": True}

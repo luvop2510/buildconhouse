@@ -90,10 +90,9 @@ def _rupee(value: float) -> str:
 
 def _draw_tiles_page_chrome(cv, doc, branding: dict | None = None) -> None:
     """Persistent footer and watermark for every tile page."""
+    _draw_room_watermark(cv, doc, branding)
     if doc.page == 1:
         _draw_footer(cv, doc, branding)
-    else:
-        _draw_room_watermark(cv, doc, branding)
 
 
 DEFAULT_ADDRESS = "Nr. Gujarat Housing Board, Kataria Motors, 2nd 150ft Ring Road, Rajkot-360005"
@@ -431,8 +430,10 @@ def build_tiles_selection_pdf(quotation: dict, customer: dict, branding: dict | 
         ("LEFTPADDING", (0, 0), (-1, -1), 2), ("RIGHTPADDING", (0, 0), (-1, -1), 2),
         ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
     ]
-    for r in range(2, len(rows), 2):  # zebra every 2nd item row
-        style_cmds.append(("BACKGROUND", (0, r), (-1, r), ZEBRA))
+    # Alternate serial cells for scanning while leaving the diagonal visible
+    # behind the product details; full-width row fills concealed the logo.
+    for r in range(2, len(rows), 2):
+        style_cmds.append(("BACKGROUND", (0, r), (0, r), ZEBRA))
     table = Table(rows, colWidths=_SEL_COLS, rowHeights=[9 * mm] + [45 * mm] * (len(rows) - 1), repeatRows=1)
     table.setStyle(TableStyle(style_cmds))
     story.append(table)
@@ -575,8 +576,8 @@ def build_tiles_quotation_pdf(quotation: dict, customer: dict, branding: dict | 
         ("LEFTPADDING", (0, 0), (-1, -1), 2), ("RIGHTPADDING", (0, 0), (-1, -1), 2),
         ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ]
-    for r in range(2, len(rows), 2):  # zebra every 2nd item row
-        style_cmds.append(("BACKGROUND", (0, r), (-1, r), ZEBRA))
+    for r in range(2, len(rows), 2):
+        style_cmds.append(("BACKGROUND", (0, r), (0, r), ZEBRA))
     table = Table(
         rows,
         colWidths=_QUO_COLS,

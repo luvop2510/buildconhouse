@@ -20,6 +20,10 @@ import { ConfirmDialog } from "@/src/components/ds";
 import { canManageDestructiveData } from "@/src/constants/roles";
 import { useAuth } from "@/src/state/auth";
 
+import { useFloorAccess } from "@/src/hooks/use-floor-access";
+import { WhatsAppQuotationSheet, prepareQuotationWhatsAppDraft, type WhatsAppQuotationDraft } from "../WhatsAppQuotationSheet";
+import { api } from "@/src/api/client";
+
 import { useBuilder } from "../context/BuilderContext";
 
 // isPhone/isDesktop are measured off the builder's own container width by
@@ -35,6 +39,22 @@ export function BuilderTopbar({
 }) {
   const b = useBuilder();
   const { staff } = useAuth();
+  const { selectedFloorId } = useFloorAccess();
+  const [whatsappDraft, setWhatsappDraft] = useState<{ id: string; floorId: string; draft: WhatsAppQuotationDraft } | null>(null);
+  const [preparingWhatsApp, setPreparingWhatsApp] = useState(false);
+  const [whatsappError, setWhatsappError] = useState<string | null>(null);
+  const prepareWhatsApp = async () => {
+    if (preparingWhatsApp || b.workflowBusy) return;
+    setPreparingWhatsApp(true); setWhatsappError(null);
+    try {
+      const id = await b.persist();
+      if (!id) return;
+      const floorId = selectedFloorId || "first-floor";
+      const draft = await prepareQuotationWhatsAppDraft(id, floorId);
+      setWhatsappDraft({ id, floorId, draft });
+    } catch (error: any) { setWhatsappError(error?.detail || "Could not prepare the WhatsApp quotation draft."); }
+    finally { setPreparingWhatsApp(false); }
+  };
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
@@ -87,6 +107,11 @@ export function BuilderTopbar({
         style={[styles.iconBtn, (b.workflowBusy || !b.s.lines.length) && { opacity: 0.4 }]}>
         <Feather name="download" size={20} color={colors.onSurface} />
       </Pressable> : null}
+      <Pressable accessibilityRole="button" accessibilityLabel="WhatsApp quotation draft" testID="quotation-whatsapp-draft"
+        onPress={() => void prepareWhatsApp()} disabled={preparingWhatsApp || b.workflowBusy || !b.s.lines.length}
+        style={[styles.iconBtn, (preparingWhatsApp || b.workflowBusy || !b.s.lines.length) && { opacity: 0.4 }]}>
+        <Feather name="message-circle" size={18} color={colors.onSurface} />
+      </Pressable>
       {isPhone ? <Pressable accessibilityRole="button" accessibilityLabel="Quotation actions" onPress={() => setActionsOpen(true)} style={styles.iconBtn} testID="builder-actions">
         <Feather name="more-horizontal" size={20} color={colors.onSurface} />
       </Pressable> : null}
@@ -169,6 +194,12 @@ export function BuilderTopbar({
         ) : null}
         {!isDesktop ? <Pressable accessibilityRole="button" accessibilityLabel="Recent quotations" style={styles.iconBtn} onPress={() => setRecentOpen(true)}><Feather name="clock" size={16} color={colors.onSurface} /></Pressable> : null}
       </View> : null}
+      <BottomSheet visible={!!whatsappError} onClose={() => setWhatsappError(null)} title="WhatsApp draft unavailable" testID="quotation-whatsapp-error">
+        <Text style={type.bodyMuted}>{whatsappError}</Text>
+      </BottomSheet>
+      <WhatsAppQuotationSheet draft={whatsappDraft?.draft || null} onClose={() => setWhatsappDraft(null)} onRevoke={async () => {
+        if (whatsappDraft) await api.delete(`/quotations/${whatsappDraft.id}/whatsapp-draft`, { floorId: whatsappDraft.floorId });
+      }} />
       <BottomSheet visible={actionsOpen} onClose={() => setActionsOpen(false)} title="Quotation actions" testID="quotation-actions-sheet">
         <View style={{ gap: 8 }}>
           {[

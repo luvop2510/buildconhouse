@@ -356,7 +356,7 @@ export default function CustomerOrderDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  summaryBadges: { flexDirection: "row", alignItems: "center", gap: spacing.s12, marginBottom: spacing.s20 },
+  summaryBadges: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.s12, marginBottom: spacing.s20 },
   summaryStats: { flexDirection: "row", flexWrap: "wrap", columnGap: spacing.s40, rowGap: spacing.s24 },
   actionCell: { gap: spacing.s8, width: "100%" },
   hint: { ...type.caption, color: colors.onSurfaceMuted },

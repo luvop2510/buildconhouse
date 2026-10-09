@@ -11,6 +11,7 @@ import { Alert, Button, Card, IconButton, PageHeader, PriceTag, StatusBadge } fr
 import { ConfirmDialog } from "@/src/components/ds";
 import { BottomSheet } from "@/src/components/BottomSheet";
 import { api } from "@/src/api/client";
+import { WhatsAppQuotationSheet, prepareQuotationWhatsAppDraft, type WhatsAppQuotationDraft } from "@/src/components/quotation/WhatsAppQuotationSheet";
 import { downloadApiFile } from "@/src/utils/downloadFile";
 import { colors, money, radius, spacing, type } from "@/src/theme/tokens";
 import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
@@ -32,7 +33,6 @@ type Breakdown = {
 };
 
 const NEXT_STATUS: Record<string, string> = {
-  draft: "sent",
   pending_approval: "approved",
 };
 
@@ -51,6 +51,15 @@ export default function QuotationDetail() {
   const [linkedPos, setLinkedPos] = useState<PoStub[]>([]);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [pdfOptionsOpen, setPdfOptionsOpen] = useState(false);
+  const [whatsappDraft, setWhatsappDraft] = useState<WhatsAppQuotationDraft | null>(null);
+  const [preparingWhatsApp, setPreparingWhatsApp] = useState(false);
+  const prepareWhatsApp = async () => {
+    if (!q || preparingWhatsApp) return;
+    setPreparingWhatsApp(true); setActionError(null);
+    try { setWhatsappDraft(await prepareQuotationWhatsAppDraft(q.id, q.floor_id || "first-floor")); }
+    catch (error: any) { setActionError(error?.detail || "Could not prepare the WhatsApp quotation draft."); }
+    finally { setPreparingWhatsApp(false); }
+  };
   const [deleting, setDeleting] = useState(false);
   const [advancing, setAdvancing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -176,6 +185,7 @@ export default function QuotationDetail() {
               </Pressable>
             ) : null}
           </View>
+          <View style={{ marginTop: 12, alignSelf: "flex-start" }}><Button label="WhatsApp draft" icon="message-circle" variant="secondary" size="sm" loading={preparingWhatsApp} disabled={!q.items.length || preparingWhatsApp} onPress={() => void prepareWhatsApp()} testID="quotation-whatsapp-draft" /></View>
           {isPhone ? <View style={{ marginTop: 12, alignSelf: "flex-start" }}><Button label="Download product PPT" icon="image" variant="secondary" size="sm" onPress={openPpt} testID="download-ppt" /></View> : null}
         </View>
 
@@ -317,6 +327,9 @@ export default function QuotationDetail() {
           </View>
         </Card>
       </ScrollView>
+      <WhatsAppQuotationSheet draft={whatsappDraft} onClose={() => setWhatsappDraft(null)} onRevoke={async () => {
+        await api.delete(`/quotations/${id}/whatsapp-draft`, { floorId: q.floor_id || "first-floor" });
+      }} />
       <BottomSheet visible={pdfOptionsOpen} onClose={() => setPdfOptionsOpen(false)} title="Download quotation PDF" testID="quotation-detail-pdf-options">
         <View style={{ gap: spacing.sm, paddingBottom: spacing.lg }}>
           <Text style={type.bodyMuted}>Include Vitra dimension diagrams in this PDF?</Text>

@@ -64,6 +64,7 @@ function provider(platform, options = {}) {
     'react-native': { Platform: { OS: platform } },
     '@/src/components/quotation/helpers/draftStorage': {
       clearBuilderDrafts: async () => { draftClears++; await options.draftCleanup?.promise; },
+      ensureBuilderDraftReset: async () => { await options.startupDraftReset?.promise; },
     },
     '@/src/api/client': {
       getTokenKind: async () => kind,
@@ -117,8 +118,9 @@ function provider(platform, options = {}) {
       for (const hook of activeEffects) hook.cleanup = hook.setup();
     },
     async settle() { for (let i = 0; i < 24; i++) { await Promise.resolve(); if (dirty && mounted) render(); } },
-    beginLogin(nextKind) {
+    async beginLogin(nextKind) {
       const promise = state[nextKind === 'staff' ? 'loginStaff' : 'loginCustomer']('fixture@example.invalid', 'fixture-password');
+      await fixture.settle();
       posts.at(-1).resolve(loginResponse(nextKind));
       return promise;
     },
@@ -137,6 +139,32 @@ function assertLogin(fixture, kind) {
 }
 
 for (const platform of ['web', 'ios']) {
+  test(`${platform}: startup draft reset gates identity hydration and newer login`, async () => {
+    const startupDraftReset = deferred();
+    const fixture = provider(platform, { startupDraftReset });
+    await fixture.settle();
+    assert.equal(fixture.gets.length, 0);
+    assert.equal(fixture.state.loading, true);
+    const login = fixture.state.loginStaff('fixture@example.invalid', 'fixture-password');
+    await fixture.settle();
+    assert.equal(fixture.posts.length, 0);
+    startupDraftReset.resolve(); await fixture.settle();
+    assert.equal(fixture.gets.length, 0, 'superseded startup cannot hydrate after reset finishes');
+    assert.equal(fixture.posts.length, 1);
+    fixture.posts[0].resolve(loginResponse('staff')); await login; await fixture.settle();
+    assertLogin(fixture, 'staff');
+  });
+
+  test(`${platform}: unmount during startup reset cannot publish an identity`, async () => {
+    const startupDraftReset = deferred();
+    const fixture = provider(platform, { startupDraftReset });
+    await fixture.settle();
+    const previousWrites = fixture.stateWrites;
+    fixture.unmount(); startupDraftReset.resolve(); await fixture.settle();
+    assert.equal(fixture.gets.length, 0);
+    assert.equal(fixture.stateWrites, previousWrites);
+    assert.equal(fixture.tokenClears, 0);
+  });
   for (const nextKind of ['staff', 'customer']) {
     test(`${platform}: aborted hydration cannot clear newer ${nextKind} login`, async () => {
       const fixture = provider(platform, { abortHydrationOnLogin: true });

@@ -133,3 +133,11 @@ async def test_custom_access_can_use_only_the_action_already_allowed_by_middlewa
     standard_worker = UserPublic(email="standard@example.com", full_name="Standard Worker", role="worker")
     with pytest.raises(HTTPException):
         await require_min_role("admin")(standard_worker)
+
+
+@pytest.mark.parametrize("method", ["POST", "DELETE"])
+def test_whatsapp_pdf_drafts_require_export_capability(method):
+    from services.access_grants import action_for_api_request
+    assert action_for_api_request(method, "/api/quotations/q1/whatsapp-draft") == "export"
+    # Exact command matching must not broaden unrelated routes.
+    assert action_for_api_request("POST", "/api/quotations/q1/whatsapp-draft/other") == "create"

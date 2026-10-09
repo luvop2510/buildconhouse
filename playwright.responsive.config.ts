@@ -8,8 +8,8 @@ export default defineConfig({
   timeout: 30000,
   workers: 2,
   retries: 0,
-  reporter: [['list'], ['json', { outputFile: 'output/responsive-review-20261008/results.json' }]],
-  outputDir: 'output/responsive-review-20261008/final-tests',
+  reporter: [['list'], ['json', { outputFile: 'output/playwright/responsive-results.json' }]],
+  outputDir: 'output/playwright/responsive',
   use: {
     baseURL: 'http://127.0.0.1:8096',
     browserName: 'chromium',

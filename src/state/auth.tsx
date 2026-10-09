@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Platform } from "react-native";
 
-import { clearBuilderDrafts } from "@/src/components/quotation/helpers/draftStorage";
+import { clearBuilderDrafts, ensureBuilderDraftReset } from "@/src/components/quotation/helpers/draftStorage";
 import { api, clearToken, getToken, getTokenKind, setToken, TokenKind } from "@/src/api/client";
 import { getFloorAccess, getSelectedFloorId, resetFloorAccess, setSelectedFloorId } from "@/src/hooks/use-floor-access";
 import type { AccessProfile, PersonalGrant } from "@/src/access-profiles";
@@ -69,6 +69,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const operation = ++operationGeneration.current;
     const isCurrent = () => operationGeneration.current === operation;
     try {
+      await ensureBuilderDraftReset();
+      if (!isCurrent()) return;
       // Restore a previously-stored session, if any.
       const k = await getTokenKind();
       if (!isCurrent()) return;
@@ -114,6 +116,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const isCurrent = () => operationGeneration.current === operation;
     setLoading(true);
     try {
+      await ensureBuilderDraftReset();
+      if (!isCurrent()) return;
       const res = await api.post<{ access_token: string; user: StaffUser }>("/auth/login", { email, password, ...factor });
       if (!isCurrent()) return;
       await updateCredentials(operation, () => setToken(res.access_token, "staff"));
@@ -160,6 +164,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const isCurrent = () => operationGeneration.current === operation;
     setLoading(true);
     try {
+      await ensureBuilderDraftReset();
+      if (!isCurrent()) return;
       const res = await api.post<{ access_token: string; customer: CustomerUser }>("/auth/customer/login", { email, password });
       if (!isCurrent()) return;
       await updateCredentials(operation, () => setToken(res.access_token, "customer"));

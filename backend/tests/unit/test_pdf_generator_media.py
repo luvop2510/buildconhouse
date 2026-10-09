@@ -1,7 +1,7 @@
 """Regression tests for upright quotation product images and fit geometry."""
 
 from io import BytesIO
-from math import ceil
+from math import atan2, ceil, cos, sin
 from pathlib import Path
 import shutil
 import subprocess
@@ -361,14 +361,23 @@ def test_seventeen_long_products_continue_without_clipping_or_blank_pages():
     assert "…" in text
 
 
-def test_watermark_geometry_fits_the_complete_original_logo_on_landscape_page():
-    page_width, page_height = pdf_generator.LANDSCAPE_A4
+@pytest.mark.parametrize("page_width,page_height", [pdf_generator.LANDSCAPE_A4, pdf_generator.PORTRAIT_A4, (595, 609)])
+def test_watermark_geometry_fills_the_diagonal_without_clipping(page_width, page_height):
     x, y, width, height = pdf_generator.watermark_geometry(page_width, page_height)
 
-    assert width == page_width * pdf_generator.WATERMARK_MAX_PAGE_WIDTH
     assert height == pytest.approx(width / pdf_generator.LOGO_RATIO)
-    assert x > 0 and x + width < page_width
-    assert y > 0 and y + height < page_height
+    assert x + width / 2 == pytest.approx(page_width / 2)
+    assert y + height / 2 == pytest.approx(page_height / 2)
+    angle = atan2(page_height, page_width)
+    rotated_width = width * cos(angle) + height * sin(angle)
+    rotated_height = width * sin(angle) + height * cos(angle)
+    available_width = page_width - 2 * pdf_generator.WATERMARK_PAGE_INSET
+    available_height = page_height - 2 * pdf_generator.WATERMARK_PAGE_INSET
+    assert rotated_width <= available_width + 0.001
+    assert rotated_height <= available_height + 0.001
+    # At least one edge is at the printable limit: the logo cannot grow.
+    assert max(rotated_width / available_width, rotated_height / available_height) == pytest.approx(1)
+    assert pdf_generator.watermark_angle(page_width, page_height) == pytest.approx(angle * 180 / 3.141592653589793)
 
 
 def test_watermark_is_drawn_on_the_first_and_detail_pages():

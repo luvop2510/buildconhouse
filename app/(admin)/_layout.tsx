@@ -2,7 +2,7 @@ import { ConnectionStatus } from "@/src/design/ConnectionStatus";
 import { PRIMARY, SECONDARY, TILES_ITEMS, type NavItem } from "@/src/design/navigation";
 // ─────────────────────────────────────────────────────────────────────────────
 // BuildCon House · Shell.
-// Desktop: quiet 240px sidebar. Tablet: 64px icon rail. Phone: bottom bar.
+// Tablet and desktop: collapsible labelled sidebar. Phone: bottom bar.
 // One brass bar marks where you are. The command palette lives here (⌘K).
 // ─────────────────────────────────────────────────────────────────────────────
 import Feather from "@expo/vector-icons/Feather";
@@ -40,6 +40,7 @@ function WorkspaceLink({ href, onPress, ...props }: Omit<React.ComponentProps<ty
 }
 
 function isNavActive(item: NavItem, segments: string[]): boolean {
+  if (item.match === "tiles") return segments.includes("tiles") && !segments.includes("orders");
   // The root notebook route is Walk-ins. It must not remain highlighted when
   // its sibling Quotation Follow-up route is active.
   if (item.href.endsWith("/notebook/kitchen")) {
@@ -256,6 +257,8 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
           testID="admin-sidebar-collapse-toggle"
           accessibilityRole="button"
           accessibilityLabel={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          accessibilityState={{ expanded: !collapsed }}
+          aria-expanded={!collapsed}
           onPress={onToggle}
           style={[styles.sidebarToggle, collapsed && { alignSelf: "center" }]}
         >
@@ -308,91 +311,6 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
             </View> : null}
             {!collapsed ? <Feather name="more-horizontal" size={15} color={color.inkFaint} /> : null}
           </View>
-        </Menu>
-      </View>
-    </SafeAreaView>
-  );
-}
-
-// ── Tablet icon rail ────────────────────────────────────────────────────────
-function Rail() {
-  const router = useRouter();
-  const segments = useSegments() as string[];
-  const { staff, logout } = useAuth();
-  const visible = useVisibleNav();
-  const palette = usePalette();
-  const tilesNav = useTilesNav();
-  const isActive = (item: NavItem) => isNavActive(item, segments);
-
-  const RailBtn = ({ item }: { item: NavItem }) => {
-    const on = isActive(item);
-    return (
-      <WorkspaceLink
-        href={item.href}
-        testID={`nav-${item.match}`}
-        accessibilityRole="link"
-        accessibilityLabel={item.label}
-        {...(Platform.OS === "web" ? { title: item.label } : {})}
-        accessibilityState={{ selected: on }}
-        onPress={() => router.push(item.href as any)}
-        style={({ pressed, hovered }: any) => [
-          styles.railItem,
-          { backgroundColor: on ? color.accentTint : pressed || hovered ? color.hoverWash : "transparent" },
-        ]}
-      >
-        <View style={[styles.brassBarRail, { backgroundColor: on ? color.brass : "transparent" }]} />
-        <Feather name={item.icon} size={18} color={on ? color.action : color.inkSoft} />
-      </WorkspaceLink>
-    );
-  };
-
-  return (
-    <SafeAreaView edges={["top", "left", "bottom"]} style={styles.rail}>
-      <View style={{ alignItems: "center", paddingVertical: space.x4, gap: space.x4 }}>
-        <Wordmark compact />
-        <FloorSwitcher compact />
-        <Pressable accessibilityRole="button" accessibilityLabel="Search" onPress={palette.open} style={styles.railItem}>
-          <Feather name="search" size={18} color={color.inkSoft} />
-        </Pressable>
-      </View>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ alignItems: "center", gap: 2 }} showsVerticalScrollIndicator={false}>
-        {visible(PRIMARY).map((n) => <RailBtn key={n.href} item={n} />)}
-        {tilesNav.items.map((n) => {
-          const on = n.match === "orders" ? segments.includes("orders") : segments.includes("tiles") && !segments.includes("orders");
-          return (
-            <WorkspaceLink
-              href={n.href}
-              key={n.href}
-              testID={`nav-${n.match}`}
-              accessibilityRole="link"
-              accessibilityLabel={n.label}
-              accessibilityState={{ selected: on }}
-              onPress={() => { void tilesNav.open(n); }}
-              style={({ pressed, hovered }: any) => [
-                styles.railItem,
-                { backgroundColor: on ? color.accentTint : pressed || hovered ? color.hoverWash : "transparent" },
-              ]}
-            >
-              <View style={[styles.brassBarRail, { backgroundColor: on ? color.brass : "transparent" }]} />
-              <Feather name={n.icon} size={18} color={on ? color.action : color.inkSoft} />
-            </WorkspaceLink>
-          );
-        })}
-        <View style={{ height: space.x4 }} />
-        {visible(SECONDARY).map((n) => (
-          <RailBtn key={n.href} item={n} />
-        ))}
-      </ScrollView>
-      <View style={{ alignItems: "center", paddingVertical: space.x4 }}>
-        <Menu
-          triggerLabel="Account menu"
-          align="left"
-          items={[{
-            label: "Sign out", icon: "log-out", tone: "risk",
-            onPress: async () => { await logout(); router.replace("/(auth)/login"); },
-          }]}
-        >
-          <Avatar name={staff?.full_name} size={32} />
         </Menu>
       </View>
     </SafeAreaView>
@@ -545,7 +463,7 @@ function CustomAccessRouteGate({ children }: { children: React.ReactNode }) {
 }
 
 export default function AdminLayout() {
-  const { isPhone, isTablet } = useBp();
+  const { isPhone } = useBp();
   const builderSegments = useSegments() as string[];
   const focusedQuotation = builderSegments.includes("quotations") && builderSegments.includes("new");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -582,11 +500,11 @@ export default function AdminLayout() {
     <PaletteProvider>
       <View style={{ flex: 1, flexDirection: "row", backgroundColor: color.canvas }}>
         <View role="navigation" accessibilityLabel="Primary" style={{
-          width: isTablet ? layout.rail : sidebarCollapsed ? layout.rail : layout.sidebar,
+          width: sidebarCollapsed ? layout.rail : layout.sidebar,
           borderRightWidth: layout.hairline, borderRightColor: color.line,
           ...(Platform.OS === "web" ? ({ transition: "width 200ms cubic-bezier(0.2, 0, 0, 1)" } as any) : {}),
         }}>
-          {isTablet ? <Rail /> : <Sidebar collapsed={sidebarCollapsed} onToggle={toggleSidebar} />}
+          <Sidebar collapsed={sidebarCollapsed} onToggle={toggleSidebar} />
         </View>
         <View role="main" accessibilityLabel="Workspace content" style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
           <ConnectionStatus /><FloorAccessGate><CustomAccessRouteGate>{isPhone && !focusedQuotation ? <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 }}><FloorSwitcher /></View> : null}<Slot /></CustomAccessRouteGate></FloorAccessGate>

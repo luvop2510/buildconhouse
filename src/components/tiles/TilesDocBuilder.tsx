@@ -41,6 +41,7 @@ import { ActivityIndicator, Alert as RNAlert, KeyboardAvoidingView, Modal, Platf
 import { Text, TextInput } from "@/src/components/AppText";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { WhatsAppQuotationSheet, prepareQuotationWhatsAppDraft, type WhatsAppQuotationDraft } from "@/src/components/quotation/WhatsAppQuotationSheet";
 import { api } from "@/src/api/client";
 import { toast } from "@/src/components/Toast";
 import { ProductImage } from "@/src/components/ProductImage";
@@ -247,6 +248,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [serverTotals, setServerTotals] = useState<{ subtotal: number; grandTotal: number; transportation: number } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [whatsappDraft, setWhatsappDraft] = useState<WhatsAppQuotationDraft | null>(null);
   const [workflowError, setWorkflowError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(Boolean(routeId));
   const [restoreError, setRestoreError] = useState<string | null>(null);
@@ -651,6 +653,19 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     }
   }, [persist, header.customerName, header.docDate, rows]);
 
+  const prepareWhatsApp = useCallback(async () => {
+    if (busy) return;
+    setBusy("whatsapp"); setWorkflowError(null);
+    try {
+      const id = await persist({ silent: false });
+      if (!id) return;
+      setWhatsappDraft(await prepareQuotationWhatsAppDraft(id, TILES_FLOOR_ID));
+    } catch (error: any) {
+      const message = error?.detail || "Could not prepare the WhatsApp quotation draft.";
+      setWorkflowError(message); toast.error(message);
+    } finally { setBusy(null); }
+  }, [busy, persist]);
+
   const print = useCallback(async () => {
     if (rows.some((row) => row.productId && !row.image?.trim())) {
       toast.error("Every selected tile needs a product image before printing.");
@@ -744,6 +759,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     updateRow, addRow, removeRow, applyProduct, selectRowSize, loadRowSizes,
     customers, customerId, pickCustomer, setCustomerId,
     saveState, retrySave: () => persist({ silent: true }), busy, generatePdf, print, placeOrder, serverTotals, previewTotals,
+    whatsappDraft, closeWhatsApp: () => setWhatsappDraft(null), prepareWhatsApp,
     status, stage: tilesStage(docType, status), workflowAction, runWorkflowAction, workflowError, deleteDocument,
   };
 }
@@ -1690,6 +1706,7 @@ function MobileTilesEditor({
   const fieldColumns = workspaceWidth >= 720 ? 3 : workspaceWidth >= 540 ? 2 : 1;
   const insets = useSafeAreaInsets();
   const [pickerRow, setPickerRow] = useState<string | null>(null);
+  const [footerHeight, setFooterHeight] = useState(176 + insets.bottom);
   const isSelection = docType === "tiles_selection";
   const title = isSelection ? "Tiles Selection" : "Tiles Quotation";
   const itemCount = doc.rows.filter((r) => r.productId).length;
@@ -1754,7 +1771,7 @@ function MobileTilesEditor({
       ) : (
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}>
           <ScrollView
-            contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg, paddingBottom: 116 + insets.bottom }}
+            contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg, paddingBottom: footerHeight + spacing.lg }}
             keyboardShouldPersistTaps="handled"
           >
             <SaveStatusPill state={doc.saveState} onRetry={() => void doc.retrySave()} />
@@ -1812,7 +1829,8 @@ function MobileTilesEditor({
         </KeyboardAvoidingView>
       )}
 
-      <View style={[mobileStyles.bottomBar, { paddingBottom: Math.max(spacing.lg, insets.bottom + spacing.sm) }]}>
+      <View onLayout={(event) => setFooterHeight(event.nativeEvent.layout.height)} style={[mobileStyles.bottomBar, { paddingBottom: Math.max(spacing.lg, insets.bottom + spacing.sm) }]}>
+        <Button label="WhatsApp draft" icon="message-circle" onPress={doc.prepareWhatsApp} loading={doc.busy === "whatsapp"} disabled={!!doc.busy} variant="secondary" testID="tiles-mobile-whatsapp-draft" />
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
           <Button
             label="Download PDF" icon="download" onPress={doc.generatePdf}
@@ -1939,7 +1957,7 @@ const mobileStyles = StyleSheet.create({
   summaryValue: { fontSize: 13, color: colors.onSurface, fontVariant: ["tabular-nums"] },
   summaryBold: { fontWeight: "700", color: colors.onSurface, fontSize: 14 },
   bottomBar: {
-    position: "absolute", left: 0, right: 0, bottom: 0,
+    position: "absolute", left: 0, right: 0, bottom: 0, gap: spacing.sm,
     padding: spacing.md, paddingBottom: spacing.lg, backgroundColor: colors.surface,
     borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
   },
@@ -1997,6 +2015,9 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
 
   return (
     <View style={{ flex: 1 }} onLayout={(event) => setWorkspaceWidth(event.nativeEvent.layout.width)}>
+      <WhatsAppQuotationSheet draft={doc.whatsappDraft} onClose={doc.closeWhatsApp} onRevoke={async () => {
+        if (doc.docId) await api.delete(`/quotations/${doc.docId}/whatsapp-draft`, { floorId: TILES_FLOOR_ID });
+      }} />
       {useResponsiveEditor ? <MobileTilesEditor docType={docType} doc={doc} router={router} onDelete={confirmDelete} workspaceWidth={workspaceWidth} /> : (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surfaceSecondary }} edges={["top"]}>
       <View style={shellStyles.topbar}>
@@ -2021,6 +2042,7 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
               testID="tiles-workflow-action"
             />
           ) : null}
+          <ActionBtn label="WhatsApp draft" icon="message-circle" onPress={doc.prepareWhatsApp} loading={doc.busy === "whatsapp"} testID="tiles-whatsapp-draft" />
           <ActionBtn
             label={isSelection ? "Generate selection PDF" : "Generate quotation PDF"}
             icon="file-text"
@@ -2060,6 +2082,9 @@ function ActionBtn({
 }) {
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: !!loading, busy: !!loading }}
       onPress={onPress}
       disabled={loading}
       testID={testID}

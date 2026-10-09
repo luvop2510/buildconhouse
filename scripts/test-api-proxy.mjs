@@ -112,5 +112,27 @@ for (const value of ['', 'http://api.example.test', 'https://user:pass@api.examp
   assert.equal(res.statusCode, 413);
 }
 
+for (const method of ['GET', 'HEAD']) {
+  const res = response();
+  const req = request({ method, path: ['quotations', 'shared-pdf', 'a'.repeat(43)], headers: {
+    cookie: 'forge_session=expired', authorization: 'Bearer restricted',
+  } });
+  await createHandler({ backendUrl: 'https://api.example.test', fetchImpl: async (_url, options) => {
+    assert.equal(options.headers.get('authorization'), null);
+    return new Response('%PDF', { headers: { 'Content-Type': 'application/pdf', 'Referrer-Policy': 'no-referrer' } });
+  } })(req, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Referrer-Policy'], 'no-referrer');
+  assert.equal(res.headers['Cache-Control'], 'no-store');
+}
+
+{
+  const res = response();
+  await createHandler({ backendUrl: 'https://api.example.test', fetchImpl: async (_url, options) => {
+    assert.equal(options.headers.get('authorization'), 'Bearer restricted');
+    return new Response('{}');
+  } })(request({ path: ['quotations', 'q1', 'whatsapp-draft'], headers: { authorization: 'Bearer restricted' } }), res);
+}
+
 console.log('API proxy security contract passed');
 console.error = originalConsoleError;

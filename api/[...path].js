@@ -117,7 +117,8 @@ export function createHandler({ backendUrl = process.env.BACKEND_URL, fetchImpl 
     });
     // Preserve the single-use download token and its floor binding. A
     // forwarded session bearer would make backend auth ignore `dl`.
-    if (req.method === 'GET' && upstream.searchParams.has('dl')) headers.delete('authorization');
+    const publicQuotationPdf = ['GET', 'HEAD'].includes(req.method) && /^quotations\/shared-pdf\/[A-Za-z0-9_-]{43}$/.test(path);
+    if (publicQuotationPdf || (req.method === 'GET' && upstream.searchParams.has('dl'))) headers.delete('authorization');
     else if (session && !headers.has('authorization')) {
       try { headers.set('authorization', `Bearer ${decodeURIComponent(session)}`); }
       catch { return res.status(401).json({ detail: 'Invalid session. Sign in again.' }); }
@@ -138,7 +139,7 @@ export function createHandler({ backendUrl = process.env.BACKEND_URL, fetchImpl 
 
     // Keep backend processing time visible in browser diagnostics and preserve
     // rate-limit recovery guidance, including responses handled below as JSON.
-    for (const name of ['Server-Timing', 'Retry-After']) {
+    for (const name of ['Server-Timing', 'Retry-After', 'Referrer-Policy']) {
       const value = upstreamResponse.headers.get(name);
       if (value) res.setHeader(name, value);
     }

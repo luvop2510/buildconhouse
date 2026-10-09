@@ -14,7 +14,7 @@ import { PageHeader as SharedPageHeader } from "@/src/design/PageHeader";
 //   tap target     36 small · 40 medium · 44 large
 // Nothing in Tile Orders should set its own horizontal page padding, its own
 // button metrics, or its own section rhythm — it comes from here.
-import { type ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -103,7 +103,7 @@ export function SectionHeader({
   return (
     <View style={[styles.sectionHeader, compact ? styles.sectionHeaderCompact : null]}>
       <View style={styles.sectionHeaderText}>
-        <Text style={type.titleMd} numberOfLines={1}>{title}</Text>
+        <Text style={[type.titleMd, { flexShrink: 1 }]} numberOfLines={1}>{title}</Text>
         {meta}
       </View>
       {actions ? <View style={[styles.sectionHeaderActions, compact ? styles.sectionHeaderActionsCompact : null]}>{actions}</View> : null}
@@ -210,13 +210,14 @@ export function TabBar<K extends string>({
  */
 export function Toolbar({ search, filters, actions }: { search?: ReactNode; filters?: ReactNode; actions?: ReactNode }) {
   const { isPhone, bp } = useBreakpoint();
-  const compact = isPhone || bp === "tabletPortrait";
+  const [availableWidth, setAvailableWidth] = useState(0);
+  const compact = isPhone || (availableWidth > 0 ? availableWidth < 900 : bp === "tabletPortrait");
   return (
-    <View style={[styles.toolbar, compact ? styles.toolbarPhone : null]}>
-      {search ? <View style={styles.toolbarSearch}>{search}</View> : null}
+    <View onLayout={(event) => setAvailableWidth(event.nativeEvent.layout.width)} style={[styles.toolbar, compact ? styles.toolbarPhone : null]}>
+      {search ? <View style={[styles.toolbarSearch, compact ? styles.toolbarSearchCompact : null]}>{search}</View> : null}
       <View style={[styles.toolbarTrailing, compact ? styles.toolbarTrailingPhone : null]}>
         {filters ? (compact ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.toolbarFilterScroller} contentContainerStyle={styles.toolbarFilters}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.toolbarFilterScroller} contentContainerStyle={[styles.toolbarFilters, styles.toolbarFiltersCompact]}>
             {filters}
           </ScrollView>
         ) : <View style={styles.toolbarFilters}>{filters}</View>) : null}
@@ -303,7 +304,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
     flexWrap: "wrap",
   },
-  sectionHeaderText: { flexDirection: "row", alignItems: "center", gap: spacing.s12, flexShrink: 1, minWidth: 0 },
+  sectionHeaderText: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.s12, flexShrink: 1, minWidth: 0, maxWidth: "100%" },
   sectionHeaderActions: { flexDirection: "row", alignItems: "center", gap: spacing.s12 },
   sectionHeaderCompact: { alignItems: "stretch" },
   sectionHeaderActionsCompact: { width: "100%" },
@@ -403,13 +404,15 @@ const styles = StyleSheet.create({
   },
   toolbarPhone: { alignItems: "stretch" },
   toolbarSearch: { flexShrink: 1, flexGrow: 1, maxWidth: 420, minWidth: 240 },
+  toolbarSearchCompact: { width: "100%", maxWidth: "100%", minWidth: 0 },
   toolbarTrailing: { flexDirection: "row", alignItems: "center", gap: spacing.lg, flexWrap: "wrap" },
   toolbarTrailingPhone: { width: "100%", alignItems: "stretch" },
   toolbarFilterScroller: { width: "100%" },
   // 12px is the module's floor for separation between two controls; 8px read
   // as chips touching each other.
   toolbarFilters: { flexDirection: "row", alignItems: "center", gap: spacing.s12, flexWrap: "wrap" },
-  toolbarActions: { flexDirection: "row", alignItems: "center", gap: spacing.s12 },
+  toolbarFiltersCompact: { flexWrap: "nowrap" },
+  toolbarActions: { flexDirection: "row", alignItems: "center", gap: spacing.s12, flexWrap: "wrap" },
 
   statRow: {
     flexDirection: "row",
