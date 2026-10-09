@@ -21,6 +21,7 @@ from services.pricing import per_line_net_amounts
 from services.sequence import next_number
 from services.tile_movement_log import record_movement
 from services.tile_order_status import rollup_status
+from services.customer_data_reset import customer_reset_maintenance
 from pymongo import ReturnDocument
 
 EVENT_QUOTATION_GENERATED = "QuotationGenerated"
@@ -652,6 +653,8 @@ WORKER_INTERVAL_SECONDS = 30
 
 
 async def dispatch_pending(limit: int = 100) -> list[dict]:
+    if customer_reset_maintenance():
+        return []
     stale_before = datetime.now(timezone.utc).timestamp() - 120
     events = await db.event_outbox.find(
         {

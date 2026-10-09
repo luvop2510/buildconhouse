@@ -1,5 +1,6 @@
 """Forge backend entrypoint. Wires routes and boots demo data on first run."""
 import asyncio
+import json
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -67,6 +68,7 @@ from services.tile_order_indexes import ensure_tile_order_indexes  # noqa: E402
 from migrations.runner import pending_migrations, run_migrations  # noqa: E402
 from services.followup_engine import reconcile_followups  # noqa: E402
 from services.floor_scope import ensure_floor_scope  # noqa: E402
+from services.customer_data_reset import customer_reset_maintenance, reset_customer_data, cleanup_reset_files  # noqa: E402
 
 
 # A non-sensitive marker used by the public health probe to verify that the
@@ -167,6 +169,12 @@ async def _startup(app: FastAPI) -> None:
     await ensure_transfer_indexes()
     await ensure_download_token_indexes()
     await ensure_access_grant_indexes(db)
+    reset_request = os.environ.get("FORGE_CUSTOMER_RESET_REQUEST", "")
+    if reset_request:
+        receipt = await reset_customer_data(db, client, request_id=reset_request)
+        receipt = await cleanup_reset_files(db, get_media_storage(),
+            bucket=settings.supabase_private_bucket, receipt=receipt)
+        logger.info("Customer reset receipt: %s", json.dumps(receipt, sort_keys=True))
     await dispatch_pending()
     app.state.outbox_worker = asyncio.create_task(outbox_worker())
     snapshot = await catalog_service.refresh_catalog_snapshot()
@@ -218,6 +226,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Forge API", version="0.1.0", lifespan=lifespan)
 api = APIRouter(prefix="/api")
+
+
+@app.middleware("http")
+async def customer_reset_maintenance_gate(request: Request, call_next):
+    if (customer_reset_maintenance() and request.url.path.startswith("/api/")
+            and request.url.path not in {"/api/health", "/api/health/ready"}):
+        return JSONResponse(status_code=503,
+            content={"detail": "Customer data reset in progress. Please try again shortly."},
+            headers={"Retry-After": "60", "Cache-Control": "no-store"})
+    return await call_next(request)
 
 
 @app.middleware("http")

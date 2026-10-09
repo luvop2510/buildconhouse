@@ -25,6 +25,7 @@ from db import db
 from models import Followup, now_iso
 from services.activity_log import log_event
 from services.notifications import notify
+from services.customer_data_reset import customer_reset_maintenance
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -446,6 +447,8 @@ _reconcile_lock = asyncio.Lock()
 
 
 async def reconcile_followups() -> dict:
+    if customer_reset_maintenance():
+        return {"skipped": True, "reason": "customer reset maintenance"}
     if _reconcile_lock.locked():
         # Another reconcile is already mid-flight. Its desired-state pass
         # already covers whatever DB write just triggered this call (routes
