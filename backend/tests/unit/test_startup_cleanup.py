@@ -62,6 +62,7 @@ async def test_startup_failure_after_worker_start_cleans_up_resources(monkeypatc
     monkeypatch.setattr(server, "ensure_transfer_indexes", noop)
     monkeypatch.setattr(server, "ensure_download_token_indexes", noop)
     monkeypatch.setattr(server, "ensure_access_grant_indexes", noop)
+    monkeypatch.setattr(server, "ensure_quotation_share_indexes", noop)
     monkeypatch.setattr(server, "dispatch_pending", noop)
     monkeypatch.setattr(server, "outbox_worker", worker)
     monkeypatch.setattr(server.catalog_service, "refresh_catalog_snapshot", broken_snapshot)

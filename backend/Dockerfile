@@ -3,7 +3,9 @@
 # Run:    docker run -p 8000:8000 --env-file <secrets> buildcon-backend
 # All configuration comes from the process environment (see settings.py);
 # never bake .env into the image.
-FROM python:3.12-slim
+# The Google-managed Docker Hub cache avoids shared-builder Hub rate limits.
+# This multi-platform digest was verified identical to library/python upstream.
+FROM mirror.gcr.io/library/python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
