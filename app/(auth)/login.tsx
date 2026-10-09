@@ -2,10 +2,10 @@
 // Authentication — one image, one form, one button.
 // ─────────────────────────────────────────────────────────────────────────────
 import React, { createElement, useState } from "react";
-import { Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from "react-native";
+import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { NavigationLink } from "@/src/design/NavigationLink";
 
 import { Button, Field, IconButton, Input, Txt } from "@/src/design/components";
 import { NavigationTabs } from "@/src/design/NavigationTabs";
@@ -22,7 +22,6 @@ export default function Login() {
   const { isPhone, height } = useBp();
   const compactPhone = isPhone && height < 700;
   const insets = useSafeAreaInsets();
-  const router = useRouter();
 
   const [mode, setMode] = useState<Mode>("staff");
   const [email, setEmail] = useState("");
@@ -118,12 +117,12 @@ export default function Login() {
       </View>
 
       <View style={{ flexDirection: "row", justifyContent: "center", gap: space.x4 }}>
-        <Pressable accessibilityRole="link" style={{ minHeight: 44, justifyContent: "center" }} testID="login-privacy-link" onPress={() => router.push("/privacy")} hitSlop={8}>
+        <NavigationLink href="/privacy" accessibilityRole="link" style={{ minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center" }} testID="login-privacy-link" hitSlop={8}>
           <Text style={{ fontFamily: font.regular, fontSize: 12, color: color.inkSoft }}>Privacy</Text>
-        </Pressable>
-        <Pressable accessibilityRole="link" style={{ minHeight: 44, justifyContent: "center" }} testID="login-terms-link" onPress={() => router.push("/terms")} hitSlop={8}>
+        </NavigationLink>
+        <NavigationLink href="/terms" accessibilityRole="link" style={{ minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center" }} testID="login-terms-link" hitSlop={8}>
           <Text style={{ fontFamily: font.regular, fontSize: 12, color: color.inkSoft }}>Terms</Text>
-        </Pressable>
+        </NavigationLink>
       </View>
     </View>
   );

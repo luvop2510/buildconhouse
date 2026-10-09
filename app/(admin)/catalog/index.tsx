@@ -19,7 +19,7 @@ import { Text, TextInput } from "@/src/components/AppText";
 import { ProductImage } from "@/src/components/ProductImage";
 import { productImageList } from "@/src/components/quotation/helpers/media";
 import { BottomSheet } from "@/src/components/BottomSheet";
-import { Chip, EmptyState, IconButton, PriceTag, ScreenTitle, SegmentedControl, Skeleton, Button } from "@/src/components/ui";
+import { Alert, Chip, EmptyState, IconButton, PriceTag, ScreenTitle, SegmentedControl, Skeleton, Button } from "@/src/components/ui";
 import { catalogReferences, fetchCatalogPage, mergeCatalogPage, type CatalogEntry } from "@/src/services/catalogService";
 import { useBreakpoint } from "@/src/hooks/use-breakpoint";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
@@ -125,10 +125,16 @@ export default function Catalog() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const loadingMoreRef = useRef(false);
+  const searchRef = useRef<TextInput>(null);
   const categoryScrollRef = useRef<ScrollView>(null);
   const categoryScrollOffset = useRef(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [referenceError, setReferenceError] = useState<string | null>(null);
+  const [hierarchyError, setHierarchyError] = useState<string | null>(null);
+  const [referencesLoading, setReferencesLoading] = useState(false);
+  const [hierarchyLoading, setHierarchyLoading] = useState(false);
+  const [filterRevision, setFilterRevision] = useState(0);
 
   const [q, setQ] = useState("");
   const [cat, setCat] = useState<string | null>(null);
@@ -145,8 +151,13 @@ export default function Catalog() {
     setBrandId(null); setCat(null); setSubcat(null); setSeries(null);
     setCategoriesForBrand(null); setBrandCounts({});
     setProducts(null); setFamilies(null); setTotal(null); setHasMore(false);
+    setReferenceError(null); setHierarchyError(null);
+  }, [selectedFloorId]);
+
+  useEffect(() => {
     if (!selectedFloorId) return;
     let active = true;
+    setReferencesLoading(true);
     (async () => {
       try {
         const [bs, cs] = await Promise.all([
@@ -155,34 +166,38 @@ export default function Catalog() {
         ]);
         if (!active) return;
         setBrands(bs); setCategories(cs);
-        setLoadError(null);
+        setReferenceError(null);
       } catch {
         if (!active) return;
-        setBrands([]); setCategories([]);
-        setLoadError("Catalog filters could not be loaded. Refresh and sign in again if this persists.");
+        setReferenceError("Catalog brands and categories could not be loaded.");
+      } finally {
+        if (active) setReferencesLoading(false);
       }
     })();
     return () => { active = false; };
-  }, [selectedFloorId]);
+  }, [selectedFloorId, filterRevision]);
 
   // Hierarchy is invariant across filter changes. Load and parse it once; the
   // filter-derived rail options below are computed from this stable snapshot.
   useEffect(() => {
     if (!selectedFloorId) return;
     let active = true;
+    setHierarchyLoading(true);
     (async () => {
       try {
         const res = await catalogReferences.hierarchy<{ tree: any[] }>({ floorId: selectedFloorId });
         if (!active) return;
         setHierarchyTree(res.tree);
+        setHierarchyError(null);
       } catch {
         if (!active) return;
-        setHierarchyTree([]);
-        setLoadError("Catalog data could not be loaded. Refresh and sign in again if this persists.");
+        setHierarchyError("Catalog subcategories, series and brand counts could not be loaded.");
+      } finally {
+        if (active) setHierarchyLoading(false);
       }
     })();
     return () => { active = false; };
-  }, [selectedFloorId]);
+  }, [selectedFloorId, filterRevision]);
 
   // Hierarchy → derive brand counts, brand-scoped categories, subcategory & series options
   useEffect(() => {
@@ -222,6 +237,7 @@ export default function Catalog() {
   const load = useCallback(async () => {
     if (!selectedFloorId) return;
     const requestId = ++requestIdRef.current;
+    setLoadError(null);
     loadingMoreRef.current = false;
     setLoadingMore(false);
     setProducts(null); setFamilies(null); setTotal(null); setHasMore(false);
@@ -298,10 +314,16 @@ export default function Catalog() {
   const resetFilters = () => { setBrandId(null); setSubcat(null); setSeries(null); };
   const clearAll = () => { setQ(""); setCat(null); resetFilters(); };
   const hasActiveFilters = Boolean(q) || Boolean(cat) || activeFilterCount > 0;
+  const filterError = [referenceError, hierarchyError].filter(Boolean).join(" ");
+  const filtersLoading = referencesLoading || hierarchyLoading;
+  const retryFilters = () => setFilterRevision((revision) => revision + 1);
 
-  const subtitle = total === null
+  const countLabel = (count: number) => mode === "families"
+    ? count === 1 ? "family" : "families"
+    : count === 1 ? "product" : "products";
+  const subtitle = loadError ? "Catalog data is unavailable" : total === null
     ? "Loading…"
-    : `${total.toLocaleString("en-IN")} ${mode === "families" ? "families" : "products"}${cat ? " · filtered" : ""}`;
+    : `${total.toLocaleString("en-IN")} ${countLabel(total)}${cat ? " · filtered" : ""}`;
 
   const gridPadding = pad;
   const gap = 14;
@@ -349,7 +371,9 @@ export default function Catalog() {
         <View style={styles.searchWrap}>
           <Feather name="search" size={16} color={colors.onSurfaceMuted} />
           <TextInput
+            ref={searchRef}
             testID="catalog-search"
+            accessibilityLabel="Search catalog"
             value={q}
             onChangeText={setQ}
             placeholder="Search products, series, SKU…"
@@ -358,16 +382,20 @@ export default function Catalog() {
             returnKeyType="search"
           />
           {q ? (
-            <Pressable onPress={() => setQ("")} hitSlop={8}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Clear catalog search"
+              onPress={() => { setQ(""); searchRef.current?.focus(); }} style={styles.searchClear}>
               <Feather name="x" size={16} color={colors.onSurfaceMuted} />
             </Pressable>
           ) : null}
         </View>
-        <Pressable testID="catalog-filter-btn" onPress={() => setFiltersOpen(true)} style={styles.filterBtn}>
+        <Pressable testID="catalog-filter-btn" accessibilityRole="button" accessibilityLabel="Catalog filters"
+          aria-expanded={filtersOpen} accessibilityState={{ expanded: filtersOpen }} onPress={() => setFiltersOpen(true)} style={styles.filterBtn}>
           <Feather name="sliders" size={16} color={colors.onSurface} />
           {activeFilterCount > 0 ? <View style={styles.filterDot}><Text style={styles.filterDotText}>{activeFilterCount}</Text></View> : null}
         </Pressable>
       </View>
+
+      <FilterLoadStatus error={filterError} loading={filtersLoading} onRetry={retryFilters} />
 
       {!isPhone ? <>
       <View style={styles.horizontalStrip}>
@@ -378,7 +406,7 @@ export default function Catalog() {
         >
           <BrandPill
             label="All brands"
-            count={brands.reduce((sum, b) => sum + (brandCounts[b.id] || 0), 0)}
+            count={hierarchyError || hierarchyLoading ? undefined : brands.reduce((sum, b) => sum + (brandCounts[b.id] || 0), 0)}
             active={!brandId}
             onPress={() => { setBrandId(null); setCat(null); setSubcat(null); setSeries(null); }}
             testID="brand-pill-all"
@@ -436,7 +464,7 @@ export default function Catalog() {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingRight: 8 }}>
           {brandId ? <ActiveChip label={brandById[brandId] || "Brand"} onClose={() => { setBrandId(null); setCat(null); }} /> : null}
           {cat ? <ActiveChip label={(categoriesForBrand ?? categories).find((item) => item.id === cat)?.name || "Category"} onClose={() => setCat(null)} /> : null}
-          <Pressable onPress={clearAll} style={styles.clearAll}><Text style={styles.clearAllText}>Clear</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Clear all catalog filters" onPress={clearAll} style={styles.clearAll}><Text style={styles.clearAllText}>Clear</Text></Pressable>
         </ScrollView>
       ) : null}
 
@@ -446,7 +474,7 @@ export default function Catalog() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingRight: 8 }}>
               {subcat ? <ActiveChip label={subcat} onClose={() => { setSubcat(null); setSeries(null); }} /> : null}
               {series ? <ActiveChip label={series} onClose={() => setSeries(null)} /> : null}
-              <Pressable onPress={resetFilters} style={styles.clearAll}><Text style={styles.clearAllText}>Clear</Text></Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel="Clear detailed catalog filters" onPress={resetFilters} style={styles.clearAll}><Text style={styles.clearAllText}>Clear</Text></Pressable>
             </ScrollView>
           ) : null}
         </View>
@@ -517,7 +545,7 @@ export default function Catalog() {
           loadingMore ? (
             <View style={styles.listFooter}><ActivityIndicator size="small" color={colors.brand} /><Text style={type.caption}>Loading more…</Text></View>
           ) : total !== null && catalogItems.length > 0 && !hasMore ? (
-            <Text testID="catalog-end-of-list" style={styles.endOfList}>Showing all {catalogItems.length.toLocaleString("en-IN")} {mode === "families" ? "families" : "products"}</Text>
+            <Text testID="catalog-end-of-list" style={styles.endOfList}>Showing all {catalogItems.length.toLocaleString("en-IN")} {countLabel(catalogItems.length)}</Text>
           ) : null
         }
       />
@@ -525,6 +553,7 @@ export default function Catalog() {
       <FiltersSheet
         visible={filtersOpen}
         onClose={() => setFiltersOpen(false)}
+        filterError={filterError} filtersLoading={filtersLoading} onRetryFilters={retryFilters}
         brands={brands}
         categories={categoriesForBrand ?? categories}
         subcategories={subcategories}
@@ -555,7 +584,7 @@ function BrandPill({
       accessibilityState={{ selected: Boolean(active) }}
       style={{
         flexDirection: "row", alignItems: "center", gap: 8,
-        paddingHorizontal: 12, paddingLeft: logo ? 6 : 12, height: 40, borderRadius: 999,
+        paddingHorizontal: 12, paddingLeft: logo ? 6 : 12, height: 44, borderRadius: 999,
         borderWidth: 1, borderColor: active ? colors.brand : colors.border,
         backgroundColor: active ? colors.brand : colors.surfaceSecondary,
       }}
@@ -630,6 +659,8 @@ function FamilyCard({ family: f, brandName, onPress }: { family: Family; brandNa
   return (
     <Pressable
       testID={`family-${f.listing_id || f.family_key || f.sample_product_id}`}
+      accessibilityRole="button"
+      accessibilityLabel={`View ${[brandName, f.family_name].filter(Boolean).join(" ")}`}
       onPress={onPress}
       style={({ pressed }) => [styles.card, { opacity: pressed ? 0.9 : 1 }]}
     >
@@ -703,6 +734,8 @@ function ProductCard({ product: p, brandName, onPress }: { product: Product; bra
   return (
     <Pressable
       testID={`product-${p.listing_id || p.id}`}
+      accessibilityRole="button"
+      accessibilityLabel={`View ${[brandName, p.name].filter(Boolean).join(" ")}, ${p.catalog_entry?.source_sku || p.sku}`}
       onPress={onPress}
       style={({ pressed }) => [styles.card, { opacity: pressed ? 0.9 : 1 }]}
     >
@@ -761,6 +794,7 @@ function SkeletonCard({ tall }: { tall?: boolean }) {
 function FiltersSheet({
   visible, onClose, brands, categories, subcategories, seriesList,
   brandId, setBrandId, cat, setCat, subcat, setSubcat, series, setSeries, onReset,
+  filterError, filtersLoading, onRetryFilters,
 }: {
   visible: boolean; onClose: () => void;
   brands: Brand[]; categories: Category[]; subcategories: string[]; seriesList: string[];
@@ -769,6 +803,7 @@ function FiltersSheet({
   subcat: string | null; setSubcat: (v: string | null) => void;
   series: string | null; setSeries: (v: string | null) => void;
   onReset: () => void;
+  filterError: string; filtersLoading: boolean; onRetryFilters: () => void;
 }) {
   return (
     <BottomSheet
@@ -784,6 +819,7 @@ function FiltersSheet({
       }
     >
       <View style={{ gap: spacing.xl }}>
+        <FilterLoadStatus error={filterError} loading={filtersLoading} onRetry={onRetryFilters} />
         <FilterSection title="Brand">
           <Chip label="Any" active={!brandId} onPress={() => { setBrandId(null); setCat(null); setSubcat(null); setSeries(null); }} />
           {brands.map((brand) => (
@@ -817,6 +853,14 @@ function FiltersSheet({
   );
 }
 
+function FilterLoadStatus({ error, loading, onRetry }: { error: string; loading: boolean; onRetry: () => void }) {
+  if (error) return <View style={{ gap: spacing.sm }}>
+    <Alert tone="error" title={error} />
+    <Button label="Retry catalog filters" variant="secondary" loading={loading} onPress={onRetry} />
+  </View>;
+  return loading ? <Text accessibilityLiveRegion="polite" style={type.bodyMuted}>Loading catalog filters…</Text> : null;
+}
+
 function FilterSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <View style={{ gap: spacing.sm }}>
@@ -841,7 +885,8 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary,
     paddingHorizontal: 14, borderRadius: radius.md, height: 44,
   },
-  searchInput: { flex: 1, fontSize: 14, color: colors.onSurface, height: 44 },
+  searchInput: { flex: 1, minWidth: 0, fontSize: 16, color: colors.onSurface, height: 44 },
+  searchClear: { width: 44, height: 44, marginRight: -14, alignItems: "center", justifyContent: "center" },
   filterBtn: {
     width: 44, height: 44, borderRadius: radius.md,
     backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
@@ -852,7 +897,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.brand, alignItems: "center", justifyContent: "center", paddingHorizontal: 3,
   },
   filterDotText: { color: colors.onBrand, fontSize: 9, fontWeight: "800" },
-  clearAll: { paddingHorizontal: 10, height: 26, borderRadius: 999, alignItems: "center", justifyContent: "center" },
+  clearAll: { paddingHorizontal: 10, minWidth: 44, minHeight: 44, borderRadius: 999, alignItems: "center", justifyContent: "center" },
   clearAllText: { fontSize: 11, fontWeight: "600", color: colors.onSurfaceMuted, textDecorationLine: "underline" },
   brandPillLogoWrap: {
     width: 28, height: 28, borderRadius: 14, overflow: "hidden",

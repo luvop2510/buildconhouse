@@ -8,8 +8,8 @@
 // AuthGate (app/_layout.tsx) redirects any unauthenticated visitor to
 // /(auth)/login by default, with an explicit carve-out for this route's
 // top-level "privacy" segment so it stays reachable without signing in.
-import { useRouter } from "expo-router";
-import { Pressable, ScrollView, View } from "react-native";
+import { NavigationLink } from "@/src/design/NavigationLink";
+import { ScrollView, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -20,7 +20,6 @@ import { color, font, space } from "@/src/design/tokens";
 import { PrivacyPolicyContent } from "@/src/components/PrivacyPolicyContent";
 
 export default function PublicPrivacyPolicy() {
-  const router = useRouter();
   const { isPhone, gutter } = useBp();
   const insets = useSafeAreaInsets();
 
@@ -45,9 +44,9 @@ export default function PublicPrivacyPolicy() {
 
           <PrivacyPolicyContent />
 
-          <Pressable accessibilityRole="link" style={{ minHeight: 44, justifyContent: "center" }} onPress={() => router.push("/(auth)/login")} hitSlop={8}>
+          <NavigationLink href="/(auth)/login" accessibilityRole="link" accessibilityLabel="Back to sign in" style={{ minHeight: 44, justifyContent: "center" }} hitSlop={8}>
             <Text style={{ fontFamily: font.medium, fontSize: 13, color: color.brassDeep }}>← Back to sign in</Text>
-          </Pressable>
+          </NavigationLink>
         </View>
       </ScrollView>
     </View>

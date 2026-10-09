@@ -16,6 +16,7 @@ import { Alert, ErrorState } from "@/src/components/ui";
 import {
   Button, FadeIn, Hairline, IconButton, Money, Section, Skeleton, StatusWord, Txt,
 } from "@/src/design/components";
+import { NavigationLink } from "@/src/design/NavigationLink";
 import { useBp } from "@/src/design/responsive";
 import { color, layout, space } from "@/src/design/tokens";
 import { useAuth } from "@/src/state/auth";
@@ -232,12 +233,13 @@ export default function Today() {
       </View>
 
       {stats && stats.pending_approval > 0 ? (
-        <Pressable
-          onPress={() => router.push("/(admin)/quotations" as any)}
+        <NavigationLink href="/(admin)/quotations"
+          accessibilityRole="link"
+          accessibilityLabel={`${stats.pending_approval} quotation${stats.pending_approval === 1 ? "" : "s"} waiting for approval`}
           style={({ hovered }: any) => [
             {
               flexDirection: "row", alignItems: "center", gap: 8,
-              paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10,
+              minHeight: 44, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10,
               backgroundColor: hovered ? color.brassTint : "transparent",
               borderWidth: 1, borderColor: color.brassLine,
             },
@@ -249,16 +251,17 @@ export default function Today() {
             {stats.pending_approval} quotation{stats.pending_approval === 1 ? "" : "s"} waiting for approval
           </Txt>
           <Feather name="arrow-right" size={14} color={color.brassDeep} />
-        </Pressable>
+        </NavigationLink>
       ) : null}
 
       {shortages.length > 0 ? (
-        <Pressable
-          onPress={() => router.push("/(admin)/purchases" as any)}
+        <NavigationLink href="/(admin)/purchases"
+          accessibilityRole="link"
+          accessibilityLabel={`${shortages.length} customer${shortages.length === 1 ? "" : "s"} awaiting reorder after a transfer`}
           style={({ hovered }: any) => [
             {
               flexDirection: "row", alignItems: "center", gap: 8,
-              paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10,
+              minHeight: 44, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10,
               backgroundColor: hovered ? color.riskTint : "transparent",
               borderWidth: 1, borderColor: color.risk,
             },
@@ -270,19 +273,19 @@ export default function Today() {
             {shortages.length} customer{shortages.length === 1 ? "" : "s"} awaiting reorder after a transfer
           </Txt>
           <Feather name="arrow-right" size={14} color={color.risk} />
-        </Pressable>
+        </NavigationLink>
       ) : null}
 
       <View style={{ gap: space.x2 }}>
         <Section eyebrow="Pipeline" right={
-          <Pressable
-            onPress={() => router.push("/(admin)/quotations" as any)}
+          <NavigationLink href="/(admin)/quotations"
+            style={{ minWidth: 44, minHeight: 44, justifyContent: "center" }}
             hitSlop={layout.hitSlop}
             accessibilityRole="link"
             accessibilityLabel="View all quotations"
           >
             <Txt v="caption" tone="soft">View all</Txt>
-          </Pressable>
+          </NavigationLink>
         } />
         {sectionErrors.recent ? (
           <Txt v="sub" tone="soft">Quotation activity is unavailable. Retry the workspace to refresh it.</Txt>
@@ -328,9 +331,9 @@ export default function Today() {
       <Section
         eyebrow="Up next"
         right={due > 0 ? (
-          <Pressable onPress={() => router.push("/(admin)/followups" as any)} hitSlop={layout.hitSlop}>
+          <NavigationLink href="/(admin)/followups" accessibilityRole="link" accessibilityLabel="All follow-ups" style={{ minHeight: 44, justifyContent: "center" }} hitSlop={layout.hitSlop}>
             <Txt v="caption" tone="soft">All follow-ups</Txt>
-          </Pressable>
+          </NavigationLink>
         ) : undefined}
       />
       {loading ? (

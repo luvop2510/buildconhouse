@@ -56,10 +56,11 @@ export function Menu({
         accessibilityRole="button"
         accessibilityLabel={triggerLabel || "Open menu"}
         accessibilityState={{ expanded: !!pos }}
+        aria-expanded={!!pos}
         aria-haspopup="menu"
         onPress={openMenu}
         hitSlop={layout.hitSlop}
-        style={webCursor as any}
+        style={[{ minWidth: 44, minHeight: 44, justifyContent: "center" }, webCursor] as any}
       >
         {children}
       </Pressable>

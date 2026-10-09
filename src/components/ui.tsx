@@ -572,6 +572,7 @@ export function KpiCard({
     <Container
       testID={testID}
       onPress={onPress}
+      accessibilityRole={onPress ? "button" : undefined}
       accessibilityLabel={onPress ? `${label}: ${value}` : undefined}
       style={[{
         backgroundColor: toneMap.bg,

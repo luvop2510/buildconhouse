@@ -18,6 +18,7 @@ import {
 import { PaletteProvider } from "@/src/design/CommandPalette";
 import { useBp } from "@/src/design/responsive";
 import { color, font, layout, radius, space } from "@/src/design/tokens";
+import { NavigationLink } from "@/src/design/NavigationLink";
 import { BuildConLogo } from "@/src/design/BrandLogo";
 import { useAuth } from "@/src/state/auth";
 import { useModuleAccess, usePermissionMatrix } from "@/src/hooks/use-permissions";
@@ -26,6 +27,17 @@ import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { AppScaffold } from "@/src/components/mobile/AppScaffold";
 import { storage } from "@/src/utils/storage";
 import { FURNITURE_FLOOR_ID, KITCHEN_FLOOR_ID, SANITARY_FLOOR_ID, TILES_FLOOR_ID, floorDisplayLabel, floorLandingPath } from "@/src/constants/floors";
+
+// A web link needs an actual href for native Enter activation. Keep the
+// existing callback as the navigation owner (including floor synchronization).
+function WorkspaceLink({ href, onPress, ...props }: Omit<React.ComponentProps<typeof Pressable>, "onPress"> & { href: string; onPress: () => void }) {
+  return <NavigationLink href={href as any} {...props} onPress={(event) => {
+      const mouse = event.nativeEvent as any;
+      if (Platform.OS === "web" && (mouse.metaKey || mouse.ctrlKey || mouse.shiftKey || mouse.altKey || mouse.button > 0)) return;
+      event.preventDefault();
+      onPress();
+    }} />;
+}
 
 function isNavActive(item: NavItem, segments: string[]): boolean {
   // The root notebook route is Walk-ins. It must not remain highlighted when
@@ -58,7 +70,8 @@ function Wordmark({ compact }: { compact?: boolean }) {
 // ── Sidebar item — the brass bar is the only accent in the chrome. ─────────
 function SideItem({ item, active, onPress, compact = false }: { item: NavItem; active: boolean; onPress: () => void; compact?: boolean }) {
   return (
-    <Pressable
+    <WorkspaceLink
+      href={item.href}
       testID={`nav-${item.match}`}
       onPress={onPress}
       accessibilityRole="link"
@@ -84,7 +97,7 @@ function SideItem({ item, active, onPress, compact = false }: { item: NavItem; a
       >
         {item.label}
       </Text> : null}
-    </Pressable>
+    </WorkspaceLink>
   );
 }
 
@@ -314,7 +327,8 @@ function Rail() {
   const RailBtn = ({ item }: { item: NavItem }) => {
     const on = isActive(item);
     return (
-      <Pressable
+      <WorkspaceLink
+        href={item.href}
         testID={`nav-${item.match}`}
         accessibilityRole="link"
         accessibilityLabel={item.label}
@@ -328,7 +342,7 @@ function Rail() {
       >
         <View style={[styles.brassBarRail, { backgroundColor: on ? color.brass : "transparent" }]} />
         <Feather name={item.icon} size={18} color={on ? color.action : color.inkSoft} />
-      </Pressable>
+      </WorkspaceLink>
     );
   };
 
@@ -346,7 +360,8 @@ function Rail() {
         {tilesNav.items.map((n) => {
           const on = n.match === "orders" ? segments.includes("orders") : segments.includes("tiles") && !segments.includes("orders");
           return (
-            <Pressable
+            <WorkspaceLink
+              href={n.href}
               key={n.href}
               testID={`nav-${n.match}`}
               accessibilityRole="link"
@@ -360,7 +375,7 @@ function Rail() {
             >
               <View style={[styles.brassBarRail, { backgroundColor: on ? color.brass : "transparent" }]} />
               <Feather name={n.icon} size={18} color={on ? color.action : color.inkSoft} />
-            </Pressable>
+            </WorkspaceLink>
           );
         })}
         <View style={{ height: space.x4 }} />
@@ -408,7 +423,7 @@ function PhoneBar() {
   const moreActive = more.some(isActive);
   return <>
     <View role="navigation" accessibilityLabel="Primary" style={styles.phoneBar}>
-      {priorities.map(item => <Pressable key={item.href} testID={`bottom-nav-${item.match}`}
+      {priorities.map(item => <WorkspaceLink href={item.href} key={item.href} testID={`bottom-nav-${item.match}`}
         accessibilityRole="link" accessibilityLabel={item.label} accessibilityState={{ selected: isActive(item) }}
         onPress={() => router.push(item.href as any)} style={styles.tab}>
         <View style={[styles.tabIconWrap, isActive(item) && styles.tabIconWrapActive]}>
@@ -417,9 +432,10 @@ function PhoneBar() {
         <Text numberOfLines={2} style={[styles.tabLabel, isActive(item) && styles.tabLabelActive]}>
           {notebook ? item.href.includes('quotation-follow-up') ? 'Quotation follow-up' : 'Walk-ins' : item.label}
         </Text>
-      </Pressable>)}
+      </WorkspaceLink>)}
       <Pressable testID={notebook ? "bottom-nav-notebook-workspace" : "bottom-nav-more"}
         accessibilityRole="button" accessibilityLabel="More" accessibilityState={{ expanded: moreOpen, selected: moreActive }}
+        aria-expanded={moreOpen}
         onPress={() => setMoreOpen(true)} style={styles.tab}>
         <View style={[styles.tabIconWrap, moreActive && styles.tabIconWrapActive]}><Feather name="menu" size={20} color={moreActive ? color.action : color.inkMid} /></View>
         <Text style={[styles.tabLabel, moreActive && styles.tabLabelActive]}>More</Text>
@@ -430,11 +446,11 @@ function PhoneBar() {
         onPress={() => { setMoreOpen(false); setTimeout(palette.open, 200); }} style={styles.moreRow}>
         <Feather name="search" size={18} color={color.inkMid} /><Text style={styles.moreLabel}>Search everything</Text>
       </Pressable> : null}
-      {more.map(item => <Pressable key={item.href} accessibilityRole="link" accessibilityLabel={item.label}
+      {more.map(item => <WorkspaceLink href={item.href} key={item.href} accessibilityRole="link" accessibilityLabel={item.label}
         {...(Platform.OS === "web" ? { title: item.label } : {})}
         onPress={() => { setMoreOpen(false); router.push(item.href as any); }} style={styles.moreRow}>
         <Feather name={item.icon} size={18} color={color.inkMid} /><Text style={styles.moreLabel}>{item.label}</Text>
-      </Pressable>)}
+      </WorkspaceLink>)}
       <Hairline />
       <View style={[styles.moreRow, { height: 'auto', minHeight: 56 }]}><Avatar name={staff?.full_name} />
         <View style={{ flex: 1 }}><Text style={styles.moreLabel}>{staff?.full_name}</Text><Text style={{ color: color.inkMid }}>{roleLabel[staff?.role || '']}</Text></View>
@@ -594,19 +610,19 @@ const styles = StyleSheet.create({
   },
   searchTrigger: {
     flexDirection: "row", alignItems: "center", gap: 8,
-    height: 34, borderRadius: radius.md, borderWidth: 1, paddingHorizontal: 10,
+    height: 44, borderRadius: radius.md, borderWidth: 1, paddingHorizontal: 10,
   },
   sideItem: {
     flexDirection: "row", alignItems: "center", gap: 10,
-    height: 36, borderRadius: radius.sm, paddingLeft: 10, paddingRight: 10,
+    height: 44, borderRadius: radius.sm, paddingLeft: 10, paddingRight: 10,
     overflow: "hidden",
   },
   sideItemCompact: {
-    width: 42, justifyContent: "center", paddingLeft: 0, paddingRight: 0,
+    width: 44, justifyContent: "center", paddingLeft: 0, paddingRight: 0,
   },
   sidebarToggle: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
-    minHeight: 30, borderRadius: radius.sm, paddingHorizontal: 8,
+    minHeight: 44, minWidth: 44, borderRadius: radius.sm, paddingHorizontal: 8,
     backgroundColor: color.sunken,
   },
   sidebarToggleLabel: { fontFamily: font.medium, fontSize: 11.5, color: color.inkMid },

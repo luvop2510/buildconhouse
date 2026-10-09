@@ -62,7 +62,7 @@ export function RoomChipRow() {
 
 const styles = StyleSheet.create({
   wrap: { flexDirection: "row", alignItems: "center", gap: 6 },
-  tab: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
+  tab: { minHeight: 44, minWidth: 44, justifyContent: "center", flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
   tabActive: { backgroundColor: ds.brassTint, borderColor: ds.brassLine },
   tabDrop: { borderColor: ds.brassDeep, borderWidth: 2 },
   tabPressed: { opacity: 0.76, transform: [{ scale: 0.98 }] },

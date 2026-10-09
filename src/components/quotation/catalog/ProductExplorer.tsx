@@ -110,7 +110,7 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
               <Text style={[styles.crumb, styles.crumbActive]} numberOfLines={1}>{catName}</Text>
             </>
           ) : null}
-          <Text style={styles.crumbCount}>· {b.productTotal} products</Text>
+          {!b.productLoading && !b.productError ? <Text testID="explorer-product-count" style={styles.crumbCount}>· {b.productTotal} products</Text> : null}
         </View>
 
         <View style={styles.searchWrap}>
@@ -159,7 +159,7 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
             >
               <FilterPill
                 label="All brands"
-                count={totalBrandProducts}
+                count={b.referenceLoading || b.referenceError ? undefined : totalBrandProducts}
                 active={!b.selectedBrandId}
                 onPress={() => b.setSelectedBrandId(null)}
                 testID="mobile-brand-all"

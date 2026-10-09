@@ -127,6 +127,7 @@ export function BuilderShell({ onBack }: { onBack: () => void }) {
               accessibilityRole="button"
               accessibilityLabel={quotationCollapsed ? "Show quotation panel" : "Hide quotation panel"}
               accessibilityState={{ expanded: !quotationCollapsed }}
+              aria-expanded={!quotationCollapsed}
               onPress={() => setQuotationCollapsed((value) => !value)}
               style={styles.quotationToggle}
               testID="builder-quotation-panel-toggle"
@@ -192,6 +193,6 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center", backgroundColor: colors.onSurface,
   },
   retryLabel: { fontSize: 13, fontWeight: "700", color: colors.surface },
-  quotationToggle: { height: 40, alignItems: "center", justifyContent: "center", borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
+  quotationToggle: { height: 44, alignItems: "center", justifyContent: "center", borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
   quotationToggleText: { fontSize: 24, lineHeight: 28, color: colors.onSurfaceMuted },
 });
