@@ -113,12 +113,23 @@ def test_place_order_confirm_updates_cross_floor_quotation(monkeypatch):
         async def update_one(self, filter_dict, update_dict, session=None):
             update_calls.append({"filter": filter_dict, "update": update_dict})
             # Verify the filter is just {"id": ...}, not floor-scoped
-            assert filter_dict == {"id": "q1"}, f"Expected {{'id': 'q1'}}, got {filter_dict}"
+            assert filter_dict == {"id": "q1", "floor_id": "ground-floor"}, f"Expected {{'id': 'q1'}}, got {filter_dict}"
             return {"matched_count": 1, "modified_count": 1}
+
+    class _FakeConfirmProducts:
+        def find(self, query, projection, *, session=None):
+            assert query["floor_id"] == "ground-floor"
+            assert query["id"] == {"$in": ["p1"]}
+            assert session is not None
+            class Cursor:
+                async def to_list(self, length):
+                    return [{"id": "p1", "price": 100.0, "mrp": 100.0}]
+            return Cursor()
 
     class _FakeDbForConfirm:
         def __init__(self):
             self.quotations = _FakeQuotationsForConfirm()
+            self.products = _FakeConfirmProducts()
             self.event_outbox = type('obj', (object,), {'find_one': self._fake_find_one})()
 
         async def _fake_find_one(self, query, projection=None):

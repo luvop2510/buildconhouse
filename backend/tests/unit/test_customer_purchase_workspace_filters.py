@@ -68,7 +68,7 @@ def _workspace_rows() -> list[dict]:
             name="Grohe Rain Shower", sku="GR-SH-1", qty=2, unit_cost=1000, blocked=True, po_number="PO-1",
         ),
         _row(
-            "item-2", brand_id="grohe", brand_name="Grohe", stage="delivered",
+            "item-2", brand_id="grohe", brand_name="Grohe", stage="dispatched",
             name="Grohe Basin Mixer", sku="GR-BM-1", qty=1, unit_cost=1500, po_number="PO-1",
         ),
         _row(
@@ -76,7 +76,7 @@ def _workspace_rows() -> list[dict]:
             name="Vitra Wall Hung WC", sku="VT-WC-1", qty=1, unit_cost=7000, po_number="PO-2",
         ),
         _row(
-            "item-4", brand_id="vitra", brand_name="Vitra", stage="in_transit",
+            "item-4", brand_id="vitra", brand_name="Vitra", stage="dispatched",
             name="Vitra Flush Plate", sku="VT-FP-1", qty=3, unit_cost=1200, po_number="PO-2",
         ),
         _row(
@@ -225,10 +225,10 @@ def _assert_workspace_matches_rows(workspace: dict, rows: list[dict]) -> None:
     assert workspace["products"] == rows
 
     expected_total_value = round(sum(r["qty"] * r["unit_cost"] for r in rows), 2)
-    expected_outstanding = [r for r in rows if r["stage"] != "delivered"]
+    expected_outstanding = [r for r in rows if r["stage"] != "dispatched"]
     expected_outstanding_value = round(sum(r["qty"] * r["unit_cost"] for r in expected_outstanding), 2)
     expected_blocked = sum(1 for r in rows if r["blocked"])
-    expected_delivered = sum(1 for r in rows if r["stage"] == "delivered")
+    expected_delivered = sum(1 for r in rows if r["stage"] == "dispatched")
 
     assert workspace["summary"]["total_items"] == len(rows)
     assert workspace["summary"]["total_value"] == expected_total_value
@@ -481,7 +481,7 @@ def test_workspace_large_history_avoids_per_item_queries(monkeypatch):
             "brand_name": po_doc["brand_name"],
             "customer_id": "cust-1",
             "customer_name": "Aarav Residency",
-            "stage": "order_in_company" if idx % 3 == 0 else "in_transit",
+            "stage": "order_in_company" if idx % 3 == 0 else "dispatched",
             "qty": 1 + (idx % 4),
             "unit_cost": 500 + idx,
             "room": "Master Bath",
@@ -489,7 +489,7 @@ def test_workspace_large_history_avoids_per_item_queries(monkeypatch):
         }
         aggregate_rows.append({**po_doc, "items": item_doc})
         expected_rows.append(tracker._flatten_item(po_doc, item_doc, 7))
-    expected_rows.sort(key=lambda r: (r["stage"] == "delivered", -(r.get("age_days") or 0)))
+    expected_rows.sort(key=lambda r: (r["stage"] == "dispatched", -(r.get("age_days") or 0)))
 
     purchase_orders = _AggregatePurchaseOrders(aggregate_rows, po_rows, calls)
     monkeypatch.setattr(tracker, "db", _Db(calls, pos=po_rows, purchase_orders=purchase_orders))

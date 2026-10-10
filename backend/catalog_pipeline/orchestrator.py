@@ -1,6 +1,8 @@
 """Orchestrator wiring Extraction → Validation → Certification → Import."""
 from __future__ import annotations
 import logging
+import json
+import math
 import re
 import base64
 import hashlib
@@ -154,9 +156,9 @@ async def import_accepted(
     imported = 0
     updated = 0
     skipped = 0
+    unchanged = 0
     failed = 0
     errors: list[dict] = []
-    snapshots: list[dict] = []
     job_id = job.get("id")
     attempted_row_ids: list[str] = []
 
@@ -196,6 +198,8 @@ async def import_accepted(
             mrp = float(r["mrp"])
             price_val = r.get("dealer_price") if r.get("dealer_price") not in (None, MISSING) else mrp
             price_val = float(price_val)
+            if not all(math.isfinite(value) and value >= 0 for value in (mrp, price_val)):
+                raise ValueError("Prices must be finite and nonnegative")
 
             # Hierarchy fields — never fabricate; missing supplier data stays null.
             subcategory = _clean(r.get("subcategory"))
@@ -239,6 +243,8 @@ async def import_accepted(
                     data_url = await _resolve_blob(ref, blob_map)
                     if data_url:
                         resolved_images.append(data_url)
+                    else:
+                        raise ValueError("Staged supplier image is unavailable; retry the row")
                 else:
                     resolved_images.append(ref)
 
@@ -296,37 +302,77 @@ async def import_accepted(
             # overwrite a completely unrelated brand's product. Never again.
             existing = await db.products.find_one({"sku": sku, "brand_id": row_brand["id"], "floor_id": floor_id}, {"_id": 0})
             if existing:
+                # A price-only supplier file must not erase verified metadata/media.
+                for key in list(payload):
+                    if payload[key] is None and existing.get(key) is not None:
+                        payload[key] = existing[key]
+                for key in ("specs", "tags", "concealed_skus"):
+                    if not r.get(key) and existing.get(key):
+                        payload[key] = existing[key]
+                if not r.get("must_buy_concealed") and not r.get("concealed_sku") and not r.get("concealed_skus"):
+                    payload["must_buy_concealed"] = existing.get("must_buy_concealed", payload["must_buy_concealed"])
+                if not raw_images:
+                    for key in ("images", "image_meta", "image_quality"):
+                        payload[key] = existing.get(key, payload[key])
+                content = {key: value for key, value in payload.items() if key != "updated_at"}
+                digest = hashlib.sha256(json.dumps(content, sort_keys=True, default=str).encode()).hexdigest()
+                same_content = all(existing.get(key) == value for key, value in content.items())
+                if same_content and existing.get("catalog_image_fingerprint") == hashlib.sha256(json.dumps(raw_images, sort_keys=True).encode()).hexdigest():
+                    unchanged += 1
+                    continue
+                revision = int(existing.get("catalog_version") or 0) + 1
+                payload.update({"catalog_version": revision, "catalog_content_sha256": digest,
+                                "catalog_image_fingerprint": hashlib.sha256(json.dumps(raw_images, sort_keys=True).encode()).hexdigest(),
+                                "catalog_updated_by": user_id, "catalog_import_id": job_id})
+                if existing.get("price") != price_val or existing.get("mrp") != mrp:
+                    payload["catalog_price_updated_at"] = payload["updated_at"]
                 if job_id:
-                    snapshots.append({
+                    snapshot = {
                         "job_id": job_id, "product_id": existing["id"], "was_new": False,
-                        "previous": existing, "created_at": datetime.now(timezone.utc).isoformat(),
-                    })
-                await db.products.update_one(
-                    {"sku": sku, "brand_id": row_brand["id"], "floor_id": floor_id}, {"$set": payload}
-                )
+                        "previous": existing, "floor_id": floor_id, "brand_id": row_brand["id"],
+                        "catalog_version": revision, "actor_id": user_id, "created_at": payload["updated_at"],
+                    }
+                if job_id:
+                    await db.catalog_import_snapshots.insert_many([snapshot])
+                # Resolve/upload before changing prices: failed replacement keeps prior metadata.
                 await _upload_supplier_images(
                     resolved_images, image_meta, image_quality,
                     product_id=existing["id"], family_key=family_key,
                     brand_id=row_brand["id"], brand_slug=row_brand.get("slug") or supplier.lower(), floor_id=floor_id,
                     force_landscape_images=force_landscape_images,
                 )
+                version_filter = {"catalog_version": existing["catalog_version"]} if "catalog_version" in existing else {"catalog_version": {"$exists": False}}
+                result = await db.products.update_one(
+                    {"id": existing["id"], "floor_id": floor_id, "brand_id": row_brand["id"], **version_filter}, {"$set": payload}
+                )
+                if result is not None and not result.matched_count:
+                    raise ValueError("Catalog changed concurrently; retry this row")
                 updated += 1
                 continue
 
             payload["sku"] = sku
             p = Product(**payload)
             if job_id:
-                snapshots.append({
+                snapshot = {
                     "job_id": job_id, "product_id": p.id, "was_new": True,
-                    "previous": None, "created_at": datetime.now(timezone.utc).isoformat(),
-                })
-            await db.products.insert_one(p.model_dump())
+                    "previous": None, "catalog_version": 1, "floor_id": floor_id, "brand_id": row_brand["id"],
+                    "actor_id": user_id, "created_at": datetime.now(timezone.utc).isoformat(),
+                }
+            if job_id:
+                await db.catalog_import_snapshots.insert_many([snapshot])
+            new_document = p.model_dump()
+            new_document.update({"catalog_version": 1, "catalog_updated_by": user_id, "catalog_import_id": job_id,
+                                 "catalog_price_updated_at": payload["updated_at"],
+                                 "catalog_image_fingerprint": "" if raw_images else hashlib.sha256(b"[]").hexdigest()})
+            await db.products.insert_one(new_document)
             await _upload_supplier_images(
                 resolved_images, image_meta, image_quality,
                 product_id=p.id, family_key=family_key,
                 brand_id=row_brand["id"], brand_slug=row_brand.get("slug") or supplier.lower(), floor_id=floor_id,
                 force_landscape_images=force_landscape_images,
             )
+            if raw_images:
+                await db.products.update_one({"id": p.id, "floor_id": floor_id}, {"$set": {"catalog_image_fingerprint": hashlib.sha256(json.dumps(raw_images, sort_keys=True).encode()).hexdigest()}})
             imported += 1
         except Exception as e:  # noqa: BLE001
             # One malformed row (bad price, bad category) must never abort
@@ -335,11 +381,7 @@ async def import_accepted(
             errors.append({"row_id": r.get("row_id"), "sku": r.get("sku"), "error": f"Catalog row could not be imported ({type(e).__name__})"})
             logger.warning("Catalog import row failed job=%s row=%s error_type=%s", job_id, r.get("row_id"), type(e).__name__)
 
-    if snapshots:
-        for i in range(0, len(snapshots), 200):
-            await db.catalog_import_snapshots.insert_many(snapshots[i:i + 200])
-
-    return {"imported": imported, "updated": updated, "skipped": skipped, "failed": failed, "errors": errors, "attempted_row_ids": attempted_row_ids}
+    return {"imported": imported, "updated": updated, "unchanged": unchanged, "skipped": skipped, "failed": failed, "errors": errors, "attempted_row_ids": attempted_row_ids}
 
 
 async def _upload_supplier_images(
@@ -369,8 +411,8 @@ async def _upload_supplier_images(
             head, b64 = ref.split(",", 1)
             mime = head.split(";", 1)[0].removeprefix("data:") or "image/png"
             data = base64.b64decode(b64)
-        except Exception:  # noqa: BLE001
-            continue
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError("Supplier image data is invalid") from exc
         role = "hero" if i == 0 else "gallery"
         try:
             await upload_and_register(
@@ -383,6 +425,7 @@ async def _upload_supplier_images(
             )
         except Exception as e:  # noqa: BLE001
             logger.warning("Supplier image upload failed product=%s index=%d error_type=%s", product_id, i, type(e).__name__)
+            raise ValueError("Supplier image replacement failed; retry this row") from e
 
 
 async def rollback_job(job_id: str) -> dict:

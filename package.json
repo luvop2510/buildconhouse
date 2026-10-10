@@ -44,6 +44,7 @@
     "test:auth-provider-races": "node scripts/test-auth-provider-races.mjs",
     "test:customer-draft-reset": "node scripts/test-customer-draft-reset.mjs",
     "test:quotation-whatsapp": "node --experimental-strip-types --no-warnings scripts/test-quotation-whatsapp.mjs",
+    "test:furniture-rmb": "node --experimental-strip-types --no-warnings scripts/test-furniture-rmb.mjs",
     "test:native-release-config": "node scripts/test-native-release-config.mjs",
     "test:history-lifecycle": "node scripts/test-history-lifecycle.mjs"
   },

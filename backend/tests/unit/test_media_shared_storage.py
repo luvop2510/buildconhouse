@@ -10,7 +10,7 @@ from services import media_service as service
 
 @pytest.fixture
 def media_fakes(monkeypatch):
-    collection = SimpleNamespace(find_one=AsyncMock(), delete_one=AsyncMock(), insert_one=AsyncMock())
+    collection = SimpleNamespace(find_one=AsyncMock(), delete_one=AsyncMock(), insert_one=AsyncMock(), update_one=AsyncMock(), update_many=AsyncMock())
     storage = SimpleNamespace(delete=AsyncMock(), upload=AsyncMock(return_value=SimpleNamespace(public_url="https://example.test/image.png")))
     log = AsyncMock()
     monkeypatch.setattr(service, "db", SimpleNamespace(product_media=collection))
@@ -72,6 +72,8 @@ async def test_duplicate_upload_restores_only_missing_exact_bytes(media_fakes, p
     storage.exists = AsyncMock(return_value=present)
     result = await service.upload_and_register(data=data, mime="image/svg+xml", brand_slug="brand", product_id="first", role="hero", is_primary=True)
     assert result.id == old["id"]
+    collection.update_many.assert_awaited_once()
+    collection.update_one.assert_awaited_once()
     collection.insert_one.assert_not_awaited()
     storage.delete.assert_not_awaited()
     if present:

@@ -1,7 +1,7 @@
 // Purchases — Material Tracker
 // -----------------------------------------------------------------------------
 // A per-line-item lifecycle workspace built on the same PO document store used
-// by the create/receive flows. Every line item moves through 6 stages
+// by the create/receive flows. Every line item moves through 5 stages
 // independently, gets recorded to an immutable stage history, and can be
 // transferred to another customer (which spawns a fresh draft PO for the
 // destination). Layout follows the FORGE V2 reference — Forge design language.
@@ -33,8 +33,7 @@ import {
 // Types
 // -----------------------------------------------------------------------------
 type Stage =
-  | "po_final" | "company_billing" | "in_box"
-  | "dispatched" | "in_transit" | "delivered";
+  | "po_final" | "order_in_company" | "company_billing" | "in_box" | "dispatched";
 
 type StageMeta = { key: Stage; label: string; count: number; tone: { bg: string; fg: string } };
 
@@ -69,16 +68,15 @@ const VIEW_META: Record<ViewMode, { label: string; icon: keyof typeof Feather.gl
   dispatch_record:  { label: "Dispatch Record", icon: "truck",     sub: "Dispatched history" },
 };
 
-const STAGE_ORDER: Stage[] = ["po_final", "company_billing", "in_box", "dispatched", "in_transit", "delivered"];
+const STAGE_ORDER: Stage[] = ["po_final", "order_in_company", "company_billing", "in_box", "dispatched"];
 
 // Stage tone — one calm vocabulary; overrides whatever the backend sends.
 const STAGE_TONE: Record<Stage, { bg: string; fg: string }> = {
+  order_in_company: { bg: ds.warnTint, fg: ds.warn },
   po_final:         { bg: ds.sunken,    fg: ds.inkMid },
   company_billing:  { bg: ds.warnTint,  fg: ds.warn },
   in_box:           { bg: ds.sunken,    fg: ds.inkMid },
   dispatched:       { bg: ds.brassTint, fg: ds.brassDeep },
-  in_transit:       { bg: ds.brassTint, fg: ds.brassDeep },
-  delivered:        { bg: ds.okTint,    fg: ds.ok },
 };
 
 // -----------------------------------------------------------------------------
@@ -119,6 +117,7 @@ export default function PurchasesScreen() {
   const [brand, setBrand] = useState<string>("all");
   const [q, setQ] = useState<string>("");
   const [committedQ, setCommittedQ] = useState<string>("");
+  const [customerFilter, setCustomerFilter] = useState("");
   const [stage, setStage] = useState<Stage | "">("");
 
   // Data
@@ -129,7 +128,9 @@ export default function PurchasesScreen() {
   const [customers, setCustomers] = useState<PurchaseCustomer[]>([]);
   const [loadingCustomers, setLoadingCustomers] = useState(true);
   const [brandsTotal, setBrandsTotal] = useState(0);
-  const [stages, setStages] = useState<StageMeta[]>([]);
+  const [stageCatalog, setStages] = useState<StageMeta[]>([]);
+  const [stageCounts, setStageCounts] = useState<Partial<Record<Stage, number>> | null>(null);
+  const stages = useMemo(() => stageCatalog.map((entry) => ({ ...entry, count: stageCounts ? stageCounts[entry.key] || 0 : entry.count })), [stageCatalog, stageCounts]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [itemsError, setItemsError] = useState<string | null>(null);
@@ -165,8 +166,8 @@ export default function PurchasesScreen() {
   useEffect(() => {
     setItems([]); setTotal(0); setBlockedCount(0); setNextSkip(null); nextSkipRef.current = null;
     setCustomers([]); setCustomersError(null); setLoadingCustomers(true);
-    setBrands([]); setBrandsTotal(0); setStages([]); setShortages([]);
-    setBrand("all"); setStage(""); setSelected(new Set());
+    setBrands([]); setBrandsTotal(0); setStages([]); setStageCounts(null); setShortages([]);
+    setBrand("all"); setStage(""); setCustomerFilter(""); setSelected(new Set());
     setCustomerWorkspaceId(null); setCustomerWorkspace(null); setTransferItem(null);
     setRowMoveTarget(null); setHistoryItemId(null); setCancelTarget(null);
     setShowMoveMenu(false); setShowShortages(false); setBulkResponse(null); setBulkRefreshError(null);
@@ -206,17 +207,19 @@ export default function PurchasesScreen() {
     }
   }, [selectedFloorId]);
 
+  const customerRequestSequence = useRef(0);
   const loadCustomers = useCallback(async () => {
     if (!selectedFloorId) return;
+    const sequence = ++customerRequestSequence.current;
     setLoadingCustomers(true);
     setCustomersError(null);
     try {
-      const loadedCustomers = await getPurchaseCustomers();
-      if (activeFloor.current === selectedFloorId) { setCustomers(loadedCustomers); setCustomersError(null); }
+      const loadedCustomers = await getPurchaseCustomers(undefined, view === "stock");
+      if (activeFloor.current === selectedFloorId && sequence === customerRequestSequence.current) { setCustomers(loadedCustomers); setCustomersError(null); }
     }
-    catch (e: any) { if (activeFloor.current === selectedFloorId) setCustomersError(e?.detail || "Could not load customers"); }
-    finally { if (activeFloor.current === selectedFloorId) setLoadingCustomers(false); }
-  }, [selectedFloorId]);
+    catch (e: any) { if (activeFloor.current === selectedFloorId && sequence === customerRequestSequence.current) setCustomersError(e?.detail || "Could not load customers"); }
+    finally { if (activeFloor.current === selectedFloorId && sequence === customerRequestSequence.current) setLoadingCustomers(false); }
+  }, [selectedFloorId, view]);
 
   const loadItems = useCallback(async ({ throwOnError = false, append = false, quiet = false }: { throwOnError?: boolean; append?: boolean; quiet?: boolean } = {}) => {
     if (!selectedFloorId) return;
@@ -230,7 +233,7 @@ export default function PurchasesScreen() {
     if (append) setLoadingMore(true);
     else if (!quiet) setLoading(true);
     try {
-      const resp: PurchasesPage = await getPurchasesPage({ view, brand, q: committedQ, stage, skip, limit: isDesktop ? 100 : 30 }, controller.signal);
+      const resp: PurchasesPage = await getPurchasesPage({ view, brand, customer: view === "stock" ? customerFilter : undefined, q: committedQ, stage, skip, limit: isDesktop ? 100 : 30 }, controller.signal);
       if (seq !== requestSeq.current) return;
       setItems((current) => append ? [...current, ...resp.items] : resp.items);
       setTotal(resp.total);
@@ -238,6 +241,7 @@ export default function PurchasesScreen() {
       nextSkipRef.current = resp.next_skip;
       setBlockedCount(resp.summaries.blocked_count);
       setSlaDays(resp.summaries.sla_days);
+      setStageCounts(resp.summaries.stage_counts);
       // Prune selection to visible items
       if (!append) setSelected((prev) => {
         const visible = new Set(resp.items.map((i) => i.item_id));
@@ -252,10 +256,10 @@ export default function PurchasesScreen() {
     } finally {
       if (seq === requestSeq.current) { setLoading(false); setLoadingMore(false); }
     }
-  }, [view, brand, committedQ, stage, isDesktop, selectedFloorId]);
+  }, [view, brand, customerFilter, committedQ, stage, isDesktop, selectedFloorId]);
 
   useEffect(() => { loadFacets(); }, [loadFacets]);
-  useEffect(() => { if (view === "customers") void loadCustomers(); }, [loadCustomers, view]);
+  useEffect(() => { if (view === "customers" || view === "stock") void loadCustomers(); }, [loadCustomers, view]);
   useEffect(() => { loadShortages(); }, [loadShortages]);
   useEffect(() => {
     if (!customerWorkspaceId) { setCustomerWorkspace(null); return; }
@@ -376,6 +380,7 @@ export default function PurchasesScreen() {
         if (brand && brand !== "all") qs.set("brand", brand);
         if (q) qs.set("q", q);
         if (stage) qs.set("stage", stage);
+        if (view === "stock" && customerFilter) qs.set("customer", customerFilter);
         const downloaded = await downloadApiFile(`/purchases/export.xlsx?${qs.toString()}`, `purchases-${view}.xlsx`, `${VIEW_META[view].label} purchases Excel`, selectedFloorId);
         if (!downloaded) return;
       }
@@ -383,7 +388,7 @@ export default function PurchasesScreen() {
     } catch (error: any) {
       toast.error(error?.message || "Export failed");
     }
-  }, [view, brand, q, stage, customers, selectedFloorId]);
+  }, [view, brand, customerFilter, q, stage, customers, selectedFloorId]);
 
   const toggleSelected = useCallback((itemId: string) => setSelected((current) => {
     const next = new Set(current);
@@ -424,7 +429,7 @@ export default function PurchasesScreen() {
   }, [customers, q]);
 
   if (!isDesktop) {
-    const activeFilterCount = (brand !== "all" ? 1 : 0) + (stage ? 1 : 0);
+    const activeFilterCount = (brand !== "all" ? 1 : 0) + (stage ? 1 : 0) + (view === "stock" && customerFilter ? 1 : 0);
     const compactPhone = isPhone && width < 390;
     return (
       <SafeAreaView style={styles.mobileSafe} edges={isPhone ? [] : ["top"]}>
@@ -495,7 +500,7 @@ export default function PurchasesScreen() {
                   <Text style={styles.activeFilterText} numberOfLines={2}>
                     {brand !== "all" ? brands.find((entry) => entry.id === brand)?.name || "Brand" : ""}{brand !== "all" && stage ? " · " : ""}{stage ? stages.find((entry) => entry.key === stage)?.label : ""}
                   </Text>
-                  <Pressable onPress={() => { setBrand("all"); setStage(""); }} style={styles.clearFiltersButton}><Text style={styles.clearFiltersText}>Clear</Text></Pressable>
+                  <Pressable onPress={() => { setBrand("all"); setStage(""); setCustomerFilter(""); }} style={styles.clearFiltersButton}><Text style={styles.clearFiltersText}>Clear</Text></Pressable>
                 </View>
               ) : null}
               {blockedCount > 0 ? (
@@ -508,7 +513,7 @@ export default function PurchasesScreen() {
               {loading ? <View style={styles.loadingCard}><ActivityIndicator /><Text style={type.caption}>Loading purchases…</Text></View> : null}
               {view !== "customers" && itemsError ? <ErrorState title="Purchases unavailable" subtitle={itemsError} onRetry={() => void loadItems()} /> : null}
               {view === "customers" && customersError ? <ErrorState title="Customers unavailable" subtitle={customersError} onRetry={() => void loadCustomers()} /> : null}
-              {view === "customers" && !customersError ? <CustomerNavigator loading={loadingCustomers} customers={visibleCustomers} onOpen={setCustomerWorkspaceId} /> : null}
+              {view === "customers" && !customersError ? <View style={{ gap: spacing.md }}><Pressable accessibilityRole="button" accessibilityLabel="Open 100 percent complete customers" onPress={() => router.push("/(admin)/purchases-completed" as never)} style={styles.completedLink}><Text style={styles.completedLinkText}>100% complete customers</Text><Feather name="arrow-right" size={16} color={colors.success} /></Pressable><CustomerNavigator loading={loadingCustomers} customers={visibleCustomers} onOpen={setCustomerWorkspaceId} /></View> : null}
               {!loading && !itemsError && view !== "customers" && items.length === 0 ? <View style={styles.mobileEmpty}><Feather name="package" size={28} color={colors.onSurfaceMuted} /><Text style={styles.actionTitle}>No purchases found</Text><Text style={type.bodyMuted}>Clear filters or try a different search.</Text></View> : null}
             </View>
           )}
@@ -520,7 +525,7 @@ export default function PurchasesScreen() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
         />
-        <MobileFiltersSheet visible={showMobileFilters} brands={brands} stages={stages} brand={brand} stage={stage} onBrand={setBrand} onStage={setStage} onClose={() => setShowMobileFilters(false)} />
+        <MobileFiltersSheet visible={showMobileFilters} brands={brands} stages={stages} brand={brand} stage={stage} customers={view === "stock" ? customers : []} customer={customerFilter} onCustomer={setCustomerFilter} onBrand={setBrand} onStage={setStage} onClose={() => setShowMobileFilters(false)} />
         <MobileActionsSheet visible={showMobileActions} shortages={shortages.length} exportLabel={`Export ${VIEW_META[view].label} Excel`} onClose={() => setShowMobileActions(false)} onExport={() => { setShowMobileActions(false); doExport(); }} onShortages={() => { setShowMobileActions(false); setShowShortages(true); }} onSettings={() => { setShowMobileActions(false); setShowSettings(true); }} />
         <MoveMenu visible={showMoveMenu} stages={stages} onClose={() => setShowMoveMenu(false)} onPick={(s) => bulkMove(s)} title={`Move ${selected.size} item${selected.size === 1 ? "" : "s"}`} busy={bulkBusy} />
         <MoveStageSheet visible={!!rowMoveTarget} item={rowMoveTarget ? toMovable(rowMoveTarget) : null} onClose={() => setRowMoveTarget(null)} onMoved={async () => { await Promise.all([loadItems({ quiet: true, throwOnError: true }), loadFacets()]); }} />
@@ -734,6 +739,7 @@ export default function PurchasesScreen() {
               </View>
             </View>
 
+            {view === "stock" ? <View style={styles.railBlock}><Text style={styles.sectionLabel}>CUSTOMER NAME</Text><Pressable accessibilityRole="button" onPress={() => setCustomerFilter("")} style={[styles.brandItem, !customerFilter && styles.brandItemActive]}><Text style={styles.brandLabel}>All customers</Text></Pressable>{customers.map((entry) => <Pressable key={entry.id} accessibilityRole="button" accessibilityLabel={`Filter stock for ${entry.name}`} onPress={() => setCustomerFilter(entry.id)} style={[styles.brandItem, customerFilter === entry.id && styles.brandItemActive]}><Text style={styles.brandLabel} numberOfLines={1}>{entry.name}</Text></Pressable>)}</View> : null}
             <View style={styles.railBlock}>
               <Text style={styles.sectionLabel}>STAGE</Text>
               <View style={{ marginTop: 6 }}>
@@ -929,7 +935,7 @@ const MobilePurchaseCard = memo(function MobilePurchaseCard({ item, selected, co
             {item.stage === "in_box" && !item.loan_replenishment_for_customer_name ? <SheetAction icon="shuffle" label="Transfer customer" onPress={() => { setMenuOpen(false); onTransfer(item); }} /> : null}
             <SheetAction icon="clock" label="Movement history" onPress={() => { setMenuOpen(false); onHistory(item.item_id); }} />
             <SheetAction icon="file-text" label="Open purchase order" onPress={() => { setMenuOpen(false); onOpenPo(item.po_id); }} />
-            {item.stage !== "delivered" && !item.loan_replenishment_for_customer_name ? <SheetAction icon="trash-2" label="Remove from active purchases" onPress={() => { setMenuOpen(false); onCancel(item); }} /> : null}
+            {item.stage !== "dispatched" && !item.loan_replenishment_for_customer_name ? <SheetAction icon="trash-2" label="Remove from active purchases" onPress={() => { setMenuOpen(false); onCancel(item); }} /> : null}
       </Sheet> : null}
     </View>
   );
@@ -939,8 +945,9 @@ function SheetAction({ icon, label, onPress }: { icon: keyof typeof Feather.glyp
   return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.mobileSheetAction, pressed && { backgroundColor: colors.surfaceTertiary }]}><Feather name={icon} size={19} color={colors.onSurface} /><Text style={styles.mobileSheetActionText}>{label}</Text><Feather name="chevron-right" size={18} color={colors.onSurfaceMuted} /></Pressable>;
 }
 
-function MobileFiltersSheet({ visible, brands, stages, brand, stage, onBrand, onStage, onClose }: {
+function MobileFiltersSheet({ visible, brands, stages, brand, stage, customers, customer, onCustomer, onBrand, onStage, onClose }: {
   visible: boolean; brands: BrandFacet[]; stages: StageMeta[]; brand: string; stage: Stage | "";
+  customers: PurchaseCustomer[]; customer: string; onCustomer: (value: string) => void;
   onBrand: (value: string) => void; onStage: (value: Stage | "") => void; onClose: () => void;
 }) {
   return (
@@ -950,6 +957,7 @@ function MobileFiltersSheet({ visible, brands, stages, brand, stage, onBrand, on
               <FilterOption label="All brands" active={brand === "all"} onPress={() => onBrand("all")} />
               {brands.map((entry) => <FilterOption key={entry.id} label={`${entry.name} (${entry.count})`} active={brand === entry.id} onPress={() => onBrand(entry.id)} />)}
             </View>
+            {customers.length > 0 ? <View><Text style={[styles.sectionLabel, { marginTop: 18 }]}>CUSTOMER NAME</Text><View style={styles.mobileFilterOptions}><FilterOption label="All customers" active={!customer} onPress={() => onCustomer("")} />{customers.map((entry) => <FilterOption key={entry.id} label={entry.name} active={customer === entry.id} onPress={() => onCustomer(entry.id)} />)}</View></View> : null}
             <Text style={[styles.sectionLabel, { marginTop: 18 }]}>STAGE</Text>
             <View style={styles.mobileFilterOptions}>
               <FilterOption label="All stages" active={!stage} onPress={() => onStage("")} />
@@ -993,8 +1001,8 @@ function TodayWorkspace({ loading, rows, blockedRows, slaDays, onMove, onTransfe
   loading: boolean; rows: Item[]; blockedRows: Item[]; slaDays: number;
   onMove: (item: Item) => void; onTransfer: (item: Item) => void; onHistory: (id: string) => void;
 }) {
-  const arrivals = rows.filter((r) => r.stage === "delivered" && isToday(r.last_moved_at));
-  const dispatches = rows.filter((r) => ["dispatched", "in_transit"].includes(r.stage) && isToday(r.last_moved_at));
+  const arrivals = rows.filter((r) => r.stage === "dispatched" && isToday(r.last_moved_at));
+  const dispatches = rows.filter((r) => r.stage === "dispatched" && isToday(r.last_moved_at));
   const delayedSuppliers = Array.from(new Set(blockedRows.map((r) => r.supplier_name).filter(Boolean)));
   const urgent = [...blockedRows, ...rows.filter((r) => r.stage === "company_billing" || r.stage === "in_box")]
     .filter((row, index, list) => list.findIndex((candidate) => candidate.item_id === row.item_id) === index)
@@ -1039,9 +1047,9 @@ function StockWorkspace({ loading, rows, shortages, stages, isDesktop, selected,
   loading: boolean; rows: Item[]; shortages: Shortage[]; stages: StageMeta[]; isDesktop: boolean; selected: Set<string>;
   setSelected: Dispatch<SetStateAction<Set<string>>>; onMove: (item: Item) => void; onTransfer: (item: Item) => void; onHistory: (id: string) => void; onOpenPo: (id: string) => void; onCancel: (item: Item) => void;
 }) {
-  const pending = rows.filter((r) => ["po_final", "company_billing", "in_box"].includes(r.stage));
+  const pending = rows.filter((r) => ["po_final", "order_in_company", "company_billing", "in_box"].includes(r.stage));
   const receiving = rows.filter((r) => ["company_billing", "in_box"].includes(r.stage));
-  const ready = rows.filter((r) => ["dispatched", "in_transit"].includes(r.stage));
+  const ready = rows.filter((r) => r.stage === "dispatched");
   if (loading) return <View style={styles.loadingCard}><ActivityIndicator /><Text style={type.caption}>Loading inventory movement…</Text></View>;
   return (
     <View style={{ gap: spacing.lg }}>
@@ -1059,11 +1067,11 @@ function StockWorkspace({ loading, rows, shortages, stages, isDesktop, selected,
   );
 }
 
-function CustomerNavigator({ loading, customers, onOpen }: { loading: boolean; customers: PurchaseCustomer[]; onOpen: (id: string) => void }) {
+export function CustomerNavigator({ loading, customers, onOpen, completed = false }: { loading: boolean; customers: PurchaseCustomer[]; onOpen: (id: string) => void; completed?: boolean }) {
   if (loading) return <View style={styles.loadingCard}><ActivityIndicator /><Text style={type.caption}>Loading customer workspaces…</Text></View>;
   return (
     <View style={{ gap: spacing.lg }}>
-      <View><Text style={styles.overline}>CUSTOMER WORKSPACES</Text><Text style={type.bodyMuted}>All customers on this floor. Select one for their purchases, quotations, payments and lifecycle timeline.</Text></View>
+      <View><Text style={styles.overline}>CUSTOMER WORKSPACES</Text><Text style={type.bodyMuted}>{completed ? "Customers with every active product delivered. Select one for their products, delivery dates and history." : "Active customers on this floor. Select one for their purchases, quotations, payments and lifecycle timeline."}</Text></View>
       <View style={styles.workspaceCard}>
         {customers.length === 0 ? <Text style={type.bodyMuted}>No customers found on this floor.</Text> : customers.map((customer, index) => (
           <Pressable key={customer.id} testID={`customer-workspace-${customer.id}`} onPress={() => onOpen(customer.id)} style={({ pressed }) => [styles.customerNavRow, index > 0 && styles.customerNavDivider, pressed && { backgroundColor: colors.surfaceTertiary }]}>
@@ -1079,23 +1087,21 @@ function CustomerNavigator({ loading, customers, onOpen }: { loading: boolean; c
 
 function DispatchWorkspace({ loading, rows, onHistory, onOpenPo }: { loading: boolean; rows: Item[]; onHistory: (id: string) => void; onOpenPo: (id: string) => void }) {
   const dispatched = rows.filter((r) => r.stage === "dispatched");
-  const transit = rows.filter((r) => r.stage === "in_transit");
-  const delivered = rows.filter((r) => r.stage === "delivered");
+  const delivered = rows.filter((r) => r.stage === "dispatched");
   if (loading) return <View style={styles.loadingCard}><ActivityIndicator /><Text style={type.caption}>Loading dispatch history…</Text></View>;
   return (
     <View style={{ gap: spacing.lg }}>
-      <View><Text style={styles.overline}>DISPATCH & DELIVERY</Text><Text style={type.bodyMuted}>Customer-bound dispatch history and live delivery stages.</Text></View>
+      <View><Text style={styles.overline}>DISPATCH & DELIVERY</Text><Text style={type.bodyMuted}>Dispatched products are delivered. Delivery dates are recorded when items are dispatched.</Text></View>
       <View style={styles.opsMetrics}>
         <OpsMetric label="Dispatched" value={dispatched.length} icon="truck" />
-        <OpsMetric label="In transit" value={transit.length} icon="navigation" tone="warn" />
-        <OpsMetric label="Delivered" value={delivered.length} icon="check-circle" tone="ok" />
+        <OpsMetric label="Delivered products" value={delivered.length} icon="check-circle" tone="ok" />
       </View>
       <View style={styles.workspaceCard}>
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.sm }}><Text style={styles.workspaceTitle}>Dispatch history</Text><Text style={type.caption}>Carrier status uses the linked supplier until a carrier is recorded.</Text></View>
         {rows.length === 0 ? <Text style={type.bodyMuted}>No dispatched or delivered items recorded.</Text> : rows.map((row, index) => (
           <Pressable key={row.item_id} onPress={() => onOpenPo(row.po_id)} style={({ pressed }) => [styles.dispatchRow, index > 0 && styles.customerNavDivider, pressed && { backgroundColor: colors.surfaceTertiary }]}>
             <ProductImage source={row.image} style={styles.actionThumb} fallbackLabel={row.sku} disableSkeleton borderRadius={8} />
-            <View style={{ flex: 1, minWidth: 0 }}><Text style={styles.actionTitle} numberOfLines={1}>{row.name}</Text><Text style={type.caption} numberOfLines={1}>{row.customer_name} · {row.supplier_name || "Carrier pending"} · {fmtDate(row.last_moved_at)}</Text></View>
+            <View style={{ flex: 1, minWidth: 0 }}><Text style={styles.actionTitle} numberOfLines={1}>{row.name}</Text><Text style={type.caption} numberOfLines={1}>{row.customer_name} · {row.supplier_name || "Supplier pending"} · delivered {fmtDate(row.delivered_at)}</Text></View>
             <StageBadge stage={row.stage} tone={row.stage_tone} label={row.stage_label} />
             <Pressable testID={`dispatch-history-${row.item_id}`} onPress={() => onHistory(row.item_id)} style={styles.transferBtn}><Feather name="clock" size={12} color={colors.onSurface} /></Pressable>
           </Pressable>
@@ -1177,7 +1183,7 @@ function ItemRow(props: {
             <Pressable accessibilityRole="button" accessibilityLabel={`View movement history for ${row.name}`} onPress={onHistory} style={styles.mobileTransferBtn} hitSlop={6}><Feather name="clock" size={14} color={colors.onSurface} /></Pressable>
             <Pressable accessibilityRole="button" accessibilityLabel={`Move ${row.name} to another stage`} onPress={onOpenMove} style={styles.mobileMoveBtn} hitSlop={6}><Text style={styles.moveBtnText}>Move</Text></Pressable>
             {row.stage === "in_box" && !row.loan_replenishment_for_customer_name ? <Pressable accessibilityRole="button" accessibilityLabel={`Transfer ${row.name} to another customer`} onPress={onTransfer} style={styles.mobileTransferBtn} hitSlop={6}><Feather name="repeat" size={14} color={colors.onSurface} /></Pressable> : null}
-            {row.stage !== "delivered" && !row.loan_replenishment_for_customer_name ? <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${row.name}`} onPress={onCancel} style={styles.mobileTransferBtn} hitSlop={6}><Feather name="trash-2" size={14} color={colors.error} /></Pressable> : null}
+            {row.stage !== "dispatched" && !row.loan_replenishment_for_customer_name ? <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${row.name}`} onPress={onCancel} style={styles.mobileTransferBtn} hitSlop={6}><Feather name="trash-2" size={14} color={colors.error} /></Pressable> : null}
           </View>
         </View>
       </View>
@@ -1241,7 +1247,7 @@ function ItemRow(props: {
         {row.stage === "in_box" && !row.loan_replenishment_for_customer_name ? <Pressable accessibilityRole="button" accessibilityLabel={`Transfer ${row.name} to another customer`} onPress={onTransfer} testID={`row-transfer-${row.item_id}`} hitSlop={6} style={({ pressed }) => [styles.transferBtn, pressed && { opacity: 0.85 }]}>
           <Feather name="repeat" size={12} color={colors.onSurface} />
         </Pressable> : null}
-        {row.stage !== "delivered" && !row.loan_replenishment_for_customer_name ? <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${row.name}`} testID={`row-cancel-${row.item_id}`} onPress={onCancel} hitSlop={6} style={({ pressed }) => [styles.transferBtn, pressed && { opacity: 0.85 }]}><Feather name="trash-2" size={12} color={colors.error} /></Pressable> : null}
+        {row.stage !== "dispatched" && !row.loan_replenishment_for_customer_name ? <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${row.name}`} testID={`row-cancel-${row.item_id}`} onPress={onCancel} hitSlop={6} style={({ pressed }) => [styles.transferBtn, pressed && { opacity: 0.85 }]}><Feather name="trash-2" size={12} color={colors.error} /></Pressable> : null}
       </View>
     </View>
   );
@@ -1307,9 +1313,10 @@ function BulkChk({ checked, onToggle }: { checked: boolean; onToggle: () => void
   );
 }
 
-function CustomerPurchasePanel({ visible, loading, workspace, onClose, onMove, onTransfer, onHistory }: {
+export function CustomerPurchasePanel({ visible, loading, workspace, onClose, onMove, onTransfer, onHistory, readOnly = false, products, onLoadMore, loadingMore = false }: {
   visible: boolean; loading: boolean; workspace: PurchaseCustomerWorkspace | null; onClose: () => void;
   onMove: (item: Item) => void; onTransfer: (item: Item) => void; onHistory: (item: Item) => void;
+  readOnly?: boolean; products?: Item[]; onLoadMore?: () => void; loadingMore?: boolean;
 }) {
   const rupees = (value?: number) => `₹${Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
   return (
@@ -1334,23 +1341,26 @@ function CustomerPurchasePanel({ visible, loading, workspace, onClose, onMove, o
             <CustomerMetric label="Material value" value={rupees(workspace.summary.outstanding_value)} />
           </View>
           <View style={styles.workspaceCard}>
-            <Text style={styles.workspaceTitle}>Active purchase items</Text>
-            {workspace.outstanding_items.length === 0 ? <Text style={type.bodyMuted}>No active purchase items.</Text> : workspace.outstanding_items.map((item, index) => (
+            <Text style={styles.workspaceTitle}>{readOnly ? "Delivered products · 100% complete" : "Purchase products"}</Text>
+            {(products || workspace.products).length === 0 ? <Text style={type.bodyMuted}>No active purchase items.</Text> : (products || workspace.products).map((item, index) => (
               <View key={item.item_id} style={[styles.customerPanelItem, index > 0 && styles.customerNavDivider]}>
                 <ProductImage source={item.image} style={styles.customerPanelImage} contentFit="contain" frameInset={0} frameBackground="transparent" fallbackLabel={item.sku} borderRadius={8} />
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.actionTitle} numberOfLines={1}>{item.name}</Text>
                   <Text style={type.caption} numberOfLines={1}>{item.sku} · {item.qty} · {item.stage_label}</Text>
+                  <Text style={type.caption}>{item.po_number} · {item.brand_name} · {rupees(item.unit_cost)} / unit{item.room ? ` · ${item.room}` : ""}</Text>
+                  {item.stage === "dispatched" ? <Text style={type.caption}>Delivered {fmtDate(item.delivered_at || item.dispatched_at || item.last_moved_at)}</Text> : null}
                   <GodownStatus item={item} compact />
                   <PurchaseLoanStatus item={item} compact />
                 </View>
                 <View style={{ gap: 5 }}>
-                  <Pressable accessibilityRole="button" accessibilityLabel={`Move ${item.name}`} onPress={() => onMove(item)} style={styles.customerPanelAction}><Text style={styles.customerPanelActionText}>Move</Text></Pressable>
-                  {item.stage === "in_box" && !item.loan_replenishment_for_customer_name ? <Pressable accessibilityRole="button" accessibilityLabel={`Transfer ${item.name}`} onPress={() => onTransfer(item)} style={styles.customerPanelAction}><Text style={styles.customerPanelActionText}>Transfer</Text></Pressable> : null}
+                  {!readOnly ? <Pressable accessibilityRole="button" accessibilityLabel={`Move ${item.name}`} onPress={() => onMove(item)} style={styles.customerPanelAction}><Text style={styles.customerPanelActionText}>Move</Text></Pressable> : null}
+                  {!readOnly && item.stage === "in_box" && !item.loan_replenishment_for_customer_name ? <Pressable accessibilityRole="button" accessibilityLabel={`Transfer ${item.name}`} onPress={() => onTransfer(item)} style={styles.customerPanelAction}><Text style={styles.customerPanelActionText}>Transfer</Text></Pressable> : null}
                   <Pressable accessibilityRole="button" accessibilityLabel={`View movement history for ${item.name}`} onPress={() => onHistory(item)} style={styles.customerPanelAction}><Text style={styles.customerPanelActionText}>History</Text></Pressable>
                 </View>
               </View>
             ))}
+            {onLoadMore ? <Pressable accessibilityRole="button" accessibilityLabel="Load more delivered products" disabled={loadingMore} onPress={onLoadMore} style={styles.mobileApplyButton}><Text style={styles.mobileApplyText}>{loadingMore ? "Loading…" : "Load more products"}</Text></Pressable> : null}
           </View>
         </View>
       )}
@@ -1449,12 +1459,12 @@ function MoveMenu({ visible, stages, onClose, onPick, title, currentStage, busy 
           <View style={{ borderTopWidth: 1, borderColor: colors.border, marginTop: 8, paddingTop: 8 }}>
             <Pressable
               testID="move-to-last-stage"
-              onPress={() => onPick("delivered")}
+              onPress={() => onPick("dispatched")}
               disabled={busy}
               style={({ pressed }) => [styles.menuItem, busy && { opacity: 0.4 }, pressed && { backgroundColor: colors.surfaceTertiary }]}
             >
               <Feather name="fast-forward" size={12} color={colors.brand} />
-              <Text style={{ fontSize: 13, color: colors.brand, fontWeight: "700" }}>Move to Last Stage (Delivered)</Text>
+              <Text style={{ fontSize: 13, color: colors.brand, fontWeight: "700" }}>Move to Last Stage (Dispatched)</Text>
             </Pressable>
           </View>
     </Sheet>

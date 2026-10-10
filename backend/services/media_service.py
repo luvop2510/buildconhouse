@@ -131,6 +131,12 @@ async def upload_and_register(
                 payload={"media_id": existing["id"], "storage_key": existing["storage_key"], "sha1": sha1},
                 summary="Restored missing storage bytes for an existing product image",
             )
+        if is_primary and not existing.get("is_primary"):
+            # Reusing an older supplier image is a real replacement choice.
+            # Dedupe bytes while promoting the selected pointer again.
+            await db.product_media.update_one({"id": existing["id"], "floor_id": floor_id}, {"$set": {"is_primary": True, "sort_order": sort_order}})
+            await _demote_other_primaries(product_id=product_id, family_key=family_key, keep_id=existing["id"], floor_id=floor_id, brand_id=brand_id)
+            existing.update({"is_primary": True, "sort_order": sort_order})
         return ProductMedia(**existing)
 
     width, height, quality = _detect_dims_and_quality(data, mime)

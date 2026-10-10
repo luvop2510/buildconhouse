@@ -47,6 +47,8 @@ type PoItem = {
   finish?: string | null;
   stage?: string;
   loaned_qty?: number;
+  godown_transferred_qty?: number;
+  loan_replenishment_returned_qty?: number;
 };
 
 type ChalanStage = "released" | "at_godown" | "dispatched";
@@ -246,7 +248,9 @@ export default function PurchaseOrderDetail() {
   const [pdfError, setPdfError] = useState<{ chalan: Chalan; message: string } | null>(null);
 
   const toMovable = useCallback((it: PoItem): MovableItem => ({
-    item_id: it.id, sku: it.sku, name: it.name, image: it.image, qty: it.qty, loaned_qty: it.loaned_qty,
+    item_id: it.id, sku: it.sku, name: it.name, image: it.image,
+    qty: Math.max(0, it.qty - (it.godown_transferred_qty || 0) - (it.loan_replenishment_returned_qty || 0)),
+    loaned_qty: it.loaned_qty,
     stage: (it.stage as any) || "po_final",
     customer_id: po?.customer_id, customer_name: po?.customer_name,
     po_number: po?.number, brand_name: po?.brand_name, supplier_name: po?.supplier_name,

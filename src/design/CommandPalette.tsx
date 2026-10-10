@@ -160,7 +160,7 @@ function PaletteSession({ open, onClose, selectedFloorId }: { open: boolean; onC
     const nav: Item[] = NAV
       .filter(n => (!n.floors || n.floors.includes(selectedFloorId)) && (!n.roles || !!staff && n.roles.includes(staff.role)) && hasAccess(n.match))
       .filter(n => !n.href.includes("/tiles") || selectedFloorId === "ground-floor")
-      .filter((n) => !notebookOnly || (selectedFloorId === KITCHEN_FLOOR_ID ? n.href.includes("/notebook/kitchen") : n.href.includes("/notebook/furniture")))
+      .filter((n) => !notebookOnly || ["catalog", "customers", "purchases", "payments", "payments-list"].includes(n.match) || (selectedFloorId === KITCHEN_FLOOR_ID ? n.href.includes("/notebook/kitchen") : n.href.includes("/notebook/furniture")))
       .filter((n) => match(n.label + " " + n.match))
       .map((n) => ({
         key: `n-${n.href}`, section: "Go to", icon: n.icon, title: n.label, run: () => go(n.href),

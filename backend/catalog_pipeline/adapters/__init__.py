@@ -36,7 +36,11 @@ REGISTRY = {
 
 
 def get_adapter(brand: str):
+    from catalog_policy import removed_brand_identity
+    if removed_brand_identity(brand):
+        raise ValueError("This supplier is no longer distributed")
     key = (brand or "").strip().lower()
     if key not in REGISTRY:
-        raise ValueError(f"No adapter for brand '{brand}'. Available: {sorted(REGISTRY)}")
+        from .standard import StandardAdapter
+        return StandardAdapter(brand.strip())
     return REGISTRY[key]()

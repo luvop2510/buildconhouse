@@ -94,6 +94,8 @@ POST_UPDATE_ROUTE_PATTERNS = (
 def action_for_api_request(method: str, path: str, query=None) -> str | None:
     """Exports require the export capability even for direct authenticated GETs."""
     method = method.upper()
+    if method == "POST" and fullmatch(r"/api/furniture-quotations/[^/]+/whatsapp-send", path):
+        return "export"
     if method in {"POST", "DELETE"} and fullmatch(r"/api/quotations/[^/]+/whatsapp-draft", path):
         return "export"
     if method == "POST" and any(fullmatch(pattern, path) for pattern in POST_UPDATE_ROUTE_PATTERNS):
@@ -137,6 +139,8 @@ def resource_for_api_path(path: str) -> str | None:
         ("/api/dashboard", "dashboard"),
         ("/api/payments", "payments"),
         ("/api/quotations", "quotations"),
+        ("/api/furniture-quotations", "quotations"),
+        ("/api/whatsapp", "quotations"),
         ("/api/catalog", "catalog"), ("/api/products", "catalog"),
         ("/api/brands", "catalog"), ("/api/categories", "catalog"),
         ("/api/customers", "customers"),

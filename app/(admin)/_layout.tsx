@@ -169,10 +169,10 @@ function FloorSwitcher({ compact = false }: { compact?: boolean }) {
 }
 
 const FLOOR_ROUTE_SEGMENTS: Record<string, string[]> = {
-  [SANITARY_FLOOR_ID]: ["quotations", "purchases", "purchase-orders", "godown-stock"],
+  [SANITARY_FLOOR_ID]: ["quotations", "godown-stock"],
   [TILES_FLOOR_ID]: ["tiles", "orders"],
   [KITCHEN_FLOOR_ID]: ["kitchen"],
-  [FURNITURE_FLOOR_ID]: ["furniture"],
+  [FURNITURE_FLOOR_ID]: ["furniture", "furniture-quotations"],
 };
 
 function isRouteCompatibleWithFloor(segments: string[], floorId: string) {
@@ -223,11 +223,10 @@ function useVisibleNav() {
   const { staff } = useAuth();
   const { access, selectedFloorId } = useFloorAccess();
   return (items: NavItem[]) => items.filter((item) => {
-    // Kitchen and Furniture are intentionally notebook-only floors. Keeping
-    // generic CRM destinations in their shell would make them look like an
-    // inherited dashboard instead of the two-page floor notebook.
+    // These units share floor-scoped business pages alongside their notebooks.
     if (selectedFloorId === KITCHEN_FLOOR_ID || selectedFloorId === FURNITURE_FLOOR_ID) {
-      return item.floors?.includes(selectedFloorId) ?? false;
+      const shared = ["catalog", "customers", "purchases", "payments", "payments-list"].includes(item.match);
+      return (shared || Boolean(item.floors?.includes(selectedFloorId))) && hasAccess(item.match);
     }
     if (item.roles && (!staff?.role || !item.roles.includes(staff.role))) return false;
     if (!hasAccess(item.match)) return false;
@@ -348,7 +347,7 @@ function PhoneBar() {
           <Feather name={item.icon} size={20} color={isActive(item) ? color.action : color.inkMid} />
         </View>
         <Text numberOfLines={2} style={[styles.tabLabel, isActive(item) && styles.tabLabelActive]}>
-          {notebook ? item.href.includes('quotation-follow-up') ? 'Quotation follow-up' : 'Walk-ins' : item.label}
+          {notebook && (item.match === 'furniture' || item.match === 'kitchen') ? 'Walk-ins' : item.label}
         </Text>
       </WorkspaceLink>)}
       <Pressable testID={notebook ? "bottom-nav-notebook-workspace" : "bottom-nav-more"}

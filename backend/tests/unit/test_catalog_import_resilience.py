@@ -146,3 +146,39 @@ def test_rollback_restores_updated_products_and_removes_created_ones(_patch_db_a
     assert result["products_removed"] == 1
     assert fake_db.products.docs["existing-product"]["mrp"] == 1000.0  # real revert, not just reported
     assert new_product_id not in fake_db.products.docs  # actually removed, not just deactivated-and-fake-reported
+
+
+def test_identical_company_update_preserves_ids_images_and_avoids_duplicate_history(_patch_db_and_uploads):
+    fake_db = orchestrator.db
+    fake_db.products.docs['existing-product'].update({'images': ['verified.png'], 'image_quality': 'excellent'})
+    job = {'id': 'revision-job', 'supplier_name': 'Grohe', 'rows': [_row('r1', 'SKU-EXIST', 2000)]}
+    asyncio.run(orchestrator.import_accepted(job, user_id='manager'))
+    saved = dict(fake_db.products.docs['existing-product'])
+    assert saved['catalog_version'] == 1
+    assert saved['images'] == ['verified.png']
+    assert saved['image_quality'] == 'excellent'
+    assert saved['catalog_price_updated_at']
+    count = len(fake_db.catalog_import_snapshots.docs)
+    second = asyncio.run(orchestrator.import_accepted(job, user_id='manager'))
+    assert second['unchanged'] == 1
+    assert second['updated'] == 0
+    assert fake_db.products.docs['existing-product'] == saved
+    assert len(fake_db.catalog_import_snapshots.docs) == count
+
+@pytest.mark.parametrize('value', [float('nan'), float('inf'), -1])
+def test_invalid_prices_cannot_replace_catalog(_patch_db_and_uploads, value):
+    original = dict(orchestrator.db.products.docs['existing-product'])
+    result = asyncio.run(orchestrator.import_accepted({'supplier_name': 'Grohe', 'rows': [_row('r1', 'SKU-EXIST', value)]}, user_id='manager'))
+    assert result['failed'] == 1
+    assert orchestrator.db.products.docs['existing-product'] == original
+
+
+def test_image_replacement_failure_keeps_prior_product_for_retry(_patch_db_and_uploads, monkeypatch):
+    original = dict(orchestrator.db.products.docs['existing-product'])
+    async def broken_upload(*args, **kwargs):
+        raise ValueError('storage temporarily unavailable')
+    monkeypatch.setattr(orchestrator, '_upload_supplier_images', broken_upload)
+    result = asyncio.run(orchestrator.import_accepted({'id': 'image-job', 'supplier_name': 'Grohe', 'rows': [_row('r1', 'SKU-EXIST', 2500)]}, user_id='manager'))
+    assert result['failed'] == 1
+    assert orchestrator.db.products.docs['existing-product'] == original
+    assert len(orchestrator.db.catalog_import_snapshots.docs) == 1  # recovery exists before mutation

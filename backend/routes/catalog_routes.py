@@ -626,6 +626,10 @@ async def update_product(
         )
 
     updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    updates["catalog_version"] = int(existing.get("catalog_version") or 0) + 1
+    updates["catalog_updated_by"] = user.id
+    if any(key in updates and updates[key] != existing.get(key) for key in ("price", "mrp")):
+        updates["catalog_price_updated_at"] = updates["updated_at"]
     await db.products.update_one(floor_query(user, {"id": product_id}), {"$set": updates})
 
     catalog_service.patch_product_in_snapshot(product_id, updates)

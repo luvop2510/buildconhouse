@@ -14,6 +14,8 @@ const MODULE_GRANT_RESOURCE: Record<string, string> = {
   dashboard: "dashboard", quotations: "quotations", catalog: "catalog", customers: "customers",
   purchases: "purchases", payments: "payments", followups: "followups", notifications: "notifications",
   "godown-stock": "godown_stock",
+  "furniture-quotations": "quotations", "payments-list": "payments",
+  kitchen: "walkins", furniture: "walkins", "quotation-follow-up": "followups",
   orders: "orders", tiles: "tiles", walkins: "walkins", reports: "reports",
 };
 

@@ -1,11 +1,13 @@
 """Current catalog previews for floor-bound purchase line snapshots."""
-from services.catalog_service import get_catalog_snapshot, product_hero_image
+from services.catalog_service import get_catalog_snapshot, product_hero_image, snapshot_for_product_ids
 
 
 async def hydrate_purchase_images(rows: list[dict]) -> None:
     if not any(row.get("product_id") and row.get("floor_id") for row in rows):
         return
     snapshot = await get_catalog_snapshot()
+    if getattr(snapshot, "database_backed", False):
+        snapshot = await snapshot_for_product_ids(list({row["product_id"] for row in rows if row.get("product_id")}), list({row["floor_id"] for row in rows if row.get("floor_id")}))
     previews: dict[str, str | None] = {}
     for row in rows:
         product_id = row.get("product_id")

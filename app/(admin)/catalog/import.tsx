@@ -1,5 +1,5 @@
-// AI Catalog Import — supplier price tables with review before import
-// Steps: pick brand → pick file → Claude extracts → human review → import
+// Catalog Import — supplier price tables with review before import
+// Steps: pick brand → pick file → deterministic extraction → human review → import
 import Feather from "@expo/vector-icons/Feather";
 import * as DocumentPicker from "expo-document-picker";
 import { useRouter } from "expo-router";
@@ -16,7 +16,7 @@ import { uriToBlob } from "@/src/utils/uriToBlob";
 import { useBp } from "@/src/design/responsive";
 
 const SUPPORTED = ["Hansgrohe", "Grohe", "Vitra", "Geberit", "MCM", "GRANOLAND"] as const;
-type Brand = typeof SUPPORTED[number];
+type Brand = string;
 const MISSING = "[MISSING DATA]";
 // Keep bulk edits gentle on the API and on the browser. This is deliberately
 // small: the server remains the authority for row updates.
@@ -436,7 +436,7 @@ export default function CatalogImport() {
   return (
     <AdminPage
       title="AI Catalog Import"
-      subtitle="Upload supplier price-lists — BuildCon House extracts, classifies, maps images and produces a certification report. Only 5 supplier brands are supported."
+      subtitle="Upload supplier price-lists — BuildCon House extracts, classifies, maps images and produces a certification report. Company CSV/XLSX files use deterministic parsing with no AI tokens."
       right={
         <Pressable
           testID="back-to-catalog"
@@ -464,6 +464,9 @@ export default function CatalogImport() {
           ))}
         </View>
 
+        <TextInput accessibilityLabel="Company name" testID="import-company-name" value={brand} onChangeText={setBrand} maxLength={100} placeholder="Company name" style={{ borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: 12, marginTop: 12, color: colors.onSurface }} />
+        <Text style={[type.caption, { marginTop: 8 }]}>Other companies: CSV or XLSX with sku, name, category, mrp and optional dealer_price columns. Existing product IDs and images are preserved when no new image is supplied.</Text>
+
         <Text style={[type.overline, { marginTop: spacing.lg }]}>Step 2 · File</Text>
         <Pressable
           testID="upload-file"
@@ -481,7 +484,7 @@ export default function CatalogImport() {
               <View style={styles.dropIcon}><Feather name="upload-cloud" size={24} color={colors.brand} /></View>
               <Text style={[type.titleMd, { marginTop: 12 }]}>Upload {brand} supplier catalog</Text>
               <Text style={[type.bodyMuted, { textAlign: "center", maxWidth: 380 }]}>
-                Excel (.xlsx / .xls), PDF or CSV. The supplier file is always the source of truth — nothing is invented.
+                Excel (.xlsx), PDF for supported suppliers, or CSV. The supplier file is always the source of truth — nothing is invented.
               </Text>
               <View style={{ flexDirection: "row", gap: 6, marginTop: 12, flexWrap: "wrap", justifyContent: "center" }}>
                 <Badge label=".xlsx" />

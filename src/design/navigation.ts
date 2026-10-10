@@ -1,5 +1,5 @@
 import type { FeatherName } from "./components";
-import { SANITARY_FLOOR_ID, KITCHEN_FLOOR_ID, FURNITURE_FLOOR_ID } from "@/src/constants/floors";
+import { SANITARY_FLOOR_ID, TILES_FLOOR_ID, KITCHEN_FLOOR_ID, FURNITURE_FLOOR_ID } from "@/src/constants/floors";
 export type NavItem = {
   href: string; label: string; icon: FeatherName; match: string; roles?: string[];
   // Business units this destination exists in. Omitted = every unit.
@@ -11,9 +11,8 @@ export type NavItem = {
   // Quotation Tiles are the mirror image and are already handled this way by
   // `useTilesNav`.
   //
-  // Purchases is the same shape: the supplier-PO workflow belongs to Sanitary
-  // Bathroom, and Ground Floor runs its stock through Tile Orders instead, so
-  // the item is restricted rather than left showing an empty tracker.
+  // Purchases is now a shared five-stage tracker across business units;
+  // Ground Floor also retains its existing tile-specific order workspace.
   floors?: string[];
 };
 
@@ -23,7 +22,7 @@ export const PRIMARY: NavItem[] = [
   { href: "/(admin)/quotations", label: "Quotations", icon: "file-text", match: "quotations", floors: [SANITARY_FLOOR_ID] },
   { href: "/(admin)/catalog", label: "Catalog", icon: "package", match: "catalog" },
   { href: "/(admin)/customers", label: "Customers", icon: "users", match: "customers" },
-  { href: "/(admin)/purchases", label: "Purchases", icon: "shopping-cart", match: "purchases", floors: [SANITARY_FLOOR_ID] },
+  { href: "/(admin)/purchases", label: "Purchases", icon: "shopping-cart", match: "purchases", floors: [SANITARY_FLOOR_ID, TILES_FLOOR_ID, KITCHEN_FLOOR_ID, FURNITURE_FLOOR_ID] },
   { href: "/(admin)/godown-stock", label: "Godown stock", icon: "archive", match: "godown-stock", floors: [SANITARY_FLOOR_ID] },
   { href: "/(admin)/payments", label: "Payments", icon: "credit-card", match: "payments" },
   { href: "/(admin)/payments-list", label: "Fully paid orders", icon: "list", match: "payments-list" },
@@ -31,6 +30,7 @@ export const PRIMARY: NavItem[] = [
   { href: "/(admin)/notebook/kitchen", label: "Kitchen Walk-ins", icon: "user-plus", match: "kitchen", floors: [KITCHEN_FLOOR_ID] },
   { href: "/(admin)/notebook/kitchen/quotation-follow-up", label: "Quotation Follow-up", icon: "file-text", match: "quotation-follow-up", floors: [KITCHEN_FLOOR_ID] },
   { href: "/(admin)/notebook/furniture", label: "Furniture Walk-ins", icon: "user-plus", match: "furniture", floors: [FURNITURE_FLOOR_ID] },
+  { href: "/(admin)/notebook/furniture-quotations", label: "RMB quotations", icon: "file-text", match: "furniture-quotations", floors: [FURNITURE_FLOOR_ID] },
   { href: "/(admin)/notebook/furniture/quotation-follow-up", label: "Quotation Follow-up", icon: "file-text", match: "quotation-follow-up", floors: [FURNITURE_FLOOR_ID] },
 ];
 

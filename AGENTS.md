@@ -2,7 +2,26 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
-## Current verification update — 2026-10-07
+## Current verification update — 2026-10-10
+
+Company CSV/XLSX updates are deterministic and preserve product IDs and verified
+media. Catalog reads keep the existing warm cache at normal sizes and switch to
+indexed, bounded Mongo paging beyond its row/byte budgets. Furniture adds the
+unbranded exact RMB ledger/PDF, with direct WhatsApp sends gated on configured
+Business sender credentials. Kitchen/Furniture share floor-scoped business pages;
+RMB is Furniture only. Purchases uses five stages, dispatched means delivered,
+and completion requires every active quantity. Atomic split/move guards protect
+that invariant. See `docs/audits/2026-10-10-furniture-catalog-purchases-release.md`.
+
+Final acceptance: 1,874 hermetic unit tests, 20 disposable Mongo integration cases,
+78 six-size browser cases, TypeScript, zero-warning lint, frontend contracts,
+route budgets and Expo Doctor20/20 pass. Controlled migrations0027–0029 are
+applied; production predeploy gate passes with no pending migrations. No real
+WhatsApp messages were sent; production Business sender configuration remains
+missing. Existing npm findings (22high/eight moderate) still fail the independent
+security job. No overall green CI or physical-device acceptance is claimed.
+
+## Earlier verification update — 2026-10-07
 
 The latest App Store readiness repair preserves and releases the prior workspace
 search fixes, adds atomic undo/redo history and committed overlay callback refs,

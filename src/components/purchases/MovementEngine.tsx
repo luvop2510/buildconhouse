@@ -25,8 +25,7 @@ import { PRODUCT_IMAGE_ASPECT_RATIO } from "@/src/theme/tokens";
 // Shared types
 // -----------------------------------------------------------------------------
 export type TrackerStage =
-  | "po_final" | "company_billing" | "in_box"
-  | "dispatched" | "in_transit" | "delivered";
+  | "po_final" | "order_in_company" | "company_billing" | "in_box" | "dispatched";
 
 export type StageMeta = {
   key: TrackerStage;
@@ -53,16 +52,16 @@ export type MovableItem = {
 };
 
 export const STAGE_TONE: Record<TrackerStage, { bg: string; fg: string }> = {
+  order_in_company: { bg: ds.warnTint, fg: ds.warn },
   po_final:         { bg: ds.sunken, fg: ds.inkMid },
   company_billing:  { bg: ds.warnTint, fg: ds.warn },
   in_box:           { bg: ds.sunken, fg: ds.inkMid },
   dispatched:       { bg: ds.brassTint, fg: ds.brassDeep },
-  in_transit:       { bg: ds.brassTint, fg: ds.brassDeep },
-  delivered:        { bg: ds.okTint, fg: ds.ok },
+
 };
 
 const STAGE_ICON: Record<string, keyof typeof Feather.glyphMap> = {
-  po_final: "box", company_billing: "file-text", in_box: "archive",
+  po_final: "box", order_in_company: "shopping-cart", company_billing: "file-text", in_box: "archive",
   dispatched: "truck", in_transit: "navigation", delivered: "check-circle",
   create: "plus-circle", move: "arrow-right", transfer_in: "log-in",
   transfer_out: "log-out", split_in: "git-branch", split_out: "git-commit",
@@ -135,7 +134,7 @@ export function MoveStageSheet({
   const isPartial = n > 0 && n < item.qty - 1e-6;
   const returnObligation = !!item.loan_replenishment_for_customer_name;
   const valid = !!target && n > 0 && n <= item.qty + 1e-6
-    && (!returnObligation || (!isPartial && ["po_final", "company_billing", "in_box"].includes(target)));
+    && (!returnObligation || (!isPartial && ["po_final", "order_in_company", "company_billing", "in_box"].includes(target)));
 
   const submit = async () => {
     if (!valid || !target) return;
@@ -242,7 +241,7 @@ export function MoveStageSheet({
         {returnObligation ? <Txt v="caption" tone="mid">This product is promised back to {item.loan_replenishment_for_customer_name}. It returns automatically on reaching In Box. You can move it to godown stock instead.</Txt> : null}
         <Field label="Move to stage">
           <View style={{ gap: 4 }}>
-            {stages.filter((s) => !returnObligation || ["po_final", "company_billing", "in_box"].includes(s.key)).map((s) => {
+            {stages.filter((s) => !returnObligation || ["po_final", "order_in_company", "company_billing", "in_box"].includes(s.key)).map((s) => {
               const disabled = s.key === item.stage && !isPartial;
               const on = target === s.key;
               return (
@@ -571,7 +570,7 @@ function STAGE_LABEL_HINT(ev: HistoryEvent): string {
 }
 function LABEL(stage: string): string {
   const map: Record<string, string> = {
-    po_final: "PO Final", company_billing: "Company Billing", in_box: "In Box",
+    po_final: "PO Final", order_in_company: "Order in Company", company_billing: "Company Billing", in_box: "Inbox",
     dispatched: "Dispatched", in_transit: "In Transit", delivered: "Delivered",
   };
   return map[stage] || stage;

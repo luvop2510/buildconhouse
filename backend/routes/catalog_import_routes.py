@@ -140,6 +140,9 @@ def _source_type_and_validate_adapter(brand: str, filename: str) -> str:
         raise HTTPException(status_code=400, detail="Legacy .xls files are not supported reliably; save as .xlsx and upload again.")
     if ext not in {".xlsx", ".pdf", ".csv"}:
         raise HTTPException(status_code=400, detail="Only .xlsx, .pdf, .csv are supported")
+    from catalog_policy import removed_brand_identity
+    if removed_brand_identity(brand):
+        raise HTTPException(status_code=400, detail="This supplier is no longer distributed")
     adapter = get_adapter(brand)
     if ext not in adapter.supported_extensions:
         supported = ", ".join(adapter.supported_extensions)
@@ -208,8 +211,9 @@ async def upload_and_extract(
     brand: str = Form(...),
     user: UserPublic = Depends(require_min_role("purchase")),
 ):
-    if brand not in SUPPORTED_BRANDS:
-        raise HTTPException(status_code=400, detail=f"Unsupported brand. Choose from: {SUPPORTED_BRANDS}")
+    brand = brand.strip()
+    if not brand or len(brand) > 100:
+        raise HTTPException(status_code=400, detail="Company name must contain 1–100 characters")
     data = await _read_limited_upload(file)
     filename = file.filename or "upload"
     source_type = _source_type_and_validate_adapter(brand, filename)
@@ -236,8 +240,9 @@ async def import_from_url(
     brand = payload.get("brand")
     url = payload.get("url")
     filename = payload.get("filename") or (url.rsplit("/", 1)[-1] if url else "download")
-    if brand not in SUPPORTED_BRANDS:
-        raise HTTPException(status_code=400, detail=f"Unsupported brand. Choose from: {SUPPORTED_BRANDS}")
+    brand = brand.strip()
+    if not brand or len(brand) > 100:
+        raise HTTPException(status_code=400, detail="Company name must contain 1–100 characters")
     if not url or not isinstance(url, str) or not url.startswith("http"):
         raise HTTPException(status_code=400, detail="Provide a valid public https URL")
     # Direct outbound URL imports are disabled in production until they run

@@ -719,15 +719,17 @@ async def _reconcile_followups_locked() -> dict:
         days_since_contact = age_days(last_contact)
         tags = [tier.upper()]
         value = float(po.get("grand_total") or 0)
-        dispatched = [i for i in items if i.get("stage") in ("dispatched", "in_transit")]
-        delivered = [i for i in items if i.get("stage") == "delivered"]
+        from services.purchase_stages import active_quantity, normalized_stage
+        items = [i for i in items if not i.get("cancelled") and active_quantity(i) > 0]
+        dispatched = [i for i in items if normalized_stage(i, po) == "dispatched"]
+        delivered = dispatched
 
         if dispatched and len(delivered) < len(items):
             upsert(
                 f"purchase_dispatched:{po['id']}", "purchase_dispatched", "dispatch", cust,
                 purchase=po, value=value, due_at=now_iso(),
                 urgency_bullet="Order dispatched — inform customer", urgency_pts=16,
-                reason=f"{po.get('number')} is dispatched — let the customer know it's on the way.",
+                reason=f"{po.get('number')} is partially delivered — update the customer on remaining products.",
                 next_action="Send WhatsApp",
                 next_action_reason="Customers appreciate a heads-up the moment goods ship.",
                 channel="whatsapp", tags=tags, days_since_contact=days_since_contact,

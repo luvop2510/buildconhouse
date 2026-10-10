@@ -107,6 +107,7 @@ jobs:
           npm run test:auth-provider-races
           npm run test:customer-draft-reset
           npm run test:quotation-whatsapp
+          npm run test:furniture-rmb
           npm run test:api-proxy
           npm run test:web-worker
           npm run test:sales-periods

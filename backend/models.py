@@ -592,6 +592,9 @@ class QuotationLineItem(BaseModel):
     qty: float = Field(default=1, gt=0)
     unit_price: float = Field(default=0, ge=0)  # final selling price per unit ("offer rate")
     mrp: Optional[float] = Field(default=None, ge=0)  # catalog MRP at the time this line was added; None → PDF falls back to unit_price
+    catalog_price: Optional[float] = Field(default=None, ge=0)
+    catalog_mrp: Optional[float] = Field(default=None, ge=0)
+    catalog_version: Optional[int] = Field(default=None, ge=0)
     # Post-discount total for this line, resolved through services/pricing.py's
     # cascade and denormalized at write time. Analytics sums THIS field, so
     # product/brand/category revenue reconciles to grand_total by construction
@@ -863,15 +866,9 @@ class SupplierCreate(BaseModel):
 
 
 PURCHASE_STAGES = (
-    "po_final",
-    # Historical orders retain this stage until a user moves them.
-    "order_in_company",
-    "company_billing",
-    "in_box",
-    "dispatched",
-    "in_transit",
-    "delivered",
+    "po_final", "order_in_company", "company_billing", "in_box", "dispatched",
 )
+# Legacy literals remain readable in immutable historical stage events.
 PurchaseStage = Literal[
     "po_final",
     "order_in_company",
@@ -918,6 +915,9 @@ class PurchaseOrderItem(BaseModel):
     room: Optional[str] = None
     qty: float = 1
     qty_received: float = 0
+    dispatched_at: Optional[str] = None
+    delivered_at: Optional[str] = None
+    legacy_stage: Optional[str] = None
     # Quantity moved out of a sanitary purchase line into reusable godown
     # stock. Kept distinct from tile-only `boxes_godown` below.
     godown_transferred_qty: float = Field(default=0, ge=0)

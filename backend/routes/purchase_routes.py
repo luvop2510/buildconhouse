@@ -424,10 +424,9 @@ async def receive_items(
                 # means it has physically arrived — the Material Tracker's
                 # per-item `stage` must reflect that too, or the tracker board
                 # would keep showing "Order in Company" for a fully-received PO.
-                if clamped >= float(it.get("qty", 0)) - 1e-6 and it.get("stage") != "delivered":
+                if clamped >= float(it.get("qty", 0)) - 1e-6 and it.get("stage") not in {"in_box", "dispatched", "in_transit", "delivered"}:
                     prev_stage = it.get("stage") or "order_in_company"
-                    return_replacement = float(it.get("loan_replenishment_promised_qty") or 0) > 0
-                    next_stage = "in_box" if return_replacement else "delivered"
+                    next_stage = "in_box"
                     stage_ev = PurchaseStageEvent(
                         from_stage=prev_stage, to_stage=next_stage,
                         by_user_id=user.id, by_user_name=user.full_name,

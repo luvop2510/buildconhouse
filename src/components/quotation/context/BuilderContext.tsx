@@ -17,6 +17,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { Platform } from "react-native";
 import { TextInput } from "@/src/components/AppText";
 
+import { QuotationPriceReviewSheet, type CatalogPriceReview } from "../QuotationPriceReviewSheet";
 import { api } from "@/src/api/client";
 import { toast } from "@/src/components/Toast";
 import { useHistory, useUndoRedoShortcuts } from "@/src/hooks/useHistory";
@@ -1488,23 +1489,45 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     }
   }, [persist, customers, s.customerId, activeFloorId]);
 
-  const placeOrder = useCallback(async () => {
-    const persistedId = await persist();
-    if (!persistedId) return;
+  const [pendingPriceReview, setPendingPriceReview] = useState<{ id: string; review: CatalogPriceReview } | null>(null);
+  useEffect(() => { setPendingPriceReview(null); }, [activeFloorId]);
+  useEffect(() => { setPendingPriceReview(current => current && current.id !== quotationId ? null : current); }, [quotationId]);
+
+  const confirmOrder = useCallback(async (persistedId: string, choice?: "keep" | "latest", token?: string | null) => {
     setWorkflowBusy(true);
     try {
       const result = await api.post<{ count?: number; idempotent?: boolean }>(`/quotations/${persistedId}/place-order/confirm`, {
         project_name: s.header.projectName || null,
+        catalog_price_choice: choice || null,
+        catalog_price_token: token || null,
       }, { floorId: activeFloorId });
+      setPendingPriceReview(null);
       await refreshRecentQuotations();
       toast.success(result.idempotent ? "Existing order opened safely" : `Order placed · ${result.count || 0} purchase order(s)`);
       onFinalize?.(persistedId);
     } catch (e: any) {
-      toast.error(e?.detail || "Could not place order");
-    } finally {
-      setWorkflowBusy(false);
-    }
-  }, [persist, s.header.projectName, refreshRecentQuotations, onFinalize, activeFloorId]);
+      if (e?.payload?.detail?.code === "catalog_price_review_required") {
+        setPendingPriceReview({ id: persistedId, review: e.payload.detail.price_review });
+      } else toast.error(typeof e?.detail === "string" ? e.detail : "Could not place order");
+    } finally { setWorkflowBusy(false); }
+  }, [s.header.projectName, refreshRecentQuotations, onFinalize, activeFloorId]);
+
+  const placeOrder = useCallback(async () => {
+    if (workflowBusy) return;
+    const persistedId = await persist();
+    if (!persistedId) return;
+    setWorkflowBusy(true);
+    try {
+      const preview = await api.get<{ price_review?: CatalogPriceReview }>(`/quotations/${persistedId}/place-order/preview`, { floorId: activeFloorId });
+      if (preview.price_review?.changes.length) {
+        setPendingPriceReview({ id: persistedId, review: preview.price_review });
+        return;
+      }
+      await confirmOrder(persistedId);
+    } catch (error: any) {
+      toast.error(typeof error?.detail === "string" ? error.detail : "Could not review order prices");
+    } finally { setWorkflowBusy(false); }
+  }, [persist, workflowBusy, activeFloorId, confirmOrder]);
 
   // Web-only: cmd/ctrl+K focuses search
   useEffect(() => {
@@ -1591,5 +1614,5 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     assistantFocus, setAssistantFocus, assistantOpenMobile, setAssistantOpenMobile,
   ]);
 
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={value}>{children}<QuotationPriceReviewSheet review={pendingPriceReview?.review || null} busy={workflowBusy} onClose={() => { if (!workflowBusy) setPendingPriceReview(null); }} onChoose={choice => { if (pendingPriceReview) void confirmOrder(pendingPriceReview.id, choice, pendingPriceReview.review.token); }} /></Ctx.Provider>;
 }

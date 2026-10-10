@@ -71,6 +71,8 @@ from services.followup_engine import reconcile_followups  # noqa: E402
 from services.floor_scope import ensure_floor_scope  # noqa: E402
 from services.customer_data_reset import customer_reset_maintenance, reset_customer_data, cleanup_reset_files  # noqa: E402
 from services.quotation_shares import ensure_quotation_share_indexes  # noqa: E402
+from routes.furniture_quotation_routes import router as furniture_quotation_router  # noqa: E402
+from routes.whatsapp_routes import router as whatsapp_router  # noqa: E402
 
 
 # A non-sensitive marker used by the public health probe to verify that the
@@ -181,7 +183,10 @@ async def _startup(app: FastAPI) -> None:
     await dispatch_pending()
     app.state.outbox_worker = asyncio.create_task(outbox_worker())
     snapshot = await catalog_service.refresh_catalog_snapshot()
-    logger.info("Catalog read model ready: %d products.", len(snapshot.products))
+    if getattr(snapshot, "database_backed", False):
+        logger.info("Catalog read model ready: bounded database paging (catalog exceeds warm-cache budget).")
+    else:
+        logger.info("Catalog read model ready: %d products.", len(snapshot.products))
     app.state.optional_startup_tasks = [
         asyncio.create_task(_run_optional_startup_task("automation-rule seed", _seed_automation_rules)),
         asyncio.create_task(_run_optional_startup_task("follow-up reconciliation", reconcile_followups)),
@@ -386,6 +391,8 @@ api.include_router(catalog_import_router)
 api.include_router(customer_router)
 api.include_router(po_final_router)
 api.include_router(quotation_router)
+api.include_router(furniture_quotation_router)
+api.include_router(whatsapp_router)
 api.include_router(misc_router)
 api.include_router(media_router)
 api.include_router(supplier_router)

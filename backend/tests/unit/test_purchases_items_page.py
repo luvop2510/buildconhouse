@@ -92,7 +92,7 @@ def test_page_endpoint_shape_floor_scope_and_next_skip(monkeypatch):
     assert response["summaries"] == {
         "sla_days": 7, "blocked_count": 5, "stage_counts": {"in_box": 61},
     }
-    assert response["items"][0]["stage_label"] == "In Box"
+    assert response["items"][0]["stage_label"] == "Inbox"
 
 
 def test_page_endpoint_uses_thirty_row_default():

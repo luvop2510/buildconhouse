@@ -14,6 +14,9 @@ import copy
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+from contextvars import ContextVar
+from functools import wraps
+from bson import BSON
 from datetime import datetime
 from time import monotonic
 from typing import Optional
@@ -51,8 +54,12 @@ class CatalogSnapshot:
     global_usage: dict[str, int]
     usage_by_user: dict[str, dict[str, dict]]
     loaded_at: float
+    database_backed: bool = False
 
 
+_snapshot_override: ContextVar[CatalogSnapshot | None] = ContextVar("catalog_snapshot_override", default=None)
+_SNAPSHOT_MAX_BYTES = 16 * 1024 * 1024
+_SNAPSHOT_ROW_LIMITS = {"products": 10000, "product_media": 20000, "brands": 2000, "categories": 2000, "product_usage": 50000}
 _snapshot: CatalogSnapshot | None = None
 _refresh_lock = asyncio.Lock()
 _background_refresh: asyncio.Task | None = None
@@ -131,22 +138,44 @@ def _build_snapshot(
     )
 
 
+async def _bounded_snapshot_collection(name: str, query: dict, budget: list[int]) -> list[dict] | None:
+    rows: list[dict] = []
+    cursor = db[name].find(query, {"_id": 0}).batch_size(32)
+    async for row in cursor:
+        budget[0] += len(BSON.encode(row))
+        if len(rows) >= _SNAPSHOT_ROW_LIMITS[name] or budget[0] > _SNAPSHOT_MAX_BYTES:
+            await cursor.close()
+            return None
+        rows.append(row)
+    return rows
+
+
 async def refresh_catalog_snapshot() -> CatalogSnapshot:
-    """Reload all compact catalog read-model collections in one RTT group."""
+    """Warm a bounded cache, or select indexed Mongo reads for a large catalog.
+
+    The byte budget is shared by all collections. Cursors use small batches;
+    crossing the threshold discards the partial cache, never partial results.
+    """
     global _snapshot
     async with _refresh_lock:
-        products, media_rows, brands, categories, usage_rows = await asyncio.gather(
-            db.products.find({"active": True}, {"_id": 0}).to_list(10000),
-            db.product_media.find({}, {"_id": 0}).to_list(20000),
-            db.brands.find({}, {"_id": 0}).to_list(500),
-            db.categories.find({}, {"_id": 0}).to_list(500),
-            db.product_usage.find({}, {"_id": 0}).to_list(50000),
-        )
-        _snapshot = _build_snapshot(products, media_rows, brands, categories, usage_rows)
+        budget = [0]
+        collections = []
+        for name in ("products", "product_media", "brands", "categories", "product_usage"):
+            rows = await _bounded_snapshot_collection(name, {"active": True} if name == "products" else {}, budget)
+            if rows is None:
+                marker = _build_snapshot([], [], [], [], [])
+                marker.database_backed = True
+                _snapshot = marker
+                return _snapshot
+            collections.append(rows)
+        _snapshot = _build_snapshot(*collections)
         return _snapshot
 
 
 async def get_catalog_snapshot() -> CatalogSnapshot:
+    override = _snapshot_override.get()
+    if override is not None:
+        return override
     global _background_refresh
     if _snapshot is None:
         return await refresh_catalog_snapshot()
@@ -195,7 +224,7 @@ async def note_product_usage(user_id: str, product_ids: list[str], at: str) -> N
     """Keep popularity/recent/frequent reads coherent with a completed write."""
     global _snapshot
     async with _refresh_lock:
-        if _snapshot is None:
+        if _snapshot is None or getattr(_snapshot, "database_backed", False):
             return
         snapshot = _snapshot
         global_usage = dict(snapshot.global_usage)
@@ -434,6 +463,10 @@ def _variant_summary(product: dict, snapshot: CatalogSnapshot) -> dict:
     return summary
 
 
+def _hydration_products(snapshot):
+    return snapshot.product_by_id.values() if hasattr(snapshot, "product_by_id") else snapshot.products
+
+
 def _hydrate_concealed_part(product: dict, snapshot: CatalogSnapshot) -> None:
     """Fill a legacy SKU-only conceal configuration from this catalog snapshot.
 
@@ -446,7 +479,7 @@ def _hydrate_concealed_part(product: dict, snapshot: CatalogSnapshot) -> None:
     if not isinstance(configured, dict) or not str(configured.get("sku") or "").strip():
         return
     sku = str(configured["sku"]).strip()
-    linked = next((candidate for candidate in snapshot.products
+    linked = next((candidate for candidate in _hydration_products(snapshot)
                    if candidate.get("id") != product.get("id")
                    and candidate.get("floor_id") == product.get("floor_id")
                    and candidate.get("sku") == sku
@@ -489,7 +522,7 @@ def _configuration_options(product: dict, snapshot: CatalogSnapshot) -> list[dic
     finish = str(product.get("finish") or product.get("colour") or "").strip().casefold()
     options: list[dict] = []
     seen_labels: set[str] = set()
-    for candidate in snapshot.products:
+    for candidate in _hydration_products(snapshot):
         candidate_specs = candidate.get("specs") or {}
         if (
             not isinstance(candidate_specs, dict)
@@ -539,7 +572,7 @@ def product_hero_image(product: dict, snapshot: CatalogSnapshot) -> Optional[str
 
 
 def hydrate_product(product: dict, snapshot: CatalogSnapshot) -> dict:
-    out = copy.deepcopy(product)
+    out = {key: copy.deepcopy(value) for key, value in product.items() if not key.startswith("_")}
     out["price_unknown"] = product.get("price_status") == "unspecified"
     _apply_media(out, snapshot)
     _hydrate_concealed_part(out, snapshot)
@@ -566,6 +599,9 @@ def _listing_products(snapshot: CatalogSnapshot) -> list[dict]:
     rows = []
     for product in snapshot.products:
         if not _is_catalog_product(product, snapshot):
+            continue
+        if product.get("_catalog_database_listing"):
+            rows.append(product)
             continue
         entries = product.get("catalog_entries") or []
         if not entries:
@@ -1305,3 +1341,34 @@ async def media_for_product(product_id: str, floor_ids: Optional[list[str]] = No
     if product.get("family_key"):
         rows.extend(m for m in snapshot.media_by_family.get(product["family_key"], ()) if floor_ids is None or m.floor_id in floor_ids)
     return _dedup_media(rows)
+
+
+async def snapshot_for_product_ids(product_ids: list[str], floor_ids: Optional[list[str]] = None) -> CatalogSnapshot:
+    """Batch media ownership for quotation/purchase consumers in either mode."""
+    snapshot = await get_catalog_snapshot()
+    if not getattr(snapshot, "database_backed", False):
+        return snapshot
+    from services.catalog_database import context
+    return await context([], product_ids=product_ids, floor_ids=floor_ids)
+
+
+def _database_capable(function):
+    @wraps(function)
+    async def read(*args, **kwargs):
+        snapshot = await get_catalog_snapshot()
+        if getattr(snapshot, "database_backed", False):
+            from services import catalog_database
+            return await catalog_database.call(function.__name__, function, args, kwargs)
+        return await function(*args, **kwargs)
+    return read
+
+
+# Keep the existing in-memory algorithms and public contracts unchanged at
+# normal sizes. Each large-catalog read has a bounded database implementation.
+for _reader_name in (
+    "list_products_page", "list_brands_with_counts", "list_categories_with_counts",
+    "recent_or_frequent_products", "product_by_id", "resolve_size_variant",
+    "hierarchy_rows", "list_family_groups", "facet_buckets", "search_catalog",
+    "family_detail", "alternate_products", "complete_set_products", "media_for_product",
+):
+    globals()[_reader_name] = _database_capable(globals()[_reader_name])

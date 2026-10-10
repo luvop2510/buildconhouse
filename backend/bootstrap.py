@@ -82,6 +82,9 @@ REQUIRED_INDEXES: dict[str, list[tuple[tuple[str, Any], ...]]] = {
     # Data Integrity Audit (Phase 2, 2026-08) — duplicate-prevention indexes.
     "users": [(("email", 1),)],
     "quotations": [(("number", 1),)],
+    "furniture_quotations": [(("id", 1),), (("floor_id", 1), ("updated_at", -1), ("id", -1))],
+    "whatsapp_deliveries": [(("floor_id", 1), ("source_id", 1), ("idempotency_key", 1)), (("message_id", 1),)],
+    "whatsapp_status_events": [(("message_id", 1),)],
     "purchase_orders": [(("number", 1),)],
     # BACKEND_AUDIT_2026-07-17.md High #14/#15, Medium #31 — added alongside
     # ensure_indexes.py so the startup gate actually enforces these instead
@@ -101,6 +104,9 @@ REQUIRED_UNIQUE_INDEXES: dict[str, list[tuple[tuple[str, Any], ...]]] = {
     "categories": [(("floor_id", 1), ("slug", 1))],
     "users": [(("email", 1),)],
     "quotations": [(("number", 1),)],
+    "furniture_quotations": [(("id", 1),)],
+    "whatsapp_deliveries": [(("floor_id", 1), ("source_id", 1), ("idempotency_key", 1)), (("message_id", 1),)],
+    "whatsapp_status_events": [(("message_id", 1),)],
     "purchase_orders": [(("number", 1),)],
 }
 

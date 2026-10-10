@@ -1,8 +1,7 @@
 import { api } from "@/src/api/client";
 
 export type PurchaseStage =
-  | "po_final" | "company_billing" | "in_box"
-  | "dispatched" | "in_transit" | "delivered";
+  | "po_final" | "order_in_company" | "company_billing" | "in_box" | "dispatched";
 
 export type PurchaseItem = {
   item_id: string;
@@ -21,6 +20,8 @@ export type PurchaseItem = {
   supplier_id?: string | null;
   supplier_name?: string | null;
   stage: PurchaseStage;
+  dispatched_at?: string | null;
+  delivered_at?: string | null;
   stage_label: string;
   stage_tone: { bg: string; fg: string };
   qty: number;
@@ -96,6 +97,7 @@ export type PurchasesPage = {
 export type PurchasesPageQuery = {
   view: "today" | "stock" | "customers" | "dispatch_record";
   brand?: string;
+  customer?: string;
   stage?: PurchaseStage | "";
   q?: string;
   skip?: number;
@@ -109,6 +111,7 @@ export function purchasesPagePath(query: PurchasesPageQuery): string {
     limit: String(query.limit ?? 30),
   });
   if (query.brand && query.brand !== "all") params.set("brand", query.brand);
+  if (query.customer) params.set("customer", query.customer);
   if (query.stage) params.set("stage", query.stage);
   if (query.q?.trim()) params.set("q", query.q.trim());
   return `/purchases/items/page?${params.toString()}`;
@@ -118,9 +121,9 @@ export function getPurchasesPage(query: PurchasesPageQuery, signal?: AbortSignal
   return api.get<PurchasesPage>(purchasesPagePath(query), { signal });
 }
 
-/** This deliberately uses the CRM collection, not the purchase-item facet. */
-export function getPurchaseCustomers(signal?: AbortSignal) {
-  return api.get<PurchaseCustomer[]>("/customers", { signal, cacheMs: 10_000 });
+/** CRM workspaces on this floor, with fully delivered customers moved out. */
+export function getPurchaseCustomers(signal?: AbortSignal, includeCompleted = false) {
+  return api.get<PurchaseCustomer[]>(`/purchases/customer-workspaces?include_completed=${includeCompleted}`, { signal });
 }
 
 export function getPurchaseCustomerWorkspace(customerId: string, signal?: AbortSignal) {

@@ -14,6 +14,7 @@ import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View
 import { Text, TextInput } from "@/src/components/AppText";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { QuotationPriceReviewSheet, type CatalogPriceReview } from "@/src/components/quotation/QuotationPriceReviewSheet";
 import { Alert, Button, Card, ErrorState, LoadingState, PageHeader } from "@/src/components/ui";
 import { toast } from "@/src/components/Toast";
 import { api } from "@/src/api/client";
@@ -54,6 +55,7 @@ type Preview = {
   brands: BrandCard[];
   total_value: number;
   godown_matches?: GodownMatch[];
+  price_review?: CatalogPriceReview;
 };
 
 type GodownMatch = { line_id: string; product_id: string; sku: string; name: string; requested_qty: number; available_qty: number; replaceable_qty: number; source_customers: string[] };
@@ -76,6 +78,8 @@ export default function PlaceOrderReview() {
   const [projectName, setProjectName] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [pricePromptOpen, setPricePromptOpen] = useState(false);
+  const [priceReview, setPriceReview] = useState<CatalogPriceReview | null>(null);
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [godownPromptOpen, setGodownPromptOpen] = useState(false);
   const [godownBusy, setGodownBusy] = useState(false);
@@ -117,8 +121,10 @@ export default function PlaceOrderReview() {
     [suppliers],
   );
 
-  const confirm = async () => {
+  const confirm = async (choice?: "keep" | "latest") => {
     if (!preview || busy) return;
+    const review = priceReview || preview.price_review;
+    if (review?.changes.length && !choice) { setPriceReview(review); setPricePromptOpen(true); return; }
     setConfirmError(null); setBusy(true);
     try {
       const res = await api.post<{ purchase_orders: { id: string }[]; count: number }>(
@@ -128,13 +134,16 @@ export default function PlaceOrderReview() {
           notes_by_brand: notesByBrand,
           expected_delivery_at: expected || null,
           project_name: projectName || null,
+          catalog_price_choice: choice || null,
+          catalog_price_token: review?.token || null,
         }, { floorId },
       );
       toast.success(`Order placed · ${res.count} Purchase Orders created`);
       const isTilesDoc = preview.doc_type === "tiles_selection" || preview.doc_type === "tiles_quotation";
       router.replace((isTilesDoc ? "/(admin)/tiles/orders" : "/(admin)/purchases") as any);
     } catch (e: any) {
-      setConfirmError(e?.detail || "Could not place order. Your supplier choices and notes are still here.");
+      if (e?.payload?.detail?.code === "catalog_price_review_required") { setPriceReview(e.payload.detail.price_review); setPricePromptOpen(true); }
+      else setConfirmError(typeof e?.detail === "string" ? e.detail : "Could not place order. Your supplier choices and notes are still here.");
     } finally {
       setBusy(false);
     }
@@ -327,11 +336,12 @@ export default function PlaceOrderReview() {
           </View>
           <View style={[styles.confirmActions, isPhone && styles.confirmActionsPhone]}>
             <Button label="Cancel" variant="ghost" onPress={() => router.back()} fullWidth={isPhone} />
-            <Button label={`Generate ${preview.brands.length} PO${preview.brands.length !== 1 ? "s" : ""}`} icon="check" onPress={confirm} loading={busy} testID="confirm-place-order" fullWidth={isPhone} />
+            <Button label={`Generate ${preview.brands.length} PO${preview.brands.length !== 1 ? "s" : ""}`} icon="check" onPress={() => void confirm()} loading={busy} testID="confirm-place-order" fullWidth={isPhone} />
           </View>
         </View>
       </ScrollView>
       </KeyboardAvoidingView>
+      <QuotationPriceReviewSheet review={pricePromptOpen ? priceReview : null} busy={busy} onClose={() => { if (!busy) setPricePromptOpen(false); }} onChoose={choice => void confirm(choice)} />
       <Sheet open={godownPromptOpen} onClose={() => setGodownPromptOpen(false)} title="Products already in Godown" width={520}
         footer={<View style={{ flexDirection: "row", gap: spacing.sm }}><Button label="Place fresh order" variant="ghost" onPress={() => setGodownPromptOpen(false)} disabled={godownBusy} fullWidth /><Button label="Use Godown stock" icon="archive" onPress={useGodownStock} loading={godownBusy} fullWidth /></View>}
       >

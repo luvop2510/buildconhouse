@@ -3,8 +3,8 @@
 A per-LINE-ITEM lifecycle tracker built on top of the PO document store.
 
 New PO line items flow through:
-    po_final → company_billing → in_box → dispatched → in_transit → delivered
-Historical order_in_company items remain valid until moved.
+    po_final → order_in_company → company_billing → in_box → dispatched
+Dispatched means delivered in this business process.
 
 Endpoints:
     GET  /purchases/items                     — flat cross-PO items list
@@ -30,6 +30,7 @@ import hashlib
 import io
 import json
 import logging
+import math
 import re
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Optional, TypeVar
@@ -63,6 +64,7 @@ from services.domain_outbox import (
 )
 from services.followup_engine import reconcile_followups
 from services.purchase_images import hydrate_purchase_images
+from services.purchase_stages import active_quantity, active_quantity_expression, delivery_timestamp, delivery_timestamp_expression, normalized_stage, stage_expression
 from services.sequence import next_number
 from services.transfer_workflow import execute_transfer, mark_loans_due_for_replenishment, settle_loan_transfer, transfer_history
 
@@ -77,10 +79,8 @@ STAGE_LABELS: dict[str, str] = {
     "po_final":        "PO Final",
     "order_in_company": "Order in Company",
     "company_billing":  "Company Billing",
-    "in_box":           "In Box",
+    "in_box":           "Inbox",
     "dispatched":       "Dispatched",
-    "in_transit":       "In Transit",
-    "delivered":        "Delivered",
 }
 
 # UI tones aligned with the reference (light-mode badges).
@@ -90,12 +90,10 @@ STAGE_TONES: dict[str, dict[str, str]] = {
     "company_billing":  {"bg": "#FEF3C7", "fg": "#92400E"},   # yellow
     "in_box":           {"bg": "#DBEAFE", "fg": "#1E40AF"},   # blue
     "dispatched":       {"bg": "#DCFCE7", "fg": "#166534"},   # green
-    "in_transit":       {"bg": "#E9D5FF", "fg": "#6B21A8"},   # purple
-    "delivered":        {"bg": "#D1FAE5", "fg": "#065F46"},   # emerald
 }
 
 EARLY_STAGES = ("po_final", "order_in_company", "company_billing", "in_box")
-DISPATCH_STAGES = ("dispatched", "in_transit", "delivered")
+DISPATCH_STAGES = ("dispatched",)
 
 DEFAULT_SLA_DAYS = 7
 SETTINGS_KEY = "purchases_tracker"
@@ -176,7 +174,7 @@ def _age_days(iso_ts: Optional[str]) -> Optional[int]:
 
 def _flatten_item(po: dict, it: dict, sla_days: int) -> dict:
     """Materialize a single tracker row from a PO doc + its item sub-doc."""
-    stage = it.get("stage") or "order_in_company"
+    stage = normalized_stage(it, po)
     last_moved_at = it.get("last_moved_at") or po.get("created_at")
     age = _age_days(last_moved_at) or 0
     blocked = (stage in EARLY_STAGES) and (age >= sla_days)
@@ -201,6 +199,8 @@ def _flatten_item(po: dict, it: dict, sla_days: int) -> dict:
         "brand_name": it.get("brand_name") or po.get("brand_name"),
         "supplier_id": po.get("supplier_id"),
         "supplier_name": po.get("supplier_name"),
+        "dispatched_at": delivery_timestamp(po, it) if stage == "dispatched" else None,
+        "delivered_at": delivery_timestamp(po, it) if stage == "dispatched" else None,
         "stage": stage,
         "stage_label": STAGE_LABELS.get(stage, stage),
         "stage_tone": STAGE_TONES.get(stage, {"bg": "#F4F4F5", "fg": "#3F3F46"}),
@@ -279,8 +279,6 @@ async def _iter_items(
         ]
     if brand and brand.lower() != "all":
         match["brand_id"] = brand
-    if customer:
-        match["customer_id"] = customer
     if product_id:
         match["items.product_id"] = product_id
 
@@ -295,10 +293,13 @@ async def _iter_items(
             "brand_id": 1, "brand_name": 1, "quotation_id": 1, "quotation_number": 1,
             "created_at": 1, "created_by_name": 1, "status": 1, "floor_id": 1,
             "supplier_id": 1, "supplier_name": 1, "expected_delivery_at": 1,
-            "items": 1,
+            "items": 1, "chalans": 1,
         }},
     ]
 
+    pipeline.append({"$set": {"items.stage": stage_expression()}})
+    if customer:
+        pipeline.append({"$match": {"$expr": {"$eq": [{"$ifNull": ["$items.customer_id", "$customer_id"]}, customer]}}})
     if product_id:
         pipeline.append({"$match": {"items.product_id": product_id}})
     if view == "dispatch_record":
@@ -328,7 +329,7 @@ async def _iter_items(
         rows = [r for r in rows if r["stage"] not in DISPATCH_STAGES or r["stage"] == "dispatched"]
         rows.sort(key=lambda r: (not r["blocked"], -(r.get("age_days") or 0)))
     elif view == "stock":
-        rows.sort(key=lambda r: (r["stage"] == "delivered", -(r.get("age_days") or 0)))
+        rows.sort(key=lambda r: (r["stage"] == "dispatched", -(r.get("age_days") or 0)))
     elif view == "customers":
         rows.sort(key=lambda r: ((r.get("customer_name") or "").lower(), r.get("po_number") or ""))
     elif view == "dispatch_record":
@@ -413,7 +414,9 @@ def _items_page_pipeline(
             "brand_id": {"$ifNull": ["$items.brand_id", "$brand_id"]},
             "brand_name": {"$ifNull": ["$items.brand_name", "$brand_name"]},
             "supplier_id": 1, "supplier_name": 1,
-            "stage": {"$ifNull": ["$items.stage", "order_in_company"]},
+            "stage": stage_expression(),
+            "dispatched_at": delivery_timestamp_expression(),
+            "delivered_at": delivery_timestamp_expression(),
             "qty": {"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$add": [{"$ifNull": ["$items.godown_transferred_qty", 0]}, {"$ifNull": ["$items.loan_replenishment_returned_qty", 0]}]}]},
             "unit_cost": {"$ifNull": ["$items.unit_cost", 0]},
             "room": "$items.room", "expected_delivery_at": 1,
@@ -448,7 +451,7 @@ def _items_page_pipeline(
                 {"$lte": ["$last_moved_at", cutoff_iso]},
             ]},
             "age_sort": "$last_moved_at",
-            "delivered_sort": {"$cond": [{"$eq": ["$stage", "delivered"]}, 1, 0]},
+            "delivered_sort": {"$cond": [{"$eq": ["$stage", "dispatched"]}, 1, 0]},
         }},
         {"$facet": {
             "items": [{"$sort": sort}, {"$skip": skip}, {"$limit": limit}],
@@ -466,6 +469,9 @@ def _hydrate_page_item(row: dict, sla_days: int) -> dict:
     result["stage"] = stage
     result["stage_label"] = STAGE_LABELS.get(stage, stage)
     result["stage_tone"] = STAGE_TONES.get(stage, {"bg": "#F4F4F5", "fg": "#3F3F46"})
+    if stage != "dispatched":
+        result["dispatched_at"] = None
+        result["delivered_at"] = None
     result["qty"] = float(result.get("qty") or 0)
     result["unit_cost"] = float(result.get("unit_cost") or 0)
     result["age_days"] = _age_days(result.get("last_moved_at")) or 0
@@ -490,7 +496,7 @@ async def stage_catalog(user: UserPublic = Depends(get_current_user)):
         {"$unwind": "$items"},
         {"$match": {"items.cancelled": {"$ne": True}}},
         {"$match": {"$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$add": [{"$ifNull": ["$items.godown_transferred_qty", 0]}, {"$ifNull": ["$items.loan_replenishment_returned_qty", 0]}]}]}, 0]}}},
-        {"$group": {"_id": {"$ifNull": ["$items.stage", "order_in_company"]}, "count": {"$sum": 1}}},
+        {"$group": {"_id": stage_expression(), "count": {"$sum": 1}}},
     ]
     rows = await db.purchase_orders.aggregate(pipeline).to_list(20)
     counts = {r["_id"]: r["count"] for r in rows}
@@ -540,9 +546,9 @@ async def customer_facets(user: UserPublic = Depends(get_current_user)):
         {"$match": {"items.cancelled": {"$ne": True}}},
         {"$match": {"$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$add": [{"$ifNull": ["$items.godown_transferred_qty", 0]}, {"$ifNull": ["$items.loan_replenishment_returned_qty", 0]}]}]}, 0]}}},
         {"$group": {
-            "_id": {"id": "$customer_id", "name": "$customer_name"},
+            "_id": {"id": {"$ifNull": ["$items.customer_id", "$customer_id"]}, "name": {"$ifNull": ["$items.customer_name", "$customer_name"]}},
             "count": {"$sum": 1},
-            "open": {"$sum": {"$cond": [{"$in": ["$items.stage", ["delivered"]]}, 0, 1]}},
+            "open": {"$sum": {"$cond": [{"$eq": [stage_expression(), "dispatched"]}, 0, 1]}},
         }},
         {"$sort": {"open": -1, "count": -1}},
     ]
@@ -558,32 +564,74 @@ async def customer_facets(user: UserPublic = Depends(get_current_user)):
     ]
 
 
-@router.get("/customers/completed")
-async def completed_customer_facets(user: UserPublic = Depends(get_current_user)):
-    """Customers whose non-cancelled tracked items are all delivered.
-
-    This is deliberately separate from the active customer facet above: the
-    regular Purchases view stays operationally quiet while staff retain a
-    first-class, floor-scoped completion list for handover and audit.
-    """
+def _completed_customer_pipeline(user: UserPublic, skip: int = 0, limit: int = 100) -> list[dict]:
     match: dict = {"status": {"$ne": "cancelled"}}
     floor_ids = floor_scope_ids(user)
     if floor_ids is not None:
         match["floor_id"] = {"$in": floor_ids}
-    rows = await db.purchase_orders.aggregate([
+    return [
         {"$match": match}, {"$unwind": "$items"},
         {"$match": {"items.cancelled": {"$ne": True}}},
-        {"$match": {"$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$add": [{"$ifNull": ["$items.godown_transferred_qty", 0]}, {"$ifNull": ["$items.loan_replenishment_returned_qty", 0]}]}]}, 0]}}},
+        {"$match": {"$expr": {"$gt": [active_quantity_expression(), 0]}}},
         {"$group": {
-            "_id": {"id": "$customer_id", "name": "$customer_name"},
+            "_id": {"$ifNull": ["$items.customer_id", "$customer_id"]},
+            "name": {"$last": {"$ifNull": ["$items.customer_name", "$customer_name"]}},
             "item_count": {"$sum": 1},
-            "open_count": {"$sum": {"$cond": [{"$eq": [{"$ifNull": ["$items.stage", "order_in_company"]}, "delivered"]}, 0, 1]}},
-            "last_delivered_at": {"$max": "$items.last_moved_at"},
+            "quantity": {"$sum": active_quantity_expression()},
+            "open_count": {"$sum": {"$cond": [{"$eq": [stage_expression(), "dispatched"]}, 0, 1]}},
+            "last_delivered_at": {"$max": delivery_timestamp_expression()},
         }},
-        {"$match": {"item_count": {"$gt": 0}, "open_count": 0}},
-        {"$sort": {"last_delivered_at": -1}},
-    ]).to_list(500)
-    return [{"id": r["_id"].get("id"), "name": r["_id"].get("name"), "count": r["item_count"], "completed_at": r.get("last_delivered_at")} for r in rows if r["_id"].get("id")]
+        {"$match": {"_id": {"$nin": [None, ""]}, "item_count": {"$gt": 0}, "open_count": 0}},
+        {"$sort": {"last_delivered_at": -1, "_id": 1}},
+        {"$skip": skip}, {"$limit": limit},
+    ]
+
+
+@router.get("/customer-workspaces")
+async def active_customer_workspaces(
+    include_completed: bool = Query(False), user: UserPublic = Depends(get_current_user),
+):
+    """CRM layout stays available for new customers; completed buyers move out.
+
+    Lookup evaluates every active item on this floor, including older orders.
+    """
+    po_match = floor_query(user, {"status": {"$ne": "cancelled"}})
+    rows = await db.customers.aggregate([
+        {"$match": floor_query(user)},
+        {"$lookup": {
+            "from": "purchase_orders", "let": {"customer": "$id"}, "as": "purchase_status",
+            "pipeline": [
+                {"$match": po_match},
+                {"$match": {"$expr": {"$or": [{"$eq": ["$customer_id", "$$customer"]}, {"$in": ["$$customer", {"$ifNull": ["$items.customer_id", []]}]}]}}},
+                {"$unwind": "$items"},
+                {"$match": {"items.cancelled": {"$ne": True}, "$expr": {"$and": [
+                    {"$eq": [{"$ifNull": ["$items.customer_id", "$customer_id"]}, "$$customer"]},
+                    {"$gt": [active_quantity_expression(), 0]},
+                ]}}},
+                {"$group": {"_id": None, "open": {"$sum": {"$cond": [{"$eq": [stage_expression(), "dispatched"]}, 0, 1]}}}},
+            ],
+        }},
+        *([] if include_completed else [{"$match": {"$or": [{"purchase_status.0": {"$exists": False}}, {"purchase_status.open": {"$gt": 0}}]}}]),
+        {"$sort": {"name": 1, "id": 1}},
+        {"$project": {"_id": 0, "id": 1, "name": 1, "company": 1, "email": 1, "phone": 1, "city": 1, "tier": 1}},
+    ]).to_list(None)
+    return rows
+
+
+@router.get("/customers/completed")
+async def completed_customer_facets(
+    skip: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=100),
+    user: UserPublic = Depends(get_current_user),
+):
+    """Only customers with every positive, active line dispatched (delivered).
+
+    Aggregation examines every PO before paging, so an older pending line,
+    partial split or customer rename cannot falsely produce 100% completion.
+    """
+    rows = await db.purchase_orders.aggregate(_completed_customer_pipeline(user, skip, limit)).to_list(limit)
+    return [{"id": r["_id"], "name": r.get("name"), "count": r["item_count"],
+             "quantity": r.get("quantity", 0), "completed_at": r.get("last_delivered_at")}
+            for r in rows]
 
 
 @router.get("/customers/{customer_id}/workspace")
@@ -653,10 +701,10 @@ async def customer_workspace(
     )
     godown_value = sum(godown_by_quote.values())
     order_value = round(max(0.0, sum(_collection_total(quote) for quote in order_quotes) - godown_value), 2)
-    outstanding_rows = [r for r in rows if r["stage"] != "delivered"]
+    outstanding_rows = [r for r in rows if r["stage"] != "dispatched"]
     outstanding_value = round(sum(r["qty"] * r["unit_cost"] for r in outstanding_rows), 2)
     blocked_rows = [r for r in rows if r["blocked"]]
-    delivered_rows = [r for r in rows if r["stage"] == "delivered"]
+    delivered_rows = [r for r in rows if r["stage"] == "dispatched"]
 
     brand_map: dict = {}
     for r in rows:
@@ -883,7 +931,7 @@ async def get_item(item_id: str, user: UserPublic = Depends(get_current_user)):
 class MoveBody(BaseModel):
     stage: PurchaseStage
     note: Optional[str] = None
-    qty: Optional[float] = Field(default=None, gt=0)  # partial move — e.g. "3 of 20"
+    qty: Optional[float] = Field(default=None, gt=0, allow_inf_nan=False)  # partial move — e.g. "3 of 20"
 
 
 class BulkMoveBody(BaseModel):
@@ -948,7 +996,7 @@ async def _cancel_item(
         raise HTTPException(status_code=409, detail="Item is already cancelled")
     if item.get("loan_replenishment_for_customer_name"):
         raise HTTPException(status_code=409, detail="This ordered product is reserved to return a customer loan; move it to godown stock instead")
-    if (item.get("stage") or "order_in_company") == "delivered":
+    if normalized_stage(item, po) == "dispatched":
         raise HTTPException(status_code=400, detail="Delivered items cannot be cancelled")
 
     now = now_iso()
@@ -958,8 +1006,8 @@ async def _cancel_item(
     # The element match is a compare-and-set guard: a concurrent cancellation
     # or delivery move cannot overwrite this item's active state.
     result = await db.purchase_orders.update_one(
-        {"id": po["id"], "items": {"$elemMatch": {
-            "id": item_id, "cancelled": {"$ne": True}, "stage": {"$ne": "delivered"},
+        {"id": po["id"], "chalans": po.get("chalans"), "items": {"$elemMatch": {
+            "id": item_id, "cancelled": {"$ne": True}, "stage": {"$nin": ["dispatched", "in_transit", "delivered"]},
         }}},
         {"$set": {
             "items.$.cancelled": True,
@@ -1012,11 +1060,14 @@ def _derive_po_status_from_stages(items: list[dict], current_status: str) -> Opt
         return None
     if not items:
         return None
-    stages = [i.get("stage") or "order_in_company" for i in items]
+    active_items = [i for i in items if not i.get("cancelled") and active_quantity(i) > 0]
+    if not active_items:
+        return None
+    stages = [normalized_stage(i) for i in active_items]
 
-    if all(s == "delivered" for s in stages):
+    if all(s == "dispatched" for s in stages):
         target = "fully_received"
-    elif any(s == "delivered" for s in stages):
+    elif any(s == "dispatched" for s in stages):
         target = "partial_received"
     elif any(s in ("dispatched", "in_transit") for s in stages):
         target = "awaiting_supplier"
@@ -1067,7 +1118,7 @@ async def _sync_po_status_with_stages(po_id: str, user: UserPublic) -> Optional[
     # that has physically reached "delivered" — otherwise the receive-progress
     # math (partial vs full) on the PO-lifecycle side would still read 0.
     for it2 in fresh.get("items", []):
-        if it2.get("stage") == "delivered" and float(it2.get("qty_received") or 0) < float(it2.get("qty") or 0):
+        if normalized_stage(it2) == "dispatched" and float(it2.get("qty_received") or 0) < float(it2.get("qty") or 0):
             await db.purchase_orders.update_one(
                 {"id": po_id, "items.id": it2["id"]},
                 {"$set": {"items.$.qty_received": it2.get("qty")}},
@@ -1144,16 +1195,19 @@ async def _attempt_stage_change(
         raise HTTPException(status_code=409, detail="This ordered product is promised back to the lending customer")
     from_stage = it.get("stage") or "order_in_company"
     full_qty = float(it.get("qty") or 0)
-    move_qty = float(qty) if qty is not None else full_qty
+    available_qty = active_quantity(it)
+    move_qty = float(qty) if qty is not None else available_qty
+    if not all(math.isfinite(value) for value in (full_qty, available_qty, move_qty)):
+        raise HTTPException(status_code=400, detail="Move quantities must be finite numbers")
     if move_qty <= 0:
         raise HTTPException(status_code=400, detail="Move quantity must be greater than 0")
-    if move_qty > full_qty + 1e-6:
-        raise HTTPException(status_code=400, detail=f"Only {full_qty} available to move")
+    if move_qty > available_qty + 1e-6:
+        raise HTTPException(status_code=400, detail=f"Only {available_qty} available to move")
     if float(it.get("loan_replenishment_promised_qty") or 0) > 0 and move_qty < full_qty - 1e-6:
         raise HTTPException(status_code=409, detail="A promised replacement cannot be split")
 
     loaned_qty = float(it.get("loaned_qty") or 0)
-    if loaned_qty > 0 and (to_stage != from_stage or move_qty < full_qty - 1e-6) and move_qty > full_qty - loaned_qty + 1e-6:
+    if loaned_qty > 0 and (to_stage != from_stage or move_qty < full_qty - 1e-6) and move_qty > available_qty - loaned_qty + 1e-6:
         raise HTTPException(status_code=409, detail=f"{loaned_qty:g} units are lent to another customer and must be returned before moving them")
 
     is_partial = move_qty < full_qty - 1e-6
@@ -1162,6 +1216,19 @@ async def _attempt_stage_change(
         return {"po_id": po["id"], "item_id": item_id, "no_change": True}
 
     now = now_iso()
+    # Guard every quantity input and active state used in this calculation.
+    # Stage-only comparisons cannot detect concurrent cancellation/returns.
+    item_guard = {
+        "id": item_id, "qty": full_qty, "stage": it.get("stage"),
+        "cancelled": {"$ne": True},
+        **{field: it.get(field) for field in (
+            "godown_transferred_qty", "loan_replenishment_returned_qty", "loaned_qty", "loan_replenishment_promised_qty",
+        )},
+    }
+    mutation_guard = {
+        "id": po["id"], "floor_id": po.get("floor_id"), "status": {"$ne": "cancelled"},
+        "items": {"$elemMatch": item_guard}, "chalans": po.get("chalans"),
+    }
 
     # -------------------------------------------------------------------
     # PARTIAL MOVE — split the line into two tracked pieces.
@@ -1180,10 +1247,17 @@ async def _attempt_stage_change(
         new_item["id"] = new_item_id
         new_item["qty"] = move_qty
         new_item["qty_received"] = 0
+        # Returned quantities stay on the source; copying them to the child
+        # would subtract the same physical returns from active stock twice.
+        new_item["godown_transferred_qty"] = 0
+        new_item["godown_transfer_history"] = []
+        new_item["loan_replenishment_returned_qty"] = 0
         # The original line retains every active customer loan; the moved
         # unloaned piece must not inherit its reservation or transfer journal.
         new_item["loaned_qty"] = 0
         new_item["customer_loan_history"] = []
+        new_item["dispatched_at"] = now if to_stage == "dispatched" else None
+        new_item["delivered_at"] = now if to_stage == "dispatched" else None
         new_item["stage"] = to_stage
         new_item["last_moved_at"] = now
         new_item["last_moved_by"] = user.id
@@ -1200,40 +1274,34 @@ async def _attempt_stage_change(
             ref_item_id=new_item_id, ref_po_id=po["id"], qty=move_qty,
         ).model_dump()
 
-        # Optimistic concurrency: the filter requires items.qty to still equal
-        # the value this request read (`full_qty`). Two concurrent partial
-        # moves on the same item both read the same starting qty; MongoDB
-        # serializes the two update_one calls, so whichever lands first
-        # changes qty away from full_qty and the second call's filter no
-        # longer matches — it gets matched_count=0 instead of silently
-        # clobbering the first move's result with a stale computation.
-        #
-        # $elemMatch (not two separate "items.id"/"items.qty" conditions) is
-        # required for correctness here: without it, Mongo only needs id and
-        # qty to each match *some* element of the array, not the same one —
-        # if another line item in this PO happens to share the same qty
-        # value, a plain dotted-path filter could false-positive-match even
-        # though THIS item's qty actually changed underneath us.
+        # The source shrink and new child append are one document update.
+        # A read can never observe the source removed without its child, and
+        # an interrupted request cannot lose the moved stock. Literal wrappers
+        # prevent user names/notes beginning with "$" becoming expressions.
+        source_fields = {
+            "qty": remaining, "split_into_item_id": new_item_id,
+            "last_moved_at": now, "last_moved_by": user.id,
+            "last_moved_by_name": user.full_name,
+        }
         cas_result = await db.purchase_orders.update_one(
-            {"id": po["id"], "items": {"$elemMatch": {"id": item_id, "qty": full_qty}}},
-            {
-                "$set": {
-                    "items.$.qty": remaining,
-                    "items.$.split_into_item_id": new_item_id,
-                    "items.$.last_moved_at": now,
-                    "items.$.last_moved_by": user.id,
-                    "items.$.last_moved_by_name": user.full_name,
-                    "updated_at": now,
-                },
-                "$push": {"items.$.stage_history": src_ev},
-            },
+            mutation_guard,
+            [{"$set": {
+                "items": {"$concatArrays": [
+                    {"$map": {"input": "$items", "as": "current", "in": {"$cond": [
+                        {"$eq": ["$$current.id", {"$literal": item_id}]},
+                        {"$mergeObjects": ["$$current", {"$literal": source_fields}, {
+                            "stage_history": {"$concatArrays": [
+                                {"$ifNull": ["$$current.stage_history", []]}, {"$literal": [src_ev]},
+                            ]},
+                        }]}, "$$current",
+                    ]}}},
+                    {"$literal": [new_item]},
+                ]},
+                "updated_at": now,
+            }}],
         )
         if cas_result.matched_count == 0:
             return {"conflict": True, "expected_qty": full_qty}
-        await db.purchase_orders.update_one(
-            {"id": po["id"]},
-            {"$push": {"items": new_item}},
-        )
 
         await log_event(
             event_type="purchase.stage_split",
@@ -1277,10 +1345,12 @@ async def _attempt_stage_change(
     # last-write-wins stage instead of corrupted quantities), but the same
     # primitive is essentially free and keeps both branches consistent.
     cas_result = await db.purchase_orders.update_one(
-        {"id": po["id"], "items": {"$elemMatch": {"id": item_id, "stage": from_stage}}},
+        mutation_guard,
         {
             "$set": {
                 "items.$.stage": to_stage,
+                "items.$.dispatched_at": now if to_stage == "dispatched" else None,
+                "items.$.delivered_at": now if to_stage == "dispatched" else None,
                 "items.$.last_moved_at": now,
                 "items.$.last_moved_by": user.id,
                 "items.$.last_moved_by_name": user.full_name,

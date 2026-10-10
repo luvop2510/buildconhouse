@@ -23,7 +23,7 @@ assert.doesNotMatch(adminShell, /bottom-fab-new-quotation/);
 // must not mount a second copy that can race a route transition.
 assert.doesNotMatch(adminShell, /<Sheet open=\{moreOpen\}[\s\S]*?title="Workspace">\s*<FloorSwitcher/);
 assert.match(navigation, /match: "quotations", floors: \[SANITARY_FLOOR_ID\]/);
-assert.match(navigation, /match: "purchases", floors: \[SANITARY_FLOOR_ID\]/);
+assert.match(navigation, /match: "purchases", floors: \[SANITARY_FLOOR_ID, TILES_FLOOR_ID, KITCHEN_FLOOR_ID, FURNITURE_FLOOR_ID\]/);
 assert.match(navigation, /notebook\/kitchen\/quotation-follow-up/);
 assert.match(navigation, /notebook\/furniture\/quotation-follow-up/);
 

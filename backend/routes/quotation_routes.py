@@ -1,6 +1,7 @@
 """Quotation Builder API — v2 with multi-level discounts, autosave, duplicate."""
 import asyncio
 import logging
+from typing import Literal
 from datetime import datetime, timezone
 from urllib.parse import quote
 from uuid import uuid4
@@ -25,6 +26,7 @@ from models import (
 )
 from pdf_generator import build_quotation_pdf, quotation_pdf_filename
 from pdf_tiles import build_tiles_quotation_pdf, build_tiles_selection_pdf, tiles_pdf_filename
+from services.quotation_catalog_prices import price_review, apply_price_choice, line_catalog_snapshot
 from services.quotation_ppt import build_product_ppt, presentation_filename
 from services import catalog_service
 from services.activity_log import log_event
@@ -104,6 +106,8 @@ async def _canonicalize_item_images(items, floor_id: str | None = None) -> list[
         # Ownership proof and media come from the existing warmed catalog,
         # avoiding a fresh Atlas lookup for every quotation read/autosave.
         snapshot = await catalog_service.get_catalog_snapshot()
+        if getattr(snapshot, "database_backed", False):
+            snapshot = await catalog_service.snapshot_for_product_ids(list(product_ids))
         eligible_ids = set()
         for item in raw_items:
             product = snapshot.product_by_id.get(str(item.get("product_id")))
@@ -419,12 +423,14 @@ async def create_quotation(
     for it in items:
         p = await db.products.find_one(
             floor_query(user, {"id": it.product_id}),
-            {"_id": 0, "category_id": 1, "floor_id": 1, "specs": 1},
+            {"_id": 0, "category_id": 1, "floor_id": 1, "specs": 1, "price": 1, "mrp": 1, "catalog_version": 1},
         )
         if not p:
             p = await _manual_stock_line(it, user)
         if not p:
             raise HTTPException(status_code=400, detail="One or more quotation products are unavailable on this floor.")
+        for key, value in line_catalog_snapshot(p).items():
+            setattr(it, key, value)
         if not it.category_id:
             it.category_id = p.get("category_id")
         if p.get("floor_id"):
@@ -716,7 +722,7 @@ async def update_quotation(
         products = await asyncio.gather(*[
             db.products.find_one(
                 floor_query(user, {"id": it.product_id, "floor_id": doc.get("floor_id")}),
-                {"_id": 0, "category_id": 1, "specs": 1},
+                {"_id": 0, "category_id": 1, "specs": 1, "price": 1, "mrp": 1, "catalog_version": 1},
             )
             for it in items_typed
         ])
@@ -727,6 +733,12 @@ async def update_quotation(
                 raise HTTPException(status_code=400, detail="One or more quotation products are unavailable on this quotation's floor.")
             if not it.category_id:
                 it.category_id = p.get("category_id")
+        previous_by_id = {raw["id"]: raw for raw in doc.get("items", [])}
+        for it, p in zip(items_typed, products, strict=True):
+            old = previous_by_id.get(it.id)
+            snapshot = old if old and old.get("product_id") == it.product_id else line_catalog_snapshot(p or {})
+            for key in ("catalog_price", "catalog_mrp", "catalog_version"):
+                setattr(it, key, snapshot.get(key))
         canonical_items = await _canonicalize_item_images(items_typed, floor_inherit(doc))
         update["items"] = [i.model_dump() for i in _normalize_tile_items(
             [QuotationLineItem(**item) for item in canonical_items], doc.get("doc_type", "standard")
@@ -1560,6 +1572,8 @@ class PlaceOrderConfirmPayload(BaseModel):
     notes_by_brand: dict[str, str] = {}
     expected_delivery_at: str | None = None
     project_name: str | None = None
+    catalog_price_choice: Literal["keep", "latest"] | None = None
+    catalog_price_token: str | None = None
 
 
 async def _godown_matches(doc: dict) -> list[dict]:
@@ -1683,12 +1697,14 @@ async def place_order_preview(quotation_id: str, user: UserPublic = Depends(requ
         raise HTTPException(status_code=400, detail="Confirm the quotation before placing the order")
     if not doc.get("items"):
         raise HTTPException(status_code=400, detail="Cannot place order — quotation has no items")
-    return await _brand_grouped_preview(doc)
+    return {**await _brand_grouped_preview(doc), "price_review": await price_review(doc, db.products)}
 
 
 @router.post("/{quotation_id}/place-order/confirm")
 async def place_order_confirm(quotation_id: str, body: PlaceOrderConfirmPayload, user: UserPublic = Depends(require_min_role("sales"))):
     """Commit OrderPlaced once, then dispatch idempotent secondary automation."""
+    # Authorize retries as well: an existing outbox row must not bypass floor access.
+    await get_floor_scoped_or_404(db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0, "id": 1, "floor_id": 1})
     key = f"order-placed:{quotation_id}"
     event = await db.event_outbox.find_one({"idempotency_key": key}, {"_id": 0})
     if not event:
@@ -1704,9 +1720,19 @@ async def place_order_confirm(quotation_id: str, body: PlaceOrderConfirmPayload,
                         raise HTTPException(status_code=400, detail="Confirm the quotation before placing the order")
                     if not doc.get("items"):
                         raise HTTPException(status_code=400, detail="Cannot place order — quotation has no items")
+                    review = await price_review(doc, db.products, session=session)
+                    items = apply_price_choice(doc, review, body.catalog_price_choice, body.catalog_price_token)
+                    price_patch = {}
+                    if review["changes"]:
+                        if body.catalog_price_choice == "latest":
+                            typed_items = _normalize_tile_items([QuotationLineItem(**raw) for raw in items], doc.get("doc_type", "standard"))
+                            room_discounts = {key: RoomDiscountCfg(**value) for key, value in (doc.get("room_discounts") or {}).items()}
+                            price_patch = _tile_totals(_recalc(typed_items, doc.get("project_discount_pct") or 0, doc.get("category_discounts") or {}, room_discounts), doc.get("transportation_fee") or 0, doc.get("doc_type", "standard"))
+                            price_patch["items"] = stamp_net_amounts([item.model_dump() for item in typed_items], doc.get("project_discount_pct") or 0, doc.get("category_discounts") or {}, doc.get("room_discounts") or {})
+                        price_patch["catalog_price_decision"] = {"choice": body.catalog_price_choice, "at": now_iso(), "by": user.id, "changes": review["changes"]}
                     await db.quotations.update_one(
-                        {"id": quotation_id},
-                        {"$set": {"status": "ordered", "updated_at": now_iso(), **_ordered_at_patch(doc, "ordered")}},
+                        {"id": quotation_id, "floor_id": doc.get("floor_id")},
+                        {"$set": {**price_patch, "status": "ordered", "updated_at": now_iso(), **_ordered_at_patch(doc, "ordered")}},
                         session=session,
                     )
                     await _complete_order_notebook_followups(doc, session=session)

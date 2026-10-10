@@ -121,7 +121,9 @@ def test_rerunning_the_same_job_upserts_instead_of_duplicating(_patch_db_and_upl
 
     fake_db = orchestrator.db
     assert stats1["imported"] == 1 and stats1["updated"] == 0
-    assert stats2["imported"] == 0 and stats2["updated"] == 1
+    assert stats2["imported"] == 0 and stats2["updated"] == 0
+    assert stats2["unchanged"] == 1
+    assert len(fake_db.catalog_import_snapshots.docs) == 1  # no duplicate revision history
     assert len(fake_db.products.docs) == 1  # never duplicated
 
 

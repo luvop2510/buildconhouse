@@ -66,6 +66,10 @@ def test_placed_order_completes_only_matching_active_notebook_in_same_transactio
 
 
 def test_place_order_retry_does_not_reclose_later_notebook_followups(monkeypatch):
+    class Quotations:
+        async def find_one(self, query, *_args, **_kwargs):
+            assert query == {"id": "q1"}
+            return {"id": "q1", "floor_id": "second-floor"}
     class Outbox:
         async def find_one(self, query, *_args):
             assert query == {"idempotency_key": "order-placed:q1"}
@@ -77,7 +81,7 @@ def test_place_order_retry_does_not_reclose_later_notebook_followups(monkeypatch
         return {"purchase_order_ids": ["po1"]}
     async def reconcile():
         return None
-    monkeypatch.setattr(quotation_routes, "db", SimpleNamespace(event_outbox=Outbox()))
+    monkeypatch.setattr(quotation_routes, "db", SimpleNamespace(event_outbox=Outbox(), quotations=Quotations()))
     monkeypatch.setattr(quotation_routes, "_complete_order_notebook_followups", unexpected)
     monkeypatch.setattr(quotation_routes, "_complete_pre_confirmation_followups", unexpected)
     monkeypatch.setattr(quotation_routes, "dispatch_event", dispatch)
