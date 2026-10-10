@@ -52,7 +52,7 @@ export default function ReferrerDetail() {
 
   const exportData = (section: string, rows: (string | number | null)[][]) => {
     if (!data) return;
-    void downloadSectionExcel({ page: `Referrer / ${data.referrer.name}`, section, filename: `referrer-${section.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.xlsx`, floorId, rows }).catch((error: unknown) => toast.show(error instanceof Error ? error.message : "Could not export referrer data"));
+    void downloadSectionExcel({ resource: "sales_data", page: `Referrer / ${data.referrer.name}`, section, filename: `referrer-${section.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.xlsx`, floorId, rows }).catch((error: unknown) => toast.show(error instanceof Error ? error.message : "Could not export referrer data"));
   };
 
   return (

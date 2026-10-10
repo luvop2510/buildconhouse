@@ -20,6 +20,8 @@ export type StaffUser = {
   floor_ids: string[];
   access_profile?: AccessProfile | null;
   custom_access?: boolean;
+  login_id?: string | null;
+  team_role?: string | null;
   access_grants?: PersonalGrant[];
 };
 

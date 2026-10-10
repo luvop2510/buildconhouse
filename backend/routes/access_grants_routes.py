@@ -1,9 +1,4 @@
-"""Owner/admin management API for custom staff access grants.
-
-The router is intentionally isolated until it is registered in ``server.py``.
-It does not alter existing role checks; a later integration adds grant-aware
-dependencies to individual business endpoints.
-"""
+"""Manage atomic, default-deny floor/page assignments for team members."""
 from __future__ import annotations
 
 from typing import Literal
@@ -15,8 +10,9 @@ from auth import get_current_user, invalidate_principal_cache, require_min_role,
 from db import db
 from models import UserPublic
 from services.access_grants import (
-    ACTIONS, RESOURCE_REGISTRY, build_grant, grants_for_user, is_expired,
-    is_valid_resource, normalized_actions, utc_now_iso,
+    ACTIONS, ACTION_DESCRIPTIONS, RESOURCE_REGISTRY, build_delegation_snapshot,
+    build_grant, grants_for_user, is_expired,
+    is_valid_resource, normalized_actions, resource_supports, utc_now_iso,
 )
 
 router = APIRouter(prefix="/settings/access-grants", tags=["settings", "access grants"])
@@ -27,6 +23,11 @@ class AccessGrantInput(BaseModel):
     actions: list[Literal["view", "create", "update", "delete", "export"]] = Field(min_length=1)
     floor_id: str | None = None
     expires_at: str | None = None
+
+
+class DelegationInput(BaseModel):
+    floor_ids: list[str] = Field(max_length=50)
+    grants: list[AccessGrantInput] = Field(max_length=500)
 
 
 def _validate_input(body: AccessGrantInput) -> list[str]:
@@ -47,11 +48,13 @@ async def _target_user_or_404(user_id: str) -> dict:
     return target
 
 
-async def _assert_can_manage_target(actor: UserPublic, target: dict) -> None:
+async def _assert_can_manage_target(actor: UserPublic, target: dict, *, mutation: bool = False) -> None:
     # Admins can manage staff grants, but no admin may change an owner's
     # scope. This mirrors the existing Team-management owner protection.
     if target.get("role") == "owner" and actor.role != "owner":
         raise HTTPException(status_code=403, detail="Only an owner can manage an owner's access grants")
+    if mutation and target.get("role") == "owner":
+        raise HTTPException(status_code=422, detail="Owners have full access; delegate pages to staff accounts")
 
 
 async def _validate_floor(floor_id: str | None) -> None:
@@ -70,11 +73,16 @@ async def _revoke_grant_subject(user_id: str) -> None:
 
 @router.get("/resources")
 async def list_grant_resources(_: UserPublic = Depends(require_min_role("admin"))):
+    floors = await db.floors.find({"active": {"$ne": False}}, {"_id": 0, "id": 1}).to_list(50)
+    floor_ids = [floor["id"] for floor in floors]
     return {
         "resources": [
-            {"key": key, "label": value["label"], "actions": sorted(ACTIONS)}
-            for key, value in RESOURCE_REGISTRY.items()
+            {"key": key, "label": value["label"], "actions": value.get("actions", sorted(ACTIONS)),
+             "floor_ids": [floor for floor in floor_ids if not value.get("floor_ids") or floor in value["floor_ids"]],
+             "description": value.get("description", f"Manage {value['label'].lower()} records on this floor.")}
+            for key, value in RESOURCE_REGISTRY.items() if key != "reports"
         ],
+        "action_descriptions": ACTION_DESCRIPTIONS,
     }
 
 
@@ -88,7 +96,28 @@ async def my_access_grants(user: UserPublic = Depends(get_current_user)):
 async def list_access_grants(user_id: str, actor: UserPublic = Depends(require_min_role("admin"))):
     target = await _target_user_or_404(user_id)
     await _assert_can_manage_target(actor, target)
-    return {"user_id": user_id, "grants": await grants_for_user(db, user_id)}
+    return {"user_id": user_id, "floor_ids": target.get("floor_ids", []),
+            "custom_access": bool(target.get("custom_access")), "grants": await grants_for_user(db, user_id)}
+
+
+@router.put("/{user_id}")
+async def replace_access_grants(user_id: str, body: DelegationInput, actor: UserPublic = Depends(require_min_role("admin"))):
+    target = await _target_user_or_404(user_id)
+    await _assert_can_manage_target(actor, target, mutation=True)
+    if any(grant.expires_at is not None for grant in body.grants):
+        raise HTTPException(status_code=422, detail="Floor/page toggles use ongoing access; assign expiries individually")
+    snapshot = await build_delegation_snapshot(
+        db, user_id=user_id, floor_ids=body.floor_ids,
+        grants=[grant.model_dump() for grant in body.grants], actor_id=actor.id, actor_name=actor.full_name,
+    )
+    # One Mongo document write commits the enabled floors and every page at
+    # once. Empty snapshots retain custom mode and therefore deny everything.
+    await db.users.update_one({"id": user_id}, {"$set": {
+        "floor_ids": body.floor_ids, "delegation_grants": snapshot, "custom_access": True,
+        "access_profile": None, "updated_at": utc_now_iso(),
+    }})
+    await _revoke_grant_subject(user_id)
+    return {"user_id": user_id, "floor_ids": body.floor_ids, "custom_access": True, "grants": snapshot}
 
 
 @router.post("/{user_id}", status_code=201)
@@ -96,12 +125,13 @@ async def create_access_grant(
     user_id: str, body: AccessGrantInput, actor: UserPublic = Depends(require_min_role("admin")),
 ):
     target = await _target_user_or_404(user_id)
-    await _assert_can_manage_target(actor, target)
+    await _assert_can_manage_target(actor, target, mutation=True)
     actions = _validate_input(body)
     await _validate_floor(body.floor_id)
-    existing = await db.access_grants.find_one(
-        {"user_id": user_id, "resource": body.resource, "floor_id": body.floor_id}, {"_id": 0},
-    )
+    if body.floor_id not in target.get("floor_ids", []) or not resource_supports(body.resource, body.floor_id, actions) or "view" not in actions:
+        raise HTTPException(status_code=422, detail="Enable a supported floor/page before assigning its actions, including view")
+    current = await grants_for_user(db, user_id)
+    existing = next((grant for grant in current if grant["resource"] == body.resource and grant.get("floor_id") == body.floor_id), None)
     grant = build_grant(
         user_id=user_id, resource=body.resource, actions=actions, floor_id=body.floor_id,
         expires_at=body.expires_at, actor_id=actor.id, actor_name=actor.full_name,
@@ -111,13 +141,12 @@ async def create_access_grant(
         for key in ("created_by", "created_by_name"):
             if key in existing:
                 grant[key] = existing[key]
-        await db.access_grants.update_one({"id": grant["id"]}, {"$set": grant})
-    else:
-        await db.access_grants.insert_one(grant)
+    snapshot = [row for row in current if row.get("id") != grant["id"]] + [grant]
     # A user with one or more grants is deliberately in custom-access mode.
     # Their next sign-in token carries this state and the server middleware
     # applies the grants as a default-deny allow-list.
-    await db.users.update_one({"id": user_id}, {"$set": {"custom_access": True, "updated_at": utc_now_iso()}})
+    await db.users.update_one({"id": user_id}, {"$set": {"custom_access": True, "access_profile": None,
+        "delegation_grants": snapshot, "updated_at": utc_now_iso()}})
     await _revoke_grant_subject(user_id)
     grant.pop("_id", None)
     return grant
@@ -128,12 +157,12 @@ async def delete_access_grant(
     user_id: str, grant_id: str, actor: UserPublic = Depends(require_min_role("admin")),
 ):
     target = await _target_user_or_404(user_id)
-    await _assert_can_manage_target(actor, target)
-    result = await db.access_grants.delete_one({"id": grant_id, "user_id": user_id})
-    if not result.deleted_count:
+    await _assert_can_manage_target(actor, target, mutation=True)
+    current = await grants_for_user(db, user_id)
+    snapshot = [row for row in current if row.get("id") != grant_id]
+    if len(snapshot) == len(current):
         raise HTTPException(status_code=404, detail="Access grant not found")
-    remaining = await db.access_grants.count_documents({"user_id": user_id})
-    if remaining == 0:
-        await db.users.update_one({"id": user_id}, {"$set": {"custom_access": False, "updated_at": utc_now_iso()}})
+    await db.users.update_one({"id": user_id}, {"$set": {"custom_access": True, "delegation_grants": snapshot,
+        "access_profile": None, "updated_at": utc_now_iso()}})
     await _revoke_grant_subject(user_id)
     return {"deleted": True, "id": grant_id}

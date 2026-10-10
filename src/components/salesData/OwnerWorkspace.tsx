@@ -10,6 +10,7 @@ import { useBp } from "@/src/design/responsive";
 import { fmtMoneyCompact } from "@/src/design/tokens";
 import { getSelectedFloorId, useFloorAccess } from "@/src/hooks/use-floor-access";
 import { useAuth } from "@/src/state/auth";
+import { useActionAccess } from "@/src/hooks/use-permissions";
 import { SalesFilters } from "./SalesFilters";
 import { useSalesPeriod } from "./useSalesPeriod";
 import { colors, layout, spacing, type } from "@/src/theme/tokens";
@@ -31,7 +32,8 @@ const LABELS: Record<WorkspaceName, { title: string; subtitle: string; rows: "br
 };
 
 export function OwnerWorkspace({ workspace }: { workspace: WorkspaceName }) {
-  const { staff } = useAuth(); const { floors } = useFloorAccess(); const router = useRouter(); const { isPhone, isTablet } = useBp();
+  const { staff } = useAuth();
+  const canViewSales = useActionAccess("sales_data", "view", staff?.role === "owner"); const { floors } = useFloorAccess(); const router = useRouter(); const { isPhone, isTablet } = useBp();
   const [floorId, setFloorId] = useState(""); const [data, setData] = useState<WorkspaceData | null>(null); const [error, setError] = useState<string | null>(null);
   useEffect(() => { if (!floorId) void getSelectedFloorId().then((id) => setFloorId(id || "all")); }, [floorId]);
   const { period, choose } = useSalesPeriod(floorId);
@@ -46,7 +48,7 @@ export function OwnerWorkspace({ workspace }: { workspace: WorkspaceName }) {
     );
   }, [workspace, floorId, period]);
   useEffect(() => { load(); return () => { requestId.current += 1; }; }, [load]);
-  if (staff && staff.role !== "owner") return <Redirect href="/(admin)/sales-data" />;
+  if (staff && !canViewSales) return <Redirect href="/(admin)/sales-data" />;
   const meta = LABELS[workspace]; const cardStyle = isPhone ? { width: "100%" as const } : isTablet ? { width: "48%" as const } : { flex: 1, minWidth: 180 };
   return <AdminPage title={meta.title} subtitle={data ? `${meta.subtitle} · ${data.period}` : meta.subtitle}>
     {period ? <SalesFilters floors={floors} floorId={floorId} onFloorChange={setFloorId} period={period} onPeriodChange={choose} /> : null}
@@ -65,7 +67,7 @@ export function OwnerWorkspace({ workspace }: { workspace: WorkspaceName }) {
   </AdminPage>;
 }
 
-function Forecast({ data, floorId }: { data: WorkspaceData; floorId: string }) { const forecast = data.forecast; return <Card variant="flat" padding={spacing.xl}><View style={{ gap: spacing.sm }}><View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: spacing.sm }}><Text style={type.titleSm}>Conservative forecast</Text>{forecast?.forecast != null ? <Button testID="sales-forecast-export-xlsx" label="Export Excel" icon="download" variant="secondary" onPress={() => void downloadSectionExcel({ page: "Sales Data", section: "Conservative forecast", filename: "sales-forecast.xlsx", floorId: floorId === "all" ? undefined : floorId, rows: [["Measure", "Value"], ["Forecast", forecast.forecast], ...forecast.monthly_history.map((value, index) => [`Prior month ${index + 1}`, value])] }).catch((error: unknown) => toast.show(error instanceof Error ? error.message : "Could not export forecast"))} /> : null}</View>{forecast?.forecast == null ? <Text style={[type.body, { color: colors.onSurfaceMuted }]}>Orders in each of the previous three complete UTC calendar months are required. This baseline uses the selected business unit and is independent of the report period.</Text> : <><Text style={type.displayMd}>{fmtMoneyCompact(forecast?.forecast || 0)}</Text><Text style={[type.caption, { color: colors.onSurfaceMuted }]}>Baseline for the current month, independent of the report period. Prior three complete UTC months (oldest first): {forecast?.monthly_history.map(fmtMoneyCompact).join(" · ")}</Text></>}</View></Card>; }
+function Forecast({ data, floorId }: { data: WorkspaceData; floorId: string }) { const forecast = data.forecast; return <Card variant="flat" padding={spacing.xl}><View style={{ gap: spacing.sm }}><View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: spacing.sm }}><Text style={type.titleSm}>Conservative forecast</Text>{forecast?.forecast != null ? <Button testID="sales-forecast-export-xlsx" label="Export Excel" icon="download" variant="secondary" onPress={() => void downloadSectionExcel({ resource: "sales_data", page: "Sales Data", section: "Conservative forecast", filename: "sales-forecast.xlsx", floorId: floorId === "all" ? undefined : floorId, rows: [["Measure", "Value"], ["Forecast", forecast.forecast], ...forecast.monthly_history.map((value, index) => [`Prior month ${index + 1}`, value])] }).catch((error: unknown) => toast.show(error instanceof Error ? error.message : "Could not export forecast"))} /> : null}</View>{forecast?.forecast == null ? <Text style={[type.body, { color: colors.onSurfaceMuted }]}>Orders in each of the previous three complete UTC calendar months are required. This baseline uses the selected business unit and is independent of the report period.</Text> : <><Text style={type.displayMd}>{fmtMoneyCompact(forecast?.forecast || 0)}</Text><Text style={[type.caption, { color: colors.onSurfaceMuted }]}>Baseline for the current month, independent of the report period. Prior three complete UTC months (oldest first): {forecast?.monthly_history.map(fmtMoneyCompact).join(" · ")}</Text></>}</View></Card>; }
 
 function WorkspaceTable({ kind, data, floorId, phone, onOpen }: { kind: "brands" | "products" | "customers" | "relationships" | "floors"; data: WorkspaceData; floorId: string; phone: boolean; onOpen: (path: string) => void }) {
   const [visibleCount, setVisibleCount] = useState(25);
@@ -83,7 +85,7 @@ function WorkspaceTable({ kind, data, floorId, phone, onOpen }: { kind: "brands"
       : kind === "relationships" ? [r.name, r.type, r.revenue, r.orders, r.customers, r.last_order_at]
       : kind === "brands" ? [r.name, r.revenue, r.quantity, r.orders]
       : [r.floor_id, r.revenue, r.orders]);
-    void downloadSectionExcel({ page: `Sales Data / ${data.workspace}`, section: title, filename: `sales-${data.workspace}-${kind}.xlsx`, floorId: floorId === "all" ? undefined : floorId, rows: [headers, ...values] }).catch((error: unknown) => toast.show(error instanceof Error ? error.message : "Could not export this section"));
+    void downloadSectionExcel({ resource: "sales_data", page: `Sales Data / ${data.workspace}`, section: title, filename: `sales-${data.workspace}-${kind}.xlsx`, floorId: floorId === "all" ? undefined : floorId, rows: [headers, ...values] }).catch((error: unknown) => toast.show(error instanceof Error ? error.message : "Could not export this section"));
   };
   const phoneRow = (r: any) => {
     const key = r.id || r.brand_id || r.product_id || r.customer_id || r.floor_id;

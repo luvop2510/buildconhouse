@@ -11,6 +11,7 @@ import { Button, Card, EmptyState, ErrorState, LoadingState, PillTabs } from "@/
 import { fmtMoneyCompact } from "@/src/design/tokens";
 import { getSelectedFloorId, useFloorAccess } from "@/src/hooks/use-floor-access";
 import { useAuth } from "@/src/state/auth";
+import { useActionAccess } from "@/src/hooks/use-permissions";
 import { colors, spacing, type } from "@/src/theme/tokens";
 import { downloadSectionExcel } from "@/src/utils/sectionExcel";
 import { toast } from "@/src/components/Toast";
@@ -102,6 +103,7 @@ function DoneTodayRow({ entry }: { entry: FeedEntry }) {
  */
 export default function TodaysPrioritiesScreen() {
   const { staff } = useAuth();
+  const canViewSales = useActionAccess("sales_data", "view", !!staff && ["owner", "admin", "manager"].includes(staff.role));
   const { floors } = useFloorAccess();
   const router = useRouter();
   const params = useLocalSearchParams<{ floor_id?: string }>();
@@ -133,7 +135,7 @@ export default function TodaysPrioritiesScreen() {
 
   useEffect(() => { load(); }, [load]);
 
-  if (staff && !["owner", "admin", "manager"].includes(staff.role)) {
+  if (staff && !canViewSales) {
     return <Redirect href="/(admin)/dashboard" />;
   }
 
@@ -161,7 +163,7 @@ export default function TodaysPrioritiesScreen() {
         <>
           {data.rows.length ? (
             <View style={{ gap: spacing.sm }} testID="today-priorities-list">
-              <Button testID="today-priorities-export-xlsx" label="Export Excel" icon="download" variant="secondary" onPress={() => void downloadSectionExcel({ page: "Today's Priorities", section: "Priorities", filename: "today-priorities.xlsx", floorId: floorId === "all" ? undefined : floorId, rows: [["Priority", "Type", "Impact", "Age (days)", "Destination"], ...data.rows.map((row, index) => [index + 1, row.headline, row.impact, row.age_days, row.destination])] }).catch((error: unknown) => toast.show(error instanceof Error ? error.message : "Could not export priorities"))} />
+              <Button testID="today-priorities-export-xlsx" label="Export Excel" icon="download" variant="secondary" onPress={() => void downloadSectionExcel({ resource: "sales_data", page: "Today's Priorities", section: "Priorities", filename: "today-priorities.xlsx", floorId: floorId === "all" ? undefined : floorId, rows: [["Priority", "Type", "Impact", "Age (days)", "Destination"], ...data.rows.map((row, index) => [index + 1, row.headline, row.impact, row.age_days, row.destination])] }).catch((error: unknown) => toast.show(error instanceof Error ? error.message : "Could not export priorities"))} />
               {data.rows.map((row, index) => (
                 <View key={`${row.rule}-${index}`} style={{ gap: spacing.xs }}>
                   <StarBadge row={row} index={index} total={data.total} testID={`today-stars-${index}`} />
@@ -182,7 +184,7 @@ export default function TodaysPrioritiesScreen() {
             <View style={{ gap: spacing.md }}>
               <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: spacing.sm }}>
                 <Text style={type.titleSm}>Done today</Text>
-                {data.done_today.length ? <Button testID="today-done-export-xlsx" label="Export Excel" icon="download" variant="secondary" onPress={() => void downloadSectionExcel({ page: "Today's Priorities", section: "Done today", filename: "today-done.xlsx", floorId: floorId === "all" ? undefined : floorId, rows: [["Activity", "Type", "Value", "Completed at"], ...data.done_today.map(entry => [entry.label, entry.event_type, entry.value, entry.created_at])] }).catch((error: unknown) => toast.show(error instanceof Error ? error.message : "Could not export completed work"))} /> : null}
+                {data.done_today.length ? <Button testID="today-done-export-xlsx" label="Export Excel" icon="download" variant="secondary" onPress={() => void downloadSectionExcel({ resource: "sales_data", page: "Today's Priorities", section: "Done today", filename: "today-done.xlsx", floorId: floorId === "all" ? undefined : floorId, rows: [["Activity", "Type", "Value", "Completed at"], ...data.done_today.map(entry => [entry.label, entry.event_type, entry.value, entry.created_at])] }).catch((error: unknown) => toast.show(error instanceof Error ? error.message : "Could not export completed work"))} /> : null}
               </View>
               {data.done_today.length ? (
                 <View style={{ gap: spacing.xs }}>

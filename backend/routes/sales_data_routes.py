@@ -58,7 +58,9 @@ def _resolve_floor_ids(user: UserPublic, floor_id: Optional[str]) -> Optional[li
         if allowed is not None and floor_id not in allowed:
             raise HTTPException(status_code=403, detail="You do not have access to this floor")
         return [floor_id]
-    return None
+    # Delegated reporting keeps the operation's granted floors even when
+    # the caller selects the combined view or omits a floor filter.
+    return accessible_floor_ids(user) if user.custom_access else None
 
 
 def _revenue_timestamp(quotation: dict) -> Optional[str]:
@@ -164,7 +166,10 @@ async def referrer_detail(
     quotations = await _confirmed_quotations(floor_ids, date_from, date_to)
     quotations = [q for q in quotations if q.get("referrer_id") == referrer_id]
 
-    referrer = await db.referrers.find_one({"id": referrer_id}, {"_id": 0})
+    referrer_query = {"id": referrer_id}
+    if user.custom_access:
+        referrer_query["floor_id"] = {"$in": floor_ids or []}
+    referrer = await db.referrers.find_one(referrer_query, {"_id": 0})
     if not referrer:
         if not quotations:
             raise HTTPException(status_code=404, detail="Referrer not found")

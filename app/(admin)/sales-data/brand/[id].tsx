@@ -52,7 +52,7 @@ export default function BrandDetail() {
 
   const exportData = (section: string, rows: (string | number | null)[][]) => {
     if (!data) return;
-    void downloadSectionExcel({ page: `Brand / ${data.brand.name}`, section, filename: `brand-${section.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.xlsx`, floorId, rows }).catch((error: unknown) => toast.show(error instanceof Error ? error.message : "Could not export brand data"));
+    void downloadSectionExcel({ resource: "sales_data", page: `Brand / ${data.brand.name}`, section, filename: `brand-${section.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.xlsx`, floorId, rows }).catch((error: unknown) => toast.show(error instanceof Error ? error.message : "Could not export brand data"));
   };
 
   return (

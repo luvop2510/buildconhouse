@@ -10,12 +10,14 @@ import { colors, money, radius, spacing } from "@/src/theme/tokens";
 import { color as ds, statusTone } from "@/src/design/tokens";
 import { ConfirmDialog } from "@/src/components/ds";
 import { useAuth } from "@/src/state/auth";
+import { useActionAccess } from "@/src/hooks/use-permissions";
 import { canManageDestructiveData } from "@/src/constants/roles";
 import { useBuilder } from "../context/BuilderContext";
 
 export function RecentQuotationsPanel() {
   const b = useBuilder();
   const { staff } = useAuth();
+  const canDeleteQuotations = useActionAccess("quotations", "delete", canManageDestructiveData(staff?.role));
   const [deleteTarget, setDeleteTarget] = React.useState<typeof b.recentQuotations[number] | null>(null);
   const [deleting, setDeleting] = React.useState(false);
 
@@ -48,7 +50,7 @@ export function RecentQuotationsPanel() {
             <View style={{ alignItems: "flex-end", gap: 2 }}>
               <Text style={styles.amt} numberOfLines={1}>{money(q.grand_total || 0)}</Text>
               <Text style={styles.status}>{statusTone[q.status]?.label || q.status}</Text>
-              {canManageDestructiveData(staff?.role) ? (
+              {canDeleteQuotations ? (
                 <Pressable
                   hitSlop={6}
                   onPress={(event) => { event.stopPropagation(); setDeleteTarget(q); }}

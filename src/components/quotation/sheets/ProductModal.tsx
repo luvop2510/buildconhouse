@@ -17,6 +17,7 @@ import { ProductImage } from "@/src/components/ProductImage";
 import { ProductEditor } from "@/src/components/catalog/ProductEditor";
 import { toast } from "@/src/components/Toast";
 import { useAuth } from "@/src/state/auth";
+import { useActionAccess } from "@/src/hooks/use-permissions";
 import { colors, money, PRODUCT_IMAGE_ASPECT_RATIO, radius, shadow, spacing } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";
 import { useBp } from "@/src/design/responsive";
@@ -57,7 +58,7 @@ function automaticParts(product: Product, variant: ProductVariant | null): { nam
 export function ProductModal() {
   const b = useBuilder();
   const { staff } = useAuth();
-  const canEditProduct = !!staff && ["owner", "admin", "manager", "accounts", "purchase"].includes(staff.role);
+  const canEditProduct = useActionAccess("catalog", "update", !!staff && ["owner", "admin", "manager", "accounts", "purchase"].includes(staff.role));
   const open = !!b.productModal;
   const product = b.productModal;
   const { isPhone } = useBp();

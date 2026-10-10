@@ -26,6 +26,7 @@ import {
 } from "@/src/components/ds";
 import { toast } from "@/src/components/Toast";
 import { useAuth } from "@/src/state/auth";
+import { useActionAccess } from "@/src/hooks/use-permissions";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { colors, elevation, moneyShort, radius, spacing, type } from "@/src/theme/tokens";
 import { MANAGER_ROLES } from "./followup-assignments";
@@ -264,6 +265,7 @@ async function settleBulkRequests(request: BulkRequest, ids: string[]): Promise<
 // ═══════════════════════════════════════════════════════════════════════════
 export default function FollowupsScreen() {
   const { staff } = useAuth();
+  const canDeleteFollowups = useActionAccess("followups", "delete", !!staff && MANAGER_ROLES.includes(staff.role));
   const { selectedFloorId } = useFloorAccess();
   const router = useRouter();
   const { isPhone, isDesktop } = useBp();
@@ -1089,7 +1091,7 @@ export default function FollowupsScreen() {
       renderSectionFooter={({ section }) =>
         section.bucket === visibleSections[visibleSections.length - 1]?.bucket ? paginationFooter : null
       }
-      renderItem={({ item: f }) => <View style={{ paddingHorizontal: horizontalPadding, marginBottom: spacing.sm }}><MemoFollowupCard f={f} active={f.id === selectedId} assignees={assignees} rank={rankMap.get(f.id)} checked={selectedIds.has(f.id)} onToggleSelect={toggleSelect} onPress={selectCard} onCall={contact} onWhatsApp={contact} onEmail={contact} onComplete={completeFollowup} onSnooze={snoozeFollowup} onCustomSnooze={setCustomSnoozeFor} onPushDays={pushDue} onAssign={assignFollowup} onNote={setNoteFor} onMarkLost={(item) => { setLossActionFor(item); setCallOutcomeFor(item); }} onDismiss={dismissFollowup} canDelete={!!staff && MANAGER_ROLES.includes(staff.role)} onDelete={setDeleteTarget} onOpenDoc={openRelatedDocument} /></View>}
+      renderItem={({ item: f }) => <View style={{ paddingHorizontal: horizontalPadding, marginBottom: spacing.sm }}><MemoFollowupCard f={f} active={f.id === selectedId} assignees={assignees} rank={rankMap.get(f.id)} checked={selectedIds.has(f.id)} onToggleSelect={toggleSelect} onPress={selectCard} onCall={contact} onWhatsApp={contact} onEmail={contact} onComplete={completeFollowup} onSnooze={snoozeFollowup} onCustomSnooze={setCustomSnoozeFor} onPushDays={pushDue} onAssign={assignFollowup} onNote={setNoteFor} onMarkLost={(item) => { setLossActionFor(item); setCallOutcomeFor(item); }} onDismiss={dismissFollowup} canDelete={canDeleteFollowups} onDelete={setDeleteTarget} onOpenDoc={openRelatedDocument} /></View>}
     />
     );
   };

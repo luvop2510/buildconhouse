@@ -19,6 +19,7 @@ import { RecentQuotationsPanel } from "../panes/RecentQuotationsPanel";
 import { ConfirmDialog } from "@/src/components/ds";
 import { canManageDestructiveData } from "@/src/constants/roles";
 import { useAuth } from "@/src/state/auth";
+import { useActionAccess } from "@/src/hooks/use-permissions";
 
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { WhatsAppQuotationSheet, prepareQuotationWhatsAppDraft, type WhatsAppQuotationDraft } from "../WhatsAppQuotationSheet";
@@ -39,6 +40,7 @@ export function BuilderTopbar({
 }) {
   const b = useBuilder();
   const { staff } = useAuth();
+  const canDeleteQuotations = useActionAccess("quotations", "delete", canManageDestructiveData(staff?.role));
   const { selectedFloorId } = useFloorAccess();
   const [whatsappDraft, setWhatsappDraft] = useState<{ id: string; floorId: string; draft: WhatsAppQuotationDraft } | null>(null);
   const [preparingWhatsApp, setPreparingWhatsApp] = useState(false);
@@ -181,7 +183,7 @@ export function BuilderTopbar({
         >
           <Feather name="corner-up-right" size={16} color={colors.onSurface} />
         </Pressable> : null}
-        {canManageDestructiveData(staff?.role) && b.quotationId ? (
+        {canDeleteQuotations && b.quotationId ? (
           <Pressable
             testID="builder-delete-quotation"
             onPress={() => setDeleteOpen(true)}
@@ -214,7 +216,7 @@ export function BuilderTopbar({
             onPress={() => { setActionsOpen(false); item.action(); }} style={[styles.actionRow, item.disabled && { opacity: 0.4 }]}>
             <Feather name={item.icon} size={18} color={colors.onSurface} /><Text style={styles.actionLabel}>{item.label}</Text>
           </Pressable>)}
-          {canManageDestructiveData(staff?.role) && b.quotationId ? <Pressable accessibilityRole="button" accessibilityLabel="Delete quotation" onPress={() => { setActionsOpen(false); setDeleteOpen(true); }} style={styles.actionRow}>
+          {canDeleteQuotations && b.quotationId ? <Pressable accessibilityRole="button" accessibilityLabel="Delete quotation" onPress={() => { setActionsOpen(false); setDeleteOpen(true); }} style={styles.actionRow}>
             <Feather name="trash-2" size={18} color={colors.error} /><Text style={[styles.actionLabel, { color: colors.error }]}>Delete quotation</Text>
           </Pressable> : null}
         </View>

@@ -17,6 +17,7 @@ import {
 } from "@/src/components/ds";
 import { colors, icon as iconSize, radius, spacing, type } from "@/src/theme/tokens";
 import { useAuth } from "@/src/state/auth";
+import { useActionAccess } from "@/src/hooks/use-permissions";
 import { canManageDestructiveData } from "@/src/constants/roles";
 import { toast } from "@/src/components/Toast";
 import { ErrorState } from "@/src/components/ui";
@@ -46,6 +47,7 @@ export default function Customers() {
   const router = useRouter();
   const { isDesktop, isPhone } = useBp();
   const { staff } = useAuth();
+  const canDeleteCustomers = useActionAccess("customers", "delete", canManageDestructiveData(staff?.role));
   const { selectedFloorId } = useFloorAccess();
   const isTileDeliveryLookup = staff?.access_profile === "ground_tile_quotations_followups";
 
@@ -106,7 +108,7 @@ export default function Customers() {
   const visibleCustomers = filtered.slice(0, visibleCount);
   const exportCustomers = async () => {
     try {
-      await downloadSectionExcel({
+      await downloadSectionExcel({ resource: "customers",
         page: "Customers",
         section: tier === "all" ? "Customer accounts" : `${tier.toUpperCase()} customers`,
         rows: [
@@ -289,7 +291,7 @@ export default function Customers() {
                       accessibilityLabel={`Edit ${c.name}`}
                       testID={`edit-customer-${c.id}`}
                     />
-                    {canManageDestructiveData(staff?.role) ? (
+                    {canDeleteCustomers ? (
                       <IconButton
                         icon="trash-2"
                         onPress={() => setDeleteTarget(c)}

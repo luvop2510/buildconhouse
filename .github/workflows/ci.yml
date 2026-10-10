@@ -126,6 +126,7 @@ jobs:
           npm run test:native-release-config
           npm run test:stock-floor-races
           npm run test:history-lifecycle
+          node --experimental-strip-types --no-warnings scripts/test-team-delegation.mjs
       - name: Tile Orders workflow route contract
         run: node scripts/verify-tile-orders-contract.mjs
       - name: Lint

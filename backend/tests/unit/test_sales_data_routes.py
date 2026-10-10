@@ -5,6 +5,7 @@ test_dashboard_floor_scoping.py."""
 from __future__ import annotations
 
 import asyncio
+import pytest
 
 from models import UserPublic
 from routes import sales_data_routes as sd
@@ -74,6 +75,16 @@ def test_resolve_floor_ids_owner_both_means_no_restriction():
 
 def test_resolve_floor_ids_owner_picks_one_floor():
     assert sd._resolve_floor_ids(_owner(), "ground-floor") == ["ground-floor"]
+
+
+@pytest.mark.parametrize("floor", [None, "both"])
+def test_delegated_combined_sales_never_broadens_page_granted_floors(floor):
+    user = UserPublic(email="worker@example.com", full_name="Worker", role="worker",
+                      custom_access=True, floor_ids=["ground-floor", "first-floor"])
+    object.__setattr__(user, "_custom_grant_floor_ids", ["ground-floor"])
+    assert sd._resolve_floor_ids(user, floor) == ["ground-floor"]
+    object.__setattr__(user, "_custom_grant_floor_ids", [])
+    assert sd._resolve_floor_ids(user, floor) == []
 
 
 def test_resolve_floor_ids_admin_cannot_request_a_floor_outside_their_access():

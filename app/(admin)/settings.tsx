@@ -122,7 +122,7 @@ export default function Settings() {
           <Text style={type.bodyMuted}>{staff?.email}</Text>
           <View style={styles.rolePill}>
             <Feather name="shield" size={11} color={colors.brand} />
-            <Text style={styles.rolePillText}>{roleLabels[staff?.role || ""] || staff?.role || "Team"}</Text>
+            <Text style={styles.rolePillText}>{staff?.team_role || roleLabels[staff?.role || ""] || staff?.role || "Team"}</Text>
           </View>
         </View>
       </View>
@@ -157,10 +157,10 @@ export default function Settings() {
         { title: "Business & documents", ids: ["company", "pdf", "catalog", "walkins"] },
         { title: "People & access", ids: ["team", "permissions", "access-grants"] },
         { title: "Preferences & support", ids: ["notifications", "system", "privacy", "terms"] },
-      ].map(group => (
+      ].filter(group => !staff?.custom_access || group.ids.includes("privacy")).map(group => (
       <Card key={group.title} style={{ padding: 0 }} variant="flat">
         <Text style={[type.overline, { padding: spacing.md, paddingBottom: 8 }]}>{group.title}</Text>
-        {workspaceRows.filter(r => group.ids.includes(r.testId.replace("settings-nav-", ""))).filter((r) => !r.roles || r.roles.includes(staff?.role || "")).map((r, i) => (
+        {workspaceRows.filter(r => !staff?.custom_access || ["settings-nav-privacy", "settings-nav-terms"].includes(r.testId)).filter(r => group.ids.includes(r.testId.replace("settings-nav-", ""))).filter((r) => !r.roles || r.roles.includes(staff?.role || "")).map((r, i) => (
           <Pressable
             key={r.href}
             testID={r.testId}

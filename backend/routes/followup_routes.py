@@ -681,11 +681,6 @@ async def create_notebook_row(
         phone=clean["customer_phone"], address=clean.get("address"),
     )
     referrer_fields = await _notebook_referrer_fields(requested_referrer_id, floor_id)
-    if requested_referrer_id:
-        await db.customers.update_one(
-            {"id": customer["id"], "floor_id": floor_id}, {"$set": referrer_fields},
-        )
-        customer = {**customer, **referrer_fields}
     # A customer has one notebook row per floor. Repeated creation requests
     # must resolve to that row instead of making the register appear to ignore
     # edits or creating a second customer conversation.
@@ -693,6 +688,15 @@ async def create_notebook_row(
     existing = await db.followups.find_one(
         notebook_query(user, floor_id, {"notebook_key": notebook_key}), {"_id": 0},
     )
+    if getattr(user, "custom_access", False) and existing and existing.get("is_converted"):
+        raise HTTPException(status_code=403, detail="This customer is already in Quotation Follow-up; open that page with its assigned access")
+    if getattr(user, "custom_access", False) and existing and requested_referrer_id:
+        raise HTTPException(status_code=409, detail="This walk-in already exists; edit its partner from the existing row")
+    if requested_referrer_id:
+        await db.customers.update_one(
+            {"id": customer["id"], "floor_id": floor_id}, {"$set": referrer_fields},
+        )
+        customer = {**customer, **referrer_fields}
     if existing:
         # Retrying an add with a newly selected directory partner should not
         # make the picker look as if it saved only on the customer. Keep the
@@ -730,6 +734,8 @@ async def create_notebook_row(
             notebook_query(user, floor_id, {"notebook_key": notebook_key}), {"_id": 0},
         )
         if existing:
+            if getattr(user, "custom_access", False) and existing.get("is_converted"):
+                raise HTTPException(status_code=403, detail="This customer is already in Quotation Follow-up; open that page with its assigned access")
             return serialize_notebook_row(existing)
         raise
     await log_event(
@@ -1201,14 +1207,21 @@ async def contact_followup(followup_id: str, body: FollowupContactPayload, user:
     from services.email_service import build_email
     from services.messaging_service import build_message
 
-    f = await db.followups.find_one(floor_query(user, {"id": followup_id}), {"_id": 0})
+    identity = {"id": followup_id}
+    converted = getattr(user, "_custom_notebook_converted", None)
+    if converted is not None:
+        identity.update(is_converted=converted, notebook_key={"$type": "string"})
+    contact_query = floor_query(user, identity)
+    f = await db.followups.find_one(contact_query, {"_id": 0})
     if not f:
         raise HTTPException(status_code=404, detail="Follow-up not found")
     now = now_iso()
-    await db.followups.update_one(
-        floor_query(user, {"id": followup_id}),
+    result = await db.followups.update_one(
+        contact_query,
         {"$set": {"last_contacted_at": now, "updated_at": now, "notes": notes}, "$inc": {"contact_attempts": 1}},
     )
+    if converted is not None and not result.matched_count:
+        raise HTTPException(status_code=409, detail="This lead moved to another notebook page; reopen that page")
     await log_event(
         event_type="followup.contacted", entity_type="followup", entity_id=followup_id, actor=user,
         customer_id=f.get("customer_id"), quotation_id=f.get("quotation_id"), purchase_id=f.get("purchase_id"),

@@ -11,6 +11,7 @@ import { ProductImage } from "@/src/components/ProductImage";
 import { ErrorState } from "@/src/components/ui";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { useAuth } from "@/src/state/auth";
+import { useActionAccess } from "@/src/hooks/use-permissions";
 import { toast } from "@/src/components/Toast";
 import { useBp } from "@/src/design/responsive";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
@@ -22,6 +23,7 @@ const money = (value: number) => `₹${value.toLocaleString("en-IN", { maximumFr
 export default function GodownStockScreen() {
   const { selectedFloorId } = useFloorAccess();
   const { staff } = useAuth();
+  const canEditPricing = useActionAccess("godown_stock", "update", staff?.role !== "worker");
   const router = useRouter(); const { isPhone, isDesktop } = useBp();
   const { newStockId } = useLocalSearchParams<{ newStockId?: string }>();
   const checkedStockId = useRef<string | null>(null);
@@ -107,7 +109,7 @@ export default function GodownStockScreen() {
           ...(lot.allocations || []).map(row => [lot.sku, lot.name, "Allocated", row.customer_name || row.quotation_number || row.quotation_id, row.qty, row.allocated_at]),
           ...(lot.customer_transfers || []).map(row => [lot.sku, lot.name, "Transferred", row.recipient_customer_name, row.qty, row.created_at]),
         ])];
-      await downloadSectionExcel({ page: "Godown stock", section: section === "inventory" ? "Available inventory" : "Stock movements", rows, filename: `godown-${section}.xlsx`, floorId: selectedFloorId });
+      await downloadSectionExcel({ resource: "godown_stock", page: "Godown stock", section: section === "inventory" ? "Available inventory" : "Stock movements", rows, filename: `godown-${section}.xlsx`, floorId: selectedFloorId });
     } catch (exportError: any) { toast.error(exportError?.message || "Could not export godown stock"); }
   };
   if (loading) return <View style={styles.center}><ActivityIndicator /><Text style={type.bodyMuted}>Loading stock…</Text></View>;
@@ -134,7 +136,7 @@ export default function GodownStockScreen() {
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips} accessibilityRole="tablist"><Chip label="All brands" selected={!brand} onPress={() => setBrand(null)} />{data?.brands.map(row => <Chip key={row.id || row.name} label={`${row.name} · ${row.available_qty}`} selected={brand === (row.id || row.name)} onPress={() => setBrand(row.id || row.name)} />)}</ScrollView>
     <Text accessibilityLiveRegion="polite" style={styles.result}>{lots.filter(lot => lot.available_qty > 0).length} available · {lots.filter(lot => lot.available_qty <= 0).length} zero-stock lots</Text>
     <View style={styles.exportActions}><Pressable accessibilityRole="button" accessibilityLabel="Export filtered godown inventory to Excel" testID="godown-export-inventory" disabled={!lots.length} onPress={() => void exportStock("inventory")} style={[styles.exportButton, !lots.length && { opacity: .45 }]}><Feather name="download" size={15} color={colors.brand} /><Text style={styles.detailsText}>Inventory .xlsx</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Export godown stock movements to Excel" testID="godown-export-movements" disabled={!lots.some(lot => (lot.allocations?.length || 0) + (lot.customer_transfers?.length || 0) > 0)} onPress={() => void exportStock("movements")} style={[styles.exportButton, !lots.some(lot => (lot.allocations?.length || 0) + (lot.customer_transfers?.length || 0) > 0) && { opacity: .45 }]}><Feather name="download" size={15} color={colors.brand} /><Text style={styles.detailsText}>Movements .xlsx</Text></Pressable></View>
-    <View style={[styles.grid, !isPhone && styles.gridWide]}>{lots.map(lot => <LotCard key={lot.id} lot={lot} compact={isPhone} width={isPhone ? "100%" : isDesktop ? "31.9%" : "48.8%"} canEditPricing={staff?.role !== "worker"} onUpdated={() => void load()} onViewDetails={() => { if (lot.product_id) router.push(`/(admin)/catalog/${encodeURIComponent(lot.product_id)}` as any); }} onAdd={(variantIndex) => router.push(`/(admin)/quotations/new?godownStockId=${encodeURIComponent(lot.id)}${variantIndex === null ? "" : `&godownVariant=${variantIndex}`}` as any)} onTransfer={() => { setTransferMatch(null); setTransferLot(lot); }} />)}</View>
+    <View style={[styles.grid, !isPhone && styles.gridWide]}>{lots.map(lot => <LotCard key={lot.id} lot={lot} compact={isPhone} width={isPhone ? "100%" : isDesktop ? "31.9%" : "48.8%"} canEditPricing={canEditPricing} onUpdated={() => void load()} onViewDetails={() => { if (lot.product_id) router.push(`/(admin)/catalog/${encodeURIComponent(lot.product_id)}` as any); }} onAdd={(variantIndex) => router.push(`/(admin)/quotations/new?godownStockId=${encodeURIComponent(lot.id)}${variantIndex === null ? "" : `&godownVariant=${variantIndex}`}` as any)} onTransfer={() => { setTransferMatch(null); setTransferLot(lot); }} />)}</View>
     {!lots.length ? <View style={styles.empty}><Feather name="archive" size={28} color={colors.onSurfaceMuted} /><Text style={type.titleMd}>No matching stock</Text><Text style={type.bodyMuted}>Try another brand or search term.</Text></View> : null}
     <Sheet open={!!newLot && poFinalMatches.length > 0} onClose={() => { setNewLot(null); setPoFinalMatches([]); }} title="Matching orders in PO Final" width={560}>
       <View style={{ gap: spacing.md, paddingBottom: spacing.md }}>

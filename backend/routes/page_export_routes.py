@@ -12,6 +12,8 @@ from pydantic import BaseModel, Field
 
 from auth import get_current_user
 from models import UserPublic
+from db import db
+from services.access_grants import grants_allow, grants_for_user
 from services.export import spreadsheet_cell
 
 router = APIRouter(prefix="/exports", tags=["exports"])
@@ -24,11 +26,18 @@ class ExportSection(BaseModel):
 
 class PageWorkbook(BaseModel):
     page: str = Field(max_length=80)
+    resource: str | None = Field(default=None, max_length=80)
     sections: list[ExportSection] = Field(min_length=1, max_length=30)
 
 
 @router.post("/page.xlsx")
 async def export_page_workbook(body: PageWorkbook, user: UserPublic = Depends(get_current_user)):
+    if user.custom_access:
+        if not user.active_floor_id or not body.resource or not grants_allow(
+            await grants_for_user(db, user.id), user_id=user.id,
+            resource=body.resource, action="export", floor_id=user.active_floor_id,
+        ):
+            raise HTTPException(status_code=403, detail="Export permission is required for this page and floor")
     if sum(len(section.rows) for section in body.sections) > 10_000:
         raise HTTPException(status_code=413, detail="Page export is too large; choose one section or brand")
     wb = Workbook()

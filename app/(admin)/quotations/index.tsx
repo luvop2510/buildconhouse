@@ -18,6 +18,7 @@ import { api } from "@/src/api/client";
 import { colors, font, money, radius, spacing, type } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";
 import { useAuth } from "@/src/state/auth";
+import { useActionAccess } from "@/src/hooks/use-permissions";
 import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
 
 type Quotation = {
@@ -45,6 +46,7 @@ export default function QuotationsList() {
   const { view } = useLocalSearchParams<{ view?: string }>();
   const completed = view === "completed";
   const { staff } = useAuth();
+  const canDeleteQuotations = useActionAccess("quotations", "delete", !!staff && ["owner", "admin", "manager"].includes(staff.role));
   const { isPhone } = useBp();
   const isTablet = !isPhone;
 
@@ -163,7 +165,7 @@ export default function QuotationsList() {
           )
         }
         renderItem={({ item }) => (
-          <QuotationRow q={item} onPress={() => router.push(`/(admin)/quotations/${item.id}` as any)} canDelete={!!staff && ["owner", "admin", "manager"].includes(staff.role)} onDelete={() => setDeleteTarget(item)} />
+          <QuotationRow q={item} onPress={() => router.push(`/(admin)/quotations/${item.id}` as any)} canDelete={canDeleteQuotations} onDelete={() => setDeleteTarget(item)} />
         )}
       />
       <ConfirmDialog

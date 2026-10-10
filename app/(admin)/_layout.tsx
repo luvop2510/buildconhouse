@@ -23,6 +23,7 @@ import { BuildConLogo } from "@/src/design/BrandLogo";
 import { useAuth } from "@/src/state/auth";
 import { useModuleAccess, usePermissionMatrix } from "@/src/hooks/use-permissions";
 import { staffLandingPath } from "@/src/access-profiles";
+import { moduleForRoute } from "@/src/team-delegation";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { AppScaffold } from "@/src/components/mobile/AppScaffold";
 import { storage } from "@/src/utils/storage";
@@ -125,6 +126,7 @@ function SearchTrigger() {
 
 function FloorSwitcher({ compact = false }: { compact?: boolean }) {
   const { access, floors, selectedFloorId, selectFloor } = useFloorAccess();
+  const { staff } = useAuth();
   const router = useRouter();
   const segments = useSegments() as string[];
   const selected = floors.find((floor) => floor.id === selectedFloorId);
@@ -137,7 +139,9 @@ function FloorSwitcher({ compact = false }: { compact?: boolean }) {
     // while the route only changes when the current screen belongs to the
     // floor we are leaving.
     void selectFloor(id).catch(() => {});
-    if (!isRouteCompatibleWithFloor(segments, id)) {
+    if (staff?.custom_access) {
+      router.replace(staffLandingPath(null, staff.access_grants || [], id) as any);
+    } else if (!isRouteCompatibleWithFloor(segments, id)) {
       router.replace(`/(admin)${floorLandingPath(id)}` as any);
     }
   };
@@ -198,7 +202,7 @@ function useTilesNav() {
   // Tile Orders and Quotation Tiles in Sanitary's navigation.
   const items = groundAccessible && selectedFloorId === TILES_FLOOR_ID
     ? TILES_ITEMS.filter((item) => (
-      hasAccess(item.match) && (!item.roles || Boolean(staff && item.roles.includes(staff.role)))
+      hasAccess(item.match) && (staff?.custom_access || !item.roles || Boolean(staff && item.roles.includes(staff.role)))
     ))
     : [];
   const open = (item: NavItem) => {
@@ -223,6 +227,7 @@ function useVisibleNav() {
   const { staff } = useAuth();
   const { access, selectedFloorId } = useFloorAccess();
   return (items: NavItem[]) => items.filter((item) => {
+    if (staff?.custom_access) return (!item.floors || item.floors.includes(selectedFloorId)) && hasAccess(item.match);
     // These units share floor-scoped business pages alongside their notebooks.
     if (selectedFloorId === KITCHEN_FLOOR_ID || selectedFloorId === FURNITURE_FLOOR_ID) {
       const shared = ["catalog", "customers", "purchases", "payments", "payments-list"].includes(item.match);
@@ -438,24 +443,14 @@ function CustomAccessRouteGate({ children }: { children: React.ReactNode }) {
   const hasAccess = useModuleAccess();
   const segments = useSegments() as string[];
   const router = useRouter();
-  const module = segments.includes("payments") ? "payments"
-    : segments.includes("quotations") ? "quotations"
-    : segments.includes("catalog") ? "catalog"
-    : segments.includes("customers") ? "customers"
-    : segments.includes("purchases") || segments.includes("purchases-completed") || segments.includes("purchase-orders") ? "purchases"
-    : segments.includes("godown-stock") ? "godown-stock"
-    : segments.includes("followups") ? "followups"
-    : segments.includes("notifications") ? "notifications"
-    : segments.includes("walkins") ? "walkins"
-    : segments.includes("orders") ? "orders"
-    : segments.includes("dashboard") ? "dashboard"
-    : null;
+  const { selectedFloorId } = useFloorAccess();
+  const module = moduleForRoute(segments);
 
   useEffect(() => {
     if (staff?.custom_access && module && !hasAccess(module)) {
-      router.replace(staffLandingPath(staff.access_profile, staff.access_grants) as any);
+      router.replace(staffLandingPath(null, staff.access_grants || [], selectedFloorId) as any);
     }
-  }, [staff, module, hasAccess, router]);
+  }, [staff, module, hasAccess, router, selectedFloorId]);
 
   if (staff?.custom_access && module && !hasAccess(module)) return null;
   return <>{children}</>;

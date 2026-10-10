@@ -55,6 +55,8 @@ class TimestampedModel(BaseModel):
 # ---------- Users (staff) ----------
 class UserBase(BaseModel):
     email: EmailStr
+    login_id: Optional[str] = None
+    team_role: Optional[str] = Field(default=None, max_length=120)
     full_name: str
     role: Role
     phone: Optional[str] = None
@@ -92,7 +94,8 @@ class UserInDB(UserPublic):
 
 
 class LoginPayload(BaseModel):
-    email: EmailStr
+    # Keep the existing JSON key for backwards-compatible email/username login.
+    email: str = Field(min_length=1, max_length=254)
     password: str
     mfa_code: Optional[str] = Field(default=None, max_length=6)
     recovery_code: Optional[str] = Field(default=None, max_length=40)
@@ -229,7 +232,16 @@ class ChangePasswordPayload(BaseModel):
 
 
 # ---------- Team management (Settings) ----------
+class TeamAccessGrantPayload(BaseModel):
+    resource: str
+    floor_id: str
+    actions: list[Literal["view", "create", "update", "delete", "export"]] = Field(min_length=1)
+
+
 class TeamCreatePayload(BaseModel):
+    team_role: Optional[str] = Field(default=None, max_length=120)
+    custom_access: bool = False
+    access_grants: Optional[list[TeamAccessGrantPayload]] = None
     email: EmailStr
     full_name: str
     role: Role
@@ -245,6 +257,9 @@ class TeamCreatePayload(BaseModel):
 
 
 class TeamUpdatePayload(BaseModel):
+    team_role: Optional[str] = Field(default=None, max_length=120)
+    custom_access: Optional[bool] = None
+    access_grants: Optional[list[TeamAccessGrantPayload]] = None
     full_name: Optional[str] = None
     role: Optional[Role] = None
     phone: Optional[str] = None

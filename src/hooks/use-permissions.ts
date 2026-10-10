@@ -9,14 +9,17 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "@/src/api/client";
 import { useAuth } from "@/src/state/auth";
 import { PROFILE_MODULES } from "@/src/access-profiles";
+import { useFloorAccess } from "@/src/hooks/use-floor-access";
+import { GrantAction, hasGrantAccess } from "@/src/team-delegation";
 
 const MODULE_GRANT_RESOURCE: Record<string, string> = {
   dashboard: "dashboard", quotations: "quotations", catalog: "catalog", customers: "customers",
   purchases: "purchases", payments: "payments", followups: "followups", notifications: "notifications",
   "godown-stock": "godown_stock",
-  "furniture-quotations": "quotations", "payments-list": "payments",
-  kitchen: "walkins", furniture: "walkins", "quotation-follow-up": "followups",
+  "furniture-quotations": "furniture_quotations", "payments-list": "payments",
+  kitchen: "notebook_walkins", furniture: "notebook_walkins", "quotation-follow-up": "notebook_quotations",
   orders: "orders", tiles: "tiles", walkins: "walkins", reports: "reports",
+  "sales-data": "sales_data",
 };
 
 export type ModuleInfo = { key: string; label: string };
@@ -80,12 +83,14 @@ export function usePermissionMatrix() {
 export function useModuleAccess() {
   const { staff } = useAuth();
   const { data } = usePermissionMatrix();
+  const { selectedFloorId } = useFloorAccess();
   return useCallback(
     (moduleKey: string) => {
       if (!staff) return true;
       if (staff.custom_access) {
+        if (moduleKey === "settings") return true;
         const resource = MODULE_GRANT_RESOURCE[moduleKey];
-        return Boolean(resource && staff.access_grants?.some((grant) => grant.resource === resource && grant.actions.includes("view")));
+        return Boolean(resource && hasGrantAccess(staff.access_grants, selectedFloorId, resource));
       }
       if (!data) return true;
       const profileModules = staff.access_profile ? PROFILE_MODULES[staff.access_profile] : undefined;
@@ -94,6 +99,14 @@ export function useModuleAccess() {
       if (!row || !(moduleKey in row)) return true;
       return row[moduleKey] !== false;
     },
-    [staff, data],
+    [staff, data, selectedFloorId],
   );
+}
+
+/** The API remains authoritative; this keeps unavailable actions out of the UI. */
+export function useActionAccess(resource: string, action: GrantAction, legacyAllowed = true): boolean {
+  const { staff } = useAuth();
+  const { selectedFloorId } = useFloorAccess();
+  if (!staff?.custom_access) return legacyAllowed;
+  return hasGrantAccess(staff.access_grants, selectedFloorId, resource, action);
 }

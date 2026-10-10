@@ -16,6 +16,7 @@ import { useBp } from "@/src/design/responsive";
 import { fmtMoneyCompact } from "@/src/design/tokens";
 import { getSelectedFloorId, useFloorAccess } from "@/src/hooks/use-floor-access";
 import { useAuth } from "@/src/state/auth";
+import { useActionAccess } from "@/src/hooks/use-permissions";
 import { colors, spacing, type } from "@/src/theme/tokens";
 import { downloadSectionExcel } from "@/src/utils/sectionExcel";
 import { toast } from "@/src/components/Toast";
@@ -52,6 +53,7 @@ const FLOOR_LABEL: Record<string, string> = {
  */
 export default function ExecutiveOverview() {
   const { staff } = useAuth();
+  const canViewSales = useActionAccess("sales_data", "view", !!staff && ["owner", "admin", "manager"].includes(staff.role));
   const { floors } = useFloorAccess();
   const { isPhone, isTablet } = useBp();
   const router = useRouter();
@@ -107,7 +109,7 @@ export default function ExecutiveOverview() {
     router.setParams({ floor_id: nextFloor, preset: nextPreset });
   };
 
-  if (staff && !["owner", "admin", "manager"].includes(staff.role)) {
+  if (staff && !canViewSales) {
     return <Redirect href="/(admin)/dashboard" />;
   }
 
@@ -242,7 +244,7 @@ export default function ExecutiveOverview() {
               <View style={{ gap: spacing.md }}>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: spacing.sm }}>
                   <Text style={type.titleSm}>Revenue by Floor</Text>
-                  <Button testID="executive-revenue-by-floor-export-xlsx" label="Export Excel" icon="download" variant="secondary" onPress={() => void downloadSectionExcel({ page: "Executive Overview", section: "Revenue by Floor", filename: "executive-revenue-by-floor.xlsx", floorId: floorId === "all" ? undefined : floorId, rows: [["Business unit", "Revenue", "Orders"], ...data.revenue_by_floor.map(row => [FLOOR_LABEL[row.floor_id] || row.floor_id, row.revenue, row.orders])] }).catch((error: unknown) => toast.show(error instanceof Error ? error.message : "Could not export floor revenue"))} />
+                  <Button testID="executive-revenue-by-floor-export-xlsx" label="Export Excel" icon="download" variant="secondary" onPress={() => void downloadSectionExcel({ resource: "sales_data", page: "Executive Overview", section: "Revenue by Floor", filename: "executive-revenue-by-floor.xlsx", floorId: floorId === "all" ? undefined : floorId, rows: [["Business unit", "Revenue", "Orders"], ...data.revenue_by_floor.map(row => [FLOOR_LABEL[row.floor_id] || row.floor_id, row.revenue, row.orders])] }).catch((error: unknown) => toast.show(error instanceof Error ? error.message : "Could not export floor revenue"))} />
                 </View>
                 <Text style={[type.caption, { color: colors.onSurfaceMuted }]}>
                   Which floor is winning?

@@ -27,6 +27,7 @@ import { TILES_FLOOR_ID } from "@/src/constants/floors";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { toast } from "@/src/components/Toast";
 import { useAuth } from "@/src/state/auth";
+import { useActionAccess } from "@/src/hooks/use-permissions";
 import { canManageDestructiveData } from "@/src/constants/roles";
 import { colors, icon as iconSize, money, moneyShort, PRODUCT_IMAGE_ASPECT_RATIO, radius, spacing, type } from "@/src/theme/tokens";
 import { downloadSectionExcel } from "@/src/utils/sectionExcel";
@@ -136,6 +137,7 @@ export default function CustomerDetail() {
   }>();
   const router = useRouter();
   const { staff } = useAuth();
+  const canDeleteCustomers = useActionAccess("customers", "delete", canManageDestructiveData(staff?.role));
   const { isDesktop, isPhone } = useBp();
   const { selectedFloorId } = useFloorAccess();
   const isTilesFloor = selectedFloorId === TILES_FLOOR_ID;
@@ -389,7 +391,7 @@ export default function CustomerDetail() {
           ? [["PO", "Status", "Brand", "Supplier", "Items", "Total (INR)", "Created"], ...(workspace?.purchase_orders || []).map(row => [row.number, row.status, row.brand_name, row.supplier_name, row.item_count, row.grand_total, row.created_at])]
           : [["Date", "Event", "Summary", "Recorded by"], ...timeline.map(row => [row.created_at, row.event_type, row.summary, row.actor_name])];
     try {
-      await downloadSectionExcel({ page: `Customer ${customer?.company || customer?.name || id}`, section: `Customer ${section}`, rows, filename: `customer-${id}-${section}.xlsx`, floorId: selectedFloorId });
+      await downloadSectionExcel({ resource: "customers", page: `Customer ${customer?.company || customer?.name || id}`, section: `Customer ${section}`, rows, filename: `customer-${id}-${section}.xlsx`, floorId: selectedFloorId });
     } catch (error: any) { toast.error(error?.message || `Could not export ${section}`); }
   };
 
@@ -494,7 +496,7 @@ export default function CustomerDetail() {
               size="md"
               onPress={() => router.push(`/(admin)/customers/${customer.id}/edit` as any)}
             />
-            {canManageDestructiveData(staff?.role) ? (
+            {canDeleteCustomers ? (
               <Button
                 icon="trash-2"
                 label="Delete"

@@ -14,7 +14,7 @@ from auth import accessible_floor_ids, floor_for_write, floor_query, floor_scope
 from db import db
 from models import FloorCreatePayload, FloorPublic, TeamCreatePayload, TeamUpdatePayload, UserPublic, now_iso
 from services.activity_log import log_event
-from services.access_grants import grants_allow, grants_for_user, resource_candidates_for_api_path
+from services.access_grants import build_delegation_snapshot, grants_allow, grants_for_user, resource_candidates_for_api_path
 from services.download_tokens import create_download_token
 from services.invite_service import generate_temp_password, get_invite_service, temp_password_expiry_iso
 from settings import settings
@@ -314,18 +314,34 @@ async def create_team_member(body: TeamCreatePayload, user: UserPublic = Depends
         raise HTTPException(status_code=403, detail="Only an owner can create another owner")
     if await db.users.find_one({"email": body.email.lower()}, {"_id": 0, "id": 1}):
         raise HTTPException(status_code=409, detail="A team member with this email already exists")
-    role, floor_ids = normalize_staff_access(
-        role=body.role, floor_ids=body.floor_ids, access_profile=body.access_profile,
-    )
+    if body.custom_access:
+        if body.role == "owner":
+            raise HTTPException(status_code=422, detail="Owners use full access; delegate pages to staff accounts")
+        if body.access_profile is not None:
+            raise HTTPException(status_code=422, detail="Choose floor/page delegation or an access profile")
+        role, floor_ids = body.role, body.floor_ids
+    else:
+        if body.access_grants is not None:
+            raise HTTPException(status_code=422, detail="Page assignments require custom access")
+        role, floor_ids = normalize_staff_access(role=body.role, floor_ids=body.floor_ids, access_profile=body.access_profile)
     doc = UserPublic(
         email=body.email.lower(), full_name=body.full_name, role=role, phone=body.phone,
         floor_ids=floor_ids,
         access_profile=body.access_profile,
+        custom_access=body.custom_access,
         # New staff must set their own password on first login — the admin-
         # supplied password here is only a onboarding credential, never a
         # long-term secret someone else chose for them.
         must_change_password=True, temp_password_expires_at=temp_password_expiry_iso(),
-    ).dict(exclude={"active_floor_id"})
+    ).model_dump(exclude={"active_floor_id"})
+    if getattr(body, "team_role", None) is not None:
+        doc["team_role"] = body.team_role
+    if body.custom_access:
+        doc["delegation_grants"] = await build_delegation_snapshot(
+            db, user_id=doc["id"], floor_ids=floor_ids,
+            grants=[grant.model_dump() for grant in (body.access_grants or [])],
+            actor_id=user.id, actor_name=user.full_name,
+        )
     doc["password_hash"] = hash_password(body.password)
     await db.users.insert_one(doc)
     doc.pop("password_hash", None)
@@ -353,7 +369,7 @@ async def update_team_member(
     # provisioner profile.  Other nulls retain PATCH's usual "not supplied"
     # semantics.
     supplied = body.model_dump(exclude_unset=True)
-    patch = {k: v for k, v in supplied.items() if v is not None or k == "access_profile"}
+    patch = {k: v for k, v in supplied.items() if v is not None or k in {"access_profile", "team_role"}}
     if not patch:
         raise HTTPException(status_code=400, detail="Nothing to update")
     target_is_owner = before.get("role") == "owner"
@@ -363,11 +379,32 @@ async def update_team_member(
     removes_owner = target_is_owner and (patch.get("active") is False or ("role" in patch and patch["role"] != "owner"))
     if removes_owner and await db.users.count_documents({"role": "owner", "active": {"$ne": False}}) <= 1:
         raise HTTPException(status_code=400, detail="At least one active owner is required")
-    proposed_role, proposed_floors = normalize_staff_access(
-        role=patch.get("role", before["role"]),
-        floor_ids=patch.get("floor_ids", before.get("floor_ids") or []),
-        access_profile=patch["access_profile"] if "access_profile" in patch else before.get("access_profile"),
-    )
+    proposed_custom = patch.get("custom_access", bool(before.get("custom_access")))
+    proposed_role = patch.get("role", before["role"])
+    proposed_floors = patch.get("floor_ids", before.get("floor_ids") or [])
+    if proposed_custom:
+        if proposed_role == "owner":
+            raise HTTPException(status_code=422, detail="Owners use full access; delegate pages to staff accounts")
+        if patch.get("access_profile") is not None:
+            raise HTTPException(status_code=422, detail="Choose floor/page delegation or an access profile")
+        patch["access_profile"] = None
+        if "access_grants" in patch or "floor_ids" in patch or "custom_access" in patch:
+            allocations = patch.pop("access_grants", None)
+            if allocations is None:
+                allocations = await grants_for_user(db, user_id)
+            patch["delegation_grants"] = await build_delegation_snapshot(
+                db, user_id=user_id, floor_ids=proposed_floors, grants=allocations,
+                actor_id=user.id, actor_name=user.full_name,
+            )
+    else:
+        if "access_grants" in patch:
+            raise HTTPException(status_code=422, detail="Page assignments require custom access")
+        proposed_role, proposed_floors = normalize_staff_access(
+            role=proposed_role, floor_ids=proposed_floors,
+            access_profile=patch["access_profile"] if "access_profile" in patch else before.get("access_profile"),
+        )
+        if before.get("custom_access"):
+            patch["delegation_grants"] = []
     # Profile provisioning may raise the requested role to the workflow's
     # minimum and always pins its corresponding floor. Store that correction
     # even when the client only supplied the profile.
@@ -377,9 +414,10 @@ async def update_team_member(
         patch["floor_ids"] = proposed_floors
     patch["updated_at"] = now_iso()
     await db.users.update_one({"id": user_id}, {"$set": patch})
-    security_fields = ("role", "floor_ids", "access_profile")
+    security_fields = ("role", "floor_ids", "access_profile", "custom_access", "delegation_grants")
     security_changed = any(field in patch and patch[field] != before.get(field) for field in security_fields)
     if security_changed:
+        invalidate_principal_cache("staff", user_id)
         # Roles/floors/profiles are authorization claims. Revoke every device
         # before returning the updated account so stale tokens cannot retain
         # the old scope for their remaining JWT lifetime.

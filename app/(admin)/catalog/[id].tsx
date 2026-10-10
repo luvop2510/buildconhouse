@@ -33,6 +33,7 @@ import { ProductEditor } from "@/src/components/catalog/ProductEditor";
 import { toast } from "@/src/components/Toast";
 import { api } from "@/src/api/client";
 import { useAuth } from "@/src/state/auth";
+import { useActionAccess } from "@/src/hooks/use-permissions";
 import { useBreakpoint } from "@/src/hooks/use-breakpoint";
 import { colors, money, PRODUCT_IMAGE_ASPECT_RATIO, radius, spacing, type } from "@/src/theme/tokens";
 import {
@@ -116,7 +117,7 @@ export default function ProductDetail() {
   const { staff } = useAuth();
   // Same threshold as backend's require_min_role("purchase") for the media
   // endpoints — keep in sync if that ever changes.
-  const canManageImages = !!staff && ["owner", "admin", "manager", "accounts", "purchase"].includes(staff.role);
+  const canManageImages = useActionAccess("catalog", "update", !!staff && ["owner", "admin", "manager", "accounts", "purchase"].includes(staff.role));
   const [editorTab, setEditorTab] = useState<"General" | "Pricing" | "Media">("General");
 
   const [p, setP] = useState<Product | null>(null);

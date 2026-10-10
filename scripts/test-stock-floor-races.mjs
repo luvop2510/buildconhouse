@@ -66,6 +66,7 @@ function screen(newStockId) {
     'react-native': { StyleSheet: { create: value => value } },
     'expo-router': { useRouter: () => ({}), useLocalSearchParams: () => ({ newStockId }) },
     '@/src/hooks/use-floor-access': { useFloorAccess: () => ({ selectedFloorId: floor }) },
+    '@/src/hooks/use-permissions': { useActionAccess: (_resource, _action, allowed = true) => allowed },
     '@/src/state/auth': { useAuth: () => ({ staff: { role: 'owner' } }) },
     '@/src/design/responsive': { useBp: () => ({ isPhone: false, isDesktop: true }) },
     '@/src/theme/tokens': { colors: {}, radius: {}, spacing: {}, type: {} },

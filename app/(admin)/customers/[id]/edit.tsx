@@ -20,6 +20,7 @@ import { toast } from "@/src/components/Toast";
 import { ReferrerField } from "@/src/components/customer/ReferrerField";
 import { useBp } from "@/src/design/responsive";
 import { useAuth } from "@/src/state/auth";
+import { useActionAccess } from "@/src/hooks/use-permissions";
 import { canManageDestructiveData } from "@/src/constants/roles";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
 
@@ -38,6 +39,7 @@ export default function EditCustomer() {
   const router = useRouter();
   const { isPhone, gutter } = useBp();
   const { staff } = useAuth();
+  const canDeleteCustomers = useActionAccess("customers", "delete", canManageDestructiveData(staff?.role));
 
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -176,7 +178,7 @@ export default function EditCustomer() {
         title="Edit Customer"
         overline="CRM"
         back={() => router.back()}
-        actions={canManageDestructiveData(staff?.role) ? (
+        actions={canDeleteCustomers ? (
           <Button
             label="Delete"
             icon="trash-2"

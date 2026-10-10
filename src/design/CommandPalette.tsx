@@ -1,6 +1,6 @@
 import { useOverlayFocus } from "./useOverlayFocus";
 import { NAVIGATION as NAV } from "./navigation";
-import { useModuleAccess } from "@/src/hooks/use-permissions";
+import { useActionAccess, useModuleAccess } from "@/src/hooks/use-permissions";
 import { useAuth } from "@/src/state/auth";
 import { useReducedMotion } from "@/src/hooks/use-reduced-motion";
 // ─────────────────────────────────────────────────────────────────────────────
@@ -73,6 +73,9 @@ function PaletteSession({ open, onClose, selectedFloorId }: { open: boolean; onC
   const canCustomers = hasAccess("customers");
   const canQuotes = hasAccess("quotations") && selectedFloorId === "first-floor";
   const canCatalog = hasAccess("catalog");
+  const canNewQuotation = useActionAccess(selectedFloorId === "ground-floor" ? "tiles" : "quotations", "create");
+  const canNewCustomer = useActionAccess("customers", "create");
+  const canRecordPayment = useActionAccess("payments", "create");
   const panelRef = useOverlayFocus(open, onClose);
   const reducedMotion = useReducedMotion();
   const notebookOnly = selectedFloorId === KITCHEN_FLOOR_ID || selectedFloorId === FURNITURE_FLOOR_ID;
@@ -155,12 +158,12 @@ function PaletteSession({ open, onClose, selectedFloorId }: { open: boolean; onC
       { key: "a-newq", section: "Actions", icon: "plus", title: "New quotation", keywords: "create quote", run: () => go(selectedFloorId === "ground-floor" ? "/(admin)/tiles/quotation" : "/(admin)/quotations/new") },
       { key: "a-cust", section: "Actions", icon: "user-plus", title: "Add customer", keywords: "create client", run: () => go("/(admin)/customers/new") },
       { key: "a-pay", section: "Actions", icon: "credit-card", title: "Record a payment", keywords: "collect money", run: () => go("/(admin)/payments") },
-    ] as Item[]).filter(a => hasAccess(a.key === "a-newq" ? "quotations" : a.key === "a-cust" ? "customers" : "payments")).filter((a) => match(a.title + " " + a.keywords));
+    ] as Item[]).filter(a => a.key === "a-newq" ? canNewQuotation && hasAccess(selectedFloorId === "ground-floor" ? "tiles" : "quotations") : a.key === "a-cust" ? canNewCustomer && canCustomers : canRecordPayment && hasAccess("payments")).filter((a) => match(a.title + " " + a.keywords));
 
     const nav: Item[] = NAV
-      .filter(n => (!n.floors || n.floors.includes(selectedFloorId)) && (!n.roles || !!staff && n.roles.includes(staff.role)) && hasAccess(n.match))
+      .filter(n => (!n.floors || n.floors.includes(selectedFloorId)) && (staff?.custom_access || !n.roles || !!staff && n.roles.includes(staff.role)) && hasAccess(n.match))
       .filter(n => !n.href.includes("/tiles") || selectedFloorId === "ground-floor")
-      .filter((n) => !notebookOnly || ["catalog", "customers", "purchases", "payments", "payments-list"].includes(n.match) || (selectedFloorId === KITCHEN_FLOOR_ID ? n.href.includes("/notebook/kitchen") : n.href.includes("/notebook/furniture")))
+      .filter((n) => staff?.custom_access || !notebookOnly || ["catalog", "customers", "purchases", "payments", "payments-list"].includes(n.match) || (selectedFloorId === KITCHEN_FLOOR_ID ? n.href.includes("/notebook/kitchen") : n.href.includes("/notebook/furniture")))
       .filter((n) => match(n.label + " " + n.match))
       .map((n) => ({
         key: `n-${n.href}`, section: "Go to", icon: n.icon, title: n.label, run: () => go(n.href),
@@ -194,7 +197,7 @@ function PaletteSession({ open, onClose, selectedFloorId }: { open: boolean; onC
     }));
 
     return [...actions, ...(needle ? [...cust, ...quots, ...prods] : []), ...nav];
-  }, [q, customers, quotations, productQuery, productResult, canCatalog, go, notebookOnly, selectedFloorId, staff, hasAccess, canCustomers, canQuotes]);
+  }, [q, customers, quotations, productQuery, productResult, canCatalog, go, notebookOnly, selectedFloorId, staff, hasAccess, canCustomers, canQuotes, canNewQuotation, canNewCustomer, canRecordPayment]);
 
   // Keep selection valid as asynchronous results change.
   useEffect(() => { setSel((s) => Math.min(s, Math.max(0, items.length - 1))); }, [items.length]);

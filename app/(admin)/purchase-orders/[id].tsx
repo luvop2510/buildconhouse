@@ -28,6 +28,7 @@ import {
 } from "@/src/components/purchases/MovementEngine";
 import { useRoles } from "@/src/hooks/use-roles";
 import { useAuth } from "@/src/state/auth";
+import { useActionAccess } from "@/src/hooks/use-permissions";
 import { downloadApiFile } from "@/src/utils/downloadFile";
 
 type PoStatus =
@@ -301,7 +302,8 @@ export default function PurchaseOrderDetail() {
 
   const warehouseLevel = roles.find((role) => role.role === "warehouse")?.level;
   const staffLevel = roles.find((role) => role.role === staff?.role)?.level;
-  const canManageChalans = warehouseLevel !== undefined && staffLevel !== undefined && staffLevel >= warehouseLevel;
+  const canManageChalans = useActionAccess("purchases", "update", warehouseLevel !== undefined && staffLevel !== undefined && staffLevel >= warehouseLevel);
+  const canCreateChalans = useActionAccess("purchases", "create", warehouseLevel !== undefined && staffLevel !== undefined && staffLevel >= warehouseLevel);
 
   const applyGeneratedChalan = useCallback((chalan: Chalan, stage: ChalanOrderStage, items: GenerateChalanPayload["items"]) => {
     setPo((current) => {
@@ -702,7 +704,7 @@ export default function PurchaseOrderDetail() {
                   </Text>
                 </View>
               </View>
-              {canManageChalans && hasRemainingChalanQty ? (
+              {canCreateChalans && hasRemainingChalanQty ? (
                 <Button
                   label="Generate Chalan"
                   icon="file-plus"
@@ -723,8 +725,8 @@ export default function PurchaseOrderDetail() {
                 <Text style={[type.bodySm, { color: colors.error, flex: 1 }]}>Could not confirm Chalan action permissions.</Text>
                 <Button label="Retry" size="sm" variant="secondary" onPress={refreshRoles} testID="sanitary-chalan-permissions-retry" />
               </View>
-            ) : !canManageChalans ? (
-              <Text style={[type.caption, { marginTop: spacing.sm }]}>Your role has read-only access to Chalans.</Text>
+            ) : !canManageChalans && !canCreateChalans ? (
+              <Text style={[type.caption, { marginTop: spacing.sm }]}>Your account has read-only access to Chalans.</Text>
             ) : !hasRemainingChalanQty ? (
               <Text style={[type.caption, { marginTop: spacing.sm }]}>All ordered quantities are covered by persisted Chalans.</Text>
             ) : null}

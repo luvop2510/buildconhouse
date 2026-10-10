@@ -71,7 +71,7 @@ export default function CompletedPurchases() {
     } catch (cause: any) { toast.error(cause?.detail || "Could not load more products"); }
     finally { if (activeFloor.current === selectedFloorId && selectedCustomer.current === selectedId) setLoadingWorkspace(false); }
   };
-  const exportRows = () => void downloadSectionExcel({
+  const exportRows = () => void downloadSectionExcel({ resource: "purchases",
     page: "Purchases", section: "Completed customers", filename: "purchases-completed-customers.xlsx",
     rows: [["Customer", "Delivered products", "Delivered quantity", "Last delivered"], ...customers.map((customer) => [customer.name, customer.count, customer.quantity, customer.completed_at || ""])],
   }).catch((cause: unknown) => toast.error(cause instanceof Error ? cause.message : "Could not export completed customers"));

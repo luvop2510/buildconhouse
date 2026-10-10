@@ -4,13 +4,14 @@ import { api, csrfHeaders, getToken } from "@/src/api/client";
 
 /** Export explicit rows for one business section; no DOM scraping or page-wide dump. */
 export async function downloadSectionExcel({
-  page, section, rows, filename, floorId,
+  page, section, rows, filename, floorId, resource,
 }: {
   page: string;
   section: string;
   rows: (string | number | null | undefined)[][];
   filename: string;
   floorId?: string | null;
+  resource: string;
 }): Promise<void> {
   if (rows.length < 2) throw new Error("There are no rows to export.");
   const token = await getToken();
@@ -23,7 +24,7 @@ export async function downloadSectionExcel({
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(floorId ? { "X-Floor-Id": floorId } : {}),
     },
-    body: JSON.stringify({ page: page.slice(0, 80), sections: [{ name: section.slice(0, 80), rows: rows.map(row => row.map(cell => String(cell ?? ""))) }] }),
+    body: JSON.stringify({ page: page.slice(0, 80), resource, sections: [{ name: section.slice(0, 80), rows: rows.map(row => row.map(cell => String(cell ?? ""))) }] }),
   });
   if (!response.ok) {
     const detail = await response.json().then(body => body?.detail).catch(() => null);

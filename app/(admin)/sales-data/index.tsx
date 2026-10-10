@@ -28,6 +28,7 @@ import { useBp } from "@/src/design/responsive";
 import { fmtMoney, fmtMoneyCompact } from "@/src/design/tokens";
 import { getSelectedFloorId, useFloorAccess } from "@/src/hooks/use-floor-access";
 import { useAuth } from "@/src/state/auth";
+import { useActionAccess } from "@/src/hooks/use-permissions";
 import { colors, layout, spacing, type } from "@/src/theme/tokens";
 import { downloadApiFile } from "@/src/utils/downloadFile";
 import { downloadSectionExcel } from "@/src/utils/sectionExcel";
@@ -83,6 +84,7 @@ const EMPTY_SECTIONS: Sections = {
 /** Owner summary using canonical server totals and independently loaded breakdowns. */
 export default function SalesDataIndex() {
   const { staff } = useAuth();
+  const canViewSales = useActionAccess("sales_data", "view", !!staff && ANALYTICS_ROLES.includes(staff.role));
   const { floors } = useFloorAccess();
   const cellMoney = useCellMoney();
   const { isPhone, isTabletPortrait } = useBp();
@@ -257,7 +259,7 @@ export default function SalesDataIndex() {
 
   // The role check is a plain `if` AFTER every hook call — an early return
   // before a hook would change this component's hook count between renders.
-  if (staff && !ANALYTICS_ROLES.includes(staff.role)) {
+  if (staff && !canViewSales) {
     return <Redirect href="/(admin)/dashboard" />;
   }
 
@@ -276,7 +278,7 @@ export default function SalesDataIndex() {
 
   const exportFloorRevenue = () => {
     if (!visibleFloorRevenue.length) return;
-    void downloadSectionExcel({
+    void downloadSectionExcel({ resource: "sales_data",
       page: "Sales Data", section: "Revenue by Business Unit", filename: "sales-business-units.xlsx",
       floorId: floorId === "all" ? undefined : floorId,
       rows: [["Business unit", "Revenue", "Orders"], ...visibleFloorRevenue.map(row => [floorName(row.floor_id), row.revenue, row.orders])],

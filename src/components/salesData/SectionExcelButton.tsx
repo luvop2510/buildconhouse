@@ -12,5 +12,5 @@ export function SectionExcelButton({ testID, page, section, filename, rows, floo
   floorId?: string | null;
 }) {
   if (rows.length < 2) return null;
-  return <Button testID={testID} label="Export Excel" icon="download" variant="secondary" onPress={() => void downloadSectionExcel({ page, section, filename, rows, floorId }).catch((error: unknown) => toast.show(error instanceof Error ? error.message : `Could not export ${section.toLowerCase()}`))} />;
+  return <Button testID={testID} label="Export Excel" icon="download" variant="secondary" onPress={() => void downloadSectionExcel({ resource: "sales_data", page, section, filename, rows, floorId }).catch((error: unknown) => toast.show(error instanceof Error ? error.message : `Could not export ${section.toLowerCase()}`))} />;
 }

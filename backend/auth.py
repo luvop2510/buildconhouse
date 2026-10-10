@@ -14,7 +14,7 @@ from db import db
 from models import Role, UserPublic, CustomerPublic
 from settings import settings
 from access_profiles import profile_allows_request
-from services.access_grants import action_for_api_request, granted_floor_ids, grants_for_user, is_common_access_request
+from services.access_grants import action_for_api_request, granted_floor_ids, grants_for_user, is_common_access_request, request_resource
 
 JWT_SECRET = settings.jwt_secret
 JWT_ALG = settings.jwt_algorithm
@@ -188,7 +188,10 @@ async def authorize_staff_request(user: UserPublic, request: Request | None) -> 
         else:
             grants = await grants_for_user(db, user.id)
             request.state.staff_access_grants = (user.id, grants)
-        floors = granted_floor_ids(grants, user_id=user.id, path=path, action=action) if action else []
+        resource = await request_resource(db, path, request.query_params)
+        if resource in {"notebook_walkins", "notebook_quotations"} and (path.count("/") > 4 or path.endswith("/contact")):
+            object.__setattr__(user, "_custom_notebook_converted", resource == "notebook_quotations")
+        floors = granted_floor_ids(grants, user_id=user.id, path=path, action=action, resource=resource) if action else []
         object.__setattr__(user, "_custom_grant_floor_ids", floors)
         permitted = accessible_floor_ids(user)
         if permitted == [] or (user.active_floor_id and permitted is not None and user.active_floor_id not in permitted):
@@ -426,7 +429,7 @@ def require_min_role(min_role: Role):
 
 
 def has_all_floor_access(user: UserPublic) -> bool:
-    return user.role in {"owner", "manager"}
+    return not getattr(user, "custom_access", False) and user.role in {"owner", "manager"}
 
 
 PROFILE_FLOOR_IDS: dict[str, tuple[str, ...]] = {

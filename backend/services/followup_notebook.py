@@ -209,6 +209,9 @@ def notebook_query(user: Any, floor_id: str, extra: dict[str, Any] | None = None
     base = {"floor_id": floor_id, "notebook_key": {"$type": "string"}}
     if extra:
         base.update(extra)
+    converted = getattr(user, "_custom_notebook_converted", None)
+    if converted is not None:
+        base["is_converted"] = converted
     return base
 
 
@@ -319,7 +322,9 @@ async def convert_notebook_row(
         raise NotebookConflictError(
             serialize_notebook_row(changed or current), changed_fields=[*patch.keys(), "is_converted"],
         )
-    updated = await db.followups.find_one(query, {"_id": 0})
+    # This response is the caller's own successful conversion; the source
+    # page's request constraint must not hide the state it just produced.
+    updated = await db.followups.find_one({**query, "is_converted": True}, {"_id": 0})
     return serialize_notebook_row(updated)
 
 

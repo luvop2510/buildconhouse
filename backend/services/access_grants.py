@@ -10,7 +10,7 @@ from re import fullmatch
 # Resource names are stable API/UI concepts, not URL prefixes.  Keeping this
 # registry explicit prevents a typo in stored Mongo data from becoming an
 # unexpected authorization bypass.
-RESOURCE_REGISTRY: dict[str, dict[str, str]] = {
+RESOURCE_REGISTRY: dict[str, dict[str, Any]] = {
     "dashboard": {"label": "Dashboard"},
     "quotations": {"label": "Quotations"},
     "tiles": {"label": "Tile quotations"},
@@ -24,6 +24,30 @@ RESOURCE_REGISTRY: dict[str, dict[str, str]] = {
     "walkins": {"label": "Walk-ins"},
     "reports": {"label": "Reports"},
     "notifications": {"label": "Notifications"},
+    "notebook_walkins": {"label": "Walk-in notebook", "floor_ids": ["second-floor", "third-floor"], "actions": ["view", "create", "update"], "description": "Add walk-ins, record contact attempts, and move leads to quotation follow-up."},
+    "notebook_quotations": {"label": "Quotation Follow-up", "floor_ids": ["second-floor", "third-floor"], "actions": ["view", "update"], "description": "Review converted leads, update quotation values, contact customers, and record outcomes."},
+    "furniture_quotations": {"label": "RMB quotations", "floor_ids": ["third-floor"], "actions": ["view", "create", "update", "export"], "description": "Prepare RMB quotations, edit items and terms, download PDFs, and send configured WhatsApp exports."},
+    "sales_data": {"label": "Sales Data", "actions": ["view", "export"], "description": "Review floor sales, customer and brand totals, and export reports."},
+}
+
+RESOURCE_REGISTRY["dashboard"].update(actions=["view"], description="View today's floor summary and activity.")
+RESOURCE_REGISTRY["quotations"].update(floor_ids=["first-floor"], description="Create and manage Sanitary quotations, confirm orders, and export documents.")
+RESOURCE_REGISTRY["tiles"].update(floor_ids=["ground-floor"], description="Create tile selections and quotations, confirm orders, and export documents.")
+RESOURCE_REGISTRY["orders"].update(floor_ids=["ground-floor"], description="Manage tile purchase orders, dispatches, and delivery stages.")
+RESOURCE_REGISTRY["godown_stock"].update(floor_ids=["first-floor"], description="Manage godown stock and customer transfers.")
+RESOURCE_REGISTRY["payments"].update(description="Manage payments and the Fully paid orders page.")
+RESOURCE_REGISTRY["notifications"].update(actions=["view"], description="View your notifications for the selected floor.")
+RESOURCE_REGISTRY["reports"].update(actions=["view", "export"])
+RESOURCE_REGISTRY["followups"].update(floor_ids=["ground-floor", "first-floor"], description="Manage the floor follow-up inbox. Kitchen and Furniture use their separate notebook pages.")
+for _resource in ("catalog", "purchases", "godown_stock", "payments", "orders", "walkins"):
+    RESOURCE_REGISTRY[_resource]["actions"] = ["view", "create", "update", "export"]
+
+ACTION_DESCRIPTIONS = {
+    "view": "Open the page and read its records.",
+    "create": "Add new records on this page.",
+    "update": "Edit records and perform workflow actions such as moving, confirming, or completing them.",
+    "delete": "Remove records where the page supports deletion.",
+    "export": "Download documents or spreadsheets and use supported document sharing actions.",
 }
 
 ACTIONS = frozenset({"view", "create", "update", "delete", "export"})
@@ -67,6 +91,11 @@ MFA_ACCOUNT_REQUESTS = frozenset({
 # unrelated child creation routes and future endpoints from inheriting an
 # action merely because their name contains "move", "cancel", or "confirm".
 POST_UPDATE_ROUTE_PATTERNS = (
+    r"/api/followups/notebook/[^/]+/[^/]+/(?:convert|outcome)",
+    r"/api/followups/[^/]+/(?:contact|snooze|complete|log-call)",
+    r"/api/walkins/[^/]+/contact",
+    r"/api/customers/[^/]+/(?:send-invite|reset-password)",
+    r"/api/godown-stock/[^/]+/allocate",
     r"/api/quotations/[^/]+/items/[^/]+/cancel",
     r"/api/quotations/[^/]+/move-to-quotation",
     r"/api/quotations/[^/]+/place-order/confirm",
@@ -108,18 +137,25 @@ def action_for_api_request(method: str, path: str, query=None) -> str | None:
     return action_for_http_method(method)
 
 
-def granted_floor_ids(grants, *, user_id: str, path: str, action: str) -> list[str] | None:
+def granted_floor_ids(grants, *, user_id: str, path: str, action: str, resource: str | None = None) -> list[str] | None:
     """Floors authorized for this operation; None represents an explicit global grant."""
     floors = []
     for grant in grants:
         floor = grant.get("floor_id")
         # Ground-floor tile grants cannot widen the shared quotations API to
         # another floor, including when the stored grant is organization-wide.
-        resources = resource_candidates_for_api_path(path, floor)
+        resources = (resource,) if resource else resource_candidates_for_api_path(path, floor)
         if grant.get("resource") == "tiles" and floor is None:
             floor = "ground-floor"
             resources = resource_candidates_for_api_path(path, floor)
         if any(grant_allows(grant, user_id=user_id, resource=resource, action=action, floor_id=floor) for resource in resources):
+            if grant.get("resource") == "followups":
+                supported = RESOURCE_REGISTRY["followups"]["floor_ids"]
+                if floor is None:
+                    floors.extend(supported)
+                    continue
+                if floor not in supported:
+                    continue
             if floor is None:
                 return None
             floors.append(floor)
@@ -139,7 +175,7 @@ def resource_for_api_path(path: str) -> str | None:
         ("/api/dashboard", "dashboard"),
         ("/api/payments", "payments"),
         ("/api/quotations", "quotations"),
-        ("/api/furniture-quotations", "quotations"),
+        ("/api/furniture-quotations", "furniture_quotations"),
         ("/api/whatsapp", "quotations"),
         ("/api/catalog", "catalog"), ("/api/products", "catalog"),
         ("/api/brands", "catalog"), ("/api/categories", "catalog"),
@@ -150,6 +186,8 @@ def resource_for_api_path(path: str) -> str | None:
         ("/api/notifications", "notifications"),
         ("/api/tile-orders", "orders"), ("/api/walkins", "walkins"),
         ("/api/reports", "reports"),
+        ("/api/analytics", "sales_data"), ("/api/executive-analytics", "sales_data"),
+        ("/api/sales-data", "sales_data"),
     ):
         if path == prefix or path.startswith(f"{prefix}/"):
             return resource
@@ -163,12 +201,71 @@ def resource_candidates_for_api_path(path: str, floor_id: str | None) -> tuple[s
     must never authorize a Sanitary quotation. The explicit floor header is
     what makes this compatibility mapping safe.
     """
+    if path == "/api/referrers" or path.startswith("/api/referrers/"):
+        return ("quotations", "tiles", "notebook_walkins", "notebook_quotations", "sales_data")
     resource = resource_for_api_path(path)
     if resource is None:
         return ()
     if resource == "quotations" and floor_id == "ground-floor":
         return ("quotations", "tiles")
     return (resource,)
+
+
+async def request_resource(database: Any, path: str, query: Any = None) -> str | None:
+    """Notebook sibling pages share URLs, so resolve rows from stored stage.
+
+    A forged view query on a row URL cannot turn a walk-in permission into
+    access to a converted quotation. Generic contact uses the same resolver.
+    """
+    notebook = fullmatch(r"/api/followups/notebook/([^/]+)(?:/([^/]+)(?:/[^/]+)?)?", path)
+    generic = fullmatch(r"/api/followups/([^/]+)(?:/(snooze|complete|contact|log-call))?", path)
+    if generic and generic.group(1) in {"reconcile", "stats", "mission", "insights", "export", "saved-views", "page", "assignments"}:
+        generic = None
+    if notebook and not notebook.group(2):
+        return "notebook_quotations" if query and query.get("view") == "quotation" else "notebook_walkins"
+    if notebook or generic:
+        lookup = {"id": notebook.group(2) if notebook else generic.group(1)}
+        if notebook:
+            lookup["floor_id"] = notebook.group(1)
+        row = await database.followups.find_one(lookup, {"_id": 0, "is_converted": 1, "notebook_key": 1})
+        if generic and row and row.get("notebook_key") and generic.group(2) != "contact":
+            # Generic detail returns related quotations/payments; a notebook
+            # grant covers only its narrow DTO and must use notebook URLs.
+            return "__notebook_route_required"
+        if notebook or row and row.get("notebook_key"):
+            return "notebook_quotations" if row and row.get("is_converted") else "notebook_walkins"
+    return None
+
+
+def resource_supports(resource: str, floor_id: str, actions: list[str]) -> bool:
+    metadata = RESOURCE_REGISTRY.get(resource)
+    return bool(metadata and (not metadata.get("floor_ids") or floor_id in metadata["floor_ids"])
+                and set(actions).issubset(metadata.get("actions", ACTIONS)))
+
+
+async def build_delegation_snapshot(database: Any, *, user_id: str, floor_ids: list[str], grants: list[dict], actor_id: str, actor_name: str | None) -> list[dict]:
+    """Validate the entire draft before its single-document atomic save."""
+    from fastapi import HTTPException
+    if len(floor_ids) != len(set(floor_ids)) or any(not floor or not isinstance(floor, str) for floor in floor_ids):
+        raise HTTPException(status_code=422, detail="Enabled floors must be distinct valid floor IDs")
+    for floor_id in floor_ids:
+        if not await database.floors.find_one({"id": floor_id, "active": {"$ne": False}}, {"_id": 0, "id": 1}):
+            raise HTTPException(status_code=422, detail="Enable only active floors")
+    seen = set()
+    snapshot = []
+    for grant in grants:
+        floor_id, resource = grant.get("floor_id"), grant.get("resource")
+        actions = normalized_actions(grant.get("actions"))
+        if floor_id not in floor_ids:
+            raise HTTPException(status_code=422, detail="Enable a floor before assigning its pages")
+        if actions is None or "view" not in actions or not resource_supports(resource, floor_id, actions):
+            raise HTTPException(status_code=422, detail="Select a supported page and its actions, including view")
+        if (floor_id, resource) in seen:
+            raise HTTPException(status_code=422, detail="Each floor page must be assigned only once")
+        seen.add((floor_id, resource))
+        snapshot.append(build_grant(user_id=user_id, resource=resource, actions=actions, floor_id=floor_id,
+                                    expires_at=None, actor_id=actor_id, actor_name=actor_name))
+    return snapshot
 
 
 def utc_now_iso() -> str:
@@ -295,5 +392,12 @@ async def ensure_access_grant_indexes(database: Any) -> None:
 
 async def grants_for_user(database: Any, user_id: str) -> list[dict[str, Any]]:
     """Return only structurally valid, unexpired grants; malformed rows deny."""
+    user = await database.users.find_one({"id": user_id}, {"_id": 0, "delegation_grants": 1, "floor_ids": 1})
+    if user is not None and "delegation_grants" in user:
+        rows = user["delegation_grants"]
+        if not isinstance(rows, list):
+            return []
+        return [row for row in rows if isinstance(row, dict) and grant_is_valid(row) and not is_expired(row.get("expires_at"))
+                and row.get("floor_id") in (user.get("floor_ids") or [])]
     rows = await database.access_grants.find({"user_id": user_id}, {"_id": 0}).to_list(500)
     return [row for row in rows if grant_is_valid(row) and not is_expired(row.get("expires_at"))]

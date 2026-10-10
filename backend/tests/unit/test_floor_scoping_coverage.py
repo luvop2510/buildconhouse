@@ -113,6 +113,12 @@ ALLOWLIST: dict[str, str] = {
         "belonging to a single business record; the target is admin-authorized and session "
         "revocation follows the deletion."
     ),
+    "replace_access_grants": (
+        "access_grants_routes.py atomically replaces a staff person's enabled floors and "
+        "page/action snapshot in db.users, not a floor-owned business record. The target "
+        "is admin-authorized, every enabled floor is validated against active db.floors, "
+        "every page belongs to an enabled supported floor, and sessions are revoked."
+    ),
 
     # --- Scoped indirectly: the handler delegates to a helper that floor-scopes the lookup ---
     "send_customer_invite": (

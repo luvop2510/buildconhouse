@@ -368,7 +368,7 @@ export default function PurchasesScreen() {
   const doExport = useCallback(async () => {
     try {
       if (view === "customers") {
-        await downloadSectionExcel({
+        await downloadSectionExcel({ resource: "purchases",
           page: "Purchases",
           section: "Customer workspaces",
           rows: [["Customer", "Company", "Tier", "Email", "Phone", "City"], ...customers.filter(customer => `${customer.name} ${customer.company || ""} ${customer.email || ""}`.toLowerCase().includes(q.trim().toLowerCase())).map(customer => [customer.name, customer.company, customer.tier, customer.email, customer.phone, customer.city])],

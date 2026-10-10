@@ -18,6 +18,7 @@ from services.invite_service import is_temp_password_expired
 from services.rate_limit import clear_login_attempts, reserve_login_attempt
 from services import mfa
 from services.password_policy import is_known_default_password
+from services.login_identity import normalize_login_id
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -51,10 +52,14 @@ async def _revoke_other_sessions(kind: str, user_id: str, authorization: Optiona
 @router.post("/login", response_model=TokenResponse)
 async def staff_login(body: LoginPayload, request: Request):
     ip = _client_ip(request)
-    await reserve_login_attempt(ip, body.email)
+    identifier = normalize_login_id(body.email)
+    await reserve_login_attempt(ip, identifier)
     if is_known_default_password(body.password):
         raise HTTPException(status_code=401, detail="Invalid email or password")
-    doc = await db.users.find_one({"email": body.email.lower()}, {"_id": 0})
+    # Email is already unique. Usernames are explicitly stored normalized and
+    # separately indexed; full names never become an implicit login alias.
+    query = {"email": identifier} if "@" in identifier else {"login_id_key": identifier}
+    doc = await db.users.find_one(query, {"_id": 0})
     if not doc or not verify_password(body.password, doc.get("password_hash", "")):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     if not doc.get("active", True):
@@ -66,7 +71,7 @@ async def staff_login(body: LoginPayload, request: Request):
         )
     if doc.get("mfa_enabled"):
         await mfa.consume_factor(doc, body.mfa_code, body.recovery_code)
-    await clear_login_attempts(ip, body.email)
+    await clear_login_attempts(ip, identifier)
     sid = await create_session("staff", doc["id"], request, login_method="password+mfa" if doc.get("mfa_enabled") else "password")
     if doc.get("mfa_enabled"):
         await db.user_sessions.update_one({"id": sid}, {"$set": {"mfa_verified": True, "mfa_version": doc.get("mfa_version", 0)}})

@@ -47,17 +47,21 @@ export const PROFILE_MODULES: Record<AccessProfile, Set<string>> = {
   sanitary_purchases: new Set(["purchases"]),
 };
 
-export function staffLandingPath(profile?: AccessProfile | null, grants?: PersonalGrant[]): string {
-  const permitted = grants?.find((grant) => grant.actions.includes("view"));
+export function staffLandingPath(profile?: AccessProfile | null, grants?: PersonalGrant[], floorId?: string): string {
+  const permitted = grants?.find((grant) => grant.actions.includes("view") && (!floorId || !grant.floor_id || grant.floor_id === floorId));
   if (permitted) {
     const routeByResource: Record<string, string> = {
       payments: "/(admin)/payments", quotations: "/(admin)/quotations", catalog: "/(admin)/catalog",
       customers: "/(admin)/customers", purchases: "/(admin)/purchases", followups: "/(admin)/followups",
       orders: "/(admin)/tiles/orders", walkins: "/(admin)/walkins", dashboard: "/(admin)/dashboard",
       notifications: "/(admin)/notifications", tiles: "/(admin)/tiles", godown_stock: "/(admin)/godown-stock",
+      furniture_quotations: "/(admin)/notebook/furniture-quotations", sales_data: "/(admin)/sales-data",
+      notebook_walkins: (floorId || permitted.floor_id) === "third-floor" ? "/(admin)/notebook/furniture" : "/(admin)/notebook/kitchen",
+      notebook_quotations: (floorId || permitted.floor_id) === "third-floor" ? "/(admin)/notebook/furniture/quotation-follow-up" : "/(admin)/notebook/kitchen/quotation-follow-up",
     };
     if (routeByResource[permitted.resource]) return routeByResource[permitted.resource];
   }
+  if (grants !== undefined) return "/(admin)/access";
   switch (profile) {
     case "ground_tile_quotations_followups": return "/(admin)/tiles";
     case "ground_payments_dispatches": return "/(admin)/payments";

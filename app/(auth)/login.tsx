@@ -35,7 +35,7 @@ export default function Login() {
 
   const submit = async () => {
     if (busy) return;
-    if (!email.trim() || !password) { setError("Enter your email and password."); return; }
+    if (!email.trim() || !password) { setError(mode === "staff" ? "Enter your email or username and password." : "Enter your email and password."); return; }
     Keyboard.dismiss();
     setBusy(true); setError(null);
     try {
@@ -52,7 +52,7 @@ export default function Login() {
       // stuck on /login with a valid session already in memory.
     } catch (e: any) {
       if (e?.detail === "mfa_required" || e?.message === "mfa_required") { setMfaRequired(true); setBusy(false); return; }
-      setError(e?.message === "Invalid credentials" ? "That email and password don't match." : e?.message || "Sign-in failed. Try again.");
+      setError(e?.message === "Invalid credentials" ? "Those sign-in details don't match." : e?.message || "Sign-in failed. Try again.");
       setBusy(false);
     }
   };
@@ -73,16 +73,16 @@ export default function Login() {
         onChange={(option) => { setMode(option); setError(null); setPassword(""); setMfaRequired(false); setFactor(""); }} disabled={busy} fullWidth testID="login-mode" />
 
       <View style={{ gap: compactPhone ? space.x3 : space.x4 }}>
-        <Field label="Email">
+        <Field label={mode === "staff" ? "Email or username" : "Email"}>
           <Input
             testID="login-email"
             value={email}
             onChangeText={(v) => { setEmail(v); setError(null); setMfaRequired(false); setFactor(""); }}
-            placeholder="you@company.com"
-            keyboardType="email-address"
+            placeholder={mode === "staff" ? "Email or username" : "you@company.com"}
+            keyboardType={mode === "staff" ? "default" : "email-address"}
             autoCapitalize="none"
             autoCorrect={false}
-            autoComplete="email"
+            autoComplete={mode === "staff" ? "username" : "email"}
             returnKeyType="next"
             editable={!busy}
           />
