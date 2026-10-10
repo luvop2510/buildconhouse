@@ -1703,7 +1703,10 @@ function MobileTilesEditor({
   const { isPhone } = useBp();
   // The sidebar can consume tablet space. Reflow the usable editor rather
   // than stretching phone images and stacking every field at tablet widths.
-  const fieldColumns = workspaceWidth >= 720 ? 3 : workspaceWidth >= 540 ? 2 : 1;
+  // A 768px tablet with its expanded 240px sidebar leaves a 528px
+  // workspace. Two columns still fit there; treating it as a one-column
+  // phone layout inflated the product photo and hid editable fields.
+  const fieldColumns = workspaceWidth >= 720 ? 3 : workspaceWidth >= 480 ? 2 : 1;
   const insets = useSafeAreaInsets();
   const [pickerRow, setPickerRow] = useState<string | null>(null);
   const [footerHeight, setFooterHeight] = useState(176 + insets.bottom);

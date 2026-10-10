@@ -84,6 +84,13 @@ async def reset_customer_data(database, client, *, request_id: str) -> dict:
                 {"entity_type": {"$in": list(CUSTOMER_ENTITY_TYPES)}},
                 {"purchase_id": {"$in": purchase_ids}}]},
             "notifications": {"$or": [{"link": {"$regex": CUSTOMER_LINK}},
+                {"$and": [
+                    {"link": {"$regex": r"^/(?:\(admin\)/)?godown-stock(?:[/?]|$)"}},
+                    # These two sources only emit customer transaction notices.
+                    # A company/alias or already-deleted contact can differ
+                    # from the current customer.name used by legacy notices.
+                    {"title": {"$in": ["Godown stock added", "Godown stock allocated"]}},
+                ]},
                 *([{"$and": [
                     {"link": {"$regex": r"^/(?:\(admin\)/)?godown-stock(?:[/?]|$)"}},
                     {"$or": [{field: {"$regex": name_pattern}} for field in ("title", "body")]},

@@ -176,6 +176,19 @@ def test_stock_keeps_product_image_and_quantities_without_customer_snapshots(mon
         'available_qty': 7, 'allocations': [{'qty': 3}]}]
 
 
+def test_reset_removes_historical_stock_customer_notices_but_keeps_stock_alerts(monkeypatch):
+    monkeypatch.setenv('FORGE_CUSTOMER_RESET_MAINTENANCE', 'true')
+    db = Database()
+    db.notifications.rows.extend([
+        {'id': 'old-company-snapshot', 'title': 'Godown stock added',
+         'link': '/(admin)/godown-stock', 'body': '1 product from Old Company is available to reuse.'},
+        {'id': 'stock-alert', 'title': 'Stock low', 'link': '/godown-stock',
+         'body': 'Product stock needs replenishment.'},
+    ])
+    apply(db)
+    assert {row['id'] for row in db.notifications.rows} == {'catalog-notification', 'stock-alert'}
+
+
 def test_receipt_prevents_replay_from_deleting_new_customers(monkeypatch):
     monkeypatch.setenv('FORGE_CUSTOMER_RESET_MAINTENANCE', 'true')
     db = Database()
