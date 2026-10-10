@@ -2,6 +2,7 @@ import { Stack, useRootNavigationState, useRouter, useSegments } from "expo-rout
 import { useEffect } from "react";
 import { View } from "react-native";
 
+import { InitialAccountRouteProvider } from "@/src/state/initial-account-route";
 import { AuthProvider, useAuth } from "@/src/state/auth";
 import { staffLandingPath } from "@/src/access-profiles";
 import { colors } from "@/src/theme/tokens";
@@ -63,12 +64,14 @@ export default function RootLayout() {
   if (!loaded && !error) return null;
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
-      <AuthProvider>
-        <AuthGate>
-          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }} />
-        </AuthGate>
-        <ToastHost />
-      </AuthProvider>
+      <InitialAccountRouteProvider>
+        <AuthProvider>
+          <AuthGate>
+            <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }} />
+          </AuthGate>
+          <ToastHost />
+        </AuthProvider>
+      </InitialAccountRouteProvider>
     </View>
   );
 }

@@ -74,6 +74,17 @@ test('critical team delegation: multiple floors, pages and actions save in one c
   ]);
 });
 
+test('critical team delegation: a new account starts with every floor off and saves explicit no access', async ({ page }) => {
+  const { writes } = await teamFixture(page);
+  await fillNewMember(page);
+  for (const floor of floors) await expect(switchFor(page, `floor-toggle-${floor.id}`)).not.toBeChecked();
+  await expect(page.getByTestId('delegation-summary')).toHaveText('0 floors · 0 pages enabled');
+  await page.getByTestId('add-staff-save').click();
+  await expect(page.getByTestId('add-staff-sheet')).toHaveCount(0);
+  expect(writes).toHaveLength(1);
+  expect(writes[0].body).toMatchObject({ custom_access: true, access_profile: null, floor_ids: [], access_grants: [] });
+});
+
 test('critical team delegation: disabling a floor clears its pages and starts blank when reenabled', async ({ page }) => {
   const { writes } = await teamFixture(page);
   await fillNewMember(page);
@@ -140,13 +151,17 @@ test('critical team delegation: removing the final page saves explicit no access
   expect(writes[0].body).toMatchObject({ custom_access: true, access_grants: [], floor_ids: ['ground-floor', 'first-floor'] });
 });
 
-async function personalSession(page: Page, grants: unknown[]) {
-  await mockSession(page, '/access');
-  await page.route('**/api/auth/me', route => route.fulfill({ json: { ...member, floor_ids: ['first-floor', 'ground-floor'] } }));
-  await page.route('**/api/settings/access-grants/me', route => route.fulfill({ json: { grants } }));
-  await page.route('**/api/settings/floor-access', route => route.fulfill({ json: { all_floors: false, floors: floors.slice(0, 2), floor_ids: ['first-floor', 'ground-floor'] } }));
-  await page.goto('/access');
-  await expect(page.getByTestId('floor-switcher').filter({ visible: true }).first()).toBeVisible();
+async function personalSession(page: Page, grants: unknown[], path = '/access', beforeNavigate?: () => Promise<void>, floorIds = ['first-floor', 'ground-floor']) {
+  const person = { ...member, floor_ids: floorIds };
+  await mockSession(page, path, true, {
+    staff: person, grants,
+    floorAccess: { all_floors: false, floors: floors.filter(floor => floorIds.includes(floor.id)), floor_ids: person.floor_ids },
+  });
+  if (beforeNavigate) await beforeNavigate();
+  const identity = page.waitForResponse(response => new URL(response.url()).pathname === '/api/auth/me');
+  await page.goto(path);
+  expect(await (await identity).json()).toMatchObject({ id: member.id, team_role: member.team_role, custom_access: true });
+  if (floorIds.length > 1) await expect(page.getByTestId('floor-switcher').filter({ visible: true }).first()).toBeVisible();
 }
 
 test('critical team delegation: floor switching lands on an allowed page and blank floors show no page access', async ({ page }) => {
@@ -181,10 +196,11 @@ test('critical team delegation: malformed older catalog blocks editing and savin
 });
 
 test('critical team delegation: custom Settings preserves account controls and hides management links', async ({ page }) => {
-  await personalSession(page, []);
   let sessionReads = 0;
-  await page.route('**/api/auth/sessions', route => { sessionReads++; return route.fulfill({ json: [] }); });
-  await page.goto('/settings');
+  await personalSession(page, [], '/settings', async () => {
+    await page.route('**/api/auth/sessions', route => { sessionReads++; return route.fulfill({ json: [] }); });
+  });
+  await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByText('Ground Floor Sales', { exact: true })).toBeVisible();
   for (const id of ['password', 'mfa', 'privacy', 'terms']) await expect(page.getByTestId(`settings-nav-${id}`)).toBeVisible();
   await expect(page.getByTestId('logout-all-devices')).toBeVisible();
@@ -195,4 +211,61 @@ test('critical team delegation: custom Settings preserves account controls and h
   await page.getByTestId('settings-nav-password').click();
   await expect(page).toHaveURL(/\/settings-password$/);
   await expect(page.getByRole('heading', { name: 'Change password', exact: true })).toBeVisible();
+});
+
+
+test('critical team delegation: account password deep link survives hydration and root still lands on no access', async ({ page }) => {
+  await personalSession(page, [], '/settings-password');
+  await expect(page).toHaveURL(/\/settings-password$/);
+  await expect(page.getByRole('heading', { name: 'Change password', exact: true })).toBeVisible();
+  await expect(page.getByTestId('current-password-input')).toBeVisible();
+  await expect(page.getByTestId('no-page-access')).toHaveCount(0);
+  await page.reload();
+  await expect(page).toHaveURL(/\/settings-password$/);
+  await expect(page.getByTestId('current-password-input')).toBeVisible();
+  await page.goto('/');
+  await expect(page).toHaveURL(/\/access$/);
+  await expect(page.getByTestId('no-page-access')).toBeVisible();
+});
+
+
+test('critical team delegation: no assigned floors keeps personal security pages usable and blocks business pages', async ({ page }) => {
+  let businessReads = 0;
+  await personalSession(page, [], '/settings', async () => {
+    await page.route('**/api/auth/sessions', route => route.fulfill({ json: [] }));
+    await page.route('**/api/products**', route => { businessReads++; return route.fulfill({ json: [] }); });
+    await page.route('**/api/settings/company', route => { businessReads++; return route.fulfill({ json: {} }); });
+  }, []);
+  await expect(page).toHaveURL(/\/settings$/);
+  await expect(page.getByText('Ground Floor Sales', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('settings-nav-password')).toBeVisible();
+  await expect(page.getByTestId('settings-nav-mfa')).toBeVisible();
+  await expect(page.getByTestId('logout-all-devices')).toBeVisible();
+  await expect(page.getByTestId('floor-access-empty')).toHaveCount(0);
+  await page.getByTestId('settings-nav-password').click();
+  await expect(page.getByTestId('current-password-input')).toBeVisible();
+  await expect(page).toHaveURL(/\/settings-password$/);
+  await page.reload();
+  await expect(page.getByTestId('current-password-input')).toBeVisible();
+  await expect(page).toHaveURL(/\/settings-password$/);
+  await page.goto('/settings-mfa');
+  await expect(page.getByRole('heading', { name: 'Authenticator MFA', exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/settings-mfa$/);
+  for (const path of ['/catalog', '/settings-company']) {
+    await page.goto(path);
+    await expect(page.getByTestId('floor-access-empty')).toBeVisible();
+    await expect(page.getByTestId('current-password-input')).toHaveCount(0);
+  }
+  expect(businessReads).toBe(0);
+});
+
+test('critical team delegation: a no-floor personal deep link still requires changing a temporary password', async ({ page }) => {
+  await mockSession(page, '/settings', false, {
+    staff: { ...member, floor_ids: [], must_change_password: true }, grants: [],
+    floorAccess: { all_floors: false, floors: [], floor_ids: [] },
+  });
+  await page.goto('/settings');
+  await expect(page).toHaveURL(/\/set-new-password$/);
+  await expect(page.getByTestId('force-change-current')).toBeVisible();
+  await expect(page.getByTestId('settings-nav-password')).toHaveCount(0);
 });

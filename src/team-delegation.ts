@@ -57,8 +57,25 @@ export function hasGrantAccess(grants: { resource: string; actions: string[]; fl
   return Boolean(grants?.some((grant) => grant.resource === resource && (!grant.floor_id || grant.floor_id === floorId) && grant.actions.includes(action)));
 }
 
+/** A layout group alone is not the destination page during router hydration. */
+export function hasRouteDestination(segments: string[]): boolean {
+  return segments.some((part) => !part.startsWith("("));
+}
+
+/** Only these exact account screens can work without a business floor. */
+export function isPersonalAccountRoute(segments: string[]): boolean {
+  const pages = segments.filter((part) => !part.startsWith("("));
+  return pages.length === 1 && ["access", "settings", "settings-password", "settings-mfa", "settings-privacy", "settings-terms"].includes(pages[0]);
+}
+
+export function personalAccountPath(pathname: string | undefined): string | null {
+  if (!pathname) return null;
+  const segments = pathname.split("/").filter(Boolean);
+  return isPersonalAccountRoute(segments) ? `/${segments.filter((part) => !part.startsWith("("))[0]}` : null;
+}
+
 export function moduleForRoute(segments: string[]): string | null {
-  if (segments.includes("access") || segments.some((part) => ["settings", "settings-password", "settings-mfa", "settings-privacy", "settings-terms"].includes(part))) return null;
+  if (isPersonalAccountRoute(segments)) return null;
   if (segments.includes("notebook")) {
     if (segments.includes("furniture-quotations")) return "furniture-quotations";
     if (segments.includes("quotation-follow-up") || segments.includes("quotation")) return "quotation-follow-up";

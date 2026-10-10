@@ -120,7 +120,7 @@ for (const name of ['Privacy', 'Terms']) {
     await page.route('**/api/**', route => route.fulfill({ status: 401, json: { detail: 'Fixture signed out' } }));
     await page.goto('/login');
     await page.getByTestId('login-submit').click();
-    await expect(page.getByRole('alert')).toContainText('Enter your email and password');
+    await expect(page.getByRole('alert')).toHaveText('Enter your email or username and password.');
     await expect(page.getByLabel('Password', { exact: true })).toHaveAttribute('aria-invalid', 'true');
     const link = page.getByRole('link', { name, exact: true });
     await targetSize(link);

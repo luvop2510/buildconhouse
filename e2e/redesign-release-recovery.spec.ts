@@ -12,11 +12,11 @@ test('critical failed startup asset reloads once and reaches usable login', asyn
       : route.continue();
   });
   await page.goto('/', { waitUntil: 'commit' });
-  await expect(page.getByRole('textbox', { name: 'Email', exact: true })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole('textbox', { name: 'Email or username', exact: true })).toBeVisible({ timeout: 15000 });
   await expect.poll(() => navigations).toBe(2);
   await expect(page.getByRole('button', { name: 'Reload app', exact: true })).toHaveCount(0);
   await page.getByTestId('login-submit').click();
-  await expect(page.getByRole('alert')).toContainText('Enter your email and password');
+  await expect(page.getByRole('alert')).toHaveText('Enter your email or username and password.');
 });
 
 test('critical repeated startup asset failure stops retrying and exposes a visible reload action', async ({ page }) => {

@@ -24,9 +24,15 @@ for(const path of routes){
 }
 test('login validation and accessible input labels',async({page},info)=>{
  await page.goto('/login');
+ await expect(page.getByRole('textbox',{name:'Email or username',exact:true})).toBeVisible();
+ await page.getByTestId('login-submit').click();
+ await expect(page.getByRole('alert')).toHaveText('Enter your email or username and password.');
+ await page.getByTestId('login-mode-customer').click();
  await expect(page.getByRole('textbox',{name:'Email',exact:true})).toBeVisible();
  await page.getByTestId('login-submit').click();
- await expect(page.getByRole('alert')).toContainText('Enter your email and password');
+ await expect(page.getByRole('alert')).toHaveText('Enter your email and password.');
+ await page.getByTestId('login-mode-staff').click();
+ await expect(page.getByRole('textbox',{name:'Email or username',exact:true})).toBeVisible();
  await page.screenshot({path:info.outputPath('login.png'),fullPage:true});
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
 });

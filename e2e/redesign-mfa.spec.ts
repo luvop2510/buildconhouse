@@ -13,7 +13,7 @@ test.beforeEach(async ({ page }) => {
 
 for (const recovery of [false, true]) {
   test(`critical login requires ${recovery ? 'recovery' : 'authenticator'} proof before entering workspace`, async ({ page }) => {
-    await mockSession(page, '/login', false);
+    await mockSession(page, '/login', false, { signedIn: false });
     await page.route('**/api/auth/me', route => route.fulfill({ status: 401, json: { detail: 'Not signed in' } }));
     const requests: Record<string, string>[] = [];
     await page.route('**/api/auth/login', route => {
@@ -22,9 +22,12 @@ for (const recovery of [false, true]) {
       return route.fulfill({ json: { access_token: '', user: { id: 'mfa-owner', email: 'owner@example.test', full_name: 'MFA Owner', role: 'owner', active: true, mfa_enabled: true, floor_ids: floors.map(f => f.id) } } });
     });
     await page.goto('/login');
+    await expect(page.getByRole('textbox', { name: 'Email or username', exact: true })).toBeVisible();
     await page.getByTestId('login-email').fill('owner@example.test');
     await page.getByTestId('login-password').fill('fixture-only-password');
     await page.getByTestId('login-submit').click();
+    await expect.poll(() => requests.length).toBe(1);
+    expect(requests[0]).toMatchObject({ email: 'owner@example.test', password: 'fixture-only-password' });
     await expect(page.getByTestId('login-mfa-code')).toBeVisible();
     await expect(page).toHaveURL(/\/login$/);
     if (recovery) await page.getByTestId('login-mfa-recovery').click();

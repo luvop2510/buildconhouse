@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { toggleFloor, togglePage, toggleAction, loadDelegation, hasGrantAccess, moduleForRoute } from '../src/team-delegation.ts';
+import { toggleFloor, togglePage, toggleAction, loadDelegation, hasGrantAccess, moduleForRoute, hasRouteDestination, isPersonalAccountRoute, personalAccountPath } from '../src/team-delegation.ts';
 import { staffLandingPath } from '../src/access-profiles.ts';
 
 const floors = ['ground-floor', 'first-floor', 'second-floor', 'third-floor'];
@@ -65,4 +65,21 @@ assert.equal(moduleForRoute(['(admin)', 'tiles', 'orders']), 'orders');
 assert.equal(moduleForRoute(['(admin)', 'team']), 'restricted');
 assert.equal(moduleForRoute(['(admin)', 'settings-company']), 'restricted');
 assert.equal(moduleForRoute(['(admin)', 'settings-password']), null);
+assert.equal(hasRouteDestination([]), false);
+assert.equal(hasRouteDestination(['(admin)']), false);
+assert.equal(hasRouteDestination(['(admin)', 'settings']), true);
+assert.equal(hasRouteDestination(['(admin)', 'unknown-page']), true, 'unknown resolved routes must reach the denial check');
+for (const page of ['settings', 'settings-password', 'settings-mfa', 'settings-privacy', 'settings-terms', 'access']) {
+  assert.equal(isPersonalAccountRoute(['(admin)', page]), true);
+  assert.equal(moduleForRoute(['(admin)', page]), null);
+}
+for (const segments of [[], ['(admin)'], ['(admin)', 'catalog'], ['(admin)', 'settings-company'], ['(admin)', 'catalog', 'settings'], ['(admin)', 'unknown-page']]) {
+  assert.equal(isPersonalAccountRoute(segments), false);
+}
+assert.equal(moduleForRoute(['(admin)', 'catalog', 'settings']), 'catalog');
+assert.equal(moduleForRoute(['(admin)', 'unknown-page']), 'restricted');
+assert.equal(personalAccountPath('/settings'), '/settings');
+assert.equal(personalAccountPath('/settings-password/'), '/settings-password');
+assert.equal(personalAccountPath('/(admin)/settings-mfa'), '/settings-mfa');
+for (const path of [undefined, '/', '/catalog', '/settings-company', '/catalog/settings', '/unknown', '/settings/unknown']) assert.equal(personalAccountPath(path), null);
 console.log(`Team delegation: ${cases} floor revocation combinations plus page/action, scoped navigation and landing checks passed`);

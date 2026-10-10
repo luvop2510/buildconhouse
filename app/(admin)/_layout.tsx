@@ -20,10 +20,11 @@ import { useBp } from "@/src/design/responsive";
 import { color, font, layout, radius, space } from "@/src/design/tokens";
 import { NavigationLink } from "@/src/design/NavigationLink";
 import { BuildConLogo } from "@/src/design/BrandLogo";
+import { useInitialAccountRoute } from "@/src/state/initial-account-route";
 import { useAuth } from "@/src/state/auth";
 import { useModuleAccess, usePermissionMatrix } from "@/src/hooks/use-permissions";
 import { staffLandingPath } from "@/src/access-profiles";
-import { moduleForRoute } from "@/src/team-delegation";
+import { hasRouteDestination, isPersonalAccountRoute, moduleForRoute } from "@/src/team-delegation";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { AppScaffold } from "@/src/components/mobile/AppScaffold";
 import { storage } from "@/src/utils/storage";
@@ -401,8 +402,23 @@ function PhoneBarSkeleton() {
 // ── Layout root ─────────────────────────────────────────────────────────────
 function FloorAccessGate({ children }: { children: React.ReactNode }) {
   const { access, floors, selectedFloorId, loading, error, retry } = useFloorAccess();
-  const { logout } = useAuth();
+  const { staff, loading: authLoading, logout } = useAuth();
+  const segments = useSegments() as string[];
   const router = useRouter();
+
+  const initialAccount = useInitialAccountRoute();
+  const destinationReady = hasRouteDestination(segments);
+  const pendingAccount = !destinationReady && initialAccount.path;
+  useEffect(() => {
+    if (authLoading || !staff || !initialAccount.path) return;
+    if (destinationReady) initialAccount.finish();
+    else router.replace(`/(admin)${initialAccount.path}` as any);
+  }, [authLoading, staff, destinationReady, initialAccount, router]);
+
+  // Password, MFA and session management belong to the authenticated account,
+  // even when every business floor has been switched off. Business routes
+  // still require a concrete server-authorized floor below.
+  if (!authLoading && staff && (isPersonalAccountRoute(segments) || pendingAccount)) return <>{children}</>;
 
   // Never mount business screens before a concrete, server-authorized floor
   // is known. Besides making loading/error states explicit, this closes the
@@ -444,15 +460,19 @@ function CustomAccessRouteGate({ children }: { children: React.ReactNode }) {
   const segments = useSegments() as string[];
   const router = useRouter();
   const { selectedFloorId } = useFloorAccess();
+  const destinationReady = hasRouteDestination(segments);
   const module = moduleForRoute(segments);
 
   useEffect(() => {
+    // Expo can publish ['(admin)'] before a deep link's page segment. Do not
+    // turn that layout-only snapshot into a denial and lose the destination.
+    if (!destinationReady) return;
     if (staff?.custom_access && module && !hasAccess(module)) {
       router.replace(staffLandingPath(null, staff.access_grants || [], selectedFloorId) as any);
     }
-  }, [staff, module, hasAccess, router, selectedFloorId]);
+  }, [staff, module, destinationReady, hasAccess, router, selectedFloorId]);
 
-  if (staff?.custom_access && module && !hasAccess(module)) return null;
+  if (destinationReady && staff?.custom_access && module && !hasAccess(module)) return null;
   return <>{children}</>;
 }
 
