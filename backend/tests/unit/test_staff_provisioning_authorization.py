@@ -84,7 +84,7 @@ def test_team_create_rejects_an_unassigned_non_manager_before_writing(monkeypatc
             return None
 
     monkeypatch.setattr(misc_routes, "db", SimpleNamespace(users=Users()))
-    admin = UserPublic(email="admin@example.com", full_name="Admin", role="admin", floor_ids=["ground-floor"])
+    admin = UserPublic(email="owner@example.com", full_name="Owner", role="owner")
     body = TeamCreatePayload(
         email="new@example.com", full_name="New Staff", role="sales", password="sufficiently-long-password", floor_ids=[],
     )
@@ -109,6 +109,7 @@ def test_clearing_a_profile_preserves_valid_floor_access_and_revokes_sessions(mo
 
         async def update_one(self, _query, update):
             stored.update(update["$set"])
+            return SimpleNamespace(matched_count=1)
 
     revoked: list[str] = []
     events: list[str] = []
@@ -122,7 +123,7 @@ def test_clearing_a_profile_preserves_valid_floor_access_and_revokes_sessions(mo
     monkeypatch.setattr(misc_routes, "db", SimpleNamespace(users=Users()))
     monkeypatch.setattr(misc_routes, "revoke_all_sessions", revoke)
     monkeypatch.setattr(misc_routes, "log_event", log_event)
-    admin = UserPublic(email="admin@example.com", full_name="Admin", role="admin", floor_ids=["ground-floor"])
+    admin = UserPublic(email="owner@example.com", full_name="Owner", role="owner")
 
     result = asyncio.run(misc_routes.update_team_member("staff-1", TeamUpdatePayload(access_profile=None), admin))
 

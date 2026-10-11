@@ -101,7 +101,7 @@ export default function Settings() {
   const workspaceRows: { icon: keyof typeof Feather.glyphMap; label: string; hint: string; href: string; testId: string; roles?: string[] }[] = [
     { icon: "briefcase", label: "Company", hint: "Name, contact, logo", href: "/(admin)/settings-company", testId: "settings-nav-company" },
     { icon: "file-text", label: "PDF branding", hint: "Footer, terms, watermark", href: "/(admin)/settings-pdf", testId: "settings-nav-pdf" },
-    { icon: "users", label: "Team", hint: "People, floors, pages and actions", href: "/(admin)/team", testId: "settings-nav-team" },
+    { icon: "users", label: "Team", hint: "People, floors, pages and actions", href: "/(admin)/team", testId: "settings-nav-team", roles: ["owner"] },
     { icon: "bell", label: "Notifications", hint: "Channels & follow-up rules", href: "/(admin)/settings-notifications", testId: "settings-nav-notifications" },
     { icon: "user-plus", label: "Walk-in setup", hint: "Manage lead sources", href: "/(admin)/settings-walkins", testId: "settings-nav-walkins", roles: ["owner", "admin", "manager"] },
     { icon: "database", label: "Catalog tools", hint: "Import, export, backup", href: "/(admin)/settings-catalog", testId: "settings-nav-catalog" },
@@ -190,7 +190,7 @@ export default function Settings() {
           <Text style={type.overline}>Security · Active sessions</Text>
           {sessionsLoading ? <ActivityIndicator size="small" color={colors.onSurfaceMuted} /> : null}
         </View>
-        <Pressable
+        {staff?.role === "owner" ? <Pressable
           testID="settings-nav-password"
           accessibilityRole="link"
           onPress={() => router.push("/(admin)/settings-password" as any)}
@@ -202,6 +202,7 @@ export default function Settings() {
           <Text style={[type.bodyMuted, { flex: 1 }]}>Change password</Text>
           <Feather name="chevron-right" size={16} color={colors.onSurfaceMuted} />
         </Pressable>
+        : <Text testID="settings-owner-managed-password" style={[type.bodyMuted, { padding: spacing.md }]}>Your password is managed by the owner.</Text>}
         <Pressable testID="settings-nav-mfa" accessibilityRole="link" accessibilityLabel="Authenticator MFA"
           onPress={() => router.push("/(admin)/settings-mfa" as any)} style={styles.row}>
           <View style={styles.itemIcon}><Feather name="shield" size={14} color={colors.onSurfaceMuted} /></View>

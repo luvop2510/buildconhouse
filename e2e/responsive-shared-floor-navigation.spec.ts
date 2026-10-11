@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { mockSession } from './audit-fixtures';
 
 for (const [floor, path] of [['second-floor', '/notebook/kitchen'], ['third-floor', '/notebook/furniture'], ['ground-floor', '/tiles']] as const) {
-  test(`${floor} exposes shared Purchases and completed customers while RMB remains furniture-only`, async ({ page }) => {
+  test(`${floor} exposes shared Purchases and completed customers while RNB remains furniture-only`, async ({ page }) => {
     await mockSession(page, path, false);
     await page.addInitScript(id => localStorage.setItem('forge.active-floor', JSON.stringify(id)), floor);
     await page.route('**/api/followups/notebook/**', route => route.fulfill({ json: { rows: [], next_cursor: null } }));
@@ -17,10 +17,10 @@ for (const [floor, path] of [['second-floor', '/notebook/kitchen'], ['third-floo
     await expect(page.getByRole('link', { name: floor === 'second-floor' ? 'Kitchen Walk-ins' : floor === 'third-floor' ? 'Furniture Walk-ins' : 'Quotations', exact: true })).toBeVisible();
     const sidebarPurchases = page.getByRole('link', { name: 'Purchases', exact: true });
     if (await sidebarPurchases.isVisible()) {
-      await expect(page.getByRole('link', { name: 'RMB quotations', exact: true })).toHaveCount(floor === 'third-floor' ? 1 : 0);
+      await expect(page.getByRole('link', { name: 'RNB quotations', exact: true })).toHaveCount(floor === 'third-floor' ? 1 : 0);
       await sidebarPurchases.click();
     } else {
-      await expect(page.getByRole('link', { name: 'RMB quotations', exact: true })).toHaveCount(floor === 'third-floor' ? 1 : 0);
+      await expect(page.getByRole('link', { name: 'RNB quotations', exact: true })).toHaveCount(floor === 'third-floor' ? 1 : 0);
       await page.getByRole('button', { name: 'More', exact: true }).click();
       await page.getByRole('link', { name: 'Purchases', exact: true }).click();
     }

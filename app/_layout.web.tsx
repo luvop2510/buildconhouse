@@ -35,7 +35,6 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     const inCustomer = segments[0] === "(customer)";
     const onForceChange = inAuth && segments[1] === "set-new-password";
     const mustChangePassword =
-      (kind === "staff" && !!staff?.must_change_password) ||
       (kind === "customer" && !!customer?.must_change_password);
 
     if (kind && mustChangePassword) {

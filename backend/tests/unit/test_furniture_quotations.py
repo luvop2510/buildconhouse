@@ -107,10 +107,19 @@ def test_duplicate_or_foreign_entry_ids_are_rejected():
 
 
 def test_rmb_deposit_requires_rate_one_and_credit_balance_is_retained():
-    with pytest.raises(HTTPException):
+    with pytest.raises(HTTPException, match="RNB deposits must use rate 1"):
         document(deposits=[{"amount": "100", "rate": "2", "currency": "RMB"}])
     doc = document(deposits=[{"amount": "240000", "rate": "1", "currency": "RMB"}])
     assert doc["balance_rmb"] == "-7462.00"
+
+
+def test_pdf_displays_rnb_for_legacy_receipts_without_changing_stored_currency():
+    doc = document(deposits=[{"amount": "100", "rate": "1", "currency": "RMB"}])
+    text = PdfReader(BytesIO(build_pdf(doc)[0])).pages[0].extract_text()
+    assert text.count("RNB") == 3  # Two ledger headings and the saved deposit currency.
+    assert "100 RNB" in text and "RMB" not in text
+    assert doc["deposits"][0]["currency"] == "RMB"
+    assert doc["deposits"][0]["amount_rmb"] == "100.00"
 
 
 def test_pdf_layout_unbranded_deterministic_and_totals_present():
@@ -124,6 +133,7 @@ def test_pdf_layout_unbranded_deterministic_and_totals_present():
     assert "RDCL" in text and "TOTAL PURCHASE" in text and "BALANCE AMOUNT" in text
     assert "232538.00" in text and "145502.65" in text and "87035.35" in text
     assert "10-10-2026 09:30" in text
+    assert text.count("RNB") == 2 and "RMB" not in text
     assert "Buildcon" not in text and "BuildCon" not in text and "Forge" not in text
 
 
@@ -133,6 +143,7 @@ def test_large_pdf_continues_with_repeat_headers_and_complete_totals():
     assert len(pdf.pages) > 1
     for page in pdf.pages:
         assert "DESCRIPTION" in page.extract_text() and "RDCL" in page.extract_text()
+        assert "RNB" in page.extract_text() and "RMB" not in page.extract_text()
     text = " ".join(page.extract_text() for page in pdf.pages)
     assert "Furniture charge 59" in text and "60.00" in text and "BALANCE AMOUNT" in text
 

@@ -6,7 +6,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from auth import get_current_user, invalidate_principal_cache, require_min_role, revoke_all_sessions
+from auth import get_current_user, invalidate_principal_cache, require_owner, revoke_all_sessions
 from db import db
 from models import UserPublic
 from services.access_grants import (
@@ -43,16 +43,13 @@ def _validate_input(body: AccessGrantInput) -> list[str]:
 
 async def _target_user_or_404(user_id: str) -> dict:
     target = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
-    if not target:
+    if not target or target.get("deleted_at"):
         raise HTTPException(status_code=404, detail="Team member not found")
     return target
 
 
 async def _assert_can_manage_target(actor: UserPublic, target: dict, *, mutation: bool = False) -> None:
-    # Admins can manage staff grants, but no admin may change an owner's
-    # scope. This mirrors the existing Team-management owner protection.
-    if target.get("role") == "owner" and actor.role != "owner":
-        raise HTTPException(status_code=403, detail="Only an owner can manage an owner's access grants")
+    require_owner(actor)
     if mutation and target.get("role") == "owner":
         raise HTTPException(status_code=422, detail="Owners have full access; delegate pages to staff accounts")
 
@@ -72,7 +69,8 @@ async def _revoke_grant_subject(user_id: str) -> None:
 
 
 @router.get("/resources")
-async def list_grant_resources(_: UserPublic = Depends(require_min_role("admin"))):
+async def list_grant_resources(actor: UserPublic = Depends(require_owner)):
+    require_owner(actor)
     floors = await db.floors.find({"active": {"$ne": False}}, {"_id": 0, "id": 1}).to_list(50)
     floor_ids = [floor["id"] for floor in floors]
     return {
@@ -93,7 +91,8 @@ async def my_access_grants(user: UserPublic = Depends(get_current_user)):
 
 
 @router.get("/{user_id}")
-async def list_access_grants(user_id: str, actor: UserPublic = Depends(require_min_role("admin"))):
+async def list_access_grants(user_id: str, actor: UserPublic = Depends(require_owner)):
+    require_owner(actor)
     target = await _target_user_or_404(user_id)
     await _assert_can_manage_target(actor, target)
     return {"user_id": user_id, "floor_ids": target.get("floor_ids", []),
@@ -101,7 +100,8 @@ async def list_access_grants(user_id: str, actor: UserPublic = Depends(require_m
 
 
 @router.put("/{user_id}")
-async def replace_access_grants(user_id: str, body: DelegationInput, actor: UserPublic = Depends(require_min_role("admin"))):
+async def replace_access_grants(user_id: str, body: DelegationInput, actor: UserPublic = Depends(require_owner)):
+    require_owner(actor)
     target = await _target_user_or_404(user_id)
     await _assert_can_manage_target(actor, target, mutation=True)
     if any(grant.expires_at is not None for grant in body.grants):
@@ -122,8 +122,9 @@ async def replace_access_grants(user_id: str, body: DelegationInput, actor: User
 
 @router.post("/{user_id}", status_code=201)
 async def create_access_grant(
-    user_id: str, body: AccessGrantInput, actor: UserPublic = Depends(require_min_role("admin")),
+    user_id: str, body: AccessGrantInput, actor: UserPublic = Depends(require_owner),
 ):
+    require_owner(actor)
     target = await _target_user_or_404(user_id)
     await _assert_can_manage_target(actor, target, mutation=True)
     actions = _validate_input(body)
@@ -154,8 +155,9 @@ async def create_access_grant(
 
 @router.delete("/{user_id}/{grant_id}")
 async def delete_access_grant(
-    user_id: str, grant_id: str, actor: UserPublic = Depends(require_min_role("admin")),
+    user_id: str, grant_id: str, actor: UserPublic = Depends(require_owner),
 ):
+    require_owner(actor)
     target = await _target_user_or_404(user_id)
     await _assert_can_manage_target(actor, target, mutation=True)
     current = await grants_for_user(db, user_id)

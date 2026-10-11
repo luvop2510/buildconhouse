@@ -1,5 +1,10 @@
 import type { FurnitureCharge, FurnitureDeposit } from "@/src/api/furnitureQuotations";
 
+/** Keep existing receipt currency codes stable while using the furniture flow's label. */
+export function furnitureCurrencyLabel(currency: string): string {
+  return currency === "RMB" ? "RNB" : currency;
+}
+
 /** Preview uses integer arithmetic; the backend remains authoritative on save. */
 function units(value: string): bigint | null {
   if (value.length > 24 || !/^\d+(\.\d{1,6})?$/.test(value.trim())) return null;

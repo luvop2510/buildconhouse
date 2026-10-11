@@ -9,9 +9,8 @@ import { FURNITURE_FLOOR_ID } from "@/src/constants/floors";
 import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
 import { useActionAccess } from "@/src/hooks/use-permissions";
 import { useAuth } from "@/src/state/auth";
-import { useBp } from "@/src/design/responsive";
 import { downloadApiFile } from "@/src/utils/downloadFile";
-import { chargeCents, depositCents, ledgerTotals, rmbText } from "@/src/utils/furnitureRmb";
+import { chargeCents, depositCents, furnitureCurrencyLabel, ledgerTotals, rmbText } from "@/src/utils/furnitureRmb";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
 
 const newDraft = (): FurnitureDraft => ({ customer_name: "", customer_phone: "", status: "draft", charges: [
@@ -20,11 +19,12 @@ const newDraft = (): FurnitureDraft => ({ customer_name: "", customer_phone: "",
 const date = (value?: string) => value ? new Date(value).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) : "On save";
 const formFrom = (doc: FurnitureQuotation): FurnitureDraft => ({ customer_name: doc.customer_name, customer_phone: doc.customer_phone,
   status: doc.status, charges: doc.charges, deposits: doc.deposits });
-const defaultMessage = (doc: FurnitureQuotation) => `Dear ${doc.customer_name}, please find your furniture quotation attached. Balance: RMB ${doc.balance_rmb}.`;
+const defaultMessage = (doc: FurnitureQuotation) => `Dear ${doc.customer_name}, please find your furniture quotation attached. Balance: RNB ${doc.balance_rmb}.`;
+const LEDGER_COLUMN_WIDTH = 145;
+const LEDGER_WIDTH = 7 * LEDGER_COLUMN_WIDTH;
 
 export default function FurnitureQuotations() {
   const authorized = useRequireFloorAccess(FURNITURE_FLOOR_ID);
-  const { isPhone } = useBp();
   const { staff } = useAuth();
   const legacyCanEdit = Boolean(staff && ["owner", "admin", "manager", "sales"].includes(staff.role));
   const canCreate = useActionAccess("furniture_quotations", "create", legacyCanEdit);
@@ -35,6 +35,7 @@ export default function FurnitureQuotations() {
   const [draft, setDraft] = useState<FurnitureDraft | null>(null), [saved, setSaved] = useState<FurnitureQuotation | null>(null);
   const [error, setError] = useState<string | null>(null), [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState("");
+  const [previewWidth, setPreviewWidth] = useState<number | null>(null);
   const [whatsAppConfigured, setWhatsAppConfigured] = useState<boolean | null>(null), [receipt, setReceipt] = useState<WhatsAppReceipt | null>(null);
   const [configurationError, setConfigurationError] = useState<string | null>(null);
   const [configurationAttempt, setConfigurationAttempt] = useState(0);
@@ -116,14 +117,14 @@ export default function FurnitureQuotations() {
   const totals = draft ? ledgerTotals(draft.charges, draft.deposits) : null;
   if (!authorized) return <EmptyState title="Loading Furniture Floor access" />;
   return <SafeAreaView style={styles.screen} edges={["top"]}>
-    <PageHeader title="Furniture quotations" subtitle="RMB quotation and customer deposits" />
+    <PageHeader title="Furniture quotations" subtitle="RNB quotation and customer deposits" />
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" testID="furniture-quotations">
       {error ? <Alert tone="error" title={error} /> : null}
       {!draft ? <>
-        {canCreate ? <Button label="New RMB quotation" icon="plus" disabled={Boolean(busy)} onPress={() => { requestVersion.current += 1; setSaved(null); setDraft(newDraft()); setError(null); setMessage(""); }} /> : null}
-        {rows.length === 0 ? <EmptyState title={busy ? "Loading quotations" : "No furniture quotations yet"} subtitle="Create a quotation using your RMB layout." /> : rows.map((row) => <View key={row.id} style={styles.card}>
+        {canCreate ? <Button label="New RNB quotation" icon="plus" disabled={Boolean(busy)} onPress={() => { requestVersion.current += 1; setSaved(null); setDraft(newDraft()); setError(null); setMessage(""); }} /> : null}
+        {rows.length === 0 ? <EmptyState title={busy ? "Loading quotations" : "No furniture quotations yet"} subtitle="Create a quotation using your RNB layout." /> : rows.map((row) => <View key={row.id} style={styles.card}>
           <Text style={type.titleMd}>{row.customer_name}</Text><Text style={type.bodyMuted}>{row.status === "final" ? "Finalized" : "Draft"} · {date(row.updated_at)}</Text>
-          <Text style={type.body}>Payable RMB {row.total_payable_rmb} · Received RMB {row.total_received_rmb}</Text><Text style={type.titleSm}>Balance RMB {row.balance_rmb}</Text>
+          <Text style={type.body}>Payable RNB {row.total_payable_rmb} · Received RNB {row.total_received_rmb}</Text><Text style={type.titleSm}>Balance RNB {row.balance_rmb}</Text>
           <Button label={`Open ${row.customer_name}`} variant="secondary" disabled={Boolean(busy)} onPress={() => void open(row.id)} />
         </View>)}
         {cursor ? <Button label="Load more quotations" loading={busy === "list"} onPress={() => void load(true)} /> : null}
@@ -137,10 +138,10 @@ export default function FurnitureQuotations() {
           <Text style={type.bodyMuted}>{saved ? `Revision ${saved.revision} · Updated ${date(saved.updated_at)}` : "Every saved change receives a date."}</Text>
           {locked ? <Text style={type.bodyMuted}>Finalized charges are locked. Customer deposits can still be recorded.</Text> : null}
         </View>
-        <Text style={type.titleMd}>RMB payable</Text>
+        <Text style={type.titleMd}>RNB payable</Text>
         {draft.charges.map((row, index) => <View key={row.id || `charge-${index}`} style={styles.card}>
           <TextField label={`Charge ${index + 1} description`} value={row.description} editable={editable && !locked && !busy} onChangeText={(description) => setDraft({ ...draft, charges: draft.charges.map((entry, i) => i === index ? { ...entry, description } : entry) })} />
-          <TextField label={`Charge ${index + 1} RMB`} value={row.amount_rmb} keyboardType="decimal-pad" editable={editable && !locked && !busy} onChangeText={(amount_rmb) => setDraft({ ...draft, charges: draft.charges.map((entry, i) => i === index ? { ...entry, amount_rmb } : entry) })} />
+          <TextField label={`Charge ${index + 1} RNB`} value={row.amount_rmb} keyboardType="decimal-pad" editable={editable && !locked && !busy} onChangeText={(amount_rmb) => setDraft({ ...draft, charges: draft.charges.map((entry, i) => i === index ? { ...entry, amount_rmb } : entry) })} />
           <Text style={type.bodyMuted}>Updated {date(row.updated_at)}</Text>
           {editable && !locked && draft.charges.length > 1 ? <Button label={`Remove charge ${index + 1}`} variant="ghost" disabled={Boolean(busy)} onPress={() => setDraft({ ...draft, charges: draft.charges.filter((_, i) => i !== index) })} /> : null}
         </View>)}
@@ -148,32 +149,32 @@ export default function FurnitureQuotations() {
         <Text style={type.titleMd}>Customer deposits</Text>
         {draft.deposits.map((row, index) => <View key={row.id || `deposit-${index}`} style={styles.card}>
           <TextField label={`Deposit ${index + 1} description`} value={row.description} editable={editable && !busy} onChangeText={(description) => setDraft({ ...draft, deposits: draft.deposits.map((entry, i) => i === index ? { ...entry, description } : entry) })} />
-          <View style={styles.actions}>{(["INR", "USD", "RMB"] as const).map((currency) => <Chip key={currency} label={currency} active={row.currency === currency} onPress={!editable || busy ? undefined : () => setDraft({ ...draft, deposits: draft.deposits.map((entry, i) => i === index ? { ...entry, currency, rate: currency === "RMB" ? "1" : "" } : entry) })} />)}</View>
-          <TextField label={`Deposit ${index + 1} amount (${row.currency})`} keyboardType="decimal-pad" value={row.amount} editable={editable && !busy} onChangeText={(amount) => setDraft({ ...draft, deposits: draft.deposits.map((entry, i) => i === index ? { ...entry, amount } : entry) })} />
-          <TextField label={row.currency === "INR" ? "Rate: INR per RMB (divide)" : row.currency === "USD" ? "Rate: RMB per USD (multiply)" : "RMB rate"} keyboardType="decimal-pad" value={row.rate} editable={editable && !busy && row.currency !== "RMB"} onChangeText={(rate) => setDraft({ ...draft, deposits: draft.deposits.map((entry, i) => i === index ? { ...entry, rate } : entry) })} />
-          <Text style={type.body}>Received RMB {rmbText(depositCents(row))}</Text><Text style={type.bodyMuted}>Updated {date(row.updated_at)}</Text>
+          <View style={styles.actions}>{(["INR", "USD", "RMB"] as const).map((currency) => <Chip key={currency} label={furnitureCurrencyLabel(currency)} active={row.currency === currency} onPress={!editable || busy ? undefined : () => setDraft({ ...draft, deposits: draft.deposits.map((entry, i) => i === index ? { ...entry, currency, rate: currency === "RMB" ? "1" : "" } : entry) })} />)}</View>
+          <TextField label={`Deposit ${index + 1} amount (${furnitureCurrencyLabel(row.currency)})`} keyboardType="decimal-pad" value={row.amount} editable={editable && !busy} onChangeText={(amount) => setDraft({ ...draft, deposits: draft.deposits.map((entry, i) => i === index ? { ...entry, amount } : entry) })} />
+          <TextField label={row.currency === "INR" ? "Rate: INR per RNB (divide)" : row.currency === "USD" ? "Rate: RNB per USD (multiply)" : "RNB rate"} keyboardType="decimal-pad" value={row.rate} editable={editable && !busy && row.currency !== "RMB"} onChangeText={(rate) => setDraft({ ...draft, deposits: draft.deposits.map((entry, i) => i === index ? { ...entry, rate } : entry) })} />
+          <Text style={type.body}>Received RNB {rmbText(depositCents(row))}</Text><Text style={type.bodyMuted}>Updated {date(row.updated_at)}</Text>
           {editable ? <Button label={`Remove deposit ${index + 1}`} variant="ghost" disabled={Boolean(busy)} onPress={() => setDraft({ ...draft, deposits: draft.deposits.filter((_, i) => i !== index) })} /> : null}
         </View>)}
         {editable ? <Button label="Add customer deposit" variant="secondary" disabled={Boolean(busy) || draft.deposits.length >= 200} onPress={() => setDraft({ ...draft, deposits: [...draft.deposits, { description: "Deposit by customer", currency: "INR", amount: "", rate: "" }] })} /> : null}
         <Text style={type.titleMd}>Quotation preview</Text>
-        {isPhone ? <Text style={type.bodyMuted}>Swipe horizontally to view all seven columns.</Text> : null}
+        {previewWidth !== null && previewWidth < LEDGER_WIDTH ? <Text style={type.bodyMuted}>Scroll horizontally to view all seven columns.</Text> : null}
         <Text style={[styles.heading, type.titleMd]}>{draft.customer_name || "RDCL"}</Text>
-        <ScrollView horizontal contentContainerStyle={styles.table} testID="furniture-ledger-preview">
+        <ScrollView horizontal contentContainerStyle={styles.table} onLayout={(event) => setPreviewWidth(event.nativeEvent.layout.width)} testID="furniture-ledger-preview">
           <View>
-            <View style={[styles.tableRow, styles.tableHeader]}>{["RMB", "DESCRIPTION", "RMB", "DESCRIPTION", "AMOUNT", "RATE", "DATE"].map((label, index) => <Text key={`${label}-${index}`} style={[styles.cell, type.label, styles.darkText]}>{label}</Text>)}</View>
+            <View style={[styles.tableRow, styles.tableHeader]}>{["RNB", "DESCRIPTION", "RNB", "DESCRIPTION", "AMOUNT", "RATE", "DATE"].map((label, index) => <Text key={`${label}-${index}`} style={[styles.cell, type.label, styles.darkText]}>{label}</Text>)}</View>
             {Array.from({ length: Math.max(draft.charges.length, draft.deposits.length, 5) }, (_, index) => {
               const charge = draft.charges[index], deposit = draft.deposits[index];
               const dates = [...new Set([charge?.updated_at, deposit?.updated_at].filter((value): value is string => Boolean(value)))].sort();
-              return <View key={index} style={styles.tableRow}>{[charge ? rmbText(chargeCents(charge)) : "", charge?.description || "", deposit ? rmbText(depositCents(deposit)) : "", deposit?.description || "", deposit ? `${deposit.amount} ${deposit.currency}` : "", deposit?.rate || "", dates.length ? dates.map(date).join(" / ") : charge || deposit ? "On save" : ""].map((value, cell) => <Text key={cell} style={[styles.cell, type.body]}>{value}</Text>)}</View>;
+              return <View key={index} style={styles.tableRow}>{[charge ? rmbText(chargeCents(charge)) : "", charge?.description || "", deposit ? rmbText(depositCents(deposit)) : "", deposit?.description || "", deposit ? `${deposit.amount} ${furnitureCurrencyLabel(deposit.currency)}` : "", deposit?.rate || "", dates.length ? dates.map(date).join(" / ") : charge || deposit ? "On save" : ""].map((value, cell) => <Text key={cell} style={[styles.cell, type.body]}>{value}</Text>)}</View>;
             })}
             <View style={[styles.tableRow, styles.total]}>{[rmbText(totals!.payable), "", rmbText(totals!.received), "TOTAL", "", "", ""].map((value, index) => <Text key={index} testID={index === 0 ? "furniture-total-payable" : index === 2 ? "furniture-total-received" : undefined} style={[styles.cell, styles.darkText, type.label]}>{value}</Text>)}</View>
             <View style={styles.tableRow}>{["", "", rmbText(totals!.balance), "BALANCE AMOUNT", "", "", ""].map((value, index) => <Text key={index} testID={index === 2 ? "furniture-balance" : undefined} style={[styles.cell, type.label, (index === 2 || index === 3) && styles.balance]}>{value}</Text>)}</View>
           </View>
         </ScrollView>
         <View style={styles.card} testID="furniture-summary">
-          <Text style={type.body}>Payable RMB {rmbText(totals!.payable)}</Text>
-          <Text style={type.body}>Received RMB {rmbText(totals!.received)}</Text>
-          <Text style={type.titleMd}>Balance RMB {rmbText(totals!.balance)}</Text>
+          <Text style={type.body}>Payable RNB {rmbText(totals!.payable)}</Text>
+          <Text style={type.body}>Received RNB {rmbText(totals!.received)}</Text>
+          <Text style={type.titleMd}>Balance RNB {rmbText(totals!.balance)}</Text>
         </View>
         <View style={styles.actions}>{editable ? <Button label="Save quotation" loading={busy === "save"} disabled={Boolean(busy) || !dirty} onPress={() => void save()} /> : null}
           {editable && !locked ? <Button label="Finalize and lock charges" variant="secondary" disabled={Boolean(busy)} onPress={() => void save(true)} /> : null}
@@ -195,6 +196,6 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.surface }, content: { padding: spacing.lg, gap: spacing.md, maxWidth: 1100, width: "100%", alignSelf: "center", paddingBottom: spacing.xxl },
   card: { backgroundColor: colors.surface, padding: spacing.lg, borderRadius: radius.lg, gap: spacing.md, borderWidth: 1, borderColor: colors.border },
   actions: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }, table: { paddingBottom: spacing.sm }, tableRow: { flexDirection: "row" },
-  cell: { width: 145, minHeight: 48, padding: spacing.sm, borderWidth: 0.5, borderColor: colors.border }, heading: { textAlign: "center", padding: spacing.md, backgroundColor: colors.surface },
+  cell: { width: LEDGER_COLUMN_WIDTH, minHeight: 48, padding: spacing.sm, borderWidth: 0.5, borderColor: colors.border }, heading: { textAlign: "center", padding: spacing.md, backgroundColor: colors.surface },
   tableHeader: { backgroundColor: "#c7c9ef" }, total: { backgroundColor: "#fff000" }, balance: { backgroundColor: "#ffaf00", color: "#202020" }, darkText: { color: "#202020" },
 });

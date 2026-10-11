@@ -77,8 +77,8 @@ class UserCreate(UserBase):
 class UserPublic(UserBase, TimestampedModel):
     mfa_enabled: bool = False
     mfa_version: int = 0
-    # Set when Team > Reset Password issues a temporary password — the staff
-    # member must set their own password before using the app further.
+    # Compatibility fields for older clients. Staff passwords are permanently
+    # owner-managed; authenticated staff responses normalize these to false/null.
     must_change_password: bool = False
     temp_password_expires_at: Optional[str] = None
     # Request-scoped selection; never persisted to the users collection.
@@ -239,6 +239,7 @@ class TeamAccessGrantPayload(BaseModel):
 
 
 class TeamCreatePayload(BaseModel):
+    login_id: Optional[str] = Field(default=None, max_length=120)
     team_role: Optional[str] = Field(default=None, max_length=120)
     custom_access: bool = False
     access_grants: Optional[list[TeamAccessGrantPayload]] = None
@@ -257,6 +258,7 @@ class TeamCreatePayload(BaseModel):
 
 
 class TeamUpdatePayload(BaseModel):
+    login_id: Optional[str] = Field(default=None, max_length=120)
     team_role: Optional[str] = Field(default=None, max_length=120)
     custom_access: Optional[bool] = None
     access_grants: Optional[list[TeamAccessGrantPayload]] = None
@@ -266,6 +268,12 @@ class TeamUpdatePayload(BaseModel):
     active: Optional[bool] = None
     floor_ids: Optional[list[str]] = None
     access_profile: Optional[AccessProfile] = None
+
+
+class TeamPasswordResetPayload(BaseModel):
+    new_password: str = Field(min_length=12, max_length=72)
+
+    _password_policy = field_validator("new_password")(validate_new_password)
 
 
 class FloorPublic(TimestampedModel):

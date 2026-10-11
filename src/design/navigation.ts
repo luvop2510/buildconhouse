@@ -30,14 +30,14 @@ export const PRIMARY: NavItem[] = [
   { href: "/(admin)/notebook/kitchen", label: "Kitchen Walk-ins", icon: "user-plus", match: "kitchen", floors: [KITCHEN_FLOOR_ID] },
   { href: "/(admin)/notebook/kitchen/quotation-follow-up", label: "Quotation Follow-up", icon: "file-text", match: "quotation-follow-up", floors: [KITCHEN_FLOOR_ID] },
   { href: "/(admin)/notebook/furniture", label: "Furniture Walk-ins", icon: "user-plus", match: "furniture", floors: [FURNITURE_FLOOR_ID] },
-  { href: "/(admin)/notebook/furniture-quotations", label: "RMB quotations", icon: "file-text", match: "furniture-quotations", floors: [FURNITURE_FLOOR_ID] },
+  { href: "/(admin)/notebook/furniture-quotations", label: "RNB quotations", icon: "file-text", match: "furniture-quotations", floors: [FURNITURE_FLOOR_ID] },
   { href: "/(admin)/notebook/furniture/quotation-follow-up", label: "Quotation Follow-up", icon: "file-text", match: "quotation-follow-up", floors: [FURNITURE_FLOOR_ID] },
 ];
 
 export const SECONDARY: NavItem[] = [
   { href: "/(admin)/notifications", label: "Notifications", icon: "bell", match: "notifications" },
   { href: "/(admin)/sales-data", label: "Sales Data", icon: "trending-up", match: "sales-data" },
-  { href: "/(admin)/team", label: "Team", icon: "user-check", match: "team", roles: ["owner", "admin", "manager"] },
+  { href: "/(admin)/team", label: "Team", icon: "user-check", match: "team", roles: ["owner"] },
   { href: "/(admin)/settings", label: "Settings", icon: "settings", match: "settings" },
 ];
 

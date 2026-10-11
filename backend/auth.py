@@ -154,7 +154,13 @@ async def _load_active_principal(payload: dict, *, kind: str, collection: str) -
 
 
 def _enforce_password_change(principal: dict, request: Request | None, *, kind: str) -> None:
-    """Keep a temporary-password session from becoming a normal long-lived one."""
+    """Customer temporary credentials retain their first-login requirement.
+
+    Staff credentials are permanently managed by the owner, including legacy
+    accounts provisioned with the former temporary-password flags.
+    """
+    if kind == "staff":
+        return
     if not principal.get("must_change_password"):
         return
     path = request.url.path if request else ""
@@ -167,12 +173,22 @@ def _enforce_password_change(principal: dict, request: Request | None, *, kind: 
         raise HTTPException(status_code=403, detail="password_change_required")
 
 
+def apply_staff_password_policy(principal: dict) -> dict:
+    """Do not expose obsolete staff onboarding restrictions to older clients."""
+    normalized = {**principal, "must_change_password": False, "temp_password_expires_at": None}
+    if principal.get("role") == "owner":
+        normalized.update(access_profile=None, custom_access=False, floor_ids=[])
+    return normalized
+
+
 async def authorize_staff_request(user: UserPublic, request: Request | None) -> UserPublic:
     """Bind current profile/grants to every staff authentication path.
 
     Request-local floor constraints are private model metadata: response and
     persisted user fields retain the account's normal assignments.
     """
+    if user.role == "owner":
+        return user
     if request is None:
         if user.custom_access:
             raise HTTPException(status_code=403, detail="Custom access requires request context")
@@ -284,7 +300,7 @@ async def get_current_user(
             kind="staff", collection="users",
         )
         _enforce_password_change(doc, request, kind="staff")
-        user = apply_effective_floor_ids(UserPublic(**doc))
+        user = apply_effective_floor_ids(UserPublic(**apply_staff_password_policy(doc)))
         # The header wins when present (it can be, for a fetch()-based
         # download); otherwise replay the floor recorded at mint time so the
         # download stays scoped to the unit the user was actually in.
@@ -303,7 +319,7 @@ async def get_current_user(
         raise HTTPException(status_code=403, detail="Not a staff token")
     doc = await _load_active_principal(payload, kind="staff", collection="users")
     _enforce_password_change(doc, request, kind="staff")
-    user = apply_effective_floor_ids(UserPublic(**doc))
+    user = apply_effective_floor_ids(UserPublic(**apply_staff_password_policy(doc)))
     user.session_id = payload.get("session_id")
     if x_floor_id:
         allowed = accessible_floor_ids(user)
@@ -386,14 +402,21 @@ ROLE_LABELS: dict[str, str] = {
 
 ROLE_CAPABILITIES: dict[str, list[str]] = {
     "owner": ["Everything, including team management and settings"],
-    "admin": ["Team management", "Company & PDF settings", "Catalog backup/export"],
-    "manager": ["View team", "Approve catalog imports", "Full sales & purchase access"],
+    "admin": ["Company & PDF settings", "Catalog backup/export"],
+    "manager": ["Approve catalog imports", "Full sales & purchase access"],
     "accounts": ["Payments & receivables", "Financial reporting"],
     "purchase": ["Purchase orders", "Catalog imports", "Supplier management"],
     "sales": ["Quotations", "Customers", "Follow-ups"],
     "warehouse": ["Stock movements", "Purchase receiving"],
     "worker": ["View-only access to assigned tasks"],
 }
+
+
+def require_owner(user: UserPublic = Depends(get_current_user)) -> UserPublic:
+    """Account administration cannot be delegated through page grants."""
+    if user.role != "owner":
+        raise HTTPException(status_code=403, detail="Only the owner can manage team accounts and passwords")
+    return user
 
 
 def require_roles(*allowed: Role):
@@ -429,7 +452,7 @@ def require_min_role(min_role: Role):
 
 
 def has_all_floor_access(user: UserPublic) -> bool:
-    return not getattr(user, "custom_access", False) and user.role in {"owner", "manager"}
+    return user.role == "owner" or (not getattr(user, "custom_access", False) and user.role == "manager")
 
 
 PROFILE_FLOOR_IDS: dict[str, tuple[str, ...]] = {
@@ -468,6 +491,10 @@ def normalize_staff_access(*, role: Role, floor_ids: list[str], access_profile: 
     security boundary, not a UI convenience: an empty assignment must never
     fall back to the legacy Sanitary Bathroom default.
     """
+    if role == "owner":
+        if access_profile is not None:
+            raise HTTPException(status_code=422, detail="Owners use full access; delegate pages to staff accounts")
+        return role, []
     profile_floors = profile_floor_ids(access_profile)
     if access_profile is not None and profile_floors is None:
         raise HTTPException(status_code=422, detail="Unknown access profile")
@@ -486,6 +513,11 @@ def normalize_staff_access(*, role: Role, floor_ids: list[str], access_profile: 
 
 def apply_effective_floor_ids(user: UserPublic) -> UserPublic:
     """Expose profile-bound floors consistently in authentication responses."""
+    if user.role == "owner":
+        user.access_profile = None
+        user.custom_access = False
+        user.floor_ids = []
+        return user
     profile_floors = profile_floor_ids(user.access_profile)
     if profile_floors is not None:
         user.floor_ids = profile_floors
@@ -494,6 +526,8 @@ def apply_effective_floor_ids(user: UserPublic) -> UserPublic:
 
 def accessible_floor_ids(user: UserPublic) -> list[str] | None:
     """None means all active floors; otherwise return explicit assignments."""
+    if user.role == "owner":
+        return None
     profile = getattr(user, "access_profile", None)
     profile_floors = profile_floor_ids(profile)
     if profile_floors is not None:

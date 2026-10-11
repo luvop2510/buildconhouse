@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Switch, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 
+import { ConfirmDialog } from "@/src/components/ds";
 import { AdminPage, IconAction } from "@/src/components/AdminPage";
 import { Avatar, Badge, Button, Chip, EmptyState, ErrorState, Sheet, Skeleton, TextField } from "@/src/components/ui";
 import { TempPasswordDialog, TempPasswordResult } from "@/src/components/TempPasswordDialog";
@@ -20,13 +21,14 @@ import { colors, radius, spacing, type } from "@/src/theme/tokens";
 
 type Staff = {
   id: string; full_name: string; email: string; role: string;
-  phone?: string | null; active: boolean; floor_ids?: string[]; custom_access?: boolean; team_role?: string | null;
+  phone?: string | null; login_id?: string | null; active: boolean; floor_ids?: string[]; custom_access?: boolean; team_role?: string | null;
 };
 type Floor = { id: string; name: string; slug: string };
 export default function Team() {
   const { isPhone } = useBp();
   const { staff: me } = useAuth();
   const { roles } = useRoles();
+  const isOwner = me?.role === "owner";
   const [options, setOptions] = useState<{ floors: Floor[]; catalog: DelegationCatalog } | null>(null);
   const [items, setItems] = useState<Staff[] | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -37,11 +39,13 @@ export default function Team() {
   const [tempDialogOpen, setTempDialogOpen] = useState(false);
 
   const load = useCallback(() => {
+    if (!isOwner) return;
     setLoadError(false);
     api.get<Staff[]>("/team").then(setItems).catch(() => setLoadError(true));
-  }, []);
+  }, [isOwner]);
   useEffect(() => { load(); }, [load]);
   const loadOptions = useCallback(() => {
+    if (!isOwner) return;
     setOptionsError(false);
     Promise.all([api.get<Floor[]>("/settings/floors"), api.get<DelegationCatalog>("/settings/access-grants/resources")])
       .then(([floors, catalog]) => {
@@ -49,8 +53,10 @@ export default function Team() {
         setOptions({ floors: floors.map((floor) => ({ ...floor, name: floorDisplayLabel(floor) })), catalog });
       })
       .catch(() => setOptionsError(true));
-  }, []);
+  }, [isOwner]);
   useEffect(loadOptions, [loadOptions]);
+
+  if (!isOwner) return <AdminPage title="Team"><CardNotice /></AdminPage>;
 
   return (
     <AdminPage
@@ -72,7 +78,7 @@ export default function Team() {
           ))}
         </View>
       ) : items.length === 0 ? (
-        <EmptyState icon="user-check" title="No team members" subtitle="Only Manager, Admin & Owner roles can access team management." />
+        <EmptyState icon="user-check" title="No team members" subtitle="Create a member and choose the floors and actions they can use." />
       ) : (
         <View style={{ gap: spacing.sm }}>
           {items.map((u) => {
@@ -103,11 +109,11 @@ export default function Team() {
                   }}>{u.full_name}{u.id === me?.id ? " · You" : ""}</Text>
                   <Text numberOfLines={1} style={type.caption}>{u.email}</Text>
                 </View>
-                <View style={{ alignItems: isPhone ? "flex-start" : "flex-end", gap: 4, marginLeft: isPhone ? 44 + spacing.md : 0 }}>
-                  <Badge label={u.team_role || (u.custom_access ? "Delegated staff" : roleInfo?.label || u.role)} tone={u.active ? "brand" : "neutral"} size="sm" />
+                <Feather name="chevron-right" size={16} color={colors.onSurfaceMuted} />
+                <View style={{ alignItems: isPhone ? "flex-start" : "flex-end", gap: 4, minWidth: 0, flexShrink: 1, ...(isPhone ? { width: "100%", paddingLeft: 44 + spacing.md } : { maxWidth: "40%" }) }}>
+                  <Badge label={u.team_role || (u.custom_access ? "Delegated staff" : roleInfo?.label || u.role)} tone={u.active ? "brand" : "neutral"} size="sm" truncate testID={`team-role-${u.id}`} />
                   {!u.active ? <Badge label="Disabled" tone="warning" size="sm" /> : null}
                 </View>
-                <Feather name="chevron-right" size={16} color={colors.onSurfaceMuted} />
               </Pressable>
             );
           })}
@@ -131,9 +137,14 @@ export default function Team() {
         onClose={() => { setTempDialogOpen(false); setTempResult(null); }}
         title="Password reset"
         result={tempResult}
+        permanent
       />
     </AdminPage>
   );
+}
+
+function CardNotice() {
+  return <View testID="team-owner-only" style={styles.card}><Text style={type.body}>Only the owner can create, delete or manage team members and passwords.</Text></View>;
 }
 
 type AccessOptions = { floors: Floor[]; catalog: DelegationCatalog };
@@ -166,6 +177,7 @@ function AddStaffSheet({ visible, options, optionsError, onRetry, onClose, onCre
 }) {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("worker");
@@ -173,8 +185,9 @@ function AddStaffSheet({ visible, options, optionsError, onRetry, onClose, onCre
   const [delegation, setDelegation] = useState<DelegationState>(emptyDelegation);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const reset = () => { setFullName(""); setEmail(""); setPhone(""); setPassword(""); setTeamRole(""); setRole("worker"); setDelegation(emptyDelegation()); setError(null); };
+  const reset = () => { setFullName(""); setEmail(""); setUsername(""); setPhone(""); setPassword(""); setTeamRole(""); setRole("worker"); setDelegation(emptyDelegation()); setError(null); };
   const save = async () => {
+    if (saving) return;
     if (!fullName.trim()) { setError("Full name is required"); return; }
     if (!email.trim()) { setError("Email is required"); return; }
     if (password.length < 12) { setError("Initial password must be at least 12 characters"); return; }
@@ -183,12 +196,12 @@ function AddStaffSheet({ visible, options, optionsError, onRetry, onClose, onCre
     try {
       const owner = role === "owner";
       await api.post("/team", {
-        full_name: fullName.trim(), email: email.trim(), phone: phone.trim() || null,
+        full_name: fullName.trim(), email: email.trim(), login_id: username.trim() || null, phone: phone.trim() || null,
         password, role, team_role: teamRole.trim() || null, access_profile: null,
         custom_access: !owner, floor_ids: owner ? [] : delegation.floorIds,
         ...(!owner ? { access_grants: delegation.grants } : {}),
       });
-      toast.success("Team member and access saved — they must set their own password on first sign-in");
+      toast.success("Team member and access saved — their password is managed by the owner");
       reset(); onCreated(); onClose();
     } catch (cause: any) { setError(cause?.detail || "Could not add team member"); }
     finally { setSaving(false); }
@@ -198,8 +211,9 @@ function AddStaffSheet({ visible, options, optionsError, onRetry, onClose, onCre
       <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
         <TextField testID="add-staff-name" label="Full name" value={fullName} onChangeText={setFullName} placeholder="e.g. Priya Sharma" autoFocus />
         <TextField testID="add-staff-email" label="Email" value={email} onChangeText={setEmail} placeholder="name@company.com" autoCapitalize="none" keyboardType="email-address" />
+        <TextField testID="add-staff-username" label="Username" value={username} onChangeText={setUsername} placeholder="Optional sign-in username" autoCapitalize="none" autoCorrect={false} maxLength={120} />
         <TextField testID="add-staff-phone" label="Phone" value={phone} onChangeText={setPhone} placeholder="Optional" keyboardType="phone-pad" />
-        <TextField testID="add-staff-password" label="Initial password" value={password} onChangeText={setPassword} placeholder="At least 12 characters" secureTextEntry autoCapitalize="none" helper="They’ll set their own password on first login." />
+        <TextField testID="add-staff-password" label="Initial password" value={password} onChangeText={setPassword} placeholder="At least 12 characters" secureTextEntry autoCapitalize="none" helper="This password remains valid until the owner changes it. The member cannot change it." />
         <TextField testID="add-staff-team-role" label="Team role name" value={teamRole} onChangeText={setTeamRole} placeholder="e.g. Ground Floor Sales" helper="Give this person a role name that matches their work." maxLength={80} />
         <AccountAccessPicker value={role} onChange={setRole} disabled={saving} prefix="add-staff" />
         {role === "owner" ? <Text style={type.caption}>An owner can access all floors and pages and manage the whole team.</Text> : <DelegationOptions options={options} error={optionsError} onRetry={onRetry} value={delegation} onChange={setDelegation} disabled={saving} />}
@@ -225,9 +239,16 @@ function EditStaffSheet({ staff, options, optionsError, onRetry, selfId, onClose
   const [retryCount, setRetryCount] = useState(0);
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [username, setUsername] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   useEffect(() => {
     if (!staff) return;
+    setUsername(staff.login_id || "");
     setFullName(staff.full_name); setPhone(staff.phone || ""); setRole(staff.role === "owner" ? "owner" : "worker");
     setTeamRole(staff.team_role || ""); setActive(staff.active); setSaveError(null);
   }, [staff]);
@@ -244,12 +265,14 @@ function EditStaffSheet({ staff, options, optionsError, onRetry, selfId, onClose
   }, [staff, options, retryCount]);
   if (!staff) return null;
   const isSelf = staff.id === selfId;
+  const protectedOwner = staff.role === "owner" && staff.active;
   const save = async () => {
+    if (saving || resetting || deleting) return;
     if (!fullName.trim()) { setSaveError("Full name is required"); return; }
     if (!isSelf && (!options || optionsError || grantsLoading || grantsError)) return;
     setSaving(true); setSaveError(null);
     try {
-      const patch: Record<string, unknown> = { full_name: fullName.trim(), phone: phone.trim() || null, team_role: teamRole.trim() || null };
+      const patch: Record<string, unknown> = { full_name: fullName.trim(), login_id: username.trim() || null, phone: phone.trim() || null, team_role: teamRole.trim() || null };
       if (!isSelf) {
         const owner = role === "owner";
         Object.assign(patch, { role, active, access_profile: null, custom_access: !owner, floor_ids: owner ? [] : delegation.floorIds });
@@ -260,33 +283,59 @@ function EditStaffSheet({ staff, options, optionsError, onRetry, selfId, onClose
     } catch (cause: any) { setSaveError(cause?.detail || "Could not update team member"); }
     finally { setSaving(false); }
   };
-  const resetPassword = async () => {
+  const resetPassword = async (generated = false) => {
+    if (saving || resetting || deleting || isSelf) return;
+    setPasswordError(null);
+    if (!generated && newPassword.length < 12) { setPasswordError("Password must be at least 12 characters"); return; }
+    if (!generated && newPassword !== confirmPassword) { setPasswordError("Passwords don't match"); return; }
     setResetting(true);
     try {
-      const result = await api.post<TempPasswordResult>(`/team/${staff.id}/reset-password`);
+      const result = await api.post<TempPasswordResult>(`/team/${staff.id}/reset-password`, generated ? undefined : { new_password: newPassword });
+      setNewPassword(""); setConfirmPassword("");
       onClose(); onPasswordReset(result);
-    } catch (cause: any) { toast.error(cause?.detail || "Could not reset password"); }
+    } catch (cause: any) { setPasswordError(cause?.detail || "Could not change password"); }
     finally { setResetting(false); }
   };
-  return <Sheet visible={!!staff} onClose={() => { if (!saving) onClose(); }} title={staff.full_name} subtitle={staff.email} testID="edit-staff-sheet">
+  const deleteMember = async () => {
+    if (saving || resetting || deleting || isSelf || protectedOwner) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/team/${staff.id}`);
+      toast.success("Team member deleted"); setDeleteOpen(false); onSaved();
+    } catch (cause: any) { setSaveError(cause?.detail || "Could not delete team member"); setDeleteOpen(false); }
+    finally { setDeleting(false); }
+  };
+  return <Sheet visible={!!staff} onClose={() => { if (!saving && !resetting && !deleting) onClose(); }} title={staff.full_name} subtitle={staff.email} testID="edit-staff-sheet">
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
         <TextField testID="edit-staff-name" label="Full name" value={fullName} onChangeText={setFullName} />
+        <TextField testID="edit-staff-username" label="Username" value={username} onChangeText={setUsername} placeholder="Optional sign-in username" autoCapitalize="none" autoCorrect={false} maxLength={120} editable={!saving && !resetting && !deleting} />
         <TextField testID="edit-staff-phone" label="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="Optional" />
         <TextField testID="edit-staff-team-role" label="Team role name" value={teamRole} onChangeText={setTeamRole} placeholder="e.g. Ground Floor Sales" maxLength={80} />
-        <AccountAccessPicker value={role} onChange={setRole} disabled={isSelf || saving} prefix="edit-staff" />
+        <AccountAccessPicker value={role} onChange={setRole} disabled={isSelf || protectedOwner || saving} prefix="edit-staff" />
+        {protectedOwner && !isSelf ? <Text testID="edit-staff-owner-protected" style={type.caption}>Active owners keep full access and cannot be disabled, demoted or deleted.</Text> : null}
         <View style={styles.switchRow}>
-          <View style={{ flex: 1 }}><Text style={type.bodyStrong}>Account enabled</Text><Text style={type.caption}>{isSelf ? "You can’t disable your own account." : "Turn off to block sign-in immediately."}</Text></View>
-          <Switch testID="edit-staff-active-switch" value={active} onValueChange={setActive} disabled={isSelf || saving} />
+          <View style={{ flex: 1 }}><Text style={type.bodyStrong}>Account enabled</Text><Text style={type.caption}>{isSelf ? "You can’t disable your own account." : protectedOwner ? "Active owner accounts stay enabled." : "Turn off to block sign-in immediately."}</Text></View>
+          <Switch testID="edit-staff-active-switch" value={active} onValueChange={setActive} disabled={isSelf || protectedOwner || saving} />
         </View>
         {isSelf ? <Text style={type.caption}>You can’t change your own account access.</Text> : role === "owner" ? <Text style={type.caption}>An owner has full access to all floors and pages.</Text> : grantsError ? <ErrorState title="Current access unavailable" subtitle={grantsError} onRetry={() => setRetryCount((count) => count + 1)} /> : grantsLoading ? <Text style={type.caption}>Loading this person’s access…</Text> : <DelegationOptions options={options} error={optionsError} onRetry={onRetry} value={delegation} onChange={setDelegation} disabled={saving} />}
         {saveError ? <Text accessibilityRole="alert" style={[type.caption, { color: colors.error }]}>{saveError}</Text> : null}
-        <Button testID="edit-staff-save" label={saving ? "Saving…" : "Save changes"} variant="primary" icon="check" disabled={saving || (!isSelf && (!options || optionsError || grantsLoading || !!grantsError))} onPress={save} fullWidth />
+        <Button testID="edit-staff-save" label={saving ? "Saving…" : "Save changes"} variant="primary" icon="check" disabled={saving || resetting || deleting || (!isSelf && (!options || optionsError || grantsLoading || !!grantsError))} onPress={save} fullWidth />
         <View style={styles.divider} />
-        <Button testID="edit-staff-reset-password" label={resetting ? "Generating…" : "Reset password"} variant="secondary" icon="key" disabled={resetting || saving || isSelf} onPress={resetPassword} fullWidth />
-        <Text style={type.caption}>{isSelf ? "Use Settings > Change password to update your own password." : "Generates a temporary password shown once — share it with them directly."}</Text>
+        {isSelf ? <Text style={type.caption}>Use Settings → Change password to update your own password.</Text> : <>
+          <Text accessibilityRole="header" style={type.titleSm}>Change member password</Text>
+          <Text style={type.caption}>Only the owner can change this member’s password. Changing it signs them out of every device.</Text>
+          <TextField testID="edit-staff-password" label="New password" value={newPassword} onChangeText={setNewPassword} secureTextEntry autoCapitalize="none" editable={!resetting && !deleting && !saving} placeholder="At least 12 characters" />
+          <TextField testID="edit-staff-confirm-password" label="Confirm new password" value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry autoCapitalize="none" editable={!resetting && !deleting && !saving} error={passwordError} />
+          <Button testID="edit-staff-set-password" label="Set member password" variant="primary" icon="key" loading={resetting} disabled={saving || deleting} onPress={() => void resetPassword()} fullWidth />
+          <Button testID="edit-staff-reset-password" label="Generate password" variant="secondary" icon="refresh-cw" disabled={resetting || saving || deleting} onPress={() => void resetPassword(true)} fullWidth />
+          <Text style={type.caption}>The password applies only to this member and remains valid until the owner changes it.</Text>
+          <View style={styles.divider} />
+          {!protectedOwner ? <Button testID="edit-staff-delete" label="Delete team member" variant="danger" icon="trash-2" disabled={resetting || saving || deleting} onPress={() => setDeleteOpen(true)} fullWidth /> : null}
+        </>}
       </ScrollView>
     </KeyboardAvoidingView>
+    <ConfirmDialog visible={deleteOpen} onClose={() => { if (!deleting) setDeleteOpen(false); }} onConfirm={() => void deleteMember()} title="Delete team member?" description={`This removes ${staff.full_name} from the team and blocks their sign-in on every device. Business records remain available.`} confirmLabel="Delete member" tone="danger" loading={deleting} testID="confirm-delete-team-member" />
   </Sheet>;
 }
 

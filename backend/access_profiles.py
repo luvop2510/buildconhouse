@@ -19,7 +19,7 @@ PROFILE_MODULES = {
 # Account/session functions and the single assigned-floor selector. No
 # business records are exposed by these endpoints.
 _COMMON = {
-    ("GET", "/api/auth/me"), ("POST", "/api/auth/change-password"),
+    ("GET", "/api/auth/me"),
     ("POST", "/api/auth/logout"), ("GET", "/api/auth/sessions"),
     ("POST", "/api/auth/sessions/logout-all"),
     ("GET", "/api/settings/floor-access"), ("GET", "/api/settings/floors"),

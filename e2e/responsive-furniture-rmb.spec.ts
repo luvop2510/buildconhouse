@@ -23,14 +23,18 @@ async function fixture(page: Page, configured = true) {
   await page.getByRole('button', { name: 'Open RDCL', exact: true }).click();
 }
 
-test('furniture RMB ledger converts INR and USD, saves exact rates, and locks finalized charges', async ({ page }, testInfo) => {
+test('furniture RNB ledger converts INR and USD, saves exact rates, and locks finalized charges', async ({ page }, testInfo) => {
   await fixture(page);
   await expect(page.getByLabel('Customer name / quotation heading (RDCL)', { exact: true })).toHaveValue('RDCL');
   await expect(page.getByTestId('furniture-ledger-preview')).toContainText('87035.35');
+  const preview = await page.getByTestId('furniture-ledger-preview').boundingBox();
+  await expect(page.getByText('Scroll horizontally to view all seven columns.', { exact: true })).toHaveCount(preview && preview.width < 1015 ? 1 : 0);
+  await expect(page.getByTestId('furniture-summary')).toContainText('Balance RNB 87035.35');
+  await expect(page.getByLabel('Accompanying WhatsApp message', { exact: true })).toHaveValue('Dear RDCL, please find your furniture quotation attached. Balance: RNB 87035.35.');
   await page.getByRole('button', { name: 'Add customer deposit', exact: true }).click();
   await page.getByText('USD', { exact: true }).last().click();
   await page.getByLabel('Deposit 2 amount (USD)', { exact: true }).fill('100');
-  await page.getByLabel('Rate: RMB per USD (multiply)', { exact: true }).fill('7.1');
+  await page.getByLabel('Rate: RNB per USD (multiply)', { exact: true }).fill('7.1');
   await expect(page.getByTestId('furniture-ledger-preview')).toContainText('86325.35');
   let body: any;
   await page.route('**/api/furniture-quotations/rmb-one', route => {
@@ -44,11 +48,35 @@ test('furniture RMB ledger converts INR and USD, saves exact rates, and locks fi
   });
   await page.getByRole('button', { name: 'Finalize and lock charges', exact: true }).click();
   await expect(page.getByText('Finalized charges are locked. Customer deposits can still be recorded.', { exact: true })).toBeVisible();
-  await expect(page.getByLabel('Charge 1 RMB', { exact: true })).not.toBeEditable();
+  await expect(page.getByLabel('Charge 1 RNB', { exact: true })).not.toBeEditable();
   await expect(page.getByLabel('Deposit 1 amount (INR)', { exact: true })).toBeEditable();
   expect(body.status).toBe('final');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('furniture-ledger.png'), fullPage: true });
+});
+
+test('saved RMB deposits display RNB throughout and retain the existing currency on save', async ({ page }) => {
+  await fixture(page);
+  const legacy = { ...saved, deposits: [{ ...saved.deposits[0], currency: 'RMB', amount: '100', rate: '1', amount_rmb: '100.00' }], total_received_rmb: '100.00', balance_rmb: '232438.00' };
+  await page.route('**/api/furniture-quotations/rmb-one', route => route.fulfill({ json: legacy }));
+  await page.getByRole('button', { name: 'Reload saved quotation', exact: true }).click();
+  await expect(page.getByLabel('Deposit 1 amount (RNB)', { exact: true })).toHaveValue('100');
+  await expect(page.getByLabel('RNB rate', { exact: true })).not.toBeEditable();
+  await expect(page.getByText('RNB', { exact: true }).first()).toBeVisible();
+  await expect(page.getByTestId('furniture-ledger-preview')).toContainText('100 RNB');
+  await expect(page.getByText(/\bRMB\b/)).toHaveCount(0);
+  await page.getByLabel('Deposit 1 amount (RNB)', { exact: true }).fill('200');
+  let persisted = false;
+  await page.route('**/api/furniture-quotations/rmb-one', route => {
+    const body = route.request().postDataJSON();
+    expect(body.deposits[0]).toMatchObject({ currency: 'RMB', amount: '200', rate: '1' });
+    persisted = true;
+    return route.fulfill({ json: { ...legacy, ...body, total_received_rmb: '200.00', balance_rmb: '232338.00' } });
+  });
+  await page.getByRole('button', { name: 'Save quotation', exact: true }).click();
+  await expect(page.getByTestId('furniture-summary')).toContainText('Balance RNB 232338.00');
+  expect(persisted).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 });
 
 test('direct furniture WhatsApp sends the PDF with editable message and refreshes real receipt', async ({ page }) => {
@@ -78,7 +106,7 @@ test('unconfigured WhatsApp and unsaved edits do not claim a send', async ({ pag
   await fixture(page, false);
   await expect(page.getByRole('button', { name: 'Send PDF to WhatsApp', exact: true })).toBeDisabled();
   await expect(page.getByText(/Direct WhatsApp sending needs a WhatsApp Business sender/)).toBeVisible();
-  await page.getByLabel('Charge 1 RMB', { exact: true }).fill('172251');
+  await page.getByLabel('Charge 1 RNB', { exact: true }).fill('172251');
   await expect(page.getByRole('button', { name: 'Download PDF', exact: true })).toBeDisabled();
   await expect(page.getByText('Save your changes before downloading or sending the PDF.', { exact: true })).toBeVisible();
 });

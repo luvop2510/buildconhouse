@@ -1,4 +1,4 @@
-"""Furniture RMB ledger: exact decimal snapshots and the supplied seven-column PDF."""
+"""Furniture RNB ledger: exact decimal snapshots and the supplied seven-column PDF."""
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -15,6 +15,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 FURNITURE_FLOOR_ID = "third-floor"
 CENT = Decimal("0.01")
+
+
+def furniture_currency_label(currency: str) -> str:
+    """Display the requested label without changing saved receipt currency codes."""
+    return "RNB" if currency == "RMB" else currency
 
 
 def money(value: str) -> Decimal:
@@ -107,12 +112,12 @@ def prepare_document(body: FurnitureQuotationInput, now: str, previous: dict | N
             else:
                 amount, rate = money(value.amount), money(value.rate)
                 if value.currency == "RMB" and rate != 1:
-                    raise HTTPException(422, "RMB deposits must use rate 1")
+                    raise HTTPException(422, "RNB deposits must use rate 1")
                 fields["amount"] = format(amount, "f")
                 fields["rate"] = format(rate, "f")
                 fields["amount_rmb"] = decimal_text(amount / rate if value.currency == "INR" else amount * rate)
             if Decimal(fields["amount_rmb"]) <= 0:
-                raise HTTPException(422, "Each charge and converted deposit must be at least RMB 0.01")
+                raise HTTPException(422, "Each charge and converted deposit must be at least RNB 0.01")
             entry_id = value.id or str(uuid4())
             if entry_id in seen or (value.id and entry_id not in old):
                 raise HTTPException(422, "Entry IDs must be unique and belong to this quotation")
@@ -151,14 +156,14 @@ def build_pdf(doc: dict) -> tuple[bytes, str]:
     paragraph = lambda value: Paragraph(escape(str(value)), text)
     heading = ParagraphStyle("heading", parent=text, alignment=1, fontSize=12)
     rows = [[Paragraph(escape(doc["customer_name"]), heading), "", "", "", "", "", ""],
-            ["RMB", "DESCRIPTION", "RMB", "DESCRIPTION", "AMOUNT", "RATE", "DATE"]]
+            ["RNB", "DESCRIPTION", "RNB", "DESCRIPTION", "AMOUNT", "RATE", "DATE"]]
     for i in range(max(len(doc["charges"]), len(doc["deposits"]), 5)):
         charge = doc["charges"][i] if i < len(doc["charges"]) else {}
         deposit = doc["deposits"][i] if i < len(doc["deposits"]) else {}
         dates = sorted({entry["updated_at"] for entry in (charge, deposit) if entry})
         rows.append([charge.get("amount_rmb", ""), paragraph(charge.get("description", "")),
                      deposit.get("amount_rmb", ""), paragraph(deposit.get("description", "")),
-                     paragraph(f"{deposit.get('amount', '')} {deposit.get('currency', '')}".strip()),
+                     paragraph(f"{deposit.get('amount', '')} {furniture_currency_label(deposit.get('currency', ''))}".strip()),
                      deposit.get("rate", ""), paragraph(" / ".join(_date(date) for date in dates))])
     total_row = len(rows)
     rows.append([doc["total_payable_rmb"], "", doc["total_received_rmb"], "TOTAL", "", "", ""])

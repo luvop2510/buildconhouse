@@ -158,13 +158,14 @@ export function Card({
 // Badge / StatusBadge / Chip
 // ──────────────────────────────────────────────────────────────────────────
 export function Badge({
-  label, tone = "neutral", size = "md", icon, testID,
+  label, tone = "neutral", size = "md", icon, testID, truncate = false,
 }: {
   label: string;
   tone?: "neutral" | "brand" | "success" | "warning" | "error" | "info";
   size?: "sm" | "md";
   icon?: FeatherName;
   testID?: string;
+  truncate?: boolean;
 }) {
   const map = {
     neutral: { bg: colors.surfaceTertiary, fg: colors.onSurfaceSecondary, border: colors.border },
@@ -180,6 +181,7 @@ export function Badge({
 
   return (
     <View testID={testID} style={{
+      ...(truncate ? { maxWidth: "100%", minWidth: 0, flexShrink: 1 } as const : {}),
       backgroundColor: map.bg,
       paddingHorizontal: padH,
       paddingVertical: padV,
@@ -192,7 +194,7 @@ export function Badge({
       gap: 4,
     }}>
       {icon ? <Feather name={icon} size={fs + 1} color={map.fg} /> : null}
-      <Text style={{ color: map.fg, fontSize: fs, fontFamily: type.titleMd.fontFamily, fontWeight: "600", letterSpacing: 0.1 }}>
+      <Text numberOfLines={truncate ? 1 : undefined} style={{ ...(truncate ? { minWidth: 0, flexShrink: 1 } : {}), color: map.fg, fontSize: fs, fontFamily: type.titleMd.fontFamily, fontWeight: "600", letterSpacing: 0.1 }}>
         {label}
       </Text>
     </View>

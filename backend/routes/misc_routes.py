@@ -10,13 +10,15 @@ from re import fullmatch
 from urllib.parse import parse_qs, urlsplit
 
 from access_profiles import profile_allows_request
-from auth import accessible_floor_ids, floor_for_write, floor_query, floor_scope_ids, get_current_customer, get_current_session, get_current_user, hash_password, invalidate_principal_cache, normalize_staff_access, require_min_role, revoke_all_sessions
+from auth import accessible_floor_ids, apply_staff_password_policy, floor_for_write, floor_query, floor_scope_ids, get_current_customer, get_current_session, get_current_user, hash_password, invalidate_principal_cache, normalize_staff_access, require_min_role, require_owner, revoke_all_sessions
 from db import db
-from models import FloorCreatePayload, FloorPublic, TeamCreatePayload, TeamUpdatePayload, UserPublic, now_iso
+from models import FloorCreatePayload, FloorPublic, TeamCreatePayload, TeamPasswordResetPayload, TeamUpdatePayload, UserPublic, now_iso
 from services.activity_log import log_event
 from services.access_grants import build_delegation_snapshot, grants_allow, grants_for_user, resource_candidates_for_api_path
 from services.download_tokens import create_download_token
-from services.invite_service import generate_temp_password, get_invite_service, temp_password_expiry_iso
+from services.invite_service import generate_temp_password, get_invite_service
+from services.login_identity import normalize_login_id
+from pymongo.errors import DuplicateKeyError
 from settings import settings
 from time import monotonic
 from typing import Optional
@@ -304,16 +306,42 @@ async def list_notifications(user: UserPublic = Depends(get_current_user)):
 
 
 @router.get("/team")
-async def list_team(_: UserPublic = Depends(require_min_role("manager"))):
-    return await db.users.find({}, {"_id": 0, "password_hash": 0}).sort("full_name", 1).to_list(200)
+async def list_team(user: UserPublic = Depends(require_owner)):
+    require_owner(user)
+    docs = await db.users.find({"deleted_at": {"$exists": False}}, {"_id": 0, "password_hash": 0}).sort("full_name", 1).to_list(200)
+    return [apply_staff_password_policy(doc) for doc in docs]
+
+
+async def _team_login_patch(login_id: str | None, *, user_id: str | None = None) -> dict:
+    key = normalize_login_id(login_id or "")
+    if not key:
+        return {"login_id": None, "login_id_key": None}
+    if "@" in key:
+        raise HTTPException(status_code=422, detail="Usernames cannot contain @; use the email field for email login")
+    query: dict = {"login_id_key": key}
+    if user_id:
+        query["id"] = {"$ne": user_id}
+    if await db.users.find_one(query, {"_id": 0, "id": 1}):
+        raise HTTPException(status_code=409, detail="A team member with this username already exists")
+    return {"login_id": " ".join(login_id.split()), "login_id_key": key}
+
+
+async def _write_team_patch(target: dict, patch: dict) -> None:
+    """Do not mutate an account that changed role, status or was deleted."""
+    query = {"id": target["id"], "role": target["role"],
+             "active": {"$ne": False} if target.get("active", True) else False,
+             "deleted_at": {"$exists": False}}
+    result = await db.users.update_one(query, {"$set": patch})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=409, detail="Team member changed. Refresh before trying again")
 
 
 @router.post("/team")
-async def create_team_member(body: TeamCreatePayload, user: UserPublic = Depends(require_min_role("admin"))):
-    if body.role == "owner" and user.role != "owner":
-        raise HTTPException(status_code=403, detail="Only an owner can create another owner")
+async def create_team_member(body: TeamCreatePayload, user: UserPublic = Depends(require_owner)):
+    require_owner(user)
     if await db.users.find_one({"email": body.email.lower()}, {"_id": 0, "id": 1}):
         raise HTTPException(status_code=409, detail="A team member with this email already exists")
+    login_patch = await _team_login_patch(body.login_id)
     if body.custom_access:
         if body.role == "owner":
             raise HTTPException(status_code=422, detail="Owners use full access; delegate pages to staff accounts")
@@ -329,10 +357,7 @@ async def create_team_member(body: TeamCreatePayload, user: UserPublic = Depends
         floor_ids=floor_ids,
         access_profile=body.access_profile,
         custom_access=body.custom_access,
-        # New staff must set their own password on first login — the admin-
-        # supplied password here is only a onboarding credential, never a
-        # long-term secret someone else chose for them.
-        must_change_password=True, temp_password_expires_at=temp_password_expiry_iso(),
+        must_change_password=False, temp_password_expires_at=None,
     ).model_dump(exclude={"active_floor_id"})
     if getattr(body, "team_role", None) is not None:
         doc["team_role"] = body.team_role
@@ -343,7 +368,11 @@ async def create_team_member(body: TeamCreatePayload, user: UserPublic = Depends
             actor_id=user.id, actor_name=user.full_name,
         )
     doc["password_hash"] = hash_password(body.password)
-    await db.users.insert_one(doc)
+    doc.update(login_patch)
+    try:
+        await db.users.insert_one(doc)
+    except DuplicateKeyError as exc:
+        raise HTTPException(status_code=409, detail="A team member with this email or username already exists") from exc
     doc.pop("password_hash", None)
     doc.pop("_id", None)
     await log_event(
@@ -356,32 +385,38 @@ async def create_team_member(body: TeamCreatePayload, user: UserPublic = Depends
 
 @router.patch("/team/{user_id}")
 async def update_team_member(
-    user_id: str, body: TeamUpdatePayload, user: UserPublic = Depends(require_min_role("admin")),
+    user_id: str, body: TeamUpdatePayload, user: UserPublic = Depends(require_owner),
 ):
+    require_owner(user)
     if user_id == user.id and body.active is False:
         raise HTTPException(status_code=400, detail="You can't deactivate your own account")
     if user_id == user.id and body.role is not None and body.role != user.role:
         raise HTTPException(status_code=400, detail="You can't change your own role")
     before = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
-    if not before:
+    if not before or before.get("deleted_at"):
         raise HTTPException(status_code=404, detail="Team member not found")
-    # `access_profile: null` is a meaningful request: it safely clears the
-    # provisioner profile.  Other nulls retain PATCH's usual "not supplied"
-    # semantics.
+    # Null clears optional profile, team-role and username assignments.
+    # Other nulls retain PATCH's usual "not supplied" semantics.
     supplied = body.model_dump(exclude_unset=True)
-    patch = {k: v for k, v in supplied.items() if v is not None or k in {"access_profile", "team_role"}}
+    patch = {k: v for k, v in supplied.items() if v is not None or k in {"access_profile", "team_role", "login_id"}}
     if not patch:
         raise HTTPException(status_code=400, detail="Nothing to update")
     target_is_owner = before.get("role") == "owner"
-    promoting_to_owner = patch.get("role") == "owner" and not target_is_owner
-    if user.role != "owner" and (target_is_owner or promoting_to_owner):
-        raise HTTPException(status_code=403, detail="Only an owner can manage owner accounts")
     removes_owner = target_is_owner and (patch.get("active") is False or ("role" in patch and patch["role"] != "owner"))
-    if removes_owner and await db.users.count_documents({"role": "owner", "active": {"$ne": False}}) <= 1:
-        raise HTTPException(status_code=400, detail="At least one active owner is required")
+    if removes_owner and before.get("active", True):
+        # No count-then-write race: active owners cannot remove one another
+        # through Team, so concurrent requests cannot eliminate every owner.
+        raise HTTPException(status_code=400, detail="Active owner accounts cannot be deactivated or demoted through Team")
+    if "login_id" in patch:
+        patch.update(await _team_login_patch(patch["login_id"], user_id=user_id))
     proposed_custom = patch.get("custom_access", bool(before.get("custom_access")))
     proposed_role = patch.get("role", before["role"])
     proposed_floors = patch.get("floor_ids", before.get("floor_ids") or [])
+    if proposed_role == "owner":
+        if patch.get("custom_access") or patch.get("access_profile") is not None:
+            raise HTTPException(status_code=422, detail="Owners use full access; delegate pages to staff accounts")
+        proposed_custom = False
+        patch.update({"custom_access": False, "access_profile": None, "delegation_grants": []})
     if proposed_custom:
         if proposed_role == "owner":
             raise HTTPException(status_code=422, detail="Owners use full access; delegate pages to staff accounts")
@@ -413,8 +448,11 @@ async def update_team_member(
     if proposed_floors != (before.get("floor_ids") or []) or "floor_ids" in patch or "access_profile" in patch:
         patch["floor_ids"] = proposed_floors
     patch["updated_at"] = now_iso()
-    await db.users.update_one({"id": user_id}, {"$set": patch})
-    security_fields = ("role", "floor_ids", "access_profile", "custom_access", "delegation_grants")
+    try:
+        await _write_team_patch(before, patch)
+    except DuplicateKeyError as exc:
+        raise HTTPException(status_code=409, detail="A team member with this username already exists") from exc
+    security_fields = ("role", "floor_ids", "access_profile", "custom_access", "delegation_grants", "active")
     security_changed = any(field in patch and patch[field] != before.get(field) for field in security_fields)
     if security_changed:
         invalidate_principal_cache("staff", user_id)
@@ -448,37 +486,32 @@ async def update_team_member(
             summary="Staff Access Profile Changed",
             payload={"from": before.get("access_profile"), "to": patch["access_profile"]},
         )
-    return doc
+    return apply_staff_password_policy(doc)
 
 
 @router.post("/team/{user_id}/reset-password")
-async def reset_team_member_password(user_id: str, user: UserPublic = Depends(require_min_role("admin"))):
-    """Team > Reset Password. Generates a secure temporary password shown
-    ONCE to the admin (manual-share, no email/SMS integration yet — see
-    services/invite_service.py). The account is forced to change it on next
-    login and it self-expires in 72h if unused."""
+async def reset_team_member_password(
+    user_id: str, user: UserPublic = Depends(require_owner), body: Optional[TeamPasswordResetPayload] = None,
+):
+    """Owner sets a permanent credential for this account and signs it out."""
+    require_owner(user)
     if user_id == user.id:
         raise HTTPException(status_code=400, detail="Use Settings > Change password to reset your own password")
     target = await db.users.find_one({"id": user_id}, {"_id": 0})
-    if not target:
+    if not target or target.get("deleted_at"):
         raise HTTPException(status_code=404, detail="Team member not found")
-    if target.get("role") == "owner" and user.role != "owner":
-        raise HTTPException(status_code=403, detail="Only an owner can reset an owner password")
-    temp_pw = generate_temp_password()
-    expires_at = temp_password_expiry_iso()
-    await db.users.update_one(
-        {"id": user_id},
-        {"$set": {
-            "password_hash": hash_password(temp_pw),
-            "must_change_password": True,
-            "temp_password_expires_at": expires_at,
-            "updated_at": now_iso(),
-        }},
-    )
+    password = body.new_password if body is not None else generate_temp_password()
+    expires_at = None
+    await _write_team_patch(target, {
+        "password_hash": hash_password(password),
+        "must_change_password": False,
+        "temp_password_expires_at": expires_at,
+        "updated_at": now_iso(),
+    })
     await revoke_all_sessions("staff", user_id)
     result = await get_invite_service().deliver(
         recipient_email=target.get("email"), recipient_name=target.get("full_name", "this team member"),
-        temp_password=temp_pw, expires_at=expires_at, kind="staff_reset",
+        temp_password=password, expires_at=expires_at, kind="staff_reset",
     )
     await log_event(
         event_type="user.password_reset", entity_type="user", entity_id=user_id, actor=user,
@@ -486,10 +519,34 @@ async def reset_team_member_password(user_id: str, user: UserPublic = Depends(re
     )
     return {
         "delivery_method": result.delivery_method,
+        "password": result.temporary_password,
         "temporary_password": result.temporary_password,
         "expires_at": result.expires_at,
         "message": result.message,
     }
+
+
+@router.delete("/team/{user_id}")
+async def delete_team_member(user_id: str, user: UserPublic = Depends(require_owner)):
+    """Remove access while retaining account identity in historical records."""
+    require_owner(user)
+    if user_id == user.id:
+        raise HTTPException(status_code=400, detail="You can't delete your own account")
+    target = await db.users.find_one({"id": user_id}, {"_id": 0, "id": 1, "role": 1, "active": 1, "deleted_at": 1})
+    if not target or target.get("deleted_at"):
+        raise HTTPException(status_code=404, detail="Team member not found")
+    if target.get("role") == "owner" and target.get("active", True):
+        raise HTTPException(status_code=400, detail="Active owner accounts cannot be deleted through Team")
+    await _write_team_patch(target, {
+        "active": False, "deleted_at": now_iso(), "updated_at": now_iso(),
+        "delegation_grants": [], "custom_access": False, "access_profile": None,
+    })
+    await revoke_all_sessions("staff", user_id)
+    await log_event(
+        event_type="user.deleted", entity_type="user", entity_id=user_id,
+        actor=user, summary="Staff Account Deleted",
+    )
+    return {"deleted": True}
 
 
 @router.get("/reports/overview")

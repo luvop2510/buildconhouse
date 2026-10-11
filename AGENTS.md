@@ -2,7 +2,34 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
-## Current verification update — 2026-10-10
+## Current verification update — 2026-10-11
+
+Staff credentials are permanent and owner-managed. Team account reads, creation,
+editing, deletion, password resets and delegation management are owner-only at
+the API and UI; staff cannot change their own password. Legacy staff temporary
+flags are normalized at login/hydration, including the JK owner account. Customer
+temporary credentials retain their independent policy. Owners have full access;
+active owners cannot be demoted, disabled or deleted through Team. Deleted staff
+lose sessions and remain tombstones for historical attribution and identity safety.
+
+Furniture displays RNB in the UI, PDF and sharing text, retaining legacy RMB wire
+fields and stored values. Hard-navigation hydration failures no longer erase
+persisted credentials unless the server returns an authoritative 401/403.
+
+Local acceptance: 2,072 hermetic backend tests; 636 browser passes across six
+widths with six intentional navigation skips; 58 passes each for Android Chrome,
+iPhone Safari, iPad Safari and isolated desktop Firefox. The original device run
+had two Firefox runner/protocol failures; its entire 58-case project passed with
+one worker, unchanged deadlines and no retries. TypeScript, zero-warning lint,
+34 frontend contract scripts, web/native exports, all 11 route budgets and Expo
+Doctor20/20 pass. Optional route drift checking has no configured baseline.
+Read-only predeploy passes and migration dry-run finds no pending migrations.
+Existing 22 high/eight moderate npm findings and GitHub billing preventing CI
+job startup still block release. No deployment, signing or physical-device
+acceptance is claimed. See
+`docs/audits/2026-10-11-owner-password-rnb-responsive.md` and its JSON evidence.
+
+## Earlier verification update — 2026-10-10
 
 Company CSV/XLSX updates are deterministic and preserve product IDs and verified
 media. Catalog reads keep the existing warm cache at normal sizes and switch to

@@ -1,15 +1,6 @@
-// Secure one-time credential dialog — used by Team > Reset Password and
-// Customers > Send Invite / Reset Password. Shows a freshly-generated
-// temporary password exactly once with a Copy button; the password is only
-// ever held in local component state and is gone the moment this dialog
-// closes (no persistence, no re-open, no re-fetch — the backend never
-// returns a plaintext password a second time).
-//
-// Architected for the future EmailInviteService: when the backend switches
-// delivery_method to "email", `temporaryPassword` will be absent from the
-// response and this dialog is simply never opened — callers should check
-// `delivery_method === "manual"` before calling `open()`. No UI changes
-// needed to support that switch later.
+// One-time credential display. Team passwords are permanent and owner-managed;
+// customer invites keep their separate temporary-password policy. Credentials
+// are held only in local state and cleared when the caller closes this dialog.
 import * as Clipboard from "expo-clipboard";
 import { useState } from "react";
 import { View } from "react-native";
@@ -23,24 +14,27 @@ import { useBp } from "@/src/design/responsive";
 export type TempPasswordResult = {
   delivery_method: "manual" | "email";
   temporary_password?: string | null;
+  password?: string | null;
   expires_at?: string | null;
   message?: string;
 };
 
 export function TempPasswordDialog({
-  visible, onClose, title, result,
+  visible, onClose, title, result, permanent = false,
 }: {
   visible: boolean;
   onClose: () => void;
   title: string;
   result: TempPasswordResult | null;
+  permanent?: boolean;
 }) {
   const { isPhone } = useBp();
   const [copied, setCopied] = useState(false);
+  const password = result?.password || result?.temporary_password;
 
   const copy = async () => {
-    if (!result?.temporary_password) return;
-    await Clipboard.setStringAsync(result.temporary_password);
+    if (!password) return;
+    await Clipboard.setStringAsync(password);
     setCopied(true);
     toast.success("Copied to clipboard");
     setTimeout(() => setCopied(false), 2000);
@@ -64,7 +58,7 @@ export function TempPasswordDialog({
       testID="temp-password-dialog"
     >
       <View style={{ padding: isPhone ? spacing.lg : spacing.xl, gap: spacing.lg }}>
-        {result?.delivery_method === "manual" && result.temporary_password ? (
+        {result?.delivery_method === "manual" && password ? (
           <>
             <Text style={type.bodyMuted}>
               Share this password with them directly (WhatsApp, SMS, or email). It will
@@ -72,7 +66,7 @@ export function TempPasswordDialog({
             </Text>
             <View style={styles.pwBox}>
               <Text testID="temp-password-value" selectable numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65} style={styles.pwText}>
-                {result.temporary_password}
+                {password}
               </Text>
             </View>
             <Button
@@ -83,7 +77,7 @@ export function TempPasswordDialog({
               onPress={copy}
               fullWidth
             />
-            {expiresLabel ? (
+            {permanent ? <Text style={type.caption}>This password applies only to this account and remains valid until the owner changes it. The member cannot change it.</Text> : expiresLabel ? (
               <View style={styles.expiryRow}>
                 <Text style={type.caption}>
                   Expires {expiresLabel} if unused. They&apos;ll be asked to set their own

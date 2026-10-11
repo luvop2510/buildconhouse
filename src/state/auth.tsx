@@ -47,6 +47,15 @@ type AuthState = {
   markPasswordChanged: () => void;
 };
 
+// Owner access cannot be reduced by historical delegation fields. Staff
+// passwords stay owner-managed even when an older response carries the flag.
+function normalizeStaffIdentity(user: StaffUser): StaffUser {
+  return {
+    ...user, must_change_password: false,
+    ...(user.role === "owner" ? { custom_access: false, access_profile: null, access_grants: undefined } : {}),
+  };
+}
+
 const AuthCtx = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -83,7 +92,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       if (k === "staff") {
-        const me = await api.get<StaffUser>("/auth/me");
+        const me = normalizeStaffIdentity(await api.get<StaffUser>("/auth/me"));
         if (!isCurrent()) return;
         if (me.custom_access) {
           const access = await api.get<{ grants: PersonalGrant[] }>("/settings/access-grants/me");
@@ -96,8 +105,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!isCurrent()) return;
         setKind(k); setCustomer(me); setStaff(null);
       }
-    } catch {
+    } catch (error) {
       if (!isCurrent()) return;
+      // A canceled request or temporary outage does not revoke a session.
+      // In WebKit, unloading a document can reject its fetch before React
+      // cleans up; clearing storage then would erase the next page’s session.
+      const status = error && typeof error === "object" && "status" in error ? error.status : undefined;
+      if (status !== 401 && status !== 403) return;
       await clearBuilderDrafts();
       if (!isCurrent()) return;
       await updateCredentials(operation, clearToken);
@@ -124,6 +138,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!isCurrent()) return;
       await updateCredentials(operation, () => setToken(res.access_token, "staff"));
       if (!isCurrent()) return;
+      res.user = normalizeStaffIdentity(res.user);
       // Floor access is identity-scoped, not app-scoped. In particular, a
       // single-floor worker's cached response must never determine what the
       // next owner sees in the shell.

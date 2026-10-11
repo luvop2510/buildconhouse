@@ -46,20 +46,15 @@ configuredTest(Boolean(process.env.E2E_BASE_URL && process.env.E2E_GROUND_TILES_
   await expect(page.getByText(/Create dispatch|Mark ready|Dispatch order/i)).toHaveCount(0);
 });
 
-configuredTest(Boolean(process.env.E2E_BASE_URL && process.env.E2E_TEMP_STAFF_EMAIL && process.env.E2E_TEMP_STAFF_PASSWORD && process.env.E2E_TEMP_STAFF_NEW_PASSWORD))("temporary-password staff must change password before reaching the workspace", async ({ page }) => {
-  const email = process.env.E2E_TEMP_STAFF_EMAIL;
-  const temporaryPassword = process.env.E2E_TEMP_STAFF_PASSWORD;
-  const newPassword = process.env.E2E_TEMP_STAFF_NEW_PASSWORD;
+configuredTest(Boolean(process.env.E2E_BASE_URL && process.env.E2E_TEMP_STAFF_EMAIL && process.env.E2E_TEMP_STAFF_PASSWORD))("owner-managed staff password reaches workspace without forced change", async ({ page }) => {
   await page.goto("/login");
-  await page.getByTestId("login-email").fill(email!);
-  await page.getByTestId("login-password").fill(temporaryPassword!);
+  await page.getByTestId("login-email").fill(process.env.E2E_TEMP_STAFF_EMAIL!);
+  await page.getByTestId("login-password").fill(process.env.E2E_TEMP_STAFF_PASSWORD!);
   await page.getByTestId("login-submit").click();
-  await expect(page.getByTestId("force-change-new")).toBeVisible();
-  await page.getByTestId("force-change-current").fill(temporaryPassword!);
-  await page.getByTestId("force-change-new").fill(newPassword!);
-  await page.getByTestId("force-change-confirm").fill(newPassword!);
-  await page.getByTestId("force-change-submit").click();
-  await expect(page).not.toHaveURL(/set-new-password/);
+  await expect(page).not.toHaveURL(/login|set-new-password/);
+  await expect(page.getByTestId("force-change-new")).toHaveCount(0);
+  await page.goto("/settings-password");
+  await expect(page.getByTestId("owner-managed-password")).toBeVisible();
 });
 
 configuredTest(Boolean(process.env.E2E_BASE_URL && profiles[0].email && profiles[0].password && profiles[3].email && profiles[3].password))("logout/login does not retain the preceding account floor", async ({ page }) => {

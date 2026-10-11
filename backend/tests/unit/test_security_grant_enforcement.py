@@ -44,7 +44,7 @@ def mock_staff(monkeypatch, grants, principal=None):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("role", ["worker", "owner"])
+@pytest.mark.parametrize("role", ["worker", "admin", "manager"])
 async def test_custom_grant_binds_actual_object_and_related_floor(monkeypatch, role):
     mock_staff(monkeypatch, [grant()], staff(role=role))
     user = await auth.get_current_user(request=request("/api/quotations/q-first"), authorization="Bearer test", x_floor_id="ground-floor", dl=None)
@@ -60,6 +60,27 @@ async def test_custom_grant_binds_actual_object_and_related_floor(monkeypatch, r
     assert exc.value.status_code == 404
     with pytest.raises(HTTPException):
         auth.require_floor_access("first-floor", user)
+
+
+@pytest.mark.asyncio
+async def test_owner_can_manage_every_floor_despite_legacy_restricted_flags(monkeypatch):
+    principal = {**staff(role="owner"), "access_profile": "ground_payments_dispatches"}
+    mock_staff(monkeypatch, [], principal)
+    user = await auth.get_current_user(request=request("/api/team"), authorization="Bearer test", x_floor_id="ground-floor", dl=None)
+    assert auth.accessible_floor_ids(user) is None
+    assert user.custom_access is False and user.access_profile is None
+    assert auth.require_floor_access("first-floor", user) is user
+    class Quotes:
+        async def find_one(self, *_args, **_kwargs):
+            return {"id": "q-first", "floor_id": "first-floor"}
+    assert (await auth.get_floor_scoped_or_404(Quotes(), "q-first", user))["id"] == "q-first"
+    reached = []
+    async def next_handler(_request):
+        reached.append(True)
+        return Response(status_code=200)
+    monkeypatch.setattr(server, "decode_token", lambda _token: {"kind": "staff"})
+    response = await server.enforce_access_profile(request("/api/team"), next_handler)
+    assert response.status_code == 200 and reached == [True]
 
 
 @pytest.mark.asyncio

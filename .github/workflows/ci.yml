@@ -153,6 +153,8 @@ jobs:
         run: npm run test:e2e:audit
       - name: Six-size tablet, catalog and WhatsApp acceptance
         run: npx playwright test --config playwright.responsive.config.ts responsive-
+      - name: Member credentials and furniture touch-device acceptance
+        run: npx playwright test --config playwright.devices.config.ts
       - name: Publish browser result counts in the job summary
         if: always()
         run: |

@@ -91,14 +91,19 @@ ALLOWLIST: dict[str, str] = {
         "misc_routes.py:220 patches db.users by user_id with no floor filter, but staff "
         "accounts are cross-floor by design: models.UserPublic carries a floor_ids LIST "
         "(a person can be assigned to more than one business unit) and the endpoint is "
-        "already gated to require_min_role('admin'), so this is person/staff "
+        "already gated to require_owner, so this is person/staff "
         "administration, not a per-floor business record."
     ),
     "reset_team_member_password": (
         "misc_routes.py:253 looks up db.users by user_id with no floor filter for the same "
         "reason as update_team_member above -- staff accounts belong to a person who may "
         "hold floor_ids on either or both business units, not to a single floor, and the "
-        "route is already require_min_role('admin')-gated."
+        "route is already require_owner-gated."
+    ),
+    "delete_team_member": (
+        "Staff identity spans assigned floors rather than belonging to one business "
+        "unit. Strict require_owner protects deletion, which preserves the account "
+        "as an inactive tombstone and revokes its sessions and delegation snapshot."
     ),
     "create_access_grant": (
         "access_grants_routes.py creates a staff-account authorization row, not a business "

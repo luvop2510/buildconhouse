@@ -16,17 +16,19 @@ const originalGrants = [{ resource: 'payments', floor_id: 'ground-floor', action
 
 async function teamFixture(page: Page, catalogResponse: () => unknown = () => catalog, existingRole = member.role) {
   await mockSession(page, '/team');
-  const writes: { path: string; body: Record<string, any> }[] = [];
-  const state = { failSave: false, failGrants: false, floorIds: [...member.floor_ids], grants: [...originalGrants] };
+  const writes: { path: string; method: string; body: Record<string, any> }[] = [];
+  const state = { failSave: false, failGrants: false, floorIds: [...member.floor_ids], grants: [...originalGrants], deleted: false };
   await page.route('**/api/**', async route => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (request.method() !== 'GET' && path.startsWith('/api/team')) {
-      writes.push({ path, body: request.postDataJSON() });
+      writes.push({ path, method: request.method(), body: request.postDataJSON() || {} });
       if (state.failSave) return route.fulfill({ status: 503, json: { detail: 'Save temporarily unavailable' } });
+      if (path.endsWith("/reset-password")) return route.fulfill({ json: { delivery_method: "manual", password: request.postDataJSON()?.new_password || "GeneratedOwner!2026", expires_at: null } });
+      if (request.method() === "DELETE") { state.deleted = true; return route.fulfill({ json: { ok: true } }); }
       return route.fulfill({ json: { ...member, ...request.postDataJSON() } });
     }
-    if (path === '/api/team') return route.fulfill({ json: [{ ...member, role: existingRole }] });
+    if (path === '/api/team') return route.fulfill({ json: state.deleted ? [] : [{ ...member, role: existingRole }] });
     if (path === '/api/settings/floors') return route.fulfill({ json: floors });
     if (path === '/api/settings/access-grants/resources') return route.fulfill({ json: catalogResponse() });
     if (path === '/api/settings/access-grants/test-worker') return state.failGrants ? route.fulfill({ status: 503, json: { detail: 'Access temporarily unavailable' } }) : route.fulfill({ json: { floor_ids: state.floorIds, grants: state.grants } });
@@ -43,6 +45,7 @@ async function fillNewMember(page: Page) {
   await page.getByTestId('add-staff-name').fill('New Worker');
   await page.getByTestId('add-staff-email').fill('new-worker@example.test');
   await page.getByTestId('add-staff-password').fill('NewWorker!2026');
+  await page.getByTestId('add-staff-username').fill('NEW WORKER');
   await page.getByTestId('add-staff-team-role').fill('Ground Floor Sales');
   await expect(page.getByTestId('floor-delegation-editor')).toBeVisible();
   await expect(page.getByTestId('add-staff-role-worker')).toHaveText('Delegated staff');
@@ -68,7 +71,7 @@ test('critical team delegation: multiple floors, pages and actions save in one c
   await page.getByTestId('add-staff-save').click();
   await expect(page.getByTestId('add-staff-sheet')).toHaveCount(0);
   expect(writes).toHaveLength(1);
-  expect(writes[0].body).toMatchObject({ role: 'worker', custom_access: true, access_profile: null, floor_ids: ['ground-floor', 'first-floor'], team_role: 'Ground Floor Sales' });
+  expect(writes[0].body).toMatchObject({ role: 'worker', custom_access: true, access_profile: null, floor_ids: ['ground-floor', 'first-floor'], team_role: 'Ground Floor Sales', login_id: 'NEW WORKER' });
   expect(writes[0].body.access_grants).toEqual([
     { resource: 'payments', floor_id: 'ground-floor', actions: ['view', 'create'] },
     { resource: 'tiles', floor_id: 'ground-floor', actions: ['view'] },
@@ -239,27 +242,28 @@ test('critical team delegation: custom Settings preserves account controls and h
   });
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByText('Ground Floor Sales', { exact: true })).toBeVisible();
-  for (const id of ['password', 'mfa', 'privacy', 'terms']) await expect(page.getByTestId(`settings-nav-${id}`)).toBeVisible();
+  for (const id of ['mfa', 'privacy', 'terms']) await expect(page.getByTestId(`settings-nav-${id}`)).toBeVisible();
   await expect(page.getByTestId('logout-all-devices')).toBeVisible();
   await expect(page.getByTestId('settings-logout')).toBeVisible();
   for (const id of ['team', 'permissions', 'access-grants', 'company', 'pdf', 'catalog', 'walkins', 'notifications', 'system']) await expect(page.getByTestId(`settings-nav-${id}`)).toHaveCount(0);
   await expect(page.getByText('No active sessions found.', { exact: true })).toBeVisible();
   expect(sessionReads).toBe(1);
-  await page.getByTestId('settings-nav-password').click();
-  await expect(page).toHaveURL(/\/settings-password$/);
-  await expect(page.getByRole('heading', { name: 'Change password', exact: true })).toBeVisible();
+  await expect(page.getByTestId('settings-nav-password')).toHaveCount(0);
+  await expect(page.getByTestId('settings-owner-managed-password')).toBeVisible();
 });
 
 
 test('critical team delegation: account password deep link survives hydration and root still lands on no access', async ({ page }) => {
   await personalSession(page, [], '/settings-password');
   await expect(page).toHaveURL(/\/settings-password$/);
-  await expect(page.getByRole('heading', { name: 'Change password', exact: true })).toBeVisible();
-  await expect(page.getByTestId('current-password-input')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Password managed by owner', exact: true })).toBeVisible();
+  await expect(page.getByTestId('owner-managed-password')).toBeVisible();
+  await expect(page.getByTestId('current-password-input')).toHaveCount(0);
   await expect(page.getByTestId('no-page-access')).toHaveCount(0);
   await page.reload();
   await expect(page).toHaveURL(/\/settings-password$/);
-  await expect(page.getByTestId('current-password-input')).toBeVisible();
+  await expect(page.getByTestId('owner-managed-password')).toBeVisible();
+  await expect(page.getByTestId('current-password-input')).toHaveCount(0);
   await page.goto('/');
   await expect(page).toHaveURL(/\/access$/);
   await expect(page.getByTestId('no-page-access')).toBeVisible();
@@ -275,15 +279,18 @@ test('critical team delegation: no assigned floors keeps personal security pages
   }, []);
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByText('Ground Floor Sales', { exact: true })).toBeVisible();
-  await expect(page.getByTestId('settings-nav-password')).toBeVisible();
+  await expect(page.getByTestId('settings-nav-password')).toHaveCount(0);
+  await expect(page.getByTestId('settings-owner-managed-password')).toBeVisible();
   await expect(page.getByTestId('settings-nav-mfa')).toBeVisible();
   await expect(page.getByTestId('logout-all-devices')).toBeVisible();
   await expect(page.getByTestId('floor-access-empty')).toHaveCount(0);
-  await page.getByTestId('settings-nav-password').click();
-  await expect(page.getByTestId('current-password-input')).toBeVisible();
+  await page.goto('/settings-password');
+  await expect(page.getByTestId('owner-managed-password')).toBeVisible();
+  await expect(page.getByTestId('current-password-input')).toHaveCount(0);
   await expect(page).toHaveURL(/\/settings-password$/);
   await page.reload();
-  await expect(page.getByTestId('current-password-input')).toBeVisible();
+  await expect(page.getByTestId('owner-managed-password')).toBeVisible();
+  await expect(page.getByTestId('current-password-input')).toHaveCount(0);
   await expect(page).toHaveURL(/\/settings-password$/);
   await page.goto('/settings-mfa');
   await expect(page.getByRole('heading', { name: 'Authenticator MFA', exact: true })).toBeVisible();
@@ -296,13 +303,129 @@ test('critical team delegation: no assigned floors keeps personal security pages
   expect(businessReads).toBe(0);
 });
 
-test('critical team delegation: a no-floor personal deep link still requires changing a temporary password', async ({ page }) => {
+test('critical team delegation: a no-floor member with a legacy password flag can use their account', async ({ page }) => {
   await mockSession(page, '/settings', false, {
     staff: { ...member, floor_ids: [], must_change_password: true }, grants: [],
     floorAccess: { all_floors: false, floors: [], floor_ids: [] },
   });
   await page.goto('/settings');
-  await expect(page).toHaveURL(/\/set-new-password$/);
-  await expect(page.getByTestId('force-change-current')).toBeVisible();
+  await expect(page).toHaveURL(/\/settings$/);
+  await expect(page.getByTestId('force-change-current')).toHaveCount(0);
+  await expect(page.getByTestId('settings-owner-managed-password')).toBeVisible();
   await expect(page.getByTestId('settings-nav-password')).toHaveCount(0);
+});
+
+
+test('critical team passwords: owner sets one member password and it remains owner managed', async ({ page }) => {
+  const { writes } = await teamFixture(page);
+  await page.getByTestId('team-row-test-worker').click();
+  await page.getByTestId('edit-staff-password').fill('SpecificMember!2026');
+  await page.getByTestId('edit-staff-confirm-password').fill('SpecificMember!2026');
+  await page.getByTestId('edit-staff-set-password').click();
+  await expect(page.getByTestId('temp-password-dialog')).toBeVisible();
+  await expect(page.getByTestId('temp-password-value')).toHaveText('SpecificMember!2026');
+  await expect(page.getByText('This password applies only to this account and remains valid until the owner changes it. The member cannot change it.', { exact: true })).toBeVisible();
+  expect(writes).toEqual([{ path: '/api/team/test-worker/reset-password', method: 'POST', body: { new_password: 'SpecificMember!2026' } }]);
+  await page.getByTestId('temp-password-done').click();
+  await expect(page.getByTestId('temp-password-value')).toHaveCount(0);
+});
+
+test('critical team passwords: generated member password and mismatched passwords', async ({ page }) => {
+  const { writes } = await teamFixture(page);
+  await page.getByTestId('team-row-test-worker').click();
+  await page.getByTestId('edit-staff-password').fill('SpecificMember!2026');
+  await page.getByTestId('edit-staff-confirm-password').fill('DifferentMember!2026');
+  await page.getByTestId('edit-staff-set-password').click();
+  await expect(page.getByRole('alert')).toHaveText("Passwords don't match");
+  expect(writes).toHaveLength(0);
+  await page.getByTestId('edit-staff-reset-password').click();
+  await expect(page.getByTestId('temp-password-value')).toHaveText('GeneratedOwner!2026');
+  expect(writes[0]).toMatchObject({ path: '/api/team/test-worker/reset-password', method: 'POST', body: {} });
+});
+
+test('critical team members: delete requires confirmation and removes only that member', async ({ page }) => {
+  const { writes } = await teamFixture(page);
+  await page.getByTestId('team-row-test-worker').click();
+  await page.getByTestId('edit-staff-delete').click();
+  await expect(page.getByTestId('confirm-delete-team-member')).toBeVisible();
+  expect(writes).toHaveLength(0);
+  await page.getByTestId('confirm-delete-team-member-confirm').click();
+  await expect(page.getByTestId('edit-staff-sheet')).toHaveCount(0);
+  await expect(page.getByTestId('team-row-test-worker')).toHaveCount(0);
+  expect(writes).toEqual([{ path: '/api/team/test-worker', method: 'DELETE', body: {} }]);
+});
+
+for (const role of ['admin', 'manager', 'sales', 'purchase', 'warehouse', 'accounts', 'worker']) {
+  test(`critical ${role} cannot use member management or own password changes`, async ({ page }) => {
+    let managementRequests = 0;
+    await mockSession(page, '/team', false, { staff: { ...member, role, custom_access: false } });
+    await page.route('**/api/team**', route => { managementRequests++; return route.fulfill({ status: 403, json: { detail: 'Owner only' } }); });
+    await page.goto('/team');
+    await expect(page.getByTestId('team-owner-only')).toBeVisible();
+    await expect(page.getByTestId('team-add-btn')).toHaveCount(0);
+    expect(managementRequests).toBe(0);
+    await page.goto('/settings');
+    await expect(page.getByTestId('settings-owner-managed-password')).toBeVisible();
+    await expect(page.getByTestId('settings-nav-team')).toHaveCount(0);
+    await expect(page.getByTestId('settings-nav-password')).toHaveCount(0);
+    await page.goto('/settings-password');
+    await expect(page.getByTestId('owner-managed-password')).toBeVisible();
+    await expect(page.getByTestId('save-password-btn')).toHaveCount(0);
+  });
+}
+
+
+test('critical owner keeps every floor and management function despite stale delegation fields', async ({ page }) => {
+  await teamFixture(page);
+  await page.route('**/api/auth/me', route => route.fulfill({ json: { id: 'audit-owner', email: 'owner@example.test', full_name: 'JK PATEL', role: 'owner', active: true, custom_access: true, access_profile: 'sanitary_purchases', floor_ids: [], must_change_password: true } }));
+  let grantRequests = 0;
+  await page.route('**/api/settings/access-grants/me', route => { grantRequests++; return route.fulfill({ status: 403, json: { detail: 'No delegated grants' } }); });
+  await page.goto('/team');
+  await expect(page.getByTestId('team-add-btn')).toBeVisible();
+  await expect(page.getByTestId('floor-access-empty')).toHaveCount(0);
+  expect(grantRequests).toBe(0);
+  await page.goto('/settings');
+  await expect(page.getByTestId('settings-nav-team')).toBeVisible();
+  await expect(page.getByTestId('settings-nav-password')).toBeVisible();
+  await page.goto('/settings-password');
+  await expect(page.getByTestId('current-password-input')).toBeVisible();
+});
+
+
+test('critical team members: long names usernames emails and role labels stay inside every viewport', async ({ page }) => {
+  await teamFixture(page);
+  const longMember = { ...member, full_name: 'A'.repeat(120), email: `${'longmember'.repeat(12)}@example.test`, login_id: 'U'.repeat(120), team_role: 'Furniture Sales and Installation Coordination Department Supervisor and Assistant' };
+  await page.route('**/api/team', route => route.fulfill({ json: [longMember] }));
+  await page.reload();
+  const row = page.getByTestId('team-row-test-worker');
+  const badge = page.getByTestId('team-role-test-worker');
+  await expect(row).toBeVisible();
+  await expect(badge).toBeVisible();
+  const rowBox = await row.boundingBox();
+  const badgeBox = await badge.boundingBox();
+  expect(rowBox).not.toBeNull();
+  expect(badgeBox).not.toBeNull();
+  expect(badgeBox!.x).toBeGreaterThanOrEqual(rowBox!.x);
+  expect(badgeBox!.x + badgeBox!.width).toBeLessThanOrEqual(rowBox!.x + rowBox!.width);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await row.click();
+  await expect(page.getByTestId('edit-staff-username')).toHaveValue(longMember.login_id);
+  await expect(page.getByTestId('edit-staff-password')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+
+test('critical active owners keep their role enabled status and account', async ({ page }) => {
+  const { writes } = await teamFixture(page, () => catalog, 'owner');
+  await page.getByTestId('team-row-test-worker').click();
+  await expect(page.getByTestId('edit-staff-owner-protected')).toBeVisible();
+  await expect(page.getByTestId('edit-staff-active-switch').getByRole('switch')).toBeDisabled();
+  await expect(page.getByTestId('edit-staff-delete')).toHaveCount(0);
+  await page.getByTestId('edit-staff-role-worker').click();
+  await expect(page.getByTestId('edit-staff-role-owner')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('edit-staff-set-password')).toBeVisible();
+  await page.getByTestId('edit-staff-save').click();
+  await expect(page.getByTestId('edit-staff-sheet')).toHaveCount(0);
+  expect(writes).toHaveLength(1);
+  expect(writes[0].body).toMatchObject({ role: 'owner', active: true, custom_access: false });
 });

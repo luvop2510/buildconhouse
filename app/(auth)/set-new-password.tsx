@@ -1,9 +1,4 @@
-// Forced password change — shown when a staff member or customer logs in
-// with a temporary password (issued via Team > Reset Password or
-// Customers > Send Invite / Reset Password). Works for BOTH auth kinds:
-// the endpoint called depends on `kind`, but the screen itself is identical
-// (staff and customer authentication stay completely separate server-side —
-// this UI only branches on which change-password endpoint to call).
+// Temporary customer portal invites use a separate password policy.
 import { useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { Text } from "@/src/components/AppText";
@@ -26,15 +21,14 @@ export default function SetNewPassword() {
   const [error, setError] = useState<string | null>(null);
 
   const submit = async () => {
-    if (saving) return;
+    if (saving || kind !== "customer") return;
     setError(null);
     if (!current) { setError("Enter the temporary password you just used to sign in"); return; }
     if (next.length < 12) { setError("New password must be at least 12 characters"); return; }
     if (next !== confirm) { setError("Passwords don't match"); return; }
     setSaving(true);
     try {
-      const path = kind === "customer" ? "/auth/customer/change-password" : "/auth/change-password";
-      await api.post(path, { current_password: current, new_password: next });
+      await api.post("/auth/customer/change-password", { current_password: current, new_password: next });
       markPasswordChanged();
       toast.success("Password set — you're all set");
     } catch (e: any) {
@@ -43,6 +37,8 @@ export default function SetNewPassword() {
       setSaving(false);
     }
   };
+
+  if (kind !== "customer") return null;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}>

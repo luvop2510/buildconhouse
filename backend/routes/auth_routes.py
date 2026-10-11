@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
 from auth import (
-    apply_effective_floor_ids, create_session, create_token, decode_token, get_current_customer, get_current_session, get_current_user,
-    hash_password, invalidate_principal_cache, verify_password,
+    apply_effective_floor_ids, apply_staff_password_policy, create_session, create_token, decode_token, get_current_customer, get_current_session, get_current_user,
+    hash_password, invalidate_principal_cache, require_owner, verify_password,
 )
 from db import db
 from models import (
@@ -64,11 +64,7 @@ async def staff_login(body: LoginPayload, request: Request):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     if not doc.get("active", True):
         raise HTTPException(status_code=403, detail="Account disabled")
-    if doc.get("must_change_password") and is_temp_password_expired(doc.get("temp_password_expires_at")):
-        raise HTTPException(
-            status_code=401,
-            detail="This temporary password has expired. Ask an admin to reset it again.",
-        )
+    doc = apply_staff_password_policy(doc)
     if doc.get("mfa_enabled"):
         await mfa.consume_factor(doc, body.mfa_code, body.recovery_code)
     await clear_login_attempts(ip, identifier)
@@ -96,12 +92,10 @@ async def staff_me(user: UserPublic = Depends(get_current_user)):
 async def staff_change_password(
     body: ChangePasswordPayload,
     request: Request,
-    user: UserPublic = Depends(get_current_user),
+    user: UserPublic = Depends(require_owner),
     authorization: Optional[str] = Header(None),
 ):
-    """Settings > Account > Password. Also the exit path from a forced
-    password change after Team > Reset Password issued a temporary one —
-    clears must_change_password/temp_password_expires_at on success.
+    """Only owners can change their own password, with their current password.
 
     Security: a valid session token alone (stolen or leaked) doesn't hand an
     attacker the account — they still need the CURRENT password, and this
@@ -109,6 +103,7 @@ async def staff_change_password(
     Reuses the same (ip, identifier) rate limiter as /login, keyed on the
     user's own id rather than email so it's scoped per-account regardless of
     what email is on file."""
+    require_owner(user)
     ip = _client_ip(request)
     await reserve_login_attempt(ip, f"staff-pw:{user.id}")
     doc = await db.users.find_one({"id": user.id}, {"_id": 0, "password_hash": 1})

@@ -1,9 +1,11 @@
 """InviteService — delivery abstraction for portal invites & password resets.
 
 Today's implementation (`ManualInviteService`) does not send any email/SMS:
-it hands the admin a secure, single-use temporary password to relay
+it shows a credential once for the account administrator to relay
 themselves (WhatsApp/SMS/email), which is the option the user explicitly
-chose for launch. `EmailInviteService` is a stub for a future real email
+chose for launch. Staff credentials are permanently owner-managed, with no
+expiry; customer invites retain the temporary credential policy.
+`EmailInviteService` is a stub for a future real email
 integration (Resend/SendGrid) — swapping the driver is a single env var
 (`INVITE_SERVICE_DRIVER=email`) and changes NOTHING else:
 
@@ -76,7 +78,7 @@ class InviteResult:
 
 
 class InviteService(ABC):
-    """Delivers a freshly-generated temporary password to a recipient. Never
+    """Delivers a freshly-issued account password to a recipient. Never
     persists or hashes anything itself — the caller is responsible for
     storing `password_hash` before calling `deliver`; this class only decides
     HOW the credential reaches the recipient."""
@@ -84,7 +86,7 @@ class InviteService(ABC):
     @abstractmethod
     async def deliver(
         self, *, recipient_email: Optional[str], recipient_name: str,
-        temp_password: str, expires_at: str, kind: str,
+        temp_password: str, expires_at: Optional[str], kind: str,
     ) -> InviteResult:
         ...
 
@@ -104,6 +106,9 @@ class ManualInviteService(InviteService):
             temporary_password=temp_password,
             expires_at=expires_at,
             message=(
+                f"{verb} generated for {recipient_name}. Share it with them directly — "
+                "it will not be shown again. Only the owner can change this password."
+                if kind == "staff_reset" else
                 f"{verb} generated for {recipient_name}. Share it with them directly — "
                 "it will not be shown again and expires in 72 hours if unused."
             ),

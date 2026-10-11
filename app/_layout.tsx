@@ -39,12 +39,9 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     const inCustomer = segments[0] === "(customer)";
     const onForceChange = inAuth && segments[1] === "set-new-password";
 
-    // Security requirement: a temporary password (Team > Reset Password,
-    // Customers > Send Invite/Reset Password) must force a real password
-    // before the user can reach anything else — checked before the normal
-    // staff/customer routing below so it wins regardless of destination.
+    // Staff credentials are permanent and owner-managed. Temporary customer
+    // portal invites keep their separate first-sign-in password policy.
     const mustChangePassword =
-      (kind === "staff" && !!staff?.must_change_password) ||
       (kind === "customer" && !!customer?.must_change_password);
 
     if (kind && mustChangePassword) {

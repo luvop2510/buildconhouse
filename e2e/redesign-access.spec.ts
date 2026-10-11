@@ -146,21 +146,42 @@ for (const [profile, role, route, forbidden] of [
   });
 }
 
-test('critical temporary-password sessions validate before entering the staff workspace', async ({ page }) => {
+test('critical owner with a legacy password flag reaches the workspace and changes their own password', async ({ page }) => {
   await mockSession(page, '/dashboard');
   await page.route('**/api/auth/me', r => r.fulfill({ json: { id: 'audit-owner', email: 'owner@example.test', full_name: 'Audit Owner', role: 'owner', active: true, floor_ids: ['first-floor'], must_change_password: true } }));
   await page.goto('/dashboard');
-  await expect(page).toHaveURL(/set-new-password/);
-  await page.getByTestId('force-change-submit').click();
-  await expect(page.getByRole('alert')).toContainText('Enter the temporary password');
-  await page.getByTestId('force-change-current').fill('Temporary-test-123');
-  await page.getByTestId('force-change-new').fill('Replacement-test-123');
-  await page.getByTestId('force-change-confirm').fill('Replacement-test-123');
+  await expect(page).toHaveURL(/dashboard$/);
+  await expect(page.getByTestId('force-change-current')).toHaveCount(0);
+  await page.goto('/settings-password');
+  await page.getByTestId('current-password-input').fill('OwnerInitial!2026');
+  await page.getByTestId('new-password-input').fill('OwnerReplacement!2026');
+  await page.getByTestId('confirm-password-input').fill('OwnerReplacement!2026');
   let payload: unknown;
   await page.route('**/api/auth/change-password', r => { payload = r.request().postDataJSON(); return r.fulfill({ json: { ok: true } }); });
-  await page.getByTestId('force-change-submit').click();
-  await expect(page).toHaveURL(/dashboard/);
-  expect(payload).toEqual({ current_password: 'Temporary-test-123', new_password: 'Replacement-test-123' });
+  await page.getByTestId('save-password-btn').click();
+  await expect(page).toHaveURL(/settings$/);
+  await expect(page.getByTestId('save-password-btn')).toHaveCount(0);
+  expect(payload).toEqual({ current_password: 'OwnerInitial!2026', new_password: 'OwnerReplacement!2026' });
+});
+
+test('critical owner password changes entered through Settings return to the account page', async ({ page }) => {
+  await mockSession(page, '/settings', false);
+  let payload: unknown;
+  await page.route('**/api/auth/change-password', route => {
+    payload = route.request().postDataJSON();
+    return route.fulfill({ json: { ok: true } });
+  });
+  await page.goto('/settings');
+  await page.getByTestId('settings-nav-password').click();
+  await expect(page).toHaveURL(/settings-password$/);
+  await page.getByTestId('current-password-input').fill('OwnerInitial!2026');
+  await page.getByTestId('new-password-input').fill('OwnerReplacement!2026');
+  await page.getByTestId('confirm-password-input').fill('OwnerReplacement!2026');
+  await page.getByTestId('save-password-btn').click();
+  await expect(page).toHaveURL(/settings$/);
+  await expect(page.getByTestId('settings-nav-password')).toBeVisible();
+  await expect(page.getByTestId('save-password-btn')).toHaveCount(0);
+  expect(payload).toEqual({ current_password: 'OwnerInitial!2026', new_password: 'OwnerReplacement!2026' });
 });
 
 test('critical expired sessions return to sign-in without rendering protected data', async ({ page }) => {

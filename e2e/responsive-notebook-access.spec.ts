@@ -45,15 +45,15 @@ for (const [slug, floorId] of [['kitchen', 'second-floor'], ['furniture', 'third
   }
 }
 
-test('furniture view-only grant keeps the RMB ledger readable without edit or export controls', async ({ page }) => {
+test('furniture view-only grant keeps the RNB ledger readable without edit or export controls', async ({ page }) => {
   await viewOnly(page, '/notebook/furniture-quotations', 'third-floor', 'furniture_quotations');
   await page.route('**/api/furniture-quotations', route => route.fulfill({ json: { rows: [saved], next_cursor: null } }));
   await page.route('**/api/furniture-quotations/rmb-one', route => route.fulfill({ json: saved }));
   await page.goto('/notebook/furniture-quotations');
-  await expect(page.getByRole('button', { name: 'New RMB quotation', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'New RNB quotation', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Open RDCL', exact: true }).click();
   await expect(page.getByLabel('Customer name / quotation heading (RDCL)', { exact: true })).not.toBeEditable();
-  await expect(page.getByLabel('Deposit 1 amount (RMB)', { exact: true })).not.toBeEditable();
+  await expect(page.getByLabel('Deposit 1 amount (RNB)', { exact: true })).not.toBeEditable();
   for (const name of ['Save quotation', 'Finalize and lock charges', 'Add customer deposit', 'Download PDF', 'Send PDF to WhatsApp']) {
     await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0);
   }
@@ -189,7 +189,7 @@ test('furniture export-only grant allows PDF delivery and receipt refresh while 
   });
   await page.goto('/notebook/furniture-quotations');
   await page.getByRole('button', { name: 'Open RDCL', exact: true }).click();
-  await expect(page.getByLabel('Charge 1 RMB', { exact: true })).not.toBeEditable();
+  await expect(page.getByLabel('Charge 1 RNB', { exact: true })).not.toBeEditable();
   await expect(page.getByRole('button', { name: 'Save quotation', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Download PDF', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Send PDF to WhatsApp', exact: true }).click();

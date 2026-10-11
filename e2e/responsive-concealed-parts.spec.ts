@@ -147,15 +147,21 @@ test('critical quotation create-only access recovers locally and submits once wi
   await page.getByTestId('customer-option-client').click();
   await expect.poll(() => page.evaluate(() => {
     const raw = localStorage.getItem('forge.builder.draft.v1.conceal-viewer.first-floor');
-    return raw ? raw.includes('TRIM-1') : false;
-  })).toBe(true);
-  // Reload after the local write exercises recovery beyond the server-save debounce.
+    if (!raw) return null;
+    const draft = JSON.parse(JSON.parse(raw)); // storage serializes the draft JSON string.
+    return { customerId: draft.state.customerId, products: draft.state.lines.map((line: { product_id: string; qty: number }) => [line.product_id, line.qty]) };
+  })).toEqual({ customerId: 'client', products: [['trim', 1]] });
+  // Wait for the complete customer/product snapshot, not an earlier product-only
+  // write. A reload before the 250ms local debounce legitimately loses that edit.
   await page.reload();
   await expect(page.getByTestId('draft-recovery')).toBeVisible();
   await page.getByRole('button', { name: 'Restore draft', exact: true }).click();
   await expect(page.getByTestId('draft-recovery')).not.toBeVisible();
   await expect(page.locator('[data-testid^="qty-trim-"]')).toHaveValue('1');
+  await page.getByTestId('quotation-details-toggle').click();
+  await expect(page.getByTestId('compact-hdr-customer')).toContainText('Fixture customer');
   expect(fixture.mutations()).toEqual([]);
+  await expect(page.getByRole('button', { name: 'Finish and review quotation', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Finish and review quotation', exact: true }).click();
   await expect(page).toHaveURL(/\/quotations\/conceal-quote$/);
   expect(fixture.mutations()).toEqual(['POST']);

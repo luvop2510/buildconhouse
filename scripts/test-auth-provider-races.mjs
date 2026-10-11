@@ -16,7 +16,7 @@ const deferred = () => {
   const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
 };
-const staff = (id, custom = false) => ({ id, role: 'owner', floor_ids: ['first-floor'], custom_access: custom });
+const staff = (id, custom = false) => ({ id, role: custom ? 'worker' : 'owner', floor_ids: ['first-floor'], custom_access: custom });
 const customer = id => ({ id, tier: 'retail' });
 const loginResponse = kind => kind === 'staff'
   ? { access_token: 'fixture-new-credential', user: staff('new-staff') }
@@ -138,7 +138,59 @@ function assertLogin(fixture, kind) {
   assert.equal(fixture.hasStoredCredential, true, 'new persisted credentials survive obsolete hydration');
 }
 
-for (const platform of ['web', 'ios']) {
+for (const platform of ['web', 'ios', 'android']) {
+  test(`${platform}: owner hydration clears legacy delegation and password restrictions`, async () => {
+    const fixture = provider(platform);
+    await fixture.settle();
+    fixture.gets[0].resolve({ ...staff('owner'), custom_access: true, access_profile: 'sanitary_purchases', access_grants: [], floor_ids: [], must_change_password: true });
+    await fixture.settle();
+    assert.equal(fixture.gets.length, 1, 'owner never waits on delegated grant lookup');
+    assert.equal(fixture.state.staff.custom_access, false);
+    assert.equal(fixture.state.staff.access_profile, null);
+    assert.equal(fixture.state.staff.access_grants, undefined);
+    assert.equal(fixture.state.staff.must_change_password, false);
+    assert.equal(fixture.state.loading, false);
+  });
+
+  test(`${platform}: member hydration clears obsolete force-change requirement`, async () => {
+    const fixture = provider(platform);
+    await fixture.settle();
+    fixture.gets[0].resolve({ ...staff('member'), role: 'worker', must_change_password: true });
+    await fixture.settle();
+    assert.equal(fixture.state.staff.must_change_password, false);
+    assert.equal(fixture.state.staff.role, 'worker');
+    assert.equal(fixture.state.loading, false);
+  });
+
+  for (const failure of [
+    { label: 'canceled', error: () => new DOMException('Fixture canceled transport', 'AbortError') },
+    { label: 'temporarily unavailable', error: () => Object.assign(new Error('Fixture server outage'), { status: 503 }) },
+    { label: 'network failure', error: () => new TypeError('Fixture network failure') },
+  ]) {
+    test(`${platform}: ${failure.label} hydration preserves session storage without publishing identity`, async () => {
+      const fixture = provider(platform);
+      await fixture.settle();
+      fixture.gets[0].reject(failure.error());
+      await fixture.settle();
+      assert.equal(fixture.tokenClears, 0, 'a transport failure must not erase another document’s stored session');
+      assert.equal(fixture.draftClears, 0, 'a transport failure is not an account revocation');
+      assert.equal(fixture.state.kind, null);
+      assert.equal(fixture.state.staff, null);
+      assert.equal(fixture.state.loading, false);
+    });
+  }
+
+  test(`${platform}: authoritative forbidden hydration still revokes credentials`, async () => {
+    const fixture = provider(platform);
+    await fixture.settle();
+    fixture.gets[0].reject(Object.assign(new Error('Fixture forbidden session'), { status: 403 }));
+    await fixture.settle();
+    assert.equal(fixture.tokenClears, 1);
+    assert.equal(fixture.draftClears, 1);
+    assert.equal(fixture.state.kind, null);
+    assert.equal(fixture.state.loading, false);
+  });
+
   test(`${platform}: startup draft reset gates identity hydration and newer login`, async () => {
     const startupDraftReset = deferred();
     const fixture = provider(platform, { startupDraftReset });
@@ -184,7 +236,7 @@ for (const platform of ['web', 'ios']) {
     test(`${platform}: newer ${nextKind} login wins during obsolete draft cleanup`, async () => {
       const draftCleanup = deferred();
       const fixture = provider(platform, { draftCleanup }); await fixture.settle();
-      fixture.gets[0].reject(new Error('Fixture invalid session')); await fixture.settle();
+      fixture.gets[0].reject(Object.assign(new Error('Fixture invalid session'), { status: 401 })); await fixture.settle();
       assert.equal(fixture.draftClears, 1); assert.equal(fixture.tokenClears, 0);
       await fixture.beginLogin(nextKind); await fixture.settle();
       draftCleanup.resolve(); await fixture.settle();
@@ -194,7 +246,7 @@ for (const platform of ['web', 'ios']) {
     test(`${platform}: delayed credential deletion finishes before newer ${nextKind} write`, async () => {
       const credentialDeletion = deferred();
       const fixture = provider(platform, { credentialDeletion }); await fixture.settle();
-      fixture.gets[0].reject(new Error('Fixture invalid session')); await fixture.settle();
+      fixture.gets[0].reject(Object.assign(new Error('Fixture invalid session'), { status: 401 })); await fixture.settle();
       assert.equal(fixture.tokenClears, 1);
       const login = fixture.beginLogin(nextKind); await fixture.settle();
       assert.equal(fixture.writes.length, 0, 'new credential write waits for already-started deletion');
@@ -227,7 +279,7 @@ for (const platform of ['web', 'ios']) {
 
   test(`${platform}: current invalid hydration still revokes credentials and drafts`, async () => {
     const fixture = provider(platform); await fixture.settle();
-    fixture.gets[0].reject(new Error('Fixture expired session')); await fixture.settle();
+    fixture.gets[0].reject(Object.assign(new Error('Fixture expired session'), { status: 401 })); await fixture.settle();
     assert.equal(fixture.state.kind, null); assert.equal(fixture.state.staff, null);
     assert.equal(fixture.state.customer, null); assert.equal(fixture.state.loading, false);
     assert.equal(fixture.draftClears, 1); assert.equal(fixture.tokenClears, 1);

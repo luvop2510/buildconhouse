@@ -26,7 +26,7 @@ RESOURCE_REGISTRY: dict[str, dict[str, Any]] = {
     "notifications": {"label": "Notifications"},
     "notebook_walkins": {"label": "Walk-in notebook", "floor_ids": ["second-floor", "third-floor"], "actions": ["view", "create", "update"], "description": "Add walk-ins, record contact attempts, and move leads to quotation follow-up."},
     "notebook_quotations": {"label": "Quotation Follow-up", "floor_ids": ["second-floor", "third-floor"], "actions": ["view", "update"], "description": "Review converted leads, update quotation values, contact customers, and record outcomes."},
-    "furniture_quotations": {"label": "RMB quotations", "floor_ids": ["third-floor"], "actions": ["view", "create", "update", "export"], "description": "Prepare RMB quotations, edit items and terms, download PDFs, and send configured WhatsApp exports."},
+    "furniture_quotations": {"label": "RNB quotations", "floor_ids": ["third-floor"], "actions": ["view", "create", "update", "export"], "description": "Prepare RNB quotations, edit items and terms, download PDFs, and send configured WhatsApp exports."},
     "sales_data": {"label": "Sales Data", "actions": ["view", "export"], "description": "Review floor sales, customer and brand totals, and export reports."},
 }
 
@@ -61,7 +61,7 @@ HTTP_ACTIONS = {
 # resolve through the registry below; unknown business endpoints deny rather
 # than silently inheriting the role hierarchy.
 CUSTOM_ACCESS_COMMON_PATHS = frozenset({
-    "/api/auth/me", "/api/auth/logout", "/api/auth/change-password",
+    "/api/auth/me", "/api/auth/logout",
     "/api/auth/sessions", "/api/settings/floor-access", "/api/settings/floors",
     "/api/settings/permission-matrix", "/api/roles", "/api/downloads/token",
     "/api/settings/access-grants/me",
@@ -75,9 +75,9 @@ def is_common_access_request(method: str, path: str) -> bool:
     if (method, path) in MFA_ACCOUNT_REQUESTS:
         return True
     if method == "GET":
-        return path in CUSTOM_ACCESS_COMMON_PATHS - {"/api/downloads/token", "/api/exports/page.xlsx", "/api/auth/logout", "/api/auth/change-password"}
+        return path in CUSTOM_ACCESS_COMMON_PATHS - {"/api/downloads/token", "/api/exports/page.xlsx", "/api/auth/logout"}
     if method == "POST":
-        return path in {"/api/auth/logout", "/api/auth/change-password", "/api/auth/sessions/logout-all", "/api/downloads/token", "/api/exports/page.xlsx"}
+        return path in {"/api/auth/logout", "/api/auth/sessions/logout-all", "/api/downloads/token", "/api/exports/page.xlsx"}
     return method == "DELETE" and fullmatch(r"/api/auth/sessions/[^/]+", path) is not None
 
 

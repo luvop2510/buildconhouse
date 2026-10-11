@@ -49,3 +49,54 @@ for (const kind of ['staff', 'customer'] as const) {
     }
   });
 }
+
+
+for (const role of ['owner', 'worker']) {
+  test(`critical ${role} signs in with owner-set password and an obsolete force-change flag`, async ({ page }) => {
+    await mockSession(page, '/login', false, { signedIn: false });
+    const person = { id: `password-${role}`, email: 'fixture@example.test', login_id: role === 'owner' ? 'JK PATEL' : 'NEW WORKER', full_name: 'Password Account', role, active: true, floor_ids: role === 'owner' ? [] : ['first-floor'], must_change_password: true, custom_access: role !== 'owner' };
+    await page.route('**/api/auth/login', route => {
+      expect(route.request().postDataJSON()).toEqual({ email: person.login_id, password: 'OwnerAssigned!2026' });
+      return route.fulfill({ json: { access_token: 'fixture-only-staff', user: person } });
+    });
+    await page.route('**/api/settings/access-grants/me', route => route.fulfill({ json: { grants: [] } }));
+    await page.goto('/login');
+    await page.getByTestId('login-email').fill(person.login_id);
+    await page.getByTestId('login-password').fill('OwnerAssigned!2026');
+    await page.getByTestId('login-submit').click();
+    await expect(page).toHaveURL(role === 'owner' ? /dashboard$/ : /access$/);
+    await expect(page.getByTestId('force-change-current')).toHaveCount(0);
+  });
+}
+
+test('critical customer invite still requires its separate first-sign-in password change', async ({ page }) => {
+  await mockSession(page, '/home', false);
+  await page.route('**/api/auth/customer/me', route => route.fulfill({ json: { id: 'invite-customer', email: 'customer@example.test', name: 'Invite Customer', tier: 'retail', portal_enabled: true, must_change_password: true } }));
+  let payload: unknown;
+  await page.route('**/api/auth/customer/change-password', route => { payload = route.request().postDataJSON(); return route.fulfill({ json: { ok: true } }); });
+  await page.goto('/home');
+  await expect(page).toHaveURL(/set-new-password$/);
+  await page.getByTestId('force-change-current').fill('CustomerInvite!2026');
+  await page.getByTestId('force-change-new').fill('CustomerChosen!2026');
+  await page.getByTestId('force-change-confirm').fill('CustomerChosen!2026');
+  await page.getByTestId('force-change-submit').click();
+  await expect(page).toHaveURL(/home$/);
+  expect(payload).toEqual({ current_password: 'CustomerInvite!2026', new_password: 'CustomerChosen!2026' });
+});
+
+
+test('critical transient startup identity failure preserves the saved session and reload recovers', async ({ page }) => {
+  await mockSession(page, '/dashboard', false);
+  let unavailable = true;
+  await page.route('**/api/auth/me', route => route.fulfill(unavailable
+    ? { status: 503, json: { detail: 'Temporary identity transport failure' } }
+    : { json: { id: 'recovered-owner', email: 'owner@example.test', full_name: 'Recovered Owner', role: 'owner', active: true, floor_ids: [] } }));
+  await page.goto('/dashboard');
+  await expect(page.getByTestId('login-submit')).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Good (morning|afternoon|evening), Recovered\.$/ })).toHaveCount(0);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('forge.jwt.kind') || 'null'))).toBe('staff');
+  unavailable = false;
+  await page.reload();
+  await expect(page).toHaveURL(/dashboard$/);
+  await expect(page.getByRole('heading', { name: /^Good (morning|afternoon|evening), Recovered\.$/ })).toBeVisible();
+});

@@ -451,7 +451,7 @@ function FloorAccessGate({ children }: { children: React.ReactNode }) {
     return <View testID="floor-access-empty" accessibilityLiveRegion="assertive" style={styles.floorAccessState}>
       <Feather name="lock" size={28} color={color.inkSoft} />
       <Text style={styles.floorAccessTitle}>No floor access assigned</Text>
-      <Text style={styles.floorAccessCopy}>Your account has no workspace assigned. Ask an owner or manager to assign a floor, then sign in again.</Text>
+      <Text style={styles.floorAccessCopy}>Your account has no workspace assigned. Ask an owner to assign a floor, then sign in again.</Text>
       <Pressable accessibilityRole="button" accessibilityLabel="Sign out" onPress={async () => { await logout(); router.replace("/(auth)/login"); }} style={styles.floorAccessButton}>
         <Text style={styles.floorAccessButtonText}>Sign out</Text>
       </Pressable>
