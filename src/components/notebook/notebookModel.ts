@@ -62,6 +62,14 @@ export function applyCellPatch(row: NotebookRow, field: NotebookField, value: un
   return { ...row, [field]: value } as NotebookRow;
 }
 
+/** Preserve the meaning of entered prices; never turn negatives or text into money. */
+export function parseQuotationPrice(input: string): number | null {
+  const normalized = input.trim().replace(/^₹\s*/, "").replace(/,/g, "");
+  if (!/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(normalized)) return null;
+  const value = Number(normalized);
+  return Number.isFinite(value) ? value : null;
+}
+
 export function formatRupees(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(value)) return "—";
   return `₹${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(value)}`;

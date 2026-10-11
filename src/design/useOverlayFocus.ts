@@ -1,20 +1,30 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { Platform, View } from 'react-native';
 
-// Reference counting keeps underlying dialogs isolated when another opens above them.
-const isolated = new Map<HTMLElement, { count: number; inert: boolean; hidden: string | null }>();
+// The topmost portal remains interactive even if an underlying dialog previously
+// isolated its already-mounted portal. Recompute isolation when the stack changes.
+const portals: HTMLElement[] = [];
+const isolated = new Map<HTMLElement, { inert: boolean; hidden: string | null }>();
 function isolate(element: HTMLElement) {
-  const current = isolated.get(element);
-  if (current) { current.count += 1; return; }
-  isolated.set(element, { count: 1, inert: element.inert, hidden: element.getAttribute('aria-hidden') });
+  if (isolated.has(element)) return;
+  isolated.set(element, { inert: element.inert, hidden: element.getAttribute('aria-hidden') });
   element.inert = true; element.setAttribute('aria-hidden', 'true');
 }
 function restore(element: HTMLElement) {
   const previous = isolated.get(element);
-  if (!previous || --previous.count > 0) return;
+  if (!previous) return;
   element.inert = previous.inert;
   if (previous.hidden === null) element.removeAttribute('aria-hidden'); else element.setAttribute('aria-hidden', previous.hidden);
   isolated.delete(element);
+}
+
+function syncIsolation() {
+  const top = portals[portals.length - 1];
+  if (!top) { Array.from(isolated.keys()).forEach(restore); return; }
+  restore(top);
+  for (const sibling of Array.from(document.body.children)) {
+    if (sibling instanceof HTMLElement && sibling !== top && !["SCRIPT", "STYLE", "LINK"].includes(sibling.tagName)) isolate(sibling);
+  }
 }
 
 /** Focus containment, background isolation and restoration for every web overlay. */
@@ -32,22 +42,20 @@ export function useOverlayFocus(open: boolean, onClose: () => void, dismissable 
     if (!open || Platform.OS !== 'web') return;
     const previous = document.activeElement as HTMLElement | null;
     let panel: HTMLElement | null = null;
-    const background: HTMLElement[] = [];
+    let activePortal: HTMLElement | null = null;
     const focusables = () => Array.from(panel?.querySelectorAll<HTMLElement>(
       'button:not(:disabled),input:not(:disabled),textarea:not(:disabled),select:not(:disabled),a[href],[tabindex="0"]',
     ) || []).filter(el => el.getClientRects().length > 0 && el.getAttribute('aria-disabled') !== 'true');
     const timer = setTimeout(() => {
       panel = ref.current as unknown as HTMLElement;
-      (focusables()[0] || panel)?.focus();
       let portal = panel;
       while (portal?.parentElement && portal.parentElement !== document.body) portal = portal.parentElement;
       if (portal?.parentElement === document.body) {
-        for (const sibling of Array.from(document.body.children)) {
-          if (sibling instanceof HTMLElement && sibling !== portal && !['SCRIPT', 'STYLE', 'LINK'].includes(sibling.tagName)) {
-            background.push(sibling); isolate(sibling);
-          }
-        }
+        activePortal = portal;
+        portals.push(portal);
+        syncIsolation();
       }
+      (focusables()[0] || panel)?.focus();
     }, 0);
     const handleKey = (event: KeyboardEvent) => {
       // Only the topmost modal should receive keyboard events.
@@ -75,7 +83,11 @@ export function useOverlayFocus(open: boolean, onClose: () => void, dismissable 
     return () => {
       clearTimeout(timer); document.removeEventListener('keydown', handleKey, true);
       document.removeEventListener('keyup', handleEscape, true);
-      background.forEach(restore);
+      if (activePortal) {
+        const index = portals.lastIndexOf(activePortal);
+        if (index >= 0) portals.splice(index, 1);
+        syncIsolation();
+      }
       if (previous?.isConnected) previous.focus();
     };
   }, [open]);

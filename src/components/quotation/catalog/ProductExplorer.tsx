@@ -354,7 +354,8 @@ type CardProps = {
 };
 
 function ProductGridCardImpl({ product, compact, width, favourite, addedQty, onToggleFav, onQuickAdd, onOpenModal }: CardProps) {
-  const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
+  const [chosenVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
+  const selectedVariant = chosenVariant ? product.variants?.find((variant) => variant.id === chosenVariant.id && variant.sku === chosenVariant.sku) ?? chosenVariant : null;
   const badges: { label: string; tone: "popular" | "frequent" | "recent" }[] = [];
   if (product.popular) badges.push({ label: "Popular", tone: "popular" });
   else if (product.frequently_used) badges.push({ label: "Frequently used", tone: "frequent" });

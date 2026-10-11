@@ -21,6 +21,7 @@ import { QuotationPriceReviewSheet, type CatalogPriceReview } from "../Quotation
 import { api } from "@/src/api/client";
 import { toast } from "@/src/components/Toast";
 import { useHistory, useUndoRedoShortcuts } from "@/src/hooks/useHistory";
+import { useActionAccess } from "@/src/hooks/use-permissions";
 import { useAuth } from "@/src/state/auth";
 import { builderDraftEpoch, readBuilderDraft, writeBuilderDraft, removeBuilderDraft } from "../helpers/draftStorage";
 import { draftNeedsCopy, moveWithinRoom, type BuilderDraft } from "../helpers/draftRecovery";
@@ -91,6 +92,7 @@ function familyCardToProduct(family: CatalogFamily): Product | null {
     warranty: representative.warranty ?? null,
     specs: representative.specs ?? null,
     description: representative.description ?? null,
+    concealed_part: representative.concealed_part ?? null,
     configuration_options: family.configuration_options ?? [],
     variants,
   };
@@ -210,7 +212,7 @@ export type BuilderApi = {
   clearReferrer: () => void;
   createReferrer: (data: { name: string; type: "architect" | "interior_designer" }) => Promise<string | null>;
   referrerSwitcherOpen: boolean; setReferrerSwitcherOpen: (v: boolean) => void;
-  addFromProduct: (p: Product, variant?: ProductVariant) => void;
+  addFromProduct: (p: Product, variant?: ProductVariant, quantity?: number, notes?: string) => void;
   updateLine: (id: string, patch: Partial<Line>, coalesceKey?: string) => void;
   assignAreaToLines: (ids: string[], area: string | null) => void;
   removeLine: (id: string) => void;
@@ -295,6 +297,8 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   const { selectedFloorId, floors } = useFloorAccess();
   const { staff } = useAuth();
   const accountId = staff?.id || "";
+  const canCreateQuotation = useActionAccess("quotations", "create");
+  const canUpdateQuotation = useActionAccess("quotations", "update");
   // The selected floor is published synchronously by the app shell. The
   // fallback only covers the brief initial storage-read window.
   const activeFloorId = selectedFloorId || floors[0]?.id || "";
@@ -664,6 +668,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
         setSaveState("saving");
         let persistedId = persistedIdRef.current || quotationId;
         if (!persistedId) {
+          if (!canCreateQuotation) { toast.error("You don't have access to create quotations"); setSaveState("idle"); return null; }
           const created = await api.post<{ id: string; number: string; updated_at?: string }>("/quotations", payload, { floorId: activeFloorId });
           if (generation !== documentGeneration.current) return null;
           serverSavedAtRef.current = created.updated_at || null;
@@ -672,6 +677,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
           persistedIdRef.current = created.id;
           persistedId = created.id;
         } else {
+          if (!canUpdateQuotation) { toast.error("You don't have access to edit this quotation"); setSaveState("idle"); return null; }
           const upd: any = { ...payload, silent: true, collapsed_rooms: Object.keys(s.collapsedRooms).filter((k) => s.collapsedRooms[k]) };
           const updated = await api.patch<{ updated_at?: string }>(`/quotations/${persistedId}`, upd, { floorId: activeFloorId });
           if (generation !== documentGeneration.current) return null;
@@ -681,6 +687,9 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
         setSaveState(stateRef.current === s ? "saved" : "idle");
         setSavedAt(new Date());
         if (stateRef.current === s) void removeBuilderDraft(accountId, activeFloorId);
+        // Create-only staff submit a complete local draft once. Viewing the
+        // resulting document cannot accidentally enqueue a denied PATCH.
+        if (!canUpdateQuotation) onFinalize?.(persistedId);
         return persistedId;
       } catch (e: any) {
         if (generation !== documentGeneration.current) return null;
@@ -690,17 +699,19 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
       }
     };
     return enqueueQuotationPersist(persistQueue, run);
-  }, [s, quotationId, selectedBrandId, selectedCategoryId, sortKey, activeFloorId, accountId]);
+  }, [s, quotationId, selectedBrandId, selectedCategoryId, sortKey, activeFloorId, accountId, canCreateQuotation, canUpdateQuotation, onFinalize]);
 
   useEffect(() => {
     if (lastSavedStateRef.current === s) return;
     setSaveState("idle");
-    if (!s.customerId) return;
+    // Local draft recovery still runs for create-only staff. Defer the one
+    // server POST until Finish/Save, because later PATCH needs an Edit grant.
+    if (!canUpdateQuotation || !s.customerId) return;
     if (s.lines.length === 0 && !quotationId && s.projectDiscount === 0 && Object.keys(s.categoryDiscounts).length === 0 && Object.keys(s.roomDiscounts).length === 0) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => { persist(); }, 900);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
-  }, [s, quotationId, persist]);
+  }, [s, quotationId, persist, canUpdateQuotation]);
 
   // Recovery is account/floor scoped on web and native, and never replaces
   // a document without an explicit choice. Only unacknowledged edits remain.
@@ -739,6 +750,8 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   const restoreLocalDraft = useCallback(async () => {
     if (!recoveryDraft || recoveryBusy) return;
     const draft = recoveryDraft;
+    if (draft.quotationId && !canUpdateQuotation) { setRecoveryError("You don't have access to edit this saved quotation."); return; }
+    if (!draft.quotationId && !canCreateQuotation) { setRecoveryError("You don't have access to create quotations."); return; }
     setRecoveryError(null);
     setRecoveryBusy(true);
     try {
@@ -754,6 +767,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
           copy = true;
         }
       }
+      if (copy && !canCreateQuotation) { setRecoveryError("Recovering this as a new quotation requires Create access."); return; }
       documentGeneration.current += 1;
       restoreRequest.current += 1;
       if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -772,7 +786,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
       setRecoveryError(message);
       toast.error(message);
     } finally { setRecoveryBusy(false); }
-  }, [recoveryDraft, recoveryBusy, activeFloorId, history]);
+  }, [recoveryDraft, recoveryBusy, activeFloorId, history, canCreateQuotation, canUpdateQuotation]);
 
   // ---------- Restore an existing quotation ----------
   const refreshRecentQuotations = useCallback(async () => {
@@ -783,6 +797,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   }, [activeFloorId]);
 
   const restoreQuotation = useCallback(async (id: string, announce = true) => {
+    if (!canUpdateQuotation) { toast.error("You don't have access to edit saved quotations"); return; }
     const request = ++restoreRequest.current;
     try {
       const doc = await api.get<any>(`/quotations/${id}`, { floorId: activeFloorId });
@@ -810,6 +825,8 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
           discount_pct: it.discount_pct ?? null,
           description: it.description, notes: it.notes,
           finish: it.finish ?? null, family_key: it.family_key ?? null,
+          included_for_line_id: it.included_for_line_id ?? null,
+          included_qty_per_parent: it.included_qty_per_parent ?? null,
           // Preserve immutable godown allocation provenance when reopening a
           // confirmed quotation. Omitting these fields would make a later
           // unrelated edit look like a stock-source swap to the backend.
@@ -844,7 +861,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     } catch (e: any) {
       toast.error(e?.detail || "Could not restore quotation");
     }
-  }, [history, activeFloorId]);
+  }, [history, activeFloorId, canUpdateQuotation]);
 
   // Customer and quotation detail pages enter this route with an explicit
   // quotation id. Reuse the builder's normal restore path so edits, swaps,
@@ -881,6 +898,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   }, [history, quotationId, activeFloorId, accountId]);
 
   const startNewQuotation = useCallback(() => {
+    if (!canCreateQuotation) { toast.error("You don't have access to create quotations"); return; }
     documentGeneration.current += 1;
     restoreRequest.current += 1;
     lastSavedStateRef.current = INITIAL_BUILDER_STATE;
@@ -895,7 +913,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     setSelectedBrandIdState(null);
     setSelectedCategoryIdState(null);
     setQ("");
-  }, [history, accountId, activeFloorId]);
+  }, [history, accountId, activeFloorId, canCreateQuotation]);
 
   // Product modal helpers
   const openProductModal = useCallback((p: Product) => setProductModal(p), []);
@@ -907,6 +925,8 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     } as Product);
     setProductModal((cur) => cur ? patch(cur) : cur);
     setProducts((cur) => cur.map(patch));
+    setRecent((cur) => cur.map(patch));
+    setFrequent((cur) => cur.map(patch));
   }, []);
 
   // ---------- Derived ----------
@@ -1069,7 +1089,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     }
   }, [setReferrer, activeFloorId]);
 
-  const addFromProduct = useCallback((p: Product, variant?: ProductVariant) => {
+  const addFromProduct = useCallback((p: Product, variant?: ProductVariant, quantity = 1, notes?: string) => {
     if (catalogPriceUnknown(p, variant)) {
       setProductModal(variant ? { ...p, ...variant, id: variant.id || p.id, name: variant.name || p.name, price_unknown: true } : p);
       toast.error("Enter a selling price in product details before adding this item");
@@ -1087,7 +1107,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
         lines: addProductAndConcealedPart(
           cur.lines, p, variant, cur.activeRoom,
           (productId) => `${productId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          productImageList(p)[0] ?? null,
+          productImageList(p)[0] ?? null, quantity, notes,
         ).map((line) => existingIds.has(line.id) || line.area ? line : {
           ...line,
           area: suggestedProductArea(line.name, categoryById[line.category_id || ""]),
@@ -1452,8 +1472,8 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   const finalize = useCallback(async () => {
     const persistedId = await persist();
     if (!persistedId) return;
-    onFinalize?.(persistedId);
-  }, [persist, onFinalize]);
+    if (canUpdateQuotation) onFinalize?.(persistedId);
+  }, [persist, onFinalize, canUpdateQuotation]);
 
   // Builder controls issue commands only. The backend commits an EventOutbox
   // record and dispatches QuotationGenerated / OrderPlaced after commit.
@@ -1545,6 +1565,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   // Save label string
   const saveLabel = saveState === "saving" ? "Saving…"
     : saveState === "error" ? "Save failed"
+    : !canUpdateQuotation && (s.customerId || s.lines.length) ? "Local draft · Finish to save"
     : s !== lastSavedStateRef.current && (s.customerId || s.lines.length) ? (s.customerId ? "Unsaved changes" : "Choose a customer to save")
     : savedAt ? `Saved · ${savedAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}`
     : "Draft — no changes yet";

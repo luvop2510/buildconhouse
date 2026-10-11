@@ -89,6 +89,8 @@ def profile_allows_request(profile: str | None, method: str, path: str) -> bool:
                 or (profile == GROUND_TILE_QUOTATIONS_FOLLOWUPS and _tile_customer_tracking(method, path))
                 or (method in {"GET", "POST"} and path == "/api/referrers")
                 or (method == "POST" and path == "/api/products/custom")
+                or (profile == SANITARY_QUOTATIONS_FOLLOWUPS and method == "PATCH"
+                    and fullmatch(r"/api/products/[^/]+/concealed-part", path) is not None)
                 or (method == "POST" and path == "/api/downloads/token"))
     if profile == GROUND_PAYMENTS_DISPATCHES:
         return (path.startswith("/api/payments") or _dispatch_surface(method, path)

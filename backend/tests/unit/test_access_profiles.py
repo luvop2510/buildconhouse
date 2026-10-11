@@ -59,6 +59,14 @@ def test_sanitary_profiles_are_separated():
     assert not profile_allows_request(SANITARY_PURCHASES, "GET", "/api/payments/history")
 
 
+def test_sanitary_profile_allows_only_exact_concealed_default_patch():
+    assert profile_allows_request(SANITARY_QUOTATIONS_FOLLOWUPS, "PATCH", "/api/products/p-1/concealed-part")
+    for method, path in [("PATCH", "/api/products/p-1"), ("PUT", "/api/products/p-1/concealed-part"),
+                         ("PATCH", "/api/products/p-1/concealed-part/extra")]:
+        assert not profile_allows_request(SANITARY_QUOTATIONS_FOLLOWUPS, method, path)
+    assert not profile_allows_request(GROUND_TILE_QUOTATIONS_FOLLOWUPS, "PATCH", "/api/products/p-1/concealed-part")
+
+
 def test_sanitary_quotation_profile_is_always_bound_to_sanitary_floor():
     assert accessible_floor_ids(_profiled_user(SANITARY_QUOTATIONS_FOLLOWUPS)) == ["first-floor"]
 

@@ -95,4 +95,6 @@ async def dashboard_stats(user: UserPublic = Depends(get_current_user)):
     # A very short cache makes route revisits instantaneous without making the
     # dashboard materially stale. Version keys invalidate immediately for
     # write paths that already publish analytics changes.
-    return await cache.cached("dashboard_stats", ["quotations", "customers", "products", "followups"], month_start[:10], floor_scope_ids(user), load, ttl=15)
+    # followups_due is assigned to this person, so same-floor staff must not
+    # share one another's cached count.
+    return await cache.cached("dashboard_stats", ["quotations", "customers", "products", "followups"], f"{month_start[:10]}:{user.id}", floor_scope_ids(user), load, ttl=15)

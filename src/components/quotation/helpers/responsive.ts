@@ -7,7 +7,8 @@ export function quotationGridColumns(width: number, desktopExplorer = false): 1 
   // a single-column fallback means the layout is still usable in an embedded
   // or exceptionally narrow web view.
   if (width >= 720) return 5;
-  if (desktopExplorer && width >= 520) return 5;
+  // Five cards in a 520–719px pane shrink image targets beneath the 44px
+  // favorite control. Use the same four-column threshold as the tablet pane.
   if (width >= 576) return 4;
   if (width >= 480 || (desktopExplorer && width >= 420)) return 3;
   if (width >= 280) return 2;

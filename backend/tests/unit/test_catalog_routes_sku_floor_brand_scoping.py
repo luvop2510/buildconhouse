@@ -18,7 +18,7 @@ import pytest
 from fastapi import HTTPException
 
 import routes.catalog_routes as catalog_routes
-from models import ProductCreate, ProductPatch, UserPublic
+from models import ConcealedPart, ProductCreate, ProductPatch, UserPublic
 
 
 def _user(role: str, floor_id: str) -> UserPublic:
@@ -321,3 +321,37 @@ def test_update_product_rejects_missing_or_ambiguous_conceal_sku(monkeypatch):
             "p1", ProductPatch(concealed_part={"sku": "BODY"}), user=_user("purchase", "first-floor"),
         ))
     assert ambiguous.value.status_code == 409
+
+
+def test_sales_picker_saves_only_a_validated_concealed_association(monkeypatch):
+    docs = [
+        {"id": "p1", "sku": "TRIM", "floor_id": "first-floor", "brand_id": "brand-A"},
+        {"id": "body", "sku": "BODY", "name": "Concealed body", "price": 4000,
+         "mrp": 4500, "floor_id": "first-floor", "brand_id": "brand-A", "active": True},
+    ]
+    fake_db = _patch_setup(monkeypatch, docs)
+    asyncio.run(catalog_routes.save_product_concealed_part(
+        "p1", ConcealedPart(sku="BODY", product_id="body", unit_price=1, qty=2),
+        user=_user("sales", "first-floor"),
+    ))
+    updates = fake_db.products.updated[1]["$set"]
+    assert updates["concealed_part"]["product_id"] == "body"
+    assert updates["concealed_part"]["unit_price"] == 4000
+    assert updates["concealed_part"]["qty"] == 2
+    assert set(updates) == {"concealed_part", "updated_at", "catalog_version", "catalog_updated_by"}
+
+
+@pytest.mark.parametrize("part_floor,active,self_link", [("ground-floor", True, False), ("first-floor", False, False), ("first-floor", True, True)])
+def test_sales_picker_rejects_foreign_retired_or_self_linked_parts(monkeypatch, part_floor, active, self_link):
+    docs = [
+        {"id": "p1", "sku": "TRIM", "floor_id": "first-floor", "brand_id": "brand-A"},
+        {"id": "body", "sku": "BODY", "floor_id": part_floor, "brand_id": "brand-A", "active": active},
+    ]
+    fake_db = _patch_setup(monkeypatch, docs)
+    with pytest.raises(HTTPException) as rejected:
+        asyncio.run(catalog_routes.save_product_concealed_part(
+            "p1", ConcealedPart(sku="TRIM" if self_link else "BODY", product_id="p1" if self_link else "body"),
+            user=_user("sales", "first-floor"),
+        ))
+    assert rejected.value.status_code == 422
+    assert fake_db.products.updated is None

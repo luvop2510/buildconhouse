@@ -17,19 +17,21 @@ import { useBuilder } from "../context/BuilderContext";
 export function RecentQuotationsPanel() {
   const b = useBuilder();
   const { staff } = useAuth();
+  const canCreateQuotations = useActionAccess("quotations", "create");
+  const canEditQuotations = useActionAccess("quotations", "update");
   const canDeleteQuotations = useActionAccess("quotations", "delete", canManageDestructiveData(staff?.role));
   const [deleteTarget, setDeleteTarget] = React.useState<typeof b.recentQuotations[number] | null>(null);
   const [deleting, setDeleting] = React.useState(false);
 
-  if (!b.recentQuotations.length) return null;
+  if (!canEditQuotations || !b.recentQuotations.length) return null;
 
   return (
     <View style={styles.wrap}>
       <View style={styles.headRow}>
         <Text style={styles.groupLabel}>Recent Quotations</Text>
-        <Pressable hitSlop={6} onPress={b.startNewQuotation} testID="rail-new-quote">
+        {canCreateQuotations ? <Pressable hitSlop={6} onPress={b.startNewQuotation} testID="rail-new-quote">
           <Feather name="plus" size={14} color={ds.inkSoft} />
-        </Pressable>
+        </Pressable> : null}
       </View>
       {b.recentQuotations.slice(0, 8).map((q) => {
         const active = b.quotationId === q.id;

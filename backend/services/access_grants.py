@@ -137,18 +137,35 @@ def action_for_api_request(method: str, path: str, query=None) -> str | None:
     return action_for_http_method(method)
 
 
-def granted_floor_ids(grants, *, user_id: str, path: str, action: str, resource: str | None = None) -> list[str] | None:
+def granted_floor_ids(grants, *, user_id: str, path: str, action: str, resource: str | None = None, method: str | None = None) -> list[str] | None:
     """Floors authorized for this operation; None represents an explicit global grant."""
     floors = []
     for grant in grants:
         floor = grant.get("floor_id")
+        furniture_delivery = method in {"GET", "HEAD"} and action == "view" and whatsapp_document_status(path)
+        if furniture_delivery and grant.get("resource") == "furniture_quotations" and floor is None:
+            floor = "third-floor"
         # Ground-floor tile grants cannot widen the shared quotations API to
         # another floor, including when the stored grant is organization-wide.
         resources = (resource,) if resource else resource_candidates_for_api_path(path, floor)
         if grant.get("resource") == "tiles" and floor is None:
             floor = "ground-floor"
             resources = resource_candidates_for_api_path(path, floor)
-        if any(grant_allows(grant, user_id=user_id, resource=resource, action=action, floor_id=floor) for resource in resources):
+        # Saving a quotation's concealed default is also part of creating a
+        # quotation. This exception is restricted to that exact PATCH action;
+        # it never authorizes general product edits or catalog reads.
+        quotation_default = method == "PATCH" and action == "update" and fullmatch(r"/api/products/[^/]+/concealed-part", path)
+        quotation_lookup = method == "GET" and action == "view" and quotation_dependency_read(path)
+        if (quotation_default or quotation_lookup) and grant.get("resource") == "quotations" and floor is None:
+            floor = "first-floor"
+        if quotation_default and floor == "first-floor":
+            resources = ("catalog", "quotations")
+        elif quotation_lookup and floor == "first-floor":
+            resources = (*resources, "quotations")
+        if any(grant_allows(grant, user_id=user_id, resource=candidate, action=capability, floor_id=floor)
+               for candidate in resources
+               for capability in (("export",) if furniture_delivery and candidate == "furniture_quotations"
+                                  else ("create", "update") if quotation_default and candidate == "quotations" else (action,))):
             if grant.get("resource") == "followups":
                 supported = RESOURCE_REGISTRY["followups"]["floor_ids"]
                 if floor is None:
@@ -160,6 +177,23 @@ def granted_floor_ids(grants, *, user_id: str, path: str, action: str, resource:
                 return None
             floors.append(floor)
     return list(dict.fromkeys(floors))
+
+
+def quotation_dependency_read(path: str) -> bool:
+    """The Sanitary builder's lookup surface, excluding imports and exports.
+
+    A quotation page grant supplies the product/customer picker data needed
+    inside that page. Separate Catalog/Customers grants still control those
+    pages and every mutation of their underlying records.
+    """
+    return bool(path in {"/api/brands", "/api/categories", "/api/catalog/hierarchy", "/api/catalog/search", "/api/catalog/facets"}
+                or fullmatch(r"/api/products(?:/[^/]+(?:/(?:alternates|complete-the-set|size-variants|media))?)?", path)
+                or fullmatch(r"/api/families/[^/]+", path)
+                or fullmatch(r"/api/customers(?:/[^/]+)?", path))
+
+
+def whatsapp_document_status(path: str) -> bool:
+    return bool(path == "/api/whatsapp/configuration" or fullmatch(r"/api/whatsapp/deliveries/[^/]+/[^/]+", path))
 
 
 def resource_for_api_path(path: str) -> str | None:
@@ -179,6 +213,7 @@ def resource_for_api_path(path: str) -> str | None:
         ("/api/whatsapp", "quotations"),
         ("/api/catalog", "catalog"), ("/api/products", "catalog"),
         ("/api/brands", "catalog"), ("/api/categories", "catalog"),
+        ("/api/families", "catalog"),
         ("/api/customers", "customers"),
         ("/api/purchases", "purchases"), ("/api/purchase-orders", "purchases"),
         ("/api/suppliers", "purchases"), ("/api/followups", "followups"),
@@ -201,6 +236,8 @@ def resource_candidates_for_api_path(path: str, floor_id: str | None) -> tuple[s
     must never authorize a Sanitary quotation. The explicit floor header is
     what makes this compatibility mapping safe.
     """
+    if floor_id == "third-floor" and whatsapp_document_status(path):
+        return ("furniture_quotations",)
     if path == "/api/referrers" or path.startswith("/api/referrers/"):
         return ("quotations", "tiles", "notebook_walkins", "notebook_quotations", "sales_data")
     resource = resource_for_api_path(path)
@@ -398,6 +435,8 @@ async def grants_for_user(database: Any, user_id: str) -> list[dict[str, Any]]:
         if not isinstance(rows, list):
             return []
         return [row for row in rows if isinstance(row, dict) and grant_is_valid(row) and not is_expired(row.get("expires_at"))
-                and row.get("floor_id") in (user.get("floor_ids") or [])]
+                and row.get("user_id") == user_id and "view" in row["actions"]
+                and row.get("floor_id") in (user.get("floor_ids") or [])
+                and resource_supports(row["resource"], row["floor_id"], row["actions"])]
     rows = await database.access_grants.find({"user_id": user_id}, {"_id": 0}).to_list(500)
     return [row for row in rows if grant_is_valid(row) and not is_expired(row.get("expires_at"))]

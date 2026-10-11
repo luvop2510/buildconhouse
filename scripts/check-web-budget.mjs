@@ -13,6 +13,7 @@ const ROUTES = [
   "login.html", "dashboard.html", "followups.html", "purchases.html",
   "tiles/quotation.html", "tiles/orders/index.html", "quotations/new.html",
   "sales-data/index.html",
+  "team.html", "catalog/index.html", "notebook/furniture-quotations.html",
 ];
 // Expo Router + React Native Web form the unavoidable shell shared by every
 // route (about 490 KiB gzip in the production export). The profiled largest

@@ -15,6 +15,25 @@ export const ACTION_LABELS: Record<GrantAction, string> = {
 };
 export const ACTION_ORDER: GrantAction[] = ["view", "create", "update", "delete", "export"];
 
+/** Block saving when a partial server response could silently discard access. */
+export function isDelegationCatalog(value: unknown, floors: DelegationFloor[]): value is DelegationCatalog {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<DelegationCatalog>;
+  if (!Array.isArray(candidate.resources) || candidate.resources.length === 0 || !candidate.action_descriptions) return false;
+  const floorIds = new Set(floors.map((floor) => floor.id));
+  const keys = new Set<string>();
+  return candidate.resources.every((resource) => {
+    if (!resource || typeof resource.key !== "string" || !resource.key || keys.has(resource.key)
+      || typeof resource.label !== "string" || !resource.label.trim()
+      || !Array.isArray(resource.floor_ids) || resource.floor_ids.some((floor) => !floorIds.has(floor))
+      || !Array.isArray(resource.actions) || !resource.actions.includes("view")
+      || resource.actions.some((action) => !ACTION_ORDER.includes(action)
+        || typeof candidate.action_descriptions?.[action] !== "string" || !candidate.action_descriptions[action].trim())) return false;
+    keys.add(resource.key);
+    return true;
+  });
+}
+
 export function toggleFloor(state: DelegationState, floorId: string, enabled: boolean): DelegationState {
   return {
     floorIds: enabled ? [...new Set([...state.floorIds, floorId])] : state.floorIds.filter((id) => id !== floorId),
@@ -25,12 +44,13 @@ export function toggleFloor(state: DelegationState, floorId: string, enabled: bo
 
 export function togglePage(state: DelegationState, floorId: string, resource: DelegationResource, enabled: boolean): DelegationState {
   if (!state.floorIds.includes(floorId) || !resource.floor_ids.includes(floorId)) return state;
+  if (enabled && state.grants.some((grant) => grant.floor_id === floorId && grant.resource === resource.key)) return state;
   const grants = state.grants.filter((grant) => grant.floor_id !== floorId || grant.resource !== resource.key);
   return { ...state, grants: enabled ? [...grants, { floor_id: floorId, resource: resource.key, actions: ["view"] }] : grants };
 }
 
 export function toggleAction(state: DelegationState, floorId: string, resource: DelegationResource, action: GrantAction, enabled: boolean): DelegationState {
-  if (action === "view" || !resource.actions.includes(action) || !state.floorIds.includes(floorId)) return state;
+  if (action === "view" || !resource.actions.includes(action) || !state.floorIds.includes(floorId) || !resource.floor_ids.includes(floorId)) return state;
   return { ...state, grants: state.grants.map((grant) => {
     if (grant.floor_id !== floorId || grant.resource !== resource.key) return grant;
     const selected = enabled ? [...new Set([...grant.actions, "view" as const, action])] : grant.actions.filter((value) => value !== action);
@@ -55,6 +75,12 @@ export function loadDelegation(floorIds: string[], grants: { resource: string; a
 export function hasGrantAccess(grants: { resource: string; actions: string[]; floor_id?: string | null }[] | undefined, floorId: string, resource: string, action = "view"): boolean {
   if (!floorId) return false;
   return Boolean(grants?.some((grant) => grant.resource === resource && (!grant.floor_id || grant.floor_id === floorId) && grant.actions.includes(action)));
+}
+
+/** Resolve notebook floor params before access checks and floor switching. */
+export function resolveFloorRouteSegments(segments: string[], floor: unknown): string[] {
+  if (!segments.includes("notebook") || (floor !== "kitchen" && floor !== "furniture")) return segments;
+  return segments.map((part) => part === "[floor]" ? floor : part);
 }
 
 /** A layout group alone is not the destination page during router hydration. */

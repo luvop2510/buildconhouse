@@ -450,12 +450,12 @@ def _variant_summary(product: dict, snapshot: CatalogSnapshot) -> dict:
     if product.get("catalog_entries"):
         entry = next((e for e in product["catalog_entries"] if e.get("category_id") == product.get("category_id")), product["catalog_entries"][0])
         summary["listing_id"] = product.get("listing_id") or entry["entry_id"]
-    # Preserve the compact response shape for ordinary variants. A finish is
-    # an independently sellable SKU, though, so expose its rough-in when one
-    # is configured instead of inheriting the representative card's value.
+    # Each finish is independently sellable. Explicit null prevents clients
+    # from inheriting the representative card's rough-in for another SKU.
+    summary["concealed_part"] = None
     if product.get("concealed_part"):
         configured = {
-            "id": product.get("id"), "floor_id": product.get("floor_id"),
+            "id": product.get("id"), "floor_id": product.get("floor_id"), "brand_id": product.get("brand_id"),
             "concealed_part": copy.deepcopy(product["concealed_part"]),
         }
         _hydrate_concealed_part(configured, snapshot)
@@ -479,22 +479,34 @@ def _hydrate_concealed_part(product: dict, snapshot: CatalogSnapshot) -> None:
     if not isinstance(configured, dict) or not str(configured.get("sku") or "").strip():
         return
     sku = str(configured["sku"]).strip()
-    linked = next((candidate for candidate in _hydration_products(snapshot)
-                   if candidate.get("id") != product.get("id")
-                   and candidate.get("floor_id") == product.get("floor_id")
-                   and candidate.get("sku") == sku
-                   and candidate.get("active", True)), None)
+    def eligible(candidate):
+        return (candidate and candidate.get("id") != product.get("id")
+                and candidate.get("floor_id") == product.get("floor_id")
+                and candidate.get("sku") == sku and candidate.get("active", True))
+
+    selected_id = configured.get("product_id")
+    if selected_id:
+        # A saved selection identifies an exact SKU even when other brands
+        # reuse its article number. Do not substitute an arbitrary same-SKU
+        # product if that selected item has been retired or moved.
+        linked = snapshot.product_by_id.get(selected_id)
+        linked = linked if eligible(linked) else None
+    else:
+        matches = [candidate for candidate in _hydration_products(snapshot) if eligible(candidate)]
+        same_brand = [candidate for candidate in matches if candidate.get("brand_id") == product.get("brand_id")]
+        linked = same_brand[0] if len(same_brand) == 1 else matches[0] if len(matches) == 1 else None
     if not linked:
+        product["concealed_part"] = {**configured, "product_id": None}
         return
     product["concealed_part"] = {
         **configured,
         "sku": sku,
-        "product_id": configured.get("product_id") or linked.get("id"),
-        "name": configured.get("name") or linked.get("name"),
-        "description": configured.get("description") or linked.get("description"),
-        "unit_price": configured.get("unit_price") if configured.get("unit_price") is not None else linked.get("price"),
-        "mrp": configured.get("mrp") if configured.get("mrp") is not None else linked.get("mrp"),
-        "image": configured.get("image") or _primary_product_image(snapshot, linked["id"], linked.get("family_key")),
+        "product_id": linked.get("id"),
+        "name": linked.get("name"),
+        "description": linked.get("description"),
+        "unit_price": linked.get("price"),
+        "mrp": linked.get("mrp"),
+        "image": _primary_product_image(snapshot, linked["id"], linked.get("family_key")) or linked.get("hero_image_url") or (linked.get("images") or [None])[0],
     }
 
 
@@ -979,30 +991,34 @@ async def list_family_groups(
             "min_price": float(product.get("price") or 0),
             "max_price": float(product.get("price") or 0),
             "product_count": 0,
-            "sample_image": _primary_product_image(snapshot, product["id"]),
             "sample_image_quality": product.get("image_quality"),
-            "configuration_options": _configuration_options(product, snapshot),
             "variants": [],
         })
         price = float(product.get("price") or 0)
         group["min_price"] = min(group["min_price"], price)
         group["max_price"] = max(group["max_price"], price)
         group["product_count"] += 1
-        summary = _variant_summary(product, snapshot)
-        summary["image_quality"] = product.get("image_quality")
-        group["variants"].append(summary)
+        # Group and count cheaply; media/configuration/concealed hydration is
+        # needed only for the requested page, not every SKU in the catalog.
+        group["variants"].append(product)
     has_source = any(item.get("catalog_entry") for item in products)
     ordered = sorted(groups.values(), key=lambda row: (
         _source_sort_key({**row, "id": row["sample_product_id"], "name": row["family_name"]}, snapshot)
         if has_source else (row.get("family_name") or "",)
     ))
-    page = copy.deepcopy(ordered[skip:skip + limit])
-    for group in page:
+    page = []
+    for raw_group in ordered[skip:skip + limit]:
+        group = copy.deepcopy({**raw_group, "variants": [
+            {**_variant_summary(product, snapshot), "image_quality": product.get("image_quality")}
+            for product in raw_group["variants"]
+        ]})
         sample_product = snapshot.product_by_id.get(group["sample_product_id"]) if hasattr(snapshot, "product_by_id") else next(
             (product for product in products if product.get("id") == group["sample_product_id"]), None,
         )
         if sample_product and group.get("catalog_entry"):
             sample_product = {**sample_product, "category_id": group["category_id"], "catalog_entry": group["catalog_entry"]}
+        group["sample_image"] = _primary_product_image(snapshot, group["sample_product_id"])
+        group["configuration_options"] = _configuration_options(sample_product, snapshot) if sample_product else []
         family_products = (
             (_family_siblings(snapshot, sample_product) or [sample_product])
             if group.get("family_key") else [
@@ -1028,6 +1044,7 @@ async def list_family_groups(
             group["sample_image"] = hero["public_url"]
             group["sample_image_quality"] = hero.get("quality") or group.get("sample_image_quality")
             group["sample_image_source"] = hero.get("source_type")
+        page.append(group)
     return {"total": len(ordered), "items": page}
 
 

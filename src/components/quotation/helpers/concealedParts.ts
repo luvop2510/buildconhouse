@@ -31,6 +31,14 @@ type LineLike = {
 
 type IncludedPart = ConcealedPart & { role?: string };
 
+/** A sibling SKU must never inherit the representative product's rough-in. */
+export function productConcealedPart(product: ProductLike, variant?: VariantLike | null): ConcealedPart | null | undefined {
+  if (variant && (variant.concealed_part !== undefined || (variant.id && variant.id !== product.id))) {
+    return variant.concealed_part;
+  }
+  return product.concealed_part;
+}
+
 function defaultIncludedParts(product: ProductLike, variant?: VariantLike): IncludedPart[] {
   const source = variant?.specs?.default_included_parts ?? product.specs?.default_included_parts;
   if (!Array.isArray(source)) return [];
@@ -41,20 +49,35 @@ function defaultIncludedParts(product: ProductLike, variant?: VariantLike): Incl
   ));
 }
 
-/** Replace catalog-controlled included parts for an already-created parent line. */
+function automaticIncludedParts(product: ProductLike, variant: VariantLike | undefined, parentProductId: string): IncludedPart[] {
+  const concealed = productConcealedPart(product, variant);
+  const seen = new Set<string>();
+  return [...defaultIncludedParts(product, variant), ...(concealed ? [{ ...concealed, role: "concealed" }] : [])]
+    .filter((part) => {
+      const ratio = Number(part.qty ?? 1);
+      if (!part.product_id || part.product_id === parentProductId || !part.sku?.trim()
+          || !Number.isFinite(ratio) || ratio <= 0 || seen.has(part.product_id)) return false;
+      seen.add(part.product_id);
+      return true;
+    });
+}
+
+/** Replace automatic parts for a parent, keeping quantity/room/removal linked. */
 export function syncDefaultIncludedParts<T extends LineLike>(
   lines: T[], parent: T, product: ProductLike, variant: VariantLike | undefined,
   newLineId: (productId: string) => string,
 ): T[] {
-  let next = lines.filter((line) => line.included_for_line_id !== parent.id);
-  for (const part of defaultIncludedParts(product, variant)) {
+  const next = lines.filter((line) => line.included_for_line_id !== parent.id);
+  for (const part of automaticIncludedParts(product, variant, parent.product_id)) {
+    const ratio = Number(part.qty ?? 1);
     next.push({
       id: newLineId(part.product_id!), product_id: part.product_id!, sku: part.sku.trim(),
       name: part.name || `Included part · ${part.sku}`, image: part.image || null,
-      category_id: product.category_id, room: parent.room, qty: parent.qty * Number(part.qty || 1),
-      unit_price: Number(part.unit_price), mrp: part.mrp ?? part.unit_price ?? null,
+      category_id: part.role === "concealed" ? null : product.category_id, room: parent.room, qty: parent.qty * ratio,
+      unit_price: Number(part.unit_price ?? 0), mrp: part.mrp ?? part.unit_price ?? null,
       discount_pct: null, finish: null, family_key: null,
-      included_for_line_id: parent.id, included_qty_per_parent: Number(part.qty || 1),
+      description: part.description || null,
+      included_for_line_id: parent.id, included_qty_per_parent: ratio,
     } as T);
   }
   return next;
@@ -63,51 +86,53 @@ export function syncDefaultIncludedParts<T extends LineLike>(
 export function addProductAndConcealedPart<T extends LineLike>(
   lines: T[], product: ProductLike, variant: VariantLike | undefined, room: string,
   newLineId: (productId: string) => string, primaryImage: string | null,
+  quantity = 1, notes?: string,
 ): T[] {
+  if (!Number.isFinite(quantity) || quantity <= 0) return lines;
   const productId = variant?.id || product.id;
   const sku = variant?.sku || product.sku;
   const variantColour = variant?.colour || variant?.color;
   const finish = variant?.finish || variantColour || variant?.size || product.finish || product.colour || null;
   const displayName = variant && (variant.finish || variantColour || variant.size)
     ? `${product.name} · ${variant.finish || variantColour || variant.size}` : product.name;
+  const expectedParts = automaticIncludedParts(product, variant, productId);
+  const childrenByParent = new Map<string, T[]>();
+  for (const line of lines) {
+    if (!line.included_for_line_id) continue;
+    const children = childrenByParent.get(line.included_for_line_id) ?? [];
+    children.push(line);
+    childrenByParent.set(line.included_for_line_id, children);
+  }
+  const sameAutomaticParts = (parentId: string) => {
+    const children = childrenByParent.get(parentId) ?? [];
+    return children.length === expectedParts.length && expectedParts.every((part) => children.some((line) =>
+      line.product_id === part.product_id && line.unit_price === Number(part.unit_price ?? 0)
+      && Number(line.included_qty_per_parent ?? 1) === Number(part.qty ?? 1)));
+  };
+  let parentId = "";
   const addOrIncrease = (current: T[], line: T): T[] => {
     const index = current.findIndex((item) => item.product_id === line.product_id && item.room === room
       && !item.included_for_line_id
       && !!item.exclude_dimension === !!line.exclude_dimension
-      && item.unit_price === line.unit_price);
-    if (index < 0) return [...current, line];
+      && item.unit_price === line.unit_price && sameAutomaticParts(item.id));
+    if (index < 0) { parentId = line.id; return [...current, line]; }
+    parentId = current[index].id;
     const next = [...current];
-    next[index] = { ...next[index], qty: next[index].qty + line.qty };
+    next[index] = { ...next[index], qty: next[index].qty + line.qty,
+      ...(notes?.trim() ? { notes: notes.trim() } : {}) };
     return next;
   };
-  let next = addOrIncrease(lines, {
+  const next = addOrIncrease(lines, {
     id: newLineId(productId), product_id: productId, sku, name: displayName,
     image: variant?.image || primaryImage, category_id: product.category_id, room,
-    qty: 1, unit_price: variant?.price ?? product.price, mrp: variant?.mrp ?? product.mrp,
+    qty: quantity, unit_price: variant?.price ?? product.price, mrp: variant?.mrp ?? product.mrp,
     discount_pct: null, finish, family_key: product.family_key || null,
     exclude_dimension: !!variant?.exclude_dimension,
+    ...(notes?.trim() ? { notes: notes.trim() } : {}),
   } as T);
-  const parent = next.find((line) => line.product_id === productId && line.room === room
-    && !line.included_for_line_id
-    && !!line.exclude_dimension === !!variant?.exclude_dimension
-    && line.unit_price === (variant?.price ?? product.price))!;
+  // A changed association or rough-in price starts another parent line;
+  // already quoted commercial snapshots remain intact.
+  const parent = next.find((line) => line.id === parentId)!;
 
-  // Seat covers are not an optional cross-sell: they follow their selected
-  // WC's SKU and quantity. A re-select replaces any prior linked cover rather
-  // than accumulating a duplicate line.
-  next = syncDefaultIncludedParts(next, parent, product, variant, newLineId);
-
-  const concealed = variant?.concealed_part || product.concealed_part;
-  const concealedId = concealed?.product_id;
-  if (!concealedId || concealedId === productId || !concealed?.sku) return next;
-  const qty = Number(concealed.qty || 1);
-  if (!Number.isFinite(qty) || qty <= 0) return next;
-  return addOrIncrease(next, {
-    id: newLineId(concealedId), product_id: concealedId, sku: concealed.sku,
-    name: concealed.name || `Conceal part · ${concealed.sku}`,
-    image: concealed.image || null, category_id: null, room, qty,
-    unit_price: Number(concealed.unit_price || 0), mrp: concealed.mrp ?? null,
-    discount_pct: null, finish: null, family_key: null,
-    description: concealed.description || null,
-  } as T);
+  return syncDefaultIncludedParts(next, parent, product, variant, newLineId);
 }

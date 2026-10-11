@@ -102,6 +102,7 @@ jobs:
           npm run test:quotation-concealed-parts
           npm run test:purchases-contract
           npm run test:notebook
+          npm run test:notebook-lifecycle
           npm run test:mobile-ux
           npm run test:api-client
           npm run test:auth-provider-races

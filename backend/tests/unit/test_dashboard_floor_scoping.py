@@ -128,3 +128,26 @@ def test_top_products_excludes_unconfirmed_quotations(monkeypatch):
     assert group["revenue"]["$sum"] == {
         "$ifNull": ["$items.net_amount", {"$multiply": ["$items.qty", "$items.unit_price"]}],
     }
+
+
+def test_dashboard_cache_does_not_share_assigned_counts_between_staff(monkeypatch):
+    fake_db = _FakeDb()
+    monkeypatch.setattr(dashboard_routes, "db", fake_db)
+    counts = []
+
+    async def count_assigned(query):
+        base = next(clause for clause in query["$and"] if "assigned_to" in clause)
+        counts.append(base["assigned_to"])
+        return 2 if base["assigned_to"] == "user-1" else 7
+
+    monkeypatch.setattr(fake_db.followups, "count_documents", count_assigned)
+
+    async def check():
+        first = _user("ground-floor")
+        second = first.model_copy(update={"id": "user-2"})
+        assert (await dashboard_routes.dashboard_stats(user=first))["followups_due"] == 2
+        assert (await dashboard_routes.dashboard_stats(user=second))["followups_due"] == 7
+        assert (await dashboard_routes.dashboard_stats(user=first))["followups_due"] == 2
+        assert counts == ["user-1", "user-2"]
+
+    asyncio.run(check())

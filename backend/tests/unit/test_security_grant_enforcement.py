@@ -106,6 +106,105 @@ def test_semantic_mutation_patterns_are_exact_and_preserve_real_create_operation
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("resource,actions,allowed", [
+    ("quotations", ["view", "create"], True),
+    ("quotations", ["view", "update"], True),
+    ("catalog", ["view", "update"], True),
+    ("quotations", ["view"], False),
+    ("catalog", ["view", "create"], False),
+    ("payments", ["view", "update"], False),
+])
+async def test_concealed_default_save_requires_exact_quotation_or_catalog_capability(monkeypatch, resource, actions, allowed):
+    mock_staff(monkeypatch, [grant(resource=resource, actions=actions, floor="first-floor")])
+    kwargs = dict(request=request("/api/products/product-1/concealed-part", "PATCH", floor="first-floor"),
+                  authorization="Bearer test", x_floor_id="first-floor", dl=None)
+    if allowed:
+        user = await auth.get_current_user(**kwargs)
+        assert auth.accessible_floor_ids(user) == ["first-floor"]
+    else:
+        with pytest.raises(HTTPException) as exc:
+            await auth.get_current_user(**kwargs)
+        assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path,method,floor", [
+    ("/api/products/product-1", "PATCH", "first-floor"),
+    ("/api/products/product-1/concealed-part/extra", "PATCH", "first-floor"),
+    ("/api/products/product-1/concealed-part", "POST", "first-floor"),
+    ("/api/products/product-1/concealed-part", "PUT", "first-floor"),
+    ("/api/products/product-1/concealed-part", "PATCH", "ground-floor"),
+])
+async def test_concealed_default_permission_cannot_expand_into_other_catalog_operations(monkeypatch, path, method, floor):
+    mock_staff(monkeypatch, [grant(actions=["view", "create", "update"], floor=floor)])
+    with pytest.raises(HTTPException) as exc:
+        await auth.get_current_user(request=request(path, method, floor=floor), authorization="Bearer test", x_floor_id=floor, dl=None)
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", [
+    "/api/products", "/api/products/families", "/api/products/recent", "/api/products/frequent",
+    "/api/products/product-1", "/api/products/product-1/alternates",
+    "/api/products/product-1/complete-the-set", "/api/products/product-1/size-variants",
+    "/api/products/product-1/media", "/api/families/family-1", "/api/brands", "/api/categories",
+    "/api/catalog/hierarchy", "/api/catalog/search", "/api/catalog/facets",
+    "/api/customers", "/api/customers/customer-1",
+])
+@pytest.mark.parametrize("floor", ["first-floor", "ground-floor"])
+async def test_quotation_only_page_can_load_builder_lookups_on_sanitary_floor(monkeypatch, path, floor):
+    mock_staff(monkeypatch, [grant(floor="first-floor")])
+    kwargs = dict(request=request(path, floor=floor), authorization="Bearer test", x_floor_id=floor, dl=None)
+    if floor == "first-floor":
+        user = await auth.get_current_user(**kwargs)
+        assert auth.accessible_floor_ids(user) == ["first-floor"]
+    else:
+        with pytest.raises(HTTPException) as exc:
+            await auth.get_current_user(**kwargs)
+        assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path,method", [
+    ("/api/catalog/imports", "GET"), ("/api/catalog/export.xlsx", "GET"),
+    ("/api/customers/customer-1/quotations", "GET"),
+    ("/api/customers/import-sources/ground-floor", "GET"),
+    ("/api/customers", "POST"), ("/api/customers/customer-1", "PATCH"),
+    ("/api/products", "POST"), ("/api/products/custom", "POST"),
+    ("/api/products/product-1", "PATCH"), ("/api/products/product-1", "DELETE"),
+    ("/api/brands", "POST"), ("/api/categories", "POST"),
+])
+async def test_quotation_lookup_permissions_do_not_expose_other_pages_actions(monkeypatch, path, method):
+    mock_staff(monkeypatch, [grant(actions=["view", "create", "update", "export"], floor="first-floor")])
+    with pytest.raises(HTTPException) as exc:
+        await auth.get_current_user(request=request(path, method, floor="first-floor"), authorization="Bearer test", x_floor_id="first-floor", dl=None)
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["/api/whatsapp/configuration", "/api/whatsapp/deliveries/quotation-1/request-1"])
+@pytest.mark.parametrize("resource,grant_floor,actions,active_floor,allowed", [
+    ("furniture_quotations", "third-floor", ["view", "export"], "third-floor", True),
+    ("furniture_quotations", "third-floor", ["view"], "third-floor", False),
+    ("furniture_quotations", "third-floor", ["view", "export"], "first-floor", False),
+    ("quotations", "first-floor", ["view"], "third-floor", False),
+    ("payments", "third-floor", ["view", "export"], "third-floor", False),
+    ("quotations", "first-floor", ["view"], "first-floor", True),
+])
+async def test_whatsapp_furniture_status_requires_floor_export_and_preserves_sanitary_policy(monkeypatch, path, resource, grant_floor, actions, active_floor, allowed):
+    principal = {**staff(), "floor_ids": ["first-floor", "third-floor"]}
+    mock_staff(monkeypatch, [grant(resource=resource, actions=actions, floor=grant_floor)], principal)
+    kwargs = dict(request=request(path, floor=active_floor), authorization="Bearer test", x_floor_id=active_floor, dl=None)
+    if allowed:
+        user = await auth.get_current_user(**kwargs)
+        assert auth.accessible_floor_ids(user) == [active_floor]
+    else:
+        with pytest.raises(HTTPException) as exc:
+            await auth.get_current_user(**kwargs)
+        assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_tile_workflow_cannot_borrow_other_floor_header(monkeypatch):
     mock_staff(monkeypatch, [grant(resource="orders", floor="first-floor")])
     user = await auth.get_current_user(request=request("/api/tile-orders/history", floor="first-floor"), authorization="Bearer test", x_floor_id="first-floor", dl=None)

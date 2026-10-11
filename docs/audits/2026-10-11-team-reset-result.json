@@ -1,0 +1,32 @@
+{
+  "receipt": {
+    "request_id": "team-reset-20261010",
+    "completed_at": "2026-10-11T10:56:02.462636+00:00",
+    "deleted": {
+      "users": 14,
+      "access_grants": 1,
+      "user_sessions": 12,
+      "download_tokens": 0,
+      "product_usage": 302,
+      "followup_saved_views": 1,
+      "notifications": 0,
+      "activity_events": 954,
+      "settings": 1
+    },
+    "portal_accounts_disabled": 0,
+    "customer_credential_rows_scrubbed": 1,
+    "owner_id": "81d00286-1e42-5030-a9b5-55f4ca5cab7d",
+    "already_applied": false,
+    "preview_staff_count": 14
+  },
+  "verified": {
+    "only_new_owner": true,
+    "owner_identity": true,
+    "owner_password_verified": true,
+    "legacy_grants_removed": true,
+    "old_sessions_removed": true,
+    "legacy_role_matrix_removed": true,
+    "unaffected_collection_counts_unchanged": true
+  },
+  "unaffected_collections_checked": 36
+}

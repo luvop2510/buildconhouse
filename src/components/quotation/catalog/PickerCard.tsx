@@ -3,6 +3,7 @@
 // both quick-add; both flash the same success confirmation (row tint + toast)
 // so the feedback is identical regardless of which hit-target the user used.
 import * as Haptics from "expo-haptics";
+import { productConcealedPart } from "../helpers/concealedParts";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Text } from "@/src/components/AppText";
@@ -29,7 +30,8 @@ const ROW_FLASH_MS = 700;
 
 function PickerCardImpl({ product, onQuickAdd, onLongPress, onOpenDetails }: Props) {
   const [rowFlash, setRowFlash] = useState(false);
-  const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
+  const [chosenVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
+  const selectedVariant = chosenVariant ? product.variants?.find((variant) => variant.id === chosenVariant.id && variant.sku === chosenVariant.sku) ?? chosenVariant : null;
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (flashTimer.current) clearTimeout(flashTimer.current); }, []);
 
@@ -57,7 +59,7 @@ function PickerCardImpl({ product, onQuickAdd, onLongPress, onOpenDetails }: Pro
   const selectedPrice = selectedVariant?.price ?? product.price;
   const automaticParts = selectedVariant?.specs?.default_included_parts ?? product.specs?.default_included_parts;
   const hasAutomaticPart = Array.isArray(automaticParts) && automaticParts.length > 0;
-  const hasConcealedPart = !!(selectedVariant?.concealed_part ?? product.concealed_part)?.sku;
+  const hasConcealedPart = !!productConcealedPart(product, selectedVariant)?.sku;
 
   return (
     <View style={{ gap: 6 }}>

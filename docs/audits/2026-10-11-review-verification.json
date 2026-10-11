@@ -1,0 +1,54 @@
+{
+  "date": "2026-10-11",
+  "backend_unit_tests": {
+    "passed": 2006,
+    "warnings": 6,
+    "production_test_writes": false
+  },
+  "responsive_browser_tests": {
+    "passed": 356,
+    "skipped": 4,
+    "failed": 0,
+    "flaky": 0,
+    "errors": 0,
+    "screen_sizes": [
+      {
+        "width": 320,
+        "height": 740
+      },
+      {
+        "width": 390,
+        "height": 844
+      },
+      {
+        "width": 768,
+        "height": 1024
+      },
+      {
+        "width": 1024,
+        "height": 768
+      },
+      {
+        "width": 1280,
+        "height": 800
+      },
+      {
+        "width": 1440,
+        "height": 900
+      }
+    ],
+    "skip_reason": "Phone More navigation is intentionally skipped on four larger viewports"
+  },
+  "typescript": "passed",
+  "lint": "passed, zero warnings",
+  "web_build": "passed",
+  "web_budget": "11 routes passed, 576 KiB gzip limit",
+  "security_gate": {
+    "passed": false,
+    "high": 22,
+    "moderate": 8,
+    "critical": 0
+  },
+  "production_staff_reset": "complete, sole new owner JK PATEL",
+  "feature_source_release": "not published; required pre-existing dependency-security gate blocks release"
+}

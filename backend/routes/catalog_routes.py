@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from auth import floor_for_write, floor_inherit, floor_query, floor_scope_ids, get_current_user, get_floor_scoped_or_404, require_min_role
 from db import db, strip_ids
 from catalog_policy import removed_brand_document
-from models import Brand, BrandCreate, Category, CategoryCreate, Product, ProductCreate, ProductPatch, SizeVariantResolution, UserPublic
+from models import Brand, BrandCreate, Category, CategoryCreate, ConcealedPart, Product, ProductCreate, ProductPatch, SizeVariantResolution, UserPublic
 from services import catalog_service, media_service
 from services.activity_log import log_event
 from services.pagination import MAX_PAGE_LIMIT, normalize_pagination
@@ -558,6 +558,10 @@ async def update_product(
     if not existing:
         raise HTTPException(status_code=404, detail="Product not found")
 
+    return await _apply_product_updates(product_id, body, user, existing)
+
+
+async def _apply_product_updates(product_id: str, body: ProductPatch, user: UserPublic, existing: dict):
     updates = body.model_dump(exclude_unset=True)
     if not updates:
         return Product(**existing)
@@ -645,6 +649,25 @@ async def update_product(
 
     updated = await catalog_service.product_by_id(product_id, floor_ids=floor_scope_ids(user))
     return Product(**{k: v for k, v in updated.items() if k in Product.model_fields})
+
+
+@router.patch("/products/{product_id}/concealed-part", response_model=Product)
+async def save_product_concealed_part(
+    product_id: str,
+    body: ConcealedPart,
+    user: UserPublic = Depends(require_min_role("sales")),
+):
+    """Persist a reusable SKU association from the quotation product picker.
+
+    This narrow write does not allow sales staff to edit prices or unrelated
+    catalog fields. The shared editor path validates both products on the
+    active floor, stamps the catalog revision, and updates the warm snapshot.
+    Custom page/action grants are enforced by the access middleware.
+    """
+    existing = await db.products.find_one(floor_query(user, {"id": product_id}), {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return await _apply_product_updates(product_id, ProductPatch(concealed_part=body), user, existing)
 
 
 # ---------- Catalog import (AI-assisted scaffold) ----------

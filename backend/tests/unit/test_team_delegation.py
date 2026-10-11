@@ -121,6 +121,21 @@ def test_custom_manager_floor_shell_never_inherits_unassigned_floors():
 
 
 @pytest.mark.asyncio
+async def test_persisted_delegation_snapshot_drops_unsupported_or_disabled_access():
+    db = database()
+    valid = {"id": "valid", "user_id": "staff", **allocation()}
+    db.users.doc.update(floor_ids=["ground-floor", "first-floor"], delegation_grants=[
+        valid,
+        {**valid, "id": "wrong-owner", "user_id": "other"},
+        {**valid, "id": "wrong-floor", "floor_id": "second-floor"},
+        {**valid, "id": "wrong-page-floor", "resource": "tiles", "floor_id": "first-floor"},
+        {**valid, "id": "unsupported-action", "actions": ["view", "delete"]},
+        {**valid, "id": "no-view", "actions": ["update"]},
+    ])
+    assert await grants_for_user(db, "staff") == [valid]
+
+
+@pytest.mark.asyncio
 async def test_custom_team_create_can_have_no_enabled_floors_without_role_fallback(monkeypatch):
     db = database()
     async def log(**_kwargs):

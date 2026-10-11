@@ -7,7 +7,7 @@ import { Overlay } from "@/src/design/Overlay";
 // so the salesperson can extend the quotation without leaving the modal.
 // -----------------------------------------------------------------------------
 import Feather from "@expo/vector-icons/Feather";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -17,12 +17,14 @@ import { ProductImage } from "@/src/components/ProductImage";
 import { ProductEditor } from "@/src/components/catalog/ProductEditor";
 import { toast } from "@/src/components/Toast";
 import { useAuth } from "@/src/state/auth";
+import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { useActionAccess } from "@/src/hooks/use-permissions";
 import { colors, money, PRODUCT_IMAGE_ASPECT_RATIO, radius, shadow, spacing } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";
 import { useBp } from "@/src/design/responsive";
 import { useBuilder } from "../context/BuilderContext";
 import { productImageList, resolveVariantImages } from "../helpers/media";
+import { productConcealedPart } from "../helpers/concealedParts";
 import { variantDescriptor } from "../helpers/pricing";
 import type { Product, ProductVariant } from "../helpers/types";
 import { catalogPriceUnknown, manualCatalogPrice } from "../helpers/catalogSource";
@@ -59,6 +61,16 @@ export function ProductModal() {
   const b = useBuilder();
   const { staff } = useAuth();
   const canEditProduct = useActionAccess("catalog", "update", !!staff && ["owner", "admin", "manager", "accounts", "purchase"].includes(staff.role));
+  const canCreateQuotation = useActionAccess("quotations", "create", !!staff && ["owner", "admin", "manager", "accounts", "purchase", "sales"].includes(staff.role));
+  const canUpdateQuotation = useActionAccess("quotations", "update", !!staff && ["owner", "admin", "manager", "accounts", "purchase", "sales"].includes(staff.role));
+  const canAddGodownStock = useActionAccess("godown_stock", "create", true);
+  const canSaveConcealedPart = canEditProduct || canCreateQuotation || canUpdateQuotation;
+  const { selectedFloorId, floors } = useFloorAccess();
+  const activeFloorId = selectedFloorId || floors[0]?.id || "";
+  const [commitBusy, setCommitBusy] = useState(false);
+  const commitBusyRef = useRef(false);
+  const resetProductIdRef = useRef<string | null>(null);
+  const activeSelectionRef = useRef("");
   const open = !!b.productModal;
   const product = b.productModal;
   const { isPhone } = useBp();
@@ -71,7 +83,8 @@ export function ProductModal() {
   const [stockQty, setStockQty] = useState(1);
   const [stockBusy, setStockBusy] = useState(false);
 
-  const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
+  const [chosenVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
+  const selectedVariant = chosenVariant ? product?.variants?.find((variant) => variant.id === chosenVariant.id && variant.sku === chosenVariant.sku) ?? chosenVariant : null;
   const [qty, setQty] = useState(1);
   const [priceOverride, setPriceOverride] = useState<string>("");
   const [excludeDimension, setExcludeDimension] = useState(false);
@@ -94,7 +107,7 @@ export function ProductModal() {
   }, [product]);
   const selectedProduct = useMemo(() => {
     if (!product || !selectedVariant) return product;
-    const variant = product.variants?.find((candidate) => candidate.id === selectedVariant.id) ?? selectedVariant;
+    const variant = product.variants?.find((candidate) => candidate.id === selectedVariant.id && candidate.sku === selectedVariant.sku) ?? selectedVariant;
     const variantColour = variant.colour ?? variant.color ?? product.colour;
     return {
       ...product,
@@ -119,10 +132,13 @@ export function ProductModal() {
       warranty: variant.warranty ?? product.warranty,
       specs: variant.specs ?? product.specs,
       description: variant.description ?? product.description,
-      concealed_part: variant.concealed_part ?? product.concealed_part,
+      concealed_part: productConcealedPart(product, variant),
       configuration_options: variant.configuration_options ?? product.configuration_options,
     };
   }, [product, selectedVariant]);
+
+  const selectionKey = `${staff?.id || ""}:${activeFloorId}:${product?.id || ""}:${selectedProduct?.id || ""}`;
+  activeSelectionRef.current = selectionKey;
 
   useEffect(() => {
     setSourceEntries(selectedProduct?.catalog_entries || []);
@@ -135,9 +151,11 @@ export function ProductModal() {
     return () => { active = false; };
   }, [selectedProduct]);
 
-  // Reset when product changes.
+  // Reset when another product opens; a saved association is a same-product edit.
   useEffect(() => {
-    if (!product) return;
+    if (!product) { resetProductIdRef.current = null; return; }
+    if (resetProductIdRef.current === product.id) return;
+    resetProductIdRef.current = product.id;
     setSelectedVariant(null);
     setQty(1);
     setPriceOverride("");
@@ -161,6 +179,11 @@ export function ProductModal() {
       } catch {}
     })();
   }, [product]);
+
+  // A selected concealed SKU belongs to one exact finish, never its siblings.
+  useEffect(() => {
+    setConcealQuery(""); setConcealMatches([]); setQuotationConceal(null);
+  }, [selectedProduct?.id]);
 
   useEffect(() => {
     const query = concealQuery.trim();
@@ -205,7 +228,7 @@ export function ProductModal() {
   if (!product || !selectedProduct) return null;
 
   const includedParts = automaticParts(selectedProduct, selectedVariant);
-  const concealedPart = selectedVariant?.concealed_part ?? selectedProduct.concealed_part;
+  const concealedPart = productConcealedPart(selectedProduct, selectedVariant);
   const configurationOptions = selectedProduct.configuration_options || [];
 
   const chooseConfiguration = async (productId: string) => {
@@ -217,7 +240,8 @@ export function ProductModal() {
     }
   };
 
-  const commit = (closeAfter: boolean) => {
+  const commit = async (closeAfter: boolean) => {
+    if (commitBusyRef.current) return;
     if (catalogPriceUnknown(product, selectedVariant) && manualCatalogPrice(priceOverride) === null) {
       toast.error("Enter a selling price before adding this item");
       return;
@@ -228,26 +252,39 @@ export function ProductModal() {
     }
     if (concealQuery.trim() && !quotationConceal) { toast.error("Select a concealed part from the catalog"); return; }
     const v = selectedVariant ?? productAsVariant(product);
-    // Custom price / quantity override via a synthetic variant — keeps
-    // the existing addFromProduct path a single source of truth.
-    const custom: ProductVariant = { ...v, price: currentPrice,
-      price_unknown: manualCatalogPrice(priceOverride) !== null ? false : catalogPriceUnknown(product, selectedVariant),
-      exclude_dimension: excludeDimension,
-      concealed_part: quotationConceal ? {
-        product_id: quotationConceal.id, sku: quotationConceal.sku, name: quotationConceal.name,
-        unit_price: quotationConceal.price, mrp: quotationConceal.mrp,
-        image: productImageList(quotationConceal)[0] ?? null, qty: 1,
-      } : v.concealed_part,
-    };
     const qtyAdded = Math.max(1, Math.floor(qty));
-    for (let i = 0; i < qtyAdded; i++) b.addFromProduct(product, custom);
-    if (notes.trim() && b.s.lines.length) {
-      // Attach notes to the just-added line (the last one).
-      const last = b.s.lines[b.s.lines.length - 1];
-      if (last) b.updateLine(last.id, { notes: notes.trim() });
+    const originalSelection = selectionKey;
+    commitBusyRef.current = true;
+    setCommitBusy(true);
+    try {
+      let savedPart = productConcealedPart(product, v);
+      if (quotationConceal) {
+        if (!canSaveConcealedPart) { toast.error("You do not have access to save a concealed part"); return; }
+        const updated = await api.patch<Product>(`/products/${selectedProduct.id}/concealed-part`, {
+          product_id: quotationConceal.id, sku: quotationConceal.sku, qty: 1,
+        }, { floorId: activeFloorId });
+        if (activeSelectionRef.current !== originalSelection) return;
+        savedPart = updated.concealed_part;
+        if (!savedPart?.product_id) { toast.error("The concealed part could not be linked; try again"); return; }
+        // Mirror the confirmed catalog write into every picker tab, including
+        // the exact family variant. Later additions immediately reuse it.
+        b.patchProduct(selectedProduct.id, { concealed_part: savedPart });
+        setSelectedVariant((current) => current ? { ...current, concealed_part: savedPart } : current);
+        setQuotationConceal(null); setConcealQuery("");
+      }
+      const custom: ProductVariant = { ...v, price: currentPrice,
+        price_unknown: manualCatalogPrice(priceOverride) !== null ? false : catalogPriceUnknown(product, selectedVariant),
+        exclude_dimension: excludeDimension, concealed_part: savedPart,
+      };
+      b.addFromProduct(product, custom, qtyAdded, notes);
+      toast.success(qtyAdded > 1 ? `${qtyAdded} × ${selectedProduct.name} added` : `${selectedProduct.name} added to quotation`);
+      if (closeAfter) b.closeProductModal();
+    } catch (e: any) {
+      toast.error(e?.detail || "Could not save the concealed part; the product was not added");
+    } finally {
+      commitBusyRef.current = false;
+      setCommitBusy(false);
     }
-    toast.success(qtyAdded > 1 ? `${qtyAdded} × ${product.name} added` : `${product.name} added to quotation`);
-    if (closeAfter) b.closeProductModal();
   };
 
   const moveToGodown = async () => {
@@ -474,9 +511,9 @@ export function ProductModal() {
                   </View>
                 ) : null}
 
-                <View style={styles.autoParts} testID="pm-quotation-conceal">
-                  <Text style={styles.sectionLabel}>Concealed part for this quotation</Text>
-                  <Text style={styles.autoPartHint}>Choose a catalog SKU for this product only.</Text>
+                {canSaveConcealedPart ? <View style={styles.autoParts} testID="pm-quotation-conceal">
+                  <Text style={styles.sectionLabel}>Concealed part for this product</Text>
+                  <Text style={styles.autoPartHint}>Choose a catalog SKU. It is saved for this product and added automatically next time.</Text>
                   <TextInput value={concealQuery} onChangeText={(value) => { setConcealQuery(value); setQuotationConceal(null); }}
                     placeholder="Search concealed part SKU" placeholderTextColor={colors.onSurfaceMuted}
                     style={styles.notesInput} testID="pm-conceal-sku" autoCapitalize="characters" />
@@ -488,9 +525,9 @@ export function ProductModal() {
                   ))}
                   {quotationConceal ? <Text style={styles.autoPartText}>Selected: {quotationConceal.name}</Text> : null}
                   {quotationConceal ? <Pressable onPress={() => { setQuotationConceal(null); setConcealQuery(""); }}><Text style={styles.autoPartHint}>Remove selection</Text></Pressable> : null}
-                </View>
+                </View> : null}
 
-                <View style={styles.autoParts} testID="pm-godown-action">
+                {canAddGodownStock ? <View style={styles.autoParts} testID="pm-godown-action">
                   <Text style={styles.sectionLabel}>Godown stock</Text>
                   <View style={styles.qtyRow}>
                     <Text style={styles.autoPartHint}>Quantity to add</Text>
@@ -504,7 +541,7 @@ export function ProductModal() {
                     <Feather name="package" size={14} color={colors.onSurface} />
                     <Text style={styles.autoPartText}>{stockBusy ? "Adding…" : "Add to godown stock"}</Text>
                   </Pressable>
-                </View>
+                </View> : null}
 
                 {/* Quantity + notes */}
                 <View style={styles.qtyRow}>
@@ -598,13 +635,13 @@ export function ProductModal() {
                   <Feather name="heart" size={14} color={b.favouriteIds.includes(product.id) ? ds.brass : colors.onSurface} />
                   <Text style={styles.footerGhostLabel}>{b.favouriteIds.includes(product.id) ? "Favourited" : "Favourite"}</Text>
                 </Pressable>
-                <Pressable onPress={() => commit(false)} style={[styles.footerSecondary, { flex: 1 }]} testID="pm-add-more">
+                <Pressable disabled={commitBusy} onPress={() => { void commit(false); }} style={[styles.footerSecondary, { flex: 1 }]} testID="pm-add-more">
                   <Text style={styles.footerSecondaryLabel} numberOfLines={1}>Add another</Text>
                 </Pressable>
               </View>
-              <Pressable onPress={() => commit(true)} style={[styles.footerPrimary, styles.footerPrimaryFull]} testID="pm-add-close">
+              <Pressable disabled={commitBusy} onPress={() => { void commit(true); }} style={[styles.footerPrimary, styles.footerPrimaryFull]} testID="pm-add-close">
                 <Feather name="plus" size={15} color={colors.onBrand} />
-                <Text style={styles.footerPrimaryLabel} numberOfLines={1}>Add to quotation</Text>
+                <Text style={styles.footerPrimaryLabel} numberOfLines={1}>{commitBusy ? "Saving…" : "Add to quotation"}</Text>
               </Pressable>
             </View>
           ) : (
@@ -618,12 +655,12 @@ export function ProductModal() {
                 <Text style={styles.footerGhostLabel}>{b.favouriteIds.includes(product.id) ? "Favourited" : "Favourite"}</Text>
               </Pressable>
               <View style={{ flex: 1 }} />
-              <Pressable onPress={() => commit(false)} style={styles.footerSecondary} testID="pm-add-more">
+              <Pressable disabled={commitBusy} onPress={() => { void commit(false); }} style={styles.footerSecondary} testID="pm-add-more">
                 <Text style={styles.footerSecondaryLabel}>Add another</Text>
               </Pressable>
-              <Pressable onPress={() => commit(true)} style={styles.footerPrimary} testID="pm-add-close">
+              <Pressable disabled={commitBusy} onPress={() => { void commit(true); }} style={styles.footerPrimary} testID="pm-add-close">
                 <Feather name="plus" size={14} color={colors.onBrand} />
-                <Text style={styles.footerPrimaryLabel}>Add to quotation</Text>
+                <Text style={styles.footerPrimaryLabel}>{commitBusy ? "Saving…" : "Add to quotation"}</Text>
               </Pressable>
             </View>
           )}

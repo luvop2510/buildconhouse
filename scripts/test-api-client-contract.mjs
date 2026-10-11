@@ -170,3 +170,26 @@ for (const path of ['../src/api/client.ts', '../src/api/client.web.ts']) {
   }
 }
 console.log('Identity hydration survives workspace changes; login/logout still reject old identity and workspace transports.');
+
+// Explicit refreshes bypass completed cached reads on native and web.
+for (const path of ['../src/api/client.ts', '../src/api/client.web.ts']) {
+  let reads = 0;
+  const module = { exports: {} };
+  const storage = { secureGet: async () => null, getItem: async () => 'first-floor' };
+  vm.runInNewContext(ts.transpileModule(read(path), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText, {
+    module, exports: module.exports, require: () => ({ storage, browserStorage: storage }),
+    __DEV__: true, process: { env: {} }, document: { cookie: '' },
+    AbortController, DOMException, setTimeout, clearTimeout,
+    fetch: async () => ({ ok: true, text: async () => JSON.stringify({ value: ++reads }) }),
+  });
+  module.exports.setRequestFloorId('first-floor');
+  const { api } = module.exports;
+  assert.equal((await api.get('/dashboard/stats', { cacheMs: 15000 })).value, 1);
+  assert.equal((await api.get('/dashboard/stats')).value, 1);
+  assert.equal(reads, 1);
+  assert.equal((await api.get('/dashboard/stats', { cacheMs: 0 })).value, 2);
+  assert.equal(reads, 2);
+}
+console.log('Native/web explicit refresh bypasses completed response cache.');

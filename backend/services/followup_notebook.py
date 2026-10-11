@@ -6,6 +6,7 @@ and automation fields carried by :class:`models.Followup`.
 """
 from __future__ import annotations
 
+import math
 import re
 from typing import Any
 from uuid import uuid4
@@ -168,10 +169,16 @@ def validate_notebook_patch(
     for field in ("quotation_price",):
         if field in clean and clean[field] is not None:
             try:
-                if float(clean[field]) < 0:
-                    raise NotebookValidationError(f"{field} cannot be negative")
-            except (TypeError, ValueError):
-                raise NotebookValidationError(f"{field} must be a number")
+                if isinstance(clean[field], bool):
+                    raise ValueError()
+                price = float(clean[field])
+                if not math.isfinite(price):
+                    raise ValueError()
+            except (TypeError, ValueError, OverflowError):
+                raise NotebookValidationError(f"{field} must be a finite number")
+            if price < 0:
+                raise NotebookValidationError(f"{field} cannot be negative")
+            clean[field] = price
     return clean
 
 

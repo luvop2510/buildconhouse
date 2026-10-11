@@ -8,6 +8,7 @@ import {
   formatIndianDate,
   formatRupees,
   nextCell,
+  parseQuotationPrice,
   searchNotebookRows,
 } from "../src/components/notebook/notebookModel.ts";
 
@@ -35,6 +36,13 @@ assert.deepEqual(nextCell({ row: 1, column: 0 }, "Shift+Tab", 2, 8), { row: 0, c
 assert.equal(nextCell({ row: 0, column: 0 }, "Escape", 2, 8), null);
 assert.equal(applyCellPatch(row, "notes", "changed").notes, "changed");
 assert.equal(row.notes, "N");
+assert.equal(parseQuotationPrice("12500.50"), 12500.5);
+assert.equal(parseQuotationPrice("₹1,25,000"), 125000);
+assert.equal(parseQuotationPrice(".50"), 0.5);
+assert.equal(parseQuotationPrice("0"), 0);
+for (const invalid of ["", "-100", "oops", "100abc", "1.2.3", "NaN", "Infinity", "1e999"]) {
+  assert.equal(parseQuotationPrice(invalid), null, `Invalid price must stay invalid: ${invalid}`);
+}
 assert.equal(formatRupees(125000), "₹1,25,000");
 assert.equal(formatIndianDate("2026-08-06"), "06/08/2026");
 

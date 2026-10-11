@@ -8,12 +8,15 @@ import { BottomSheet } from "@/src/components/BottomSheet";
 import { Button } from "@/src/components/ui";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
 
+import { useActionAccess } from "@/src/hooks/use-permissions";
+
 import { useBuilder } from "../context/BuilderContext";
 
 type ReferrerType = "architect" | "interior_designer";
 
 export function ReferrerSwitcherSheet() {
   const b = useBuilder();
+  const canCreateReferrer = useActionAccess("quotations", "create");
   const [tab, setTab] = useState<ReferrerType>("architect");
   const [q, setQ] = useState("");
   const [creating, setCreating] = useState(false);
@@ -39,7 +42,7 @@ export function ReferrerSwitcherSheet() {
   };
 
   const save = async () => {
-    if (!name.trim()) return;
+    if (!name.trim() || !canCreateReferrer) return;
     setSaving(true);
     const id = await b.createReferrer({ name: name.trim(), type: tab });
     setSaving(false);
@@ -108,7 +111,7 @@ export function ReferrerSwitcherSheet() {
               <Text style={type.body}>{r.name}</Text>
             </Pressable>
           ))}
-          <Button label="+ Add new" variant="secondary" onPress={() => setCreating(true)} testID="referrer-add-new" />
+          {canCreateReferrer ? <Button label="+ Add new" variant="secondary" onPress={() => setCreating(true)} testID="referrer-add-new" /> : null}
         </View>
       )}
     </BottomSheet>

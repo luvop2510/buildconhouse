@@ -20,6 +20,7 @@ import { NavigationLink } from "@/src/design/NavigationLink";
 import { useBp } from "@/src/design/responsive";
 import { color, layout, space } from "@/src/design/tokens";
 import { useAuth } from "@/src/state/auth";
+import { useActionAccess } from "@/src/hooks/use-permissions";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 
 type Mission = {
@@ -51,9 +52,9 @@ const todayLabel = () => new Intl.DateTimeFormat("en-IN", {
 // ── Queue row — hover reveals actions on desktop; touch gets the suggested
 // channel + done, always visible. One contextual action, not an icon pile.
 function QueueRow({
-  fu, rank, alwaysShow, onDone, onCall, onWhatsApp, onOpen,
+  fu, rank, alwaysShow, canUpdate, onDone, onCall, onWhatsApp, onOpen,
 }: {
-  fu: Fu; rank: number; alwaysShow: boolean;
+  fu: Fu; rank: number; alwaysShow: boolean; canUpdate: boolean;
   onDone: () => void; onCall: () => void; onWhatsApp: () => void; onOpen: () => void;
 }) {
   const [hover, setHover] = useState(false);
@@ -80,7 +81,7 @@ function QueueRow({
         <Txt v="sub" numberOfLines={1}>{fu.next_action || fu.reason}</Txt>
       </View>
       {fu.value ? <Money value={fu.value} size="sm" tone="mid" compact /> : null}
-      {alwaysShow ? (
+      {!canUpdate ? null : alwaysShow ? (
         <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
           <IconButton
             icon={preferCall ? "phone" : "message-circle"}
@@ -119,6 +120,11 @@ export default function Today() {
   const { staff } = useAuth();
   const { selectedFloorId } = useFloorAccess();
   const { isPhone, isDesktop, gutter } = useBp();
+  const canFollowups = useActionAccess("followups", "view");
+  const canUpdateFollowups = useActionAccess("followups", "update");
+  const canQuotations = useActionAccess("quotations", "view");
+  const canPayments = useActionAccess("payments", "view");
+  const canPurchases = useActionAccess("purchases", "view");
 
   const [mission, setMission] = useState<Mission | null>(null);
   const [queue, setQueue] = useState<Fu[] | null>(null);
@@ -139,34 +145,36 @@ export default function Today() {
     setLoadError(false);
     setSectionErrors({ queue: false, recent: false });
     if (!isRefresh) {
-      setMission(null); setQueue(null); setStats(null); setPay(null); setRecent(null); setShortages([]);
+      setMission(null); setQueue(canFollowups ? null : []); setStats(null); setPay(null); setRecent(canQuotations ? null : []); setShortages([]);
     }
     if (isRefresh) setRefreshing(true);
-    // Fire-and-forget: this reconcile pass can take several seconds under
-    // load and is best-effort housekeeping, not something the user should
-    // ever sit on a skeleton for. Same "soft" semantics as before — we just
-    // no longer block the critical render path on it.
-    const [m, fus, st, ps, rq, sh] = await Promise.allSettled([
-      api.get<Mission>("/followups/mission", { cacheMs: 15_000 }),
-      api.get<Fu[]>("/followups?limit=12", { cacheMs: 15_000 }),
-      api.get<DashStats>("/dashboard/stats", { cacheMs: 15_000 }),
-      api.get<PayStats>("/payments/stats", { cacheMs: 15_000 }),
-      api.get<RecentQ[]>("/quotations/recent?limit=5", { cacheMs: 15_000 }),
-      api.get<{ items: Shortage[] }>("/purchases/shortages?status=awaiting_reorder", { cacheMs: 15_000 }),
+    // Publish each section as soon as its own request finishes. A slow
+    // purchases/payments request must not keep the follow-up queue loading.
+    const current = () => version === requestVersion.current;
+    const section = async <T,>(path: string, publish: (value: T) => void, onError?: () => void) => {
+      try {
+        const value = await api.get<T>(path, { cacheMs: isRefresh ? 0 : 15_000, floorId: selectedFloorId });
+        if (current()) publish(value);
+      } catch {
+        if (current()) { setLoadError(true); onError?.(); }
+      }
+    };
+    await Promise.all([
+      canFollowups && section<Mission>("/followups/mission", setMission),
+      canFollowups && section<Fu[]>("/followups?limit=12", value => setQueue((Array.isArray(value) ? value : []).filter(f => f.status === "open").slice(0, 6)), () => {
+        setSectionErrors(errors => ({ ...errors, queue: true }));
+        if (!isRefresh) setQueue([]);
+      }),
+      section<DashStats>("/dashboard/stats", setStats),
+      canPayments && section<PayStats>("/payments/stats", setPay),
+      canQuotations && section<RecentQ[]>("/quotations/recent?limit=5", setRecent, () => {
+        setSectionErrors(errors => ({ ...errors, recent: true }));
+        if (!isRefresh) setRecent([]);
+      }),
+      canPurchases && section<{ items: Shortage[] }>("/purchases/shortages?status=awaiting_reorder", value => setShortages(value.items || [])),
     ]);
-    if (version !== requestVersion.current) return;
-    setSectionErrors({ queue: fus.status === "rejected", recent: rq.status === "rejected" });
-    setLoadError([m, fus, st, ps, rq, sh].some(result => result.status === "rejected"));
-    if (m.status === "fulfilled") setMission(m.value);
-    if (fus.status === "fulfilled") setQueue((Array.isArray(fus.value) ? fus.value : []).filter((f) => f.status === "open").slice(0, 6));
-    else if (!isRefresh) setQueue([]);
-    if (st.status === "fulfilled") setStats(st.value);
-    if (ps.status === "fulfilled") setPay(ps.value);
-    if (rq.status === "fulfilled") setRecent(rq.value);
-    else if (!isRefresh) setRecent([]);
-    if (sh.status === "fulfilled") setShortages(sh.value.items || []);
-    setRefreshing(false);
-  }, [selectedFloorId]);
+    if (current()) setRefreshing(false);
+  }, [selectedFloorId, canFollowups, canQuotations, canPayments, canPurchases]);
 
   useEffect(() => { void load(); return () => { requestVersion.current += 1; }; }, [load]);
 
@@ -210,6 +218,7 @@ export default function Today() {
     <View style={{ gap: space.x6 }}>
       <Section eyebrow="The business" />
       <View style={isPhone ? { flexDirection: "row", flexWrap: "wrap", gap: space.x6, rowGap: space.x5 } : { gap: space.x5 }}>
+        {canPayments ? <>
         <View style={isPhone ? { width: "46%" } : undefined}>
           <Stat label="Collected this month" value={pay?.collected_this_month} compactValue note="payments received" />
         </View>
@@ -224,6 +233,7 @@ export default function Today() {
             noteTone={mission && mission.overdue_payments > 0 ? "risk" : "soft"}
           />
         </View>
+        </> : null}
         <View style={isPhone ? { width: "46%" } : undefined}>
           <Stat label="Open pipeline" value={stats?.open_pipeline} compactValue note={stats ? `${stats.quotes_this_month} quotations this month` : "quotation count unavailable"} />
         </View>
@@ -232,7 +242,7 @@ export default function Today() {
         </View>
       </View>
 
-      {stats && stats.pending_approval > 0 ? (
+      {canQuotations && stats && stats.pending_approval > 0 ? (
         <NavigationLink href="/(admin)/quotations"
           accessibilityRole="link"
           accessibilityLabel={`${stats.pending_approval} quotation${stats.pending_approval === 1 ? "" : "s"} waiting for approval`}
@@ -276,7 +286,7 @@ export default function Today() {
         </NavigationLink>
       ) : null}
 
-      <View style={{ gap: space.x2 }}>
+      {canQuotations ? <View style={{ gap: space.x2 }}>
         <Section eyebrow="Pipeline" right={
           <NavigationLink href="/(admin)/quotations"
             style={{ minWidth: 44, minHeight: 44, justifyContent: "center" }}
@@ -321,7 +331,7 @@ export default function Today() {
             </View>
           </Pressable>
         ))}
-      </View>
+      </View> : null}
     </View>
   );
 
@@ -363,6 +373,7 @@ export default function Today() {
                 fu={fu}
                 rank={i + 1}
                 alwaysShow={!isDesktop}
+                canUpdate={canUpdateFollowups}
                 onDone={() => complete(fu)}
                 onCall={() => call(fu)}
                 onWhatsApp={() => whatsapp(fu)}
@@ -395,7 +406,7 @@ export default function Today() {
             </Txt>
             {mission ? (
               <Txt v="bodyMid" style={{ fontSize: 15.5 }}>{sentence}</Txt>
-            ) : loadError ? <Txt v="sub" tone="soft">Some information is unavailable. Working sections remain below.</Txt> : (
+            ) : !canFollowups ? null : loadError ? <Txt v="sub" tone="soft">Some information is unavailable. Working sections remain below.</Txt> : (
               <Skeleton w={280} h={15} style={{ marginTop: 4 }} />
             )}
             {due > 0 ? (
@@ -416,14 +427,13 @@ export default function Today() {
           <>
           {isDesktop ? (
             <View style={{ flexDirection: "row", gap: space.x12 }}>
-              <View style={{ flex: 1.9, minWidth: 0 }}>{upNext}</View>
+              {canFollowups ? <View style={{ flex: 1.9, minWidth: 0 }}>{upNext}</View> : null}
               <View style={{ width: layout.hairline, backgroundColor: color.line }} />
               <View style={{ flex: 1, minWidth: 0 }}>{business}</View>
             </View>
           ) : (
             <View style={{ gap: space.x10 }}>
-              {upNext}
-              <Hairline />
+              {canFollowups ? <>{upNext}<Hairline /></> : null}
               {business}
             </View>
           )}

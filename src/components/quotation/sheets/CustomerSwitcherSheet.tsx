@@ -13,10 +13,20 @@ import { colors, radius, spacing, type } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";
 import { api } from "@/src/api/client";
 
+import { useAuth } from "@/src/state/auth";
+import { useActionAccess } from "@/src/hooks/use-permissions";
+import { useFloorAccess } from "@/src/hooks/use-floor-access";
+import { hasGrantAccess } from "@/src/team-delegation";
+
 import { useBuilder } from "../context/BuilderContext";
 
 export function CustomerSwitcherSheet() {
   const b = useBuilder();
+  const { staff } = useAuth();
+  const { floors } = useFloorAccess();
+  const canCreateCustomer = useActionAccess("customers", "create", true);
+  const canImportGroundCustomer = canCreateCustomer && floors.some((floor) => floor.id === "ground-floor")
+    && (!staff?.custom_access || hasGrantAccess(staff.access_grants, "ground-floor", "customers", "view"));
   const [q, setQ] = useState("");
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
@@ -58,12 +68,13 @@ export function CustomerSwitcherSheet() {
   };
 
   const importGroundCustomer = async (id: string) => {
+    if (!canImportGroundCustomer) return;
     const applied = await b.importCustomerFromGround(id);
     if (applied) close();
   };
 
   const save = async () => {
-    if (!name.trim()) return;
+    if (!name.trim() || !canCreateCustomer) return;
     setSaving(true);
     const id = await b.createCustomer({ name: name.trim(), phone: phone.trim(), address: address.trim() });
     setSaving(false);
@@ -154,18 +165,18 @@ export function CustomerSwitcherSheet() {
             ) : null}
           </View>
 
-          <Pressable testID="open-create-customer" onPress={() => setCreating(true)} style={styles.createRow}>
+          {canCreateCustomer ? <Pressable testID="open-create-customer" onPress={() => setCreating(true)} style={styles.createRow}>
             <View style={styles.createIcon}>
               <Feather name="plus" size={14} color={ds.brass} />
             </View>
             <Text style={styles.createLabel}>Create new customer</Text>
-          </Pressable>
+          </Pressable> : null}
 
-          <Pressable testID="open-ground-floor-customers" onPress={() => setShowGroundSources((open) => !open)} style={styles.importRow}>
+          {canImportGroundCustomer ? <Pressable testID="open-ground-floor-customers" onPress={() => setShowGroundSources((open) => !open)} style={styles.importRow}>
             <Feather name="copy" size={14} color={ds.brass} />
             <View style={{ flex: 1 }}><Text style={styles.createLabel}>Use Ground Floor customer details</Text><Text style={type.caption}>Copies contact and latest project details, not tile products.</Text></View>
             <Feather name={showGroundSources ? "chevron-up" : "chevron-down"} size={16} color={colors.onSurfaceMuted} />
-          </Pressable>
+          </Pressable> : null}
 
           {showGroundSources ? (
             <View style={styles.groundList}>

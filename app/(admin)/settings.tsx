@@ -101,9 +101,7 @@ export default function Settings() {
   const workspaceRows: { icon: keyof typeof Feather.glyphMap; label: string; hint: string; href: string; testId: string; roles?: string[] }[] = [
     { icon: "briefcase", label: "Company", hint: "Name, contact, logo", href: "/(admin)/settings-company", testId: "settings-nav-company" },
     { icon: "file-text", label: "PDF branding", hint: "Footer, terms, watermark", href: "/(admin)/settings-pdf", testId: "settings-nav-pdf" },
-    { icon: "users", label: "Team", hint: "Add, edit roles, deactivate", href: "/(admin)/team", testId: "settings-nav-team" },
-    { icon: "shield", label: "Roles & permissions", hint: "What each role can do", href: "/(admin)/settings-permissions", testId: "settings-nav-permissions" },
-    { icon: "shield", label: "Personal access", hint: "Worker access by page, action & floor", href: "/(admin)/settings-access-grants", testId: "settings-nav-access-grants", roles: ["owner", "admin"] },
+    { icon: "users", label: "Team", hint: "People, floors, pages and actions", href: "/(admin)/team", testId: "settings-nav-team" },
     { icon: "bell", label: "Notifications", hint: "Channels & follow-up rules", href: "/(admin)/settings-notifications", testId: "settings-nav-notifications" },
     { icon: "user-plus", label: "Walk-in setup", hint: "Manage lead sources", href: "/(admin)/settings-walkins", testId: "settings-nav-walkins", roles: ["owner", "admin", "manager"] },
     { icon: "database", label: "Catalog tools", hint: "Import, export, backup", href: "/(admin)/settings-catalog", testId: "settings-nav-catalog" },
@@ -122,7 +120,7 @@ export default function Settings() {
           <Text style={type.bodyMuted}>{staff?.email}</Text>
           <View style={styles.rolePill}>
             <Feather name="shield" size={11} color={colors.brand} />
-            <Text style={styles.rolePillText}>{staff?.team_role || roleLabels[staff?.role || ""] || staff?.role || "Team"}</Text>
+            <Text style={styles.rolePillText}>{staff?.team_role || (staff?.custom_access ? "Delegated staff" : roleLabels[staff?.role || ""] || staff?.role || "Team")}</Text>
           </View>
         </View>
       </View>
@@ -155,7 +153,7 @@ export default function Settings() {
 
       {[
         { title: "Business & documents", ids: ["company", "pdf", "catalog", "walkins"] },
-        { title: "People & access", ids: ["team", "permissions", "access-grants"] },
+        { title: "People & access", ids: ["team"] },
         { title: "Preferences & support", ids: ["notifications", "system", "privacy", "terms"] },
       ].filter(group => !staff?.custom_access || group.ids.includes("privacy")).map(group => (
       <Card key={group.title} style={{ padding: 0 }} variant="flat">

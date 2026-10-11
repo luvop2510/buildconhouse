@@ -220,7 +220,7 @@ export const api = {
     const key = `${opts?.floorId ?? floorCache ?? "auto"}:${p}`;
     const cacheVersion = readCacheVersion;
     const cached = responseCache.get(key);
-    if (cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.value as T);
+    if (opts?.cacheMs !== 0 && cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.value as T);
     if (cached) responseCache.delete(key);
     const existing = inflightGets.get(key);
     if (existing) return abortForConsumer(existing as Promise<T>, opts?.signal);

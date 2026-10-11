@@ -98,7 +98,7 @@ def test_family_card_variant_switching_exposes_each_skus_business_fields(monkeyp
         "color": None, "price": 200, "mrp": 250, "stock": 9, "dimensions": "220 mm",
         "dimension_image_urls": [], "seat_cover_image_urls": [],
         "material": "Steel", "warranty": "10 years", "specs": {"flow": "7 l/min"}, "description": None,
-        "image": "https://cdn.test/b.jpg", "image_quality": None, "configuration_options": [],
+        "image": "https://cdn.test/b.jpg", "image_quality": None, "configuration_options": [], "concealed_part": None,
     }
 
 

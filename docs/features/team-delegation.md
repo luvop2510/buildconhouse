@@ -2,10 +2,26 @@
 
 Owners manage access in **Settings → Team**. Add a person or edit an existing
 member, give their role a descriptive name, and enable the floors they need.
+Account access offers Owner or Delegated staff. Legacy Admin, Manager, Sales,
+Purchases, Accounts and Warehouse choices are no longer provisioning options;
+delegated staff use a compatibility worker value internally, with their named
+role and explicit allocation governing access.
 Each enabled floor reveals its supported pages. Enable any combination of pages
 and choose the actions on each page: View, Create, Edit, Delete, or Export, where
 supported. View is included when a page is enabled. The editor explains each
 action and saves the complete allocation together.
+The previous Roles & permissions and Personal access links now open Team;
+Settings shows only the unified Team entry for people and permissions.
+
+Sanitary Quotation access includes read-only product, brand/category/family,
+catalog search and customer lookups needed inside the builder. It does not
+enable Catalog or Customers navigation, imports, exports, or record changes.
+Creating or editing quotations can save the product's concealed-part default
+through its dedicated endpoint; general product edits still require Catalog
+Edit access. Choosing multiple pages and actions saves one allocation.
+Furniture RMB Export access also covers the sender configuration check and
+delivery receipt status used by that page, scoped to Furniture; View alone
+does not authorize those export controls.
 
 Turning a floor off removes every page permission for that floor. Turning it on
 again starts with all pages off. An account with no enabled pages can sign in

@@ -456,3 +456,15 @@ async def test_notebook_partner_assignment_updates_the_lead_and_customer(monkeyp
     assert db.followups.rows[0]["referrer_type"] == "architect"
     assert db.customers.rows[0]["referrer_id"] == "r1"
     assert events[0]["event_type"] == "project_followup.referrer_assigned"
+
+
+@pytest.mark.parametrize("price", [float("nan"), float("inf"), float("-inf"), "NaN", "Infinity", "1e999", True])
+def test_notebook_quotation_price_rejects_nonfinite_values(price):
+    with pytest.raises(NotebookValidationError, match="finite number"):
+        validate_notebook_patch({"quotation_price": price}, converted=True, current={})
+
+
+def test_notebook_quotation_price_preserves_negative_validation_and_normalizes_numbers():
+    with pytest.raises(NotebookValidationError, match="cannot be negative"):
+        validate_notebook_patch({"quotation_price": -100}, converted=True, current={})
+    assert validate_notebook_patch({"quotation_price": "12500.50"}, converted=True, current={}) == {"quotation_price": 12500.5}

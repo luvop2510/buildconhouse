@@ -6,7 +6,7 @@ import { PRIMARY, SECONDARY, TILES_ITEMS, type NavItem } from "@/src/design/navi
 // One brass bar marks where you are. The command palette lives here (⌘K).
 // ─────────────────────────────────────────────────────────────────────────────
 import Feather from "@expo/vector-icons/Feather";
-import { Slot, useRouter, useSegments } from "expo-router";
+import { Slot, useRouter, useSegments, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text } from "@/src/components/AppText";
@@ -24,11 +24,17 @@ import { useInitialAccountRoute } from "@/src/state/initial-account-route";
 import { useAuth } from "@/src/state/auth";
 import { useModuleAccess, usePermissionMatrix } from "@/src/hooks/use-permissions";
 import { staffLandingPath } from "@/src/access-profiles";
-import { hasRouteDestination, isPersonalAccountRoute, moduleForRoute } from "@/src/team-delegation";
+import { hasRouteDestination, isPersonalAccountRoute, moduleForRoute, resolveFloorRouteSegments } from "@/src/team-delegation";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { AppScaffold } from "@/src/components/mobile/AppScaffold";
 import { storage } from "@/src/utils/storage";
 import { FURNITURE_FLOOR_ID, KITCHEN_FLOOR_ID, SANITARY_FLOOR_ID, TILES_FLOOR_ID, floorDisplayLabel, floorLandingPath } from "@/src/constants/floors";
+
+function useResolvedFloorSegments(): string[] {
+  const segments = useSegments() as string[];
+  const { floor } = useLocalSearchParams<{ floor?: string }>();
+  return resolveFloorRouteSegments(segments, floor);
+}
 
 // A web link needs an actual href for native Enter activation. Keep the
 // existing callback as the navigation owner (including floor synchronization).
@@ -129,7 +135,7 @@ function FloorSwitcher({ compact = false }: { compact?: boolean }) {
   const { access, floors, selectedFloorId, selectFloor } = useFloorAccess();
   const { staff } = useAuth();
   const router = useRouter();
-  const segments = useSegments() as string[];
+  const segments = useResolvedFloorSegments();
   const selected = floors.find((floor) => floor.id === selectedFloorId);
   if (!access || floors.length < 2) return null;
   const pick = (id: string) => {
@@ -247,7 +253,7 @@ function useVisibleNav() {
 // ── Desktop sidebar ─────────────────────────────────────────────────────────
 function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const router = useRouter();
-  const segments = useSegments() as string[];
+  const segments = useResolvedFloorSegments();
   const { staff, logout } = useAuth();
   const visible = useVisibleNav();
   const tilesNav = useTilesNav();
@@ -325,7 +331,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
 // ── Phone bottom bar + More sheet ───────────────────────────────────────────
 function PhoneBar() {
   const router = useRouter();
-  const segments = useSegments() as string[];
+  const segments = useResolvedFloorSegments();
   const { staff, logout } = useAuth();
   const visible = useVisibleNav();
   const palette = usePalette();
@@ -403,7 +409,7 @@ function PhoneBarSkeleton() {
 function FloorAccessGate({ children }: { children: React.ReactNode }) {
   const { access, floors, selectedFloorId, loading, error, retry } = useFloorAccess();
   const { staff, loading: authLoading, logout } = useAuth();
-  const segments = useSegments() as string[];
+  const segments = useResolvedFloorSegments();
   const router = useRouter();
 
   const initialAccount = useInitialAccountRoute();
@@ -457,7 +463,7 @@ function FloorAccessGate({ children }: { children: React.ReactNode }) {
 function CustomAccessRouteGate({ children }: { children: React.ReactNode }) {
   const { staff } = useAuth();
   const hasAccess = useModuleAccess();
-  const segments = useSegments() as string[];
+  const segments = useResolvedFloorSegments();
   const router = useRouter();
   const { selectedFloorId } = useFloorAccess();
   const destinationReady = hasRouteDestination(segments);
@@ -478,7 +484,7 @@ function CustomAccessRouteGate({ children }: { children: React.ReactNode }) {
 
 export default function AdminLayout() {
   const { isPhone } = useBp();
-  const builderSegments = useSegments() as string[];
+  const builderSegments = useResolvedFloorSegments();
   const focusedQuotation = builderSegments.includes("quotations") && builderSegments.includes("new");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 

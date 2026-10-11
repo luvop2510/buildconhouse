@@ -7,6 +7,8 @@ import { toast } from "@/src/components/Toast";
 import { furnitureQuotationsApi, type FurnitureDraft, type FurnitureQuotation, type FurnitureSummary, type WhatsAppReceipt } from "@/src/api/furnitureQuotations";
 import { FURNITURE_FLOOR_ID } from "@/src/constants/floors";
 import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
+import { useActionAccess } from "@/src/hooks/use-permissions";
+import { useAuth } from "@/src/state/auth";
 import { useBp } from "@/src/design/responsive";
 import { downloadApiFile } from "@/src/utils/downloadFile";
 import { chargeCents, depositCents, ledgerTotals, rmbText } from "@/src/utils/furnitureRmb";
@@ -23,22 +25,43 @@ const defaultMessage = (doc: FurnitureQuotation) => `Dear ${doc.customer_name}, 
 export default function FurnitureQuotations() {
   const authorized = useRequireFloorAccess(FURNITURE_FLOOR_ID);
   const { isPhone } = useBp();
+  const { staff } = useAuth();
+  const legacyCanEdit = Boolean(staff && ["owner", "admin", "manager", "sales"].includes(staff.role));
+  const canCreate = useActionAccess("furniture_quotations", "create", legacyCanEdit);
+  const canUpdate = useActionAccess("furniture_quotations", "update", legacyCanEdit);
+  const canExport = useActionAccess("furniture_quotations", "export");
+  const canSend = useActionAccess("furniture_quotations", "export", legacyCanEdit);
   const [rows, setRows] = useState<FurnitureSummary[]>([]), [cursor, setCursor] = useState<string | null>(null);
   const [draft, setDraft] = useState<FurnitureDraft | null>(null), [saved, setSaved] = useState<FurnitureQuotation | null>(null);
   const [error, setError] = useState<string | null>(null), [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [whatsAppConfigured, setWhatsAppConfigured] = useState<boolean | null>(null), [receipt, setReceipt] = useState<WhatsAppReceipt | null>(null);
+  const [configurationError, setConfigurationError] = useState<string | null>(null);
+  const [configurationAttempt, setConfigurationAttempt] = useState(0);
   const requestVersion = useRef(0), sendKey = useRef("");
   const load = async (more = false) => {
     const version = ++requestVersion.current;
     setBusy("list"); setError(null);
-    try { const [result, configuration] = await Promise.all([furnitureQuotationsApi.list(more ? cursor || undefined : undefined), furnitureQuotationsApi.configuration()]);
+    try { const result = await furnitureQuotationsApi.list(more ? cursor || undefined : undefined);
       if (version !== requestVersion.current) return;
-      setWhatsAppConfigured(configuration.configured);
       setRows((current) => more ? [...current, ...result.rows] : result.rows); setCursor(result.next_cursor);
     } catch (err: any) { if (version === requestVersion.current) setError(typeof err?.detail === "string" ? err.detail : "Could not load furniture quotations."); }
     finally { if (version === requestVersion.current) setBusy(null); }
   };
+  // Provider checks load independently: a slow or unavailable WhatsApp service
+  // must not delay the quotation list or repeat for every pagination request.
+  useEffect(() => {
+    if (!authorized || !canSend) return;
+    let alive = true;
+    setWhatsAppConfigured(null); setConfigurationError(null);
+    void furnitureQuotationsApi.configuration()
+      .then((configuration) => { if (alive) setWhatsAppConfigured(configuration.configured); })
+      .catch(() => { if (alive) {
+        setWhatsAppConfigured(false);
+        setConfigurationError("Could not check WhatsApp availability. Your quotation and PDF remain available.");
+      } });
+    return () => { alive = false; };
+  }, [authorized, canSend, configurationAttempt]);
   useEffect(() => { if (authorized) void load(); return () => { requestVersion.current += 1; }; }, [authorized]); // eslint-disable-line react-hooks/exhaustive-deps
   const open = async (id: string) => {
     const version = ++requestVersion.current; setBusy("open"); setError(null);
@@ -48,7 +71,7 @@ export default function FurnitureQuotations() {
     finally { if (version === requestVersion.current) setBusy(null); }
   };
   const save = async (finalize = false) => {
-    if (!draft) return;
+    if (!authorized || !draft || busy || !(saved ? canUpdate : canCreate)) return;
     const totals = ledgerTotals(draft.charges, draft.deposits);
     if (!draft.customer_name.trim() || !draft.customer_phone.trim() || totals.payable === null || totals.received === null
       || draft.charges.some((row) => !row.description.trim()) || draft.deposits.some((row) => !row.description.trim())) {
@@ -65,6 +88,7 @@ export default function FurnitureQuotations() {
     finally { if (version === requestVersion.current) setBusy(null); }
   };
   const send = async () => {
+    if (!authorized || !canSend || whatsAppConfigured !== true || busy) return;
     if (!saved || !message.trim()) { setError("Enter the accompanying WhatsApp message."); return; }
     const version = ++requestVersion.current; setBusy("send"); setError(null);
     sendKey.current ||= `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
@@ -88,6 +112,7 @@ export default function FurnitureQuotations() {
   };
   const dirty = Boolean(draft && (!saved || JSON.stringify(draft) !== JSON.stringify(formFrom(saved))));
   const locked = saved?.status === "final";
+  const editable = Boolean(saved ? canUpdate : canCreate);
   const totals = draft ? ledgerTotals(draft.charges, draft.deposits) : null;
   if (!authorized) return <EmptyState title="Loading Furniture Floor access" />;
   return <SafeAreaView style={styles.screen} edges={["top"]}>
@@ -95,7 +120,7 @@ export default function FurnitureQuotations() {
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" testID="furniture-quotations">
       {error ? <Alert tone="error" title={error} /> : null}
       {!draft ? <>
-        <Button label="New RMB quotation" icon="plus" disabled={Boolean(busy)} onPress={() => { requestVersion.current += 1; setSaved(null); setDraft(newDraft()); setError(null); setMessage(""); }} />
+        {canCreate ? <Button label="New RMB quotation" icon="plus" disabled={Boolean(busy)} onPress={() => { requestVersion.current += 1; setSaved(null); setDraft(newDraft()); setError(null); setMessage(""); }} /> : null}
         {rows.length === 0 ? <EmptyState title={busy ? "Loading quotations" : "No furniture quotations yet"} subtitle="Create a quotation using your RMB layout." /> : rows.map((row) => <View key={row.id} style={styles.card}>
           <Text style={type.titleMd}>{row.customer_name}</Text><Text style={type.bodyMuted}>{row.status === "final" ? "Finalized" : "Draft"} · {date(row.updated_at)}</Text>
           <Text style={type.body}>Payable RMB {row.total_payable_rmb} · Received RMB {row.total_received_rmb}</Text><Text style={type.titleSm}>Balance RMB {row.balance_rmb}</Text>
@@ -107,29 +132,29 @@ export default function FurnitureQuotations() {
         <View style={styles.actions}><Button label="Quotation list" variant="secondary" disabled={Boolean(busy)} onPress={() => { setDraft(null); setSaved(null); setError(null); void load(); }} />
           {saved ? <Button label="Reload saved quotation" variant="ghost" disabled={Boolean(busy)} onPress={() => void open(saved.id)} /> : null}</View>
         <View style={styles.card}>
-          <TextField label="Customer name / quotation heading (RDCL)" value={draft.customer_name} editable={!locked && !busy} onChangeText={(customer_name) => setDraft({ ...draft, customer_name })} />
-          <TextField label="Customer WhatsApp mobile" keyboardType="phone-pad" value={draft.customer_phone} editable={!locked && !busy} onChangeText={(customer_phone) => setDraft({ ...draft, customer_phone })} />
+          <TextField label="Customer name / quotation heading (RDCL)" value={draft.customer_name} editable={editable && !locked && !busy} onChangeText={(customer_name) => setDraft({ ...draft, customer_name })} />
+          <TextField label="Customer WhatsApp mobile" keyboardType="phone-pad" value={draft.customer_phone} editable={editable && !locked && !busy} onChangeText={(customer_phone) => setDraft({ ...draft, customer_phone })} />
           <Text style={type.bodyMuted}>{saved ? `Revision ${saved.revision} · Updated ${date(saved.updated_at)}` : "Every saved change receives a date."}</Text>
           {locked ? <Text style={type.bodyMuted}>Finalized charges are locked. Customer deposits can still be recorded.</Text> : null}
         </View>
         <Text style={type.titleMd}>RMB payable</Text>
         {draft.charges.map((row, index) => <View key={row.id || `charge-${index}`} style={styles.card}>
-          <TextField label={`Charge ${index + 1} description`} value={row.description} editable={!locked && !busy} onChangeText={(description) => setDraft({ ...draft, charges: draft.charges.map((entry, i) => i === index ? { ...entry, description } : entry) })} />
-          <TextField label={`Charge ${index + 1} RMB`} value={row.amount_rmb} keyboardType="decimal-pad" editable={!locked && !busy} onChangeText={(amount_rmb) => setDraft({ ...draft, charges: draft.charges.map((entry, i) => i === index ? { ...entry, amount_rmb } : entry) })} />
+          <TextField label={`Charge ${index + 1} description`} value={row.description} editable={editable && !locked && !busy} onChangeText={(description) => setDraft({ ...draft, charges: draft.charges.map((entry, i) => i === index ? { ...entry, description } : entry) })} />
+          <TextField label={`Charge ${index + 1} RMB`} value={row.amount_rmb} keyboardType="decimal-pad" editable={editable && !locked && !busy} onChangeText={(amount_rmb) => setDraft({ ...draft, charges: draft.charges.map((entry, i) => i === index ? { ...entry, amount_rmb } : entry) })} />
           <Text style={type.bodyMuted}>Updated {date(row.updated_at)}</Text>
-          {!locked && draft.charges.length > 1 ? <Button label={`Remove charge ${index + 1}`} variant="ghost" disabled={Boolean(busy)} onPress={() => setDraft({ ...draft, charges: draft.charges.filter((_, i) => i !== index) })} /> : null}
+          {editable && !locked && draft.charges.length > 1 ? <Button label={`Remove charge ${index + 1}`} variant="ghost" disabled={Boolean(busy)} onPress={() => setDraft({ ...draft, charges: draft.charges.filter((_, i) => i !== index) })} /> : null}
         </View>)}
-        {!locked ? <Button label="Add charge / expense" variant="secondary" disabled={Boolean(busy) || draft.charges.length >= 200} onPress={() => setDraft({ ...draft, charges: [...draft.charges, { description: "EXPENSE", amount_rmb: "" }] })} /> : null}
+        {editable && !locked ? <Button label="Add charge / expense" variant="secondary" disabled={Boolean(busy) || draft.charges.length >= 200} onPress={() => setDraft({ ...draft, charges: [...draft.charges, { description: "EXPENSE", amount_rmb: "" }] })} /> : null}
         <Text style={type.titleMd}>Customer deposits</Text>
         {draft.deposits.map((row, index) => <View key={row.id || `deposit-${index}`} style={styles.card}>
-          <TextField label={`Deposit ${index + 1} description`} value={row.description} editable={!busy} onChangeText={(description) => setDraft({ ...draft, deposits: draft.deposits.map((entry, i) => i === index ? { ...entry, description } : entry) })} />
-          <View style={styles.actions}>{(["INR", "USD", "RMB"] as const).map((currency) => <Chip key={currency} label={currency} active={row.currency === currency} onPress={busy ? undefined : () => setDraft({ ...draft, deposits: draft.deposits.map((entry, i) => i === index ? { ...entry, currency, rate: currency === "RMB" ? "1" : "" } : entry) })} />)}</View>
-          <TextField label={`Deposit ${index + 1} amount (${row.currency})`} keyboardType="decimal-pad" value={row.amount} editable={!busy} onChangeText={(amount) => setDraft({ ...draft, deposits: draft.deposits.map((entry, i) => i === index ? { ...entry, amount } : entry) })} />
-          <TextField label={row.currency === "INR" ? "Rate: INR per RMB (divide)" : row.currency === "USD" ? "Rate: RMB per USD (multiply)" : "RMB rate"} keyboardType="decimal-pad" value={row.rate} editable={!busy && row.currency !== "RMB"} onChangeText={(rate) => setDraft({ ...draft, deposits: draft.deposits.map((entry, i) => i === index ? { ...entry, rate } : entry) })} />
+          <TextField label={`Deposit ${index + 1} description`} value={row.description} editable={editable && !busy} onChangeText={(description) => setDraft({ ...draft, deposits: draft.deposits.map((entry, i) => i === index ? { ...entry, description } : entry) })} />
+          <View style={styles.actions}>{(["INR", "USD", "RMB"] as const).map((currency) => <Chip key={currency} label={currency} active={row.currency === currency} onPress={!editable || busy ? undefined : () => setDraft({ ...draft, deposits: draft.deposits.map((entry, i) => i === index ? { ...entry, currency, rate: currency === "RMB" ? "1" : "" } : entry) })} />)}</View>
+          <TextField label={`Deposit ${index + 1} amount (${row.currency})`} keyboardType="decimal-pad" value={row.amount} editable={editable && !busy} onChangeText={(amount) => setDraft({ ...draft, deposits: draft.deposits.map((entry, i) => i === index ? { ...entry, amount } : entry) })} />
+          <TextField label={row.currency === "INR" ? "Rate: INR per RMB (divide)" : row.currency === "USD" ? "Rate: RMB per USD (multiply)" : "RMB rate"} keyboardType="decimal-pad" value={row.rate} editable={editable && !busy && row.currency !== "RMB"} onChangeText={(rate) => setDraft({ ...draft, deposits: draft.deposits.map((entry, i) => i === index ? { ...entry, rate } : entry) })} />
           <Text style={type.body}>Received RMB {rmbText(depositCents(row))}</Text><Text style={type.bodyMuted}>Updated {date(row.updated_at)}</Text>
-          <Button label={`Remove deposit ${index + 1}`} variant="ghost" disabled={Boolean(busy)} onPress={() => setDraft({ ...draft, deposits: draft.deposits.filter((_, i) => i !== index) })} />
+          {editable ? <Button label={`Remove deposit ${index + 1}`} variant="ghost" disabled={Boolean(busy)} onPress={() => setDraft({ ...draft, deposits: draft.deposits.filter((_, i) => i !== index) })} /> : null}
         </View>)}
-        <Button label="Add customer deposit" variant="secondary" disabled={Boolean(busy) || draft.deposits.length >= 200} onPress={() => setDraft({ ...draft, deposits: [...draft.deposits, { description: "Deposit by customer", currency: "INR", amount: "", rate: "" }] })} />
+        {editable ? <Button label="Add customer deposit" variant="secondary" disabled={Boolean(busy) || draft.deposits.length >= 200} onPress={() => setDraft({ ...draft, deposits: [...draft.deposits, { description: "Deposit by customer", currency: "INR", amount: "", rate: "" }] })} /> : null}
         <Text style={type.titleMd}>Quotation preview</Text>
         {isPhone ? <Text style={type.bodyMuted}>Swipe horizontally to view all seven columns.</Text> : null}
         <Text style={[styles.heading, type.titleMd]}>{draft.customer_name || "RDCL"}</Text>
@@ -150,17 +175,17 @@ export default function FurnitureQuotations() {
           <Text style={type.body}>Received RMB {rmbText(totals!.received)}</Text>
           <Text style={type.titleMd}>Balance RMB {rmbText(totals!.balance)}</Text>
         </View>
-        <View style={styles.actions}><Button label="Save quotation" loading={busy === "save"} disabled={Boolean(busy) || !dirty} onPress={() => void save()} />
-          {!locked ? <Button label="Finalize and lock charges" variant="secondary" disabled={Boolean(busy)} onPress={() => void save(true)} /> : null}
-          <Button label="Download PDF" icon="download" variant="secondary" disabled={!saved || dirty || Boolean(busy)} onPress={() => saved && void downloadApiFile(`/furniture-quotations/${saved.id}/pdf`, `${saved.customer_name.replace(/[\\/]/g, "")}.pdf`, "furniture quotation", FURNITURE_FLOOR_ID)} />
+        <View style={styles.actions}>{editable ? <Button label="Save quotation" loading={busy === "save"} disabled={Boolean(busy) || !dirty} onPress={() => void save()} /> : null}
+          {editable && !locked ? <Button label="Finalize and lock charges" variant="secondary" disabled={Boolean(busy)} onPress={() => void save(true)} /> : null}
+          {canExport ? <Button label="Download PDF" icon="download" variant="secondary" disabled={!saved || dirty || Boolean(busy)} onPress={() => saved && void downloadApiFile(`/furniture-quotations/${saved.id}/pdf`, `${saved.customer_name.replace(/[\\/]/g, "")}.pdf`, "furniture quotation", FURNITURE_FLOOR_ID)} /> : null}
         </View>
-        <View style={styles.card}><TextField label="Accompanying WhatsApp message" multiline value={message} editable={!busy && !receipt} onChangeText={(value) => { setMessage(value); sendKey.current = ""; }} />
+        {canExport ? <View style={styles.card}><TextField label="Accompanying WhatsApp message" multiline value={message} editable={!busy && !receipt} onChangeText={(value) => { setMessage(value); sendKey.current = ""; }} />
           <Text style={type.bodyMuted}>{dirty ? "Save your changes before downloading or sending the PDF." : `PDF and message will be sent to ${saved?.customer_phone || "the customer"}.`}</Text>
-          {whatsAppConfigured === false ? <Alert tone="info" title="Direct WhatsApp sending needs a WhatsApp Business sender configured in Railway. You can download the PDF now." /> : null}
+          {configurationError ? <><Alert tone="error" title={configurationError} /><Button label="Retry WhatsApp availability" variant="secondary" onPress={() => setConfigurationAttempt((attempt) => attempt + 1)} /></> : whatsAppConfigured === false ? <Alert tone="info" title="Direct WhatsApp sending needs a WhatsApp Business sender configured in Railway. You can download the PDF now." /> : null}
           {receipt ? <><Text style={type.body}>WhatsApp status: {receipt.status}{receipt.updated_at ? ` · ${date(receipt.updated_at)}` : ""}{receipt.error_code ? ` · ${receipt.error_code}` : ""}</Text><Button label="Refresh delivery status" variant="secondary" loading={busy === "receipt"} disabled={Boolean(busy)} onPress={() => void refreshReceipt()} />
             {receipt.status === "failed" ? <Button label="Prepare another send attempt" variant="secondary" disabled={Boolean(busy)} onPress={() => { sendKey.current = ""; setReceipt(null); setError(null); }} /> : null}</> : null}
-          <Button label="Send PDF to WhatsApp" icon="send" loading={busy === "send"} disabled={!saved || dirty || Boolean(busy) || !message.trim() || whatsAppConfigured === false || Boolean(receipt)} onPress={() => void send()} />
-        </View>
+          {canSend ? <Button label="Send PDF to WhatsApp" icon="send" loading={busy === "send"} disabled={!saved || dirty || Boolean(busy) || !message.trim() || whatsAppConfigured !== true || Boolean(receipt)} onPress={() => void send()} /> : null}
+        </View> : null}
       </>}
     </ScrollView>
   </SafeAreaView>;

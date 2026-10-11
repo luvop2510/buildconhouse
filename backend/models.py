@@ -410,10 +410,10 @@ class ProductVariant(BaseModel):
 class ConcealedPart(BaseModel):
     """The optional rough-in/concealed item automatically added with a SKU.
 
-    ``sku`` is deliberately the only required field: a salesperson may know a
-    supplier article number before that item has been imported into Forge.
-    The remaining snapshot fields make that one-off configuration usable in a
-    quotation immediately and are refreshed from the catalog when possible.
+    ``sku`` also supports legacy importer associations. New selections are
+    verified against an active product on the same floor before saving. The
+    remaining fields expose current catalog values for future quotation lines;
+    saved quotations retain their own independent commercial snapshots.
     """
     sku: str = Field(min_length=1, max_length=160)
     product_id: Optional[str] = None

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { toggleFloor, togglePage, toggleAction, loadDelegation, hasGrantAccess, moduleForRoute, hasRouteDestination, isPersonalAccountRoute, personalAccountPath } from '../src/team-delegation.ts';
+import { toggleFloor, togglePage, toggleAction, loadDelegation, hasGrantAccess, moduleForRoute, resolveFloorRouteSegments, hasRouteDestination, isPersonalAccountRoute, personalAccountPath, isDelegationCatalog } from '../src/team-delegation.ts';
 import { staffLandingPath } from '../src/access-profiles.ts';
 
 const floors = ['ground-floor', 'first-floor', 'second-floor', 'third-floor'];
@@ -33,6 +33,9 @@ state = togglePage(state, 'first-floor', tiles, true);
 assert.equal(state.grants.length, 3, 'unsupported floor/page combination cannot be assigned');
 state = toggleAction(state, 'ground-floor', payments, 'create', true);
 state = toggleAction(state, 'ground-floor', payments, 'export', true);
+const beforeRepeatedEnable = state;
+state = togglePage(state, 'ground-floor', payments, true);
+assert.strictEqual(state, beforeRepeatedEnable, 'repeated enable must preserve selected actions');
 state = toggleAction(state, 'ground-floor', payments, 'view', false);
 assert.deepEqual(state.grants[0].actions, ['view', 'create', 'export']);
 state = toggleAction(state, 'ground-floor', tiles, 'delete', true);
@@ -43,6 +46,8 @@ assert.equal(hasGrantAccess(state.grants, 'first-floor', 'catalog', 'update'), f
 assert.equal(hasGrantAccess(state.grants, 'ground-floor', 'catalog'), false, 'another floor grant must not expose the page');
 assert.equal(hasGrantAccess(state.grants, '', 'catalog'), false, 'unresolved floor fails closed');
 assert.equal(hasGrantAccess(undefined, 'first-floor', 'catalog'), false);
+assert.equal(hasGrantAccess([{ resource: 'quotations', floor_id: 'first-floor', actions: ['view', 'create'] }], 'first-floor', 'catalog'), false, 'builder lookups do not grant Catalog navigation');
+assert.equal(hasGrantAccess([{ resource: 'quotations', floor_id: 'first-floor', actions: ['view', 'create'] }], 'first-floor', 'customers'), false, 'builder lookups do not grant Customers navigation');
 assert.deepEqual(loadDelegation(['ground-floor', 'first-floor'], [
   { resource: 'payments', floor_id: null, actions: ['view', 'create'] },
   { resource: 'payments', floor_id: 'first-floor', actions: ['export'] },
@@ -82,4 +87,23 @@ assert.equal(personalAccountPath('/settings'), '/settings');
 assert.equal(personalAccountPath('/settings-password/'), '/settings-password');
 assert.equal(personalAccountPath('/(admin)/settings-mfa'), '/settings-mfa');
 for (const path of [undefined, '/', '/catalog', '/settings-company', '/catalog/settings', '/unknown', '/settings/unknown']) assert.equal(personalAccountPath(path), null);
+const delegationFloors = floors.map(id => ({ id, name: id }));
+const validCatalog = { resources: [payments, tiles], action_descriptions: Object.fromEntries(['view', 'create', 'update', 'delete', 'export'].map(action => [action, `Can ${action}`])) };
+assert.equal(isDelegationCatalog(validCatalog, delegationFloors), true);
+for (const invalidCatalog of [null, {}, { ...validCatalog, resources: [] },
+  { ...validCatalog, resources: [payments, payments] },
+  { ...validCatalog, resources: [{ ...payments, actions: ['view', 'typo'] }] },
+  { ...validCatalog, resources: [{ ...payments, floor_ids: ['unknown-floor'] }] },
+  { ...validCatalog, resources: [{ ...payments, label: '' }] },
+  { ...validCatalog, action_descriptions: { view: 'View only' } },
+]) assert.equal(isDelegationCatalog(invalidCatalog, delegationFloors), false, 'incomplete catalog must block saving');
 console.log(`Team delegation: ${cases} floor revocation combinations plus page/action, scoped navigation and landing checks passed`);
+
+for (const floor of ["kitchen", "furniture"]) {
+  const resolved = resolveFloorRouteSegments(["(admin)", "notebook", "[floor]"], floor);
+  assert.equal(moduleForRoute(resolved), floor);
+  assert.equal(resolved.includes(floor), true, "floor-switch compatibility needs the resolved floor");
+  assert.equal(moduleForRoute(resolveFloorRouteSegments(["(admin)", "notebook", "[floor]", "quotation-follow-up"], floor)), "quotation-follow-up");
+}
+assert.equal(moduleForRoute(resolveFloorRouteSegments(["(admin)", "notebook", "[floor]"], "unknown")), "restricted");
+assert.deepEqual(resolveFloorRouteSegments(["(admin)", "catalog", "[id]"], "kitchen"), ["(admin)", "catalog", "[id]"]);

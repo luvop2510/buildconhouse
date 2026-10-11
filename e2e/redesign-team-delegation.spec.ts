@@ -14,10 +14,10 @@ const member = { id: 'test-worker', full_name: 'Test Worker', email: 'worker@exa
 const switchFor = (page: Page, id: string) => page.getByTestId(id).getByRole('switch');
 const originalGrants = [{ resource: 'payments', floor_id: 'ground-floor', actions: ['view'] }];
 
-async function teamFixture(page: Page, catalogResponse: () => unknown = () => catalog) {
+async function teamFixture(page: Page, catalogResponse: () => unknown = () => catalog, existingRole = member.role) {
   await mockSession(page, '/team');
   const writes: { path: string; body: Record<string, any> }[] = [];
-  const state = { failSave: false, failGrants: false };
+  const state = { failSave: false, failGrants: false, floorIds: [...member.floor_ids], grants: [...originalGrants] };
   await page.route('**/api/**', async route => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
@@ -26,11 +26,11 @@ async function teamFixture(page: Page, catalogResponse: () => unknown = () => ca
       if (state.failSave) return route.fulfill({ status: 503, json: { detail: 'Save temporarily unavailable' } });
       return route.fulfill({ json: { ...member, ...request.postDataJSON() } });
     }
-    if (path === '/api/team') return route.fulfill({ json: [member] });
+    if (path === '/api/team') return route.fulfill({ json: [{ ...member, role: existingRole }] });
     if (path === '/api/settings/floors') return route.fulfill({ json: floors });
     if (path === '/api/settings/access-grants/resources') return route.fulfill({ json: catalogResponse() });
-    if (path === '/api/settings/access-grants/test-worker') return state.failGrants ? route.fulfill({ status: 503, json: { detail: 'Access temporarily unavailable' } }) : route.fulfill({ json: { grants: originalGrants } });
-    if (path === '/api/roles') return route.fulfill({ json: [{ role: 'owner', label: 'Owner', level: 8 }, { role: 'worker', label: 'Worker', level: 1 }] });
+    if (path === '/api/settings/access-grants/test-worker') return state.failGrants ? route.fulfill({ status: 503, json: { detail: 'Access temporarily unavailable' } }) : route.fulfill({ json: { floor_ids: state.floorIds, grants: state.grants } });
+    if (path === '/api/roles') return route.fulfill({ json: [{ role: 'owner', label: 'Owner', level: 8 }, { role: 'admin', label: 'Admin', level: 7 }, { role: 'manager', label: 'Manager', level: 6 }, { role: 'sales', label: 'Sales', level: 4 }, { role: 'worker', label: 'Worker', level: 1 }] });
     return route.fallback();
   });
   await page.goto('/team');
@@ -45,6 +45,8 @@ async function fillNewMember(page: Page) {
   await page.getByTestId('add-staff-password').fill('NewWorker!2026');
   await page.getByTestId('add-staff-team-role').fill('Ground Floor Sales');
   await expect(page.getByTestId('floor-delegation-editor')).toBeVisible();
+  await expect(page.getByTestId('add-staff-role-worker')).toHaveText('Delegated staff');
+  for (const role of ['admin', 'manager', 'sales', 'purchase', 'accounts', 'warehouse']) await expect(page.getByTestId(`add-staff-role-${role}`)).toHaveCount(0);
 }
 
 // These browser journeys exercise the release export and intercept every API
@@ -66,7 +68,7 @@ test('critical team delegation: multiple floors, pages and actions save in one c
   await page.getByTestId('add-staff-save').click();
   await expect(page.getByTestId('add-staff-sheet')).toHaveCount(0);
   expect(writes).toHaveLength(1);
-  expect(writes[0].body).toMatchObject({ custom_access: true, access_profile: null, floor_ids: ['ground-floor', 'first-floor'], team_role: 'Ground Floor Sales' });
+  expect(writes[0].body).toMatchObject({ role: 'worker', custom_access: true, access_profile: null, floor_ids: ['ground-floor', 'first-floor'], team_role: 'Ground Floor Sales' });
   expect(writes[0].body.access_grants).toEqual([
     { resource: 'payments', floor_id: 'ground-floor', actions: ['view', 'create'] },
     { resource: 'tiles', floor_id: 'ground-floor', actions: ['view'] },
@@ -128,6 +130,37 @@ test('critical team delegation: editing is a draft and a failed save preserves a
   ]);
 });
 
+test('critical team delegation: editing uses current floors and pages when the team list is stale', async ({ page }) => {
+  const { state, writes } = await teamFixture(page, () => catalog, 'manager');
+  state.floorIds = ['third-floor'];
+  state.grants = [{ resource: 'payments', floor_id: 'third-floor', actions: ['view'] }];
+  await page.getByTestId('team-row-test-worker').click();
+  await expect(switchFor(page, 'floor-toggle-third-floor')).toBeChecked();
+  await expect(switchFor(page, 'floor-toggle-ground-floor')).not.toBeChecked();
+  await expect(switchFor(page, 'floor-toggle-first-floor')).not.toBeChecked();
+  await expect(switchFor(page, 'page-toggle-third-floor-payments')).toBeChecked();
+  await expect(page.getByTestId('edit-staff-role-worker')).toHaveText('Delegated staff');
+  await expect(page.getByTestId('edit-staff-role-manager')).toHaveCount(0);
+  await page.getByTestId('edit-staff-save').click();
+  await expect(page.getByTestId('edit-staff-sheet')).toHaveCount(0);
+  expect(writes[0].body.floor_ids).toEqual(['third-floor']);
+  expect(writes[0].body).toMatchObject({ role: 'worker', custom_access: true, access_profile: null });
+  expect(writes[0].body.access_grants).toEqual(state.grants);
+});
+
+test('critical team delegation: Settings has one access editor and historical links open Team', async ({ page }) => {
+  await teamFixture(page);
+  await page.goto('/settings');
+  await expect(page.getByTestId('settings-nav-team')).toBeVisible();
+  await expect(page.getByTestId('settings-nav-permissions')).toHaveCount(0);
+  await expect(page.getByTestId('settings-nav-access-grants')).toHaveCount(0);
+  for (const path of ['/settings-permissions', '/settings-access-grants']) {
+    await page.goto(path);
+    await expect(page).toHaveURL(/\/team$/);
+    await expect(page.getByTestId('team-row-test-worker')).toBeVisible();
+  }
+});
+
 test('critical team delegation: failed permission loading blocks saving and retry restores the saved grants', async ({ page }) => {
   const { writes, state } = await teamFixture(page);
   state.failGrants = true;
@@ -185,6 +218,10 @@ test('critical team delegation: malformed older catalog blocks editing and savin
   await expect(page.getByTestId('floor-delegation-editor')).toHaveCount(0);
   await expect(page.getByTestId('add-staff-save')).toBeDisabled();
   catalogResponse = { ...catalog, resources: [{ ...catalog.resources[0], actions: ['create'] }] };
+  await page.getByRole('button', { name: 'Try again', exact: true }).last().click();
+  await expect(page.getByText('Access options unavailable', { exact: true }).last()).toBeVisible();
+  await expect(page.getByTestId('add-staff-save')).toBeDisabled();
+  catalogResponse = { ...catalog, action_descriptions: { view: 'Read only.' } };
   await page.getByRole('button', { name: 'Try again', exact: true }).last().click();
   await expect(page.getByText('Access options unavailable', { exact: true }).last()).toBeVisible();
   await expect(page.getByTestId('add-staff-save')).toBeDisabled();

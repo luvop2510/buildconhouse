@@ -23,7 +23,7 @@ assert.equal(quotationGridColumns(800), 5);
 assert.equal(quotationGridColumns(810), 5);
 assert.equal(quotationGridColumns(1040), 5);
 assert.equal(quotationGridColumns(1920), 5);
-assert.equal(quotationGridColumns(600, true), 5);
+assert.equal(quotationGridColumns(600, true), 4);
 assert.equal(quotationGridColumns(279), 1);
 assert.deepEqual(productImageList({
   hero_image_url: "hero",

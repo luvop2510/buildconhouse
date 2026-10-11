@@ -191,7 +191,7 @@ async def authorize_staff_request(user: UserPublic, request: Request | None) -> 
         resource = await request_resource(db, path, request.query_params)
         if resource in {"notebook_walkins", "notebook_quotations"} and (path.count("/") > 4 or path.endswith("/contact")):
             object.__setattr__(user, "_custom_notebook_converted", resource == "notebook_quotations")
-        floors = granted_floor_ids(grants, user_id=user.id, path=path, action=action, resource=resource) if action else []
+        floors = granted_floor_ids(grants, user_id=user.id, path=path, action=action, resource=resource, method=request.method) if action else []
         object.__setattr__(user, "_custom_grant_floor_ids", floors)
         permitted = accessible_floor_ids(user)
         if permitted == [] or (user.active_floor_id and permitted is not None and user.active_floor_id not in permitted):

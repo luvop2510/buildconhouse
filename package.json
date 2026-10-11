@@ -46,7 +46,8 @@
     "test:quotation-whatsapp": "node --experimental-strip-types --no-warnings scripts/test-quotation-whatsapp.mjs",
     "test:furniture-rmb": "node --experimental-strip-types --no-warnings scripts/test-furniture-rmb.mjs",
     "test:native-release-config": "node scripts/test-native-release-config.mjs",
-    "test:history-lifecycle": "node scripts/test-history-lifecycle.mjs"
+    "test:history-lifecycle": "node scripts/test-history-lifecycle.mjs",
+    "test:notebook-lifecycle": "node scripts/test-notebook-lifecycle.mjs"
   },
   "dependencies": {
     "@expo/metro-runtime": "~55.0.12",
