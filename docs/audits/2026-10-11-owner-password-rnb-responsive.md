@@ -83,5 +83,17 @@ Structured results and local log locations are recorded in
 `2026-10-11-owner-password-rnb-responsive.json`. Private logs and generated
 artifacts stay in the ignored `output/` directory.
 
-This change is based on the existing team/floor/performance work in PR #15.
-Review and merge that dependency before promoting the combined result.
+The implementation is committed as `f259f8f6` in draft
+[PR #16](https://github.com/yashvardhansinh2510-max/buildconhouse/pull/16), based on
+the existing team/floor/performance work in PR #15. Review and merge that
+dependency before promoting the combined result. PR #16's
+[CI run](https://github.com/yashvardhansinh2510-max/buildconhouse/actions/runs/38140636826)
+also failed all three jobs before any steps started. Its check annotation confirms
+the GitHub billing/spending restriction; remote source tests did not execute.
+
+The initial automatic Vercel preview failed before Expo export because its preview
+environment lacked a valid `BACKEND_URL`. The branch-specific preview variable
+was configured to the established Railway HTTPS endpoint; production environment
+variables were unchanged. A later source push retriggers the automatic preview.
+That preview uses the currently deployed backend, so it does not demonstrate the
+new backend password policy until a separately gated backend release occurs.
