@@ -97,3 +97,10 @@ was configured to the established Railway HTTPS endpoint; production environment
 variables were unchanged. A later source push retriggers the automatic preview.
 That preview uses the currently deployed backend, so it does not demonstrate the
 new backend password policy until a separately gated backend release occurs.
+
+Preview deployment `dpl_7BfTZF5atWwcyfJGawbwyehEhv2J` reached **Ready** for
+documentation commit `12fa6ed9` with the same runtime implementation as `f259f8f6`.
+Read-only HTTP checks at
+`https://buildcon-house-hj800j8qj-yug19.vercel.app` verified `/login` 200 with CSP,
+`/api/health/ready` 200 and unauthenticated `/api/auth/me` 401. This is a branch
+preview, not a production promotion or signed-native release.
