@@ -2,7 +2,16 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
+
+# Pull requests cover feature branches; main pushes validate the merged result.
+# Avoid running the same feature commit twice, and replace stale runs when a
+# newer commit arrives. All three required jobs still run for each PR revision.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   backend:
