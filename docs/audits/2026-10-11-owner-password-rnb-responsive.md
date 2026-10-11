@@ -167,3 +167,14 @@ The goal is not complete. Repeated external release blockers require GitHub
 billing restoration, resolution of the remaining dependency gate and access to
 the outstanding platform/device acceptance environment. No real staff passwords
 or accounts were changed by this verification work.
+
+The final runtime commit `5c498e53` reached Vercel Ready as
+`dpl_ACZUVbsybeiMdjyH428J61SKySgz`, at
+`https://buildcon-house-kqm3xzh71-yug19.vercel.app`. All **16 hosted key-flow
+checks** passed across Android Chrome, iPhone Safari, iPad Safari and Firefox:
+legacy-flag staff sign-in, targeted owner password reset, saved RMB deposits
+displaying RNB, and the pending-floor furniture redirect. API requests remained
+intercepted; one worker, unchanged deadlines, no retries or failures. The same
+commit's CI run `38143333610` failed before any job steps because GitHub again
+reported the account billing/spending restriction. This preview result does not
+release the backend or certify actual devices.
