@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { mockSession } from './audit-fixtures';
+import { floors, mockSession } from './audit-fixtures';
 import { readFileSync } from 'node:fs';
 
 for (const [path, destination] of [['/reports', '/dashboard'], ['/purchase-orders', '/purchases'], ['/notebook/kitchen/followups', '/notebook/kitchen'], ['/notebook/furniture/quotation', '/notebook/furniture/quotation-follow-up']]) {
@@ -10,6 +10,28 @@ for (const [path, destination] of [['/reports', '/dashboard'], ['/purchase-order
     await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
   });
 }
+
+test('critical legacy furniture URL waits for authorized floors before opening quotation follow-up', async ({ page }) => {
+  await mockSession(page, '/notebook/furniture/quotation');
+  let releaseFloorAccess!: () => void;
+  const pendingFloorAccess = new Promise<void>(resolve => { releaseFloorAccess = resolve; });
+  await page.route('**/api/settings/floor-access', async route => {
+    await pendingFloorAccess;
+    await route.fulfill({ json: { all_floors: true, floors, floor_ids: floors.map(floor => floor.id) } });
+  });
+  let notebookReads = 0;
+  await page.route('**/api/followups/notebook/**', route => {
+    notebookReads += 1;
+    return route.fulfill({ json: { rows: [], next_cursor: null } });
+  });
+  await page.goto('/notebook/furniture/quotation');
+  await expect(page.getByTestId('floor-access-loading')).toBeVisible();
+  expect(notebookReads).toBe(0);
+  releaseFloorAccess();
+  await expect(page).toHaveURL(/\/notebook\/furniture\/quotation-follow-up$/);
+  await expect(page.getByRole('heading', { name: 'Furniture Floor Quotation follow-ups', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Switch workspace\. Current workspace: Furniture/ })).toBeVisible();
+});
 
 test('critical entry route sends staff and customers to separate workspaces', async ({ page }) => {
   await mockSession(page, '/dashboard');

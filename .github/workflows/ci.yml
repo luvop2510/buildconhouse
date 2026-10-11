@@ -128,6 +128,7 @@ jobs:
           npm run test:release-recovery
           npm run test:npm-audit
           npm run test:shell-quote-security
+          npm run test:uri-decoder-security
           npm run test:service-health
           npm run test:uptime-monitor
           npm run test:app-text

@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "scripts": {
     "preinstall": "./scripts/cmd-guard.js --preinstall",
-    "postinstall": "node scripts/patch-react19-compat.mjs",
+    "postinstall": "node scripts/patch-react19-compat.mjs && node scripts/patch-uri-decoder-compat.mjs",
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
@@ -40,6 +40,7 @@
     "test:stock-floor-races": "node scripts/test-stock-floor-races.mjs",
     "test:uptime-monitor": "node scripts/test-uptime-monitor.mjs",
     "test:shell-quote-security": "node scripts/test-shell-quote-security.mjs",
+    "test:uri-decoder-security": "node scripts/test-uri-decoder-security.mjs",
     "test:font-assets": "node scripts/check-font-assets.mjs",
     "test:auth-provider-races": "node scripts/test-auth-provider-races.mjs",
     "test:customer-draft-reset": "node scripts/test-customer-draft-reset.mjs",
@@ -102,11 +103,13 @@
     "typescript": "5.9.3"
   },
   "resolutions": {
+    "decode-uri-component": "0.5.0",
     "@eslint/plugin-kit": "0.4.1",
     "postcss": "8.5.28",
     "uuid": "11.1.1"
   },
   "overrides": {
+    "decode-uri-component": "0.5.0",
     "postcss": "8.5.28",
     "xcode": {
       "uuid": "11.1.1"

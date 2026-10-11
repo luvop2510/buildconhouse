@@ -17,16 +17,22 @@ fields and stored values. Hard-navigation hydration failures no longer erase
 persisted credentials unless the server returns an authoritative 401/403.
 
 Local acceptance: 2,072 hermetic backend tests; 636 browser passes across six
-widths with six intentional navigation skips; 58 passes each for Android Chrome,
-iPhone Safari, iPad Safari and isolated desktop Firefox. The original device run
-had two Firefox runner/protocol failures; its entire 58-case project passed with
-one worker, unchanged deadlines and no retries. TypeScript, zero-warning lint,
-34 frontend contract scripts, web/native exports, all 11 route budgets and Expo
-Doctor20/20 pass. Optional route drift checking has no configured baseline.
+widths with six intentional navigation skips, plus six delayed-floor startup
+checks. The final device run passes all 236 cases (59 each for Android Chrome,
+iPhone Safari, iPad Safari and desktop Firefox), two workers, unchanged deadlines
+and no retries. Earlier runner failures remain documented. Hosted preview checks
+had 227 passes/five navigation or loading failures; all ten focused cases passed
+in isolation. TypeScript, zero-warning lint, 35 frontend contract scripts,
+web/native exports, all 11 route budgets and Expo Doctor20/20 pass.
+The published decode-uri-component 0.5.0 fix is pinned, with a CommonJS import
+compatibility repair for Expo Router's query-string 7. Malformed URL regressions
+run in CI. Optional route drift checking has no configured baseline.
 Read-only predeploy passes and migration dry-run finds no pending migrations.
-Existing 22 high/eight moderate npm findings and GitHub billing preventing CI
-job startup still block release. No deployment, signing or physical-device
-acceptance is claimed. See
+Remaining 22 high/five moderate npm findings and GitHub billing preventing CI
+job startup still block release. The live backend schema lacks the new member
+deletion/specific-password contracts. No production deployment, signing or
+physical-device acceptance is claimed. This Mac lacks simctl and Android tooling.
+See
 `docs/audits/2026-10-11-owner-password-rnb-responsive.md` and its JSON evidence.
 
 ## Earlier verification update — 2026-10-10

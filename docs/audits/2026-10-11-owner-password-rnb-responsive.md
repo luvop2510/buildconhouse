@@ -104,3 +104,66 @@ Read-only HTTP checks at
 `https://buildcon-house-hj800j8qj-yug19.vercel.app` verified `/login` 200 with CSP,
 `/api/health/ready` 200 and unauthenticated `/api/auth/me` 401. This is a branch
 preview, not a production promotion or signed-native release.
+
+## Additional verification and URI security repair
+
+The current `09b406d6` branch preview also reached Ready as
+`dpl_8RrjEgKtrhznaTKwmfmFEty6xAev`, at
+`https://buildcon-house-d3x4ktz8k-yug19.vercel.app`. Hosted acceptance intercepted
+every API request and completed with 227 passes and five failures. Four failures
+occurred in `page.goto` while loading pages; the furniture compatibility redirect
+did not reach its destination within its assertion deadline. Traces include
+unfinished asset requests and one entry bundle taking approximately 11 seconds.
+All ten focused cases across Android and iPhone passed in an isolated one-worker
+run, with unchanged deadlines and no retries. This does not erase the original
+hosted failures or establish a production latency guarantee.
+
+The published [URI decoder advisory](https://github.com/advisories/GHSA-vcc3-ghjq-m6fr)
+identifies 0.5.0 as the patched version. The project now pins that release through
+npm overrides and Yarn resolutions. Expo Router 55 consumes query-string 7's
+CommonJS API, while the patched decoder exports an ES module default. The
+postinstall compatibility repair unwraps that default without copying the decoder
+or changing the router/framework version. A bounded subprocess tests four large
+malformed inputs through query-string, alongside username, Unicode and repeated
+query-parameter round trips. The regression is required by frontend CI.
+
+After a clean `npm ci`, the patched web build, unsigned iOS/Android Hermes exports,
+TypeScript, zero-warning lint, all 35 frontend contract scripts, all 11 route
+budgets (largest 439 KiB) and Expo Doctor20/20 pass. The entire device suite passes
+**236 cases**, 59 each in Android Chrome, iPhone Safari, iPad Safari and desktop
+Firefox, using two workers and no retries. A new controlled pending-floor
+regression verifies no notebook requests run before authorized floor access is
+known, then checks the furniture redirect, heading and active floor. It passes
+all four browser profiles and all six viewport sizes. Backend source is unchanged
+from the implementation commit covered by the 2,072 passing unit tests.
+
+The fresh audit falls from 30 to **27 findings: 22 high/five moderate**, zero
+critical. Remaining blockers include the [braces advisory](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)
+and [node-forge advisory](https://github.com/advisories/GHSA-86w9-cpqp-85rv), both
+still reporting no patched releases. Registry checks confirm braces 3.0.3 and
+node-forge 1.4.0 remain the latest published versions. The independent security
+gate remains enforced.
+
+The current PR CI run `38141249427` again stopped all three jobs before any
+source-check steps; its annotation confirms the same GitHub billing/spending
+restriction. A read-only production `/openapi.json` check confirms that Team
+deletion and `TeamPasswordResetPayload` are absent, and reset-password has no
+request body: the new backend policy has not been released. The local environment
+has neither `simctl` nor Android adb/emulator tooling. Physical devices, signed
+native builds and actual Windows/Linux client acceptance remain unverified.
+
+## Goal completion audit
+
+| Requirement | Current evidence | Completion limit |
+| --- | --- | --- |
+| Permanent, intended-member credentials without first-login changes | Login/session normalization; username binding, target-only bcrypt write and legacy JK expiry tests; browser sign-in flows | Implemented and tested; live backend remains unchanged |
+| Only owner creates/deletes members and changes their passwords | HTTP and direct-call denial for every non-owner role/custom grants; owner create/reset/delete flows; session revocation tests | Implemented and tested; live backend remains unchanged |
+| Owner manages all functions | Owner normalization overrides stale profiles/grants; all-floor and module access tests | Source and browser behavior verified |
+| Furniture displays RNB | Ledger/deposit/PDF/share label tests and legacy payload arithmetic compatibility | Branch preview and local artifacts verified; production release pending |
+| Smooth use across devices/viewports/OS | Six viewport audit, 236 final browser-profile passes, six pending-floor cases and unsigned native exports | Hosted timing failures retained; hardware, signing and Windows/Linux clients unverified |
+| Address discovered problems and report completion | Password/auth/UI fixes; URI security patch; recorded original and rerun results | Full goal remains incomplete while release and platform acceptance gates are open |
+
+The goal is not complete. Repeated external release blockers require GitHub
+billing restoration, resolution of the remaining dependency gate and access to
+the outstanding platform/device acceptance environment. No real staff passwords
+or accounts were changed by this verification work.
