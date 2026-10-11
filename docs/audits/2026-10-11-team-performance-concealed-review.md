@@ -1,6 +1,6 @@
 # Team access, performance and concealed-part review — 2026-10-11
 
-Source fixes are implemented locally. The authorized production account reset is complete and normal service has been restored. Publishing the source changes remains blocked by the required pre-existing npm security gate.
+Source fixes are implemented and preserved in [draft PR #15](https://github.com/yashvardhansinh2510-max/buildconhouse/pull/15), commit `90b1951c`. The authorized production account reset is complete and normal service has been restored. Publishing the source changes remains blocked by the required pre-existing npm security gate.
 
 ## Implemented changes
 
@@ -41,3 +41,5 @@ Browser tests use an isolated static server with intercepted API fixtures, cover
 ## Release blocker revalidation
 
 On the next goal continuation, a fresh npm audit still reported 22 high/eight moderate findings. The registry latest versions were braces 3.0.3 and node-forge 1.4.0; both remain inside the advisory affected ranges. The reviewed [braces advisory](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) and [node-forge advisory](https://github.com/advisories/GHSA-86w9-cpqp-85rv) both list no patched versions. A routine version override cannot clear these findings; changing the audit policy or relabeling patched local code as an unaffected package would not establish a verified upstream fix. Source changes are preserved on a dedicated draft-review branch, while production continues to use its existing application commit.
+
+The draft PR’s CI run [38134590444](https://github.com/yashvardhansinh2510-max/buildconhouse/actions/runs/38134590444) is terminal. All three jobs have empty step arrays: GitHub refused to start them because recent account payments failed or the spending limit needs increasing. This is an account-level execution blocker, not evidence that the tested source failed a CI step. Local test evidence remains valid, but no green remote CI is claimed. GitHub billing requires the account owner; no billing/spending setting was changed.

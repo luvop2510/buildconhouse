@@ -50,5 +50,13 @@
     "critical": 0
   },
   "production_staff_reset": "complete, sole new owner JK PATEL",
-  "feature_source_release": "not published; required pre-existing dependency-security gate blocks release"
+  "feature_source_release": "Draft PR preserved; production release blocked by dependency security and GitHub CI billing",
+  "pull_request": "https://github.com/yashvardhansinh2510-max/buildconhouse/pull/15",
+  "remote_ci": {
+    "run_id": 38134590444,
+    "status": "completed",
+    "conclusion": "failure",
+    "jobs_executed": false,
+    "reason": "GitHub account payment or spending-limit issue prevented jobs starting"
+  }
 }
