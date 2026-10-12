@@ -111,7 +111,8 @@ test('critical customer intake retains optional details after a failed save', as
   await page.getByRole('button', { name: 'Save Customer', exact: true }).click();
   await expect(page).toHaveURL(/\/customers\/saved-customer/);
   expect(writes).toHaveLength(2);
-  expect(writes[1]).toMatchObject({ name: 'Showroom customer', phone: '9000000000', company: 'Project office', tier: 'retail' });
+  expect(writes[1]).toMatchObject({ name: 'Showroom customer', phone: '9000000000', company: 'Project office' });
+  expect(writes[1]).not.toHaveProperty('tier');
 });
 
 test('critical collection failures recover and failed payment saves retain entered values', async ({ page }) => {

@@ -126,3 +126,39 @@ ignored. The destination is public, like the repository supplied by the user.
 
 GitHub push and final remote/default-branch verification are recorded in the
 completion update. Production configuration and secrets are not embedded in Git.
+
+## Continuation update — GitHub and deployment
+
+Commit `64f5ed7ff8a912c1f85793cc0433367bc94b4e08` is verified on the new
+repository's `main` and default branch. GitHub CLI is signed into `luvop2510`.
+The local `origin` now targets the new repository; the old app remote is retained
+as `previous-origin`, the older forge remote remains `legacy-origin`, and the
+current branch tracks `origin/main`.
+
+The user explicitly requested production deployment in the follow-up. Railway
+project `BuildCon House Backend`, service `forge2.0`, production environment was
+inspected through the Railway connector. The current service is online with no
+recent failures. Only its repository and pinned commit were staged; environment
+variables, domain, root directory and resources are preserved. The controlled
+migration dry-run reports no pending migrations, and read-only infrastructure
+preflight passes again. Railway accept-deploy returned “Cancelled — the user did
+not approve this action. No changes were made.” Its pending patch is still staged;
+the earlier deployment remains online. User confirmation is pending.
+
+Vercel's existing project `yug19/buildcon-house` was verified by CLI inspection.
+Connecting `luvop2510/buildconhouse` failed because the Vercel GitHub integration
+lacks repository access. A CLI preview was created at
+`https://buildcon-house-d7m1n8pc4-yug19.vercel.app`, but the platform blocked it
+before build: the real commit author is not permitted to deploy to this project.
+No source authorship was rewritten and no protection was bypassed. The user was
+asked to authorize repository access and the commit author. The existing live
+frontend remains unchanged.
+
+The broad matrix exposed stale assertions for removed tiers, icon-bearing
+password buttons and the canonical floor-switch destination. Corrected assertions
+retain the requested behavior; all 18 focused cases pass across six widths.
+A concealed-product immediate reload failed in the broad run but passed in
+isolation; it remains a recorded diagnostic, not a blanket accepted pass. One
+artifact ENOENT arose from an overlapping runner sharing its output directory;
+subsequent focused/device runs use isolated artifact paths. The remaining broad
+and four-engine device runs are still active and final acceptance is pending.

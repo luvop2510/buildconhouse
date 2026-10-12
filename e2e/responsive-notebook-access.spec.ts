@@ -98,7 +98,10 @@ test('switching notebook floors discards a closed draft and uses the destination
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await page.getByTestId('floor-switcher').filter({ visible: true }).first().click();
   await page.getByRole('menuitem', { name: 'Furniture Floor', exact: true }).click();
-  await expect(page).toHaveURL(/\/notebook\/furniture$/);
+  await expect(page).toHaveURL(/\/walkins$/);
+  // Regular Walk-ins is the canonical destination after a floor switch.
+  // Legacy notebooks remain explicitly reachable and retain independent drafts.
+  await page.goto('/notebook/furniture');
   await page.getByRole('button', { name: 'New walk-in', exact: true }).first().click();
   dialog = page.getByRole('dialog', { name: 'New walk-in', exact: true });
   await expect(dialog.getByLabel('Customer name *', { exact: true })).toHaveValue('');
