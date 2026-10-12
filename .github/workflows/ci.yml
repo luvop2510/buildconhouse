@@ -181,7 +181,7 @@ jobs:
         if: always()
         # Retained release evidence is required. Preserve upload failures as
         # failures so unavailable artifact storage cannot be reported as green CI.
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: browser-audit
           path: output/playwright

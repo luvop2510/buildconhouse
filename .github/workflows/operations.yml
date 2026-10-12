@@ -45,7 +45,7 @@ jobs:
         run: node scripts/summarize-health-evidence.mjs output/operations/vercel.json output/operations/railway.json
       - name: Preserve non-sensitive timing evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: operations-health
           path: output/operations/
