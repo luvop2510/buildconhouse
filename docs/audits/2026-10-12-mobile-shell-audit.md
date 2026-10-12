@@ -32,3 +32,27 @@ The remaining **1,602-case** matrix excludes the six priority files to avoid rep
 Initial and intermediate runs were intentionally stopped when source edits or confirmed regressions required a new export. Their logs/results remain in `output/mobile-audit-*.log` and `output/playwright/mobile-audit-*-results.json`; these interrupted runs are not final acceptance. The initial baseline found the layered-focus issue, completed Purchases route redirection, and stale fixture/viewport expectations. A focused run caught the remaining palette visible-lifetime race, and the new bookmark regression proved the department-route race before both repairs were retested.
 
 The viewport and device projects are browser emulation, not physical-device or signed-native acceptance. Shortening a browser viewport checks available-space reflow; it does not establish behavior of a real operating-system keyboard. Hermetic journeys verify application behavior and layout, not production API availability or deployment.
+
+## Final results and production acceptance
+
+The broader matrix finished with 1,571 passes, 19 skips and 12 failures. Eight
+stale expectations were corrected, three artifact collisions were rerun in
+isolated output directories, and the remaining genuine cold floor-hydration
+reload race was repaired by the early startup bootstrap. Focused corrections and
+artifact reruns each pass 18 cases. Startup acceptance passes 90 six-width cases,
+20 device/engine cases, six repeated phone reloads and the dedicated delayed-floor
+reload on all six widths and four engines. The earlier independent four-device
+matrix passed 340 cases with eight intentional skips and no failures/retries.
+
+The promoted production domain passes an independent 64-case phone/desktop
+matrix. The first run had one loading-element timeout; three focused repeats and
+the complete rerun pass. In the user's private authenticated session, mobile
+acceptance additionally verifies the sanitary catalog, owner identity, all-floor
+canonical Walk-ins, 100% Customer views and Team access/password explanations.
+No real orders, passwords or permissions were changed by these UI checks.
+The separately authorized cleanup removed two obsolete orphan assignment labels.
+
+The final editor completion indicator follow-up passes all 54 completion journeys
+at widths 320, 390, 768, 1024, 1280 and 1440, along with TypeScript, changed-file
+lint and route budgets. Browser emulation remains distinct from physical-device
+or signed native acceptance.

@@ -225,3 +225,46 @@ retains the quotation query string, checks builder recovery and confirms removal
 of the tab-scoped pending route. It passes all **six viewport projects and all
 four browser/device projects**. The new Vercel preview's served bootstrap matches
 the repaired source byte-for-byte. Production remains unchanged pending approval.
+
+## Production rollout and authenticated acceptance
+
+Railway deployment `4e21a8c9-7e3d-4de5-8a0f-a40f25cef473` successfully
+replaced the backend with release `652448ba` from the new repository. Production
+has one running replica, zero crashed replicas and no pending changes. Public
+readiness is 200, and OpenAPI now includes Walk-ins assignees, the shared Customer
+completion parameter and the member-password payload. Vercel candidate
+`dpl_G7TJP9vmaTNNZ6kKQEQhKVQckk4g` was promoted after backend readiness.
+The custom domain, www domain and both existing Vercel bookmark URLs serve it.
+Protected APIs correctly return 401 without an authenticated session.
+
+The user signed in privately. Read-only live browser acceptance verifies
+`JK PATEL · Owner`, no duplicate RO account in Team, regular Walk-ins on all four
+floors, the sanitary catalog with 1,597 families at phone width, and Customer,
+Purchases and Quotation 100% views. Team displays the clarified password labels
+and the existing delegated worker's floor/page/action grants. No credentials were
+reset, and no new grants or business orders were created for this acceptance.
+
+The live walk-in also exposed an obsolete `Aarav Kapoor` assignment to a user ID
+that no longer exists. The user explicitly requested its removal. A private,
+ignored, permission-restricted backup preserves the two original records. Exact
+compare-and-set updates cleared the salesperson on that walk-in and assignee on
+its linked showroom follow-up; an activity event records the authorized cleanup.
+Both collections now contain zero Kapoor assignment labels. Live UI shows
+`Unassigned`; customer, walk-in and follow-up records remain intact.
+
+The first live-domain matrix had 63 passes and one phone startup loading-element
+timeout. Three focused repeats pass. The complete independent rerun passes all
+64 phone/desktop cases with zero retries. These journeys fetch the real deployed
+assets while mocking APIs; the private signed-in checks above separately verify
+real production reads.
+
+Final completion audit found that saved standard and Tile quotation editors also
+needed the customer fulfillment badge. They now request the existing authorized
+completion contract on restore and show `100% completed` independently of quote
+approval. The indicator is tied to the restored quotation/customer/floor identity,
+so changing those identities cannot retain another customer's completion label.
+All 54 completion journeys pass across six widths (320–1440), including ordered
+but still active buyers and completed buyers in both editors. TypeScript,
+zero-warning changed-file lint, quotation/mobile contracts, 84 auth-race checks
+and all 11 route budgets pass. This frontend-only follow-up uses the already
+updated backend. The deployment journal records its final pipeline result.

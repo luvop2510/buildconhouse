@@ -236,6 +236,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   const [docId, setDocId] = useState<string | null>(null);
   const [docNumberServer, setDocNumberServer] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("draft");
+  const [completionSnapshot, setCompletionSnapshot] = useState<{ id: string; customerId: string; completed: boolean } | null>(null);
   const [customerId, setCustomerId] = useState<string | null>(null);
   const customerIdRef = useRef<string | null>(null);
   const [customerSnapshot, setCustomerSnapshot] = useState<{ name: string; phone: string }>({ name: "", phone: "" });
@@ -272,7 +273,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     setRestoreError(null);
     (async () => {
       try {
-        const doc = await api.get<any>(`/quotations/${routeId}`, { floorId: TILES_FLOOR_ID });
+        const doc = await api.get<any>(`/quotations/${routeId}?with_completion=true`, { floorId: TILES_FLOOR_ID });
         if (!alive) return;
         if (doc.doc_type !== docType) {
           const canonicalRoute = doc.doc_type === "tiles_selection" ? "selection" : doc.doc_type === "tiles_quotation" ? "quotation" : null;
@@ -283,6 +284,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         setDocId(doc.id);
         setDocNumberServer(doc.number || null);
         setStatus(normalizeTilesStatus(doc.status || "draft"));
+        setCompletionSnapshot({ id: doc.id, customerId: doc.customer_id, completed: doc.purchase_completion_status === "completed" });
         setServerTotals({
           subtotal: Number(doc.subtotal || 0),
           grandTotal: Number(doc.grand_total || 0),
@@ -760,6 +762,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     customers, customerId, pickCustomer, setCustomerId,
     saveState, retrySave: () => persist({ silent: true }), busy, generatePdf, print, placeOrder, serverTotals, previewTotals,
     whatsappDraft, closeWhatsApp: () => setWhatsappDraft(null), prepareWhatsApp,
+    customerCompleted: Boolean(!loading && completionSnapshot?.completed && completionSnapshot.id === docId && completionSnapshot.customerId === customerId),
     status, stage: tilesStage(docType, status), workflowAction, runWorkflowAction, workflowError, deleteDocument,
   };
 }
@@ -1749,6 +1752,7 @@ function MobileTilesEditor({
           <Text style={[type.titleMd, { marginTop: 1 }]} numberOfLines={1}>
             {title}{doc.docNumberServer ? `  ·  ${doc.docNumberServer}` : ""}
           </Text>
+          {doc.customerCompleted ? <Text testID="quotation-customer-completed" style={[type.caption, { color: colors.success }]}>100% completed</Text> : null}
         </View>
         <Dropdown
           testID="tiles-mobile-menu"
@@ -2033,6 +2037,7 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
             <Text style={[type.titleMd, { marginTop: 1 }]} numberOfLines={1}>
               {title}{doc.docNumberServer ? `  ·  ${doc.docNumberServer}` : ""}
             </Text>
+            {doc.customerCompleted ? <Text testID="quotation-customer-completed" style={[type.caption, { color: colors.success }]}>100% completed</Text> : null}
           </View>
         </View>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, alignItems: "center", justifyContent: "flex-end", flexShrink: 1 }}>

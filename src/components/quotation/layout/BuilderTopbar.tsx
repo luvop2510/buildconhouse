@@ -95,6 +95,7 @@ export function BuilderTopbar({
             </View>
           ) : null}
         </View>
+        {b.customerCompleted ? <Text testID="quotation-customer-completed" style={[type.caption, { color: colors.success }]}>100% completed</Text> : null}
         <Text
           style={[type.caption, { color: b.saveState === "error" ? colors.error : colors.onSurfaceMuted }]}
           testID="save-status"

@@ -110,3 +110,26 @@ for (const action of ['move', 'transfer'] as const) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   });
 }
+
+for (const kind of ['standard', 'tiles_quotation'] as const) {
+  for (const completion of ['active', 'completed'] as const) {
+    test(`critical saved ${kind} editor shows delivery completion independently of order approval: ${completion}`, async ({ page }) => {
+      const path = kind === 'standard' ? '/quotations/new?quotationId=editor-completion' : '/tiles/quotation?id=editor-completion';
+      await mockSession(page, path, false);
+      const requests: { completion: string | null; floor: string | undefined }[] = [];
+      await page.route('**/api/quotations/editor-completion*', route => {
+        requests.push({ completion: new URL(route.request().url()).searchParams.get('with_completion'), floor: route.request().headers()['x-floor-id'] });
+        return route.fulfill({ json: { id: 'editor-completion', number: 'Q-COMPLETE', customer_id: 'delivered', customer_name: 'Completed Buyer', doc_type: kind, status: 'ordered', purchase_completion_status: completion, items: [], rooms: ['Room 1'], subtotal: 0, grand_total: 0, updated_at: '2026-10-12T10:00:00Z' } });
+      });
+      await page.goto(path);
+      await expect.poll(() => requests.length).toBeGreaterThan(0);
+      if (completion === 'completed') await expect(page.getByTestId('quotation-customer-completed')).toHaveText('100% completed');
+      else {
+        await expect(page.getByText(/Q-COMPLETE/).first()).toBeVisible();
+        await expect(page.getByTestId('quotation-customer-completed')).toHaveCount(0);
+      }
+      expect(requests.every(request => request.completion === 'true' && request.floor === (kind === 'standard' ? 'first-floor' : 'ground-floor'))).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    });
+  }
+}

@@ -202,6 +202,7 @@ export type BuilderApi = {
   // Autosave
   quotationId: string | null;
   quotationNumber: string | null;
+  customerCompleted: boolean;
   saveState: SaveState;
   savedAt: Date | null;
   saveLabel: string;
@@ -381,6 +382,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   // Autosave metadata (not undoable)
   const [quotationId, setQuotationId] = useState<string | null>(null);
   const [quotationNumber, setQuotationNumber] = useState<string | null>(null);
+  const [completionSnapshot, setCompletionSnapshot] = useState<{ id: string; customerId: string; floorId: string; completed: boolean } | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [workflowBusy, setWorkflowBusy] = useState(false);
@@ -800,7 +802,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     if (!canUpdateQuotation) { toast.error("You don't have access to edit saved quotations"); return; }
     const request = ++restoreRequest.current;
     try {
-      const doc = await api.get<any>(`/quotations/${id}`, { floorId: activeFloorId });
+      const doc = await api.get<any>(`/quotations/${id}?with_completion=true`, { floorId: activeFloorId });
       if (request !== restoreRequest.current) return;
       documentGeneration.current += 1;
       if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -851,6 +853,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
       setQuotationId(doc.id);
       persistedIdRef.current = doc.id;
       setQuotationNumber(doc.number);
+      setCompletionSnapshot({ id: doc.id, customerId: doc.customer_id, floorId: activeFloorId, completed: doc.purchase_completion_status === "completed" });
       setSaveState("saved");
       setSavedAt(new Date(doc.updated_at || Date.now()));
       // Restore UI filter state too
@@ -1567,6 +1570,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   // (useCallback/useState setters) or a real state value that should trigger
   // a refresh, so this only produces a new reference when something the UI
   // actually depends on changes.
+  const customerCompleted = Boolean(completionSnapshot?.completed && completionSnapshot.id === quotationId && completionSnapshot.customerId === s.customerId && completionSnapshot.floorId === activeFloorId);
   const value: BuilderApi = useMemo(() => ({
     history, s,
     customers, referrers, categories, categoryById, referenceLoading, referenceError, retryReferenceData,
@@ -1580,7 +1584,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     customProductSheetOpen, setCustomProductSheetOpen,
     recentQuotations, refreshRecentQuotations, restoreQuotation, deleteQuotation, startNewQuotation,
     totals, usedCategoryIds, flatRows, lineBreakdownById, recoveryDraft, recoveryBusy, recoveryError, restoreLocalDraft, dismissRecovery,
-    quotationId, quotationNumber, saveState, savedAt, saveLabel, persist, finalize,
+    quotationId, quotationNumber, customerCompleted, saveState, savedAt, saveLabel, persist, finalize,
     workflowBusy, generateOfficialQuotation, generateProductPpt, placeOrder,
     setCustomer, createCustomer, importCustomerFromGround, customerSwitcherOpen, setCustomerSwitcherOpen,
     setReferrer, clearReferrer, createReferrer, referrerSwitcherOpen, setReferrerSwitcherOpen,
@@ -1609,7 +1613,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     customProductSheetOpen, setCustomProductSheetOpen,
     recentQuotations, refreshRecentQuotations, restoreQuotation, deleteQuotation, startNewQuotation,
     totals, usedCategoryIds, flatRows, lineBreakdownById, recoveryDraft, recoveryBusy, recoveryError, restoreLocalDraft, dismissRecovery,
-    quotationId, quotationNumber, saveState, savedAt, saveLabel, persist, finalize,
+    quotationId, quotationNumber, customerCompleted, saveState, savedAt, saveLabel, persist, finalize,
     workflowBusy, generateOfficialQuotation, generateProductPpt, placeOrder,
     setCustomer, createCustomer, importCustomerFromGround, customerSwitcherOpen, setCustomerSwitcherOpen,
     setReferrer, clearReferrer, createReferrer, referrerSwitcherOpen, setReferrerSwitcherOpen,
