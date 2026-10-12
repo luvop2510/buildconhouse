@@ -55,6 +55,55 @@ async function fillNewMember(page: Page) {
   for (const role of ['admin', 'manager', 'sales', 'purchase', 'accounts', 'warehouse']) await expect(page.getByTestId(`add-staff-role-${role}`)).toHaveCount(0);
 }
 
+test('critical six-character passwords: creation rejects five and accepts six', async ({ page }) => {
+  const { writes } = await teamFixture(page);
+  await fillNewMember(page);
+  await page.getByTestId('add-staff-password').fill('12345');
+  await page.getByTestId('add-staff-save').click();
+  await expect(page.getByText('Initial password must be at least 6 characters', { exact: true })).toBeVisible();
+  expect(writes).toHaveLength(0);
+  await page.getByTestId('add-staff-password').fill('123456');
+  await page.getByTestId('add-staff-save').click();
+  await expect(page.getByTestId('add-staff-sheet')).toHaveCount(0);
+  expect(writes[0].body.password).toBe('123456');
+});
+
+test('critical six-character passwords: member reset rejects five and accepts six', async ({ page }) => {
+  const { writes } = await teamFixture(page);
+  await page.getByTestId('team-row-test-worker').click();
+  await page.getByTestId('edit-staff-password').fill('12345');
+  await page.getByTestId('edit-staff-confirm-password').fill('12345');
+  await page.getByTestId('edit-staff-set-password').click();
+  await expect(page.getByText('Password must be at least 6 characters', { exact: true })).toBeVisible();
+  expect(writes).toHaveLength(0);
+  await page.getByTestId('edit-staff-password').fill('123456');
+  await page.getByTestId('edit-staff-confirm-password').fill('123456');
+  await page.getByTestId('edit-staff-set-password').click();
+  await expect(page.getByTestId('temp-password-value')).toHaveText('123456');
+  expect(writes[0].body).toEqual({ new_password: '123456' });
+});
+
+test('critical six-character passwords: owner change rejects five and accepts six', async ({ page }) => {
+  await mockSession(page, '/settings-password');
+  const writes: unknown[] = [];
+  await page.route('**/api/auth/change-password', route => {
+    writes.push(route.request().postDataJSON());
+    return route.fulfill({ json: { ok: true } });
+  });
+  await page.goto('/settings-password');
+  await page.getByTestId('current-password-input').fill('existing-password');
+  await page.getByTestId('new-password-input').fill('12345');
+  await page.getByTestId('confirm-password-input').fill('12345');
+  await page.getByTestId('save-password-btn').click();
+  await expect(page.getByText('New password must be at least 6 characters', { exact: true })).toBeVisible();
+  expect(writes).toHaveLength(0);
+  await page.getByTestId('new-password-input').fill('123456');
+  await page.getByTestId('confirm-password-input').fill('123456');
+  await page.getByTestId('save-password-btn').click();
+  await expect(page).toHaveURL(/\/settings$/);
+  expect(writes).toEqual([{ current_password: 'existing-password', new_password: '123456' }]);
+});
+
 // These browser journeys exercise the release export and intercept every API
 // request. No production accounts, credentials or database mutations are used.
 test('critical team delegation: multiple floors, pages and actions save in one create', async ({ page }) => {

@@ -18,6 +18,7 @@ Three rules this module exists to hold:
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -71,10 +72,11 @@ def _serialize_rows(rows, role: str) -> list[dict]:
     return [row_dict(row, role) for row in rank(list(rows))]
 
 
-async def _thresholds() -> dict:
+async def _thresholds(targets=None) -> dict:
     """The one constant block, with payment terms taken from the owner's own
     declared setting rather than a second hardcoded number."""
-    targets = await load_targets()
+    if targets is None:
+        targets = await load_targets()
     return {**THRESHOLDS, "PAYMENT_OVERDUE_DAYS": float(targets.payment_terms_days or THRESHOLDS["PAYMENT_OVERDUE_DAYS"])}
 
 
@@ -82,22 +84,27 @@ def _period_of(f: AnalyticsFilter):
     return resolve(f.preset, f.date_from, f.date_to)
 
 
-async def _kpis(f: AnalyticsFilter, floors, period) -> dict:
+async def _kpis(f: AnalyticsFilter, floors, period, *, revenue_only: bool = False) -> dict:
     """Revenue, orders, AOV, outstanding — with an honest comparison."""
     match = build_match(AnalyticsFilter(floor_id=f.floor_id, status="ordered"), floors, (period.start, period.end))
-    rows = await db.quotations.aggregate(revenue_pipeline(match)).to_list(1)
-    current = rows[0] if rows else {"revenue": 0.0, "orders": 0, "customers": 0, "aov": 0.0}
-
+    if revenue_only:
+        rows = await db.quotations.aggregate(revenue_pipeline(match)).to_list(1)
+        return rows[0] if rows else {"revenue": 0.0, "orders": 0, "customers": 0, "aov": 0.0}
     prior = previous(period)
-    prior_value = 0.0
+    reads = [
+        db.quotations.aggregate(revenue_pipeline(match)).to_list(1),
+        db.quotations.aggregate(outstanding_pipeline(match)).to_list(1),
+    ]
     if prior is not None:
         prior_match = build_match(
             AnalyticsFilter(floor_id=f.floor_id, status="ordered"), floors, (prior.start, prior.end),
         )
-        prior_rows = await db.quotations.aggregate(revenue_pipeline(prior_match)).to_list(1)
-        prior_value = float(prior_rows[0]["revenue"]) if prior_rows else 0.0
-
-    outstanding_rows = await db.quotations.aggregate(outstanding_pipeline(match)).to_list(1)
+        reads.append(db.quotations.aggregate(revenue_pipeline(prior_match)).to_list(1))
+    results = await asyncio.gather(*reads)
+    rows, outstanding_rows = results[:2]
+    current = rows[0] if rows else {"revenue": 0.0, "orders": 0, "customers": 0, "aov": 0.0}
+    prior_rows = results[2] if prior is not None else []
+    prior_value = float(prior_rows[0]["revenue"]) if prior_rows else 0.0
     outstanding = outstanding_rows[0] if outstanding_rows else {"ordered": 0.0, "collected": 0.0, "outstanding": 0.0}
 
     return {
@@ -178,8 +185,10 @@ async def _rows_for(f: AnalyticsFilter, floors, period):
     """Both rule sets, from the one implementation of each."""
     thresholds = await _thresholds()
     now = datetime.now(timezone.utc)
-    attention_data = await gather.gather_attention(db, f, floors, (period.start, period.end), thresholds)
-    opportunity_data = await gather.gather_opportunity(db, f, floors, (period.start, period.end), thresholds)
+    attention_data, opportunity_data = await asyncio.gather(
+        gather.gather_attention(db, f, floors, (period.start, period.end), thresholds),
+        gather.gather_opportunity(db, f, floors, (period.start, period.end), thresholds),
+    )
     return (
         attention_rows(attention_data, now, thresholds),
         opportunity_rows(opportunity_data, now, thresholds),
@@ -204,12 +213,17 @@ async def _revenue_by_floor(f: AnalyticsFilter, floors, period) -> list[dict]:
     else:
         docs = await db.floors.find({"active": True}, {"_id": 0, "id": 1}).sort("id", 1).to_list(200)
         candidate_floors = [d["id"] for d in docs if d.get("id")]
-    out = []
-    for floor_id in candidate_floors:
-        scoped = _filter_from_query(floor_id, f.preset, f.date_from, f.date_to)
-        kpis = await _kpis(scoped, [floor_id], period)
-        out.append({"floor_id": floor_id, "revenue": kpis["revenue"], "orders": kpis["orders"]})
-    return out
+    # Only revenue/orders are displayed here. Avoid prior-period and payment
+    # joins for every floor, and cap concurrent work as the floor list grows.
+    semaphore = asyncio.Semaphore(4)
+
+    async def load_floor(floor_id):
+        async with semaphore:
+            scoped = _filter_from_query(floor_id, f.preset, f.date_from, f.date_to)
+            kpis = await _kpis(scoped, [floor_id], period, revenue_only=True)
+            return {"floor_id": floor_id, "revenue": kpis["revenue"], "orders": kpis["orders"]}
+
+    return await asyncio.gather(*(load_floor(floor_id) for floor_id in candidate_floors))
 
 
 async def _brief(f: AnalyticsFilter, floors, user: UserPublic, recommended: list | None = None) -> dict:
@@ -224,15 +238,14 @@ async def _brief(f: AnalyticsFilter, floors, user: UserPublic, recommended: list
     match = build_match(
         AnalyticsFilter(floor_id=f.floor_id, status="ordered"), floors, (yesterday.start, yesterday.end),
     )
-    rows = await db.quotations.aggregate(revenue_pipeline(match)).to_list(1)
+    rows, collected_rows, brands = await asyncio.gather(
+        db.quotations.aggregate(revenue_pipeline(match)).to_list(1),
+        db.quotations.aggregate(outstanding_pipeline(match)).to_list(1),
+        db.quotations.aggregate(line_revenue_pipeline(match, "items.product_id", limit=1)).to_list(1),
+    )
     kpis = rows[0] if rows else {"revenue": 0.0, "orders": 0}
 
-    collected_rows = await db.quotations.aggregate(outstanding_pipeline(match)).to_list(1)
     collected = float(collected_rows[0]["collected"]) if collected_rows else 0.0
-
-    brands = await db.quotations.aggregate(
-        line_revenue_pipeline(match, "items.product_id", limit=1),
-    ).to_list(1)
 
     if recommended is None:
         attention, opportunity = await _rows_for(f, floors, _period_of(f))
@@ -267,29 +280,32 @@ async def overview(
     period = _period_of(f)
     try:
         targets = await load_targets()
-        thresholds = await _thresholds()
+        thresholds = await _thresholds(targets)
         now = datetime.now(timezone.utc)
 
         # Fetched once and reused everywhere below — this handler used to
         # gather_attention twice (once here, once inside _brief's own
         # _rows_for call) and gather it a third time inside _money_blocked.
         # Same rows, same rules, one round-trip.
-        attention_data = await gather.gather_attention(db, f, floors, (period.start, period.end), thresholds)
-        opportunity_data = await gather.gather_opportunity(db, f, floors, (period.start, period.end), thresholds)
+        attention_data, opportunity_data, signals, kpis, revenue_by_floor = await asyncio.gather(
+            gather.gather_attention(db, f, floors, (period.start, period.end), thresholds),
+            gather.gather_opportunity(db, f, floors, (period.start, period.end), thresholds),
+            gather.gather_health_signals(db, f, floors, (period.start, period.end), targets),
+            _kpis(f, floors, period),
+            _revenue_by_floor(f, floors, period),
+        )
         attention = attention_rows(attention_data, now, thresholds)
         opportunity = opportunity_rows(opportunity_data, now, thresholds)
         ranked_all = rank(list(attention) + list(opportunity))
 
-        signals = await gather.gather_health_signals(db, f, floors, (period.start, period.end), targets)
-
         payload = {
             "health": health_score(signals, targets),
             "brief": await _brief(f, floors, user, recommended=ranked_all),
-            "kpis": await _kpis(f, floors, period),
+            "kpis": kpis,
             "money_blocked": _money_blocked_from(attention_data),
             "pending_quotations": _pending_quotations_from(attention_data.quotations, now),
             "pending_followups": _pending_followups_from(attention_data.followups, now),
-            "revenue_by_floor": await _revenue_by_floor(f, floors, period),
+            "revenue_by_floor": revenue_by_floor,
             "attention": _serialize_rows(attention[:OVERVIEW_ROW_LIMIT], user.role),
             "opportunities": _serialize_rows(opportunity[:OVERVIEW_ROW_LIMIT], user.role),
             "attention_total": len(attention),

@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 import { readFileSync } from 'node:fs';
 import { roomProductQuantities, catalogProductQuantity } from '../src/components/quotation/helpers/catalogMetrics.ts';
+import { hasMinimumPasswordLength } from '../src/utils/passwordPolicy.ts';
+
+for (const password of ['123456', '12345678901', '😀'.repeat(6)]) assert.equal(hasMinimumPasswordLength(password), true);
+for (const password of ['', '12345', '😀'.repeat(3)]) assert.equal(hasMinimumPasswordLength(password), false);
 
 const lines = [
   { product_id: 'basin', room: 'Bathroom', qty: 2 },

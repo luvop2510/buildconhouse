@@ -35,11 +35,13 @@ test('critical catalog multi-select keeps two brands categories and finishes in 
   await expect(page.getByTestId('family-family-basin')).toHaveCount(1);
   await page.getByRole('button', { name: 'Catalog filters', exact: true }).click();
   const sheet = page.getByTestId('catalog-filters');
-  for (const label of ['Brand A', 'Brand B', 'Basins', 'Showers', 'Chrome', 'Black']) await sheet.getByRole('button', { name: label, exact: true }).first().click();
+  // Categorical filters load immediately. Observe before selecting the last
+  // filter so a fast response cannot finish before the listener is installed.
   const response = page.waitForResponse(res => {
     const url = new URL(res.url());
     return url.pathname === '/api/products/families' && url.searchParams.getAll('brand_ids').length === 2 && url.searchParams.getAll('category_ids').length === 2 && url.searchParams.getAll('finishes').length === 2;
   });
+  for (const label of ['Brand A', 'Brand B', 'Basins', 'Showers', 'Chrome', 'Black']) await sheet.getByRole('button', { name: label, exact: true }).first().click();
   await sheet.getByRole('button', { name: 'Show results', exact: true }).click();
   await response;
   await expect(page.getByTestId('family-family-basin')).toHaveCount(1);

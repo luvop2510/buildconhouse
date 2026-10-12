@@ -232,7 +232,7 @@ async def lifespan(app: FastAPI):
         await _shutdown_resources(app)
 
 
-app = FastAPI(title="Forge API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Forge API", version="0.1.1", lifespan=lifespan)
 api = APIRouter(prefix="/api")
 
 
@@ -343,7 +343,7 @@ def _cache_demo_check_from_bootstrap(checks: dict[str, Any]) -> None:
 
 @api.get("/")
 async def root():
-    return {"name": "Forge API", "version": "0.1.0", "status": "ok"}
+    return {"name": "Forge API", "version": "0.1.1", "status": "ok"}
 
 
 @api.get("/health")
@@ -425,7 +425,7 @@ app.include_router(api)
 @app.get("/", include_in_schema=False)
 async def service_root():
     """Provide a useful response when the service URL is opened directly."""
-    return {"name": "Forge API", "version": "0.1.0", "status": "ok"}
+    return {"name": "Forge API", "version": "0.1.1", "status": "ok"}
 
 
 @app.get("/sentry-debug", include_in_schema=False)

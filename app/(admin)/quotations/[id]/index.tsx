@@ -1,6 +1,6 @@
 import Feather from "@expo/vector-icons/Feather";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -40,7 +40,7 @@ const NEXT_STATUS: Record<string, string> = {
 type PoStub = { id: string; number: string; brand_name?: string | null; status: string; grand_total: number };
 
 export default function QuotationDetail() {
-  useRequireFloorAccess("first-floor");
+  const floorReady = useRequireFloorAccess("first-floor");
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { isPhone } = useBp();
@@ -67,27 +67,56 @@ export default function QuotationDetail() {
   const [relatedError, setRelatedError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [breakdownLoading, setBreakdownLoading] = useState(true);
+  const [relatedLoading, setRelatedLoading] = useState(true);
+  const requestRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
+  const activeRef = useRef(false);
+  const contextRef = useRef("");
+  const context = `${id}:${floorReady}`;
+  contextRef.current = context;
+  const breakdownByLine = useMemo(() => new Map(breakdown?.lines.map(line => [line.line_id, line]) || []), [breakdown]);
 
   const load = useCallback(async () => {
+    if (!activeRef.current || !id || !floorReady || contextRef.current !== context) return;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const requestId = ++requestRef.current;
+    const isCurrent = () => !controller.signal.aborted && requestId === requestRef.current && contextRef.current === context;
+    const options = { floorId: "first-floor", signal: controller.signal };
     setLoading(true);
     setLoadError(null);
     setRelatedError(false);
-    try {
-      const [doc, br, tl, pos] = await Promise.all([
-        api.get<Quotation>(`/quotations/${id}?with_completion=true`),
-        api.get<Breakdown>(`/quotations/${id}/breakdown`).catch(() => null),
-        api.get<TimelineEvent[]>(`/activity/quotation/${id}`).catch(() => { setRelatedError(true); return []; }),
-        api.get<PoStub[]>(`/purchase-orders?quotation_id=${id}`).catch(() => { setRelatedError(true); return []; }),
-      ]);
-      setQ(doc); setBreakdown(br); setTimeline(tl); setLinkedPos(pos);
-    } catch (e: any) {
-      setQ(null);
-      setLoadError(e?.detail || "Could not load this quotation");
-    } finally {
-      setLoading(false);
-    }
-  }, [id]);
-  useEffect(() => { load(); }, [load]);
+    setBreakdownLoading(true); setRelatedLoading(true);
+    setBreakdown(null); setTimeline([]); setLinkedPos([]);
+    const quotationId = encodeURIComponent(id);
+    const primary = api.get<Quotation>(`/quotations/${quotationId}?with_completion=true`, options)
+      .then(doc => { if (isCurrent()) setQ(doc); })
+      .catch((e: any) => {
+        if (isCurrent()) { setQ(null); setLoadError(e?.detail || "Could not load this quotation"); }
+      }).finally(() => { if (isCurrent()) setLoading(false); });
+    // Render the authoritative document summary immediately; secondary reads
+    // fill their own sections without holding the whole page behind a barrier.
+    const prices = api.get<Breakdown>(`/quotations/${quotationId}/breakdown`, options)
+      .then(value => { if (isCurrent()) setBreakdown(value); })
+      .catch(() => { if (isCurrent()) setRelatedError(true); })
+      .finally(() => { if (isCurrent()) setBreakdownLoading(false); });
+    const related = <T,>(path: string, publish: (value: T) => void) => api.get<T>(path, options)
+      .then(value => { if (isCurrent()) publish(value); })
+      .catch(() => { if (isCurrent()) setRelatedError(true); });
+    const history = Promise.all([
+      related<TimelineEvent[]>(`/activity/quotation/${quotationId}`, setTimeline),
+      related<PoStub[]>(`/purchase-orders?quotation_id=${quotationId}`, setLinkedPos),
+    ]).finally(() => { if (isCurrent()) setRelatedLoading(false); });
+    await Promise.all([primary, prices, history]);
+  }, [id, floorReady, context]);
+  useEffect(() => {
+    activeRef.current = true;
+    setQ(null); setLoading(true);
+    void load();
+    return () => { activeRef.current = false; requestRef.current += 1; abortRef.current?.abort(); };
+  }, [load]);
 
   const openPdf = async (includeDimensions: boolean) => {
     const name = (q?.customer_name || "Customer").replace(/[\\\\/:*?\"<>|]/g, "").trim().replace(/\s+/g, " ") || "Customer";
@@ -192,7 +221,7 @@ export default function QuotationDetail() {
         </View>
 
         {/* Line items — tablet: table, phone: stacked cards */}
-        {isTablet ? (
+        {breakdownLoading ? <Text accessibilityLiveRegion="polite" style={type.bodyMuted}>Loading line prices…</Text> : isTablet ? (
           <Card style={{ padding: 0 }} variant="flat">
             <View style={styles.tableHead}>
               <Text style={[type.overline, { width: 40 }]}>#</Text>
@@ -203,7 +232,7 @@ export default function QuotationDetail() {
               <Text style={[type.overline, { width: 110, textAlign: "right" }]}>AMOUNT</Text>
             </View>
             {q.items.map((it, i) => {
-              const br = breakdown?.lines.find((b) => b.line_id === it.id);
+              const br = breakdownByLine.get(it.id);
               const pct = br?.discount_pct ?? (it.discount_pct ?? 0);
               const source = br?.discount_source ?? (it.discount_pct != null ? "product" : "none");
               return (
@@ -230,7 +259,7 @@ export default function QuotationDetail() {
         ) : (
           <View style={{ gap: spacing.sm }}>
             {q.items.map((it, i) => {
-              const br = breakdown?.lines.find((b) => b.line_id === it.id);
+              const br = breakdownByLine.get(it.id);
               const pct = br?.discount_pct ?? (it.discount_pct ?? 0);
               const lineTotal = it.qty * it.unit_price * (1 - pct / 100);
               return (
@@ -325,7 +354,7 @@ export default function QuotationDetail() {
         <Card variant="flat">
           <Text style={type.overline}>Activity</Text>
           <View style={{ marginTop: spacing.md }}>
-            <ActivityTimeline events={timeline} emptyLabel="No activity yet — every mutation from now on will land here." />
+            <ActivityTimeline events={timeline} emptyLabel={relatedLoading ? "Loading activity…" : "No activity yet — every mutation from now on will land here."} />
           </View>
         </Card>
       </ScrollView>

@@ -13,6 +13,7 @@ problems — the ones the Attention Center exists for.
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 
 from models import AnalyticsTargets
@@ -92,16 +93,16 @@ async def _with_collected(db, orders: list[dict]) -> list[dict]:
     return [{**o, "collected": collected.get(o.get("id"), 0.0)} for o in orders]
 
 
+async def _collected_orders(db, f, accessible_floors, window) -> list[dict]:
+    return await _with_collected(db, await _ordered_quotations(db, f, accessible_floors, window))
+
+
 async def gather_attention(db, f: AnalyticsFilter, accessible_floors, window, thresholds: dict) -> AttentionInput:
     """Fetch everything the §9 rules need, already floor-scoped."""
-    t = {**THRESHOLDS, **(thresholds or {})}
     now = datetime.now(timezone.utc)
 
-    quotations = await _open_quotations(db, f, accessible_floors)
-    orders = await _with_collected(db, await _ordered_quotations(db, f, accessible_floors, (None, None)))
-
     followup_match = build_match(AnalyticsFilter(floor_id=f.floor_id, status="any"), accessible_floors, (None, None))
-    followups = await db.followups.find(
+    followup_read = db.followups.find(
         {**followup_match, "status": "open"},
         {"_id": 0, "id": 1, "status": 1, "due_at": 1, "value": 1, "customer_id": 1, "customer_name": 1,
          "customer_phone": 1, "reason": 1, "assigned_to": 1, "assigned_to_name": 1, "floor_id": 1,
@@ -111,11 +112,19 @@ async def gather_attention(db, f: AnalyticsFilter, accessible_floors, window, th
     ).to_list(_MAX_ROWS)
 
     po_match = build_match(AnalyticsFilter(floor_id=f.floor_id, status="any"), accessible_floors, (None, None))
-    purchase_orders = await db.purchase_orders.find(
+    purchase_read = db.purchase_orders.find(
         {**po_match, "status": {"$nin": list(SETTLED_PURCHASE_STATUSES)}},
         {"_id": 0, "id": 1, "number": 1, "status": 1, "supplier_id": 1, "supplier_name": 1,
          "expected_delivery_at": 1, "total": 1, "grand_total": 1, "floor_id": 1},
     ).to_list(_MAX_ROWS)
+    quotations, orders, followups, purchase_orders, ready_items, unreleased_items = await asyncio.gather(
+        _open_quotations(db, f, accessible_floors),
+        _collected_orders(db, f, accessible_floors, (None, None)),
+        followup_read,
+        purchase_read,
+        _ready_items(db, f, accessible_floors),
+        _unreleased_items(db, f, accessible_floors),
+    )
     for po in purchase_orders:
         po.setdefault("total", po.get("grand_total"))
 
@@ -128,8 +137,8 @@ async def gather_attention(db, f: AnalyticsFilter, accessible_floors, window, th
         # Ready/unreleased material lives in the tile-orders collections; the
         # Operations workspace (Phase 5) owns their full aggregation. Phase 1
         # reads only what the two rules need.
-        ready_items=await _ready_items(db, f, accessible_floors),
-        unreleased_items=await _unreleased_items(db, f, accessible_floors),
+        ready_items=ready_items,
+        unreleased_items=unreleased_items,
         salespeople=salespeople,
         purchase_orders=purchase_orders,
         brands=[],      # comparison rules need a prior window; wired in Phase 3
@@ -201,16 +210,18 @@ async def _salespeople(db, open_quotations: list[dict], followups: list[dict], n
 async def gather_opportunity(db, f: AnalyticsFilter, accessible_floors, window, thresholds: dict) -> OpportunityInput:
     """Fetch everything the §10 rules need, already floor-scoped."""
     now = datetime.now(timezone.utc)
-    quotations = await _open_quotations(db, f, accessible_floors)
-
     walkin_match = build_match(AnalyticsFilter(floor_id=f.floor_id, status="any"), accessible_floors, (None, None))
-    walkins = await db.walkins.find(
+    walkin_read = db.walkins.find(
         {**walkin_match, "is_deleted": {"$ne": True}},
         {"_id": 0, "id": 1, "customer_id": 1, "customer_name": 1, "customer_phone": 1, "budget": 1,
          "interested_products": 1, "visited_at": 1, "selection_quotation_id": 1, "floor_id": 1},
     ).to_list(_MAX_ROWS)
 
-    orders = await _ordered_quotations(db, f, accessible_floors, (None, None))
+    quotations, walkins, orders = await asyncio.gather(
+        _open_quotations(db, f, accessible_floors),
+        walkin_read,
+        _ordered_quotations(db, f, accessible_floors, (None, None)),
+    )
     customers = _customer_cadence(orders, quotations)
 
     return OpportunityInput(
@@ -269,7 +280,15 @@ async def gather_health_signals(db, f: AnalyticsFilter, accessible_floors, windo
     renormalizes, while zero would say the business scored nothing on it.
     """
     now = datetime.now(timezone.utc)
-    orders = await _with_collected(db, await _ordered_quotations(db, f, accessible_floors, window))
+    followup_match = build_match(AnalyticsFilter(floor_id=f.floor_id, status="any"), accessible_floors, (None, None))
+    walkin_match = build_match(AnalyticsFilter(floor_id=f.floor_id, status="any"), accessible_floors, window)
+    orders, open_quotations, followups, ready, walkins = await asyncio.gather(
+        _collected_orders(db, f, accessible_floors, window),
+        _open_quotations(db, f, accessible_floors),
+        db.followups.find({**followup_match, "status": "open"}, {"_id": 0, "due_at": 1}).to_list(_MAX_ROWS),
+        _ready_items(db, f, accessible_floors),
+        db.walkins.count_documents({**walkin_match, "is_deleted": {"$ne": True}}),
+    )
     ordered_total = _fold(o.get("grand_total") for o in orders)
     collected_total = _fold(o.get("collected") for o in orders)
 
@@ -283,28 +302,19 @@ async def gather_health_signals(db, f: AnalyticsFilter, accessible_floors, windo
         if amount > 0 and (age_days(o.get("ordered_at"), now) or 0) > terms
     )
 
-    open_quotations = await _open_quotations(db, f, accessible_floors)
     open_value = _fold(q.get("grand_total") for q in open_quotations)
     fresh_value = _fold(
         q.get("grand_total") for q in open_quotations
         if (age_days(q.get("created_at"), now) or 0) <= THRESHOLDS["QUOTATION_STALE_DAYS"]
     )
 
-    followup_match = build_match(AnalyticsFilter(floor_id=f.floor_id, status="any"), accessible_floors, (None, None))
-    followups = await db.followups.find(
-        {**followup_match, "status": "open"}, {"_id": 0, "due_at": 1},
-    ).to_list(_MAX_ROWS)
     # Strict, not day-floored: a follow-up due this morning is overdue this
     # afternoon. See is_overdue() for what day-granularity cost here.
     not_overdue = [f_ for f_ in followups if not is_overdue(f_.get("due_at"), now)]
 
-    ready = await _ready_items(db, f, accessible_floors)
     dispatched_in_time = [
         r for r in ready if (age_days(r.get("ready_at"), now) or 0) <= THRESHOLDS["DISPATCH_WAITING_DAYS"]
     ]
-
-    walkin_match = build_match(AnalyticsFilter(floor_id=f.floor_id, status="any"), accessible_floors, window)
-    walkins = await db.walkins.count_documents({**walkin_match, "is_deleted": {"$ne": True}})
 
     revenue_target = getattr(targets, "monthly_revenue_target", None)
     conversion_target = getattr(targets, "target_conversion_pct", None)

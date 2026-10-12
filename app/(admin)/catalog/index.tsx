@@ -138,6 +138,7 @@ export default function Catalog() {
   const [filterRevision, setFilterRevision] = useState(0);
 
   const [q, setQ] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [cat, setCatValues] = useState<string[]>([]);
   const setCat = (value: string | null) => setCatValues(current => value === null ? [] : current.includes(value) ? current.filter(item => item !== value) : [...current, value]);
   const [brandId, setBrandIdValues] = useState<string[]>([]);
@@ -250,7 +251,7 @@ export default function Catalog() {
   // A filter/search/mode change replaces the current query result with page 1.
   // Subsequent pages are appended exclusively by `loadMore`, never simulated.
   const load = useCallback(async () => {
-    if (!selectedFloorId) return;
+    if (!selectedFloorId || q !== searchQuery) return;
     const requestId = ++requestIdRef.current;
     setLoadError(null);
     loadingMoreRef.current = false;
@@ -259,14 +260,14 @@ export default function Catalog() {
     try {
       if (mode === "families") {
         const res = await fetchCatalogPage<Family>({
-          mode: "families", q, brandIds: brandId, categoryIds: cat, subcategories: subcat, seriesValues: series, finishes, colours, sizes,
+          mode: "families", q: searchQuery, brandIds: brandId, categoryIds: cat, subcategories: subcat, seriesValues: series, finishes, colours, sizes,
         }, 0, PAGE_SIZE, { floorId: selectedFloorId });
         if (requestId !== requestIdRef.current) return;
         const items = res.items || [];
         setFamilies(items); setTotal(res.total); setHasMore(items.length < res.total);
       } else {
         const res = await fetchCatalogPage<Product>({
-          mode: "products", q, brandIds: brandId, categoryIds: cat, subcategories: subcat, seriesValues: series, finishes, colours, sizes, sort: "popular",
+          mode: "products", q: searchQuery, brandIds: brandId, categoryIds: cat, subcategories: subcat, seriesValues: series, finishes, colours, sizes, sort: "popular",
         }, 0, PAGE_SIZE, { floorId: selectedFloorId });
         if (requestId !== requestIdRef.current) return;
         const items = res.items || [];
@@ -279,20 +280,28 @@ export default function Catalog() {
       setTotal(0); setHasMore(false);
       setLoadError("Catalog products could not be loaded. Refresh and sign in again if this persists.");
     }
-  }, [q, cat, brandId, subcat, series, finishes, colours, sizes, mode, selectedFloorId]);
+  }, [q, searchQuery, cat, brandId, subcat, series, finishes, colours, sizes, mode, selectedFloorId]);
 
   useEffect(() => {
-    // Invalidate immediately when filters or floors change. Waiting for the
-    // debounce lets a cancelled old response replace the new floor's state.
+    // Only typing waits for a debounce. Startup, floor changes and categorical
+    // filters can fetch immediately rather than paying a 250ms delay per page.
+    // Invalidate while typing so an older response cannot publish in that wait.
+    if (q === searchQuery) return;
     requestIdRef.current += 1;
     loadingMoreRef.current = false;
     setLoadingMore(false);
-    const t = setTimeout(load, 250);
-    return () => { clearTimeout(t); requestIdRef.current += 1; };
+    setHasMore(false);
+    const t = setTimeout(() => setSearchQuery(q), q ? 250 : 0);
+    return () => clearTimeout(t);
+  }, [q, searchQuery]);
+
+  useEffect(() => {
+    void load();
+    return () => { requestIdRef.current += 1; };
   }, [load]);
 
   const loadMore = useCallback(async () => {
-    if (!selectedFloorId || loadingMoreRef.current || total === null || !hasMore) return;
+    if (!selectedFloorId || q !== searchQuery || loadingMoreRef.current || total === null || !hasMore) return;
     loadingMoreRef.current = true;
     setLoadingMore(true);
     const requestId = requestIdRef.current;
@@ -301,7 +310,7 @@ export default function Catalog() {
       if (mode === "families") {
         const currentFamilies = families || [];
         const res = await fetchCatalogPage<Family>({
-          mode: "families", q, brandIds: brandId, categoryIds: cat, subcategories: subcat, seriesValues: series, finishes, colours, sizes,
+          mode: "families", q: searchQuery, brandIds: brandId, categoryIds: cat, subcategories: subcat, seriesValues: series, finishes, colours, sizes,
         }, currentLength, PAGE_SIZE, { floorId: selectedFloorId || undefined });
         if (requestId !== requestIdRef.current) return;
         const incoming = res.items || [];
@@ -310,7 +319,7 @@ export default function Catalog() {
       } else {
         const currentProducts = products || [];
         const res = await fetchCatalogPage<Product>({
-          mode: "products", q, brandIds: brandId, categoryIds: cat, subcategories: subcat, seriesValues: series, finishes, colours, sizes, sort: "popular",
+          mode: "products", q: searchQuery, brandIds: brandId, categoryIds: cat, subcategories: subcat, seriesValues: series, finishes, colours, sizes, sort: "popular",
         }, currentLength, PAGE_SIZE, { floorId: selectedFloorId || undefined });
         if (requestId !== requestIdRef.current) return;
         const incoming = res.items || [];
@@ -325,7 +334,7 @@ export default function Catalog() {
         setLoadingMore(false);
       }
     }
-  }, [q, cat, brandId, subcat, series, finishes, colours, sizes, families, hasMore, mode, products, selectedFloorId, total]);
+  }, [q, searchQuery, cat, brandId, subcat, series, finishes, colours, sizes, families, hasMore, mode, products, selectedFloorId, total]);
 
   const brandById: Record<string, string> = useMemo(
     () => Object.fromEntries(brands.map((b) => [b.id, b.name])), [brands],

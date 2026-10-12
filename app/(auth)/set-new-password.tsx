@@ -1,3 +1,4 @@
+import { hasMinimumPasswordLength } from "@/src/utils/passwordPolicy";
 // Temporary customer portal invites use a separate password policy.
 import { useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
@@ -24,7 +25,7 @@ export default function SetNewPassword() {
     if (saving || kind !== "customer") return;
     setError(null);
     if (!current) { setError("Enter the temporary password you just used to sign in"); return; }
-    if (next.length < 12) { setError("New password must be at least 12 characters"); return; }
+    if (!hasMinimumPasswordLength(next)) { setError("New password must be at least 6 characters"); return; }
     if (next !== confirm) { setError("Passwords don't match"); return; }
     setSaving(true);
     try {
@@ -70,7 +71,7 @@ export default function SetNewPassword() {
               secureTextEntry
               autoCapitalize="none"
               editable={!saving}
-              placeholder="At least 12 characters"
+              placeholder="At least 6 characters"
             />
             <TextField
               testID="force-change-confirm"

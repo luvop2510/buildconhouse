@@ -1,0 +1,32 @@
+{
+  "methodology": "Hermetic fake Mongo cursor benchmark; every cursor/network request waits 30ms; baseline uses HEAD source; no real database connections or production timing claims. Catalog contains 6565 synthetic products; executive overview has empty business collections and three synthetic floors.",
+  "network_delay_ms": 30,
+  "catalog": {
+    "before": {
+      "duration_ms": 6606.32,
+      "simulated_database_round_trips": 210,
+      "products": 6565
+    },
+    "after": {
+      "duration_ms": 547.2,
+      "simulated_database_round_trips": 17,
+      "products": 6565
+    },
+    "duration_reduction_pct": 91.7
+  },
+  "executive_overview": {
+    "before": {
+      "duration_ms": 1069.26,
+      "simulated_database_round_trips": 34,
+      "target_reads": 2,
+      "result_floor_rows": 3
+    },
+    "after": {
+      "duration_ms": 125.57,
+      "simulated_database_round_trips": 27,
+      "target_reads": 1,
+      "result_floor_rows": 3
+    },
+    "duration_reduction_pct": 88.3
+  }
+}

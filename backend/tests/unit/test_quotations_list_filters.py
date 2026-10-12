@@ -78,6 +78,16 @@ def test_list_quotations_filters_by_doc_type(monkeypatch):
     assert _flatten(fake_db.quotations.last_query)["doc_type"] == "tiles_selection"
 
 
+def test_customer_quotation_filter_keeps_floor_and_lifecycle_scope(monkeypatch):
+    fake_db = _FakeDb()
+    monkeypatch.setattr(quotation_routes, "db", fake_db)
+    asyncio.run(quotation_routes.list_quotations(customer_id="customer-1", view="pending", user=_user()))
+    query = _flatten(fake_db.quotations.last_query)
+    assert query["customer_id"] == "customer-1"
+    assert query["floor_id"] == {"$in": ["ground-floor"]}
+    assert query["status"] == {"$in": ["draft", "pending_approval", "sent"]}
+
+
 def test_tile_document_listing_is_pinned_to_ground_floor(monkeypatch):
     """A tile doc_type is a Ground Floor request by definition — it must not
     inherit the caller's ambient active floor (that is what surfaced tile

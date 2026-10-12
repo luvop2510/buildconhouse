@@ -15,7 +15,8 @@ from services.analytics import cache
 
 
 @pytest.fixture(autouse=True)
-def _clean():
+def _clean(monkeypatch):
+    monkeypatch.setattr(cache, "_redis", lambda: None)
     cache.reset_memory_state()
     yield
     cache.reset_memory_state()
@@ -149,4 +150,121 @@ def test_memory_cache_evicts_old_filters_at_a_bounded_size(monkeypatch):
         for i in range(10):
             await cache.cached("revenue", ["quotations"], str(i), None, loader)
         assert len(cache._memory_entries) == 3
+    asyncio.run(go())
+
+
+def test_concurrent_cold_requests_share_one_loader():
+    async def go():
+        calls = 0
+        async def loader():
+            nonlocal calls
+            calls += 1
+            await asyncio.sleep(0)
+            return {"revenue": 100}
+        values = await asyncio.gather(*(cache.cached("revenue", ["quotations"], "sig", None, loader) for _ in range(20)))
+        assert calls == 1
+        assert values == [{"revenue": 100}] * 20
+        assert cache._inflight == {}
+    asyncio.run(go())
+
+
+def test_cancelling_one_caller_does_not_cancel_shared_metric():
+    async def go():
+        started = asyncio.Event()
+        release = asyncio.Event()
+        calls = 0
+        async def loader():
+            nonlocal calls
+            calls += 1
+            started.set()
+            await release.wait()
+            return {"value": 7}
+        first = asyncio.create_task(cache.cached("revenue", ["quotations"], "sig", None, loader))
+        await started.wait()
+        second = asyncio.create_task(cache.cached("revenue", ["quotations"], "sig", None, loader))
+        first.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await first
+        release.set()
+        assert await second == {"value": 7}
+        assert calls == 1
+    asyncio.run(go())
+
+
+def test_write_during_shared_load_uses_a_new_version_for_later_callers():
+    async def go():
+        started = asyncio.Event()
+        release = asyncio.Event()
+        async def old_loader():
+            started.set()
+            await release.wait()
+            return {"value": "before-write"}
+        async def new_loader():
+            return {"value": "after-write"}
+        old = asyncio.create_task(cache.cached("revenue", ["quotations"], "sig", None, old_loader))
+        await started.wait()
+        await cache.bump("quotations")
+        assert await cache.cached("revenue", ["quotations"], "sig", None, new_loader) == {"value": "after-write"}
+        release.set()
+        assert await old == {"value": "before-write"}
+        assert await cache.cached("revenue", ["quotations"], "sig", None, new_loader) == {"value": "after-write"}
+    asyncio.run(go())
+
+
+def test_failed_shared_load_is_removed_and_can_be_retried():
+    async def go():
+        calls = 0
+        async def loader():
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                await asyncio.sleep(0)
+                raise RuntimeError("temporary failure")
+            return {"value": 2}
+        results = await asyncio.gather(*(cache.cached("revenue", ["quotations"], "sig", None, loader) for _ in range(5)), return_exceptions=True)
+        assert calls == 1
+        assert all(isinstance(result, RuntimeError) for result in results)
+        assert cache._inflight == {}
+        assert await cache.cached("revenue", ["quotations"], "sig", None, loader) == {"value": 2}
+    asyncio.run(go())
+
+
+def test_redis_versions_are_read_concurrently_and_burst_loader_is_shared(monkeypatch):
+    async def go():
+        class Redis:
+            def __init__(self):
+                self.versions_started = 0
+                self.ready = asyncio.Event()
+                self.values = {}
+                self.writes = []
+
+            async def get(self, key):
+                if key.startswith("analytics:ver:"):
+                    self.versions_started += 1
+                    if self.versions_started >= 3:
+                        self.ready.set()
+                    await asyncio.wait_for(self.ready.wait(), 1)
+                    return "1"
+                return self.values.get(key)
+
+            async def set(self, key, value, ex):
+                self.values[key] = value
+                self.writes.append((key, ex))
+
+        redis = Redis()
+        monkeypatch.setattr(cache, "_redis", lambda: redis)
+        calls = 0
+        async def loader():
+            nonlocal calls
+            calls += 1
+            await asyncio.sleep(0)
+            return {"value": 10}
+        args = ("revenue", ["quotations", "products", "payments"], "sig", ["ground-floor"], loader)
+        values = await asyncio.gather(*(cache.cached(*args, ttl=15) for _ in range(5)))
+        assert values == [{"value": 10}] * 5
+        assert calls == 1
+        assert len(redis.writes) == 1
+        assert redis.writes[0][1] == 15
+        assert await cache.cached(*args) == {"value": 10}
+        assert calls == 1
     asyncio.run(go())

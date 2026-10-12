@@ -1,3 +1,4 @@
+import { hasMinimumPasswordLength } from "@/src/utils/passwordPolicy";
 // Settings > Account > Password. The one real gap the audit found — there
 // was no change-password endpoint or screen anywhere before this.
 import { useRouter } from "expo-router";
@@ -26,7 +27,7 @@ export default function SettingsPassword() {
     if (saving || !isOwner) return;
     setError(null);
     if (!current) { setError("Enter your current password"); return; }
-    if (next.length < 12) { setError("New password must be at least 12 characters"); return; }
+    if (!hasMinimumPasswordLength(next)) { setError("New password must be at least 6 characters"); return; }
     if (next !== confirm) { setError("Passwords don't match"); return; }
     setSaving(true);
     try {
@@ -51,7 +52,7 @@ export default function SettingsPassword() {
       <View style={{ gap: spacing.lg }}>
         <Card style={{ gap: spacing.md }}>
           <TextField testID="current-password-input" label="Current password" value={current} onChangeText={setCurrent} secureTextEntry placeholder="••••••••" autoCapitalize="none" editable={!saving} />
-          <TextField testID="new-password-input" label="New password" value={next} onChangeText={setNext} secureTextEntry placeholder="At least 12 characters" autoCapitalize="none" editable={!saving} />
+          <TextField testID="new-password-input" label="New password" value={next} onChangeText={setNext} secureTextEntry placeholder="At least 6 characters" autoCapitalize="none" editable={!saving} />
           <TextField testID="confirm-password-input" label="Confirm new password" value={confirm} onChangeText={setConfirm} secureTextEntry placeholder="Re-enter new password" autoCapitalize="none" editable={!saving} error={error} />
           <Button testID="save-password-btn" label="Update password" icon="lock" loading={saving} onPress={submit} fullWidth />
         </Card>

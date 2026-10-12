@@ -77,11 +77,16 @@ test('critical customer invite still requires its separate first-sign-in passwor
   await page.goto('/home');
   await expect(page).toHaveURL(/set-new-password$/);
   await page.getByTestId('force-change-current').fill('CustomerInvite!2026');
-  await page.getByTestId('force-change-new').fill('CustomerChosen!2026');
-  await page.getByTestId('force-change-confirm').fill('CustomerChosen!2026');
+  await page.getByTestId('force-change-new').fill('12345');
+  await page.getByTestId('force-change-confirm').fill('12345');
+  await page.getByTestId('force-change-submit').click();
+  await expect(page.getByText('New password must be at least 6 characters', { exact: true })).toBeVisible();
+  expect(payload).toBeUndefined();
+  await page.getByTestId('force-change-new').fill('123456');
+  await page.getByTestId('force-change-confirm').fill('123456');
   await page.getByTestId('force-change-submit').click();
   await expect(page).toHaveURL(/home$/);
-  expect(payload).toEqual({ current_password: 'CustomerInvite!2026', new_password: 'CustomerChosen!2026' });
+  expect(payload).toEqual({ current_password: 'CustomerInvite!2026', new_password: '123456' });
 });
 
 

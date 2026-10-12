@@ -60,6 +60,7 @@ class CatalogSnapshot:
 _snapshot_override: ContextVar[CatalogSnapshot | None] = ContextVar("catalog_snapshot_override", default=None)
 _SNAPSHOT_MAX_BYTES = 16 * 1024 * 1024
 _SNAPSHOT_ROW_LIMITS = {"products": 10000, "product_media": 20000, "brands": 2000, "categories": 2000, "product_usage": 50000}
+_SNAPSHOT_BATCH_SIZE = 512
 _snapshot: CatalogSnapshot | None = None
 _refresh_lock = asyncio.Lock()
 _background_refresh: asyncio.Task | None = None
@@ -140,24 +141,33 @@ def _build_snapshot(
 
 async def _bounded_snapshot_collection(name: str, query: dict, budget: list[int]) -> list[dict] | None:
     rows: list[dict] = []
-    cursor = db[name].find(query, {"_id": 0}).batch_size(32)
-    async for row in cursor:
-        budget[0] += len(BSON.encode(row))
-        if len(rows) >= _SNAPSHOT_ROW_LIMITS[name] or budget[0] > _SNAPSHOT_MAX_BYTES:
-            await cursor.close()
-            return None
-        rows.append(row)
+    # A 32-document batch made normal catalogs pay hundreds of remote
+    # getMore round trips. Mongo still bounds each batch by its wire byte cap;
+    # the shared byte/row guards below bound retained snapshot data.
+    cursor = db[name].find(query, {"_id": 0}).batch_size(_SNAPSHOT_BATCH_SIZE)
+    try:
+        async for row in cursor:
+            budget[0] += len(BSON.encode(row))
+            if len(rows) >= _SNAPSHOT_ROW_LIMITS[name] or budget[0] > _SNAPSHOT_MAX_BYTES:
+                return None
+            rows.append(row)
+    finally:
+        await cursor.close()
     return rows
 
 
-async def refresh_catalog_snapshot() -> CatalogSnapshot:
+async def refresh_catalog_snapshot(*, only_if_missing: bool = False) -> CatalogSnapshot:
     """Warm a bounded cache, or select indexed Mongo reads for a large catalog.
 
-    The byte budget is shared by all collections. Cursors use small batches;
+    The byte budget is shared by all collections. Cursors use bounded batches;
     crossing the threshold discards the partial cache, never partial results.
     """
     global _snapshot
     async with _refresh_lock:
+        # Concurrent cold requests wait for the first warmup and reuse it.
+        # Explicit post-write refreshes always reload the source collections.
+        if only_if_missing and _snapshot is not None:
+            return _snapshot
         budget = [0]
         collections = []
         for name in ("products", "product_media", "brands", "categories", "product_usage"):
@@ -178,7 +188,7 @@ async def get_catalog_snapshot() -> CatalogSnapshot:
         return override
     global _background_refresh
     if _snapshot is None:
-        return await refresh_catalog_snapshot()
+        return await refresh_catalog_snapshot(only_if_missing=True)
     if monotonic() - _snapshot.loaded_at > _SNAPSHOT_MAX_AGE_SECONDS:
         if _background_refresh is None or _background_refresh.done():
             _background_refresh = asyncio.create_task(refresh_catalog_snapshot())

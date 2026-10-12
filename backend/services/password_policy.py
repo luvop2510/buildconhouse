@@ -1,7 +1,9 @@
-"""Shared checks for the published historical demo credential."""
+"""Shared policy for newly assigned passwords."""
 from __future__ import annotations
 
 import hmac
+
+MIN_PASSWORD_LENGTH = 6
 
 
 def is_known_default_password(password: str) -> bool:
@@ -13,6 +15,8 @@ def is_known_default_password(password: str) -> bool:
 
 
 def validate_new_password(password: str) -> str:
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise ValueError(f"Password must contain at least {MIN_PASSWORD_LENGTH} characters")
     if len(password.encode("utf-8")) > 72:
         raise ValueError("Password must contain at most 72 UTF-8 bytes")
     if is_known_default_password(password):

@@ -1,3 +1,4 @@
+import { hasMinimumPasswordLength } from "@/src/utils/passwordPolicy";
 // Team uses named floor/page/action delegations. Legacy role labels remain
 // readable until account migration; new allocations use owner or worker only.
 import Feather from "@expo/vector-icons/Feather";
@@ -221,7 +222,7 @@ function AddStaffSheet({ visible, options, optionsError, onRetry, onClose, onCre
     if (!fullName.trim()) { setError("Full name is required"); return; }
     const contactError = validateTeamContacts(email, username, phone, mobile);
     if (contactError) { setError(contactError); return; }
-    if (password.length < 12) { setError("Initial password must be at least 12 characters"); return; }
+    if (!hasMinimumPasswordLength(password)) { setError("Initial password must be at least 6 characters"); return; }
     if (!options || optionsError) { setError("Load access options before saving"); return; }
     setSaving(true); setError(null);
     try {
@@ -243,7 +244,7 @@ function AddStaffSheet({ visible, options, optionsError, onRetry, onClose, onCre
         <TextField testID="add-staff-name" label="Full name" value={fullName} onChangeText={setFullName} placeholder="e.g. Priya Sharma" autoFocus />
         <TextField testID="add-staff-username" label="Username" value={username} onChangeText={setUsername} placeholder="Optional sign-in username" autoCapitalize="none" autoCorrect={false} maxLength={120} />
         <ContactFields prefix="add-staff" email={email} onEmail={setEmail} phone={phone} onPhone={setPhone} mobile={mobile} onMobile={setMobile} disabled={saving} />
-        <TextField testID="add-staff-password" label="Initial password" value={password} onChangeText={setPassword} placeholder="At least 12 characters" secureTextEntry autoCapitalize="none" helper="This password remains valid until the owner changes it. The member cannot change it." />
+        <TextField testID="add-staff-password" label="Initial password" value={password} onChangeText={setPassword} placeholder="At least 6 characters" secureTextEntry autoCapitalize="none" helper="This password remains valid until the owner changes it. The member cannot change it." />
         <TextField testID="add-staff-team-role" label="Team role name" value={teamRole} onChangeText={setTeamRole} placeholder="e.g. Ground Floor Sales" helper="Give this person a role name that matches their work." maxLength={80} />
         <AccountAccessPicker value={role} onChange={setRole} disabled={saving} prefix="add-staff" />
         {role === "owner" ? <Text style={type.caption}>An owner can access all floors and pages and manage the whole team.</Text> : <DelegationOptions options={options} error={optionsError} onRetry={onRetry} value={delegation} onChange={setDelegation} disabled={saving} />}
@@ -334,7 +335,7 @@ function EditStaffSheet({ staff, options, optionsError, onRetry, selfId, onClose
   const resetPassword = async (generated = false) => {
     if (saving || resetting || deleting || isSelf) return;
     setPasswordError(null);
-    if (!generated && newPassword.length < 12) { setPasswordError("Password must be at least 12 characters"); return; }
+    if (!generated && !hasMinimumPasswordLength(newPassword)) { setPasswordError("Password must be at least 6 characters"); return; }
     if (!generated && newPassword !== confirmPassword) { setPasswordError("Passwords don't match"); return; }
     setResetting(true);
     try {
@@ -373,7 +374,7 @@ function EditStaffSheet({ staff, options, optionsError, onRetry, selfId, onClose
         {isSelf ? <Text style={type.caption}>Use Settings → Change password to update your own password.</Text> : <>
           <Text accessibilityRole="header" style={type.titleSm}>Change member password</Text>
           <Text style={type.caption}>Only the owner can change this member’s password. Changing it signs them out of every device.</Text>
-          <TextField testID="edit-staff-password" label="New password" value={newPassword} onChangeText={setNewPassword} secureTextEntry autoCapitalize="none" editable={!resetting && !deleting && !saving} placeholder="At least 12 characters" />
+          <TextField testID="edit-staff-password" label="New password" value={newPassword} onChangeText={setNewPassword} secureTextEntry autoCapitalize="none" editable={!resetting && !deleting && !saving} placeholder="At least 6 characters" />
           <TextField testID="edit-staff-confirm-password" label="Confirm new password" value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry autoCapitalize="none" editable={!resetting && !deleting && !saving} error={passwordError} />
           <Button testID="edit-staff-set-password" label="Save entered password" variant="primary" icon="key" loading={resetting} disabled={saving || deleting} onPress={() => void resetPassword()} fullWidth />
           <Text testID="edit-staff-set-password-help" style={type.caption}>Saves the password you entered and confirmed above.</Text>

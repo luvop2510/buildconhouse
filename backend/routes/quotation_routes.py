@@ -310,12 +310,15 @@ async def list_quotations(
     view: str | None = Query(None, pattern="^(pending|completed)$"),
     completion: str | None = Query(None, pattern="^(active|completed)$"),
     status: str | None = None,
+    customer_id: str | None = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1),
     user: UserPublic = Depends(get_current_user),
 ):
     skip, limit = normalize_pagination(skip, limit)
     query: dict = {}
+    if customer_id:
+        query["customer_id"] = customer_id
     if doc_type == "standard":
         # `doc_type` was added with the Tiles module; every quotation created
         # before that has no such field at all. `{"doc_type": "standard"}`

@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "main": "expo-router/entry",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "scripts": {
     "preinstall": "./scripts/cmd-guard.js --preinstall",
     "postinstall": "node scripts/patch-react19-compat.mjs && node scripts/patch-uri-decoder-compat.mjs",
@@ -34,6 +34,8 @@
     "test:monitoring-contract": "node scripts/test-monitoring-contract.mjs",
     "test:e2e:audit": "playwright test --config playwright.audit.config.ts",
     "test:frontend-performance": "node --experimental-strip-types --no-warnings scripts/test-frontend-performance.mjs",
+    "test:e2e:performance": "playwright test --config playwright.performance.config.ts",
+    "test:page-loading-performance": "node scripts/test-page-loading-performance.mjs",
     "test:icon-fonts": "node scripts/test-icon-font-contract.mjs",
     "test:release-recovery": "node scripts/test-release-recovery.mjs",
     "test:npm-audit": "node scripts/test-npm-audit.mjs",

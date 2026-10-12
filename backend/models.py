@@ -5,7 +5,7 @@ from typing import Any, Literal, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
-from services.password_policy import validate_new_password
+from services.password_policy import MIN_PASSWORD_LENGTH, validate_new_password
 from services.staff_contacts import optional_email, read_staff_email, read_staff_phone, validate_staff_phone
 
 
@@ -74,7 +74,7 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    password: str = Field(min_length=12, max_length=72)
+    password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=72)
 
     _password_policy = field_validator("password")(validate_new_password)
 
@@ -164,7 +164,7 @@ class CustomerBase(BaseModel):
 
 
 class CustomerCreate(CustomerBase):
-    password: Optional[str] = Field(default=None, min_length=12, max_length=72)  # for portal login
+    password: Optional[str] = Field(default=None, min_length=MIN_PASSWORD_LENGTH, max_length=72)  # for portal login
 
     @field_validator("password")
     @classmethod
@@ -231,7 +231,7 @@ class CustomerTokenResponse(BaseModel):
 
 class ChangePasswordPayload(BaseModel):
     current_password: str = Field(..., max_length=72)
-    new_password: str = Field(..., min_length=12, max_length=72)
+    new_password: str = Field(..., min_length=MIN_PASSWORD_LENGTH, max_length=72)
 
     @field_validator("new_password")
     @classmethod
@@ -256,7 +256,7 @@ class TeamCreatePayload(BaseModel):
     role: Role
     phone: Optional[str] = None
     mobile: Optional[str] = None
-    password: str = Field(..., min_length=12, max_length=72)
+    password: str = Field(..., min_length=MIN_PASSWORD_LENGTH, max_length=72)
     floor_ids: list[str] = Field(default_factory=list)
     access_profile: Optional[AccessProfile] = None
 
@@ -288,7 +288,7 @@ class TeamUpdatePayload(BaseModel):
 
 
 class TeamPasswordResetPayload(BaseModel):
-    new_password: str = Field(min_length=12, max_length=72)
+    new_password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=72)
 
     _password_policy = field_validator("new_password")(validate_new_password)
 

@@ -127,6 +127,7 @@ jobs:
           npm run test:sales-periods
           npm run test:monitoring-contract
           npm run test:frontend-performance
+          npm run test:page-loading-performance
           npm run test:icon-fonts
           npm run test:font-assets
           npm run test:release-recovery
@@ -160,6 +161,8 @@ jobs:
         run: npx playwright test --config playwright.responsive.config.ts responsive-
       - name: Member credentials and furniture touch-device acceptance
         run: npx playwright test --config playwright.devices.config.ts
+      - name: Catalog startup and progressive detail loading across devices
+        run: npm run test:e2e:performance
       - name: Publish browser result counts in the job summary
         if: always()
         run: |

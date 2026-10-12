@@ -13,6 +13,7 @@ services/rate_limit.py.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from typing import Awaitable, Callable, Optional, Sequence
@@ -22,12 +23,14 @@ _MAX_MEMORY_ENTRIES = 256
 
 _memory_versions: dict[str, int] = {}
 _memory_entries: dict[str, tuple[float, object]] = {}
+_inflight: dict[str, asyncio.Task] = {}
 
 
 def reset_memory_state() -> None:
     """Test helper — clears the in-process fallback."""
     _memory_versions.clear()
     _memory_entries.clear()
+    _inflight.clear()
 
 
 def _redis():
@@ -70,10 +73,11 @@ async def cache_key(
     None (unrestricted) and [] (restricted to nothing) must not collide, so
     the empty list keys as "none" rather than as an empty string.
     """
-    # List comprehension, not a generator expression: an `await` inside a
-    # genexp makes it an async generator, which str.join cannot consume
-    # (TypeError: can only join an iterable).
-    versions = ".".join([f"{name}{await _version(name)}" for name in sorted(collections)])
+    # Resolve independent Redis version reads together, then compose a stable
+    # ordered key. A cache hit should not pay one network round trip per source.
+    names = sorted(collections)
+    values = await asyncio.gather(*(_version(name) for name in names))
+    versions = ".".join(f"{name}{value}" for name, value in zip(names, values))
     scope = "all" if floors is None else (",".join(sorted(floors)) or "none")
     return f"analytics:{metric_id}:{versions}:{filter_signature}:{scope}"
 
@@ -94,21 +98,39 @@ async def cached(
         hit = await client.get(key)
         if hit is not None:
             return json.loads(hit)
+    else:
+        entry = _memory_entries.get(key)
+        if entry and entry[0] > time.monotonic():
+            return entry[1]
+
+    async def load_and_store():
         value = await loader()
-        await client.set(key, json.dumps(value, default=str), ex=ttl)
+        if client is not None:
+            await client.set(key, json.dumps(value, default=str), ex=ttl)
+        else:
+            # Version invalidation changes keys without removing old entries.
+            now = time.monotonic()
+            for stale_key, (expires_at, _) in list(_memory_entries.items()):
+                if expires_at <= now:
+                    del _memory_entries[stale_key]
+            while len(_memory_entries) >= _MAX_MEMORY_ENTRIES:
+                del _memory_entries[next(iter(_memory_entries))]
+            _memory_entries[key] = (time.monotonic() + ttl, value)
         return value
 
-    entry = _memory_entries.get(key)
-    if entry and entry[0] > time.monotonic():
-        return entry[1]
-    value = await loader()
-    # Version invalidation changes keys without removing old entries. Bound
-    # the fallback even when filters change frequently or writes are busy.
-    now = time.monotonic()
-    for stale_key, (expires_at, _) in list(_memory_entries.items()):
-        if expires_at <= now:
-            del _memory_entries[stale_key]
-    while len(_memory_entries) >= _MAX_MEMORY_ENTRIES:
-        del _memory_entries[next(iter(_memory_entries))]
-    _memory_entries[key] = (time.monotonic() + ttl, value)
-    return value
+    # Burst requests for an expired metric should run its database pipeline
+    # once. The version/floor/filter key preserves invalidation and isolation.
+    # Shield the shared read so closing one page does not cancel other callers.
+    task = _inflight.get(key)
+    if task is None or task.get_loop() is not asyncio.get_running_loop():
+        task = asyncio.create_task(load_and_store())
+        _inflight[key] = task
+
+        def finished(done):
+            if _inflight.get(key) is done:
+                _inflight.pop(key, None)
+            if not done.cancelled():
+                done.exception()  # observe failures even if all callers left
+
+        task.add_done_callback(finished)
+    return await asyncio.shield(task)

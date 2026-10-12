@@ -157,6 +157,7 @@ export default function CustomerDetail() {
   const [returningPurchaseLoanId, setReturningPurchaseLoanId] = useState<string | null>(null);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [relatedErrors, setRelatedErrors] = useState(false);
+  const [relatedLoading, setRelatedLoading] = useState(true);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [availableBrands, setAvailableBrands] = useState<Workspace["brands"]>([]);
   const [availableStages, setAvailableStages] = useState<Workspace["stages"]>([]);
@@ -173,6 +174,12 @@ export default function CustomerDetail() {
   const [deleting, setDeleting] = useState(false);
   const workspaceRequestIdRef = useRef(0);
   const scheduledWorkspaceRequestIdRef = useRef<number | null>(null);
+  const coreRequestRef = useRef(0);
+  const coreAbortRef = useRef<AbortController | null>(null);
+  const coreActiveRef = useRef(false);
+  const coreContextRef = useRef("");
+  const coreContext = `${selectedFloorId}:${id}`;
+  coreContextRef.current = coreContext;
 
   const workspaceFilters = useMemo<WorkspaceServerFilters>(() => ({
     productSearch: productSearch.trim(),
@@ -181,24 +188,32 @@ export default function CustomerDetail() {
   }), [brandFilter, productSearch, stageFilter]);
 
   const loadCore = useCallback(async () => {
-    if (!id) return;
+    if (!coreActiveRef.current || !id || !selectedFloorId || coreContextRef.current !== coreContext) return;
+    coreAbortRef.current?.abort();
+    const controller = new AbortController();
+    coreAbortRef.current = controller;
+    const requestId = ++coreRequestRef.current;
+    const isCurrent = () => !controller.signal.aborted && requestId === coreRequestRef.current && coreContextRef.current === coreContext;
+    const options = { floorId: selectedFloorId, signal: controller.signal };
     setLoadError(null);
     setRelatedErrors(false);
-    try {
-      const [c, qs, pos, tl] = await Promise.all([
-        api.get<Customer>(`/customers/${id}?with_completion=true`),
-        api.get<Quotation[]>(`/quotations`).then((all) => all.filter((q: any) => q.customer_id === id)).catch(() => { setRelatedErrors(true); return []; }),
-        api.get<PO[]>(`/purchase-orders?customer_id=${id}`).catch(() => { setRelatedErrors(true); return []; }),
-        api.get<TimelineEvent[]>(`/activity/customer/${id}`).catch(() => { setRelatedErrors(true); return []; }),
-      ]);
-      setCustomer(c);
-      setQuotations(qs);
-      setPurchases(pos);
-      setTimeline(tl);
-    } catch (e: any) {
-      setLoadError(e?.detail || "Could not load this customer. Check your connection and try again.");
-    }
-  }, [id]);
+    setRelatedLoading(true);
+    const customerId = encodeURIComponent(id);
+    // The profile is usable as soon as its own read completes. Activity or
+    // purchase history must not add their latency to the whole page's spinner.
+    const primary = api.get<Customer>(`/customers/${customerId}?with_completion=true`, options)
+      .then(value => { if (isCurrent()) setCustomer(value); })
+      .catch((e: any) => { if (isCurrent()) setLoadError(e?.detail || "Could not load this customer. Check your connection and try again."); });
+    const related = <T,>(path: string, publish: (value: T) => void) => api.get<T>(path, options)
+      .then(value => { if (isCurrent()) publish(value); })
+      .catch(() => { if (isCurrent()) setRelatedErrors(true); });
+    const history = Promise.all([
+      related<Quotation[]>(`/quotations?customer_id=${customerId}`, setQuotations),
+      related<PO[]>(`/purchase-orders?customer_id=${customerId}`, setPurchases),
+      related<TimelineEvent[]>(`/activity/customer/${customerId}`, setTimeline),
+    ]).finally(() => { if (isCurrent()) setRelatedLoading(false); });
+    await Promise.all([primary, history]);
+  }, [id, selectedFloorId, coreContext]);
 
   const loadStockTransfers = useCallback(async () => {
     if (!id || isTilesFloor) { setStockTransfers([]); return; }
@@ -314,7 +329,12 @@ export default function CustomerDetail() {
     ]);
   }, [loadCore, loadWorkspace, loadStockTransfers, workspaceFilters]);
 
-  useEffect(() => { loadCore(); }, [loadCore]);
+  useEffect(() => {
+    coreActiveRef.current = true;
+    setCustomer(null); setQuotations([]); setPurchases([]); setTimeline([]);
+    void loadCore();
+    return () => { coreActiveRef.current = false; coreRequestRef.current += 1; coreAbortRef.current?.abort(); };
+  }, [loadCore]);
   useEffect(() => { void loadStockTransfers(); }, [loadStockTransfers]);
   useEffect(() => {
     if (!id) return;
@@ -535,10 +555,10 @@ export default function CustomerDetail() {
         <Disclosure title="Customer summary">
         {/* Stats */}
         <View style={[styles.statsRow, !isDesktop && styles.statsRowMobile]}>
-          <StatTile label="Lifetime Revenue" value={relatedErrors ? "Unavailable" : moneyShort(totalRevenue)} icon="trending-up" tone="success" sub="Won + ordered" />
-          <StatTile label="Quotations" value={relatedErrors ? "—" : String(quotations.length)} icon="file-text" tone="brand" sub="All statuses" />
-          <StatTile label="Purchase Orders" value={relatedErrors ? "—" : String(purchases.length)} icon="shopping-cart" tone="brand" sub="Across brands" />
-          <StatTile label="Activity" value={relatedErrors ? "—" : String(timeline.length)} icon="activity" tone="neutral" sub="Events logged" />
+          <StatTile label="Lifetime Revenue" value={relatedLoading ? "Loading…" : relatedErrors ? "Unavailable" : moneyShort(totalRevenue)} icon="trending-up" tone="success" sub="Won + ordered" />
+          <StatTile label="Quotations" value={relatedLoading || relatedErrors ? "—" : String(quotations.length)} icon="file-text" tone="brand" sub="All statuses" />
+          <StatTile label="Purchase Orders" value={relatedLoading || relatedErrors ? "—" : String(purchases.length)} icon="shopping-cart" tone="brand" sub="Across brands" />
+          <StatTile label="Activity" value={relatedLoading || relatedErrors ? "—" : String(timeline.length)} icon="activity" tone="neutral" sub="Events logged" />
         </View>
 
         </Disclosure>
@@ -566,7 +586,7 @@ export default function CustomerDetail() {
             </Card>
             <Card>
               <Text style={[type.overline, { marginBottom: spacing.md }]}>Latest activity</Text>
-              <ActivityTimeline events={timeline.slice(0, 8)} dense emptyLabel="No activity yet" />
+              <ActivityTimeline events={timeline.slice(0, 8)} dense emptyLabel={relatedLoading ? "Loading activity…" : "No activity yet"} />
             </Card>
             {tilesHistory.length > 0 ? (
               <Card>
@@ -598,7 +618,7 @@ export default function CustomerDetail() {
         ) : tab === "quotations" ? (
           quotations.length === 0 ? (
             <Card>
-              <EmptyState icon="file-text" title={relatedErrors ? "Quotation records unavailable" : "No quotations yet"} subtitle={relatedErrors ? "Retry related records to see this customer’s quotations." : "This customer hasn't received a quotation."} />
+              <EmptyState icon="file-text" title={relatedLoading ? "Loading quotations…" : relatedErrors ? "Quotation records unavailable" : "No quotations yet"} subtitle={relatedLoading ? "Fetching this customer's quotations." : relatedErrors ? "Retry related records to see this customer’s quotations." : "This customer hasn't received a quotation."} />
             </Card>
           ) : (
             <Card padding={0}>
@@ -1038,7 +1058,7 @@ export default function CustomerDetail() {
           </View>
         ) : (
           <Card>
-            <ActivityTimeline events={timeline} emptyLabel={relatedErrors ? "Activity unavailable. Retry related records." : "Nothing yet"} />
+            <ActivityTimeline events={timeline} emptyLabel={relatedLoading ? "Loading activity…" : relatedErrors ? "Activity unavailable. Retry related records." : "Nothing yet"} />
           </Card>
         )}
       </ScrollView>

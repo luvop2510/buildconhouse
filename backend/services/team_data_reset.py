@@ -80,8 +80,6 @@ async def reset_team_data(database, client, *, request_id: str,
         raise RuntimeError("Account reset requires every API and worker in maintenance mode")
     if request_id != REQUEST_ID:
         raise ValueError("Unrecognized account reset request")
-    if len(owner_password) < 12 or len(owner_password) > 72:
-        raise ValueError("Owner password must contain between 12 and 72 characters")
     validate_new_password(owner_password)
     password_hash = hash_password(owner_password)
 

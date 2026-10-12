@@ -2,6 +2,20 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
+## Performance and password minimum — 2026-10-12
+
+Version 1.0.1 fixes bounded catalog batching/shared cold warmup, parallel analytics
+reads and shared cache misses, independent customer/quotation primary loading,
+customer-scoped quotation history, and catalog startup debounce. Newly assigned
+passwords require six Unicode characters in both UI and API. Existing byte limits,
+floor isolation and write invalidation remain. Final backend suite: 2,246 passed;
+20 screen loading/race tests and 16 four-device performance tests pass. Six-character
+password boundaries pass 16 browser cases. TypeScript, zero-warning lint, web and
+unsigned iOS/Android exports and all 11 route budgets pass. Read-only readiness
+passes with no pending migrations. Required npm audit still fails with 22 high/five
+moderate findings; GitHub source review does not constitute production promotion or
+physical-device acceptance. See `docs/audits/2026-10-12-performance-1.0.1.md`.
+
 ## Walk-in/catalog/filter verification — 2026-10-11
 
 Local changes add multi-choice categorical filters, confirmed-only Customers,
