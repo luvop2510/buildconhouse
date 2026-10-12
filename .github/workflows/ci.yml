@@ -118,6 +118,7 @@ jobs:
           npm run test:mobile-ux
           npm run test:api-client
           npm run test:auth-provider-races
+          npm run test:team-contacts
           npm run test:customer-draft-reset
           npm run test:quotation-whatsapp
           npm run test:furniture-rmb

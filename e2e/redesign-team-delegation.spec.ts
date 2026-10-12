@@ -17,7 +17,7 @@ const originalGrants = [{ resource: 'payments', floor_id: 'ground-floor', action
 async function teamFixture(page: Page, catalogResponse: () => unknown = () => catalog, existingRole = member.role) {
   await mockSession(page, '/team');
   const writes: { path: string; method: string; body: Record<string, any> }[] = [];
-  const state = { failSave: false, failGrants: false, floorIds: [...member.floor_ids], grants: [...originalGrants], deleted: false };
+  const state = { members: [{ ...member, role: existingRole }] as Record<string, any>[], failSave: false, failGrants: false, floorIds: [...member.floor_ids], grants: [...originalGrants] };
   await page.route('**/api/**', async route => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
@@ -25,13 +25,16 @@ async function teamFixture(page: Page, catalogResponse: () => unknown = () => ca
       writes.push({ path, method: request.method(), body: request.postDataJSON() || {} });
       if (state.failSave) return route.fulfill({ status: 503, json: { detail: 'Save temporarily unavailable' } });
       if (path.endsWith("/reset-password")) return route.fulfill({ json: { delivery_method: "manual", password: request.postDataJSON()?.new_password || "GeneratedOwner!2026", expires_at: null } });
-      if (request.method() === "DELETE") { state.deleted = true; return route.fulfill({ json: { ok: true } }); }
-      return route.fulfill({ json: { ...member, ...request.postDataJSON() } });
+      if (request.method() === "DELETE") { state.members = state.members.filter(item => item.id !== path.split('/').pop()); return route.fulfill({ json: { ok: true } }); }
+      const result = { ...member, ...request.postDataJSON(), id: request.method() === 'POST' ? 'created-worker' : path.split('/').pop() };
+      if (request.method() === 'POST') state.members.push(result);
+      else state.members = state.members.map(item => item.id === result.id ? { ...item, ...request.postDataJSON() } : item);
+      return route.fulfill({ json: result });
     }
-    if (path === '/api/team') return route.fulfill({ json: state.deleted ? [] : [{ ...member, role: existingRole }] });
+    if (path === '/api/team') return route.fulfill({ json: state.members });
     if (path === '/api/settings/floors') return route.fulfill({ json: floors });
     if (path === '/api/settings/access-grants/resources') return route.fulfill({ json: catalogResponse() });
-    if (path === '/api/settings/access-grants/test-worker') return state.failGrants ? route.fulfill({ status: 503, json: { detail: 'Access temporarily unavailable' } }) : route.fulfill({ json: { floor_ids: state.floorIds, grants: state.grants } });
+    if (path === '/api/settings/access-grants/test-worker' || path === '/api/settings/access-grants/created-worker') return state.failGrants ? route.fulfill({ status: 503, json: { detail: 'Access temporarily unavailable' } }) : route.fulfill({ json: { floor_ids: state.floorIds, grants: state.grants } });
     if (path === '/api/roles') return route.fulfill({ json: [{ role: 'owner', label: 'Owner', level: 8 }, { role: 'admin', label: 'Admin', level: 7 }, { role: 'manager', label: 'Manager', level: 6 }, { role: 'sales', label: 'Sales', level: 4 }, { role: 'worker', label: 'Worker', level: 1 }] });
     return route.fallback();
   });
@@ -144,11 +147,12 @@ test('critical team delegation: editing uses current floors and pages when the t
   await expect(switchFor(page, 'page-toggle-third-floor-payments')).toBeChecked();
   await expect(page.getByTestId('edit-staff-role-worker')).toHaveText('Delegated staff');
   await expect(page.getByTestId('edit-staff-role-manager')).toHaveCount(0);
+  await switchFor(page, 'page-toggle-third-floor-catalog').check();
   await page.getByTestId('edit-staff-save').click();
   await expect(page.getByTestId('edit-staff-sheet')).toHaveCount(0);
   expect(writes[0].body.floor_ids).toEqual(['third-floor']);
   expect(writes[0].body).toMatchObject({ role: 'worker', custom_access: true, access_profile: null });
-  expect(writes[0].body.access_grants).toEqual(state.grants);
+  expect(writes[0].body.access_grants).toEqual([...state.grants, { resource: 'catalog', floor_id: 'third-floor', actions: ['view'] }]);
 });
 
 test('critical team delegation: Settings has one access editor and historical links open Team', async ({ page }) => {
@@ -164,12 +168,12 @@ test('critical team delegation: Settings has one access editor and historical li
   }
 });
 
-test('critical team delegation: failed permission loading blocks saving and retry restores the saved grants', async ({ page }) => {
+test('critical team delegation: failed permission loading preserves contacts and retry restores the saved grants', async ({ page }) => {
   const { writes, state } = await teamFixture(page);
   state.failGrants = true;
   await page.getByTestId('team-row-test-worker').click();
   await expect(page.getByText('Current access unavailable', { exact: true })).toBeVisible();
-  await expect(page.getByTestId('edit-staff-save')).toBeDisabled();
+  await expect(page.getByTestId('edit-staff-save')).toBeEnabled();
   state.failGrants = false;
   await page.getByRole('button', { name: 'Try again', exact: true }).click();
   await expect(switchFor(page, 'page-toggle-ground-floor-payments')).toBeChecked();
@@ -430,6 +434,164 @@ test('critical active owners keep their role enabled status and account', async 
   await expect(page.getByTestId('edit-staff-set-password')).toBeVisible();
   await page.getByTestId('edit-staff-save').click();
   await expect(page.getByTestId('edit-staff-sheet')).toHaveCount(0);
+  expect(writes).toHaveLength(0); // An unchanged save cannot rewrite owner access.
+});
+
+test('critical team contacts: username-only creation, contact changes, clearing, reload and delete remain usable', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const { writes } = await teamFixture(page);
+  await fillNewMember(page);
+  await page.getByTestId('add-staff-email').fill('');
+  await page.getByTestId('add-staff-phone').fill('+91 (079) 2345-6789');
+  await page.getByTestId('add-staff-mobile').fill('+91 98765 43210');
+  await page.getByTestId('add-staff-save').click();
+  const row = page.getByTestId('team-row-created-worker');
+  await expect(row).toBeVisible();
+  await expect(page.getByTestId('team-email-created-worker')).toHaveCount(0);
+  expect(writes[0].body).toMatchObject({ email: null, phone: '+91 (079) 2345-6789', mobile: '+91 98765 43210', login_id: 'NEW WORKER' });
+  await page.reload();
+  await expect(row).toBeVisible();
+  await row.click();
+  await expect(page.getByTestId('edit-staff-phone')).toHaveValue('+91 (079) 2345-6789');
+  await expect(page.getByTestId('edit-staff-mobile')).toHaveValue('+91 98765 43210');
+  await page.getByTestId('edit-staff-email').fill(' new-worker@example.test ');
+  await page.getByTestId('edit-staff-save').click();
+  await expect(page.getByTestId('team-email-created-worker')).toHaveText('new-worker@example.test');
+  expect(writes[1].body).toEqual({ email: 'new-worker@example.test' });
+  await page.reload();
+  await row.click();
+  await page.getByTestId('edit-staff-phone').fill('');
+  await page.getByTestId('edit-staff-mobile').fill('');
+  await page.getByTestId('edit-staff-email').fill('');
+  await page.getByTestId('edit-staff-save').click();
+  await expect(page.getByTestId('team-phone-created-worker')).toHaveCount(0);
+  await expect(page.getByTestId('team-email-created-worker')).toHaveCount(0);
+  expect(writes[2].body).toEqual({ email: null, phone: null, mobile: null });
+  await page.reload();
+  await row.click();
+  await page.getByTestId('edit-staff-delete').click();
+  await page.getByTestId('confirm-delete-team-member-confirm').click();
+  await expect(row).toHaveCount(0);
+  await page.reload();
+  await expect(row).toHaveCount(0);
+  await expect(page.getByTestId('team-add-btn')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('critical team contacts: invalid inputs block writes and preserve the draft', async ({ page }) => {
+  const { writes } = await teamFixture(page);
+  await fillNewMember(page);
+  for (const [id, value, message] of [
+    ['email', 'bad-address', 'Enter a valid email address'],
+    ['phone', '123', 'Phone must contain 7–15 digits, with an optional country code'],
+    ['mobile', '+91 abc 1234567', 'Mobile must contain 7–15 digits, with an optional country code'],
+  ]) {
+    await page.getByTestId(`add-staff-${id}`).fill(value);
+    await page.getByTestId('add-staff-save').click();
+    await expect(page.getByRole('alert')).toHaveText(message);
+    await page.getByTestId(`add-staff-${id}`).fill(id === 'email' ? 'new-worker@example.test' : '');
+  }
+  await page.getByTestId('add-staff-email').fill('');
+  await page.getByTestId('add-staff-username').fill('');
+  await page.getByTestId('add-staff-save').click();
+  await expect(page.getByRole('alert')).toHaveText('Add an email or username so this person can sign in');
+  await expect(page.getByTestId('add-staff-name')).toHaveValue('New Worker');
+  expect(writes).toHaveLength(0);
+});
+
+test('critical team contacts: contact-only edits preserve legacy role and credentials when access fails', async ({ page }) => {
+  const { state, writes } = await teamFixture(page, () => catalog, 'manager');
+  state.failGrants = true;
+  await page.getByTestId('team-row-test-worker').click();
+  await expect(page.getByText('Current access unavailable', { exact: true })).toBeVisible();
+  await page.getByTestId('edit-staff-phone').fill('9876543210');
+  await page.getByTestId('edit-staff-save').click();
+  await expect(page.getByTestId('edit-staff-sheet')).toHaveCount(0);
+  expect(writes[0].body).toEqual({ phone: '9876543210' });
+  await page.reload();
+  await expect(page.getByTestId('team-role-test-worker')).toHaveText('Ground Floor Sales');
+  await expect(page.getByTestId('team-email-test-worker')).toHaveText(member.email);
+});
+
+test('critical team contacts: JK owner contact save never rewrites identity or access', async ({ page }) => {
+  const { state, writes } = await teamFixture(page);
+  state.members = [{ ...member, id: 'audit-owner', login_id: 'JK', full_name: 'JK PATEL', role: 'owner' }];
+  await page.reload();
+  await page.getByTestId('team-row-audit-owner').click();
+  await page.getByTestId('edit-staff-mobile').fill('+91 98765 43210');
+  await page.getByTestId('edit-staff-save').click();
+  await expect(page.getByTestId('edit-staff-sheet')).toHaveCount(0);
+  expect(writes[0]).toMatchObject({ path: '/api/team/audit-owner', body: { mobile: '+91 98765 43210' } });
+  expect(Object.keys(writes[0].body)).toEqual(['mobile']);
+  await page.reload();
+  await expect(page.getByTestId('team-add-btn')).toBeVisible();
+});
+
+test('critical team contacts: structured validation failure remains readable and can be retried', async ({ page }) => {
+  const { writes } = await teamFixture(page);
+  let fail = true;
+  await page.route('**/api/team/test-worker', route => {
+    if (route.request().method() !== 'PATCH' || !fail) return route.fallback();
+    return route.fulfill({ status: 422, json: { detail: [{ loc: ['body', 'phone'], msg: 'Enter a valid phone number', type: 'value_error' }] } });
+  });
+  await page.getByTestId('team-row-test-worker').click();
+  await page.getByTestId('edit-staff-phone').fill('9876543210');
+  await page.getByTestId('edit-staff-save').click();
+  await expect(page.getByRole('alert')).toHaveText('phone: Enter a valid phone number');
+  await expect(page.getByTestId('edit-staff-phone')).toHaveValue('9876543210');
+  fail = false;
+  await page.getByTestId('edit-staff-save').click();
+  await expect(page.getByTestId('edit-staff-sheet')).toHaveCount(0);
   expect(writes).toHaveLength(1);
-  expect(writes[0].body).toMatchObject({ role: 'owner', active: true, custom_access: false });
+  await page.reload();
+  await expect(page.getByTestId('team-row-test-worker')).toBeVisible();
+});
+
+test('critical team contacts: a failed refresh keeps the team usable and retry recovers saved details', async ({ page }) => {
+  await teamFixture(page);
+  let fail = true;
+  await page.route('**/api/team', route => {
+    if (route.request().method() === 'GET' && fail) return route.fulfill({ status: 503, json: { detail: 'Refresh temporarily unavailable' } });
+    return route.fallback();
+  });
+  await page.getByTestId('team-row-test-worker').click();
+  await page.getByTestId('edit-staff-phone').fill('9876543210');
+  await page.getByTestId('edit-staff-save').click();
+  await expect(page.getByTestId('edit-staff-sheet')).toHaveCount(0);
+  await expect(page.getByText('Could not load team', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('team-row-test-worker')).toBeVisible();
+  await expect(page.getByTestId('team-add-btn')).toBeVisible();
+  fail = false;
+  await page.getByRole('button', { name: 'Try again', exact: true }).click();
+  await expect(page.getByTestId('team-phone-test-worker')).toContainText('9876543210');
+  await expect(page.getByText('Could not load team', { exact: true })).toHaveCount(0);
+});
+
+test('critical team contacts: a delayed older refresh cannot resurrect a deleted member', async ({ page }) => {
+  const { state } = await teamFixture(page);
+  let delayed = false;
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/team', async route => {
+    if (route.request().method() !== 'GET' || delayed) return route.fallback();
+    delayed = true;
+    const oldTeam = structuredClone(state.members);
+    await gate;
+    await route.fulfill({ json: oldTeam });
+  });
+  await page.getByTestId('team-row-test-worker').click();
+  await page.getByTestId('edit-staff-phone').fill('9876543210');
+  await page.getByTestId('edit-staff-save').click();
+  await expect.poll(() => delayed).toBe(true);
+  await expect(page.getByTestId('edit-staff-sheet')).toHaveCount(0);
+  await page.getByTestId('team-row-test-worker').click();
+  await page.getByTestId('edit-staff-delete').click();
+  await page.getByTestId('confirm-delete-team-member-confirm').click();
+  await expect(page.getByTestId('team-row-test-worker')).toHaveCount(0);
+  const oldResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/team');
+  release();
+  await oldResponse;
+  await expect(page.getByTestId('team-row-test-worker')).toHaveCount(0);
+  await expect(page.getByText('No team members', { exact: true })).toBeVisible();
 });

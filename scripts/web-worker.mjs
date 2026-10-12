@@ -48,13 +48,17 @@ export function createWorker(backendUrl, fetchImpl = fetch, timeoutMs = 28000) {
       const session=cookie(request,'forge_session');
       const unsafe=!['GET','HEAD','OPTIONS'].includes(request.method);
       const csrf=cookie(request,'forge_csrf');
-      if(unsafe && session && (!csrf || request.headers.get('Origin')!==url.origin || request.headers.get('X-CSRF-Token')!==csrf)) return secure(failure(403,'CSRF validation failed'),true);
+      const credentialLogin=request.method==='POST' && ['/api/auth/login','/api/auth/customer/login'].includes(url.pathname);
+      // Fresh credentials may replace stale cookies, but only our own origin
+      // may establish a browser session. Other writes retain double-submit CSRF.
+      if(credentialLogin && request.headers.get('Origin')!==url.origin) return secure(failure(403,'Login must originate from this application.'),true);
+      if(unsafe && !credentialLogin && session && (!csrf || request.headers.get('Origin')!==url.origin || request.headers.get('X-CSRF-Token')!==csrf)) return secure(failure(403,'CSRF validation failed'),true);
       const headers=new Headers(request.headers);
       headers.delete('Cookie'); headers.delete('Host');
       // A browser attachment navigation must redeem its scoped, one-use `dl`
       // token. Forwarding the session bearer would bypass that token and its
       // floor binding in the backend auth dependency.
-      if(request.method==='GET' && url.searchParams.has('dl')) headers.delete('Authorization');
+      if(credentialLogin || (request.method==='GET' && url.searchParams.has('dl'))) headers.delete('Authorization');
       else if(session && !headers.has('Authorization')) {
         try { headers.set('Authorization','Bearer '+decodeURIComponent(session)); }
         catch { return secure(clearSession(failure(401,'Invalid session. Sign in again.')),true); }

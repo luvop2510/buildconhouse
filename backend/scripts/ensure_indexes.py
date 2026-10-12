@@ -136,7 +136,10 @@ async def ensure_all() -> None:
         unique=True, name="products_floor_brand_sku_unique",
     )
 
-    await _safe_create_index(db.users, "email", unique=True, name="users_email_unique")
+    await _safe_create_index(
+        db.users, "email", unique=True, name="users_email_optional_unique",
+        partialFilterExpression={"email": {"$type": "string"}},
+    )
     await _safe_create_index(db.quotations, "number", unique=True, name="quotations_number_unique")
     await _safe_create_index(db.purchase_orders, "number", unique=True, name="purchase_orders_number_unique")
     await _safe_create_index(

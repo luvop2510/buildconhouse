@@ -10,7 +10,9 @@ import type { AccessProfile, PersonalGrant } from "@/src/access-profiles";
 
 export type StaffUser = {
   id: string;
-  email: string;
+  email: string | null;
+  phone?: string | null;
+  mobile?: string | null;
   full_name: string;
   role: "owner" | "admin" | "manager" | "sales" | "purchase" | "warehouse" | "accounts" | "worker";
   active: boolean;
@@ -149,27 +151,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // the newly signed-in worker was rejected with "You do not have access
       // to this floor". Keep a saved selection only when this account can use
       // it; otherwise fall back to the first floor assigned to the account.
-      const savedFloor = await getSelectedFloorId();
-      if (!isCurrent()) return;
       // Owners/managers have implicit all-floor access, so their user document
       // may intentionally have no explicit floor_ids. Resolve the authoritative
       // visible list instead of leaving a prior user's floor selected.
-      let assignedFloors = res.user.floor_ids || [];
-      try {
-        assignedFloors = (await getFloorAccess()).floor_ids;
-      } catch {
-        // Authentication must remain usable during a transient floor-settings
-        // outage; the shell will retry its normal access request after login.
-      }
+      // Floor assignments and personal grants are independent account reads.
+      // Start them together rather than adding two network round trips to login.
+      // Publish the identity only when both are ready so delegation fails closed.
+      const [savedFloor, assignedFloors, access] = await Promise.all([
+        getSelectedFloorId(),
+        getFloorAccess().then((value) => value.floor_ids).catch(() => res.user.floor_ids || []),
+        res.user.custom_access
+          ? api.get<{ grants: PersonalGrant[] }>("/settings/access-grants/me")
+          : Promise.resolve(null),
+      ]);
       if (!isCurrent()) return;
       const activeFloor = assignedFloors.includes(savedFloor) ? savedFloor : assignedFloors[0];
       if (activeFloor && activeFloor !== savedFloor) await setSelectedFloorId(activeFloor);
       if (!isCurrent()) return;
-      if (res.user.custom_access) {
-        const access = await api.get<{ grants: PersonalGrant[] }>("/settings/access-grants/me");
-        if (!isCurrent()) return;
-        res.user.access_grants = access.grants;
-      }
+      if (access) res.user.access_grants = access.grants;
       setKind("staff"); setStaff(res.user); setCustomer(null);
     } finally {
       if (isCurrent()) setLoading(false);

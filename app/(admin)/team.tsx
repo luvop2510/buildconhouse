@@ -1,7 +1,7 @@
 // Team uses named floor/page/action delegations. Legacy role labels remain
 // readable until account migration; new allocations use owner or worker only.
 import Feather from "@expo/vector-icons/Feather";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Switch, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 
@@ -16,12 +16,13 @@ import { useAuth } from "@/src/state/auth";
 import { useBp } from "@/src/design/responsive";
 import { FloorDelegationEditor } from "@/src/components/FloorDelegationEditor";
 import { DelegationCatalog, DelegationGrant, DelegationState, isDelegationCatalog, loadDelegation } from "@/src/team-delegation";
+import { optionalContact, teamErrorMessage, validateTeamContacts } from "@/src/team-contacts";
 import { floorDisplayLabel } from "@/src/constants/floors";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
 
 type Staff = {
-  id: string; full_name: string; email: string; role: string;
-  phone?: string | null; login_id?: string | null; active: boolean; floor_ids?: string[]; custom_access?: boolean; team_role?: string | null;
+  id: string; full_name: string; email?: string | null; role: string;
+  phone?: string | null; mobile?: string | null; login_id?: string | null; active: boolean; floor_ids?: string[]; custom_access?: boolean; team_role?: string | null;
 };
 type Floor = { id: string; name: string; slug: string };
 export default function Team() {
@@ -29,6 +30,7 @@ export default function Team() {
   const { staff: me } = useAuth();
   const { roles } = useRoles();
   const isOwner = me?.role === "owner";
+  const ownerId = isOwner ? me.id : null;
   const [options, setOptions] = useState<{ floors: Floor[]; catalog: DelegationCatalog } | null>(null);
   const [items, setItems] = useState<Staff[] | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -38,23 +40,31 @@ export default function Team() {
   const [tempResult, setTempResult] = useState<TempPasswordResult | null>(null);
   const [tempDialogOpen, setTempDialogOpen] = useState(false);
 
+  const loadVersion = useRef(0);
+  const optionsVersion = useRef(0);
   const load = useCallback(() => {
-    if (!isOwner) return;
+    if (!ownerId) return;
     setLoadError(false);
-    api.get<Staff[]>("/team").then(setItems).catch(() => setLoadError(true));
-  }, [isOwner]);
-  useEffect(() => { load(); }, [load]);
+    const version = ++loadVersion.current;
+    api.get<Staff[]>("/team").then((result) => {
+      if (version !== loadVersion.current) return;
+      setItems(result);
+    }).catch(() => { if (version === loadVersion.current) setLoadError(true); });
+  }, [ownerId]);
+  useEffect(() => { const requests = loadVersion; setItems(null); load(); return () => { requests.current++; }; }, [load]);
   const loadOptions = useCallback(() => {
-    if (!isOwner) return;
+    if (!ownerId) return;
     setOptionsError(false);
+    const version = ++optionsVersion.current;
     Promise.all([api.get<Floor[]>("/settings/floors"), api.get<DelegationCatalog>("/settings/access-grants/resources")])
       .then(([floors, catalog]) => {
+        if (version !== optionsVersion.current) return;
         if (!isDelegationCatalog(catalog, floors)) throw new Error("Delegation catalog unavailable");
         setOptions({ floors: floors.map((floor) => ({ ...floor, name: floorDisplayLabel(floor) })), catalog });
       })
-      .catch(() => setOptionsError(true));
-  }, [isOwner]);
-  useEffect(loadOptions, [loadOptions]);
+      .catch(() => { if (version === optionsVersion.current) setOptionsError(true); });
+  }, [ownerId]);
+  useEffect(() => { const requests = optionsVersion; setOptions(null); loadOptions(); return () => { requests.current++; }; }, [loadOptions]);
 
   if (!isOwner) return <AdminPage title="Team"><CardNotice /></AdminPage>;
 
@@ -65,7 +75,8 @@ export default function Team() {
       right={<IconAction icon="user-plus" label="Add" onPress={() => setAddOpen(true)} testID="team-add-btn" />}
     >
       {optionsError ? <ErrorState title="Access options unavailable" subtitle="Retry before assigning staff access." onRetry={loadOptions} /> : null}
-      {loadError ? <ErrorState title="Could not load team" onRetry={load} /> : !items ? (
+      {loadError ? <ErrorState title="Could not load team" subtitle={items ? "Your last loaded team is shown below. Retry to refresh it." : undefined} onRetry={load} /> : null}
+      {!items ? loadError ? null : (
         <View style={{ gap: spacing.sm }}>
           {Array.from({ length: 4 }).map((_, i) => (
             <View key={i} style={[styles.card, { flexDirection: "row", gap: spacing.md }]}>
@@ -107,7 +118,9 @@ export default function Team() {
                     color: colors.onSurface,
                     letterSpacing: -0.1,
                   }}>{u.full_name}{u.id === me?.id ? " · You" : ""}</Text>
-                  <Text numberOfLines={1} style={type.caption}>{u.email}</Text>
+                  {optionalContact(u.email) ? <Text testID={`team-email-${u.id}`} numberOfLines={1} style={type.caption}>{u.email}</Text> : null}
+                  {optionalContact(u.login_id) ? <Text testID={`team-username-${u.id}`} numberOfLines={1} style={type.caption}>ID: {u.login_id}</Text> : null}
+                  {optionalContact(u.phone) || optionalContact(u.mobile) ? <Text testID={`team-phone-${u.id}`} numberOfLines={1} style={type.caption}>{[u.phone ? `Phone: ${u.phone}` : null, u.mobile ? `Mobile: ${u.mobile}` : null].filter(Boolean).join(" · ")}</Text> : null}
                 </View>
                 <Feather name="chevron-right" size={16} color={colors.onSurfaceMuted} />
                 <View style={{ alignItems: isPhone ? "flex-start" : "flex-end", gap: 4, minWidth: 0, flexShrink: 1, ...(isPhone ? { width: "100%", paddingLeft: 44 + spacing.md } : { maxWidth: "40%" }) }}>
@@ -150,6 +163,21 @@ function CardNotice() {
 type AccessOptions = { floors: Floor[]; catalog: DelegationCatalog };
 const emptyDelegation = (): DelegationState => ({ floorIds: [], grants: [] });
 
+function ContactFields({ prefix, email, onEmail, phone, onPhone, mobile, onMobile, disabled }: {
+  prefix: string; email: string; onEmail: (value: string) => void; phone: string; onPhone: (value: string) => void;
+  mobile: string; onMobile: (value: string) => void; disabled: boolean;
+}) {
+  return <View style={{ gap: spacing.md }}>
+    <Text style={type.label}>Contact details</Text>
+    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.md }}>
+      <View style={styles.contactColumn}><TextField testID={`${prefix}-phone`} label="Phone" value={phone} onChangeText={onPhone} keyboardType="phone-pad" placeholder="Optional" maxLength={40} editable={!disabled} /></View>
+      <View style={styles.contactColumn}><TextField testID={`${prefix}-mobile`} label="Mobile" value={mobile} onChangeText={onMobile} keyboardType="phone-pad" placeholder="Optional" maxLength={40} editable={!disabled} /></View>
+      <View style={styles.contactColumn}><TextField testID={`${prefix}-email`} label="Email" value={email} onChangeText={onEmail} keyboardType="email-address" placeholder="Optional email address" autoCapitalize="none" autoCorrect={false} maxLength={254} editable={!disabled} /></View>
+    </View>
+    <Text style={type.caption}>Contacts are optional. Keep an email or username for sign-in.</Text>
+  </View>;
+}
+
 function AccountAccessPicker({ value, onChange, disabled, prefix }: {
   value: string; onChange: (value: string) => void; disabled?: boolean; prefix: string;
 }) {
@@ -179,40 +207,41 @@ function AddStaffSheet({ visible, options, optionsError, onRetry, onClose, onCre
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [phone, setPhone] = useState("");
+  const [mobile, setMobile] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("worker");
   const [teamRole, setTeamRole] = useState("");
   const [delegation, setDelegation] = useState<DelegationState>(emptyDelegation);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const reset = () => { setFullName(""); setEmail(""); setUsername(""); setPhone(""); setPassword(""); setTeamRole(""); setRole("worker"); setDelegation(emptyDelegation()); setError(null); };
+  const reset = () => { setFullName(""); setEmail(""); setUsername(""); setPhone(""); setMobile(""); setPassword(""); setTeamRole(""); setRole("worker"); setDelegation(emptyDelegation()); setError(null); };
   const save = async () => {
     if (saving) return;
     if (!fullName.trim()) { setError("Full name is required"); return; }
-    if (!email.trim()) { setError("Email is required"); return; }
+    const contactError = validateTeamContacts(email, username, phone, mobile);
+    if (contactError) { setError(contactError); return; }
     if (password.length < 12) { setError("Initial password must be at least 12 characters"); return; }
     if (!options || optionsError) { setError("Load access options before saving"); return; }
     setSaving(true); setError(null);
     try {
       const owner = role === "owner";
       await api.post("/team", {
-        full_name: fullName.trim(), email: email.trim(), login_id: username.trim() || null, phone: phone.trim() || null,
+        full_name: fullName.trim(), email: optionalContact(email)?.toLowerCase() || null, login_id: optionalContact(username), phone: optionalContact(phone), mobile: optionalContact(mobile),
         password, role, team_role: teamRole.trim() || null, access_profile: null,
         custom_access: !owner, floor_ids: owner ? [] : delegation.floorIds,
         ...(!owner ? { access_grants: delegation.grants } : {}),
       });
       toast.success("Team member and access saved — their password is managed by the owner");
       reset(); onCreated(); onClose();
-    } catch (cause: any) { setError(cause?.detail || "Could not add team member"); }
+    } catch (cause: unknown) { setError(teamErrorMessage(cause, "Could not add team member")); }
     finally { setSaving(false); }
   };
   return <Sheet visible={visible} onClose={() => { if (!saving) { reset(); onClose(); } }} title="Add staff" testID="add-staff-sheet">
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
         <TextField testID="add-staff-name" label="Full name" value={fullName} onChangeText={setFullName} placeholder="e.g. Priya Sharma" autoFocus />
-        <TextField testID="add-staff-email" label="Email" value={email} onChangeText={setEmail} placeholder="name@company.com" autoCapitalize="none" keyboardType="email-address" />
         <TextField testID="add-staff-username" label="Username" value={username} onChangeText={setUsername} placeholder="Optional sign-in username" autoCapitalize="none" autoCorrect={false} maxLength={120} />
-        <TextField testID="add-staff-phone" label="Phone" value={phone} onChangeText={setPhone} placeholder="Optional" keyboardType="phone-pad" />
+        <ContactFields prefix="add-staff" email={email} onEmail={setEmail} phone={phone} onPhone={setPhone} mobile={mobile} onMobile={setMobile} disabled={saving} />
         <TextField testID="add-staff-password" label="Initial password" value={password} onChangeText={setPassword} placeholder="At least 12 characters" secureTextEntry autoCapitalize="none" helper="This password remains valid until the owner changes it. The member cannot change it." />
         <TextField testID="add-staff-team-role" label="Team role name" value={teamRole} onChangeText={setTeamRole} placeholder="e.g. Ground Floor Sales" helper="Give this person a role name that matches their work." maxLength={80} />
         <AccountAccessPicker value={role} onChange={setRole} disabled={saving} prefix="add-staff" />
@@ -230,6 +259,7 @@ function EditStaffSheet({ staff, options, optionsError, onRetry, selfId, onClose
 }) {
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
+  const [mobile, setMobile] = useState("");
   const [role, setRole] = useState("");
   const [teamRole, setTeamRole] = useState("");
   const [active, setActive] = useState(true);
@@ -246,9 +276,12 @@ function EditStaffSheet({ staff, options, optionsError, onRetry, selfId, onClose
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [email, setEmail] = useState("");
+  const originalDelegation = useRef<DelegationState | null>(null);
   useEffect(() => {
     if (!staff) return;
     setUsername(staff.login_id || "");
+    setEmail(staff.email || ""); setMobile(staff.mobile || "");
     setFullName(staff.full_name); setPhone(staff.phone || ""); setRole(staff.role === "owner" ? "owner" : "worker");
     setTeamRole(staff.team_role || ""); setActive(staff.active); setSaveError(null);
   }, [staff]);
@@ -256,31 +289,44 @@ function EditStaffSheet({ staff, options, optionsError, onRetry, selfId, onClose
     let alive = true;
     if (!staff || !options) return;
     setGrantsLoading(true); setGrantsError(null);
+    originalDelegation.current = null;
     setDelegation(emptyDelegation());
     api.get<{ floor_ids?: string[]; grants: DelegationGrant[] }>(`/settings/access-grants/${staff.id}`).then((response) => {
-      if (alive) setDelegation(loadDelegation(response.floor_ids ?? staff.floor_ids ?? [], response.grants, options.catalog.resources));
-    }).catch((cause: any) => { if (alive) setGrantsError(cause?.detail || "Could not load this person’s access"); })
+      if (alive) {
+        const current = loadDelegation(response.floor_ids ?? staff.floor_ids ?? [], response.grants, options.catalog.resources);
+        originalDelegation.current = current;
+        setDelegation(current);
+      }
+    }).catch((cause: unknown) => { if (alive) setGrantsError(teamErrorMessage(cause, "Could not load this person’s access")); })
       .finally(() => { if (alive) setGrantsLoading(false); });
     return () => { alive = false; };
   }, [staff, options, retryCount]);
   if (!staff) return null;
   const isSelf = staff.id === selfId;
   const protectedOwner = staff.role === "owner" && staff.active;
+  const accessChanged = role !== (staff.role === "owner" ? "owner" : "worker") || active !== staff.active || (!!originalDelegation.current && JSON.stringify(delegation) !== JSON.stringify(originalDelegation.current));
+  const accessUnavailable = !options || optionsError || grantsLoading || !!grantsError;
   const save = async () => {
     if (saving || resetting || deleting) return;
     if (!fullName.trim()) { setSaveError("Full name is required"); return; }
-    if (!isSelf && (!options || optionsError || grantsLoading || grantsError)) return;
+    const contactError = validateTeamContacts(email, username, phone, mobile);
+    if (contactError) { setSaveError(contactError); return; }
+    if (!isSelf && accessChanged && accessUnavailable) { setSaveError("Load this person’s access before changing it"); return; }
     setSaving(true); setSaveError(null);
     try {
-      const patch: Record<string, unknown> = { full_name: fullName.trim(), login_id: username.trim() || null, phone: phone.trim() || null, team_role: teamRole.trim() || null };
-      if (!isSelf) {
+      const patch: Record<string, unknown> = {};
+      const contact = { full_name: fullName.trim(), login_id: optionalContact(username), email: optionalContact(email)?.toLowerCase() || null, phone: optionalContact(phone), mobile: optionalContact(mobile), team_role: optionalContact(teamRole) };
+      for (const [key, value] of Object.entries(contact)) {
+        if (value !== (staff[key as keyof Staff] ?? null)) patch[key] = value;
+      }
+      if (!isSelf && accessChanged) {
         const owner = role === "owner";
         Object.assign(patch, { role, active, access_profile: null, custom_access: !owner, floor_ids: owner ? [] : delegation.floorIds });
         if (!owner) patch.access_grants = delegation.grants;
       }
-      await api.patch(`/team/${staff.id}`, patch);
+      if (Object.keys(patch).length) await api.patch(`/team/${staff.id}`, patch);
       toast.success("Team member and access saved"); onSaved();
-    } catch (cause: any) { setSaveError(cause?.detail || "Could not update team member"); }
+    } catch (cause: unknown) { setSaveError(teamErrorMessage(cause, "Could not update team member")); }
     finally { setSaving(false); }
   };
   const resetPassword = async (generated = false) => {
@@ -293,7 +339,7 @@ function EditStaffSheet({ staff, options, optionsError, onRetry, selfId, onClose
       const result = await api.post<TempPasswordResult>(`/team/${staff.id}/reset-password`, generated ? undefined : { new_password: newPassword });
       setNewPassword(""); setConfirmPassword("");
       onClose(); onPasswordReset(result);
-    } catch (cause: any) { setPasswordError(cause?.detail || "Could not change password"); }
+    } catch (cause: unknown) { setPasswordError(teamErrorMessage(cause, "Could not change password")); }
     finally { setResetting(false); }
   };
   const deleteMember = async () => {
@@ -302,15 +348,15 @@ function EditStaffSheet({ staff, options, optionsError, onRetry, selfId, onClose
     try {
       await api.delete(`/team/${staff.id}`);
       toast.success("Team member deleted"); setDeleteOpen(false); onSaved();
-    } catch (cause: any) { setSaveError(cause?.detail || "Could not delete team member"); setDeleteOpen(false); }
+    } catch (cause: unknown) { setSaveError(teamErrorMessage(cause, "Could not delete team member")); setDeleteOpen(false); }
     finally { setDeleting(false); }
   };
-  return <Sheet visible={!!staff} onClose={() => { if (!saving && !resetting && !deleting) onClose(); }} title={staff.full_name} subtitle={staff.email} testID="edit-staff-sheet">
+  return <Sheet visible={!!staff} onClose={() => { if (!saving && !resetting && !deleting) onClose(); }} title={staff.full_name} subtitle={optionalContact(staff.email) || undefined} testID="edit-staff-sheet">
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
         <TextField testID="edit-staff-name" label="Full name" value={fullName} onChangeText={setFullName} />
         <TextField testID="edit-staff-username" label="Username" value={username} onChangeText={setUsername} placeholder="Optional sign-in username" autoCapitalize="none" autoCorrect={false} maxLength={120} editable={!saving && !resetting && !deleting} />
-        <TextField testID="edit-staff-phone" label="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="Optional" />
+        <ContactFields prefix="edit-staff" email={email} onEmail={setEmail} phone={phone} onPhone={setPhone} mobile={mobile} onMobile={setMobile} disabled={saving || resetting || deleting} />
         <TextField testID="edit-staff-team-role" label="Team role name" value={teamRole} onChangeText={setTeamRole} placeholder="e.g. Ground Floor Sales" maxLength={80} />
         <AccountAccessPicker value={role} onChange={setRole} disabled={isSelf || protectedOwner || saving} prefix="edit-staff" />
         {protectedOwner && !isSelf ? <Text testID="edit-staff-owner-protected" style={type.caption}>Active owners keep full access and cannot be disabled, demoted or deleted.</Text> : null}
@@ -320,7 +366,7 @@ function EditStaffSheet({ staff, options, optionsError, onRetry, selfId, onClose
         </View>
         {isSelf ? <Text style={type.caption}>You can’t change your own account access.</Text> : role === "owner" ? <Text style={type.caption}>An owner has full access to all floors and pages.</Text> : grantsError ? <ErrorState title="Current access unavailable" subtitle={grantsError} onRetry={() => setRetryCount((count) => count + 1)} /> : grantsLoading ? <Text style={type.caption}>Loading this person’s access…</Text> : <DelegationOptions options={options} error={optionsError} onRetry={onRetry} value={delegation} onChange={setDelegation} disabled={saving} />}
         {saveError ? <Text accessibilityRole="alert" style={[type.caption, { color: colors.error }]}>{saveError}</Text> : null}
-        <Button testID="edit-staff-save" label={saving ? "Saving…" : "Save changes"} variant="primary" icon="check" disabled={saving || resetting || deleting || (!isSelf && (!options || optionsError || grantsLoading || !!grantsError))} onPress={save} fullWidth />
+        <Button testID="edit-staff-save" label={saving ? "Saving…" : "Save changes"} variant="primary" icon="check" disabled={saving || resetting || deleting || (!isSelf && accessChanged && accessUnavailable)} onPress={save} fullWidth />
         <View style={styles.divider} />
         {isSelf ? <Text style={type.caption}>Use Settings → Change password to update your own password.</Text> : <>
           <Text accessibilityRole="header" style={type.titleSm}>Change member password</Text>
@@ -342,6 +388,7 @@ function EditStaffSheet({ staff, options, optionsError, onRetry, selfId, onClose
 }
 
 const styles = StyleSheet.create({
+  contactColumn: { flexGrow: 1, flexBasis: 180, minWidth: 0 },
   form: { padding: spacing.xl, gap: spacing.lg },
   card: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, padding: spacing.md },
   switchRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md },

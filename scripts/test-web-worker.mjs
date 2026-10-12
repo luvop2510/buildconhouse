@@ -22,7 +22,23 @@ const offline=createWorker('https://api.example.test',async()=>{throw Error('off
 const timeout=createWorker('https://api.example.test',req=>new Promise((resolve,reject)=>req.signal.addEventListener('abort',()=>reject(Error('timeout')))),5);
 assert.equal((await timeout.fetch(request(),{})).status,504);
 const login=createWorker('https://api.example.test',async()=>Response.json({access_token:'secret',user:{id:'one'}}));
-const signedIn=await login.fetch(request('/api/auth/login',{method:'POST'}),{});assert.equal((await signedIn.json()).access_token,'');assert.match(signedIn.headers.get('set-cookie'),/HttpOnly/);assert.match(signedIn.headers.get('set-cookie'),/Path=\/;/);
+const signedIn=await login.fetch(request('/api/auth/login',{method:'POST',headers:{Origin:base}}),{});assert.equal((await signedIn.json()).access_token,'');assert.match(signedIn.headers.get('set-cookie'),/HttpOnly/);assert.match(signedIn.headers.get('set-cookie'),/Path=\/;/);
+for (const path of ['/api/auth/login','/api/auth/customer/login']) {
+  for (const Cookie of ['forge_session=expired','forge_session=%ZZ; forge_csrf=%ZZ']) {
+    const recovery=createWorker('https://api.example.test',async req=>{
+      assert.equal(req.headers.get('Authorization'),null);
+      return Response.json({access_token:'fresh-session',user:{id:'fixture'}});
+    });
+    const result=await recovery.fetch(request(path,{method:'POST',headers:{Cookie,Origin:base}}),{});
+    assert.equal(result.status,200);
+    assert.equal((await result.json()).access_token,'');
+    assert.match(result.headers.get('set-cookie'),/forge_session=fresh-session;/);
+  }
+  for (const Origin of [undefined,'https://evil.test','null']) {
+    const blocked=createWorker('https://api.example.test',async()=>{throw Error('must not reach upstream');});
+    assert.equal((await blocked.fetch(request(path,{method:'POST',headers:Origin?{Origin}:{}}),{})).status,403);
+  }
+}
 const assets={ASSETS:{fetch:async req=>new URL(req.url).pathname==='/index.html'?new Response('<html>app</html>'):new Response('',{status:404})}};
 assert.equal((await worker.fetch(request('/sales-data'),assets)).status,200);
 assert.equal((await worker.fetch(request('/missing.js'),assets)).status,404);

@@ -292,7 +292,7 @@ async def mfa_enroll(body: MFAProofPayload, request: Request, user: UserPublic =
     doc = await _mfa_password(body, request, user)
     if doc.get("mfa_enabled"):
         raise HTTPException(status_code=409, detail="Authenticator MFA is already enabled")
-    pending, public = mfa.pending_enrollment(user.id, user.email)
+    pending, public = mfa.pending_enrollment(user.id, user.email or user.login_id or user.id)
     result = await db.users.update_one(
         {"id": user.id, "mfa_enabled": {"$ne": True}, "password_hash": doc["password_hash"]},
         {"$set": {"mfa_pending": pending}},

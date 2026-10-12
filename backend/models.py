@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from services.password_policy import validate_new_password
+from services.staff_contacts import optional_email, read_staff_email, read_staff_phone, validate_staff_phone
 
 
 Role = Literal[
@@ -54,18 +55,22 @@ class TimestampedModel(BaseModel):
 
 # ---------- Users (staff) ----------
 class UserBase(BaseModel):
-    email: EmailStr
+    email: Optional[EmailStr] = None
     login_id: Optional[str] = None
     team_role: Optional[str] = Field(default=None, max_length=120)
     full_name: str
     role: Role
     phone: Optional[str] = None
+    mobile: Optional[str] = None
     active: bool = True
     avatar_url: Optional[str] = None
     floor_ids: list[str] = Field(default_factory=list)
     # An optional profile only narrows the normal role's access.
     access_profile: Optional[AccessProfile] = None
     custom_access: bool = False
+
+    _email_normalization = field_validator("email", mode="before")(optional_email)
+    _legacy_contacts = field_validator("phone", "mobile", mode="before")(read_staff_phone)
 
 
 class UserCreate(UserBase):
@@ -75,6 +80,7 @@ class UserCreate(UserBase):
 
 
 class UserPublic(UserBase, TimestampedModel):
+    _email_normalization = field_validator("email", mode="before")(read_staff_email)
     mfa_enabled: bool = False
     mfa_version: int = 0
     # Compatibility fields for older clients. Staff passwords are permanently
@@ -245,13 +251,17 @@ class TeamCreatePayload(BaseModel):
     team_role: Optional[str] = Field(default=None, max_length=120)
     custom_access: bool = False
     access_grants: Optional[list[TeamAccessGrantPayload]] = None
-    email: EmailStr
+    email: Optional[EmailStr] = None
     full_name: str
     role: Role
     phone: Optional[str] = None
+    mobile: Optional[str] = None
     password: str = Field(..., min_length=12, max_length=72)
     floor_ids: list[str] = Field(default_factory=list)
     access_profile: Optional[AccessProfile] = None
+
+    _email_normalization = field_validator("email", mode="before")(optional_email)
+    _contact_validation = field_validator("phone", "mobile", mode="before")(validate_staff_phone)
 
     @field_validator("password")
     @classmethod
@@ -265,11 +275,16 @@ class TeamUpdatePayload(BaseModel):
     custom_access: Optional[bool] = None
     access_grants: Optional[list[TeamAccessGrantPayload]] = None
     full_name: Optional[str] = None
+    email: Optional[EmailStr] = None
     role: Optional[Role] = None
     phone: Optional[str] = None
+    mobile: Optional[str] = None
     active: Optional[bool] = None
     floor_ids: Optional[list[str]] = None
     access_profile: Optional[AccessProfile] = None
+
+    _email_normalization = field_validator("email", mode="before")(optional_email)
+    _contact_validation = field_validator("phone", "mobile", mode="before")(validate_staff_phone)
 
 
 class TeamPasswordResetPayload(BaseModel):

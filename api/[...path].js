@@ -1,3 +1,5 @@
+import { Buffer } from 'node:buffer';
+
 const MAX_REQUEST_BODY_BYTES = 1_048_576;
 // The browser client allows a request 30 seconds. Give the proxy nearly that
 // full window so it does not turn a healthy-but-slow Railway response into a
@@ -95,7 +97,13 @@ export function createHandler({ backendUrl = process.env.BACKEND_URL, fetchImpl 
     const origin = req.headers.origin;
     const host = req.headers['x-forwarded-host'] || req.headers.host;
     const expectedOrigin = host ? `https://${host}` : undefined;
-    if (unsafe && session && (!cookie(req, 'forge_csrf') || origin !== expectedOrigin || req.headers['x-csrf-token'] !== cookie(req, 'forge_csrf'))) {
+    const credentialLogin = req.method === 'POST' && ['auth/login', 'auth/customer/login'].includes(path);
+    // Credentials establish a new identity. Require our own browser origin,
+    // but allow recovery when the previous session/CSRF cookies are stale.
+    if (credentialLogin && (!expectedOrigin || origin !== expectedOrigin)) {
+      return res.status(403).json({ detail: 'Login must originate from this application.' });
+    }
+    if (unsafe && !credentialLogin && session && (!cookie(req, 'forge_csrf') || origin !== expectedOrigin || req.headers['x-csrf-token'] !== cookie(req, 'forge_csrf'))) {
       return res.status(403).json({ detail: 'CSRF validation failed' });
     }
 
@@ -118,7 +126,7 @@ export function createHandler({ backendUrl = process.env.BACKEND_URL, fetchImpl 
     // Preserve the single-use download token and its floor binding. A
     // forwarded session bearer would make backend auth ignore `dl`.
     const publicQuotationPdf = ['GET', 'HEAD'].includes(req.method) && /^quotations\/shared-pdf\/[A-Za-z0-9_-]{43}$/.test(path);
-    if (publicQuotationPdf || (req.method === 'GET' && upstream.searchParams.has('dl'))) headers.delete('authorization');
+    if (credentialLogin || publicQuotationPdf || (req.method === 'GET' && upstream.searchParams.has('dl'))) headers.delete('authorization');
     else if (session && !headers.has('authorization')) {
       try { headers.set('authorization', `Bearer ${decodeURIComponent(session)}`); }
       catch { return res.status(401).json({ detail: 'Invalid session. Sign in again.' }); }

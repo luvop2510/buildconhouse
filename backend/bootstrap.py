@@ -110,6 +110,12 @@ REQUIRED_UNIQUE_INDEXES: dict[str, list[tuple[tuple[str, Any], ...]]] = {
     "purchase_orders": [(("number", 1),)],
 }
 
+# An ordinary unique email index permits only one account with null/missing
+# email. Username-only staff need the exact string-only constraint.
+REQUIRED_PARTIAL_UNIQUE_INDEXES = {
+    "users": {(("email", 1),): {"email": {"$type": "string"}}},
+}
+
 
 @dataclass
 class BootstrapReport:
@@ -188,8 +194,10 @@ async def _check_mongo(cfg: Settings, report: BootstrapReport) -> None:
             )
 
         missing_indexes: dict[str, list[list[list[Any]]]] = {}
+        index_specs: dict[str, dict] = {}
         for collection, expected in REQUIRED_INDEXES.items():
             current = await database[collection].index_information()
+            index_specs[collection] = current
             signatures = {_index_signature(spec) for spec in current.values()}
             absent = [sig for sig in expected if sig not in signatures]
             if absent:
@@ -203,19 +211,30 @@ async def _check_mongo(cfg: Settings, report: BootstrapReport) -> None:
 
         missing_unique: dict[str, list[list[list[Any]]]] = {}
         for collection, expected in REQUIRED_UNIQUE_INDEXES.items():
-            current = await database[collection].index_information()
+            current = index_specs[collection]
             signatures = {
                 _index_signature(spec)
                 for spec in current.values()
                 if spec.get("unique") is True
             }
             absent = [sig for sig in expected if sig not in signatures]
+            for signature, partial in REQUIRED_PARTIAL_UNIQUE_INDEXES.get(collection, {}).items():
+                valid_partial = any(
+                    _index_signature(spec) == signature and spec.get("unique") is True
+                    and spec.get("partialFilterExpression") == partial for spec in current.values()
+                )
+                restrictive_legacy = any(
+                    _index_signature(spec) == signature and spec.get("unique") is True
+                    and spec.get("partialFilterExpression") != partial for spec in current.values()
+                )
+                if signature not in absent and (not valid_partial or restrictive_legacy):
+                    absent.append(signature)
             if absent:
                 missing_unique[collection] = [[list(part) for part in sig] for sig in absent]
         report.checks["mongo"]["missing_unique_indexes"] = missing_unique
         if missing_unique and report.checks.get("enforce_indexes", True):
             report.errors.append(
-                "MongoDB required unique indexes are missing or non-unique: "
+                "MongoDB required unique indexes are missing or have incompatible options: "
                 + ", ".join(sorted(missing_unique))
             )
 

@@ -47,6 +47,7 @@
     "test:uri-decoder-security": "node scripts/test-uri-decoder-security.mjs",
     "test:font-assets": "node scripts/check-font-assets.mjs",
     "test:auth-provider-races": "node scripts/test-auth-provider-races.mjs",
+    "test:team-contacts": "node --experimental-strip-types --no-warnings scripts/test-team-contacts.mjs",
     "test:customer-draft-reset": "node scripts/test-customer-draft-reset.mjs",
     "test:quotation-whatsapp": "node --experimental-strip-types --no-warnings scripts/test-quotation-whatsapp.mjs",
     "test:furniture-rmb": "node --experimental-strip-types --no-warnings scripts/test-furniture-rmb.mjs",

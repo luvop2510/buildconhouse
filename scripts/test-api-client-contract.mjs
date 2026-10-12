@@ -193,3 +193,28 @@ for (const path of ['../src/api/client.ts', '../src/api/client.web.ts']) {
   assert.equal(reads, 2);
 }
 console.log('Native/web explicit refresh bypasses completed response cache.');
+
+// Cookie parsing must match the proxy's raw-value comparison and must never
+// crash all mutations when a stale browser cookie contains malformed escapes.
+{
+  const requests = [];
+  const document = { cookie: 'other=one;forge_csrf=%ZZ' };
+  const module = { exports: {} };
+  const storage = { secureGet: async () => null, getItem: async () => 'first-floor' };
+  vm.runInNewContext(ts.transpileModule(read('../src/api/client.web.ts'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText, {
+    module, exports: module.exports, require: () => ({ browserStorage: storage }),
+    __DEV__: false, process: { env: {} }, document, AbortController, DOMException, setTimeout, clearTimeout,
+    fetch: async (_url, options) => { requests.push(options); return { ok: true, text: async () => '{"ok":true}' }; },
+  });
+  for (const value of ['%ZZ', 'encoded%2Fcsrf%3D', 'value=with=equals']) {
+    document.cookie = `other=one;forge_csrf=${value}; last=two`;
+    assert.equal(module.exports.csrfHeaders()['X-CSRF-Token'], value);
+    await module.exports.api.post('/auth/login', { email: 'fixture', password: 'fixture' });
+    assert.equal(requests.at(-1).headers['X-CSRF-Token'], value);
+  }
+  document.cookie = 'other=one; forge_csrf=';
+  assert.equal(Object.keys(module.exports.csrfHeaders()).length, 0);
+}
+console.log('Browser CSRF cookie parsing preserves raw values and malformed cookies cannot crash credential login.');

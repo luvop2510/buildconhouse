@@ -24,7 +24,7 @@ const loginResponse = kind => kind === 'staff'
 
 function provider(platform, options = {}) {
   const hooks = [], effects = [], gets = [], posts = [], writes = [];
-  let index = 0, dirty = false, state, draftClears = 0, tokenClears = 0, stateWrites = 0, mounted = true;
+  let index = 0, dirty = false, state, draftClears = 0, tokenClears = 0, stateWrites = 0, floorReads = 0, mounted = true;
   let token = 'fixture-old-credential', storedToken = token, kind = options.initialKind || 'staff';
   const same = (a, b) => a && b && a.length === b.length && a.every((value, i) => Object.is(value, b[i]));
   const react = {
@@ -86,7 +86,7 @@ function provider(platform, options = {}) {
     },
     '@/src/hooks/use-floor-access': {
       resetFloorAccess: () => {}, getSelectedFloorId: async () => 'first-floor',
-      getFloorAccess: async () => ({ floor_ids: ['first-floor'] }), setSelectedFloorId: async () => {},
+      getFloorAccess: async () => { floorReads++; return options.floorAccess ? options.floorAccess.promise : { floor_ids: ['first-floor'] }; }, setSelectedFloorId: async () => {},
     },
   };
   const exports = {};
@@ -106,6 +106,7 @@ function provider(platform, options = {}) {
     get draftClears() { return draftClears; },
     get tokenClears() { return tokenClears; },
     get stateWrites() { return stateWrites; },
+    get floorReads() { return floorReads; },
     get hasStoredCredential() { return storedToken === 'fixture-new-credential'; },
     get hasCredential() { return token === 'fixture-new-credential'; },
     render,
@@ -139,6 +140,63 @@ function assertLogin(fixture, kind) {
 }
 
 for (const platform of ['web', 'ios', 'android']) {
+  for (const first of ['floor', 'grants']) {
+    test(`${platform}: delegated login loads floors and grants together, waiting for ${first === 'floor' ? 'grants' : 'floors'} before publishing identity`, async () => {
+      const floorAccess = deferred();
+      const fixture = provider(platform, { floorAccess });
+      await fixture.settle();
+      const login = fixture.state.loginStaff('fixture', 'fixture-password');
+      await fixture.settle();
+      fixture.posts[0].resolve({ access_token: 'fixture-new-credential', user: staff('new-staff', true) });
+      await fixture.settle();
+      assert.equal(fixture.floorReads, 1);
+      assert.equal(fixture.gets[1].path, '/settings/access-grants/me', 'grants transport starts before floor transport finishes');
+      const finishFloor = () => floorAccess.resolve({ floor_ids: ['first-floor'] });
+      const finishGrants = () => fixture.gets[1].resolve({ grants: [{ resource: 'quotations' }] });
+      if (first === 'floor') finishFloor(); else finishGrants();
+      await fixture.settle();
+      assert.equal(fixture.state.loading, true);
+      assert.equal(fixture.state.kind, null);
+      if (first === 'floor') finishGrants(); else finishFloor();
+      await login; await fixture.settle();
+      assertLogin(fixture, 'staff');
+      assert.equal(fixture.state.staff.access_grants[0].resource, 'quotations');
+    });
+  }
+
+  test(`${platform}: logout supersedes both overlapping delegated-login reads`, async () => {
+    const floorAccess = deferred();
+    const fixture = provider(platform, { floorAccess });
+    await fixture.settle();
+    const login = fixture.state.loginStaff('fixture', 'fixture-password');
+    await fixture.settle();
+    fixture.posts[0].resolve({ access_token: 'fixture-new-credential', user: staff('new-staff', true) });
+    await fixture.settle();
+    const logout = fixture.state.logout();
+    fixture.posts[1].resolve({}); await logout; await fixture.settle();
+    floorAccess.resolve({ floor_ids: ['first-floor'] });
+    fixture.gets[1].resolve({ grants: [{ resource: 'quotations' }] });
+    await login; await fixture.settle();
+    assert.equal(fixture.state.kind, null);
+    assert.equal(fixture.state.staff, null);
+    assert.equal(fixture.state.loading, false);
+    assert.equal(fixture.tokenClears, 1);
+  });
+
+  test(`${platform}: floor-settings outage retains delegated login fallback without skipping grants`, async () => {
+    const floorAccess = deferred();
+    const fixture = provider(platform, { floorAccess });
+    await fixture.settle();
+    const login = fixture.state.loginStaff('fixture', 'fixture-password');
+    await fixture.settle();
+    fixture.posts[0].resolve({ access_token: 'fixture-new-credential', user: staff('new-staff', true) });
+    await fixture.settle();
+    floorAccess.reject(Object.assign(new Error('Fixture temporary outage'), { status: 503 }));
+    fixture.gets[1].resolve({ grants: [{ resource: 'quotations' }] });
+    await login; await fixture.settle();
+    assertLogin(fixture, 'staff');
+  });
+
   test(`${platform}: owner hydration clears legacy delegation and password restrictions`, async () => {
     const fixture = provider(platform);
     await fixture.settle();

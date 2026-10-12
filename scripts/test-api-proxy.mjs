@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { Buffer } from 'node:buffer';
 import { EventEmitter } from 'node:events';
 import { readFile } from 'node:fs/promises';
 
@@ -110,6 +111,31 @@ for (const value of ['', 'http://api.example.test', 'https://user:pass@api.examp
     request({ method: 'POST', headers: { 'content-length': String(1_048_577) } }), res,
   );
   assert.equal(res.statusCode, 413);
+}
+
+// A stale cookie pair must never prevent a new credential login. Login is
+// still strictly same-origin; every authenticated write retains CSRF checks.
+for (const path of [['auth', 'login'], ['auth', 'customer', 'login']]) {
+  for (const cookie of ['forge_session=expired', 'forge_session=%ZZ; forge_csrf=%ZZ']) {
+    const res = response();
+    await createHandler({ backendUrl: 'https://api.example.test', fetchImpl: async (_url, options) => {
+      assert.equal(options.headers.get('authorization'), null, 'old identity must not accompany credential login');
+      return Response.json({ access_token: 'fresh-session', user: { id: 'fixture' } });
+    } })(request({ method: 'POST', path, headers: { cookie, origin: 'https://buildcon.example' }, body: '{"email":"fixture","password":"fixture"}' }), res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.payload.access_token, '');
+    assert.match(res.headers['Set-Cookie'][0], /forge_session=fresh-session;/);
+  }
+  for (const origin of [undefined, 'https://evil.example', 'null']) {
+    const res = response();
+    await createHandler({ backendUrl: 'https://api.example.test', fetchImpl: async () => { throw new Error('must not reach upstream'); } })(request({ method: 'POST', path, headers: { origin } }), res);
+    assert.equal(res.statusCode, 403, 'credential login requires trusted browser origin');
+  }
+}
+for (const path of [['team', 'fixture'], ['auth', 'logout']]) {
+  const res = response();
+  await createHandler({ backendUrl: 'https://api.example.test', fetchImpl: async () => { throw new Error('must not reach upstream'); } })(request({ method: 'POST', path, headers: { cookie: 'forge_session=expired', origin: 'https://buildcon.example' } }), res);
+  assert.equal(res.statusCode, 403, 'authenticated mutations still require CSRF');
 }
 
 for (const method of ['GET', 'HEAD']) {

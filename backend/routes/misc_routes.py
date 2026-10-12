@@ -18,6 +18,7 @@ from services.access_grants import build_delegation_snapshot, grants_allow, gran
 from services.download_tokens import create_download_token
 from services.invite_service import generate_temp_password, get_invite_service
 from services.login_identity import normalize_login_id
+from services.staff_contacts import read_staff_email, read_staff_phone
 from pymongo.errors import DuplicateKeyError
 from settings import settings
 from time import monotonic
@@ -309,7 +310,24 @@ async def list_notifications(user: UserPublic = Depends(get_current_user)):
 async def list_team(user: UserPublic = Depends(require_owner)):
     require_owner(user)
     docs = await db.users.find({"deleted_at": {"$exists": False}}, {"_id": 0, "password_hash": 0}).sort("full_name", 1).to_list(200)
-    return [apply_staff_password_policy(doc) for doc in docs]
+    return [_team_public(doc) for doc in docs]
+
+
+def _team_public(doc: dict) -> dict:
+    from services.team_data_reset import OWNER_EMAIL, OWNER_ID
+
+    safe = {key: value for key, value in doc.items() if key not in {
+        "_id", "password_hash", "mfa_secret_encrypted", "mfa_recovery_hashes", "mfa_pending",
+    }}
+    safe.update(email=read_staff_email(doc.get("email")), phone=read_staff_phone(doc.get("phone")),
+                mobile=read_staff_phone(doc.get("mobile")))
+    # The reset service assigned this one login alias automatically. Keep it
+    # usable for authentication, but show a contact email only after entry.
+    if doc.get("contact_email_added") is False or (
+        "contact_email_added" not in doc and doc.get("id") == OWNER_ID and doc.get("email") == OWNER_EMAIL
+    ):
+        safe["email"] = None
+    return apply_staff_password_policy(safe)
 
 
 async def _team_login_patch(login_id: str | None, *, user_id: str | None = None) -> dict:
@@ -331,6 +349,10 @@ async def _write_team_patch(target: dict, patch: dict) -> None:
     query = {"id": target["id"], "role": target["role"],
              "active": {"$ne": False} if target.get("active", True) else False,
              "deleted_at": {"$exists": False}}
+    if "email" in patch or "login_id" in patch:
+        # Concurrent removal of different login identities must not leave the
+        # member with neither email nor username.
+        query.update({"email": target.get("email"), "login_id_key": target.get("login_id_key")})
     result = await db.users.update_one(query, {"$set": patch})
     if result.matched_count == 0:
         raise HTTPException(status_code=409, detail="Team member changed. Refresh before trying again")
@@ -339,9 +361,11 @@ async def _write_team_patch(target: dict, patch: dict) -> None:
 @router.post("/team")
 async def create_team_member(body: TeamCreatePayload, user: UserPublic = Depends(require_owner)):
     require_owner(user)
-    if await db.users.find_one({"email": body.email.lower()}, {"_id": 0, "id": 1}):
+    if body.email and await db.users.find_one({"email": body.email}, {"_id": 0, "id": 1}):
         raise HTTPException(status_code=409, detail="A team member with this email already exists")
     login_patch = await _team_login_patch(body.login_id)
+    if not body.email and not login_patch["login_id_key"]:
+        raise HTTPException(status_code=422, detail="Add an email address or username for sign-in")
     if body.custom_access:
         if body.role == "owner":
             raise HTTPException(status_code=422, detail="Owners use full access; delegate pages to staff accounts")
@@ -353,12 +377,13 @@ async def create_team_member(body: TeamCreatePayload, user: UserPublic = Depends
             raise HTTPException(status_code=422, detail="Page assignments require custom access")
         role, floor_ids = normalize_staff_access(role=body.role, floor_ids=body.floor_ids, access_profile=body.access_profile)
     doc = UserPublic(
-        email=body.email.lower(), full_name=body.full_name, role=role, phone=body.phone,
+        email=body.email, full_name=body.full_name, role=role, phone=body.phone, mobile=body.mobile,
         floor_ids=floor_ids,
         access_profile=body.access_profile,
         custom_access=body.custom_access,
         must_change_password=False, temp_password_expires_at=None,
     ).model_dump(exclude={"active_floor_id"})
+    doc["contact_email_added"] = bool(body.email)
     if getattr(body, "team_role", None) is not None:
         doc["team_role"] = body.team_role
     if body.custom_access:
@@ -395,10 +420,10 @@ async def update_team_member(
     before = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
     if not before or before.get("deleted_at"):
         raise HTTPException(status_code=404, detail="Team member not found")
-    # Null clears optional profile, team-role and username assignments.
+    # Null clears optional profile, team-role, username and contact fields.
     # Other nulls retain PATCH's usual "not supplied" semantics.
     supplied = body.model_dump(exclude_unset=True)
-    patch = {k: v for k, v in supplied.items() if v is not None or k in {"access_profile", "team_role", "login_id"}}
+    patch = {k: v for k, v in supplied.items() if v is not None or k in {"access_profile", "team_role", "login_id", "email", "phone", "mobile"}}
     if not patch:
         raise HTTPException(status_code=400, detail="Nothing to update")
     target_is_owner = before.get("role") == "owner"
@@ -409,6 +434,15 @@ async def update_team_member(
         raise HTTPException(status_code=400, detail="Active owner accounts cannot be deactivated or demoted through Team")
     if "login_id" in patch:
         patch.update(await _team_login_patch(patch["login_id"], user_id=user_id))
+    if "email" in patch and patch["email"] and await db.users.find_one(
+        {"email": patch["email"], "id": {"$ne": user_id}}, {"_id": 0, "id": 1},
+    ):
+        raise HTTPException(status_code=409, detail="A team member with this email already exists")
+    if "email" in patch or "login_id" in patch:
+        if not patch.get("email", read_staff_email(before.get("email"))) and not patch.get("login_id_key", before.get("login_id_key")):
+            raise HTTPException(status_code=422, detail="Keep an email address or username for sign-in")
+    if "email" in patch:
+        patch["contact_email_added"] = bool(patch["email"])
     proposed_custom = patch.get("custom_access", bool(before.get("custom_access")))
     proposed_role = patch.get("role", before["role"])
     proposed_floors = patch.get("floor_ids", before.get("floor_ids") or [])
@@ -416,13 +450,15 @@ async def update_team_member(
         if patch.get("custom_access") or patch.get("access_profile") is not None:
             raise HTTPException(status_code=422, detail="Owners use full access; delegate pages to staff accounts")
         proposed_custom = False
-        patch.update({"custom_access": False, "access_profile": None, "delegation_grants": []})
+        if before.get("custom_access") or before.get("access_profile") or before.get("delegation_grants") or "role" in patch or "custom_access" in patch or "access_profile" in patch:
+            patch.update({"custom_access": False, "access_profile": None, "delegation_grants": []})
     if proposed_custom:
         if proposed_role == "owner":
             raise HTTPException(status_code=422, detail="Owners use full access; delegate pages to staff accounts")
         if patch.get("access_profile") is not None:
             raise HTTPException(status_code=422, detail="Choose floor/page delegation or an access profile")
-        patch["access_profile"] = None
+        if "access_profile" in patch or "custom_access" in patch:
+            patch["access_profile"] = None
         if "access_grants" in patch or "floor_ids" in patch or "custom_access" in patch:
             allocations = patch.pop("access_grants", None)
             if allocations is None:
@@ -434,10 +470,11 @@ async def update_team_member(
     else:
         if "access_grants" in patch:
             raise HTTPException(status_code=422, detail="Page assignments require custom access")
-        proposed_role, proposed_floors = normalize_staff_access(
-            role=proposed_role, floor_ids=proposed_floors,
-            access_profile=patch["access_profile"] if "access_profile" in patch else before.get("access_profile"),
-        )
+        if any(field in patch for field in ("role", "floor_ids", "access_profile", "custom_access")):
+            proposed_role, proposed_floors = normalize_staff_access(
+                role=proposed_role, floor_ids=proposed_floors,
+                access_profile=patch["access_profile"] if "access_profile" in patch else before.get("access_profile"),
+            )
         if before.get("custom_access"):
             patch["delegation_grants"] = []
     # Profile provisioning may raise the requested role to the workflow's
@@ -451,7 +488,7 @@ async def update_team_member(
     try:
         await _write_team_patch(before, patch)
     except DuplicateKeyError as exc:
-        raise HTTPException(status_code=409, detail="A team member with this username already exists") from exc
+        raise HTTPException(status_code=409, detail="A team member with this email or username already exists") from exc
     security_fields = ("role", "floor_ids", "access_profile", "custom_access", "delegation_grants", "active")
     security_changed = any(field in patch and patch[field] != before.get(field) for field in security_fields)
     if security_changed:
@@ -460,6 +497,9 @@ async def update_team_member(
         # before returning the updated account so stale tokens cannot retain
         # the old scope for their remaining JWT lifetime.
         await revoke_all_sessions("staff", user_id)
+    else:
+        # Refresh display/contact data without revoking valid sessions.
+        invalidate_principal_cache("staff", user_id)
     doc = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
 
     if "role" in patch and patch["role"] != before.get("role"):
@@ -486,7 +526,7 @@ async def update_team_member(
             summary="Staff Access Profile Changed",
             payload={"from": before.get("access_profile"), "to": patch["access_profile"]},
         )
-    return apply_staff_password_policy(doc)
+    return _team_public(doc)
 
 
 @router.post("/team/{user_id}/reset-password")

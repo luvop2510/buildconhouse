@@ -43,6 +43,21 @@ class _GenericFakeCollection:
     only cares that the runner discovers/orders/tracks them correctly, not
     that each migration's own index-creation logic is re-verified here."""
 
+    def __init__(self):
+        self.indexes = {}
+
+    async def create_index(self, keys, **kwargs):
+        keys = [(keys, 1)] if isinstance(keys, str) else keys
+        name = kwargs.get("name", repr(keys))
+        self.indexes[name] = {"key": keys, **kwargs}
+        return name
+
+    async def index_information(self):
+        return dict(self.indexes)
+
+    async def drop_index(self, name):
+        del self.indexes[name]
+
     def find(self, *_args, **_kwargs):
         # motor's find() is a sync call returning an async-iterable cursor, not
         # a coroutine — a data-backfill migration that iterates one would blow
@@ -80,11 +95,12 @@ class _FakeDb:
     def __init__(self):
         self.schema_migrations = _FakeMigrationsCollection()
         self.schema_migration_locks = _FakeLeaseCollection()
+        self.collections = {}
 
     def __getattr__(self, _name):
         # Only reached for attributes NOT already set in __init__ (i.e. any
         # collection name other than `schema_migrations`), so this never shadows it.
-        return _GenericFakeCollection()
+        return self.collections.setdefault(_name, _GenericFakeCollection())
 
 
 def test_run_migrations_discovers_and_applies_real_migrations_in_order():

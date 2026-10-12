@@ -113,8 +113,10 @@ function isIdentityRead(method: string, path: string) {
 }
 
 export function csrfHeaders(): Record<string, string> {
-  const csrf = document.cookie.split("; ").find((part) => part.startsWith("forge_csrf="))?.split("=")[1];
-  return csrf ? { "X-CSRF-Token": decodeURIComponent(csrf) } : {};
+  const csrf = document.cookie.split(";").map((part) => part.trim()).find((part) => part.startsWith("forge_csrf="))?.slice("forge_csrf=".length);
+  // The proxy compares the raw cookie value. Decoding malformed escapes could
+  // throw before fetch and prevent even logout or a fresh credential login.
+  return csrf ? { "X-CSRF-Token": csrf } : {};
 }
 async function getRequestFloorId() {
   if (floorCache === undefined) {
