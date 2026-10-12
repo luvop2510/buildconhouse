@@ -17,7 +17,7 @@ class Element extends EventTarget {
   querySelector() { return this.interactive ? {} : null; }
   remove() { this.parent.children = this.parent.children.filter(child => child !== this); }
 }
-function harness({ storage = new Map(), storageFails = false, initial = '', interactive = false, entry = asset, readyState = 'complete' } = {}) {
+function harness({ storage = new Map(), storageFails = false, initial = '', interactive = false, entry = asset, readyState = 'complete', pathname = '/quotations/q1' } = {}) {
   const root = new Element('div'); root.id = 'root'; root.innerHTML = initial; root.interactive = interactive;
   if (initial) root.appendChild(new Element('div'));
   const body = new Element('body'); body.appendChild(root);
@@ -28,9 +28,9 @@ function harness({ storage = new Map(), storageFails = false, initial = '', inte
     createElement(tag) { return new Element(tag); },
     querySelectorAll() { return entry ? [{ src: entry }] : []; },
   });
-  const location = { origin: base, href: `${base}/quotations/q1`, pathname: '/quotations/q1', reload() { reloads++; } };
+  const location = { origin: base, href: `${base}${pathname}`, pathname, reload() { reloads++; } };
   vm.runInNewContext(source, { window, document, location, URL, setTimeout(callback) { timers.push(callback); },
-    sessionStorage: { getItem(key) { if (storageFails) throw Error('blocked'); return storage.get(key); }, setItem(key, value) { if (storageFails) throw Error('blocked'); storage.set(key, value); } },
+    sessionStorage: { getItem(key) { if (storageFails) throw Error('blocked'); return storage.get(key); }, setItem(key, value) { if (storageFails) throw Error('blocked'); storage.set(key, value); }, removeItem(key) { if (storageFails) throw Error('blocked'); storage.delete(key); } },
     MutationObserver: class { constructor(callback) { observerCallback = callback; } observe() {} disconnect() {} },
   });
   function event(values, type = 'error') {
@@ -38,10 +38,16 @@ function harness({ storage = new Map(), storageFails = false, initial = '', inte
     for (const [key, value] of Object.entries(values)) Object.defineProperty(actual, key, { value });
     window.dispatchEvent(actual);
   }
-  return { root, body, document, storage, get reloads() { return reloads; }, panel() { return body.children.find(element => element.id === 'release-startup-recovery'); }, flush() { while (timers.length) timers.shift()(); }, event,
+  return { root, body, document, storage, initialRoute: window.__FORGE_INITIAL_ROUTE__, get reloads() { return reloads; }, panel() { return body.children.find(element => element.id === 'release-startup-recovery'); }, flush() { while (timers.length) timers.shift()(); }, event,
     script(url = asset) { event({ target: { tagName: 'SCRIPT', src: url } }); }, mutate() { root.innerHTML = '<div>Live app</div>'; root.children = [new Element('div')]; observerCallback?.(); },
   };
 }
+const routeStorage = new Map();
+assert.equal(harness({ storage: routeStorage, pathname: '/quotations/new?productId=basin' }).initialRoute, '/quotations/new?productId=basin');
+assert.equal(harness({ storage: routeStorage, pathname: '/access' }).initialRoute, '/quotations/new?productId=basin');
+harness({ storage: routeStorage, pathname: '/login' });
+assert.equal(routeStorage.has('forge.pending-initial-route'), false);
+assert.equal(harness({ storage: new Map([['forge.pending-initial-route', '//untrusted.test']]), pathname: '/access' }).initialRoute, '/access');
 
 const first = harness(); first.script(); first.script(); first.flush(); assert.equal(first.reloads, 1);
 const retry = harness({ storage: first.storage }); retry.script(); retry.flush(); assert.equal(retry.reloads, 0);

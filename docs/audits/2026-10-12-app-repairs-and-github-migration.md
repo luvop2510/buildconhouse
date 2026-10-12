@@ -175,3 +175,53 @@ The investigation patch remains local under
 race remains an open functional issue. The source tree matches the pushed runtime.
 The broader viewport and device runs remain live; their later final results must
 be read before declaring complete responsive acceptance.
+
+## Verified continuation after the new GitHub connection
+
+Vercel project API now confirms `link.org=luvop2510`, `link.repo=buildconhouse`,
+production branch `main`. A new preview built successfully at
+`https://buildcon-house-ghby0i5c0-yug19.vercel.app`. Authenticated CLI fetches of
+its login page and proxied backend readiness succeed. Production promotion waits
+for backend rollout, because the existing backend does not expose the new APIs.
+Railway accept-deploy again returned a cancelled user confirmation, with no
+changes; the source/commit patch remains staged and the existing backend stays
+online. The user was asked whether to present the platform confirmation again.
+
+The cold reload failure is now repaired. The early external bootstrap captures
+the requested admin route before Expo initializes, retaining a tab-scoped pending
+route only until authenticated floor hydration completes. The shell restores the
+initial URL without mounting business reads while floors are unknown. The bootstrap
+clears pending routes on public/auth pages, preserves product query parameters,
+rejects external destinations and tolerates unavailable browser storage. The
+provider remains compatible with native startup. Earlier module-only attempts
+failed because the URL had already normalized before those modules evaluated.
+
+Verification of this final repair:
+
+- Six repeated previously failing immediate phone reload cases: **6 passed**.
+- Focused six-width access/bookmark/owner/member and reload matrix: **90 passed**.
+- Four-engine focused access matrix: **20 passed**.
+- Three artifact-collision cases rerun across six widths with isolated outputs:
+  **18 passed**.
+- The previously corrected stale expectations: **18 passed** across six widths.
+- Required startup-recovery/mobile-UX contracts, 84 auth-race checks, TypeScript,
+  zero-warning lint and all route budgets pass. Native iOS/Android exports pass
+  for the repaired startup source.
+
+The prior final wide run finished with 1,571 passes, 19 skips and 12 failures.
+Its failures comprised the stale expectations corrected above, three harness
+artifact-directory collisions and the reproduced cold reload failure; all those
+classes now have focused passing acceptance. This is disclosed rather than
+calling the initial run wholly green. The independent Android Chrome/iPhone
+Safari/iPad Safari/desktop Firefox run completed with **340 passes, eight
+intentional skips and zero failures/retries** before the final startup repair;
+the 20-case follow-up covers the changed startup authorization behavior.
+
+No production deployment or physical-device acceptance is claimed yet.
+
+The permanent cold-reload regression additionally holds the floor-access response
+across a reload, verifies **zero business reads** before authorized floors resolve,
+retains the quotation query string, checks builder recovery and confirms removal
+of the tab-scoped pending route. It passes all **six viewport projects and all
+four browser/device projects**. The new Vercel preview's served bootstrap matches
+the repaired source byte-for-byte. Production remains unchanged pending approval.

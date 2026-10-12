@@ -4,7 +4,7 @@ import { resolve, extname, sep } from 'node:path';
 
 // Serve the actual release export. This server deliberately has no API proxy:
 // browser journeys must intercept requests and can never write to production.
-const root = resolve('dist/client');
+const root = resolve(process.env.AUDIT_ROOT || 'dist/client');
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.ttf': 'font/ttf', '.woff2': 'font/woff2' };
 createServer(async (request, response) => {
   try {

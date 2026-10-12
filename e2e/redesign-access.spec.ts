@@ -33,6 +33,34 @@ test('critical legacy furniture URL waits for authorized floors before opening q
   await expect(page.getByRole('button', { name: /Switch workspace\. Current workspace: Furniture/ })).toBeVisible();
 });
 
+test('critical cold quotation reload retains its query while authorized floors are delayed', async ({ page }) => {
+  await mockSession(page, '/quotations/new', false);
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/settings/floor-access', async route => {
+    await pending;
+    await route.fulfill({ json: { all_floors: true, floors, floor_ids: floors.map(floor => floor.id) } });
+  });
+  let businessReads = 0;
+  for (const path of ['brands', 'categories', 'products/families']) {
+    await page.route(`**/api/${path}**`, route => {
+      businessReads++;
+      return route.fulfill({ json: path === 'products/families' ? { total: 0, items: [] } : [] });
+    });
+  }
+  await page.goto('/quotations/new?catalogEntryId=retained-entry');
+  await expect(page.getByTestId('floor-access-loading')).toBeVisible();
+  expect(businessReads).toBe(0);
+  await page.reload();
+  await expect(page.getByTestId('floor-access-loading')).toBeVisible();
+  expect(businessReads).toBe(0);
+  release();
+  await expect(page).toHaveURL(/\/quotations\/new\?catalogEntryId=retained-entry$/);
+  await expect(page.getByTestId('quotation-details-toggle')).toBeVisible();
+  await expect.poll(() => businessReads).toBeGreaterThan(0);
+  await expect.poll(() => page.evaluate(() => sessionStorage.getItem('forge.pending-initial-route'))).toBeNull();
+});
+
 test('critical entry route sends staff and customers to separate workspaces', async ({ page }) => {
   await mockSession(page, '/dashboard');
   await page.goto('/');

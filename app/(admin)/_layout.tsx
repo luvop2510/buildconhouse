@@ -431,12 +431,21 @@ function FloorAccessGate({ children }: { children: React.ReactNode }) {
 
   const initialAccount = useInitialAccountRoute();
   const destinationReady = hasRouteDestination(segments);
-  const pendingAccount = !destinationReady && initialAccount.path;
+  const initialPersonal = initialAccount.path && isPersonalAccountRoute(initialAccount.path.split('?')[0].split('/').filter(Boolean));
+  const pendingAccount = !destinationReady && initialPersonal;
   useEffect(() => {
     if (authLoading || !staff || !initialAccount.path) return;
-    if (destinationReady) initialAccount.finish();
-    else router.replace(`/(admin)${initialAccount.path}` as any);
-  }, [authLoading, staff, destinationReady, initialAccount, router]);
+    if (!initialPersonal && (!access || !selectedFloorId || loading)) return;
+    // Withholding Slot until floor access resolves lets Expo temporarily
+    // normalize a cold business deep link to the default /access child.
+    // Retain the requested URL through that loading window without mounting
+    // its business reads before an authorized workspace is ready.
+    if (destinationReady && !segments.includes("access")) initialAccount.finish();
+    else if (initialPersonal || (access && selectedFloorId && !loading)) {
+      if (initialAccount.path.split('?')[0] === "/access" && segments.includes("access")) initialAccount.finish();
+      else router.replace(`/(admin)${initialAccount.path}` as any);
+    }
+  }, [authLoading, staff, destinationReady, initialAccount, initialPersonal, access, selectedFloorId, loading, segments, router]);
 
   useEffect(() => {
     if (authLoading || !staff || staff.custom_access || !access || !selectedFloorId || !destinationReady || !segments.includes("dashboard")) return;

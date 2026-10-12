@@ -1,6 +1,21 @@
 /* Run before Expo: recover a failed, empty startup without touching live UI. */
 (function () {
   'use strict';
+  // Capture business deep links before Expo initializes and can normalize an
+  // unmounted admin Slot to /access. Keep this tab's pending destination across
+  // a reload in that short initialization window; the mounted shell clears it.
+  try {
+    var initialURL = new URL(location.href);
+    var initialPath = initialURL.pathname;
+    var pendingRouteKey = 'forge.pending-initial-route';
+    var validAdminRoute = /^\/(?:access|dashboard|catalog|customers|quotations|purchases|purchases-completed|purchase-orders|payments|payments-list|walkins|followups|notebook|tiles|godown-stock|sales-data|team|notifications|reports|settings(?:-[a-z-]+)?)(?:\/|\?|$)/;
+    var pendingRoute = sessionStorage.getItem(pendingRouteKey);
+    if (initialPath === '/access' && pendingRoute && validAdminRoute.test(pendingRoute)) window.__FORGE_INITIAL_ROUTE__ = pendingRoute;
+    else if (validAdminRoute.test(initialPath)) {
+      window.__FORGE_INITIAL_ROUTE__ = initialPath + initialURL.search;
+      if (initialPath !== '/access') sessionStorage.setItem(pendingRouteKey, window.__FORGE_INITIAL_ROUTE__);
+    } else sessionStorage.removeItem(pendingRouteKey);
+  } catch (_) { /* Storage restrictions do not prevent the app from starting. */ }
   var handled = false;
   var pending = false;
   var queued = false;
