@@ -26,4 +26,23 @@ assert.equal(mergeCatalogPage([], [...occurrences, occurrences[0]]).length, 2, '
 assert.equal(mergeCatalogPage([{ id: 'a' }], [{ id: 'a' }, { id: 'b' }]).length, 2);
 assert.notEqual(catalogItemKey({ ...family, family_key: null }), catalogItemKey({ ...family, family_key: null, sample_product_id: 'b' }), 'Ungrouped products stay distinct');
 assert.notEqual(catalogItemKey({ ...family, family_key: 'a' }), catalogItemKey({ ...family, family_key: null }), 'A supplier family cannot collide with an ungrouped product ID');
+const builder = readFileSync(new URL('../src/components/quotation/context/BuilderContext.tsx', import.meta.url), 'utf8');
+const builderAst = ts.createSourceFile('BuilderContext.tsx', builder, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+let append;
+const visit = node => {
+  if (ts.isCallExpression(node) && node.expression.getText(builderAst) === 'setProducts' &&
+      ts.isArrowFunction(node.arguments[0]) && node.arguments[0].parameters[0]?.name.getText(builderAst) === 'cur' &&
+      node.getText(builderAst).includes('items')) append = node.getText(builderAst);
+  ts.forEachChild(node, visit);
+};
+visit(builderAst);
+assert.ok(append, 'Quotation builder exposes its page append callback');
+let quotationProducts;
+vm.runInNewContext(append, {
+  mergeCatalogPage, items: [occurrences[1], occurrences[0]],
+  setProducts: update => { quotationProducts = update([occurrences[0]]); },
+});
+assert.equal(quotationProducts.length, 2, 'Quotation pagination retains both category listings of the same product');
+const explorer = readFileSync(new URL('../src/components/quotation/catalog/ProductExplorer.tsx', import.meta.url), 'utf8');
+assert.match(explorer, /keyExtractor=\{catalogItemKey\}/, 'Quotation cards use the same occurrence identity as pagination');
 console.log('Catalog pagination, repeated pages, family identity and supplier occurrence regressions passed');

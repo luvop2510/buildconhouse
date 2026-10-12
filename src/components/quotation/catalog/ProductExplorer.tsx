@@ -27,6 +27,7 @@ import type { Product, ProductVariant } from "../helpers/types";
 import { catalogPriceUnknown } from "../helpers/catalogSource";
 import { catalogProductQuantity, roomProductQuantities } from "../helpers/catalogMetrics";
 import { isNearScrollEnd } from "@/src/utils/scrollEnd";
+import { catalogItemKey } from "@/src/services/catalogService";
 
 const RECENT_SEARCHES_KEY = "forge.builder.recentSearches.v1";
 const MAX_RECENT_SEARCHES = 8;
@@ -287,7 +288,7 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
         numColumns={numCols}
         style={{ flex: 1, minHeight: 0 }}
         columnWrapperStyle={numCols > 1 ? { gap: 12 } : undefined}
-        keyExtractor={(p) => p.id}
+        keyExtractor={catalogItemKey}
         contentContainerStyle={{ padding: showCompactFilters ? 12 : 16, gap: 12, paddingBottom: 24 }}
         keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => (

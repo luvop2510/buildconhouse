@@ -28,7 +28,7 @@ import { draftNeedsCopy, type BuilderDraft } from "../helpers/draftRecovery";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import type { HistoryApi } from "@/src/hooks/useHistory";
 import { playAddProductSound } from "@/src/services/soundService";
-import { catalogReferences, CATALOG_PAGE_SIZE, clearCatalogCache, fetchCatalogPage } from "@/src/services/catalogService";
+import { catalogReferences, CATALOG_PAGE_SIZE, clearCatalogCache, fetchCatalogPage, mergeCatalogPage } from "@/src/services/catalogService";
 import { downloadApiFile } from "@/src/utils/downloadFile";
 
 import { computeTotals, computeLineBreakdown, type LineBreakdown } from "../helpers/pricing";
@@ -622,10 +622,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
         }, skipAt, CATALOG_PAGE_SIZE, { floorId: activeFloorId, signal: controller.signal });
         if (controller.signal.aborted || generation !== productRequestGeneration.current) return;
         const items = (res.items || []).map(familyCardToProduct).filter((item): item is Product => item !== null);
-        setProducts((cur) => {
-          const seen = new Set(cur.map((p) => p.id));
-          return [...cur, ...items.filter((p) => !seen.has(p.id))];
-        });
+        setProducts((cur) => mergeCatalogPage(cur, items));
         setProductTotal(res.total || 0);
         setProductHasMore(skipAt + items.length < (res.total || 0));
       } catch (e) {
