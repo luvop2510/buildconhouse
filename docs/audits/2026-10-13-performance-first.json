@@ -1,0 +1,1253 @@
+{
+  "config": {
+    "argv": [
+      "/opt/homebrew/Cellar/node/26.5.1/bin/node",
+      "/Users/yashvardhansinhjhala/buildcon house/forge2.0/node_modules/.bin/playwright",
+      "test",
+      "--config",
+      "playwright.performance.config.ts"
+    ],
+    "configFile": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/playwright.performance.config.ts",
+    "rootDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/output/playwright/performance",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "android-chrome",
+        "name": "android-chrome",
+        "testDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "performance-startup.spec.ts"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/output/playwright/performance",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "iphone-safari",
+        "name": "iphone-safari",
+        "testDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "performance-startup.spec.ts"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/output/playwright/performance",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "ipad-safari",
+        "name": "ipad-safari",
+        "testDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "performance-startup.spec.ts"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/output/playwright/performance",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "desktop-chrome",
+        "name": "desktop-chrome",
+        "testDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "performance-startup.spec.ts"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "output/playwright/goal-final-performance.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.63.0",
+    "workers": 1,
+    "webServer": {
+      "command": "AUDIT_PORT=8098 node scripts/serve-audit.mjs",
+      "url": "http://127.0.0.1:8098/login",
+      "reuseExistingServer": true
+    }
+  },
+  "suites": [
+    {
+      "title": "performance-startup.spec.ts",
+      "file": "performance-startup.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "cold catalog loads one bounded page promptly on each device",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "android-chrome",
+              "projectName": "android-chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1810,
+                  "errors": [],
+                  "stdout": [
+                    {
+                      "text": "PERFORMANCE {\"device\":\"android-chrome\",\"browserVersion\":\"153.0.8010.12\",\"fixtureLatencyMs\":200,\"readyMs\":1513.764875,\"requestAfterFloorMs\":334.91629199999977,\"requestAfterReferencesMs\":0.6811249999996107,\"reads\":[{\"path\":\"/api/auth/me\",\"query\":\"\",\"atMs\":192.46925,\"floor\":\"first-floor\"},{\"path\":\"/api/settings/floor-access\",\"query\":\"\",\"atMs\":494.18504199999995,\"floor\":\"first-floor\"},{\"path\":\"/api/settings/permission-matrix\",\"query\":\"\",\"atMs\":494.38379199999997,\"floor\":\"first-floor\"},{\"path\":\"/api/catalog/facets\",\"query\":\"\",\"atMs\":1034.2619169999998,\"floor\":\"first-floor\"},{\"path\":\"/api/brands\",\"query\":\"\",\"atMs\":1034.5005420000002,\"floor\":\"first-floor\"},{\"path\":\"/api/categories\",\"query\":\"\",\"atMs\":1034.6072920000001,\"floor\":\"first-floor\"},{\"path\":\"/api/catalog/hierarchy\",\"query\":\"\",\"atMs\":1034.8245419999998,\"floor\":\"first-floor\"},{\"path\":\"/api/products/families\",\"query\":\"?limit=60&skip=0\",\"atMs\":1035.1816669999998,\"floor\":\"first-floor\"}],\"longTasksMs\":[55],\"consoleErrors\":[],\"failedRequests\":[]}\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:38:48.555Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "catalog-startup-timing",
+                      "contentType": "application/json",
+                      "body": "ewogICJkZXZpY2UiOiAiYW5kcm9pZC1jaHJvbWUiLAogICJicm93c2VyVmVyc2lvbiI6ICIxNTMuMC44MDEwLjEyIiwKICAiZml4dHVyZUxhdGVuY3lNcyI6IDIwMCwKICAicmVhZHlNcyI6IDE1MTMuNzY0ODc1LAogICJyZXF1ZXN0QWZ0ZXJGbG9vck1zIjogMzM0LjkxNjI5MTk5OTk5OTc3LAogICJyZXF1ZXN0QWZ0ZXJSZWZlcmVuY2VzTXMiOiAwLjY4MTEyNDk5OTk5OTYxMDcsCiAgInJlYWRzIjogWwogICAgewogICAgICAicGF0aCI6ICIvYXBpL2F1dGgvbWUiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiAxOTIuNDY5MjUsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvc2V0dGluZ3MvZmxvb3ItYWNjZXNzIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogNDk0LjE4NTA0MTk5OTk5OTk1LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3NldHRpbmdzL3Blcm1pc3Npb24tbWF0cml4IiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogNDk0LjM4Mzc5MTk5OTk5OTk3LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2NhdGFsb2cvZmFjZXRzIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMTAzNC4yNjE5MTY5OTk5OTk4LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2JyYW5kcyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDEwMzQuNTAwNTQyMDAwMDAwMiwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jYXRlZ29yaWVzIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMTAzNC42MDcyOTIwMDAwMDAxLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2NhdGFsb2cvaGllcmFyY2h5IiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMTAzNC44MjQ1NDE5OTk5OTk4LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3Byb2R1Y3RzL2ZhbWlsaWVzIiwKICAgICAgInF1ZXJ5IjogIj9saW1pdD02MCZza2lwPTAiLAogICAgICAiYXRNcyI6IDEwMzUuMTgxNjY2OTk5OTk5OCwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfQogIF0sCiAgImxvbmdUYXNrc01zIjogWwogICAgNTUKICBdLAogICJjb25zb2xlRXJyb3JzIjogW10sCiAgImZhaWxlZFJlcXVlc3RzIjogW10KfQ=="
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "202fc15c005728e7a2ea-315acd11461c59be29c8",
+          "file": "performance-startup.spec.ts",
+          "line": 79,
+          "column": 5
+        },
+        {
+          "title": "customer identity and tabs remain usable while related history is pending",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "android-chrome",
+              "projectName": "android-chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1674,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:38:50.879Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "customer-primary-ready",
+                      "contentType": "application/json",
+                      "body": "ewogICJkZXZpY2UiOiAiYW5kcm9pZC1jaHJvbWUiLAogICJyZWFkeU1zIjogMTQ0MS4yNjY2MjUwMDAwMDAyLAogICJoZWxkIjogWwogICAgIi9hcGkvcXVvdGF0aW9ucyIsCiAgICAiL2FwaS9wdXJjaGFzZS1vcmRlcnMiLAogICAgIi9hcGkvYWN0aXZpdHkvY3VzdG9tZXIvcGVyZm9ybWFuY2UtY3VzdG9tZXIiLAogICAgIi9hcGkvZ29kb3duLXN0b2NrL2N1c3RvbWVyLXRyYW5zZmVycyIsCiAgICAiL2FwaS9wdXJjaGFzZXMvY3VzdG9tZXJzL3BlcmZvcm1hbmNlLWN1c3RvbWVyL3dvcmtzcGFjZSIKICBdLAogICJyZWFkcyI6IFsKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9zZXR0aW5ncy9wZXJtaXNzaW9uLW1hdHJpeCIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDMyMC4zMDk3OTA5OTk5OTk3LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3NldHRpbmdzL2Zsb29yLWFjY2VzcyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDMyMC43NDg0NTgsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvYXV0aC9tZSIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDMyMC44MzUyMDc5OTk5OTk5NywKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jdXN0b21lcnMvcGVyZm9ybWFuY2UtY3VzdG9tZXIiLAogICAgICAicXVlcnkiOiAiP3dpdGhfY29tcGxldGlvbj10cnVlIiwKICAgICAgImF0TXMiOiA4MzkuNDg0OTE1OTk5OTk5OSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9xdW90YXRpb25zIiwKICAgICAgInF1ZXJ5IjogIj9jdXN0b21lcl9pZD1wZXJmb3JtYW5jZS1jdXN0b21lciIsCiAgICAgICJhdE1zIjogODM5Ljc1NjA0MDk5OTk5OTYsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvcHVyY2hhc2Utb3JkZXJzIiwKICAgICAgInF1ZXJ5IjogIj9jdXN0b21lcl9pZD1wZXJmb3JtYW5jZS1jdXN0b21lciIsCiAgICAgICJhdE1zIjogODM5Ljg1MTMzMjk5OTk5OTYsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvYWN0aXZpdHkvY3VzdG9tZXIvcGVyZm9ybWFuY2UtY3VzdG9tZXIiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiA4MzkuOTI5NDU3OTk5OTk5NiwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9nb2Rvd24tc3RvY2svY3VzdG9tZXItdHJhbnNmZXJzIiwKICAgICAgInF1ZXJ5IjogIj9jdXN0b21lcl9pZD1wZXJmb3JtYW5jZS1jdXN0b21lciIsCiAgICAgICJhdE1zIjogODQwLjAyNTM3NDk5OTk5OTcsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvcHVyY2hhc2VzL2N1c3RvbWVycy9wZXJmb3JtYW5jZS1jdXN0b21lci93b3Jrc3BhY2UiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiAxMDU1LjA4MDI1LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9CiAgXQp9"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "202fc15c005728e7a2ea-9add9de61cbdcb17bfd2",
+          "file": "performance-startup.spec.ts",
+          "line": 115,
+          "column": 5
+        },
+        {
+          "title": "quotation content renders while breakdown, purchase links and activity are pending",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "android-chrome",
+              "projectName": "android-chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1593,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:38:52.558Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "quotation-primary-ready",
+                      "contentType": "application/json",
+                      "body": "ewogICJkZXZpY2UiOiAiYW5kcm9pZC1jaHJvbWUiLAogICJyZWFkeU1zIjogMTQ0Ni4zNDg2NjcwMDAwMDAyLAogICJoZWxkIjogWwogICAgIi9hcGkvcXVvdGF0aW9ucy9wZXJmb3JtYW5jZS1xdW90YXRpb24vYnJlYWtkb3duIiwKICAgICIvYXBpL2FjdGl2aXR5L3F1b3RhdGlvbi9wZXJmb3JtYW5jZS1xdW90YXRpb24iLAogICAgIi9hcGkvcHVyY2hhc2Utb3JkZXJzIgogIF0sCiAgInJlYWRzIjogWwogICAgewogICAgICAicGF0aCI6ICIvYXBpL3NldHRpbmdzL3Blcm1pc3Npb24tbWF0cml4IiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMzI2LjU4MDYyNDk5OTk5OTYsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvc2V0dGluZ3MvZmxvb3ItYWNjZXNzIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMzI2Ljg0OTU4Mzk5OTk5OTYsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvYXV0aC9tZSIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDMyNy4wMTU5NTkwMDAwMDAzLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3F1b3RhdGlvbnMvcGVyZm9ybWFuY2UtcXVvdGF0aW9uIiwKICAgICAgInF1ZXJ5IjogIj93aXRoX2NvbXBsZXRpb249dHJ1ZSIsCiAgICAgICJhdE1zIjogODQ2LjMwNDAwMDAwMDAwMDEsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvcXVvdGF0aW9ucy9wZXJmb3JtYW5jZS1xdW90YXRpb24vYnJlYWtkb3duIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogODQ2Ljc0MzkxNjk5OTk5OTgsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvYWN0aXZpdHkvcXVvdGF0aW9uL3BlcmZvcm1hbmNlLXF1b3RhdGlvbiIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDg0Ny4yNDg3NDk5OTk5OTk3LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3B1cmNoYXNlLW9yZGVycyIsCiAgICAgICJxdWVyeSI6ICI/cXVvdGF0aW9uX2lkPXBlcmZvcm1hbmNlLXF1b3RhdGlvbiIsCiAgICAgICJhdE1zIjogODQ3LjM1NDM3NDk5OTk5OTksCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0KICBdCn0="
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "202fc15c005728e7a2ea-01a7b2b93f9c4ecf5c69",
+          "file": "performance-startup.spec.ts",
+          "line": 155,
+          "column": 5
+        },
+        {
+          "title": "catalog results do not wait for slow filter metadata",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "android-chrome",
+              "projectName": "android-chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1545,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:38:54.155Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "202fc15c005728e7a2ea-ba2b54e80e61ede8c8e1",
+          "file": "performance-startup.spec.ts",
+          "line": 198,
+          "column": 5
+        },
+        {
+          "title": "repeated navigation and viewport rotation remain usable on a slower CPU",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "android-chrome",
+              "projectName": "android-chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 5263,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:38:55.705Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "navigation-rotation-timings",
+                      "contentType": "application/json",
+                      "body": "ewogICJjcHVUaHJvdHRsZSI6IDQsCiAgImZpeHR1cmVMYXRlbmN5TXMiOiAyMDAsCiAgInRpbWluZ3MiOiBbCiAgICA4NzcuOTE5ODM0MDAwMDAwMywKICAgIDg3Mi45MDI1ODMwMDAwMDEsCiAgICA5MC40NTE3MDgwMDAwMDA1MSwKICAgIDEwNC4zMDkzMzI5OTk5OTkyNAogIF0sCiAgInJlYWRzIjogWwogICAgewogICAgICAicGF0aCI6ICIvYXBpL2F1dGgvbWUiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiA0MjUuMTY5ODM0MDAwMDAwMjYsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvc2V0dGluZ3MvZmxvb3ItYWNjZXNzIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogNzE2LjQ5MjcwOTAwMDAwMDEsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvc2V0dGluZ3MvcGVybWlzc2lvbi1tYXRyaXgiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiA3MTYuNjIzNjY3MDAwMDAwOCwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jdXN0b21lcnMiLAogICAgICAicXVlcnkiOiAiP2NvbmZpcm1lZF9vbmx5PXRydWUmY29tcGxldGlvbj1hY3RpdmUiLAogICAgICAiYXRNcyI6IDEzMjUuNDcxNTQyMDAwMDAxMSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jYXRhbG9nL2ZhY2V0cyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDIwNzAuNjYyNzA5LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2JyYW5kcyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDIwNzAuNzA1NjY3LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2NhdGVnb3JpZXMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiAyMDcwLjg4Mjc5MjAwMDAwMDMsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY2F0YWxvZy9oaWVyYXJjaHkiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiAyMDcwLjkwNTgzNDAwMDAwMSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9wcm9kdWN0cy9mYW1pbGllcyIsCiAgICAgICJxdWVyeSI6ICI/bGltaXQ9NjAmc2tpcD0wIiwKICAgICAgImF0TXMiOiAyMDcwLjkyNjA0MjAwMDAwMSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jdXN0b21lcnMiLAogICAgICAicXVlcnkiOiAiP2NvbmZpcm1lZF9vbmx5PXRydWUmY29tcGxldGlvbj1hY3RpdmUiLAogICAgICAiYXRNcyI6IDI2NDQuMzY1NzA4OTk5OTk5NywKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jdXN0b21lcnMiLAogICAgICAicXVlcnkiOiAiP2NvbmZpcm1lZF9vbmx5PXRydWUmY29tcGxldGlvbj1hY3RpdmUiLAogICAgICAiYXRNcyI6IDMxNjguODExOTU5MDAwMDAwNiwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jYXRhbG9nL2ZhY2V0cyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDM3MjkuNTY4Mzc1MDAwMDAwNywKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jdXN0b21lcnMiLAogICAgICAicXVlcnkiOiAiP2NvbmZpcm1lZF9vbmx5PXRydWUmY29tcGxldGlvbj1hY3RpdmUiLAogICAgICAiYXRNcyI6IDM5ODYuMzUxNzUsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY2F0YWxvZy9mYWNldHMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiA0MzEyLjE3MzE2NzAwMDAwMSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jdXN0b21lcnMiLAogICAgICAicXVlcnkiOiAiP2NvbmZpcm1lZF9vbmx5PXRydWUmY29tcGxldGlvbj1hY3RpdmUiLAogICAgICAiYXRNcyI6IDQzODkuNTgxNzUwMDAwMDAxLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2NhdGFsb2cvZmFjZXRzIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogNDY3Mi4wMDE1NDIsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY3VzdG9tZXJzIiwKICAgICAgInF1ZXJ5IjogIj9jb25maXJtZWRfb25seT10cnVlJmNvbXBsZXRpb249YWN0aXZlIiwKICAgICAgImF0TXMiOiA0NzY2LjgwODc1LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9CiAgXSwKICAiY29uc29sZUVycm9ycyI6IFtdLAogICJmYWlsZWRSZXF1ZXN0cyI6IFtdCn0="
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "202fc15c005728e7a2ea-0b622fe1ca0165790b78",
+          "file": "performance-startup.spec.ts",
+          "line": 218,
+          "column": 5
+        },
+        {
+          "title": "a delayed obsolete search cannot replace newer catalog results",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "android-chrome",
+              "projectName": "android-chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2424,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:39:00.980Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "202fc15c005728e7a2ea-5d4256d1d949b049ad66",
+          "file": "performance-startup.spec.ts",
+          "line": 247,
+          "column": 5
+        },
+        {
+          "title": "repeated catalog visits retain one signed-in session and reuse reference data",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "android-chrome",
+              "projectName": "android-chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 404272,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e/performance-startup.spec.ts",
+                        "column": 69,
+                        "line": 279
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByText('No customers yet', { exact: true })\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByText('No customers yet', { exact: true }) with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByText('No customers yet', { exact: true })\u001b[22m\n\n\n  277 |   const data = await fixtureCatalog(page, baseURL!);\n  278 |   await page.goto('/customers');\n> 279 |   await expect(page.getByText('No customers yet', { exact: true })).toBeVisible();\n      |                                                                     ^\n  280 |   const timings: number[] = [];\n  281 |   for (let visit = 0; visit < 12; visit++) {\n  282 |     const started = performance.now();\n    at /Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e/performance-startup.spec.ts:279:69"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:39:03.413Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/output/playwright/performance/performance-startup-repeat-46dcc-on-and-reuse-reference-data-android-chrome/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/output/playwright/performance/performance-startup-repeat-46dcc-on-and-reuse-reference-data-android-chrome/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/output/playwright/performance/performance-startup-repeat-46dcc-on-and-reuse-reference-data-android-chrome/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "202fc15c005728e7a2ea-5c8047e0600107db1a25",
+          "file": "performance-startup.spec.ts",
+          "line": 276,
+          "column": 5
+        },
+        {
+          "title": "cold catalog loads one bounded page promptly on each device",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "iphone-safari",
+              "projectName": "iphone-safari",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 4006,
+                  "errors": [],
+                  "stdout": [
+                    {
+                      "text": "PERFORMANCE {\"device\":\"iphone-safari\",\"browserVersion\":\"26.6\",\"fixtureLatencyMs\":200,\"readyMs\":1829.8206250000003,\"requestAfterFloorMs\":354.4327080000003,\"requestAfterReferencesMs\":0.7174169999998412,\"reads\":[{\"path\":\"/api/auth/me\",\"query\":\"\",\"atMs\":548.5610409999999,\"floor\":\"first-floor\"},{\"path\":\"/api/settings/floor-access\",\"query\":\"\",\"atMs\":845.3153750000001,\"floor\":\"first-floor\"},{\"path\":\"/api/settings/permission-matrix\",\"query\":\"\",\"atMs\":845.8372079999999,\"floor\":\"first-floor\"},{\"path\":\"/api/catalog/facets\",\"query\":\"\",\"atMs\":1422.064375,\"floor\":\"first-floor\"},{\"path\":\"/api/brands\",\"query\":\"\",\"atMs\":1430.0386660000004,\"floor\":\"first-floor\"},{\"path\":\"/api/categories\",\"query\":\"\",\"atMs\":1430.2123329999995,\"floor\":\"first-floor\"},{\"path\":\"/api/catalog/hierarchy\",\"query\":\"\",\"atMs\":1430.3645830000005,\"floor\":\"first-floor\"},{\"path\":\"/api/products/families\",\"query\":\"?limit=60&skip=0\",\"atMs\":1430.7560830000002,\"floor\":\"first-floor\"}],\"longTasksMs\":[],\"consoleErrors\":[],\"failedRequests\":[]}\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:45:49.088Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "catalog-startup-timing",
+                      "contentType": "application/json",
+                      "body": "ewogICJkZXZpY2UiOiAiaXBob25lLXNhZmFyaSIsCiAgImJyb3dzZXJWZXJzaW9uIjogIjI2LjYiLAogICJmaXh0dXJlTGF0ZW5jeU1zIjogMjAwLAogICJyZWFkeU1zIjogMTgyOS44MjA2MjUwMDAwMDAzLAogICJyZXF1ZXN0QWZ0ZXJGbG9vck1zIjogMzU0LjQzMjcwODAwMDAwMDMsCiAgInJlcXVlc3RBZnRlclJlZmVyZW5jZXNNcyI6IDAuNzE3NDE2OTk5OTk5ODQxMiwKICAicmVhZHMiOiBbCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvYXV0aC9tZSIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDU0OC41NjEwNDA5OTk5OTk5LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3NldHRpbmdzL2Zsb29yLWFjY2VzcyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDg0NS4zMTUzNzUwMDAwMDAxLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3NldHRpbmdzL3Blcm1pc3Npb24tbWF0cml4IiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogODQ1LjgzNzIwNzk5OTk5OTksCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY2F0YWxvZy9mYWNldHMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiAxNDIyLjA2NDM3NSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9icmFuZHMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiAxNDMwLjAzODY2NjAwMDAwMDQsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY2F0ZWdvcmllcyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDE0MzAuMjEyMzMyOTk5OTk5NSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jYXRhbG9nL2hpZXJhcmNoeSIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDE0MzAuMzY0NTgzMDAwMDAwNSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9wcm9kdWN0cy9mYW1pbGllcyIsCiAgICAgICJxdWVyeSI6ICI/bGltaXQ9NjAmc2tpcD0wIiwKICAgICAgImF0TXMiOiAxNDMwLjc1NjA4MzAwMDAwMDIsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0KICBdLAogICJsb25nVGFza3NNcyI6IFtdLAogICJjb25zb2xlRXJyb3JzIjogW10sCiAgImZhaWxlZFJlcXVlc3RzIjogW10KfQ=="
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "202fc15c005728e7a2ea-ad48490c2333b0f75d41",
+          "file": "performance-startup.spec.ts",
+          "line": 79,
+          "column": 5
+        },
+        {
+          "title": "customer identity and tabs remain usable while related history is pending",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "iphone-safari",
+              "projectName": "iphone-safari",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1850,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:45:57.215Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "customer-primary-ready",
+                      "contentType": "application/json",
+                      "body": "ewogICJkZXZpY2UiOiAiaXBob25lLXNhZmFyaSIsCiAgInJlYWR5TXMiOiAxNDY4LjE3ODI1MDAwMDAwMDgsCiAgImhlbGQiOiBbCiAgICAiL2FwaS9xdW90YXRpb25zIiwKICAgICIvYXBpL3B1cmNoYXNlLW9yZGVycyIsCiAgICAiL2FwaS9hY3Rpdml0eS9jdXN0b21lci9wZXJmb3JtYW5jZS1jdXN0b21lciIsCiAgICAiL2FwaS9nb2Rvd24tc3RvY2svY3VzdG9tZXItdHJhbnNmZXJzIiwKICAgICIvYXBpL3B1cmNoYXNlcy9jdXN0b21lcnMvcGVyZm9ybWFuY2UtY3VzdG9tZXIvd29ya3NwYWNlIgogIF0sCiAgInJlYWRzIjogWwogICAgewogICAgICAicGF0aCI6ICIvYXBpL3NldHRpbmdzL3Blcm1pc3Npb24tbWF0cml4IiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMzM1LjQ1MzA4MzAwMDAwMDMzLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3NldHRpbmdzL2Zsb29yLWFjY2VzcyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDMzNi4xMDg5MTcwMDAwMDE0LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2F1dGgvbWUiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiAzMzYuMTc0NzA4MDAwMDAwNDYsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY3VzdG9tZXJzL3BlcmZvcm1hbmNlLWN1c3RvbWVyIiwKICAgICAgInF1ZXJ5IjogIj93aXRoX2NvbXBsZXRpb249dHJ1ZSIsCiAgICAgICJhdE1zIjogODgyLjExNjEyNTAwMDAwMDUsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvcXVvdGF0aW9ucyIsCiAgICAgICJxdWVyeSI6ICI/Y3VzdG9tZXJfaWQ9cGVyZm9ybWFuY2UtY3VzdG9tZXIiLAogICAgICAiYXRNcyI6IDg4Mi4zMjAwMDAwMDAwMDE1LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3B1cmNoYXNlLW9yZGVycyIsCiAgICAgICJxdWVyeSI6ICI/Y3VzdG9tZXJfaWQ9cGVyZm9ybWFuY2UtY3VzdG9tZXIiLAogICAgICAiYXRNcyI6IDg4Mi42MTQ5NTgwMDAwMDAxLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2FjdGl2aXR5L2N1c3RvbWVyL3BlcmZvcm1hbmNlLWN1c3RvbWVyIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogODgyLjY1ODM3NTAwMDAwMDksCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvZ29kb3duLXN0b2NrL2N1c3RvbWVyLXRyYW5zZmVycyIsCiAgICAgICJxdWVyeSI6ICI/Y3VzdG9tZXJfaWQ9cGVyZm9ybWFuY2UtY3VzdG9tZXIiLAogICAgICAiYXRNcyI6IDg4Mi42OTMyOTE5OTk5OTk5LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3B1cmNoYXNlcy9jdXN0b21lcnMvcGVyZm9ybWFuY2UtY3VzdG9tZXIvd29ya3NwYWNlIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMTEwMC4zMDIxNjY5OTk5OTk4LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9CiAgXQp9"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "202fc15c005728e7a2ea-92a439632ab6d94f07b4",
+          "file": "performance-startup.spec.ts",
+          "line": 115,
+          "column": 5
+        },
+        {
+          "title": "quotation content renders while breakdown, purchase links and activity are pending",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "iphone-safari",
+              "projectName": "iphone-safari",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1838,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:45:59.071Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "quotation-primary-ready",
+                      "contentType": "application/json",
+                      "body": "ewogICJkZXZpY2UiOiAiaXBob25lLXNhZmFyaSIsCiAgInJlYWR5TXMiOiAxNTQ3LjIxMzYyNTAwMDAwMDMsCiAgImhlbGQiOiBbCiAgICAiL2FwaS9xdW90YXRpb25zL3BlcmZvcm1hbmNlLXF1b3RhdGlvbi9icmVha2Rvd24iLAogICAgIi9hcGkvYWN0aXZpdHkvcXVvdGF0aW9uL3BlcmZvcm1hbmNlLXF1b3RhdGlvbiIsCiAgICAiL2FwaS9wdXJjaGFzZS1vcmRlcnMiCiAgXSwKICAicmVhZHMiOiBbCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvYXV0aC9tZSIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDIwNy4yODAwNDIwMDAwMDAzMiwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9zZXR0aW5ncy9mbG9vci1hY2Nlc3MiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiA1MTMuMjM4OTE3MDAwMDAwNiwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9zZXR0aW5ncy9wZXJtaXNzaW9uLW1hdHJpeCIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDUxMy4zOTY2MjQ5OTk5OTk0LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3F1b3RhdGlvbnMvcGVyZm9ybWFuY2UtcXVvdGF0aW9uIiwKICAgICAgInF1ZXJ5IjogIj93aXRoX2NvbXBsZXRpb249dHJ1ZSIsCiAgICAgICJhdE1zIjogMTA4NC41OTYzNzQ5OTk5OTkyLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3F1b3RhdGlvbnMvcGVyZm9ybWFuY2UtcXVvdGF0aW9uL2JyZWFrZG93biIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDEwODUuMDk2NTgzOTk5OTk5LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2FjdGl2aXR5L3F1b3RhdGlvbi9wZXJmb3JtYW5jZS1xdW90YXRpb24iLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiAxMDg1LjE1NzQ1OSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9wdXJjaGFzZS1vcmRlcnMiLAogICAgICAicXVlcnkiOiAiP3F1b3RhdGlvbl9pZD1wZXJmb3JtYW5jZS1xdW90YXRpb24iLAogICAgICAiYXRNcyI6IDEwODUuMjA4MjkxOTk5OTk5MywKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfQogIF0KfQ=="
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "202fc15c005728e7a2ea-368a26704d7cd0333168",
+          "file": "performance-startup.spec.ts",
+          "line": 155,
+          "column": 5
+        },
+        {
+          "title": "catalog results do not wait for slow filter metadata",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "iphone-safari",
+              "projectName": "iphone-safari",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1707,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:46:00.918Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "202fc15c005728e7a2ea-8f947092fc56720c0bbc",
+          "file": "performance-startup.spec.ts",
+          "line": 198,
+          "column": 5
+        },
+        {
+          "title": "repeated navigation and viewport rotation remain usable on a slower CPU",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "iphone-safari",
+              "projectName": "iphone-safari",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 3968,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:46:02.631Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "navigation-rotation-timings",
+                      "contentType": "application/json",
+                      "body": "ewogICJjcHVUaHJvdHRsZSI6ICJ1bmF2YWlsYWJsZSBvbiB0aGlzIGVuZ2luZSIsCiAgImZpeHR1cmVMYXRlbmN5TXMiOiAyMDAsCiAgInRpbWluZ3MiOiBbCiAgICA4NTkuMDAyNTgyOTk5OTk3NywKICAgIDk0LjU3NzYyNDk5OTk5ODA4LAogICAgNjMuNjg2MDgzMDAwMDAwNTEsCiAgICA1MS40MTU5MTU5OTk5OTgxMDYKICBdLAogICJyZWFkcyI6IFsKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9hdXRoL21lIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMTQ5LjMzNDQxNTk5OTk5OTcsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvc2V0dGluZ3MvZmxvb3ItYWNjZXNzIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogNDU4LjExMTM3NTAwMDAwMDQsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvc2V0dGluZ3MvcGVybWlzc2lvbi1tYXRyaXgiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiA0NTguMzgyMjkwOTk5OTk5OSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jdXN0b21lcnMiLAogICAgICAicXVlcnkiOiAiP2NvbmZpcm1lZF9vbmx5PXRydWUmY29tcGxldGlvbj1hY3RpdmUiLAogICAgICAiYXRNcyI6IDEwMjMuNTM3MDQxMDAwMDAxNCwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jYXRhbG9nL2ZhY2V0cyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDE4MTAuOTk1ODMzMDAwMDAwOSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9icmFuZHMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiAxODExLjA3NjQxNTk5OTk5OTksCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY2F0ZWdvcmllcyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDE4MTEuMTA5OTE2MDAwMDAxMiwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jYXRhbG9nL2hpZXJhcmNoeSIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDE4MTEuMTM5OTE2LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3Byb2R1Y3RzL2ZhbWlsaWVzIiwKICAgICAgInF1ZXJ5IjogIj9saW1pdD02MCZza2lwPTAiLAogICAgICAiYXRNcyI6IDE4MTEuMTY2NjI1MDAwMDAxNywKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jdXN0b21lcnMiLAogICAgICAicXVlcnkiOiAiP2NvbmZpcm1lZF9vbmx5PXRydWUmY29tcGxldGlvbj1hY3RpdmUiLAogICAgICAiYXRNcyI6IDI0NjguNTQ3MjQ5OTk5OTk5NiwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jdXN0b21lcnMiLAogICAgICAicXVlcnkiOiAiP2NvbmZpcm1lZF9vbmx5PXRydWUmY29tcGxldGlvbj1hY3RpdmUiLAogICAgICAiYXRNcyI6IDI3OTMuMDc4NTgzMDAwMDAyMywKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jYXRhbG9nL2ZhY2V0cyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDI4NDYuODIyMTY2MDAwMDAxNywKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jdXN0b21lcnMiLAogICAgICAicXVlcnkiOiAiP2NvbmZpcm1lZF9vbmx5PXRydWUmY29tcGxldGlvbj1hY3RpdmUiLAogICAgICAiYXRNcyI6IDMxMzMuNDM5MjQ5OTk5OTk5NCwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jYXRhbG9nL2ZhY2V0cyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDMzODcuMzI3MDAwMDAwMDAxLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2N1c3RvbWVycyIsCiAgICAgICJxdWVyeSI6ICI/Y29uZmlybWVkX29ubHk9dHJ1ZSZjb21wbGV0aW9uPWFjdGl2ZSIsCiAgICAgICJhdE1zIjogMzQyMC42NjQwODI5OTk5OTk3LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9CiAgXSwKICAiY29uc29sZUVycm9ycyI6IFtdLAogICJmYWlsZWRSZXF1ZXN0cyI6IFtdCn0="
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "202fc15c005728e7a2ea-8eb6a7a0e87e854d73fe",
+          "file": "performance-startup.spec.ts",
+          "line": 218,
+          "column": 5
+        },
+        {
+          "title": "a delayed obsolete search cannot replace newer catalog results",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "iphone-safari",
+              "projectName": "iphone-safari",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2357,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:46:06.605Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "202fc15c005728e7a2ea-28e34135e678d9f1e6e2",
+          "file": "performance-startup.spec.ts",
+          "line": 247,
+          "column": 5
+        },
+        {
+          "title": "repeated catalog visits retain one signed-in session and reuse reference data",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "iphone-safari",
+              "projectName": "iphone-safari",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 6711,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:46:08.967Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "repeated-session-navigation",
+                      "contentType": "application/json",
+                      "body": "ewogICJ2aXNpdHMiOiAxMiwKICAiZGV2aWNlIjogImlwaG9uZS1zYWZhcmkiLAogICJmaXh0dXJlTGF0ZW5jeU1zIjogMjAwLAogICJ0aW1pbmdzIjogWwogICAgODY0LjQ0NDI1MDAwMDAwMDUsCiAgICAzNS41MTE4MzI5OTk5OTY4NCwKICAgIDM3LjE2MjgzMzk5OTk5ODg0LAogICAgNDAuMzI5ODMyOTk5OTk5NzgsCiAgICA0MS40MjEyMDc5OTk5OTk3NSwKICAgIDQwLjUzNzI1MDAwMDAwMTIyLAogICAgNDAuMzI4NTQwOTk5OTk4OTUsCiAgICA0MC42NjgwMDAwMDAwMDE0ODQsCiAgICAzMS42ODI3OTIwMDAwMDMyNDYsCiAgICAyNi4xMTk1ODQwMDAwMDAwMywKICAgIDM1LjMzMTA4NDAwMDAwMTI4LAogICAgMjIuMjY0OTk5OTk5OTk5NDE4CiAgXSwKICAicmVhZHMiOiBbCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvYXV0aC9tZSIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDE1My41NjcxMjUwMDAwMDE0LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3NldHRpbmdzL2Zsb29yLWFjY2VzcyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDQ1NS4wNDUzMzM5OTk5OTg1NSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9zZXR0aW5ncy9wZXJtaXNzaW9uLW1hdHJpeCIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDQ1NS4zNTYyMDkwMDAwMDE0LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2N1c3RvbWVycyIsCiAgICAgICJxdWVyeSI6ICI/Y29uZmlybWVkX29ubHk9dHJ1ZSZjb21wbGV0aW9uPWFjdGl2ZSIsCiAgICAgICJhdE1zIjogMTAxNi4xNjAwNDE5OTk5OTk1LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2NhdGFsb2cvZmFjZXRzIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMTgwNC4xNDk0OTk5OTk5OTk1LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2JyYW5kcyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDE4MDQuMjQ2NDU5MDAwMDAxOCwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jYXRlZ29yaWVzIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMTgwNC42MDAyNDk5OTk5OTk1LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2NhdGFsb2cvaGllcmFyY2h5IiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMTgwNC42NTc4NzUwMDAwMDA4LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3Byb2R1Y3RzL2ZhbWlsaWVzIiwKICAgICAgInF1ZXJ5IjogIj9saW1pdD02MCZza2lwPTAiLAogICAgICAiYXRNcyI6IDE4MDQuNzAxOTE2OTk5OTk4NSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jdXN0b21lcnMiLAogICAgICAicXVlcnkiOiAiP2NvbmZpcm1lZF9vbmx5PXRydWUmY29tcGxldGlvbj1hY3RpdmUiLAogICAgICAiYXRNcyI6IDIzNDguMDQ4MTY3MDAwMDAxLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2NhdGFsb2cvZmFjZXRzIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMjY4Ni4yNjMzMzM5OTk5OTkzLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2N1c3RvbWVycyIsCiAgICAgICJxdWVyeSI6ICI/Y29uZmlybWVkX29ubHk9dHJ1ZSZjb21wbGV0aW9uPWFjdGl2ZSIsCiAgICAgICJhdE1zIjogMjcwNi41NTE1MDAwMDAwMDE0LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2NhdGFsb2cvZmFjZXRzIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMzAzNC41OTI0OTk5OTk5OTksCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY3VzdG9tZXJzIiwKICAgICAgInF1ZXJ5IjogIj9jb25maXJtZWRfb25seT10cnVlJmNvbXBsZXRpb249YWN0aXZlIiwKICAgICAgImF0TXMiOiAzMDUzLjAxOTcwOSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jYXRhbG9nL2ZhY2V0cyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDMzNjMuMzk2NTQxOTk5OTk4NiwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jdXN0b21lcnMiLAogICAgICAicXVlcnkiOiAiP2NvbmZpcm1lZF9vbmx5PXRydWUmY29tcGxldGlvbj1hY3RpdmUiLAogICAgICAiYXRNcyI6IDMzOTUuNTk5OTk5OTk5OTk4NSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jYXRhbG9nL2ZhY2V0cyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDM3MTMuNTA4NzkyMDAwMDAwNSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jdXN0b21lcnMiLAogICAgICAicXVlcnkiOiAiP2NvbmZpcm1lZF9vbmx5PXRydWUmY29tcGxldGlvbj1hY3RpdmUiLAogICAgICAiYXRNcyI6IDM3NDYuODIwNTAwMDAwMDAxNiwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jYXRhbG9nL2ZhY2V0cyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDQwNjcuNjkzODc1MDAwMDAxLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2N1c3RvbWVycyIsCiAgICAgICJxdWVyeSI6ICI/Y29uZmlybWVkX29ubHk9dHJ1ZSZjb21wbGV0aW9uPWFjdGl2ZSIsCiAgICAgICJhdE1zIjogNDA5Ni44MjI1NDIwMDAwMDIsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY2F0YWxvZy9mYWNldHMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiA0NDIzLjAxNTI5MiwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jdXN0b21lcnMiLAogICAgICAicXVlcnkiOiAiP2NvbmZpcm1lZF9vbmx5PXRydWUmY29tcGxldGlvbj1hY3RpdmUiLAogICAgICAiYXRNcyI6IDQ0NTIuNzEyNTAwMDAwMDAxNSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jYXRhbG9nL2ZhY2V0cyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDQ3NjYuMzQxMTY2OTk5OTk5LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2N1c3RvbWVycyIsCiAgICAgICJxdWVyeSI6ICI/Y29uZmlybWVkX29ubHk9dHJ1ZSZjb21wbGV0aW9uPWFjdGl2ZSIsCiAgICAgICJhdE1zIjogNDc5Ny40NzM1LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2NhdGFsb2cvZmFjZXRzIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogNTExMy44NjQwNDIwMDAwMDEsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY3VzdG9tZXJzIiwKICAgICAgInF1ZXJ5IjogIj9jb25maXJtZWRfb25seT10cnVlJmNvbXBsZXRpb249YWN0aXZlIiwKICAgICAgImF0TXMiOiA1MTM2Ljc2Nzc5MTk5OTk5OSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jYXRhbG9nL2ZhY2V0cyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDU0NDMuODEwNzkyLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2N1c3RvbWVycyIsCiAgICAgICJxdWVyeSI6ICI/Y29uZmlybWVkX29ubHk9dHJ1ZSZjb21wbGV0aW9uPWFjdGl2ZSIsCiAgICAgICJhdE1zIjogNTQ3NC41ODEyOTE5OTk5OTksCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY2F0YWxvZy9mYWNldHMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiA1ODA1LjgwNSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jdXN0b21lcnMiLAogICAgICAicXVlcnkiOiAiP2NvbmZpcm1lZF9vbmx5PXRydWUmY29tcGxldGlvbj1hY3RpdmUiLAogICAgICAiYXRNcyI6IDU4MzEuMDY4MzM0LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2NhdGFsb2cvZmFjZXRzIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogNjE0Ny4zMjc0OTk5OTk5OTksCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY3VzdG9tZXJzIiwKICAgICAgInF1ZXJ5IjogIj9jb25maXJtZWRfb25seT10cnVlJmNvbXBsZXRpb249YWN0aXZlIiwKICAgICAgImF0TXMiOiA2MTYwLjM0ODMzNDAwMDAwMiwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfQogIF0sCiAgImNvbnNvbGVFcnJvcnMiOiBbXSwKICAiZmFpbGVkUmVxdWVzdHMiOiBbXQp9"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "202fc15c005728e7a2ea-1498ef14a01e5d3edf52",
+          "file": "performance-startup.spec.ts",
+          "line": 276,
+          "column": 5
+        },
+        {
+          "title": "cold catalog loads one bounded page promptly on each device",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "ipad-safari",
+              "projectName": "ipad-safari",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2169,
+                  "errors": [],
+                  "stdout": [
+                    {
+                      "text": "PERFORMANCE {\"device\":\"ipad-safari\",\"browserVersion\":\"26.6\",\"fixtureLatencyMs\":200,\"readyMs\":1631.8612080000003,\"requestAfterFloorMs\":331.185375,\"requestAfterReferencesMs\":0.841707999999926,\"reads\":[{\"path\":\"/api/settings/permission-matrix\",\"query\":\"\",\"atMs\":442.5802919999999,\"floor\":\"first-floor\"},{\"path\":\"/api/settings/floor-access\",\"query\":\"\",\"atMs\":443.25204199999985,\"floor\":\"first-floor\"},{\"path\":\"/api/auth/me\",\"query\":\"\",\"atMs\":444.2843339999997,\"floor\":\"first-floor\"},{\"path\":\"/api/catalog/facets\",\"query\":\"\",\"atMs\":979.466584,\"floor\":\"first-floor\"},{\"path\":\"/api/brands\",\"query\":\"\",\"atMs\":979.5839589999998,\"floor\":\"first-floor\"},{\"path\":\"/api/categories\",\"query\":\"\",\"atMs\":979.7072500000002,\"floor\":\"first-floor\"},{\"path\":\"/api/catalog/hierarchy\",\"query\":\"\",\"atMs\":979.7439999999999,\"floor\":\"first-floor\"},{\"path\":\"/api/products/families\",\"query\":\"?limit=60&skip=0\",\"atMs\":980.4256669999997,\"floor\":\"first-floor\"}],\"longTasksMs\":[],\"consoleErrors\":[],\"failedRequests\":[]}\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:46:16.208Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "catalog-startup-timing",
+                      "contentType": "application/json",
+                      "body": "ewogICJkZXZpY2UiOiAiaXBhZC1zYWZhcmkiLAogICJicm93c2VyVmVyc2lvbiI6ICIyNi42IiwKICAiZml4dHVyZUxhdGVuY3lNcyI6IDIwMCwKICAicmVhZHlNcyI6IDE2MzEuODYxMjA4MDAwMDAwMywKICAicmVxdWVzdEFmdGVyRmxvb3JNcyI6IDMzMS4xODUzNzUsCiAgInJlcXVlc3RBZnRlclJlZmVyZW5jZXNNcyI6IDAuODQxNzA3OTk5OTk5OTI2LAogICJyZWFkcyI6IFsKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9zZXR0aW5ncy9wZXJtaXNzaW9uLW1hdHJpeCIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDQ0Mi41ODAyOTE5OTk5OTk5LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3NldHRpbmdzL2Zsb29yLWFjY2VzcyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDQ0My4yNTIwNDE5OTk5OTk4NSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9hdXRoL21lIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogNDQ0LjI4NDMzMzk5OTk5OTcsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY2F0YWxvZy9mYWNldHMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiA5NzkuNDY2NTg0LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2JyYW5kcyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDk3OS41ODM5NTg5OTk5OTk4LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2NhdGVnb3JpZXMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiA5NzkuNzA3MjUwMDAwMDAwMiwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jYXRhbG9nL2hpZXJhcmNoeSIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDk3OS43NDM5OTk5OTk5OTk5LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3Byb2R1Y3RzL2ZhbWlsaWVzIiwKICAgICAgInF1ZXJ5IjogIj9saW1pdD02MCZza2lwPTAiLAogICAgICAiYXRNcyI6IDk4MC40MjU2NjY5OTk5OTk3LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9CiAgXSwKICAibG9uZ1Rhc2tzTXMiOiBbXSwKICAiY29uc29sZUVycm9ycyI6IFtdLAogICJmYWlsZWRSZXF1ZXN0cyI6IFtdCn0="
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "202fc15c005728e7a2ea-54dcb14f1fb29f524c08",
+          "file": "performance-startup.spec.ts",
+          "line": 79,
+          "column": 5
+        },
+        {
+          "title": "customer identity and tabs remain usable while related history is pending",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "ipad-safari",
+              "projectName": "ipad-safari",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1794,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:46:19.356Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "customer-primary-ready",
+                      "contentType": "application/json",
+                      "body": "ewogICJkZXZpY2UiOiAiaXBhZC1zYWZhcmkiLAogICJyZWFkeU1zIjogMTQ2NC4wNTU5MTYwMDAwMDAzLAogICJoZWxkIjogWwogICAgIi9hcGkvcXVvdGF0aW9ucyIsCiAgICAiL2FwaS9wdXJjaGFzZS1vcmRlcnMiLAogICAgIi9hcGkvYWN0aXZpdHkvY3VzdG9tZXIvcGVyZm9ybWFuY2UtY3VzdG9tZXIiLAogICAgIi9hcGkvZ29kb3duLXN0b2NrL2N1c3RvbWVyLXRyYW5zZmVycyIsCiAgICAiL2FwaS9wdXJjaGFzZXMvY3VzdG9tZXJzL3BlcmZvcm1hbmNlLWN1c3RvbWVyL3dvcmtzcGFjZSIKICBdLAogICJyZWFkcyI6IFsKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9hdXRoL21lIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMTQ5LjQ4ODY2NTk5OTk5OTc0LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3NldHRpbmdzL2Zsb29yLWFjY2VzcyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDQ2NS41Njg0MTU5OTk5OTk2LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3NldHRpbmdzL3Blcm1pc3Npb24tbWF0cml4IiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogNDY1LjY5Njc0OTk5OTk5OTYsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY3VzdG9tZXJzL3BlcmZvcm1hbmNlLWN1c3RvbWVyIiwKICAgICAgInF1ZXJ5IjogIj93aXRoX2NvbXBsZXRpb249dHJ1ZSIsCiAgICAgICJhdE1zIjogOTkzLjQ3ODMzMjk5OTk5OTYsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvcXVvdGF0aW9ucyIsCiAgICAgICJxdWVyeSI6ICI/Y3VzdG9tZXJfaWQ9cGVyZm9ybWFuY2UtY3VzdG9tZXIiLAogICAgICAiYXRNcyI6IDk5NC4wNjM0MTYwMDAwMDA0LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3B1cmNoYXNlLW9yZGVycyIsCiAgICAgICJxdWVyeSI6ICI/Y3VzdG9tZXJfaWQ9cGVyZm9ybWFuY2UtY3VzdG9tZXIiLAogICAgICAiYXRNcyI6IDk5NC4xMzQ2MjUwMDAwMDAxLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2FjdGl2aXR5L2N1c3RvbWVyL3BlcmZvcm1hbmNlLWN1c3RvbWVyIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogOTk0LjE4OTk1ODAwMDAwMDQsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvZ29kb3duLXN0b2NrL2N1c3RvbWVyLXRyYW5zZmVycyIsCiAgICAgICJxdWVyeSI6ICI/Y3VzdG9tZXJfaWQ9cGVyZm9ybWFuY2UtY3VzdG9tZXIiLAogICAgICAiYXRNcyI6IDk5NC4yMzU1NDA5OTk5OTk2LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3B1cmNoYXNlcy9jdXN0b21lcnMvcGVyZm9ybWFuY2UtY3VzdG9tZXIvd29ya3NwYWNlIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMTIxNC44NzQ1MDAwMDAwMDA0LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9CiAgXQp9"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "202fc15c005728e7a2ea-0873205ece666b587a92",
+          "file": "performance-startup.spec.ts",
+          "line": 115,
+          "column": 5
+        },
+        {
+          "title": "quotation content renders while breakdown, purchase links and activity are pending",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "ipad-safari",
+              "projectName": "ipad-safari",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1747,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:46:21.159Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "quotation-primary-ready",
+                      "contentType": "application/json",
+                      "body": "ewogICJkZXZpY2UiOiAiaXBhZC1zYWZhcmkiLAogICJyZWFkeU1zIjogMTQ3My42Nzg2NjcwMDAwMDAxLAogICJoZWxkIjogWwogICAgIi9hcGkvcXVvdGF0aW9ucy9wZXJmb3JtYW5jZS1xdW90YXRpb24vYnJlYWtkb3duIiwKICAgICIvYXBpL2FjdGl2aXR5L3F1b3RhdGlvbi9wZXJmb3JtYW5jZS1xdW90YXRpb24iLAogICAgIi9hcGkvcHVyY2hhc2Utb3JkZXJzIgogIF0sCiAgInJlYWRzIjogWwogICAgewogICAgICAicGF0aCI6ICIvYXBpL3NldHRpbmdzL3Blcm1pc3Npb24tbWF0cml4IiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMzQ1Ljg3NDQ5OTk5OTk5OTksCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvc2V0dGluZ3MvZmxvb3ItYWNjZXNzIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMzQ2LjY1NzA0MTk5OTk5OTgsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvYXV0aC9tZSIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDM0Ni45NTE4MzMwMDAwMDAxLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3F1b3RhdGlvbnMvcGVyZm9ybWFuY2UtcXVvdGF0aW9uIiwKICAgICAgInF1ZXJ5IjogIj93aXRoX2NvbXBsZXRpb249dHJ1ZSIsCiAgICAgICJhdE1zIjogODcyLjk5Njc5MTk5OTk5OTksCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvcXVvdGF0aW9ucy9wZXJmb3JtYW5jZS1xdW90YXRpb24vYnJlYWtkb3duIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogODczLjQxMjYyNDk5OTk5OTksCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvYWN0aXZpdHkvcXVvdGF0aW9uL3BlcmZvcm1hbmNlLXF1b3RhdGlvbiIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDg3NC40ODI2MjQ5OTk5OTk2LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3B1cmNoYXNlLW9yZGVycyIsCiAgICAgICJxdWVyeSI6ICI/cXVvdGF0aW9uX2lkPXBlcmZvcm1hbmNlLXF1b3RhdGlvbiIsCiAgICAgICJhdE1zIjogODc0LjcyNTQ1Nzk5OTk5OTksCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0KICBdCn0="
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "202fc15c005728e7a2ea-ab8c8535a23c85c5cf7f",
+          "file": "performance-startup.spec.ts",
+          "line": 155,
+          "column": 5
+        },
+        {
+          "title": "catalog results do not wait for slow filter metadata",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "ipad-safari",
+              "projectName": "ipad-safari",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1779,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:46:22.915Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "202fc15c005728e7a2ea-6e42dcfd9924c27f4d3b",
+          "file": "performance-startup.spec.ts",
+          "line": 198,
+          "column": 5
+        },
+        {
+          "title": "repeated navigation and viewport rotation remain usable on a slower CPU",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "ipad-safari",
+              "projectName": "ipad-safari",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 4563,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:46:24.701Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "navigation-rotation-timings",
+                      "contentType": "application/json",
+                      "body": "ewogICJjcHVUaHJvdHRsZSI6ICJ1bmF2YWlsYWJsZSBvbiB0aGlzIGVuZ2luZSIsCiAgImZpeHR1cmVMYXRlbmN5TXMiOiAyMDAsCiAgInRpbWluZ3MiOiBbCiAgICA4ODkuOTg4NzQ5OTk5OTk4NiwKICAgIDc2LjIwMzQ1Nzk5OTk5OTk2LAogICAgNTEuNjQ3ODMyOTk5OTk5MDgsCiAgICAxMjQuMjc3MDgzMDAwMDAwODYKICBdLAogICJyZWFkcyI6IFsKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9hdXRoL21lIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMTU1LjA5NTE2Njk5OTk5OTUsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvc2V0dGluZ3MvZmxvb3ItYWNjZXNzIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogNDY3LjU1ODM3NTAwMDAwMDUsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvc2V0dGluZ3MvcGVybWlzc2lvbi1tYXRyaXgiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiA0NjcuODcxMjkxOTk5OTk5OCwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jdXN0b21lcnMiLAogICAgICAicXVlcnkiOiAiP2NvbmZpcm1lZF9vbmx5PXRydWUmY29tcGxldGlvbj1hY3RpdmUiLAogICAgICAiYXRNcyI6IDk5OC42NjQxMjQ5OTk5OTkzLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2N1c3RvbWVycyIsCiAgICAgICJxdWVyeSI6ICI/Y29uZmlybWVkX29ubHk9dHJ1ZSZjb21wbGV0aW9uPWFjdGl2ZSIsCiAgICAgICJhdE1zIjogMTUzNy4xOTIxMjQ5OTk5OTk2LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2NhdGFsb2cvZmFjZXRzIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMTg4MS4xNTQxMjUwMDAwMDEsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvYnJhbmRzIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMTg4MS4yOTQyMDg5OTk5OTk3LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2NhdGVnb3JpZXMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiAxODgxLjk2ODg3NTAwMDAwMDUsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY2F0YWxvZy9oaWVyYXJjaHkiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiAxODgyLjAyMzM3NTAwMDAwMDcsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvcHJvZHVjdHMvZmFtaWxpZXMiLAogICAgICAicXVlcnkiOiAiP2xpbWl0PTYwJnNraXA9MCIsCiAgICAgICJhdE1zIjogMTg4Mi4wNTM4MzQwMDAwMDAzLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2N1c3RvbWVycyIsCiAgICAgICJxdWVyeSI6ICI/Y29uZmlybWVkX29ubHk9dHJ1ZSZjb21wbGV0aW9uPWFjdGl2ZSIsCiAgICAgICJhdE1zIjogMjcxNi44NzQyNTAwMDAwMDA4LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2N1c3RvbWVycyIsCiAgICAgICJxdWVyeSI6ICI/Y29uZmlybWVkX29ubHk9dHJ1ZSZjb21wbGV0aW9uPWFjdGl2ZSIsCiAgICAgICJhdE1zIjogMzA2My42NjU1ODQwMDAwMDAzLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2NhdGFsb2cvZmFjZXRzIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMzA5Ny4wNTMzMzQsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY2F0YWxvZy9mYWNldHMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiAzMzgxLjAyMTI5MTk5OTk5OTQsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY3VzdG9tZXJzIiwKICAgICAgInF1ZXJ5IjogIj9jb25maXJtZWRfb25seT10cnVlJmNvbXBsZXRpb249YWN0aXZlIiwKICAgICAgImF0TXMiOiAzNDE1LjczNjYyNDk5OTk5OTUsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY2F0YWxvZy9mYWNldHMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiAzOTk1Ljc3NjU4Mzk5OTk5OTMsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY3VzdG9tZXJzIiwKICAgICAgInF1ZXJ5IjogIj9jb25maXJtZWRfb25seT10cnVlJmNvbXBsZXRpb249YWN0aXZlIiwKICAgICAgImF0TXMiOiA0MDU2LjAyNzgzNDAwMDAwMDQsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0KICBdLAogICJjb25zb2xlRXJyb3JzIjogW10sCiAgImZhaWxlZFJlcXVlc3RzIjogW10KfQ=="
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "202fc15c005728e7a2ea-8565e586f2c72a34f709",
+          "file": "performance-startup.spec.ts",
+          "line": 218,
+          "column": 5
+        },
+        {
+          "title": "a delayed obsolete search cannot replace newer catalog results",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "ipad-safari",
+              "projectName": "ipad-safari",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2416,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:46:29.277Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "202fc15c005728e7a2ea-574f4bbd2f0f71cc0147",
+          "file": "performance-startup.spec.ts",
+          "line": 247,
+          "column": 5
+        },
+        {
+          "title": "repeated catalog visits retain one signed-in session and reuse reference data",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "ipad-safari",
+              "projectName": "ipad-safari",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 6969,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:46:31.704Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "repeated-session-navigation",
+                      "contentType": "application/json",
+                      "body": "ewogICJ2aXNpdHMiOiAxMiwKICAiZGV2aWNlIjogImlwYWQtc2FmYXJpIiwKICAiZml4dHVyZUxhdGVuY3lNcyI6IDIwMCwKICAidGltaW5ncyI6IFsKICAgIDg2My4yNzQ1NDE5OTk5OTkyLAogICAgMzQuODg0MzMyOTk5OTk4MTUsCiAgICAzMi40OTg4MzM5OTk5OTgxNywKICAgIDQ5LjE1NDE2NjAwMDAwMDI2LAogICAgMzEuMTMyNzUwMDAwMDAwNjcsCiAgICAzNi4yNTkyNTAwMDAwMDI3OTQsCiAgICAzMi45NDg3OTIwMDAwMDI4NywKICAgIDM0Ljk3MzQ1ODAwMDAwMDM5LAogICAgMzAuODUxNzQ5OTk5OTk3OTkyLAogICAgNDIuODc4MDgyOTk5OTk5NjA2LAogICAgMzEuNDc0MzMyOTk5OTk4Mjk2LAogICAgMzkuNzQzNzkxMDAwMDAwNzgKICBdLAogICJyZWFkcyI6IFsKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9hdXRoL21lIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMTQyLjY5Nzc1MDAwMDAwMTE4LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3NldHRpbmdzL2Zsb29yLWFjY2VzcyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDQ1Ny4xNjAzNzUwMDAwMDEzLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3NldHRpbmdzL3Blcm1pc3Npb24tbWF0cml4IiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogNDU3LjMwMTE2NTk5OTk5OTMsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY3VzdG9tZXJzIiwKICAgICAgInF1ZXJ5IjogIj9jb25maXJtZWRfb25seT10cnVlJmNvbXBsZXRpb249YWN0aXZlIiwKICAgICAgImF0TXMiOiA5OTUuMTMyNTQxMDAwMDAwOSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jYXRhbG9nL2ZhY2V0cyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDE4MzEuODc2OTk5OTk5OTk4NiwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9icmFuZHMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiAxODMyLjAwMTE2NiwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jYXRlZ29yaWVzIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMTgzMi4wNjA5MTYwMDAwMDA0LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2NhdGFsb2cvaGllcmFyY2h5IiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMTgzMi4xMDg2MjQ5OTk5OTksCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvcHJvZHVjdHMvZmFtaWxpZXMiLAogICAgICAicXVlcnkiOiAiP2xpbWl0PTYwJnNraXA9MCIsCiAgICAgICJhdE1zIjogMTgzMi4yMzMwMDAwMDAwMDIsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY3VzdG9tZXJzIiwKICAgICAgInF1ZXJ5IjogIj9jb25maXJtZWRfb25seT10cnVlJmNvbXBsZXRpb249YWN0aXZlIiwKICAgICAgImF0TXMiOiAyMzczLjIyNjEyNDk5OTk5OTIsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY2F0YWxvZy9mYWNldHMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiAyNzE5LjAyNTY2NTk5OTk5OTUsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY3VzdG9tZXJzIiwKICAgICAgInF1ZXJ5IjogIj9jb25maXJtZWRfb25seT10cnVlJmNvbXBsZXRpb249YWN0aXZlIiwKICAgICAgImF0TXMiOiAyNzY1Ljk0NDE2NTk5OTk5OTMsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY2F0YWxvZy9mYWNldHMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiAzMTEwLjY3OTA0MTAwMDAwMTIsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY3VzdG9tZXJzIiwKICAgICAgInF1ZXJ5IjogIj9jb25maXJtZWRfb25seT10cnVlJmNvbXBsZXRpb249YWN0aXZlIiwKICAgICAgImF0TXMiOiAzMTQyLjk4NDEyNTAwMDAwMSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jYXRhbG9nL2ZhY2V0cyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDM0NTcuNTE2ODc0OTk5OTk5MywKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jdXN0b21lcnMiLAogICAgICAicXVlcnkiOiAiP2NvbmZpcm1lZF9vbmx5PXRydWUmY29tcGxldGlvbj1hY3RpdmUiLAogICAgICAiYXRNcyI6IDM0OTUuNTE5MDQxMDAwMDAxNCwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jYXRhbG9nL2ZhY2V0cyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDM4NDEuNzQzNzQ5OTk5OTk5NiwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jdXN0b21lcnMiLAogICAgICAicXVlcnkiOiAiP2NvbmZpcm1lZF9vbmx5PXRydWUmY29tcGxldGlvbj1hY3RpdmUiLAogICAgICAiYXRNcyI6IDM4ODcuNzcyOTU3OTk5OTk5NiwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jYXRhbG9nL2ZhY2V0cyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDQyMTEuMjYwODMzMDAwMDAyLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2N1c3RvbWVycyIsCiAgICAgICJxdWVyeSI6ICI/Y29uZmlybWVkX29ubHk9dHJ1ZSZjb21wbGV0aW9uPWFjdGl2ZSIsCiAgICAgICJhdE1zIjogNDIyOC43MTQwMDAwMDAwMDIsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY2F0YWxvZy9mYWNldHMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiA0NTY5LjI5OTkxNjAwMDAwMiwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jdXN0b21lcnMiLAogICAgICAicXVlcnkiOiAiP2NvbmZpcm1lZF9vbmx5PXRydWUmY29tcGxldGlvbj1hY3RpdmUiLAogICAgICAiYXRNcyI6IDQ2MDMuNzQ0OTE2MDAwMDAxNSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jYXRhbG9nL2ZhY2V0cyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDQ5MzEuMDg2NzkxLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2N1c3RvbWVycyIsCiAgICAgICJxdWVyeSI6ICI/Y29uZmlybWVkX29ubHk9dHJ1ZSZjb21wbGV0aW9uPWFjdGl2ZSIsCiAgICAgICJhdE1zIjogNDk0NS42MTcwODI5OTk5OTksCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY2F0YWxvZy9mYWNldHMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiA1MjgxLjY5MTE2NTk5OTk5OSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jdXN0b21lcnMiLAogICAgICAicXVlcnkiOiAiP2NvbmZpcm1lZF9vbmx5PXRydWUmY29tcGxldGlvbj1hY3RpdmUiLAogICAgICAiYXRNcyI6IDUzMjMuMDcxNDE2MDAwMDAxLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2NhdGFsb2cvZmFjZXRzIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogNTY0Ni4xNDgzNzQ5OTk5OTksCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY3VzdG9tZXJzIiwKICAgICAgInF1ZXJ5IjogIj9jb25maXJtZWRfb25seT10cnVlJmNvbXBsZXRpb249YWN0aXZlIiwKICAgICAgImF0TXMiOiA1NjcyLjU4MTUwMDAwMDAwMiwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jYXRhbG9nL2ZhY2V0cyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDU5OTguNDYyNDU4LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2N1c3RvbWVycyIsCiAgICAgICJxdWVyeSI6ICI/Y29uZmlybWVkX29ubHk9dHJ1ZSZjb21wbGV0aW9uPWFjdGl2ZSIsCiAgICAgICJhdE1zIjogNjAzMi42MzgwNDEsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY2F0YWxvZy9mYWNldHMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiA2MzQ1LjMyNDk1Nzk5OTk5OSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jdXN0b21lcnMiLAogICAgICAicXVlcnkiOiAiP2NvbmZpcm1lZF9vbmx5PXRydWUmY29tcGxldGlvbj1hY3RpdmUiLAogICAgICAiYXRNcyI6IDYzNzUuNjczNjI1MDAwMDAxLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9CiAgXSwKICAiY29uc29sZUVycm9ycyI6IFtdLAogICJmYWlsZWRSZXF1ZXN0cyI6IFtdCn0="
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "202fc15c005728e7a2ea-0d9dd02daad765ec078e",
+          "file": "performance-startup.spec.ts",
+          "line": 276,
+          "column": 5
+        },
+        {
+          "title": "cold catalog loads one bounded page promptly on each device",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop-chrome",
+              "projectName": "desktop-chrome",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1822,
+                  "errors": [],
+                  "stdout": [
+                    {
+                      "text": "PERFORMANCE {\"device\":\"desktop-chrome\",\"browserVersion\":\"153.0.8010.12\",\"fixtureLatencyMs\":200,\"readyMs\":1510.869708,\"requestAfterFloorMs\":320.1021249999999,\"requestAfterReferencesMs\":1.4868749999998272,\"reads\":[{\"path\":\"/api/settings/permission-matrix\",\"query\":\"\",\"atMs\":350.58287500000006,\"floor\":\"first-floor\"},{\"path\":\"/api/settings/floor-access\",\"query\":\"\",\"atMs\":350.91137500000013,\"floor\":\"first-floor\"},{\"path\":\"/api/auth/me\",\"query\":\"\",\"atMs\":351.34270800000013,\"floor\":\"first-floor\"},{\"path\":\"/api/catalog/facets\",\"query\":\"\",\"atMs\":872.8640420000002,\"floor\":\"first-floor\"},{\"path\":\"/api/brands\",\"query\":\"\",\"atMs\":873.2078330000002,\"floor\":\"first-floor\"},{\"path\":\"/api/categories\",\"query\":\"\",\"atMs\":874.2554580000001,\"floor\":\"first-floor\"},{\"path\":\"/api/catalog/hierarchy\",\"query\":\"\",\"atMs\":874.5692920000001,\"floor\":\"first-floor\"},{\"path\":\"/api/products/families\",\"query\":\"?limit=60&skip=0\",\"atMs\":874.694708,\"floor\":\"first-floor\"}],\"longTasksMs\":[63],\"consoleErrors\":[],\"failedRequests\":[]}\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:46:39.211Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "catalog-startup-timing",
+                      "contentType": "application/json",
+                      "body": "ewogICJkZXZpY2UiOiAiZGVza3RvcC1jaHJvbWUiLAogICJicm93c2VyVmVyc2lvbiI6ICIxNTMuMC44MDEwLjEyIiwKICAiZml4dHVyZUxhdGVuY3lNcyI6IDIwMCwKICAicmVhZHlNcyI6IDE1MTAuODY5NzA4LAogICJyZXF1ZXN0QWZ0ZXJGbG9vck1zIjogMzIwLjEwMjEyNDk5OTk5OTksCiAgInJlcXVlc3RBZnRlclJlZmVyZW5jZXNNcyI6IDEuNDg2ODc0OTk5OTk5ODI3MiwKICAicmVhZHMiOiBbCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvc2V0dGluZ3MvcGVybWlzc2lvbi1tYXRyaXgiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiAzNTAuNTgyODc1MDAwMDAwMDYsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvc2V0dGluZ3MvZmxvb3ItYWNjZXNzIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMzUwLjkxMTM3NTAwMDAwMDEzLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2F1dGgvbWUiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiAzNTEuMzQyNzA4MDAwMDAwMTMsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY2F0YWxvZy9mYWNldHMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiA4NzIuODY0MDQyMDAwMDAwMiwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9icmFuZHMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiA4NzMuMjA3ODMzMDAwMDAwMiwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jYXRlZ29yaWVzIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogODc0LjI1NTQ1ODAwMDAwMDEsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY2F0YWxvZy9oaWVyYXJjaHkiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiA4NzQuNTY5MjkyMDAwMDAwMSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9wcm9kdWN0cy9mYW1pbGllcyIsCiAgICAgICJxdWVyeSI6ICI/bGltaXQ9NjAmc2tpcD0wIiwKICAgICAgImF0TXMiOiA4NzQuNjk0NzA4LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9CiAgXSwKICAibG9uZ1Rhc2tzTXMiOiBbCiAgICA2MwogIF0sCiAgImNvbnNvbGVFcnJvcnMiOiBbXSwKICAiZmFpbGVkUmVxdWVzdHMiOiBbXQp9"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "202fc15c005728e7a2ea-ab2dcd0bb057ee3f98f0",
+          "file": "performance-startup.spec.ts",
+          "line": 79,
+          "column": 5
+        },
+        {
+          "title": "customer identity and tabs remain usable while related history is pending",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop-chrome",
+              "projectName": "desktop-chrome",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1605,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:46:41.486Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "customer-primary-ready",
+                      "contentType": "application/json",
+                      "body": "ewogICJkZXZpY2UiOiAiZGVza3RvcC1jaHJvbWUiLAogICJyZWFkeU1zIjogMTQyMS43NDQ0OTk5OTk5OTk4LAogICJoZWxkIjogWwogICAgIi9hcGkvcXVvdGF0aW9ucyIsCiAgICAiL2FwaS9wdXJjaGFzZS1vcmRlcnMiLAogICAgIi9hcGkvYWN0aXZpdHkvY3VzdG9tZXIvcGVyZm9ybWFuY2UtY3VzdG9tZXIiLAogICAgIi9hcGkvZ29kb3duLXN0b2NrL2N1c3RvbWVyLXRyYW5zZmVycyIsCiAgICAiL2FwaS9wdXJjaGFzZXMvY3VzdG9tZXJzL3BlcmZvcm1hbmNlLWN1c3RvbWVyL3dvcmtzcGFjZSIKICBdLAogICJyZWFkcyI6IFsKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9zZXR0aW5ncy9wZXJtaXNzaW9uLW1hdHJpeCIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDM0Ny40MzI5MTcwMDAwMDAxLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3NldHRpbmdzL2Zsb29yLWFjY2VzcyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDM0Ny43NTQ5MTY5OTk5OTk3NSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9hdXRoL21lIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMzQ4LjMzOTU0MjAwMDAwMDE2LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2N1c3RvbWVycy9wZXJmb3JtYW5jZS1jdXN0b21lciIsCiAgICAgICJxdWVyeSI6ICI/d2l0aF9jb21wbGV0aW9uPXRydWUiLAogICAgICAiYXRNcyI6IDg2OS43MjEsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvcXVvdGF0aW9ucyIsCiAgICAgICJxdWVyeSI6ICI/Y3VzdG9tZXJfaWQ9cGVyZm9ybWFuY2UtY3VzdG9tZXIiLAogICAgICAiYXRNcyI6IDg2OS45NDI1ODMsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvcHVyY2hhc2Utb3JkZXJzIiwKICAgICAgInF1ZXJ5IjogIj9jdXN0b21lcl9pZD1wZXJmb3JtYW5jZS1jdXN0b21lciIsCiAgICAgICJhdE1zIjogODcwLjAyOTQ1OCwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9hY3Rpdml0eS9jdXN0b21lci9wZXJmb3JtYW5jZS1jdXN0b21lciIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDg3MC4zNDUyMDgwMDAwMDAyLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2dvZG93bi1zdG9jay9jdXN0b21lci10cmFuc2ZlcnMiLAogICAgICAicXVlcnkiOiAiP2N1c3RvbWVyX2lkPXBlcmZvcm1hbmNlLWN1c3RvbWVyIiwKICAgICAgImF0TXMiOiA4NzAuNDAzMzMyOTk5OTk5NywKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9wdXJjaGFzZXMvY3VzdG9tZXJzL3BlcmZvcm1hbmNlLWN1c3RvbWVyL3dvcmtzcGFjZSIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDEwODguNjUwNjI0OTk5OTk5OCwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfQogIF0KfQ=="
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "202fc15c005728e7a2ea-7958cf27b6707a436ec2",
+          "file": "performance-startup.spec.ts",
+          "line": 115,
+          "column": 5
+        },
+        {
+          "title": "quotation content renders while breakdown, purchase links and activity are pending",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop-chrome",
+              "projectName": "desktop-chrome",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1544,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:46:43.096Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "quotation-primary-ready",
+                      "contentType": "application/json",
+                      "body": "ewogICJkZXZpY2UiOiAiZGVza3RvcC1jaHJvbWUiLAogICJyZWFkeU1zIjogMTQyNi4yMDcwMDAwMDAwMDAzLAogICJoZWxkIjogWwogICAgIi9hcGkvcXVvdGF0aW9ucy9wZXJmb3JtYW5jZS1xdW90YXRpb24vYnJlYWtkb3duIiwKICAgICIvYXBpL2FjdGl2aXR5L3F1b3RhdGlvbi9wZXJmb3JtYW5jZS1xdW90YXRpb24iLAogICAgIi9hcGkvcHVyY2hhc2Utb3JkZXJzIgogIF0sCiAgInJlYWRzIjogWwogICAgewogICAgICAicGF0aCI6ICIvYXBpL3NldHRpbmdzL3Blcm1pc3Npb24tbWF0cml4IiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMzQ2LjExMTEyNTAwMDAwMDM2LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3NldHRpbmdzL2Zsb29yLWFjY2VzcyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDM0Ni4zODQwODQwMDAwMDAyNiwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9hdXRoL21lIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMzQ2LjQzODQxNzAwMDAwMDMsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvcXVvdGF0aW9ucy9wZXJmb3JtYW5jZS1xdW90YXRpb24iLAogICAgICAicXVlcnkiOiAiP3dpdGhfY29tcGxldGlvbj10cnVlIiwKICAgICAgImF0TXMiOiA4NzAuNTQzMDgzOTk5OTk5OSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9xdW90YXRpb25zL3BlcmZvcm1hbmNlLXF1b3RhdGlvbi9icmVha2Rvd24iLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiA4NzAuNzU4OTU4OTk5OTk5OCwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9hY3Rpdml0eS9xdW90YXRpb24vcGVyZm9ybWFuY2UtcXVvdGF0aW9uIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogODcwLjgzMTc5MiwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9wdXJjaGFzZS1vcmRlcnMiLAogICAgICAicXVlcnkiOiAiP3F1b3RhdGlvbl9pZD1wZXJmb3JtYW5jZS1xdW90YXRpb24iLAogICAgICAiYXRNcyI6IDg3MC44ODk3OTE5OTk5OTk5LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9CiAgXQp9"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "202fc15c005728e7a2ea-a51f8b3e3f482bbbc81b",
+          "file": "performance-startup.spec.ts",
+          "line": 155,
+          "column": 5
+        },
+        {
+          "title": "catalog results do not wait for slow filter metadata",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop-chrome",
+              "projectName": "desktop-chrome",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1567,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:46:44.645Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "202fc15c005728e7a2ea-4e0abef9ea898b1e6785",
+          "file": "performance-startup.spec.ts",
+          "line": 198,
+          "column": 5
+        },
+        {
+          "title": "repeated navigation and viewport rotation remain usable on a slower CPU",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop-chrome",
+              "projectName": "desktop-chrome",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 4446,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:46:46.217Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "navigation-rotation-timings",
+                      "contentType": "application/json",
+                      "body": "ewogICJjcHVUaHJvdHRsZSI6IDQsCiAgImZpeHR1cmVMYXRlbmN5TXMiOiAyMDAsCiAgInRpbWluZ3MiOiBbCiAgICA4OTAuNTM5ODc1MDAwMDAwNCwKICAgIDMyNS41NjczNzUwMDAwMDA1NCwKICAgIDExNS4yODg1ODM5OTk5OTk5LAogICAgMTAxLjczMjMzMjk5OTk5OTkzCiAgXSwKICAicmVhZHMiOiBbCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvYXV0aC9tZSIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDQyNi44NDE4NzUwMDAwMDAxLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3NldHRpbmdzL2Zsb29yLWFjY2VzcyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDczNC44ODY3NTAwMDAwMDA2LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3NldHRpbmdzL3Blcm1pc3Npb24tbWF0cml4IiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogNzM0Ljk1NjkxNjAwMDAwMDEsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY3VzdG9tZXJzIiwKICAgICAgInF1ZXJ5IjogIj9jb25maXJtZWRfb25seT10cnVlJmNvbXBsZXRpb249YWN0aXZlIiwKICAgICAgImF0TXMiOiAxMzEwLjIxNDU0MTAwMDAwMDMsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY3VzdG9tZXJzIiwKICAgICAgInF1ZXJ5IjogIj9jb25maXJtZWRfb25seT10cnVlJmNvbXBsZXRpb249YWN0aXZlIiwKICAgICAgImF0TXMiOiAxNzYyLjQwODU0MDk5OTk5OTgsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY2F0YWxvZy9mYWNldHMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiAyMTEzLjE4OTQxNiwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9icmFuZHMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiAyMTEzLjQ4MDg3NSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jYXRlZ29yaWVzIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMjExMy41MjMxMjUwMDAwMDA2LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2NhdGFsb2cvaGllcmFyY2h5IiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMjExMy41NDMzMzMwMDAwMDA1LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL3Byb2R1Y3RzL2ZhbWlsaWVzIiwKICAgICAgInF1ZXJ5IjogIj9saW1pdD02MCZza2lwPTAiLAogICAgICAiYXRNcyI6IDIxMTMuNTY2OTU4MDAwMDAwMywKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jdXN0b21lcnMiLAogICAgICAicXVlcnkiOiAiP2NvbmZpcm1lZF9vbmx5PXRydWUmY29tcGxldGlvbj1hY3RpdmUiLAogICAgICAiYXRNcyI6IDI3MTIuMTYxNDE2LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2N1c3RvbWVycyIsCiAgICAgICJxdWVyeSI6ICI/Y29uZmlybWVkX29ubHk9dHJ1ZSZjb21wbGV0aW9uPWFjdGl2ZSIsCiAgICAgICJhdE1zIjogMzAwMC41NTQ1ODMsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY2F0YWxvZy9mYWNldHMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiAzMjIzLjc1ODg3NTAwMDAwMDQsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY3VzdG9tZXJzIiwKICAgICAgInF1ZXJ5IjogIj9jb25maXJtZWRfb25seT10cnVlJmNvbXBsZXRpb249YWN0aXZlIiwKICAgICAgImF0TXMiOiAzMzY4LjY2MzcwODAwMDAwMSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jYXRhbG9nL2ZhY2V0cyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDM2NDEuOTA3MjkxMDAwMDAwNCwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jdXN0b21lcnMiLAogICAgICAicXVlcnkiOiAiP2NvbmZpcm1lZF9vbmx5PXRydWUmY29tcGxldGlvbj1hY3RpdmUiLAogICAgICAiYXRNcyI6IDM3NDkuODExODMzMDAwMDAwNywKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jYXRhbG9nL2ZhY2V0cyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDQwMjEuNzAyMjQ5OTk5OTk5NCwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jdXN0b21lcnMiLAogICAgICAicXVlcnkiOiAiP2NvbmZpcm1lZF9vbmx5PXRydWUmY29tcGxldGlvbj1hY3RpdmUiLAogICAgICAiYXRNcyI6IDQxMTMuMzE5OTE1OTk5OTk5NSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfQogIF0sCiAgImNvbnNvbGVFcnJvcnMiOiBbXSwKICAiZmFpbGVkUmVxdWVzdHMiOiBbXQp9"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "202fc15c005728e7a2ea-c16615f5c67172adf993",
+          "file": "performance-startup.spec.ts",
+          "line": 218,
+          "column": 5
+        },
+        {
+          "title": "a delayed obsolete search cannot replace newer catalog results",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop-chrome",
+              "projectName": "desktop-chrome",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1621,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:46:50.668Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "202fc15c005728e7a2ea-ec07edfc4df145773e71",
+          "file": "performance-startup.spec.ts",
+          "line": 247,
+          "column": 5
+        },
+        {
+          "title": "repeated catalog visits retain one signed-in session and reuse reference data",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop-chrome",
+              "projectName": "desktop-chrome",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 6228,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:46:52.294Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "repeated-session-navigation",
+                      "contentType": "application/json",
+                      "body": "ewogICJ2aXNpdHMiOiAxMiwKICAiZGV2aWNlIjogImRlc2t0b3AtY2hyb21lIiwKICAiZml4dHVyZUxhdGVuY3lNcyI6IDIwMCwKICAidGltaW5ncyI6IFsKICAgIDg1MS4yMDgxNjU5OTk5OTg1LAogICAgMjcuNTk3MTY2MDAwMDAxMzgsCiAgICAyNi4wODcxMjQ5OTk5OTgxOTYsCiAgICAyNi41NTg0OTk5OTk5OTkxODUsCiAgICAyNC42MTU5MTY5OTk5OTkxNzIsCiAgICAyMy45MjE1ODM5OTk5OTk3MSwKICAgIDIyLjY1MTI5MjAwMDAwMjI4NiwKICAgIDIzLjkwMjMzMzAwMDAwMTgxOCwKICAgIDIyLjgyMzI1MDAwMDAwMTI4LAogICAgMjMuNjY4OTE2OTk5OTk5MDU1LAogICAgMjMuODA2MDAwMDAwMDAwNDk1LAogICAgMjkuNjc0OTE2MDAwMDAzNTc3CiAgXSwKICAicmVhZHMiOiBbCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvc2V0dGluZ3MvcGVybWlzc2lvbi1tYXRyaXgiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiAzNDYuMzY4ODMzMDAwMDAwNDUsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvc2V0dGluZ3MvZmxvb3ItYWNjZXNzIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMzQ2LjQzNTQxNzAwMDAwMDYsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvYXV0aC9tZSIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDM0Ni41MDA1MDAwMDAwMDAxLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2N1c3RvbWVycyIsCiAgICAgICJxdWVyeSI6ICI/Y29uZmlybWVkX29ubHk9dHJ1ZSZjb21wbGV0aW9uPWFjdGl2ZSIsCiAgICAgICJhdE1zIjogODc3LjI0NTMzMzAwMDAwMDgsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY2F0YWxvZy9mYWNldHMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiAxNzU0LjQ2OTgzMzAwMDAwMSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9icmFuZHMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiAxNzU0LjU3MzgzMzAwMDAwMDQsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY2F0ZWdvcmllcyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDE3NTQuNzcyNjY3MDAwMDAxLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2NhdGFsb2cvaGllcmFyY2h5IiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMTc1NC44OTAxMjUsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvcHJvZHVjdHMvZmFtaWxpZXMiLAogICAgICAicXVlcnkiOiAiP2xpbWl0PTYwJnNraXA9MCIsCiAgICAgICJhdE1zIjogMTc1NC45NDA4MzMwMDAwMDA2LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2N1c3RvbWVycyIsCiAgICAgICJxdWVyeSI6ICI/Y29uZmlybWVkX29ubHk9dHJ1ZSZjb21wbGV0aW9uPWFjdGl2ZSIsCiAgICAgICJhdE1zIjogMjI5Ni4wMjI1ODMsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY2F0YWxvZy9mYWNldHMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiAyNjEwLjE4MDc5MjAwMDAwMSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jdXN0b21lcnMiLAogICAgICAicXVlcnkiOiAiP2NvbmZpcm1lZF9vbmx5PXRydWUmY29tcGxldGlvbj1hY3RpdmUiLAogICAgICAiYXRNcyI6IDI2MjkuNzU0MDgzLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2NhdGFsb2cvZmFjZXRzIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogMjkzNS4yMTYxMjQ5OTk5OTksCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY3VzdG9tZXJzIiwKICAgICAgInF1ZXJ5IjogIj9jb25maXJtZWRfb25seT10cnVlJmNvbXBsZXRpb249YWN0aXZlIiwKICAgICAgImF0TXMiOiAyOTU1LjQ5NDE2NzAwMDAwMDcsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY2F0YWxvZy9mYWNldHMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiAzMjYxLjMzODgzMzAwMDAwMTYsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY3VzdG9tZXJzIiwKICAgICAgInF1ZXJ5IjogIj9jb25maXJtZWRfb25seT10cnVlJmNvbXBsZXRpb249YWN0aXZlIiwKICAgICAgImF0TXMiOiAzMjgxLjA5NTE2Njk5OTk5OTUsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY2F0YWxvZy9mYWNldHMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiAzNTg2LjM3MzUwMDAwMDAwMTUsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY3VzdG9tZXJzIiwKICAgICAgInF1ZXJ5IjogIj9jb25maXJtZWRfb25seT10cnVlJmNvbXBsZXRpb249YWN0aXZlIiwKICAgICAgImF0TXMiOiAzNjA0Ljk2ODQxNywKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jYXRhbG9nL2ZhY2V0cyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDM5MDYuMjY4MjUwMDAwMDAxLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2N1c3RvbWVycyIsCiAgICAgICJxdWVyeSI6ICI/Y29uZmlybWVkX29ubHk9dHJ1ZSZjb21wbGV0aW9uPWFjdGl2ZSIsCiAgICAgICJhdE1zIjogMzkyNC41NzEyMDgwMDAwMDEsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY2F0YWxvZy9mYWNldHMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiA0MjI0LjcxNDE2NzAwMDAwMiwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jdXN0b21lcnMiLAogICAgICAicXVlcnkiOiAiP2NvbmZpcm1lZF9vbmx5PXRydWUmY29tcGxldGlvbj1hY3RpdmUiLAogICAgICAiYXRNcyI6IDQyNDIuMjIyNTQxOTk5OTk5NSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jYXRhbG9nL2ZhY2V0cyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDQ1NDcuNjAyMjkyLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2N1c3RvbWVycyIsCiAgICAgICJxdWVyeSI6ICI/Y29uZmlybWVkX29ubHk9dHJ1ZSZjb21wbGV0aW9uPWFjdGl2ZSIsCiAgICAgICJhdE1zIjogNDU2NS43Njk2MjUwMDAwMDEsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY2F0YWxvZy9mYWNldHMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiA0ODY4LjM1NjI1MDAwMDAwMSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jdXN0b21lcnMiLAogICAgICAicXVlcnkiOiAiP2NvbmZpcm1lZF9vbmx5PXRydWUmY29tcGxldGlvbj1hY3RpdmUiLAogICAgICAiYXRNcyI6IDQ4ODYuMDMzMjkyLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2NhdGFsb2cvZmFjZXRzIiwKICAgICAgInF1ZXJ5IjogIiIsCiAgICAgICJhdE1zIjogNTE5MS42MTk1ODMsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY3VzdG9tZXJzIiwKICAgICAgInF1ZXJ5IjogIj9jb25maXJtZWRfb25seT10cnVlJmNvbXBsZXRpb249YWN0aXZlIiwKICAgICAgImF0TXMiOiA1MjA4Ljk4OTU0MTk5OTk5OSwKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jYXRhbG9nL2ZhY2V0cyIsCiAgICAgICJxdWVyeSI6ICIiLAogICAgICAiYXRNcyI6IDU1MTEuMDc1NTgzMDAwMDAyLAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9LAogICAgewogICAgICAicGF0aCI6ICIvYXBpL2N1c3RvbWVycyIsCiAgICAgICJxdWVyeSI6ICI/Y29uZmlybWVkX29ubHk9dHJ1ZSZjb21wbGV0aW9uPWFjdGl2ZSIsCiAgICAgICJhdE1zIjogNTUyOS43MzkzNzUwMDAwMDEsCiAgICAgICJmbG9vciI6ICJmaXJzdC1mbG9vciIKICAgIH0sCiAgICB7CiAgICAgICJwYXRoIjogIi9hcGkvY2F0YWxvZy9mYWNldHMiLAogICAgICAicXVlcnkiOiAiIiwKICAgICAgImF0TXMiOiA1ODMyLjA0MTQxNywKICAgICAgImZsb29yIjogImZpcnN0LWZsb29yIgogICAgfSwKICAgIHsKICAgICAgInBhdGgiOiAiL2FwaS9jdXN0b21lcnMiLAogICAgICAicXVlcnkiOiAiP2NvbmZpcm1lZF9vbmx5PXRydWUmY29tcGxldGlvbj1hY3RpdmUiLAogICAgICAiYXRNcyI6IDU4NTcuMjYyNjY2OTk5OTk5LAogICAgICAiZmxvb3IiOiAiZmlyc3QtZmxvb3IiCiAgICB9CiAgXSwKICAiY29uc29sZUVycm9ycyI6IFtdLAogICJmYWlsZWRSZXF1ZXN0cyI6IFtdCn0="
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "202fc15c005728e7a2ea-1dbeacc37c38b60f22ba",
+          "file": "performance-startup.spec.ts",
+          "line": 276,
+          "column": 5
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-12T22:38:48.134Z",
+    "duration": 490446.908,
+    "expected": 27,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  }
+}

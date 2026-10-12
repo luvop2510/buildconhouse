@@ -29,6 +29,7 @@ JWT_EXP_MIN = settings.jwt_exp_minutes
 _PRINCIPAL_CACHE_TTL_SECONDS = 10.0
 _PRINCIPAL_CACHE_MAX_ENTRIES = 2048
 _principal_cache: dict[tuple[str, str, str], tuple[float, dict]] = {}
+_principal_cache_generation = 0
 
 
 def _cached_principal(kind: str, subject: str, session_id: str | None) -> dict | None:
@@ -59,6 +60,11 @@ def _cache_principal(kind: str, subject: str, session_id: str | None, doc: dict)
 
 def invalidate_principal_cache(kind: str, subject: str, session_id: str | None = None) -> None:
     """Invalidate one session or every cached session for a principal."""
+    # A read already in flight may have captured pre-revocation state. A
+    # single bounded generation prevents it from putting that state back
+    # after invalidation, without retaining per-user tombstones forever.
+    global _principal_cache_generation
+    _principal_cache_generation += 1
     if session_id is not None:
         _principal_cache.pop((kind, subject, session_id), None)
         return
@@ -121,6 +127,7 @@ async def _load_active_principal(payload: dict, *, kind: str, collection: str) -
     if not session_id:
         raise HTTPException(status_code=401, detail="Session expired or was signed out. Please sign in again.")
 
+    generation = _principal_cache_generation
     session_filter = {
         "id": session_id,
         "user_type": kind,
@@ -149,7 +156,8 @@ async def _load_active_principal(payload: dict, *, kind: str, collection: str) -
         or session_doc.get("mfa_version") != principal.get("mfa_version", 0)
     ):
         raise HTTPException(status_code=401, detail="Second-factor verification is required. Please sign in again.")
-    _cache_principal(kind, subject, session_id, principal)
+    if generation == _principal_cache_generation:
+        _cache_principal(kind, subject, session_id, principal)
     return principal
 
 
@@ -376,10 +384,15 @@ async def get_current_session(authorization: Optional[str] = Header(None)) -> tu
 async def revoke_all_sessions(kind: str, subject: str) -> int:
     """Invalidate every session after an administrator resets credentials."""
     invalidate_principal_cache(kind, subject)
-    result = await db.user_sessions.update_many(
-        {"user_type": kind, "user_id": subject, "revoked": {"$ne": True}},
-        {"$set": {"revoked": True}},
-    )
+    try:
+        result = await db.user_sessions.update_many(
+            {"user_type": kind, "user_id": subject, "revoked": {"$ne": True}},
+            {"$set": {"revoked": True}},
+        )
+    finally:
+        # Clear entries created while the write was pending, even when its
+        # acknowledgement fails: the server may already have committed it.
+        invalidate_principal_cache(kind, subject)
     return result.modified_count
 
 

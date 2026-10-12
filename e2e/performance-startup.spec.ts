@@ -23,6 +23,8 @@ async function fixtureCatalog(page: Page, baseURL: string) {
   const external: string[] = [];
   const mutations: string[] = [];
   const errors: string[] = [];
+  const consoleErrors: string[] = [];
+  const failedRequests: { path: string; error: string | null }[] = [];
   await page.context().route('**/*', async route => {
     const url = new URL(route.request().url());
     if (url.origin !== origin) {
@@ -42,6 +44,9 @@ async function fixtureCatalog(page: Page, baseURL: string) {
     if (url.pathname.startsWith('/api/')) completed.push({ path: url.pathname, atMs: performance.now() - started });
   });
   page.on('pageerror', error => errors.push(error.message));
+  page.on('crash', () => errors.push('Browser page crashed'));
+  page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+  page.on('requestfailed', request => failedRequests.push({ path: new URL(request.url()).pathname, error: request.failure()?.errorText || null }));
   await page.addInitScript(() => {
     const tasks: number[] = [];
     (window as any).__performanceLongTasks = tasks;
@@ -68,7 +73,7 @@ async function fixtureCatalog(page: Page, baseURL: string) {
     if (Object.hasOwn(replies, path)) return route.fulfill({ json: replies[path] });
     return route.fallback();
   });
-  return { started, reads, completed, external, mutations, errors };
+  return { started, reads, completed, external, mutations, errors, consoleErrors, failedRequests };
 }
 
 test('cold catalog loads one bounded page promptly on each device', async ({ page, baseURL }, info) => {
@@ -83,9 +88,10 @@ test('cold catalog loads one bounded page promptly on each device', async ({ pag
   const referencesStarted = data.reads.find(read => read.path === '/api/brands')!.atMs;
   const requestAfterReferencesMs = familyReads[0].atMs - referencesStarted;
   const summary = {
-    device: info.project.name, fixtureLatencyMs: LATENCY_MS, readyMs,
+    device: info.project.name, browserVersion: page.context().browser()?.version(), fixtureLatencyMs: LATENCY_MS, readyMs,
     requestAfterFloorMs, requestAfterReferencesMs, reads: data.reads,
     longTasksMs: await page.evaluate(() => (window as any).__performanceLongTasks),
+    consoleErrors: data.consoleErrors, failedRequests: data.failedRequests,
   };
   await info.attach('catalog-startup-timing', { body: JSON.stringify(summary, null, 2), contentType: 'application/json' });
   console.log(`PERFORMANCE ${JSON.stringify(summary)}`);
@@ -207,4 +213,87 @@ test('catalog results do not wait for slow filter metadata', async ({ page, base
     expect(data.external).toEqual([]);
     expect(data.errors).toEqual([]);
   } finally { release(); }
+});
+
+test('repeated navigation and viewport rotation remain usable on a slower CPU', async ({ page, browserName, baseURL }, info) => {
+  const data = await fixtureCatalog(page, baseURL!);
+  const cdp = browserName === 'chromium' ? await page.context().newCDPSession(page) : null;
+  if (cdp) await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+  const timings: number[] = [];
+  try {
+    await page.goto('/customers');
+    await expect(page.getByText('No customers yet', { exact: true })).toBeVisible();
+    for (const viewport of [{ width: 360, height: 800 }, { width: 800, height: 360 }, { width: 768, height: 1024 }, { width: 1440, height: 900 }]) {
+      await page.setViewportSize(viewport);
+      const started = performance.now();
+      const catalogLink = page.getByTestId(viewport.width < 768 ? 'bottom-nav-catalog' : 'nav-catalog');
+      await catalogLink.focus();
+      await page.keyboard.press('Enter');
+      await expect(page.getByTestId('family-performance-family')).toBeVisible();
+      timings.push(performance.now() - started);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+      await page.goBack();
+      await expect(page.getByText('No customers yet', { exact: true })).toBeVisible();
+    }
+    expect(data.errors).toEqual([]);
+    expect(data.external).toEqual([]);
+    expect(data.mutations).toEqual([]);
+    await info.attach('navigation-rotation-timings', { body: JSON.stringify({ cpuThrottle: cdp ? 4 : 'unavailable on this engine', fixtureLatencyMs: LATENCY_MS, timings, reads: data.reads, consoleErrors: data.consoleErrors, failedRequests: data.failedRequests }, null, 2), contentType: 'application/json' });
+  } finally {
+    if (cdp) { await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 }); await cdp.detach(); }
+  }
+});
+
+test('a delayed obsolete search cannot replace newer catalog results', async ({ page, baseURL }) => {
+  const data = await fixtureCatalog(page, baseURL!);
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/products/families?**', async route => {
+    const query = new URL(route.request().url()).searchParams.get('q');
+    if (query === 'obsolete') await pending;
+    const id = query || 'initial';
+    return route.fulfill({ json: { total: 1, items: [{ ...family, family_key: id, family_name: `${id} basin` }] } });
+  });
+  try {
+    await page.goto('/catalog');
+    await expect(page.getByTestId('family-initial')).toBeVisible();
+    const search = page.getByRole('textbox', { name: 'Search catalog', exact: true });
+    const oldStarted = page.waitForRequest(request => new URL(request.url()).pathname === '/api/products/families' && new URL(request.url()).searchParams.get('q') === 'obsolete');
+    await search.fill('obsolete');
+    await oldStarted;
+    await search.fill('current');
+    await expect(page.getByTestId('family-current')).toBeVisible();
+    const oldFinished = page.waitForResponse(response => new URL(response.url()).pathname === '/api/products/families' && new URL(response.url()).searchParams.get('q') === 'obsolete');
+    release();
+    await oldFinished;
+    await expect(page.getByTestId('family-current')).toBeVisible();
+    await expect(page.getByTestId('family-obsolete')).toHaveCount(0);
+    expect(data.errors).toEqual([]);
+    expect(data.external).toEqual([]);
+  } finally { release(); }
+});
+
+test('repeated catalog visits retain one signed-in session and reuse reference data', async ({ page, baseURL }, info) => {
+  const data = await fixtureCatalog(page, baseURL!);
+  await page.goto('/customers');
+  await expect(page.getByText('No customers yet', { exact: true })).toBeVisible();
+  const timings: number[] = [];
+  for (let visit = 0; visit < 12; visit++) {
+    const started = performance.now();
+    const catalogLink = page.getByTestId(page.viewportSize()!.width < 768 ? 'bottom-nav-catalog' : 'nav-catalog');
+    await catalogLink.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('family-performance-family')).toBeVisible();
+    timings.push(performance.now() - started);
+    await page.goBack();
+    await expect(page.getByText('No customers yet', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('login-submit')).toHaveCount(0);
+  }
+  for (const path of ['/api/auth/me', '/api/settings/floor-access', '/api/brands', '/api/categories', '/api/catalog/hierarchy']) {
+    expect(data.reads.filter(read => read.path === path), path).toHaveLength(1);
+  }
+  expect(data.errors).toEqual([]);
+  expect(data.external).toEqual([]);
+  expect(data.mutations).toEqual([]);
+  await info.attach('repeated-session-navigation', { body: JSON.stringify({ visits: 12, device: info.project.name, fixtureLatencyMs: LATENCY_MS, timings, reads: data.reads, consoleErrors: data.consoleErrors, failedRequests: data.failedRequests }, null, 2), contentType: 'application/json' });
 });

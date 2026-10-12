@@ -46,7 +46,10 @@ async def _revoke_other_sessions(kind: str, user_id: str, authorization: Optiona
     query: dict = {"user_type": kind, "user_id": user_id, "revoked": {"$ne": True}}
     if current_sid:
         query["id"] = {"$ne": current_sid}
-    await db.user_sessions.update_many(query, {"$set": {"revoked": True}})
+    try:
+        await db.user_sessions.update_many(query, {"$set": {"revoked": True}})
+    finally:
+        invalidate_principal_cache(kind, user_id)
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -214,7 +217,10 @@ async def logout_current_session(authorization: Optional[str] = Header(None)):
     if not sid:
         return {"revoked": False}
     invalidate_principal_cache(payload.get("kind", ""), payload.get("sub", ""), sid)
-    await db.user_sessions.update_one({"id": sid}, {"$set": {"revoked": True}})
+    try:
+        await db.user_sessions.update_one({"id": sid}, {"$set": {"revoked": True}})
+    finally:
+        invalidate_principal_cache(payload.get("kind", ""), payload.get("sub", ""), sid)
     return {"revoked": True}
 
 
@@ -239,9 +245,12 @@ async def logout_all_sessions(session: tuple[str, str, str] = Depends(get_curren
     """Revoke every active session for this user — 'logout from all devices'."""
     kind, sub, _ = session
     invalidate_principal_cache(kind, sub)
-    res = await db.user_sessions.update_many(
-        {"user_type": kind, "user_id": sub, "revoked": {"$ne": True}}, {"$set": {"revoked": True}},
-    )
+    try:
+        res = await db.user_sessions.update_many(
+            {"user_type": kind, "user_id": sub, "revoked": {"$ne": True}}, {"$set": {"revoked": True}},
+        )
+    finally:
+        invalidate_principal_cache(kind, sub)
     return {"revoked_count": res.modified_count}
 
 
@@ -249,9 +258,12 @@ async def logout_all_sessions(session: tuple[str, str, str] = Depends(get_curren
 async def revoke_one_session(session_id: str, session: tuple[str, str, str] = Depends(get_current_session)):
     kind, sub, _ = session
     invalidate_principal_cache(kind, sub, session_id)
-    res = await db.user_sessions.update_one(
-        {"id": session_id, "user_type": kind, "user_id": sub}, {"$set": {"revoked": True}},
-    )
+    try:
+        res = await db.user_sessions.update_one(
+            {"id": session_id, "user_type": kind, "user_id": sub}, {"$set": {"revoked": True}},
+        )
+    finally:
+        invalidate_principal_cache(kind, sub, session_id)
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Session not found")
     return {"revoked": True}
@@ -273,12 +285,15 @@ async def _mfa_sessions(user: UserPublic, version: int, enabled: bool) -> None:
     query = {"user_type": "staff", "user_id": user.id, "revoked": {"$ne": True}}
     if user.session_id:
         query["id"] = {"$ne": user.session_id}
-    await db.user_sessions.update_many(query, {"$set": {"revoked": True}})
-    if user.session_id:
-        await db.user_sessions.update_one(
-            {"id": user.session_id, "user_type": "staff", "user_id": user.id, "revoked": {"$ne": True}},
-            {"$set": {"mfa_verified": enabled, "mfa_version": version}},
-        )
+    try:
+        await db.user_sessions.update_many(query, {"$set": {"revoked": True}})
+        if user.session_id:
+            await db.user_sessions.update_one(
+                {"id": user.session_id, "user_type": "staff", "user_id": user.id, "revoked": {"$ne": True}},
+                {"$set": {"mfa_verified": enabled, "mfa_version": version}},
+            )
+    finally:
+        invalidate_principal_cache("staff", user.id)
 
 
 @router.get("/mfa/status")

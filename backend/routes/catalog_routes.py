@@ -231,7 +231,8 @@ async def catalog_hierarchy(user: UserPublic = Depends(get_current_user)):
         brand = brands.get(bid, {"id": bid, "name": "Unknown"})
         category = cats.get(cid, {"id": cid, "name": "Uncategorised"})
         b = tree.setdefault(bid, {"brand": brand, "categories": {}})
-        c = b["categories"].setdefault(cid, {"category": category, "subcategories": {}})
+        c = b["categories"].setdefault(cid, {"category": category, "subcategories": {},
+                                           "product_count": r.get("category_product_count")})
         s = c["subcategories"].setdefault(subcat, {"name": subcat, "series": {}})
         se = s["series"].setdefault(series, {"name": series, "families": {}})
         fam = se["families"].setdefault(family_key, {
@@ -274,7 +275,7 @@ async def catalog_hierarchy(user: UserPublic = Depends(get_current_user)):
                 cats_out.append({
                     "category": c["category"],
                     "subcategory_count": len(subs_out),
-                    "product_count": sum(sub["product_count"] for sub in subs_out),
+                    "product_count": c["product_count"] if c["product_count"] is not None else sum(sub["product_count"] for sub in subs_out),
                     "subcategories": subs_out,
                 })
             cats_out.sort(key=lambda x: catalog_service._category_sort_key(x["category"]))

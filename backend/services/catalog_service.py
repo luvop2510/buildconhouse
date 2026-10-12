@@ -38,6 +38,9 @@ _SEARCH_FIELDS = (
 # `_canonical_sku_for_sha1`). Guards built around "identical photo across
 # siblings = mistake" must not apply here.
 _TILE_FLOOR_ID = "ground-floor"
+# Hierarchy exposes these labels for missing supplier metadata. Filtering a
+# visible choice must include the same products as that hierarchy branch.
+_HIERARCHY_FALLBACK_LABELS = {"subcategory": "General", "series": "Uncategorised"}
 
 
 @dataclass
@@ -660,13 +663,19 @@ def _family_listing_siblings(snapshot: CatalogSnapshot, product: dict) -> list[d
     return siblings
 
 
-def _unique_listings(rows: list[dict], *, per_category: bool = False) -> list[dict]:
+def _unique_listings(rows: list[dict], *, per_category: bool = False, per_placement: bool = False) -> list[dict]:
     """Keep the first matching source placement, retaining every row on the SKU."""
     seen = set()
     out = []
     for index, row in enumerate(rows):
         product_id = row.get("id", index)
-        key = (product_id, row.get("category_id")) if per_category else product_id
+        if per_placement:
+            key = (product_id, *((row.get(field) or _HIERARCHY_FALLBACK_LABELS[field])
+                                 if field in _HIERARCHY_FALLBACK_LABELS else row.get(field) for field in (
+                "category_id", "subcategory", "series", "family_key", "family_name",
+            )))
+        else:
+            key = (product_id, row.get("category_id")) if per_category else product_id
         if key in seen:
             continue
         seen.add(key)
@@ -706,7 +715,15 @@ def _matches_filters(product: dict, *, brand_id: Optional[str], category_id: Opt
         "finish": finish,
         "colour": colour,
     }
-    return all(value is None or (product.get(field) in value if isinstance(value, (list, tuple)) else product.get(field) == value) for field, value in expected.items())
+    def matches(field, value):
+        actual = product.get(field)
+        if field in _HIERARCHY_FALLBACK_LABELS:
+            label = _HIERARCHY_FALLBACK_LABELS[field]
+            requests_fallback = label in value if isinstance(value, (list, tuple)) else value == label
+            if requests_fallback and actual in (None, ""):
+                actual = label
+        return value is None or (actual in value if isinstance(value, (list, tuple)) else actual == value)
+    return all(matches(field, value) for field, value in expected.items())
 
 
 def _family_card_key(product: dict) -> tuple:
@@ -970,10 +987,14 @@ async def resolve_size_variant(
 async def hierarchy_rows(floor_ids: Optional[list[str]] = None) -> tuple[list[dict], dict[str, dict], dict[str, dict]]:
     snapshot = await get_catalog_snapshot()
     groups: dict[tuple, dict] = {}
-    products = _unique_listings(_listing_products(snapshot), per_category=True)
+    # One SKU may be placed in multiple sections of the same worksheet.
+    # Keep each hierarchy branch while counting repeated rows in it once.
+    products = _unique_listings(_listing_products(snapshot), per_placement=True)
     products = products if floor_ids is None else [
         p for p in products if p.get("floor_id") in floor_ids
     ]
+    category_counts = Counter((p.get("brand_id"), p.get("category_id")) for p in
+                              _unique_listings(products, per_category=True))
     for product in products:
         key = (
             product.get("brand_id"), product.get("category_id"), product.get("subcategory"),
@@ -985,6 +1006,7 @@ async def hierarchy_rows(floor_ids: Optional[list[str]] = None) -> tuple[list[di
                 "series": key[3], "family_key": key[4], "family_name": key[5],
             },
             "product_count": 0,
+            "category_product_count": category_counts[(key[0], key[1])],
             "min_price": float(product.get("price") or 0),
             "sample_image": (product.get("images") or [None])[0],
             "image_quality": product.get("image_quality"),
@@ -1106,7 +1128,9 @@ async def facet_buckets(
 ) -> dict:
     snapshot = await get_catalog_snapshot()
     products = [
-        row for row in _unique_listings(_listing_products(snapshot), per_category=True)
+        # Filter every source occurrence before bucket's (value, SKU) dedupe.
+        # Category-level dedupe here loses later same-category sections.
+        row for row in _listing_products(snapshot)
         if _matches_filters(
             row, brand_id=brand_id, category_id=category_id, subcategory=subcategory,
             series=series, family_key=None, finish=None, colour=None, floor_ids=floor_ids,

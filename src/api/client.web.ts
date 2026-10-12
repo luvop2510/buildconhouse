@@ -21,6 +21,22 @@ const TOKEN_KIND_KEY = "forge.jwt.kind";
 const REQUEST_TIMEOUT_MS = 30_000;
 const inflightGets = new Map<string, Promise<unknown>>();
 const responseCache = new Map<string, { expiresAt: number; value: unknown }>();
+const MAX_RESPONSE_CACHE_ENTRIES = 64;
+
+function cacheResponse(key: string, value: unknown, ttlMs: number) {
+  const now = Date.now();
+  // Distinct searches/pages must not retain expired catalog payloads for the
+  // whole session. The bounded scan also keeps cleanup independent of URL reuse.
+  for (const [cachedKey, entry] of responseCache) {
+    if (entry.expiresAt <= now) responseCache.delete(cachedKey);
+  }
+  responseCache.delete(key);
+  while (responseCache.size >= MAX_RESPONSE_CACHE_ENTRIES) {
+    responseCache.delete(responseCache.keys().next().value!);
+  }
+  responseCache.set(key, { expiresAt: now + ttlMs, value });
+}
+
 const activeRequests = new Map<AbortController, boolean>();
 let tokenCache: string | null | undefined;
 let tokenKindCache: TokenKind | null | undefined;
@@ -196,13 +212,18 @@ export const api = {
     const key = `${opts?.floorId ?? floorCache ?? "auto"}:${path}`;
     const cacheVersion = readCacheVersion;
     const cached = responseCache.get(key);
-    if (opts?.cacheMs !== 0 && cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.value as T);
+    if (opts?.cacheMs !== 0 && cached && cached.expiresAt > Date.now()) {
+      // Touch the entry so recently visited categories survive eviction.
+      responseCache.delete(key);
+      responseCache.set(key, cached);
+      return Promise.resolve(cached.value as T);
+    }
     if (cached) responseCache.delete(key);
     const existing = inflightGets.get(key);
     if (existing) return abortForConsumer(existing as Promise<T>, opts?.signal);
     // Consumer cancellation must not terminate a request shared by another view.
     const pending = request<T>("GET", path, undefined, { ...opts, signal: undefined }).then((value) => {
-      if (cacheVersion === readCacheVersion && opts?.cacheMs && opts.cacheMs > 0) responseCache.set(key, { expiresAt: Date.now() + opts.cacheMs, value });
+      if (cacheVersion === readCacheVersion && opts?.cacheMs && opts.cacheMs > 0) cacheResponse(key, value, opts.cacheMs);
       return value;
     }).finally(() => { if (inflightGets.get(key) === pending) inflightGets.delete(key); });
     inflightGets.set(key, pending);

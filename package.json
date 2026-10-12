@@ -17,6 +17,7 @@
     "test:downloads": "node scripts/test-download-file.mjs",
     "test:quotation-contract": "node --experimental-strip-types --no-warnings scripts/test-quotation-contract.mjs",
     "test:quotation-reorder": "node --experimental-strip-types --no-warnings scripts/test-quotation-reorder.mjs",
+    "test:quotation-individual": "node scripts/test-quotation-individual.mjs",
     "test:multi-filters": "node --experimental-strip-types --no-warnings scripts/test-multi-filters.mjs",
     "test:section-excel": "node --experimental-strip-types --no-warnings scripts/test-section-excel.mjs",
     "preview:local": "node scripts/serve-local.mjs",

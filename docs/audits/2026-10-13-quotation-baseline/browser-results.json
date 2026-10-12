@@ -1,0 +1,370 @@
+{
+  "config": {
+    "argv": [
+      "/opt/homebrew/Cellar/node/26.5.1/bin/node",
+      "/Users/yashvardhansinhjhala/buildcon house/forge2.0/node_modules/.bin/playwright",
+      "test",
+      "--config",
+      "playwright.audit.config.ts",
+      "e2e/redesign-quotation-individual.spec.ts",
+      "--project=desktop",
+      "--workers=1"
+    ],
+    "configFile": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/playwright.audit.config.ts",
+    "rootDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/output/playwright/audit",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "desktop",
+        "name": "desktop",
+        "testDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "app-audit.spec.ts",
+          "release-journeys.spec.ts",
+          "redesign-*.spec.ts"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/output/playwright/audit",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "tablet",
+        "name": "tablet",
+        "testDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "app-audit.spec.ts",
+          "release-journeys.spec.ts",
+          "redesign-*.spec.ts"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/output/playwright/audit",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "phone",
+        "name": "phone",
+        "testDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "app-audit.spec.ts",
+          "release-journeys.spec.ts",
+          "redesign-*.spec.ts"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/output/playwright/audit",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "small-phone",
+        "name": "small-phone",
+        "testDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "app-audit.spec.ts",
+          "release-journeys.spec.ts",
+          "redesign-*.spec.ts"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/output/playwright/audit",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "tablet-boundary",
+        "name": "tablet-boundary",
+        "testDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "app-audit.spec.ts",
+          "release-journeys.spec.ts",
+          "redesign-*.spec.ts"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/output/playwright/audit",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "tablet-landscape",
+        "name": "tablet-landscape",
+        "testDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "app-audit.spec.ts",
+          "release-journeys.spec.ts",
+          "redesign-*.spec.ts"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/output/playwright/audit",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "firefox",
+        "name": "firefox",
+        "testDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "app-audit.spec.ts",
+          "release-journeys.spec.ts",
+          "redesign-*.spec.ts"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/output/playwright/audit",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "webkit",
+        "name": "webkit",
+        "testDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "app-audit.spec.ts",
+          "release-journeys.spec.ts",
+          "redesign-*.spec.ts"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "output/playwright/audit-results.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.63.0",
+    "workers": 1,
+    "webServer": {
+      "command": "node scripts/serve-audit.mjs",
+      "url": "http://127.0.0.1:8090/login",
+      "reuseExistingServer": true
+    }
+  },
+  "suites": [
+    {
+      "title": "redesign-quotation-individual.spec.ts",
+      "file": "redesign-quotation-individual.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "critical quotation has individual product editing without line multi-select or batch area assignment",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 6567,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveCount\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  getByTestId('quotation-area-grouping')\nExpected: \u001b[32m0\u001b[39m\nReceived: \u001b[31m1\u001b[39m\nTimeout:  5000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveCount\" getByTestId('quotation-area-grouping') with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('quotation-area-grouping')\u001b[22m\n\u001b[2m    14 × locator resolved to 1 element\u001b[22m\n\u001b[2m       - unexpected value \"1\"\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveCount\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  getByTestId('quotation-area-grouping')\nExpected: \u001b[32m0\u001b[39m\nReceived: \u001b[31m1\u001b[39m\nTimeout:  5000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveCount\" getByTestId('quotation-area-grouping') with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('quotation-area-grouping')\u001b[22m\n\u001b[2m    14 × locator resolved to 1 element\u001b[22m\n\u001b[2m       - unexpected value \"1\"\u001b[22m\n\n    at /Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e/redesign-quotation-individual.spec.ts:41:61",
+                    "location": {
+                      "file": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e/redesign-quotation-individual.spec.ts",
+                      "column": 61,
+                      "line": 41
+                    },
+                    "snippet": "  39 |   await individualQuotation(page);\n  40 |   await showLines(page);\n> 41 |   await expect(page.getByTestId('quotation-area-grouping')).toHaveCount(0);\n     |                                                             ^\n  42 |   await expect(page.locator('[data-testid^=\"area-select-\"]')).toHaveCount(0);\n  43 |   await expect(page.getByTestId('apply-area')).toHaveCount(0);\n  44 |   await expect(page.getByTestId('line-area-line-old')).toHaveValue('Existing area');"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e/redesign-quotation-individual.spec.ts",
+                        "column": 61,
+                        "line": 41
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveCount\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  getByTestId('quotation-area-grouping')\nExpected: \u001b[32m0\u001b[39m\nReceived: \u001b[31m1\u001b[39m\nTimeout:  5000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveCount\" getByTestId('quotation-area-grouping') with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('quotation-area-grouping')\u001b[22m\n\u001b[2m    14 × locator resolved to 1 element\u001b[22m\n\u001b[2m       - unexpected value \"1\"\u001b[22m\n\n\n  39 |   await individualQuotation(page);\n  40 |   await showLines(page);\n> 41 |   await expect(page.getByTestId('quotation-area-grouping')).toHaveCount(0);\n     |                                                             ^\n  42 |   await expect(page.locator('[data-testid^=\"area-select-\"]')).toHaveCount(0);\n  43 |   await expect(page.getByTestId('apply-area')).toHaveCount(0);\n  44 |   await expect(page.getByTestId('line-area-line-old')).toHaveValue('Existing area');\n    at /Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e/redesign-quotation-individual.spec.ts:41:61"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T21:55:28.792Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/output/playwright/audit/redesign-quotation-individ-d8223-ct-or-batch-area-assignment-desktop/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/output/playwright/audit/redesign-quotation-individ-d8223-ct-or-batch-area-assignment-desktop/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/output/playwright/audit/redesign-quotation-individ-d8223-ct-or-batch-area-assignment-desktop/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e/redesign-quotation-individual.spec.ts",
+                    "column": 61,
+                    "line": 41
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "c15d1df21844d0374e31-241f9121b5212e7f353d",
+          "file": "redesign-quotation-individual.spec.ts",
+          "line": 38,
+          "column": 5
+        },
+        {
+          "title": "critical saved quotation individual adds edits discounts autosave and reload preserve all lines and areas",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 3375,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoMatchObject\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[2m  Object {\u001b[22m\n\u001b[32m-   \"area\": \"Revised area\",\u001b[39m\n\u001b[31m+   \"area\": \"Existing area\",\u001b[39m\n\u001b[2m    \"included_for_line_id\": \"line-old\",\u001b[22m\n\u001b[2m    \"qty\": 3,\u001b[22m\n\u001b[2m  }\u001b[22m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoMatchObject\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[2m  Object {\u001b[22m\n\u001b[32m-   \"area\": \"Revised area\",\u001b[39m\n\u001b[31m+   \"area\": \"Existing area\",\u001b[39m\n\u001b[2m    \"included_for_line_id\": \"line-old\",\u001b[22m\n\u001b[2m    \"qty\": 3,\u001b[22m\n\u001b[2m  }\u001b[22m\n    at /Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e/redesign-quotation-individual.spec.ts:76:16",
+                    "location": {
+                      "file": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e/redesign-quotation-individual.spec.ts",
+                      "column": 16,
+                      "line": 76
+                    },
+                    "snippet": "  74 |   const part = saved().items.find((line: any) => line.id === 'line-part');\n  75 |   expect(parent).toMatchObject({ qty: 3, area: 'Revised area', discount_pct: 20 });\n> 76 |   expect(part).toMatchObject({ qty: 3, area: 'Revised area', included_for_line_id: 'line-old' });\n     |                ^\n  77 |   // Product override 20% wins; the two individual additions inherit project 5%.\n  78 |   expect(saved().subtotal).toBe(600);\n  79 |   expect(saved().grand_total).toBe(525);"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e/redesign-quotation-individual.spec.ts",
+                        "column": 16,
+                        "line": 76
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoMatchObject\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[2m  Object {\u001b[22m\n\u001b[32m-   \"area\": \"Revised area\",\u001b[39m\n\u001b[31m+   \"area\": \"Existing area\",\u001b[39m\n\u001b[2m    \"included_for_line_id\": \"line-old\",\u001b[22m\n\u001b[2m    \"qty\": 3,\u001b[22m\n\u001b[2m  }\u001b[22m\n\n  74 |   const part = saved().items.find((line: any) => line.id === 'line-part');\n  75 |   expect(parent).toMatchObject({ qty: 3, area: 'Revised area', discount_pct: 20 });\n> 76 |   expect(part).toMatchObject({ qty: 3, area: 'Revised area', included_for_line_id: 'line-old' });\n     |                ^\n  77 |   // Product override 20% wins; the two individual additions inherit project 5%.\n  78 |   expect(saved().subtotal).toBe(600);\n  79 |   expect(saved().grand_total).toBe(525);\n    at /Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e/redesign-quotation-individual.spec.ts:76:16"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T21:55:36.168Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/output/playwright/audit/redesign-quotation-individ-18135-reserve-all-lines-and-areas-desktop/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/output/playwright/audit/redesign-quotation-individ-18135-reserve-all-lines-and-areas-desktop/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/output/playwright/audit/redesign-quotation-individ-18135-reserve-all-lines-and-areas-desktop/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e/redesign-quotation-individual.spec.ts",
+                    "column": 16,
+                    "line": 76
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "c15d1df21844d0374e31-21d4a85177216ef0dc7d",
+          "file": "redesign-quotation-individual.spec.ts",
+          "line": 47,
+          "column": 5
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-12T21:55:28.359Z",
+    "duration": 11437.569000000001,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 2,
+    "flaky": 0
+  }
+}

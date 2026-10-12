@@ -13,7 +13,7 @@ import { colors, font, money, radius, type } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";
 
 import { useBuilder } from "../context/BuilderContext";
-import { computeLineBreakdown, effectivePct, sourceBadge } from "../helpers/pricing";
+import { effectivePct, sourceBadge } from "../helpers/pricing";
 import { FinishSwatch } from "../shared/VariantChip";
 import { grabCursor } from "../shared/grabCursor";
 import type { Line, RoomDiscount } from "../helpers/types";
@@ -67,8 +67,7 @@ function LineRowImpl({
   // is allocated across eligible lines, so calculating this row from only its
   // own effective percentage makes the visible line total disagree with the
   // quotation grand total.
-  const resolved = computeLineBreakdown(b.s.lines, projDisc, catDiscs, roomDiscs || {})
-    .find((row) => row.line.id === l.id);
+  const resolved = b.lineBreakdownById[l.id];
   const badge = sourceBadge(resolved?.source || eff.source);
   const total = resolved?.net ?? 0;
   const focused = b.assistantFocus?.kind === "line" && b.assistantFocus.line_id === l.id;
@@ -137,6 +136,7 @@ function LineRowImpl({
             placeholder="Area for PPT, e.g. Basin Area"
             placeholderTextColor={colors.onSurfaceMuted}
             returnKeyType="done"
+            editable={!isIncluded}
             style={styles.areaInput}
           />
         </View>

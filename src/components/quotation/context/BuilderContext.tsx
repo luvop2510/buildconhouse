@@ -224,7 +224,6 @@ export type BuilderApi = {
   referrerSwitcherOpen: boolean; setReferrerSwitcherOpen: (v: boolean) => void;
   addFromProduct: (p: Product, variant?: ProductVariant, quantity?: number, notes?: string) => void;
   updateLine: (id: string, patch: Partial<Line>, coalesceKey?: string) => void;
-  assignAreaToLines: (ids: string[], area: string | null) => void;
   removeLine: (id: string) => void;
   /** Cancel a product with an auditable order-line adjustment when saved. */
   cancelLine: (id: string) => Promise<boolean>;
@@ -1175,8 +1174,14 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
           ...cur,
           lines: cur.lines.map((line) => {
             if (line.id === id) return nextParent;
-            if (line.included_for_line_id === id && patch.qty != null) {
-              return { ...line, qty: nextParent.qty * (line.included_qty_per_parent || 1) };
+            if (line.included_for_line_id === id) {
+              return {
+                ...line,
+                ...(patch.qty != null ? { qty: nextParent.qty * (line.included_qty_per_parent || 1) } : {}),
+                // Included parts follow their parent in presentation exports,
+                // including when staff edit its area individually.
+                ...("area" in patch ? { area: nextParent.area } : {}),
+              };
             }
             return line;
           }),
@@ -1185,17 +1190,6 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
       { coalesceKey: coalesceKey ? `${coalesceKey}:${id}` : undefined },
     ),
   [history]);
-
-  const assignAreaToLines = useCallback((ids: string[], area: string | null) => {
-    const selected = new Set(ids);
-    if (!selected.size) return;
-    const value = area?.trim() || null;
-    history.apply((cur) => ({
-      ...cur,
-      lines: cur.lines.map((line) => selected.has(line.id) || (line.included_for_line_id && selected.has(line.included_for_line_id))
-        ? { ...line, area: value } : line),
-    }));
-  }, [history]);
 
   const removeLine = useCallback((id: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1585,7 +1579,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     workflowBusy, generateOfficialQuotation, generateProductPpt, placeOrder,
     setCustomer, createCustomer, importCustomerFromGround, customerSwitcherOpen, setCustomerSwitcherOpen,
     setReferrer, clearReferrer, createReferrer, referrerSwitcherOpen, setReferrerSwitcherOpen,
-    addFromProduct, updateLine, assignAreaToLines, removeLine, cancelLine, duplicateLine, moveLineToNextRoom, moveLine, moveRoom,
+    addFromProduct, updateLine, removeLine, cancelLine, duplicateLine, moveLineToNextRoom, moveLine, moveRoom,
     addRoom, renameRoom, duplicateRoom, deleteRoom, toggleCollapse, setActiveRoom, onRoomDragEnd, onLinesDragEnd,
     setProjectDiscount, setCategoryDiscount, setRoomDiscount, setNotes,
     swapItems, swapLoading, openSwap, commitSwap, closeSwap,
@@ -1614,7 +1608,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     workflowBusy, generateOfficialQuotation, generateProductPpt, placeOrder,
     setCustomer, createCustomer, importCustomerFromGround, customerSwitcherOpen, setCustomerSwitcherOpen,
     setReferrer, clearReferrer, createReferrer, referrerSwitcherOpen, setReferrerSwitcherOpen,
-    addFromProduct, updateLine, assignAreaToLines, removeLine, cancelLine, duplicateLine, moveLineToNextRoom, moveLine, moveRoom,
+    addFromProduct, updateLine, removeLine, cancelLine, duplicateLine, moveLineToNextRoom, moveLine, moveRoom,
     addRoom, renameRoom, duplicateRoom, deleteRoom, toggleCollapse, setActiveRoom, onRoomDragEnd, onLinesDragEnd,
     setProjectDiscount, setCategoryDiscount, setRoomDiscount, setNotes,
     swapItems, swapLoading, openSwap, commitSwap, closeSwap,

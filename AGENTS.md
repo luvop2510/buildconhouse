@@ -2,6 +2,20 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
+## Stability, quotation and catalog — 2026-10-13
+
+Response caches now release expired entries and retain 64 recent responses;
+quotation line multi-select is removed, individual workflows remain, and rows
+reuse memoized pricing. Catalog occurrence/fallback counting is repaired in warm
+and Mongo paths with 146 authoritative scopes verified. Session-cache generations
+and post-write invalidation close revocation refill races. Final local checks:
+2,283 backend passes, 42 frontend commands, 2,495 browser passes / 55 intentional
+skips / zero failures, production web export and all route budgets pass.
+Npm audit still fails (22 high / five moderate); no suppression or protected-main
+bypass. The user subsequently explicitly requested GitHub/Vercel/Railway
+publication. See `docs/audits/2026-10-13-goal-report.md` and the release ledger
+for deployment outcomes. Physical-device acceptance remains unverified.
+
 ## Performance and password minimum — 2026-10-12
 
 Version 1.0.1 fixes bounded catalog batching/shared cold warmup, parallel analytics

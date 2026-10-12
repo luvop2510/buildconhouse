@@ -1,6 +1,6 @@
 // Discount sheet — project / category / line discount management.
 import Feather from "@expo/vector-icons/Feather";
-import { useEffect, useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 
@@ -22,7 +22,10 @@ export function DiscountSheet() {
   const [roomType, setRoomType] = useState<"percent" | "amount">("percent");
   const [tempRoomVal, setTempRoomVal] = useState<string>("");
 
-  useEffect(() => {
+  // Initialize before the sheet becomes interactive. A passive effect can
+  // replace the selected text after typing begins, appending the new digits
+  // to the saved discount instead of replacing it during rapid edits.
+  useLayoutEffect(() => {
     if (!cur) return;
     if (cur.kind === "project") setTempProjPct(String(b.s.projectDiscount));
     else if (cur.kind === "line") {

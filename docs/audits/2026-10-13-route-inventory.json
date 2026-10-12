@@ -1,0 +1,397 @@
+[
+  {
+    "route": "/",
+    "source": "app/index.tsx",
+    "area": "auth/public"
+  },
+  {
+    "route": "/terms",
+    "source": "app/terms.tsx",
+    "area": "auth/public"
+  },
+  {
+    "route": "/privacy",
+    "source": "app/privacy.tsx",
+    "area": "auth/public"
+  },
+  {
+    "route": "/home",
+    "source": "app/(customer)/home.tsx",
+    "area": "customer"
+  },
+  {
+    "route": "/login",
+    "source": "app/(auth)/login.tsx",
+    "area": "auth/public"
+  },
+  {
+    "route": "/set-new-password",
+    "source": "app/(auth)/set-new-password.tsx",
+    "area": "auth/public"
+  },
+  {
+    "route": "/settings",
+    "source": "app/(admin)/settings.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/followups",
+    "source": "app/(admin)/followups.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/payments-list",
+    "source": "app/(admin)/payments-list.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/settings-system",
+    "source": "app/(admin)/settings-system.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/reports",
+    "source": "app/(admin)/reports.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/settings-permissions",
+    "source": "app/(admin)/settings-permissions.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/access",
+    "source": "app/(admin)/access.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/team",
+    "source": "app/(admin)/team.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/dashboard",
+    "source": "app/(admin)/dashboard.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/followup-assignments",
+    "source": "app/(admin)/followup-assignments.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/settings-catalog",
+    "source": "app/(admin)/settings-catalog.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/settings-mfa",
+    "source": "app/(admin)/settings-mfa.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/godown-stock",
+    "source": "app/(admin)/godown-stock.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/purchases-completed",
+    "source": "app/(admin)/purchases-completed.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/payments",
+    "source": "app/(admin)/payments.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/settings-access-grants",
+    "source": "app/(admin)/settings-access-grants.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/notifications",
+    "source": "app/(admin)/notifications.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/settings-pdf",
+    "source": "app/(admin)/settings-pdf.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/settings-password",
+    "source": "app/(admin)/settings-password.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/settings-terms",
+    "source": "app/(admin)/settings-terms.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/settings-notifications",
+    "source": "app/(admin)/settings-notifications.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/settings-company",
+    "source": "app/(admin)/settings-company.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/settings-walkins",
+    "source": "app/(admin)/settings-walkins.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/settings-privacy",
+    "source": "app/(admin)/settings-privacy.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/purchases",
+    "source": "app/(admin)/purchases.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/customers",
+    "source": "app/(admin)/customers/index.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/customers/new",
+    "source": "app/(admin)/customers/new.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/customers/[id]",
+    "source": "app/(admin)/customers/[id].tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/purchase-orders",
+    "source": "app/(admin)/purchase-orders/index.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/purchase-orders/[id]",
+    "source": "app/(admin)/purchase-orders/[id].tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/catalog",
+    "source": "app/(admin)/catalog/index.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/catalog/import",
+    "source": "app/(admin)/catalog/import.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/catalog/[id]",
+    "source": "app/(admin)/catalog/[id].tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/walkins",
+    "source": "app/(admin)/walkins/index.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/walkins/new",
+    "source": "app/(admin)/walkins/new.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/walkins/[id]",
+    "source": "app/(admin)/walkins/[id].tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/tiles/selection",
+    "source": "app/(admin)/tiles/selection.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/tiles",
+    "source": "app/(admin)/tiles/index.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/tiles/quotation",
+    "source": "app/(admin)/tiles/quotation.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/sales-data",
+    "source": "app/(admin)/sales-data/index.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/sales-data/sales",
+    "source": "app/(admin)/sales-data/sales.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/sales-data/brands",
+    "source": "app/(admin)/sales-data/brands.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/sales-data/relationships",
+    "source": "app/(admin)/sales-data/relationships.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/sales-data/today",
+    "source": "app/(admin)/sales-data/today.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/sales-data/operations",
+    "source": "app/(admin)/sales-data/operations.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/sales-data/suppliers",
+    "source": "app/(admin)/sales-data/suppliers.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/sales-data/executive",
+    "source": "app/(admin)/sales-data/executive.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/sales-data/forecasting",
+    "source": "app/(admin)/sales-data/forecasting.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/sales-data/products",
+    "source": "app/(admin)/sales-data/products.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/sales-data/customers",
+    "source": "app/(admin)/sales-data/customers.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/sales-data/collections",
+    "source": "app/(admin)/sales-data/collections.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/quotations",
+    "source": "app/(admin)/quotations/index.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/quotations/new",
+    "source": "app/(admin)/quotations/new.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/notebook/[floor]",
+    "source": "app/(admin)/notebook/[floor].tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/notebook/furniture-quotations",
+    "source": "app/(admin)/notebook/furniture-quotations.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/notebook/[floor]/quotation-follow-up",
+    "source": "app/(admin)/notebook/[floor]/quotation-follow-up.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/notebook/[floor]/[view]",
+    "source": "app/(admin)/notebook/[floor]/[view].tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/quotations/[id]",
+    "source": "app/(admin)/quotations/[id]/index.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/quotations/[id]/place-order",
+    "source": "app/(admin)/quotations/[id]/place-order.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/sales-data/referrals/architects",
+    "source": "app/(admin)/sales-data/referrals/architects.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/sales-data/referrals/interior-designers",
+    "source": "app/(admin)/sales-data/referrals/interior-designers.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/sales-data/brands/[id]",
+    "source": "app/(admin)/sales-data/brands/[id].tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/sales-data/brand/[id]",
+    "source": "app/(admin)/sales-data/brand/[id].tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/sales-data/referrer/[id]",
+    "source": "app/(admin)/sales-data/referrer/[id].tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/sales-data/people/[kind]/[id]",
+    "source": "app/(admin)/sales-data/people/[kind]/[id].tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/tiles/place-order/[id]",
+    "source": "app/(admin)/tiles/place-order/[id].tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/tiles/orders",
+    "source": "app/(admin)/tiles/orders/index.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/tiles/orders/[id]",
+    "source": "app/(admin)/tiles/orders/[id].tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/tiles/orders/brands/[brandId]",
+    "source": "app/(admin)/tiles/orders/brands/[brandId].tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/tiles/orders/po/[poId]",
+    "source": "app/(admin)/tiles/orders/po/[poId].tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/customers/[id]/edit",
+    "source": "app/(admin)/customers/[id]/edit.tsx",
+    "area": "staff"
+  },
+  {
+    "route": "/quotes",
+    "source": "app/(customer)/quotes/index.tsx",
+    "area": "customer"
+  },
+  {
+    "route": "/quotes/[id]",
+    "source": "app/(customer)/quotes/[id].tsx",
+    "area": "customer"
+  }
+]

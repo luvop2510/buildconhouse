@@ -1,3 +1,4 @@
+import './test-api-cache-retention.mjs';
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
@@ -218,3 +219,42 @@ console.log('Native/web explicit refresh bypasses completed response cache.');
   assert.equal(Object.keys(module.exports.csrfHeaders()).length, 0);
 }
 console.log('Browser CSRF cookie parsing preserves raw values and malformed cookies cannot crash credential login.');
+
+// A genuinely stalled transport must time out, release the shared GET and
+// allow recovery without disturbing another usable request. Drive the real
+// 30-second callback directly, avoiding a slow or flaky wall-clock test.
+for (const path of ['../src/api/client.ts', '../src/api/client.web.ts']) {
+  const timers = [];
+  const requests = [];
+  let fail = true;
+  const module = { exports: {} };
+  const storage = { secureGet: async () => null, getItem: async () => 'first-floor' };
+  vm.runInNewContext(ts.transpileModule(read(path), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText, {
+    module, exports: module.exports, require: () => ({ storage, browserStorage: storage }),
+    __DEV__: true, process: { env: {} }, document: { cookie: '' },
+    AbortController, DOMException,
+    setTimeout: (callback, ms) => { const timer = { callback, ms }; timers.push(timer); return timer; },
+    clearTimeout: () => {},
+    fetch: (url, options) => {
+      requests.push(url);
+      if (fail && url.includes('/products')) return new Promise((_resolve, reject) => {
+        options.signal.addEventListener('abort', () => reject(new DOMException('fixture timeout', 'AbortError')), { once: true });
+      });
+      return Promise.resolve({ ok: true, text: async () => '{"recovered":true}' });
+    },
+  });
+  module.exports.setRequestFloorId('first-floor');
+  const stalled = module.exports.api.get('/products');
+  const result = stalled.then(value => ({ value }), error => ({ error }));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal((await module.exports.api.get('/brands')).recovered, true);
+  assert.equal(timers[0].ms, 30000);
+  timers[0].callback();
+  assert.equal((await result).error.status, 408);
+  fail = false;
+  assert.equal((await module.exports.api.get('/products')).recovered, true);
+  assert.equal(requests.filter(url => url.includes('/products')).length, 2);
+}
+console.log('Native/web stalled transports time out, evict shared reads, and recover while unrelated reads remain usable.');
