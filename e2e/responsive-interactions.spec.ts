@@ -4,8 +4,10 @@ import { mockSession } from './audit-fixtures';
 async function targetSize(control: Locator) {
   await expect(control).toBeVisible();
   const box = await control.boundingBox();
-  expect(box!.width).toBeGreaterThanOrEqual(44);
-  expect(box!.height).toBeGreaterThanOrEqual(44);
+  // Chromium returns fractional CSS pixels (for example 43.99994 for 44px).
+  // Permit only numerical rounding, never a smaller practical touch target.
+  expect(box!.width).toBeGreaterThanOrEqual(44 - 0.001);
+  expect(box!.height).toBeGreaterThanOrEqual(44 - 0.001);
 }
 
 async function salesFixture(page: Page) {

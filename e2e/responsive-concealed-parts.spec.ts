@@ -32,17 +32,29 @@ async function concealedFixture(page: Page, customActions?: ("view" | "create" |
     return route.fulfill({ json: product });
   });
   const mutations: string[] = [];
+  let savedQuotationReads = 0;
   let builderReads = 0;
   page.on('request', request => {
     const url = new URL(request.url());
     if (['/api/products/families', '/api/customers', '/api/brands', '/api/categories'].includes(url.pathname)) builderReads++;
   });
-  await page.route(/\/api\/quotations(?:\/conceal-quote)?$/, route => {
-    if (route.request().method() === 'GET') return route.fulfill({ json: {
-      id: 'conceal-quote', number: 'Q-CONCEAL', floor_id: 'first-floor', status: 'draft',
-      customer_id: 'client', customer_name: 'Fixture customer', rooms: savedRooms,
-      items: savedItems, subtotal: 900, grand_total: 900, created_at: '2026-10-11T00:00:00Z', updated_at: '2026-10-11T00:00:00Z',
-    } });
+  // Saved builders ask for the customer's completion snapshot. Match the
+  // endpoint independently of that query; otherwise the generic session
+  // fixture rejects the restore and silently leaves an empty document.
+  await page.route(/\/api\/quotations(?:\/conceal-quote)?(?:\?.*)?$/, route => {
+    if (route.request().method() === 'GET') {
+      const url = new URL(route.request().url());
+      expect(url.pathname).toBe('/api/quotations/conceal-quote');
+      expect(url.searchParams.get('with_completion')).toBe('true');
+      expect(route.request().headers()['x-floor-id']).toBe('first-floor');
+      savedQuotationReads++;
+      return route.fulfill({ json: {
+        id: 'conceal-quote', number: 'Q-CONCEAL', floor_id: 'first-floor', status: 'draft',
+        customer_id: 'client', customer_name: 'Fixture customer', rooms: savedRooms,
+        items: savedItems, subtotal: 900, grand_total: 900, created_at: '2026-10-11T00:00:00Z', updated_at: '2026-10-11T00:00:00Z',
+        purchase_completion_status: 'active',
+      } });
+    }
     mutations.push(route.request().method());
     const payload = route.request().postDataJSON();
     savedItems = payload.items;
@@ -50,7 +62,7 @@ async function concealedFixture(page: Page, customActions?: ("view" | "create" |
     return route.fulfill({ json: { id: 'conceal-quote', number: 'Q-CONCEAL', updated_at: new Date().toISOString() } });
   });
   await page.goto(path);
-  return { product, mutations: () => mutations, reads: () => builderReads, saves: () => saves, items: () => savedItems, reject: () => { failSave = true; } };
+  return { product, mutations: () => mutations, reads: () => builderReads, restores: () => savedQuotationReads, saves: () => saves, items: () => savedItems, reject: () => { failSave = true; } };
 }
 
 async function openPicker(page: Page) {
@@ -98,9 +110,11 @@ test('critical concealed choice persists and every later addition includes its q
   await page.goto('/quotations/new?quotationId=conceal-quote');
   await reviewQuotation(page);
   await expect(qty).toHaveValue('5');
+  expect(fixture.restores()).toBe(1);
   await qty.fill('6');
   await qty.press('Tab');
   await expect.poll(() => fixture.items().map(item => [item.product_id, item.qty])).toEqual([['trim', 6], ['body', 6]]);
+  expect(fixture.items()[1].included_for_line_id).toBe(fixture.items()[0].id);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 });
 
@@ -180,6 +194,7 @@ test('critical quotation update-only access edits existing records without expos
   await picker.getByTestId('add-TRIM-1').click();
   await reviewQuotation(page);
   await expect.poll(() => fixture.mutations()).toEqual(['PATCH']);
+  expect(fixture.restores()).toBe(1);
   await expect(page.getByTestId('rail-new-quote')).toHaveCount(0);
   await page.getByTestId('quotation-details-toggle').click();
   await page.getByTestId('compact-hdr-referrer').click();

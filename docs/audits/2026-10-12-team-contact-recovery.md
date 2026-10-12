@@ -94,3 +94,34 @@ The unchanged npm graph reports **22 high and five moderate findings**. The
 independent security gate remains failing and is not suppressed. Backend
 production dependency auditing reports no known vulnerabilities. Local functional
 acceptance and successful deployments do not establish overall green CI.
+
+## Final production and CI follow-up
+
+Vercel production `dpl_9duUZf8tx1Qx3susgjWFAJub4LQf` serves frontend commit
+`5a3797736019bb86f6b64c67aab5f66d507c09e2`. All four existing URLs
+(`buildconhouse.in`, `www.buildconhouse.in`, `buildcon-house-yug19.vercel.app`
+and `buildcon-house-nine.vercel.app`) serve the same verified Team bundle.
+The two historical Vercel bookmark aliases were updated to this release.
+Sixteen hosted phone/desktop contact journeys pass without retries, and nineteen
+read-only release probes pass again. Railway has one running replica of the
+successful backend release. The branch preview's missing `BACKEND_URL` was fixed
+with the established Railway HTTPS endpoint; its redeployment is Ready.
+
+Remote CI run `38247790436` passed backend, typecheck, lint, frontend contracts,
+web export, route budgets and the initial browser audit. Its subsequent responsive
+suite had 327 passes, fourteen skips and thirteen failures. Twelve failures came
+from a concealed-parts fixture that omitted the `?with_completion=true` query
+introduced before this Team change by commit `69b86d82`; restore requests fell
+through to the generic mock 503. The fixture now asserts the completion query,
+floor header and exact restore count while preserving linked-line persistence
+and access assertions. The thirteenth failure compared a Chromium measurement
+of 43.99993896484375px against a 44px target. The test permits 0.001px numerical
+rounding, retaining the practical minimum; all six dashboard-width checks pass.
+No application behavior or timeout was changed to hide these CI failures.
+The original failed run remains recorded, and the dependency-security gate
+continues to fail independently.
+
+The repaired concealed fixture passes all thirty-six hosted cases across six
+widths, without retries or failures. The twelve previously failing concealed
+cases also pass against the local export; all six dashboard-width cases pass.
+Only fixture matching and numerical precision changed in this CI follow-up.
