@@ -1,3 +1,5 @@
+import { FilterBar } from "@/src/components/ds";
+import { filterValues } from "@/src/utils/filters";
 // Quotation Tiles — single tab listing every Ground Floor tiles Selection
 // and Quotation, any stage, with two entry points to start a new one. See
 // docs/superpowers/specs/2026-07-27-quotation-tiles-workflow-design.md.
@@ -8,7 +10,7 @@ import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from "react-
 import { Text } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { Button, EmptyState, ErrorState, PageHeader, SearchField, SegmentedControl } from "@/src/components/ui";
+import { Button, EmptyState, ErrorState, PageHeader, SearchField } from "@/src/components/ui";
 import { api } from "@/src/api/client";
 import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
 import { useBp } from "@/src/design/responsive";
@@ -17,6 +19,7 @@ import { tilesStageLabel } from "@/src/components/tiles/tilesStage";
 
 type TilesDoc = {
   id: string; number: string; doc_type: "tiles_selection" | "tiles_quotation";
+  purchase_completion_status?: "active" | "completed";
   status: string; customer_name: string; grand_total: number; updated_at: string;
 };
 
@@ -25,12 +28,13 @@ export default function QuotationTilesList() {
   const router = useRouter();
   const { view } = useLocalSearchParams<{ view?: string }>();
   const completed = view === "completed";
+  const fulfilled = view === "fulfilled";
   const [documents, setDocuments] = useState<Record<TilesDoc["doc_type"], TilesDoc[]> | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const requestIdRef = useRef(0);
   const [search, setSearch] = useState("");
-  const [documentType, setDocumentType] = useState<TilesDoc["doc_type"]>("tiles_quotation");
+  const [documentType, setDocumentType] = useState<string>("tiles_quotation");
   const { isPhone, isTablet } = useBp();
   // The tablet shell reserves a 64px navigation rail. At a 768px viewport the
   // page itself is only about 704px wide, which is not enough for this title
@@ -42,10 +46,11 @@ export default function QuotationTilesList() {
     const requestId = ++requestIdRef.current;
     setLoading(true);
     setLoadError(null);
+    setDocuments(null);
     try {
       const [selections, quotations] = await Promise.all([
-        api.get<TilesDoc[]>(`/quotations?doc_type=tiles_selection&view=${completed ? "completed" : "pending"}`, { floorId: "ground-floor" }),
-        api.get<TilesDoc[]>(`/quotations?doc_type=tiles_quotation&view=${completed ? "completed" : "pending"}`, { floorId: "ground-floor" }),
+        api.get<TilesDoc[]>(`/quotations?doc_type=tiles_selection&completion=${fulfilled ? "completed" : "active"}${fulfilled ? "" : `&view=${completed ? "completed" : "pending"}`}`, { floorId: "ground-floor" }),
+        api.get<TilesDoc[]>(`/quotations?doc_type=tiles_quotation&completion=${fulfilled ? "completed" : "active"}${fulfilled ? "" : `&view=${completed ? "completed" : "pending"}`}`, { floorId: "ground-floor" }),
       ]);
       if (requestId !== requestIdRef.current) return;
       const newestFirst = (docs: TilesDoc[]) => [...docs].sort(
@@ -58,7 +63,7 @@ export default function QuotationTilesList() {
     } finally {
       if (requestId === requestIdRef.current) setLoading(false);
     }
-  }, [completed]);
+  }, [completed, fulfilled]);
 
   useFocusEffect(useCallback(() => {
     void load();
@@ -69,12 +74,12 @@ export default function QuotationTilesList() {
     const route = doc.doc_type === "tiles_selection" ? "selection" : "quotation";
     router.push(`/(admin)/tiles/${route}?id=${doc.id}` as any);
   };
-  const docs = documents?.[documentType]?.filter(doc => !search.trim() || `${doc.customer_name} ${doc.number}`.toLowerCase().includes(search.trim().toLowerCase())) ?? null;
-  const label = documentType === "tiles_selection" ? "selections" : "quotations";
+  const docs = (documents ? [...documents.tiles_selection, ...documents.tiles_quotation].filter(doc => !filterValues(documentType).length || filterValues(documentType).includes(doc.doc_type)) : null)?.filter(doc => !search.trim() || `${doc.customer_name} ${doc.number}`.toLowerCase().includes(search.trim().toLowerCase())) ?? null;
+  const label = documentType === "tiles_selection" ? "selections" : documentType === "tiles_quotation" ? "quotations" : "documents";
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
-      <PageHeader title={completed ? "Completed tile documents" : "Tile quotations"} overline="Ground Floor · Tiles" actions={
+      <PageHeader title={fulfilled ? "100% Customers · Tiles" : completed ? "Approved & ordered tile documents" : "Tile quotations"} overline="Ground Floor · Tiles" actions={
         <View style={[styles.headerActions, compact && styles.headerActionsCompact]}>
           <Button
             label={completed ? "View pending" : "View completed"}
@@ -85,7 +90,16 @@ export default function QuotationTilesList() {
             fullWidth={compact}
             style={compact ? styles.compactAction : undefined}
           />
-          {!completed ? <Button
+          <Button
+            label={fulfilled ? "Active customers" : "100% Customers"}
+            variant="secondary"
+            icon="check-circle"
+            onPress={() => router.push(`/(admin)/tiles?view=${fulfilled ? "pending" : "fulfilled"}` as any)}
+            testID="tiles-fulfilled-toggle"
+            fullWidth={compact}
+            style={compact ? styles.compactAction : undefined}
+          />
+          {!completed && !fulfilled ? <Button
             label="Create new selection"
             variant="ghost"
             icon="grid"
@@ -94,7 +108,7 @@ export default function QuotationTilesList() {
             fullWidth={compact}
             style={compact ? styles.compactAction : undefined}
           /> : null}
-          {!completed ? <Button
+          {!completed && !fulfilled ? <Button
             label="Create new quotation"
             icon="layout"
             onPress={() => router.push("/(admin)/tiles/quotation" as any)}
@@ -106,12 +120,12 @@ export default function QuotationTilesList() {
       } />
 
       <View style={styles.filterBar}>
-        <SegmentedControl
+        <FilterBar multiSelect
           value={documentType}
           onChange={setDocumentType}
-          fullWidth
           testID="tiles-document-filter"
           options={[
+            { value: "all", label: "All documents" },
             { value: "tiles_quotation", label: "Quotation", icon: "file-text" },
             { value: "tiles_selection", label: "Selection", icon: "grid" },
           ]}
@@ -127,7 +141,7 @@ export default function QuotationTilesList() {
           <Text style={type.bodyMuted}>Loading quotation tiles…</Text>
         </View>
       ) : docs?.length === 0 ? (
-        <EmptyState icon="layers" title={search ? "No matching documents" : `No ${completed ? "completed " : ""}${label} yet`} subtitle={search ? "Try a different customer or document number." : completed ? "Approved and order-placed selections or quotations will appear here." : `Create a new ${label.slice(0, -1)} to get started.`} />
+        <EmptyState icon="layers" title={search ? "No matching documents" : `No ${fulfilled ? "100% completed " : completed ? "approved or ordered " : ""}${label} yet`} subtitle={search ? "Try a different customer or document number." : fulfilled ? "Customers appear after every active order quantity is delivered." : completed ? "Approved and order-placed selections or quotations will appear here." : `Create a new ${label.slice(0, -1)} to get started.`} />
       ) : (
         <FlatList
           data={docs}
@@ -146,6 +160,7 @@ export default function QuotationTilesList() {
                   {item.customer_name || "Unnamed customer"}
                 </Text>
                 <Text style={type.caption} numberOfLines={1}>{item.number} · {tilesStageLabel(item.doc_type, item.status)}</Text>
+                {item.purchase_completion_status === "completed" ? <Text style={[type.caption, { color: colors.success }]}>100% completed</Text> : null}
               </View>
               <Text style={[type.mono, { fontSize: 13, fontWeight: "600" }]}>{money(item.grand_total || 0)}</Text>
               <Feather name="chevron-right" size={16} color={colors.onSurfaceMuted} />

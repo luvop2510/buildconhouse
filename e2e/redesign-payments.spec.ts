@@ -196,7 +196,7 @@ test('critical returning from the canonical quotation refreshes the selected bal
   } }));
   await page.route('**/api/payments/orders', route => route.fulfill({ json: [row()] }));
   await page.route('**/api/payments/orders/payment-order', route => route.fulfill({ json: { ...detail(row()), quotation_total: row().grand_total } }));
-  await page.route('**/api/quotations/payment-order', route => route.fulfill({ json: {
+  await page.route(/\/api\/quotations\/payment-order(?:\?.*)?$/, route => route.fulfill({ json: {
     ...order, status: 'ordered', created_at: '2026-09-01', created_by_name: 'Accounts',
     items: [], rooms: [], subtotal: 1200.5, discount_total: 0,
   } }));

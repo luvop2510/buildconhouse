@@ -13,6 +13,7 @@ by construction — one document per closed deal — and folding in Python keeps
 these unit-testable against the codebase's existing fake-db pattern.
 """
 from __future__ import annotations
+from services.multi_filters import filter_condition
 
 from dataclasses import replace
 from typing import Optional
@@ -50,7 +51,7 @@ async def _ordered_match(db, f, accessible_floors, window) -> dict:
     if ordered.brand_id:
         scope = build_match(AnalyticsFilter(floor_id=f.floor_id, status="any"), accessible_floors, (None, None))
         products = await db.products.find(
-            {**scope, "brand_id": ordered.brand_id}, {"_id": 0, "id": 1},
+            {**scope, "brand_id": filter_condition(ordered.brand_id)}, {"_id": 0, "id": 1},
         ).to_list(None)
         match["items.product_id"] = {"$in": [p["id"] for p in products]}
     return match

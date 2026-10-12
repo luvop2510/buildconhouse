@@ -27,9 +27,9 @@ export const PRIMARY: NavItem[] = [
   { href: "/(admin)/payments", label: "Payments", icon: "credit-card", match: "payments" },
   { href: "/(admin)/payments-list", label: "Fully paid orders", icon: "list", match: "payments-list" },
   { href: "/(admin)/followups", label: "Follow-ups", icon: "phone-call", match: "followups" },
-  { href: "/(admin)/notebook/kitchen", label: "Kitchen Walk-ins", icon: "user-plus", match: "kitchen", floors: [KITCHEN_FLOOR_ID] },
+  { href: "/(admin)/notebook/kitchen", label: "Kitchen lead notebook", icon: "user-plus", match: "kitchen", floors: [KITCHEN_FLOOR_ID] },
   { href: "/(admin)/notebook/kitchen/quotation-follow-up", label: "Quotation Follow-up", icon: "file-text", match: "quotation-follow-up", floors: [KITCHEN_FLOOR_ID] },
-  { href: "/(admin)/notebook/furniture", label: "Furniture Walk-ins", icon: "user-plus", match: "furniture", floors: [FURNITURE_FLOOR_ID] },
+  { href: "/(admin)/notebook/furniture", label: "Furniture lead notebook", icon: "user-plus", match: "furniture", floors: [FURNITURE_FLOOR_ID] },
   { href: "/(admin)/notebook/furniture-quotations", label: "RNB quotations", icon: "file-text", match: "furniture-quotations", floors: [FURNITURE_FLOOR_ID] },
   { href: "/(admin)/notebook/furniture/quotation-follow-up", label: "Quotation Follow-up", icon: "file-text", match: "quotation-follow-up", floors: [FURNITURE_FLOOR_ID] },
 ];

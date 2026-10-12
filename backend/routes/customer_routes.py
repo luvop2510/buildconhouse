@@ -12,6 +12,7 @@ from db import db
 from models import (
     CustomerCreate, CustomerPublic, CustomerUpdatePayload, UserPublic, now_iso,
 )
+from services.customer_completion import completed_customer_ids, purchase_customer_ids
 from services.activity_log import log_event
 from services.invite_service import generate_temp_password, get_invite_service, temp_password_expiry_iso
 
@@ -51,13 +52,31 @@ async def list_customers(
     response: Response,
     skip: int = Query(0, ge=0),
     limit: int = Query(500, ge=1, le=2000),
+    confirmed_only: bool = False,
+    completion: str | None = Query(None, pattern="^(active|completed)$"),
     user: UserPublic = Depends(get_current_user),
 ):
+    query = floor_query(user)
+    if confirmed_only:
+        # Derive eligibility from actual confirmed orders, including legacy
+        # customers without lifecycle metadata. Draft quotations never qualify.
+        customer_ids = await db.quotations.distinct(
+            "customer_id", floor_query(user, {"status": {"$in": ["ordered", "won"]}}),
+        )
+        tile_customer_ids = await db.customer_orders.distinct(
+            "customer_id", floor_query(user, {"is_deleted": {"$ne": True}}),
+        )
+        purchase_ids = await purchase_customer_ids(db, user)
+        query = floor_query(user, {"id": {"$in": sorted(value for value in set(customer_ids + tile_customer_ids) | purchase_ids if isinstance(value, str) and value)}})
+    complete_ids = None
+    if completion in ("active", "completed"):
+        complete_ids = await completed_customer_ids(db, user)
+        query = {"$and": [query, {"id": {"$in" if completion == "completed" else "$nin": sorted(complete_ids)}}]}
     docs = await db.customers.find(
-        floor_query(user), {"_id": 0, "password_hash": 0},
+        query, {"_id": 0, "password_hash": 0},
     ).sort("created_at", -1).skip(skip).limit(limit + 1).to_list(limit + 1)
     response.headers["X-Has-More"] = "true" if len(docs) > limit else "false"
-    return [CustomerPublic(**d) for d in docs[:limit]]
+    return [CustomerPublic(**{**d, **({"purchase_completion_status": "completed" if d["id"] in complete_ids else "active"} if complete_ids is not None else {})}) for d in docs[:limit]]
 
 
 @router.post("/customers", response_model=CustomerPublic)
@@ -207,10 +226,14 @@ async def import_customer_from_floor(
 
 
 @router.get("/customers/{customer_id}", response_model=CustomerPublic)
-async def get_customer(customer_id: str, user: UserPublic = Depends(get_current_user)):
+async def get_customer(customer_id: str, with_completion: bool = False, user: UserPublic = Depends(get_current_user)):
     doc = await get_floor_scoped_or_404(
         db.customers, customer_id, user, not_found="Customer not found", projection={"_id": 0, "password_hash": 0},
     )
+    if with_completion:
+        completion_user = user.model_copy(update={"active_floor_id": doc["floor_id"]})
+        complete_ids = await completed_customer_ids(db, completion_user, [customer_id])
+        doc["purchase_completion_status"] = "completed" if customer_id in complete_ids else "active"
     return CustomerPublic(**doc)
 
 

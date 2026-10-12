@@ -4,6 +4,7 @@ the TileCustomerOrder itself) lives in services/domain_outbox.py, not here
 — see that file's _handle_order_placed.
 """
 from __future__ import annotations
+from services.multi_filters import filter_values, filter_condition
 
 from datetime import datetime, timezone
 import re
@@ -1190,7 +1191,7 @@ async def brand_orders(
     page_size = page_size if isinstance(page_size, int) else 20
     filters: dict = {"brand_id": brand_id}
     if status:
-        filters["overall_status"] = status
+        filters["overall_status"] = filter_condition(status)
     if search:
         safe_search = {"$regex": re.escape(search[:80]), "$options": "i"}
         filters["$or"] = [
@@ -1292,7 +1293,7 @@ async def supplier_orders(
     page_size = page_size if isinstance(page_size, int) else 20
     filters: dict = {"supplier_id": supplier_id}
     if status:
-        filters["overall_status"] = status
+        filters["overall_status"] = filter_condition(status)
     if search:
         safe_search = {"$regex": re.escape(search[:80]), "$options": "i"}
         filters["$or"] = [
@@ -1399,9 +1400,9 @@ async def list_customer_orders(
     # name search: names can be duplicated and a partial search could show a
     # different customer's dispatch status.
     if customer_id:
-        filters["customer_id"] = customer_id
+        filters["customer_id"] = filter_condition(customer_id)
     if status:
-        filters["overall_status"] = status
+        filters["overall_status"] = filter_condition(status)
     if search:
         safe_search = {"$regex": re.escape(search[:80]), "$options": "i"}
         filters["$or"] = [
@@ -1514,7 +1515,7 @@ async def list_dispatches(
     from TileDispatch + its 1:1 TileChalan, one row per Chalan line item."""
     filters: dict = {"is_deleted": False}
     if customer_id:
-        filters["customer_id"] = customer_id
+        filters["customer_id"] = filter_condition(customer_id)
     if dispatch_number:
         filters["dispatch_number"] = {"$regex": dispatch_number, "$options": "i"}
     if date_from or date_to:
@@ -1552,10 +1553,10 @@ async def list_dispatches(
         ]
         line_filters: list[dict] = []
         contains = lambda value: {"$regex": re.escape(value[:80]), "$options": "i"}
-        if brand_id: line_filters.append({"brand_id": brand_id})
+        if brand_id: line_filters.append({"brand_id": filter_condition(brand_id)})
         if product: line_filters.append({"tile_name": contains(product)})
         if chalan_number: line_filters.append({"chalan_number": contains(chalan_number)})
-        if status: line_filters.append({"status": status})
+        if status: line_filters.append({"status": filter_condition(status)})
         if search:
             safe_search = contains(search)
             line_filters.append({"$or": [
@@ -1597,10 +1598,10 @@ async def list_dispatches(
     rows = []
     for dispatch in dispatches:
         dispatch_status = _dispatch_status(dispatch)
-        if status and status != dispatch_status:
+        if status and dispatch_status not in filter_values(status):
             continue
         this_brand_id, this_brand_name = brand_by_po_id.get(dispatch["purchase_order_id"], (None, None))
-        if brand_id and this_brand_id != brand_id:
+        if brand_id and this_brand_id not in filter_values(brand_id):
             continue
         chalan = chalan_by_id.get(dispatch["chalan_id"], {})
         if chalan_number and chalan_number.lower() not in (chalan.get("number") or "").lower():
@@ -1737,12 +1738,12 @@ async def completed_tile_order_history(
 
     rows = []
     for order in orders:
-        if customer_id and order.get("customer_id") != customer_id:
+        if customer_id and order.get("customer_id") not in filter_values(customer_id):
             continue
         pos = pos_by_order.get(order["id"], [])
         if not pos:
             continue
-        if brand_id and not any(po.get("brand_id") == brand_id for po in pos):
+        if brand_id and not any(po.get("brand_id") in filter_values(brand_id) for po in pos):
             continue
         haystack = " ".join([order.get("customer_name") or "", order.get("number") or ""] + [po.get("brand_name") or "" for po in pos]).lower()
         if search and search.lower() not in haystack:
@@ -1945,9 +1946,9 @@ async def list_material_movements(
     collections, so this is a straight filtered read."""
     filters: dict = {"is_deleted": False}
     if customer_id:
-        filters["customer_id"] = customer_id
+        filters["customer_id"] = filter_condition(customer_id)
     if brand_id:
-        filters["brand_id"] = brand_id
+        filters["brand_id"] = filter_condition(brand_id)
     if movement_type:
         filters["movement_type"] = movement_type
     def contains(value: str) -> dict:

@@ -1,3 +1,4 @@
+import { filterValues, toggleFilterValue } from "@/src/utils/filters";
 // ═══════════════════════════════════════════════════════════════════════════
 // Payments — migrated to Design System V2.
 // Consumes ONLY primitives from @/src/components/ds. Zero local styles for
@@ -311,11 +312,11 @@ export default function PaymentsScreen() {
     try {
       const params = new URLSearchParams();
       if (query) params.set("q", query);
-      if (agingPeriod !== "all") params.set("overdue_period", agingPeriod);
-      if (agingPeriod === "custom") {
+      const selectedAging = filterValues(agingPeriod).filter(value => value !== "custom" || customMinDays || customMaxDays);
+      if (selectedAging.length) params.set("overdue_period", selectedAging.join(","));
+      if (filterValues(agingPeriod).includes("custom")) {
         if (customMinDays) params.set("custom_min_days", customMinDays);
         if (customMaxDays) params.set("custom_max_days", customMaxDays);
-        if (!customMinDays && !customMaxDays) params.delete("overdue_period");
       }
       const url = `/payments/orders${params.toString() ? `?${params.toString()}` : ""}`;
       const list = await api.get<OrderRow[]>(url);
@@ -694,12 +695,12 @@ export default function PaymentsScreen() {
                 />
                 <Dropdown
                   testID="payments-aging-filter"
-                  label={AGING_OPTIONS.find((option) => option.value === agingPeriod)?.label || "All outstanding"}
+                  label={filterValues(agingPeriod).length ? AGING_OPTIONS.filter(option => filterValues(agingPeriod).includes(option.value)).map(option => option.label).join(", ") : "All outstanding"}
                   icon="calendar"
                   variant="secondary"
-                  items={AGING_OPTIONS.map((option) => ({ label: option.label, onPress: () => setAgingPeriod(option.value) }))}
+                  items={AGING_OPTIONS.map((option) => ({ label: `${filterValues(agingPeriod).includes(option.value) ? "✓ " : ""}${option.label}`, onPress: () => setAgingPeriod(current => toggleFilterValue(current, option.value)) }))}
                 />
-                {agingPeriod === "custom" ? (
+                {filterValues(agingPeriod).includes("custom") ? (
                   <View style={{ flexDirection: isPhone ? "column" : "row", gap: spacing.sm }}>
                     <TextInput testID="payments-custom-min-days" value={customMinDays} onChangeText={(value) => setCustomMinDays(value.replace(/\D/g, ""))}
                       keyboardType="number-pad" placeholder="From days" placeholderTextColor={colors.onSurfaceMuted} style={[styles.dateInput, !isPhone && { flex: 1 }]} />
@@ -1127,8 +1128,8 @@ function PaymentHistoryTab(props: {
           placeholder="Search customer, invoice number, or reference…"
           onClear={() => onQChange("")}
         />
-        <FilterBar testID="history-unit-filter" label="BUSINESS UNIT" value={unit} onChange={onUnitChange} options={unitOptions} />
-        <FilterBar testID="history-mode-filter" label="PAYMENT METHOD" value={mode} onChange={onModeChange} options={PAY_MODE_FILTERS} />
+        <FilterBar multiSelect testID="history-unit-filter" label="BUSINESS UNIT" value={unit} onChange={onUnitChange} options={unitOptions} />
+        <FilterBar multiSelect testID="history-mode-filter" label="PAYMENT METHOD" value={mode} onChange={onModeChange} options={PAY_MODE_FILTERS} />
         <View style={{ gap: spacing.sm }}>
           <Text style={type.overline}>DATE RANGE</Text>
           <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, flexWrap: "wrap" }}>

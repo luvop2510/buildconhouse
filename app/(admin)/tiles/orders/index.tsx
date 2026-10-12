@@ -1,3 +1,4 @@
+import { filterValues, toggleFilterValue } from "@/src/utils/filters";
 // frontend/app/(admin)/tiles/orders/index.tsx
 // Ground Floor → Tiles → Tile Orders — four tabs matching how BuildCon
 // staff actually think about this workflow (redesigned 2026-08, replacing
@@ -197,7 +198,7 @@ export default function TileOrdersScreen() {
   const [dispatchRows, setDispatchRows] = useState<DispatchListRow[]>([]);
   const [dispatchSearch, setDispatchSearch] = useState(params.search ?? "");
   const [dispatchSearchDraft, setDispatchSearchDraft] = useState(params.search ?? "");
-  const [dispatchStatus, setDispatchStatus] = useState<typeof DISPATCH_STATUS_FILTERS[number]>("All");
+  const [dispatchStatus, setDispatchStatus] = useState<string>("All");
   const [openDispatchId, setOpenDispatchId] = useState<string | null>(null);
   const [creatingDispatch, setCreatingDispatch] = useState(false);
   const [historyFacets, setHistoryFacets] = useState<{ customers: IdNameRef[]; brands: IdNameRef[] }>({ customers: [], brands: [] });
@@ -693,9 +694,9 @@ export default function TileOrdersScreen() {
                 <FilterChip
                   key={value}
                   label={label}
-                  active={customerStatus === value}
+                  active={value === "All" ? customerStatus === "All" : filterValues(customerStatus, "All").includes(value)}
                   testID={`tile-orders-customer-status-${value.toLowerCase().replaceAll(" ", "-")}`}
-                  onPress={() => setCustomerStatus(value)}
+                  onPress={() => setCustomerStatus(current => toggleFilterValue(current, value, "All"))}
                 />
               ))}
             />
@@ -722,9 +723,9 @@ export default function TileOrdersScreen() {
                 <FilterChip
                   key={status}
                   label={status}
-                  active={dispatchStatus === status}
+                  active={status === "All" ? dispatchStatus === "All" : filterValues(dispatchStatus, "All").includes(status)}
                   testID={`tile-orders-dispatch-status-${status.toLowerCase().replaceAll(" ", "-")}`}
-                  onPress={() => setDispatchStatus(status)}
+                  onPress={() => setDispatchStatus(current => toggleFilterValue(current, status, "All"))}
                 />
               ))}
               actions={!readOnlyDeliveryLookup ? (
@@ -757,9 +758,9 @@ export default function TileOrdersScreen() {
               search={<SearchField testID="tile-orders-history-search" value={historySearchDraft} onChangeText={setHistorySearchDraft} onSubmit={() => setHistorySearch(historySearchDraft.trim())} placeholder="Search customer, order or brand…" />}
               filters={[
                 <FilterChip key="customer-All" label="All customers" active={historyCustomer === "All"} onPress={() => setHistoryCustomer("All")} />,
-                ...historyFacets.customers.map((value) => <FilterChip key={`customer-${value.id}`} label={`Customer: ${value.name}`} active={historyCustomer === value.id} onPress={() => setHistoryCustomer(value.id)} />),
+                ...historyFacets.customers.map((value) => <FilterChip key={`customer-${value.id}`} label={`Customer: ${value.name}`} active={value.id === "All" ? historyCustomer === "All" : filterValues(historyCustomer, "All").includes(value.id)} onPress={() => setHistoryCustomer(current => toggleFilterValue(current, value.id, "All"))} />),
                 <FilterChip key="brand-All" label="All brands" active={historyBrand === "All"} onPress={() => setHistoryBrand("All")} />,
-                ...historyFacets.brands.map((value) => <FilterChip key={`brand-${value.id}`} label={`Brand: ${value.name}`} active={historyBrand === value.id} onPress={() => setHistoryBrand(value.id)} />),
+                ...historyFacets.brands.map((value) => <FilterChip key={`brand-${value.id}`} label={`Brand: ${value.name}`} active={value.id === "All" ? historyBrand === "All" : filterValues(historyBrand, "All").includes(value.id)} onPress={() => setHistoryBrand(current => toggleFilterValue(current, value.id, "All"))} />),
                 ...(["All", "30d", "year"] as const).map((value) => <FilterChip key={`date-${value}`} label={value === "All" ? "All dates" : value === "30d" ? "Last 30 days" : "This year"} active={historyDateRange === value} onPress={() => setHistoryDateRange(value)} />),
               ]}
               actions={<Button label="Export" variant="primary" onPress={() => void exportHistory("xlsx")} testID="tile-orders-history-export" />}

@@ -49,6 +49,7 @@ function WorkspaceLink({ href, onPress, ...props }: Omit<React.ComponentProps<ty
 
 function isNavActive(item: NavItem, segments: string[]): boolean {
   if (item.match === "tiles") return segments.includes("tiles") && !segments.includes("orders");
+  if (item.match === "purchases") return segments.includes("purchases") || segments.includes("purchases-completed");
   // The root notebook route is Walk-ins. It must not remain highlighted when
   // its sibling Quotation Follow-up route is active.
   if (item.href.endsWith("/notebook/kitchen")) {
@@ -137,7 +138,10 @@ function FloorSwitcher({ compact = false }: { compact?: boolean }) {
   const router = useRouter();
   const segments = useResolvedFloorSegments();
   const selected = floors.find((floor) => floor.id === selectedFloorId);
-  if (!access || floors.length < 2) return null;
+  // Keep the active workspace selector visible in the shell. Hiding it for a
+  // single assigned floor made restricted accounts look as if floor access
+  // was unavailable, and hid the current data scope from every page.
+  if (!access || floors.length === 0) return null;
   const pick = (id: string) => {
     if (id === selectedFloorId) return;
 
@@ -148,7 +152,14 @@ function FloorSwitcher({ compact = false }: { compact?: boolean }) {
     void selectFloor(id).catch(() => {});
     if (staff?.custom_access) {
       router.replace(staffLandingPath(null, staff.access_grants || [], id) as any);
-    } else if (!isRouteCompatibleWithFloor(segments, id)) {
+    } else if (!isRouteCompatibleWithFloor(segments, id) ||
+      (!isSharedFloorRoute(segments) && (
+        (id === KITCHEN_FLOOR_ID && !segments.includes("kitchen")) ||
+        (id === FURNITURE_FLOOR_ID && !segments.includes("furniture"))
+      ))) {
+      // Keep shared business pages, including the regular walk-in register,
+      // mounted when the workspace changes. Department-only pages still
+      // navigate to the destination floor's workspace.
       router.replace(`/(admin)${floorLandingPath(id)}` as any);
     }
   };
@@ -185,6 +196,12 @@ const FLOOR_ROUTE_SEGMENTS: Record<string, string[]> = {
   [KITCHEN_FLOOR_ID]: ["kitchen"],
   [FURNITURE_FLOOR_ID]: ["furniture", "furniture-quotations"],
 };
+
+const SHARED_FLOOR_ROUTES = ["catalog", "customers", "purchases", "purchases-completed", "payments", "payments-list", "walkins", "followups", "settings", "team", "notifications", "sales-data"];
+
+function isSharedFloorRoute(segments: string[]) {
+  return SHARED_FLOOR_ROUTES.some(segment => segments.includes(segment));
+}
 
 function isRouteCompatibleWithFloor(segments: string[], floorId: string) {
   return !Object.entries(FLOOR_ROUTE_SEGMENTS).some(([restrictedFloor, roots]) => (
@@ -237,7 +254,7 @@ function useVisibleNav() {
     if (staff?.custom_access) return (!item.floors || item.floors.includes(selectedFloorId)) && hasAccess(item.match);
     // These units share floor-scoped business pages alongside their notebooks.
     if (selectedFloorId === KITCHEN_FLOOR_ID || selectedFloorId === FURNITURE_FLOOR_ID) {
-      const shared = ["catalog", "customers", "purchases", "payments", "payments-list"].includes(item.match);
+      const shared = SHARED_FLOOR_ROUTES.includes(item.match);
       return (shared || Boolean(item.floors?.includes(selectedFloorId))) && hasAccess(item.match);
     }
     if (item.roles && (!staff?.role || !item.roles.includes(staff.role))) return false;
@@ -343,7 +360,7 @@ function PhoneBar() {
   if (!shellReady) return <PhoneBarSkeleton />;
   const all = [...visible(PRIMARY), ...tilesNav.items, ...visible(SECONDARY)];
   const notebook = selectedFloorId === KITCHEN_FLOOR_ID || selectedFloorId === FURNITURE_FLOOR_ID;
-  const priorities = notebook ? all.filter(item => item.href.includes('/notebook/'))
+  const priorities = notebook ? all.filter(item => item.match === 'walkins' || item.href.includes('/notebook/'))
     : ['dashboard', 'catalog', selectedFloorId === TILES_FLOOR_ID ? 'tiles' : 'quotations', 'followups']
       .flatMap(match => all.filter(item => item.match === match));
   const more = all.filter(item => !priorities.some(tab => tab.href === item.href));
@@ -359,7 +376,7 @@ function PhoneBar() {
           <Feather name={item.icon} size={20} color={isActive(item) ? color.action : color.inkMid} />
         </View>
         <Text numberOfLines={2} style={[styles.tabLabel, isActive(item) && styles.tabLabelActive]}>
-          {notebook && (item.match === 'furniture' || item.match === 'kitchen') ? 'Walk-ins' : item.label}
+          {item.match === 'kitchen' ? 'Kitchen leads' : item.match === 'furniture' ? 'Furniture leads' : item.label}
         </Text>
       </WorkspaceLink>)}
       <Pressable testID={notebook ? "bottom-nav-notebook-workspace" : "bottom-nav-more"}
@@ -420,6 +437,16 @@ function FloorAccessGate({ children }: { children: React.ReactNode }) {
     if (destinationReady) initialAccount.finish();
     else router.replace(`/(admin)${initialAccount.path}` as any);
   }, [authLoading, staff, destinationReady, initialAccount, router]);
+
+  useEffect(() => {
+    if (authLoading || !staff || staff.custom_access || !access || !selectedFloorId || !destinationReady || !segments.includes("dashboard")) return;
+    const kitchenOrFurniture = selectedFloorId === KITCHEN_FLOOR_ID || selectedFloorId === FURNITURE_FLOOR_ID;
+    if (!kitchenOrFurniture) return;
+    // Only choose a department default for the generic dashboard. A bookmarked
+    // floor-specific page owns its floor synchronization; replacing it here
+    // races that hook and loses the user's destination during hydration.
+    router.replace(`/(admin)${floorLandingPath(selectedFloorId)}` as any);
+  }, [authLoading, staff, access, selectedFloorId, destinationReady, segments, router]);
 
   // Password, MFA and session management belong to the authenticated account,
   // even when every business floor has been switched off. Business routes
@@ -587,7 +614,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.x3, gap: space.x2,
   },
   notebookWorkspaceTab: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 6, gap: 3 },
-  tab: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 6, gap: 3 },
+  tab: { flex: 1, minWidth: 0, minHeight: 44, alignItems: "center", justifyContent: "center", paddingVertical: 6, gap: 3 },
   tabIconWrap: {
     width: 40, height: 26, borderRadius: radius.md, alignItems: "center", justifyContent: "center",
   },
@@ -608,7 +635,7 @@ const styles = StyleSheet.create({
   navLoadingLabel: { width: 26, height: 7, borderRadius: 4, backgroundColor: color.sunken },
   moreRow: {
     flexDirection: "row", alignItems: "center", gap: 12,
-    height: 48, paddingHorizontal: 4,
+    minHeight: 48, paddingVertical: 10, paddingHorizontal: 4,
   },
-  moreLabel: { fontFamily: font.medium, fontWeight: "500", fontSize: 14.5, color: color.ink },
+  moreLabel: { flexShrink: 1, fontFamily: font.medium, fontWeight: "500", fontSize: 14.5, color: color.ink },
 });

@@ -1,3 +1,4 @@
+import { filterValues, toggleFilterValue } from "@/src/utils/filters";
 import { Disclosure } from "@/src/design/Disclosure";
 import { NavigationTabs } from "@/src/design/NavigationTabs";
 // Customer profile with full activity timeline across quotations, purchases,
@@ -37,7 +38,7 @@ import {
 
 type Customer = {
   id: string; name: string; company?: string | null; email: string;
-  phone?: string | null; city?: string | null; tier: "retail" | "trade" | "vip";
+  phone?: string | null; city?: string | null; purchase_completion_status?: "active" | "completed";
   address?: string | null;
   property_name?: string | null;
 };
@@ -75,7 +76,6 @@ type Workspace = {
 };
 
 type Tab = "overview" | "quotations" | "po_final" | "purchases" | "timeline";
-type ProductFilter = "all" | "outstanding" | "blocked";
 type WorkspaceServerFilters = {
   productSearch: string;
   brandFilter: string | null;
@@ -161,7 +161,7 @@ export default function CustomerDetail() {
   const [availableBrands, setAvailableBrands] = useState<Workspace["brands"]>([]);
   const [availableStages, setAvailableStages] = useState<Workspace["stages"]>([]);
   const [tab, setTab] = useState<Tab>("overview");
-  const [productFilter, setProductFilter] = useState<ProductFilter>("all");
+  const [productFilter, setProductFilter] = useState<string>("all");
   const [productSearch, setProductSearch] = useState(routeSearch);
   const [brandFilter, setBrandFilter] = useState<string | null>(routeBrand || null);
   const [stageFilter, setStageFilter] = useState<string | null>(routeStage || null);
@@ -186,7 +186,7 @@ export default function CustomerDetail() {
     setRelatedErrors(false);
     try {
       const [c, qs, pos, tl] = await Promise.all([
-        api.get<Customer>(`/customers/${id}`),
+        api.get<Customer>(`/customers/${id}?with_completion=true`),
         api.get<Quotation[]>(`/quotations`).then((all) => all.filter((q: any) => q.customer_id === id)).catch(() => { setRelatedErrors(true); return []; }),
         api.get<PO[]>(`/purchase-orders?customer_id=${id}`).catch(() => { setRelatedErrors(true); return []; }),
         api.get<TimelineEvent[]>(`/activity/customer/${id}`).catch(() => { setRelatedErrors(true); return []; }),
@@ -378,9 +378,9 @@ export default function CustomerDetail() {
 
   const visibleProducts = useMemo(() => {
     if (!workspace) return [];
-    if (productFilter === "outstanding") return workspace.outstanding_items;
-    if (productFilter === "blocked") return workspace.products.filter((p) => p.blocked);
-    return workspace.products;
+    const selected = filterValues(productFilter);
+    const outstanding = new Set(workspace.outstanding_items.map(p => p.item_id));
+    return workspace.products.filter(p => !selected.length || (selected.includes("outstanding") && outstanding.has(p.item_id)) || (selected.includes("blocked") && p.blocked));
   }, [workspace, productFilter]);
   const exportDetail = async (section: "quotations" | "products" | "orders" | "timeline") => {
     const rows = section === "quotations"
@@ -400,11 +400,11 @@ export default function CustomerDetail() {
     [workspaceFilters],
   );
   const selectedBrand = useMemo(
-    () => availableBrands.find((brand) => brand.id === brandFilter) || null,
+    () => availableBrands.filter((brand) => !!brand.id && filterValues(brandFilter).includes(brand.id)).map(brand => brand.name).join(", "),
     [availableBrands, brandFilter],
   );
   const selectedStage = useMemo(
-    () => availableStages.find((stage) => stage.key === stageFilter) || null,
+    () => availableStages.filter((stage) => filterValues(stageFilter).includes(stage.key)).map(stage => stage.label).join(", "),
     [availableStages, stageFilter],
   );
   const clearServerFilters = useCallback(() => {
@@ -418,7 +418,7 @@ export default function CustomerDetail() {
     [availableBrands],
   );
   const stageOptions = useMemo(
-    () => availableStages.filter((stage) => stage.count > 0 || stage.key === stageFilter),
+    () => availableStages.filter((stage) => stage.count > 0 || filterValues(stageFilter).includes(stage.key)),
     [availableStages, stageFilter],
   );
   const hasServerFilteredEmpty = Boolean(workspace && hasServerFilters && workspace.products.length === 0);
@@ -477,7 +477,7 @@ export default function CustomerDetail() {
       <PageHeader
         title={customer.company || customer.name}
         subtitle={`${customer.email}${customer.city ? ` · ${customer.city}` : ""}`}
-        overline={`CUSTOMER · ${customer.tier.toUpperCase()}`}
+        overline={customer.purchase_completion_status === "completed" ? "CUSTOMER · 100% COMPLETED" : "CUSTOMER"}
         back={() => router.back()}
         actions={
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, maxWidth: "100%" }}>
@@ -520,10 +520,7 @@ export default function CustomerDetail() {
                 <Text style={[type.titleLg, { flexShrink: 1 }]} numberOfLines={isDesktop ? 1 : 3}>
                   {customer.company || customer.name}
                 </Text>
-                <Badge
-                  label={customer.tier.toUpperCase()}
-                  tone={customer.tier === "vip" ? "success" : customer.tier === "trade" ? "info" : "neutral"}
-                />
+                {customer.purchase_completion_status === "completed" ? <Badge label="100% completed" tone="success" /> : null}
               </View>
               <View style={{ gap: 6, marginTop: 4 }}>
                 <Row icon="mail" text={customer.email} />
@@ -681,8 +678,8 @@ export default function CustomerDetail() {
                         key={brand.id}
                         label={brand.name}
                         count={brand.count}
-                        active={brandFilter === brand.id}
-                        onPress={() => setBrandWorkspaceFilter((current) => current === brand.id ? null : brand.id)}
+                        active={!!brand.id && filterValues(brandFilter).includes(brand.id)}
+                        onPress={() => setBrandWorkspaceFilter((current) => toggleFilterValue(current, brand.id || "", "") || null)}
                         testID={`customer-workspace-brand-${brand.id}`}
                       />
                     ))}
@@ -696,8 +693,8 @@ export default function CustomerDetail() {
                         key={stage.key}
                         label={stage.label}
                         count={stage.count}
-                        active={stageFilter === stage.key}
-                        onPress={() => setStageWorkspaceFilter((current) => current === stage.key ? null : stage.key)}
+                        active={filterValues(stageFilter).includes(stage.key)}
+                        onPress={() => setStageWorkspaceFilter((current) => toggleFilterValue(current, stage.key, "") || null)}
                         testID={`customer-workspace-stage-${stage.key}`}
                       />
                     ))}
@@ -716,7 +713,7 @@ export default function CustomerDetail() {
                     ) : null}
                     {brandFilter ? (
                       <Chip
-                        label={`Brand: ${selectedBrand?.name || brandFilter}`}
+                        label={`Brands: ${selectedBrand || brandFilter}`}
                         active
                         icon="x"
                         onPress={() => setBrandWorkspaceFilter(null)}
@@ -725,7 +722,7 @@ export default function CustomerDetail() {
                     ) : null}
                     {stageFilter ? (
                       <Chip
-                        label={`Stage: ${selectedStage?.label || stageFilter}`}
+                        label={`Stages: ${selectedStage || stageFilter}`}
                         active
                         icon="x"
                         onPress={() => setStageWorkspaceFilter(null)}
@@ -910,8 +907,8 @@ export default function CustomerDetail() {
                   </View>
                   <View style={{ flexDirection: "row", flexWrap: isPhone ? "wrap" : "nowrap", gap: 6, maxWidth: "100%" }}>
                     <FilterChip label={`All ${workspace.products.length}`} active={productFilter === "all"} onPress={() => setProductFilter("all")} />
-                    <FilterChip label={`Outstanding ${workspace.outstanding_items.length}`} active={productFilter === "outstanding"} onPress={() => setProductFilter("outstanding")} />
-                    <FilterChip label={`Delayed ${workspace.summary.blocked_count}`} active={productFilter === "blocked"} onPress={() => setProductFilter("blocked")} />
+                    <FilterChip label={`Outstanding ${workspace.outstanding_items.length}`} active={filterValues(productFilter).includes("outstanding")} onPress={() => setProductFilter(current => toggleFilterValue(current, "outstanding"))} />
+                    <FilterChip label={`Delayed ${workspace.summary.blocked_count}`} active={filterValues(productFilter).includes("blocked")} onPress={() => setProductFilter(current => toggleFilterValue(current, "blocked"))} />
                   </View>
                 </View>
                 {visibleProducts.length === 0 ? (

@@ -44,6 +44,7 @@ async def find_or_create_customer(
     }
     cust = CustomerPublic(**data)
     to_store = cust.dict()
+    to_store["lifecycle"] = "prospect"
     if not to_store.get("email"):
         to_store.pop("email", None)  # customers_email_unique is a sparse index — omit the key entirely, not null
     await db.customers.insert_one(to_store)

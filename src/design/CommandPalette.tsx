@@ -76,7 +76,6 @@ function PaletteSession({ open, onClose, selectedFloorId }: { open: boolean; onC
   const canNewQuotation = useActionAccess(selectedFloorId === "ground-floor" ? "tiles" : "quotations", "create");
   const canNewCustomer = useActionAccess("customers", "create");
   const canRecordPayment = useActionAccess("payments", "create");
-  const panelRef = useOverlayFocus(open, onClose);
   const reducedMotion = useReducedMotion();
   const notebookOnly = selectedFloorId === KITCHEN_FLOOR_ID || selectedFloorId === FURNITURE_FLOOR_ID;
   const { width: winW, height: winH } = useWindowDimensions();
@@ -91,6 +90,10 @@ function PaletteSession({ open, onClose, selectedFloorId }: { open: boolean; onC
   const inputRef = useRef<TextInput>(null);
   const anim = useRef(new Animated.Value(0)).current;
   const [visible, setVisible] = useState(open);
+  // The web Modal remains mounted for its exit animation. Keep isolation and
+  // focus ownership until that portal actually closes; restoring on `open`
+  // let its still-active native focus trap move focus onto the next backdrop.
+  const panelRef = useOverlayFocus(visible, onClose, open);
   const productQuery = q.trim();
 
   // Each opening and floor gets a fresh session; only exit visibility outlives open.

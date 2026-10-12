@@ -319,6 +319,10 @@ test('critical team delegation: a no-floor member with a legacy password flag ca
 test('critical team passwords: owner sets one member password and it remains owner managed', async ({ page }) => {
   const { writes } = await teamFixture(page);
   await page.getByTestId('team-row-test-worker').click();
+  await expect(page.getByTestId('edit-staff-set-password')).toHaveText('Save entered password');
+  await expect(page.getByTestId('edit-staff-set-password-help')).toHaveText('Saves the password you entered and confirmed above.');
+  await expect(page.getByTestId('edit-staff-reset-password')).toHaveText('Generate and save random password');
+  await expect(page.getByTestId('edit-staff-generate-password-help')).toContainText('It ignores the fields above.');
   await page.getByTestId('edit-staff-password').fill('SpecificMember!2026');
   await page.getByTestId('edit-staff-confirm-password').fill('SpecificMember!2026');
   await page.getByTestId('edit-staff-set-password').click();

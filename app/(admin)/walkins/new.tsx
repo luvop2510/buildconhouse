@@ -19,6 +19,7 @@ import {
 } from "@/src/components/ui";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { useBp } from "@/src/design/responsive";
+import { hasGrantAccess } from "@/src/team-delegation";
 import { useAuth } from "@/src/state/auth";
 import { colors, spacing, type } from "@/src/theme/tokens";
 
@@ -29,7 +30,8 @@ export default function NewWalkIn() {
   const { isPhone } = useBp();
   const { floor_id: routeFloorId } = useLocalSearchParams<{ floor_id?: string }>();
   const { staff } = useAuth();
-  const { floors, selectedFloorId } = useFloorAccess();
+  const { floors: assignedFloors, selectedFloorId } = useFloorAccess();
+  const floors = staff?.custom_access ? assignedFloors.filter(floor => hasGrantAccess(staff.access_grants, floor.id, "walkins", "create")) : assignedFloors;
   const [optionsError, setOptionsError] = useState(false);
   const [optionsRetry, setOptionsRetry] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -71,12 +73,26 @@ export default function NewWalkIn() {
   useEffect(() => {
     setOptionsError(false);
     walkinsApi.listSources().then((r) => setSources(r.sources)).catch(() => setOptionsError(true));
-    walkinsApi.listAssignees().then(setAssignees).catch(() => setOptionsError(true));
+
   }, [optionsRetry]);
 
   useEffect(() => {
-    if (!salespersonId && staff?.id) { setSalespersonId(staff.id); setSalespersonName(staff.full_name); }
-  }, [staff, salespersonId]);
+    if (!floorId) return;
+    let active = true;
+    setAssignees([]);
+    walkinsApi.listAssignees({ floorId }).then(rows => {
+      if (!active) return;
+      setAssignees(rows);
+      setSalespersonId(current => rows.some(row => row.id === current) ? current : "");
+    }).catch(() => { if (active) setOptionsError(true); });
+    return () => { active = false; };
+  }, [floorId, optionsRetry]);
+
+  useEffect(() => {
+    if (salespersonId) return;
+    if (staff?.id && assignees.some(row => row.id === staff.id)) { setSalespersonId(staff.id); setSalespersonName(staff.full_name); }
+    else setSalespersonName("");
+  }, [staff, salespersonId, assignees]);
 
   useEffect(() => {
     if (routeFloorId) { setFloorId(routeFloorId); return; }
@@ -91,14 +107,14 @@ export default function NewWalkIn() {
     if (!hasSignal) { setMatches({ high: [], medium: [], low: [] }); return; }
     let active = true;
     const t = setTimeout(() => {
-      walkinsApi.checkDuplicate({ phone, alternatePhone: altPhone, email, name, city, address })
+      walkinsApi.checkDuplicate({ phone, alternatePhone: altPhone, email, name, city, address, floorId })
         .then((r) => {
           if (active) setMatches(r);
         })
         .catch(() => {});
     }, 450);
     return () => { active = false; clearTimeout(t); };
-  }, [phone, altPhone, email, name, city, address]);
+  }, [phone, altPhone, email, name, city, address, floorId]);
 
   const resolvedHigh = matches.high[0] || null;
 
@@ -142,7 +158,7 @@ export default function NewWalkIn() {
         use_existing_customer_id: useExistingId, force_new_customer: force,
       });
       toast.success("Walk-in logged");
-      router.replace(`/(admin)/walkins/${created.id}` as any);
+      router.replace(`/(admin)/walkins/${created.id}?floor_id=${created.floor_id}` as any);
     } catch (e: any) {
       const conflict = e?.status === 409 ? parseDuplicateConflict(e?.detail) : null;
       if (conflict) {

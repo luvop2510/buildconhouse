@@ -40,9 +40,9 @@ def test_catalog_over_ten_thousand_has_complete_pages_counts_families_and_media(
             await importlib.import_module('migrations.0029_catalog_revision_audit_index').up(db)
             marker = await catalog.refresh_catalog_snapshot()
             assert marker.database_backed and not marker.products
-            result = await catalog.list_products_page(**list_arguments(skip=10002))
-            assert result['total'] == 10004
-            assert [row['id'] for row in result['items']] == ['p10002', 'p10003']
+            result = await catalog.list_products_page(**list_arguments(skip=5001))
+            assert result['total'] == 5002
+            assert [row['id'] for row in result['items']] == ['p10002']
             assert result['items'][0]['hero_image_url'] == image['public_url']
             assert [row['id'] for row in result['items'][0]['family_variants']] == ['p10002', 'p10003']
             groups = await catalog.list_family_groups(brand_id=None, category_id=None, subcategory=None, series=None, q=None, limit=2, skip=5000, floor_ids=['first-floor'])
@@ -100,13 +100,44 @@ def test_byte_threshold_and_normal_cache_dont_truncate_or_query_mongo_each_read(
             class NoDatabase:
                 def __getattr__(self, key): raise AssertionError('Normal-sized read must use its warm cache')
             monkeypatch.setattr(database, 'db', NoDatabase())
-            assert (await catalog.list_products_page(**list_arguments()))['total'] == 4
+            assert (await catalog.list_products_page(**list_arguments()))['total'] == 2
             monkeypatch.setattr(database, 'db', db)
             monkeypatch.setattr(catalog, '_SNAPSHOT_MAX_BYTES', 100)
             oversized = await catalog.refresh_catalog_snapshot()
             assert oversized.database_backed and not oversized.products
-            assert (await catalog.list_products_page(**list_arguments()))['total'] == 4
+            assert (await catalog.list_products_page(**list_arguments()))['total'] == 2
         finally: client.close()
+    asyncio.run(run())
+
+
+def test_catalog_without_sort_spilling_preserves_full_source_metadata(mongo_url, monkeypatch):
+    async def run():
+        client = AsyncIOMotorClient(mongo_url); db = client.catalog_sort_memory
+        setup(monkeypatch, db)
+        try:
+            await client.admin.command({"setParameter": 1, "internalQueryMaxBlockingSortMemoryUsageBytes": 1024 * 1024})
+            await seed(db)
+            note = 'Exact supplier notes ' + 'x' * 32768
+            rows = [product(index, specs={'supplier_notes': note}, catalog_entries=[{
+                'entry_id': f'entry-{index}', 'category_id': 'category', 'name': f'Listed {index:05}',
+                'source_order': index, 'mrp': 42, 'source_cells': {'supplier_note': note},
+            }]) for index in range(200)]
+            await db.products.insert_many(rows)
+            monkeypatch.setattr(catalog, '_SNAPSHOT_ROW_LIMITS', {**catalog._SNAPSHOT_ROW_LIMITS, 'products': 1})
+            monkeypatch.setattr(database, 'aggregate', lambda pipeline: db.products.aggregate(pipeline, allowDiskUse=False, maxTimeMS=30000))
+            await catalog.refresh_catalog_snapshot()
+            families = await catalog.list_family_groups(brand_id=None, category_id=None, subcategory=None, series=None, q=None, limit=2, skip=0, floor_ids=['first-floor'])
+            assert families['total'] == 100 and len(families['items']) == 2
+            assert families['items'][0]['catalog_entry']['source_cells']['supplier_note'] == note
+            listed = await catalog.list_products_page(**list_arguments(sort='source'))
+            assert listed['total'] == 100
+            assert listed['items'][0]['catalog_entry']['source_cells']['supplier_note'] == note
+            assert listed['items'][0]['specs']['supplier_notes'] == note
+            searched = await catalog.search_catalog(q='Listed', brand_id=None, category_id=None, subcategory=None, series=None, limit=2, group=False, floor_ids=['first-floor'])
+            assert searched['total'] == 200 and len(searched['items']) == 2
+            assert searched['items'][0]['catalog_entry']['source_cells']['supplier_note'] == note
+        finally:
+            client.close()
     asyncio.run(run())
 
 
@@ -128,7 +159,7 @@ def test_database_matches_warm_cache_for_sort_details_related_sizes_media_and_us
                 product(4, floor_id='ground-floor', family_key='family-0', size='Foreign'),
                 product(5),
             ])
-            await db.product_usage.insert_many([{'product_id':'p1','user_id':'user','count':5,'last_used_at':'2026-10-10'}, {'product_id':'p0','user_id':'other','count':10,'last_used_at':'2026-10-09'}, {'product_id':'p0','user_id':'user','count':1,'last_used_at':'2026-10-08'}])
+            await db.product_usage.insert_many([{'product_id':'p1','user_id':'user','count':5,'last_used_at':'2026-10-10'}, {'product_id':'p0','user_id':'other','count':10,'last_used_at':'2026-10-09'}, {'product_id':'p0','user_id':'user','count':1,'last_used_at':'2026-10-08'}, {'product_id':'p3','user_id':'user','count':1,'last_used_at':'2026-10-07'}])
             image = ProductMedia(product_id='p0', floor_id='first-floor', brand_id='brand', family_key='family-0', public_url='https://example.test/real.png', is_primary=True, role='hero', source_type='supplier', bucket='public', storage_key='real.png', sha1='real').model_dump()
             await db.product_media.insert_one(image)
             await catalog.refresh_catalog_snapshot()
@@ -141,7 +172,9 @@ def test_database_matches_warm_cache_for_sort_details_related_sizes_media_and_us
             expected['media'] = await catalog.media_for_product('p0', ['first-floor'])
             expected['alternate'] = await catalog.alternate_products('p0', 'user', 4, ['first-floor'])
             expected['complete'] = await catalog.complete_set_products('p0', 4, ['first-floor'])
-            expected['recent_usage'] = await catalog.recent_or_frequent_products('user', limit=4, recent=True, floor_ids=['first-floor'])
+            expected['recent_usage'] = await catalog.recent_or_frequent_products('user', limit=2, recent=True, floor_ids=['first-floor'])
+            expected['frequent_usage'] = await catalog.recent_or_frequent_products('user', limit=2, recent=False, floor_ids=['first-floor'])
+            assert [row['id'] for row in expected['recent_usage']] == ['p1', 'p3']
             monkeypatch.setattr(catalog, '_SNAPSHOT_ROW_LIMITS', {**catalog._SNAPSHOT_ROW_LIMITS, 'products':1})
             marker = await catalog.refresh_catalog_snapshot()
             assert marker.database_backed
@@ -155,7 +188,8 @@ def test_database_matches_warm_cache_for_sort_details_related_sizes_media_and_us
             assert await catalog.media_for_product('p0', ['first-floor']) == expected['media']
             assert await catalog.alternate_products('p0', 'user', 4, ['first-floor']) == expected['alternate']
             assert await catalog.complete_set_products('p0', 4, ['first-floor']) == expected['complete']
-            assert await catalog.recent_or_frequent_products('user', limit=4, recent=True, floor_ids=['first-floor']) == expected['recent_usage']
+            assert await catalog.recent_or_frequent_products('user', limit=2, recent=True, floor_ids=['first-floor']) == expected['recent_usage']
+            assert await catalog.recent_or_frequent_products('user', limit=2, recent=False, floor_ids=['first-floor']) == expected['frequent_usage']
             await catalog.note_product_usage('user', ['p1'], '2026-10-11')
             assert (await catalog.get_catalog_snapshot()).database_backed
             assert await catalog.product_by_id('p4', ['first-floor']) is None

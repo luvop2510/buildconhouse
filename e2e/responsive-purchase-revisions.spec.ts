@@ -74,7 +74,7 @@ test('100 percent customers open Purchases workspace with delivery time and prod
   await page.route('**/api/purchases/items/page?**', route => route.fulfill({ json: { items: [delivered], total: 1, next_skip: null, summaries: { blocked_count: 0, sla_days: 7, stage_counts: { dispatched: 1 } } } }));
   await page.goto('/purchases-completed');
   await page.getByTestId('customer-workspace-client1').click();
-  await expect(page.getByText('Delivered products · 100% complete', { exact: true })).toBeVisible();
+  await expect(page.getByText('Delivered products · 100% completed', { exact: true })).toBeVisible();
   await expect(page.getByText('Furniture chair', { exact: true })).toBeVisible();
   await expect(page.getByText(/PO-1 · Example Company/)).toBeVisible();
   await expect(page.getByText(/Delivered 9 Oct/)).toBeVisible();

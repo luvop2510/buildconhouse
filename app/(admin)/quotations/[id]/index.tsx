@@ -19,6 +19,7 @@ import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
 type Line = { id: string; sku: string; name: string; qty: number; unit_price: number; discount_pct: number | null; room?: string; description?: string | null; category_id?: string | null; godown_stock_id?: string | null; godown_source_customer_name?: string | null; godown_source_purchased_at?: string | null; godown_allocated_at?: string | null };
 type Quotation = {
   id: string; number: string; customer_name: string; status: string; floor_id?: string;
+  purchase_completion_status?: "active" | "completed";
   items: Line[]; rooms: string[]; subtotal: number; discount_total: number;
   grand_total: number; created_at: string; notes?: string;
   created_by_name: string;
@@ -73,7 +74,7 @@ export default function QuotationDetail() {
     setRelatedError(false);
     try {
       const [doc, br, tl, pos] = await Promise.all([
-        api.get<Quotation>(`/quotations/${id}`),
+        api.get<Quotation>(`/quotations/${id}?with_completion=true`),
         api.get<Breakdown>(`/quotations/${id}/breakdown`).catch(() => null),
         api.get<TimelineEvent[]>(`/activity/quotation/${id}`).catch(() => { setRelatedError(true); return []; }),
         api.get<PoStub[]>(`/purchase-orders?quotation_id=${id}`).catch(() => { setRelatedError(true); return []; }),
@@ -164,6 +165,7 @@ export default function QuotationDetail() {
         {/* Document summary */}
         <View style={styles.hero}>
           <StatusBadge status={q.status} />
+          {q.purchase_completion_status === "completed" ? <Text style={[type.caption, { color: colors.success, marginTop: spacing.sm }]}>100% completed</Text> : null}
           <Text accessibilityRole="header" aria-level={2} style={[type.titleLg, { marginTop: 10 }]} numberOfLines={2}>{q.customer_name || "Unknown customer"}</Text>
           <Text style={[type.bodyMuted, { marginTop: 4 }]}>
             Prepared by {q.created_by_name} · {new Date(q.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}

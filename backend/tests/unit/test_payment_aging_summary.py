@@ -136,6 +136,8 @@ def test_age_presets_and_custom_bounds(monkeypatch):
     assert [row["id"] for row in custom] == ["late"]
     old = asyncio.run(payments.list_orders(status_filter=None, overdue_period="over_6_months", custom_min_days=None, custom_max_days=None, limit=200, user=_user()))
     assert [row["id"] for row in old] == ["old"]
+    combined = asyncio.run(payments.list_orders(status_filter=None, overdue_period="over_6_months,custom", custom_min_days=0, custom_max_days=5, limit=200, user=_user()))
+    assert {row["id"] for row in combined} == {"recent", "old"}
 
 
 def test_invalid_custom_age_is_rejected():
@@ -240,3 +242,24 @@ def test_detail_keeps_confirmation_date_and_hides_pending_automation_balances(mo
     assert detail["project_name"] == "Bath"
     assert detail["doc_type"] == "standard"
     assert requested[0]["$nor"] == [{"status": "pending", "automation_key": {"$exists": True}}]
+
+
+def test_fully_paid_history_honors_multiple_authorized_floors_over_active_workspace(monkeypatch):
+    fake_db = Db([])
+    queries = []
+    def find(query, *_args):
+        queries.append(query)
+        return Cursor([])
+    fake_db.quotations.find = find
+    monkeypatch.setattr(payments, "db", fake_db)
+    user = UserPublic(email="accounts@forge.app", full_name="Accounts", role="accounts",
+                      floor_ids=["first-floor", "second-floor"], active_floor_id="first-floor")
+    result = asyncio.run(payments.fully_paid_orders(
+        q=None, business_unit="first-floor,second-floor", sort="date_desc", skip=0, limit=50, user=user,
+    ))
+    assert result["total"] == 0
+    assert queries[0] == {"status": {"$in": ["ordered", "won"]}, "floor_id": {"$in": ["first-floor", "second-floor"]}}
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(payments.fully_paid_orders(q=None, business_unit="first-floor,third-floor", sort="date_desc", skip=0, limit=50, user=user))
+    assert error.value.status_code == 403
+    assert len(queries) == 1  # reject before any data is queried

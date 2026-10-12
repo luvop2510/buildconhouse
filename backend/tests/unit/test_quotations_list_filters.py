@@ -152,3 +152,15 @@ def test_quotation_list_proves_images_in_one_snapshot_read_per_floor(monkeypatch
     assert [doc["id"] for doc in result] == ["first", "second", "third"]
     assert [doc["items"][0]["image"] for doc in result] == [None, "https://cdn.test/own.png", "https://cdn.test/foreign.png"]
     assert len(reads) == 2  # three quotations, two floor groups, no DB media queries
+
+
+def test_quotation_status_multi_select_intersects_lifecycle_scope(monkeypatch):
+    fake_db = _FakeDb()
+    monkeypatch.setattr(quotation_routes, "db", fake_db)
+    asyncio.run(quotation_routes.list_quotations(status="draft,sent,draft", view="pending", user=_user()))
+    assert _flatten(fake_db.quotations.last_query)["status"] == {"$in": ["draft", "sent"]}
+    asyncio.run(quotation_routes.list_quotations(status="ordered,sent", view="pending", user=_user()))
+    assert _flatten(fake_db.quotations.last_query)["status"] == {"$in": ["sent"]}
+    asyncio.run(quotation_routes.list_quotations(status="ordered", view="pending", user=_user()))
+    assert _flatten(fake_db.quotations.last_query)["status"] == {"$in": []}
+    assert _flatten(fake_db.quotations.last_query)["floor_id"] == {"$in": ["ground-floor"]}

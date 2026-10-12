@@ -29,6 +29,7 @@ from pdf_tiles import build_tiles_quotation_pdf, build_tiles_selection_pdf, tile
 from services.quotation_catalog_prices import price_review, apply_price_choice, line_catalog_snapshot
 from services.quotation_ppt import build_product_ppt, presentation_filename
 from services import catalog_service
+from services.customer_completion import completed_customer_ids
 from services.activity_log import log_event
 from services.domain_outbox import (
     EVENT_ORDER_PLACED,
@@ -39,6 +40,7 @@ from services.domain_outbox import (
 from services.followup_engine import reconcile_followups
 from services.pricing import _resolve_line_rows, net_amount_list, normalize_tile_line_item, per_line_net_amounts, stamp_net_amounts
 from services.pagination import normalize_pagination
+from services.multi_filters import filter_values
 from services.pricing import recalc_quotation_totals as _recalc
 from services.sequence import next_number
 from services.po_final import _line_changes
@@ -306,6 +308,8 @@ def _referrer_fields(referrer_type: str | None, referrer_doc: dict | None) -> di
 async def list_quotations(
     doc_type: str | None = None,
     view: str | None = Query(None, pattern="^(pending|completed)$"),
+    completion: str | None = Query(None, pattern="^(active|completed)$"),
+    status: str | None = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1),
     user: UserPublic = Depends(get_current_user),
@@ -326,9 +330,20 @@ async def list_quotations(
         query["status"] = {"$in": list(PENDING_QUOTATION_STATUSES)}
     elif view == "completed":
         query["status"] = {"$in": list(COMPLETED_QUOTATION_STATUSES)}
+    selected_statuses = filter_values(status)
+    if selected_statuses:
+        allowed_statuses = query.get("status", {}).get("$in")
+        if allowed_statuses is not None:
+            selected_statuses = [value for value in selected_statuses if value in allowed_statuses]
+        query["status"] = {"$in": selected_statuses}
     # Asking for a tile document type is a Ground Floor request by
     # definition — never scope those by the caller's ambient floor.
     scoped = tiles_floor_query(user, query) if doc_type in TILES_DOC_TYPES else floor_query(user, query)
+    complete_ids = None
+    if completion in ("active", "completed"):
+        completion_user = user.model_copy(update={"active_floor_id": TILES_FLOOR_ID}) if doc_type in TILES_DOC_TYPES else user
+        complete_ids = await completed_customer_ids(db, completion_user)
+        scoped = {"$and": [scoped, {"customer_id": {"$in" if completion == "completed" else "$nin": sorted(complete_ids)}}]}
     docs = await db.quotations.find(scoped, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
     # Resolve each floor's entire page together. List responses must obey the
     # same image ownership contract as detail/export without one lookup per
@@ -344,7 +359,7 @@ async def list_quotations(
         offset = 0
         for index, doc in entries:
             count = len(doc.get("items") or [])
-            result[index] = {**doc, "items": items[offset:offset + count]}
+            result[index] = {**doc, "items": items[offset:offset + count], **({"purchase_completion_status": "completed" if doc.get("customer_id") in complete_ids else "active"} if complete_ids is not None else {})}
             offset += count
     return result
 
@@ -559,9 +574,13 @@ async def create_quotation(
 
 
 @router.get("/{quotation_id}", response_model=Quotation)
-async def get_quotation(quotation_id: str, user: UserPublic = Depends(get_current_user)):
+async def get_quotation(quotation_id: str, with_completion: bool = False, user: UserPublic = Depends(get_current_user)):
     doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0})
     doc = {**doc, "items": await _canonicalize_item_images(doc.get("items", []), floor_inherit(doc))}
+    if with_completion:
+        completion_user = user.model_copy(update={"active_floor_id": doc["floor_id"]})
+        complete_ids = await completed_customer_ids(db, completion_user, [doc.get("customer_id")])
+        doc["purchase_completion_status"] = "completed" if doc.get("customer_id") in complete_ids else "active"
     return Quotation(**doc)
 
 

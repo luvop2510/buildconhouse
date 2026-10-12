@@ -1,3 +1,4 @@
+import { filterValues, matchesFilter, toggleFilterValue } from "@/src/utils/filters";
 import Feather from "@expo/vector-icons/Feather";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -100,7 +101,7 @@ export default function GodownStockScreen() {
       } catch (matchError: any) { if (isCurrentFloor()) toast.error(matchError?.detail || "Stock added, but PO Final matches could not be checked"); }
     } catch (e: any) { if (isCurrentFloor()) toast.error(e?.detail || "Could not add stock"); } finally { if (isCurrentFloor()) setSaving(false); }
   };
-  const lots = useMemo(() => (data?.lots || []).filter(lot => (!brand || (lot.brand_id || lot.brand_name) === brand) && `${lot.name} ${lot.sku} ${lot.brand_name || ""}`.toLowerCase().includes(q.trim().toLowerCase())), [data, brand, q]);
+  const lots = useMemo(() => (data?.lots || []).filter(lot => matchesFilter(lot.brand_id || lot.brand_name, brand) && `${lot.name} ${lot.sku} ${lot.brand_name || ""}`.toLowerCase().includes(q.trim().toLowerCase())), [data, brand, q]);
   const exportStock = async (section: "inventory" | "movements") => {
     try {
       const rows = section === "inventory"
@@ -133,7 +134,7 @@ export default function GodownStockScreen() {
       <Pressable accessibilityRole="button" disabled={saving} onPress={() => void save()} style={[styles.add, saving && { opacity: .5 }]}><Text style={styles.addText}>{saving ? "Adding…" : "Add to godown stock"}</Text></Pressable>
     </View> : null}
     <TextInput accessibilityLabel="Search godown stock" value={q} onChangeText={setQ} placeholder="Search brand, SKU or product" style={styles.search} />
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips} accessibilityRole="tablist"><Chip label="All brands" selected={!brand} onPress={() => setBrand(null)} />{data?.brands.map(row => <Chip key={row.id || row.name} label={`${row.name} · ${row.available_qty}`} selected={brand === (row.id || row.name)} onPress={() => setBrand(row.id || row.name)} />)}</ScrollView>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips} accessibilityRole="tablist"><Chip label="All brands" selected={!brand} onPress={() => setBrand(null)} />{data?.brands.map(row => <Chip key={row.id || row.name} label={`${row.name} · ${row.available_qty}`} selected={filterValues(brand).includes(row.id || row.name)} onPress={() => setBrand(current => toggleFilterValue(current, row.id || row.name, ""))} />)}</ScrollView>
     <Text accessibilityLiveRegion="polite" style={styles.result}>{lots.filter(lot => lot.available_qty > 0).length} available · {lots.filter(lot => lot.available_qty <= 0).length} zero-stock lots</Text>
     <View style={styles.exportActions}><Pressable accessibilityRole="button" accessibilityLabel="Export filtered godown inventory to Excel" testID="godown-export-inventory" disabled={!lots.length} onPress={() => void exportStock("inventory")} style={[styles.exportButton, !lots.length && { opacity: .45 }]}><Feather name="download" size={15} color={colors.brand} /><Text style={styles.detailsText}>Inventory .xlsx</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Export godown stock movements to Excel" testID="godown-export-movements" disabled={!lots.some(lot => (lot.allocations?.length || 0) + (lot.customer_transfers?.length || 0) > 0)} onPress={() => void exportStock("movements")} style={[styles.exportButton, !lots.some(lot => (lot.allocations?.length || 0) + (lot.customer_transfers?.length || 0) > 0) && { opacity: .45 }]}><Feather name="download" size={15} color={colors.brand} /><Text style={styles.detailsText}>Movements .xlsx</Text></Pressable></View>
     <View style={[styles.grid, !isPhone && styles.gridWide]}>{lots.map(lot => <LotCard key={lot.id} lot={lot} compact={isPhone} width={isPhone ? "100%" : isDesktop ? "31.9%" : "48.8%"} canEditPricing={canEditPricing} onUpdated={() => void load()} onViewDetails={() => { if (lot.product_id) router.push(`/(admin)/catalog/${encodeURIComponent(lot.product_id)}` as any); }} onAdd={(variantIndex) => router.push(`/(admin)/quotations/new?godownStockId=${encodeURIComponent(lot.id)}${variantIndex === null ? "" : `&godownVariant=${variantIndex}`}` as any)} onTransfer={() => { setTransferMatch(null); setTransferLot(lot); }} />)}</View>

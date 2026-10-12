@@ -338,6 +338,8 @@ async def _walkin_producer(customers: dict[str, dict], contact_map: dict) -> dic
         {"status": {"$in": WALKIN_OPEN_STATUSES}, "is_deleted": False}, {"_id": 0},
     ).to_list(5000)
     for w in walkins:
+        if w.get("showroom_followup_id"):
+            continue
         cust = customers.get(w.get("customer_id")) or {"id": w.get("customer_id"), "tier": "retail"}
         visited_at = parse_iso(w.get("visited_at"))
         if not visited_at:

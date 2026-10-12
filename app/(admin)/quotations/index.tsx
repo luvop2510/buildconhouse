@@ -2,6 +2,7 @@
 // Premium card list: number pill · customer + meta · total · status.
 // Optimised for phone (no cramped inline rows), tablet gets a tabular feel.
 
+import { filterValues, matchesFilter, toggleFilterValue } from "@/src/utils/filters";
 import Feather from "@expo/vector-icons/Feather";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -23,6 +24,7 @@ import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
 
 type Quotation = {
   id: string; number: string; customer_name: string;
+  purchase_completion_status?: "active" | "completed";
   status: string; grand_total: number; created_at: string; items: any[];
 };
 
@@ -44,6 +46,7 @@ export default function QuotationsList() {
   useRequireFloorAccess("first-floor");
   const router = useRouter();
   const { view } = useLocalSearchParams<{ view?: string }>();
+  const fulfilled = view === "fulfilled";
   const completed = view === "completed";
   const { staff } = useAuth();
   const canDeleteQuotations = useActionAccess("quotations", "delete", !!staff && ["owner", "admin", "manager"].includes(staff.role));
@@ -52,13 +55,13 @@ export default function QuotationsList() {
 
   const [items, setItems] = useState<Quotation[] | null>(null);
   const [q, setQ] = useState("");
-  const [statusFilter, setStatusFilter] = useState<Filter>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
   const [deleteTarget, setDeleteTarget] = useState<Quotation | null>(null);
   const [deleting, setDeleting] = useState(false);
   const requestId = useRef(0);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  useEffect(() => { setStatusFilter("all"); }, [completed]);
+  useEffect(() => { setStatusFilter("all"); }, [completed, fulfilled]);
 
   const deleteQuotation = async () => {
     if (!deleteTarget) return;
@@ -75,13 +78,14 @@ export default function QuotationsList() {
   const load = useCallback(async () => {
     const currentRequest = ++requestId.current;
     setLoadError(null);
+    setItems(null);
     try {
-      const nextItems = await api.get<Quotation[]>(`/quotations?doc_type=standard&view=${completed ? "completed" : "pending"}`);
+      const nextItems = await api.get<Quotation[]>(`/quotations?doc_type=standard&completion=${fulfilled ? "completed" : "active"}${fulfilled ? "" : `&view=${completed ? "completed" : "pending"}`}`);
       if (currentRequest === requestId.current) setItems(nextItems);
     } catch (e: any) {
       if (currentRequest === requestId.current) setLoadError(e?.detail || "Could not load quotations");
     }
-  }, [completed]);
+  }, [completed, fulfilled]);
   useFocusEffect(useCallback(() => {
     void load();
     return () => { requestId.current += 1; };
@@ -93,10 +97,10 @@ export default function QuotationsList() {
     return map;
   }, [items]);
 
-  const filters = completed ? COMPLETED_FILTERS : PENDING_FILTERS;
+  const filters = fulfilled ? [...PENDING_FILTERS, ...COMPLETED_FILTERS.slice(1)] : completed ? COMPLETED_FILTERS : PENDING_FILTERS;
 
   const filtered = useMemo(() => (items || []).filter((it) => {
-    if (statusFilter !== "all" && it.status !== statusFilter) return false;
+    if (!matchesFilter(it.status, statusFilter)) return false;
     if (q && !`${it.number} ${it.customer_name}`.toLowerCase().includes(q.toLowerCase())) return false;
     return true;
   }), [items, q, statusFilter]);
@@ -105,8 +109,8 @@ export default function QuotationsList() {
 
   return (
     <AdminPage
-      title={completed ? "Completed quotations" : "Quotations"}
-      subtitle={loadError ? "Pipeline unavailable" : items ? `${items.length} ${completed ? "approved or ordered" : "pending"} · ${money(totalValue)} filtered` : "Loading pipeline…"}
+      title={fulfilled ? "100% Customers · Quotations" : completed ? "Approved & ordered quotations" : "Quotations"}
+      subtitle={loadError ? "Pipeline unavailable" : items ? `${items.length} ${fulfilled ? "100% completed" : completed ? "approved or ordered" : "pending"} · ${money(totalValue)} filtered` : "Loading pipeline…"}
       scroll={false}
       contentStyle={{ paddingHorizontal: 0, paddingTop: 0 }}
       right={
@@ -115,7 +119,8 @@ export default function QuotationsList() {
             testID="quotations-lifecycle-toggle" onPress={() => router.push(`/(admin)/quotations?view=${completed ? "pending" : "completed"}` as any)} style={styles.lifecycleLink}>
             <Text style={styles.lifecycleText}>{completed ? "Pending" : "Completed"}</Text>
           </Pressable>
-          {!completed ? <Pressable
+          <Pressable accessibilityRole="button" accessibilityLabel={fulfilled ? "View active customer quotations" : "View 100 percent completed customer quotations"} testID="quotations-fulfilled-toggle" onPress={() => router.push(`/(admin)/quotations?view=${fulfilled ? "pending" : "fulfilled"}` as any)} style={styles.lifecycleLink}><Text style={styles.lifecycleText}>{fulfilled ? "Active customers" : "100% Customers"}</Text></Pressable>
+          {!completed && !fulfilled ? <Pressable
             accessibilityRole="button"
             accessibilityLabel="Create new quotation"
             testID="new-quotation-btn"
@@ -148,7 +153,7 @@ export default function QuotationsList() {
             />
             <ScrollView horizontal showsHorizontalScrollIndicator={isPhone} contentContainerStyle={{ gap: 8, paddingRight: spacing.lg }}>
               {filters.map((f) => (
-                <Chip key={f.key} testID={`filter-${f.key}`} label={f.label} active={statusFilter === f.key} onPress={() => setStatusFilter(f.key)} count={counts[f.key]} />
+                <Chip key={f.key} testID={`filter-${f.key}`} label={f.label} active={f.key === "all" ? !filterValues(statusFilter).length : filterValues(statusFilter).includes(f.key)} onPress={() => setStatusFilter(current => toggleFilterValue(current, f.key))} count={counts[f.key]} />
               ))}
             </ScrollView>
           </View>
@@ -202,7 +207,7 @@ function QuotationRow({ q, onPress, canDelete, onDelete }: { q: Quotation; onPre
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: spacing.sm }}>
         <Text style={[styles.numberText, { flex: 1 }]} numberOfLines={1}>{q.number}</Text>
         <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
-          <StatusBadge status={q.status} />
+          {q.purchase_completion_status === "completed" ? <Text style={[type.caption, { color: colors.success }]}>100% completed</Text> : <StatusBadge status={q.status} />}
           {canDelete ? <IconButton icon="trash-2" onPress={onDelete} size={32} tone="danger" accessibilityLabel="Delete quotation" testID={`delete-quotation-${q.id}`} /> : null}
         </View>
       </View>
@@ -223,7 +228,7 @@ function QuotationRow({ q, onPress, canDelete, onDelete }: { q: Quotation; onPre
 }
 
 const styles = StyleSheet.create({
-  headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  headerActions: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 },
   lifecycleLink: { minHeight: 40, justifyContent: "center", paddingHorizontal: 10, borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
   lifecycleText: { fontSize: 12, fontWeight: "700", color: colors.onSurface },
   cta: {

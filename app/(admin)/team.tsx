@@ -327,8 +327,10 @@ function EditStaffSheet({ staff, options, optionsError, onRetry, selfId, onClose
           <Text style={type.caption}>Only the owner can change this member’s password. Changing it signs them out of every device.</Text>
           <TextField testID="edit-staff-password" label="New password" value={newPassword} onChangeText={setNewPassword} secureTextEntry autoCapitalize="none" editable={!resetting && !deleting && !saving} placeholder="At least 12 characters" />
           <TextField testID="edit-staff-confirm-password" label="Confirm new password" value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry autoCapitalize="none" editable={!resetting && !deleting && !saving} error={passwordError} />
-          <Button testID="edit-staff-set-password" label="Set member password" variant="primary" icon="key" loading={resetting} disabled={saving || deleting} onPress={() => void resetPassword()} fullWidth />
-          <Button testID="edit-staff-reset-password" label="Generate password" variant="secondary" icon="refresh-cw" disabled={resetting || saving || deleting} onPress={() => void resetPassword(true)} fullWidth />
+          <Button testID="edit-staff-set-password" label="Save entered password" variant="primary" icon="key" loading={resetting} disabled={saving || deleting} onPress={() => void resetPassword()} fullWidth />
+          <Text testID="edit-staff-set-password-help" style={type.caption}>Saves the password you entered and confirmed above.</Text>
+          <Button testID="edit-staff-reset-password" label="Generate and save random password" variant="secondary" icon="refresh-cw" disabled={resetting || saving || deleting} onPress={() => void resetPassword(true)} fullWidth />
+          <Text testID="edit-staff-generate-password-help" style={type.caption}>Creates and saves a random password immediately. It ignores the fields above. Share the new password using the delivery shown after saving.</Text>
           <Text style={type.caption}>The password applies only to this member and remains valid until the owner changes it.</Text>
           <View style={styles.divider} />
           {!protectedOwner ? <Button testID="edit-staff-delete" label="Delete team member" variant="danger" icon="trash-2" disabled={resetting || saving || deleting} onPress={() => setDeleteOpen(true)} fullWidth /> : null}

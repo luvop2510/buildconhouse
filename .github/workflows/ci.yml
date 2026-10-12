@@ -108,6 +108,9 @@ jobs:
           npm run test:quotation-media
           npm run test:downloads
           npm run test:quotation-contract
+          npm run test:quotation-reorder
+          npm run test:multi-filters
+          npm run test:section-excel
           npm run test:quotation-concealed-parts
           npm run test:purchases-contract
           npm run test:notebook

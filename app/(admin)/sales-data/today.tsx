@@ -1,3 +1,4 @@
+import { FilterBar } from "@/src/components/ds";
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import Feather from "@expo/vector-icons/Feather";
@@ -7,7 +8,7 @@ import { Text } from "@/src/components/AppText";
 import { executiveApi, type ExecutiveRow, type FeedEntry, type TodaysPriorities } from "@/src/api/executive";
 import { AdminPage } from "@/src/components/AdminPage";
 import { ActionRow } from "@/src/components/analytics/ActionRow";
-import { Button, Card, EmptyState, ErrorState, LoadingState, PillTabs } from "@/src/components/ui";
+import { Button, Card, EmptyState, ErrorState, LoadingState } from "@/src/components/ui";
 import { fmtMoneyCompact } from "@/src/design/tokens";
 import { getSelectedFloorId, useFloorAccess } from "@/src/hooks/use-floor-access";
 import { useAuth } from "@/src/state/auth";
@@ -145,7 +146,7 @@ export default function TodaysPrioritiesScreen() {
       subtitle={data ? `${data.total} thing${data.total === 1 ? "" : "s"} need attention` : undefined}
     >
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }} testID="today-floor-filter">
-        <PillTabs
+        <FilterBar multiSelect
           testID="today-floor-tabs"
           value={floorId || "all"}
           onChange={selectFloor}

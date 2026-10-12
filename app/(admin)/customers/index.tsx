@@ -3,7 +3,7 @@
 // unified customer-card language shared with quotations/purchases/payments.
 import { Disclosure } from "@/src/design/Disclosure";
 import Feather from "@expo/vector-icons/Feather";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text } from "@/src/components/AppText";
@@ -30,21 +30,16 @@ type Customer = {
   company?: string | null;
   email: string;
   city?: string | null;
-  tier: "retail" | "trade" | "vip";
+  purchase_completion_status?: "active" | "completed";
   phone?: string | null;
 };
 
-const tierTone: Record<string, "success" | "info" | "neutral"> = {
-  vip: "success",
-  trade: "info",
-  retail: "neutral",
-};
-
-type TierFilter = "all" | "vip" | "trade" | "retail";
 const CUSTOMER_RENDER_BATCH = 40;
 
 export default function Customers() {
   const router = useRouter();
+  const { view } = useLocalSearchParams<{ view?: string }>();
+  const completed = view === "completed";
   const { isDesktop, isPhone } = useBp();
   const { staff } = useAuth();
   const canDeleteCustomers = useActionAccess("customers", "delete", canManageDestructiveData(staff?.role));
@@ -53,7 +48,6 @@ export default function Customers() {
 
   const [items, setItems] = useState<Customer[] | null>(null);
   const [q, setQ] = useState("");
-  const [tier, setTier] = useState<TierFilter>("all");
   const [visibleCount, setVisibleCount] = useState(CUSTOMER_RENDER_BATCH);
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -65,12 +59,12 @@ export default function Customers() {
     const id = ++requestId.current;
     setItems(null);
     setLoadError(false);
-    api.get<Customer[]>("/customers").then(
+    api.get<Customer[]>(`/customers?confirmed_only=true&completion=${completed ? "completed" : "active"}`).then(
       (result) => { if (id === requestId.current) setItems(result); },
       () => { if (id === requestId.current) setLoadError(true); },
     );
-  }, [selectedFloorId]);
-  useEffect(() => { load(); return () => { requestId.current += 1; }; }, [load]);
+  }, [selectedFloorId, completed]);
+  useFocusEffect(useCallback(() => { load(); return () => { requestId.current += 1; }; }, [load]));
 
   const deleteCustomer = async () => {
     if (!deleteTarget) return;
@@ -88,34 +82,27 @@ export default function Customers() {
     }
   };
 
-  const counts = useMemo(() => {
-    const map: Record<string, number> = { all: items?.length || 0, vip: 0, trade: 0, retail: 0 };
-    (items || []).forEach((c) => { map[c.tier] = (map[c.tier] || 0) + 1; });
-    return map;
-  }, [items]);
-
   const filtered = useMemo(() => (items || []).filter((c) => {
-    if (tier !== "all" && c.tier !== tier) return false;
     if (!q) return true;
     const needle = q.toLowerCase();
     return `${c.name} ${c.company || ""} ${c.email} ${c.phone || ""} ${c.city || ""}`.toLowerCase().includes(needle);
-  }), [items, q, tier]);
+  }), [items, q]);
 
   // Keep the mobile scroll surface light even when the legacy list endpoint
   // returns hundreds of accounts. Search/filter changes always begin at the
   // most relevant results, while the operator can reveal the rest explicitly.
-  useEffect(() => { setVisibleCount(CUSTOMER_RENDER_BATCH); }, [q, tier]);
+  useEffect(() => { setVisibleCount(CUSTOMER_RENDER_BATCH); }, [q, completed]);
   const visibleCustomers = filtered.slice(0, visibleCount);
   const exportCustomers = async () => {
     try {
       await downloadSectionExcel({ resource: "customers",
         page: "Customers",
-        section: tier === "all" ? "Customer accounts" : `${tier.toUpperCase()} customers`,
+        section: completed ? "100% completed customers" : "Active customer accounts",
         rows: [
-          ["Name", "Company", "Tier", "Email", "Phone", "City"],
-          ...filtered.map(customer => [customer.name, customer.company, customer.tier, customer.email, customer.phone, customer.city]),
+          ["Name", "Company", "Status", "Email", "Phone", "City"],
+          ...filtered.map(customer => [customer.name, customer.company, completed ? "100% completed" : "Active", customer.email, customer.phone, customer.city]),
         ],
-        filename: `customers-${tier}.xlsx`,
+        filename: `customers-${completed ? "completed" : "active"}.xlsx`,
         floorId: selectedFloorId,
       });
     } catch (error: any) { toast.error(error?.message || "Could not export customers"); }
@@ -124,8 +111,8 @@ export default function Customers() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
       <PageHeader
-        title={isTileDeliveryLookup ? "Customer delivery lookup" : "Customers"}
-        subtitle={loadError ? "Customer data is unavailable" : items ? (isTileDeliveryLookup ? "Choose a customer to view their Ground Floor tile order and dispatch status." : `${items.length} accounts · Trade, VIP & retail buyers`) : "Loading customers…"}
+        title={isTileDeliveryLookup ? "Customer delivery lookup" : completed ? "100% Customers" : "Customers"}
+        subtitle={loadError ? "Customer data is unavailable" : items ? (isTileDeliveryLookup ? "Choose a customer to view their Ground Floor tile order and dispatch status." : `${items.length} ${completed ? "100% completed" : "active confirmed-order"} customers`) : "Loading customers…"}
         overline={isTileDeliveryLookup ? "GROUND FLOOR · READ ONLY" : "CRM"}
         actions={!isTileDeliveryLookup ? (
           <Button
@@ -139,42 +126,15 @@ export default function Customers() {
       />
 
       <ScrollView contentContainerStyle={[styles.content, isPhone && styles.contentPhone]}>
-        <Disclosure title="Customer summary" summary="Account types and totals">
+        <Disclosure title="Customer summary" summary="Customer totals">
         {/* Stats */}
         <View style={[styles.statsRow, !isDesktop && styles.statsRowMobile]}>
           <StatTile
             label="Total Customers"
-            value={items ? counts.all : "—"}
+            value={items ? items.length : "—"}
             icon="users"
             tone="brand"
-            sub="All active accounts"
-            dense={isPhone}
-            style={isPhone ? styles.statPhone : undefined}
-          />
-          <StatTile
-            label="VIP"
-            value={items ? counts.vip : "—"}
-            icon="star"
-            tone="success"
-            sub="Premium tier"
-            dense={isPhone}
-            style={isPhone ? styles.statPhone : undefined}
-          />
-          <StatTile
-            label="Trade"
-            value={items ? counts.trade : "—"}
-            icon="briefcase"
-            tone="brand"
-            sub="Trade partners"
-            dense={isPhone}
-            style={isPhone ? styles.statPhone : undefined}
-          />
-          <StatTile
-            label="Retail"
-            value={items ? counts.retail : "—"}
-            icon="user"
-            tone="neutral"
-            sub="Direct buyers"
+            sub={completed ? "100% completed orders" : "Active confirmed orders"}
             dense={isPhone}
             style={isPhone ? styles.statPhone : undefined}
           />
@@ -191,27 +151,10 @@ export default function Customers() {
             placeholder="Search customers, cities, companies…"
             testID="customers-search"
           />
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: spacing.sm, paddingRight: spacing.lg }}
-          >
-            {([
-              { key: "all",    label: "All" },
-              { key: "vip",    label: "VIP" },
-              { key: "trade",  label: "Trade" },
-              { key: "retail", label: "Retail" },
-            ] as { key: TierFilter; label: string }[]).map((f) => (
-              <Chip
-                key={f.key}
-                label={f.label}
-                active={tier === f.key}
-                onPress={() => setTier(f.key)}
-                count={counts[f.key]}
-                testID={`tier-${f.key}`}
-              />
-            ))}
-          </ScrollView>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+            <Chip label="Active customers" active={!completed} testID="customers-active-tab" onPress={() => router.push("/(admin)/customers" as any)} />
+            <Chip label="100% Customers" active={completed} testID="customers-completed-tab" onPress={() => router.push("/(admin)/customers?view=completed" as any)} />
+          </View>
           {!isTileDeliveryLookup ? <Pressable accessibilityRole="button" accessibilityLabel="Export filtered customer accounts to Excel" testID="customers-export-excel" disabled={!filtered.length} onPress={() => void exportCustomers()} style={[styles.exportButton, !filtered.length && { opacity: .45 }]}><Feather name="download" size={16} color={colors.brand} /><Text style={styles.exportText}>Export customer accounts .xlsx</Text></Pressable> : null}
         </View>
 
@@ -240,7 +183,7 @@ export default function Customers() {
                 variant="secondary"
                 size="sm"
                 icon="x"
-                onPress={() => { setQ(""); setTier("all"); }}
+                onPress={() => { setQ(""); }}
               />
             }
           />
@@ -282,7 +225,7 @@ export default function Customers() {
                 </View>
                 </View>
                   <View style={[{ alignItems: "flex-end", gap: spacing.sm, flexShrink: 0 }, !isDesktop && styles.customerActionsMobile]}>
-                    <Badge label={c.tier.toUpperCase()} tone={tierTone[c.tier]} size="sm" />
+                    {c.purchase_completion_status === "completed" ? <Badge label="100% completed" tone="success" size="sm" /> : null}
                   {!isTileDeliveryLookup ? <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.xs }}>
                     <IconButton
                       icon="edit-2"

@@ -30,16 +30,18 @@ function daysWaiting(visitedAt: string): number {
 }
 
 export function WalkInCard({
-  w, onPress, onCall, onWhatsApp, onScheduleSelection, quotationFollowup = false, onSaveQuotationPrice, onTransferToQuotation,
+  w, onPress, onCall, onWhatsApp, onScheduleSelection, quotationFollowup = false, onSaveQuotationPrice, onTransferToQuotation, onVisitShowroom,
 }: {
-  w: WalkIn; onPress: () => void; onCall: () => void; onWhatsApp: () => void; onScheduleSelection?: () => void;
+  w: WalkIn; onPress: () => void; onCall: () => void; onWhatsApp?: () => void; onScheduleSelection?: () => void;
   quotationFollowup?: boolean;
   onSaveQuotationPrice?: (price: number | null) => Promise<void>;
   onTransferToQuotation?: () => void;
+  onVisitShowroom?: () => Promise<void>;
 }) {
-  const tone = STATUS_TONE[w.status];
+  const tone = STATUS_TONE[w.status] || STATUS_TONE.new;
   const days = daysWaiting(w.visited_at);
   const [price, setPrice] = useState(w.quotation_price?.toString() || "");
+  const [transferring, setTransferring] = useState(false);
   const [savingPrice, setSavingPrice] = useState(false);
 
   useEffect(() => { setPrice(w.quotation_price?.toString() || ""); }, [w.quotation_price]);
@@ -53,7 +55,7 @@ export function WalkInCard({
     }
     if (!onSaveQuotationPrice) return;
     setSavingPrice(true);
-    try { await onSaveQuotationPrice(value); } finally { setSavingPrice(false); }
+    try { await onSaveQuotationPrice(value); } catch { /* The owning page displays the save error. */ } finally { setSavingPrice(false); }
   };
   return (
     <Pressable onPress={onPress} testID={`walkin-card-${w.id}`}>
@@ -64,7 +66,7 @@ export function WalkInCard({
             <Text style={type.bodyMuted}>{w.customer_phone || "No phone"} · {w.number}</Text>
           </View>
           <View style={{ backgroundColor: tone.bg, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 3 }}>
-            <Text style={[type.captionStrong, { color: tone.fg }]}>{STATUS_LABEL[w.status]}</Text>
+            <Text style={[type.captionStrong, { color: tone.fg }]}>{STATUS_LABEL[w.status] || "New"}</Text>
           </View>
         </View>
         <Text style={type.bodySm}>
@@ -90,7 +92,14 @@ export function WalkInCard({
         ) : null}
         <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.xs, flexWrap: "wrap" }}>
           <IconButton icon="phone" onPress={onCall} size={34} tone="brandLight" accessibilityLabel="Call" testID={`walkin-call-${w.id}`} />
-          <IconButton icon="message-circle" onPress={onWhatsApp} size={34} tone="surface" accessibilityLabel="WhatsApp" testID={`walkin-wa-${w.id}`} />
+          {onWhatsApp ? <IconButton icon="message-circle" onPress={onWhatsApp} size={34} tone="surface" accessibilityLabel="WhatsApp" testID={`walkin-wa-${w.id}`} /> : null}
+          {onVisitShowroom && w.status !== "lost" ? (
+            <Button label={w.showroom_followup_id ? "View Visit Showroom" : "Visit Showroom"} icon="home" size="sm" loading={transferring} onPress={() => {
+              if (transferring) return;
+              setTransferring(true);
+              void onVisitShowroom().finally(() => setTransferring(false));
+            }} testID={`walkin-visit-showroom-${w.id}`} />
+          ) : null}
           {onScheduleSelection && w.status !== "lost" && w.status !== "converted" && w.status !== "quotation_created" ? (
             <Button label="Schedule Selection" icon="calendar" variant="secondary" size="sm" onPress={onScheduleSelection} testID={`walkin-schedule-${w.id}`} />
           ) : null}

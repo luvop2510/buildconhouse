@@ -99,3 +99,19 @@ def test_page_endpoint_uses_thirty_row_default():
     route = next(route for route in tracker.router.routes if route.path == "/purchases/items/page")
     limit_parameter = next(parameter for parameter in route.dependant.query_params if parameter.name == "limit")
     assert limit_parameter.default == 30
+
+
+def test_dispatch_stage_filters_match_paged_and_export_paths(monkeypatch):
+    common = dict(view="dispatch_record", brand="one,two", customer="c1,c2", stage="in_box,dispatched", q=None,
+                  product_id=None, floor_ids=["ground-floor"], sla_days=7)
+    page = tracker._items_page_pipeline(**common, skip=0, limit=30)
+    match = next(step["$match"] for step in page if step.get("$match", {}).get("brand_id"))
+    assert match["stage"] == {"$in": ["dispatched"]}
+    assert match["brand_id"] == {"$in": ["one", "two"]}
+    assert match["customer_id"] == {"$in": ["c1", "c2"]}
+    fake_db = _Db([])
+    monkeypatch.setattr(tracker, "db", fake_db)
+    asyncio.run(tracker._iter_items(**common, limit=30))
+    stage_clauses = [step["$match"]["items.stage"] for step in fake_db.purchase_orders.pipeline if "items.stage" in step.get("$match", {})]
+    assert {"$in": ["dispatched"]} in stage_clauses
+    assert {"$in": ["in_box", "dispatched"]} in stage_clauses

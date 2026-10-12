@@ -1,5 +1,5 @@
 import { api } from "@/src/api/client";
-import type { NotebookField, NotebookRow, NotebookStatus, NotebookView } from "@/src/components/notebook/notebookTypes";
+import type { NotebookField, NotebookRow, NotebookView } from "@/src/components/notebook/notebookTypes";
 
 export type NotebookList = { rows: NotebookRow[]; next_cursor: string | null };
 
@@ -20,7 +20,7 @@ const query = (values: Record<string, string | undefined>) => {
 };
 
 export const notebookApi = {
-  list: (floorId: string, values: { view: NotebookView; status?: NotebookStatus | "all"; q?: string; cursor?: string }) =>
+  list: (floorId: string, values: { view: NotebookView; status?: string; q?: string; cursor?: string }) =>
     api.get<NotebookList>(`/followups/notebook/${floorId}${query(values)}`, { floorId }),
   create: (floorId: string, body: NotebookCreate) =>
     api.post<NotebookRow>(`/followups/notebook/${floorId}`, body, { floorId }),

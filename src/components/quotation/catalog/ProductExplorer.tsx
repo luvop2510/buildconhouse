@@ -15,6 +15,7 @@ import { ProductImage } from "@/src/components/ProductImage";
 import { colors, money, PRODUCT_IMAGE_ASPECT_RATIO, radius, spacing } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";
 import { supplierLogoFor } from "@/src/design/BrandLogo";
+import { api } from "@/src/api/client";
 import { storage } from "@/src/utils/storage";
 import { useBuilder } from "../context/BuilderContext";
 import { VariantSwatchStrip } from "../shared/VariantChip";
@@ -43,6 +44,8 @@ const SORT_OPTIONS: { k: SortKey; label: string; icon: React.ComponentProps<type
 export function ProductExplorer({ showCompactFilters = true }: { showCompactFilters?: boolean }) {
   const b = useBuilder();
   const [paneWidth, setPaneWidth] = useState(0);
+  const [facets, setFacets] = useState<Record<string, { value: string }[]>>({});
+  useEffect(() => { let active = true; void api.get<Record<string, { value: string }[]>>("/catalog/facets").then(value => { if (active) setFacets(value); }).catch(() => {}); return () => { active = false; }; }, [b.brands]);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const numCols = quotationGridColumns(paneWidth, !showCompactFilters);
   // Cap compact imagery so tablets show multiple complete rows, even when a
@@ -52,14 +55,14 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
   const favouriteIds = useMemo(() => new Set(b.favouriteIds), [b.favouriteIds]);
   const roomQuantities = useMemo(() => roomProductQuantities(b.s.lines, b.s.activeRoom), [b.s.lines, b.s.activeRoom]);
   const brandName = useMemo(() => {
-    if (!b.selectedBrandId) return "All brands";
-    return b.brands.find((x) => x.id === b.selectedBrandId)?.name || "Brand";
-  }, [b.brands, b.selectedBrandId]);
+    if (!b.selectedBrandIds.length) return "All brands";
+    return b.brands.filter(x => b.selectedBrandIds.includes(x.id)).map(x => x.name).join(", ") || "Brand";
+  }, [b.brands, b.selectedBrandIds]);
 
   const catName = useMemo(() => {
-    if (!b.selectedCategoryId) return null;
-    return b.categories.find((c) => c.id === b.selectedCategoryId)?.name || null;
-  }, [b.categories, b.selectedCategoryId]);
+    if (!b.selectedCategoryIds.length) return null;
+    return b.categories.filter(c => b.selectedCategoryIds.includes(c.id)).map(c => c.name).join(", ") || null;
+  }, [b.categories, b.selectedCategoryIds]);
 
   // ---- Recent searches (phone catalog experience parity) ----------------
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
@@ -141,7 +144,7 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
             <Text style={styles.filterTriggerLabel}>Filters & sort{b.selectedBrandId || b.selectedCategoryId ? " · Active" : ""}</Text>
             <Feather name={filtersOpen ? "chevron-up" : "chevron-down"} size={13} color={colors.onSurface} />
           </Pressable>
-          {b.selectedBrandId || b.selectedCategoryId || b.q ? <Pressable accessibilityRole="button" accessibilityLabel="Clear all product filters" onPress={() => { b.setSelectedBrandId(null); b.setSelectedCategoryId(null); b.setQ(""); }} style={styles.filterTrigger}>
+          {b.selectedBrandId || b.selectedCategoryId || b.q ? <Pressable accessibilityRole="button" accessibilityLabel="Clear all product filters" onPress={() => { b.setSelectedBrandId(null); b.setSelectedCategoryId(null); b.setSelectedFinishes([]); b.setSelectedColours([]); b.setSelectedSizes([]); b.setQ(""); }} style={styles.filterTrigger}>
             <Text style={styles.filterTriggerLabel}>Clear</Text>
           </Pressable> : <Text style={styles.filterHint}>{SORT_OPTIONS.find(o => o.k === b.sortKey)?.label}</Text>}
         </View> : null}
@@ -160,7 +163,7 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
               <FilterPill
                 label="All brands"
                 count={b.referenceLoading || b.referenceError ? undefined : totalBrandProducts}
-                active={!b.selectedBrandId}
+                active={!b.selectedBrandIds.length}
                 onPress={() => b.setSelectedBrandId(null)}
                 testID="mobile-brand-all"
               />
@@ -170,8 +173,8 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
                   label={br.name}
                   logo={supplierLogoFor(br.name)}
                   count={br.product_count}
-                  active={b.selectedBrandId === br.id}
-                  onPress={() => b.setSelectedBrandId(b.selectedBrandId === br.id ? null : br.id)}
+                  active={b.selectedBrandIds.includes(br.id)}
+                  onPress={() => b.setSelectedBrandId(br.id)}
                   testID={`mobile-brand-${br.name}`}
                 />
               ))}
@@ -184,7 +187,7 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
               >
                 <FilterPill
                   label={`All ${brandName}`}
-                  active={!b.selectedCategoryId}
+                  active={!b.selectedCategoryIds.length}
                   onPress={() => b.setSelectedCategoryId(null)}
                   testID="mobile-category-all"
                 />
@@ -193,8 +196,8 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
                     key={c.id}
                     label={c.name}
                     count={c.product_count}
-                    active={b.selectedCategoryId === c.id}
-                    onPress={() => b.setSelectedCategoryId(b.selectedCategoryId === c.id ? null : c.id)}
+                    active={b.selectedCategoryIds.includes(c.id)}
+                    onPress={() => b.setSelectedCategoryId(c.id)}
                     testID={`mobile-category-${c.name}`}
                   />
                 ))}
@@ -202,6 +205,14 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
             ) : null}
           </>
         ) : null}
+
+        {([["finishes", "Finish", b.selectedFinishes, b.setSelectedFinishes], ["colours", "Color", b.selectedColours, b.setSelectedColours], ["sizes", "Size", b.selectedSizes, b.setSelectedSizes]] as const).map(([field, label, selected, update]) => facets[field]?.length ? <View key={field} style={{ gap: 4 }}>
+          <Text style={styles.filterHint}>{label} · select multiple</Text>
+          <ScrollView horizontal contentContainerStyle={{ gap: 6 }}>
+            <FilterPill label="All" active={!selected.length} onPress={() => update([])} />
+            {facets[field].map(option => <FilterPill key={option.value} label={option.value} active={selected.includes(option.value)} onPress={() => update(selected.includes(option.value) ? selected.filter(value => value !== option.value) : [...selected, option.value])} />)}
+          </ScrollView>
+        </View> : null)}
 
         {/* Keep sorting secondary on phones: filters and the first product row
             should remain reachable without spending the viewport on controls. */}

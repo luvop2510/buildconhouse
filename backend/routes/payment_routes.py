@@ -8,6 +8,7 @@ There are NO taxes anywhere in Forge — the quotation's grand_total is the
 final price the customer pays, and payments accumulate against it directly.
 """
 from __future__ import annotations
+from services.multi_filters import filter_values, filter_condition
 import asyncio
 import logging
 import math
@@ -325,7 +326,7 @@ async def list_orders(
     user: UserPublic = Depends(get_current_user),
 ):
     """Collectable orders sorted by outstanding-first."""
-    aging = _aging_range(overdue_period, custom_min_days, custom_max_days)
+    aging_ranges = [_aging_range(value, custom_min_days, custom_max_days) for value in filter_values(overdue_period)]
     query: dict = {"status": {"$in": list(ORDER_STATUSES)}}
     if q:
         term = {"$regex": q, "$options": "i"}
@@ -384,10 +385,8 @@ async def list_orders(
     else:
         out = [o for o in out if o["payment_status"] != "paid"]
 
-    if aging:
-        minimum, maximum = aging
-        out = [o for o in out if o["outstanding"] > 0 and o["days_unpaid"] >= minimum
-               and (maximum is None or o["days_unpaid"] <= maximum)]
+    if aging_ranges:
+        out = [o for o in out if o["outstanding"] > 0 and any(bounds is None or (o["days_unpaid"] >= bounds[0] and (bounds[1] is None or o["days_unpaid"] <= bounds[1])) for bounds in aging_ranges)]
 
     # Sort: outstanding desc, then most recently confirmed
     out.sort(key=lambda o: (o.get("confirmed_at") or "", o["id"]), reverse=True)
@@ -816,11 +815,13 @@ async def completed_payment_list(
     user: UserPublic = Depends(get_current_user),
 ):
     """Return payment rows only for orders that are fully paid (100%)."""
-    order_query = _payment_scope_query(user, {"status": {"$in": list(ORDER_STATUSES)}})
+    floor_ids = _resolve_history_floor_ids(user, business_unit)
+    order_query: dict = {"status": {"$in": list(ORDER_STATUSES)}}
+    if floor_ids is not None:
+        order_query["floor_id"] = {"$in": floor_ids}
     orders = await db.quotations.find(order_query, {"_id": 0, "id": 1, "grand_total": 1, "payment_extra_amount": 1, "payment_extra_history": 1}).to_list(5000)
     paid_by_order = await _paid_by_quotation([order["id"] for order in orders])
     fully_paid_ids = _fully_paid_order_ids(orders, paid_by_order)
-    floor_ids = _resolve_history_floor_ids(user, business_unit)
     query = _history_filter(floor_ids, q, date_from, date_to, None, mode, "completed")
     query["quotation_id"] = {"$in": fully_paid_ids}
     total = await db.payments.count_documents(query)
@@ -840,14 +841,14 @@ async def fully_paid_orders(
 ):
     """One row per settled order, even when it took several installments."""
     query: dict = {"status": {"$in": list(ORDER_STATUSES)}}
-    if business_unit and business_unit != "all":
-        _resolve_history_floor_ids(user, business_unit)
-        query["floor_id"] = business_unit
+    floor_ids = _resolve_history_floor_ids(user, business_unit)
+    if floor_ids is not None:
+        query["floor_id"] = {"$in": floor_ids}
     if q:
         term = {"$regex": q.strip(), "$options": "i"}
         query["$or"] = [{"number": term}, {"customer_name": term}]
     orders = await db.quotations.find(
-        _payment_scope_query(user, query),
+        query,
         {"_id": 0, "id": 1, "number": 1, "customer_id": 1, "customer_name": 1,
          "floor_id": 1, "grand_total": 1, "payment_extra_amount": 1,
          "payment_extra_history": 1, "ordered_at": 1, "created_at": 1},
@@ -902,9 +903,9 @@ def _resolve_history_floor_ids(user: UserPublic, business_unit: Optional[str]) -
     the caller is actually allowed onto it."""
     if business_unit and business_unit != "all":
         allowed = accessible_floor_ids(user)
-        if allowed is not None and business_unit not in allowed:
+        if allowed is not None and any(value not in allowed for value in filter_values(business_unit)):
             raise HTTPException(status_code=403, detail="You do not have access to this business unit")
-        return [business_unit]
+        return filter_values(business_unit)
     return accessible_floor_ids(user)  # None (unrestricted) for owner/manager, else their assigned floors
 
 
@@ -923,9 +924,9 @@ def _history_filter(
     if customer_id:
         query["customer_id"] = customer_id
     if mode:
-        query["mode"] = mode
+        query["mode"] = filter_condition(mode)
     if status:
-        query["status"] = status
+        query["status"] = filter_condition(status)
     date_range: dict = {}
     if date_from:
         date_range["$gte"] = date_from

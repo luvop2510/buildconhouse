@@ -1,3 +1,4 @@
+import { filterValues, matchesFilter, toggleFilterValue } from "@/src/utils/filters";
 // Purchases — Material Tracker
 // -----------------------------------------------------------------------------
 // A per-line-item lifecycle workspace built on the same PO document store used
@@ -118,7 +119,7 @@ export default function PurchasesScreen() {
   const [q, setQ] = useState<string>("");
   const [committedQ, setCommittedQ] = useState<string>("");
   const [customerFilter, setCustomerFilter] = useState("");
-  const [stage, setStage] = useState<Stage | "">("");
+  const [stage, setStage] = useState<string>("");
 
   // Data
   const [items, setItems] = useState<Item[]>([]);
@@ -285,8 +286,9 @@ export default function PurchasesScreen() {
     await Promise.all([
       loadItems({ throwOnError: strict }),
       loadFacets({ throwOnError: strict }),
+      loadCustomers(),
     ]);
-  }, [loadItems, loadFacets]);
+  }, [loadItems, loadFacets, loadCustomers]);
 
   const cancelItem = useCallback(async (reason?: string, moveToGodown = false) => {
     if (!cancelTarget) return;
@@ -305,12 +307,12 @@ export default function PurchasesScreen() {
       if (!moveToGodown) await cancelPurchaseItem(cancelTarget.item_id, reason);
       toast.success(moveToGodown ? `${cancelTarget.name} moved to godown stock and removed from active purchases` : `${cancelTarget.name} removed from active purchases`);
       setCancelTarget(null);
-      await Promise.all([refreshPurchases({ strict: true }), loadCustomers(), loadShortages()]);
+      await Promise.all([refreshPurchases({ strict: true }), loadShortages()]);
     } catch (e: any) {
       toast.error(e?.detail || "Could not remove product");
       throw e;
     }
-  }, [cancelTarget, refreshPurchases, loadCustomers, loadShortages]);
+  }, [cancelTarget, refreshPurchases, loadShortages]);
 
   // -----------------------------------
   // Mutations
@@ -371,7 +373,7 @@ export default function PurchasesScreen() {
         await downloadSectionExcel({ resource: "purchases",
           page: "Purchases",
           section: "Customer workspaces",
-          rows: [["Customer", "Company", "Tier", "Email", "Phone", "City"], ...customers.filter(customer => `${customer.name} ${customer.company || ""} ${customer.email || ""}`.toLowerCase().includes(q.trim().toLowerCase())).map(customer => [customer.name, customer.company, customer.tier, customer.email, customer.phone, customer.city])],
+          rows: [["Customer", "Company", "Email", "Phone", "City"], ...customers.filter(customer => `${customer.name} ${customer.company || ""} ${customer.email || ""}`.toLowerCase().includes(q.trim().toLowerCase())).map(customer => [customer.name, customer.company, customer.email, customer.phone, customer.city])],
           filename: "purchases-customers.xlsx",
           floorId: selectedFloorId,
         });
@@ -429,7 +431,7 @@ export default function PurchasesScreen() {
   }, [customers, q]);
 
   if (!isDesktop) {
-    const activeFilterCount = (brand !== "all" ? 1 : 0) + (stage ? 1 : 0) + (view === "stock" && customerFilter ? 1 : 0);
+    const activeFilterCount = filterValues(brand).length + filterValues(stage).length + (view === "stock" ? filterValues(customerFilter).length : 0);
     const compactPhone = isPhone && width < 390;
     return (
       <SafeAreaView style={styles.mobileSafe} edges={isPhone ? [] : ["top"]}>
@@ -498,7 +500,7 @@ export default function PurchasesScreen() {
               {activeFilterCount > 0 ? (
                 <View style={styles.activeFilterRow}>
                   <Text style={styles.activeFilterText} numberOfLines={2}>
-                    {brand !== "all" ? brands.find((entry) => entry.id === brand)?.name || "Brand" : ""}{brand !== "all" && stage ? " · " : ""}{stage ? stages.find((entry) => entry.key === stage)?.label : ""}
+                    {brand !== "all" ? brands.filter(entry => matchesFilter(entry.id, brand)).map(entry => entry.name).join(", ") : ""}{brand !== "all" && stage ? " · " : ""}{stage ? stages.filter(entry => matchesFilter(entry.key, stage)).map(entry => entry.label).join(", ") : ""}
                   </Text>
                   <Pressable onPress={() => { setBrand("all"); setStage(""); setCustomerFilter(""); }} style={styles.clearFiltersButton}><Text style={styles.clearFiltersText}>Clear</Text></Pressable>
                 </View>
@@ -513,7 +515,7 @@ export default function PurchasesScreen() {
               {loading ? <View style={styles.loadingCard}><ActivityIndicator /><Text style={type.caption}>Loading purchases…</Text></View> : null}
               {view !== "customers" && itemsError ? <ErrorState title="Purchases unavailable" subtitle={itemsError} onRetry={() => void loadItems()} /> : null}
               {view === "customers" && customersError ? <ErrorState title="Customers unavailable" subtitle={customersError} onRetry={() => void loadCustomers()} /> : null}
-              {view === "customers" && !customersError ? <View style={{ gap: spacing.md }}><Pressable accessibilityRole="button" accessibilityLabel="Open 100 percent complete customers" onPress={() => router.push("/(admin)/purchases-completed" as never)} style={styles.completedLink}><Text style={styles.completedLinkText}>100% complete customers</Text><Feather name="arrow-right" size={16} color={colors.success} /></Pressable><CustomerNavigator loading={loadingCustomers} customers={visibleCustomers} onOpen={setCustomerWorkspaceId} /></View> : null}
+              {view === "customers" && !customersError ? <View style={{ gap: spacing.md }}><Pressable accessibilityRole="button" accessibilityLabel="Open 100 percent complete customers" onPress={() => router.push("/(admin)/purchases-completed" as never)} style={styles.completedLink}><Text style={styles.completedLinkText}>100% Customers</Text><Feather name="arrow-right" size={16} color={colors.success} /></Pressable><CustomerNavigator loading={loadingCustomers} customers={visibleCustomers} onOpen={setCustomerWorkspaceId} /></View> : null}
               {!loading && !itemsError && view !== "customers" && items.length === 0 ? <View style={styles.mobileEmpty}><Feather name="package" size={28} color={colors.onSurfaceMuted} /><Text style={styles.actionTitle}>No purchases found</Text><Text style={type.bodyMuted}>Clear filters or try a different search.</Text></View> : null}
             </View>
           )}
@@ -528,10 +530,10 @@ export default function PurchasesScreen() {
         <MobileFiltersSheet visible={showMobileFilters} brands={brands} stages={stages} brand={brand} stage={stage} customers={view === "stock" ? customers : []} customer={customerFilter} onCustomer={setCustomerFilter} onBrand={setBrand} onStage={setStage} onClose={() => setShowMobileFilters(false)} />
         <MobileActionsSheet visible={showMobileActions} shortages={shortages.length} exportLabel={`Export ${VIEW_META[view].label} Excel`} onClose={() => setShowMobileActions(false)} onExport={() => { setShowMobileActions(false); doExport(); }} onShortages={() => { setShowMobileActions(false); setShowShortages(true); }} onSettings={() => { setShowMobileActions(false); setShowSettings(true); }} />
         <MoveMenu visible={showMoveMenu} stages={stages} onClose={() => setShowMoveMenu(false)} onPick={(s) => bulkMove(s)} title={`Move ${selected.size} item${selected.size === 1 ? "" : "s"}`} busy={bulkBusy} />
-        <MoveStageSheet visible={!!rowMoveTarget} item={rowMoveTarget ? toMovable(rowMoveTarget) : null} onClose={() => setRowMoveTarget(null)} onMoved={async () => { await Promise.all([loadItems({ quiet: true, throwOnError: true }), loadFacets()]); }} />
-        <TransferSheet visible={!!transferItem} item={transferItem ? toMovable(transferItem) : null} onClose={() => setTransferItem(null)} onSuccess={async () => { await Promise.all([loadItems({ quiet: true, throwOnError: true }), loadFacets(), loadShortages()]); }} />
+        <MoveStageSheet visible={!!rowMoveTarget} item={rowMoveTarget ? toMovable(rowMoveTarget) : null} onClose={() => setRowMoveTarget(null)} onMoved={async () => { await Promise.all([loadItems({ quiet: true, throwOnError: true }), loadFacets(), loadCustomers()]); }} />
+        <TransferSheet visible={!!transferItem} item={transferItem ? toMovable(transferItem) : null} onClose={() => setTransferItem(null)} onSuccess={async () => { await Promise.all([loadItems({ quiet: true, throwOnError: true }), loadFacets(), loadCustomers(), loadShortages()]); }} />
         <HistorySheet visible={!!historyItemId} itemId={historyItemId} onClose={() => setHistoryItemId(null)} />
-        <ShortagesModal visible={showShortages} shortages={shortages} onClose={() => setShowShortages(false)} onChanged={async () => { await Promise.all([loadShortages(), loadItems(), loadFacets()]); }} />
+        <ShortagesModal visible={showShortages} shortages={shortages} onClose={() => setShowShortages(false)} onChanged={async () => { await Promise.all([loadShortages(), loadItems(), loadFacets(), loadCustomers()]); }} />
         <SettingsModal visible={showSettings} currentSla={slaDays} onClose={() => setShowSettings(false)} onSaved={async (value) => { setSlaDays(value); setShowSettings(false); await loadItems(); }} />
         <CancelPurchaseModal item={cancelTarget} onClose={() => setCancelTarget(null)} onConfirm={cancelItem} />
         <CustomerPurchasePanel visible={!!customerWorkspaceId} loading={loadingWorkspace} workspace={customerWorkspace} onClose={() => setCustomerWorkspaceId(null)} onMove={(item) => { setCustomerWorkspaceId(null); setRowMoveTarget(item); }} onTransfer={(item) => { setCustomerWorkspaceId(null); setTransferItem(item); }} onHistory={(item) => { setCustomerWorkspaceId(null); setHistoryItemId(item.item_id); }} />
@@ -727,10 +729,10 @@ export default function PurchasesScreen() {
                 {brands.map((b) => (
                   <Pressable
                     key={b.id}
-                    onPress={() => setBrand(b.id)}
-                    style={[styles.brandItem, brand === b.id && styles.brandItemActive]}
+                    onPress={() => setBrand(current => toggleFilterValue(current, b.id, "all"))}
+                    style={[styles.brandItem, filterValues(brand).includes(b.id) && styles.brandItemActive]}
                   >
-                    <Text style={[styles.brandLabel, brand === b.id && { color: colors.brand, fontWeight: "700" }]} numberOfLines={1}>
+                    <Text style={[styles.brandLabel, filterValues(brand).includes(b.id) && { color: colors.brand, fontWeight: "700" }]} numberOfLines={1}>
                       {b.name}
                     </Text>
                     <Text style={styles.brandCount}>{b.count}</Text>
@@ -739,7 +741,7 @@ export default function PurchasesScreen() {
               </View>
             </View>
 
-            {view === "stock" ? <View style={styles.railBlock}><Text style={styles.sectionLabel}>CUSTOMER NAME</Text><Pressable accessibilityRole="button" onPress={() => setCustomerFilter("")} style={[styles.brandItem, !customerFilter && styles.brandItemActive]}><Text style={styles.brandLabel}>All customers</Text></Pressable>{customers.map((entry) => <Pressable key={entry.id} accessibilityRole="button" accessibilityLabel={`Filter stock for ${entry.name}`} onPress={() => setCustomerFilter(entry.id)} style={[styles.brandItem, customerFilter === entry.id && styles.brandItemActive]}><Text style={styles.brandLabel} numberOfLines={1}>{entry.name}</Text></Pressable>)}</View> : null}
+            {view === "stock" ? <View style={styles.railBlock}><Text style={styles.sectionLabel}>CUSTOMER NAME</Text><Pressable accessibilityRole="button" onPress={() => setCustomerFilter("")} style={[styles.brandItem, !customerFilter && styles.brandItemActive]}><Text style={styles.brandLabel}>All customers</Text></Pressable>{customers.map((entry) => <Pressable key={entry.id} accessibilityRole="button" accessibilityLabel={`Filter stock for ${entry.name}`} onPress={() => setCustomerFilter(current => toggleFilterValue(current, entry.id, ""))} style={[styles.brandItem, filterValues(customerFilter).includes(entry.id) && styles.brandItemActive]}><Text style={styles.brandLabel} numberOfLines={1}>{entry.name}</Text></Pressable>)}</View> : null}
             <View style={styles.railBlock}>
               <Text style={styles.sectionLabel}>STAGE</Text>
               <View style={{ marginTop: 6 }}>
@@ -753,12 +755,12 @@ export default function PurchasesScreen() {
                 {stages.map((s) => (
                   <Pressable
                     key={s.key}
-                    onPress={() => setStage(s.key)}
-                    style={[styles.brandItem, stage === s.key && styles.brandItemActive]}
+                    onPress={() => setStage(current => toggleFilterValue(current, s.key, ""))}
+                    style={[styles.brandItem, filterValues(stage).includes(s.key) && styles.brandItemActive]}
                   >
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1 }}>
                       <View style={[styles.stageDot, { backgroundColor: STAGE_TONE[s.key]?.fg || s.tone.fg }]} />
-                      <Text style={[styles.brandLabel, stage === s.key && { color: colors.brand, fontWeight: "700" }]} numberOfLines={1}>
+                      <Text style={[styles.brandLabel, filterValues(stage).includes(s.key) && { color: colors.brand, fontWeight: "700" }]} numberOfLines={1}>
                         {s.label}
                       </Text>
                     </View>
@@ -802,7 +804,7 @@ export default function PurchasesScreen() {
               />
             ) : view === "customers" ? (
               <View style={{ gap: spacing.md }}>
-                <Pressable accessibilityRole="button" accessibilityLabel="Open 100 percent complete customers" onPress={() => router.push("/(admin)/purchases-completed" as any)} style={styles.completedLink}><Feather name="check-circle" size={16} color={colors.success} /><Text style={styles.completedLinkText}>100% complete customers</Text><Feather name="arrow-right" size={16} color={colors.success} /></Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel="Open 100 percent complete customers" onPress={() => router.push("/(admin)/purchases-completed" as any)} style={styles.completedLink}><Feather name="check-circle" size={16} color={colors.success} /><Text style={styles.completedLinkText}>100% Customers</Text><Feather name="arrow-right" size={16} color={colors.success} /></Pressable>
                 <CustomerNavigator loading={loadingCustomers} customers={visibleCustomers} onOpen={setCustomerWorkspaceId} />
               </View>
             ) : (
@@ -835,13 +837,13 @@ export default function PurchasesScreen() {
         visible={!!rowMoveTarget}
         item={rowMoveTarget ? toMovable(rowMoveTarget) : null}
         onClose={() => setRowMoveTarget(null)}
-        onMoved={async () => { await Promise.all([loadItems({ quiet: true, throwOnError: true }), loadFacets()]); }}
+        onMoved={async () => { await Promise.all([loadItems({ quiet: true, throwOnError: true }), loadFacets(), loadCustomers()]); }}
       />
       <TransferSheet
         visible={!!transferItem}
         item={transferItem ? toMovable(transferItem) : null}
         onClose={() => setTransferItem(null)}
-        onSuccess={async () => { await Promise.all([loadItems({ quiet: true, throwOnError: true }), loadFacets(), loadShortages()]); }}
+        onSuccess={async () => { await Promise.all([loadItems({ quiet: true, throwOnError: true }), loadFacets(), loadCustomers(), loadShortages()]); }}
       />
       <HistorySheet
         visible={!!historyItemId}
@@ -852,7 +854,7 @@ export default function PurchasesScreen() {
         visible={showShortages}
         shortages={shortages}
         onClose={() => setShowShortages(false)}
-        onChanged={async () => { await Promise.all([loadShortages(), loadItems(), loadFacets()]); }}
+        onChanged={async () => { await Promise.all([loadShortages(), loadItems(), loadFacets(), loadCustomers()]); }}
       />
       <SettingsModal
         visible={showSettings}
@@ -946,22 +948,22 @@ function SheetAction({ icon, label, onPress }: { icon: keyof typeof Feather.glyp
 }
 
 function MobileFiltersSheet({ visible, brands, stages, brand, stage, customers, customer, onCustomer, onBrand, onStage, onClose }: {
-  visible: boolean; brands: BrandFacet[]; stages: StageMeta[]; brand: string; stage: Stage | "";
+  visible: boolean; brands: BrandFacet[]; stages: StageMeta[]; brand: string; stage: string;
   customers: PurchaseCustomer[]; customer: string; onCustomer: (value: string) => void;
-  onBrand: (value: string) => void; onStage: (value: Stage | "") => void; onClose: () => void;
+  onBrand: (value: string) => void; onStage: (value: string) => void; onClose: () => void;
 }) {
   return (
     <Sheet open={visible} onClose={onClose} title="Filter purchases" footer={<Pressable accessibilityRole="button" accessibilityLabel="Show filtered purchases" testID="apply-purchase-filters" onPress={onClose} style={styles.mobileApplyButton}><Text style={styles.mobileApplyText}>Show results</Text></Pressable>}>
             <Text style={styles.sectionLabel}>BRAND</Text>
             <View style={styles.mobileFilterOptions}>
               <FilterOption label="All brands" active={brand === "all"} onPress={() => onBrand("all")} />
-              {brands.map((entry) => <FilterOption key={entry.id} label={`${entry.name} (${entry.count})`} active={brand === entry.id} onPress={() => onBrand(entry.id)} />)}
+              {brands.map((entry) => <FilterOption key={entry.id} label={`${entry.name} (${entry.count})`} active={filterValues(brand).includes(entry.id)} onPress={() => onBrand(toggleFilterValue(brand, entry.id, "all"))} />)}
             </View>
-            {customers.length > 0 ? <View><Text style={[styles.sectionLabel, { marginTop: 18 }]}>CUSTOMER NAME</Text><View style={styles.mobileFilterOptions}><FilterOption label="All customers" active={!customer} onPress={() => onCustomer("")} />{customers.map((entry) => <FilterOption key={entry.id} label={entry.name} active={customer === entry.id} onPress={() => onCustomer(entry.id)} />)}</View></View> : null}
+            {customers.length > 0 ? <View><Text style={[styles.sectionLabel, { marginTop: 18 }]}>CUSTOMER NAME</Text><View style={styles.mobileFilterOptions}><FilterOption label="All customers" active={!customer} onPress={() => onCustomer("")} />{customers.map((entry) => <FilterOption key={entry.id} label={entry.name} active={filterValues(customer).includes(entry.id)} onPress={() => onCustomer(toggleFilterValue(customer, entry.id, ""))} />)}</View></View> : null}
             <Text style={[styles.sectionLabel, { marginTop: 18 }]}>STAGE</Text>
             <View style={styles.mobileFilterOptions}>
               <FilterOption label="All stages" active={!stage} onPress={() => onStage("")} />
-              {stages.map((entry) => <FilterOption key={entry.key} label={`${entry.label} (${entry.count})`} active={stage === entry.key} onPress={() => onStage(entry.key)} />)}
+              {stages.map((entry) => <FilterOption key={entry.key} label={`${entry.label} (${entry.count})`} active={filterValues(stage).includes(entry.key)} onPress={() => onStage(toggleFilterValue(stage, entry.key, ""))} />)}
             </View>
     </Sheet>
   );
@@ -1076,7 +1078,7 @@ export function CustomerNavigator({ loading, customers, onOpen, completed = fals
         {customers.length === 0 ? <Text style={type.bodyMuted}>No customers found on this floor.</Text> : customers.map((customer, index) => (
           <Pressable key={customer.id} testID={`customer-workspace-${customer.id}`} onPress={() => onOpen(customer.id)} style={({ pressed }) => [styles.customerNavRow, index > 0 && styles.customerNavDivider, pressed && { backgroundColor: colors.surfaceTertiary }]}>
             <View style={styles.customerAvatar}><Text style={styles.customerAvatarText}>{customer.name.slice(0, 1).toUpperCase()}</Text></View>
-            <View style={{ flex: 1, minWidth: 0 }}><Text style={styles.actionTitle} numberOfLines={1}>{customer.name}</Text><Text style={type.caption} numberOfLines={1}>{customer.company || customer.phone || customer.email || customer.city || "Customer lifecycle"}</Text></View>
+            <View style={{ flex: 1, minWidth: 0 }}><Text style={styles.actionTitle} numberOfLines={1}>{customer.name}</Text>{completed ? <Text style={[type.caption, { color: colors.success }]}>100% completed</Text> : null}<Text style={type.caption} numberOfLines={1}>{customer.company || customer.phone || customer.email || customer.city || "Customer lifecycle"}</Text></View>
             <Feather name="chevron-right" size={16} color={colors.onSurfaceMuted} />
           </Pressable>
         ))}
@@ -1341,7 +1343,7 @@ export function CustomerPurchasePanel({ visible, loading, workspace, onClose, on
             <CustomerMetric label="Material value" value={rupees(workspace.summary.outstanding_value)} />
           </View>
           <View style={styles.workspaceCard}>
-            <Text style={styles.workspaceTitle}>{readOnly ? "Delivered products · 100% complete" : "Purchase products"}</Text>
+            <Text style={styles.workspaceTitle}>{readOnly ? "Delivered products · 100% completed" : "Purchase products"}</Text>
             {(products || workspace.products).length === 0 ? <Text style={type.bodyMuted}>No active purchase items.</Text> : (products || workspace.products).map((item, index) => (
               <View key={item.item_id} style={[styles.customerPanelItem, index > 0 && styles.customerNavDivider]}>
                 <ProductImage source={item.image} style={styles.customerPanelImage} contentFit="contain" frameInset={0} frameBackground="transparent" fallbackLabel={item.sku} borderRadius={8} />

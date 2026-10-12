@@ -1,3 +1,4 @@
+import { filterValues, toggleFilterValue } from "@/src/utils/filters";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform, ScrollView, StyleSheet, View } from "react-native";
 import { Text } from "@/src/components/AppText";
@@ -114,7 +115,7 @@ export default function PaymentListScreen() {
       <ScrollView style={{ flex: 1, minHeight: 0 }} contentContainerStyle={[styles.content, isPhone && styles.contentPhone]}>
         <View style={styles.filters}>
           <View style={[styles.search, isPhone && styles.searchPhone]}><SearchField testID="payment-list-search" value={query} onChangeText={setQuery} onClear={() => setQuery("")} placeholder="Search client, invoice or reference…" /></View>
-          <Dropdown label={floor === "all" ? "All business units" : floors.find((item) => item.id === floor)?.name || floor} items={[{ label: "All business units", onPress: () => setFloor("all") }, ...floors.map((item) => ({ label: item.name, onPress: () => setFloor(item.id) }))]} />
+          <Dropdown label={floor === "all" ? "All business units" : floors.filter(item => filterValues(floor).includes(item.id)).map(item => item.name).join(", ") || floor} items={[{ label: "All business units", onPress: () => setFloor("all") }, ...floors.map((item) => ({ label: `${filterValues(floor).includes(item.id) ? "✓ " : ""}${item.name}`, onPress: () => setFloor(current => toggleFilterValue(current, item.id)) }))]} />
           <Dropdown label={SORT_OPTIONS.find((item) => item.value === sort)?.label || "Sort"} items={SORT_OPTIONS.map((item) => ({ label: item.label, onPress: () => setSort(item.value) }))} />
         </View>
 

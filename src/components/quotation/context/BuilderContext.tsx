@@ -24,7 +24,7 @@ import { useHistory, useUndoRedoShortcuts } from "@/src/hooks/useHistory";
 import { useActionAccess } from "@/src/hooks/use-permissions";
 import { useAuth } from "@/src/state/auth";
 import { builderDraftEpoch, readBuilderDraft, writeBuilderDraft, removeBuilderDraft } from "../helpers/draftStorage";
-import { draftNeedsCopy, moveWithinRoom, type BuilderDraft } from "../helpers/draftRecovery";
+import { draftNeedsCopy, type BuilderDraft } from "../helpers/draftRecovery";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import type { HistoryApi } from "@/src/hooks/useHistory";
 import { playAddProductSound } from "@/src/services/soundService";
@@ -34,6 +34,7 @@ import { downloadApiFile } from "@/src/utils/downloadFile";
 import { computeTotals, computeLineBreakdown, type LineBreakdown } from "../helpers/pricing";
 import { enqueueQuotationPersist } from "../helpers/autosave";
 import { productImageList } from "../helpers/media";
+import { applyQuotationRowOrder, moveQuotationLine } from "../helpers/reorder";
 import { suggestedProductArea } from "../helpers/areas";
 import { addProductAndConcealedPart, syncDefaultIncludedParts } from "../helpers/concealedParts";
 import {
@@ -144,6 +145,14 @@ export type BuilderApi = {
   // V4 rail + explorer state
   brands: Brand[];
   categoriesForRail: Category[];       // filtered by selectedBrandId if set
+  selectedBrandIds: string[];
+  selectedCategoryIds: string[];
+  selectedFinishes: string[];
+  selectedColours: string[];
+  selectedSizes: string[];
+  setSelectedFinishes: (values: string[]) => void;
+  setSelectedColours: (values: string[]) => void;
+  setSelectedSizes: (values: string[]) => void;
   selectedBrandId: string | null;
   setSelectedBrandId: (id: string | null) => void;
   selectedCategoryId: string | null;
@@ -339,8 +348,13 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
 
   // V4 rail + explorer
   const [brands, setBrands] = useState<Brand[]>([]);
-  const [selectedBrandId, setSelectedBrandIdState] = useState<string | null>(null);
-  const [selectedCategoryId, setSelectedCategoryIdState] = useState<string | null>(null);
+  const [selectedBrandIds, setSelectedBrandIds] = useState<string[]>([]);
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
+  const [selectedFinishes, setSelectedFinishes] = useState<string[]>([]);
+  const [selectedColours, setSelectedColours] = useState<string[]>([]);
+  const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
+  const selectedBrandId = selectedBrandIds[0] || null;
+  const selectedCategoryId = selectedCategoryIds[0] || null;
   const [sortKey, setSortKey] = useState<SortKey>("popular");
   const [categoriesForRail, setCategoriesForRail] = useState<Category[]>([]);
   const [favouriteIds, setFavouriteIds] = useState<string[]>([]);
@@ -513,38 +527,24 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     return () => controller.abort();
   }, [referrerSwitcherOpen, activeFloorId]);
 
-  // ---------- Re-fetch categories when brand changes ----------
+  // Category facets combine every selected brand; an empty selection means all.
   useEffect(() => {
-    if (!selectedBrandId) {
-      setCategoriesForRail(categories);
-      return;
-    }
+    if (!selectedBrandIds.length) { setCategoriesForRail(categories); return; }
     const controller = new AbortController();
     let current = true;
-    (async () => {
-      try {
-        const cats = await catalogReferences.categories<Category[]>(selectedBrandId, {
-          floorId: activeFloorId, signal: controller.signal,
-        });
-        if (current) setCategoriesForRail(cats);
-      } catch (e: any) {
-        if (current && e?.name !== "AbortError") {
-          console.warn("Failed to load brand categories", e);
-        }
-      }
-    })();
-    return () => {
-      current = false;
-      controller.abort();
-    };
-  }, [selectedBrandId, categories, activeFloorId]);
+    void Promise.all(selectedBrandIds.map(id => catalogReferences.categories<Category[]>(id,
+      { floorId: activeFloorId, signal: controller.signal }))).then(groups => {
+        if (current) setCategoriesForRail([...new Map(groups.flat().map(category => [category.id, category])).values()]);
+      }).catch(error => { if (current && error?.name !== "AbortError") console.warn("Failed to load brand categories", error); });
+    return () => { current = false; controller.abort(); };
+  }, [selectedBrandIds, categories, activeFloorId]);
 
   const setSelectedBrandId = useCallback((id: string | null) => {
-    setSelectedBrandIdState(id);
-    setSelectedCategoryIdState(null); // reset category when brand changes
+    setSelectedBrandIds(current => id === null ? [] : current.includes(id) ? current.filter(value => value !== id) : [...current, id]);
+    if (id === null) setSelectedCategoryIds([]);
   }, []);
   const setSelectedCategoryId = useCallback((id: string | null) => {
-    setSelectedCategoryIdState(id);
+    setSelectedCategoryIds(current => id === null ? [] : current.includes(id) ? current.filter(value => value !== id) : [...current, id]);
   }, []);
   const setPickerTab = useCallback((tab: PickerTab) => setPickerTabState(tab), []);
 
@@ -577,7 +577,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
       const safety = setTimeout(() => { if (!cancelled) { setProductLoading(false); setProductError("Product search is taking longer than expected. Please retry."); controller.abort(); } }, 12000);
       try {
         const res = await fetchCatalogPage<CatalogFamily>({
-          mode: "families", q, brandId: selectedBrandId, categoryId: selectedCategoryId, sort: sortKey,
+          mode: "families", q, brandIds: selectedBrandIds, categoryIds: selectedCategoryIds, finishes: selectedFinishes, colours: selectedColours, sizes: selectedSizes, sort: sortKey,
         }, 0, CATALOG_PAGE_SIZE, { floorId: activeFloorId, signal: controller.signal });
         if (cancelled || generation !== productRequestGeneration.current) return;
         const items = (res.items || []).map(familyCardToProduct).filter((item): item is Product => item !== null);
@@ -600,7 +600,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
       loadMoreController.current?.abort();
       clearTimeout(t);
     };
-  }, [q, selectedBrandId, selectedCategoryId, sortKey, activeFloorId, productRetry]);
+  }, [q, selectedBrandIds, selectedCategoryIds, selectedFinishes, selectedColours, selectedSizes, sortKey, activeFloorId, productRetry]);
 
   // ---------- Infinite scroll — fetch the next page and append ----------
   const loadingMoreRef = useRef(false);
@@ -616,7 +616,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     (async () => {
       try {
         const res = await fetchCatalogPage<CatalogFamily>({
-          mode: "families", q, brandId: selectedBrandId, categoryId: selectedCategoryId, sort: sortKey,
+          mode: "families", q, brandIds: selectedBrandIds, categoryIds: selectedCategoryIds, finishes: selectedFinishes, colours: selectedColours, sizes: selectedSizes, sort: sortKey,
         }, skipAt, CATALOG_PAGE_SIZE, { floorId: activeFloorId, signal: controller.signal });
         if (controller.signal.aborted || generation !== productRequestGeneration.current) return;
         const items = (res.items || []).map(familyCardToProduct).filter((item): item is Product => item !== null);
@@ -636,7 +636,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
         }
       }
     })();
-  }, [productLoading, productHasMore, products.length, q, selectedBrandId, selectedCategoryId, sortKey, activeFloorId]);
+  }, [productLoading, productHasMore, products.length, q, selectedBrandIds, selectedCategoryIds, selectedFinishes, selectedColours, selectedSizes, sortKey, activeFloorId]);
 
   // ---------- Autosave ----------
   const persist = useCallback(async (): Promise<string | null> => {
@@ -658,7 +658,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
         ui_state: {
           activeRoom: s.activeRoom,
           collapsedRooms: s.collapsedRooms,
-          selectedBrandId, selectedCategoryId, sortKey,
+          selectedBrandId, selectedCategoryId, selectedBrandIds, selectedCategoryIds, selectedFinishes, selectedColours, selectedSizes, sortKey,
         },
         project_discount_pct: s.projectDiscount,
         category_discounts: s.categoryDiscounts,
@@ -699,7 +699,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
       }
     };
     return enqueueQuotationPersist(persistQueue, run);
-  }, [s, quotationId, selectedBrandId, selectedCategoryId, sortKey, activeFloorId, accountId, canCreateQuotation, canUpdateQuotation, onFinalize]);
+  }, [s, quotationId, selectedBrandId, selectedCategoryId, selectedBrandIds, selectedCategoryIds, selectedFinishes, selectedColours, selectedSizes, sortKey, activeFloorId, accountId, canCreateQuotation, canUpdateQuotation, onFinalize]);
 
   useEffect(() => {
     if (lastSavedStateRef.current === s) return;
@@ -854,8 +854,11 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
       setSaveState("saved");
       setSavedAt(new Date(doc.updated_at || Date.now()));
       // Restore UI filter state too
-      if (ui.selectedBrandId !== undefined) setSelectedBrandIdState(ui.selectedBrandId);
-      if (ui.selectedCategoryId !== undefined) setSelectedCategoryIdState(ui.selectedCategoryId);
+      setSelectedBrandIds(Array.isArray(ui.selectedBrandIds) ? ui.selectedBrandIds.filter((id: unknown): id is string => typeof id === "string") : ui.selectedBrandId ? [ui.selectedBrandId] : []);
+      setSelectedCategoryIds(Array.isArray(ui.selectedCategoryIds) ? ui.selectedCategoryIds.filter((id: unknown): id is string => typeof id === "string") : ui.selectedCategoryId ? [ui.selectedCategoryId] : []);
+      setSelectedFinishes(Array.isArray(ui.selectedFinishes) ? ui.selectedFinishes : []);
+      setSelectedColours(Array.isArray(ui.selectedColours) ? ui.selectedColours : []);
+      setSelectedSizes(Array.isArray(ui.selectedSizes) ? ui.selectedSizes : []);
       if (ui.sortKey) setSortKey(ui.sortKey);
       if (announce) toast.success(`Restored ${doc.number}`);
     } catch (e: any) {
@@ -910,8 +913,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     setQuotationNumber(null);
     setSaveState("idle");
     setSavedAt(null);
-    setSelectedBrandIdState(null);
-    setSelectedCategoryIdState(null);
+    setSelectedBrandIds([]); setSelectedCategoryIds([]); setSelectedFinishes([]); setSelectedColours([]); setSelectedSizes([]);
     setQ("");
   }, [history, accountId, activeFloorId, canCreateQuotation]);
 
@@ -1267,7 +1269,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   }, [history]);
 
   const moveLine = useCallback((id: string, direction: -1 | 1) => {
-    history.apply(cur => ({ ...cur, lines: moveWithinRoom(cur.lines, id, direction) }));
+    history.apply(cur => ({ ...cur, lines: moveQuotationLine(cur.lines, id, direction) }));
   }, [history]);
 
   const moveRoom = useCallback((room: string, direction: -1 | 1) => {
@@ -1385,19 +1387,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   [history]);
 
   const onLinesDragEnd = useCallback(({ data }: { data: BuilderRow[] }) => {
-    history.apply((cur) => {
-      const newLines: Line[] = [];
-      let curRoom = cur.rooms[0];
-      for (const row of data) {
-        if (row.kind === "room-header") curRoom = row.roomName;
-        else newLines.push({ ...row.line, room: curRoom });
-      }
-      const roomByParent = new Map(newLines.map((line) => [line.id, line.room]));
-      for (const line of newLines) {
-        if (line.included_for_line_id) line.room = roomByParent.get(line.included_for_line_id) || line.room;
-      }
-      return { ...cur, lines: newLines };
-    });
+    history.apply((cur) => applyQuotationRowOrder(cur, data));
   }, [history]);
 
   // Swap alternates
@@ -1582,6 +1572,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     customers, referrers, categories, categoryById, referenceLoading, referenceError, retryReferenceData,
     q, setQ, pickerTab, setPickerTab, pickerList, products, productTotal, productLoading, productError, retryProducts,
     productHasMore, productLoadingMore, loadMoreProducts, recent, frequent, searchRef,
+    selectedBrandIds, selectedCategoryIds, selectedFinishes, selectedColours, selectedSizes, setSelectedFinishes, setSelectedColours, setSelectedSizes,
     brands, categoriesForRail, selectedBrandId, setSelectedBrandId, selectedCategoryId, setSelectedCategoryId,
     sortKey, setSortKey, favouriteIds, toggleFavourite,
     setProjectName, setPhone, setAddress, setReferenceSource,
@@ -1610,6 +1601,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     customers, referrers, categories, categoryById, referenceLoading, referenceError, retryReferenceData,
     q, setQ, pickerTab, setPickerTab, pickerList, products, productTotal, productLoading, productError, retryProducts,
     productHasMore, productLoadingMore, loadMoreProducts, recent, frequent, searchRef,
+    selectedBrandIds, selectedCategoryIds, selectedFinishes, selectedColours, selectedSizes, setSelectedFinishes, setSelectedColours, setSelectedSizes,
     brands, categoriesForRail, selectedBrandId, setSelectedBrandId, selectedCategoryId, setSelectedCategoryId,
     sortKey, setSortKey, favouriteIds, toggleFavourite,
     setProjectName, setPhone, setAddress, setReferenceSource,

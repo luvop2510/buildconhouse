@@ -56,8 +56,14 @@ previously saved quotations and exact decimal calculations.
 
 The page catalog comes from the backend and includes supported floors and
 actions. An incomplete or invalid catalog blocks saving until a valid response
-is available. Kitchen and Furniture walk-in and quotation follow-up notebooks
-have separate permissions, even though they share backend routes.
+is available. **Walk-ins** opens the regular intake, items and customer journey
+on every enabled floor. Kitchen and Furniture open this same register by
+default. Department filters include only floors with Walk-ins View access;
+creation and workflow actions respect the separate Create/Edit allocations.
+The salesperson picker includes delegated staff with Walk-ins Create or Edit
+on the selected department, without giving them Team or Follow-ups access.
+Kitchen and Furniture legacy lead notebooks remain distinctly named, with
+separate permissions for historical notebook and quotation follow-up records.
 
 ## Account reset operation
 

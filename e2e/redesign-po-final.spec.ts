@@ -3,7 +3,7 @@ import { mockSession } from './audit-fixtures';
 
 test('critical customer shows commercial order value and PO Final on desktop and phone', async ({ page }, info) => {
   await mockSession(page, '/customers/c1');
-  await page.route('**/api/customers/c1', route => route.fulfill({ json: {
+  await page.route(/\/api\/customers\/c1(?:\?.*)?$/, route => route.fulfill({ json: {
     id: 'c1', name: '1 Vitra', email: 'vitra@example.test', tier: 'retail', phone: '9000000000',
   } }));
   await page.route('**/api/quotations', route => route.fulfill({ json: [{

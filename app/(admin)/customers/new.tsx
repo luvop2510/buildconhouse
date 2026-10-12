@@ -9,19 +9,16 @@ import { Disclosure } from "@/src/design/Disclosure";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
-import { Text } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { api } from "@/src/api/client";
 import {
-  Alert, Button, Chip, PageHeader, TextField,
+  Alert, Button, PageHeader, TextField,
 } from "@/src/components/ui";
 import { toast } from "@/src/components/Toast";
 import { ReferrerField } from "@/src/components/customer/ReferrerField";
 import { useBp } from "@/src/design/responsive";
-import { colors, spacing, type } from "@/src/theme/tokens";
-
-type Tier = "retail" | "trade" | "vip";
+import { colors, spacing } from "@/src/theme/tokens";
 
 export default function NewCustomer() {
   const router = useRouter();
@@ -37,7 +34,6 @@ export default function NewCustomer() {
   const [stateField, setStateField] = useState("");
   const [pincode, setPincode] = useState("");
   const [gstin, setGstin] = useState("");
-  const [tier, setTier] = useState<Tier>("retail");
   const [referrer, setReferrer] = useState<{ id: string; name: string; type: "architect" | "interior_designer" } | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -63,7 +59,6 @@ export default function NewCustomer() {
         state: stateField.trim() || null,
         pincode: pincode.trim() || null,
         gstin: gstin.trim() || null,
-        tier,
         referrer_id: referrer?.id || null,
       };
       const created = await api.post<{ id: string }>("/customers", payload);
@@ -162,27 +157,13 @@ export default function NewCustomer() {
           </View>
           <TextField
             label="GSTIN"
-            placeholder="Optional, for trade/VIP invoicing"
+            placeholder="Optional, for invoicing"
             value={gstin}
             onChangeText={setGstin}
             autoCapitalize="characters"
             testID="new-customer-gstin"
           />
 
-          <View style={{ gap: 6 }}>
-            <Text style={type.label}>Tier</Text>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-              {(["retail", "trade", "vip"] as Tier[]).map((t) => (
-                <Chip
-                  key={t}
-                  label={t.charAt(0).toUpperCase() + t.slice(1)}
-                  active={tier === t}
-                  onPress={() => setTier(t)}
-                  testID={`new-customer-tier-${t}`}
-                />
-              ))}
-            </View>
-          </View>
 
           </Disclosure>
         </ScrollView>

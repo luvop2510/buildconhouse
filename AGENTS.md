@@ -2,6 +2,26 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
+## Walk-in/catalog/filter verification — 2026-10-11
+
+Local changes add multi-choice categorical filters, confirmed-only Customers,
+immediate Visit Showroom follow-ups, one catalog card per family with editable
+variant labels, and persistent mouse/touch quotation product ordering. Migration
+`0031` is applied to the configured live Atlas database: `second-floor` is named
+`Kitchen Floor` and the two exact test lead-source choices are removed. Floor IDs
+and historical records remain stable. The local preview on 8090 proxies to the
+local backend on 8010 using `scripts/serve-local.mjs`.
+
+Acceptance: 2,102 hermetic backend unit tests, four disposable Mongo catalog
+integration tests, 86 feature browser passes across eight browser/viewport
+projects (two touch-harness skips), and 55 surrounding regression passes (two
+tablet-only skips). TypeScript, zero-warning lint, web/iOS/Android exports, frontend
+contracts and all 11 route budgets pass. Six controlled live route checks pass
+and their temporary records are removed. Infrastructure preflight and local API
+readiness pass; migration dry-run has no pending changes. These are local
+changes, without a production deployment or physical-device acceptance.
+See `docs/audits/2026-10-11-walkins-families-multi-filters.md`.
+
 ## Current verification update — 2026-10-11
 
 Staff credentials are permanent and owner-managed. Team account reads, creation,

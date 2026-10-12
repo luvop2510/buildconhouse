@@ -96,6 +96,10 @@ function LineRowImpl({
     >
       <Pressable
         onLongPress={isIncluded ? undefined : drag}
+        accessibilityRole="button"
+        accessibilityLabel={`Reorder ${l.name}`}
+        accessibilityHint="Drag to move. Use product actions for Move up and Move down."
+        disabled={isIncluded}
         delayLongPress={160}
         hitSlop={6}
         style={[styles.dragHandle, grabCursor]}
@@ -246,7 +250,7 @@ const styles = StyleSheet.create({
   rowHovered: { borderColor: colors.brandBorder, backgroundColor: colors.surface, transform: [{ translateY: -1 }] },
   rowPhone: { padding: 12, gap: 8, alignItems: "flex-start" },
   dragHandle: {
-    width: 20, alignItems: "center", justifyContent: "center", alignSelf: "stretch",
+    width: 28, minHeight: 44, alignItems: "center", justifyContent: "center", alignSelf: "stretch",
     marginRight: -2, marginLeft: -4,
   },
   // A compact portrait frame gives product imagery enough vertical room in

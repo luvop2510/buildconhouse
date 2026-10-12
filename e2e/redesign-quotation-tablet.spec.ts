@@ -55,7 +55,7 @@ test('critical iPad desktop browser downloads the quotation PDF with dimensions 
     Object.defineProperty(navigator, 'maxTouchPoints', { configurable: true, value: 5 });
   });
   await mockSession(page, '/quotations/q-tablet', false);
-  await page.route('**/api/quotations/q-tablet', r => r.fulfill({ json: {
+  await page.route(/\/api\/quotations\/q-tablet(?:\?.*)?$/, r => r.fulfill({ json: {
     id: 'q-tablet', number: 'Q-TABLET', customer_name: 'Tablet Customer', status: 'ordered', floor_id: 'first-floor',
     items: [], rooms: [], subtotal: 1200, discount_total: 0, grand_total: 1200,
     created_at: '2026-10-01T10:00:00Z', created_by_name: 'Audit Owner',
@@ -87,7 +87,7 @@ for (const format of ['pdf', 'pptx'] as const) {
       Object.defineProperty(navigator, 'maxTouchPoints', { configurable: true, value: 5 });
     });
     await mockSession(page, '/quotations/q-export', false);
-    await page.route('**/api/quotations/q-export', route => route.fulfill({ json: {
+    await page.route(/\/api\/quotations\/q-export(?:\?.*)?$/, route => route.fulfill({ json: {
       id: 'q-export', number: 'Q-EXPORT', customer_name: 'Export Customer', status: 'ordered', floor_id: 'first-floor',
       items: [], rooms: [], subtotal: 1200, discount_total: 0, grand_total: 1200,
       created_at: '2026-10-01T10:00:00Z', created_by_name: 'Audit Owner',

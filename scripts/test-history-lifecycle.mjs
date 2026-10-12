@@ -113,7 +113,7 @@ for (const replay of [false, true]) {
 }
 
 function overlayFixture() {
-  const hooks = [], events = new Map();
+  const hooks = [], events = new Map(), frames = [];
   let index = 0, pending = [], timer, oldCalls = 0, newCalls = 0;
   const same = (a, b) => a && b && a.length === b.length && a.every((value, i) => Object.is(value, b[i]));
   const effect = (callback, deps) => {
@@ -137,6 +137,7 @@ function overlayFixture() {
   };
   const module = execute(overlaySource, { react, 'react-native': { Platform: { OS: 'web' } } }, {
     document, HTMLElement: class {}, setTimeout: callback => { timer = callback; return 1; }, clearTimeout: () => { timer = null; },
+    requestAnimationFrame: callback => { frames.push(callback); return frames.length; },
   });
   function render(close, dismissable = true, open = true) {
     index = 0; pending = [];
@@ -144,6 +145,7 @@ function overlayFixture() {
   }
   function commit() { for (const apply of pending) apply(); pending = []; if (timer) { const run = timer; timer = null; run(); } }
   return { render, commit, events, previous, document,
+    flushFrames() { const pendingFrames = frames.splice(0); for (const frame of pendingFrames) frame(); },
     old: () => oldCalls++, newer: () => newCalls++,
     get calls() { return [oldCalls, newCalls]; },
     escape() { events.get('keyup')?.({ key: 'Escape', preventDefault() {}, stopImmediatePropagation() {} }); },
@@ -174,7 +176,31 @@ test('overlay cleanup removes listeners and restores the trigger on close and un
   const h = overlayFixture();
   h.render(h.old); h.commit(); assert.equal(h.events.size, 2);
   h.render(h.old, true, false); h.commit();
+  h.flushFrames();
   assert.equal(h.events.size, 0); assert.equal(h.document.activeElement, h.previous);
   h.render(h.old); h.commit(); h.unmount();
+  h.flushFrames();
   assert.equal(h.events.size, 0); assert.equal(h.document.activeElement, h.previous);
+});
+
+test('overlay restoration runs after native Modal cleanup changes focus', () => {
+  const h = overlayFixture();
+  h.render(h.old); h.commit();
+  h.render(h.old, true, false); h.commit();
+  const backdrop = {};
+  h.document.activeElement = backdrop; // React Native Web's unmount cleanup.
+  assert.equal(h.document.activeElement, backdrop);
+  h.flushFrames();
+  assert.equal(h.document.activeElement, h.previous);
+});
+
+test('overlay restoration preserves destination focus after its trigger is removed', () => {
+  const h = overlayFixture();
+  h.render(h.old); h.commit();
+  h.render(h.old, true, false); h.commit();
+  h.previous.isConnected = false;
+  const destination = {};
+  h.document.activeElement = destination;
+  h.flushFrames();
+  assert.equal(h.document.activeElement, destination);
 });

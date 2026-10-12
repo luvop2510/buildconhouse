@@ -23,6 +23,13 @@ export type CatalogQuery = {
   mode?: CatalogMode;
   q?: string;
   brandId?: string | null;
+  brandIds?: string[];
+  categoryIds?: string[];
+  subcategories?: string[];
+  seriesValues?: string[];
+  finishes?: string[];
+  colours?: string[];
+  sizes?: string[];
   categoryId?: string | null;
   subcategory?: string | null;
   series?: string | null;
@@ -45,6 +52,11 @@ function stableParams(query: CatalogQuery, skip: number, limit: number): URLSear
   if (query.categoryId) p.set("category_id", query.categoryId);
   if (query.subcategory) p.set("subcategory", query.subcategory);
   if (query.series) p.set("series", query.series);
+  for (const [key, values] of Object.entries({ brand_ids: query.brandIds, category_ids: query.categoryIds,
+    subcategories: query.subcategories, series_values: query.seriesValues, finishes: query.finishes,
+    colours: query.colours, sizes: query.sizes })) {
+    for (const value of [...new Set(values || [])].sort()) p.append(key, value);
+  }
   return p;
 }
 

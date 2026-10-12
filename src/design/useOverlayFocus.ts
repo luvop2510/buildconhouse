@@ -4,6 +4,7 @@ import { Platform, View } from 'react-native';
 // The topmost portal remains interactive even if an underlying dialog previously
 // isolated its already-mounted portal. Recompute isolation when the stack changes.
 const portals: HTMLElement[] = [];
+const panels = new Map<HTMLElement, HTMLElement>();
 const isolated = new Map<HTMLElement, { inert: boolean; hidden: string | null }>();
 function isolate(element: HTMLElement) {
   if (isolated.has(element)) return;
@@ -53,6 +54,7 @@ export function useOverlayFocus(open: boolean, onClose: () => void, dismissable 
       if (portal?.parentElement === document.body) {
         activePortal = portal;
         portals.push(portal);
+        panels.set(portal, panel);
         syncIsolation();
       }
       (focusables()[0] || panel)?.focus();
@@ -86,9 +88,22 @@ export function useOverlayFocus(open: boolean, onClose: () => void, dismissable 
       if (activePortal) {
         const index = portals.lastIndexOf(activePortal);
         if (index >= 0) portals.splice(index, 1);
+        panels.delete(activePortal);
         syncIsolation();
       }
-      if (previous?.isConnected) previous.focus();
+      const restoredPortal = portals[portals.length - 1];
+      // React Native Web also restores focus while unmounting its Modal.
+      // Run after that cleanup so it cannot leave focus on the backdrop of
+      // the underlying dialog, where Escape and Tab cannot reach our panel.
+      requestAnimationFrame(() => {
+        if (portals[portals.length - 1] !== restoredPortal) return;
+        const restoredPanel = restoredPortal ? panels.get(restoredPortal) : undefined;
+        if (previous?.isConnected && (!restoredPanel || restoredPanel.contains(previous))) previous.focus();
+        else if (restoredPanel?.isConnected) {
+          const target = restoredPanel.querySelector<HTMLElement>('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),select:not(:disabled),a[href],[tabindex="0"]');
+          (target || restoredPanel).focus();
+        }
+      });
     };
   }, [open]);
   return ref;

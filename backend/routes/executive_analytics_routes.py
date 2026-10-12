@@ -5,6 +5,7 @@ quotations). Every query starts with the same floor/date/brand/owner/referrer
 match so cards, tables and exports cannot drift from the books.
 """
 from __future__ import annotations
+from services.multi_filters import filter_values, filter_condition
 
 from services.export import spreadsheet_cell
 
@@ -47,23 +48,23 @@ async def _match(
     brand_id: Optional[str], salesperson_id: Optional[str], referrer_type: Optional[str], customer_id: Optional[str] = None, referrer_id: Optional[str] = None,
 ) -> dict:
     allowed = accessible_floor_ids(user)
-    floors = [floor_id] if floor_id and floor_id != "all" else allowed
-    if floor_id and floor_id != "all" and allowed is not None and floor_id not in allowed:
+    floors = filter_values(floor_id) if floor_id and floor_id != "all" else allowed
+    if floor_id and floor_id != "all" and allowed is not None and any(value not in allowed for value in filter_values(floor_id)):
         raise HTTPException(status_code=403, detail="You do not have access to this floor")
     start, end = _date_range(preset, date_from, date_to)
     query: dict = {"status": "ordered"}
     if floors is not None: query["floor_id"] = {"$in": floors}
-    if salesperson_id: query["created_by"] = salesperson_id
-    if referrer_type: query["referrer_type"] = referrer_type
-    if customer_id: query["customer_id"] = customer_id
-    if referrer_id: query["referrer_id"] = referrer_id
+    if salesperson_id: query["created_by"] = filter_condition(salesperson_id)
+    if referrer_type: query["referrer_type"] = filter_condition(referrer_type)
+    if customer_id: query["customer_id"] = filter_condition(customer_id)
+    if referrer_id: query["referrer_id"] = filter_condition(referrer_id)
     if start or end:
         # Revenue reporting dates confirmed orders by their write-once
         # confirmation stamp.  ``updated_at`` changes on every later edit and
         # would silently move historical revenue between reporting periods.
         query["ordered_at"] = {k: v for k, v in (("$gte", start), ("$lte", end)) if v}
     if brand_id:
-        ids = [p["id"] for p in await db.products.find({"brand_id": brand_id}, {"_id": 0, "id": 1}).to_list(100000)]
+        ids = [p["id"] for p in await db.products.find({"brand_id": filter_condition(brand_id)}, {"_id": 0, "id": 1}).to_list(100000)]
         query["items.product_id"] = {"$in": ids}
     return query
 
@@ -88,7 +89,7 @@ async def filters(
     # reported on. Listing every floor's brands put The Sanitary Bathroom's
     # brands in Ground Floor's filter (and vice versa).
     if floor_id and floor_id != "all":
-        brand_scope: dict = {"floor_id": floor_id}
+        brand_scope: dict = {"floor_id": filter_condition(floor_id)}
     elif allowed is not None:
         brand_scope = {"floor_id": {"$in": allowed}}
     else:

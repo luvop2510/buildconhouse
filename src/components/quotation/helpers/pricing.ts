@@ -104,7 +104,8 @@ export function computeTotals(
 // the old pattern (`finish || color || size || sku`) picked only ONE of
 // them, silently dropping the other. Returns "" (never a fallback to sku)
 // so callers decide their own sku fallback explicitly.
-export function variantDescriptor(v: { finish?: string | null; size?: string | null; colour?: string | null; color?: string | null }): string {
+export function variantDescriptor(v: { finish?: string | null; size?: string | null; colour?: string | null; color?: string | null; variant_label?: string | null }): string {
+  if (v.variant_label?.trim()) return [v.variant_label.trim(), v.size].filter(Boolean).join(" · ");
   return [v.finish, v.size, v.colour ?? v.color].filter((part): part is string => !!part).join(" · ");
 }
 

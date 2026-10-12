@@ -97,7 +97,7 @@ export function BrandRail({ collapsed = false, onToggleCollapsed, compact = fals
   }, [b, compact]);
 
   const onTapCategory = useCallback((brandId: string, categoryId: string | null) => {
-    if (b.selectedBrandId !== brandId) b.setSelectedBrandId(brandId);
+    if (!b.selectedBrandIds.includes(brandId)) b.setSelectedBrandId(brandId);
     b.setSelectedCategoryId(categoryId);
     if (compact) b.setPickerSheetOpen(true);
   }, [b, compact]);
@@ -142,7 +142,7 @@ export function BrandRail({ collapsed = false, onToggleCollapsed, compact = fals
       >
         <Pressable
           onPress={onTapAll}
-          style={[styles.item, collapsed && styles.itemCollapsed, !b.selectedBrandId && styles.itemActive]}
+          style={[styles.item, collapsed && styles.itemCollapsed, !b.selectedBrandIds.length && styles.itemActive]}
           testID="rail-brand-all"
         >
           <View style={styles.itemIcon}>
@@ -150,7 +150,7 @@ export function BrandRail({ collapsed = false, onToggleCollapsed, compact = fals
           </View>
           {!collapsed ? (
             <>
-              <Text style={[styles.itemLabel, !b.selectedBrandId && styles.itemLabelActive]} numberOfLines={1}>
+              <Text style={[styles.itemLabel, !b.selectedBrandIds.length && styles.itemLabelActive]} numberOfLines={1}>
                 All brands
               </Text>
               <Text style={styles.itemCount}>{b.brands.reduce((s, br) => s + (br.product_count || 0), 0)}</Text>
@@ -159,7 +159,7 @@ export function BrandRail({ collapsed = false, onToggleCollapsed, compact = fals
         </Pressable>
 
         {filteredBrands.map((br) => {
-          const on = b.selectedBrandId === br.id;
+          const on = b.selectedBrandIds.includes(br.id);
           const isOpen = expanded === br.id;
           const cats = [...(catCache[br.id] || [])].sort((left, right) => {
             const order = catOrder[br.id] || [];
@@ -205,15 +205,15 @@ export function BrandRail({ collapsed = false, onToggleCollapsed, compact = fals
                   <View style={styles.catGroup} testID={`rail-cats-${br.name}`}>
                     <Pressable
                       onPress={() => onTapCategory(br.id, null)}
-                      style={[styles.catItem, on && !b.selectedCategoryId && styles.catItemActive]}
+                      style={[styles.catItem, on && !b.selectedCategoryIds.length && styles.catItemActive]}
                     >
                       <View style={styles.catDot} />
-                      <Text style={[styles.catLabel, on && !b.selectedCategoryId && styles.catLabelActive]}>
+                      <Text style={[styles.catLabel, on && !b.selectedCategoryIds.length && styles.catLabelActive]}>
                         All {br.name}
                       </Text>
                     </Pressable>
                     {cats.map((c, index) => {
-                      const catOn = on && b.selectedCategoryId === c.id;
+                      const catOn = on && b.selectedCategoryIds.includes(c.id);
                       return (
                         <View
                           key={c.id}

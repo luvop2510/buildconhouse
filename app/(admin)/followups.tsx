@@ -6,8 +6,9 @@
 // produced by the backend's idempotent reconciliation engine — this screen
 // only orchestrates reads + user actions, never invents data.
 // ═══════════════════════════════════════════════════════════════════════════
+import { filterValues, matchesFilter, toggleFilterValue } from "@/src/utils/filters";
 import Feather from "@expo/vector-icons/Feather";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Linking, Platform, Pressable, RefreshControl, ScrollView, SectionList, StyleSheet, View, KeyboardAvoidingView } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
@@ -77,6 +78,8 @@ type Followup = {
   completed_at?: string | null;
   completed_outcome?: string | null;
   notes?: string | null;
+  origin?: string | null;
+  walkin_id?: string | null;
   bucket: Bucket;
   created_at: string;
   updated_at: string;
@@ -264,6 +267,7 @@ async function settleBulkRequests(request: BulkRequest, ids: string[]): Promise<
 // Screen
 // ═══════════════════════════════════════════════════════════════════════════
 export default function FollowupsScreen() {
+  const routeParams = useLocalSearchParams<{ workspace?: string }>();
   const { staff } = useAuth();
   const canDeleteFollowups = useActionAccess("followups", "delete", !!staff && MANAGER_ROLES.includes(staff.role));
   const { selectedFloorId } = useFloorAccess();
@@ -291,10 +295,10 @@ export default function FollowupsScreen() {
     const timer = setTimeout(() => setSearchQuery(q.trim()), 250);
     return () => clearTimeout(timer);
   }, [q]);
-  const [kpiFilter, setKpiFilter] = useState<KpiFilter>("all");
-  const [priorityFilter, setPriorityFilter] = useState<PriorityLevel | "all">("all");
+  const [kpiFilter, setKpiFilter] = useState<string>("all");
+  const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
-  const [tierFilter, setTierFilter] = useState<"all" | "retail" | "trade" | "vip">("all");
+  const tierFilter = "all";
   const [ownerFilter, setOwnerFilter] = useState<"all" | "mine" | string>("all");
   const [followupView, setFollowupView] = useState<FollowupView>("active");
   const [collapsed, setCollapsed] = useState<Set<Bucket>>(new Set(["completed", "snoozed"]));
@@ -335,14 +339,14 @@ export default function FollowupsScreen() {
   // living inside the same premium inbox rather than separate screens, per
   // design decision to reuse existing components and avoid a new visual
   // style. Walk-ins / Payments workspaces land in a later phase.
-  const [workspace, setWorkspace] = useState<"all" | "selection" | "quotation_tiles">("all");
+  const [workspace, setWorkspace] = useState<"all" | "selection" | "quotation_tiles" | "visit_showroom">(routeParams.workspace === "visit_showroom" ? "visit_showroom" : "all");
   const hasTileFollowupWorkspaces = selectedFloorId === "ground-floor";
 
   // Tile selection/quotation workspaces are a Ground Floor workflow.  The
   // shared Follow-ups route must not make Sanitary Bathroom users inherit its
   // tabs (or leave a stale tile filter active after switching floors).
   useEffect(() => {
-    if (!hasTileFollowupWorkspaces) setWorkspace("all");
+    if (!hasTileFollowupWorkspaces) setWorkspace(current => current === "visit_showroom" ? current : "all");
   }, [hasTileFollowupWorkspaces]);
 
   // ── Data loading ──────────────────────────────────────────────────────────
@@ -368,13 +372,11 @@ export default function FollowupsScreen() {
       if (priorityFilter !== "all") params.set("priority", priorityFilter);
       if (categoryFilter !== "all") params.set("category", categoryFilter);
       if (tierFilter !== "all") params.set("customer_tier", tierFilter);
-      if (ownerFilter === "mine" && staff?.id) params.set("assigned_to", staff.id);
-      else if (ownerFilter !== "all") params.set("assigned_to", ownerFilter);
+      if (ownerFilter !== "all") params.set("assigned_to", filterValues(ownerFilter).map(owner => owner === "mine" ? staff?.id || "" : owner).filter(Boolean).join(","));
+      if (workspace === "visit_showroom") params.set("origin", "visit_showroom");
       if (workspace === "selection") params.set("rule_type", "selection_waiting");
       else if (workspace === "quotation_tiles") params.set("rule_type", "quotation_tiles_waiting");
-      if (kpiFilter === "waiting") params.set("waiting", "true");
-      else if (kpiFilter === "completed") params.set("completed_today", "true");
-      else if (kpiFilter !== "all") params.set("bucket", kpiFilter);
+      if (kpiFilter !== "all") params.set("bucket", filterValues(kpiFilter).map(choice => choice === "completed" ? "completed_today" : choice).join(","));
 
       let result: FollowupPage;
       try {
@@ -387,13 +389,13 @@ export default function FollowupsScreen() {
         // recover the first page and suppress unavailable pagination.
         if (!pageNavigation && nextPage === 1 && isMissingPagedInbox(error)) {
           const legacyParams = new URLSearchParams({ limit: String(FOLLOWUP_PAGE_SIZE) });
+          if (workspace === "visit_showroom") legacyParams.set("origin", "visit_showroom");
           if (searchQuery) legacyParams.set("q", searchQuery);
           if (priorityFilter !== "all") legacyParams.set("priority", priorityFilter);
           if (categoryFilter !== "all") legacyParams.set("category", categoryFilter);
           if (tierFilter !== "all") legacyParams.set("customer_tier", tierFilter);
-          if (ownerFilter === "mine" && staff?.id) legacyParams.set("assigned_to", staff.id);
-          else if (ownerFilter !== "all") legacyParams.set("assigned_to", ownerFilter);
-          if (kpiFilter !== "all" && kpiFilter !== "waiting" && kpiFilter !== "completed") legacyParams.set("bucket", kpiFilter);
+          if (ownerFilter !== "all") legacyParams.set("assigned_to", filterValues(ownerFilter).map(owner => owner === "mine" ? staff?.id || "" : owner).filter(Boolean).join(","));
+          if (kpiFilter !== "all") legacyParams.set("bucket", filterValues(kpiFilter).map(choice => choice === "completed" ? "completed_today" : choice).join(","));
           const items = await api.get<Followup[]>(`/followups?${legacyParams.toString()}`, { floorId: selectedFloorId });
           result = { items, page: 1, page_size: FOLLOWUP_PAGE_SIZE, has_more: false };
         } else {
@@ -703,23 +705,26 @@ export default function FollowupsScreen() {
         || f.tags?.some((t) => t.toLowerCase().includes(term))
       ));
     }
-    if (kpiFilter === "waiting") {
-      list = list.filter((f) => f.status === "open" && f.rule_type === "payment_partial");
-    } else if (kpiFilter === "completed") {
-      list = list.filter((f) => f.bucket === "completed" && !!f.completed_at && isSameDay(f.completed_at, new Date()));
-    } else if (kpiFilter !== "all") {
-      list = list.filter((f) => f.bucket === kpiFilter);
+    if (kpiFilter !== "all") {
+      const selectedBuckets = filterValues(kpiFilter);
+      list = list.filter(f => selectedBuckets.some(choice =>
+        choice === "waiting" ? f.status === "open" && f.rule_type === "payment_partial"
+        : choice === "completed" ? f.bucket === "completed" && !!f.completed_at && isSameDay(f.completed_at, new Date())
+        : f.bucket === choice));
     }
     if (followupView === "won") list = list.filter(isWonOrderFollowup);
     else if (followupView === "lost") list = list.filter((f) => f.completed_outcome === "lost");
     else list = list.filter((f) => !isWonOrderFollowup(f) && f.completed_outcome !== "lost");
-    if (priorityFilter !== "all") list = list.filter((f) => (f.manual_priority_override || f.priority_level) === priorityFilter);
-    if (categoryFilter !== "all") list = list.filter((f) => f.category === categoryFilter);
+    if (priorityFilter !== "all") list = list.filter((f) => matchesFilter(f.manual_priority_override || f.priority_level, priorityFilter));
+    if (categoryFilter !== "all") list = list.filter((f) => matchesFilter(f.category, categoryFilter));
     if (workspace === "selection") list = list.filter((f) => f.rule_type === "selection_waiting");
     else if (workspace === "quotation_tiles") list = list.filter((f) => f.rule_type === "quotation_tiles_waiting");
-    if (tierFilter !== "all") list = list.filter((f) => f.customer_tier === tierFilter);
-    if (ownerFilter === "mine") list = list.filter((f) => f.assigned_to === staff?.id);
-    else if (ownerFilter !== "all") list = list.filter((f) => f.assigned_to === ownerFilter);
+    if (tierFilter !== "all") list = list.filter((f) => matchesFilter(f.customer_tier, tierFilter));
+    if (ownerFilter !== "all") {
+      const owners = filterValues(ownerFilter).map(owner => owner === "mine" ? staff?.id : owner);
+      list = list.filter(f => owners.includes(f.assigned_to || undefined));
+    }
+    if (workspace === "visit_showroom") list = list.filter(f => f.origin === "visit_showroom");
     return [...list].sort((a, b) => {
       const mineA = a.assigned_to === staff?.id ? 0 : 1;
       const mineB = b.assigned_to === staff?.id ? 0 : 1;
@@ -770,7 +775,7 @@ export default function FollowupsScreen() {
     return m;
   }, [rawItems]);
 
-  const toggleKpi = (v: KpiFilter) => setKpiFilter((cur) => (cur === v ? "all" : v));
+  const toggleKpi = (v: KpiFilter) => setKpiFilter(cur => toggleFilterValue(cur, v));
   const toggleSection = (b: Bucket) => setCollapsed((prev) => {
     const n = new Set(prev);
     if (n.has(b)) n.delete(b); else n.add(b);
@@ -780,7 +785,6 @@ export default function FollowupsScreen() {
     router.push(`/(admin)/tiles/${f.rule_type === "selection_waiting" ? "selection" : "quotation"}?id=${f.quotation_id}` as any);
   }, [router]);
 
-  const ownerLabel = ownerFilter === "all" ? "Owner: All" : ownerFilter === "mine" ? "Owner: Mine" : `Owner: ${assignees.find((a) => a.id === ownerFilter)?.full_name || "—"}`;
   const activeFilterCount = [followupView !== "active", priorityFilter !== "all", categoryFilter !== "all", tierFilter !== "all", ownerFilter !== "all"].filter(Boolean).length;
 
   // ── Bulk selection ───────────────────────────────────────────────────────
@@ -851,7 +855,6 @@ export default function FollowupsScreen() {
     setFollowupView(flt.followupView || "active");
     setPriorityFilter(flt.priorityFilter || "all");
     setCategoryFilter(flt.categoryFilter || "all");
-    setTierFilter(flt.tierFilter || "all");
     setOwnerFilter(flt.ownerFilter || "all");
     setSavedViewsSheet(false);
     toast.success(`Applied "${v.name}"`);
@@ -874,12 +877,12 @@ export default function FollowupsScreen() {
   // ── Export ───────────────────────────────────────────────────────────────
   const doExport = useCallback(async (format: "xlsx" | "csv") => {
     const qs = new URLSearchParams({ format });
-    if (kpiFilter !== "all" && kpiFilter !== "waiting" && kpiFilter !== "completed") qs.set("bucket", kpiFilter);
+    if (kpiFilter !== "all") qs.set("bucket", filterValues(kpiFilter).map(choice => choice === "completed" ? "completed_today" : choice).join(","));
     if (priorityFilter !== "all") qs.set("priority", priorityFilter);
     if (categoryFilter !== "all") qs.set("category", categoryFilter);
     if (tierFilter !== "all") qs.set("customer_tier", tierFilter);
-    if (ownerFilter === "mine" && staff?.id) qs.set("assigned_to", staff.id);
-    else if (ownerFilter !== "all") qs.set("assigned_to", ownerFilter);
+    if (ownerFilter !== "all") qs.set("assigned_to", filterValues(ownerFilter).map(owner => owner === "mine" ? staff?.id || "" : owner).filter(Boolean).join(","));
+    if (workspace === "visit_showroom") qs.set("origin", "visit_showroom");
     if (q.trim()) qs.set("q", q.trim());
     try {
       const url = await api.authenticatedUrl(`/followups/export?${qs.toString()}`);
@@ -891,7 +894,7 @@ export default function FollowupsScreen() {
       }
       toast.success("Export ready");
     } catch { toast.error("Could not export"); }
-  }, [kpiFilter, priorityFilter, categoryFilter, tierFilter, ownerFilter, q, staff]);
+  }, [kpiFilter, priorityFilter, categoryFilter, tierFilter, ownerFilter, q, staff, workspace]);
 
   // ── Keyboard shortcuts (web only) ───────────────────────────────────────
   useEffect(() => {
@@ -955,23 +958,27 @@ export default function FollowupsScreen() {
   const workspaceAndFilters = (
     <>
       {followupViewControl}
-      {hasTileFollowupWorkspaces ? (
+      {(
+
         <SegmentedControl
           value={workspace}
-          onChange={setWorkspace}
+          onChange={value => setWorkspace(value as typeof workspace)}
           fullWidth
           testID="followups-workspace-tabs"
           options={[
             { value: "all", label: "All", icon: "layers" },
-            { value: "selection", label: `Selections${stats ? ` · ${stats.workspace_counts.selection}` : ""}`, icon: "grid" },
-            { value: "quotation_tiles", label: `Quotations${stats ? ` · ${stats.workspace_counts.quotation_tiles}` : ""}`, icon: "file-text" },
+            { value: "visit_showroom", label: "Visit Showroom", icon: "home" },
+            ...(hasTileFollowupWorkspaces ? [
+              { value: "selection", label: `Selections${stats ? ` · ${stats.workspace_counts.selection}` : ""}`, icon: "grid" as FeatherName },
+              { value: "quotation_tiles", label: `Quotations${stats ? ` · ${stats.workspace_counts.quotation_tiles}` : ""}`, icon: "file-text" as FeatherName },
+            ] : []),
           ]}
         />
-      ) : null}
+      )}
 
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-        <Chip label={`Today${stats ? ` · ${stats.today_tasks}` : ""}`} active={kpiFilter === "today"} onPress={() => toggleKpi("today")} />
-        <Chip label={`Overdue${stats ? ` · ${stats.overdue}` : ""}`} active={kpiFilter === "overdue"} onPress={() => toggleKpi("overdue")} />
+        <Chip label={`Today${stats ? ` · ${stats.today_tasks}` : ""}`} active={filterValues(kpiFilter).includes("today")} onPress={() => toggleKpi("today")} />
+        <Chip label={`Overdue${stats ? ` · ${stats.overdue}` : ""}`} active={filterValues(kpiFilter).includes("overdue")} onPress={() => toggleKpi("overdue")} />
         <Chip label="Summary" active={summaryOpen} onPress={toggleSummary} />
       </View>
       {summaryOpen ? <View style={{ gap: spacing.md }}>
@@ -989,20 +996,20 @@ export default function FollowupsScreen() {
         <View style={{ flexDirection: "row", gap: spacing.md, flexWrap: isPhone ? "nowrap" : "wrap" }}>
           <StatTile label="Today's Tasks" value={stats ? stats.today_tasks : "—"} icon="sun" tone="brand"
             sub={stats?.today_critical ? `${stats.today_critical} critical` : "On track"}
-            onPress={() => toggleKpi("today")} style={kpiFilter === "today" ? activeTileStyle : undefined} />
+            onPress={() => toggleKpi("today")} style={filterValues(kpiFilter).includes("today") ? activeTileStyle : undefined} />
           <StatTile label="Overdue Tasks" value={stats ? stats.overdue : "—"} icon="alert-circle" tone="danger"
             sub={stats?.overdue_critical ? `${stats.overdue_critical} critical` : "None overdue"}
-            onPress={() => toggleKpi("overdue")} style={kpiFilter === "overdue" ? activeTileStyle : undefined} />
+            onPress={() => toggleKpi("overdue")} style={filterValues(kpiFilter).includes("overdue") ? activeTileStyle : undefined} />
           <StatTile label="Payments Overdue" value={stats ? stats.overdue_payments_count : "—"} icon="credit-card" tone="danger"
             sub={stats?.overdue_payments_count ? `₹${stats.overdue_payments_amount_short} at stake` : "None overdue"}
             onPress={() => toggleKpi("overdue")} />
           <StatTile label="Expiring Soon" value={stats ? stats.expiring_quotations_count : "—"} icon="clock" tone="warning"
             sub="Quotations lapsing" onPress={() => setCategoryFilter("quotation")} />
           <StatTile label="Waiting For Customer" value={stats ? stats.waiting_for_customer : "—"} icon="watch" tone="warning"
-            sub="Ball's in their court" onPress={() => toggleKpi("waiting")} style={kpiFilter === "waiting" ? activeTileStyle : undefined} />
+            sub="Ball's in their court" onPress={() => toggleKpi("waiting")} style={filterValues(kpiFilter).includes("waiting") ? activeTileStyle : undefined} />
           <StatTile label="Completed Today" value={stats ? stats.completed_today : "—"} icon="check-circle" tone="success"
             sub={stats ? `${stats.completed_trend >= 0 ? "+" : ""}${stats.completed_trend} vs yesterday` : undefined}
-            onPress={() => toggleKpi("completed")} style={kpiFilter === "completed" ? activeTileStyle : undefined} />
+            onPress={() => toggleKpi("completed")} style={filterValues(kpiFilter).includes("completed") ? activeTileStyle : undefined} />
         </View>
       </ScrollView>
 
@@ -1018,7 +1025,7 @@ export default function FollowupsScreen() {
             {!isPhone ? <IconButton icon="help-circle" onPress={() => setShortcutHelp(true)} tone="surface" accessibilityLabel="Keyboard shortcuts" size={40} /> : null}
           </View>
           {q.trim() ? <Text style={type.caption}>{filtered.length} customer{filtered.length === 1 ? "" : "s"} found</Text> : null}
-          <FilterBar label="PRIORITY" value={priorityFilter} onChange={setPriorityFilter as any} options={[
+          <FilterBar multiSelect label="PRIORITY" value={priorityFilter} onChange={setPriorityFilter as any} options={[
             { value: "all", label: "All priorities" }, { value: "critical", label: "Critical", count: priorityCounts.critical || undefined },
             { value: "high", label: "High", count: priorityCounts.high || undefined }, { value: "medium", label: "Medium", count: priorityCounts.medium || undefined },
             { value: "low", label: "Low", count: priorityCounts.low || undefined },
@@ -1028,18 +1035,16 @@ export default function FollowupsScreen() {
             <Text style={{ fontSize: 12, fontWeight: "700", color: colors.onSurfaceSecondary }}>{filtersExpanded ? "Hide filters" : "More filters"}{activeFilterCount ? ` (${activeFilterCount})` : ""}</Text>
           </Pressable>
           {filtersExpanded ? <>
-            <FilterBar label="TYPE" value={categoryFilter} onChange={setCategoryFilter} options={CATEGORY_OPTIONS} />
+            <FilterBar multiSelect label="TYPE" value={categoryFilter} onChange={setCategoryFilter} options={CATEGORY_OPTIONS} />
             <View style={{ flexDirection: "row", gap: spacing.md, alignItems: "center", flexWrap: "wrap" }}>
-              <SegmentedControl size="sm" value={tierFilter} onChange={setTierFilter as any} options={[
-                { value: "all", label: "All customers" }, { value: "retail", label: "Retail" }, { value: "trade", label: "Trade" }, { value: "vip", label: "VIP" },
-              ]} />
-              <Dropdown label={ownerLabel} icon="user" variant="secondary" items={[
-                { label: "All owners", icon: "users", onPress: () => setOwnerFilter("all") }, { label: "Mine", icon: "user-check", onPress: () => setOwnerFilter("mine") },
-                ...assignees.map((a) => ({ label: a.full_name, icon: "user" as FeatherName, onPress: () => setOwnerFilter(a.id) })),
+
+              <FilterBar multiSelect label="OWNER" value={ownerFilter} onChange={setOwnerFilter} options={[
+                { label: "All owners", value: "all" }, { label: "Mine", value: "mine" },
+                ...assignees.map(a => ({ label: a.full_name, value: a.id })),
               ]} />
             </View>
           </> : null}
-          {kpiFilter !== "all" || activeFilterCount > 0 ? <Chip label="Clear filters ✕" active onPress={() => { setKpiFilter("all"); setFollowupView("active"); setPriorityFilter("all"); setCategoryFilter("all"); setTierFilter("all"); setOwnerFilter("all"); }} /> : null}
+          {kpiFilter !== "all" || activeFilterCount > 0 ? <Chip label="Clear filters ✕" active onPress={() => { setKpiFilter("all"); setFollowupView("active"); setPriorityFilter("all"); setCategoryFilter("all"); setOwnerFilter("all"); }} /> : null}
         </View>
       </Panel>
 
@@ -1318,7 +1323,7 @@ function SavedViewsSheet({ visible, onClose, views, onApply, onSave, onDelete }:
         {naming ? (
           <View style={{ gap: spacing.sm }}>
             <FormField label="View name">
-              <TextInput value={name} onChangeText={setName} placeholder="e.g. My VIP overdue payments" placeholderTextColor={colors.onSurfaceMuted} style={styles.textInput} autoFocus />
+              <TextInput value={name} onChangeText={setName} placeholder="e.g. My overdue payments" placeholderTextColor={colors.onSurfaceMuted} style={styles.textInput} autoFocus />
             </FormField>
             <View style={{ flexDirection: "row", gap: spacing.sm }}>
               <Button label="Cancel" variant="secondary" size="md" onPress={() => setNaming(false)} />
@@ -1728,7 +1733,7 @@ function ContextPanel({ detail, loading, embedded, compact }: { detail: Detail |
             {customer.phone ? <Badge label={customer.phone} tone="neutral" size="sm" icon="phone" /> : null}
             {customer.email ? <Badge label={customer.email} tone="neutral" size="sm" icon="mail" /> : null}
             {customer.city ? <Badge label={customer.city} tone="neutral" size="sm" icon="map-pin" /> : null}
-            <Badge label={(customer.tier || "retail").toUpperCase()} tone={customer.tier === "vip" ? "success" : customer.tier === "trade" ? "info" : "neutral"} size="sm" />
+
             <Badge
               label={`${stats.risk_level.toUpperCase()} RISK`}
               tone={stats.risk_level === "high" ? "error" : stats.risk_level === "medium" ? "warning" : "success"}

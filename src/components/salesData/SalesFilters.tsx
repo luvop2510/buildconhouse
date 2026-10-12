@@ -1,3 +1,4 @@
+import { FilterBar } from "@/src/components/ds";
 import { useEffect, useState } from "react";
 import { Pressable, View } from "react-native";
 import { Text } from "@/src/components/AppText";
@@ -80,15 +81,7 @@ export function SalesFilters({
       </Sheet>
       <View style={{ gap: spacing.sm }}>
         <Text style={type.overline}>Business unit</Text>
-        {isPhone ? <Button label={floorId === "all" ? "All units" : FLOOR_LABEL[floorId] || floors.find(f => f.id === floorId)?.name || "Choose business unit"} icon="chevron-down" variant="secondary" onPress={() => setPicker("floor")} testID="sales-data-floor" /> : <PillTabs
-          testID="sales-data-floor"
-          value={floorId || "all"}
-          onChange={onFloorChange}
-          options={[
-            { value: "all", label: "All units" },
-            ...floors.map((f) => ({ value: f.id, label: FLOOR_LABEL[f.id] || f.name })),
-          ]}
-        />}
+        <FilterBar multiSelect testID="sales-data-floor" value={floorId || "all"} onChange={onFloorChange} options={[{ value: "all", label: "All units" }, ...floors.map(f => ({ value: f.id, label: FLOOR_LABEL[f.id] || f.name }))]} />
       </View>
 
       <View style={{ gap: spacing.sm }}>

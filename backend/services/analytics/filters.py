@@ -1,6 +1,7 @@
 """The only place an analytics Mongo match document is built."""
 from __future__ import annotations
 
+from services.multi_filters import filter_values, filter_condition
 from dataclasses import dataclass
 from typing import Optional, Sequence
 
@@ -55,9 +56,9 @@ def build_match(
         match["status"] = f.status
 
     if f.floor_id and f.floor_id != "all":
-        if accessible_floors is not None and f.floor_id not in accessible_floors:
+        if accessible_floors is not None and any(value not in accessible_floors for value in filter_values(f.floor_id)):
             raise FloorAccessError(f.floor_id)
-        match["floor_id"] = {"$in": [f.floor_id]}
+        match["floor_id"] = {"$in": filter_values(f.floor_id)}
     elif accessible_floors is not None:
         match["floor_id"] = {"$in": list(accessible_floors)}
 
@@ -69,13 +70,13 @@ def build_match(
         match[date_field_for(f.status)] = bounds
 
     if f.salesperson_id:
-        match["created_by"] = f.salesperson_id
+        match["created_by"] = filter_condition(f.salesperson_id)
     if f.customer_id:
-        match["customer_id"] = f.customer_id
+        match["customer_id"] = filter_condition(f.customer_id)
     if f.referrer_id:
-        match["referrer_id"] = f.referrer_id
+        match["referrer_id"] = filter_condition(f.referrer_id)
     if f.referrer_type:
-        match["referrer_type"] = f.referrer_type
+        match["referrer_type"] = filter_condition(f.referrer_type)
     if f.brand_id is not None and product_ids is not None:
         # Deliberately keeps an empty list: a brand with no products must
         # match nothing, not everything.

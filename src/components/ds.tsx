@@ -31,6 +31,7 @@ import {
 } from "@/src/theme/tokens";
 import { useBp } from "@/src/design/responsive";
 import { useReducedMotion } from "@/src/hooks/use-reduced-motion";
+import { filterValues, toggleFilterValue } from "@/src/utils/filters";
 
 // Re-export every existing primitive from ui.tsx.
 // Screens should import from "@/src/components/ds" going forward.
@@ -198,13 +199,14 @@ export function Panel({
 // FilterBar — label + horizontal Chip row. Used on every list page.
 // ───────────────────────────────────────────────────────────────────────────
 export function FilterBar<T extends string>({
-  value, options, onChange, label, testID,
+  value, options, onChange, label, testID, multiSelect = false,
 }: {
   value: T;
   options: { value: T; label: string; count?: number; icon?: FeatherName }[];
   onChange: (v: T) => void;
   label?: string;
   testID?: string;
+  multiSelect?: boolean;
 }) {
   const { isPhone } = useBp();
   return (
@@ -219,12 +221,16 @@ export function FilterBar<T extends string>({
         contentContainerStyle={{ gap: spacing.sm, paddingRight: spacing.lg }}
       >
         {options.map((o) => {
-          const on = o.value === value;
+          const on = multiSelect ? (o.value === "all" ? !filterValues(value).length : filterValues(value).includes(o.value)) : o.value === value;
           return (
             <Pressable
               key={String(o.value)}
               testID={testID ? `${testID}-${o.value}` : undefined}
-              onPress={() => onChange(o.value)}
+              accessibilityRole={multiSelect ? "checkbox" : "button"}
+              accessibilityState={multiSelect ? { checked: on } : { selected: on }}
+              aria-checked={multiSelect ? on : undefined}
+              aria-pressed={multiSelect ? undefined : on}
+              onPress={() => onChange((multiSelect ? toggleFilterValue(value, o.value) : o.value) as T)}
               style={({ pressed, hovered }: any) => ({
                 paddingHorizontal: spacing.md,
                 minHeight: isPhone ? 44 : 34,
@@ -269,6 +275,16 @@ export function FilterBar<T extends string>({
       </ScrollView>
     </View>
   );
+}
+
+export function MultiSelectFilterBar({ values, options, onChange, label, testID }: {
+  values: string[];
+  options: { value: string; label: string; count?: number; icon?: FeatherName }[];
+  onChange: (values: string[]) => void;
+  label?: string;
+  testID?: string;
+}) {
+  return <FilterBar multiSelect value={values.join(",") || "all"} options={options} label={label} testID={testID} onChange={value => onChange(filterValues(value))} />;
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -501,7 +517,7 @@ export function QuotationCard({
 // CustomerCard — list item for the Customers index.
 // ───────────────────────────────────────────────────────────────────────────
 export function CustomerCard({
-  name, email, city, phone, tier, onPress, testID, lifetimeValue,
+  name, email, city, phone, onPress, testID, lifetimeValue,
 }: {
   name: string;
   email?: string | null;
@@ -513,12 +529,6 @@ export function CustomerCard({
   testID?: string;
 }) {
   const initials = name.split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase();
-  const tierTone = { vip: "success", trade: "info", retail: "neutral" }[tier];
-  const tierBg = {
-    success: { bg: colors.successBg, fg: colors.success },
-    info:    { bg: colors.infoBg,    fg: colors.info },
-    neutral: { bg: colors.surfaceTertiary, fg: colors.onSurfaceSecondary },
-  }[tierTone] ?? { bg: colors.surfaceTertiary, fg: colors.onSurfaceSecondary };
 
   return (
     <HoverCard onPress={onPress} testID={testID} padding={spacing.md}>
@@ -550,17 +560,7 @@ export function CustomerCard({
               fontVariant: ["tabular-nums"],
             }}>₹{lifetimeValue.toLocaleString("en-IN")}</Text>
           ) : null}
-          <View style={{
-            paddingHorizontal: spacing.sm, height: 20,
-            borderRadius: radius.sm, backgroundColor: tierBg.bg,
-            justifyContent: "center",
-          }}>
-            <Text style={{
-              fontSize: 10, fontFamily: type.titleMd.fontFamily,
-              fontWeight: "700", color: tierBg.fg,
-              letterSpacing: 0.4,
-            }}>{tier.toUpperCase()}</Text>
-          </View>
+
         </View>
       </View>
     </HoverCard>

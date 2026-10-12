@@ -194,6 +194,8 @@ class CustomerUpdatePayload(BaseModel):
 
 
 class CustomerPublic(CustomerBase, TimestampedModel):
+    # Computed on demand; never use persisted metadata to decide fulfillment.
+    purchase_completion_status: Optional[Literal["active", "completed"]] = None
     # Required here (not on CustomerBase — see the comment there) so every
     # persisted/returned customer document is guaranteed a real floor_id.
     floor_id: str
@@ -741,6 +743,7 @@ class ReferrerCreate(BaseModel):
 
 
 class Quotation(TimestampedModel):
+    purchase_completion_status: Optional[Literal["active", "completed"]] = None
     floor_id: str
     number: str                          # human-readable e.g. FQ-2026-0001
     customer_id: str
@@ -1327,6 +1330,8 @@ class Followup(TimestampedModel):
     by staff via the '+ New Follow-up' action or a logged call outcome."""
     floor_id: str
     source_key: Optional[str] = None        # dedupe key for automated rules, e.g. "payment_overdue:<qid>"
+    walkin_id: Optional[str] = None
+    origin: Optional[str] = None
     rule_type: FollowupRuleType = "manual"
     category: FollowupCategory = "general"
     customer_id: str

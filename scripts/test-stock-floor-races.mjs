@@ -13,6 +13,10 @@ assert.notEqual(instrumented, source, 'The screen state observation point must e
 const compiled = ts.transpileModule(instrumented, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
 }).outputText;
+const filterExports = {};
+vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../src/utils/filters.ts', import.meta.url), 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText, { exports: filterExports });
 
 const deferred = () => {
   let resolve, reject;
@@ -63,6 +67,7 @@ function screen(newStockId) {
   };
   const modules = {
     react,
+    '@/src/utils/filters': filterExports,
     'react-native': { StyleSheet: { create: value => value } },
     'expo-router': { useRouter: () => ({}), useLocalSearchParams: () => ({ newStockId }) },
     '@/src/hooks/use-floor-access': { useFloorAccess: () => ({ selectedFloorId: floor }) },

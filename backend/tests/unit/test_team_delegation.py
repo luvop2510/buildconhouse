@@ -254,3 +254,23 @@ def test_notebook_query_rechecks_authorized_stage_and_rejects_a_forged_stage_fil
     user = UserPublic(id="staff", email="staff@example.com", full_name="Worker", role="worker", custom_access=True, floor_ids=["second-floor"])
     object.__setattr__(user, "_custom_notebook_converted", False)
     assert notebook_query(user, "second-floor", {"id": "row", "is_converted": True})["is_converted"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("floor", FLOORS)
+async def test_regular_walkin_grant_authorizes_its_picker_and_update_workflow_on_every_floor(monkeypatch, floor):
+    from services.access_grants import action_for_api_request
+    async def grants(*_args):
+        return [{"user_id": "staff", "resource": "walkins", "floor_id": floor, "actions": ["view", "update"]}]
+    monkeypatch.setattr(auth, "grants_for_user", grants)
+    user = UserPublic(id="staff", email="staff@example.com", full_name="Worker", role="worker", custom_access=True,
+                      floor_ids=[floor], active_floor_id=floor)
+    for method, path in [("GET", "/api/walkins/config/assignees"), ("POST", "/api/walkins/lead/visit-showroom")]:
+        request = Request({"type": "http", "method": method, "path": path, "headers": [], "query_string": b"",
+                           "scheme": "http", "server": ("test", 80)})
+        assert await auth.authorize_staff_request(user, request) is user
+    assert action_for_api_request("POST", "/api/walkins/lead/visit-showroom") == "update"
+    request = Request({"type": "http", "method": "GET", "path": "/api/followups/config/assignees", "headers": [],
+                       "query_string": b"", "scheme": "http", "server": ("test", 80)})
+    with pytest.raises(HTTPException):
+        await auth.authorize_staff_request(user, request)

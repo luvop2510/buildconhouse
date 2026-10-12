@@ -23,6 +23,7 @@ Endpoints:
 The tracker does NOT concern itself with taxes — Forge uses final prices only.
 """
 from __future__ import annotations
+from services.multi_filters import filter_values, filter_condition
 
 from services.export import spreadsheet_cell
 import asyncio
@@ -64,6 +65,7 @@ from services.domain_outbox import (
 )
 from services.followup_engine import reconcile_followups
 from services.purchase_images import hydrate_purchase_images
+from services.customer_completion import completed_customer_ids, completed_customer_pipeline
 from services.purchase_stages import active_quantity, active_quantity_expression, delivery_timestamp, delivery_timestamp_expression, normalized_stage, stage_expression
 from services.sequence import next_number
 from services.transfer_workflow import execute_transfer, mark_loans_due_for_replenishment, settle_loan_transfer, transfer_history
@@ -278,7 +280,7 @@ async def _iter_items(
             {"brand_name": term},
         ]
     if brand and brand.lower() != "all":
-        match["brand_id"] = brand
+        match["brand_id"] = filter_condition(brand)
     if product_id:
         match["items.product_id"] = product_id
 
@@ -299,15 +301,15 @@ async def _iter_items(
 
     pipeline.append({"$set": {"items.stage": stage_expression()}})
     if customer:
-        pipeline.append({"$match": {"$expr": {"$eq": [{"$ifNull": ["$items.customer_id", "$customer_id"]}, customer]}}})
+        pipeline.append({"$match": {"$expr": {"$in": [{"$ifNull": ["$items.customer_id", "$customer_id"]}, filter_values(customer)]}}})
     if product_id:
         pipeline.append({"$match": {"items.product_id": product_id}})
     if view == "dispatch_record":
         pipeline.append({"$match": {"items.stage": {"$in": list(DISPATCH_STAGES)}}})
-    elif stage:
-        if stage not in PURCHASE_STAGES:
+    if stage:
+        if any(value not in PURCHASE_STAGES for value in filter_values(stage)):
             raise HTTPException(status_code=400, detail=f"Unknown stage '{stage}'")
-        pipeline.append({"$match": {"items.stage": stage}})
+        pipeline.append({"$match": {"items.stage": filter_condition(stage)}})
 
     docs = await db.purchase_orders.aggregate(pipeline).to_list(limit * 3)
 
@@ -365,13 +367,13 @@ def _items_page_pipeline(
 
     item_match: dict[str, Any] = {}
     if brand and brand.lower() != "all":
-        item_match["brand_id"] = brand
+        item_match["brand_id"] = filter_condition(brand)
     if customer:
-        item_match["customer_id"] = customer
+        item_match["customer_id"] = filter_condition(customer)
     if stage:
-        if stage not in PURCHASE_STAGES:
+        if any(value not in PURCHASE_STAGES for value in filter_values(stage)):
             raise HTTPException(status_code=400, detail=f"Unknown stage '{stage}'")
-        item_match["stage"] = stage
+        item_match["stage"] = filter_condition(stage)
     if product_id:
         item_match["product_id"] = product_id
     if q and q.strip():
@@ -381,7 +383,8 @@ def _items_page_pipeline(
             {"po_number": term}, {"brand_name": term},
         ]
     if view == "dispatch_record":
-        item_match["stage"] = {"$in": list(DISPATCH_STAGES)}
+        selected_stages = filter_values(stage)
+        item_match["stage"] = {"$in": [value for value in DISPATCH_STAGES if not selected_stages or value in selected_stages]}
     elif view == "today":
         item_match.setdefault("stage", {"$in": [*EARLY_STAGES, "dispatched"]})
 
@@ -565,25 +568,8 @@ async def customer_facets(user: UserPublic = Depends(get_current_user)):
 
 
 def _completed_customer_pipeline(user: UserPublic, skip: int = 0, limit: int = 100) -> list[dict]:
-    match: dict = {"status": {"$ne": "cancelled"}}
-    floor_ids = floor_scope_ids(user)
-    if floor_ids is not None:
-        match["floor_id"] = {"$in": floor_ids}
-    return [
-        {"$match": match}, {"$unwind": "$items"},
-        {"$match": {"items.cancelled": {"$ne": True}}},
-        {"$match": {"$expr": {"$gt": [active_quantity_expression(), 0]}}},
-        {"$group": {
-            "_id": {"$ifNull": ["$items.customer_id", "$customer_id"]},
-            "name": {"$last": {"$ifNull": ["$items.customer_name", "$customer_name"]}},
-            "item_count": {"$sum": 1},
-            "quantity": {"$sum": active_quantity_expression()},
-            "open_count": {"$sum": {"$cond": [{"$eq": [stage_expression(), "dispatched"]}, 0, 1]}},
-            "last_delivered_at": {"$max": delivery_timestamp_expression()},
-        }},
-        {"$match": {"_id": {"$nin": [None, ""]}, "item_count": {"$gt": 0}, "open_count": 0}},
-        {"$sort": {"last_delivered_at": -1, "_id": 1}},
-        {"$skip": skip}, {"$limit": limit},
+    return completed_customer_pipeline(user) + [
+        {"$sort": {"last_delivered_at": -1, "_id": 1}}, {"$skip": skip}, {"$limit": limit},
     ]
 
 
@@ -595,23 +581,9 @@ async def active_customer_workspaces(
 
     Lookup evaluates every active item on this floor, including older orders.
     """
-    po_match = floor_query(user, {"status": {"$ne": "cancelled"}})
+    complete_ids = await completed_customer_ids(db, user) if not include_completed else set()
     rows = await db.customers.aggregate([
-        {"$match": floor_query(user)},
-        {"$lookup": {
-            "from": "purchase_orders", "let": {"customer": "$id"}, "as": "purchase_status",
-            "pipeline": [
-                {"$match": po_match},
-                {"$match": {"$expr": {"$or": [{"$eq": ["$customer_id", "$$customer"]}, {"$in": ["$$customer", {"$ifNull": ["$items.customer_id", []]}]}]}}},
-                {"$unwind": "$items"},
-                {"$match": {"items.cancelled": {"$ne": True}, "$expr": {"$and": [
-                    {"$eq": [{"$ifNull": ["$items.customer_id", "$customer_id"]}, "$$customer"]},
-                    {"$gt": [active_quantity_expression(), 0]},
-                ]}}},
-                {"$group": {"_id": None, "open": {"$sum": {"$cond": [{"$eq": [stage_expression(), "dispatched"]}, 0, 1]}}}},
-            ],
-        }},
-        *([] if include_completed else [{"$match": {"$or": [{"purchase_status.0": {"$exists": False}}, {"purchase_status.open": {"$gt": 0}}]}}]),
+        {"$match": floor_query(user, {"id": {"$nin": sorted(complete_ids)}})},
         {"$sort": {"name": 1, "id": 1}},
         {"$project": {"_id": 0, "id": 1, "name": 1, "company": 1, "email": 1, "phone": 1, "city": 1, "tier": 1}},
     ]).to_list(None)

@@ -20,7 +20,7 @@ export type WalkIn = {
   salesperson_id: string | null; salesperson_name: string | null; source: string;
   reference_contact: string | null; architect: string | null; builder: string | null;
   floor_id: string; interested_products: string[]; budget: number | null; notes: string | null;
-  quotation_price: number | null;
+  quotation_price: number | null; showroom_followup_id?: string | null; showroom_transferred_at?: string | null;
   manual_priority_override: "low" | "medium" | "high" | "critical" | null;
   status: WalkInStatus; next_followup_at: string | null; lost_reason: string | null;
   selection_quotation_id: string | null; converted_at: string | null;
@@ -49,7 +49,7 @@ export type WalkInsAnalytics = {
 
 export const walkinsApi = {
   list: (params?: {
-    status?: string; priority?: string; salesperson_id?: string; source?: string; floor_id?: string;
+    status?: string; priority?: string; salesperson_id?: string; source?: string; floor_id?: string; floor_ids?: string;
     date_from?: string; date_to?: string; search?: string;
   }, options?: { floorId?: string }) => api.get<WalkIn[]>(`/walkins${toQuery(params)}`, options),
 
@@ -64,7 +64,7 @@ export const walkinsApi = {
     interested_products?: string[]; budget?: number; notes?: string;
     priority?: "low" | "medium" | "high" | "critical"; next_followup_at?: string;
     use_existing_customer_id?: string; force_new_customer?: boolean;
-  }) => api.post<WalkIn>("/walkins", body),
+  }) => api.post<WalkIn>("/walkins", body, { floorId: body.floor_id }),
 
   update: (id: string, body: Partial<{
     status: WalkInStatus; salesperson_id: string; notes: string;
@@ -75,8 +75,11 @@ export const walkinsApi = {
     reference_contact: string; architect: string; builder: string;
   }>, options?: { floorId?: string }) => api.patch<WalkIn>(`/walkins/${id}`, body, options),
 
-  reassign: (id: string, salesperson_id: string) =>
-    api.patch<WalkIn>(`/walkins/${id}/reassign`, { salesperson_id }),
+  visitShowroom: (id: string, options?: { floorId?: string }) =>
+    api.post<{ walkin_id: string; followup_id: string }>(`/walkins/${id}/visit-showroom`, undefined, options),
+
+  reassign: (id: string, salesperson_id: string, options?: { floorId?: string }) =>
+    api.patch<WalkIn>(`/walkins/${id}/reassign`, { salesperson_id }, options),
 
   contact: (id: string, channel: "whatsapp" | "email", options?: { floorId?: string }) =>
     api.post<{ channel: string; message?: string; wa_url?: string; subject?: string; body?: string; mailto_url?: string }>(
@@ -85,19 +88,19 @@ export const walkinsApi = {
 
   timeline: (id: string, options?: { floorId?: string }) => api.get<Record<string, any>[]>(`/walkins/${id}/timeline`, options),
 
-  checkDuplicate: (params: { phone?: string; alternatePhone?: string; email?: string; name?: string; city?: string; address?: string }) =>
+  checkDuplicate: (params: { phone?: string; alternatePhone?: string; email?: string; name?: string; city?: string; address?: string; floorId?: string }) =>
     api.get<DuplicateMatches>(`/walkins/check-duplicate${toQuery({
       phone: params.phone, alternate_phone: params.alternatePhone, email: params.email,
       name: params.name, city: params.city, address: params.address,
-    })}`),
+    })}`, params.floorId ? { floorId: params.floorId } : undefined),
 
-  dashboard: (options?: { floorId?: string }) => api.get<WalkInsDashboard>("/walkins/dashboard", options),
+  dashboard: (options?: { floorId?: string }, floorIds?: string) => api.get<WalkInsDashboard>(`/walkins/dashboard${toQuery({ floor_ids: floorIds })}`, options),
   analytics: () => api.get<WalkInsAnalytics>("/walkins/analytics"),
 
   listSources: () => api.get<{ sources: string[] }>("/walkins/config/sources"),
   updateSources: (sources: string[]) => api.put<{ sources: string[] }>("/walkins/config/sources", { sources }),
 
-  listAssignees: () => api.get<{ id: string; full_name: string; role: string }[]>("/followups/config/assignees"),
+  listAssignees: (options?: { floorId?: string }) => api.get<{ id: string; full_name: string; role: string }[]>("/walkins/config/assignees", options),
 };
 
 // Best-effort parse of ApiError.detail — the client stringifies non-string

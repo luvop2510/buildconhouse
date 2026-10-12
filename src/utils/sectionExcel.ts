@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 
+import { filterValues } from "./filters";
 import { api, csrfHeaders, getToken } from "@/src/api/client";
 
 /** Export explicit rows for one business section; no DOM scraping or page-wide dump. */
@@ -15,6 +16,8 @@ export async function downloadSectionExcel({
 }): Promise<void> {
   if (rows.length < 2) throw new Error("There are no rows to export.");
   const token = await getToken();
+  const selectedFloors = filterValues(floorId).filter(value => value !== "both");
+  const workspaceFloor = selectedFloors.length === 1 ? selectedFloors[0] : null;
   const response = await fetch(`${api.base}/api/exports/page.xlsx`, {
     method: "POST",
     credentials: "same-origin",
@@ -22,7 +25,7 @@ export async function downloadSectionExcel({
       ...csrfHeaders(),
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(floorId ? { "X-Floor-Id": floorId } : {}),
+      ...(workspaceFloor ? { "X-Floor-Id": workspaceFloor } : {}),
     },
     body: JSON.stringify({ page: page.slice(0, 80), resource, sections: [{ name: section.slice(0, 80), rows: rows.map(row => row.map(cell => String(cell ?? ""))) }] }),
   });

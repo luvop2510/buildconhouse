@@ -27,7 +27,7 @@ for (const floor of [{ slug: 'kitchen', id: 'second-floor' }, { slug: 'furniture
 
 test('critical sent quotation offers Place Order without a manual Won transition', async ({ page }) => {
   await mockSession(page, '/quotations/confirmed-order', false);
-  await page.route('**/api/quotations/confirmed-order', route => route.fulfill({ json: {
+  await page.route(/\/api\/quotations\/confirmed-order(?:\?.*)?$/, route => route.fulfill({ json: {
     id: 'confirmed-order', number: 'Q-105', status: 'sent', floor_id: 'first-floor', customer_name: 'Order customer',
     items: [{ id: 'line', sku: 'B-1', name: 'Basin', qty: 1, unit_price: 200, discount_pct: 0, room: 'Bathroom' }], rooms: ['Bathroom'],
     subtotal: 200, discount_total: 0, grand_total: 200, created_at: '2026-10-01T10:00:00Z', created_by_name: 'Audit Owner',

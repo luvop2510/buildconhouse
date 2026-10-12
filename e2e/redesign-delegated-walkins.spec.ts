@@ -1,0 +1,60 @@
+import { expect, test } from '@playwright/test';
+import { floors, mockSession } from './audit-fixtures';
+
+for (const floor of floors) {
+  test(`critical delegated Walk-ins uses the regular register and intake on ${floor.id}`, async ({ page }) => {
+    const grants = [{ resource: 'walkins', floor_id: floor.id, actions: ['view', 'create', 'update'] }];
+    const staff = { id: 'walkin-worker', email: 'worker@example.test', full_name: 'Walk-in Worker', role: 'worker',
+      active: true, custom_access: true, floor_ids: [floor.id] };
+    await mockSession(page, '/walkins', false, { staff, grants,
+      floorAccess: { all_floors: false, floors: [floor], floor_ids: [floor.id] } });
+    const walkin = { id: 'delegated-visitor', number: 'WI-DELEGATED', customer_id: 'visitor', customer_name: 'Delegated visitor',
+      customer_phone: '9876543210', alternate_phone: null, floor_id: floor.id, salesperson_id: staff.id,
+      salesperson_name: staff.full_name, source: 'Walk-in', status: 'new', interested_products: ['Bathroom fittings', 'Tiles'],
+      visited_at: new Date().toISOString(), created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+    const errors: string[] = [];
+    page.on('pageerror', error => errors.push(error.message));
+    const reads: string[] = [];
+    await page.route('**/api/walkins**', route => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname;
+      reads.push(path);
+      if (path.endsWith('/config/sources')) return route.fulfill({ json: { sources: ['Walk-in'] } });
+      if (path.endsWith('/config/assignees')) {
+        expect(request.headers()['x-floor-id']).toBe(floor.id);
+        return route.fulfill({ json: [{ id: staff.id, full_name: staff.full_name, role: 'worker' }] });
+      }
+      if (path.endsWith('/dashboard')) return route.fulfill({ json: { today_walkins: 1, this_week: 1, pending_followups: 1,
+        selections_scheduled: 0, converted: 0, lost: 0, conversion_rate: 0, avg_conversion_days: 0, total: 1 } });
+      if (path.endsWith('/check-duplicate')) {
+        expect(request.headers()['x-floor-id']).toBe(floor.id);
+        return route.fulfill({ json: { high: [], medium: [], low: [] } });
+      }
+      if (path.endsWith('/timeline')) return route.fulfill({ json: [] });
+      if (path.endsWith('/visit-showroom')) return route.fulfill({ json: { walkin_id: walkin.id, followup_id: 'showroom:delegated-visitor' } });
+      if (path === '/api/walkins' && request.method() === 'POST') {
+        expect(request.headers()['x-floor-id']).toBe(floor.id);
+        expect(request.postDataJSON()).toMatchObject({ floor_id: floor.id, salesperson_id: staff.id });
+        return route.fulfill({ json: walkin });
+      }
+      if (path === '/api/walkins') return route.fulfill({ json: [walkin] });
+      return route.fulfill({ json: walkin });
+    });
+    await page.goto('/walkins');
+    await expect(page.getByRole('heading', { name: 'Walk-ins', exact: true })).toBeVisible();
+    await expect(page.getByTestId('walkin-card-delegated-visitor')).toContainText('Bathroom fittings, Tiles');
+    await page.getByTestId('walkin-visit-showroom-delegated-visitor').click();
+    await expect(page.getByTestId('walkin-visit-showroom-delegated-visitor')).toContainText('View Visit Showroom');
+    await expect(page).toHaveURL(/\/walkins$/);
+    await page.getByTestId('walkin-new-btn').click();
+    await expect(page.getByTestId('walkin-salesperson-row')).toContainText(staff.full_name);
+    await page.getByTestId('walkin-name').fill('Delegated visitor');
+    await page.getByTestId('walkin-phone').fill('9876543210');
+    await page.getByTestId('walkin-save-btn').click();
+    await expect(page).toHaveURL(new RegExp(`/walkins/delegated-visitor\\?floor_id=${floor.id}`));
+    await expect(page.getByRole('heading', { name: 'Delegated visitor', exact: true })).toBeVisible();
+    expect(reads).toContain('/api/walkins/config/assignees');
+    expect(errors).toEqual([]);
+    await expect(page.getByText(/^(VIP|TRADE|RETAIL)$/)).toHaveCount(0);
+  });
+}

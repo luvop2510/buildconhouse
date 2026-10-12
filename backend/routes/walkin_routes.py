@@ -24,10 +24,12 @@ from pymongo.errors import DuplicateKeyError
 
 from auth import floor_query, floor_scope_ids, get_current_user, profile_floor_ids, require_floor_access, require_min_role
 from db import db
-from models import UserPublic, now_iso
+from models import Followup, UserPublic, now_iso
 from models_walkins import WalkIn, WalkInCreate, WalkInUpdate, ReassignWalkInBody, WALKIN_OPEN_STATUSES
+from services.access_grants import grants_for_user, grant_allows
 from services.activity_log import log_event, timeline_for
 from services.followup_engine import parse_iso, reconcile_followups
+from services.multi_filters import predicate, scoped_query, values
 from services.sequence import next_number as _next_number_seq
 from services.walkin_service import find_or_create_customer
 
@@ -41,26 +43,51 @@ async def _next_walkin_number() -> str:
     return await _next_number_seq("walkin", f"WI-{year}-", collection="walkins")
 
 
-async def _salesperson_for_floor(salesperson_id: str, floor_id: str) -> dict:
-    """Return an active sales-capable staff member assigned to ``floor_id``.
+async def _can_own_walkin(staff: dict, floor_id: str) -> bool:
+    """A delegated page owner can do sales work regardless of their base role."""
+    if not staff.get("active", True):
+        return False
+    if staff.get("role") == "owner":
+        return True
+    profile_floors = profile_floor_ids(staff.get("access_profile"))
+    assigned_floors = profile_floors if profile_floors is not None else staff.get("floor_ids") or []
+    if staff.get("custom_access"):
+        if floor_id not in assigned_floors:
+            return False
+        grants = await grants_for_user(db, staff["id"])
+        return any(grant_allows(grant, user_id=staff["id"], resource="walkins", action=action, floor_id=floor_id)
+                   for grant in grants for action in ("create", "update"))
+    return staff.get("role") in {"admin", "manager", "sales"} and (
+        staff.get("role") == "manager" or floor_id in assigned_floors)
 
-    A valid user id alone is not enough: assigning a warehouse/purchase user
-    or someone from another floor corrupts ownership, follow-up routing, and
-    salesperson analytics.
-    """
+
+async def _salesperson_for_floor(salesperson_id: str, floor_id: str) -> dict:
     staff = await db.users.find_one(
         {"id": salesperson_id},
-        {"_id": 0, "id": 1, "full_name": 1, "role": 1, "active": 1, "floor_ids": 1, "access_profile": 1},
+        {"_id": 0, "id": 1, "full_name": 1, "role": 1, "active": 1, "floor_ids": 1, "access_profile": 1, "custom_access": 1},
     )
     if not staff:
         raise HTTPException(status_code=404, detail="Salesperson not found")
-    if not staff.get("active", True) or staff.get("role") not in {"owner", "admin", "manager", "sales"}:
-        raise HTTPException(status_code=400, detail="Selected staff member cannot own sales follow-ups")
-    profile_floors = profile_floor_ids(staff.get("access_profile"))
-    assigned_floors = profile_floors if profile_floors is not None else staff.get("floor_ids") or []
-    if staff.get("role") not in {"owner", "manager"} and floor_id not in assigned_floors:
+    if not await _can_own_walkin(staff, floor_id):
+        if not staff.get("custom_access") and (not staff.get("active", True) or staff.get("role") not in {"owner", "admin", "manager", "sales"}):
+            raise HTTPException(status_code=400, detail="Selected staff member cannot own sales follow-ups")
         raise HTTPException(status_code=400, detail="Selected salesperson does not have access to this floor")
     return staff
+
+
+@router.get("/config/assignees")
+async def walkin_assignees(user: UserPublic = Depends(get_current_user)):
+    """The intake picker belongs to Walk-ins, without granting Team or Follow-ups."""
+    floor_ids = floor_scope_ids(user)
+    rows = await db.users.find(
+        {"active": True}, {"_id": 0, "id": 1, "full_name": 1, "role": 1, "active": 1,
+                           "floor_ids": 1, "access_profile": 1, "custom_access": 1},
+    ).sort("full_name", 1).to_list(1000)
+    result = []
+    for staff in rows:
+        if any([await _can_own_walkin(staff, floor_id) for floor_id in floor_ids or []]):
+            result.append({key: staff[key] for key in ("id", "full_name", "role")})
+    return result
 
 
 class LeadSourcesSettingsBody(BaseModel):
@@ -125,6 +152,9 @@ async def create_walkin(body: WalkInCreate, user: UserPublic = Depends(require_m
     # the other unit's customer PII back in the response body.
     require_floor_access(body.floor_id, user)
 
+    salesperson_id = body.salesperson_id or user.id
+    salesperson_doc = await _salesperson_for_floor(salesperson_id, body.floor_id)
+
     if body.use_existing_customer_id:
         # Floor-checked against `body.floor_id`, which by this point has
         # itself been verified above to be a floor the caller may access —
@@ -164,8 +194,6 @@ async def create_walkin(body: WalkInCreate, user: UserPublic = Depends(require_m
                 )
             except DuplicateKeyError:
                 raise HTTPException(status_code=409, detail="That email is already used by another customer.")
-    salesperson_id = body.salesperson_id or user.id
-    salesperson_doc = await _salesperson_for_floor(salesperson_id, body.floor_id)
     walkin = WalkIn(
         number=await _next_walkin_number(),
         customer_id=customer["id"], customer_name=customer.get("name"),
@@ -193,19 +221,18 @@ async def create_walkin(body: WalkInCreate, user: UserPublic = Depends(require_m
 @router.get("", response_model=list[WalkIn])
 async def list_walkins(
     status: Optional[str] = None, priority: Optional[str] = None, salesperson_id: Optional[str] = None,
-    source: Optional[str] = None, floor_id: Optional[str] = None,
+    source: Optional[str] = None, floor_id: Optional[str] = None, floor_ids: Optional[str] = None,
     date_from: Optional[str] = None, date_to: Optional[str] = None, search: Optional[str] = None,
     user: UserPublic = Depends(get_current_user),
 ):
     filters: dict = {"is_deleted": False}
     if status:
-        filters["status"] = status
+        filters["status"] = predicate(status)
     if salesperson_id:
-        filters["salesperson_id"] = salesperson_id
+        filters["salesperson_id"] = predicate(salesperson_id)
     if source:
-        filters["source"] = source
-    if floor_id:
-        filters["floor_id"] = floor_id
+        filters["source"] = predicate(source)
+
     if date_from or date_to:
         rng: dict = {}
         if date_from:
@@ -221,16 +248,16 @@ async def list_walkins(
             {"source": {"$regex": search, "$options": "i"}},
             {"notes": {"$regex": search, "$options": "i"}},
         ]
-    docs = await db.walkins.find(floor_query(user, filters), {"_id": 0}).sort("visited_at", -1).to_list(2000)
+    docs = await db.walkins.find(scoped_query(user, filters, floor_ids or floor_id), {"_id": 0}).sort("visited_at", -1).to_list(2000)
     if priority:
-        docs = [d for d in docs if (d.get("manual_priority_override") or "medium") == priority]
+        docs = [d for d in docs if (d.get("manual_priority_override") or "medium") in values(priority)]
     return [WalkIn(**d) for d in docs]
 
 
 # ---------- Dashboard KPIs ----------
 @router.get("/dashboard")
-async def walkins_dashboard(user: UserPublic = Depends(get_current_user)):
-    docs = await db.walkins.find(floor_query(user, {"is_deleted": False}), {"_id": 0}).to_list(5000)
+async def walkins_dashboard(floor_ids: Optional[str] = None, user: UserPublic = Depends(get_current_user)):
+    docs = await db.walkins.find(scoped_query(user, {"is_deleted": False}, floor_ids), {"_id": 0}).to_list(5000)
     now = datetime.now(timezone.utc)
     today = now.date()
     week_start = today.fromordinal(today.toordinal() - today.weekday())
@@ -312,7 +339,59 @@ async def walkin_timeline(walkin_id: str, user: UserPublic = Depends(get_current
     doc = await db.walkins.find_one(floor_query(user, {"id": walkin_id}), {"_id": 0, "customer_id": 1})
     if not doc:
         raise HTTPException(status_code=404, detail="Walk-in not found")
-    return await timeline_for(customer_id=doc["customer_id"], limit=60)
+    return await timeline_for(customer_id=doc["customer_id"], limit=60, floor_ids=floor_scope_ids(user))
+
+
+@router.post("/{walkin_id}/visit-showroom")
+async def visit_showroom(walkin_id: str, user: UserPublic = Depends(require_min_role("sales"))):
+    """Transfer immediately, with one stable identity even on repeated clicks.
+
+    The follow-up is manually initiated so reconciliation respects staff
+    completion/snoozing and never closes it merely because no delayed rule
+    currently matches this walk-in.
+    """
+    query = floor_query(user, {"id": walkin_id, "is_deleted": False})
+    walkin = await db.walkins.find_one(query, {"_id": 0})
+    if not walkin:
+        raise HTTPException(status_code=404, detail="Walk-in not found")
+    if walkin.get("status") == "lost":
+        raise HTTPException(status_code=409, detail="Reopen this lost walk-in before transferring to follow-ups")
+    now = now_iso()
+    followup_id = f"showroom:{walkin_id}"
+    followup = Followup(
+        id=followup_id, floor_id=walkin["floor_id"], source_key=f"visit_showroom:{walkin_id}",
+        walkin_id=walkin_id, origin="visit_showroom", rule_type="manual", category="walk_in",
+        customer_id=walkin["customer_id"], customer_name=walkin["customer_name"],
+        customer_phone=walkin.get("customer_phone"), reason="Visit Showroom",
+        next_action="Arrange showroom visit", next_action_reason="Transferred from the walk-in register",
+        suggested_channel="visit", due_at=now, is_automated=False,
+        assigned_to=walkin.get("salesperson_id"), assigned_to_name=walkin.get("salesperson_name"),
+        notes=walkin.get("notes"), tags=["WALK_IN", "VISIT_SHOWROOM"],
+    ).model_dump()
+    identity = {"id": followup_id, "floor_id": walkin["floor_id"]}
+    try:
+        await db.followups.update_one(identity, {"$setOnInsert": followup}, upsert=True)
+    except DuplicateKeyError:
+        # Another simultaneous click can win the unique source-key upsert.
+        # Acknowledge only our exact, authorized follow-up identity.
+        if not await db.followups.find_one(identity, {"_id": 0, "id": 1}):
+            raise
+    result = await db.walkins.update_one(
+        {**{"id": walkin_id, "floor_id": walkin["floor_id"]}, "showroom_followup_id": {"$ne": followup_id}},
+        {"$set": {"showroom_followup_id": followup_id, "showroom_transferred_at": now, "updated_at": now}},
+    )
+    # Retire any delayed walk-in reminder in favor of the immediate visit.
+    await db.followups.update_many(
+        {"source_key": f"walk_in_new:{walkin_id}", "floor_id": walkin["floor_id"], "status": {"$in": ["open", "snoozed"]}},
+        {"$set": {"status": "done", "auto_resolved": True, "completed_at": now, "resolution_note": "Transferred to Visit Showroom"}},
+    )
+    if result.modified_count:
+        await log_event(
+            event_type="walkin.visit_showroom", entity_type="walkin", entity_id=walkin_id,
+            customer_id=walkin["customer_id"], actor=user, floor_id=walkin["floor_id"],
+            summary=f"{walkin.get('number')} transferred to Visit Showroom follow-ups",
+        )
+    return {"walkin_id": walkin_id, "followup_id": followup_id}
 
 
 @router.patch("/{walkin_id}", response_model=WalkIn)
@@ -360,7 +439,7 @@ async def reassign_walkin(walkin_id: str, body: ReassignWalkInBody, user: UserPu
         {"$set": {"salesperson_id": body.salesperson_id, "salesperson_name": new_sp["full_name"], "updated_at": now_iso()}},
     )
     await db.followups.update_many(
-        {"source_key": f"walk_in_new:{walkin_id}"},
+        {"source_key": {"$in": [f"walk_in_new:{walkin_id}", f"visit_showroom:{walkin_id}"]}, "floor_id": doc["floor_id"]},
         {"$set": {"assigned_to": body.salesperson_id, "assigned_to_name": new_sp["full_name"]}},
     )
     await log_event(

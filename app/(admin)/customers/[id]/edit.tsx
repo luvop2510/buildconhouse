@@ -12,7 +12,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { api } from "@/src/api/client";
 import {
-  Button, Card, Chip, PageHeader, TextField, ErrorState,
+  Button, Card, PageHeader, TextField, ErrorState,
 } from "@/src/components/ui";
 import { ConfirmDialog } from "@/src/components/ds";
 import { TempPasswordDialog, TempPasswordResult } from "@/src/components/TempPasswordDialog";
@@ -53,7 +53,6 @@ export default function EditCustomer() {
   const [stateField, setStateField] = useState("");
   const [pincode, setPincode] = useState("");
   const [gstin, setGstin] = useState("");
-  const [tier, setTier] = useState<Tier>("retail");
   const [referrer, setReferrer] = useState<{ id: string; name: string; type: "architect" | "interior_designer" } | null>(null);
   const [notes, setNotes] = useState("");
   const [portalEnabled, setPortalEnabled] = useState(false);
@@ -81,7 +80,6 @@ export default function EditCustomer() {
     setStateField(c.state || "");
     setPincode(c.pincode || "");
     setGstin(c.gstin || "");
-    setTier(c.tier || "retail");
     setReferrer(c.referrer_id && c.referrer_name && c.referrer_type ? { id: c.referrer_id, name: c.referrer_name, type: c.referrer_type } : null);
     setNotes(c.notes || "");
     setPortalEnabled(!!c.portal_enabled);
@@ -122,7 +120,6 @@ export default function EditCustomer() {
         state: stateField.trim() || null,
         pincode: pincode.trim() || null,
         gstin: gstin.trim() || null,
-        tier,
         referrer_id: referrer?.id || null,
         notes: notes.trim() || null,
         portal_enabled: portalEnabled,
@@ -227,14 +224,6 @@ export default function EditCustomer() {
           <ReferrerField value={referrer} onChange={setReferrer} />
           <TextField label="Notes" value={notes} onChangeText={setNotes} multiline numberOfLines={2} style={{ minHeight: 56, textAlignVertical: "top" }} testID="edit-customer-notes" />
 
-          <View style={{ gap: 6 }}>
-            <Text style={type.label}>Tier</Text>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-              {(["retail", "trade", "vip"] as Tier[]).map((t) => (
-                <Chip key={t} label={t.charAt(0).toUpperCase() + t.slice(1)} active={tier === t} onPress={() => setTier(t)} testID={`edit-customer-tier-${t}`} />
-              ))}
-            </View>
-          </View>
 
           <Button testID="edit-customer-save" label={saving ? "Saving…" : "Save changes"} variant="primary" size="lg" icon="check" disabled={saving} onPress={() => save()} fullWidth />
 

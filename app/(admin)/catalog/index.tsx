@@ -10,6 +10,7 @@
 //   * Family cards: 1:1 image, series overline, family name, variant swatches,
 //     price range on one line, tap = variant PDP
 // -----------------------------------------------------------------------------
+import { api } from "@/src/api/client";
 import Feather from "@expo/vector-icons/Feather";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -137,10 +138,24 @@ export default function Catalog() {
   const [filterRevision, setFilterRevision] = useState(0);
 
   const [q, setQ] = useState("");
-  const [cat, setCat] = useState<string | null>(null);
-  const [brandId, setBrandId] = useState<string | null>(null);
-  const [subcat, setSubcat] = useState<string | null>(null);
-  const [series, setSeries] = useState<string | null>(null);
+  const [cat, setCatValues] = useState<string[]>([]);
+  const setCat = (value: string | null) => setCatValues(current => value === null ? [] : current.includes(value) ? current.filter(item => item !== value) : [...current, value]);
+  const [brandId, setBrandIdValues] = useState<string[]>([]);
+  const setBrandId = (value: string | null) => setBrandIdValues(current => value === null ? [] : current.includes(value) ? current.filter(item => item !== value) : [...current, value]);
+  const [subcat, setSubcatValues] = useState<string[]>([]);
+  const setSubcat = (value: string | null) => setSubcatValues(current => value === null ? [] : current.includes(value) ? current.filter(item => item !== value) : [...current, value]);
+  const [series, setSeriesValues] = useState<string[]>([]);
+  const setSeries = (value: string | null) => setSeriesValues(current => value === null ? [] : current.includes(value) ? current.filter(item => item !== value) : [...current, value]);
+  const [finishes, setFinishes] = useState<string[]>([]);
+  const [colours, setColours] = useState<string[]>([]);
+  const [sizes, setSizes] = useState<string[]>([]);
+  const [facets, setFacets] = useState<Record<string, { value: string }[]>>({});
+  useEffect(() => {
+    if (!selectedFloorId) return;
+    let active = true;
+    void api.get<Record<string, { value: string }[]>>("/catalog/facets", { floorId: selectedFloorId }).then(value => { if (active) setFacets(value); }).catch(() => {});
+    return () => { active = false; };
+  }, [selectedFloorId]);
   const [mode, setMode] = useState<ViewMode>("families");
 
   // A Catalog response is scoped by the selected floor. Never issue an
@@ -148,7 +163,7 @@ export default function Catalog() {
   // selections before the next floor's catalog becomes visible.
   useEffect(() => {
     setBrands([]); setCategories([]); setHierarchyTree([]);
-    setBrandId(null); setCat(null); setSubcat(null); setSeries(null);
+    setBrandId(null); setCat(null); setSubcat(null); setSeries(null); setFinishes([]); setColours([]); setSizes([]); setFacets({});
     setCategoriesForBrand(null); setBrandCounts({});
     setProducts(null); setFamilies(null); setTotal(null); setHasMore(false);
     setReferenceError(null); setHierarchyError(null);
@@ -205,9 +220,9 @@ export default function Catalog() {
     for (const b of hierarchyTree) bc[b.brand.id] = b.product_count;
     setBrandCounts(bc);
 
-    if (brandId) {
-      const bNode = hierarchyTree.find((b) => b.brand.id === brandId);
-      setCategoriesForBrand(bNode ? bNode.categories.map((c: any) => c.category) : []);
+    if (brandId.length) {
+      const nodes = hierarchyTree.filter((b) => brandId.includes(b.brand.id));
+      setCategoriesForBrand([...new Map(nodes.flatMap(b => b.categories.map((c: any) => c.category)).map((c: Category) => [c.id, c])).values()] as Category[]);
     } else {
       setCategoriesForBrand(null);
     }
@@ -215,13 +230,13 @@ export default function Catalog() {
     const subs = new Set<string>();
     const ser = new Set<string>();
     for (const b of hierarchyTree) {
-      if (brandId && b.brand.id !== brandId) continue;
+      if (brandId.length && !brandId.includes(b.brand.id)) continue;
       for (const c of b.categories) {
-        if (cat && c.category.id !== cat) continue;
+        if (cat.length && !cat.includes(c.category.id)) continue;
         for (const s of c.subcategories) {
           subs.add(s.name);
           for (const se of s.series) {
-            if (!subcat || subcat === s.name) ser.add(se.name);
+            if (!subcat.length || subcat.includes(s.name)) ser.add(se.name);
           }
         }
       }
@@ -244,14 +259,14 @@ export default function Catalog() {
     try {
       if (mode === "families") {
         const res = await fetchCatalogPage<Family>({
-          mode: "families", q, brandId, categoryId: cat, subcategory: subcat, series,
+          mode: "families", q, brandIds: brandId, categoryIds: cat, subcategories: subcat, seriesValues: series, finishes, colours, sizes,
         }, 0, PAGE_SIZE, { floorId: selectedFloorId });
         if (requestId !== requestIdRef.current) return;
         const items = res.items || [];
         setFamilies(items); setTotal(res.total); setHasMore(items.length < res.total);
       } else {
         const res = await fetchCatalogPage<Product>({
-          mode: "products", q, brandId, categoryId: cat, subcategory: subcat, series, sort: "popular",
+          mode: "products", q, brandIds: brandId, categoryIds: cat, subcategories: subcat, seriesValues: series, finishes, colours, sizes, sort: "popular",
         }, 0, PAGE_SIZE, { floorId: selectedFloorId });
         if (requestId !== requestIdRef.current) return;
         const items = res.items || [];
@@ -264,15 +279,20 @@ export default function Catalog() {
       setTotal(0); setHasMore(false);
       setLoadError("Catalog products could not be loaded. Refresh and sign in again if this persists.");
     }
-  }, [q, cat, brandId, subcat, series, mode, selectedFloorId]);
+  }, [q, cat, brandId, subcat, series, finishes, colours, sizes, mode, selectedFloorId]);
 
   useEffect(() => {
+    // Invalidate immediately when filters or floors change. Waiting for the
+    // debounce lets a cancelled old response replace the new floor's state.
+    requestIdRef.current += 1;
+    loadingMoreRef.current = false;
+    setLoadingMore(false);
     const t = setTimeout(load, 250);
-    return () => clearTimeout(t);
+    return () => { clearTimeout(t); requestIdRef.current += 1; };
   }, [load]);
 
   const loadMore = useCallback(async () => {
-    if (loadingMoreRef.current || total === null || !hasMore) return;
+    if (!selectedFloorId || loadingMoreRef.current || total === null || !hasMore) return;
     loadingMoreRef.current = true;
     setLoadingMore(true);
     const requestId = requestIdRef.current;
@@ -281,7 +301,7 @@ export default function Catalog() {
       if (mode === "families") {
         const currentFamilies = families || [];
         const res = await fetchCatalogPage<Family>({
-          mode: "families", q, brandId, categoryId: cat, subcategory: subcat, series,
+          mode: "families", q, brandIds: brandId, categoryIds: cat, subcategories: subcat, seriesValues: series, finishes, colours, sizes,
         }, currentLength, PAGE_SIZE, { floorId: selectedFloorId || undefined });
         if (requestId !== requestIdRef.current) return;
         const incoming = res.items || [];
@@ -290,7 +310,7 @@ export default function Catalog() {
       } else {
         const currentProducts = products || [];
         const res = await fetchCatalogPage<Product>({
-          mode: "products", q, brandId, categoryId: cat, subcategory: subcat, series, sort: "popular",
+          mode: "products", q, brandIds: brandId, categoryIds: cat, subcategories: subcat, seriesValues: series, finishes, colours, sizes, sort: "popular",
         }, currentLength, PAGE_SIZE, { floorId: selectedFloorId || undefined });
         if (requestId !== requestIdRef.current) return;
         const incoming = res.items || [];
@@ -305,15 +325,15 @@ export default function Catalog() {
         setLoadingMore(false);
       }
     }
-  }, [q, cat, brandId, subcat, series, families, hasMore, mode, products, selectedFloorId, total]);
+  }, [q, cat, brandId, subcat, series, finishes, colours, sizes, families, hasMore, mode, products, selectedFloorId, total]);
 
   const brandById: Record<string, string> = useMemo(
     () => Object.fromEntries(brands.map((b) => [b.id, b.name])), [brands],
   );
-  const activeFilterCount = [brandId, subcat, series].filter(Boolean).length;
-  const resetFilters = () => { setBrandId(null); setSubcat(null); setSeries(null); };
+  const activeFilterCount = brandId.length + subcat.length + series.length + finishes.length + colours.length + sizes.length;
+  const resetFilters = () => { setBrandId(null); setSubcat(null); setSeries(null); setFinishes([]); setColours([]); setSizes([]); };
   const clearAll = () => { setQ(""); setCat(null); resetFilters(); };
-  const hasActiveFilters = Boolean(q) || Boolean(cat) || activeFilterCount > 0;
+  const hasActiveFilters = Boolean(q) || Boolean(cat.length) || activeFilterCount > 0;
   const filterError = [referenceError, hierarchyError].filter(Boolean).join(" ");
   const filtersLoading = referencesLoading || hierarchyLoading;
   const retryFilters = () => setFilterRevision((revision) => revision + 1);
@@ -323,7 +343,7 @@ export default function Catalog() {
     : count === 1 ? "product" : "products";
   const subtitle = loadError ? "Catalog data is unavailable" : total === null
     ? "Loading…"
-    : `${total.toLocaleString("en-IN")} ${countLabel(total)}${cat ? " · filtered" : ""}`;
+    : `${total.toLocaleString("en-IN")} ${countLabel(total)}${cat.length ? " · filtered" : ""}`;
 
   const gridPadding = pad;
   const gap = 14;
@@ -407,7 +427,7 @@ export default function Catalog() {
           <BrandPill
             label="All brands"
             count={hierarchyError || hierarchyLoading ? undefined : brands.reduce((sum, b) => sum + (brandCounts[b.id] || 0), 0)}
-            active={!brandId}
+            active={!brandId.length}
             onPress={() => { setBrandId(null); setCat(null); setSubcat(null); setSeries(null); }}
             testID="brand-pill-all"
           />
@@ -417,8 +437,8 @@ export default function Catalog() {
               label={b.name}
               logo={supplierLogoFor(b.name)}
               count={brandCounts[b.id]}
-              active={brandId === b.id}
-              onPress={() => { setBrandId(brandId === b.id ? null : b.id); setCat(null); setSubcat(null); setSeries(null); }}
+              active={brandId.includes(b.id)}
+              onPress={() => { setBrandId(b.id); }}
               testID={`brand-pill-${b.id}`}
             />
           ))}
@@ -437,14 +457,14 @@ export default function Catalog() {
         contentContainerStyle={{ gap: 8, paddingLeft: 32, paddingRight: gridPadding + 48, paddingVertical: 2 }}
         style={{ marginHorizontal: -gridPadding, paddingHorizontal: gridPadding }}
       >
-        <CategoryPill label="All categories" icon="grid" active={!cat} onPress={() => { setCat(null); setSubcat(null); setSeries(null); }} testID="cat-all" />
+        <CategoryPill label="All categories" icon="grid" active={!cat.length} onPress={() => { setCat(null); setSubcat(null); setSeries(null); }} testID="cat-all" />
         {(categoriesForBrand ?? categories).map((c) => (
           <CategoryPill
             key={c.id}
             label={c.name}
             icon={iconFor(c.name)}
-            active={cat === c.id}
-            onPress={() => { setCat(cat === c.id ? null : c.id); setSubcat(null); setSeries(null); }}
+            active={cat.includes(c.id)}
+            onPress={() => { setCat(c.id); }}
             testID={`cat-${c.id}`}
           />
         ))}
@@ -462,18 +482,18 @@ export default function Catalog() {
       </View>
       </> : hasActiveFilters ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingRight: 8 }}>
-          {brandId ? <ActiveChip label={brandById[brandId] || "Brand"} onClose={() => { setBrandId(null); setCat(null); }} /> : null}
-          {cat ? <ActiveChip label={(categoriesForBrand ?? categories).find((item) => item.id === cat)?.name || "Category"} onClose={() => setCat(null)} /> : null}
+          {brandId.length ? <ActiveChip label={brandId.map(id => brandById[id] || "Brand").join(", ")} onClose={() => { setBrandId(null); setCat(null); }} /> : null}
+          {cat.length ? <ActiveChip label={cat.map(id => (categoriesForBrand ?? categories).find(item => item.id === id)?.name || "Category").join(", ")} onClose={() => setCat(null)} /> : null}
           <Pressable accessibilityRole="button" accessibilityLabel="Clear all catalog filters" onPress={clearAll} style={styles.clearAll}><Text style={styles.clearAllText}>Clear</Text></Pressable>
         </ScrollView>
       ) : null}
 
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-        <View style={(subcat || series) ? { flex: 1, flexShrink: 1 } : undefined}>
-          {(subcat || series) ? (
+        <View style={(subcat.length || series.length) ? { flex: 1, flexShrink: 1 } : undefined}>
+          {(subcat.length || series.length) ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingRight: 8 }}>
-              {subcat ? <ActiveChip label={subcat} onClose={() => { setSubcat(null); setSeries(null); }} /> : null}
-              {series ? <ActiveChip label={series} onClose={() => setSeries(null)} /> : null}
+              {subcat.length ? <ActiveChip label={subcat.join(", ")} onClose={() => { setSubcat(null); setSeries(null); }} /> : null}
+              {series.length ? <ActiveChip label={series.join(", ")} onClose={() => setSeries(null)} /> : null}
               <Pressable accessibilityRole="button" accessibilityLabel="Clear detailed catalog filters" onPress={resetFilters} style={styles.clearAll}><Text style={styles.clearAllText}>Clear</Text></Pressable>
             </ScrollView>
           ) : null}
@@ -562,6 +582,7 @@ export default function Catalog() {
         cat={cat} setCat={setCat}
         subcat={subcat} setSubcat={setSubcat}
         series={series} setSeries={setSeries}
+        facets={facets} finishes={finishes} setFinishes={setFinishes} colours={colours} setColours={setColours} sizes={sizes} setSizes={setSizes}
         onReset={resetFilters}
       />
     </View>
@@ -794,14 +815,18 @@ function SkeletonCard({ tall }: { tall?: boolean }) {
 function FiltersSheet({
   visible, onClose, brands, categories, subcategories, seriesList,
   brandId, setBrandId, cat, setCat, subcat, setSubcat, series, setSeries, onReset,
-  filterError, filtersLoading, onRetryFilters,
+  filterError, filtersLoading, onRetryFilters, facets, finishes, setFinishes, colours, setColours, sizes, setSizes,
 }: {
   visible: boolean; onClose: () => void;
   brands: Brand[]; categories: Category[]; subcategories: string[]; seriesList: string[];
-  brandId: string | null; setBrandId: (v: string | null) => void;
-  cat: string | null; setCat: (v: string | null) => void;
-  subcat: string | null; setSubcat: (v: string | null) => void;
-  series: string | null; setSeries: (v: string | null) => void;
+  brandId: string[]; setBrandId: (v: string | null) => void;
+  cat: string[]; setCat: (v: string | null) => void;
+  subcat: string[]; setSubcat: (v: string | null) => void;
+  series: string[]; setSeries: (v: string | null) => void;
+  facets: Record<string, { value: string }[]>;
+  finishes: string[]; setFinishes: (values: string[]) => void;
+  colours: string[]; setColours: (values: string[]) => void;
+  sizes: string[]; setSizes: (values: string[]) => void;
   onReset: () => void;
   filterError: string; filtersLoading: boolean; onRetryFilters: () => void;
 }) {
@@ -820,31 +845,36 @@ function FiltersSheet({
     >
       <View style={{ gap: spacing.xl }}>
         <FilterLoadStatus error={filterError} loading={filtersLoading} onRetry={onRetryFilters} />
+        <Text style={type.caption}>Select multiple options in each filter.</Text>
+        {([["finishes", "Finish", finishes, setFinishes], ["colours", "Color", colours, setColours], ["sizes", "Size", sizes, setSizes]] as const).map(([field, label, selected, update]) => facets[field]?.length ? <FilterSection key={field} title={label}>
+          <Chip label="Any" active={!selected.length} onPress={() => update([])} />
+          {facets[field].map(option => <Chip key={option.value} label={option.value} active={selected.includes(option.value)} onPress={() => update(selected.includes(option.value) ? selected.filter(value => value !== option.value) : [...selected, option.value])} />)}
+        </FilterSection> : null)}
         <FilterSection title="Brand">
-          <Chip label="Any" active={!brandId} onPress={() => { setBrandId(null); setCat(null); setSubcat(null); setSeries(null); }} />
+          <Chip label="Any" active={!brandId.length} onPress={() => { setBrandId(null); setCat(null); setSubcat(null); setSeries(null); }} />
           {brands.map((brand) => (
-            <Chip key={brand.id} label={brand.name} active={brandId === brand.id} onPress={() => { setBrandId(brandId === brand.id ? null : brand.id); setCat(null); setSubcat(null); setSeries(null); }} />
+            <Chip key={brand.id} label={brand.name} active={brandId.includes(brand.id)} onPress={() => { setBrandId(brand.id); }} />
           ))}
         </FilterSection>
         <FilterSection title="Category">
-          <Chip label="Any" active={!cat} onPress={() => { setCat(null); setSubcat(null); setSeries(null); }} />
+          <Chip label="Any" active={!cat.length} onPress={() => { setCat(null); setSubcat(null); setSeries(null); }} />
           {categories.map((category) => (
-            <Chip key={category.id} label={category.name} active={cat === category.id} onPress={() => { setCat(cat === category.id ? null : category.id); setSubcat(null); setSeries(null); }} />
+            <Chip key={category.id} label={category.name} active={cat.includes(category.id)} onPress={() => { setCat(category.id); }} />
           ))}
         </FilterSection>
         {subcategories.length > 0 ? (
           <FilterSection title="Subcategory">
-            <Chip label="Any" active={!subcat} onPress={() => { setSubcat(null); setSeries(null); }} testID="subcat-all" />
+            <Chip label="Any" active={!subcat.length} onPress={() => { setSubcat(null); setSeries(null); }} testID="subcat-all" />
             {subcategories.map((s) => (
-              <Chip key={s} label={s} active={subcat === s} onPress={() => { setSubcat(subcat === s ? null : s); setSeries(null); }} />
+              <Chip key={s} label={s} active={subcat.includes(s)} onPress={() => { setSubcat(s); }} />
             ))}
           </FilterSection>
         ) : null}
         {seriesList.length > 0 ? (
           <FilterSection title="Series">
-            <Chip label="Any" active={!series} onPress={() => setSeries(null)} testID="series-all" />
+            <Chip label="Any" active={!series.length} onPress={() => setSeries(null)} testID="series-all" />
             {seriesList.map((s) => (
-              <Chip key={s} label={s} active={series === s} onPress={() => setSeries(series === s ? null : s)} />
+              <Chip key={s} label={s} active={series.includes(s)} onPress={() => setSeries(s)} />
             ))}
           </FilterSection>
         ) : null}

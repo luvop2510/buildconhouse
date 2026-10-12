@@ -39,7 +39,7 @@ test('login validation and accessible input labels',async({page},info)=>{
 test('critical customer request failure retries into honest empty state',async({page})=>{
  await mockSession(page,'/customers');await page.goto('/customers');
  await expect(page.getByText("Couldn't load customers",{exact:true})).toBeVisible();
- await page.route('**/api/customers',r=>r.fulfill({json:[]}));
+ await page.route(/\/api\/customers(?:\?|$)/,r=>r.fulfill({json:[]}));
  await page.getByRole('button',{name:/try again/i}).click();
  await expect(page.getByText('No customers yet',{exact:true})).toBeVisible();
 });

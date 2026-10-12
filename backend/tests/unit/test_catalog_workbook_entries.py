@@ -69,15 +69,15 @@ def families(**kwargs):
 def test_unique_cards_keep_supplier_order_and_missing_data(snapshot):
     before = copy.deepcopy(snapshot.products)
     result = products()
-    assert result["total"] == 4
-    assert [p["id"] for p in result["items"]] == ["a", "b", "missing", "existing"]
+    assert result["total"] == 3
+    assert [p["id"] for p in result["items"]] == ["a", "missing", "existing"]
     assert products(skip=2, limit=2)["items"] == result["items"][2:]
-    missing = result["items"][2]
+    missing = result["items"][1]
     assert missing["name"] == "Canonical missing"
     assert missing["images"] == []
     assert missing["price_unknown"] is True
     assert missing["catalog_entry"]["mrp"] is None
-    existing = result["items"][3]
+    existing = result["items"][2]
     assert existing["price"] == 450
     assert existing["price_unknown"] is False
     assert existing["source_price_unspecified"] is True
@@ -98,13 +98,13 @@ def test_secondary_category_and_price_do_not_change_canonical_id(snapshot):
     assert asyncio.run(catalog.product_by_id("a", ["first-floor"], "nonexistent")) is None
 
 
-def test_family_cards_do_not_merge_source_skus_or_repeat_workbook_lines(snapshot):
+def test_family_cards_merge_color_siblings_and_keep_supplier_order(snapshot):
     result = families()
-    assert result["total"] == 4
-    assert [r["sample_product_id"] for r in result["items"]] == ["a", "b", "missing", "existing"]
+    assert result["total"] == 3
+    assert [r["sample_product_id"] for r in result["items"]] == ["a", "missing", "existing"]
     assert [r["id"] for r in result["items"][0]["variants"]] == ["a", "b"]
-    assert [r["id"] for r in result["items"][1]["variants"]] == ["b", "a"]
-    assert result["items"][2]["price_unknown"] is True
+    assert result["items"][0]["product_count"] == 2
+    assert result["items"][1]["price_unknown"] is True
     assert [r["id"] for r in families(category_id="showers")["items"][0]["variants"]] == ["a"]
 
 

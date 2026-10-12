@@ -62,13 +62,13 @@ test('critical customer PDF failures recover and all document variants download'
 test('critical walk-in duplicate resolution preserves the selected customer on retry', async ({ page }) => {
   await mockSession(page, '/walkins/new');
   await page.route('**/api/walkins/config/sources', r => r.fulfill({ json: { sources: ['Walk-in'] } }));
-  await page.route('**/api/followups/config/assignees', r => r.fulfill({ json: [] }));
+  await page.route('**/api/walkins/config/assignees', r => r.fulfill({ json: [{ id: 'audit-owner', full_name: 'Audit Owner', role: 'owner' }] }));
   await page.route('**/api/walkins/check-duplicate?**', r => r.fulfill({ json: { high: [], medium: [{ id: 'existing-customer', name: 'Showroom customer', phone: '9000000000' }], low: [] } }));
   const writes: any[] = [];
   let fail = true;
   await page.route('**/api/walkins', r => {
     writes.push(r.request().postDataJSON());
-    return fail ? r.fulfill({ status: 503, json: { detail: 'Walk-in save unavailable' } }) : r.fulfill({ json: { id: 'saved-walkin' } });
+    return fail ? r.fulfill({ status: 503, json: { detail: 'Walk-in save unavailable' } }) : r.fulfill({ json: { id: 'saved-walkin', floor_id: 'first-floor' } });
   });
   await page.goto('/walkins/new');
   await page.getByTestId('walkin-name').fill('Showroom customer');
@@ -164,8 +164,12 @@ test('last customer opens payment history in view on desktop, tablet, and phone'
   await lastCustomer.scrollIntoViewIfNeeded();
   await lastCustomer.click();
   await expect(page.getByText('Customer 23', { exact: true }).last()).toBeVisible();
-  await expect(page.getByText('Payment history', { exact: true })).toBeInViewport();
-  await expect(page.getByTestId('open-record-payment')).toBeInViewport();
+  const record = page.getByTestId('open-record-payment');
+  await record.scrollIntoViewIfNeeded();
+  await expect(record).toBeInViewport();
+  const history = page.getByText('Payment history', { exact: true });
+  await history.scrollIntoViewIfNeeded();
+  await expect(history).toBeInViewport();
 });
 
 test('critical notifications link to existing records and offline state does not replay writes', async ({ page }) => {

@@ -27,7 +27,7 @@ type LookupItem = { id: string; name: string };
 
 type EditableProduct = {
   id: string; name: string; sku: string; brand_id: string; category_id: string;
-  family_name: string; finish: string; colour: string;
+  family_name: string; finish: string; colour: string; variant_label: string;
   description: string; mrp: number; price: number;
   dimension_image_urls: string[]; seat_cover_image_urls: string[];
   concealed_sku: string; concealed_name: string; concealed_price: number;
@@ -77,7 +77,7 @@ export function ProductEditor({
         const editable: EditableProduct = {
           id: prod.id, name: prod.name || "", sku: prod.sku || "",
           brand_id: prod.brand_id || "", category_id: prod.category_id || "",
-          family_name: prod.family_name || "", finish: prod.finish || "", colour: prod.colour || "",
+          variant_label: prod.variant_label || "", family_name: prod.family_name || "", finish: prod.finish || "", colour: prod.colour || "",
           description: prod.description || "", mrp: Number(prod.mrp) || 0, price: Number(prod.price) || 0,
           dimension_image_urls: prod.dimension_image_urls || [],
           seat_cover_image_urls: prod.seat_cover_image_urls || [],
@@ -259,6 +259,7 @@ export function ProductEditor({
                   <TextField label="Finish" value={form.finish} onChangeText={(v) => set("finish", v)} testID="edit-finish" />
                 </View>
                 <View style={{ flex: 1 }}>
+                  <TextField label="Color variant name" value={form.variant_label} onChangeText={(v) => set("variant_label", v)} testID="edit-variant-label" />
                   <TextField label="Colour" value={form.colour} onChangeText={(v) => set("colour", v)} testID="edit-colour" />
                 </View>
               </View>

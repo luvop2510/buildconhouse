@@ -10,6 +10,7 @@ No new business logic is duplicated — this module is orchestration + reads.
 from __future__ import annotations
 
 from services.export import spreadsheet_cell
+from services.multi_filters import predicate, values
 
 import asyncio
 import base64
@@ -345,6 +346,7 @@ async def insights(user: UserPublic = Depends(get_current_user)):
 # ─────────────────────────────────────────────────────────────────────────────
 @router.get("/export")
 async def export_followups(
+    origin: Optional[str] = None,
     format: str = Query("xlsx", pattern="^(xlsx|csv)$"),
     bucket: Optional[str] = None,
     priority: Optional[str] = None,
@@ -356,7 +358,7 @@ async def export_followups(
 ):
     rows = await list_followups(
         bucket=bucket, priority=priority, category=category, channel=None,
-        customer_tier=customer_tier, assigned_to=assigned_to, q=q, limit=3000, user=user,
+        customer_tier=customer_tier, assigned_to=assigned_to, q=q, origin=origin, limit=3000, user=user,
     )
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M")
 
@@ -444,6 +446,7 @@ def _paged_followup_query(
     bucket: Optional[str], priority: Optional[str], category: Optional[str],
     customer_tier: Optional[str], assigned_to: Optional[str], q: Optional[str],
     rule_type: Optional[str], view: str, waiting: bool, completed_today: bool,
+    origin: Optional[str] = None,
 ) -> dict:
     """Build the database-side portion of the paged inbox filter.
 
@@ -451,15 +454,28 @@ def _paged_followup_query(
     integration callers. The canonical UI uses this bounded path so a search
     is not silently limited to the first thousand rows.
     """
+    buckets = values(bucket)
+    if len(buckets) > 1:
+        return {"$or": [_paged_followup_query(
+            user, bucket=choice, priority=priority, category=category, customer_tier=customer_tier,
+            assigned_to=assigned_to, q=q, rule_type=rule_type, view=view, waiting=waiting,
+            completed_today=completed_today, origin=origin,
+        ) for choice in buckets]}
+    if bucket == "waiting":
+        waiting, bucket = True, None
+    elif bucket == "completed_today":
+        completed_today, bucket = True, None
     clauses: list[dict] = []
+    if origin:
+        clauses.append({"origin": predicate(origin)})
     if category:
-        clauses.append({"category": category})
+        clauses.append({"category": predicate(category)})
     if customer_tier:
-        clauses.append({"customer_tier": customer_tier})
+        clauses.append({"customer_tier": predicate(customer_tier)})
     if assigned_to:
-        clauses.append({"assigned_to": assigned_to})
+        clauses.append({"assigned_to": predicate(assigned_to)})
     if rule_type:
-        clauses.append({"rule_type": rule_type})
+        clauses.append({"rule_type": predicate(rule_type)})
     if q:
         term = {"$regex": re.escape(q), "$options": "i"}
         clauses.append({"$or": [
@@ -468,8 +484,8 @@ def _paged_followup_query(
         ]})
     if priority:
         clauses.append({"$or": [
-            {"manual_priority_override": priority},
-            {"manual_priority_override": None, "priority_level": priority},
+            {"manual_priority_override": predicate(priority)},
+            {"manual_priority_override": None, "priority_level": predicate(priority)},
         ]})
 
     today_start, tomorrow_start = ist_day_bounds_utc()
@@ -530,6 +546,7 @@ async def list_followups_page(
     assigned_to: Optional[str] = None,
     q: Optional[str] = None,
     rule_type: Optional[str] = None,
+    origin: Optional[str] = None,
     view: str = Query("active", pattern="^(active|won|lost)$"),
     waiting: bool = False,
     completed_today: bool = False,
@@ -544,7 +561,7 @@ async def list_followups_page(
         {"$match": _paged_followup_query(
             user, bucket=bucket, priority=priority, category=category,
             customer_tier=customer_tier, assigned_to=assigned_to, q=q,
-            rule_type=rule_type, view=view, waiting=waiting,
+            rule_type=rule_type, origin=origin, view=view, waiting=waiting,
             completed_today=completed_today,
         )},
         {"$addFields": {
@@ -580,19 +597,22 @@ async def list_followups(
     customer_tier: Optional[str] = None,
     assigned_to: Optional[str] = None,
     q: Optional[str] = None,
+    origin: Optional[str] = None,
     limit: int = Query(1000, ge=1, le=3000),
     user: UserPublic = Depends(get_current_user),
 ):
     await _wake_snoozed(user)
     query: dict = {}
+    if isinstance(origin, str) and origin:
+        query["origin"] = predicate(origin)
     if category:
-        query["category"] = category
+        query["category"] = predicate(category)
     if channel:
-        query["suggested_channel"] = channel
+        query["suggested_channel"] = predicate(channel)
     if customer_tier:
-        query["customer_tier"] = customer_tier
+        query["customer_tier"] = predicate(customer_tier)
     if assigned_to:
-        query["assigned_to"] = assigned_to
+        query["assigned_to"] = predicate(assigned_to)
     if q:
         term = {"$regex": re.escape(q), "$options": "i"}
         query["$or"] = [
@@ -606,9 +626,18 @@ async def list_followups(
         d["effective_priority_level"] = d.get("manual_priority_override") or d.get("priority_level")
 
     if bucket and bucket != "all":
-        docs = [d for d in docs if d["bucket"] == bucket]
+        selected_buckets = values(bucket)
+        today, tomorrow = ist_day_bounds_utc()
+        def matches_bucket(row):
+            return any(
+                (row.get("status") == "open" and row.get("rule_type") == "payment_partial") if choice == "waiting"
+                else (row.get("status") in {"done", "dismissed"} and today.isoformat() <= (row.get("completed_at") or "") < tomorrow.isoformat()) if choice == "completed_today"
+                else row["bucket"] == choice
+                for choice in selected_buckets
+            )
+        docs = [d for d in docs if matches_bucket(d)]
     if priority:
-        docs = [d for d in docs if d["effective_priority_level"] == priority]
+        docs = [d for d in docs if d["effective_priority_level"] in values(priority)]
 
     docs.sort(key=lambda d: _followup_sort_key(d, user.id))
     return docs[:limit]
@@ -622,7 +651,7 @@ async def list_followups(
 async def list_notebook(
     floor_id: str,
     view: str = Query("followups", pattern="^(followups|quotation)$"),
-    status: Optional[str] = Query(None, pattern="^(all|new|pending|won|lost)$"),
+    status: Optional[str] = None,
     q: Optional[str] = None,
     cursor: Optional[str] = None,
     limit: int = Query(100, ge=1, le=250),
@@ -631,7 +660,7 @@ async def list_notebook(
     require_notebook_floor(floor_id, user)
     query = notebook_query(user, floor_id, {"is_converted": view == "quotation"})
     if status and status != "all":
-        query["notebook_status"] = status
+        query["notebook_status"] = predicate(status, allowed={"new", "pending", "won", "lost"})
     search = notebook_search_query(q or "")
     if search:
         query["$or"] = search["$or"]
@@ -1298,6 +1327,7 @@ async def log_call(followup_id: str, body: FollowupCallOutcomePayload, user: Use
         }[body.outcome]
         nf = Followup(
             rule_type="manual", category=f.get("category", "general"),
+            origin=f.get("origin"), walkin_id=f.get("walkin_id"),
             customer_id=f["customer_id"], customer_name=f["customer_name"], customer_phone=f.get("customer_phone"),
             customer_tier=f.get("customer_tier", "retail"), quotation_id=f.get("quotation_id"),
             quotation_number=f.get("quotation_number"), purchase_id=f.get("purchase_id"),

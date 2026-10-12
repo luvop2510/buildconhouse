@@ -98,7 +98,7 @@ export type PurchasesPageQuery = {
   view: "today" | "stock" | "customers" | "dispatch_record";
   brand?: string;
   customer?: string;
-  stage?: PurchaseStage | "";
+  stage?: string;
   q?: string;
   skip?: number;
   limit?: number;

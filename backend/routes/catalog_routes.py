@@ -164,19 +164,27 @@ async def list_products(
     sort: str = Query("popular", description="source | popular | recent | price_asc | price_desc | name; supplier catalogs default to source order"),
     limit: int = Query(60, ge=1),
     skip: int = Query(0, ge=0),
+    brand_ids: Optional[list[str]] = Query(None, max_length=100),
+    category_ids: Optional[list[str]] = Query(None, max_length=100),
+    subcategories: Optional[list[str]] = Query(None, max_length=100),
+    series_values: Optional[list[str]] = Query(None, max_length=100),
+    finishes: Optional[list[str]] = Query(None, max_length=100),
+    colours: Optional[list[str]] = Query(None, max_length=100),
+    sizes: Optional[list[str]] = Query(None, max_length=100),
     user: UserPublic = Depends(get_current_user),
 ):
     skip, limit = normalize_pagination(skip, limit)
     return await catalog_service.list_products_page(
         user_id=user.id,
         q=q,
-        brand_id=brand_id,
-        category_id=category_id,
-        subcategory=subcategory,
-        series=series,
+        brand_id=brand_ids if isinstance(brand_ids, list) else brand_id,
+        category_id=category_ids if isinstance(category_ids, list) else category_id,
+        subcategory=subcategories if isinstance(subcategories, list) else subcategory,
+        series=series_values if isinstance(series_values, list) else series,
         family_key=family_key,
-        finish=finish,
-        colour=colour,
+        finish=finishes if isinstance(finishes, list) else finish,
+        colour=colours if isinstance(colours, list) else colour,
+        size=sizes if isinstance(sizes, list) else None,
         sort=sort,
         limit=limit,
         skip=skip,
@@ -291,6 +299,13 @@ async def list_families(
     q: Optional[str] = None,
     limit: int = Query(60, ge=1),
     skip: int = Query(0, ge=0),
+    brand_ids: Optional[list[str]] = Query(None, max_length=100),
+    category_ids: Optional[list[str]] = Query(None, max_length=100),
+    subcategories: Optional[list[str]] = Query(None, max_length=100),
+    series_values: Optional[list[str]] = Query(None, max_length=100),
+    finishes: Optional[list[str]] = Query(None, max_length=100),
+    colours: Optional[list[str]] = Query(None, max_length=100),
+    sizes: Optional[list[str]] = Query(None, max_length=100),
     user: UserPublic = Depends(get_current_user),
 ):
     """Return products grouped by family_key — one card per family, variants
@@ -298,10 +313,13 @@ async def list_families(
     """
     skip, limit = normalize_pagination(skip, limit)
     return await catalog_service.list_family_groups(
-        brand_id=brand_id,
-        category_id=category_id,
-        subcategory=subcategory,
-        series=series,
+        brand_id=brand_ids if isinstance(brand_ids, list) else brand_id,
+        category_id=category_ids if isinstance(category_ids, list) else category_id,
+        subcategory=subcategories if isinstance(subcategories, list) else subcategory,
+        series=series_values if isinstance(series_values, list) else series,
+        finish=finishes if isinstance(finishes, list) else None,
+        colour=colours if isinstance(colours, list) else None,
+        size=sizes if isinstance(sizes, list) else None,
         q=q,
         limit=limit,
         skip=skip,
@@ -565,6 +583,11 @@ async def _apply_product_updates(product_id: str, body: ProductPatch, user: User
     updates = body.model_dump(exclude_unset=True)
     if not updates:
         return Product(**existing)
+    if "variant_label" in updates and updates["variant_label"] is not None:
+        label = updates["variant_label"].strip()
+        if not label or len(label) > 80:
+            raise HTTPException(status_code=422, detail="Color variant name must contain 1–80 characters")
+        updates["variant_label"] = label
 
     await _validate_diagram_media_urls(product_id, updates)
 

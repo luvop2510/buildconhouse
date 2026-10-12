@@ -56,6 +56,7 @@ assert.deepEqual(loadDelegation(['ground-floor', 'first-floor'], [
   { resource: 'payments', floor_id: 'ground-floor', actions: ['view', 'create'] },
   { resource: 'payments', floor_id: 'first-floor', actions: ['view', 'create', 'export'] },
 ]);
+for (const floor of floors) assert.equal(staffLandingPath(null, [{ resource: 'walkins', floor_id: floor, actions: ['view'] }], floor), '/(admin)/walkins', 'the same regular walk-in route is delegated on every floor');
 assert.equal(staffLandingPath(null, []), '/(admin)/access');
 assert.equal(staffLandingPath(null, [{ resource: 'payments', actions: ['view'], floor_id: 'ground-floor' }], 'first-floor'), '/(admin)/access');
 assert.equal(staffLandingPath(null, [{ resource: 'payments', actions: ['view'], floor_id: 'ground-floor' }], 'ground-floor'), '/(admin)/payments');

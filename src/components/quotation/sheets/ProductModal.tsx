@@ -12,6 +12,7 @@ import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { clearCatalogCache } from "@/src/services/catalogService";
 import { api } from "@/src/api/client";
 import { ProductImage } from "@/src/components/ProductImage";
 import { ProductEditor } from "@/src/components/catalog/ProductEditor";
@@ -83,6 +84,10 @@ export function ProductModal() {
   const [stockQty, setStockQty] = useState(1);
   const [stockBusy, setStockBusy] = useState(false);
 
+  const [variantName, setVariantName] = useState("");
+  const [variantNameEditing, setVariantNameEditing] = useState(false);
+  const [variantNameBusy, setVariantNameBusy] = useState(false);
+
   const [chosenVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
   const selectedVariant = chosenVariant ? product?.variants?.find((variant) => variant.id === chosenVariant.id && variant.sku === chosenVariant.sku) ?? chosenVariant : null;
   const [qty, setQty] = useState(1);
@@ -136,6 +141,30 @@ export function ProductModal() {
       configuration_options: variant.configuration_options ?? product.configuration_options,
     };
   }, [product, selectedVariant]);
+
+  useEffect(() => {
+    setVariantNameEditing(false);
+    setVariantName(selectedProduct?.variant_label || selectedProduct?.colour || selectedProduct?.finish || "");
+  }, [selectedProduct?.id, selectedProduct?.variant_label, selectedProduct?.colour, selectedProduct?.finish]);
+
+  const saveVariantName = async () => {
+    if (!selectedProduct || !canEditProduct || variantNameBusy) return;
+    const label = variantName.trim();
+    if (!label || label.length > 80) { toast.error("Enter a color variant name of 1–80 characters"); return; }
+    const identity = activeSelectionRef.current;
+    const id = selectedProduct.id;
+    setVariantNameBusy(true);
+    try {
+      await api.patch(`/products/${encodeURIComponent(id)}`, { variant_label: label }, { floorId: activeFloorId });
+      clearCatalogCache();
+      if (activeSelectionRef.current !== identity) return;
+      b.patchProduct(id, { variant_label: label });
+      setVariantNameEditing(false);
+      toast.success("Color variant name saved");
+    } catch (error: any) {
+      if (activeSelectionRef.current === identity) toast.error(error?.detail || "Could not save color variant name");
+    } finally { setVariantNameBusy(false); }
+  };
 
   const selectionKey = `${staff?.id || ""}:${activeFloorId}:${product?.id || ""}:${selectedProduct?.id || ""}`;
   activeSelectionRef.current = selectionKey;
@@ -375,7 +404,14 @@ export function ProductModal() {
                 {/* Variants / finishes */}
                 {selectableVariants.length > 1 ? (
                   <View style={{ gap: 6 }}>
-                    <Text style={styles.sectionLabel}>Available finishes</Text>
+                    <Text style={styles.sectionLabel}>Color variants</Text>
+                    {canEditProduct ? <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      {variantNameEditing ? <>
+                        <TextInput accessibilityLabel="Color variant name" testID="pm-color-variant-name" value={variantName} onChangeText={setVariantName} maxLength={80} style={{ flex: 1, minWidth: 140, minHeight: 44, borderWidth: 1, borderColor: colors.border, borderRadius: 8, paddingHorizontal: 10, color: colors.onSurface }} />
+                        <Pressable accessibilityRole="button" accessibilityLabel="Save color variant name" disabled={variantNameBusy} onPress={saveVariantName} style={{ padding: 12 }} testID="pm-save-color-variant-name"><Text>{variantNameBusy ? "Saving…" : "Save"}</Text></Pressable>
+                        <Pressable accessibilityRole="button" accessibilityLabel="Cancel color variant rename" onPress={() => setVariantNameEditing(false)} style={{ padding: 12 }}><Text>Cancel</Text></Pressable>
+                      </> : <Pressable accessibilityRole="button" accessibilityLabel="Edit selected color variant name" onPress={() => setVariantNameEditing(true)} style={{ paddingVertical: 10 }} testID="pm-edit-color-variant-name"><Text style={{ color: colors.brand }}>Edit selected color name</Text></Pressable>}
+                    </View> : null}
                     <View style={styles.variantRow}>
                       {selectableVariants.map((v) => {
                         const on = selectedProduct.sku === v.sku;

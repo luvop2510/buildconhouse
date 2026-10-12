@@ -129,12 +129,20 @@ assert.match(customerDetail, /const manageQuotation = \(quotation: Quotation\)/)
 assert.match(customerDetail, /\/\(admin\)\/tiles\/\$\{quotation\.doc_type === "tiles_selection" \? "selection" : "quotation"\}\?id=\$\{quotation\.id\}/);
 
 const quotationList = read("../app/(admin)/quotations/index.tsx");
-assert.match(quotationList, /doc_type=standard&view=\$\{completed \? "completed" : "pending"\}/);
+// Delivery completion is a separate customer view; approval stays independent.
+assert.match(quotationList, /doc_type=standard&completion=\$\{fulfilled \? "completed" : "active"\}/);
+assert.match(quotationList, /fulfilled \? "" : `&view=\$\{completed \? "completed" : "pending"\}/);
+assert.match(quotationList, /quotations-fulfilled-toggle/);
+assert.match(quotationList, /purchase_completion_status === "completed"/);
+assert.match(quotationList, /100% completed/);
 assert.match(quotationList, /quotations-lifecycle-toggle/);
 
 const tileList = read("../app/(admin)/tiles/index.tsx");
-assert.match(tileList, /doc_type=tiles_selection&view=\$\{completed \? "completed" : "pending"\}/);
-assert.match(tileList, /doc_type=tiles_quotation&view=\$\{completed \? "completed" : "pending"\}/);
+assert.match(tileList, /doc_type=tiles_selection&completion=\$\{fulfilled \? "completed" : "active"\}/);
+assert.match(tileList, /doc_type=tiles_quotation&completion=\$\{fulfilled \? "completed" : "active"\}/);
+assert.match(tileList, /fulfilled \? "" : `&view=\$\{completed \? "completed" : "pending"\}/);
+assert.match(tileList, /tiles-fulfilled-toggle/);
+assert.match(tileList, /purchase_completion_status === "completed"/);
 assert.match(tileList, /tiles-lifecycle-toggle/);
 
 const builderShell = read("../src/components/quotation/layout/BuilderShell.tsx");

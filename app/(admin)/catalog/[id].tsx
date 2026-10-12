@@ -881,7 +881,7 @@ export default function ProductDetail() {
 }
 
 function VariantSwatch({ product, active, onPress }: { product: Product; active?: boolean; onPress?: () => void }) {
-  const label = product.colour || product.variant_label || product.finish || "Variant";
+  const label = product.variant_label || product.colour || product.finish || "Variant";
   const c = swatchColor(label);
   return (
     <Pressable

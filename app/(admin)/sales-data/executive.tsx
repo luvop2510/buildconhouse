@@ -1,3 +1,4 @@
+import { FilterBar } from "@/src/components/ds";
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { View } from "react-native";
@@ -131,7 +132,7 @@ export default function ExecutiveOverview() {
         />
       </View>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }} testID="executive-floor-filter">
-        <PillTabs
+        <FilterBar multiSelect
           testID="executive-floor-tabs"
           value={floorId || "all"}
           onChange={(v) => updateFilters({ floorId: v })}

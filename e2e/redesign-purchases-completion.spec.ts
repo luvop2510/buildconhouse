@@ -11,7 +11,7 @@ const product = { item_id: 'i1', po_id: 'p1', po_number: 'PO-10', product_id: 'p
   await page.route('**/api/purchases/items/page?**', route => route.fulfill({ json: { items: [product], total: 1, next_skip: null, has_more: false, summaries: { sla_days: 7, blocked_count: 0, stage_counts: { dispatched: 1 } } } }));
   await page.goto('/purchases-completed');
   await page.getByTestId('customer-workspace-c1').click();
-  await expect(page.getByText('Delivered products · 100% complete', { exact: true })).toBeVisible();
+  await expect(page.getByText('Delivered products · 100% completed', { exact: true })).toBeVisible();
   await expect(page.getByText('Furniture chair', { exact: true })).toBeVisible();
   await expect(page.getByText(/PO-10 · Chair company/)).toBeVisible();
   await expect(page.getByText(/Delivered 10 Oct/)).toBeVisible();

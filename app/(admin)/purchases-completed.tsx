@@ -1,4 +1,4 @@
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -48,7 +48,7 @@ export default function CompletedPurchases() {
     } catch (cause: any) { if (activeFloor.current === selectedFloorId && sequence === requestSequence.current) setError(cause?.detail || "Could not load completed customers."); }
     finally { if (activeFloor.current === selectedFloorId && sequence === requestSequence.current) { setLoading(false); setLoadingMore(false); } }
   }, [selectedFloorId]);
-  useEffect(() => { setCustomers([]); setSelectedId(null); setWorkspace(null); setProducts([]); setHistoryId(null); void load(); }, [load]);
+  useFocusEffect(useCallback(() => { setCustomers([]); setSelectedId(null); setWorkspace(null); setProducts([]); setHistoryId(null); void load(); return () => { requestSequence.current += 1; }; }, [load]));
 
   useEffect(() => {
     if (!selectedId) return;
@@ -72,13 +72,13 @@ export default function CompletedPurchases() {
     finally { if (activeFloor.current === selectedFloorId && selectedCustomer.current === selectedId) setLoadingWorkspace(false); }
   };
   const exportRows = () => void downloadSectionExcel({ resource: "purchases",
-    page: "Purchases", section: "Completed customers", filename: "purchases-completed-customers.xlsx",
+    page: "Purchases", section: "100% completed customers", filename: "purchases-completed-customers.xlsx",
     rows: [["Customer", "Delivered products", "Delivered quantity", "Last delivered"], ...customers.map((customer) => [customer.name, customer.count, customer.quantity, customer.completed_at || ""])],
   }).catch((cause: unknown) => toast.error(cause instanceof Error ? cause.message : "Could not export completed customers"));
 
   return <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
     <ScrollView contentContainerStyle={{ width: "100%", maxWidth: 1000, alignSelf: "center", padding: isPhone ? spacing.md : spacing.xl, gap: spacing.lg, paddingBottom: 100 }}>
-      <PageHeader title="100% complete customers" subtitle="Every active product dispatched and delivered" back={() => router.back()} />
+      <PageHeader title="100% Customers" subtitle="Every active product dispatched and delivered" back={() => router.back()} />
       {!loading && !error && customers.length > 0 ? <Button label="Export completed customers .xlsx" icon="download" variant="secondary" onPress={exportRows} /> : null}
       {error ? <ErrorState title="Completed customers unavailable" subtitle={error} onRetry={() => void load()} /> : !loading && customers.length === 0 ? <EmptyState icon="check-circle" title="No completed customers yet" subtitle="Customers appear once every active product is dispatched. Partial dispatch stays in active purchases." /> : <CustomerNavigator completed loading={loading} customers={customers.map((customer) => ({ ...customer, company: `${customer.count} delivered products · ${customer.quantity} units${customer.completed_at ? ` · ${new Date(customer.completed_at).toLocaleDateString("en-IN")}` : ""}` }))} onOpen={setSelectedId} />}
       {hasMore && !loading ? <Button label={loadingMore ? "Loading…" : "Load more customers"} variant="secondary" disabled={loadingMore} onPress={() => void load(customers.length)} /> : null}

@@ -64,6 +64,8 @@ class WalkIn(TimestampedModel):
     converted_at: Optional[str] = None
     created_by: Optional[str] = None
     created_by_name: Optional[str] = None
+    showroom_followup_id: Optional[str] = None
+    showroom_transferred_at: Optional[str] = None
     is_deleted: bool = False
 
 

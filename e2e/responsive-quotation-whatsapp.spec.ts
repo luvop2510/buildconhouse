@@ -17,7 +17,7 @@ test('quotation WhatsApp draft uses current contact and editable message without
     };
   });
   let quotationMutations = 0;
-  await page.route('**/api/quotations/wa-quotation', async route => {
+  await page.route(/\/api\/quotations\/wa-quotation(?:\?.*)?$/, async route => {
     if (route.request().method() !== 'GET') quotationMutations++;
     await route.fulfill({ json: {
       id: 'wa-quotation', number: 'Q-WA', customer_name: 'Mira Shah', status: 'draft', floor_id: 'first-floor',
@@ -58,7 +58,7 @@ test('quotation WhatsApp draft uses current contact and editable message without
 
 test('quotation WhatsApp draft reports missing contact without opening a chat or claiming sent', async ({ page }) => {
   await mockSession(page, '/quotations/no-phone', false);
-  await page.route('**/api/quotations/no-phone', route => route.fulfill({ json: {
+  await page.route(/\/api\/quotations\/no-phone(?:\?.*)?$/, route => route.fulfill({ json: {
     id: 'no-phone', number: 'Q-NO-PHONE', customer_name: 'No contact', status: 'draft', floor_id: 'first-floor',
     items: [{ id: 'line', sku: 'B-1', name: 'Basin', qty: 1, unit_price: 200, discount_pct: 0 }], rooms: [],
     subtotal: 200, discount_total: 0, grand_total: 200, created_at: '2026-10-01T10:00:00Z', created_by_name: 'Audit Owner',
@@ -95,7 +95,7 @@ for (const kind of ['sanitary', 'tiles_selection', 'tiles_quotation'] as const) 
     await page.route('**/api/quotations/recent?**', route => route.fulfill({ json: [] }));
     await page.route('**/api/products/families?**', route => route.fulfill({ json: { total: 0, items: [] } }));
     await page.route('**/api/products/p1/size-variants', route => route.fulfill({ json: { available_sizes: ['600 × 600'] } }));
-    await page.route('**/api/quotations/builder-wa', route => {
+    await page.route(/\/api\/quotations\/builder-wa(?:\?.*)?$/, route => {
       if (route.request().method() === 'PATCH') expect(route.request().postDataJSON().status).not.toBe('sent');
       return route.fulfill({ json: savedDocument });
     });

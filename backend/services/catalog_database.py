@@ -41,7 +41,7 @@ def listing_pipeline(filters=None, *, floor_ids=None, q=None, per_category=False
     """Match floor before joins; expand source placements before user filters."""
     from services import catalog_service as catalog
     query = {"active": True, **floor_query(floor_ids)}
-    filters = {key: value for key, value in (filters or {}).items() if value is not None}
+    filters = {key: {"$in": value} if isinstance(value, (list, tuple)) else value for key, value in (filters or {}).items() if value is not None}
     # These fields are invariant across source occurrences and can use indexes.
     for key in ("brand_id", "family_key", "finish", "colour", "series"):
         if key in filters:
@@ -76,6 +76,24 @@ def listing_pipeline(filters=None, *, floor_ids=None, q=None, per_category=False
     if q:
         pattern = re.escape(q[:120])
         pipeline.append({"$match": {"$or": [{field: {"$regex": pattern, "$options": "i"}} for field in catalog._SEARCH_FIELDS]}})
+    # Atlas tiers without external sorting enforce a small memory ceiling.
+    # Sort identities and listing fields, not every product's source workbook,
+    # specifications and image gallery. Full documents are fetched only for
+    # the selected page and restored before the existing hydration algorithms.
+    listing_fields = {
+        "id", "sku", "floor_id", "brand_id", "category_id", "name", "description",
+        "family_key", "family_name", "subcategory", "series", "finish", "colour",
+        "size", "dimensions", "material", "price", "mrp", "price_status",
+        "source_price_unspecified", "price_source", "listing_id", "image_quality",
+        "catalog_search_text", "_catalog_database_listing", "_source_rank",
+        "_brand_order", "_sort_price", *catalog._SEARCH_FIELDS,
+    }
+    pipeline.append({"$project": {
+        "_id": 0, **{field: 1 for field in listing_fields},
+        "images": {"$slice": [{"$ifNull": ["$images", []]}, 1]},
+        **{f"_placement.{field}": 1 for field in ("source_catalog", "source_order")},
+        **{f"catalog_entry.{field}": 1 for field in ("entry_id", "source_catalog", "sheet_name", "sheet_order", "row_number", "source_order", "serial_number", "category_id", "category_name", "source_sku", "subcategory", "mrp", "price_status", "name", "description", "source_status_note")},
+    }})
     pipeline += [
         {"$sort": {"_source_rank": 1, "_brand_order": 1, "_placement.source_catalog": 1, "_placement.source_order": 1, "name": 1, "listing_id": 1, "id": 1}},
         {"$group": {"_id": {"id": "$id", "category": "$category_id"} if per_category else "$id", "document": {"$first": "$$ROOT"}}},
@@ -85,7 +103,7 @@ def listing_pipeline(filters=None, *, floor_ids=None, q=None, per_category=False
 
 
 def family_group_key():
-    return {"key": {"$ifNull": ["$listing_id", {"$ifNull": ["$family_key", {"$concat": ["solo:", "$id"]}]}]}, "floor": "$floor_id", "brand": "$brand_id", "category": "$category_id"}
+    return {"key": {"$ifNull": ["$family_key", {"$concat": ["solo:", "$id"]}]}, "floor": "$floor_id", "brand": "$brand_id", "category": "$category_id"}
 
 
 def source_sort():
@@ -103,14 +121,16 @@ def usage_lookup(user_id):
     ]
 
 
-async def context(products, *, product_ids=None, floor_ids=None):
+async def context(products, *, product_ids=None, floor_ids=None, listing_rows=None):
     """Complete bounded relationships for a page; namespace all family joins."""
     from services import catalog_service as catalog
     if product_ids is not None:
         products = await bounded(db.products.find({"id": {"$in": list(product_ids)}, **floor_query(floor_ids)}, {"_id": 0}), MAX_CONTEXT_PRODUCTS, "Requested product page")
     products = list(products)
     relatives = []
-    for product in products:
+    # A workbook occurrence can live in a different category than its SKU's
+    # canonical document. Include those categories in the family relationships.
+    for product in [*products, *(listing_rows or [])]:
         namespace = {"floor_id": product.get("floor_id"), "brand_id": product.get("brand_id"), "active": True}
         if product.get("family_key"):
             relatives.append({**namespace, "family_key": product["family_key"], "$or": [{"category_id": product.get("category_id")}, {"catalog_entries.category_id": product.get("category_id")}]})
@@ -154,9 +174,23 @@ async def run_in_memory(name, snapshot, arguments):
         catalog._snapshot_override.reset(token)
 
 
+def restore_listing(row, snapshot):
+    """Restore full source metadata while retaining the chosen occurrence."""
+    product = snapshot.product_by_id.get(row["id"], {})
+    restored = {**product, **row}
+    if "images" in product:
+        restored["images"] = product["images"]
+    if row.get("listing_id"):
+        entry = next((entry for entry in product.get("catalog_entries") or []
+                      if entry.get("entry_id") == row["listing_id"]), None)
+        if entry is not None:
+            restored["catalog_entry"] = entry
+    return restored
+
+
 async def list_page(arguments):
     from services import catalog_service as catalog
-    filters = {key: arguments.get(key) for key in ("brand_id", "category_id", "subcategory", "series", "family_key", "finish", "colour")}
+    filters = {key: arguments.get(key) for key in ("brand_id", "category_id", "subcategory", "series", "family_key", "finish", "colour", "size")}
     pipeline = listing_pipeline(filters, floor_ids=arguments.get("floor_ids"), q=arguments.get("q"))
     sort = arguments["sort"]
     if sort in {"recent", "popular"}:
@@ -169,9 +203,11 @@ async def list_page(arguments):
             order = {"_recent_rank": 1, "_usage.last_used_at": -1, "name": 1, "id": 1} if sort == "recent" else {"usage_count": -1, "my_usage_count": -1, "name": 1, "id": 1}
     else:
         order = {"_sort_price": 1, "id": 1} if sort == "price_asc" else {"_sort_price": -1, "id": 1} if sort == "price_desc" else {"name": 1, "id": 1} if sort == "name" else source_sort()
+    pipeline += [{"$sort": order}, {"$group": {"_id": family_group_key(), "document": {"$first": "$$ROOT"}}}, {"$replaceRoot": {"newRoot": "$document"}}]
     result = await aggregate(pipeline + [{"$facet": {"total": [{"$count": "value"}], "items": [{"$sort": order}, {"$skip": arguments["skip"]}, {"$limit": arguments["limit"]}, {"$unset": ["_brand", "_placement"]}]}}]).to_list(1)
     result = result[0] if result else {}; rows = result.get("items", [])
-    snapshot = await context(rows)
+    snapshot = await context([], product_ids=[row["id"] for row in rows], floor_ids=arguments.get("floor_ids"), listing_rows=rows)
+    rows = [restore_listing(row, snapshot) for row in rows]
     ids = [p["id"] for p in rows]
     mine = await bounded(db.product_usage.find({"user_id": arguments["user_id"], "product_id": {"$in": ids}}, {"_id": 0}), MAX_CONTEXT_PRODUCTS, "User product usage")
     my_rows = {row["product_id"]: row for row in mine}
@@ -209,7 +245,7 @@ async def reference_counts(name, arguments):
 
 
 async def families(arguments):
-    filters = {key: arguments.get(key) for key in ("brand_id", "category_id", "subcategory", "series")}
+    filters = {key: arguments.get(key) for key in ("brand_id", "category_id", "subcategory", "series", "finish", "colour", "size")}
     base = listing_pipeline(filters, floor_ids=arguments.get("floor_ids"), q=arguments.get("q"))
     groups = [{"$sort": source_sort()}, {"$group": {"_id": family_group_key(), "sample": {"$first": "$$ROOT"}}}, {"$set": {"_sort_name": {"$ifNull": ["$sample.catalog_entry.name", {"$ifNull": ["$sample.family_name", "$sample.name"]}]}}}]
     has_source = await aggregate(base + [{"$match": {"listing_id": {"$exists": True}}}, {"$limit": 1}, {"$project": {"id": 1}}]).to_list(1)
@@ -219,7 +255,8 @@ async def families(arguments):
     if not selected: return {"total": result.get("total", [{}])[0].get("value", 0) if result.get("total") else 0, "items": []}
     keys = [row["_id"] for row in selected]
     rows = await bounded(aggregate(base + [{"$set": {"_family_group": family_group_key()}}, {"$match": {"_family_group": {"$in": keys}}}, {"$unset": ["_brand", "_placement", "_family_group"]}]), MAX_CONTEXT_PRODUCTS, "Family page variants")
-    snapshot = await context(rows)
+    snapshot = await context([], product_ids=[row["id"] for row in rows], floor_ids=arguments.get("floor_ids"), listing_rows=rows)
+    rows = [restore_listing(row, snapshot) for row in rows]
     page_snapshot = replace(snapshot, products=tuple(rows))
     response = await run_in_memory("list_family_groups", page_snapshot, {**arguments, "skip": 0})
     response["total"] = result["total"][0]["value"] if result.get("total") else 0
@@ -245,10 +282,15 @@ async def search(arguments):
         score = [{"$switch": {"branches": [{"case": {"$eq": [{"$toLower": {"$ifNull": ["$sku", ""]}}, lower]}, "then": 100}, {"case": match("sku", "^" + escaped), "then": 60}, {"case": match("sku", escaped), "then": 30}], "default": 0}}]
         score += [{"$cond": [match(field, escaped), weight, 0]} for field, weight in (("name", 12), ("family_name", 10), ("series", 6), ("subcategory", 4), ("finish", 3), ("size", 3), ("colour", 3), ("dimensions", 1), ("description", 1), ("catalog_search_text", 1))]
         base += [{"$set": {"_score": {"$add": score}}}, {"$match": {"_score": {"$gt": 0}}}]
-    result = await aggregate(base + [{"$facet": {"total": [{"$count": "value"}], "items": [{"$sort": {"_score": -1, **source_sort()} if query else source_sort()}, {"$limit": arguments["limit"] * 3}, {"$unset": ["_brand", "_placement"]}]}}]).to_list(1)
-    result = result[0] if result else {}; rows = result.get("items", []); snapshot = await context(rows)
+    search_order = {"_score": -1, **source_sort()} if query else source_sort()
+    if arguments["group"]:
+        base += [{"$sort": search_order}, {"$group": {"_id": family_group_key(), "document": {"$first": "$$ROOT"}}}, {"$replaceRoot": {"newRoot": "$document"}}]
+    result = await aggregate(base + [{"$facet": {"total": [{"$count": "value"}], "items": [{"$sort": search_order}, {"$limit": arguments["limit"]}, {"$unset": ["_brand", "_placement"]}]}}]).to_list(1)
+    result = result[0] if result else {}; rows = result.get("items", [])
+    snapshot = await context([], product_ids=[row["id"] for row in rows], floor_ids=arguments.get("floor_ids"), listing_rows=rows)
+    rows = [restore_listing(row, snapshot) for row in rows]
     response = await run_in_memory("search_catalog", replace(snapshot, products=tuple(rows)), arguments)
-    if not arguments["group"]: response["total"] = result["total"][0]["value"] if result.get("total") else 0
+    response["total"] = result["total"][0]["value"] if result.get("total") else 0
     return response
 
 
@@ -289,6 +331,12 @@ async def recent(arguments):
         {"$sort": {"last_used_at" if arguments["recent"] else "count": -1, "product_id": 1}},
         {"$lookup": {"from": "products", "localField": "product_id", "foreignField": "id", "as": "product"}},
         {"$unwind": "$product"}, {"$match": {f"product.{key}": value for key, value in query.items()}},
+        {"$group": {"_id": {
+            "key": {"$ifNull": ["$product.family_key", {"$concat": ["solo:", "$product.id"]}]},
+            "floor": "$product.floor_id", "brand": "$product.brand_id", "category": "$product.category_id",
+        }, "document": {"$first": "$$ROOT"}}},
+        {"$replaceRoot": {"newRoot": "$document"}},
+        {"$sort": {"last_used_at" if arguments["recent"] else "count": -1, "product_id": 1}},
         {"$limit": arguments["limit"]},
     ], allowDiskUse=True, maxTimeMS=MAX_QUERY_MS), MAX_CONTEXT_PRODUCTS, "Recent products")
     snapshot = await context([row["product"] for row in rows]); snapshot.usage_by_user[arguments["user_id"]] = {row["product_id"]: {**row, "product": None} for row in rows}

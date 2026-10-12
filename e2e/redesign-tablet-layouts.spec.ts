@@ -21,7 +21,7 @@ const products = Array.from({ length: 8 }, (_, index) => ({
         items: [{ id: 'line-one', product_id: 'tile-0', sku: 'T-1', name: 'Stone tile 1', image, room: 'Bathroom', size: '600 × 600', rate_sqft: 50, rate_box: 100, qty: 10, quantity_unit: 'Box', net_amount: 1000 }],
       };
       const saves: any[] = [];
-      await page.route('**/api/quotations/tile-doc', route => {
+      await page.route(/\/api\/quotations\/tile-doc(?:\?.*)?$/, route => {
         if (route.request().method() === 'PATCH') saves.push(route.request().postDataJSON());
         return route.fulfill({ json: doc });
       });

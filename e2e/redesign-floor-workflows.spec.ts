@@ -18,7 +18,7 @@ test('critical sanitary deep link synchronizes the floor before fetching an exis
   await mockSession(page, '/tiles');
   await builderReferences(page);
   const requestedFloors: string[] = [];
-  await page.route('**/api/quotations/sanitary-order', route => {
+  await page.route(/\/api\/quotations\/sanitary-order(?:\?.*)?$/, route => {
     requestedFloors.push(route.request().headers()['x-floor-id']);
     return route.fulfill({ json: quotationDoc('sanitary-order', 'first-floor') });
   });
@@ -45,7 +45,7 @@ test('critical a floor-changing quotation deep link preserves pending identity h
     await route.fulfill({ json: { id: 'audit-owner', email: 'owner@example.test', full_name: 'Audit Owner', role: 'owner', active: true, floor_ids: floors.map(floor => floor.id) } });
   });
   const requestedFloors: string[] = [];
-  await page.route('**/api/quotations/pending-identity-order', route => {
+  await page.route(/\/api\/quotations\/pending-identity-order(?:\?.*)?$/, route => {
     requestedFloors.push(route.request().headers()['x-floor-id']);
     return route.fulfill({ json: quotationDoc('pending-identity-order', 'first-floor') });
   });
@@ -75,7 +75,7 @@ test('critical Payments update opens the Ground Floor document with its correct 
     quotation_total: 1200, manual_extra_amount: 0, payments: [],
   } }));
   const requestedFloors: string[] = [];
-  await page.route('**/api/quotations/tile-payment-order', route => {
+  await page.route(/\/api\/quotations\/tile-payment-order(?:\?.*)?$/, route => {
     requestedFloors.push(route.request().headers()['x-floor-id']);
     return route.fulfill({ json: tile });
   });

@@ -7,6 +7,7 @@ pipeline, since won-quotation volume stays small and this is far easier to
 unit-test against the codebase's existing fake-db pattern. See
 docs/superpowers/specs/2026-07-27-sales-data-dashboard-design.md."""
 from __future__ import annotations
+from services.multi_filters import filter_values, filter_condition
 
 from collections import defaultdict
 from datetime import datetime
@@ -53,11 +54,11 @@ def _resolve_floor_ids(user: UserPublic, floor_id: Optional[str]) -> Optional[li
     `has_all_floor_access() == False`, so "Both floors" would silently
     shrink to just that admin's own `floor_ids` even though this endpoint
     already requires an elevated role to reach at all."""
-    if floor_id and floor_id != "both":
+    if isinstance(floor_id, str) and floor_id and floor_id not in {"both", "all"}:
         allowed = accessible_floor_ids(user)
-        if allowed is not None and floor_id not in allowed:
+        if allowed is not None and any(value not in allowed for value in filter_values(floor_id)):
             raise HTTPException(status_code=403, detail="You do not have access to this floor")
-        return [floor_id]
+        return filter_values(floor_id)
     # Delegated reporting keeps the operation's granted floors even when
     # the caller selects the combined view or omits a floor filter.
     return accessible_floor_ids(user) if user.custom_access else None

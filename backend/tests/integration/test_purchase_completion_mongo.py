@@ -218,3 +218,123 @@ def test_dispatch_compare_and_set_rejects_concurrent_cancellation_quantity_or_ch
         finally:
             client.close()
     asyncio.run(run())
+
+
+def test_customer_and_quotation_views_follow_actual_fulfillment_and_reopen(mongo_url, monkeypatch):
+    """Approval is independent of delivery; no page may hide an older open line."""
+    from fastapi import Response
+    from routes import customer_routes, quotation_routes
+
+    async def run():
+        client = AsyncIOMotorClient(mongo_url)
+        db = client.completion
+        monkeypatch.setattr(customer_routes, "db", db)
+        monkeypatch.setattr(quotation_routes, "db", db)
+        monkeypatch.setattr(tracker, "db", db)
+        async def identity_images(items, _floor):
+            return items
+        monkeypatch.setattr(quotation_routes, "_canonicalize_item_images", identity_images)
+        try:
+            names = ["complete", "partial", "empty", "received", "reassigned"]
+            await db.customers.insert_many([{"id": c, "name": c, "floor_id": "first-floor"} for c in names])
+            await db.quotations.insert_many([{"id": f"q-{c}", "number": f"Q-{c}", "customer_id": c, "customer_name": c, "created_by": "test-owner", "created_by_name": "Test owner", "floor_id": "first-floor", "status": "ordered", "items": []} for c in names])
+            await db.purchase_orders.insert_many([
+                po("complete", "complete", [item(qty=8, godown_transferred_qty=2, loan_replenishment_returned_qty=1)]),
+                po("partial-done", "partial"),
+                po("partial-old", "partial", [item(stage="po_final")], created_at="2020-01-01"),
+                po("zero", "empty", [item(qty=0)]),
+                po("received", "received", [item(stage="delivered", stage_history=[{"note": "Auto-synced from PO receiving"}])]),
+                # Item ownership wins over the original order/customer name.
+                po("reassigned", "complete", [item(customer_id="reassigned", stage="in_box")]),
+                # Other floor neither leaks completion nor blocks this floor.
+                po("foreign", "complete", [item(stage="in_box")], floor_id="ground-floor"),
+            ])
+            async def customers(view):
+                return await customer_routes.list_customers(Response(), skip=0, limit=500, confirmed_only=True, completion=view, user=user())
+            async def quotations(view):
+                return await quotation_routes.list_quotations(doc_type="standard", completion=view, skip=0, limit=100, user=user())
+            assert {c.id for c in await customers("completed")} == {"complete"}
+            assert {c.id for c in await customers("active")} == {"partial", "empty", "received", "reassigned"}
+            assert {q["customer_id"] for q in await quotations("completed")} == {"complete"}
+            assert {q["customer_id"] for q in await quotations("active")} == {"partial", "empty", "received", "reassigned"}
+            assert all(q["purchase_completion_status"] == "completed" for q in await quotations("completed"))
+            assert (await customer_routes.get_customer("complete", with_completion=True, user=user())).purchase_completion_status == "completed"
+            assert (await quotation_routes.get_quotation("q-complete", with_completion=True, user=user())).purchase_completion_status == "completed"
+            assert {c["id"] for c in await tracker.active_customer_workspaces(False, user())} == {"partial", "empty", "received", "reassigned"}
+            # Reopens all views without editing the Customer or Quotation.
+            await db.purchase_orders.insert_one(po("new-order", "complete", [item(stage="in_box")]))
+            assert await customers("completed") == []
+            assert await quotations("completed") == []
+            assert (await customer_routes.get_customer("complete", with_completion=True, user=user())).purchase_completion_status == "active"
+            assert (await quotation_routes.get_quotation("q-complete", with_completion=True, user=user())).purchase_completion_status == "active"
+            assert "complete" in {c["id"] for c in await tracker.active_customer_workspaces(False, user())}
+        finally:
+            client.close()
+    asyncio.run(run())
+
+
+
+def test_po_only_customers_and_transferred_owners_share_confirmed_and_completed_directories(mongo_url, monkeypatch):
+    from fastapi import Response
+    from routes import customer_routes
+    async def run():
+        client = AsyncIOMotorClient(mongo_url)
+        db = client.completion
+        monkeypatch.setattr(customer_routes, "db", db)
+        monkeypatch.setattr(tracker, "db", db)
+        try:
+            names = ["direct", "transferred", "original", "cancelled", "zero", "returned", "foreign"]
+            await db.customers.insert_many([{"id": name, "name": name, "floor_id": "first-floor"} for name in names])
+            await db.purchase_orders.insert_many([
+                po("direct", "direct"),
+                po("transfer", "original", [item(customer_id="transferred")]),
+                po("cancelled", "cancelled", [item(cancelled=True)]),
+                po("zero", "zero", [item(qty=0)]),
+                po("returned", "returned", [item(godown_transferred_qty=2)]),
+                po("foreign", "foreign", floor_id="ground-floor"),
+                po("cancelled-po", "cancelled", status="cancelled"),
+            ])
+            confirmed = await customer_routes.list_customers(Response(), skip=0, limit=500, confirmed_only=True, completion=None, user=user())
+            assert {row.id for row in confirmed} == {"direct", "transferred"}
+            completed = await customer_routes.list_customers(Response(), skip=0, limit=500, confirmed_only=True, completion="completed", user=user())
+            assert {row.id for row in completed} == {row["id"] for row in await tracker.completed_customer_facets(0, 100, user())} == {"direct", "transferred"}
+            await db.purchase_orders.insert_one(po("new", "direct", [item(stage="in_box")]))
+            active = await customer_routes.list_customers(Response(), skip=0, limit=500, confirmed_only=True, completion="active", user=user())
+            assert {row.id for row in active} == {"direct"}
+        finally:
+            client.close()
+    asyncio.run(run())
+
+
+def test_record_floor_completion_and_tile_list_ignore_owner_ambient_workspace(mongo_url, monkeypatch):
+    from routes import customer_routes, quotation_routes
+    from fastapi import HTTPException
+    async def run():
+        client = AsyncIOMotorClient(mongo_url)
+        db = client.completion
+        monkeypatch.setattr(customer_routes, "db", db)
+        monkeypatch.setattr(quotation_routes, "db", db)
+        async def images(items, _floor): return items
+        monkeypatch.setattr(quotation_routes, "_canonicalize_item_images", images)
+        owner = UserPublic(id="owner", email="owner@example.com", full_name="Owner", role="owner", active_floor_id="first-floor")
+        try:
+            await db.customers.insert_one({"id": "tile", "name": "Tile buyer", "floor_id": "ground-floor"})
+            await db.quotations.insert_one({"id": "tile-q", "number": "TQ-1", "floor_id": "ground-floor", "doc_type": "tiles_quotation", "customer_id": "tile", "customer_name": "Tile buyer", "created_by": "owner", "created_by_name": "Owner", "items": [], "status": "ordered"})
+            await db.purchase_orders.insert_many([
+                po("tile-po", "tile", floor_id="ground-floor"),
+                po("sanitary-unrelated", "tile", [item(stage="in_box")]),
+            ])
+            assert (await customer_routes.get_customer("tile", with_completion=True, user=owner)).purchase_completion_status == "completed"
+            assert (await quotation_routes.get_quotation("tile-q", with_completion=True, user=owner)).purchase_completion_status == "completed"
+            listed = await quotation_routes.list_quotations(doc_type="tiles_quotation", completion="completed", skip=0, limit=100, user=owner)
+            assert [row["id"] for row in listed] == ["tile-q"]
+            assert listed[0]["purchase_completion_status"] == "completed"
+            assert owner.active_floor_id == "first-floor"
+            unauthorized = UserPublic(id="sales", email="sales@example.com", full_name="Sales", role="sales", floor_ids=["first-floor"], active_floor_id="first-floor")
+            for handler, identity in [(customer_routes.get_customer, "tile"), (quotation_routes.get_quotation, "tile-q")]:
+                with pytest.raises(HTTPException) as error:
+                    await handler(identity, with_completion=True, user=unauthorized)
+                assert error.value.status_code == 404
+        finally:
+            client.close()
+    asyncio.run(run())
