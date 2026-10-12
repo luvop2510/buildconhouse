@@ -1,7 +1,7 @@
 // Contact fields never change account access or passwords. Blank optional
 // values clear the contact; at least one email/username remains for sign-in.
-export function optionalContact(value: string | null | undefined): string | null {
-  return value?.trim() || null;
+export function optionalContact(value: unknown): string | null {
+  return typeof value === "string" ? value.trim() || null : null;
 }
 
 export function validateTeamContacts(email: string, username: string, phone: string, mobile: string): string | null {

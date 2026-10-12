@@ -437,6 +437,31 @@ test('critical active owners keep their role enabled status and account', async 
   expect(writes).toHaveLength(0); // An unchanged save cannot rewrite owner access.
 });
 
+test('critical team contacts: malformed legacy responses cannot crash display or editing', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const { writes, state } = await teamFixture(page);
+  state.members[0] = { ...state.members[0], login_id: 'JK', email: ['invalid'], phone: 9909906652, mobile: { number: 'invalid' } };
+  await page.reload();
+  await expect(page.getByTestId('team-row-test-worker')).toBeVisible();
+  await expect(page.getByTestId('team-email-test-worker')).toHaveCount(0);
+  await expect(page.getByTestId('team-phone-test-worker')).toHaveCount(0);
+  await page.getByTestId('team-row-test-worker').click();
+  for (const field of ['email', 'phone', 'mobile']) await expect(page.getByTestId(`edit-staff-${field}`)).toHaveValue('');
+  if ((page.viewportSize()?.width || 0) >= 768) {
+    const boxes = await Promise.all(['phone', 'mobile', 'email'].map(field => page.getByTestId(`edit-staff-${field}`).boundingBox()));
+    for (const box of boxes) expect(box).not.toBeNull();
+    expect(Math.max(...boxes.map(box => box!.y)) - Math.min(...boxes.map(box => box!.y))).toBeLessThan(2);
+  }
+  await page.getByTestId('edit-staff-phone').fill('+91 99099 06652');
+  await page.getByTestId('edit-staff-save').click();
+  await expect(page.getByTestId('edit-staff-sheet')).toHaveCount(0);
+  expect(writes).toEqual([{ path: '/api/team/test-worker', method: 'PATCH', body: { phone: '+91 99099 06652' } }]);
+  await page.reload();
+  await expect(page.getByTestId('team-phone-test-worker')).toContainText('+91 99099 06652');
+  expect(errors).toEqual([]);
+});
+
 test('critical team contacts: username-only creation, contact changes, clearing, reload and delete remain usable', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));

@@ -94,6 +94,7 @@ export default function Team() {
         <View style={{ gap: spacing.sm }}>
           {items.map((u) => {
             const roleInfo = roles.find((r) => r.role === u.role);
+            const phone = optionalContact(u.phone), mobile = optionalContact(u.mobile);
             return (
               <Pressable
                 key={u.id}
@@ -120,7 +121,7 @@ export default function Team() {
                   }}>{u.full_name}{u.id === me?.id ? " · You" : ""}</Text>
                   {optionalContact(u.email) ? <Text testID={`team-email-${u.id}`} numberOfLines={1} style={type.caption}>{u.email}</Text> : null}
                   {optionalContact(u.login_id) ? <Text testID={`team-username-${u.id}`} numberOfLines={1} style={type.caption}>ID: {u.login_id}</Text> : null}
-                  {optionalContact(u.phone) || optionalContact(u.mobile) ? <Text testID={`team-phone-${u.id}`} numberOfLines={1} style={type.caption}>{[u.phone ? `Phone: ${u.phone}` : null, u.mobile ? `Mobile: ${u.mobile}` : null].filter(Boolean).join(" · ")}</Text> : null}
+                  {phone || mobile ? <Text testID={`team-phone-${u.id}`} numberOfLines={1} style={type.caption}>{[phone ? `Phone: ${phone}` : null, mobile ? `Mobile: ${mobile}` : null].filter(Boolean).join(" · ")}</Text> : null}
                 </View>
                 <Feather name="chevron-right" size={16} color={colors.onSurfaceMuted} />
                 <View style={{ alignItems: isPhone ? "flex-start" : "flex-end", gap: 4, minWidth: 0, flexShrink: 1, ...(isPhone ? { width: "100%", paddingLeft: 44 + spacing.md } : { maxWidth: "40%" }) }}>
@@ -236,7 +237,7 @@ function AddStaffSheet({ visible, options, optionsError, onRetry, onClose, onCre
     } catch (cause: unknown) { setError(teamErrorMessage(cause, "Could not add team member")); }
     finally { setSaving(false); }
   };
-  return <Sheet visible={visible} onClose={() => { if (!saving) { reset(); onClose(); } }} title="Add staff" testID="add-staff-sheet">
+  return <Sheet visible={visible} width={720} onClose={() => { if (!saving) { reset(); onClose(); } }} title="Add staff" testID="add-staff-sheet">
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
         <TextField testID="add-staff-name" label="Full name" value={fullName} onChangeText={setFullName} placeholder="e.g. Priya Sharma" autoFocus />
@@ -280,10 +281,10 @@ function EditStaffSheet({ staff, options, optionsError, onRetry, selfId, onClose
   const originalDelegation = useRef<DelegationState | null>(null);
   useEffect(() => {
     if (!staff) return;
-    setUsername(staff.login_id || "");
-    setEmail(staff.email || ""); setMobile(staff.mobile || "");
-    setFullName(staff.full_name); setPhone(staff.phone || ""); setRole(staff.role === "owner" ? "owner" : "worker");
-    setTeamRole(staff.team_role || ""); setActive(staff.active); setSaveError(null);
+    setUsername(optionalContact(staff.login_id) || "");
+    setEmail(optionalContact(staff.email) || ""); setMobile(optionalContact(staff.mobile) || "");
+    setFullName(staff.full_name); setPhone(optionalContact(staff.phone) || ""); setRole(staff.role === "owner" ? "owner" : "worker");
+    setTeamRole(optionalContact(staff.team_role) || ""); setActive(staff.active); setSaveError(null);
   }, [staff]);
   useEffect(() => {
     let alive = true;
@@ -317,7 +318,8 @@ function EditStaffSheet({ staff, options, optionsError, onRetry, selfId, onClose
       const patch: Record<string, unknown> = {};
       const contact = { full_name: fullName.trim(), login_id: optionalContact(username), email: optionalContact(email)?.toLowerCase() || null, phone: optionalContact(phone), mobile: optionalContact(mobile), team_role: optionalContact(teamRole) };
       for (const [key, value] of Object.entries(contact)) {
-        if (value !== (staff[key as keyof Staff] ?? null)) patch[key] = value;
+        const original = key === "full_name" ? staff.full_name : optionalContact(staff[key as keyof Staff]);
+        if (value !== original) patch[key] = value;
       }
       if (!isSelf && accessChanged) {
         const owner = role === "owner";
@@ -351,7 +353,7 @@ function EditStaffSheet({ staff, options, optionsError, onRetry, selfId, onClose
     } catch (cause: unknown) { setSaveError(teamErrorMessage(cause, "Could not delete team member")); setDeleteOpen(false); }
     finally { setDeleting(false); }
   };
-  return <Sheet visible={!!staff} onClose={() => { if (!saving && !resetting && !deleting) onClose(); }} title={staff.full_name} subtitle={optionalContact(staff.email) || undefined} testID="edit-staff-sheet">
+  return <Sheet visible={!!staff} width={720} onClose={() => { if (!saving && !resetting && !deleting) onClose(); }} title={staff.full_name} subtitle={optionalContact(staff.email) || undefined} testID="edit-staff-sheet">
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
         <TextField testID="edit-staff-name" label="Full name" value={fullName} onChangeText={setFullName} />

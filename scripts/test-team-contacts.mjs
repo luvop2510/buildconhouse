@@ -3,6 +3,7 @@ import { optionalContact, validateTeamContacts, teamErrorMessage } from '../src/
 
 assert.equal(optionalContact('  '), null);
 assert.equal(optionalContact(null), null);
+for (const value of [123, true, {}, [], NaN]) assert.equal(optionalContact(value), null);
 assert.equal(optionalContact(' user@example.test '), 'user@example.test');
 for (const number of ['9876543210', '+91 (079) 2345-6789', '020 1234 5678', '1234567', '123456789012345']) {
   assert.equal(validateTeamContacts('', 'JK', number, number), null, number);
