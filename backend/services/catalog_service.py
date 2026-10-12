@@ -1088,11 +1088,12 @@ async def list_family_groups(
         group.update(_size_metadata_for_products(family_products))
         sample_id = group["sample_product_id"]
         sample_media = snapshot.media_rows_by_product.get(sample_id, ())
-        hero = next((row for row in sample_media if row.get("public_url") and row.get("role") not in ("dimension", "seat-cover")), None)
-        if not hero:
-            hero = next((row for row in sample_media if row.get("public_url") and row.get("role") == "seat-cover"), None)
+        # Metadata must describe the exact preview selected above. Raw media
+        # order puts an internal gallery before a manufacturer's primary photo;
+        # selecting the first row here used to overwrite the correct hero.
+        hero = next((row for row in sample_media
+                     if group["sample_image"] and row.get("public_url") == group["sample_image"]), None)
         if hero:
-            group["sample_image"] = hero["public_url"]
             group["sample_image_quality"] = hero.get("quality") or group.get("sample_image_quality")
             group["sample_image_source"] = hero.get("source_type")
         page.append(group)
@@ -1234,11 +1235,11 @@ async def search_catalog(
         family["product_count"] = len(family["variants"])
         family.update(_size_metadata_for_products(family_products))
         media = snapshot.media_rows_by_product.get(family["sample_product_id"], ())
-        hero = next((row for row in media if row.get("public_url") and row.get("role") not in ("dimension", "seat-cover")), None)
-        if not hero:
-            hero = next((row for row in media if row.get("public_url") and row.get("role") == "seat-cover"), None)
+        family["hero_image_url"] = _primary_product_image(snapshot, family["sample_product_id"])
+        family["image_quality"] = sample.get("image_quality") if sample else None
+        hero = next((row for row in media
+                     if family["hero_image_url"] and row.get("public_url") == family["hero_image_url"]), None)
         if hero:
-            family["hero_image_url"] = hero.get("public_url")
             family["image_quality"] = hero.get("quality")
             family["image_source"] = hero.get("source_type")
     return {"query": query, "total": len(order), "grouped": True, "items": grouped}

@@ -1,6 +1,44 @@
 import { expect, test } from '@playwright/test';
 import { floors, mockSession } from './audit-fixtures';
 
+test('critical static sign-in waits for hydration before accepting credentials', async ({ page }) => {
+  await mockSession(page, '/login', false, { signedIn: false });
+  await page.route('**/api/auth/login', route => {
+    expect(route.request().postDataJSON()).toEqual({ email: 'JK PATEL', password: 'OwnerAssigned!2026' });
+    return route.fulfill({ json: { access_token: 'fixture-only-staff', user: {
+      id: 'hydrated-owner', full_name: 'Hydrated Owner', role: 'owner', active: true, floor_ids: [],
+    } } });
+  });
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/_expo/static/js/web/entry-*.js', async route => {
+    await pending;
+    await route.continue();
+  });
+  try {
+    await page.goto('/login', { waitUntil: 'commit' });
+    const username = page.getByTestId('login-email');
+    const password = page.getByTestId('login-password');
+    await expect(username).toBeVisible();
+    // React Native Web implements editable=false with the HTML readonly
+    // attribute. Assert the user cannot enter text before handlers attach.
+    await expect(username).not.toBeEditable();
+    await expect(password).not.toBeEditable();
+    await expect(page.getByTestId('login-submit')).toBeDisabled();
+    release();
+    await username.fill('JK PATEL');
+    await password.fill('OwnerAssigned!2026');
+    await expect(username).toHaveValue('JK PATEL');
+    await expect(password).toHaveValue('OwnerAssigned!2026');
+    await expect(page.getByTestId('login-submit')).toBeEnabled();
+    await page.getByTestId('login-submit').click();
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(page.getByRole('heading', { name: /^Good (morning|afternoon|evening), Hydrated\.$/ })).toBeVisible();
+  } finally {
+    release();
+  }
+});
+
 for (const kind of ['staff', 'customer'] as const) {
   test(`critical a newer ${kind} sign-in survives delayed startup identity hydration`, async ({ page }) => {
     await mockSession(page, '/login', false);

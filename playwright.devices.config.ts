@@ -11,6 +11,7 @@ export default defineConfig({
     'responsive-furniture-rmb.spec.ts',
     'responsive-shared-floor-navigation.spec.ts',
     'responsive-mobile-shell.spec.ts',
+    'responsive-navigation-recovery.spec.ts',
     'responsive-catalog.spec.ts',
     'redesign-catalog-families.spec.ts',
     'redesign-command-palette.spec.ts',

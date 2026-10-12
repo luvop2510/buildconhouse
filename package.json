@@ -12,6 +12,7 @@
     "build": "node scripts/sites-build.mjs",
     "lint": "expo lint",
     "test:supplier-catalog": "node --experimental-strip-types --no-warnings scripts/test-catalog-source.mjs",
+    "test:catalog-pagination": "node scripts/test-catalog-pagination.mjs",
     "test:quotation-media": "node --experimental-strip-types --no-warnings scripts/test-quotation-media.mjs",
     "test:downloads": "node scripts/test-download-file.mjs",
     "test:quotation-contract": "node --experimental-strip-types --no-warnings scripts/test-quotation-contract.mjs",

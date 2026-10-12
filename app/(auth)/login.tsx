@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Authentication — one image, one form, one button.
 // ─────────────────────────────────────────────────────────────────────────────
-import React, { createElement, useState } from "react";
+import React, { createElement, useEffect, useState } from "react";
 import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -32,9 +32,13 @@ export default function Login() {
   const [useRecovery, setUseRecovery] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The web export renders before React attaches input handlers. Accepting
+  // text in that interval loses it when hydration replaces the static form.
+  const [interactive, setInteractive] = useState(Platform.OS !== "web");
+  useEffect(() => { setInteractive(true); }, []);
 
   const submit = async () => {
-    if (busy) return;
+    if (busy || !interactive) return;
     if (!email.trim() || !password) { setError(mode === "staff" ? "Enter your email or username and password." : "Enter your email and password."); return; }
     Keyboard.dismiss();
     setBusy(true); setError(null);
@@ -70,7 +74,7 @@ export default function Login() {
       </View>
 
       <NavigationTabs value={mode} options={[{ value: "staff", label: "Staff workspace" }, { value: "customer", label: "Customer portal" }]}
-        onChange={(option) => { setMode(option); setError(null); setPassword(""); setMfaRequired(false); setFactor(""); }} disabled={busy} fullWidth testID="login-mode" />
+        onChange={(option) => { setMode(option); setError(null); setPassword(""); setMfaRequired(false); setFactor(""); }} disabled={busy || !interactive} fullWidth testID="login-mode" />
 
       <View style={{ gap: compactPhone ? space.x3 : space.x4 }}>
         <Field label={mode === "staff" ? "Email or username" : "Email"}>
@@ -84,7 +88,7 @@ export default function Login() {
             autoCorrect={false}
             autoComplete={mode === "staff" ? "username" : "email"}
             returnKeyType="next"
-            editable={!busy}
+            editable={!busy && interactive}
           />
         </Field>
         <Field label="Password" error={error}>
@@ -97,7 +101,7 @@ export default function Login() {
             autoCapitalize="none"
             autoComplete="password"
             returnKeyType="go"
-            editable={!busy}
+            editable={!busy && interactive}
             onSubmitEditing={submit}
             invalid={!!error}
             right={<IconButton icon={showPw ? "eye-off" : "eye"} size={30} iconSize={15} tone="soft" onPress={() => setShowPw((v) => !v)} label={showPw ? "Hide password" : "Show password"} />}
@@ -113,7 +117,7 @@ export default function Login() {
           <Button testID="login-mfa-recovery" label={useRecovery ? "Use authenticator code" : "Use a recovery code"}
             onPress={() => { setUseRecovery(!useRecovery); setFactor(""); setError(null); }} disabled={busy} />
         </View> : null}
-        <Button testID="login-submit" label="Sign in" size="lg" full onPress={submit} loading={busy} />
+        <Button testID="login-submit" label="Sign in" size="lg" full onPress={submit} loading={busy} disabled={!interactive} />
       </View>
 
       <View style={{ flexDirection: "row", justifyContent: "center", gap: space.x4 }}>

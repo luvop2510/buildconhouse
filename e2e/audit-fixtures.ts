@@ -2,17 +2,20 @@ import type { Page } from '@playwright/test';
 export const floors = [{id:'first-floor',name:'The Sanitary Bathroom',slug:'first-floor'},{id:'ground-floor',name:'Tiles',slug:'ground-floor'},{id:'second-floor',name:'Kitchen',slug:'second-floor'},{id:'third-floor',name:'Furniture',slug:'third-floor'}];
 type SessionOptions = {
   signedIn?: boolean;
+  seedStorageOnce?: boolean;
   staff?: Record<string, unknown>;
   grants?: unknown[];
   floorAccess?: { all_floors: boolean; floors: typeof floors; floor_ids: string[] };
 };
 export async function mockSession(page: Page, path: string, failures = true, options: SessionOptions = {}) {
   const customer = path.startsWith('/home') || path.startsWith('/quotes');
-  await page.addInitScript(({customer, floor, signedIn}) => {
+  await page.addInitScript(({customer, floor, signedIn, seedStorageOnce}) => {
+    if (seedStorageOnce && sessionStorage.getItem('audit.session-seeded')) return;
     if (signedIn === false) localStorage.removeItem("forge.jwt.kind");
     else localStorage.setItem('forge.jwt.kind', JSON.stringify(customer ? 'customer' : 'staff'));
     localStorage.setItem('forge.active-floor', JSON.stringify(floor));
-  }, {customer, floor:path.startsWith('/tiles')?'ground-floor':'first-floor', signedIn: options.signedIn});
+    if (seedStorageOnce) sessionStorage.setItem('audit.session-seeded', 'true');
+  }, {customer, floor:path.startsWith('/tiles')?'ground-floor':'first-floor', signedIn: options.signedIn, seedStorageOnce: options.seedStorageOnce});
   await page.route('**/api/**', async route => {
     const p = new URL(route.request().url()).pathname;
     let body: unknown;

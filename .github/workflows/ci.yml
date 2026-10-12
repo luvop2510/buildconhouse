@@ -105,6 +105,7 @@ jobs:
       - name: Existing frontend contract tests
         run: |
           npm run test:supplier-catalog
+          npm run test:catalog-pagination
           npm run test:quotation-media
           npm run test:downloads
           npm run test:quotation-contract
@@ -154,14 +155,22 @@ jobs:
       - name: Mobile initial-JavaScript budget
         run: npm run test:mobile-budget
       - name: Install audit browsers
+        id: audit-browsers
         run: npx playwright install --with-deps chromium firefox webkit
       - name: Release browser journeys and responsive audit
+        if: ${{ !cancelled() && steps.audit-browsers.outcome == 'success' }}
         run: npm run test:e2e:audit
-      - name: Six-size tablet, catalog and WhatsApp acceptance
+      # Once the build and browser installation pass, collect every independent
+      # suite's failures in this revision instead of hiding later regressions.
+      # No suite uses continue-on-error; any failed suite still fails the job.
+      - name: Seven-size tablet, catalog and WhatsApp acceptance
+        if: ${{ !cancelled() && steps.audit-browsers.outcome == 'success' }}
         run: npx playwright test --config playwright.responsive.config.ts responsive-
       - name: Member credentials and furniture touch-device acceptance
+        if: ${{ !cancelled() && steps.audit-browsers.outcome == 'success' }}
         run: npx playwright test --config playwright.devices.config.ts
       - name: Catalog startup and progressive detail loading across devices
+        if: ${{ !cancelled() && steps.audit-browsers.outcome == 'success' }}
         run: npm run test:e2e:performance
       - name: Publish browser result counts in the job summary
         if: always()
@@ -169,12 +178,17 @@ jobs:
           node --input-type=module <<'NODE'
           import { readFile, appendFile } from 'node:fs/promises';
           let summary = '### Browser acceptance evidence\n\n';
-          try {
-            const { stats } = JSON.parse(await readFile('output/playwright/audit-results.json', 'utf8'));
-            const count = key => Number.isSafeInteger(stats?.[key]) && stats[key] >= 0 ? stats[key] : 'unavailable';
-            summary += `Expected passes: ${count('expected')}; unexpected failures: ${count('unexpected')}; flaky: ${count('flaky')}; skipped: ${count('skipped')}.\n`;
-          } catch {
-            summary += 'Browser report unavailable. Inspect the browser test step; acceptance remains unverified.\n';
+          for (const [suite, file] of Object.entries({
+            audit: 'audit-results.json', responsive: 'responsive-results.json',
+            devices: 'device-results.json', performance: 'performance-results.json',
+          })) {
+            try {
+              const { stats } = JSON.parse(await readFile(`output/playwright/${file}`, 'utf8'));
+              const count = key => Number.isSafeInteger(stats?.[key]) && stats[key] >= 0 ? stats[key] : 'unavailable';
+              summary += `${suite}: expected passes ${count('expected')}; unexpected failures ${count('unexpected')}; flaky ${count('flaky')}; skipped ${count('skipped')}.\n\n`;
+            } catch {
+              summary += `${suite}: report unavailable. Inspect its test step; acceptance remains unverified.\n\n`;
+            }
           }
           summary += 'Browser checks do not certify signed native builds or physical devices. Required test and artifact failures still fail this job.\n';
           console.log(summary);
