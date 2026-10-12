@@ -162,3 +162,16 @@ isolation; it remains a recorded diagnostic, not a blanket accepted pass. One
 artifact ENOENT arose from an overlapping runner sharing its output directory;
 subsequent focused/device runs use isolated artifact paths. The remaining broad
 and four-engine device runs are still active and final acceptance is pending.
+
+### Additional cold-reload investigation
+
+The fresh-builder immediate-reload case is reproducibly intermittent: six repeats
+on the published source produced two passes and four failures, with the browser
+on `/access` despite the authenticated owner. Experimental route retention
+improved a separate six-repeat run to five passes but left one failure, so those
+experimental app changes were restored rather than published as a verified fix.
+The investigation patch remains local under
+`output/goal-2026-10-12/deeplink-investigation.patch`. This cold hydration/reload
+race remains an open functional issue. The source tree matches the pushed runtime.
+The broader viewport and device runs remain live; their later final results must
+be read before declaring complete responsive acceptance.
