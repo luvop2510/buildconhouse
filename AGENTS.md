@@ -18,12 +18,16 @@ people before an order and deduplicates their phone identity across floors.
 Web roots and overlay portals track Safari's visual viewport; do not restore
 closing-modal focus before its portal is removed or apply keyboard resizing to
 pinch zoom. Team shows one Phone field and preserves distinct legacy contact data.
-Migration 0034 is controlled and pending in production. The user clarified a
+Migration 0034 was applied through the controlled production job; the post-apply
+dry run has no pending migrations. Runtime b9a06838 is live on both Vercel and
+Railway. The user clarified a
 total HTTP response requirement under 2 ms; current hosted baseline samples fail
 it. The user subsequently accepted that measured gap and explicitly requested
 GitHub push/live migration/Vercel/Railway publication. Preserve the existing
 performance budgets and verify deployment readiness and actual source. Read docs/audits/2026-10-13-ipad-multifloor-leads.md and its
-companion verification JSON for final local checks and publication status.
+companion verification JSON for local checks, actual deployment identities,
+post-deploy timings and retained hosted cold-load limitations. Protected main
+remains unmerged; existing dependency security findings are not suppressed.
 
 ## Passwords, lost reasons and mobile workflow update — 2026-10-13
 

@@ -3,7 +3,10 @@
     "baseCommit": "3e93bfdd8e1a3868536508a6576bbf941b563e8b",
     "branch": "codex/stability-review-2026-10-12",
     "candidateCodeDiffSha256": "2dde2f9b9513f16b5ffab8e11ff7a17a7588865be95f6e4204184ee9e16bd9bf",
-    "fingerprintMethod": "SHA256 of staged binary Git diff from base for app, src, backend, scripts, e2e, package.json and playwright.devices.config.ts; audit prose excluded."
+    "fingerprintMethod": "SHA256 of staged binary Git diff from base for app, src, backend, scripts, e2e, package.json and playwright.devices.config.ts; audit prose excluded.",
+    "implementationCommit": "2589c73a79077aabedb0373cbeb79bfb407c0ad0",
+    "deployedCommit": "b9a06838074d7ef10248c4bba6dac341492f55ae",
+    "fingerprintScope": "Implementation commit 2589c73a. Deployed b9a06838 adds two browser regression assertions and publication documentation; runtime code is unchanged."
   },
   "backend": {
     "passed": 2346,
@@ -349,10 +352,12 @@
     "summaryMethod": "Median is the arithmetic mean of the two middle samples; p95 uses nearest rank. Raw samples are unchanged."
   },
   "migration": {
-    "pending": "0034_preorder_lead_scope",
+    "pending": null,
     "dryRun": "pass",
-    "appliedToProduction": false,
-    "idempotencyVerifiedInLocalMongo": true
+    "appliedToProduction": true,
+    "idempotencyVerifiedInLocalMongo": true,
+    "postApplyDryRun": "No pending migrations",
+    "activePostOrderFollowups": 0
   },
   "dependencySecurity": {
     "high": 22,
@@ -364,18 +369,22 @@
   },
   "limitations": [
     "Controlled Safari visual-viewport/emulation tests; physical iPad keyboard not certified.",
-    "Fixture rendering and service computation budgets are different from total production HTTP duration.",
-    "Current production health samples are baseline evidence, not candidate deployment measurements."
+    "Fixture rendering and service computation budgets differ from total production HTTP duration.",
+    "Two initial hosted cold-navigation deadlines expired; serialized diagnostics pass with original limits. Initial failures remain recorded.",
+    "Live owner acceptance made no business writes. Execution-host network samples are not a customer-region latency certificate.",
+    "Railway runtime SSH hash verification unavailable because no existing SSH key is configured; uploaded clean checkout, image identity, provider manifest, API contracts and owner workflows verified.",
+    "Existing npm security findings remain; protected main is not merged and pending remote functional checks are not claimed green."
   ],
   "publication": {
-    "githubPush": false,
-    "vercelUpdate": false,
-    "railwayUpdate": false,
-    "productionMigration": false,
-    "reason": "User explicitly approved publication despite missing 2 ms total-response target; deployments pending.",
+    "githubPush": true,
+    "vercelUpdate": true,
+    "railwayUpdate": true,
+    "productionMigration": true,
+    "reason": "User approved publication despite missing 2 ms total response. Both deployed services and live owner workflows verified.",
     "existingPullRequest": "https://github.com/luvop2510/buildconhouse/pull/16",
     "protectedMainRequirementsPreserved": true,
-    "latencyGapAccepted": true
+    "latencyGapAccepted": true,
+    "deployedCommit": "b9a06838074d7ef10248c4bba6dac341492f55ae"
   },
   "priorCiRegressionBrowser": {
     "startTime": "2026-10-13T18:27:41.028Z",
@@ -396,6 +405,643 @@
     "mongodbPing": "pass",
     "requiredIndexes": "pass",
     "supabaseBuckets": "pass",
-    "pendingMigration": "0034_preorder_lead_scope"
+    "pendingMigration": null
+  },
+  "deployments": {
+    "vercel": {
+      "id": "dpl_EF3eRmTAueUxQz8T2GDWA1HRieWT",
+      "url": "https://buildcon-house-4jsznuxmh-yug19.vercel.app",
+      "publicAliases": [
+        "buildconhouse.in",
+        "www.buildconhouse.in"
+      ],
+      "status": "READY",
+      "sourceCommit": "b9a06838074d7ef10248c4bba6dac341492f55ae",
+      "functionRegions": [
+        "bom1"
+      ]
+    },
+    "railway": {
+      "id": "df8d32fd-bcf6-4d75-bdf4-462022151c9c",
+      "status": "SUCCESS",
+      "origin": "https://forge20-production-a8b0.up.railway.app",
+      "imageDigest": "sha256:2166ae6316a19851b24af39cf9f130cbd2d19c642261db3edcec36129095f4af",
+      "sourceCommitFromUploadedCleanCheckout": "b9a06838074d7ef10248c4bba6dac341492f55ae",
+      "deploymentMessage": "Multi-floor pre-order leads and iPad forms b9a06838074d7ef10248c4bba6dac341492f55ae",
+      "rootDirectory": "/backend",
+      "regions": {
+        "asia-southeast1-eqsg3a": {
+          "numReplicas": 1
+        }
+      },
+      "sleepApplication": false,
+      "healthcheckPath": "/api/health/ready"
+    }
+  },
+  "deployedPublicAcceptance": {
+    "checks": 19,
+    "result": "pass",
+    "readOnly": true
+  },
+  "deployedOwnerAcceptance": {
+    "sourceCommit": "b9a06838074d7ef10248c4bba6dac341492f55ae",
+    "origin": "https://buildconhouse.in",
+    "existingOwnerSession": true,
+    "businessWrites": false,
+    "checks": {
+      "teamAssignOwnerPage": "pass",
+      "allFourInterestedFloors": "pass",
+      "eligibleWorkersGroupedByFloor": "pass",
+      "preorderOnlyManualTypeChoices": "pass",
+      "leadSourceAndDesignerReference": "pass",
+      "teamIdPhoneOnly": "pass",
+      "sanitaryCatalog": "pass",
+      "sanitaryBuilderProducts": "pass",
+      "groundFloorCatalog": "pass",
+      "groundFloorBuilderProductPicker": "pass",
+      "originalSanitaryWorkspaceRestored": "pass"
+    },
+    "capturedConsoleErrors": 0,
+    "temporaryBrowserTabClosed": true,
+    "limitation": "Desktop owner session confirms production API and assets. Physical iPad keyboard behavior is covered by controlled viewport tests, not native device certification."
+  },
+  "hostedFeatureBrowser": {
+    "stats": {
+      "startTime": "2026-10-13T18:39:28.166Z",
+      "duration": 188596.60199999998,
+      "expected": 53,
+      "skipped": 0,
+      "unexpected": 2,
+      "flaky": 0
+    },
+    "workers": 2,
+    "retries": 0,
+    "apiFixtures": true,
+    "realHostedAssets": true,
+    "result": "53 passed; 2 page.goto load deadlines expired before feature assertions",
+    "retainedFailureTraces": true
+  },
+  "hostedNavigationDiagnostic": {
+    "stats": {
+      "startTime": "2026-10-13T18:43:51.681Z",
+      "duration": 25198.685,
+      "expected": 4,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "workers": 1,
+    "retries": 0,
+    "timeoutMs": 30000,
+    "sameSourceAndAssertions": true,
+    "result": "4 passed, no failures; both affected scenarios checked in WebKit and landscape tablet",
+    "limitation": "Serialized diagnostic does not replace the initial concurrent run or certify all production cold navigation."
+  },
+  "productionTotalResponseDeployed": {
+    "measuredAt": "2026-10-13T18:49:50.659Z",
+    "sourceCommit": "b9a06838074d7ef10248c4bba6dac341492f55ae",
+    "readOnly": true,
+    "method": "Persistent Node fetch client; duration includes network and body consumption. First health sample includes connection setup; median averages middle values and p95 uses nearest rank. Execution host geography is not independently certified.",
+    "endpoints": [
+      {
+        "origin": "https://buildconhouse.in",
+        "path": "/api/health",
+        "benchmarkMs": 2,
+        "passed": false,
+        "minMs": 216.34,
+        "medianMs": 231.04,
+        "p95Ms": 1059.63,
+        "samples": [
+          {
+            "totalMs": 1059.63,
+            "status": 200,
+            "serverTiming": "app;dur=129.6, upstream;dur=330.6"
+          },
+          {
+            "totalMs": 349.42,
+            "status": 200,
+            "serverTiming": "app;dur=64.8, upstream;dur=131.6"
+          },
+          {
+            "totalMs": 242.15,
+            "status": 200,
+            "serverTiming": "app;dur=64.7, upstream;dur=130.3"
+          },
+          {
+            "totalMs": 223.73,
+            "status": 200,
+            "serverTiming": "app;dur=63.2, upstream;dur=126.6"
+          },
+          {
+            "totalMs": 255.2,
+            "status": 200,
+            "serverTiming": "app;dur=64.6, upstream;dur=131.3"
+          },
+          {
+            "totalMs": 231.89,
+            "status": 200,
+            "serverTiming": "app;dur=64.6, upstream;dur=137.7"
+          },
+          {
+            "totalMs": 216.34,
+            "status": 200,
+            "serverTiming": "app;dur=65.0, upstream;dur=127.3"
+          },
+          {
+            "totalMs": 220.34,
+            "status": 200,
+            "serverTiming": "app;dur=63.7, upstream;dur=128.4"
+          },
+          {
+            "totalMs": 217.01,
+            "status": 200,
+            "serverTiming": "app;dur=63.4, upstream;dur=127.8"
+          },
+          {
+            "totalMs": 230.2,
+            "status": 200,
+            "serverTiming": "app;dur=64.7, upstream;dur=136.9"
+          }
+        ]
+      },
+      {
+        "origin": "https://buildconhouse.in",
+        "path": "/api/health/ready",
+        "benchmarkMs": 2,
+        "passed": false,
+        "minMs": 450.27,
+        "medianMs": 467.04,
+        "p95Ms": 4815.97,
+        "samples": [
+          {
+            "totalMs": 865.57,
+            "status": 200,
+            "serverTiming": "app;dur=678.0, upstream;dur=762.1"
+          },
+          {
+            "totalMs": 452.15,
+            "status": 200,
+            "serverTiming": "app;dur=297.6, upstream;dur=360.5"
+          },
+          {
+            "totalMs": 455.7,
+            "status": 200,
+            "serverTiming": "app;dur=293.5, upstream;dur=358.7"
+          },
+          {
+            "totalMs": 460.57,
+            "status": 200,
+            "serverTiming": "app;dur=295.6, upstream;dur=368.9"
+          },
+          {
+            "totalMs": 520.18,
+            "status": 200,
+            "serverTiming": "app;dur=322.9, upstream;dur=387.4"
+          },
+          {
+            "totalMs": 473.51,
+            "status": 200,
+            "serverTiming": "app;dur=323.9, upstream;dur=385.7"
+          },
+          {
+            "totalMs": 514.1,
+            "status": 200,
+            "serverTiming": "app;dur=293.5, upstream;dur=356.2"
+          },
+          {
+            "totalMs": 454.18,
+            "status": 200,
+            "serverTiming": "app;dur=285.3, upstream;dur=350.5"
+          },
+          {
+            "totalMs": 4815.97,
+            "status": 200,
+            "serverTiming": "app;dur=314.4, upstream;dur=496.0"
+          },
+          {
+            "totalMs": 450.27,
+            "status": 200,
+            "serverTiming": "app;dur=286.4, upstream;dur=352.5"
+          }
+        ]
+      },
+      {
+        "origin": "https://forge20-production-a8b0.up.railway.app",
+        "path": "/api/health",
+        "benchmarkMs": 2,
+        "passed": false,
+        "minMs": 152.33,
+        "medianMs": 171.18,
+        "p95Ms": 521.15,
+        "samples": [
+          {
+            "totalMs": 521.15,
+            "status": 200,
+            "serverTiming": "app;dur=133.4"
+          },
+          {
+            "totalMs": 269.73,
+            "status": 200,
+            "serverTiming": "app;dur=64.9"
+          },
+          {
+            "totalMs": 154.02,
+            "status": 200,
+            "serverTiming": "app;dur=64.8"
+          },
+          {
+            "totalMs": 179,
+            "status": 200,
+            "serverTiming": "app;dur=64.7"
+          },
+          {
+            "totalMs": 163.35,
+            "status": 200,
+            "serverTiming": "app;dur=67.3"
+          },
+          {
+            "totalMs": 159.87,
+            "status": 200,
+            "serverTiming": "app;dur=64.6"
+          },
+          {
+            "totalMs": 159.9,
+            "status": 200,
+            "serverTiming": "app;dur=64.8"
+          },
+          {
+            "totalMs": 152.33,
+            "status": 200,
+            "serverTiming": "app;dur=64.7"
+          },
+          {
+            "totalMs": 213.31,
+            "status": 200,
+            "serverTiming": "app;dur=63.3"
+          },
+          {
+            "totalMs": 220.79,
+            "status": 200,
+            "serverTiming": "app;dur=64.7"
+          }
+        ]
+      },
+      {
+        "origin": "https://forge20-production-a8b0.up.railway.app",
+        "path": "/api/health/ready",
+        "benchmarkMs": 2,
+        "passed": false,
+        "minMs": 383.22,
+        "medianMs": 428.81,
+        "p95Ms": 1355.7,
+        "samples": [
+          {
+            "totalMs": 613.72,
+            "status": 200,
+            "serverTiming": "app;dur=520.7"
+          },
+          {
+            "totalMs": 1355.7,
+            "status": 200,
+            "serverTiming": "app;dur=673.0"
+          },
+          {
+            "totalMs": 441.42,
+            "status": 200,
+            "serverTiming": "app;dur=335.3"
+          },
+          {
+            "totalMs": 386.38,
+            "status": 200,
+            "serverTiming": "app;dur=299.0"
+          },
+          {
+            "totalMs": 400.94,
+            "status": 200,
+            "serverTiming": "app;dur=310.6"
+          },
+          {
+            "totalMs": 757.56,
+            "status": 200,
+            "serverTiming": "app;dur=670.6"
+          },
+          {
+            "totalMs": 383.22,
+            "status": 200,
+            "serverTiming": "app;dur=293.5"
+          },
+          {
+            "totalMs": 842.12,
+            "status": 200,
+            "serverTiming": "app;dur=661.5"
+          },
+          {
+            "totalMs": 409.73,
+            "status": 200,
+            "serverTiming": "app;dur=301.1"
+          },
+          {
+            "totalMs": 416.2,
+            "status": 200,
+            "serverTiming": "app;dur=294.4"
+          }
+        ]
+      }
+    ],
+    "concurrentBrowserTesting": false
+  },
+  "productionTotalResponseDiagnosticConcurrent": {
+    "measuredAt": "2026-10-13T18:39:35.679Z",
+    "sourceCommit": "b9a06838074d7ef10248c4bba6dac341492f55ae",
+    "readOnly": true,
+    "method": "Persistent Node fetch client; duration includes network and body consumption. First health sample includes connection setup; median averages middle values and p95 uses nearest rank. Execution host geography is not independently certified.",
+    "endpoints": [
+      {
+        "origin": "https://buildconhouse.in",
+        "path": "/api/health",
+        "benchmarkMs": 2,
+        "passed": false,
+        "minMs": 212.01,
+        "medianMs": 227.2,
+        "p95Ms": 1237.86,
+        "samples": [
+          {
+            "totalMs": 1237.86,
+            "status": 200,
+            "serverTiming": "app;dur=64.6, upstream;dur=344.4"
+          },
+          {
+            "totalMs": 530.58,
+            "status": 200,
+            "serverTiming": "app;dur=63.3, upstream;dur=164.8"
+          },
+          {
+            "totalMs": 228.42,
+            "status": 200,
+            "serverTiming": "app;dur=63.3, upstream;dur=133.6"
+          },
+          {
+            "totalMs": 225.99,
+            "status": 200,
+            "serverTiming": "app;dur=64.0, upstream;dur=131.5"
+          },
+          {
+            "totalMs": 250.36,
+            "status": 200,
+            "serverTiming": "app;dur=64.2, upstream;dur=132.0"
+          },
+          {
+            "totalMs": 215.14,
+            "status": 200,
+            "serverTiming": "app;dur=64.2, upstream;dur=128.5"
+          },
+          {
+            "totalMs": 225.82,
+            "status": 200,
+            "serverTiming": "app;dur=64.2, upstream;dur=128.4"
+          },
+          {
+            "totalMs": 214.66,
+            "status": 200,
+            "serverTiming": "app;dur=64.1, upstream;dur=129.5"
+          },
+          {
+            "totalMs": 212.01,
+            "status": 200,
+            "serverTiming": "app;dur=64.2, upstream;dur=127.8"
+          },
+          {
+            "totalMs": 268.97,
+            "status": 200,
+            "serverTiming": "app;dur=64.8, upstream;dur=132.1"
+          }
+        ]
+      },
+      {
+        "origin": "https://buildconhouse.in",
+        "path": "/api/health/ready",
+        "benchmarkMs": 2,
+        "passed": false,
+        "minMs": 438.14,
+        "medianMs": 464.98,
+        "p95Ms": 634.88,
+        "samples": [
+          {
+            "totalMs": 438.14,
+            "status": 200,
+            "serverTiming": "app;dur=284.7, upstream;dur=350.0"
+          },
+          {
+            "totalMs": 452.97,
+            "status": 200,
+            "serverTiming": "app;dur=302.8, upstream;dur=364.7"
+          },
+          {
+            "totalMs": 460.19,
+            "status": 200,
+            "serverTiming": "app;dur=314.4, upstream;dur=377.0"
+          },
+          {
+            "totalMs": 469.77,
+            "status": 200,
+            "serverTiming": "app;dur=306.9, upstream;dur=374.6"
+          },
+          {
+            "totalMs": 634.88,
+            "status": 200,
+            "serverTiming": "app;dur=323.4, upstream;dur=537.9"
+          },
+          {
+            "totalMs": 481.24,
+            "status": 200,
+            "serverTiming": "app;dur=316.5, upstream;dur=378.7"
+          },
+          {
+            "totalMs": 473.76,
+            "status": 200,
+            "serverTiming": "app;dur=322.3, upstream;dur=388.3"
+          },
+          {
+            "totalMs": 454.23,
+            "status": 200,
+            "serverTiming": "app;dur=301.1, upstream;dur=364.6"
+          },
+          {
+            "totalMs": 449.05,
+            "status": 200,
+            "serverTiming": "app;dur=292.6, upstream;dur=360.1"
+          },
+          {
+            "totalMs": 469.95,
+            "status": 200,
+            "serverTiming": "app;dur=289.5, upstream;dur=352.5"
+          }
+        ]
+      },
+      {
+        "origin": "https://forge20-production-a8b0.up.railway.app",
+        "path": "/api/health",
+        "benchmarkMs": 2,
+        "passed": false,
+        "minMs": 151.1,
+        "medianMs": 157.93,
+        "p95Ms": 454.78,
+        "samples": [
+          {
+            "totalMs": 454.78,
+            "status": 200,
+            "serverTiming": "app;dur=63.4"
+          },
+          {
+            "totalMs": 158.2,
+            "status": 200,
+            "serverTiming": "app;dur=63.6"
+          },
+          {
+            "totalMs": 157.73,
+            "status": 200,
+            "serverTiming": "app;dur=63.3"
+          },
+          {
+            "totalMs": 153.62,
+            "status": 200,
+            "serverTiming": "app;dur=63.2"
+          },
+          {
+            "totalMs": 152.58,
+            "status": 200,
+            "serverTiming": "app;dur=63.7"
+          },
+          {
+            "totalMs": 163.34,
+            "status": 200,
+            "serverTiming": "app;dur=64.3"
+          },
+          {
+            "totalMs": 160.62,
+            "status": 200,
+            "serverTiming": "app;dur=64.1"
+          },
+          {
+            "totalMs": 158.13,
+            "status": 200,
+            "serverTiming": "app;dur=64.2"
+          },
+          {
+            "totalMs": 152.59,
+            "status": 200,
+            "serverTiming": "app;dur=63.1"
+          },
+          {
+            "totalMs": 151.1,
+            "status": 200,
+            "serverTiming": "app;dur=64.3"
+          }
+        ]
+      },
+      {
+        "origin": "https://forge20-production-a8b0.up.railway.app",
+        "path": "/api/health/ready",
+        "benchmarkMs": 2,
+        "passed": false,
+        "minMs": 381.65,
+        "medianMs": 411.65,
+        "p95Ms": 786.39,
+        "samples": [
+          {
+            "totalMs": 403.15,
+            "status": 200,
+            "serverTiming": "app;dur=310.9"
+          },
+          {
+            "totalMs": 432.53,
+            "status": 200,
+            "serverTiming": "app;dur=336.1"
+          },
+          {
+            "totalMs": 704.65,
+            "status": 200,
+            "serverTiming": "app;dur=609.4"
+          },
+          {
+            "totalMs": 381.65,
+            "status": 200,
+            "serverTiming": "app;dur=289.1"
+          },
+          {
+            "totalMs": 418.31,
+            "status": 200,
+            "serverTiming": "app;dur=326.9"
+          },
+          {
+            "totalMs": 786.39,
+            "status": 200,
+            "serverTiming": "app;dur=694.4"
+          },
+          {
+            "totalMs": 402.71,
+            "status": 200,
+            "serverTiming": "app;dur=284.9"
+          },
+          {
+            "totalMs": 391.27,
+            "status": 200,
+            "serverTiming": "app;dur=298.1"
+          },
+          {
+            "totalMs": 405,
+            "status": 200,
+            "serverTiming": "app;dur=318.1"
+          },
+          {
+            "totalMs": 420.37,
+            "status": 200,
+            "serverTiming": "app;dur=314.9"
+          }
+        ]
+      }
+    ],
+    "concurrentBrowserTesting": true
+  },
+  "githubChecksAtDeployedCommit": {
+    "commit": "b9a06838074d7ef10248c4bba6dac341492f55ae",
+    "checks": [
+      {
+        "link": "https://vercel.com/github",
+        "name": "Vercel Preview Comments",
+        "state": "SUCCESS"
+      },
+      {
+        "link": "https://github.com/luvop2510/buildconhouse/actions/runs/38447557398/job/115469794077",
+        "name": "performance",
+        "state": "SUCCESS"
+      },
+      {
+        "link": "https://github.com/luvop2510/buildconhouse/actions/runs/38447557481/job/115469782656",
+        "name": "backend",
+        "state": "SUCCESS"
+      },
+      {
+        "link": "https://github.com/luvop2510/buildconhouse/actions/runs/38447557481/job/115469782377",
+        "name": "frontend-security",
+        "state": "FAILURE"
+      },
+      {
+        "link": "https://github.com/luvop2510/buildconhouse/actions/runs/38447557481/job/115469782811",
+        "name": "frontend",
+        "state": "IN_PROGRESS"
+      },
+      {
+        "link": "https://github.com/luvop2510/buildconhouse/actions/runs/38447550344/job/115469760152",
+        "name": "performance",
+        "state": "CANCELLED"
+      },
+      {
+        "link": "https://vercel.com/yug19/buildcon-house/GLUPPTLSYsz7x3APiV4wgcS5RLpV",
+        "name": "Vercel",
+        "state": "SUCCESS"
+      }
+    ],
+    "protectedMainMerged": false
   }
 }

@@ -17,7 +17,7 @@ operations and support producers and manual choices are retired. Order placement
 closes the related floor records into the same committed order, preserving
 unrelated project leads and historical attribution. Migration 0034 retires legacy
 operational reminders, consolidates eligible historical leads and adds bounded
-team/referral query indexes; it is idempotent and remains pending in production.
+team/referral query indexes; it is idempotent and was applied to production during this release.
 
 The owner-only Team assign page shows worker totals for assigned logical leads,
 contacts, calls and completed work, plus paged lead details, latest responses and
@@ -85,9 +85,9 @@ not substituted for total duration. The repository's rendering/computation
 budgets measure different quantities and cannot certify the 2 ms target.
 
 The user subsequently explicitly authorized GitHub push, live migration, Vercel
-and Railway publication despite the measured requirement gap. Publication proceeds
-with unchanged repository budgets; deployed identities and health are recorded
-when verified. The independent npm security gate
+and Railway publication despite the measured requirement gap. Publication completed
+with unchanged repository budgets. Verified deployed identities and health are
+recorded below. The independent npm security gate
 also retains 22 high and five moderate findings; no green security CI or protected
 merge is claimed. Existing PR 16 is attached to the task for review.
 
@@ -99,3 +99,61 @@ looked for quotation controls inside the default full-screen product browser.
 Tests now enter the workspace through its existing visible button. The four-device
 regression selection passes 30 cases with two explicit phone-only skips and zero
 failures/flakes; delegated intake and catalog controls pass on every device.
+
+
+## Production publication — 14 October 2026 (India)
+
+Runtime revision `b9a06838074d7ef10248c4bba6dac341492f55ae` is pushed to
+`codex/stability-review-2026-10-12`, with [PR 16](https://github.com/luvop2510/buildconhouse/pull/16)
+open. The unchanged mandatory push hook passed all 44 performance cases, zero
+failures/skips/flakes, and all 159 route budgets before the push.
+
+Vercel deployment `dpl_EF3eRmTAueUxQz8T2GDWA1HRieWT` is READY and serves
+[buildconhouse.in](https://buildconhouse.in) and `www.buildconhouse.in`. Its metadata
+matches the runtime revision, and the API function is actually deployed to `bom1`.
+Railway deployment `df8d32fd-bcf6-4d75-bdf4-462022151c9c` is SUCCESS, with the
+existing `/backend` root, one Singapore replica, no sleeping and readiness health
+check. Its image digest and uploaded-checkout identity are in the companion JSON.
+Runtime SSH hash verification was unavailable because no existing SSH key is
+configured; no new credential was created for this check.
+
+Migration 0034 completed successfully. The subsequent dry run reports no pending
+migrations; MongoDB, required indexes and Supabase buckets pass the read-only gate.
+A read-only count finds zero active post-order follow-ups. Public hosted acceptance
+passes all 19 route, asset, cache, security-header, health and authentication checks.
+The existing authenticated owner session confirms Team assign, pre-order intake,
+all four interested floors, eligible workers per floor, source/designer reference,
+and the single Phone field. Real Sanitary and Ground Floor catalogs and quotation
+builder product controls load, with zero captured console errors. No business
+records were edited; the original workspace was restored and the temporary tab
+closed.
+
+The first hosted feature run passes 53 cases and has two page-load deadlines before
+feature assertions (WebKit Interested and landscape-tablet Team assign paging).
+Failure traces retain pending static asset requests; this is not an all-green
+hosted run. A separate single-worker diagnostic checks both scenarios on both
+affected browsers: four passed, zero failures, with the original 30-second limits,
+assertions and zero retries. It does not replace the first run or certify every
+production cold load.
+
+Final read-only response samples were taken after browser testing stopped:
+
+| Endpoint | Minimum | Median | p95 |
+| --- | ---: | ---: | ---: |
+| Vercel public domain /api/health | 216.34 ms | 231.04 ms | 1059.63 ms |
+| Vercel public domain /api/health/ready | 450.27 ms | 467.04 ms | 4815.97 ms |
+| Railway directly /api/health | 152.33 ms | 171.18 ms | 521.15 ms |
+| Railway directly /api/health/ready | 383.22 ms | 428.81 ms | 1355.7 ms |
+
+Ten samples per endpoint include network and response-body consumption; first
+health reads include connection setup. Raw samples, separate Server-Timing,
+measurement timestamps and the earlier concurrent diagnostic are retained in the
+companion JSON. The total-response 2 ms requirement remains unmet; the user
+explicitly authorized publication with that measured gap. Physical iPad keyboard
+certification and customer-region latency certification are not claimed.
+
+Remote backend and performance checks on the runtime revision pass. The broad
+remote frontend workflow was still running when this record was prepared; its
+status is preserved without claiming success. The existing npm security gate
+fails with 22 high and five moderate findings. Protected-main requirements remain
+in place; this deployment does not claim a green CI suite or a protected merge.
