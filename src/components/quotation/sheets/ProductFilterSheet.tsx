@@ -19,6 +19,8 @@ export function ProductFilterSheet({ open, onClose, facets }: {
   open: boolean; onClose: () => void; facets: Record<string, { value: string }[]>;
 }) {
   const b = useBuilder();
+  // Closed filters must not rebuild every choice when a quotation line changes.
+  if (!open) return null;
   return <Overlay open={open} onClose={onClose} title="Filters and sort" presentation="drawer" scroll={false}
     testID="quotation-product-filters" footer={<>
       <Pressable accessibilityRole="button" testID="explorer-filter-reset" style={styles.reset} onPress={() => {

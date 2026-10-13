@@ -1116,6 +1116,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     }
   }, [setReferrer, activeFloorId]);
 
+  const applyHistory = history.apply;
   const addFromProduct = useCallback((p: Product, variant?: ProductVariant, quantity = 1, notes?: string) => {
     if (catalogPriceUnknown(p, variant)) {
       setProductModal(variant ? { ...p, ...variant, id: variant.id || p.id, name: variant.name || p.name, price_unknown: true } : p);
@@ -1124,7 +1125,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     }
     Haptics.selectionAsync();
     playAddProductSound();
-    history.apply((cur) => {
+    applyHistory((cur) => {
       const existingIds = new Set(cur.lines.map((line) => line.id));
       return {
         ...cur,
@@ -1141,7 +1142,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
         }),
       };
     });
-  }, [history, categoryById]);
+  }, [applyHistory, categoryById]);
 
   // ---------- Seed from Catalog's "Add to quotation" CTA ----------
   const appliedInitialProductRef = useRef(false);

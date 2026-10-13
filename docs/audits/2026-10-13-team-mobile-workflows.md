@@ -97,3 +97,13 @@ the subsequent dry-run reports no pending migrations. Fresh read-only Mongo,
 required-index and Supabase bucket gates pass. No passwords or business records
 were changed by smoke tests. No signed native/physical-device acceptance is
 claimed.
+
+The first pre-push audit prevented publication: 39 cases passed, but the iPad
+product-add sample took 803.6 ms against the unchanged 750 ms ceiling. Review
+found that the add handler depended on the complete changing history object,
+invalidating memoized catalog cards after every line edit. It now depends on
+the stable history mutation function and category index. A regression evaluates
+the actual callback and verifies retained identity, correct repeated quantities
+and fresh category classification. Closed filter sheets also avoid rebuilding
+all choice controls during line changes. The diagnostic trace is preserved;
+this is a source repair, with no gate suppression or increased deadline.
