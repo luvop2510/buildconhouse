@@ -30,6 +30,13 @@ assert.equal(rows.reduce((sum, row) => sum + row.net, 0), pricing.computeTotals(
 assert.equal(pricing.computeTotals(lines, 5, categories, room).grand, 480);
 assert.equal(pricing.computeTotals(lines, 5, categories, { Bath: { type: 'amount', value: 9999 } }).grand, 330, 'flat discount is capped and leaves overrides alone');
 
+const filters = load('../src/components/quotation/helpers/catalogFilters.ts');
+assert.equal(filters.restoreSingleCatalogChoice(['grohe', 'hansgrohe'], 'legacy'), 'grohe');
+assert.equal(filters.restoreSingleCatalogChoice([null, '', 2, 'basins', 'showers'], null), 'basins');
+assert.equal(filters.restoreSingleCatalogChoice([], 'legacy'), null, 'explicit all selection takes precedence over old scalar state');
+assert.equal(filters.restoreSingleCatalogChoice(undefined, 'legacy'), 'legacy');
+assert.equal(filters.restoreSingleCatalogChoice(undefined, 5), null);
+
 // Guard the confirmed expensive rendering pattern and obsolete batch API.
 const rowSource = readFileSync(new URL('../src/components/quotation/canvas/LineRow.tsx', import.meta.url), 'utf8');
 const contextSource = readFileSync(new URL('../src/components/quotation/context/BuilderContext.tsx', import.meta.url), 'utf8');
@@ -38,7 +45,7 @@ assert.match(rowSource, /b\.lineBreakdownById\[l\.id\]/);
 assert.doesNotMatch(rowSource, /computeLineBreakdown/);
 assert.doesNotMatch(contextSource, /assignAreaToLines/);
 assert.doesNotMatch(paneSource, /AreaGrouping/);
-console.log('Quotation individual editing: pricing precedence, flat discounts, totals consistency and bounded row pricing passed');
+console.log('Quotation individual editing: pricing, bounded row calculations and single-choice legacy filter restoration passed');
 
 if (process.argv.includes('--benchmark')) {
   const sample = Array.from({ length: 500 }, (_, index) => line(`line-${index}`, `Room ${index % 4}`, 100 + index, { qty: (index % 3) + 1 }));

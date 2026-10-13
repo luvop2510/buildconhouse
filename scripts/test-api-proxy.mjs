@@ -62,6 +62,31 @@ for (const value of ['', 'http://api.example.test', 'https://user:pass@api.examp
 
 {
   const res = response();
+  const req = request({ path: ['products', 'families'], headers: { 'x-floor-id': 'first-floor' } });
+  Object.assign(req.query, {
+    brand_ids: ['grohe', 'hansgrohe'], category_ids: ['tap & mixers', 'showers'],
+    sizes: ['M, compact', 'L/XL'], subcategories: ['', 'General'], limit: '60', skip: '0',
+  });
+  let target, sentHeaders;
+  await createHandler({ backendUrl: 'https://api.example.test', fetchImpl: async (url, options) => {
+    target = url;
+    sentHeaders = options.headers;
+    return new Response('{"total":0,"items":[]}', { headers: { 'Content-Type': 'application/json' } });
+  } })(req, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(target.pathname, '/api/products/families');
+  assert.deepEqual(target.searchParams.getAll('brand_ids'), ['grohe', 'hansgrohe']);
+  assert.deepEqual(target.searchParams.getAll('category_ids'), ['tap & mixers', 'showers']);
+  assert.deepEqual(target.searchParams.getAll('sizes'), ['M, compact', 'L/XL']);
+  assert.deepEqual(target.searchParams.getAll('subcategories'), ['', 'General']);
+  assert.equal(target.searchParams.get('limit'), '60');
+  assert.equal(target.searchParams.get('skip'), '0');
+  assert.equal(target.searchParams.has('path'), false);
+  assert.equal(sentHeaders.get('x-floor-id'), 'first-floor');
+}
+
+{
+  const res = response();
   let sentHeaders;
   const req = request({ path: ['quotations', 'q1', 'pptx'], headers: { cookie: 'forge_session=secret' } });
   req.query.dl = 'one-use';

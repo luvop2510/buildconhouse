@@ -1,0 +1,7 @@
+{
+  "completedPasses": 1482,
+  "observedFailures": 1,
+  "complete": false,
+  "reason": "Stopped obsolete-export run after reproduced Team passive-initialization race; fix and failing/passing hook regression complete. All four suites restart against rebuilt final source. Original rapid-clear browser test unchanged; no retries or deadline changes.",
+  "failure": "redesign-team-delegation.spec.ts:514 tablet-boundary contact clearing restored old phone"
+}

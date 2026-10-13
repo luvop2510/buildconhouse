@@ -46,7 +46,7 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
   const b = useBuilder();
   const [paneWidth, setPaneWidth] = useState(0);
   const [facets, setFacets] = useState<Record<string, { value: string }[]>>({});
-  useEffect(() => { let active = true; void api.get<Record<string, { value: string }[]>>("/catalog/facets").then(value => { if (active) setFacets(value); }).catch(() => {}); return () => { active = false; }; }, [b.brands]);
+  useEffect(() => { let active = true; void api.get<Record<string, { value: string }[]>>("/catalog/facets", { floorId: b.activeFloorId, cacheMs: 5 * 60_000 }).then(value => { if (active) setFacets(value); }).catch(() => {}); return () => { active = false; }; }, [b.brands, b.activeFloorId]);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const numCols = quotationGridColumns(paneWidth, !showCompactFilters);
   // Cap compact imagery so tablets show multiple complete rows, even when a
@@ -145,7 +145,7 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
             <Text style={styles.filterTriggerLabel}>Filters & sort{b.selectedBrandId || b.selectedCategoryId ? " · Active" : ""}</Text>
             <Feather name={filtersOpen ? "chevron-up" : "chevron-down"} size={13} color={colors.onSurface} />
           </Pressable>
-          {b.selectedBrandId || b.selectedCategoryId || b.q ? <Pressable accessibilityRole="button" accessibilityLabel="Clear all product filters" onPress={() => { b.setSelectedBrandId(null); b.setSelectedCategoryId(null); b.setSelectedFinishes([]); b.setSelectedColours([]); b.setSelectedSizes([]); b.setQ(""); }} style={styles.filterTrigger}>
+          {b.selectedBrandId || b.selectedCategoryId || b.q ? <Pressable accessibilityRole="button" accessibilityLabel="Clear all product filters" onPress={() => { b.setSelectedBrandId(null); b.setSelectedCategoryId(null); b.setSelectedSizes([]); b.setQ(""); }} style={styles.filterTrigger}>
             <Text style={styles.filterTriggerLabel}>Clear</Text>
           </Pressable> : <Text style={styles.filterHint}>{SORT_OPTIONS.find(o => o.k === b.sortKey)?.label}</Text>}
         </View> : null}
@@ -180,6 +180,12 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
                 />
               ))}
             </ScrollView>
+            {b.categoriesLoading ? <View testID="explorer-categories-loading" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <ActivityIndicator size="small" color={colors.onSurfaceMuted} /><Text style={styles.filterHint}>Loading categories…</Text>
+            </View> : null}
+            {b.categoriesError ? <Pressable accessibilityRole="button" accessibilityLabel="Retry product categories" testID="explorer-category-retry" onPress={b.retryCategories} style={styles.filterTrigger}>
+              <Feather name="refresh-cw" size={14} color={colors.onSurface} /><Text style={styles.filterTriggerLabel}>{b.categoriesError}</Text>
+            </Pressable> : null}
             {b.categoriesForRail.length > 0 ? (
               <ScrollView
                 horizontal showsHorizontalScrollIndicator
@@ -207,7 +213,7 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
           </>
         ) : null}
 
-        {([["finishes", "Finish", b.selectedFinishes, b.setSelectedFinishes], ["colours", "Color", b.selectedColours, b.setSelectedColours], ["sizes", "Size", b.selectedSizes, b.setSelectedSizes]] as const).map(([field, label, selected, update]) => facets[field]?.length ? <View key={field} style={{ gap: 4 }}>
+        {([["sizes", "Size", b.selectedSizes, b.setSelectedSizes]] as const).map(([field, label, selected, update]) => facets[field]?.length ? <View key={field} style={{ gap: 4 }}>
           <Text style={styles.filterHint}>{label} · select multiple</Text>
           <ScrollView horizontal contentContainerStyle={{ gap: 6 }}>
             <FilterPill label="All" active={!selected.length} onPress={() => update([])} />
@@ -469,7 +475,7 @@ function FilterPill({
   active?: boolean; onPress?: () => void; testID?: string;
 }) {
   return (
-    <Pressable accessibilityRole="button" accessibilityState={{ selected: !!active }} onPress={onPress} testID={testID} style={[styles.filterPill, active && styles.filterPillActive]}>
+    <Pressable accessibilityRole="button" accessibilityState={{ selected: !!active }} aria-pressed={!!active} onPress={onPress} testID={testID} style={[styles.filterPill, active && styles.filterPillActive]}>
       {logo ? (
         <View style={styles.filterPillLogoWrap}>
           <Image source={logo} style={{ width: "100%", height: "100%" }} contentFit="cover" />

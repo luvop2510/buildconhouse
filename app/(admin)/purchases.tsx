@@ -1073,7 +1073,7 @@ export function CustomerNavigator({ loading, customers, onOpen, completed = fals
   if (loading) return <View style={styles.loadingCard}><ActivityIndicator /><Text style={type.caption}>Loading customer workspaces…</Text></View>;
   return (
     <View style={{ gap: spacing.lg }}>
-      <View><Text style={styles.overline}>CUSTOMER WORKSPACES</Text><Text style={type.bodyMuted}>{completed ? "Customers with every active product delivered. Select one for their products, delivery dates and history." : "Active customers on this floor. Select one for their purchases, quotations, payments and lifecycle timeline."}</Text></View>
+      <View><Text style={styles.overline}>CUSTOMER WORKSPACES</Text><Text style={type.bodyMuted}>{completed ? "Customers with every active product delivered. Select one for their products, delivery dates and history." : "Customers with confirmed orders on this floor. Select one for their purchases, quotations, payments and lifecycle timeline."}</Text></View>
       <View style={styles.workspaceCard}>
         {customers.length === 0 ? <Text style={type.bodyMuted}>No customers found on this floor.</Text> : customers.map((customer, index) => (
           <Pressable key={customer.id} testID={`customer-workspace-${customer.id}`} onPress={() => onOpen(customer.id)} style={({ pressed }) => [styles.customerNavRow, index > 0 && styles.customerNavDivider, pressed && { backgroundColor: colors.surfaceTertiary }]}>

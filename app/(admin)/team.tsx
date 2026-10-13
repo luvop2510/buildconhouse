@@ -2,7 +2,7 @@ import { hasMinimumPasswordLength } from "@/src/utils/passwordPolicy";
 // Team uses named floor/page/action delegations. Legacy role labels remain
 // readable until account migration; new allocations use owner or worker only.
 import Feather from "@expo/vector-icons/Feather";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Switch, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 
@@ -280,7 +280,9 @@ function EditStaffSheet({ staff, options, optionsError, onRetry, selfId, onClose
   const [saveError, setSaveError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const originalDelegation = useRef<DelegationState | null>(null);
-  useEffect(() => {
+  // Commit saved form values before the sheet accepts input. A passive effect
+  // can restore an old contact after the user has already cleared the field.
+  useLayoutEffect(() => {
     if (!staff) return;
     setUsername(optionalContact(staff.login_id) || "");
     setEmail(optionalContact(staff.email) || ""); setMobile(optionalContact(staff.mobile) || "");

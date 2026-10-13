@@ -121,7 +121,7 @@ export function getPurchasesPage(query: PurchasesPageQuery, signal?: AbortSignal
   return api.get<PurchasesPage>(purchasesPagePath(query), { signal });
 }
 
-/** CRM workspaces on this floor, with fully delivered customers moved out. */
+/** Confirmed buyers on this floor, with fully delivered customers moved out. */
 export function getPurchaseCustomers(signal?: AbortSignal, includeCompleted = false) {
   return api.get<PurchaseCustomer[]>(`/purchases/customer-workspaces?include_completed=${includeCompleted}`, { signal });
 }

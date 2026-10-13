@@ -117,7 +117,10 @@ export function createHandler({ backendUrl = process.env.BACKEND_URL, fetchImpl 
 
     const upstream = new URL(`/api/${path}`, backend);
     Object.entries(req.query).forEach(([key, value]) => {
-      if (key !== 'path') upstream.searchParams.set(key, Array.isArray(value) ? value[0] : value);
+      if (key === 'path') return;
+      // Catalog lists use repeated query keys. Preserve every value as native
+      // requests and the web worker do; taking only the first hides choices.
+      for (const item of Array.isArray(value) ? value : [value]) upstream.searchParams.append(key, item);
     });
     const headers = new Headers();
     Object.entries(req.headers).forEach(([key, value]) => {

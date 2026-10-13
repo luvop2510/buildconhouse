@@ -5,6 +5,8 @@ order immediately returns a customer to active views; no lifecycle flag is store
 """
 from __future__ import annotations
 
+import asyncio
+
 from auth import floor_query
 from services.purchase_stages import active_quantity_expression, delivery_timestamp_expression, stage_expression
 
@@ -53,3 +55,24 @@ async def purchase_customer_ids(database, user) -> set[str]:
         {"$match": {"_id": {"$nin": [None, ""]}}},
     ]).to_list(None)
     return {row["_id"] for row in rows}
+
+
+async def confirmed_customer_ids(database, user) -> set[str]:
+    """Buyers with an actual order, regardless of legacy lifecycle metadata.
+
+    Walk-in profiles and draft quotations are prospective identities used by
+    selection workflows. They do not belong in Customers or Purchases until
+    an order exists. Retain direct/legacy orders and transferred item owners.
+    Independent floor-scoped reads run concurrently to avoid serial latency.
+    """
+    quotation_ids, tile_ids, purchase_ids = await asyncio.gather(
+        database.quotations.distinct(
+            "customer_id", floor_query(user, {"status": {"$in": ["ordered", "won"]}}),
+        ),
+        database.customer_orders.distinct(
+            "customer_id", floor_query(user, {"is_deleted": {"$ne": True}}),
+        ),
+        purchase_customer_ids(database, user),
+    )
+    return {value for value in set(quotation_ids + tile_ids) | purchase_ids
+            if isinstance(value, str) and value}

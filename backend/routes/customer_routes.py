@@ -12,7 +12,7 @@ from db import db
 from models import (
     CustomerCreate, CustomerPublic, CustomerUpdatePayload, UserPublic, now_iso,
 )
-from services.customer_completion import completed_customer_ids, purchase_customer_ids
+from services.customer_completion import completed_customer_ids, confirmed_customer_ids
 from services.activity_log import log_event
 from services.invite_service import generate_temp_password, get_invite_service, temp_password_expiry_iso
 
@@ -57,20 +57,13 @@ async def list_customers(
     user: UserPublic = Depends(get_current_user),
 ):
     query = floor_query(user)
+    eligible_ids, complete_ids = await asyncio.gather(
+        confirmed_customer_ids(db, user) if confirmed_only else asyncio.sleep(0, result=None),
+        completed_customer_ids(db, user) if completion in ("active", "completed") else asyncio.sleep(0, result=None),
+    )
     if confirmed_only:
-        # Derive eligibility from actual confirmed orders, including legacy
-        # customers without lifecycle metadata. Draft quotations never qualify.
-        customer_ids = await db.quotations.distinct(
-            "customer_id", floor_query(user, {"status": {"$in": ["ordered", "won"]}}),
-        )
-        tile_customer_ids = await db.customer_orders.distinct(
-            "customer_id", floor_query(user, {"is_deleted": {"$ne": True}}),
-        )
-        purchase_ids = await purchase_customer_ids(db, user)
-        query = floor_query(user, {"id": {"$in": sorted(value for value in set(customer_ids + tile_customer_ids) | purchase_ids if isinstance(value, str) and value)}})
-    complete_ids = None
-    if completion in ("active", "completed"):
-        complete_ids = await completed_customer_ids(db, user)
+        query = floor_query(user, {"id": {"$in": sorted(eligible_ids)}})
+    if complete_ids is not None:
         query = {"$and": [query, {"id": {"$in" if completion == "completed" else "$nin": sorted(complete_ids)}}]}
     docs = await db.customers.find(
         query, {"_id": 0, "password_hash": 0},

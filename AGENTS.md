@@ -2,6 +2,24 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
+## Quotation filters and walk-in visibility — 2026-10-13 follow-up
+
+Quotation brand/category filters are now single-choice; finish/color filter rows
+and their hidden saved state are removed. Legacy mixed scopes normalize safely,
+and failed category reads offer retry in both compact picker and desktop rail.
+Vercel preserves repeated query values for other catalog screens. Purchases uses
+actual-order customer eligibility, excluding unconfirmed walk-in profiles while
+preserving legacy/transferred buyers. Eligibility/completion reads are parallel.
+Catalog hydration uses lazy candidate indexes with edit invalidation and unchanged
+scope/finish/ambiguity checks. The review also fixes Team contact initialization
+before interaction; the unchanged rapid-clear browser case and actual hook
+regression verify it. Final functional acceptance: 2,288 backend passes, 42
+frontend commands, 2,527 browser passes / 55 intentional skips / zero failures or
+flakes; all 157 generated pages fit the bundle budget. Fresh bathroom matrix:
+146 scopes, zero discrepancies. Npm remains 22 high/five moderate; protected main
+is not bypassed. Publication/deployment evidence belongs in
+`docs/audits/2026-10-13-quotation-walkins-release.md`.
+
 ## Stability, quotation and catalog — 2026-10-13
 
 Response caches now release expired entries and retain 64 recent responses;

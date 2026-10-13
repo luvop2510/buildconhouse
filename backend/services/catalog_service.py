@@ -13,7 +13,7 @@ import asyncio
 import copy
 import re
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from contextvars import ContextVar
 from functools import wraps
 from bson import BSON
@@ -58,6 +58,10 @@ class CatalogSnapshot:
     usage_by_user: dict[str, dict[str, dict]]
     loaded_at: float
     database_backed: bool = False
+    # Lazily built, bounded references into this snapshot. Hydrating each WC
+    # variant or legacy concealed association must not scan the whole catalog.
+    hydration_by_sku: dict[str, tuple[dict, ...]] | None = None
+    hydration_by_configuration: dict[str, tuple[dict, ...]] | None = None
 
 
 _snapshot_override: ContextVar[CatalogSnapshot | None] = ContextVar("catalog_snapshot_override", default=None)
@@ -230,6 +234,10 @@ def patch_product_in_snapshot(product_id: str, updates: dict) -> None:
     row = _snapshot.product_by_id.get(product_id)
     if row is not None:
         row.update(updates)
+        # A product edit can change its SKU or configuration group. Rebuild on
+        # the next read so the immediate edit path remains authoritative.
+        _snapshot.hydration_by_sku = None
+        _snapshot.hydration_by_configuration = None
     schedule_catalog_refresh()
 
 
@@ -255,19 +263,9 @@ async def note_product_usage(user_id: str, product_ids: list[str], at: str) -> N
                 "last_used_at": at,
             }
             global_usage[product_id] = global_usage.get(product_id, 0) + 1
-        _snapshot = CatalogSnapshot(
-            products=snapshot.products,
-            product_by_id=snapshot.product_by_id,
-            products_by_family=snapshot.products_by_family,
-            media_by_product=snapshot.media_by_product,
-            media_by_family=snapshot.media_by_family,
-            media_rows_by_product=snapshot.media_rows_by_product,
-            media_rows_by_family=snapshot.media_rows_by_family,
-            brands=snapshot.brands,
-            categories=snapshot.categories,
+        _snapshot = replace(snapshot,
             global_usage=global_usage,
             usage_by_user=usage_by_user,
-            loaded_at=snapshot.loaded_at,
         )
 
 
@@ -480,6 +478,24 @@ def _hydration_products(snapshot):
     return snapshot.product_by_id.values() if hasattr(snapshot, "product_by_id") else snapshot.products
 
 
+def _hydration_candidates(snapshot, *, sku=None, configuration_group=None):
+    if getattr(snapshot, "hydration_by_sku", None) is None or getattr(snapshot, "hydration_by_configuration", None) is None:
+        by_sku = defaultdict(list)
+        by_configuration = defaultdict(list)
+        for candidate in _hydration_products(snapshot):
+            if candidate.get("sku"):
+                by_sku[candidate["sku"]].append(candidate)
+            specs = candidate.get("specs") or {}
+            group = specs.get("configuration_group") if isinstance(specs, dict) else None
+            if isinstance(group, str) and group:
+                by_configuration[group].append(candidate)
+        snapshot.hydration_by_sku = {key: tuple(rows) for key, rows in by_sku.items()}
+        snapshot.hydration_by_configuration = {key: tuple(rows) for key, rows in by_configuration.items()}
+    if sku is not None:
+        return snapshot.hydration_by_sku.get(sku, ())
+    return snapshot.hydration_by_configuration.get(configuration_group, ())
+
+
 def _hydrate_concealed_part(product: dict, snapshot: CatalogSnapshot) -> None:
     """Fill a legacy SKU-only conceal configuration from this catalog snapshot.
 
@@ -505,7 +521,7 @@ def _hydrate_concealed_part(product: dict, snapshot: CatalogSnapshot) -> None:
         linked = snapshot.product_by_id.get(selected_id)
         linked = linked if eligible(linked) else None
     else:
-        matches = [candidate for candidate in _hydration_products(snapshot) if eligible(candidate)]
+        matches = [candidate for candidate in _hydration_candidates(snapshot, sku=sku) if eligible(candidate)]
         same_brand = [candidate for candidate in matches if candidate.get("brand_id") == product.get("brand_id")]
         linked = same_brand[0] if len(same_brand) == 1 else matches[0] if len(matches) == 1 else None
     if not linked:
@@ -547,7 +563,7 @@ def _configuration_options(product: dict, snapshot: CatalogSnapshot) -> list[dic
     finish = str(product.get("finish") or product.get("colour") or "").strip().casefold()
     options: list[dict] = []
     seen_labels: set[str] = set()
-    for candidate in _hydration_products(snapshot):
+    for candidate in _hydration_candidates(snapshot, configuration_group=group):
         candidate_specs = candidate.get("specs") or {}
         if (
             not isinstance(candidate_specs, dict)
