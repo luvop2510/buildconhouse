@@ -123,6 +123,9 @@ for (const kind of ['standard', 'tiles_quotation'] as const) {
       });
       await page.goto(path);
       await expect.poll(() => requests.length).toBeGreaterThan(0);
+      if (kind === 'standard' && (page.viewportSize()?.width ?? 1440) < 700) {
+        await page.getByRole('button', { name: 'Show quotation workspace', exact: true }).click();
+      }
       if (completion === 'completed') await expect(page.getByTestId('quotation-customer-completed')).toHaveText('100% completed');
       else {
         await expect(page.getByText(/Q-COMPLETE/).first()).toBeVisible();

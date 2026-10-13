@@ -372,8 +372,30 @@
     "vercelUpdate": false,
     "railwayUpdate": false,
     "productionMigration": false,
-    "reason": "Awaiting user acceptance of measured total-response latency exceeding requested 2 ms.",
+    "reason": "User explicitly approved publication despite missing 2 ms total-response target; deployments pending.",
     "existingPullRequest": "https://github.com/luvop2510/buildconhouse/pull/16",
-    "protectedMainRequirementsPreserved": true
+    "protectedMainRequirementsPreserved": true,
+    "latencyGapAccepted": true
+  },
+  "priorCiRegressionBrowser": {
+    "startTime": "2026-10-13T18:27:41.028Z",
+    "duration": 59488.731,
+    "expected": 30,
+    "skipped": 2,
+    "unexpected": 0,
+    "flaky": 0,
+    "diagnosticFirstRun": {
+      "passed": 22,
+      "failed": 4,
+      "skipped": 2,
+      "cause": "Phone tests expected quotation workspace controls while default full-screen product explorer was active; tests now enter workspace through actual button."
+    }
+  },
+  "predeploy": {
+    "readOnly": true,
+    "mongodbPing": "pass",
+    "requiredIndexes": "pass",
+    "supabaseBuckets": "pass",
+    "pendingMigration": "0034_preorder_lead_scope"
   }
 }

@@ -20,8 +20,9 @@ closing-modal focus before its portal is removed or apply keyboard resizing to
 pinch zoom. Team shows one Phone field and preserves distinct legacy contact data.
 Migration 0034 is controlled and pending in production. The user clarified a
 total HTTP response requirement under 2 ms; current hosted baseline samples fail
-it. GitHub push/live migration/Vercel/Railway publication require acceptance of
-that measured gap. Read docs/audits/2026-10-13-ipad-multifloor-leads.md and its
+it. The user subsequently accepted that measured gap and explicitly requested
+GitHub push/live migration/Vercel/Railway publication. Preserve the existing
+performance budgets and verify deployment readiness and actual source. Read docs/audits/2026-10-13-ipad-multifloor-leads.md and its
 companion verification JSON for final local checks and publication status.
 
 ## Passwords, lost reasons and mobile workflow update — 2026-10-13

@@ -84,10 +84,18 @@ Server-Timing is recorded separately in the local evidence and is
 not substituted for total duration. The repository's rendering/computation
 budgets measure different quantities and cannot certify the 2 ms target.
 
-GitHub push, live migration, Vercel and Railway publication remain pending explicit
-acceptance of this measured requirement gap. The independent npm security gate
+The user subsequently explicitly authorized GitHub push, live migration, Vercel
+and Railway publication despite the measured requirement gap. Publication proceeds
+with unchanged repository budgets; deployed identities and health are recorded
+when verified. The independent npm security gate
 also retains 22 high and five moderate findings; no green security CI or protected
 merge is claimed. Existing PR 16 is attached to the task for review.
 
 Local raw evidence is retained in `output/multifloor-release/` and
 `output/playwright/`. Earlier failures are diagnostic records, not acceptance.
+
+A review of the previous remote CI run identified four phone assertions that
+looked for quotation controls inside the default full-screen product browser.
+Tests now enter the workspace through its existing visible button. The four-device
+regression selection passes 30 cases with two explicit phone-only skips and zero
+failures/flakes; delegated intake and catalog controls pass on every device.

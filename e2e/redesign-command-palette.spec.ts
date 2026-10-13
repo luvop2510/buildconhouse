@@ -180,6 +180,8 @@ test('critical reduced-motion command palette Escape closes only the top quotati
   await page.route('**/api/quotations/recent?**', route => route.fulfill({ json: [] }));
   await page.route('**/api/products/families?**', route => route.fulfill({ json: { total: 0, items: [] } }));
   await page.goto('/quotations/new');
+  // Phone browsing starts full screen; actions belong to the workspace.
+  await page.getByRole('button', { name: 'Show quotation workspace', exact: true }).click();
   const trigger = page.getByTestId('builder-actions');
   await trigger.click();
   const underlying = page.getByTestId('quotation-actions-sheet');
