@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
 from auth import (
     apply_effective_floor_ids, apply_staff_password_policy, create_session, create_token, decode_token, get_current_customer, get_current_session, get_current_user,
-    hash_password, invalidate_principal_cache, require_owner, verify_password,
+    hash_password, invalidate_principal_cache, verify_password,
 )
 from db import db
 from models import (
@@ -18,6 +18,7 @@ from services.invite_service import is_temp_password_expired
 from services.rate_limit import clear_login_attempts, reserve_login_attempt
 from services import mfa
 from services.password_policy import is_known_default_password
+from services.team_credentials import encrypt_password
 from services.login_identity import normalize_login_id
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -79,6 +80,7 @@ async def staff_login(body: LoginPayload, request: Request):
         "custom_access": bool(doc.get("custom_access")),
     })
     doc.pop("password_hash", None)
+    doc.pop("password_encrypted", None)
     await log_event(
         event_type="user.login", entity_type="user", entity_id=doc["id"],
         actor_id=doc["id"], actor_name=doc.get("full_name"), summary="Staff Login",
@@ -95,10 +97,10 @@ async def staff_me(user: UserPublic = Depends(get_current_user)):
 async def staff_change_password(
     body: ChangePasswordPayload,
     request: Request,
-    user: UserPublic = Depends(require_owner),
+    user: UserPublic = Depends(get_current_user),
     authorization: Optional[str] = Header(None),
 ):
-    """Only owners can change their own password, with their current password.
+    """Every staff member can change their own password with their current password.
 
     Security: a valid session token alone (stolen or leaked) doesn't hand an
     attacker the account — they still need the CURRENT password, and this
@@ -106,24 +108,28 @@ async def staff_change_password(
     Reuses the same (ip, identifier) rate limiter as /login, keyed on the
     user's own id rather than email so it's scoped per-account regardless of
     what email is on file."""
-    require_owner(user)
     ip = _client_ip(request)
     await reserve_login_attempt(ip, f"staff-pw:{user.id}")
     doc = await db.users.find_one({"id": user.id}, {"_id": 0, "password_hash": 1})
     if not doc or not verify_password(body.current_password, doc.get("password_hash", "")):
         raise HTTPException(status_code=401, detail="Current password is incorrect")
     await clear_login_attempts(ip, f"staff-pw:{user.id}")
-    await db.users.update_one(
-        {"id": user.id},
+    result = await db.users.update_one(
+        {"id": user.id, "password_hash": doc["password_hash"], "active": {"$ne": False}, "deleted_at": {"$exists": False}},
         {"$set": {
             "password_hash": hash_password(body.new_password),
+            "password_encrypted": encrypt_password(body.new_password, user.id),
             "must_change_password": False,
             "temp_password_expires_at": None,
             "updated_at": now_iso(),
         }},
     )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=409, detail="Your account changed. Sign in again before changing the password")
     invalidate_principal_cache("staff", user.id)
     await _revoke_other_sessions("staff", user.id, authorization)
+    await log_event(event_type="user.password_changed", entity_type="user", entity_id=user.id,
+                    actor=user, summary="Staff Password Changed")
     return {"changed": True}
 
 

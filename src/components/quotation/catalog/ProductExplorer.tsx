@@ -5,7 +5,6 @@
 // Uses FlatList w/ numColumns for grid layout. Search + sort + filters live
 // in the sticky header.
 import Feather from "@expo/vector-icons/Feather";
-import { Image } from "expo-image";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, FlatList, LayoutChangeEvent, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
@@ -14,9 +13,9 @@ import { EmptyState, ErrorState } from "@/src/components/ui";
 import { ProductImage } from "@/src/components/ProductImage";
 import { colors, money, PRODUCT_IMAGE_ASPECT_RATIO, radius, spacing } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";
-import { supplierLogoFor } from "@/src/design/BrandLogo";
 import { storage } from "@/src/utils/storage";
 import { useBuilder } from "../context/BuilderContext";
+import { ProductFilterSheet } from "../sheets/ProductFilterSheet";
 import { VariantSwatchStrip } from "../shared/VariantChip";
 import { QuickAddButton } from "../shared/QuickAddButton";
 import { resolveVariantImages } from "../helpers/media";
@@ -91,11 +90,6 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
     storage.setItem(RECENT_SEARCHES_KEY, JSON.stringify([]));
   }, []);
 
-  const totalBrandProducts = useMemo(
-    () => b.brands.reduce((s, br) => s + (br.product_count || 0), 0),
-    [b.brands],
-  );
-
   return (
     <View
       style={styles.panel}
@@ -141,77 +135,15 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
           <Pressable accessibilityRole="button" accessibilityState={{ expanded: filtersOpen }}
             accessibilityLabel="Filters and sort" testID="explorer-filter-toggle" onPress={() => setFiltersOpen(v => !v)} style={styles.filterTrigger}>
             <Feather name="sliders" size={15} color={colors.onSurface} />
-            <Text style={styles.filterTriggerLabel}>Filters & sort{b.selectedBrandId || b.selectedCategoryId ? " · Active" : ""}</Text>
+            <Text style={styles.filterTriggerLabel}>Filters & sort{b.selectedBrandId || b.selectedCategoryId || b.selectedSizes.length ? " · Active" : ""}</Text>
             <Feather name={filtersOpen ? "chevron-up" : "chevron-down"} size={13} color={colors.onSurface} />
           </Pressable>
-          {b.selectedBrandId || b.selectedCategoryId || b.q ? <Pressable accessibilityRole="button" accessibilityLabel="Clear all product filters" onPress={() => { b.setSelectedBrandId(null); b.setSelectedCategoryId(null); b.setSelectedSizes([]); b.setQ(""); }} style={styles.filterTrigger}>
-            <Text style={styles.filterTriggerLabel}>Clear</Text>
-          </Pressable> : <Text style={styles.filterHint}>{SORT_OPTIONS.find(o => o.k === b.sortKey)?.label}</Text>}
+          <Pressable accessibilityRole="button" accessibilityLabel="Add custom product" testID="explorer-custom-product"
+            onPress={() => { b.setPickerSheetOpen(false); b.setCustomProductSheetOpen(true); }} style={[styles.filterTrigger, styles.customTrigger]}>
+            <Feather name="plus" size={16} color={colors.onSurface} /><Text style={styles.filterTriggerLabel}>Custom product</Text>
+          </Pressable>
         </View> : null}
-        {!showCompactFilters || filtersOpen ? <ScrollView style={showCompactFilters ? { maxHeight: 220 } : undefined} contentContainerStyle={{ gap: 8 }} keyboardShouldPersistTaps="handled">
-        {/* Mobile-only: brand + category selectors (tablet/desktop already show
-            these permanently in BrandRail alongside the grid, so this block is
-            redundant there and intentionally hidden). Keeps the phone catalog
-            experience at full parity with desktop browsing. */}
-        {showCompactFilters ? (
-          <>
-            <ScrollView
-              horizontal showsHorizontalScrollIndicator
-              contentContainerStyle={{ gap: 6, paddingVertical: 2 }}
-              testID="mobile-brand-selector"
-            >
-              <FilterPill
-                label="All brands"
-                count={b.referenceLoading || b.referenceError ? undefined : totalBrandProducts}
-                active={!b.selectedBrandIds.length}
-                onPress={() => b.setSelectedBrandId(null)}
-                testID="mobile-brand-all"
-              />
-              {b.brands.map((br) => (
-                <FilterPill
-                  key={br.id}
-                  label={br.name}
-                  logo={supplierLogoFor(br.name)}
-                  count={br.product_count}
-                  active={b.selectedBrandIds.includes(br.id)}
-                  onPress={() => b.setSelectedBrandId(br.id)}
-                  testID={`mobile-brand-${br.name}`}
-                />
-              ))}
-            </ScrollView>
-            {b.categoriesLoading ? <View testID="explorer-categories-loading" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <ActivityIndicator size="small" color={colors.onSurfaceMuted} /><Text style={styles.filterHint}>Loading categories…</Text>
-            </View> : null}
-            {b.categoriesError ? <Pressable accessibilityRole="button" accessibilityLabel="Retry product categories" testID="explorer-category-retry" onPress={b.retryCategories} style={styles.filterTrigger}>
-              <Feather name="refresh-cw" size={14} color={colors.onSurface} /><Text style={styles.filterTriggerLabel}>{b.categoriesError}</Text>
-            </Pressable> : null}
-            {b.categoriesForRail.length > 0 ? (
-              <ScrollView
-                horizontal showsHorizontalScrollIndicator
-                contentContainerStyle={{ gap: 6, paddingVertical: 2 }}
-                testID="mobile-category-selector"
-              >
-                <FilterPill
-                  label={`All ${brandName}`}
-                  active={!b.selectedCategoryIds.length}
-                  onPress={() => b.setSelectedCategoryId(null)}
-                  testID="mobile-category-all"
-                />
-                {b.categoriesForRail.map((c) => (
-                  <FilterPill
-                    key={c.id}
-                    label={c.name}
-                    count={c.product_count}
-                    active={b.selectedCategoryIds.includes(c.id)}
-                    onPress={() => b.setSelectedCategoryId(c.id)}
-                    testID={`mobile-category-${c.name}`}
-                  />
-                ))}
-              </ScrollView>
-            ) : null}
-          </>
-        ) : null}
-
+        {!showCompactFilters ? <ScrollView contentContainerStyle={{ gap: 8 }} keyboardShouldPersistTaps="handled">
         {([["sizes", "Size", b.selectedSizes, b.setSelectedSizes]] as const).map(([field, label, selected, update]) => facets[field]?.length ? <View key={field} style={{ gap: 4 }}>
           <Text style={styles.filterHint}>{label} · select multiple</Text>
           <ScrollView horizontal contentContainerStyle={{ gap: 6 }}>
@@ -286,6 +218,8 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
         ) : null}
         </ScrollView> : null}
       </View>
+
+      <ProductFilterSheet open={showCompactFilters && filtersOpen} onClose={() => setFiltersOpen(false)} facets={facets} />
 
       <FlatList
         data={b.products}
@@ -461,33 +395,12 @@ function ProductGridCardImpl({ product, compact, width, favourite, addedQty, onT
 const ProductGridCard = memo(ProductGridCardImpl);
 
 // -----------------------------------------------------------------------------
-// FilterPill — compact brand/category selector chip used in the phone-only
-// browsing row. Mirrors the standalone Catalog screen's BrandPill so the
-// mobile builder picker matches the same browsing language.
-// -----------------------------------------------------------------------------
-function FilterPill({
-  label, logo, count, active, onPress, testID,
-}: {
-  label: string; logo?: any; count?: number;
-  active?: boolean; onPress?: () => void; testID?: string;
-}) {
-  return (
-    <Pressable accessibilityRole="button" accessibilityState={{ selected: !!active }} aria-pressed={!!active} onPress={onPress} testID={testID} style={[styles.filterPill, active && styles.filterPillActive]}>
-      {logo ? (
-        <View style={styles.filterPillLogoWrap}>
-          <Image source={logo} style={{ width: "100%", height: "100%" }} contentFit="cover" />
-        </View>
-      ) : null}
-      <Text style={[styles.filterPillLabel, active && styles.filterPillLabelActive]} numberOfLines={1}>
-        {label}
-      </Text>
-      {count != null ? (
-        <Text style={[styles.filterPillCount, active && styles.filterPillCountActive]} numberOfLines={1}>
-          {count}
-        </Text>
-      ) : null}
-    </Pressable>
-  );
+// Size choices remain inline beside the desktop brand rail.
+function FilterPill({ label, active, onPress }: { label: string; active?: boolean; onPress?: () => void }) {
+  return <Pressable accessibilityRole="button" accessibilityState={{ selected: !!active }} aria-pressed={!!active} onPress={onPress}
+    style={[styles.filterPill, active && styles.filterPillActive]}>
+    <Text style={[styles.filterPillLabel, active && styles.filterPillLabelActive]}>{label}</Text>
+  </Pressable>;
 }
 
 const styles = StyleSheet.create({
@@ -500,6 +413,7 @@ const styles = StyleSheet.create({
   headCompact: { paddingHorizontal: 12, paddingVertical: 8, gap: 6 },
   filterToolbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
   filterTrigger: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 8 },
+  customTrigger: { borderWidth: 1, borderColor: colors.border, borderRadius: 10, backgroundColor: colors.surface },
   filterTriggerLabel: { fontSize: 12, fontWeight: "600", color: colors.onSurface },
   filterHint: { fontSize: 11, color: colors.onSurfaceSecondary },
   cardAdd: { minHeight: 44, alignItems: "center", justifyContent: "center", marginTop: 4 },
@@ -579,7 +493,7 @@ const styles = StyleSheet.create({
   // its row height even when a product has no variants — this is what
   // keeps every card in the grid the same height regardless of content.
   cardBody: { padding: 10, gap: 6 },
-  cardBodyCompact: { padding: 8, gap: 3 },
+  cardBodyCompact: { padding: 10, gap: 5 },
   cardName: { fontSize: 13, fontWeight: "600", color: colors.onSurface, lineHeight: 17, minHeight: 34 },
   cardNameCompact: { fontSize: 13, lineHeight: 17, minHeight: 34 },
   cardSku: { fontSize: 11, color: colors.onSurfaceMuted, fontVariant: ["tabular-nums"] },

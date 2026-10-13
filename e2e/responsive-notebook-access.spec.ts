@@ -155,7 +155,6 @@ test('notebook conversion rejects negative and text-only prices instead of chang
   await page.goto('/notebook/kitchen');
   await page.getByRole('button', { name: 'Move to quotation', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Move to quotation follow-up', exact: true });
-  await dialog.getByLabel('Follow-up note *', { exact: true }).fill('Client requested this quotation');
   for (const input of ['-100', 'oops']) {
     await dialog.getByLabel('Quotation price *', { exact: true }).fill(input);
     await dialog.getByRole('button', { name: 'Move to quotation follow-up', exact: true }).click();
@@ -165,7 +164,7 @@ test('notebook conversion rejects negative and text-only prices instead of chang
   await dialog.getByLabel('Quotation price *', { exact: true }).fill('₹12,500.50');
   await dialog.getByRole('button', { name: 'Move to quotation follow-up', exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  expect(writes).toEqual([{ quotation_price: 12500.5, notes: 'Client requested this quotation', updated_at: lead.updated_at }]);
+  expect(writes).toEqual([{ quotation_price: 12500.5, updated_at: lead.updated_at }]);
 });
 
 test('furniture export-only grant allows PDF delivery and receipt refresh while keeping ledger edits read-only', async ({ page }) => {

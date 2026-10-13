@@ -22,7 +22,7 @@
     "test:section-excel": "node --experimental-strip-types --no-warnings scripts/test-section-excel.mjs",
     "preview:local": "node scripts/serve-local.mjs",
     "test:quotation-concealed-parts": "node --experimental-strip-types --no-warnings scripts/test-quotation-concealed-parts.mjs",
-    "test:purchases-contract": "node scripts/test-purchases-contract.mjs",
+    "test:purchases-contract": "node scripts/test-purchases-contract.mjs && node scripts/test-purchase-floor-races.mjs",
     "test:notebook": "node --experimental-strip-types --no-warnings scripts/test-notebook.mjs",
     "test:mobile-ux": "node scripts/test-mobile-ux-contract.mjs",
     "test:frontend-drift": "node scripts/test-frontend-drift.mjs",

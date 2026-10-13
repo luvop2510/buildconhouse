@@ -13,7 +13,7 @@ import { ActivityIndicator, KeyboardAvoidingView, LayoutChangeEvent, Platform, P
 import { Text } from "@/src/components/AppText";
 
 import { colors } from "@/src/theme/tokens";
-import { quotationBuilderLayout } from "@/src/design/responsive";
+import { quotationBuilderLayout, useBp } from "@/src/design/responsive";
 import { storage } from "@/src/utils/storage";
 
 import { useBuilder } from "../context/BuilderContext";
@@ -35,10 +35,11 @@ import { BuilderTopbar } from "./BuilderTopbar";
 
 export function BuilderShell({ onBack }: { onBack: () => void }) {
   const b = useBuilder();
+  const { isPhone: viewportPhone } = useBp();
   const [w, setW] = useState(0);
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [quotationCollapsed, setQuotationCollapsed] = useState(false);
-  const [mobileWorkspaceCollapsed, setMobileWorkspaceCollapsed] = useState(false);
+  const [mobileWorkspaceCollapsed, setMobileWorkspaceCollapsed] = useState(viewportPhone);
 
   useEffect(() => {
     void storage.getItem<boolean>("forge.builder.brandRail.collapsed.v1", false).then((value) => {

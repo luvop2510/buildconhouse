@@ -2,6 +2,27 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
+## Passwords, lost reasons and mobile workflow update — 2026-10-13
+
+Current policy supersedes the older owner-managed-only password notes below:
+staff may change their own password with current/new/confirmation; Team and role
+management remain owner-only. Owner credential reveal is explicit/audited/no-store,
+with bcrypt login and identity-bound encrypted recovery copies. Legacy hashes
+need reset before reveal. Preserve the existing MFA encryption root (JWT fallback)
+across deployments and synchronize every credential-write path, including controlled
+Team reset. Do not expose ciphertext/hash in ordinary responses or diagnostics.
+
+Routine customer/follow-up/notebook actions accept no notes; only Lost requires a
+reason. Visit Showroom permanently excludes the source walk-in from registers/counts
+and keeps one retry-safe follow-up. Interested transferred leads keep recipient
+ownership; only committed orders count won. Own orders defaults to current member,
+and actual won sales belong to the quotation creator, including unlinked same-floor
+showroom leads. Migration 0033 repairs confirmed historical attribution while
+preserving ambiguous/unrelated history. Purchases explicitly request one selected
+floor and reject stale callbacks. Phone quotation browsing defaults full screen,
+filters use a sheet, custom products and description/edit/review parity remain.
+See docs/audits/2026-10-13-team-mobile-workflows.md for evidence and release outcome.
+
 ## Performance constraints — 2026-10-13 incident repair
 
 Performance is a release requirement for every feature/change. Read

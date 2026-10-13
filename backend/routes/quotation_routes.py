@@ -604,14 +604,18 @@ async def _complete_pre_confirmation_followups(
     *,
     session=None,
     floor_id: str | None = None,
+    creator_id: str | None = None,
+    creator_name: str | None = None,
+    customer_id: str | None = None,
 ) -> int:
     """Close reminders that existed before this quotation became an order.
 
     The order-confirmed Operations handoff is deliberately excluded: it is
     created *after* this transition and remains actionable until Operations
-    starts releasing material.  All other open or snoozed cards linked to the
-    quotation (including staff-created reminders) are sales follow-ups whose
-    purpose has been fulfilled by the confirmation.
+    starts releasing material. Existing payment/purchase reminders remain
+    actionable. Sales reminders linked to this quotation, and this same-floor
+    customer's unlinked walk-in/showroom leads, become won in the transaction
+    that places the order; other quotations and customers remain untouched.
     """
     completed_at = now_iso()
     query = {
@@ -619,10 +623,24 @@ async def _complete_pre_confirmation_followups(
         "status": {"$in": ["open", "snoozed"]},
         "rule_type": {"$ne": "order_confirmed_ops"},
         "purchase_id": None,
+        "category": {"$nin": ["payment", "purchase", "operations"]},
         "$or": [{"notebook_key": None}, {"notebook_key": ""}],
     }
     if floor_id:
         query["floor_id"] = floor_id
+    if customer_id and floor_id:
+        # Showroom leads exist before a quotation and carry no quotation id.
+        # Only this customer's walk-in sales rows can join the confirmed sale.
+        query.pop("quotation_id")
+        notebook_scope = query.pop("$or")
+        query["$and"] = [
+            {"$or": notebook_scope},
+            {"$or": [
+                {"quotation_id": quotation_id},
+                {"customer_id": customer_id, "category": "walk_in", "quotation_id": None},
+                {"customer_id": customer_id, "category": "walk_in", "quotation_id": ""},
+            ]},
+        ]
     result = await db.followups.update_many(
         query,
         {"$set": {
@@ -633,6 +651,8 @@ async def _complete_pre_confirmation_followups(
             # converted task. This outcome powers the dedicated Won orders
             # view in Follow-ups and is written only by the order transition.
             "completed_outcome": "won",
+            "quotation_id": quotation_id, "quotation_number": quotation_number,
+            **({"assigned_to": creator_id, "assigned_to_name": creator_name} if creator_id else {}),
             "snoozed_until": None,
             "resolution_note": (
                 f"Completed automatically — order {quotation_number or quotation_id} was confirmed."
@@ -665,6 +685,7 @@ async def _complete_order_notebook_followups(doc: dict, *, session=None) -> int:
             "$or": [{"quotation_id": doc["id"]}, {"quotation_id": None}, {"quotation_id": ""}],
         },
         {"$set": {
+            **({"assigned_to": doc["created_by"], "assigned_to_name": doc.get("created_by_name")} if doc.get("created_by") else {}),
             "notebook_status": "won", "status": "done", "completed_outcome": "won",
             "auto_resolved": True, "completed_at": now, "updated_at": now,
             "snoozed_until": None,
@@ -1760,6 +1781,8 @@ async def place_order_confirm(quotation_id: str, body: PlaceOrderConfirmPayload,
                     await _complete_order_notebook_followups(doc, session=session)
                     await _complete_pre_confirmation_followups(
                         quotation_id, doc.get("number"), session=session, floor_id=doc.get("floor_id"),
+                        creator_id=doc.get("created_by"), creator_name=doc.get("created_by_name"),
+                        customer_id=doc.get("customer_id"),
                     )
                     event = await enqueue_after_primary_commit(
                         event_type=EVENT_ORDER_PLACED,

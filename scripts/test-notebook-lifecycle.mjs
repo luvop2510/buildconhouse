@@ -43,7 +43,6 @@ function fixture() {
     },
   };
   const mutation = deferred();
-  let noteAction;
   const api = new Proxy({}, { get: (_, method) => (...args) => {
     requests.push({ method, args });
     return method === 'list' ? Promise.resolve({ rows: [], next_cursor: null }) : mutation.promise;
@@ -58,12 +57,6 @@ function fixture() {
     '@/src/theme/tokens': { colors: {}, radius: {}, spacing: {}, type: {} },
     '@/src/components/Toast': { toast: { success: message => notices.push(message), error: message => notices.push(message) } },
   };
-  // Capture the action's execute function without relying on a sheet renderer.
-  const stateHook = react.useState;
-  react.useState = initial => {
-    const [value, setter] = stateHook(initial);
-    return [value, next => { if (next?.execute) noteAction = next; setter(next); }];
-  };
   const exports = {};
   vm.runInNewContext(compiled, { exports, require: id => modules[id] || {}, setTimeout, clearTimeout });
   const render = () => {
@@ -74,7 +67,7 @@ function fixture() {
   render();
   return {
     notices, links, requests, mutation,
-    get state() { return state; }, get action() { return noteAction; },
+    get state() { return state; },
     unmount() { for (const hook of hooks) hook.cleanup?.(); },
     async settle() { for (let pass = 0; pass < 8; pass++) { await Promise.resolve(); if (dirty) render(); } },
   };
@@ -83,10 +76,9 @@ function fixture() {
 test('completed contact from an abandoned notebook cannot open another app or reload the previous floor', async () => {
   const view = fixture();
   view.state.contact({ id: 'old-lead', customer_name: 'Old customer' }, 'whatsapp');
-  const contact = view.action.execute('Contact note');
   view.unmount();
   view.mutation.resolve({ wa_url: 'https://wa.me/9000000000' });
-  await contact;
+  await view.settle();
   assert.equal(view.links.length, 0);
   assert.equal(view.requests.filter(request => request.method === 'list').length, 0);
   assert.equal(view.notices.length, 0);

@@ -16,7 +16,6 @@ import { Swipeable } from "@/src/components/Swipeable";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/src/api/client";
-import { RequiredNoteSheet, type FollowupNoteAction } from "@/src/components/followups/RequiredNoteSheet";
 import { useBp } from "@/src/design/responsive";
 import { Menu } from "@/src/design/navigationControls";
 import { ActivityTimeline, TimelineEvent } from "@/src/components/ActivityTimeline";
@@ -321,8 +320,6 @@ export default function FollowupsScreen() {
   const [newSheet, setNewSheet] = useState(false);
   const [callOutcomeFor, setCallOutcomeFor] = useState<Followup | null>(null);
   const [lossActionFor, setLossActionFor] = useState<Followup | null>(null);
-  const [noteFor, setNoteFor] = useState<Followup | null>(null);
-  const [noteAction, setNoteAction] = useState<FollowupNoteAction | null>(null);
   const [customSnoozeFor, setCustomSnoozeFor] = useState<Followup | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Followup | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -373,6 +370,7 @@ export default function FollowupsScreen() {
       if (categoryFilter !== "all") params.set("category", categoryFilter);
       if (tierFilter !== "all") params.set("customer_tier", tierFilter);
       if (ownerFilter !== "all") params.set("assigned_to", filterValues(ownerFilter).map(owner => owner === "mine" ? staff?.id || "" : owner).filter(Boolean).join(","));
+      if (followupView === "won" && ownerFilter === "all" && staff?.id) params.set("assigned_to", staff.id);
       if (workspace === "visit_showroom") params.set("origin", "visit_showroom");
       if (workspace === "selection") params.set("rule_type", "selection_waiting");
       else if (workspace === "quotation_tiles") params.set("rule_type", "quotation_tiles_waiting");
@@ -389,6 +387,7 @@ export default function FollowupsScreen() {
         // recover the first page and suppress unavailable pagination.
         if (!pageNavigation && nextPage === 1 && isMissingPagedInbox(error)) {
           const legacyParams = new URLSearchParams({ limit: String(FOLLOWUP_PAGE_SIZE) });
+          if (followupView === "won" && ownerFilter === "all" && staff?.id) legacyParams.set("assigned_to", staff.id);
           if (workspace === "visit_showroom") legacyParams.set("origin", "visit_showroom");
           if (searchQuery) legacyParams.set("q", searchQuery);
           if (priorityFilter !== "all") legacyParams.set("priority", priorityFilter);
@@ -474,7 +473,6 @@ export default function FollowupsScreen() {
     setLoadingDetail(false);
     setCustomerPreviewOpen(false);
     setSelectedIds(new Set());
-    setNoteAction(null);
     setBulkResult(null);
     (async () => {
       setLoading(true);
@@ -505,7 +503,7 @@ export default function FollowupsScreen() {
 
   // An order can be placed from the quotation screen while this route remains
   // mounted in the navigator. Refresh on return so its follow-ups move to the
-  // Won orders view without relying on a manual page reload.
+  // Own orders view without relying on a manual page reload.
   useFocusEffect(useCallback(() => {
     void latestLoadList.current();
     if (summaryOpen) void refreshStatsQuiet();
@@ -562,114 +560,112 @@ export default function FollowupsScreen() {
     setDetail((prev) => prev?.followup.id === id ? { ...prev, followup: { ...prev.followup, ...patch } } : prev);
   }, []);
 
+  const runAction = useCallback((action: () => Promise<void>) => {
+    void action().catch((error: any) => toast.error(error?.detail || "Could not update follow-up"));
+  }, []);
+
   // ── Actions ───────────────────────────────────────────────────────────────
   const contact = useCallback((f: Followup, channel: Channel) => {
-    setNoteAction({ title: "Contact customer", subtitle: f.customer_name, confirmLabel: "Save and open contact", execute: async (notes) => {
+    runAction(async () => {
       const res = await api.post<{ channel: string; phone?: string | null; wa_url?: string; email?: string | null }>(
-        `/followups/${f.id}/contact`, { channel, notes },
+        `/followups/${f.id}/contact`, { channel },
       );
       if (channel === "call") {
         if (!res.phone) { toast.error("No phone number on file"); return; }
-        await Linking.openURL(`tel:${res.phone}`).catch(() => toast.error("Note saved. Open the phone app manually."));
+        await Linking.openURL(`tel:${res.phone}`).catch(() => toast.error("Open the phone app manually."));
         setCallOutcomeFor(f);
       } else if (channel === "whatsapp") {
         if (!res.wa_url) { toast.error("Could not build WhatsApp message"); return; }
-        await Linking.openURL(res.wa_url).catch(() => toast.error("Note saved. Open WhatsApp manually."));
+        await Linking.openURL(res.wa_url).catch(() => toast.error("Open WhatsApp manually."));
         toast.success("WhatsApp opened");
       } else if (channel === "email") {
         if (!res.email) { toast.error("No email on file for this customer"); return; }
-        await Linking.openURL(`mailto:${res.email}?subject=${encodeURIComponent(f.quotation_number || f.project_name || "Following up")}`).catch(() => toast.error("Note saved. Open the email app manually."));
+        await Linking.openURL(`mailto:${res.email}?subject=${encodeURIComponent(f.quotation_number || f.project_name || "Following up")}`).catch(() => toast.error("Open the email app manually."));
       }
-      patchLocal(f.id, { last_contacted_at: new Date().toISOString(), notes });
-    } });
-  }, [patchLocal]);
+      patchLocal(f.id, { last_contacted_at: new Date().toISOString() });
+    });
+  }, [patchLocal, runAction]);
 
   const completeFollowup = useCallback((f: Followup) => {
-    setNoteAction({ title: "Complete follow-up", subtitle: f.customer_name, confirmLabel: "Save and complete", execute: async (notes) => {
-      const updated = await api.post<Followup>(`/followups/${f.id}/complete`, { notes });
+    runAction(async () => {
+      const updated = await api.post<Followup>(`/followups/${f.id}/complete`, {});
       patchLocal(f.id, { ...updated, bucket: "completed" });
       toast.success("Marked complete");
       void refreshStatsQuiet();
-    } });
-  }, [patchLocal, refreshStatsQuiet]);
+    });
+  }, [patchLocal, refreshStatsQuiet, runAction]);
 
   const snoozeFollowup = useCallback((f: Followup, preset: "15m" | "1h" | "tomorrow" | "next_week") => {
-    setNoteAction({ title: "Snooze follow-up", subtitle: f.customer_name, confirmLabel: "Save and snooze", execute: async (notes) => {
-      const updated = await api.post<Followup>(`/followups/${f.id}/snooze`, { preset, notes });
+    runAction(async () => {
+      const updated = await api.post<Followup>(`/followups/${f.id}/snooze`, { preset });
       patchLocal(f.id, { ...updated, bucket: "snoozed" });
       toast.success("Snoozed");
       void refreshStatsQuiet();
-    } });
-  }, [patchLocal, refreshStatsQuiet]);
+    });
+  }, [patchLocal, refreshStatsQuiet, runAction]);
 
   const customSnooze = useCallback((f: Followup, untilIso: string) => {
     setCustomSnoozeFor(null);
-    setNoteAction({ title: "Snooze follow-up", subtitle: f.customer_name, confirmLabel: "Save and snooze", execute: async (notes) => {
-      const updated = await api.post<Followup>(`/followups/${f.id}/snooze`, { until: untilIso, notes });
+    runAction(async () => {
+      const updated = await api.post<Followup>(`/followups/${f.id}/snooze`, { until: untilIso });
       patchLocal(f.id, { ...updated, bucket: "snoozed" });
       toast.success("Snoozed");
       void refreshStatsQuiet();
-    } });
-  }, [patchLocal, refreshStatsQuiet]);
+    });
+  }, [patchLocal, refreshStatsQuiet, runAction]);
 
   const pushDue = useCallback((f: Followup, days: number) => {
     const dueDate = new Date(Date.now() + days * 86400000);
     const dueIso = dueDate.toISOString();
     const newBucket: Bucket = days === 1 ? "tomorrow" : days <= 7 ? "this_week" : "later";
-    setNoteAction({ title: "Reschedule follow-up", subtitle: f.customer_name, execute: async (notes) => {
-      const updated = await api.patch<Followup>(`/followups/${f.id}`, { due_at: dueIso, notes });
+    runAction(async () => {
+      const updated = await api.patch<Followup>(`/followups/${f.id}`, { due_at: dueIso });
       patchLocal(f.id, { ...updated, bucket: newBucket });
       toast.success(`Pushed ${days} day${days === 1 ? "" : "s"}`);
       void refreshStatsQuiet();
-    } });
-  }, [patchLocal, refreshStatsQuiet]);
+    });
+  }, [patchLocal, refreshStatsQuiet, runAction]);
 
   const assignFollowup = useCallback((f: Followup, userId: string) => {
     const u = assignees.find((a) => a.id === userId);
-    setNoteAction({ title: "Assign follow-up", subtitle: f.customer_name, execute: async (notes) => {
-      const updated = await api.patch<Followup>(`/followups/${f.id}`, { assigned_to: userId, notes });
+    runAction(async () => {
+      const updated = await api.patch<Followup>(`/followups/${f.id}`, { assigned_to: userId });
       patchLocal(f.id, updated);
       toast.success(`Assigned to ${u?.full_name || "—"}`);
-    } });
-  }, [assignees, patchLocal]);
+    });
+  }, [assignees, patchLocal, runAction]);
 
   const dismissFollowup = useCallback((f: Followup) => {
-    setNoteAction({ title: "Dismiss follow-up", subtitle: f.customer_name, confirmLabel: "Save and dismiss", execute: async (notes) => {
-      const updated = await api.patch<Followup>(`/followups/${f.id}`, { status: "dismissed", notes });
+    runAction(async () => {
+      const updated = await api.patch<Followup>(`/followups/${f.id}`, { status: "dismissed" });
       patchLocal(f.id, { ...updated, bucket: "completed" });
       toast.success("Dismissed");
       void refreshStatsQuiet();
-    } });
-  }, [patchLocal, refreshStatsQuiet]);
+    });
+  }, [patchLocal, refreshStatsQuiet, runAction]);
 
   const deleteFollowup = useCallback(() => {
     if (!deleteTarget) return;
     const target = deleteTarget;
     setDeleteTarget(null);
-    setNoteAction({ title: "Delete follow-up", subtitle: target.customer_name, confirmLabel: "Save note and delete", execute: async (notes) => {
+    runAction(async () => {
       setDeleting(true);
       try {
-        await api.delete(`/followups/${target.id}?notes=${encodeURIComponent(notes)}`);
+        await api.delete(`/followups/${target.id}`);
         setRawItems((prev) => prev.filter((item) => item.id !== target.id));
         if (selectedId === target.id) clearSelectedDetail();
         toast.success("Follow-up deleted");
         void refreshStatsQuiet();
       } finally { setDeleting(false); }
-    } });
-  }, [clearSelectedDetail, deleteTarget, refreshStatsQuiet, selectedId]);
-
-  const saveNote = useCallback(async (f: Followup, notes: string) => {
-    if (!notes.trim()) { toast.error("A follow-up note is required"); return; }
-    try { const updated = await api.patch<Followup>(`/followups/${f.id}`, { notes: notes.trim() }); patchLocal(f.id, updated); toast.success("Note saved"); setNoteFor(null); }
-    catch (e: any) { toast.error(e?.detail || "Could not save note"); }
-  }, [patchLocal]);
+    });
+  }, [clearSelectedDetail, deleteTarget, refreshStatsQuiet, selectedId, runAction]);
 
   const logCallOutcome = useCallback(async (f: Followup, outcome: string, notes?: string, nextFollowupAt?: string) => {
-    if (!notes?.trim()) { toast.error("A follow-up note is required"); return; }
+    if ((outcome === "lost" || outcome === "rejected") && !notes?.trim()) { toast.error("A lost reason is required"); return; }
     try {
       await api.post(`/followups/${f.id}/log-call`, {
         outcome,
-        notes: notes || undefined,
+        notes: outcome === "lost" || outcome === "rejected" ? notes : undefined,
         next_followup_at: nextFollowupAt || undefined,
       });
       toast.success("Call logged");
@@ -712,7 +708,7 @@ export default function FollowupsScreen() {
         : choice === "completed" ? f.bucket === "completed" && !!f.completed_at && isSameDay(f.completed_at, new Date())
         : f.bucket === choice));
     }
-    if (followupView === "won") list = list.filter(isWonOrderFollowup);
+    if (followupView === "won") list = list.filter((f) => isWonOrderFollowup(f) && (ownerFilter !== "all" || f.assigned_to === staff?.id));
     else if (followupView === "lost") list = list.filter((f) => f.completed_outcome === "lost");
     else list = list.filter((f) => !isWonOrderFollowup(f) && f.completed_outcome !== "lost");
     if (priorityFilter !== "all") list = list.filter((f) => matchesFilter(f.manual_priority_override || f.priority_level, priorityFilter));
@@ -822,25 +818,25 @@ export default function FollowupsScreen() {
 
   const bulkSnooze = useCallback((preset: "1h" | "tomorrow" | "next_week") => {
     const ids = Array.from(selectedIds);
-    setNoteAction({ title: "Snooze selected follow-ups", subtitle: `${ids.length} selected`, execute: async (notes) => {
-      await runBulk({ label: "Snoozed", successPatch: { status: "snoozed", bucket: "snoozed", notes }, execute: (id) => api.post(`/followups/${id}/snooze`, { preset, notes }) }, ids);
-    } });
-  }, [runBulk, selectedIds]);
+    runAction(async () => {
+      await runBulk({ label: "Snoozed", successPatch: { status: "snoozed", bucket: "snoozed" }, execute: (id) => api.post(`/followups/${id}/snooze`, { preset }) }, ids);
+    });
+  }, [runBulk, selectedIds, runAction]);
 
   const bulkComplete = useCallback(() => {
     const ids = Array.from(selectedIds);
-    setNoteAction({ title: "Complete selected follow-ups", subtitle: `${ids.length} selected`, confirmLabel: "Save and complete", execute: async (notes) => {
-      await runBulk({ label: "Completed", successPatch: { status: "done", bucket: "completed", completed_at: new Date().toISOString(), notes }, execute: (id) => api.post(`/followups/${id}/complete`, { notes }) }, ids);
-    } });
-  }, [runBulk, selectedIds]);
+    runAction(async () => {
+      await runBulk({ label: "Completed", successPatch: { status: "done", bucket: "completed", completed_at: new Date().toISOString() }, execute: (id) => api.post(`/followups/${id}/complete`, {}) }, ids);
+    });
+  }, [runBulk, selectedIds, runAction]);
 
   const bulkAssign = useCallback((userId: string) => {
     const u = assignees.find((a) => a.id === userId);
     const ids = Array.from(selectedIds);
-    setNoteAction({ title: "Assign selected follow-ups", subtitle: `${ids.length} selected`, execute: async (notes) => {
-      await runBulk({ label: `Assigned to ${u?.full_name || "—"}`, successPatch: { assigned_to: userId, assigned_to_name: u?.full_name, notes }, execute: (id) => api.patch(`/followups/${id}`, { assigned_to: userId, notes }) }, ids);
-    } });
-  }, [assignees, runBulk, selectedIds]);
+    runAction(async () => {
+      await runBulk({ label: `Assigned to ${u?.full_name || "—"}`, successPatch: { assigned_to: userId, assigned_to_name: u?.full_name }, execute: (id) => api.patch(`/followups/${id}`, { assigned_to: userId }) }, ids);
+    });
+  }, [assignees, runBulk, selectedIds, runAction]);
 
   const retryFailedBulk = useCallback(() => {
     if (!bulkResult) return;
@@ -925,7 +921,7 @@ export default function FollowupsScreen() {
         case "?": setShortcutHelp((v) => !v); break;
         case "Escape":
           clearSelectedDetail(); setCustomerPreviewOpen(false);
-          setCallOutcomeFor(null); setNoteFor(null); setCustomSnoozeFor(null);
+          setCallOutcomeFor(null); setCustomSnoozeFor(null);
           break;
         default: break;
       }
@@ -950,7 +946,7 @@ export default function FollowupsScreen() {
       testID="followups-outcome-tabs"
       options={[
         { value: "active", label: "Follow-ups", icon: "inbox" },
-        { value: "won", label: `Won orders${outcomeCounts.won ? ` · ${outcomeCounts.won}` : ""}`, icon: "shopping-bag" },
+        { value: "won", label: `Own orders${outcomeCounts.won ? ` · ${outcomeCounts.won}` : ""}`, icon: "shopping-bag" },
         { value: "lost", label: `Loss${outcomeCounts.lost ? ` · ${outcomeCounts.lost}` : ""}`, icon: "user-x" },
       ]}
     />
@@ -1087,7 +1083,7 @@ export default function FollowupsScreen() {
       renderSectionHeader={({ section }) => {
         const meta = BUCKET_META[section.bucket];
         const isCollapsed = followupView === "active" && collapsed.has(section.bucket);
-        const label = followupView === "won" ? "Won orders" : followupView === "lost" ? "Loss" : meta.label;
+        const label = followupView === "won" ? "Own orders" : followupView === "lost" ? "Loss" : meta.label;
         const icon: FeatherName = followupView === "won" ? "shopping-bag" : followupView === "lost" ? "user-x" : meta.icon;
         return <Pressable accessibilityRole={followupView === "active" ? "button" : "header"} accessibilityLabel={label} accessibilityState={followupView === "active" ? { expanded: !isCollapsed } : undefined} onPress={() => followupView === "active" && toggleSection(section.bucket)} style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: 4, paddingHorizontal: horizontalPadding, backgroundColor: colors.surface }}>
           <Feather name={icon} size={14} color={colors.onSurfaceSecondary} /><Text style={type.overline}>{label}</Text><Badge label={String(section.itemCount)} tone="neutral" size="sm" /><View style={{ flex: 1 }} />{followupView === "active" ? <Feather name={isCollapsed ? "chevron-down" : "chevron-up"} size={16} color={colors.onSurfaceMuted} /> : null}
@@ -1096,7 +1092,7 @@ export default function FollowupsScreen() {
       renderSectionFooter={({ section }) =>
         section.bucket === visibleSections[visibleSections.length - 1]?.bucket ? paginationFooter : null
       }
-      renderItem={({ item: f }) => <View style={{ paddingHorizontal: horizontalPadding, marginBottom: spacing.sm }}><MemoFollowupCard f={f} active={f.id === selectedId} assignees={assignees} rank={rankMap.get(f.id)} checked={selectedIds.has(f.id)} onToggleSelect={toggleSelect} onPress={selectCard} onCall={contact} onWhatsApp={contact} onEmail={contact} onComplete={completeFollowup} onSnooze={snoozeFollowup} onCustomSnooze={setCustomSnoozeFor} onPushDays={pushDue} onAssign={assignFollowup} onNote={setNoteFor} onMarkLost={(item) => { setLossActionFor(item); setCallOutcomeFor(item); }} onDismiss={dismissFollowup} canDelete={canDeleteFollowups} onDelete={setDeleteTarget} onOpenDoc={openRelatedDocument} /></View>}
+      renderItem={({ item: f }) => <View style={{ paddingHorizontal: horizontalPadding, marginBottom: spacing.sm }}><MemoFollowupCard f={f} active={f.id === selectedId} assignees={assignees} rank={rankMap.get(f.id)} checked={selectedIds.has(f.id)} onToggleSelect={toggleSelect} onPress={selectCard} onCall={contact} onWhatsApp={contact} onEmail={contact} onComplete={completeFollowup} onSnooze={snoozeFollowup} onCustomSnooze={setCustomSnoozeFor} onPushDays={pushDue} onAssign={assignFollowup} onMarkLost={(item) => { setLossActionFor(item); setCallOutcomeFor(item); }} onDismiss={dismissFollowup} canDelete={canDeleteFollowups} onDelete={setDeleteTarget} onOpenDoc={openRelatedDocument} /></View>}
     />
     );
   };
@@ -1231,8 +1227,6 @@ export default function FollowupsScreen() {
         defaultAssignee={staff?.id} onCreate={createFollowup}
       />
       <AutomationRulesSheet visible={rulesSheet} onClose={() => setRulesSheet(false)} rules={stats?.rules || []} />
-      <RequiredNoteSheet action={noteAction} onClose={() => setNoteAction(null)} />
-      <NoteSheet visible={!!noteFor} f={noteFor} onClose={() => setNoteFor(null)} onSave={saveNote} />
       <CustomSnoozeSheet visible={!!customSnoozeFor} f={customSnoozeFor} onClose={() => setCustomSnoozeFor(null)} onSave={customSnooze} />
       <ConfirmDialog
         visible={!!deleteTarget}
@@ -1489,13 +1483,13 @@ function IconMenuButton({ icon, tone = "surface", accessibilityLabel, items, tes
 // ─────────────────────────────────────────────────────────────────────────────
 function FollowupCard({
   f, active, assignees, rank, checked, onToggleSelect,
-  onPress, onCall, onWhatsApp, onEmail, onComplete, onSnooze, onCustomSnooze, onPushDays, onAssign, onNote, onMarkLost, onDismiss, canDelete, onDelete, onOpenDoc,
+  onPress, onCall, onWhatsApp, onEmail, onComplete, onSnooze, onCustomSnooze, onPushDays, onAssign, onMarkLost, onDismiss, canDelete, onDelete, onOpenDoc,
 }: {
   f: Followup; active: boolean; assignees: Assignee[]; rank?: number; checked: boolean; onToggleSelect: (id: string) => void;
   onPress: (f: Followup) => void; onCall: (f: Followup, channel: Channel) => void; onWhatsApp: (f: Followup, channel: Channel) => void; onEmail: (f: Followup, channel: Channel) => void;
   onComplete: (f: Followup) => void; onSnooze: (f: Followup, preset: "15m" | "1h" | "tomorrow" | "next_week") => void;
   onCustomSnooze: (f: Followup) => void; onPushDays: (f: Followup, days: number) => void;
-  onAssign: (f: Followup, userId: string) => void; onNote: (f: Followup) => void; onMarkLost: (f: Followup) => void; onDismiss: (f: Followup) => void; canDelete: boolean; onDelete: (f: Followup) => void; onOpenDoc?: (f: Followup) => void;
+  onAssign: (f: Followup, userId: string) => void; onMarkLost: (f: Followup) => void; onDismiss: (f: Followup) => void; canDelete: boolean; onDelete: (f: Followup) => void; onOpenDoc?: (f: Followup) => void;
 }) {
   const { isPhone } = useBp();
   const level = f.manual_priority_override || f.priority_level;
@@ -1539,7 +1533,7 @@ function FollowupCard({
             </Text>
           </View>
           {!isResolved ? <ScoreBadge score={f.priority_score} level={level} /> : (
-            <Badge label={f.completed_outcome === "lost" ? "Lost" : isWonOrderFollowup(f) ? "Won order" : f.status === "dismissed" ? "Dismissed" : (f.completed_outcome || "Done")} tone={f.completed_outcome === "lost" || f.status === "dismissed" ? "neutral" : "success"} size="sm" />
+            <Badge label={f.completed_outcome === "lost" ? "Lost" : isWonOrderFollowup(f) ? "Own order" : f.status === "dismissed" ? "Dismissed" : (f.completed_outcome || "Done")} tone={f.completed_outcome === "lost" || f.status === "dismissed" ? "neutral" : "success"} size="sm" />
           )}
         </View>
 
@@ -1590,7 +1584,7 @@ function FollowupCard({
         ) : null}
 
         {/* Actions — Call/WhatsApp/Snooze/Assign/Complete are 1-click; the
-            rest (Email, custom snooze, note, dismiss) live in the overflow. */}
+            rest (Email, custom snooze, loss, dismiss) live in the overflow. */}
         {!isResolved && isPhone ? (
           <View style={{ flexDirection: "row", gap: spacing.sm, alignItems: "center", marginTop: 2 }}>
             <Button
@@ -1611,7 +1605,6 @@ function FollowupCard({
                 { label: "Call", icon: "phone", onPress: () => onCall(f, "call") },
                 { label: "WhatsApp", icon: "message-circle", onPress: () => onWhatsApp(f, "whatsapp") },
                 { label: "Snooze 1 hour", icon: "clock", onPress: () => onSnooze(f, "1h") },
-                { label: "Add note", icon: "edit-3", onPress: () => onNote(f) },
                 { label: "Mark as lost…", icon: "user-x", tone: "danger" as const, onPress: () => onMarkLost(f) },
               ]}
             />
@@ -1655,7 +1648,6 @@ function FollowupCard({
               label="More" icon="more-horizontal" variant="secondary"
               items={[
                 { label: "Email", icon: "mail", onPress: () => onEmail(f, "email") },
-                { label: "Add note", icon: "edit-3", onPress: () => onNote(f) },
                 { label: "Mark as lost…", icon: "user-x", tone: "danger" as const, onPress: () => onMarkLost(f) },
                 { label: "Dismiss", icon: "x-circle", tone: "danger" as const, onPress: () => onDismiss(f) },
               ]}
@@ -1800,8 +1792,7 @@ const OUTCOMES: { value: string; label: string; icon: FeatherName; tone: "succes
   { value: "call_back", label: "Call Back", icon: "phone-call", tone: "brand" },
   { value: "pending", label: "Pending", icon: "clock", tone: "warning" },
   { value: "no_answer", label: "No Answer", icon: "phone-missed", tone: "warning" },
-  { value: "rejected", label: "Rejected", icon: "thumbs-down", tone: "danger" },
-  { value: "lost", label: "Lost", icon: "user-x", tone: "danger" },
+    { value: "lost", label: "Lost", icon: "user-x", tone: "danger" },
 ];
 function CallOutcomeSheet({ visible, f, initialOutcome, onClose, onSubmit }: {
   visible: boolean; f: Followup | null; initialOutcome?: string; onClose: () => void; onSubmit: (f: Followup, outcome: string, notes?: string, nextFollowupAt?: string) => void;
@@ -1811,7 +1802,7 @@ function CallOutcomeSheet({ visible, f, initialOutcome, onClose, onSubmit }: {
   const [nextFollowupAt, setNextFollowupAt] = useState("");
   useEffect(() => { if (visible) { setOutcome(initialOutcome || null); setNotes(""); setNextFollowupAt(""); } }, [visible, initialOutcome]);
   if (!f) return null;
-  const notesRequired = true;
+  const notesRequired = outcome === "lost";
   const pending = outcome === "pending";
   const canSave = !!outcome && (!notesRequired || !!notes.trim()) && (!pending || !!nextFollowupAt.trim());
   return (
@@ -1819,7 +1810,7 @@ function CallOutcomeSheet({ visible, f, initialOutcome, onClose, onSubmit }: {
       footer={<>
         <Button label="Cancel" variant="secondary" onPress={onClose} size="md" />
         <View style={{ flex: 1 }} />
-        <Button label="Save" variant="primary" icon="check" disabled={!canSave} onPress={() => outcome && onSubmit(f, outcome, notes || undefined, nextFollowupAt.trim() || undefined)} size="md" testID="save-call-outcome" />
+        <Button label="Save" variant="primary" icon="check" disabled={!canSave} onPress={() => outcome && onSubmit(f, outcome, notesRequired ? notes.trim() : undefined, nextFollowupAt.trim() || undefined)} size="md" testID="save-call-outcome" />
       </>}
     >
       <ScrollView contentContainerStyle={{ padding: spacing.xl, gap: spacing.md }}>
@@ -1829,7 +1820,7 @@ function CallOutcomeSheet({ visible, f, initialOutcome, onClose, onSubmit }: {
             const on = outcome === o.value;
             const tone = { success: colors.success, warning: colors.warning, danger: colors.error, brand: colors.brand }[o.tone];
             return (
-              <Pressable key={o.value} testID={`outcome-${o.value}`} onPress={() => setOutcome(o.value)}
+              <Pressable key={o.value} testID={`outcome-${o.value}`} onPress={() => { setOutcome(o.value); setNotes(""); }}
                 style={{
                   paddingHorizontal: spacing.md, height: 40, borderRadius: radius.md,
                   borderWidth: StyleSheet.hairlineWidth, borderColor: on ? tone : colors.border,
@@ -1849,34 +1840,11 @@ function CallOutcomeSheet({ visible, f, initialOutcome, onClose, onSubmit }: {
               style={styles.textInput} testID="pending-next-followup-at" />
           </FormField>
         ) : null}
-        <FormField label={outcome === "lost" ? "Lost reason" : "Follow-up note"} helper="Required — explain the outcome before saving this change.">
+        {notesRequired ? <FormField label="Lost reason" helper="Required — record why we cannot work with this customer.">
           <TextInput value={notes} onChangeText={setNotes} placeholder="What did the customer say?" placeholderTextColor={colors.onSurfaceMuted}
             style={styles.textArea} multiline testID="outcome-notes" />
-        </FormField>
+        </FormField> : null}
       </ScrollView>
-    </Sheet>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// NoteSheet
-// ─────────────────────────────────────────────────────────────────────────────
-function NoteSheet({ visible, f, onClose, onSave }: { visible: boolean; f: Followup | null; onClose: () => void; onSave: (f: Followup, notes: string) => void }) {
-  const [notes, setNotes] = useState("");
-  useEffect(() => { setNotes(f?.notes || ""); }, [f]);
-  if (!f) return null;
-  return (
-    <Sheet visible={visible} onClose={onClose} variant="modal" title="Add Note" subtitle={f.customer_name} width={420}
-      footer={<>
-        <Button label="Cancel" variant="secondary" onPress={onClose} size="md" />
-        <View style={{ flex: 1 }} />
-        <Button label="Save Note" variant="primary" icon="check" disabled={!notes.trim()} onPress={() => onSave(f, notes.trim())} size="md" />
-      </>}
-    >
-      <View style={{ padding: spacing.xl }}>
-        <TextInput value={notes} onChangeText={setNotes} placeholder="Write a note…" placeholderTextColor={colors.onSurfaceMuted}
-          style={styles.textArea} multiline autoFocus testID="note-input" />
-      </View>
     </Sheet>
   );
 }

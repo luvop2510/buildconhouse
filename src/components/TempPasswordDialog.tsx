@@ -1,4 +1,4 @@
-// One-time credential display. Team passwords are permanent and owner-managed;
+// Credential display. Team passwords are permanent and visible to the owner;
 // customer invites keep their separate temporary-password policy. Credentials
 // are held only in local state and cleared when the caller closes this dialog.
 import * as Clipboard from "expo-clipboard";
@@ -61,8 +61,7 @@ export function TempPasswordDialog({
         {result?.delivery_method === "manual" && password ? (
           <>
             <Text style={type.bodyMuted}>
-              Share this password with them directly (WhatsApp, SMS, or email). It will
-              not be shown again after you close this dialog.
+              {permanent ? "Share this password with the member. You can view their current password in Team." : "Share this password with them directly (WhatsApp, SMS, or email). It will not be shown again after you close this dialog."}
             </Text>
             <View style={styles.pwBox}>
               <Text testID="temp-password-value" selectable numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65} style={styles.pwText}>
@@ -77,7 +76,7 @@ export function TempPasswordDialog({
               onPress={copy}
               fullWidth
             />
-            {permanent ? <Text style={type.caption}>This password applies only to this account and remains valid until the owner changes it. The member cannot change it.</Text> : expiresLabel ? (
+            {permanent ? <Text style={type.caption}>The member can change this password in Settings using their old password. The owner can also reset it.</Text> : expiresLabel ? (
               <View style={styles.expiryRow}>
                 <Text style={type.caption}>
                   Expires {expiresLabel} if unused. They&apos;ll be asked to set their own

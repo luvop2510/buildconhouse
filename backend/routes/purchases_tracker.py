@@ -47,8 +47,9 @@ from starlette.concurrency import run_in_threadpool
 
 from auth import (
     TILES_FLOOR_ID, floor_inherit, floor_query, floor_scope_ids,
-    get_current_user, get_floor_scoped_or_404, require_min_role,
+    get_floor_scoped_or_404, require_min_role,
 )
+from services.purchase_workspace import get_purchase_workspace_user as get_current_user
 from db import client, db
 from models import (
     Chalan, ChalanLineItem, PurchaseCancellationEvent, PurchaseOrder, PurchaseOrderItem, PurchaseShortage, PurchaseStageEvent, PurchaseStatusEvent,

@@ -233,7 +233,7 @@ function AddStaffSheet({ visible, options, optionsError, onRetry, onClose, onCre
         custom_access: !owner, floor_ids: owner ? [] : delegation.floorIds,
         ...(!owner ? { access_grants: delegation.grants } : {}),
       });
-      toast.success("Team member and access saved — their password is managed by the owner");
+      toast.success("Team member and access saved");
       reset(); onCreated(); onClose();
     } catch (cause: unknown) { setError(teamErrorMessage(cause, "Could not add team member")); }
     finally { setSaving(false); }
@@ -244,7 +244,7 @@ function AddStaffSheet({ visible, options, optionsError, onRetry, onClose, onCre
         <TextField testID="add-staff-name" label="Full name" value={fullName} onChangeText={setFullName} placeholder="e.g. Priya Sharma" autoFocus />
         <TextField testID="add-staff-username" label="Username" value={username} onChangeText={setUsername} placeholder="Optional sign-in username" autoCapitalize="none" autoCorrect={false} maxLength={120} />
         <ContactFields prefix="add-staff" email={email} onEmail={setEmail} phone={phone} onPhone={setPhone} mobile={mobile} onMobile={setMobile} disabled={saving} />
-        <TextField testID="add-staff-password" label="Initial password" value={password} onChangeText={setPassword} placeholder="At least 6 characters" secureTextEntry autoCapitalize="none" helper="This password remains valid until the owner changes it. The member cannot change it." />
+        <TextField testID="add-staff-password" label="Initial password" value={password} onChangeText={setPassword} placeholder="At least 6 characters" secureTextEntry autoCapitalize="none" helper="The member can change this password in Settings. Owners can view their current password." />
         <TextField testID="add-staff-team-role" label="Team role name" value={teamRole} onChangeText={setTeamRole} placeholder="e.g. Ground Floor Sales" helper="Give this person a role name that matches their work." maxLength={80} />
         <AccountAccessPicker value={role} onChange={setRole} disabled={saving} prefix="add-staff" />
         {role === "owner" ? <Text style={type.caption}>An owner can access all floors and pages and manage the whole team.</Text> : <DelegationOptions options={options} error={optionsError} onRetry={onRetry} value={delegation} onChange={setDelegation} disabled={saving} />}
@@ -275,6 +275,10 @@ function EditStaffSheet({ staff, options, optionsError, onRetry, selfId, onClose
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [visiblePassword, setVisiblePassword] = useState<string | null>(null);
+  const [revealing, setRevealing] = useState(false);
+  const [revealError, setRevealError] = useState<string | null>(null);
+  const revealGeneration = useRef(0);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -283,11 +287,15 @@ function EditStaffSheet({ staff, options, optionsError, onRetry, selfId, onClose
   // Commit saved form values before the sheet accepts input. A passive effect
   // can restore an old contact after the user has already cleared the field.
   useLayoutEffect(() => {
+    revealGeneration.current += 1;
+    setVisiblePassword(null); setRevealError(null); setRevealing(false);
+    setNewPassword(""); setConfirmPassword(""); setPasswordError(null);
     if (!staff) return;
     setUsername(optionalContact(staff.login_id) || "");
     setEmail(optionalContact(staff.email) || ""); setMobile(optionalContact(staff.mobile) || "");
     setFullName(staff.full_name); setPhone(optionalContact(staff.phone) || ""); setRole(staff.role === "owner" ? "owner" : "worker");
     setTeamRole(optionalContact(staff.team_role) || ""); setActive(staff.active); setSaveError(null);
+    return () => { revealGeneration.current += 1; };
   }, [staff]);
   useEffect(() => {
     let alive = true;
@@ -334,6 +342,20 @@ function EditStaffSheet({ staff, options, optionsError, onRetry, selfId, onClose
     } catch (cause: unknown) { setSaveError(teamErrorMessage(cause, "Could not update team member")); }
     finally { setSaving(false); }
   };
+  const revealPassword = async () => {
+    if (revealing) return;
+    if (visiblePassword !== null) { setVisiblePassword(null); return; }
+    const generation = ++revealGeneration.current;
+    setRevealing(true); setRevealError(null);
+    try {
+      const result = await api.post<{ password: string | null; reset_required: boolean }>(`/team/${staff.id}/password`);
+      if (generation !== revealGeneration.current) return;
+      if (result.reset_required) setRevealError("This older password cannot be viewed. Reset it below to make the new password available.");
+      else setVisiblePassword(result.password);
+    } catch (cause: unknown) {
+      if (generation === revealGeneration.current) setRevealError(teamErrorMessage(cause, "Could not view password"));
+    } finally { if (generation === revealGeneration.current) setRevealing(false); }
+  };
   const resetPassword = async (generated = false) => {
     if (saving || resetting || deleting || isSelf) return;
     setPasswordError(null);
@@ -341,7 +363,7 @@ function EditStaffSheet({ staff, options, optionsError, onRetry, selfId, onClose
     if (!generated && newPassword !== confirmPassword) { setPasswordError("Passwords don't match"); return; }
     setResetting(true);
     try {
-      const result = await api.post<TempPasswordResult>(`/team/${staff.id}/reset-password`, generated ? undefined : { new_password: newPassword });
+      const result = await api.post<TempPasswordResult>(`/team/${staff.id}/reset-password`, generated ? undefined : { new_password: newPassword, confirm_password: confirmPassword });
       setNewPassword(""); setConfirmPassword("");
       onClose(); onPasswordReset(result);
     } catch (cause: unknown) { setPasswordError(teamErrorMessage(cause, "Could not change password")); }
@@ -373,16 +395,20 @@ function EditStaffSheet({ staff, options, optionsError, onRetry, selfId, onClose
         {saveError ? <Text accessibilityRole="alert" style={[type.caption, { color: colors.error }]}>{saveError}</Text> : null}
         <Button testID="edit-staff-save" label={saving ? "Saving…" : "Save changes"} variant="primary" icon="check" disabled={saving || resetting || deleting || (!isSelf && accessChanged && accessUnavailable)} onPress={save} fullWidth />
         <View style={styles.divider} />
+        <Text accessibilityRole="header" style={type.titleSm}>Current password</Text>
+        <Button testID="edit-staff-view-password" label={visiblePassword !== null ? "Hide password" : "View password"} icon={visiblePassword !== null ? "eye-off" : "eye"} variant="secondary" loading={revealing} disabled={resetting || saving || deleting} onPress={() => void revealPassword()} fullWidth />
+        {visiblePassword !== null ? <Text testID="edit-staff-current-password" selectable style={type.bodyStrong}>{visiblePassword}</Text> : null}
+        {revealError ? <Text testID="edit-staff-password-unavailable" accessibilityRole="alert" style={type.caption}>{revealError}</Text> : null}
         {isSelf ? <Text style={type.caption}>Use Settings → Change password to update your own password.</Text> : <>
           <Text accessibilityRole="header" style={type.titleSm}>Change member password</Text>
-          <Text style={type.caption}>Only the owner can change this member’s password. Changing it signs them out of every device.</Text>
+          <Text style={type.caption}>Reset this member’s password if they forget it. They can also change it themselves in Settings. Resetting signs them out of every device.</Text>
           <TextField testID="edit-staff-password" label="New password" value={newPassword} onChangeText={setNewPassword} secureTextEntry autoCapitalize="none" editable={!resetting && !deleting && !saving} placeholder="At least 6 characters" />
           <TextField testID="edit-staff-confirm-password" label="Confirm new password" value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry autoCapitalize="none" editable={!resetting && !deleting && !saving} error={passwordError} />
           <Button testID="edit-staff-set-password" label="Save entered password" variant="primary" icon="key" loading={resetting} disabled={saving || deleting} onPress={() => void resetPassword()} fullWidth />
           <Text testID="edit-staff-set-password-help" style={type.caption}>Saves the password you entered and confirmed above.</Text>
           <Button testID="edit-staff-reset-password" label="Generate and save random password" variant="secondary" icon="refresh-cw" disabled={resetting || saving || deleting} onPress={() => void resetPassword(true)} fullWidth />
           <Text testID="edit-staff-generate-password-help" style={type.caption}>Creates and saves a random password immediately. It ignores the fields above. Share the new password using the delivery shown after saving.</Text>
-          <Text style={type.caption}>The password applies only to this member and remains valid until the owner changes it.</Text>
+          <Text style={type.caption}>The password applies only to this member. They can change it using their old password, or ask the owner to reset it.</Text>
           <View style={styles.divider} />
           {!protectedOwner ? <Button testID="edit-staff-delete" label="Delete team member" variant="danger" icon="trash-2" disabled={resetting || saving || deleting} onPress={() => setDeleteOpen(true)} fullWidth /> : null}
         </>}

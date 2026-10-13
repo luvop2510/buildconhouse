@@ -220,7 +220,7 @@ async def test_notebook_contact_binds_stored_page_and_rechecks_stage_in_write(mo
     user = UserPublic(id="staff", email="staff@example.com", full_name="Worker", role="worker", custom_access=True, floor_ids=["second-floor"], active_floor_id="second-floor")
     object.__setattr__(user, "_custom_notebook_converted", False)
     with pytest.raises(HTTPException) as exc:
-        await followup_routes.contact_followup("row", FollowupContactPayload(channel="call", notes="Call about kitchen"), user)
+        await followup_routes.contact_followup("row", FollowupContactPayload(channel="call"), user)
     assert exc.value.status_code == 409
 
 

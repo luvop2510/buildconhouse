@@ -50,7 +50,7 @@ type AuthState = {
 };
 
 // Owner access cannot be reduced by historical delegation fields. Staff
-// passwords stay owner-managed even when an older response carries the flag.
+// passwords stay permanent even when an older response carries the flag.
 function normalizeStaffIdentity(user: StaffUser): StaffUser {
   return {
     ...user, must_change_password: false,

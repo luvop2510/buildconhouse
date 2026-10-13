@@ -41,7 +41,7 @@ async function fixture(page: Page, restore: boolean | 'incompatible' = false, fa
     ui_state: { selectedBrandIds: ['grohe', 'hansgrohe'], selectedCategoryIds: restore === 'incompatible' ? ['hans-only', 'basins'] : ['basins', 'showers'], selectedFinishes: ['Chrome'], selectedColours: ['White'] },
   } }));
   await page.goto(`/quotations/new${restore ? '?quotationId=q-legacy' : ''}`);
-  await expect(page.getByTestId('builder-back')).toBeVisible();
+  await expect(page.getByTestId('quotation-workspace')).toBeVisible();
   const addFirst = page.getByTestId('mobile-add-first');
   if (await addFirst.isVisible()) await addFirst.click();
   const filterToggle = (await controlRoot(page)).getByTestId('explorer-filter-toggle');
@@ -50,9 +50,14 @@ async function fixture(page: Page, restore: boolean | 'incompatible' = false, fa
   return { requests, compact, recoverCategories: () => { categoryFailure = false; } };
 }
 
-async function controlRoot(page: Page) {
-  const picker = page.getByRole('dialog', { name: 'Add products', exact: true });
+async function productRoot(page: Page) {
+  const picker = page.getByRole('dialog', { name: 'Add products', exact: true, includeHidden: true });
   return await picker.isVisible() ? picker : page;
+}
+
+async function controlRoot(page: Page) {
+  const filters = page.getByTestId("quotation-product-filters");
+  return await filters.isVisible() ? filters : productRoot(page);
 }
 
 async function selectBrand(page: Page, name: string, compact: boolean) {
@@ -63,7 +68,7 @@ async function selectCategory(page: Page, id: string, compact: boolean) {
 }
 async function expectScope(page: Page, brand: string | null, category: string | null) {
   const matching = brands.filter(b => !brand || b.id === brand).flatMap(b => categories.filter(c => !category || c.id === category).map(c => `add-${b.id}-${c.id}`));
-  const root = await controlRoot(page);
+  const root = await productRoot(page);
   const productAddButtons = brands.map(brand => `[data-testid^="add-${brand.id}-"]`).join(',');
   await expect(root.locator(productAddButtons)).toHaveCount(matching.length);
   for (const id of matching) await expect(root.getByTestId(id)).toBeAttached();

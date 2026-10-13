@@ -62,8 +62,37 @@ def test_pending_outcome_creates_followup_on_requested_date(monkeypatch):
     store = _install(monkeypatch)
     due = datetime.now(timezone.utc) + timedelta(days=7)
     asyncio.run(followups.log_call(
-        "followup-1", FollowupCallOutcomePayload(outcome="pending", notes="Customer requested a call next week", next_followup_at=due), _user(),
+        "followup-1", FollowupCallOutcomePayload(outcome="pending", next_followup_at=due), _user(),
     ))
     assert store.updated["completed_outcome"] == "pending"
     assert store.inserted[0]["due_at"] == due.isoformat()
     assert store.inserted[0]["floor_id"] == "first-floor"
+
+
+def test_transferred_customer_interest_belongs_to_recipient_without_winning(monkeypatch):
+    store = _install(monkeypatch)
+    store.row.update(assigned_to="receiving-salesperson", assigned_to_name="Receiving salesperson", notes="Historical note")
+    asyncio.run(followups.log_call("followup-1", FollowupCallOutcomePayload(outcome="interested"), _user()))
+    assert store.updated["assigned_to"] == "receiving-salesperson"
+    assert store.updated["completed_outcome"] == "interested"
+    assert not store.updated.get("auto_resolved")
+    assert store.inserted[0]["assigned_to"] == "receiving-salesperson"
+    assert store.inserted[0]["status"] == "open"
+    assert "notes" not in store.updated
+    assert store.inserted[0]["notes"] is None
+
+
+def test_cannot_afford_loss_reason_records_lost_without_successor(monkeypatch):
+    store = _install(monkeypatch)
+    asyncio.run(followups.log_call("followup-1", FollowupCallOutcomePayload(outcome="lost", notes="  Cannot afford the service  "), _user()))
+    assert store.updated["completed_outcome"] == "lost"
+    assert store.updated["lost_reason"] == store.updated["notes"] == "Cannot afford the service"
+    assert store.inserted == []
+
+
+def test_rejected_customer_is_lost_with_required_reason(monkeypatch):
+    store = _install(monkeypatch)
+    asyncio.run(followups.log_call("followup-1", FollowupCallOutcomePayload(outcome="rejected", notes="We cannot work with the requested scope"), _user()))
+    assert store.updated["completed_outcome"] == "lost"
+    assert store.updated["notes"] == "We cannot work with the requested scope"
+    assert store.inserted == []

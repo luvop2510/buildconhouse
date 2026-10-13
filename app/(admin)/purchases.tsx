@@ -143,6 +143,11 @@ export default function PurchasesScreen() {
   const [showMobileActions, setShowMobileActions] = useState(false);
   const requestSeq = useRef(0);
   const requestController = useRef<AbortController | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; requestController.current?.abort(); };
+  }, []);
 
   // Selection (for bulk move)
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -175,10 +180,10 @@ export default function PurchasesScreen() {
   }, [selectedFloorId]);
 
   const loadShortages = useCallback(async () => {
-    if (!selectedFloorId) return;
+    if (!selectedFloorId || activeFloor.current !== selectedFloorId || !mounted.current) return;
     try {
-      const r = await api.get<{ items: Shortage[] }>("/purchases/shortages?status=awaiting_reorder");
-      if (activeFloor.current === selectedFloorId) setShortages(r.items || []);
+      const r = await api.get<{ items: Shortage[] }>("/purchases/shortages?status=awaiting_reorder", { floorId: selectedFloorId });
+      if (mounted.current && activeFloor.current === selectedFloorId) setShortages(r.items || []);
     } catch { /* soft-fail — non-critical banner */ }
   }, [selectedFloorId]);
 
@@ -194,13 +199,13 @@ export default function PurchasesScreen() {
   // Data loaders
   // -----------------------------------
   const loadFacets = useCallback(async ({ throwOnError = false }: { throwOnError?: boolean } = {}) => {
-    if (!selectedFloorId) return;
+    if (!selectedFloorId || activeFloor.current !== selectedFloorId || !mounted.current) return;
     try {
       const [b, s] = await Promise.all([
-        api.get<{ all: number; brands: BrandFacet[] }>("/purchases/brands"),
-        api.get<StageMeta[]>("/purchases/stages"),
+        api.get<{ all: number; brands: BrandFacet[] }>("/purchases/brands", { floorId: selectedFloorId }),
+        api.get<StageMeta[]>("/purchases/stages", { floorId: selectedFloorId }),
       ]);
-      if (activeFloor.current !== selectedFloorId) return;
+      if (!mounted.current || activeFloor.current !== selectedFloorId) return;
       setBrands(b.brands); setBrandsTotal(b.all); setStages(s);
     } catch (e) {
       if (throwOnError) throw e;
@@ -210,20 +215,20 @@ export default function PurchasesScreen() {
 
   const customerRequestSequence = useRef(0);
   const loadCustomers = useCallback(async () => {
-    if (!selectedFloorId) return;
+    if (!selectedFloorId || activeFloor.current !== selectedFloorId || !mounted.current) return;
     const sequence = ++customerRequestSequence.current;
     setLoadingCustomers(true);
     setCustomersError(null);
     try {
-      const loadedCustomers = await getPurchaseCustomers(undefined, view === "stock");
-      if (activeFloor.current === selectedFloorId && sequence === customerRequestSequence.current) { setCustomers(loadedCustomers); setCustomersError(null); }
+      const loadedCustomers = await getPurchaseCustomers(undefined, view === "stock", selectedFloorId);
+      if (mounted.current && activeFloor.current === selectedFloorId && sequence === customerRequestSequence.current) { setCustomers(loadedCustomers); setCustomersError(null); }
     }
-    catch (e: any) { if (activeFloor.current === selectedFloorId && sequence === customerRequestSequence.current) setCustomersError(e?.detail || "Could not load customers"); }
-    finally { if (activeFloor.current === selectedFloorId && sequence === customerRequestSequence.current) setLoadingCustomers(false); }
+    catch (e: any) { if (mounted.current && activeFloor.current === selectedFloorId && sequence === customerRequestSequence.current) setCustomersError(e?.detail || "Could not load customers"); }
+    finally { if (mounted.current && activeFloor.current === selectedFloorId && sequence === customerRequestSequence.current) setLoadingCustomers(false); }
   }, [selectedFloorId, view]);
 
   const loadItems = useCallback(async ({ throwOnError = false, append = false, quiet = false }: { throwOnError?: boolean; append?: boolean; quiet?: boolean } = {}) => {
-    if (!selectedFloorId) return;
+    if (!selectedFloorId || activeFloor.current !== selectedFloorId || !mounted.current) return;
     if (append && nextSkipRef.current == null) return;
     const skip = append ? nextSkipRef.current || 0 : 0;
     const seq = ++requestSeq.current;
@@ -234,8 +239,8 @@ export default function PurchasesScreen() {
     if (append) setLoadingMore(true);
     else if (!quiet) setLoading(true);
     try {
-      const resp: PurchasesPage = await getPurchasesPage({ view, brand, customer: view === "stock" ? customerFilter : undefined, q: committedQ, stage, skip, limit: isDesktop ? 100 : 30 }, controller.signal);
-      if (seq !== requestSeq.current) return;
+      const resp: PurchasesPage = await getPurchasesPage({ view, brand, customer: view === "stock" ? customerFilter : undefined, q: committedQ, stage, skip, limit: isDesktop ? 100 : 30 }, controller.signal, selectedFloorId);
+      if (!mounted.current || controller.signal.aborted || activeFloor.current !== selectedFloorId || seq !== requestSeq.current) return;
       setItems((current) => append ? [...current, ...resp.items] : resp.items);
       setTotal(resp.total);
       setNextSkip(resp.next_skip);
@@ -251,11 +256,11 @@ export default function PurchasesScreen() {
         return next;
       });
     } catch (e: any) {
-      if (controller.signal.aborted) return;
+      if (!mounted.current || controller.signal.aborted || activeFloor.current !== selectedFloorId || seq !== requestSeq.current) return;
       setItemsError(e?.detail || "Could not load purchases");
       if (throwOnError) throw e;
     } finally {
-      if (seq === requestSeq.current) { setLoading(false); setLoadingMore(false); }
+      if (mounted.current && activeFloor.current === selectedFloorId && seq === requestSeq.current) { setLoading(false); setLoadingMore(false); }
     }
   }, [view, brand, customerFilter, committedQ, stage, isDesktop, selectedFloorId]);
 
@@ -263,13 +268,13 @@ export default function PurchasesScreen() {
   useEffect(() => { if (view === "customers" || view === "stock") void loadCustomers(); }, [loadCustomers, view]);
   useEffect(() => { loadShortages(); }, [loadShortages]);
   useEffect(() => {
-    if (!customerWorkspaceId) { setCustomerWorkspace(null); return; }
+    if (!customerWorkspaceId || !selectedFloorId) { setCustomerWorkspace(null); return; }
     const controller = new AbortController();
     setLoadingWorkspace(true);
-    getPurchaseCustomerWorkspace(customerWorkspaceId, controller.signal)
-      .then(setCustomerWorkspace)
-      .catch((e: any) => { if (!controller.signal.aborted) toast.error(e?.detail || "Could not load customer purchases"); })
-      .finally(() => { if (!controller.signal.aborted) setLoadingWorkspace(false); });
+    getPurchaseCustomerWorkspace(customerWorkspaceId, controller.signal, selectedFloorId)
+      .then((detail) => { if (!controller.signal.aborted && mounted.current && activeFloor.current === selectedFloorId) setCustomerWorkspace(detail); })
+      .catch((e: any) => { if (!controller.signal.aborted && mounted.current && activeFloor.current === selectedFloorId) toast.error(e?.detail || "Could not load customer purchases"); })
+      .finally(() => { if (!controller.signal.aborted && mounted.current && activeFloor.current === selectedFloorId) setLoadingWorkspace(false); });
     return () => controller.abort();
   }, [customerWorkspaceId, selectedFloorId]);
   useEffect(() => {

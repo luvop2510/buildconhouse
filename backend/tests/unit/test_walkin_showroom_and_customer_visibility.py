@@ -186,7 +186,53 @@ def test_showroom_pending_callback_keeps_origin_and_walkin_link(monkeypatch):
     store.insert_one = insert_one
     monkeypatch.setattr(followup_routes, "db", SimpleNamespace(followups=store))
     asyncio.run(followup_routes.log_call("showroom-1", FollowupCallOutcomePayload(
-        outcome="pending", notes="Customer requested a call", next_followup_at=datetime.now(timezone.utc) + timedelta(days=2),
+        outcome="pending", next_followup_at=datetime.now(timezone.utc) + timedelta(days=2),
     ), user()))
     assert inserted[0]["origin"] == "visit_showroom"
     assert inserted[0]["walkin_id"] == "walkin-1"
+
+
+def test_showroom_transferred_walkin_permanently_exits_register_and_counts(monkeypatch):
+    walkins, _, _ = install_transfer(monkeypatch)
+    asyncio.run(walkin_routes.visit_showroom("walkin-1", user()))
+    # Querying after a hard reload must still omit the same durable source.
+    rows = asyncio.run(walkin_routes.list_walkins(user=user()))
+    counts = asyncio.run(walkin_routes.walkins_dashboard(floor_ids=None, user=user()))
+    assert rows == []
+    assert counts["total"] == counts["pending_followups"] == 0
+    assert len(walkins.rows) == 1  # Preserve the source and its audit identity.
+
+
+def test_historical_showroom_marker_alone_excludes_register(monkeypatch):
+    walkins, _, _ = install_transfer(monkeypatch)
+    walkins.rows[0]["showroom_transferred_at"] = "2026-10-11T00:00:00Z"
+    assert asyncio.run(walkin_routes.list_walkins(user=user())) == []
+
+
+def test_transferred_walkin_cannot_be_reopened_in_register(monkeypatch):
+    from models_walkins import WalkInUpdate
+    walkins, _, _ = install_transfer(monkeypatch)
+    asyncio.run(walkin_routes.visit_showroom("walkin-1", user()))
+    with pytest.raises(HTTPException) as caught:
+        asyncio.run(walkin_routes.update_walkin("walkin-1", WalkInUpdate(status="new"), user()))
+    assert caught.value.status_code == 409
+
+
+@pytest.mark.parametrize("patch", [{"notes": "Ordinary note"}, {"lost_reason": "Standalone reason"}])
+def test_walkin_non_loss_cannot_write_note(monkeypatch, patch):
+    from models_walkins import WalkInUpdate
+    walkins, _, _ = install_transfer(monkeypatch)
+    with pytest.raises(HTTPException) as caught:
+        asyncio.run(walkin_routes.update_walkin("walkin-1", WalkInUpdate(**patch), user()))
+    assert caught.value.status_code == 422
+    assert "notes" not in walkins.rows[0]
+
+
+def test_old_note_cannot_satisfy_new_lost_transition(monkeypatch):
+    from models_walkins import WalkInUpdate
+    walkins, _, _ = install_transfer(monkeypatch)
+    walkins.rows[0]["notes"] = "Old visit note"
+    with pytest.raises(HTTPException) as caught:
+        asyncio.run(walkin_routes.update_walkin("walkin-1", WalkInUpdate(status="lost"), user()))
+    assert caught.value.status_code == 422
+    assert walkins.rows[0]["status"] == "new"

@@ -80,7 +80,7 @@ test('critical six-character passwords: member reset rejects five and accepts si
   await page.getByTestId('edit-staff-confirm-password').fill('123456');
   await page.getByTestId('edit-staff-set-password').click();
   await expect(page.getByTestId('temp-password-value')).toHaveText('123456');
-  expect(writes[0].body).toEqual({ new_password: '123456' });
+  expect(writes[0].body).toEqual({ new_password: '123456', confirm_password: '123456' });
 });
 
 test('critical six-character passwords: owner change rejects five and accepts six', async ({ page }) => {
@@ -101,7 +101,7 @@ test('critical six-character passwords: owner change rejects five and accepts si
   await page.getByTestId('confirm-password-input').fill('123456');
   await page.getByTestId('save-password-btn').click();
   await expect(page).toHaveURL(/\/settings$/);
-  expect(writes).toEqual([{ current_password: 'existing-password', new_password: '123456' }]);
+  expect(writes).toEqual([{ current_password: 'existing-password', new_password: '123456', confirm_password: '123456' }]);
 });
 
 // These browser journeys exercise the release export and intercept every API
@@ -301,22 +301,22 @@ test('critical team delegation: custom Settings preserves account controls and h
   for (const id of ['team', 'permissions', 'access-grants', 'company', 'pdf', 'catalog', 'walkins', 'notifications', 'system']) await expect(page.getByTestId(`settings-nav-${id}`)).toHaveCount(0);
   await expect(page.getByText('No active sessions found.', { exact: true })).toBeVisible();
   expect(sessionReads).toBe(1);
-  await expect(page.getByTestId('settings-nav-password')).toHaveCount(0);
-  await expect(page.getByTestId('settings-owner-managed-password')).toBeVisible();
+  await expect(page.getByTestId('settings-nav-password')).toBeVisible();
+  await expect(page.getByTestId('settings-owner-managed-password')).toHaveCount(0);
 });
 
 
 test('critical team delegation: account password deep link survives hydration and root still lands on no access', async ({ page }) => {
   await personalSession(page, [], '/settings-password');
   await expect(page).toHaveURL(/\/settings-password$/);
-  await expect(page.getByRole('heading', { name: 'Password managed by owner', exact: true })).toBeVisible();
-  await expect(page.getByTestId('owner-managed-password')).toBeVisible();
-  await expect(page.getByTestId('current-password-input')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Change password', exact: true })).toBeVisible();
+  await expect(page.getByTestId('owner-managed-password')).toHaveCount(0);
+  await expect(page.getByTestId('current-password-input')).toBeVisible();
   await expect(page.getByTestId('no-page-access')).toHaveCount(0);
   await page.reload();
   await expect(page).toHaveURL(/\/settings-password$/);
-  await expect(page.getByTestId('owner-managed-password')).toBeVisible();
-  await expect(page.getByTestId('current-password-input')).toHaveCount(0);
+  await expect(page.getByTestId('owner-managed-password')).toHaveCount(0);
+  await expect(page.getByTestId('current-password-input')).toBeVisible();
   await page.goto('/');
   await expect(page).toHaveURL(/\/access$/);
   await expect(page.getByTestId('no-page-access')).toBeVisible();
@@ -332,18 +332,18 @@ test('critical team delegation: no assigned floors keeps personal security pages
   }, []);
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByText('Ground Floor Sales', { exact: true })).toBeVisible();
-  await expect(page.getByTestId('settings-nav-password')).toHaveCount(0);
-  await expect(page.getByTestId('settings-owner-managed-password')).toBeVisible();
+  await expect(page.getByTestId('settings-nav-password')).toBeVisible();
+  await expect(page.getByTestId('settings-owner-managed-password')).toHaveCount(0);
   await expect(page.getByTestId('settings-nav-mfa')).toBeVisible();
   await expect(page.getByTestId('logout-all-devices')).toBeVisible();
   await expect(page.getByTestId('floor-access-empty')).toHaveCount(0);
   await page.goto('/settings-password');
-  await expect(page.getByTestId('owner-managed-password')).toBeVisible();
-  await expect(page.getByTestId('current-password-input')).toHaveCount(0);
+  await expect(page.getByTestId('owner-managed-password')).toHaveCount(0);
+  await expect(page.getByTestId('current-password-input')).toBeVisible();
   await expect(page).toHaveURL(/\/settings-password$/);
   await page.reload();
-  await expect(page.getByTestId('owner-managed-password')).toBeVisible();
-  await expect(page.getByTestId('current-password-input')).toHaveCount(0);
+  await expect(page.getByTestId('owner-managed-password')).toHaveCount(0);
+  await expect(page.getByTestId('current-password-input')).toBeVisible();
   await expect(page).toHaveURL(/\/settings-password$/);
   await page.goto('/settings-mfa');
   await expect(page.getByRole('heading', { name: 'Authenticator MFA', exact: true })).toBeVisible();
@@ -364,12 +364,12 @@ test('critical team delegation: a no-floor member with a legacy password flag ca
   await page.goto('/settings');
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByTestId('force-change-current')).toHaveCount(0);
-  await expect(page.getByTestId('settings-owner-managed-password')).toBeVisible();
-  await expect(page.getByTestId('settings-nav-password')).toHaveCount(0);
+  await expect(page.getByTestId('settings-owner-managed-password')).toHaveCount(0);
+  await expect(page.getByTestId('settings-nav-password')).toBeVisible();
 });
 
 
-test('critical team passwords: owner sets one member password and it remains owner managed', async ({ page }) => {
+test('critical team passwords: owner resets one member password and the member can change it', async ({ page }) => {
   const { writes } = await teamFixture(page);
   await page.getByTestId('team-row-test-worker').click();
   await expect(page.getByTestId('edit-staff-set-password')).toHaveAccessibleName('Save entered password');
@@ -381,8 +381,8 @@ test('critical team passwords: owner sets one member password and it remains own
   await page.getByTestId('edit-staff-set-password').click();
   await expect(page.getByTestId('temp-password-dialog')).toBeVisible();
   await expect(page.getByTestId('temp-password-value')).toHaveText('SpecificMember!2026');
-  await expect(page.getByText('This password applies only to this account and remains valid until the owner changes it. The member cannot change it.', { exact: true })).toBeVisible();
-  expect(writes).toEqual([{ path: '/api/team/test-worker/reset-password', method: 'POST', body: { new_password: 'SpecificMember!2026' } }]);
+  await expect(page.getByText('The member can change this password in Settings using their old password. The owner can also reset it.', { exact: true })).toBeVisible();
+  expect(writes).toEqual([{ path: '/api/team/test-worker/reset-password', method: 'POST', body: { new_password: 'SpecificMember!2026', confirm_password: 'SpecificMember!2026' } }]);
   await page.getByTestId('temp-password-done').click();
   await expect(page.getByTestId('temp-password-value')).toHaveCount(0);
 });
@@ -413,7 +413,7 @@ test('critical team members: delete requires confirmation and removes only that 
 });
 
 for (const role of ['admin', 'manager', 'sales', 'purchase', 'warehouse', 'accounts', 'worker']) {
-  test(`critical ${role} cannot use member management or own password changes`, async ({ page }) => {
+  test(`critical ${role} cannot manage members and can change own password`, async ({ page }) => {
     let managementRequests = 0;
     await mockSession(page, '/team', false, { staff: { ...member, role, custom_access: false } });
     await page.route('**/api/team**', route => { managementRequests++; return route.fulfill({ status: 403, json: { detail: 'Owner only' } }); });
@@ -422,11 +422,11 @@ for (const role of ['admin', 'manager', 'sales', 'purchase', 'warehouse', 'accou
     await expect(page.getByTestId('team-add-btn')).toHaveCount(0);
     expect(managementRequests).toBe(0);
     await page.goto('/settings');
-    await expect(page.getByTestId('settings-owner-managed-password')).toBeVisible();
+    await expect(page.getByTestId('settings-owner-managed-password')).toHaveCount(0);
     await expect(page.getByTestId('settings-nav-team')).toHaveCount(0);
-    await expect(page.getByTestId('settings-nav-password')).toHaveCount(0);
+    await expect(page.getByTestId('settings-nav-password')).toBeVisible();
     await page.goto('/settings-password');
-    await expect(page.getByTestId('owner-managed-password')).toBeVisible();
+    await expect(page.getByTestId('owner-managed-password')).toHaveCount(0);
     await expect(page.getByTestId('save-password-btn')).toHaveCount(0);
   });
 }
@@ -668,4 +668,61 @@ test('critical team contacts: a delayed older refresh cannot resurrect a deleted
   await oldResponse;
   await expect(page.getByTestId('team-row-test-worker')).toHaveCount(0);
   await expect(page.getByText('No team members', { exact: true })).toBeVisible();
+});
+
+
+test('critical team password: owner can reveal, hide and reopen without retaining credentials', async ({ page }) => {
+  await teamFixture(page);
+  let reads = 0;
+  await page.route('**/api/team/test-worker/password', route => {
+    reads++;
+    return route.fulfill({ json: { password: 'CurrentMember!2026', reset_required: false } });
+  });
+  await page.getByTestId('team-row-test-worker').click();
+  await expect(page.getByTestId('edit-staff-current-password')).toHaveCount(0);
+  await page.getByTestId('edit-staff-view-password').click();
+  await expect(page.getByTestId('edit-staff-current-password')).toHaveText('CurrentMember!2026');
+  await page.getByTestId('edit-staff-view-password').click();
+  await expect(page.getByTestId('edit-staff-current-password')).toHaveCount(0);
+  expect(reads).toBe(1);
+  await page.getByTestId('edit-staff-view-password').click();
+  await expect(page.getByTestId('edit-staff-current-password')).toBeVisible();
+  await page.getByTestId('edit-staff-sheet').getByRole('button', { name: 'Close', exact: true }).click();
+  await page.getByTestId('team-row-test-worker').click();
+  await expect(page.getByTestId('edit-staff-current-password')).toHaveCount(0);
+});
+
+
+test('critical team password: legacy password offers a simple reset', async ({ page }) => {
+  const { writes } = await teamFixture(page);
+  await page.route('**/api/team/test-worker/password', route => route.fulfill({ json: { password: null, reset_required: true } }));
+  await page.getByTestId('team-row-test-worker').click();
+  await page.getByTestId('edit-staff-view-password').click();
+  await expect(page.getByTestId('edit-staff-password-unavailable')).toContainText('Reset it below');
+  await page.getByTestId('edit-staff-password').fill('RememberMe!2026');
+  await page.getByTestId('edit-staff-confirm-password').fill('Different!2026');
+  await page.getByTestId('edit-staff-set-password').click();
+  await expect(page.getByText("Passwords don't match", { exact: true })).toBeVisible();
+  expect(writes).toHaveLength(0);
+  await page.getByTestId('edit-staff-confirm-password').fill('RememberMe!2026');
+  await page.getByTestId('edit-staff-set-password').click();
+  await expect(page.getByTestId('temp-password-value')).toHaveText('RememberMe!2026');
+  expect(writes[0].body).toEqual({ new_password: 'RememberMe!2026', confirm_password: 'RememberMe!2026' });
+});
+
+
+test('critical staff password: delegated staff changes own password using old, new and confirmation', async ({ page }) => {
+  let payload: unknown;
+  await personalSession(page, [], '/settings-password', async () => {
+    await page.route('**/api/auth/change-password', route => {
+      payload = route.request().postDataJSON();
+      return route.fulfill({ json: { changed: true } });
+    });
+  });
+  await page.getByTestId('current-password-input').fill('OldMember!2026');
+  await page.getByTestId('new-password-input').fill('RememberMe!2026');
+  await page.getByTestId('confirm-password-input').fill('RememberMe!2026');
+  await page.getByTestId('save-password-btn').click();
+  await expect(page).toHaveURL(/\/settings$/);
+  expect(payload).toEqual({ current_password: 'OldMember!2026', new_password: 'RememberMe!2026', confirm_password: 'RememberMe!2026' });
 });

@@ -30,6 +30,8 @@ async function individualQuotation(page: Page) {
 }
 
 async function showLines(page: Page) {
+  const review = page.getByTestId("mobile-review-quotation");
+  if (await review.isVisible()) await review.click();
   const tab = page.getByRole('tab', { name: /Quotation ·/ });
   if (await tab.isVisible()) await tab.click();
   await expect(page.getByTestId('qty-line-old')).toBeVisible();

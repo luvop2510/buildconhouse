@@ -27,8 +27,9 @@ export function Overlay({ open, onClose, title, subtitle, children, footer, head
   const bottom = presentation === 'bottom' || (isPhone && presentation !== 'fullscreen');
   const drawer = !isPhone && presentation === 'drawer';
   const fullscreen = presentation === 'fullscreen';
+  const panelPadding = isPhone ? space.x4 : space.x5;
   const content = scroll ? <ScrollView keyboardShouldPersistTaps="handled"
-    style={{ flexShrink: 1 }} contentContainerStyle={{ padding: space.x5, gap: space.x3 }}>{children}</ScrollView>
+    style={{ flexShrink: 1 }} contentContainerStyle={{ padding: panelPadding, gap: space.x4 }}>{children}</ScrollView>
     : <View style={{ flex: 1, minHeight: 0 }}>{children}</View>;
   return <Modal visible={open} transparent animationType={Platform.OS === 'web' || reducedMotion ? 'none' : 'fade'}
     onRequestClose={dismissable ? onClose : undefined} statusBarTranslucent>
@@ -47,7 +48,7 @@ export function Overlay({ open, onClose, title, subtitle, children, footer, head
             borderTopLeftRadius: fullscreen ? 0 : radius.xl, borderTopRightRadius: drawer || fullscreen ? 0 : radius.xl,
             paddingTop: fullscreen ? insets.top : 0, paddingBottom: bottom || fullscreen ? insets.bottom : 0 }}>
           {header ? <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.x3,
-            padding: space.x5, borderBottomWidth: 1, borderBottomColor: color.line }}>
+            padding: panelPadding, borderBottomWidth: 1, borderBottomColor: color.line }}>
             <View style={{ flex: 1, minWidth: 0 }}>
               {title ? <Text accessibilityRole="header" aria-level={2} style={{ color: color.ink,
                 fontFamily: font.semibold, fontWeight: '600', fontSize: 20, lineHeight: 28 }}>{title}</Text> : null}
@@ -61,7 +62,7 @@ export function Overlay({ open, onClose, title, subtitle, children, footer, head
             </Pressable> : null}
           </View> : null}
           {content}
-          {footer ? <View style={{ padding: space.x5, borderTopWidth: 1, borderTopColor: color.line,
+          {footer ? <View style={{ padding: panelPadding, borderTopWidth: 1, borderTopColor: color.line,
             flexDirection: 'row', flexWrap: 'wrap', gap: space.x3 }}>{footer}</View> : null}
         </View>
       </View>

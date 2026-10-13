@@ -178,8 +178,12 @@ def test_place_order_confirm_updates_cross_floor_quotation(monkeypatch):
 
     completed_followups = []
 
-    async def _fake_complete_pre_confirmation_followups(quotation_id, quotation_number, *, session=None, floor_id=None):
+    async def _fake_complete_pre_confirmation_followups(quotation_id, quotation_number, *, session=None, floor_id=None, creator_id=None, creator_name=None, customer_id=None):
         assert floor_id == "ground-floor"
+        assert customer_id == "c1"
+        assert creator_id == "u1" and creator_name == "Sales Rep"
+        assert update_calls[-1]["update"]["$set"]["status"] == "ordered"
+        assert session is not None
         completed_followups.append((quotation_id, quotation_number, session))
         return 0
 

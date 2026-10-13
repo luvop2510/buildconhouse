@@ -390,7 +390,7 @@ test('quotation builder renders a full variant page and adds a line promptly', a
   const data = await fixtureCatalog(page, baseURL!, realisticReplies);
   const started = performance.now();
   await page.goto('/quotations/new', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByTestId('builder-back')).toBeVisible();
+  await expect(page.getByTestId('quotation-workspace')).toBeVisible();
   const addFirst = page.getByTestId('mobile-add-first');
   if (await addFirst.isVisible()) await addFirst.click();
   const picker = page.getByRole('dialog', { name: 'Add products', exact: true });

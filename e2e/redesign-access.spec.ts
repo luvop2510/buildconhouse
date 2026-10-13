@@ -56,7 +56,7 @@ test('critical cold quotation reload retains its query while authorized floors a
   expect(businessReads).toBe(0);
   release();
   await expect(page).toHaveURL(/\/quotations\/new\?catalogEntryId=retained-entry$/);
-  await expect(page.getByTestId('quotation-details-toggle')).toBeVisible();
+  await expect(page.getByTestId('quotation-workspace')).toBeVisible();
   await expect.poll(() => businessReads).toBeGreaterThan(0);
   await expect.poll(() => page.evaluate(() => sessionStorage.getItem('forge.pending-initial-route'))).toBeNull();
 });
@@ -211,7 +211,7 @@ test('critical owner with a legacy password flag reaches the workspace and chang
   await page.getByTestId('save-password-btn').click();
   await expect(page).toHaveURL(/settings$/);
   await expect(page.getByTestId('save-password-btn')).toHaveCount(0);
-  expect(payload).toEqual({ current_password: 'OwnerInitial!2026', new_password: 'OwnerReplacement!2026' });
+  expect(payload).toEqual({ current_password: 'OwnerInitial!2026', new_password: 'OwnerReplacement!2026', confirm_password: 'OwnerReplacement!2026' });
 });
 
 test('critical owner password changes entered through Settings return to the account page', async ({ page }) => {
@@ -231,7 +231,7 @@ test('critical owner password changes entered through Settings return to the acc
   await expect(page).toHaveURL(/settings$/);
   await expect(page.getByTestId('settings-nav-password')).toBeVisible();
   await expect(page.getByTestId('save-password-btn')).toHaveCount(0);
-  expect(payload).toEqual({ current_password: 'OwnerInitial!2026', new_password: 'OwnerReplacement!2026' });
+  expect(payload).toEqual({ current_password: 'OwnerInitial!2026', new_password: 'OwnerReplacement!2026', confirm_password: 'OwnerReplacement!2026' });
 });
 
 test('critical expired sessions return to sign-in without rendering protected data', async ({ page }) => {

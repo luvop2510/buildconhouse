@@ -82,3 +82,21 @@ async def test_valid_upload_and_json_keep_working():
         response = await client.post("/upload", files={"file": ("file.txt", b"safe")})
     assert response.status_code == 200
     assert response.json() == {"bytes": 4}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["/api/team/member/password", "/api/team/member/reset-password", "/api/auth/change-password"])
+async def test_credential_endpoints_reject_oversized_payload_before_auth_or_parse(path):
+    called = False
+    async def app(*args):
+        nonlocal called
+        called = True
+    async def receive():
+        raise AssertionError("Oversized credential request must not be buffered")
+    sent = []
+    async def send(message):
+        sent.append(message)
+    await RequestBodyLimitMiddleware(app)({"type": "http", "path": path,
+        "headers": [(b"content-length", str(64 * 1024 + 1).encode())]}, receive, send)
+    assert sent[0]["status"] == 413
+    assert not called

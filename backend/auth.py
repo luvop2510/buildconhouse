@@ -136,7 +136,7 @@ async def _load_active_principal(payload: dict, *, kind: str, collection: str) -
     }
     session_doc, principal = await asyncio.gather(
         db.user_sessions.find_one(session_filter, {"_id": 0, "id": 1, "mfa_verified": 1, "mfa_version": 1}),
-        db[collection].find_one({"id": subject}, {"_id": 0, "password_hash": 0,
+        db[collection].find_one({"id": subject}, {"_id": 0, "password_hash": 0, "password_encrypted": 0,
             "mfa_secret_encrypted": 0, "mfa_pending": 0, "mfa_recovery_hashes": 0}),
     )
     if not session_doc:

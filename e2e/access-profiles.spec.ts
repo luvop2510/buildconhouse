@@ -46,7 +46,7 @@ configuredTest(Boolean(process.env.E2E_BASE_URL && process.env.E2E_GROUND_TILES_
   await expect(page.getByText(/Create dispatch|Mark ready|Dispatch order/i)).toHaveCount(0);
 });
 
-configuredTest(Boolean(process.env.E2E_BASE_URL && process.env.E2E_TEMP_STAFF_EMAIL && process.env.E2E_TEMP_STAFF_PASSWORD))("owner-managed staff password reaches workspace without forced change", async ({ page }) => {
+configuredTest(Boolean(process.env.E2E_BASE_URL && process.env.E2E_TEMP_STAFF_EMAIL && process.env.E2E_TEMP_STAFF_PASSWORD))("owner-assigned staff password reaches workspace and can be changed", async ({ page }) => {
   await page.goto("/login");
   await page.getByTestId("login-email").fill(process.env.E2E_TEMP_STAFF_EMAIL!);
   await page.getByTestId("login-password").fill(process.env.E2E_TEMP_STAFF_PASSWORD!);
@@ -54,7 +54,7 @@ configuredTest(Boolean(process.env.E2E_BASE_URL && process.env.E2E_TEMP_STAFF_EM
   await expect(page).not.toHaveURL(/login|set-new-password/);
   await expect(page.getByTestId("force-change-new")).toHaveCount(0);
   await page.goto("/settings-password");
-  await expect(page.getByTestId("owner-managed-password")).toBeVisible();
+  await expect(page.getByTestId("current-password-input")).toBeVisible();
 });
 
 configuredTest(Boolean(process.env.E2E_BASE_URL && profiles[0].email && profiles[0].password && profiles[3].email && profiles[3].password))("logout/login does not retain the preceding account floor", async ({ page }) => {

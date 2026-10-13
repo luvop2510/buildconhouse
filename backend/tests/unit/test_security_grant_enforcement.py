@@ -314,7 +314,7 @@ async def test_current_mfa_enrollment_and_version_bind_every_staff_session(monke
             pass
     class Users:
         async def find_one(self, _query, projection):
-            for secret in ("password_hash", "mfa_secret_encrypted", "mfa_pending", "mfa_recovery_hashes"):
+            for secret in ("password_hash", "password_encrypted", "mfa_secret_encrypted", "mfa_pending", "mfa_recovery_hashes"):
                 assert projection[secret] == 0
             return principal
     class Database:

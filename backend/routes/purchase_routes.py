@@ -21,7 +21,8 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from auth import floor_query, get_current_user, require_min_role
+from auth import floor_query, require_min_role
+from services.purchase_workspace import get_purchase_workspace_user as get_current_user
 from db import db
 from models import (
     PurchaseAttachment, PurchaseAttachmentCreate, PurchaseOrder, PurchaseOrderItem,

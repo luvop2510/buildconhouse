@@ -3,7 +3,7 @@ by the full module at routes/purchase_routes.py. The /payments scaffold has been
 REMOVED and replaced by routes/payment_routes.py. /followups has been REMOVED and
 replaced by the full Sales Command Center module at routes/followup_routes.py."""
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 
 import os
 from re import fullmatch
@@ -19,6 +19,8 @@ from services.access_grants import build_delegation_snapshot, grants_allow, gran
 from services.download_tokens import create_download_token
 from services.invite_service import generate_temp_password, get_invite_service
 from services.login_identity import normalize_login_id
+from services.team_credentials import decrypt_password, encrypt_password
+from services.rate_limit import clear_login_attempts, reserve_login_attempt
 from services.staff_contacts import read_staff_email, read_staff_phone
 from pymongo.errors import DuplicateKeyError
 from settings import settings
@@ -311,7 +313,7 @@ async def list_notifications(user: UserPublic = Depends(get_current_user)):
 @router.get("/team")
 async def list_team(user: UserPublic = Depends(require_owner)):
     require_owner(user)
-    docs = await db.users.find({"deleted_at": {"$exists": False}}, {"_id": 0, "password_hash": 0}).sort("full_name", 1).to_list(200)
+    docs = await db.users.find({"deleted_at": {"$exists": False}}, {"_id": 0, "password_hash": 0, "password_encrypted": 0}).sort("full_name", 1).to_list(200)
     return [_team_public(doc) for doc in docs]
 
 
@@ -319,7 +321,7 @@ def _team_public(doc: dict) -> dict:
     from services.team_data_reset import OWNER_EMAIL, OWNER_ID
 
     safe = {key: value for key, value in doc.items() if key not in {
-        "_id", "password_hash", "mfa_secret_encrypted", "mfa_recovery_hashes", "mfa_pending",
+        "_id", "password_hash", "password_encrypted", "mfa_secret_encrypted", "mfa_recovery_hashes", "mfa_pending",
     }}
     safe.update(email=read_staff_email(doc.get("email")), phone=read_staff_phone(doc.get("phone")),
                 mobile=read_staff_phone(doc.get("mobile")))
@@ -395,6 +397,7 @@ async def create_team_member(body: TeamCreatePayload, user: UserPublic = Depends
             actor_id=user.id, actor_name=user.full_name,
         )
     doc["password_hash"] = hash_password(body.password)
+    doc["password_encrypted"] = encrypt_password(body.password, doc["id"])
     doc.update(login_patch)
     try:
         await db.users.insert_one(doc)
@@ -407,7 +410,7 @@ async def create_team_member(body: TeamCreatePayload, user: UserPublic = Depends
         actor=user, summary="Staff Account Created",
         payload={"role": role, "floor_ids": floor_ids, "access_profile": body.access_profile, "email": doc["email"]},
     )
-    return doc
+    return _team_public(doc)
 
 
 @router.patch("/team/{user_id}")
@@ -419,7 +422,7 @@ async def update_team_member(
         raise HTTPException(status_code=400, detail="You can't deactivate your own account")
     if user_id == user.id and body.role is not None and body.role != user.role:
         raise HTTPException(status_code=400, detail="You can't change your own role")
-    before = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
+    before = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0, "password_encrypted": 0})
     if not before or before.get("deleted_at"):
         raise HTTPException(status_code=404, detail="Team member not found")
     # Null clears optional profile, team-role, username and contact fields.
@@ -502,7 +505,7 @@ async def update_team_member(
     else:
         # Refresh display/contact data without revoking valid sessions.
         invalidate_principal_cache("staff", user_id)
-    doc = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
+    doc = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0, "password_encrypted": 0})
 
     if "role" in patch and patch["role"] != before.get("role"):
         await log_event(
@@ -531,6 +534,25 @@ async def update_team_member(
     return _team_public(doc)
 
 
+@router.post("/team/{user_id}/password")
+async def view_team_member_password(user_id: str, response: Response, request: Request, user: UserPublic = Depends(require_owner)):
+    """Reveal a single credential only after an explicit owner action."""
+    require_owner(user)
+    response.headers["Cache-Control"] = "no-store"
+    ip = request.client.host if request.client else None
+    rate_key = f"staff-pw-view:{user.id}"
+    await reserve_login_attempt(ip, rate_key)
+    target = await db.users.find_one({"id": user_id}, {"_id": 0, "id": 1, "deleted_at": 1, "password_encrypted": 1})
+    if not target or target.get("deleted_at"):
+        raise HTTPException(status_code=404, detail="Team member not found")
+    encrypted = target.get("password_encrypted")
+    password = decrypt_password(encrypted, user_id) if encrypted else None
+    await log_event(event_type="user.password_viewed", entity_type="user", entity_id=user_id,
+                    actor=user, summary="Owner Viewed Staff Password")
+    await clear_login_attempts(ip, rate_key)
+    return {"password": password, "reset_required": password is None}
+
+
 @router.post("/team/{user_id}/reset-password")
 async def reset_team_member_password(
     user_id: str, user: UserPublic = Depends(require_owner), body: Optional[TeamPasswordResetPayload] = None,
@@ -546,6 +568,7 @@ async def reset_team_member_password(
     expires_at = None
     await _write_team_patch(target, {
         "password_hash": hash_password(password),
+        "password_encrypted": encrypt_password(password, user_id),
         "must_change_password": False,
         "temp_password_expires_at": expires_at,
         "updated_at": now_iso(),

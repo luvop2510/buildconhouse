@@ -37,12 +37,12 @@ export default function CompletedPurchases() {
   activeFloor.current = selectedFloorId;
 
   const load = useCallback(async (skip = 0) => {
-    if (!selectedFloorId) return;
+    if (!selectedFloorId || activeFloor.current !== selectedFloorId) return;
     const sequence = ++requestSequence.current;
     if (skip) setLoadingMore(true); else setLoading(true);
     setError(null);
     try {
-      const page = await api.get<CompletedCustomer[]>(`/purchases/customers/completed?skip=${skip}&limit=100`);
+      const page = await api.get<CompletedCustomer[]>(`/purchases/customers/completed?skip=${skip}&limit=100`, { floorId: selectedFloorId });
       if (activeFloor.current !== selectedFloorId || sequence !== requestSequence.current) return;
       setCustomers((current) => skip ? [...current, ...page] : page); setHasMore(page.length === 100);
     } catch (cause: any) { if (activeFloor.current === selectedFloorId && sequence === requestSequence.current) setError(cause?.detail || "Could not load completed customers."); }
@@ -51,24 +51,24 @@ export default function CompletedPurchases() {
   useFocusEffect(useCallback(() => { setCustomers([]); setSelectedId(null); setWorkspace(null); setProducts([]); setHistoryId(null); void load(); return () => { requestSequence.current += 1; }; }, [load]));
 
   useEffect(() => {
-    if (!selectedId) return;
+    if (!selectedId || !selectedFloorId) return;
     const controller = new AbortController();
     setLoadingWorkspace(true); setWorkspace(null); setProducts([]);
-    Promise.all([getPurchaseCustomerWorkspace(selectedId, controller.signal), getPurchasesPage({ view: "stock", customer: selectedId, limit: 100 }, controller.signal)])
-      .then(([detail, page]) => { if (!controller.signal.aborted) { if (page.total === 0 || page.summaries.stage_counts.dispatched !== page.total) { throw new Error("This customer has active products and is no longer 100% complete. Refresh the list."); } setWorkspace(detail); setProducts(page.items); setNextSkip(page.next_skip); } })
-      .catch((cause) => { if (!controller.signal.aborted) { setSelectedId(null); toast.error(cause?.detail || cause?.message || "Could not load customer purchases"); } })
-      .finally(() => { if (!controller.signal.aborted) setLoadingWorkspace(false); });
+    Promise.all([getPurchaseCustomerWorkspace(selectedId, controller.signal, selectedFloorId), getPurchasesPage({ view: "stock", customer: selectedId, limit: 100 }, controller.signal, selectedFloorId)])
+      .then(([detail, page]) => { if (!controller.signal.aborted && activeFloor.current === selectedFloorId && selectedCustomer.current === selectedId) { if (page.total === 0 || page.summaries.stage_counts.dispatched !== page.total) { throw new Error("This customer has active products and is no longer 100% complete. Refresh the list."); } setWorkspace(detail); setProducts(page.items); setNextSkip(page.next_skip); } })
+      .catch((cause) => { if (!controller.signal.aborted && activeFloor.current === selectedFloorId && selectedCustomer.current === selectedId) { setSelectedId(null); toast.error(cause?.detail || cause?.message || "Could not load customer purchases"); } })
+      .finally(() => { if (!controller.signal.aborted && activeFloor.current === selectedFloorId && selectedCustomer.current === selectedId) setLoadingWorkspace(false); });
     return () => controller.abort();
   }, [selectedId, selectedFloorId]);
 
   const loadMoreProducts = async () => {
-    if (!selectedId || nextSkip === null || loadingWorkspace) return;
+    if (!selectedId || nextSkip === null || loadingWorkspace || activeFloor.current !== selectedFloorId) return;
     setLoadingWorkspace(true);
     try {
-      const page = await getPurchasesPage({ view: "stock", customer: selectedId, skip: nextSkip, limit: 100 });
+      const page = await getPurchasesPage({ view: "stock", customer: selectedId, skip: nextSkip, limit: 100 }, undefined, selectedFloorId);
       if (activeFloor.current !== selectedFloorId || selectedCustomer.current !== selectedId) return;
       setProducts((current) => [...current, ...page.items]); setNextSkip(page.next_skip);
-    } catch (cause: any) { toast.error(cause?.detail || "Could not load more products"); }
+    } catch (cause: any) { if (activeFloor.current === selectedFloorId && selectedCustomer.current === selectedId) toast.error(cause?.detail || "Could not load more products"); }
     finally { if (activeFloor.current === selectedFloorId && selectedCustomer.current === selectedId) setLoadingWorkspace(false); }
   };
   const exportRows = () => void downloadSectionExcel({ resource: "purchases",
@@ -78,7 +78,7 @@ export default function CompletedPurchases() {
 
   return <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
     <ScrollView contentContainerStyle={{ width: "100%", maxWidth: 1000, alignSelf: "center", padding: isPhone ? spacing.md : spacing.xl, gap: spacing.lg, paddingBottom: 100 }}>
-      <PageHeader title="100% Customers" subtitle="Every active product dispatched and delivered" back={() => router.back()} />
+      <PageHeader embedded title="100% Customers" subtitle="Every active product dispatched and delivered" back={() => router.back()} />
       {!loading && !error && customers.length > 0 ? <Button label="Export completed customers .xlsx" icon="download" variant="secondary" onPress={exportRows} /> : null}
       {error ? <ErrorState title="Completed customers unavailable" subtitle={error} onRetry={() => void load()} /> : !loading && customers.length === 0 ? <EmptyState icon="check-circle" title="No completed customers yet" subtitle="Customers appear once every active product is dispatched. Partial dispatch stays in active purchases." /> : <CustomerNavigator completed loading={loading} customers={customers.map((customer) => ({ ...customer, company: `${customer.count} delivered products · ${customer.quantity} units${customer.completed_at ? ` · ${new Date(customer.completed_at).toLocaleDateString("en-IN")}` : ""}` }))} onOpen={setSelectedId} />}
       {hasMore && !loading ? <Button label={loadingMore ? "Loading…" : "Load more customers"} variant="secondary" disabled={loadingMore} onPress={() => void load(customers.length)} /> : null}

@@ -131,7 +131,7 @@ export default function WalkInsScreen({
   const visitShowroom = async (w: WalkIn) => {
     try {
       await walkinsApi.visitShowroom(w.id, { floorId: w.floor_id });
-      setItems(current => current.map(item => item.id === w.id ? { ...item, showroom_followup_id: `showroom:${w.id}` } : item));
+      setItems(current => current.filter(item => item.id !== w.id));
       toast.success("Transferred to Visit Showroom follow-ups");
       // Navigate before the new floor selection triggers the shell's floor
       // routing effect. The follow-ups inbox is shared and filtered by the

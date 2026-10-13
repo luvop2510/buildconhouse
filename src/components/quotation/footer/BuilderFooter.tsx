@@ -10,7 +10,7 @@
 import { useState } from "react";
 import Feather from "@expo/vector-icons/Feather";
 import { Pressable, StyleSheet, View } from "react-native";
-import { Text, TextInput } from "@/src/components/AppText";
+import { Text } from "@/src/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors, font, money, radius, spacing, type } from "@/src/theme/tokens";
@@ -18,23 +18,9 @@ import { color as ds } from "@/src/design/tokens";
 
 import { useBuilder } from "../context/BuilderContext";
 
-function NotesAndDiscount({ b }: { b: ReturnType<typeof useBuilder> }) {
+function DiscountAndTotals({ b }: { b: ReturnType<typeof useBuilder> }) {
   return (
     <>
-      <View style={styles.notes}>
-        <Feather name="edit-3" size={13} color={colors.onSurfaceMuted} />
-        <TextInput
-          accessibilityLabel="Customer note printed on quotation PDF"
-          testID="quote-notes-input"
-          value={b.s.notes}
-          onChangeText={b.setNotes}
-          placeholder="Add a note for the customer (printed on the PDF)…"
-          placeholderTextColor={colors.onSurfaceMuted}
-          style={styles.notesInput}
-          multiline
-        />
-      </View>
-
       <Pressable
         onPress={() => b.setDiscountSheet({ kind: "project" })}
         accessibilityRole="button"
@@ -72,12 +58,12 @@ export function BuilderFooter({ compact = false }: { compact?: boolean }) {
       <View style={styles.phoneWrap}>
         {expanded ? (
           <View style={styles.phoneExpanded}>
-            <NotesAndDiscount b={b} />
+            <DiscountAndTotals b={b} />
           </View>
         ) : null}
 
         <View style={[styles.phoneBar, { paddingBottom: Math.max(spacing.md, insets.bottom + spacing.sm) }]}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Quotation totals, notes and discounts" accessibilityState={{ expanded }} testID="mobile-footer-toggle" onPress={() => setExpanded((v) => !v)} style={styles.phoneSummary}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Quotation totals and discounts" accessibilityState={{ expanded }} testID="mobile-footer-toggle" onPress={() => setExpanded((v) => !v)} style={styles.phoneSummary}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
               <Text style={type.caption} numberOfLines={1}>{b.s.lines.length} items · {b.saveLabel}</Text>
               <Feather name={expanded ? "chevron-down" : "chevron-up"} size={13} color={colors.onSurfaceMuted} />
@@ -109,7 +95,7 @@ export function BuilderFooter({ compact = false }: { compact?: boolean }) {
 
   return (
     <View style={styles.wrap}>
-      <NotesAndDiscount b={b} />
+      <DiscountAndTotals b={b} />
       <View style={[styles.tRow, { borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border, paddingTop: 8, marginTop: -4 }]}>
         <Text style={{ fontSize: 13, fontFamily: font.medium, fontWeight: "500", color: colors.onSurfaceSecondary }}>Grand total</Text>
         <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 22, fontFamily: font.regular, letterSpacing: -0.4, color: colors.onSurface, fontVariant: ["tabular-nums"], flexShrink: 1 }}>{money(b.totals.grand)}</Text>
@@ -168,19 +154,19 @@ const styles = StyleSheet.create({
     padding: spacing.md, gap: spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
   },
-  phoneBar: { gap: 8, paddingHorizontal: spacing.md, paddingTop: spacing.md },
-  phoneSummary: { minHeight: 44, justifyContent: "center" },
-  phoneActions: { flexDirection: "row", gap: 8 },
+  phoneBar: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: spacing.md, paddingTop: spacing.md },
+  phoneSummary: { flex: 1, minWidth: 0, minHeight: 44, justifyContent: "center" },
+  phoneActions: { flexShrink: 0, flexDirection: "row", gap: 8 },
   phoneTotal: { fontSize: 19, fontFamily: font.regular, letterSpacing: -0.3, color: colors.onSurface, fontVariant: ["tabular-nums"] },
   secondary: {
     flexDirection: "row", alignItems: "center", gap: 6,
-    minHeight: 44, flex: 1, justifyContent: "center", paddingHorizontal: 14, paddingVertical: 10, borderRadius: radius.md,
+    minHeight: 44, justifyContent: "center", paddingHorizontal: 12, paddingVertical: 10, borderRadius: radius.md,
     backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
   },
   secondaryText: { fontSize: 13, fontWeight: "600", color: colors.onSurface },
   primary: {
     flexDirection: "row", alignItems: "center", gap: 6,
-    minHeight: 44, flex: 1, justifyContent: "center", paddingHorizontal: 16, paddingVertical: 10, borderRadius: radius.md,
+    minHeight: 44, justifyContent: "center", paddingHorizontal: 12, paddingVertical: 10, borderRadius: radius.md,
     backgroundColor: ds.brass,
   },
   saveBtnTextSm: { color: ds.canvas, fontSize: 13, fontFamily: font.semibold, fontWeight: "600" },

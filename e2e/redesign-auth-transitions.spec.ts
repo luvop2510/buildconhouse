@@ -124,7 +124,7 @@ test('critical customer invite still requires its separate first-sign-in passwor
   await page.getByTestId('force-change-confirm').fill('123456');
   await page.getByTestId('force-change-submit').click();
   await expect(page).toHaveURL(/home$/);
-  expect(payload).toEqual({ current_password: 'CustomerInvite!2026', new_password: '123456' });
+  expect(payload).toEqual({ current_password: 'CustomerInvite!2026', new_password: '123456', confirm_password: '123456' });
 });
 
 

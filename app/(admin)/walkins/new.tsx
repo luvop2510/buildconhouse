@@ -46,7 +46,6 @@ export default function NewWalkIn() {
   const [pincode, setPincode] = useState("");
 
   const [budget, setBudget] = useState("");
-  const [notes, setNotes] = useState("");
   const [products, setProducts] = useState("");
   const [source, setSource] = useState("Walk-in");
   const [sources, setSources] = useState<string[]>(["Walk-in", "Reference", "Architect", "Builder", "Social Media", "Existing Customer", "Other"]);
@@ -154,7 +153,7 @@ export default function NewWalkIn() {
         architect: architect.trim() || undefined, builder: builder.trim() || undefined,
         salesperson_id: salespersonId, floor_id: floorId,
         interested_products: products.split(",").map((p) => p.trim()).filter(Boolean),
-        budget: budget ? Number(budget) : undefined, notes: notes.trim() || undefined,
+        budget: budget ? Number(budget) : undefined,
         use_existing_customer_id: useExistingId, force_new_customer: force,
       });
       toast.success("Walk-in logged");
@@ -261,7 +260,7 @@ export default function NewWalkIn() {
 
           <TextField label="Interested Products" value={products} onChangeText={setProducts} placeholder="Comma-separated, e.g. Vitrified Tiles, Granite" testID="walkin-products" />
           <TextField label="Budget (₹)" value={budget} onChangeText={setBudget} keyboardType="numeric" placeholder="Optional" testID="walkin-budget" />
-          <TextField label="Notes" value={notes} onChangeText={setNotes} placeholder="Optional" multiline numberOfLines={3} testID="walkin-notes" /></Disclosure>
+          </Disclosure>
 
         </ScrollView>
         <View style={styles.submitFooter}>

@@ -42,8 +42,8 @@ async def test_deleted_account_cannot_receive_new_allocations(monkeypatch):
     assert exc.value.status_code == 404
 
 
-def test_staff_password_changes_are_not_a_delegated_account_exemption():
+def test_staff_password_changes_are_post_only_personal_account_exemption():
     for method in ["GET", "POST", "PUT", "PATCH", "DELETE"]:
-        assert not is_common_access_request(method, "/api/auth/change-password")
+        assert is_common_access_request(method, "/api/auth/change-password") is (method == "POST")
         for profile in PROFILE_MODULES:
-            assert not profile_allows_request(profile, method, "/api/auth/change-password")
+            assert profile_allows_request(profile, method, "/api/auth/change-password") is (method == "POST")

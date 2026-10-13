@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Any, Literal, Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 from services.password_policy import MIN_PASSWORD_LENGTH, validate_new_password
 from services.staff_contacts import optional_email, read_staff_email, read_staff_phone, validate_staff_phone
 
@@ -229,7 +229,18 @@ class CustomerTokenResponse(BaseModel):
     customer: CustomerPublic
 
 
-class ChangePasswordPayload(BaseModel):
+class PasswordConfirmation(BaseModel):
+    # Optional for older clients; all current forms submit confirmation.
+    confirm_password: Optional[str] = Field(default=None, max_length=72)
+
+    @model_validator(mode="after")
+    def passwords_match(self):
+        if self.confirm_password is not None and self.confirm_password != self.new_password:
+            raise ValueError("Passwords don't match")
+        return self
+
+
+class ChangePasswordPayload(PasswordConfirmation):
     current_password: str = Field(..., max_length=72)
     new_password: str = Field(..., min_length=MIN_PASSWORD_LENGTH, max_length=72)
 
@@ -287,7 +298,7 @@ class TeamUpdatePayload(BaseModel):
     _contact_validation = field_validator("phone", "mobile", mode="before")(validate_staff_phone)
 
 
-class TeamPasswordResetPayload(BaseModel):
+class TeamPasswordResetPayload(PasswordConfirmation):
     new_password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=72)
 
     _password_policy = field_validator("new_password")(validate_new_password)

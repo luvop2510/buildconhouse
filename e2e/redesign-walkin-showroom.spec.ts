@@ -67,11 +67,13 @@ test('critical walk-ins combines multiple floors and lead sources in the same ba
 test('critical Visit Showroom retries a failed transfer and opens only showroom-origin follow-ups', async ({ page }) => {
   await mockSession(page, '/walkins');
   await walkinReads(page);
-  await page.route('**/api/walkins?**', route => route.fulfill({ json: [{ ...walkin, floor_id: 'second-floor' }] }));
+  let transferred = false;
+  await page.route('**/api/walkins?**', route => route.fulfill({ json: transferred ? [] : [{ ...walkin, floor_id: 'second-floor' }] }));
   let attempts = 0;
   await page.route('**/api/walkins/walkin-showroom/visit-showroom', route => {
     expect(route.request().headers()['x-floor-id']).toBe('second-floor');
     attempts += 1;
+    if (attempts > 1) transferred = true;
     return attempts === 1 ? route.fulfill({ status: 503, json: { detail: 'Transfer unavailable; retry' } })
       : route.fulfill({ json: { walkin_id: walkin.id, followup_id: 'showroom:walkin-showroom' } });
   });
@@ -94,6 +96,12 @@ test('critical Visit Showroom retries a failed transfer and opens only showroom-
   await expect(page.getByText('Unrelated follow-up', { exact: true })).toHaveCount(0);
   expect(attempts).toBe(2);
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('forge.active-floor') || 'null'))).toBe('second-floor');
+  await page.goto('/walkins');
+  await expect(page.getByTestId('walkin-card-walkin-showroom')).toHaveCount(0);
+  await expect(page.getByTestId('walkin-visit-showroom-walkin-showroom')).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByTestId('walkin-card-walkin-showroom')).toHaveCount(0);
+  expect(attempts).toBe(2);
 });
 
 test('critical multi-floor walk-in actions use the selected records floor', async ({ page }) => {

@@ -77,7 +77,7 @@ def is_common_access_request(method: str, path: str) -> bool:
     if method == "GET":
         return path in CUSTOM_ACCESS_COMMON_PATHS - {"/api/downloads/token", "/api/exports/page.xlsx", "/api/auth/logout"}
     if method == "POST":
-        return path in {"/api/auth/logout", "/api/auth/sessions/logout-all", "/api/downloads/token", "/api/exports/page.xlsx"}
+        return path in {"/api/auth/logout", "/api/auth/change-password", "/api/auth/sessions/logout-all", "/api/downloads/token", "/api/exports/page.xlsx"}
     return method == "DELETE" and fullmatch(r"/api/auth/sessions/[^/]+", path) is not None
 
 

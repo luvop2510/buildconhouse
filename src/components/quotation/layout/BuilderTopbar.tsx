@@ -206,6 +206,7 @@ export function BuilderTopbar({
       <BottomSheet visible={actionsOpen} onClose={() => setActionsOpen(false)} title="Quotation actions" testID="quotation-actions-sheet">
         <View style={{ gap: 8 }}>
           {[
+            { label: "Add custom product", icon: "plus" as const, action: () => b.setCustomProductSheetOpen(true), disabled: false },
             { label: "Undo last change", icon: "corner-up-left" as const, action: b.history.undo, disabled: !b.history.canUndo },
             { label: "Redo change", icon: "corner-up-right" as const, action: b.history.redo, disabled: !b.history.canRedo },
             { label: "Preview quotation", icon: "eye" as const, action: () => setPreviewOpen(true), disabled: !b.s.lines.length },

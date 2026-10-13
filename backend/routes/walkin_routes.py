@@ -141,6 +141,8 @@ async def check_duplicate(
 # ---------- Create ----------
 @router.post("", response_model=WalkIn)
 async def create_walkin(body: WalkInCreate, user: UserPublic = Depends(require_min_role("sales"))):
+    if body.notes is not None:
+        raise HTTPException(status_code=422, detail="Notes can only be written when marking a client as lost")
     if not await db.floors.find_one({"id": body.floor_id}, {"_id": 0, "id": 1}):
         raise HTTPException(status_code=404, detail="Department (floor) not found")
     # `body.floor_id` was only checked for EXISTENCE above — a caller could
@@ -203,7 +205,7 @@ async def create_walkin(body: WalkInCreate, user: UserPublic = Depends(require_m
         salesperson_name=salesperson_doc["full_name"],
         source=body.source, reference_contact=body.reference_contact, architect=body.architect, builder=body.builder,
         floor_id=body.floor_id, interested_products=body.interested_products,
-        budget=body.budget, notes=body.notes, manual_priority_override=body.priority,
+        budget=body.budget, manual_priority_override=body.priority,
         next_followup_at=body.next_followup_at,
         created_by=user.id, created_by_name=user.full_name,
     )
@@ -225,7 +227,7 @@ async def list_walkins(
     date_from: Optional[str] = None, date_to: Optional[str] = None, search: Optional[str] = None,
     user: UserPublic = Depends(get_current_user),
 ):
-    filters: dict = {"is_deleted": False}
+    filters: dict = {"is_deleted": False, "showroom_followup_id": None, "showroom_transferred_at": None}
     if status:
         filters["status"] = predicate(status)
     if salesperson_id:
@@ -257,7 +259,7 @@ async def list_walkins(
 # ---------- Dashboard KPIs ----------
 @router.get("/dashboard")
 async def walkins_dashboard(floor_ids: Optional[str] = None, user: UserPublic = Depends(get_current_user)):
-    docs = await db.walkins.find(scoped_query(user, {"is_deleted": False}, floor_ids), {"_id": 0}).to_list(5000)
+    docs = await db.walkins.find(scoped_query(user, {"is_deleted": False, "showroom_followup_id": None, "showroom_transferred_at": None}, floor_ids), {"_id": 0}).to_list(5000)
     now = datetime.now(timezone.utc)
     today = now.date()
     week_start = today.fromordinal(today.toordinal() - today.weekday())
@@ -295,7 +297,7 @@ async def walkins_dashboard(floor_ids: Optional[str] = None, user: UserPublic = 
 # ---------- Analytics funnel ----------
 @router.get("/analytics")
 async def walkins_analytics(user: UserPublic = Depends(get_current_user)):
-    walkins = await db.walkins.find(floor_query(user, {"is_deleted": False}), {"_id": 0}).to_list(5000)
+    walkins = await db.walkins.find(floor_query(user, {"is_deleted": False, "showroom_followup_id": None, "showroom_transferred_at": None}), {"_id": 0}).to_list(5000)
     customer_ids = list({w["customer_id"] for w in walkins})
     quotations = await db.quotations.find(
         floor_query(user, {"customer_id": {"$in": customer_ids}}), {"_id": 0},
@@ -366,7 +368,7 @@ async def visit_showroom(walkin_id: str, user: UserPublic = Depends(require_min_
         next_action="Arrange showroom visit", next_action_reason="Transferred from the walk-in register",
         suggested_channel="visit", due_at=now, is_automated=False,
         assigned_to=walkin.get("salesperson_id"), assigned_to_name=walkin.get("salesperson_name"),
-        notes=walkin.get("notes"), tags=["WALK_IN", "VISIT_SHOWROOM"],
+        tags=["WALK_IN", "VISIT_SHOWROOM"],
     ).model_dump()
     identity = {"id": followup_id, "floor_id": walkin["floor_id"]}
     try:
@@ -400,14 +402,19 @@ async def update_walkin(walkin_id: str, body: WalkInUpdate, user: UserPublic = D
     if not doc:
         raise HTTPException(status_code=404, detail="Walk-in not found")
     patch = body.model_dump(exclude_unset=True)
+    if doc.get("showroom_followup_id") or doc.get("showroom_transferred_at"):
+        raise HTTPException(status_code=409, detail="This walk-in is now in Visit Showroom follow-ups")
+    if patch.get("status") != "lost" and ("notes" in patch or "lost_reason" in patch):
+        raise HTTPException(status_code=422, detail="Notes can only be written when marking a client as lost")
     if patch.get("status") == "lost":
-        resulting_notes = patch.get("notes", doc.get("notes"))
+        resulting_notes = patch.get("notes") or patch.get("lost_reason")
         if not str(resulting_notes or "").strip():
             raise HTTPException(status_code=422, detail="A note is required before marking this client as lost")
         # Keep the note available in the legacy lost_reason field for existing
         # reports and audit consumers, while notes remains the user-facing
         # source of truth.
-        patch["lost_reason"] = str(patch.get("lost_reason") or resulting_notes).strip()
+        patch["notes"] = str(resulting_notes).strip()
+        patch["lost_reason"] = patch["notes"]
     patch["updated_at"] = now_iso()
     if patch.get("status") == "converted":
         patch["converted_at"] = now_iso()

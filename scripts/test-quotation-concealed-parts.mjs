@@ -79,4 +79,11 @@ const withStandaloneCover = addProductAndConcealedPart(cswOnce, standaloneCover,
 assert.equal(withStandaloneCover.filter((line) => line.product_id === standaloneCover.id).length, 2);
 assert.equal(withStandaloneCover.find((line) => line.included_for_line_id === cswOnce[0].id).qty, 1);
 assert.equal(withStandaloneCover.find((line) => line.product_id === standaloneCover.id && !line.included_for_line_id).qty, 1);
-console.log("quotation concealed-part contract passed");
+// Custom descriptions survive the same add/quantity expansion as catalog lines.
+const described = addProductAndConcealedPart([], { ...product, description: "Cut to customer dimensions" }, undefined, "Master Bath", id, null);
+assert.equal(described[0].description, "Cut to customer dimensions");
+const variantDescription = addProductAndConcealedPart([], { ...product, description: "Base specification" }, {
+  sku: product.sku, price: product.price, mrp: product.mrp, description: "Exact variant specification",
+}, "Master Bath", id, null);
+assert.equal(variantDescription[0].description, "Exact variant specification");
+console.log("quotation concealed-part and custom-description contract passed");

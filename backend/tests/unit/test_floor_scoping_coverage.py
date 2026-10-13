@@ -94,6 +94,13 @@ ALLOWLIST: dict[str, str] = {
         "already gated to require_owner, so this is person/staff "
         "administration, not a per-floor business record."
     ),
+    "view_team_member_password": (
+        "Explicit owner-only credential read of a cross-floor staff identity. "
+        "The POST avoids caches and automatic prefetch; it performs no business "
+        "record mutation, and require_owner plus an audited no-store response "
+        "protects password disclosure. Staff accounts have assigned floor_ids, "
+        "rather than a single floor owner."
+    ),
     "reset_team_member_password": (
         "misc_routes.py:253 looks up db.users by user_id with no floor filter for the same "
         "reason as update_team_member above -- staff accounts belong to a person who may "

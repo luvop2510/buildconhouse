@@ -35,6 +35,9 @@ test('critical quotation history restores fields and clears redo after a new bra
   await page.route('**/api/quotations/recent?**', route => route.fulfill({ json: [] }));
   await page.route('**/api/products/families?**', route => route.fulfill({ json: { total: 0, items: [] } }));
   await page.goto('/quotations/new');
+  await expect(page.getByTestId('quotation-workspace')).toBeVisible();
+  const exit = page.getByTestId('expand-quotation-workspace');
+  if (await exit.isVisible()) await exit.click();
   await page.getByTestId('quotation-details-toggle').click();
   const project = page.getByTestId('compact-hdr-project');
   const phone = page.getByTestId('compact-hdr-phone');
