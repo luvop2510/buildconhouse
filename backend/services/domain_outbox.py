@@ -224,6 +224,9 @@ async def _handle_purchase_chalan_lifecycle(event: dict, session: Any) -> dict:
 
 
 async def _upsert_followup(*, key: str, quotation: dict, reason: str, category: str, session: Any) -> None:
+    from services.lead_scope import POST_ORDER_CATEGORIES
+    if category in POST_ORDER_CATEGORIES or quotation.get("status") == "ordered":
+        return
     customer = await db.customers.find_one({"id": quotation["customer_id"]}, {"_id": 0}, session=session) or {}
     followup = Followup(
         source_key=key,
@@ -531,7 +534,6 @@ async def _handle_order_placed(event: dict, session: Any) -> dict:
         summary=f"Order placed — {len(created_po_ids)} purchase order(s) created",
         payload={"event": EVENT_ORDER_PLACED, "purchase_order_ids": created_po_ids, "outstanding": payment_amount}, session=session,
     )
-    await _upsert_followup(key=f"{key}:followup", quotation=quotation, reason=f"Order {quotation.get('number')} placed — confirm payment and delivery plan.", category="payment", session=session)
     return {
         "quotation_id": quotation_id,
         "purchase_order_ids": created_po_ids,

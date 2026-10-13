@@ -608,14 +608,10 @@ async def _complete_pre_confirmation_followups(
     creator_name: str | None = None,
     customer_id: str | None = None,
 ) -> int:
-    """Close reminders that existed before this quotation became an order.
+    """Consolidate the customer's pre-order reminders into its committed order.
 
-    The order-confirmed Operations handoff is deliberately excluded: it is
-    created *after* this transition and remains actionable until Operations
-    starts releasing material. Existing payment/purchase reminders remain
-    actionable. Sales reminders linked to this quotation, and this same-floor
-    customer's unlinked walk-in/showroom leads, become won in the transaction
-    that places the order; other quotations and customers remain untouched.
+    Grouped floor records close in the same Mongo transaction. Lead assignments
+    remain as historical work; sales revenue still credits the quotation creator.
     """
     completed_at = now_iso()
     query = {
@@ -637,10 +633,32 @@ async def _complete_pre_confirmation_followups(
             {"$or": notebook_scope},
             {"$or": [
                 {"quotation_id": quotation_id},
-                {"customer_id": customer_id, "category": "walk_in", "quotation_id": None},
-                {"customer_id": customer_id, "category": "walk_in", "quotation_id": ""},
+                {"customer_id": customer_id, "quotation_id": None},
+                {"customer_id": customer_id, "quotation_id": ""},
             ]},
         ]
+    # A customer may have one floor-local lead per selected department. Only
+    # groups linked to this order/customer join its transaction; unrelated
+    # leads remain scoped. Group metadata records the one consolidated order.
+    if floor_id and customer_id:
+        seeds_query = {"floor_id": floor_id, "$or": [{"quotation_id": quotation_id}, {"customer_id": customer_id, "quotation_id": {"$in": [None, ""]}}], "lead_group_id": {"$type": "string"}}
+        seeds = await db.followups.find(seeds_query, {"_id": 0, "lead_group_id": 1}, session=session).to_list(1000)
+        groups = list({row["lead_group_id"] for row in seeds})
+        if groups:
+            await db.followups.update_many({"lead_group_id": {"$in": groups}, "status": {"$in": ["open", "snoozed"]}}, {"$set": {
+                "status": "done", "notebook_status": "won", "completed_outcome": "won", "auto_resolved": True,
+                "completed_at": completed_at, "updated_at": completed_at, "snoozed_until": None,
+                "consolidated_order_id": quotation_id, "consolidated_order_floor_id": floor_id,
+                "resolution_note": f"Consolidated into order {quotation_number or quotation_id}",
+            }}, session=session)
+            # Group closure runs before the legacy open-row query below.
+            # Link this order's own floor rows and credit its creator here,
+            # while keeping each sibling's floor-local quotation identity.
+            await db.followups.update_many({"lead_group_id": {"$in": groups}, "floor_id": floor_id,
+                "consolidated_order_id": quotation_id, "completed_at": completed_at}, {"$set": {
+                "quotation_id": quotation_id, "quotation_number": quotation_number,
+                **({"assigned_to": creator_id, "assigned_to_name": creator_name} if creator_id else {}),
+            }}, session=session)
     result = await db.followups.update_many(
         query,
         {"$set": {
@@ -652,6 +670,7 @@ async def _complete_pre_confirmation_followups(
             # view in Follow-ups and is written only by the order transition.
             "completed_outcome": "won",
             "quotation_id": quotation_id, "quotation_number": quotation_number,
+            "consolidated_order_id": quotation_id, "consolidated_order_floor_id": floor_id,
             **({"assigned_to": creator_id, "assigned_to_name": creator_name} if creator_id else {}),
             "snoozed_until": None,
             "resolution_note": (

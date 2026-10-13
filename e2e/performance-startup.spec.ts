@@ -87,6 +87,46 @@ async function fixtureCatalog(page: Page, baseURL: string, overrides: Record<str
   return data;
 }
 
+test('team assign renders a full activity page and switches floors promptly', async ({ page, baseURL }, info) => {
+  const workers = Array.from({ length: 3 }, (_, worker) => ({
+    user_id: `performance-worker-${worker}`, user_name: `Worker ${worker + 1}`,
+    assigned_leads: 100, contacts_made: 250, calls_made: 200, completed_leads: 20,
+    leads: Array.from({ length: worker === 0 ? 18 : 16 }, (_, lead) => ({
+      id: `performance-lead-${worker}-${lead}`, customer_name: `Lead ${worker}-${lead}`,
+      floor_id: 'first-floor', status: 'open', contact_attempts: 3, call_attempts: 2,
+      latest_response: 'Interested in the selected floors', latest_update: 'Call back arranged',
+      activity: Array.from({ length: 5 }, (_, event) => ({ id: `${lead}-${event}`, action: 'call', description: 'Called lead', response: 'Requested showroom visit', created_at: '2026-10-13T10:00:00Z' })),
+    })),
+  }));
+  const data = await fixtureCatalog(page, baseURL!, {
+    '/api/followups/team-assign': { workers, has_more: true, page: 1, page_size: 50 },
+  });
+  const start = performance.now();
+  await page.goto('/team-assign', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('team-worker-performance-worker-0')).toBeVisible();
+  const readyMs = performance.now() - start;
+  expect(readyMs).toBeLessThan(2500);
+  const interaction = performance.now();
+  await page.getByTestId('team-lead-performance-lead-0-0').click();
+  await expect(page.getByText('Called lead · Requested showroom visit').first()).toBeVisible();
+  const expandMs = performance.now() - interaction;
+  expect(expandMs).toBeLessThan(750);
+  const floorStart = performance.now();
+  await page.getByRole('button', { name: 'Tiles', exact: true }).click();
+  await expect.poll(() => data.reads.filter(read => read.path === '/api/followups/team-assign').length).toBe(2);
+  await expect.poll(() => data.completed.filter(read => read.path === '/api/followups/team-assign').length).toBe(2);
+  await expect(page.getByTestId('team-worker-performance-worker-0')).toBeVisible();
+  const floorMs = performance.now() - floorStart;
+  expect(floorMs).toBeLessThan(1500);
+  expect(new URLSearchParams(data.reads.filter(read => read.path === '/api/followups/team-assign')[1].query).get('floor_ids')).toBe('ground-floor');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  expect(data.errors).toEqual([]);
+  expect(data.consoleErrors).toEqual([]);
+  expect(data.external).toEqual([]);
+  expect(data.mutations).toEqual([]);
+  await info.attach('team-assignment-performance', { body: JSON.stringify({ device: info.project.name, readyMs, expandMs, floorMs, leads: 50, reads: data.reads }, null, 2), contentType: 'application/json' });
+});
+
 test('cold catalog loads one bounded page promptly on each device', async ({ page, baseURL }, info) => {
   const data = await fixtureCatalog(page, baseURL!);
   const navigationStarted = performance.now();

@@ -232,7 +232,7 @@ function PaletteSession({ open, onClose, selectedFloorId }: { open: boolean; onC
 
   return (
     <Modal visible transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+      <KeyboardAvoidingView enabled={Platform.OS !== "web"} behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: color.scrim, opacity: anim }]}>
           <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
         </Animated.View>
@@ -240,14 +240,15 @@ function PaletteSession({ open, onClose, selectedFloorId }: { open: boolean; onC
         <Animated.View ref={panelRef} role="dialog" aria-modal accessibilityLabel="Search workspace" tabIndex={-1}
           style={[
             {
-              backgroundColor: color.surface, overflow: "hidden",
+              backgroundColor: color.surface, overflow: "hidden", minHeight: 0, flexShrink: 1,
               opacity: anim, ...shadow.overlay,
             },
             isPhone
               ? { flex: 1, marginTop: insets.top, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl }
               : {
                   alignSelf: "center", width: Math.min(620, winW - 64),
-                  maxHeight: Math.min(460, winH - 160), marginTop: Math.max(70, winH * 0.14),
+                  maxHeight: Platform.OS === "web" ? 'min(460px, calc(var(--forge-visible-height, 100dvh) - 40px))' as unknown as number : Math.min(460, winH - 160),
+                  marginTop: Platform.OS === "web" ? 'min(70px, calc(var(--forge-visible-height, 100dvh) * .14))' as unknown as number : Math.max(70, winH * 0.14),
                   borderRadius: radius.xl,
                   transform: [
                     { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] }) },

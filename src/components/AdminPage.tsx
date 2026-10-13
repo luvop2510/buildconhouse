@@ -6,6 +6,7 @@
 // Also exposes IconAction for right-cluster buttons (unchanged API for callers).
 import Feather from "@expo/vector-icons/Feather";
 import { Pressable, ScrollView, StyleSheet, View, ViewStyle } from "react-native";
+import type { Ref } from "react";
 import { Text } from "@/src/components/AppText";
 
 import { PageHeader } from "@/src/components/ui";
@@ -82,17 +83,19 @@ export function AdminPage({
 // backwards-compat with older screens. Renders a bordered 40x40 tile with
 // centered icon + optional label chip. Uses tokens only.
 export function IconAction({
-  icon, label, onPress, testID, tone = "surface",
+  icon, label, onPress, testID, tone = "surface", focusRef,
 }: {
   icon: keyof typeof Feather.glyphMap;
   label?: string;
   onPress: () => void;
   testID?: string;
   tone?: "surface" | "brand";
+  focusRef?: Ref<View>;
 }) {
   const isBrand = tone === "brand";
   return (
     <Pressable
+      ref={focusRef}
       testID={testID}
       accessibilityRole="button"
       accessibilityLabel={label || icon.replace(/-/g, " ")}

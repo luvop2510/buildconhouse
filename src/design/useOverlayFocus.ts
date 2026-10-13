@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react';
 import { Platform, View } from 'react-native';
 
 // The topmost portal remains interactive even if an underlying dialog previously
@@ -29,7 +29,7 @@ function syncIsolation() {
 }
 
 /** Focus containment, background isolation and restoration for every web overlay. */
-export function useOverlayFocus(open: boolean, onClose: () => void, dismissable = true) {
+export function useOverlayFocus(open: boolean, onClose: () => void, dismissable = true, returnFocusRef?: RefObject<View | null>) {
   const ref = useRef<View>(null);
   const closeRef = useRef(onClose);
   const dismissableRef = useRef(dismissable);
@@ -41,7 +41,9 @@ export function useOverlayFocus(open: boolean, onClose: () => void, dismissable 
   }, [onClose, dismissable]);
   useEffect(() => {
     if (!open || Platform.OS !== 'web') return;
-    const previous = document.activeElement as HTMLElement | null;
+    // Explicit triggers survive an autoFocus child moving focus before this
+    // effect. Other overlays retain their current active-element behavior.
+    const previous = (returnFocusRef?.current || document.activeElement) as HTMLElement | null;
     let panel: HTMLElement | null = null;
     let activePortal: HTMLElement | null = null;
     const focusables = () => Array.from(panel?.querySelectorAll<HTMLElement>(
@@ -95,16 +97,25 @@ export function useOverlayFocus(open: boolean, onClose: () => void, dismissable 
       // React Native Web also restores focus while unmounting its Modal.
       // Run after that cleanup so it cannot leave focus on the backdrop of
       // the underlying dialog, where Escape and Tab cannot reach our panel.
-      requestAnimationFrame(() => {
+      let closingFrames = 0;
+      const restoreFocus = () => {
         if (portals[portals.length - 1] !== restoredPortal) return;
+        // RNW's portal survives its first dismissal frame. Focusing its
+        // trigger while that portal still traps focus immediately sends
+        // focus back into the closing form. Wait for its actual removal.
+        if (panel?.isConnected && closingFrames++ < 10) {
+          requestAnimationFrame(restoreFocus);
+          return;
+        }
         const restoredPanel = restoredPortal ? panels.get(restoredPortal) : undefined;
         if (previous?.isConnected && (!restoredPanel || restoredPanel.contains(previous))) previous.focus();
         else if (restoredPanel?.isConnected) {
           const target = restoredPanel.querySelector<HTMLElement>('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),select:not(:disabled),a[href],[tabindex="0"]');
           (target || restoredPanel).focus();
         }
-      });
+      };
+      requestAnimationFrame(restoreFocus);
     };
-  }, [open]);
+  }, [open, returnFocusRef]);
   return ref;
 }

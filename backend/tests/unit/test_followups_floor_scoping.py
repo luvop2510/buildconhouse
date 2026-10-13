@@ -69,11 +69,12 @@ def test_insights_scopes_every_query_to_the_active_floor(monkeypatch):
     fake_db = _FakeDb()
     monkeypatch.setattr(followups, "db", fake_db)
 
-    asyncio.run(followups.insights(user=_user("ground-floor")))
+    result = asyncio.run(followups.insights(user=_user("ground-floor")))
 
     expected = {"$in": ["ground-floor"]}
     assert _floor_id_constraint(fake_db.activity_events.last_count_filter) == expected
-    assert _floor_id_constraint(fake_db.payments.last_find_filter) == expected
+    assert fake_db.payments.last_find_filter is None
+    assert result['payments_collected'] == 0
     assert _floor_id_constraint(fake_db.quotations.last_count_filter) == expected
     # followups.count_documents is called twice (completed_today, still_open) —
     # last_count_filter only captures the final call, which is enough to prove
@@ -260,8 +261,12 @@ def test_followup_detail_scopes_every_related_record_to_followups_floor(monkeypa
     detail = asyncio.run(followups.get_detail("f-ground", user=_user("ground-floor")))
 
     assert detail["customer"]["floor_id"] == "ground-floor"
-    for collection in (fake_db.customers, fake_db.quotations, fake_db.payments, fake_db.purchase_orders):
+    for collection in (fake_db.customers, fake_db.quotations):
         assert collection.queries[-1]["floor_id"] == "ground-floor"
+    assert fake_db.quotations.queries[-1]["status"] == {"$in": ["draft", "sent", "pending_approval", "approved", "selection"]}
+    assert fake_db.payments.queries == fake_db.purchase_orders.queries == []
+    assert detail['payments'] == detail['purchases'] == []
+    assert captured_timeline['entity_type'] == 'followup' and captured_timeline['entity_id'] == 'f-ground'
     assert captured_timeline["floor_ids"] == ["ground-floor"]
 
 

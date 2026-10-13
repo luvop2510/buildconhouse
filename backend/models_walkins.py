@@ -14,7 +14,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from models import TimestampedModel
+from models import TimestampedModel, FollowupAssignment, ReferrerType
 
 WalkInStatus = Literal[
     "new", "contacted", "selection_scheduled", "selection_completed",
@@ -30,6 +30,13 @@ WALKIN_OPEN_STATUSES: tuple[str, ...] = ("new", "contacted", "selection_schedule
 
 
 class WalkIn(TimestampedModel):
+    interested_floor_ids: Optional[list[str]] = Field(default=None, min_length=1, max_length=20)
+    assignments: Optional[list[FollowupAssignment]] = Field(default=None, max_length=100)
+    reference_source: Optional[str] = Field(default=None, max_length=200)
+    referrer_id: Optional[str] = None
+    referrer_name: Optional[str] = None
+    referrer_type: Optional[ReferrerType] = None
+    scope_followup_id: Optional[str] = None
     number: str                              # e.g. "WI-2026-0001"
     customer_id: str
     customer_name: str                       # denormalized snapshot, same pattern as Quotation.customer_name
@@ -70,6 +77,10 @@ class WalkIn(TimestampedModel):
 
 
 class WalkInCreate(BaseModel):
+    interested_floor_ids: Optional[list[str]] = Field(default=None, min_length=1, max_length=20)
+    assignments: Optional[list[FollowupAssignment]] = Field(default=None, max_length=100)
+    reference_source: Optional[str] = Field(default=None, max_length=200)
+    referrer_id: Optional[str] = None
     customer_name: str
     customer_phone: str
     alternate_phone: Optional[str] = None
@@ -99,6 +110,10 @@ class WalkInCreate(BaseModel):
 
 
 class WalkInUpdate(BaseModel):
+    interested_floor_ids: Optional[list[str]] = Field(default=None, min_length=1, max_length=20)
+    assignments: Optional[list[FollowupAssignment]] = Field(default=None, max_length=100)
+    reference_source: Optional[str] = Field(default=None, max_length=200)
+    referrer_id: Optional[str] = None
     status: Optional[WalkInStatus] = None
     salesperson_id: Optional[str] = None
     notes: Optional[str] = None

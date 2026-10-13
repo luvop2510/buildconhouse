@@ -1349,12 +1349,35 @@ NotebookField = Literal[
 ]
 
 
+class FollowupAssignment(BaseModel):
+    floor_id: str
+    user_id: str
+    user_name: Optional[str] = None
+
+
+class FollowupInterestsPayload(BaseModel):
+    interested_floor_ids: list[str] = Field(min_length=1, max_length=20)
+    assignments: Optional[list[FollowupAssignment]] = Field(default=None, max_length=100)
+    reference_source: Optional[str] = Field(default=None, max_length=200)
+    referrer_id: Optional[str] = None
+
+
 class Followup(TimestampedModel):
     """A single actionable card in the Follow-ups workspace. Automated rows are
     produced (and kept in sync / auto-resolved) by services/followup_engine.py —
     never created ad-hoc elsewhere. Manual rows (is_automated=False) are created
     by staff via the '+ New Follow-up' action or a logged call outcome."""
     floor_id: str
+    interested_floor_ids: list[str] = Field(default_factory=list)
+    assignments: list[FollowupAssignment] = Field(default_factory=list)
+    lead_group_id: Optional[str] = None
+    reference_source: Optional[str] = None
+    pending_call_id: Optional[str] = None
+    pending_call_actor_id: Optional[str] = None
+    call_attempts: int = 0
+    latest_response: Optional[str] = None
+    consolidated_order_id: Optional[str] = None
+    consolidated_order_floor_id: Optional[str] = None
     source_key: Optional[str] = None        # dedupe key for automated rules, e.g. "payment_overdue:<qid>"
     walkin_id: Optional[str] = None
     origin: Optional[str] = None
@@ -1417,6 +1440,11 @@ class Followup(TimestampedModel):
 
 
 class FollowupCreate(BaseModel):
+    request_key: Optional[str] = Field(default=None, min_length=8, max_length=128, pattern=r'^[A-Za-z0-9._:-]+$')
+    interested_floor_ids: Optional[list[str]] = Field(default=None, min_length=1, max_length=20)
+    assignments: Optional[list[FollowupAssignment]] = Field(default=None, max_length=100)
+    reference_source: Optional[str] = Field(default=None, max_length=200)
+    referrer_id: Optional[str] = None
     customer_id: str
     quotation_id: Optional[str] = None
     purchase_id: Optional[str] = None
@@ -1430,6 +1458,10 @@ class FollowupCreate(BaseModel):
 
 
 class FollowupUpdate(BaseModel):
+    interested_floor_ids: Optional[list[str]] = Field(default=None, min_length=1, max_length=20)
+    assignments: Optional[list[FollowupAssignment]] = Field(default=None, max_length=100)
+    reference_source: Optional[str] = Field(default=None, max_length=200)
+    referrer_id: Optional[str] = None
     notes: Optional[str] = None
     due_at: Optional[str] = None
     assigned_to: Optional[str] = None
@@ -1451,6 +1483,9 @@ class FollowupCompletePayload(BaseModel):
 
 
 class FollowupCallOutcomePayload(BaseModel):
+    assignments: Optional[list[FollowupAssignment]] = Field(default=None, max_length=100)
+    interested_floor_ids: Optional[list[str]] = Field(default=None, min_length=1, max_length=20)
+    response: Optional[str] = Field(default=None, max_length=2000)
     outcome: FollowupOutcome
     notes: Optional[str] = None
     # Required by the route for a pending customer.  Keeping it optional here
@@ -1464,6 +1499,9 @@ class FollowupContactPayload(BaseModel):
 
 
 class NotebookFollowupCreatePayload(BaseModel):
+    interested_floor_ids: Optional[list[str]] = Field(default=None, min_length=1, max_length=20)
+    assignments: Optional[list[FollowupAssignment]] = Field(default=None, max_length=100)
+    reference_source: Optional[str] = Field(default=None, max_length=200)
     customer_name: str
     customer_phone: str
     address: Optional[str] = None

@@ -6,6 +6,7 @@ new workspaces consume this small, paginated read model instead.
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from typing import Literal
 
@@ -20,6 +21,7 @@ from services.analytics.breakdowns import brand_rows, order_rows, product_rows
 from services.analytics.gather_breakdowns import _ordered_match
 from services.analytics.workspaces import ORDER_FIELDS, gather_workspace, gather_workspace_labels
 from services.analytics.periods import resolve
+from services.analytics.lead_referrals import gather_acquired_customers, merge_acquisitions
 
 router = APIRouter(prefix="/analytics/workspaces", tags=["analytics"])
 
@@ -116,14 +118,17 @@ async def workspace(
     kind = "architect" if workspace == "architects" else "interior_designer" if workspace == "interior-designers" else None
     try:
         match = await _ordered_match(db, f, floors, (period.start, period.end))
-        summary = await gather_workspace(db, match, kind)
+        reads = [gather_workspace(db, match, kind), gather_product_line_revenue(db, f, floors, (period.start, period.end), limit=None)]
+        if workspace in ("architects", "interior-designers", "relationships"):
+            reads.append(gather_acquired_customers(db, f, floors, (period.start, period.end), kind, match))
+        results = await asyncio.gather(*reads)
+        summary, line = results[:2]
     except FloorAccessError as exc:
         raise _floor_error_to_http(exc) from exc
     # The line pipeline remains the source of truth for product/brand numbers.
-    line = await gather_product_line_revenue(db, f, floors, (period.start, period.end), limit=None)
     product_ids = [r.get("key") for r in line if r.get("key")]
-    product_brand, brand_names = await gather_product_brands(db, product_ids)
-    names, skus = await gather_workspace_labels(db, match, product_ids[:100])
+    (product_brand, brand_names), (names, skus) = await asyncio.gather(
+        gather_product_brands(db, product_ids), gather_workspace_labels(db, match, product_ids[:100]))
     brands = [r.__dict__ for r in brand_rows(line, product_brand, brand_names)]
     products = [r.__dict__ for r in product_rows([r for r in line if r.get("key")][:100], names, skus, product_brand, brand_names)]
     hansgrohe = next((r["revenue"] for r in brands if r["name"].strip().lower() == "hansgrohe"), 0.0)
@@ -134,7 +139,7 @@ async def workspace(
         "floors": summary["floors"],
     }
     if workspace in ("architects", "interior-designers", "relationships"):
-        payload["relationships"] = summary["relationships"]
+        payload["relationships"] = merge_acquisitions(summary["relationships"], results[2])
     if workspace == "forecasting":
         payload["forecast"] = await _forecast(f, floors)
     return payload

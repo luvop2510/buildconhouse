@@ -44,6 +44,11 @@ def test_placed_order_completes_only_matching_active_notebook_in_same_transactio
     original = deepcopy(rows)
     token = object()
     class Followups:
+        def find(self, query, projection=None, *, session=None):
+            class Cursor:
+                async def to_list(self, limit):
+                    return [dict(row) for row in rows if _matches(row, query)][:limit]
+            return Cursor()
         async def update_many(self, query, update, *, session=None):
             assert session is token
             count = 0
@@ -119,6 +124,11 @@ def test_actual_order_closes_unlinked_same_customer_showroom_sales_only(monkeypa
     original = deepcopy(rows)
     transaction = object()
     class Followups:
+        def find(self, query, projection=None, *, session=None):
+            class Cursor:
+                async def to_list(self, limit):
+                    return [dict(row) for row in rows if _matches(row, query)][:limit]
+            return Cursor()
         async def update_many(self, query, update, *, session=None):
             assert session is transaction
             count = 0
@@ -129,9 +139,9 @@ def test_actual_order_closes_unlinked_same_customer_showroom_sales_only(monkeypa
             return SimpleNamespace(modified_count=count)
     monkeypatch.setattr(quotation_routes, "db", SimpleNamespace(followups=Followups()))
     args = dict(floor_id="first-floor", customer_id="c1", creator_id="creator", creator_name="Original creator", session=transaction)
-    assert asyncio.run(quotation_routes._complete_pre_confirmation_followups("q1", "FQ-1", **args)) == 3
-    assert rows[3:] == original[3:]
-    for row in rows[:3]:
+    assert asyncio.run(quotation_routes._complete_pre_confirmation_followups("q1", "FQ-1", **args)) == 4
+    assert rows[3:-1] == original[3:-1]
+    for row in [*rows[:3], rows[-1]]:
         assert row["status"] == "done" and row["completed_outcome"] == "won"
         assert row["assigned_to"] == "creator" and row["assigned_to_name"] == "Original creator"
         assert row["quotation_id"] == "q1" and row["quotation_number"] == "FQ-1"

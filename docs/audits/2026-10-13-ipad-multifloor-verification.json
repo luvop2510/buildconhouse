@@ -1,0 +1,379 @@
+{
+  "source": {
+    "baseCommit": "3e93bfdd8e1a3868536508a6576bbf941b563e8b",
+    "branch": "codex/stability-review-2026-10-12",
+    "candidateCodeDiffSha256": "2dde2f9b9513f16b5ffab8e11ff7a17a7588865be95f6e4204184ee9e16bd9bf",
+    "fingerprintMethod": "SHA256 of staged binary Git diff from base for app, src, backend, scripts, e2e, package.json and playwright.devices.config.ts; audit prose excluded."
+  },
+  "backend": {
+    "passed": 2346,
+    "warnings": 6,
+    "disposableMongoIntegrationCases": 4,
+    "hermetic": true
+  },
+  "frontend": {
+    "requiredContractCommandsPassed": 40,
+    "failedCommands": 0,
+    "typecheck": "pass",
+    "zeroWarningLint": "pass",
+    "freshProductionExport": "pass"
+  },
+  "featureBrowser": {
+    "startTime": "2026-10-13T18:07:02.564Z",
+    "duration": 47018.981,
+    "expected": 55,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "ipadSafariBrowser": {
+    "startTime": "2026-10-13T18:08:16.560Z",
+    "duration": 135893.85400000002,
+    "expected": 118,
+    "skipped": 4,
+    "unexpected": 0,
+    "flaky": 0,
+    "skipReason": "Four explicitly phone-only command-palette/shell cases do not apply to iPad."
+  },
+  "performanceAudit": {
+    "command": "npm run test:performance:audit",
+    "stats": {
+      "startTime": "2026-10-13T18:11:55.906Z",
+      "duration": 123993.66399999999,
+      "expected": 44,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "bundlePages": 159,
+    "largestInitialJsKiBGzip": 451,
+    "bundleLimitKiBGzip": 576,
+    "retries": 0,
+    "concurrentBrowserWork": false,
+    "teamAssignMetrics": [
+      {
+        "metric": "team-assignment-performance",
+        "scenario": "team assign renders a full activity page and switches floors promptly",
+        "device": "android-chrome",
+        "result": "passed",
+        "readyMs": 1526.142833,
+        "expandMs": 87.30154099999982,
+        "floorMs": 410.77537500000017,
+        "leads": 50,
+        "reads": [
+          {
+            "path": "/api/settings/permission-matrix",
+            "query": "",
+            "atMs": 340.13920800000005,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/floor-access",
+            "query": "",
+            "atMs": 340.4724170000002,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/auth/me",
+            "query": "",
+            "atMs": 340.6572920000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/followups/team-assign",
+            "query": "?floor_ids=first-floor%2Cground-floor%2Csecond-floor%2Cthird-floor&page=1&page_size=50",
+            "atMs": 856.286167,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/followups/team-assign",
+            "query": "?floor_ids=ground-floor&page=1&page_size=50",
+            "atMs": 1663.927417,
+            "floor": "first-floor"
+          }
+        ]
+      },
+      {
+        "metric": "team-assignment-performance",
+        "scenario": "team assign renders a full activity page and switches floors promptly",
+        "device": "iphone-safari",
+        "result": "passed",
+        "readyMs": 1707.455625,
+        "expandMs": 67.05491600000005,
+        "floorMs": 483.3601669999998,
+        "leads": 50,
+        "reads": [
+          {
+            "path": "/api/auth/me",
+            "query": "",
+            "atMs": 438.01441599999976,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/floor-access",
+            "query": "",
+            "atMs": 740.789833,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/permission-matrix",
+            "query": "",
+            "atMs": 741.162583,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/followups/team-assign",
+            "query": "?floor_ids=first-floor%2Cground-floor%2Csecond-floor%2Cthird-floor&page=1&page_size=50",
+            "atMs": 1259.9881659999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/followups/team-assign",
+            "query": "?floor_ids=ground-floor&page=1&page_size=50",
+            "atMs": 1841.6944579999997,
+            "floor": "first-floor"
+          }
+        ]
+      },
+      {
+        "metric": "team-assignment-performance",
+        "scenario": "team assign renders a full activity page and switches floors promptly",
+        "device": "ipad-safari",
+        "result": "passed",
+        "readyMs": 1128.4842499999997,
+        "expandMs": 81.90737500000023,
+        "floorMs": 431.48737500000016,
+        "leads": 50,
+        "reads": [
+          {
+            "path": "/api/settings/permission-matrix",
+            "query": "",
+            "atMs": 381.9820420000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/floor-access",
+            "query": "",
+            "atMs": 382.29475,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/auth/me",
+            "query": "",
+            "atMs": 382.34400000000005,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/followups/team-assign",
+            "query": "?floor_ids=first-floor%2Cground-floor%2Csecond-floor%2Cthird-floor&page=1&page_size=50",
+            "atMs": 901.2874579999998,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/followups/team-assign",
+            "query": "?floor_ids=ground-floor&page=1&page_size=50",
+            "atMs": 1279.061667,
+            "floor": "first-floor"
+          }
+        ]
+      },
+      {
+        "metric": "team-assignment-performance",
+        "scenario": "team assign renders a full activity page and switches floors promptly",
+        "device": "desktop-chrome",
+        "result": "passed",
+        "readyMs": 1590.9497499999998,
+        "expandMs": 87.79908400000022,
+        "floorMs": 386.3154159999999,
+        "leads": 50,
+        "reads": [
+          {
+            "path": "/api/auth/me",
+            "query": "",
+            "atMs": 227.6986670000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/floor-access",
+            "query": "",
+            "atMs": 528.1095,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/permission-matrix",
+            "query": "",
+            "atMs": 528.3602500000002,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/followups/team-assign",
+            "query": "?floor_ids=first-floor%2Cground-floor%2Csecond-floor%2Cthird-floor&page=1&page_size=50",
+            "atMs": 1043.8211670000003,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/followups/team-assign",
+            "query": "?floor_ids=ground-floor&page=1&page_size=50",
+            "atMs": 1709.9609590000002,
+            "floor": "first-floor"
+          }
+        ]
+      }
+    ]
+  },
+  "totalResponseBenchmark": {
+    "measuredAt": "2026-10-13T12:09:18.772Z",
+    "methodology": "Read-only GET /api/health through current production, total includes body consumption, execution host network, TCP/TLS and proxy. First sample cold; later connections warm. Not a customer-region or physical-device certificate.",
+    "results": [
+      {
+        "origin": "https://buildconhouse.in",
+        "benchmarkMs": 2,
+        "passed": false,
+        "minMs": 188.71,
+        "medianMs": 200.62,
+        "p95Ms": 1296.49,
+        "samples": [
+          {
+            "totalMs": 1296.49,
+            "status": 200,
+            "serverTiming": "app;dur=128.8, upstream;dur=405.7"
+          },
+          {
+            "totalMs": 216.27,
+            "status": 200,
+            "serverTiming": "app;dur=63.3, upstream;dur=144.0"
+          },
+          {
+            "totalMs": 215.03,
+            "status": 200,
+            "serverTiming": "app;dur=63.5, upstream;dur=135.1"
+          },
+          {
+            "totalMs": 195.14,
+            "status": 200,
+            "serverTiming": "app;dur=64.8, upstream;dur=131.0"
+          },
+          {
+            "totalMs": 199.37,
+            "status": 200,
+            "serverTiming": "app;dur=63.9, upstream;dur=131.1"
+          },
+          {
+            "totalMs": 189.5,
+            "status": 200,
+            "serverTiming": "app;dur=63.4, upstream;dur=126.1"
+          },
+          {
+            "totalMs": 201.86,
+            "status": 200,
+            "serverTiming": "app;dur=63.6, upstream;dur=132.5"
+          },
+          {
+            "totalMs": 188.71,
+            "status": 200,
+            "serverTiming": "app;dur=63.1, upstream;dur=127.5"
+          },
+          {
+            "totalMs": 238.02,
+            "status": 200,
+            "serverTiming": "app;dur=63.6, upstream;dur=175.7"
+          },
+          {
+            "totalMs": 194.89,
+            "status": 200,
+            "serverTiming": "app;dur=63.4, upstream;dur=133.9"
+          }
+        ]
+      },
+      {
+        "origin": "https://forge20-production-a8b0.up.railway.app",
+        "benchmarkMs": 2,
+        "passed": false,
+        "minMs": 153.61,
+        "medianMs": 178.2,
+        "p95Ms": 478.31,
+        "samples": [
+          {
+            "totalMs": 478.31,
+            "status": 200,
+            "serverTiming": "app;dur=64.2"
+          },
+          {
+            "totalMs": 153.61,
+            "status": 200,
+            "serverTiming": "app;dur=63.2"
+          },
+          {
+            "totalMs": 156.44,
+            "status": 200,
+            "serverTiming": "app;dur=65.5"
+          },
+          {
+            "totalMs": 310.97,
+            "status": 200,
+            "serverTiming": "app;dur=63.4"
+          },
+          {
+            "totalMs": 163.93,
+            "status": 200,
+            "serverTiming": "app;dur=63.3"
+          },
+          {
+            "totalMs": 235.24,
+            "status": 200,
+            "serverTiming": "app;dur=63.5"
+          },
+          {
+            "totalMs": 157.87,
+            "status": 200,
+            "serverTiming": "app;dur=63.7"
+          },
+          {
+            "totalMs": 191.68,
+            "status": 200,
+            "serverTiming": "app;dur=63.3"
+          },
+          {
+            "totalMs": 164.71,
+            "status": 200,
+            "serverTiming": "app;dur=63.6"
+          },
+          {
+            "totalMs": 214.06,
+            "status": 200,
+            "serverTiming": "app;dur=64.3"
+          }
+        ]
+      }
+    ],
+    "summaryMethod": "Median is the arithmetic mean of the two middle samples; p95 uses nearest rank. Raw samples are unchanged."
+  },
+  "migration": {
+    "pending": "0034_preorder_lead_scope",
+    "dryRun": "pass",
+    "appliedToProduction": false,
+    "idempotencyVerifiedInLocalMongo": true
+  },
+  "dependencySecurity": {
+    "high": 22,
+    "moderate": 5,
+    "total": 27,
+    "gate": "failed",
+    "existingFindings": true,
+    "suppressed": false
+  },
+  "limitations": [
+    "Controlled Safari visual-viewport/emulation tests; physical iPad keyboard not certified.",
+    "Fixture rendering and service computation budgets are different from total production HTTP duration.",
+    "Current production health samples are baseline evidence, not candidate deployment measurements."
+  ],
+  "publication": {
+    "githubPush": false,
+    "vercelUpdate": false,
+    "railwayUpdate": false,
+    "productionMigration": false,
+    "reason": "Awaiting user acceptance of measured total-response latency exceeding requested 2 ms.",
+    "existingPullRequest": "https://github.com/luvop2510/buildconhouse/pull/16",
+    "protectedMainRequirementsPreserved": true
+  }
+}

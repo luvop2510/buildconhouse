@@ -144,7 +144,7 @@ def test_showroom_tab_and_multi_filters_are_database_side():
     clauses = query["$and"][1]["$and"]
     assert {"origin": "visit_showroom"} in clauses
     assert {"category": {"$in": ["walk_in", "sales"]}} in clauses
-    assert {"assigned_to": {"$in": ["a", "b"]}} in clauses
+    assert {"$or": [{"assigned_to": {"$in": ["a", "b"]}}, {"assignments": {"$elemMatch": {"user_id": {"$in": ["a", "b"]}, "floor_id": "first-floor"}}}]} in clauses
 
 
 def test_migration_removes_only_verified_test_choices():

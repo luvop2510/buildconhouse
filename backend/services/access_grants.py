@@ -240,6 +240,8 @@ def resource_candidates_for_api_path(path: str, floor_id: str | None) -> tuple[s
         return ("furniture_quotations",)
     if path == "/api/referrers" or path.startswith("/api/referrers/"):
         return ("quotations", "tiles", "notebook_walkins", "notebook_quotations", "sales_data")
+    if path == "/api/followups/assignees":
+        return ("notebook_walkins", "notebook_quotations") if floor_id in {"second-floor", "third-floor"} else ("followups", "walkins")
     resource = resource_for_api_path(path)
     if resource is None:
         return ()
@@ -255,8 +257,8 @@ async def request_resource(database: Any, path: str, query: Any = None) -> str |
     access to a converted quotation. Generic contact uses the same resolver.
     """
     notebook = fullmatch(r"/api/followups/notebook/([^/]+)(?:/([^/]+)(?:/[^/]+)?)?", path)
-    generic = fullmatch(r"/api/followups/([^/]+)(?:/(snooze|complete|contact|log-call))?", path)
-    if generic and generic.group(1) in {"reconcile", "stats", "mission", "insights", "export", "saved-views", "page", "assignments"}:
+    generic = fullmatch(r"/api/followups/([^/]+)(?:/(snooze|complete|contact|log-call|interests))?", path)
+    if generic and generic.group(1) in {"reconcile", "stats", "mission", "insights", "export", "saved-views", "page", "assignments", "assignees", "team-assign"}:
         generic = None
     if notebook and not notebook.group(2):
         return "notebook_quotations" if query and query.get("view") == "quotation" else "notebook_walkins"
@@ -265,7 +267,7 @@ async def request_resource(database: Any, path: str, query: Any = None) -> str |
         if notebook:
             lookup["floor_id"] = notebook.group(1)
         row = await database.followups.find_one(lookup, {"_id": 0, "is_converted": 1, "notebook_key": 1})
-        if generic and row and row.get("notebook_key") and generic.group(2) != "contact":
+        if generic and row and row.get("notebook_key") and generic.group(2) not in {"contact", "interests"}:
             # Generic detail returns related quotations/payments; a notebook
             # grant covers only its narrow DTO and must use notebook URLs.
             return "__notebook_route_required"

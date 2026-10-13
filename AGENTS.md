@@ -2,6 +2,28 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
+## iPad forms and multi-floor pre-order leads — 2026-10-13
+
+Follow-ups cover pre-order sales only. Operational/payment/purchase/dispatch/
+delivery reminders are retired; committed orders consolidate related floor leads
+while retaining historical worker assignments and quotation-creator attribution.
+Multi-floor interested/assignment edits preserve floor-local records and require
+the actual destination notebook stage's view/update grants. Typed-phone intake
+resolves existing destination stages too. Manual creation retries use a member/
+floor-bound request key and persisted fingerprint. Call outcomes consume only
+their own pending attempt. Team assign is owner-only with full aggregate counts,
+paged details and explicit activity truncation. Interior reporting counts acquired
+people before an order and deduplicates their phone identity across floors.
+
+Web roots and overlay portals track Safari's visual viewport; do not restore
+closing-modal focus before its portal is removed or apply keyboard resizing to
+pinch zoom. Team shows one Phone field and preserves distinct legacy contact data.
+Migration 0034 is controlled and pending in production. The user clarified a
+total HTTP response requirement under 2 ms; current hosted baseline samples fail
+it. GitHub push/live migration/Vercel/Railway publication require acceptance of
+that measured gap. Read docs/audits/2026-10-13-ipad-multifloor-leads.md and its
+companion verification JSON for final local checks and publication status.
+
 ## Passwords, lost reasons and mobile workflow update — 2026-10-13
 
 Current policy supersedes the older owner-managed-only password notes below:

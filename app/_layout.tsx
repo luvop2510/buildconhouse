@@ -7,6 +7,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { useAppFonts } from "@/src/hooks/use-app-fonts";
+import { useKeyboardViewport } from "@/src/hooks/use-keyboard-viewport";
 import { AuthProvider, useAuth } from "@/src/state/auth";
 import { staffLandingPath } from "@/src/access-profiles";
 import { colors } from "@/src/theme/tokens";
@@ -79,6 +80,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 }
 
 export default function RootLayout() {
+  useKeyboardViewport();
   const [loaded, error] = useAppFonts();
   useEffect(() => {
     if (loaded || error) SplashScreen.hideAsync();

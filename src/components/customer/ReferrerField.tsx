@@ -7,8 +7,8 @@ import { Alert, Button, Sheet } from "@/src/components/ui";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
 import { useBp } from "@/src/design/responsive";
 
-type Referrer = { id: string; name: string; type: "architect" | "interior_designer" };
-type ReferrerValue = Pick<Referrer, "id" | "name" | "type"> | null;
+type Referrer = { id: string; name: string; company?: string | null; type: "architect" | "interior_designer" };
+type ReferrerValue = Pick<Referrer, "id" | "name" | "type" | "company"> | null;
 
 export function ReferrerField({ value, onChange, floorId, label = "Referred By", allowCreate = true }: { value: ReferrerValue; onChange: (value: ReferrerValue) => void; floorId?: string; label?: string; allowCreate?: boolean }) {
   const { isPhone } = useBp();
@@ -16,12 +16,13 @@ export function ReferrerField({ value, onChange, floorId, label = "Referred By",
   const [items, setItems] = useState<Referrer[]>([]);
   const [kind, setKind] = useState<Referrer["type"]>("architect");
   const [name, setName] = useState("");
+  const [company, setCompany] = useState("");
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const lifecycle = useRef(0);
   useEffect(() => {
     lifecycle.current += 1;
-    setAdding(false); setName(""); setError(null);
+    setAdding(false); setName(""); setCompany(""); setError(null);
     return () => { lifecycle.current += 1; };
   }, [floorId]);
 
@@ -41,7 +42,7 @@ export function ReferrerField({ value, onChange, floorId, label = "Referred By",
     const version = lifecycle.current;
     setAdding(true); setError(null);
     try {
-      const created = await api.post<Referrer>("/referrers", { name: name.trim(), type: kind }, floorId ? { floorId } : undefined);
+      const created = await api.post<Referrer>("/referrers", { name: name.trim(), type: kind, company: company.trim() || null }, floorId ? { floorId } : undefined);
       if (version !== lifecycle.current) return;
       setItems((current) => [...current, created]);
       choose(created);
@@ -53,7 +54,7 @@ export function ReferrerField({ value, onChange, floorId, label = "Referred By",
   return <View style={{ gap: 6 }}>
     <Text style={type.label}>{label}</Text>
     <Pressable onPress={() => setOpen(true)} style={{ minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md, justifyContent: "center" }}>
-      <Text style={type.body}>{value?.name || "Select architect or interior designer"}</Text>
+      <Text style={type.body}>{value ? [value.name, value.company].filter(Boolean).join(" · ") : "Select architect or interior designer"}</Text>
     </Pressable>
     <Sheet visible={open} onClose={() => setOpen(false)} title="Referred By" variant="bottom" testID="customer-referrer-sheet">
       <ScrollView contentContainerStyle={{ padding: isPhone ? spacing.md : spacing.lg, gap: spacing.sm, paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
@@ -62,10 +63,11 @@ export function ReferrerField({ value, onChange, floorId, label = "Referred By",
           {(["architect", "interior_designer"] as const).map((option) => <Button key={option} label={option === "architect" ? "Architect" : "Interior designer"} variant={kind === option ? "primary" : "secondary"} onPress={() => setKind(option)} />)}
         </View>
         <Pressable onPress={() => choose(null)} style={{ paddingVertical: spacing.sm }}><Text style={type.body}>No referrer</Text></Pressable>
-        {filtered.map((item) => <Pressable key={item.id} onPress={() => choose(item)} style={{ paddingVertical: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border }}><Text style={type.body}>{item.name}</Text></Pressable>)}
+        {filtered.map((item) => <Pressable key={item.id} onPress={() => choose(item)} style={{ paddingVertical: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border }}><Text style={type.body}>{[item.name, item.company].filter(Boolean).join(" · ")}</Text></Pressable>)}
         {allowCreate ? <>
         <Text style={[type.label, { marginTop: spacing.md }]}>Add new {kind === "architect" ? "architect" : "interior designer"}</Text>
-        <TextInput value={name} onChangeText={setName} placeholder="Name or studio" style={{ minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md }} />
+        <TextInput value={name} onChangeText={setName} placeholder="Designer / architect name" accessibilityLabel="Designer / architect name" style={{ minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md }} />
+        <TextInput value={company} onChangeText={setCompany} placeholder="Interior / studio name (optional)" accessibilityLabel="Interior / studio name" style={{ minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md }} testID="lead-interior-company" />
         <Button label={adding ? "Adding…" : "Add and select"} disabled={adding || !name.trim()} onPress={add} />
         </> : null}
       </ScrollView>

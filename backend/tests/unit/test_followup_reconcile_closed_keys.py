@@ -10,7 +10,7 @@ visible symptom was one startup WARNING:
 
     Initial follow-up reconciliation skipped: E11000 duplicate key error
     collection: buildcon_house.followups index: followups_source_key_unique
-    dup key: { source_key: "order_confirmed_ops:f9552cd6-..." }
+    dup key: { source_key: "quotation_new:f9552cd6-..." }
 
 Reproduced against live `buildcon_house`, which had 83 completed automated
 follow-ups holding source keys at the time.
@@ -103,8 +103,8 @@ def _patch_engine(monkeypatch, followups: _FakeFollowups):
 
 DESIRED_FIELDS = {
     "customer_id": "c1", "customer_name": "Menon", "quotation_id": "q1",
-    "rule_type": "order_confirmed_ops", "reason": "Hand off to ops",
-    "priority_level": "medium", "floor_id": "ground-floor",
+    "rule_type": "quotation_new", "reason": "Discuss quotation",
+    "category": "quotation", "priority_level": "medium", "floor_id": "ground-floor",
     "next_action": "Call", "channel": "call",
     "due_at": "2026-08-05T00:00:00+00:00",
 }
@@ -112,13 +112,13 @@ DESIRED_FIELDS = {
 
 def test_closed_source_key_is_skipped_not_reinserted(monkeypatch):
     followups = _FakeFollowups([
-        {"id": "f-old", "source_key": "order_confirmed_ops:q1", "is_automated": True,
+        {"id": "f-old", "source_key": "quotation_new:q1", "is_automated": True,
          "status": "done", "customer_id": "c1"},
     ])
     _patch_engine(monkeypatch, followups)
 
     result = asyncio.run(engine._persist_desired_followups(
-        {"order_confirmed_ops:q1": dict(DESIRED_FIELDS)},
+        {"quotation_new:q1": dict(DESIRED_FIELDS)},
         quotation_created_by={},
     ))
 
@@ -132,27 +132,27 @@ def test_a_genuinely_new_key_is_still_created(monkeypatch):
     _patch_engine(monkeypatch, followups)
 
     result = asyncio.run(engine._persist_desired_followups(
-        {"order_confirmed_ops:q2": dict(DESIRED_FIELDS)},
+        {"quotation_new:q2": dict(DESIRED_FIELDS)},
         quotation_created_by={},
     ))
 
     assert result["created"] == 1
-    assert followups.rows[0]["source_key"] == "order_confirmed_ops:q2"
+    assert followups.rows[0]["source_key"] == "quotation_new:q2"
 
 
 def test_one_duplicate_does_not_abort_the_remaining_cards(monkeypatch):
     """The regression that mattered: a single bad key used to kill the pass."""
     followups = _FakeFollowups([
-        {"id": "f-old", "source_key": "order_confirmed_ops:q1", "is_automated": True,
+        {"id": "f-old", "source_key": "quotation_new:q1", "is_automated": True,
          "status": "done", "customer_id": "c1"},
     ])
     _patch_engine(monkeypatch, followups)
 
     result = asyncio.run(engine._persist_desired_followups(
         {
-            "order_confirmed_ops:q1": dict(DESIRED_FIELDS),
-            "order_confirmed_ops:q2": dict(DESIRED_FIELDS),
-            "order_confirmed_ops:q3": dict(DESIRED_FIELDS),
+            "quotation_new:q1": dict(DESIRED_FIELDS),
+            "quotation_new:q2": dict(DESIRED_FIELDS),
+            "quotation_new:q3": dict(DESIRED_FIELDS),
         },
         quotation_created_by={},
     ))
@@ -160,35 +160,35 @@ def test_one_duplicate_does_not_abort_the_remaining_cards(monkeypatch):
     assert result["created"] == 2
     created_keys = {r["source_key"] for r in followups.rows}
     assert created_keys == {
-        "order_confirmed_ops:q1", "order_confirmed_ops:q2", "order_confirmed_ops:q3",
+        "quotation_new:q1", "quotation_new:q2", "quotation_new:q3",
     }
 
 
 def test_open_row_is_refreshed_rather_than_duplicated(monkeypatch):
     followups = _FakeFollowups([
-        {"id": "f-open", "source_key": "order_confirmed_ops:q1", "is_automated": True,
+        {"id": "f-open", "source_key": "quotation_new:q1", "is_automated": True,
          "status": "open", "reason": "stale reason"},
     ])
     _patch_engine(monkeypatch, followups)
 
     result = asyncio.run(engine._persist_desired_followups(
-        {"order_confirmed_ops:q1": dict(DESIRED_FIELDS)},
+        {"quotation_new:q1": dict(DESIRED_FIELDS)},
         quotation_created_by={},
     ))
 
     assert result["created"] == 0 and result["updated"] == 1
-    assert followups.rows[0]["reason"] == "Hand off to ops"
+    assert followups.rows[0]["reason"] == "Discuss quotation"
 
 
 def test_snoozed_row_is_left_completely_alone(monkeypatch):
     followups = _FakeFollowups([
-        {"id": "f-snz", "source_key": "order_confirmed_ops:q1", "is_automated": True,
+        {"id": "f-snz", "source_key": "quotation_new:q1", "is_automated": True,
          "status": "snoozed", "reason": "stale reason"},
     ])
     _patch_engine(monkeypatch, followups)
 
     result = asyncio.run(engine._persist_desired_followups(
-        {"order_confirmed_ops:q1": dict(DESIRED_FIELDS)},
+        {"quotation_new:q1": dict(DESIRED_FIELDS)},
         quotation_created_by={},
     ))
 

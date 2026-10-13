@@ -12,6 +12,9 @@ export type NotebookCreate = {
   referrer_id?: string | null;
   architect_interior_designer?: string;
   notes?: string;
+  interested_floor_ids?: string[];
+  assignments?: import("./leads").LeadAssignment[];
+  reference_source?: string | null;
 };
 
 const query = (values: Record<string, string | undefined>) => {

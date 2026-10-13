@@ -19,6 +19,7 @@ export type WalkIn = {
   customer_phone: string | null; alternate_phone: string | null; visited_at: string;
   salesperson_id: string | null; salesperson_name: string | null; source: string;
   reference_contact: string | null; architect: string | null; builder: string | null;
+  interested_floor_ids?: string[]; assignments?: import("./leads").LeadAssignment[]; referrer_id?: string | null; referrer_name?: string | null; referrer_type?: "architect" | "interior_designer" | null; reference_source?: string | null;
   floor_id: string; interested_products: string[]; budget: number | null; notes: string | null;
   quotation_price: number | null; showroom_followup_id?: string | null; showroom_transferred_at?: string | null;
   manual_priority_override: "low" | "medium" | "high" | "critical" | null;
@@ -61,6 +62,7 @@ export const walkinsApi = {
     visited_at?: string; salesperson_id?: string; source: string;
     reference_contact?: string; architect?: string; builder?: string;
     floor_id: string;
+    interested_floor_ids?: string[]; assignments?: import("./leads").LeadAssignment[]; referrer_id?: string | null; reference_source?: string | null;
     interested_products?: string[]; budget?: number; notes?: string;
     priority?: "low" | "medium" | "high" | "critical"; next_followup_at?: string;
     use_existing_customer_id?: string; force_new_customer?: boolean;
@@ -73,6 +75,7 @@ export const walkinsApi = {
     budget: number; interested_products: string[];
     quotation_price: number | null;
     reference_contact: string; architect: string; builder: string;
+    interested_floor_ids: string[]; assignments: import("./leads").LeadAssignment[]; referrer_id: string | null; reference_source: string | null;
   }>, options?: { floorId?: string }) => api.patch<WalkIn>(`/walkins/${id}`, body, options),
 
   visitShowroom: (id: string, options?: { floorId?: string }) =>

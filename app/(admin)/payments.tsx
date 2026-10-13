@@ -10,7 +10,7 @@ import { useReducedMotion } from "@/src/hooks/use-reduced-motion";
 import Feather from "@expo/vector-icons/Feather";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Linking, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -1268,7 +1268,7 @@ function RecordPaymentSheet(props: {
         </>
       }
     >
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1, minHeight: 0 }}>
+      <View style={{ flex: 1, minHeight: 0 }}>
         <ScrollView testID="record-payment-scroll" keyboardShouldPersistTaps="handled" style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ padding: spacing.xl, gap: spacing.lg }}>
           {error ? <UIAlert tone="error" title="Payment not saved" description={error} /> : null}
           <FormField label="Amount Received (₹)" required>
@@ -1361,7 +1361,7 @@ function RecordPaymentSheet(props: {
             />
           </FormField>
         </ScrollView>
-      </KeyboardAvoidingView>
+      </View>
     </Sheet>
   );
 }

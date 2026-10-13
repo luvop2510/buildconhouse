@@ -496,9 +496,9 @@ test('critical team contacts: malformed legacy responses cannot crash display or
   await expect(page.getByTestId('team-email-test-worker')).toHaveCount(0);
   await expect(page.getByTestId('team-phone-test-worker')).toHaveCount(0);
   await page.getByTestId('team-row-test-worker').click();
-  for (const field of ['email', 'phone', 'mobile']) await expect(page.getByTestId(`edit-staff-${field}`)).toHaveValue('');
+  for (const field of ['email', 'phone']) await expect(page.getByTestId(`edit-staff-${field}`)).toHaveValue('');
   if ((page.viewportSize()?.width || 0) >= 768) {
-    const boxes = await Promise.all(['phone', 'mobile', 'email'].map(field => page.getByTestId(`edit-staff-${field}`).boundingBox()));
+    const boxes = await Promise.all(['phone', 'email'].map(field => page.getByTestId(`edit-staff-${field}`).boundingBox()));
     for (const box of boxes) expect(box).not.toBeNull();
     expect(Math.max(...boxes.map(box => box!.y)) - Math.min(...boxes.map(box => box!.y))).toBeLessThan(2);
   }
@@ -518,17 +518,17 @@ test('critical team contacts: username-only creation, contact changes, clearing,
   await fillNewMember(page);
   await page.getByTestId('add-staff-email').fill('');
   await page.getByTestId('add-staff-phone').fill('+91 (079) 2345-6789');
-  await page.getByTestId('add-staff-mobile').fill('+91 98765 43210');
+  await expect(page.getByTestId('add-staff-mobile')).toHaveCount(0);
   await page.getByTestId('add-staff-save').click();
   const row = page.getByTestId('team-row-created-worker');
   await expect(row).toBeVisible();
   await expect(page.getByTestId('team-email-created-worker')).toHaveCount(0);
-  expect(writes[0].body).toMatchObject({ email: null, phone: '+91 (079) 2345-6789', mobile: '+91 98765 43210', login_id: 'NEW WORKER' });
+  expect(writes[0].body).toMatchObject({ email: null, phone: '+91 (079) 2345-6789', login_id: 'NEW WORKER' });
   await page.reload();
   await expect(row).toBeVisible();
   await row.click();
   await expect(page.getByTestId('edit-staff-phone')).toHaveValue('+91 (079) 2345-6789');
-  await expect(page.getByTestId('edit-staff-mobile')).toHaveValue('+91 98765 43210');
+  await expect(page.getByTestId('edit-staff-mobile')).toHaveCount(0);
   await page.getByTestId('edit-staff-email').fill(' new-worker@example.test ');
   await page.getByTestId('edit-staff-save').click();
   await expect(page.getByTestId('team-email-created-worker')).toHaveText('new-worker@example.test');
@@ -536,12 +536,11 @@ test('critical team contacts: username-only creation, contact changes, clearing,
   await page.reload();
   await row.click();
   await page.getByTestId('edit-staff-phone').fill('');
-  await page.getByTestId('edit-staff-mobile').fill('');
   await page.getByTestId('edit-staff-email').fill('');
   await page.getByTestId('edit-staff-save').click();
   await expect(page.getByTestId('team-phone-created-worker')).toHaveCount(0);
   await expect(page.getByTestId('team-email-created-worker')).toHaveCount(0);
-  expect(writes[2].body).toEqual({ email: null, phone: null, mobile: null });
+  expect(writes[2].body).toEqual({ email: null, phone: null });
   await page.reload();
   await row.click();
   await page.getByTestId('edit-staff-delete').click();
@@ -559,7 +558,6 @@ test('critical team contacts: invalid inputs block writes and preserve the draft
   for (const [id, value, message] of [
     ['email', 'bad-address', 'Enter a valid email address'],
     ['phone', '123', 'Phone must contain 7–15 digits, with an optional country code'],
-    ['mobile', '+91 abc 1234567', 'Mobile must contain 7–15 digits, with an optional country code'],
   ]) {
     await page.getByTestId(`add-staff-${id}`).fill(value);
     await page.getByTestId('add-staff-save').click();
@@ -572,6 +570,27 @@ test('critical team contacts: invalid inputs block writes and preserve the draft
   await expect(page.getByRole('alert')).toHaveText('Add an email or username so this person can sign in');
   await expect(page.getByTestId('add-staff-name')).toHaveValue('New Worker');
   expect(writes).toHaveLength(0);
+});
+
+test('critical team contacts: legacy mobile-only number stays usable through the unified Phone field', async ({ page }) => {
+  const { state, writes } = await teamFixture(page);
+  state.members[0] = { ...state.members[0], phone: null, mobile: '9876543210' };
+  await page.reload();
+  await expect(page.getByTestId('team-phone-test-worker')).toHaveText('Phone: 9876543210');
+  await page.getByTestId('team-row-test-worker').click();
+  await expect(page.getByTestId('edit-staff-phone')).toHaveValue('9876543210');
+  await expect(page.getByTestId('edit-staff-mobile')).toHaveCount(0);
+  await page.getByTestId('edit-staff-email').fill('updated@example.test');
+  await page.getByTestId('edit-staff-save').click();
+  await expect(page.getByTestId('edit-staff-sheet')).toHaveCount(0);
+  expect(writes[0].body).toEqual({ email: 'updated@example.test' });
+  await page.getByTestId('team-row-test-worker').click();
+  await page.getByTestId('edit-staff-phone').fill('');
+  await page.getByTestId('edit-staff-save').click();
+  await expect(page.getByTestId('edit-staff-sheet')).toHaveCount(0);
+  expect(writes[1].body).toEqual({ phone: null, mobile: null });
+  await page.reload();
+  await expect(page.getByTestId('team-phone-test-worker')).toHaveCount(0);
 });
 
 test('critical team contacts: contact-only edits preserve legacy role and credentials when access fails', async ({ page }) => {
@@ -593,11 +612,11 @@ test('critical team contacts: JK owner contact save never rewrites identity or a
   state.members = [{ ...member, id: 'audit-owner', login_id: 'JK', full_name: 'JK PATEL', role: 'owner' }];
   await page.reload();
   await page.getByTestId('team-row-audit-owner').click();
-  await page.getByTestId('edit-staff-mobile').fill('+91 98765 43210');
+  await page.getByTestId('edit-staff-phone').fill('+91 98765 43210');
   await page.getByTestId('edit-staff-save').click();
   await expect(page.getByTestId('edit-staff-sheet')).toHaveCount(0);
-  expect(writes[0]).toMatchObject({ path: '/api/team/audit-owner', body: { mobile: '+91 98765 43210' } });
-  expect(Object.keys(writes[0].body)).toEqual(['mobile']);
+  expect(writes[0]).toMatchObject({ path: '/api/team/audit-owner', body: { phone: '+91 98765 43210' } });
+  expect(Object.keys(writes[0].body)).toEqual(['phone']);
   await page.reload();
   await expect(page.getByTestId('team-add-btn')).toBeVisible();
 });

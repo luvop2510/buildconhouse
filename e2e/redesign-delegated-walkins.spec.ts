@@ -44,7 +44,7 @@ for (const floor of floors) {
     await expect(page.getByRole('heading', { name: 'Walk-ins', exact: true })).toBeVisible();
     await expect(page.getByTestId('walkin-card-delegated-visitor')).toContainText('Bathroom fittings, Tiles');
     await page.getByTestId('walkin-visit-showroom-delegated-visitor').click();
-    await expect(page.getByTestId('walkin-visit-showroom-delegated-visitor')).toContainText('View Visit Showroom');
+    await expect(page.getByTestId('walkin-card-delegated-visitor')).toHaveCount(0);
     await expect(page).toHaveURL(/\/walkins$/);
     await page.getByTestId('walkin-new-btn').click();
     await expect(page.getByTestId('walkin-salesperson-row')).toContainText(staff.full_name);

@@ -86,6 +86,11 @@ def serialize_notebook_row(document: dict[str, Any]) -> dict[str, Any]:
     converted = bool(document.get("is_converted"))
     row = {
         "id": document.get("id"),
+        "floor_id": document.get("floor_id"),
+        "interested_floor_ids": document.get("interested_floor_ids") or [document.get("floor_id")],
+        "assignments": document.get("assignments") or [],
+        "reference_source": document.get("reference_source"),
+        "lead_group_id": document.get("lead_group_id"),
         "customer_name": document.get("customer_name") or "",
         "customer_phone": document.get("customer_phone") or "",
         "address": document.get("address") or "",

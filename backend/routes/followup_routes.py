@@ -16,12 +16,14 @@ import asyncio
 import base64
 import binascii
 import csv
+import hashlib
 import io
 import json
 import re
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from uuid import uuid4, uuid5, NAMESPACE_URL
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -31,17 +33,18 @@ from openpyxl.utils import get_column_letter
 from pydantic import BaseModel
 from pymongo.errors import DuplicateKeyError
 
-from auth import floor_for_write, floor_inherit, floor_query, get_current_user, get_floor_scoped_or_404, require_floor_access, require_min_role
+from auth import floor_for_write, floor_inherit, floor_query, get_current_user, get_floor_scoped_or_404, require_floor_access, require_min_role, require_roles, accessible_floor_ids
 from db import db
 from models import (
     AutomationRuleUpdate, Followup, FollowupCallOutcomePayload, FollowupCompletePayload,
-    FollowupContactPayload, FollowupCreate, FollowupSavedView,
+    FollowupContactPayload, FollowupCreate, FollowupInterestsPayload, FollowupSavedView,
     FollowupSavedViewCreate, FollowupSnoozePayload, FollowupUpdate,
     NotebookCellPatchPayload, NotebookConversionPayload, NotebookFollowupCreatePayload,
     NotebookOutcomePayload, NotebookReferrerPayload,
     UserPublic, now_iso,
 )
 from services import automation_rules, workflow_transitions
+from services import lead_scope
 from services.activity_log import log_event, timeline_for
 from services.followup_engine import (
     RULE_DEFINITIONS, _followup_sort_key, age_days,
@@ -95,7 +98,8 @@ async def _wake_snoozed(user: UserPublic) -> None:
 
 
 async def _all_with_bucket(user: UserPublic | None = None) -> list[dict]:
-    docs = await db.followups.find(floor_query(user, {}) if user else {}, {"_id": 0}).to_list(10000)
+    sales = {"category": {"$nin": list(lead_scope.POST_ORDER_CATEGORIES)}, "rule_type": {"$nin": list(lead_scope.POST_ORDER_RULES)}}
+    docs = await db.followups.find(floor_query(user, sales) if user else sales, {"_id": 0}).to_list(10000)
     for d in docs:
         d["bucket"] = compute_bucket(d)
         d["effective_priority_level"] = d.get("manual_priority_override") or d.get("priority_level")
@@ -175,11 +179,13 @@ async def rules_config(user: UserPublic = Depends(get_current_user)):
 async def get_automation_rules(user: UserPublic = Depends(get_current_user)):
     """Configurable reminder cadences (day thresholds) per workspace category
     — see services/automation_rules.py. Editable by manager+ only."""
-    return await automation_rules.list_rules()
+    return [r for r in await automation_rules.list_rules() if r.get("category") not in lead_scope.POST_ORDER_CATEGORIES]
 
 
 @router.put("/config/automation-rules/{category}")
 async def put_automation_rule(category: str, body: AutomationRuleUpdate, user: UserPublic = Depends(require_min_role("manager"))):
+    if category in lead_scope.POST_ORDER_CATEGORIES:
+        raise HTTPException(422, "Follow-ups cover only activities before an order is placed")
     patch = body.model_dump(exclude_unset=True)
     updated = await automation_rules.update_rule(category, patch, user_id=user.id, user_name=user.full_name)
     asyncio.create_task(reconcile_followups())
@@ -206,11 +212,13 @@ async def get_workflow_transitions(_: UserPublic = Depends(get_current_user)):
     CRM foundation) — e.g. Quotation → Order Confirmed. See
     services/workflow_transitions.py / followup_engine._operational_followup_producer.
     Editable by manager+ only."""
-    return await workflow_transitions.list_transitions()
+    return [r for r in await workflow_transitions.list_transitions() if r.get("key") != "order_confirmed"]
 
 
 @router.put("/config/workflow-transitions/{key}")
 async def put_workflow_transition(key: str, body: WorkflowTransitionUpdate, user: UserPublic = Depends(require_min_role("manager"))):
+    if key == "order_confirmed":
+        raise HTTPException(422, "Order activity belongs in Orders")
     patch = body.model_dump(exclude_unset=True)
     updated = await workflow_transitions.update_transition(key, patch, user_id=user.id, user_name=user.full_name)
     asyncio.create_task(reconcile_followups())
@@ -323,10 +331,6 @@ async def insights(user: UserPublic = Depends(get_current_user)):
     whatsapps = await db.activity_events.count_documents(floor_query(user, {
         "event_type": "followup.contacted", "payload.channel": "whatsapp", "created_at": rng,
     }))
-    pay_docs = await db.payments.find(
-        floor_query(user, {"paid_at": rng}), {"_id": 0, "amount": 1},
-    ).to_list(1000)
-    payments_collected = sum(p.get("amount", 0) for p in pay_docs)
     quotations_approved = await db.quotations.count_documents(floor_query(user, {
         "status": {"$in": ["approved", "won"]}, "updated_at": rng,
     }))
@@ -339,7 +343,7 @@ async def insights(user: UserPublic = Depends(get_current_user)):
     return {
         "calls_completed": calls,
         "whatsapps_sent": whatsapps,
-        "payments_collected": round(payments_collected, 2),
+        "payments_collected": 0,
         "quotations_approved": quotations_approved,
         "response_rate": min(100, response_rate),
     }
@@ -470,7 +474,7 @@ def _paged_followup_query(
         waiting, bucket = True, None
     elif bucket == "completed_today":
         completed_today, bucket = True, None
-    clauses: list[dict] = []
+    clauses: list[dict] = [{"category": {"$nin": list(lead_scope.POST_ORDER_CATEGORIES)}, "rule_type": {"$nin": list(lead_scope.POST_ORDER_RULES)}}]
     if origin:
         clauses.append({"origin": predicate(origin)})
     if category:
@@ -478,7 +482,7 @@ def _paged_followup_query(
     if customer_tier:
         clauses.append({"customer_tier": predicate(customer_tier)})
     if assigned_to:
-        clauses.append({"assigned_to": predicate(assigned_to)})
+        clauses.append(_assigned_filter(user, assigned_to))
     if rule_type:
         clauses.append({"rule_type": predicate(rule_type)})
     if q:
@@ -576,7 +580,7 @@ async def list_followups_page(
                 {"$eq": ["$status", "open"]}, {"$lt": ["$due_at", start_of_today.isoformat()]},
             ]}, 0, 1]},
             "_inbox_unresolved": {"$cond": [{"$in": ["$status", ["open", "snoozed"]]}, 0, 1]},
-            "_inbox_mine": {"$cond": [{"$eq": ["$assigned_to", user.id]}, 0, 1]},
+            "_inbox_mine": {"$cond": [{"$or": [{"$eq": ["$assigned_to", user.id]}, {"$gt": [{"$size": {"$filter": {"input": {"$ifNull": ["$assignments", []]}, "as": "a", "cond": {"$and": [{"$eq": ["$$a.user_id", user.id]}, {"$eq": ["$$a.floor_id", "$floor_id"]}]}}}}, 0]}]}, 0, 1]},
         }},
         {"$sort": {
             "_inbox_overdue": 1, "_inbox_unresolved": 1, "_inbox_mine": 1,
@@ -609,7 +613,7 @@ async def list_followups(
     user: UserPublic = Depends(get_current_user),
 ):
     await _wake_snoozed(user)
-    query: dict = {}
+    query: dict = {"$nor": [{"category": {"$in": list(lead_scope.POST_ORDER_CATEGORIES)}}, {"rule_type": {"$in": list(lead_scope.POST_ORDER_RULES)}}]}
     if isinstance(origin, str) and origin:
         query["origin"] = predicate(origin)
     if category:
@@ -619,7 +623,7 @@ async def list_followups(
     if customer_tier:
         query["customer_tier"] = predicate(customer_tier)
     if assigned_to:
-        query["assigned_to"] = predicate(assigned_to)
+        query["$and"] = [_assigned_filter(user, assigned_to)]
     if q:
         term = {"$regex": re.escape(q), "$options": "i"}
         query["$or"] = [
@@ -682,6 +686,7 @@ async def list_notebook(
             "id": 1, "customer_name": 1, "customer_phone": 1, "address": 1,
             "kitchen_type": 1, "referred_by": 1, "architect_interior_designer": 1,
             "referrer_id": 1, "referrer_name": 1, "referrer_type": 1,
+            "interested_floor_ids": 1, "assignments": 1, "reference_source": 1, "floor_id": 1, "lead_group_id": 1,
             "notebook_status": 1, "notes": 1, "is_converted": 1, "updated_at": 1,
             "quotation_price": 1, "estimated_value": 1, "quotation_date": 1,
             "converted_at": 1, "lost_reason": 1, "last_contacted_at": 1, "contact_attempts": 1,
@@ -704,7 +709,9 @@ async def create_notebook_row(
 ):
     require_notebook_floor(floor_id, user)
     _reject_action_note(body.notes)
-    patch = body.model_dump(exclude_none=True, exclude={"notes"})
+    patch = body.model_dump(exclude_none=True, exclude={"notes", "interested_floor_ids", "assignments", "reference_source"})
+    if body.interested_floor_ids or body.assignments is not None:
+        await lead_scope.validate_scope(db, user, body.interested_floor_ids or [floor_id], [], source_floor=floor_id)
     requested_referrer_id = patch.pop("referrer_id", None)
     patch["notebook_status"] = "new"
     try:
@@ -746,6 +753,8 @@ async def create_notebook_row(
             existing = await db.followups.find_one(
                 notebook_query(user, floor_id, {"notebook_key": notebook_key}), {"_id": 0},
             )
+        if body.interested_floor_ids or body.assignments is not None or body.reference_source:
+            existing = await lead_scope.update_interests(db, user=user, source=existing, floor_ids=body.interested_floor_ids or [floor_id], assignments=body.assignments, metadata={"reference_source": body.reference_source, **referrer_fields})
         return serialize_notebook_row(existing)
     now = now_iso()
     row = Followup(
@@ -762,6 +771,8 @@ async def create_notebook_row(
         architect_interior_designer=clean.get("architect_interior_designer"),
         notes=clean.get("notes"),
     )
+    if body.interested_floor_ids or body.assignments is not None or body.reference_source:
+        await lead_scope.update_interests(db, user=user, source=row.model_dump(), floor_ids=body.interested_floor_ids or [floor_id], assignments=body.assignments, metadata={"reference_source": body.reference_source, **referrer_fields}, dry_run=True)
     try:
         await db.followups.insert_one(row.model_dump())
     except DuplicateKeyError:
@@ -780,7 +791,10 @@ async def create_notebook_row(
         actor=user, customer_id=row.customer_id, floor_id=floor_id,
         summary="Notebook follow-up created",
     )
-    return serialize_notebook_row(row.model_dump())
+    document = row.model_dump()
+    if body.interested_floor_ids or body.assignments is not None or body.reference_source:
+        document = await lead_scope.update_interests(db, user=user, source=document, floor_ids=body.interested_floor_ids or [floor_id], assignments=body.assignments, metadata={"reference_source": body.reference_source, **referrer_fields})
+    return serialize_notebook_row(document)
 
 
 @router.get("/notebook/{floor_id}/{row_id}")
@@ -942,6 +956,118 @@ async def notebook_timeline(floor_id: str, row_id: str, user: UserPublic = Depen
     return await timeline_for(entity_type="followup", entity_id=row_id, limit=200, floor_ids=[floor_id])
 
 
+@router.get("/config/customers")
+async def eligible_lead_customers(q: str | None = None, limit: int = Query(250, ge=1, le=500), user: UserPublic = Depends(get_current_user)):
+    query = {}
+    if q:
+        term = {"$regex": re.escape(q), "$options": "i"}
+        query["$or"] = [{"name": term}, {"company": term}, {"phone": term}]
+    return await db.customers.aggregate([
+        {"$match": floor_query(user, query)}, {"$sort": {"name": 1, "id": 1}},
+        {"$lookup": {"from": "quotations", "let": {"customer": "$id", "floor": "$floor_id"}, "pipeline": [
+            {"$match": {"status": "ordered", "$expr": {"$and": [{"$eq": ["$customer_id", "$$customer"]}, {"$eq": ["$floor_id", "$$floor"]}]}}}, {"$limit": 1}, {"$project": {"_id": 0, "id": 1}},
+        ], "as": "_orders"}}, {"$match": {"_orders": {"$size": 0}}}, {"$limit": limit},
+        {"$project": {"_id": 0, "id": 1, "name": 1, "company": 1, "phone": 1, "tier": 1, "floor_id": 1}},
+    ]).to_list(limit)
+
+
+def _assigned_filter(user, value):
+    return {"$or": [{"assigned_to": predicate(value)}, {"assignments": {"$elemMatch": {"user_id": predicate(value), "floor_id": floor_for_write(user)}}}]}
+
+
+@router.get("/assignees")
+async def lead_assignees(floor_ids: str | None = None, view: str = "walkin", source_id: str | None = None, customer_id: str | None = None, customer_phone: str | None = None, user: UserPublic = Depends(get_current_user)):
+    if customer_phone and len(customer_phone) > 40:
+        raise HTTPException(422, 'Phone must be at most 40 characters')
+    floors = values(floor_ids) if floor_ids else [floor_for_write(user)]
+    permitted = accessible_floor_ids(user)
+    if permitted is not None:
+        floors = [floor for floor in floors if floor in permitted]
+        if not floors:
+            return []
+    floors, _ = await lead_scope.validate_scope(db, user, floors, [])
+    stages = view == "quotation"
+    if source_id:
+        source = await db.followups.find_one(floor_query(user, {'id': source_id}), {'_id': 0})
+        if not source:
+            raise HTTPException(404, 'Follow-up not found')
+        stages = await lead_scope.notebook_stages(db, source, floors)
+    elif customer_id:
+        customer = await db.customers.find_one(floor_query(user, {'id': customer_id}), {'_id': 0, 'phone': 1, 'floor_id': 1})
+        if not customer:
+            raise HTTPException(404, 'Customer not found')
+        stages = await lead_scope.notebook_stages(db, {'floor_id': customer['floor_id'], 'customer_phone': customer.get('phone')}, floors)
+    elif customer_phone:
+        stages = await lead_scope.notebook_stages(db, {'floor_id': floor_for_write(user), 'customer_phone': customer_phone}, floors)
+    return [{"id": staff["id"], "full_name": staff["full_name"], "role": staff["role"], "floor_ids": staff["eligible_floor_ids"]}
+            for staff in await lead_scope.eligible_staff(db, floors, notebook_converted=stages) if staff["eligible_floor_ids"]]
+
+
+@router.get("/team-assign")
+async def team_assign(floor_ids: str | None = None, page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=100), user: UserPublic = Depends(require_roles("owner"))):
+    floors = values(floor_ids) if floor_ids else None
+    query = {"category": {"$nin": list(lead_scope.POST_ORDER_CATEGORIES)}}
+    if floors:
+        floors, _ = await lead_scope.validate_scope(db, user, floors, [])
+        query["floor_id"] = {"$in": floors}
+    # Page lead details, while aggregate counters cover the full selection.
+    assignments = {"$filter": {"input": {"$ifNull": ["$assignments", []]}, "as": "a", "cond": {"$eq": ["$$a.floor_id", "$floor_id"]}}}
+    assignment_read = db.followups.aggregate([
+        {"$match": query},
+        {"$set": {"_owners": assignments, "_lead": {"$ifNull": ["$lead_group_id", {"$ifNull": ["$walkin_id", {"$ifNull": ["$customer_id", "$id"]}]}]}}},
+        {"$set": {"_owners": {"$cond": [{"$gt": [{"$size": "$_owners"}, 0]}, "$_owners", [{"user_id": "$assigned_to", "user_name": "$assigned_to_name"}]]}}},
+        {"$unwind": "$_owners"}, {"$match": {"_owners.user_id": {"$type": "string", "$ne": ""}}},
+        {"$group": {"_id": {"user": "$_owners.user_id", "lead": "$_lead"}, "user_name": {"$first": "$_owners.user_name"}, "completed": {"$min": {"$cond": [{"$in": ["$status", ["done", "dismissed"]]}, 1, 0]}}}},
+        {"$group": {"_id": "$_id.user", "user_name": {"$first": "$user_name"}, "assigned_leads": {"$sum": 1}, "completed_leads": {"$sum": "$completed"}}},
+    ]).to_list(1000)
+    event_query = {"entity_type": "followup", "event_type": {"$in": ["followup.contacted", "followup.call_logged"]}}
+    if floors:
+        event_query["floor_id"] = {"$in": floors}
+    contact_read = db.activity_events.aggregate([
+        {"$match": event_query},
+        {"$lookup": {"from": "followups", "localField": "entity_id", "foreignField": "id", "pipeline": [{"$match": query}, {"$project": {"_id": 0, "id": 1}}], "as": "_lead"}},
+        {"$match": {"_lead.0": {"$exists": True}}},
+        {"$group": {"_id": {"actor": "$actor_id", "lead": "$entity_id", "attempt": {"$ifNull": ["$payload.attempt_id", "$id"]}}, "is_call": {"$max": {"$cond": [{"$or": [{"$eq": ["$event_type", "followup.call_logged"]}, {"$eq": ["$payload.channel", "call"]}]}, 1, 0]}}}},
+        {"$group": {"_id": "$_id.actor", "contacts_made": {"$sum": 1}, "calls_made": {"$sum": "$is_call"}}},
+    ]).to_list(1000)
+    rows, assignment_rows, contact_rows = await asyncio.gather(
+        db.followups.find(query, {"_id": 0}).sort([("updated_at", -1), ("id", -1)]).skip((page-1)*page_size).limit(page_size+1).to_list(page_size+1),
+        assignment_read, contact_read,
+    )
+    has_more = len(rows) > page_size
+    rows = rows[:page_size]
+    events = await db.activity_events.find({"entity_type": "followup", "entity_id": {"$in": [r["id"] for r in rows]}}, {"_id": 0}).sort("created_at", -1).limit(5000).to_list(5000)
+    page_workers = {w["user_id"]: w for w in lead_scope.team_report(rows, events)}
+    contacts = {r["_id"]: r for r in contact_rows}
+    workers = []
+    for summary in assignment_rows:
+        uid = summary["_id"]
+        worker = page_workers.get(uid, {"user_id": uid, "user_name": summary.get("user_name") or uid, "leads": []})
+        worker.update({k: summary[k] for k in ("assigned_leads", "completed_leads")})
+        worker.update({k: contacts.get(uid, {}).get(k, 0) for k in ("contacts_made", "calls_made")})
+        workers.append(worker)
+    workers.sort(key=lambda w: w["user_name"].casefold())
+    return {"workers": workers, "has_more": has_more, "page": page, "page_size": page_size, "activity_truncated": len(events) == 5000}
+
+
+@router.put("/{followup_id}/interests")
+async def set_lead_interests(followup_id: str, body: FollowupInterestsPayload, user: UserPublic = Depends(get_current_user)):
+    source = await db.followups.find_one(floor_query(user, {"id": followup_id}), {"_id": 0})
+    if not source:
+        raise HTTPException(404, "Follow-up not found")
+    converted = getattr(user, "_custom_notebook_converted", None)
+    if converted is not None and bool(source.get("is_converted")) != converted:
+        raise HTTPException(403, "This notebook page is outside your assigned access")
+    metadata = {}
+    if "reference_source" in body.model_fields_set:
+        metadata["reference_source"] = body.reference_source
+    if "referrer_id" in body.model_fields_set:
+        metadata.update(await lead_scope.referrer_fields(db, body.referrer_id, source["floor_id"], user))
+    row = await lead_scope.update_interests(db, user=user, source=source, floor_ids=body.interested_floor_ids, assignments=body.assignments, metadata=metadata)
+    await log_event(event_type="followup.assigned", entity_type="followup", entity_id=source["id"], actor=user, floor_id=source["floor_id"], customer_id=source.get("customer_id"), payload={"interested_floor_ids": row["interested_floor_ids"], "assignments": row["assignments"]}, summary="Updated interested floors and team assignment")
+    return row
+
+
 _ASSIGNMENT_STATUS_RANK = {"open": 0, "snoozed": 1, "done": 2, "dismissed": 2}
 
 
@@ -982,97 +1108,34 @@ async def list_assignments(
 # ─────────────────────────────────────────────────────────────────────────────
 @router.get("/{followup_id}")
 async def get_detail(followup_id: str, user: UserPublic = Depends(get_current_user)):
-    from routes.payment_routes import ORDER_STATUSES, _paid_by_quotation
-
-    # Authorize the addressed follow-up first, then use its floor for every
-    # related read. Customer ids are shared identifiers rather than a floor
-    # boundary, so filtering only the follow-up itself used to merge another
-    # unit's customer history into this detail panel.
     f = await get_floor_scoped_or_404(
-        db.followups, followup_id, user, not_found="Follow-up not found",
-        projection={"_id": 0},
+        db.followups, followup_id, user, not_found="Follow-up not found", projection={"_id": 0},
     )
-    floor_id = f.get("floor_id")
+    if f.get("category") in lead_scope.POST_ORDER_CATEGORIES or f.get("rule_type") in lead_scope.POST_ORDER_RULES or f.get("purchase_id"):
+        raise HTTPException(404, "This activity belongs in Orders")
+    floor_id = f["floor_id"]
     f["bucket"] = compute_bucket(f)
     f["effective_priority_level"] = f.get("manual_priority_override") or f.get("priority_level")
-
-    customer = await db.customers.find_one(
-        {"id": f["customer_id"], "floor_id": floor_id}, {"_id": 0, "password_hash": 0},
-    ) or {}
-    all_q = await db.quotations.find(
-        {"customer_id": f["customer_id"], "floor_id": floor_id}, {"_id": 0},
-    ).sort("updated_at", -1).to_list(200)
-    q_ids = [q["id"] for q in all_q]
-    paid_map = await _paid_by_quotation(q_ids, floor_id=floor_id)
-
-    lifetime_revenue = sum(q.get("grand_total", 0) for q in all_q if q.get("status") in ORDER_STATUSES)
-    outstanding_total = sum(
-        max(0.0, q.get("grand_total", 0) - paid_map.get(q["id"], 0.0)) for q in all_q if q.get("status") in ORDER_STATUSES
+    customer, pending_quotations, timeline = await asyncio.gather(
+        db.customers.find_one({"id": f["customer_id"], "floor_id": floor_id}, {"_id": 0, "password_hash": 0}),
+        db.quotations.find({"customer_id": f["customer_id"], "floor_id": floor_id,
+                            "status": {"$in": ["draft", "sent", "pending_approval", "approved", "selection"]}},
+                           {"_id": 0, "id": 1, "number": 1, "status": 1, "grand_total": 1,
+                            "valid_until": 1, "updated_at": 1, "created_by_name": 1}).sort("updated_at", -1).to_list(200),
+        timeline_for(entity_type="followup", entity_id=followup_id, limit=60, floor_ids=[floor_id]),
     )
-    pending_quotations = [q for q in all_q if q.get("status") in ("draft", "sent", "pending_approval", "approved")]
-    pending_orders = [
-        q for q in all_q
-        if q.get("status") in ORDER_STATUSES and (q.get("grand_total", 0) - paid_map.get(q["id"], 0.0)) > 1
-    ]
-    recent_payments = await db.payments.find(
-        {"customer_id": f["customer_id"], "floor_id": floor_id}, {"_id": 0},
-    ).sort("paid_at", -1).to_list(10)
-    recent_purchases = await db.purchase_orders.find(
-        {"customer_id": f["customer_id"], "floor_id": floor_id}, {"_id": 0},
-    ).sort("updated_at", -1).to_list(10)
-    timeline = await timeline_for(customer_id=f["customer_id"], limit=60, floor_ids=[floor_id])
-
-    # ── Premium context additions (Follow-ups V2) — all derived from data
-    # already loaded above, no new integration or LLM call needed. ──────────
-    order_count = sum(1 for q in all_q if q.get("status") in ORDER_STATUSES)
-    conversion_rate = round(100 * order_count / len(all_q)) if all_q else 0
-    average_order_value = round(lifetime_revenue / order_count, 2) if order_count else 0.0
-    creator_counts = Counter(q.get("created_by_name") for q in all_q if q.get("created_by_name"))
-    preferred_salesperson = creator_counts.most_common(1)[0][0] if creator_counts else None
-
-    last_touch_dt = None
-    touches = [parse_iso(q.get("updated_at")) for q in all_q]
+    creators = Counter(q.get("created_by_name") for q in pending_quotations if q.get("created_by_name"))
+    preferred = creators.most_common(1)[0][0] if creators else None
+    touches = [parse_iso(q.get("updated_at")) for q in pending_quotations]
     touches = [t for t in touches if t]
-    if touches:
-        last_touch_dt = max(touches)
-    days_silent = age_days(last_touch_dt) if last_touch_dt else 0
-    has_overdue_payment = any(
-        q.get("status") in ORDER_STATUSES and (q.get("grand_total", 0) - paid_map.get(q["id"], 0.0)) > 1
-        and age_days(parse_iso(q.get("updated_at"))) >= 5
-        for q in all_q
-    )
-    if has_overdue_payment:
-        risk_level = "high"
-    elif outstanding_total > 0 or days_silent >= 14:
-        risk_level = "medium"
-    else:
-        risk_level = "low"
-
+    days_silent = age_days(max(touches)) if touches else 0
     return {
-        "followup": f,
-        "customer": customer,
-        "stats": {
-            "lifetime_revenue": round(lifetime_revenue, 2),
-            "outstanding_total": round(outstanding_total, 2),
-            "pending_quotations": len(pending_quotations),
-            "pending_orders": len(pending_orders),
-            "conversion_rate": conversion_rate,
-            "average_order_value": average_order_value,
-            "preferred_salesperson": preferred_salesperson,
-            "risk_level": risk_level,
-        },
-        "quotations": [
-            {"id": q["id"], "number": q["number"], "status": q["status"], "grand_total": q.get("grand_total", 0),
-             "valid_until": q.get("valid_until"), "updated_at": q.get("updated_at")}
-            for q in all_q[:12]
-        ],
-        "payments": recent_payments,
-        "purchases": [
-            {"id": p["id"], "number": p["number"], "status": p["status"], "grand_total": p.get("grand_total", 0),
-             "updated_at": p.get("updated_at")}
-            for p in recent_purchases
-        ],
-        "timeline": timeline,
+        "followup": f, "customer": customer or {},
+        "stats": {"lifetime_revenue": 0, "outstanding_total": 0, "pending_orders": 0,
+                  "conversion_rate": 0, "average_order_value": 0,
+                  "pending_quotations": len(pending_quotations), "preferred_salesperson": preferred,
+                  "risk_level": "medium" if days_silent >= 14 else "low"},
+        "quotations": pending_quotations[:12], "payments": [], "purchases": [], "timeline": timeline,
     }
 
 
@@ -1082,14 +1145,35 @@ async def get_detail(followup_id: str, user: UserPublic = Depends(get_current_us
 @router.post("", response_model=Followup)
 async def create_followup(body: FollowupCreate, user: UserPublic = Depends(get_current_user)):
     _reject_action_note(body.notes)
+    floor_id = floor_for_write(user)
+    if floor_id in {'second-floor', 'third-floor'}:
+        raise HTTPException(422, 'Use the Kitchen or Furniture notebook to add a follow-up on this floor')
+    request_id = str(uuid5(NAMESPACE_URL, f'followup-create:{user.id}:{floor_id}:{body.request_key}')) if body.request_key else None
+    fingerprint = hashlib.sha256(json.dumps(body.model_dump(mode='json', exclude={'request_key'}), sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    previous = await db.followups.find_one({'id': request_id, 'floor_id': floor_id}, {'_id': 0}) if request_id else None
+    if previous:
+        if previous.get('create_request_fingerprint') != fingerprint:
+            raise HTTPException(409, 'This request key was already used for a different follow-up; start a new reminder')
+        if previous.get('create_request_complete'):
+            return Followup(**previous)
+    if body.category in lead_scope.POST_ORDER_CATEGORIES or body.purchase_id:
+        raise HTTPException(422, "Follow-ups cover only activities before an order is placed")
     cust = await db.customers.find_one(floor_query(user, {"id": body.customer_id}), {"_id": 0})
     if not cust:
         raise HTTPException(status_code=404, detail="Customer not found")
     quotation = await db.quotations.find_one(floor_query(user, {"id": body.quotation_id}), {"_id": 0}) if body.quotation_id else None
+    if body.quotation_id and not quotation:
+        raise HTTPException(404, "Quotation not found")
+    if quotation and quotation.get("status") == "ordered":
+        raise HTTPException(409, "This quotation is already an order")
+    if await db.quotations.find_one({"customer_id": cust["id"], "floor_id": floor_id, "status": "ordered"}, {"_id": 0, "id": 1}):
+        raise HTTPException(409, "This customer already placed an order")
     tier = cust.get("tier", "retail")
     value = float(quotation.get("grand_total", 0)) if quotation else 0.0
     score, level = score_followup(value, 0, 12, tier)
 
+    if body.assigned_to:
+        await lead_scope.validate_scope(db, user, [floor_for_write(user)], [{"floor_id": floor_for_write(user), "user_id": body.assigned_to}])
     assigned_to_name = user.full_name
     if body.assigned_to and body.assigned_to != user.id:
         au = await db.users.find_one({"id": body.assigned_to}, {"_id": 0, "full_name": 1})
@@ -1097,6 +1181,7 @@ async def create_followup(body: FollowupCreate, user: UserPublic = Depends(get_c
 
     action_label = {"call": "Call customer", "whatsapp": "Send WhatsApp", "email": "Send Email", "visit": "Schedule showroom visit"}
     f = Followup(
+        **({'id': request_id} if request_id else {}),
         source_key=None, rule_type="manual", category=body.category,
         customer_id=cust["id"], customer_name=cust.get("company") or cust.get("name"),
         customer_phone=cust.get("phone"), customer_tier=tier,
@@ -1111,14 +1196,36 @@ async def create_followup(body: FollowupCreate, user: UserPublic = Depends(get_c
         priority_level=body.priority_level or level,
         due_at=body.due_at or now_iso(), is_automated=False,
         assigned_to=body.assigned_to or user.id, assigned_to_name=assigned_to_name,
-        floor_id=floor_for_write(user),
+        floor_id=floor_id,
     )
-    await db.followups.insert_one(f.model_dump())
-    await log_event(
-        event_type="followup.created", entity_type="followup", entity_id=f.id, actor=user,
-        customer_id=f.customer_id, quotation_id=f.quotation_id,
-        summary=f"Manual follow-up created — {f.reason}",
-    )
+    if previous:
+        f = Followup(**previous)
+    metadata = {"reference_source": body.reference_source}
+    if body.referrer_id:
+        metadata.update(await lead_scope.referrer_fields(db, body.referrer_id, f.floor_id, user))
+    if body.interested_floor_ids or body.assignments is not None or body.reference_source or body.referrer_id:
+        await lead_scope.update_interests(db, user=user, source=f.model_dump(), floor_ids=body.interested_floor_ids or [f.floor_id], assignments=body.assignments, metadata=metadata, dry_run=True)
+    if request_id:
+        identity = {'_id': f'followup-create:{request_id}'}
+        await db.followups.update_one(identity, {'$setOnInsert': {**f.model_dump(), 'create_request_fingerprint': fingerprint}}, upsert=True)
+        stored = await db.followups.find_one(identity, {'_id': 0})
+        if stored.get('create_request_fingerprint') != fingerprint:
+            raise HTTPException(409, 'This request key was already used for a different follow-up; start a new reminder')
+        if stored.get('create_request_complete'):
+            return Followup(**stored)
+        f = Followup(**stored)
+    else:
+        await db.followups.insert_one(f.model_dump())
+    if body.interested_floor_ids or body.assignments is not None or body.reference_source or body.referrer_id:
+        document = await lead_scope.update_interests(db, user=user, source=f.model_dump(), floor_ids=body.interested_floor_ids or [f.floor_id], assignments=body.assignments, metadata=metadata)
+        f = Followup(**document)
+    completion = await db.followups.update_one({'id': f.id, 'create_request_complete': {'$ne': True}}, {'$set': {'create_request_complete': True}}) if request_id else None
+    if completion is None or completion.matched_count:
+        await log_event(
+            event_type="followup.created", entity_type="followup", entity_id=f.id, actor=user,
+            customer_id=f.customer_id, quotation_id=f.quotation_id,
+            summary=f"Manual follow-up created — {f.reason}",
+        )
     return f
 
 
@@ -1130,7 +1237,15 @@ async def update_followup(followup_id: str, body: FollowupUpdate, user: UserPubl
         raise HTTPException(status_code=404, detail="Follow-up not found")
     patch = body.model_dump(exclude_unset=True)
     patch.pop("notes", None)
+    scope_keys = {"interested_floor_ids", "assignments", "reference_source", "referrer_id"}
+    scope_patch = {k: patch.pop(k) for k in list(patch) if k in scope_keys}
+    if scope_patch:
+        metadata = {k: v for k, v in scope_patch.items() if k == "reference_source"}
+        if "referrer_id" in scope_patch:
+            metadata.update(await lead_scope.referrer_fields(db, scope_patch["referrer_id"], f["floor_id"], user))
+        f = await lead_scope.update_interests(db, user=user, source=f, floor_ids=scope_patch.get("interested_floor_ids") or f.get("interested_floor_ids") or [f["floor_id"]], assignments=scope_patch.get("assignments"), metadata=metadata)
     if "assigned_to" in patch and patch["assigned_to"]:
+        await lead_scope.validate_scope(db, user, [f["floor_id"]], [{"floor_id": f["floor_id"], "user_id": patch["assigned_to"]}])
         au = await db.users.find_one({"id": patch["assigned_to"]}, {"_id": 0, "full_name": 1})
         patch["assigned_to_name"] = au["full_name"] if au else None
         await log_event(
@@ -1249,16 +1364,21 @@ async def contact_followup(followup_id: str, body: FollowupContactPayload, user:
     if not f:
         raise HTTPException(status_code=404, detail="Follow-up not found")
     now = now_iso()
-    result = await db.followups.update_one(
-        contact_query,
-        {"$set": {"last_contacted_at": now, "updated_at": now}, "$inc": {"contact_attempts": 1}},
-    )
+    attempt_id = str(uuid4())
+    contact_patch = {"last_contacted_at": now, "updated_at": now}
+    increments = {"contact_attempts": 1}
+    if body.channel == "call":
+        contact_patch.update(pending_call_id=attempt_id, pending_call_actor_id=user.id)
+        actor_key = hashlib.sha256(user.id.encode()).hexdigest()
+        contact_patch[f"pending_call_ids.{actor_key}"] = attempt_id
+        increments["call_attempts"] = 1
+    result = await db.followups.update_one(contact_query, {"$set": contact_patch, "$inc": increments})
     if converted is not None and not result.matched_count:
         raise HTTPException(status_code=409, detail="This lead moved to another notebook page; reopen that page")
     await log_event(
         event_type="followup.contacted", entity_type="followup", entity_id=followup_id, actor=user,
         customer_id=f.get("customer_id"), quotation_id=f.get("quotation_id"), purchase_id=f.get("purchase_id"),
-        payload={"channel": body.channel},
+        payload={"channel": body.channel, "attempt_id": attempt_id},
         summary=f"{body.channel.title()} — {f.get('customer_name')}",
     )
     phone = _clean_phone(f.get("customer_phone"))
@@ -1304,8 +1424,16 @@ async def log_call(followup_id: str, body: FollowupCallOutcomePayload, user: Use
         order = await placed_order(db, f)
         if not order:
             raise HTTPException(status_code=409, detail="Won is recorded only after an order is placed")
+    actor_key = hashlib.sha256(user.id.encode()).hexdigest()
+    pending_attempt = (f.get("pending_call_ids") or {}).get(actor_key)
+    if not pending_attempt and f.get("pending_call_actor_id") == user.id:
+        pending_attempt = f.get("pending_call_id")
+    attempt_id = pending_attempt or str(uuid4())
     patch: dict = {
         "last_contacted_at": now_dt.isoformat(), "updated_at": now_iso(),
+        "call_attempts": (f.get("call_attempts") or 0) + (0 if pending_attempt else 1),
+        "contact_attempts": (f.get("contact_attempts") or 0) + (0 if pending_attempt else 1),
+        "latest_response": (body.response or "").strip() or outcome.replace("_", " "),
     }
     if outcome in {"won", "converted"}:
         patch["auto_resolved"] = True
@@ -1321,6 +1449,12 @@ async def log_call(followup_id: str, body: FollowupCallOutcomePayload, user: Use
     if outcome == "pending" and body.next_followup_at is None:
         raise HTTPException(status_code=422, detail="Choose the next follow-up date for a pending client")
 
+    if outcome == "pending":
+        next_due = body.next_followup_at
+        if next_due is None or (next_due.replace(tzinfo=timezone.utc) if next_due.tzinfo is None else next_due.astimezone(timezone.utc)) <= now_dt:
+            raise HTTPException(422, "The next follow-up date must be in the future")
+    if body.interested_floor_ids or body.assignments is not None:
+        f = await lead_scope.update_interests(db, user=user, source=f, floor_ids=body.interested_floor_ids or f.get("interested_floor_ids") or [f["floor_id"]], assignments=body.assignments)
     if outcome == "interested":
         # A transferred lead stays with the recipient, including the source
         # row and the new reminder; interest is not a placed/won order.
@@ -1358,11 +1492,14 @@ async def log_call(followup_id: str, body: FollowupCallOutcomePayload, user: Use
             assigned_to=f.get("assigned_to") or user.id, assigned_to_name=f.get("assigned_to_name") or user.full_name,
             tags=f.get("tags", []),
             floor_id=floor_inherit(f),
+            lead_group_id=f.get("lead_group_id"), interested_floor_ids=f.get("interested_floor_ids", []),
+            assignments=f.get("assignments", []), reference_source=f.get("reference_source"),
+            referrer_id=f.get("referrer_id"), referrer_name=f.get("referrer_name"), referrer_type=f.get("referrer_type"),
         )
         await db.followups.insert_one(nf.model_dump())
         next_created = nf.id
     elif outcome == "no_answer":
-        attempts = (f.get("contact_attempts") or 0) + 1
+        attempts = patch["contact_attempts"]
         patch["contact_attempts"] = attempts
         if attempts >= 2:
             # Escalate — stop same-day retries after the 2nd miss; push to
@@ -1396,11 +1533,23 @@ async def log_call(followup_id: str, body: FollowupCallOutcomePayload, user: Use
             "completed_outcome": "lost", "resolution_note": notes, "lost_reason": notes,
         })
 
-    await db.followups.update_one(floor_query(user, {"id": followup_id}), {"$set": patch})
+    # Contact initiation already incremented the counters. An outcome must
+    # not overwrite increments from another worker contacting this same lead.
+    patch.pop("contact_attempts", None)
+    patch.pop("call_attempts", None)
+    update = {"$set": patch}
+    if not pending_attempt:
+        update["$inc"] = {"contact_attempts": 1, "call_attempts": 1}
+    await db.followups.update_one(floor_query(user, {"id": followup_id}), update)
+    if pending_attempt:
+        # A second initiation by this worker may finish while this outcome is
+        # awaiting scope writes. Only consume the attempt that we actually read.
+        await db.followups.update_one(floor_query(user, {'id': followup_id, f'pending_call_ids.{actor_key}': pending_attempt}), {'$unset': {f'pending_call_ids.{actor_key}': ''}})
+        await db.followups.update_one(floor_query(user, {'id': followup_id, 'pending_call_id': pending_attempt, 'pending_call_actor_id': user.id}), {'$set': {'pending_call_id': None, 'pending_call_actor_id': None}})
     await log_event(
         event_type="followup.call_logged", entity_type="followup", entity_id=followup_id, actor=user,
         customer_id=f.get("customer_id"), quotation_id=f.get("quotation_id"), purchase_id=f.get("purchase_id"),
-        payload={"outcome": outcome, "next_followup_id": next_created, "notes": notes},
+        payload={"outcome": outcome, "next_followup_id": next_created, "notes": notes, "response": body.response, "attempt_id": attempt_id},
         summary=f"Call logged — {outcome.replace('_', ' ').title()}" + (f" — {notes}" if notes else ""),
     )
     return await db.followups.find_one(floor_query(user, {"id": followup_id}), {"_id": 0})

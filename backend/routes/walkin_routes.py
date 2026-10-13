@@ -28,6 +28,7 @@ from models import Followup, UserPublic, now_iso
 from models_walkins import WalkIn, WalkInCreate, WalkInUpdate, ReassignWalkInBody, WALKIN_OPEN_STATUSES
 from services.access_grants import grants_for_user, grant_allows
 from services.activity_log import log_event, timeline_for
+from services import lead_scope
 from services.followup_engine import parse_iso, reconcile_followups
 from services.multi_filters import predicate, scoped_query, values
 from services.sequence import next_number as _next_number_seq
@@ -138,6 +139,24 @@ async def check_duplicate(
     )
 
 
+async def _walkin_scope(doc, user, *, floors, assignments=None, metadata=None, dry_run=False):
+    identity = {"id": doc.get("scope_followup_id") or f"walkin-lead:{doc['id']}", "floor_id": doc['floor_id']}
+    source = await db.followups.find_one(identity, {"_id": 0})
+    if not source:
+        source = Followup(**identity, walkin_id=doc['id'], origin="walkin", category="walk_in", customer_id=doc['customer_id'], customer_name=doc['customer_name'], customer_phone=doc.get('customer_phone'), reason="Customer interested — follow up before order", due_at=doc.get('next_followup_at') or now_iso(), assigned_to=doc.get('salesperson_id'), assigned_to_name=doc.get('salesperson_name'), is_automated=False).model_dump()
+        # Validate all destinations before storing the source row.
+        await lead_scope.validate_scope(db, user, floors, [], source_floor=doc['floor_id'])
+        await lead_scope.update_interests(db, user=user, source=source, floor_ids=floors, assignments=assignments, metadata=metadata, dry_run=True)
+        if dry_run:
+            return source
+        await db.followups.update_one(identity, {"$setOnInsert": source}, upsert=True)
+    elif dry_run:
+        return await lead_scope.update_interests(db, user=user, source=source, floor_ids=floors, assignments=assignments, metadata=metadata, dry_run=True)
+    row = await lead_scope.update_interests(db, user=user, source=source, floor_ids=floors, assignments=assignments, metadata=metadata)
+    await db.walkins.update_one({'id': doc['id'], 'floor_id': doc['floor_id']}, {'$set': {'scope_followup_id': row['id'], 'lead_group_id': row['lead_group_id'], 'interested_floor_ids': row['interested_floor_ids'], 'assignments': row['assignments'], **(metadata or {})}})
+    return row
+
+
 # ---------- Create ----------
 @router.post("", response_model=WalkIn)
 async def create_walkin(body: WalkInCreate, user: UserPublic = Depends(require_min_role("sales"))):
@@ -154,6 +173,9 @@ async def create_walkin(body: WalkInCreate, user: UserPublic = Depends(require_m
     # the other unit's customer PII back in the response body.
     require_floor_access(body.floor_id, user)
 
+    if body.interested_floor_ids or body.assignments is not None:
+        await lead_scope.validate_scope(db, user, body.interested_floor_ids or [body.floor_id], [], source_floor=body.floor_id)
+    referrer = await lead_scope.referrer_fields(db, body.referrer_id, body.floor_id, user) if body.referrer_id else {}
     salesperson_id = body.salesperson_id or user.id
     salesperson_doc = await _salesperson_for_floor(salesperson_id, body.floor_id)
 
@@ -203,13 +225,24 @@ async def create_walkin(body: WalkInCreate, user: UserPublic = Depends(require_m
         visited_at=body.visited_at or now_iso(),
         salesperson_id=salesperson_id,
         salesperson_name=salesperson_doc["full_name"],
-        source=body.source, reference_contact=body.reference_contact, architect=body.architect, builder=body.builder,
+        source=body.reference_source or body.source, reference_source=body.reference_source or body.source,
+        interested_floor_ids=body.interested_floor_ids, assignments=body.assignments, **referrer,
+        reference_contact=body.reference_contact, architect=body.architect, builder=body.builder,
         floor_id=body.floor_id, interested_products=body.interested_products,
         budget=body.budget, manual_priority_override=body.priority,
         next_followup_at=body.next_followup_at,
         created_by=user.id, created_by_name=user.full_name,
     )
-    await db.walkins.insert_one(walkin.dict())
+    if body.interested_floor_ids or body.assignments is not None:
+        await _walkin_scope(walkin.model_dump(), user, floors=body.interested_floor_ids or [body.floor_id], assignments=body.assignments, metadata={'reference_source': body.reference_source or body.source, **referrer}, dry_run=True)
+    await db.walkins.insert_one(walkin.model_dump())
+    if referrer:
+        await db.customers.update_one({'id': customer['id'], 'floor_id': body.floor_id}, {'$set': referrer})
+    if body.interested_floor_ids or body.assignments is not None:
+        scoped = await _walkin_scope(walkin.model_dump(), user, floors=body.interested_floor_ids or [body.floor_id], assignments=body.assignments, metadata={'reference_source': body.reference_source or body.source, **referrer})
+        walkin.scope_followup_id = scoped['id']
+        walkin.interested_floor_ids = scoped['interested_floor_ids']
+        walkin.assignments = scoped['assignments']
     await log_event(
         event_type="walkin.created", entity_type="walkin", entity_id=walkin.id,
         customer_id=customer["id"], actor=user,
@@ -359,7 +392,7 @@ async def visit_showroom(walkin_id: str, user: UserPublic = Depends(require_min_
     if walkin.get("status") == "lost":
         raise HTTPException(status_code=409, detail="Reopen this lost walk-in before transferring to follow-ups")
     now = now_iso()
-    followup_id = f"showroom:{walkin_id}"
+    followup_id = walkin.get("scope_followup_id") or f"showroom:{walkin_id}"
     followup = Followup(
         id=followup_id, floor_id=walkin["floor_id"], source_key=f"visit_showroom:{walkin_id}",
         walkin_id=walkin_id, origin="visit_showroom", rule_type="manual", category="walk_in",
@@ -369,6 +402,8 @@ async def visit_showroom(walkin_id: str, user: UserPublic = Depends(require_min_
         suggested_channel="visit", due_at=now, is_automated=False,
         assigned_to=walkin.get("salesperson_id"), assigned_to_name=walkin.get("salesperson_name"),
         tags=["WALK_IN", "VISIT_SHOWROOM"],
+        interested_floor_ids=walkin.get("interested_floor_ids") or [walkin["floor_id"]], assignments=walkin.get("assignments") or [],
+        reference_source=walkin.get("reference_source") or walkin.get("source"), referrer_id=walkin.get("referrer_id"), referrer_name=walkin.get("referrer_name"), referrer_type=walkin.get("referrer_type"),
     ).model_dump()
     identity = {"id": followup_id, "floor_id": walkin["floor_id"]}
     try:
@@ -415,6 +450,13 @@ async def update_walkin(walkin_id: str, body: WalkInUpdate, user: UserPublic = D
         # source of truth.
         patch["notes"] = str(resulting_notes).strip()
         patch["lost_reason"] = patch["notes"]
+    scope_keys = {"interested_floor_ids", "assignments", "reference_source", "referrer_id"}
+    scope_patch = {k: patch.pop(k) for k in list(patch) if k in scope_keys}
+    if scope_patch:
+        metadata = {k: v for k,v in scope_patch.items() if k == "reference_source"}
+        if "referrer_id" in scope_patch:
+            metadata.update(await lead_scope.referrer_fields(db, scope_patch['referrer_id'], doc['floor_id'], user))
+        await _walkin_scope(doc, user, floors=scope_patch.get('interested_floor_ids') or doc.get('interested_floor_ids') or [doc['floor_id']], assignments=scope_patch.get('assignments'), metadata=metadata)
     patch["updated_at"] = now_iso()
     if patch.get("status") == "converted":
         patch["converted_at"] = now_iso()

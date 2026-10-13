@@ -8,6 +8,7 @@ import { Linking, Platform, ScrollView, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { LeadScopeSheet } from "@/src/components/leads/LeadScopeSheet";
 import { walkinsApi, type WalkIn } from "@/src/api/walkins";
 import { setSelectedFloorId } from "@/src/hooks/use-floor-access";
 import { toast } from "@/src/components/Toast";
@@ -48,6 +49,7 @@ export default function WalkInDetail() {
   const [lostOpen, setLostOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [assignees, setAssignees] = useState<{ id: string; full_name: string; role: string }[]>([]);
+  const [scopeOpen, setScopeOpen] = useState(false);
   const [reassignOpen, setReassignOpen] = useState(false);
   const [spSearch, setSpSearch] = useState("");
 
@@ -143,6 +145,8 @@ export default function WalkInDetail() {
       <ScrollView contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, paddingBottom: isPhone ? 132 : spacing.xxl, gap: spacing.md }}>
         <Card variant="outlined" style={{ gap: 4 }}>
           <Text style={type.bodyStrong}>{w.customer_phone} {w.alternate_phone ? `· Alt: ${w.alternate_phone}` : ""}</Text>
+          {canUpdate ? <Button label="Interested floors · Assign team" icon="layers" variant="secondary" onPress={() => setScopeOpen(true)} testID="walkin-edit-interests" /> : null}
+          {w.referrer_name ? <Text style={type.bodySm}>Interior / architect: {w.referrer_name}</Text> : null}
           <Text style={type.bodyMuted}>{w.source} · {(w.interested_products || []).join(", ") || "No products noted"}</Text>
           {w.budget ? <Text style={type.bodySm}>Budget: ₹{w.budget.toLocaleString("en-IN")}</Text> : null}
           {(w.reference_contact || w.architect || w.builder) ? (
@@ -193,6 +197,7 @@ export default function WalkInDetail() {
         )}
       </ScrollView>
 
+      <LeadScopeSheet lead={scopeOpen ? w : null} floorId={w.floor_id} onClose={() => setScopeOpen(false)} onSaved={() => void load()} saveScope={value => walkinsApi.update(id, value, requestOptions)} />
       <Sheet visible={lostOpen} onClose={() => setLostOpen(false)} title="Mark as lost" variant="bottom">
         <View style={{ padding: spacing.lg, gap: spacing.md }}>
           <TextField label="Lost reason" value={notes} onChangeText={setNotes} multiline numberOfLines={3} placeholder="Cannot afford the service, or we cannot work with this customer" testID="walkin-lost-reason" />

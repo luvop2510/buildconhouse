@@ -31,6 +31,7 @@ CI remains the shared release gate.
 | Cold catalog, customer/quotation primary content, builder and Ground Floor | Under 2.5 seconds with a 200 ms API fixture on each device |
 | Search | Under 1.5 seconds including debounce and fixture response; Chromium interactions use 4× CPU slowdown |
 | Builder line addition | Under 750 ms to updated quantity, with no backend mutation |
+| Team assign (50 leads) | Primary content under 2.5 seconds; activity expansion under 750 ms; floor selection through completed response under 1.5 seconds with a 200 ms API fixture |
 | Repeated cached catalog visits | First visit under 2.5 seconds; later visits under 750 ms |
 | Reference reads | One session/floor identity, brand/category/hierarchy/facets read during repeated visits |
 | Catalog page | One bounded initial request, limit 60; realistic page contains 60 families × 10 finishes, total 6,500 |
