@@ -170,9 +170,6 @@ jobs:
       - name: Member credentials and furniture touch-device acceptance
         if: ${{ !cancelled() && steps.audit-browsers.outcome == 'success' }}
         run: npx playwright test --config playwright.devices.config.ts
-      - name: Catalog startup and progressive detail loading across devices
-        if: ${{ !cancelled() && steps.audit-browsers.outcome == 'success' }}
-        run: npm run test:e2e:performance
       - name: Publish browser result counts in the job summary
         if: always()
         run: |
@@ -181,7 +178,7 @@ jobs:
           let summary = '### Browser acceptance evidence\n\n';
           for (const [suite, file] of Object.entries({
             audit: 'audit-results.json', responsive: 'responsive-results.json',
-            devices: 'device-results.json', performance: 'performance-results.json',
+            devices: 'device-results.json',
           })) {
             try {
               const { stats } = JSON.parse(await readFile(`output/playwright/${file}`, 'utf8'));

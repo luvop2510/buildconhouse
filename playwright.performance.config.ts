@@ -8,6 +8,8 @@ export default defineConfig({
   timeout: 30_000,
   workers: 1,
   retries: 0,
+  forbidOnly: !!process.env.CI,
+  failOnFlakyTests: true,
   reporter: [['list'], ['json', { outputFile: process.env.PERFORMANCE_REPORT || 'output/playwright/performance-results.json' }]],
   outputDir: 'output/playwright/performance',
   use: {
@@ -17,9 +19,9 @@ export default defineConfig({
     serviceWorkers: 'block',
   },
   webServer: {
-    command: 'AUDIT_PORT=8098 node scripts/serve-audit.mjs',
+    command: 'node scripts/serve-performance.mjs',
     url: 'http://127.0.0.1:8098/login',
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
   },
   projects: [
     { name: 'android-chrome', use: { ...devices['Pixel 7'], browserName: 'chromium' } },

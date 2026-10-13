@@ -1,0 +1,209 @@
+{
+  "methodology": "Read-only configured Mongo source; warmed local catalog service timing. Excludes auth, HTTP and browser. First call is recorded separately; no records exported.",
+  "snapshot_warmup_ms": 17350.452,
+  "catalog": {
+    "mode": "memory",
+    "source_bytes": 19688845,
+    "budget_bytes": 33554432,
+    "source_rows": {
+      "products": 6565,
+      "product_media": 8489,
+      "brands": 28,
+      "categories": 105,
+      "product_usage": 0
+    },
+    "refresh_in_flight": false,
+    "retry_after_seconds": 0
+  },
+  "products_retained": 6565,
+  "service_budget_ms": 200,
+  "floors": {
+    "first-floor": {
+      "families": {
+        "first_call_ms": 274.82,
+        "samples_ms": [
+          38.411,
+          41.393,
+          45.622
+        ],
+        "median_ms": 41.393,
+        "max_ms": 45.622,
+        "response_rows": 60
+      },
+      "hierarchy": {
+        "first_call_ms": 31.8,
+        "samples_ms": [
+          30.445,
+          32.564,
+          65.119
+        ],
+        "median_ms": 32.564,
+        "max_ms": 65.119,
+        "response_rows": 2408
+      },
+      "brands": {
+        "first_call_ms": 16.681,
+        "samples_ms": [
+          14.529,
+          14.274,
+          14.967
+        ],
+        "median_ms": 14.529,
+        "max_ms": 14.967,
+        "response_rows": 5
+      },
+      "categories": {
+        "first_call_ms": 15.745,
+        "samples_ms": [
+          14.993,
+          15.029,
+          14.756
+        ],
+        "median_ms": 14.993,
+        "max_ms": 15.029,
+        "response_rows": 104
+      }
+    },
+    "ground-floor": {
+      "families": {
+        "first_call_ms": 31.768,
+        "samples_ms": [
+          31.801,
+          51.009,
+          37.141
+        ],
+        "median_ms": 37.141,
+        "max_ms": 51.009,
+        "response_rows": 60
+      },
+      "hierarchy": {
+        "first_call_ms": 29.523,
+        "samples_ms": [
+          26.722,
+          27.873,
+          27.046
+        ],
+        "median_ms": 27.046,
+        "max_ms": 27.873,
+        "response_rows": 1584
+      },
+      "brands": {
+        "first_call_ms": 17.483,
+        "samples_ms": [
+          17.767,
+          18.05,
+          17.251
+        ],
+        "median_ms": 17.767,
+        "max_ms": 18.05,
+        "response_rows": 23
+      },
+      "categories": {
+        "first_call_ms": 20.98,
+        "samples_ms": [
+          39.406,
+          28.331,
+          18.837
+        ],
+        "median_ms": 28.331,
+        "max_ms": 39.406,
+        "response_rows": 1
+      }
+    },
+    "second-floor": {
+      "families": {
+        "first_call_ms": 14.992,
+        "samples_ms": [
+          14.596,
+          18.058,
+          15.544
+        ],
+        "median_ms": 15.544,
+        "max_ms": 18.058,
+        "response_rows": 0
+      },
+      "hierarchy": {
+        "first_call_ms": 20.168,
+        "samples_ms": [
+          21.271,
+          23.082,
+          20.898
+        ],
+        "median_ms": 21.271,
+        "max_ms": 23.082,
+        "response_rows": 0
+      },
+      "brands": {
+        "first_call_ms": 16.554,
+        "samples_ms": [
+          18.13,
+          15.78,
+          17.026
+        ],
+        "median_ms": 17.026,
+        "max_ms": 18.13,
+        "response_rows": 0
+      },
+      "categories": {
+        "first_call_ms": 17.508,
+        "samples_ms": [
+          16.139,
+          16.865,
+          17.237
+        ],
+        "median_ms": 16.865,
+        "max_ms": 17.237,
+        "response_rows": 0
+      }
+    },
+    "third-floor": {
+      "families": {
+        "first_call_ms": 13.776,
+        "samples_ms": [
+          13.699,
+          14.044,
+          13.739
+        ],
+        "median_ms": 13.739,
+        "max_ms": 14.044,
+        "response_rows": 0
+      },
+      "hierarchy": {
+        "first_call_ms": 18.811,
+        "samples_ms": [
+          18.268,
+          17.903,
+          18.371
+        ],
+        "median_ms": 18.268,
+        "max_ms": 18.371,
+        "response_rows": 0
+      },
+      "brands": {
+        "first_call_ms": 14.268,
+        "samples_ms": [
+          15.814,
+          14.45,
+          13.839
+        ],
+        "median_ms": 14.45,
+        "max_ms": 15.814,
+        "response_rows": 0
+      },
+      "categories": {
+        "first_call_ms": 15.613,
+        "samples_ms": [
+          14.36,
+          16.227,
+          14.91
+        ],
+        "median_ms": 14.91,
+        "max_ms": 16.227,
+        "response_rows": 0
+      }
+    }
+  },
+  "failures": [],
+  "process_peak_rss_mb": 212.23,
+  "passed": true
+}

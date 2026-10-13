@@ -14,6 +14,7 @@ from auth import accessible_floor_ids, apply_staff_password_policy, floor_for_wr
 from db import db
 from models import FloorCreatePayload, FloorPublic, TeamCreatePayload, TeamPasswordResetPayload, TeamUpdatePayload, UserPublic, now_iso
 from services.activity_log import log_event
+from services.catalog_service import catalog_diagnostics
 from services.access_grants import build_delegation_snapshot, grants_allow, grants_for_user, resource_candidates_for_api_path
 from services.download_tokens import create_download_token
 from services.invite_service import generate_temp_password, get_invite_service
@@ -148,7 +149,8 @@ async def mint_download_token(
 
 @router.get("/settings/floors", response_model=list[FloorPublic])
 async def list_floors(user: UserPublic = Depends(get_current_user)):
-    await _ensure_default_floors()
+    # Startup's ensure_floor_scope creates defaults before readiness. Reads
+    # must not pay four remote upserts again on every workspace hydration.
     floors = await db.floors.find({"active": True}, {"_id": 0}).sort("created_at", 1).to_list(50)
     allowed = accessible_floor_ids(user)
     return floors if allowed is None else [floor for floor in floors if floor["id"] in allowed]
@@ -156,7 +158,6 @@ async def list_floors(user: UserPublic = Depends(get_current_user)):
 
 @router.get("/settings/floor-access")
 async def get_floor_access(user: UserPublic = Depends(get_current_user)):
-    await _ensure_default_floors()
     floors = await db.floors.find({"active": True}, {"_id": 0}).sort("created_at", 1).to_list(50)
     allowed = accessible_floor_ids(user)
     visible = floors if allowed is None else [floor for floor in floors if floor["id"] in allowed]
@@ -200,7 +201,7 @@ async def health_system(_: UserPublic = Depends(require_min_role("admin"))):
     """
     global _system_health_cache
     if _system_health_cache and monotonic() - _system_health_cache[0] < _SYSTEM_HEALTH_CACHE_TTL_SECONDS:
-        return _system_health_cache[1]
+        return {**_system_health_cache[1], "catalog": catalog_diagnostics()}
 
     mongo_url = settings.mongo_url
     is_local_mongo = ("localhost" in mongo_url) or ("127.0.0.1" in mongo_url) or (not mongo_url)
@@ -275,6 +276,7 @@ async def health_system(_: UserPublic = Depends(require_min_role("admin"))):
         "counts": counts,
         "secrets_loaded": secrets_loaded,
         "monitoring": monitoring_status,
+        "catalog": catalog_diagnostics(),
         "warnings": warnings,
         "healthy": mongo_ok and (supabase_ok is not False),
     }

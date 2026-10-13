@@ -18,6 +18,7 @@ import { toast } from "@/src/components/Toast";
 import { productImageList } from "@/src/components/quotation/helpers/media";
 import type { Product } from "@/src/components/quotation/helpers/types";
 import { colors, money, radius, spacing } from "@/src/theme/tokens";
+import { catalogGridRows, catalogPageProgress, fetchCatalogPage, mergeCatalogPage } from "@/src/services/catalogService";
 import { isNearScrollEnd } from "@/src/utils/scrollEnd";
 
 import { TILE_IMAGE_ASPECT_RATIO, tilesPickerColumns } from "./tilePresentation";
@@ -50,35 +51,52 @@ export function TilesProductPicker({
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Product[]>([]);
   const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const requestId = useRef(0);
   const openedRef = useRef(false);
+  const nextOffset = useRef(0);
+  const pendingPage = useRef<number | null>(null);
+  const queryContext = useRef({ query, open });
+  queryContext.current = { query, open };
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; requestId.current += 1; }; }, []);
 
   const search = useCallback(async (q: string, skip = 0) => {
+    if (!mounted.current || !queryContext.current.open || q !== queryContext.current.query || (skip > 0 && pendingPage.current !== null)) return;
     const id = ++requestId.current;
-    if (skip === 0) setLoading(true);
+    pendingPage.current = id;
+    if (skip === 0) { nextOffset.current = 0; setHasMore(false); setLoading(true); }
     else setLoadingMore(true);
     if (skip === 0) setLoadError(null);
     try {
-      const params = new URLSearchParams({ limit: String(PAGE_SIZE), skip: String(skip), sort: "popular" });
-      if (q.trim()) params.set("q", q.trim());
-      const res = await api.get<{ items: Product[]; total: number }>(`/products?${params.toString()}`, { floorId: "ground-floor" });
-      if (id !== requestId.current) return;
+      const res = await fetchCatalogPage<Product>({ mode: "products", q, sort: "popular" }, skip, PAGE_SIZE, { floorId: "ground-floor" });
+      if (!mounted.current || !queryContext.current.open || q !== queryContext.current.query || id !== requestId.current) return;
       const items = res.items || [];
-      setResults((current) => skip === 0 ? items : [...current, ...items.filter((item) => !current.some((x) => x.id === item.id))]);
+      setResults((current) => skip === 0 ? items : mergeCatalogPage(current, items));
+      const progress = catalogPageProgress(skip, items.length, res.total || 0);
+      nextOffset.current = progress.nextSkip;
+      setHasMore(progress.hasMore);
       setTotal(res.total || 0);
     } catch (error: any) {
-      if (id === requestId.current) {
+      if (mounted.current && queryContext.current.open && q === queryContext.current.query && id === requestId.current) {
         setLoadError(error?.detail || "Could not load the tile catalog. Check your connection and try again.");
       }
     } finally {
-      if (id === requestId.current) { setLoading(false); setLoadingMore(false); }
+      if (pendingPage.current === id) pendingPage.current = null;
+      if (mounted.current && queryContext.current.open && q === queryContext.current.query && id === requestId.current) { setLoading(false); setLoadingMore(false); }
     }
   }, []);
 
   useEffect(() => {
+    // Revoke earlier responses as soon as typing/closing begins, before the
+    // debounce. A response in that interval must not restore obsolete cards.
+    requestId.current += 1;
+    pendingPage.current = null;
+    setLoadingMore(false);
+    setHasMore(false);
     if (!open) {
       openedRef.current = false;
       return;
@@ -92,7 +110,7 @@ export function TilesProductPicker({
       return;
     }
     const debounce = setTimeout(() => { void search(query); }, 180);
-    return () => clearTimeout(debounce);
+    return () => { clearTimeout(debounce); requestId.current += 1; pendingPage.current = null; };
   }, [query, open, search]);
 
   const pick = useCallback(async (product: Product, useCustomerHistory = true) => {
@@ -118,10 +136,9 @@ export function TilesProductPicker({
     onClose();
   }, [customerId, onClose, onPick]);
 
-  const hasMore = results.length < total;
   const loadMore = useCallback(() => {
-    if (!loading && !loadingMore && hasMore) void search(query, results.length);
-  }, [hasMore, loading, loadingMore, query, results.length, search]);
+    if (queryContext.current.open && queryContext.current.query === query && !loading && !loadingMore && hasMore) void search(query, nextOffset.current);
+  }, [hasMore, loading, loadingMore, query, search]);
 
   return (
     <Overlay open={open} onClose={onClose} title="Add tiles" presentation="fullscreen" scroll={false} header={false}>
@@ -132,7 +149,7 @@ export function TilesProductPicker({
           </Pressable>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.title}>Add tiles</Text>
-            <Text style={styles.subtitle}>Choose a product to add it to this document</Text>
+            <Text style={styles.subtitle}>{total > 0 ? `${total.toLocaleString("en-IN")} products · ` : ""}Choose a product to add it to this document</Text>
           </View>
         </View>
         <View style={styles.searchWrap}>
@@ -176,9 +193,9 @@ export function TilesProductPicker({
               })()}
             />
           )}
-          initialNumToRender={8}
-          maxToRenderPerBatch={8}
-          windowSize={7}
+          initialNumToRender={catalogGridRows(columns, 8)}
+          maxToRenderPerBatch={catalogGridRows(columns, 8)}
+          windowSize={5}
           removeClippedSubviews={Platform.OS !== "web"}
           onEndReached={loadMore}
           onEndReachedThreshold={0.5}

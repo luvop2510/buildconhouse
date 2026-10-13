@@ -1,3 +1,4 @@
+import './test-sound-feedback.mjs';
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 import { readFileSync } from 'node:fs';

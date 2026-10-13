@@ -109,7 +109,7 @@ for (const value of ['', 'http://api.example.test', 'https://user:pass@api.examp
     status: 429, headers: { 'Content-Type': 'application/json', 'Server-Timing': 'app;dur=12.3', 'Retry-After': '60', 'X-Internal-Debug': 'private' },
   }) })(request(), res);
   assert.equal(res.statusCode, 429);
-  assert.equal(res.headers['Server-Timing'], 'app;dur=12.3');
+  assert.match(res.headers['Server-Timing'], /^app;dur=12\.3, upstream;dur=\d+\.\d$/);
   assert.equal(res.headers['Retry-After'], '60');
   assert.equal(res.headers['X-Internal-Debug'], undefined);
   assert.equal(res.headers['Cache-Control'], 'no-store');
@@ -128,6 +128,26 @@ for (const value of ['', 'http://api.example.test', 'https://user:pass@api.examp
     options.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
   }) })(request(), res);
   assert.equal(res.statusCode, 504);
+}
+
+// Headers alone must not end the deadline: stalled JSON/download bodies are
+// the same upstream timeout as a connection that never returns headers.
+for (const path of [['products', 'families'], ['auth', 'login'], ['quotations', 'q1', 'pptx']]) {
+  const res = response();
+  const login = path.join('/') === 'auth/login';
+  await createHandler({ backendUrl: 'https://api.example.test', timeoutMs: 5, fetchImpl: async (_url, options) => {
+    return new Response(new ReadableStream({ start(controller) {
+      controller.enqueue(new TextEncoder().encode('{'));
+      options.signal.addEventListener('abort', () => controller.error(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+    } }), { headers: { 'Content-Type': 'application/json' } });
+  } })(request({ path, method: login ? 'POST' : 'GET', headers: login ? { origin: 'https://buildcon.example' } : {} }), res);
+  assert.equal(res.statusCode, 504, `${path}: stalled response body must time out`);
+}
+
+{
+  const res = response();
+  await createHandler({ backendUrl: 'https://api.example.test', fetchImpl: async () => new Response('broken') })(request({ method: 'POST', path: ['auth', 'login'], headers: { origin: 'https://buildcon.example' } }), res);
+  assert.equal(res.statusCode, 502);
 }
 
 {

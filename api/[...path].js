@@ -68,10 +68,15 @@ export function readBody(req, maxBytes = MAX_REQUEST_BODY_BYTES) {
   });
 }
 
-export async function fetchWithTimeout(url, options, { fetchImpl = fetch, timeoutMs = UPSTREAM_TIMEOUT_MS } = {}) {
+export async function fetchWithTimeout(url, options, { fetchImpl = fetch, timeoutMs = UPSTREAM_TIMEOUT_MS, consume } = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try { return await fetchImpl(url, { ...options, signal: controller.signal }); }
+  try {
+    const response = await fetchImpl(url, { ...options, signal: controller.signal });
+    // A response can send headers and then stall indefinitely. Keep the same
+    // deadline active until its body is consumed, including login and downloads.
+    return consume ? await consume(response) : response;
+  }
   finally { clearTimeout(timeout); }
 }
 
@@ -137,11 +142,12 @@ export function createHandler({ backendUrl = process.env.BACKEND_URL, fetchImpl 
     headers.set('x-forwarded-proto', 'https');
     if (host) headers.set('x-forwarded-host', host);
 
-    let upstreamResponse;
+    let upstreamResponse, upstreamBody;
+    const upstreamStarted = performance.now();
     try {
-      upstreamResponse = await fetchWithTimeout(upstream, {
+      ({ response: upstreamResponse, body: upstreamBody } = await fetchWithTimeout(upstream, {
         method: req.method, headers, body: body?.length ? body : undefined, redirect: 'manual',
-      }, { fetchImpl, timeoutMs });
+      }, { fetchImpl, timeoutMs, consume: async (response) => ({ response, body: Buffer.from(await response.arrayBuffer()) }) }));
     } catch (error) {
       if (error?.name === 'AbortError') return res.status(504).json({ detail: 'The upstream API timed out.' });
       console.error('Web API proxy upstream failure:', error);
@@ -150,14 +156,18 @@ export function createHandler({ backendUrl = process.env.BACKEND_URL, fetchImpl 
 
     // Keep backend processing time visible in browser diagnostics and preserve
     // rate-limit recovery guidance, including responses handled below as JSON.
-    for (const name of ['Server-Timing', 'Retry-After', 'Referrer-Policy']) {
+    for (const name of ['Retry-After', 'Referrer-Policy']) {
       const value = upstreamResponse.headers.get(name);
       if (value) res.setHeader(name, value);
     }
+    const appTiming = upstreamResponse.headers.get('server-timing');
+    res.setHeader('Server-Timing', [appTiming, `upstream;dur=${(performance.now() - upstreamStarted).toFixed(1)}`].filter(Boolean).join(', '));
 
     const isLogin = upstreamResponse.ok && (path === 'auth/login' || path === 'auth/customer/login');
     if (isLogin) {
-      const payload = await upstreamResponse.json();
+      let payload;
+      try { payload = JSON.parse(upstreamBody.toString('utf8')); }
+      catch { return res.status(502).json({ detail: 'The upstream API returned an invalid login response.' }); }
       const token = payload?.access_token;
       if (token) {
         const csrf = crypto.randomUUID() + crypto.randomUUID();
@@ -179,7 +189,7 @@ export function createHandler({ backendUrl = process.env.BACKEND_URL, fetchImpl 
     if (contentType) res.setHeader('Content-Type', contentType);
     const contentDisposition = upstreamResponse.headers.get('content-disposition');
     if (contentDisposition) res.setHeader('Content-Disposition', contentDisposition);
-    return res.status(upstreamResponse.status).send(Buffer.from(await upstreamResponse.arrayBuffer()));
+    return res.status(upstreamResponse.status).send(upstreamBody);
   };
 }
 

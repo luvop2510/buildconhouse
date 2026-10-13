@@ -16,6 +16,7 @@ MAX_CONTEXT_MEDIA = 20000
 MAX_REFERENCE_ROWS = 5000
 MAX_RESPONSE_BYTES = 48 * 1024 * 1024
 MAX_QUERY_MS = 30000
+CATALOG_BATCH_SIZE = 512
 
 
 def floor_query(floor_ids):
@@ -25,16 +26,20 @@ def floor_query(floor_ids):
 async def bounded(cursor, maximum, description):
     from bson import BSON
     rows = []; size = 0
-    async for row in cursor:
-        size += len(BSON.encode(row))
-        if len(rows) >= maximum or size > MAX_RESPONSE_BYTES:
-            raise HTTPException(status_code=413, detail=f"{description} is too large for one response; narrow the floor, brand, category or search filters")
-        rows.append(row)
+    cursor = cursor.batch_size(CATALOG_BATCH_SIZE)
+    try:
+        async for row in cursor:
+            size += len(BSON.encode(row))
+            if len(rows) >= maximum or size > MAX_RESPONSE_BYTES:
+                raise HTTPException(status_code=413, detail=f"{description} is too large for one response; narrow the floor, brand, category or search filters")
+            rows.append(row)
+    finally:
+        await cursor.close()
     return rows
 
 
 def aggregate(pipeline):
-    return db.products.aggregate(pipeline, allowDiskUse=True, maxTimeMS=MAX_QUERY_MS, batchSize=32)
+    return db.products.aggregate(pipeline, allowDiskUse=True, maxTimeMS=MAX_QUERY_MS, batchSize=CATALOG_BATCH_SIZE)
 
 
 def listing_pipeline(filters=None, *, floor_ids=None, q=None, per_category=False, per_placement=False, deduplicate=True):

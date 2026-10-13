@@ -15,7 +15,6 @@ import { ProductImage } from "@/src/components/ProductImage";
 import { colors, money, PRODUCT_IMAGE_ASPECT_RATIO, radius, spacing } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";
 import { supplierLogoFor } from "@/src/design/BrandLogo";
-import { api } from "@/src/api/client";
 import { storage } from "@/src/utils/storage";
 import { useBuilder } from "../context/BuilderContext";
 import { VariantSwatchStrip } from "../shared/VariantChip";
@@ -27,7 +26,7 @@ import type { Product, ProductVariant } from "../helpers/types";
 import { catalogPriceUnknown } from "../helpers/catalogSource";
 import { catalogProductQuantity, roomProductQuantities } from "../helpers/catalogMetrics";
 import { isNearScrollEnd } from "@/src/utils/scrollEnd";
-import { catalogItemKey } from "@/src/services/catalogService";
+import { catalogGridRows, catalogReferences, catalogItemKey } from "@/src/services/catalogService";
 
 const RECENT_SEARCHES_KEY = "forge.builder.recentSearches.v1";
 const MAX_RECENT_SEARCHES = 8;
@@ -46,7 +45,7 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
   const b = useBuilder();
   const [paneWidth, setPaneWidth] = useState(0);
   const [facets, setFacets] = useState<Record<string, { value: string }[]>>({});
-  useEffect(() => { let active = true; void api.get<Record<string, { value: string }[]>>("/catalog/facets", { floorId: b.activeFloorId, cacheMs: 5 * 60_000 }).then(value => { if (active) setFacets(value); }).catch(() => {}); return () => { active = false; }; }, [b.brands, b.activeFloorId]);
+  useEffect(() => { let active = true; if (!b.activeFloorId) return; setFacets({}); void catalogReferences.facets<Record<string, { value: string }[]>>({ floorId: b.activeFloorId }).then(value => { if (active) setFacets(value); }).catch(() => {}); return () => { active = false; }; }, [b.activeFloorId]);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const numCols = quotationGridColumns(paneWidth, !showCompactFilters);
   // Cap compact imagery so tablets show multiple complete rows, even when a
@@ -310,13 +309,11 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
           />
         )}
         removeClippedSubviews={Platform.OS !== "web"}
-        // Keep a full 10–20-card working set ready on compact screens. The
-        // focused mobile workspace removes its non-product chrome, so these
-        // cards are immediately visible/reachable instead of arriving one
-        // short batch at a time.
-        initialNumToRender={showCompactFilters ? 20 : 16}
-        maxToRenderPerBatch={8}
-        windowSize={7}
+        // FlatList counts multi-column rows; keep the initial working set in
+        // cards so wider grids do not multiply image decoding/render work.
+        initialNumToRender={catalogGridRows(numCols, showCompactFilters ? 20 : 16)}
+        maxToRenderPerBatch={catalogGridRows(numCols, 12)}
+        windowSize={5}
         onEndReached={() => b.loadMoreProducts()}
         onEndReachedThreshold={0.5}
         onScroll={(e) => { if (isNearScrollEnd(e.nativeEvent, 0.5)) b.loadMoreProducts(); }}

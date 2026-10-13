@@ -119,8 +119,20 @@ export const catalogReferences = {
     REFERENCE_TTL_MS,
     options,
   ),
+  facets: <T>(options?: CatalogRequestOptions) => cachedGet<T>("/catalog/facets", REFERENCE_TTL_MS, options),
   hierarchy: <T>(options?: CatalogRequestOptions) => cachedGet<T>("/catalog/hierarchy", REFERENCE_TTL_MS, options),
 };
+
+/** FlatList's multi-column list virtualizes rows, so budgets must count rows. */
+export function catalogGridRows(columns: number, cardBudget: number): number {
+  return Math.max(1, Math.ceil(cardBudget / Math.max(1, columns)));
+}
+
+/** Advance by server rows consumed, including rows deduplicated or not displayable. */
+export function catalogPageProgress(skip: number, received: number, total: number) {
+  const nextSkip = skip + received;
+  return { nextSkip, hasMore: received > 0 && nextSkip < total };
+}
 
 export function clearCatalogCache(): void {
   clearApiResponseCache();

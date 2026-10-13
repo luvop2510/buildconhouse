@@ -183,8 +183,9 @@ async def _startup(app: FastAPI) -> None:
     await dispatch_pending()
     app.state.outbox_worker = asyncio.create_task(outbox_worker())
     snapshot = await catalog_service.refresh_catalog_snapshot()
+    logger.info("Catalog startup diagnostics: %s", json.dumps(catalog_service.catalog_diagnostics(), sort_keys=True))
     if getattr(snapshot, "database_backed", False):
-        logger.info("Catalog read model ready: bounded database paging (catalog exceeds warm-cache budget).")
+        logger.warning("Catalog read model ready: bounded database paging (catalog exceeds warm-cache budget); check catalog performance before promotion.")
     else:
         logger.info("Catalog read model ready: %d products.", len(snapshot.products))
     app.state.optional_startup_tasks = [
@@ -211,6 +212,7 @@ async def _shutdown_resources(app: FastAPI) -> None:
             await task
         except asyncio.CancelledError:
             pass
+    await catalog_service.stop_catalog_refresh()
     storage = get_media_storage()
     close_storage = getattr(storage, "close", None)
     if close_storage:

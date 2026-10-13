@@ -1,6 +1,7 @@
 {
+  "regions": ["bom1"],
   "installCommand": "npm ci",
-  "buildCommand": "npm run build",
+  "buildCommand": "npm run build && npm run test:mobile-budget",
   "outputDirectory": "dist/client",
   "routes": [
     {

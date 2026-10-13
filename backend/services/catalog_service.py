@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import logging
 import re
 from collections import Counter, defaultdict
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field as dataclass_field, replace
 from contextvars import ContextVar
 from functools import wraps
 from bson import BSON
@@ -62,15 +63,25 @@ class CatalogSnapshot:
     # variant or legacy concealed association must not scan the whole catalog.
     hydration_by_sku: dict[str, tuple[dict, ...]] | None = None
     hydration_by_configuration: dict[str, tuple[dict, ...]] | None = None
+    source_bytes: int = 0
+    source_rows: dict[str, int | None] = dataclass_field(default_factory=dict)
 
 
 _snapshot_override: ContextVar[CatalogSnapshot | None] = ContextVar("catalog_snapshot_override", default=None)
-_SNAPSHOT_MAX_BYTES = 16 * 1024 * 1024
+# The October supplier imports raised the verified source data to ~20 MB.
+# The former 16 MiB cap silently sent this ordinary catalog through the
+# network-heavy fallback. Keep a finite budget with headroom for the active
+# catalog; Railway's 1 GiB process limit still bounds deployment memory.
+_SNAPSHOT_MAX_BYTES = 32 * 1024 * 1024
 _SNAPSHOT_ROW_LIMITS = {"products": 10000, "product_media": 20000, "brands": 2000, "categories": 2000, "product_usage": 50000}
 _SNAPSHOT_BATCH_SIZE = 512
 _snapshot: CatalogSnapshot | None = None
 _refresh_lock = asyncio.Lock()
 _background_refresh: asyncio.Task | None = None
+_refresh_generation = 0
+_refresh_retry_at = 0.0
+_REFRESH_RETRY_SECONDS = 15.0
+_logger = logging.getLogger(__name__)
 
 
 def _media_sort_key(row: dict) -> tuple[int, int, int]:
@@ -112,6 +123,10 @@ def _build_snapshot(
         rows.sort(key=_media_sort_key)
     for rows in media_family_raw.values():
         rows.sort(key=_media_sort_key)
+    # A photo attached to both a SKU and a family is one model referenced by
+    # two indexes, rather than two independently validated Python objects.
+    media_models = {id(row): ProductMedia(**row) for row in media_rows
+                    if row.get("product_id") or row.get("family_key")}
 
     global_usage: dict[str, int] = defaultdict(int)
     usage_by_user: dict[str, dict[str, dict]] = defaultdict(dict)
@@ -129,11 +144,11 @@ def _build_snapshot(
         product_by_id=product_by_id,
         products_by_family={key: tuple(rows) for key, rows in products_by_family_raw.items()},
         media_by_product={
-            key: tuple(ProductMedia(**row) for row in rows)
+            key: tuple(media_models[id(row)] for row in rows)
             for key, rows in media_product_raw.items()
         },
         media_by_family={
-            key: tuple(ProductMedia(**row) for row in rows)
+            key: tuple(media_models[id(row)] for row in rows)
             for key, rows in media_family_raw.items()
         },
         media_rows_by_product={key: tuple(rows) for key, rows in media_product_raw.items()},
@@ -169,44 +184,120 @@ async def refresh_catalog_snapshot(*, only_if_missing: bool = False) -> CatalogS
     The byte budget is shared by all collections. Cursors use bounded batches;
     crossing the threshold discards the partial cache, never partial results.
     """
-    global _snapshot
+    global _snapshot, _refresh_retry_at
     async with _refresh_lock:
         # Concurrent cold requests wait for the first warmup and reuse it.
         # Explicit post-write refreshes always reload the source collections.
         if only_if_missing and _snapshot is not None:
             return _snapshot
-        budget = [0]
-        collections = []
-        for name in ("products", "product_media", "brands", "categories", "product_usage"):
-            rows = await _bounded_snapshot_collection(name, {"active": True} if name == "products" else {}, budget)
-            if rows is None:
-                marker = _build_snapshot([], [], [], [], [])
-                marker.database_backed = True
-                _snapshot = marker
-                return _snapshot
-            collections.append(rows)
-        _snapshot = _build_snapshot(*collections)
-        return _snapshot
+        while True:
+            generation = _refresh_generation
+            budget = [0]
+            collection_names = ("products", "product_media", "brands", "categories", "product_usage")
+            # These collections are independent. TaskGroup also cancels and
+            # closes every cursor if one source fails, preserving the old model.
+            async with asyncio.TaskGroup() as group:
+                reads = [group.create_task(_bounded_snapshot_collection(
+                    name, {"active": True} if name == "products" else {}, budget,
+                )) for name in collection_names]
+            collections = [read.result() for read in reads]
+            if any(rows is None for rows in collections):
+                candidate = _build_snapshot([], [], [], [], [])
+                candidate.database_backed = True
+            else:
+                # Pydantic media validation/index creation must not freeze all
+                # other API requests during a cold or periodic catalog rebuild.
+                candidate = await asyncio.to_thread(_build_snapshot, *collections)
+            candidate.source_bytes = budget[0]
+            candidate.source_rows = dict(zip(collection_names, [
+                len(rows) if rows is not None else None for rows in collections
+            ]))
+            if generation != _refresh_generation:
+                # A completed write during source reads invalidates this build.
+                # Reload it rather than overwriting the immediate product edit.
+                continue
+            _snapshot = candidate
+            _refresh_retry_at = 0.0
+            log = _logger.warning if candidate.database_backed or budget[0] >= _SNAPSHOT_MAX_BYTES * .8 else _logger.info
+            log("Catalog mode=%s source_bytes=%d budget_bytes=%d source_rows=%s",
+                "database" if candidate.database_backed else "memory", budget[0],
+                _SNAPSHOT_MAX_BYTES, candidate.source_rows)
+            return _snapshot
+
+
+def catalog_diagnostics() -> dict:
+    """Operational counters only, safe for readiness and performance probes."""
+    snapshot = _snapshot
+    return {
+        "mode": "uninitialized" if snapshot is None else "database" if snapshot.database_backed else "memory",
+        "source_bytes": snapshot.source_bytes if snapshot else 0,
+        "budget_bytes": _SNAPSHOT_MAX_BYTES,
+        "source_rows": snapshot.source_rows if snapshot else {},
+        "refresh_in_flight": _background_refresh is not None and not _background_refresh.done(),
+        "retry_after_seconds": max(0, round(_refresh_retry_at - monotonic(), 1)),
+    }
+
+
+async def _background_catalog_refresh() -> CatalogSnapshot:
+    global _refresh_retry_at
+    try:
+        return await refresh_catalog_snapshot(only_if_missing=_snapshot is None)
+    except Exception:
+        _refresh_retry_at = monotonic() + _REFRESH_RETRY_SECONDS
+        _logger.exception("Catalog refresh failed; retaining the previous snapshot")
+        raise
+
+
+def _refresh_finished(task: asyncio.Task) -> None:
+    # Retrieve exceptions even if every request was cancelled or a warm request
+    # used stale data. The refresh coroutine logs its failure once.
+    if not task.cancelled():
+        task.exception()
+
+
+def _start_catalog_refresh() -> asyncio.Task:
+    global _background_refresh
+    if _background_refresh is None or _background_refresh.done():
+        _background_refresh = asyncio.create_task(_background_catalog_refresh())
+        _background_refresh.add_done_callback(_refresh_finished)
+    return _background_refresh
+
+
+async def stop_catalog_refresh() -> None:
+    """Finish ownership of background catalog work before Mongo shutdown."""
+    global _background_refresh
+    task = _background_refresh
+    _background_refresh = None
+    if task is not None and not task.done():
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 async def get_catalog_snapshot() -> CatalogSnapshot:
     override = _snapshot_override.get()
     if override is not None:
         return override
-    global _background_refresh
     if _snapshot is None:
-        return await refresh_catalog_snapshot(only_if_missing=True)
-    if monotonic() - _snapshot.loaded_at > _SNAPSHOT_MAX_AGE_SECONDS:
-        if _background_refresh is None or _background_refresh.done():
-            _background_refresh = asyncio.create_task(refresh_catalog_snapshot())
+        # All cold callers share success/failure and a disconnected client
+        # cannot cancel the shared warmup for other pages.
+        if monotonic() < _refresh_retry_at and _background_refresh is not None:
+            return await asyncio.shield(_background_refresh)
+        return await asyncio.shield(_start_catalog_refresh())
+    if (monotonic() - _snapshot.loaded_at > _SNAPSHOT_MAX_AGE_SECONDS
+            and monotonic() >= _refresh_retry_at):
+        _start_catalog_refresh()
     return _snapshot
 
 
 def schedule_catalog_refresh() -> None:
     """Refresh after a catalog/media mutation without delaying its response."""
-    global _background_refresh
-    if _background_refresh is None or _background_refresh.done():
-        _background_refresh = asyncio.create_task(refresh_catalog_snapshot())
+    global _refresh_generation
+    # Don't lose an invalidation when a prior refresh is already in flight.
+    _refresh_generation += 1
+    _start_catalog_refresh()
 
 
 def patch_product_in_snapshot(product_id: str, updates: dict) -> None:

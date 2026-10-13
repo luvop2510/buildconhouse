@@ -1,0 +1,82 @@
+{
+  "methodology": "Read-only local backend service calls using the live Atlas catalog. Excludes authentication, HTTP and browser rendering. No database writes or product/customer records exported. Measurements before and after made from this Mac; production hosting timings must be checked after deployment.",
+  "before": {
+    "snapshot_budget_bytes": 16777216,
+    "snapshot_mode": "database",
+    "snapshot_attempt_ms": 10713.22,
+    "first_floor_hierarchy_ms": 6619.65,
+    "first_floor_families_ms": 2447.55
+  },
+  "after": {
+    "snapshot_warmup_ms": 11654.48,
+    "diagnostics": {
+      "mode": "memory",
+      "source_bytes": 19688845,
+      "budget_bytes": 33554432,
+      "source_rows": {
+        "products": 6565,
+        "product_media": 8489,
+        "brands": 28,
+        "categories": 105,
+        "product_usage": 0
+      },
+      "refresh_in_flight": false,
+      "retry_after_seconds": 0
+    },
+    "process_peak_rss_mb": 155.44,
+    "floors": {
+      "first-floor": {
+        "hierarchy_memory_samples_ms": [
+          44.36,
+          39.5,
+          33.53,
+          34.9,
+          27.77
+        ],
+        "hierarchy_memory_median_ms": 34.9,
+        "families_memory_samples_ms": [
+          307.15,
+          36.93,
+          34.88,
+          64.53,
+          47.32
+        ],
+        "families_memory_median_ms": 47.32,
+        "hierarchy_fallback_512_batch_ms": 1728.44,
+        "hierarchy_counts_match": true,
+        "hierarchy_groups": 2408,
+        "families_fallback_512_batch_ms": 3404.09,
+        "family_page_ids_match": true,
+        "family_total_match": true,
+        "family_total": 1597,
+        "family_page_rows": 60
+      },
+      "ground-floor": {
+        "hierarchy_memory_samples_ms": [
+          276.34,
+          65.64,
+          42.06,
+          40.1,
+          40.31
+        ],
+        "hierarchy_memory_median_ms": 42.06,
+        "families_memory_samples_ms": [
+          51.71,
+          155.03,
+          141.27,
+          133.1,
+          70.08
+        ],
+        "families_memory_median_ms": 133.1,
+        "hierarchy_fallback_512_batch_ms": 927.98,
+        "hierarchy_counts_match": true,
+        "hierarchy_groups": 1584,
+        "families_fallback_512_batch_ms": 1076.31,
+        "family_page_ids_match": true,
+        "family_total_match": true,
+        "family_total": 1584,
+        "family_page_rows": 60
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "methodology": "Fresh final production export; all-page error/layout audit plus catalog/floor/quotation workflows; eight projects, intercepted APIs, no production business writes.",
+  "stats": {
+    "expected": 434,
+    "unexpected": 0,
+    "skipped": 0,
+    "flaky": 0,
+    "duration": 303718.945
+  }
+}

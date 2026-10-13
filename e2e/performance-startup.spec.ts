@@ -3,6 +3,14 @@ import { performance } from 'node:perf_hooks';
 import { mockSession } from './audit-fixtures';
 
 const LATENCY_MS = 200;
+const performanceFixtures = new WeakMap<Page, Record<string, unknown>>();
+
+test.afterEach(async ({ page }, info) => {
+  const data = performanceFixtures.get(page);
+  if (!data) return;
+  const tasks = await page.evaluate(() => ({ supported: PerformanceObserver.supportedEntryTypes?.includes('longtask') ?? false, durations: (window as any).__performanceLongTasks })).catch(() => null);
+  await info.attach('request-and-runtime-evidence', { body: JSON.stringify({ device: info.project.name, fixtureLatencyMs: LATENCY_MS, ...data, tasks }, null, 2), contentType: 'application/json' });
+});
 const product = {
   id: 'performance-product', name: 'Performance basin', sku: 'PERFORMANCE-1',
   brand_id: 'performance-brand', category_id: 'performance-category',
@@ -15,7 +23,7 @@ const family = {
   product_count: 1, variants: [product],
 };
 
-async function fixtureCatalog(page: Page, baseURL: string) {
+async function fixtureCatalog(page: Page, baseURL: string, overrides: Record<string, unknown> = {}) {
   const origin = new URL(baseURL).origin;
   const started = performance.now();
   const reads: { path: string; query: string; atMs: number; floor: string | undefined }[] = [];
@@ -64,6 +72,7 @@ async function fixtureCatalog(page: Page, baseURL: string) {
     '/api/catalog/hierarchy': { tree: [{ brand: { id: product.brand_id, name: 'Performance Brand' }, product_count: 1, categories: [{ category: { id: product.category_id, name: 'Basins' }, subcategories: [] }] }] },
     '/api/products/families': { total: 1, items: [family] },
     '/api/products': { total: 1, items: [product] },
+    ...overrides,
   };
   await page.route('**/api/**', async route => {
     // Delaying every request makes redundant requests and serial waterfalls
@@ -73,7 +82,9 @@ async function fixtureCatalog(page: Page, baseURL: string) {
     if (Object.hasOwn(replies, path)) return route.fulfill({ json: replies[path] });
     return route.fallback();
   });
-  return { started, reads, completed, external, mutations, errors, consoleErrors, failedRequests };
+  const data = { started, reads, completed, external, mutations, errors, consoleErrors, failedRequests };
+  performanceFixtures.set(page, data);
+  return data;
 }
 
 test('cold catalog loads one bounded page promptly on each device', async ({ page, baseURL }, info) => {
@@ -103,7 +114,7 @@ test('cold catalog loads one bounded page promptly on each device', async ({ pag
   expect(familyReads).toHaveLength(1);
   expect(new URLSearchParams(familyReads[0].query).get('limit')).toBe('60');
   expect(familyReads[0].floor).toBe('first-floor');
-  for (const path of ['/api/auth/me', '/api/settings/floor-access', '/api/brands', '/api/categories', '/api/catalog/hierarchy']) {
+  for (const path of ['/api/auth/me', '/api/settings/floor-access', '/api/brands', '/api/categories', '/api/catalog/hierarchy', '/api/catalog/facets']) {
     expect(data.reads.filter(read => read.path === path), path).toHaveLength(1);
   }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
@@ -143,6 +154,7 @@ test('customer identity and tabs remain usable while related history is pending'
     await page.getByTestId('customer-tab-quotations').click();
     await expect(page.getByText('Loading quotations…', { exact: true })).toBeVisible();
     await expect(page.getByText('No quotations yet', { exact: true })).toHaveCount(0);
+    expect(readyMs).toBeLessThan(2500);
     expect(data.completed.some(read => held.includes(read.path))).toBe(false);
     expect(data.reads.filter(read => read.path === `/api/customers/${customerId}`)).toHaveLength(1);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
@@ -186,6 +198,7 @@ test('quotation content renders while breakdown, purchase links and activity are
     await expect(page.getByText('Loading line prices…', { exact: true })).toBeVisible();
     await expect(page.getByTestId('edit-quotation')).toBeVisible();
     expect(held).toEqual(expect.arrayContaining([`/api/quotations/${quotationId}/breakdown`, `/api/activity/quotation/${quotationId}`, '/api/purchase-orders']));
+    expect(readyMs).toBeLessThan(2500);
     expect(data.completed.some(read => held.includes(read.path))).toBe(false);
     expect(data.reads.filter(read => read.path === `/api/quotations/${quotationId}`)).toHaveLength(1);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
@@ -235,6 +248,7 @@ test('repeated navigation and viewport rotation remain usable on a slower CPU', 
       await page.goBack();
       await expect(page.getByText('No customers yet', { exact: true })).toBeVisible();
     }
+    expect(Math.max(...timings)).toBeLessThan(2500);
     expect(data.errors).toEqual([]);
     expect(data.external).toEqual([]);
     expect(data.mutations).toEqual([]);
@@ -289,11 +303,128 @@ test('repeated catalog visits retain one signed-in session and reuse reference d
     await expect(page.getByText('No customers yet', { exact: true })).toBeVisible();
     await expect(page.getByTestId('login-submit')).toHaveCount(0);
   }
-  for (const path of ['/api/auth/me', '/api/settings/floor-access', '/api/brands', '/api/categories', '/api/catalog/hierarchy']) {
+  for (const path of ['/api/auth/me', '/api/settings/floor-access', '/api/brands', '/api/categories', '/api/catalog/hierarchy', '/api/catalog/facets']) {
     expect(data.reads.filter(read => read.path === path), path).toHaveLength(1);
   }
   expect(data.errors).toEqual([]);
   expect(data.external).toEqual([]);
   expect(data.mutations).toEqual([]);
+  expect(timings[0]).toBeLessThan(2500);
+  expect(Math.max(...timings.slice(1))).toBeLessThan(750);
   await info.attach('repeated-session-navigation', { body: JSON.stringify({ visits: 12, device: info.project.name, fixtureLatencyMs: LATENCY_MS, timings, reads: data.reads, consoleErrors: data.consoleErrors, failedRequests: data.failedRequests }, null, 2), contentType: 'application/json' });
+});
+
+// A one-card fixture cannot detect expensive grid/variant rendering. Return a
+// full bounded page at the actual catalog scale, with ten finishes per family.
+const realisticFamilies = Array.from({ length: 60 }, (_, index) => ({
+  ...family, family_key: `scale-${index}`, family_name: `Scale basin ${index}`,
+  sample_product_id: `scale-${index}-0`, product_count: 10,
+  variants: Array.from({ length: 10 }, (_, finish) => ({
+    ...product, id: `scale-${index}-${finish}`, sku: `SCALE-${index}-${finish}`,
+    name: `Scale basin ${index}`, finish: `Finish ${finish}`, images: [],
+  })),
+}));
+const realisticReplies = {
+  '/api/products/families': { total: 6500, items: realisticFamilies },
+  '/api/quotations/recent': [],
+  '/api/quotations': [],
+};
+
+async function assertHealthyInteraction(page: Page, data: Awaited<ReturnType<typeof fixtureCatalog>>) {
+  // Long Task API is supported in Chromium; Safari still enforces the actual
+  // interaction deadline and crash/error guard. Never treat no support as zero.
+  const tasks = await page.evaluate(() => ({
+    supported: PerformanceObserver.supportedEntryTypes?.includes('longtask') ?? false,
+    durations: (window as any).__performanceLongTasks as number[],
+  }));
+  if (tasks.supported) {
+    expect(Math.max(0, ...tasks.durations), 'one task must not freeze input for half a second').toBeLessThan(500);
+    expect(tasks.durations.reduce((sum, duration) => sum + Math.max(0, duration - 50), 0), 'total blocking CPU in the scenario').toBeLessThan(1500);
+  }
+  expect(data.errors).toEqual([]);
+  expect(data.consoleErrors).toEqual([]);
+  expect(data.external).toEqual([]);
+  expect(data.mutations).toEqual([]);
+  expect(data.failedRequests.filter(request => !/abort|cancel/i.test(request.error || ''))).toEqual([]);
+  return tasks;
+}
+
+test('full catalog page stays bounded and search responds under CPU pressure', async ({ page, browserName, baseURL }, info) => {
+  const data = await fixtureCatalog(page, baseURL!, realisticReplies);
+  const searchTimings: number[] = [];
+  await page.route('**/api/products/families?**', async route => {
+    const query = new URL(route.request().url()).searchParams;
+    if (!query.get('q')) return route.fallback();
+    await new Promise(resolve => setTimeout(resolve, LATENCY_MS));
+    return route.fulfill({ json: { total: 1, items: [{ ...realisticFamilies[0], family_key: query.get('q') }] } });
+  });
+  const started = performance.now();
+  await page.goto('/catalog', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('family-scale-0')).toBeVisible();
+  const readyMs = performance.now() - started;
+  expect(readyMs).toBeLessThan(2500);
+  const initial = data.reads.filter(read => read.path === '/api/products/families');
+  expect(initial).toHaveLength(1);
+  expect(new URLSearchParams(initial[0].query).get('limit')).toBe('60');
+  expect(new URLSearchParams(initial[0].query).get('skip')).toBe('0');
+  const cdp = browserName === 'chromium' ? await page.context().newCDPSession(page) : null;
+  if (cdp) await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+  try {
+    const search = page.getByRole('textbox', { name: 'Search catalog', exact: true });
+    for (const term of ['pressure-one', 'pressure-two', 'pressure-three']) {
+      const interactionStarted = performance.now();
+      await search.fill(term);
+      await expect(page.getByTestId(`family-${term}`)).toBeVisible();
+      searchTimings.push(performance.now() - interactionStarted);
+    }
+    expect(Math.max(...searchTimings)).toBeLessThan(1500);
+    expect(data.reads.filter(read => read.path === '/api/products/families')).toHaveLength(4);
+    const tasks = await assertHealthyInteraction(page, data);
+    await info.attach('realistic-catalog-performance', { body: JSON.stringify({ readyMs, searchTimings, cpuThrottle: cdp ? 4 : null, fixtureLatencyMs: LATENCY_MS, familyTotal: 6500, pageSize: 60, variantsPerFamily: 10, tasks, reads: data.reads }, null, 2), contentType: 'application/json' });
+  } finally {
+    if (cdp) { await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 }); await cdp.detach(); }
+  }
+});
+
+test('quotation builder renders a full variant page and adds a line promptly', async ({ page, baseURL }, info) => {
+  const data = await fixtureCatalog(page, baseURL!, realisticReplies);
+  const started = performance.now();
+  await page.goto('/quotations/new', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('builder-back')).toBeVisible();
+  const addFirst = page.getByTestId('mobile-add-first');
+  if (await addFirst.isVisible()) await addFirst.click();
+  const picker = page.getByRole('dialog', { name: 'Add products', exact: true });
+  const controls = await picker.isVisible() ? picker : page;
+  await expect(controls.getByTestId('product-card-SCALE-0-0')).toBeVisible();
+  const readyMs = performance.now() - started;
+  expect(readyMs).toBeLessThan(2500);
+  const initial = data.reads.filter(read => read.path === '/api/products/families');
+  expect(initial).toHaveLength(1);
+  expect(new URLSearchParams(initial[0].query).get('limit')).toBe('60');
+  const addStarted = performance.now();
+  await controls.getByTestId('add-SCALE-0-0').click();
+  // Quantity badge proves the real line state has changed, without saving any
+  // quotation or making a backend mutation.
+  await expect(controls.getByTestId('product-card-SCALE-0-0').getByText('1 in this room', { exact: true })).toBeVisible();
+  const addMs = performance.now() - addStarted;
+  expect(addMs).toBeLessThan(750);
+  const tasks = await assertHealthyInteraction(page, data);
+  await info.attach('realistic-builder-performance', { body: JSON.stringify({ readyMs, addMs, fixtureLatencyMs: LATENCY_MS, tasks, reads: data.reads }, null, 2), contentType: 'application/json' });
+});
+
+test('Ground Floor cold navigation starts both document reads in parallel', async ({ page, baseURL }, info) => {
+  const data = await fixtureCatalog(page, baseURL!, realisticReplies);
+  await page.addInitScript(() => localStorage.setItem('forge.active-floor', JSON.stringify('ground-floor')));
+  const started = performance.now();
+  await page.goto('/tiles', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByText('No quotations yet', { exact: true })).toBeVisible();
+  const readyMs = performance.now() - started;
+  expect(readyMs).toBeLessThan(2500);
+  const documentReads = data.reads.filter(read => read.path === '/api/quotations');
+  expect(documentReads).toHaveLength(2);
+  expect(documentReads.every(read => read.floor === 'ground-floor')).toBe(true);
+  expect(new Set(documentReads.map(read => new URLSearchParams(read.query).get('doc_type')))).toEqual(new Set(['tiles_selection', 'tiles_quotation']));
+  expect(Math.abs(documentReads[0].atMs - documentReads[1].atMs)).toBeLessThan(100);
+  const tasks = await assertHealthyInteraction(page, data);
+  await info.attach('ground-floor-performance', { body: JSON.stringify({ readyMs, fixtureLatencyMs: LATENCY_MS, tasks, reads: data.reads }, null, 2), contentType: 'application/json' });
 });

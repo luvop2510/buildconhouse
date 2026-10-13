@@ -4,6 +4,21 @@
 The duration covers the application middleware and endpoint execution in that
 process; it is neither a network round-trip nor a claim of end-to-end latency.
 
+The Vercel proxy appends `upstream;dur=<milliseconds>` covering its complete
+upstream fetch, including response-body consumption. Compare it with `app`
+and browser total duration to distinguish backend computation, upstream transit,
+and browser-to-edge latency. Its existing 28-second deadline now also covers a
+body that stalls after headers; these requests return 504 instead of hanging.
+Cookie/CSRF, floor, download-token and no-store response boundaries remain.
+
+Catalog snapshot mode, source bytes/rows, finite byte budget and refresh/backoff
+state are available in the authenticated administrator-only `/api/health/system`
+response. Startup/refresh logs record these operational counters; database
+fallback or at least 80% byte-budget consumption emits a warning. The read-only
+`backend/scripts/benchmark_catalog_performance.py` measures every floor's warmed
+family/hierarchy/reference reads and rejects unexpected database fallback.
+This catches source-data growth that hermetic CI fixtures alone cannot observe.
+
 The backend also keeps a bounded 512-request in-process latency window and
 emits a structured `slow_request` warning when a request reaches the configured
 threshold. Logs contain only HTTP method, matched route template, status, and

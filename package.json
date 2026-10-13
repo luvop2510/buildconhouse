@@ -36,6 +36,8 @@
     "test:monitoring-contract": "node scripts/test-monitoring-contract.mjs",
     "test:e2e:audit": "playwright test --config playwright.audit.config.ts",
     "test:frontend-performance": "node --experimental-strip-types --no-warnings scripts/test-frontend-performance.mjs",
+    "test:sound-feedback": "node scripts/test-sound-feedback.mjs",
+    "test:performance:audit": "node scripts/run-performance-audit.mjs",
     "test:e2e:performance": "playwright test --config playwright.performance.config.ts",
     "test:page-loading-performance": "node scripts/test-page-loading-performance.mjs",
     "test:icon-fonts": "node scripts/test-icon-font-contract.mjs",

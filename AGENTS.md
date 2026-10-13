@@ -2,6 +2,35 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
+## Performance constraints — 2026-10-13 incident repair
+
+Performance is a release requirement for every feature/change. Read
+`docs/deployment/performance-policy.md` and run `npm run test:performance:audit`
+against current source before publication. The installed local pre-push hook
+and independent push/PR Performance workflow enforce this audit; do not bypass
+them, increase deadlines, suppress page errors, or reuse an old export.
+All exported routes inherit bundle budgets; extend interaction/loading fixtures
+for new heavy pages. Backend unit tests always use hermetic CI settings.
+
+Verified incident: production source BSON grew to ~19.7 MB, exceeding the old
+16 MiB snapshot cap and silently forcing catalog hierarchy/family reads through
+remote Mongo aggregation. The cache remains bounded at 32 MiB with unchanged
+row caps; diagnostics/warnings reveal fallback. Parallel source reads, shared
+refresh/failure/backoff, off-loop construction and generation invalidation retain
+safe floor/media/write behavior. Do not introduce per-page full-catalog reads.
+`backend/scripts/benchmark_catalog_performance.py` is a read-only, configured
+dataset service audit: no bootstrap/migrations/sessions/business writes; mode,
+counts and numeric timings only. Its warmed computation budgets exclude HTTP,
+authentication/browser/network. Verify live serving regions and latency after
+deployment; historical SFO/IAD evidence no longer describes the target setup.
+
+Catalog/Builder/Tiles cursors consume raw server rows even when displayed rows
+are deduplicated/dropped; empty pages terminate pagination. Guard both starting
+and publishing async work against current query/floor/mount; gate simultaneous
+scroll callbacks synchronously. Multi-column FlatList budgets count rows, not
+cards. Optional sound playback must observe asynchronous browser rejections.
+See `docs/audits/2026-10-13-performance-incident.md` for release evidence.
+
 ## Quotation filters and walk-in visibility — 2026-10-13 follow-up
 
 Quotation brand/category filters are now single-choice; finish/color filter rows

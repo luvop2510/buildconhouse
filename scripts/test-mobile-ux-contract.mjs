@@ -151,7 +151,7 @@ const explorer = read("../src/components/quotation/catalog/ProductExplorer.tsx")
 assert.match(builderShell, /mobileWorkspaceCollapsed/);
 assert.match(quotationPane, /collapse-quotation-workspace/);
 assert.match(quotationPane, /expand-quotation-workspace/);
-assert.match(explorer, /initialNumToRender=\{showCompactFilters \? 20 : 16\}/);
+assert.match(explorer, /initialNumToRender=\{catalogGridRows\(numCols, showCompactFilters \? 20 : 16\)\}/);
 
 const placeOrder = read("../app/(admin)/quotations/[id]/place-order.tsx");
 assert.match(placeOrder, /confirmBarPhone: \{ flexDirection: "column", alignItems: "stretch" \}/);

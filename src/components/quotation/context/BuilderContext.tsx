@@ -28,7 +28,7 @@ import { draftNeedsCopy, type BuilderDraft } from "../helpers/draftRecovery";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import type { HistoryApi } from "@/src/hooks/useHistory";
 import { playAddProductSound } from "@/src/services/soundService";
-import { catalogReferences, CATALOG_PAGE_SIZE, clearCatalogCache, fetchCatalogPage, mergeCatalogPage } from "@/src/services/catalogService";
+import { catalogPageProgress, catalogReferences, CATALOG_PAGE_SIZE, clearCatalogCache, fetchCatalogPage, mergeCatalogPage } from "@/src/services/catalogService";
 import { downloadApiFile } from "@/src/utils/downloadFile";
 
 import { computeTotals, computeLineBreakdown, type LineBreakdown } from "../helpers/pricing";
@@ -576,13 +576,23 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
 
   // ---------- Product explorer fetch (page 1 on filter/search/sort change) ----------
   const productRequestGeneration = useRef(0);
+  const nextProductOffset = useRef(0);
+  const productQueryScope = JSON.stringify([activeFloorId, q, selectedBrandIds, selectedCategoryIds, selectedSizes, sortKey, productRetry]);
+  const currentProductScope = useRef(productQueryScope);
+  currentProductScope.current = productQueryScope;
+  const productMounted = useRef(true);
+  useEffect(() => { productMounted.current = true; return () => { productMounted.current = false; }; }, []);
   const loadMoreController = useRef<AbortController | null>(null);
+  const loadingMoreRef = useRef(false);
   useEffect(() => {
     if (!activeFloorId) {
       setProducts([]); setProductTotal(0); setProductHasMore(false);
       return;
     }
     const generation = ++productRequestGeneration.current;
+    nextProductOffset.current = 0;
+    loadingMoreRef.current = false;
+    setProductLoadingMore(false);
     const controller = new AbortController();
     let cancelled = false;
     setProductLoading(true);
@@ -590,24 +600,26 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     const t = setTimeout(async () => {
       // Safety net — never let the grid spin forever even if something
       // upstream (network, backend) genuinely stalls. 12s is generous.
-      const safety = setTimeout(() => { if (!cancelled) { setProductLoading(false); setProductError("Product search is taking longer than expected. Please retry."); controller.abort(); } }, 12000);
+      const safety = setTimeout(() => { if (!cancelled && productMounted.current && productQueryScope === currentProductScope.current) { setProductLoading(false); setProductError("Product search is taking longer than expected. Please retry."); controller.abort(); } }, 12000);
       try {
         const res = await fetchCatalogPage<CatalogFamily>({
           mode: "families", q, brandIds: selectedBrandIds, categoryIds: selectedCategoryIds, sizes: selectedSizes, sort: sortKey,
         }, 0, CATALOG_PAGE_SIZE, { floorId: activeFloorId, signal: controller.signal });
-        if (cancelled || generation !== productRequestGeneration.current) return;
+        if (cancelled || !productMounted.current || productQueryScope !== currentProductScope.current || generation !== productRequestGeneration.current) return;
         const items = (res.items || []).map(familyCardToProduct).filter((item): item is Product => item !== null);
         setProducts(items);
         setProductTotal(res.total || 0);
-        setProductHasMore(items.length < (res.total || 0));
+        const progress = catalogPageProgress(0, (res.items || []).length, res.total || 0);
+        nextProductOffset.current = progress.nextSkip;
+        setProductHasMore(progress.hasMore);
       } catch (e) {
-        if (!cancelled && generation === productRequestGeneration.current && (e as any)?.name !== "AbortError") {
+        if (!cancelled && productMounted.current && productQueryScope === currentProductScope.current && generation === productRequestGeneration.current && (e as any)?.name !== "AbortError") {
           setProductError((e as any)?.detail || "Could not load products. Check your connection and retry.");
           setProducts([]); setProductTotal(0); setProductHasMore(false);
         }
       } finally {
         clearTimeout(safety);
-        if (!cancelled) setProductLoading(false);
+        if (!cancelled && productMounted.current && productQueryScope === currentProductScope.current) setProductLoading(false);
       }
     }, q.trim() ? 300 : 0);
     return () => {
@@ -616,15 +628,14 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
       loadMoreController.current?.abort();
       clearTimeout(t);
     };
-  }, [q, selectedBrandIds, selectedCategoryIds, selectedSizes, sortKey, activeFloorId, productRetry]);
+  }, [q, selectedBrandIds, selectedCategoryIds, selectedSizes, sortKey, activeFloorId, productRetry, productQueryScope]);
 
   // ---------- Infinite scroll — fetch the next page and append ----------
-  const loadingMoreRef = useRef(false);
   const loadMoreProducts = useCallback(() => {
-    if (loadingMoreRef.current || productLoading || !productHasMore) return;
+    if (!productMounted.current || productQueryScope !== currentProductScope.current || loadingMoreRef.current || productLoading || !productHasMore) return;
     loadingMoreRef.current = true;
     setProductLoadingMore(true);
-    const skipAt = products.length;
+    const skipAt = nextProductOffset.current;
     const generation = productRequestGeneration.current;
     const controller = new AbortController();
     loadMoreController.current?.abort();
@@ -634,22 +645,24 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
         const res = await fetchCatalogPage<CatalogFamily>({
           mode: "families", q, brandIds: selectedBrandIds, categoryIds: selectedCategoryIds, sizes: selectedSizes, sort: sortKey,
         }, skipAt, CATALOG_PAGE_SIZE, { floorId: activeFloorId, signal: controller.signal });
-        if (controller.signal.aborted || generation !== productRequestGeneration.current) return;
+        if (controller.signal.aborted || !productMounted.current || productQueryScope !== currentProductScope.current || generation !== productRequestGeneration.current) return;
         const items = (res.items || []).map(familyCardToProduct).filter((item): item is Product => item !== null);
         setProducts((cur) => mergeCatalogPage(cur, items));
         setProductTotal(res.total || 0);
-        setProductHasMore(skipAt + items.length < (res.total || 0));
+        const progress = catalogPageProgress(skipAt, (res.items || []).length, res.total || 0);
+        nextProductOffset.current = progress.nextSkip;
+        setProductHasMore(progress.hasMore);
       } catch (e) {
-        if ((e as any)?.name !== "AbortError") console.warn("Load more products failed", e);
+        if (productMounted.current && productQueryScope === currentProductScope.current && (e as any)?.name !== "AbortError") console.warn("Load more products failed", e);
       } finally {
         if (loadMoreController.current === controller) {
           loadMoreController.current = null;
           loadingMoreRef.current = false;
-          setProductLoadingMore(false);
+          if (productMounted.current && productQueryScope === currentProductScope.current) setProductLoadingMore(false);
         }
       }
     })();
-  }, [productLoading, productHasMore, products.length, q, selectedBrandIds, selectedCategoryIds, selectedSizes, sortKey, activeFloorId]);
+  }, [productLoading, productHasMore, q, selectedBrandIds, selectedCategoryIds, selectedSizes, sortKey, activeFloorId, productQueryScope]);
 
   // ---------- Autosave ----------
   const persist = useCallback(async (): Promise<string | null> => {
