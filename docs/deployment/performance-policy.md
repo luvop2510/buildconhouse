@@ -4,9 +4,10 @@ Every push and pull request runs the independent **Performance / performance**
 workflow. It rebuilds the current production export before measuring it, so
 cached output cannot conceal source changes. Each browser run serves an immutable copy of that export; concurrent editor rebuilds cannot invalidate its assets. A failed timing, crash, loading,
 request, CPU or bundle constraint fails the job. No retries, skipped cases,
-exclusive tests or unavailable evidence count as acceptance. Configure this
-check as a required branch-protection check alongside the functional/security
-jobs; workflow files cannot create GitHub branch protection themselves.
+exclusive tests or unavailable evidence count as acceptance. This check is
+configured on main alongside backend/frontend/frontend-security, with strict
+up-to-date checks, review and enforcement for administrators (verified 13 October
+2026). Preserve it; workflow files alone do not create branch protection.
 
 Run the identical audit locally before publishing:
 
@@ -77,3 +78,14 @@ from the intended customer region, record cold/warm p50/p95 and compare
 session on the actual deployed revision, with both Sanitary and Ground Floor
 contexts. A fixture pass cannot certify MongoDB, Vercel, Railway or customer
 network latency; see `performance-observability.md` for server timing semantics.
+
+Inspect provider metadata before promotion: Vercel function region `bom1` and
+one always-running Railway replica in `asia-southeast1-eqsg3a`. The production
+Railway service did not read the nested `backend/railway.json`; setting a new
+Config-as-Code file was rejected by the provider's deprecation policy. The
+Singapore/no-sleep settings are persisted directly in the existing service.
+Do not treat a configuration-file edit as proof that the provider applied it.
+Future Infrastructure-as-Code migration must preview a plan that preserves the
+existing service, database/storage, variables and source; do not blindly apply
+an imported historical source-commit pin. Current runtime updates use the
+existing explicit project/service/environment and verify the resulting region.

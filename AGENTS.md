@@ -31,6 +31,19 @@ scroll callbacks synchronously. Multi-column FlatList budgets count rows, not
 cards. Optional sound playback must observe asynchronous browser rejections.
 See `docs/audits/2026-10-13-performance-incident.md` for release evidence.
 
+Release verified: runtime `f06017d3`, Vercel Mumbai deployment
+`dpl_Hs5yLbZbgPZe1rXciuho3WhDotdp`, Railway Singapore deployment
+`0fbd1855-ceed-4e95-9e78-ba65e17b2792`; catalog memory mode confirmed live.
+The nested Railway JSON was ignored and its new legacy registration rejected;
+provider settings now persist one Singapore replica/no sleep. Inspect actual
+provider metadata on future releases. Full local acceptance: 2,305 backend,
+434 route/workflow browser and 40 performance browser passes. Performance CI
+passes on the runtime commit. Main now requires performance alongside the
+three functional/security checks with administrator enforcement and review.
+The 22 high/five moderate npm findings still fail the independent security gate.
+Authenticated hosted content works without captured runtime errors, but fixture
+timings are not a universal 2.5-second production/physical-device certificate.
+
 ## Quotation filters and walk-in visibility — 2026-10-13 follow-up
 
 Quotation brand/category filters are now single-choice; finish/color filter rows

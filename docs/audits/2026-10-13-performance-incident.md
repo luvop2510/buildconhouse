@@ -104,3 +104,63 @@ upstream and end-to-end distributions after release. Existing provider logs
 remain available; durable Sentry/RUM aggregation requires separately configured
 provider credentials. Public-health timing is infrastructure evidence, not a
 substitute for authenticated catalog interaction.
+
+## Verified publication
+
+Runtime commit `f06017d363c69fd09e9b039df503e57217e04ce9` is pushed to
+[PR #16](https://github.com/luvop2510/buildconhouse/pull/16). The installed
+pre-push audit rebuilt and passed all 40 browser cases before allowing this
+push. The independent GitHub Performance workflow also passed on this exact
+commit (`38376812616`). Backend CI passed; the independent frontend-security
+job failed on the known dependency advisories; the larger frontend job was
+still running at evidence capture. No protected-main merge is claimed.
+
+Vercel `dpl_Hs5yLbZbgPZe1rXciuho3WhDotdp` is READY, serves both
+`https://buildconhouse.in` and `https://www.buildconhouse.in`, and provider metadata
+confirms the exact runtime commit and function region `bom1`. The CLI's wait
+timed out after submission; direct provider inspection confirmed completion
+without creating a duplicate production deployment. The deployed budget also
+passes during the Vercel build.
+
+Railway `0fbd1855-ceed-4e95-9e78-ba65e17b2792` is SUCCESS and the sole active
+production deployment, with one Singapore replica and sleep disabled. Startup
+logs confirm memory mode, 19,688,845 source bytes, a 33,554,432-byte budget and
+all 6,565 products/8,489 media rows. The first full-repository upload timed out
+before snapshot creation. A reduced package of the exact 293 Docker runtime
+inputs succeeded; all input hashes match the checked-out runtime source and
+exclude local credentials. On-container hash verification was unavailable
+because this account has no existing SSH keys; no keys were created.
+
+The nested Railway configuration file was not being read. Registering it was
+rejected by Railway's current Config-as-Code deprecation policy. Singapore and
+no-sleep settings were therefore persisted directly on the existing service and
+verified in the new deployment. A read-only IaC import/plan attempt was not
+applied: its generated source contained a historical commit pin and required a
+new SDK. No ownership, variables or source settings were changed by that attempt.
+See the current [provider configuration guidance](https://docs.railway.com/infrastructure-as-code)
+before any future migration and verify actual metadata instead of assuming a
+file edit changed production.
+
+Final read-only hosted acceptance passes 19 route/asset/security/cache/API checks
+and the deployed backend version/password contract. Ten samples per endpoint
+from this host give warm health p50/p95 of **217/324 ms through Vercel** and
+**209/417 ms direct to Railway**; readiness **472/878 ms** and **485/860 ms**.
+These use a persistent Node fetch client; runner geography is operator-labelled,
+not independently certified. Separate same-client Python samples including new
+TLS connections reduce Vercel health median from 1,471.8 to 497.9 ms. Neither
+measurement is a load test or a timing certificate for authenticated pages.
+
+An existing authenticated owner session loads the real Bathroom catalog and
+builder products, Ground Floor quotation content and catalog, with zero captured
+runtime errors. All 25 rendered Ground Floor images loaded. No business records
+were edited; the original Bathroom workspace is restored. UI automation observed
+a 4,926 ms catalog reload and 2,786 ms Ground catalog navigation, including tool
+overhead. One builder navigation waited past the tool's document-load deadline;
+subsequent DOM inspection confirmed the rendered, usable builder and products.
+This is retained as a measurement limitation, not replaced with fixture figures
+or a claim that every production cold page meets 2.5 seconds.
+
+Post-deployment Railway memory is about 289 MB of the 1,024 MB allowance, with a
+559 MB peak over the rollout window. Full source/cache headroom remains bounded.
+The report and raw sanitized distributions are in
+[production evidence](2026-10-13-performance-deployment.json).
