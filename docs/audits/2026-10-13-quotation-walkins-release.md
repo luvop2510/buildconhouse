@@ -124,9 +124,34 @@ manifest. Local environment files are now explicitly excluded; the template is
 retained and production uses linked-project variables. The private OIDC file
 was already excluded. No credential value is recorded in this evidence.
 
-Final commit/deployment IDs, full browser counts and post-deployment readiness,
-contract and hosted-browser evidence will be appended once verified. Local
+Publication and hosted acceptance are recorded below. Local
 fixture timing does not establish authenticated production latency. Three
 pre-release readiness samples from this India host were 809–1,212 ms through
 Vercel and 707–900 ms direct to Railway; those reads include remote Mongo access.
 The current regions remain Vercel `iad1` and Railway `sfo`.
+
+
+### Verified deployment outcome
+
+Runtime source `0d30cf84a326cd5e018d95873fcccd7937a26df7` is pushed to
+GitHub PR #16. Railway deployment `7c96f99c-19e7-4c62-a8bf-2ba5dd62a4f1`
+is successful; the live backend contract passes and customer-workspaces OpenAPI
+exposes the confirmed-buyer eligibility description.
+
+The first Vercel deployment was blocked by the provider's commit-author access
+check. The user requested another deployment. The normal CLI production retry
+(with force rebuild) succeeded without changing author identity, memberships or
+Git metadata. Deployment `dpl_GS3rtExZ96v986S5RPRdnbq5hqrm` is READY and its
+provider metadata confirms the source commit above. Production aliases are
+https://buildconhouse.in and https://www.buildconhouse.in; deployment URL is
+https://buildcon-house-hn2o4ky16-yug19.vercel.app.
+
+Read-only hosted release verification passes all 19 route/asset checks, including
+security/cache headers, missing-asset handling and API health/auth. The quotation
+regressions pass all eight desktop/phone cases against the deployed frontend.
+Their APIs are intercepted with fixtures, so they verify hosted assets and UI
+behavior without writing production business records.
+
+Final local acceptance totals: 2,288 backend tests; 2,527 browser tests with 55
+intentional skips and no failures/flakes. Protected-main merge remains blocked
+by the documented dependency-security gate; deployment does not waive that gate.
