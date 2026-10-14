@@ -2,6 +2,27 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
+## Sanitary warehouse replacement and photo editing — 2026-10-14
+
+Seven stock workbooks now back 1,015 active lots / 4,393 recorded units. Eight
+old lots are archived with purchase/allocation history intact. Keep archived and
+quantity_missing lots out of every new allocation/transfer path, including
+quotation matching; unknown quantity uses a flagged zero technical placeholder.
+Warehouse-only quotation identities require their exact backing lot and floor.
+Duravit has eleven new catalog products; unknown prices carry explicit
+price_status=unspecified and specs.price_status, while stock prices stay null.
+
+Lot price/HTTPS image overrides and multipart uploads use floor-scoped update
+permissions. godown_stock_media stores immutable lot photos separately from
+catalog product_media. Preserve original picker File, shared authenticated
+transport, cancellation and exact photo envelope limits. Stock reads exclude
+bulky private provenance, fail explicitly above 2,000 lots and render 60 cards
+initially while searching the complete bounded payload. Reviewed imports use
+source hashes, private backups, stock fingerprints, atomic archive/insert and
+durable replay receipts; never delete historical lots or silently reset edits.
+See docs/audits/2026-10-14-godown-stock-replacement.md for live evidence and
+explicit unresolved source fields.
+
 ## Historical Won/Lost customers — 2026-10-14
 
 Historical workbook outcomes use `quotation.customer_outcome`, independently

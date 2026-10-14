@@ -49,6 +49,52 @@ exported pages meet the 576 KiB gzip budget (largest 452 KiB). A previous
 contended run failed the unrelated iPhone Team loading budget and is retained
 in local evidence; the uncontended complete run passed unchanged limits.
 
-Publication and live reconciliation evidence will be appended after rollout.
+## Publication and live reconciliation
+
+Runtime source `3b58bcbb` is published on the existing feature branch. A
+concurrent customer-outcome commit removed its accidentally included warehouse
+identity hunk; that remote change was merged and the stock-specific hunk restored
+in `724ef380`. The two source trees are byte-identical (`git diff` is empty).
+The GitHub push passed the unchanged full performance hook and retained main's
+review/status protections. PR #16 remains the review surface; existing dependency
+security findings are not suppressed or represented as a green security gate.
+
+Vercel deployment `dpl_Ah6NsPx87XDKXaJBMrmDLTx9NLdv` is READY and serves both
+production domains, with the API function in `bom1`. Railway deployment
+`fe452edf-20d0-4c90-8af7-11f153010643` is SUCCESS, with one Singapore replica and
+sleep disabled. The first Railway upload timed out; the successful retry uses a
+fresh hash-verified 299-file runtime context. Neither deployment receives the
+private inventory manifest, source media or rollback snapshot.
+
+Manifest SHA256:
+`5c0f86c6369c6e71250651dbf5268a4b100edddef1ac9c6c13acf198fdff260a`.
+Controlled apply archived eight historical lots, inserted 1,015 active lots and
+eleven Duravit products, and staged 271 immutable stock photos. Receipt replay
+returned already-applied without changing inventory. A private 22 MiB rollback
+snapshot was written before the transaction.
+
+Independent persisted reconciliation verifies every lot's identity, quantity,
+price and source provenance against the reviewed manifest. All 271 uploaded
+photos were downloaded, decoded and SHA256-verified. Five existing business
+collections (customers, quotations, purchase orders, payments and customer stock
+transfers) retain their baseline fingerprints.
+
+Authorized hosted checks passed through Railway and `buildconhouse.in`: 1,015
+lots, 4,393 recorded units, eleven Duravit entries, no archived stock exposure,
+floor isolation, saved/restored price and image URL edits, and multipart photo
+upload reuse of the original registered bytes. Temporary QA sessions were removed.
+The Duravit brand is visible in the live catalog after its existing stale refresh.
+Stock reads measured about 2.4 seconds directly and 1.8–2.1 seconds through
+Vercel from this Mac; these are samples, not universal latency guarantees.
+
+Final local acceptance: 2,497 hermetic backend tests, 24 responsive editor/upload
+journeys, 24 surrounding stock-transfer browser checks, TypeScript, zero-warning
+lint and 52 performance browser checks. Public production verification passed
+19 route/asset, health, cache and security-header checks. The hosted build checks
+159 pages with largest initial JavaScript 453 KiB gzip.
+
+Remaining source gaps are explicitly visible: 353 unrecorded prices (including
+the intentionally blank Duravit prices), 119 missing images and 360 unrecorded
+quantities. These are not fabricated zero prices, replacement photos or units.
 Private workbooks, manifests, source media and backups remain outside Git and
 provider source contexts.
