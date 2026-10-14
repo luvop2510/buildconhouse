@@ -94,3 +94,52 @@ retains that file. The production security policy remains unchanged. The audit
 server now emits the actual Vercel security headers, covering the previously
 missing environment constraint in every browser journey. The File regression
 contract also asserts that uploading performs no URI fetch.
+
+## Published runtime and live acceptance
+
+The backend runtime is `643ed12c3113469c48efb5a1d491d53554e95e63` on Railway
+deployment `32189ae0-76fb-4247-b2fe-1e3d080c7b10` (SUCCESS), retaining one
+always-running Singapore replica and `/api/health/ready`. A first large source
+upload failed to create a provider snapshot; a hash-verified 396-file backend
+context was accepted. No database migrations or environment changes were needed.
+
+The additional browser File fix is frontend revision
+`72cd20952eb0a16311bc71998270bdda22c5fa72`, published by Vercel deployment
+`dpl_Cgcj5jrDbVeGhR8NS6VSY9BVhDxT` (READY) at `buildconhouse.in` and
+`www.buildconhouse.in`, with API functions in `bom1`. Cloud builds pass the same
+159-page budget (largest 453 KiB versus 576 KiB). The observed cloud chunk names
+match the first fresh CSP audit's build log; SHA-256 identities of the three
+served chunks are retained separately. A later local rebuild changed chunk
+identities, so the initial local identity manifest is not evidence of final
+cloud byte parity. Source revision, provider metadata and live behavior establish
+the deployed feature identity.
+
+The final security-policy reruns pass 93 responsive cases / five intentional
+phone-only skips and 48 device cases / eight explicit phone/CDP harness skips,
+with zero failures, flakes or retries. Every photo/gallery case runs on all
+projects. TypeScript, zero-warning lint, the File regression and existing API/hook
+contracts pass; exact-source unsigned iOS/Android exports pass. A fresh CSP
+performance audit passes 48/48 with unchanged limits.
+
+An owner session on the public site created two run-owned, inactive one-off
+products without selecting a customer. The photo upload saved one Mongo media
+record and one Supabase object. Downloading that object matched its metadata hash
+and all 4,845 original PNG bytes exactly. The uploaded product was moved above the
+other product; restoring the local draft after a page reload retained that order
+and its photo. Disposable media/object/products and the local draft were then
+removed. No business quotation was created or modified. Screenshot and readback
+evidence are retained in `output/custom-product-release/`.
+
+Final public acceptance passes all 19 route/asset/security/cache/health/auth
+checks. Five-sample health medians were 236 ms through Vercel and 172 ms directly
+through Railway; readiness medians were 836 ms and 579 ms. These include customer
+network/TLS/body transfer; they are not database-only or 2 ms response claims.
+
+Diagnostic reports are preserved for an interrupted device run: the local push
+hook rebuilt mutable `dist` while that server was reading it, producing eight
+startup failures. The full device rerun used an immutable export and passed.
+One push was blocked by two iPad performance timing breaches while other browser
+suites ran; no budgets or retry settings were changed. Final publication requires
+the complete pre-push audit with other builds and browser suites closed. The
+independent dependency-security gate remains blocked by the existing 22 high and
+five moderate findings; protected main is not bypassed or merged.

@@ -55,5 +55,243 @@
     "npmHigh": 22,
     "npmModerate": 5,
     "protectedMain": "not bypassed"
+  },
+  "cspAcceptance": {
+    "responsive": {
+      "startTime": "2026-10-14T09:03:40.395Z",
+      "duration": 241981.067,
+      "expected": 93,
+      "skipped": 5,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "devices": {
+      "startTime": "2026-10-14T09:09:52.429Z",
+      "duration": 184306.896,
+      "expected": 48,
+      "skipped": 8,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "performance": {
+      "startTime": "2026-10-14T09:03:26.145Z",
+      "duration": 170443.464,
+      "expected": 48,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "nativeUnsignedExports": "pass",
+    "typescript": "pass",
+    "lint": "pass",
+    "productionHeadersApplied": true
+  },
+  "production": {
+    "frontendRevision": "72cd20952eb0a16311bc71998270bdda22c5fa72",
+    "backendRevision": "643ed12c3113469c48efb5a1d491d53554e95e63",
+    "vercel": {
+      "id": "dpl_Cgcj5jrDbVeGhR8NS6VSY9BVhDxT",
+      "status": "READY",
+      "aliases": [
+        "buildconhouse.in",
+        "www.buildconhouse.in"
+      ],
+      "region": "bom1",
+      "cloudLargestInitialJsKb": 453,
+      "chunks": [
+        {
+          "name": "__common-b55b95141eaeda05efe1b884c5095bc4.js",
+          "status": 200,
+          "sha256": "7fee5426b43339c68009e726d2702aae7f804fbcfb82bb55bf0a74ccd5a14d65",
+          "bytes": 541226
+        },
+        {
+          "name": "entry-b0f126de40601c76400729a4ea3879ef.js",
+          "status": 200,
+          "sha256": "9a984cdef22821f3d52d94ee4b3743f30f3e4bde68f8b652cbf94e9236b045ee",
+          "bytes": 1062389
+        },
+        {
+          "name": "QuotationBuilder-8ac291e0ce2d7c6430b6992828206a47.js",
+          "status": 200,
+          "sha256": "ebc69f5cae84a2e9c33ce6861eb72bdb8e66d4f7624d046c1641fc3f800642b6",
+          "bytes": 319342
+        }
+      ],
+      "finalCloudLocalByteParity": "not asserted; later local rebuild changed chunk identities"
+    },
+    "railway": {
+      "id": "32189ae0-76fb-4247-b2fe-1e3d080c7b10",
+      "status": "SUCCESS",
+      "region": "asia-southeast1-eqsg3a",
+      "replicas": 1,
+      "sleep": false,
+      "sourceManifest": "output/custom-product-release/railway-source-manifest.json"
+    },
+    "liveUpload": {
+      "productId": "69ada318-3ae3-56dc-a6a1-351262171b5b",
+      "mediaId": "88cb5f62-aa43-5fc2-85ca-e9b7edff413e",
+      "floor": "first-floor",
+      "active": false,
+      "databaseMetadata": "pass",
+      "objectReadback": "pass",
+      "sha1Matches": true,
+      "originalBytesMatch": true,
+      "bytes": 4845,
+      "quotationBusinessWrites": false,
+      "testCleanup": "pass"
+    },
+    "liveReorderAfterReload": "pass",
+    "localDraftCleanup": "pass",
+    "publicChecks": 19,
+    "latency": {
+      "measuredAt": "2026-10-14T09:03:30.660Z",
+      "method": "Total response includes network, TLS and complete body; health only, no business mutations.",
+      "rows": [
+        {
+          "origin": "https://buildconhouse.in",
+          "path": "/api/health",
+          "minMs": 217.7779169999999,
+          "medianMs": 236.0885830000002,
+          "maxMs": 2043.804584,
+          "samples": [
+            {
+              "totalMs": 2043.804584,
+              "status": 200,
+              "serverTiming": "app;dur=113.4, upstream;dur=291.8"
+            },
+            {
+              "totalMs": 227.59137499999997,
+              "status": 200,
+              "serverTiming": "app;dur=56.7, upstream;dur=118.8"
+            },
+            {
+              "totalMs": 217.7779169999999,
+              "status": 200,
+              "serverTiming": "app;dur=56.5, upstream;dur=122.3"
+            },
+            {
+              "totalMs": 236.0885830000002,
+              "status": 200,
+              "serverTiming": "app;dur=56.4, upstream;dur=124.0"
+            },
+            {
+              "totalMs": 236.30087500000036,
+              "status": 200,
+              "serverTiming": "app;dur=56.9, upstream;dur=119.0"
+            }
+          ]
+        },
+        {
+          "origin": "https://buildconhouse.in",
+          "path": "/api/health/ready",
+          "minMs": 653.4519170000003,
+          "medianMs": 835.938834,
+          "maxMs": 1521.8168340000002,
+          "samples": [
+            {
+              "totalMs": 835.938834,
+              "status": 200,
+              "serverTiming": "app;dur=654.9, upstream;dur=716.2"
+            },
+            {
+              "totalMs": 1521.8168340000002,
+              "status": 200,
+              "serverTiming": "app;dur=1176.7, upstream;dur=1239.0"
+            },
+            {
+              "totalMs": 1301.6594159999995,
+              "status": 200,
+              "serverTiming": "app;dur=658.3, upstream;dur=722.4"
+            },
+            {
+              "totalMs": 653.4519170000003,
+              "status": 200,
+              "serverTiming": "app;dur=378.6, upstream;dur=447.5"
+            },
+            {
+              "totalMs": 710.3576250000006,
+              "status": 200,
+              "serverTiming": "app;dur=352.3, upstream;dur=413.6"
+            }
+          ]
+        },
+        {
+          "origin": "https://forge20-production-a8b0.up.railway.app",
+          "path": "/api/health",
+          "minMs": 145.65966600000138,
+          "medianMs": 172.13025000000016,
+          "maxMs": 526.804250000001,
+          "samples": [
+            {
+              "totalMs": 526.804250000001,
+              "status": 200,
+              "serverTiming": "app;dur=56.7"
+            },
+            {
+              "totalMs": 145.65966600000138,
+              "status": 200,
+              "serverTiming": "app;dur=56.5"
+            },
+            {
+              "totalMs": 146.96020800000042,
+              "status": 200,
+              "serverTiming": "app;dur=58.8"
+            },
+            {
+              "totalMs": 172.13025000000016,
+              "status": 200,
+              "serverTiming": "app;dur=56.5"
+            },
+            {
+              "totalMs": 290.23099999999977,
+              "status": 200,
+              "serverTiming": "app;dur=56.5"
+            }
+          ]
+        },
+        {
+          "origin": "https://forge20-production-a8b0.up.railway.app",
+          "path": "/api/health/ready",
+          "minMs": 454.3222079999996,
+          "medianMs": 579.4737079999995,
+          "maxMs": 1091.5220420000005,
+          "samples": [
+            {
+              "totalMs": 579.4737079999995,
+              "status": 200,
+              "serverTiming": "app;dur=358.9"
+            },
+            {
+              "totalMs": 789.6386669999993,
+              "status": 200,
+              "serverTiming": "app;dur=656.1"
+            },
+            {
+              "totalMs": 534.3500830000012,
+              "status": 200,
+              "serverTiming": "app;dur=375.2"
+            },
+            {
+              "totalMs": 454.3222079999996,
+              "status": 200,
+              "serverTiming": "app;dur=366.2"
+            },
+            {
+              "totalMs": 1091.5220420000005,
+              "status": 200,
+              "serverTiming": "app;dur=489.7"
+            }
+          ]
+        }
+      ]
+    },
+    "pushGate": {
+      "required": "fresh complete 48/48 audit; no concurrent suites or builds",
+      "hookEnabled": true,
+      "priorContentionTimingFailures": 2,
+      "budgetsUnchanged": true,
+      "retries": 0
+    }
   }
 }
