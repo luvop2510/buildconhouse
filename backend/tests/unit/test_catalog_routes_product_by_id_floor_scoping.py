@@ -64,10 +64,12 @@ def test_get_product_ignores_ambient_floor_mismatch(monkeypatch):
     monkeypatch.setattr(catalog_routes, "db", _FakeDb(doc))
     fake = AsyncMock(return_value={"id": "p1"})
     monkeypatch.setattr(catalog_routes.catalog_service, "product_by_id", fake)
+    hydrate = AsyncMock(side_effect=lambda product: product)
+    monkeypatch.setattr(catalog_routes.media_service, "hydrate_product_media", hydrate)
 
     result = asyncio.run(catalog_routes.get_product("p1", user=_user(active_floor_id="first-floor")))
 
-    assert result == {"id": "p1"}
+    assert result == {"id": "p1", "floor_id": "ground-floor", "images": []}
     fake.assert_awaited_once_with("p1", floor_ids=None)
 
 

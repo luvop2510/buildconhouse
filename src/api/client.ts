@@ -154,7 +154,8 @@ async function request<T>(method: string, path: string, body?: any, opts?: Reque
   const controller = new AbortController();
   activeRequests.set(controller, identityRead);
   const token = await getToken();
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const multipart = typeof FormData !== "undefined" && body instanceof FormData;
+  const headers: Record<string, string> = multipart ? {} : { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
   const floorId = opts?.floorId ?? (await getRequestFloorId());
   if (floorId) headers["X-Floor-Id"] = floorId;
@@ -178,7 +179,7 @@ async function request<T>(method: string, path: string, body?: any, opts?: Reque
     const res = await fetch(`${BASE}/api${path}`, {
       method,
       headers,
-      body: body ? JSON.stringify(body) : undefined,
+      body: multipart ? body as FormData : body ? JSON.stringify(body) : undefined,
       signal: controller.signal,
     });
 
@@ -260,6 +261,7 @@ export const api = {
   put: <T>(p: string, b?: any, opts?: RequestOptions) => { return mutate<T>("PUT", p, b, opts); },
   patch: <T>(p: string, b?: any, opts?: RequestOptions) => { return mutate<T>("PATCH", p, b, opts); },
   delete: <T>(p: string, opts?: RequestOptions) => { return mutate<T>("DELETE", p, undefined, opts); },
+  upload: <T>(p: string, form: FormData, opts?: RequestOptions) => mutate<T>("POST", p, form, opts),
   // Build a URL for a browser-download endpoint (PDF/xlsx). Browser
   // navigations can't send an Authorization header, so this mints a
   // short-lived single-use download token via a normal authenticated call

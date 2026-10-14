@@ -88,7 +88,7 @@ def profile_allows_request(profile: str | None, method: str, path: str) -> bool:
                 or _customer_for_quotation(method, path) or _catalog_read(method, path)
                 or (profile == GROUND_TILE_QUOTATIONS_FOLLOWUPS and _tile_customer_tracking(method, path))
                 or (method in {"GET", "POST"} and path == "/api/referrers")
-                or (method == "POST" and path == "/api/products/custom")
+                or (method == "POST" and path in {"/api/products/custom", "/api/products/custom-with-media"})
                 or (profile == SANITARY_QUOTATIONS_FOLLOWUPS and method == "PATCH"
                     and fullmatch(r"/api/products/[^/]+/concealed-part", path) is not None)
                 or (method == "POST" and path == "/api/downloads/token"))

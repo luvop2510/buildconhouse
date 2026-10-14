@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import { readFile } from 'node:fs/promises';
 
 process.env.BACKEND_URL = 'https://api.example.test';
-const { createHandler, validateBackendUrl } = await import('../api/[...path].js');
+const { createHandler, validateBackendUrl, requestBodyLimit } = await import('../api/[...path].js');
 const originalConsoleError = console.error;
 console.error = () => {};
 
@@ -33,6 +33,12 @@ function response() {
 }
 
 assert.equal(validateBackendUrl('https://api.example.test/'), 'https://api.example.test');
+for (const path of ['products/custom-with-media', 'products/id/media', 'products/id/media/media-id/replace', 'products/id/diagram-media', 'families/family/media']) {
+  assert.equal(requestBodyLimit('POST', path, 'multipart/form-data; boundary=test'), 4 * 1024 * 1024);
+  assert.equal(requestBodyLimit('POST', path, 'application/json'), 1024 * 1024);
+  assert.equal(requestBodyLimit('PATCH', path, 'multipart/form-data; boundary=test'), 1024 * 1024);
+}
+assert.equal(requestBodyLimit('POST', 'auth/login', 'multipart/form-data; boundary=test'), 1024 * 1024);
 for (const value of ['', 'http://api.example.test', 'https://user:pass@api.example.test', 'not a url']) {
   assert.throws(() => validateBackendUrl(value));
 }
@@ -156,6 +162,32 @@ for (const path of [['products', 'families'], ['auth', 'login'], ['quotations', 
     request({ method: 'POST', headers: { 'content-length': String(1_048_577) } }), res,
   );
   assert.equal(res.statusCode, 413);
+}
+
+// A normal photo above the former 1 MiB cap must arrive intact, with its
+// multipart boundary, selected floor and same-origin session protection.
+for (const path of [['products', 'custom-with-media'], ['products', 'product', 'media']]) {
+  const body = Buffer.concat([Buffer.from('--photo\r\nContent-Type: image/jpeg\r\n\r\n'), Buffer.alloc(2 * 1024 * 1024, 37), Buffer.from('\r\n--photo--\r\n')]);
+  const headers = { cookie: 'forge_session=fixture-session; forge_csrf=csrf', origin: 'https://buildcon.example', 'x-csrf-token': 'csrf', 'x-floor-id': 'ground-floor', 'content-type': 'multipart/form-data; boundary=photo' };
+  const res = response();
+  await createHandler({ backendUrl: 'https://api.example.test', fetchImpl: async (_url, options) => {
+    assert.deepEqual(options.body, body);
+    assert.equal(options.headers.get('content-type'), headers['content-type']);
+    assert.equal(options.headers.get('x-floor-id'), 'ground-floor');
+    assert.equal(options.headers.get('authorization'), 'Bearer fixture-session');
+    return Response.json({ id: 'stored' });
+  } })(request({ method: 'POST', path, headers, body }), res);
+  assert.equal(res.statusCode, 200);
+  const oversized = response();
+  await createHandler({ backendUrl: 'https://api.example.test', fetchImpl: async () => { throw new Error('oversized photo reached upstream'); } })(request({ method: 'POST', path, headers: { ...headers, 'content-length': String(4 * 1024 * 1024 + 1) } }), oversized);
+  assert.equal(oversized.statusCode, 413);
+  assert.match(oversized.payload.detail, /4 MiB/);
+  const streamed = response();
+  await createHandler({ backendUrl: 'https://api.example.test', fetchImpl: async () => { throw new Error('unbounded stream reached upstream'); } })(request({ method: 'POST', path, headers, body: Buffer.alloc(4 * 1024 * 1024 + 1) }), streamed);
+  assert.equal(streamed.statusCode, 413);
+  const csrf = response();
+  await createHandler({ backendUrl: 'https://api.example.test', fetchImpl: async () => { throw new Error('CSRF upload reached upstream'); } })(request({ method: 'POST', path, headers: { ...headers, 'x-csrf-token': 'wrong' }, body }), csrf);
+  assert.equal(csrf.statusCode, 403);
 }
 
 // A stale cookie pair must never prevent a new credential login. Login is

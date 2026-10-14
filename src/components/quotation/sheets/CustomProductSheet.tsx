@@ -5,6 +5,7 @@
 // In both cases a line is inserted into the current room.
 // -----------------------------------------------------------------------------
 import Feather from "@expo/vector-icons/Feather";
+import * as ImagePicker from "expo-image-picker";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
@@ -16,6 +17,8 @@ import { colors, radius, shadow, spacing } from "@/src/theme/tokens";
 import { useBp } from "@/src/design/responsive";
 import { useBuilder } from "../context/BuilderContext";
 import type { Product } from "../helpers/types";
+import { ProductImage } from "@/src/components/ProductImage";
+import { appendImageUpload, type UploadImage } from "@/src/utils/appendImageUpload";
 
 export function CustomProductSheet() {
   const b = useBuilder();
@@ -24,6 +27,8 @@ export function CustomProductSheet() {
 
   const initialized = useRef(false);
   const committing = useRef(false);
+  const request = useRef<{ fingerprint: string; id: string } | null>(null);
+  const lifecycle = useRef<AbortController | null>(null);
   const [name, setName] = useState("");
   const [sku, setSku] = useState("");
   const [brandId, setBrandId] = useState<string | null>(null);
@@ -34,6 +39,15 @@ export function CustomProductSheet() {
   const [description, setDescription] = useState("");
   const [saveToCatalog, setSaveToCatalog] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [photo, setPhoto] = useState<UploadImage | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    lifecycle.current = controller;
+    initialized.current = false;
+    setBusy(false);
+    return () => controller.abort();
+  }, [open, b.activeFloorId]);
 
   useEffect(() => {
     if (!open) { initialized.current = false; return; }
@@ -43,12 +57,23 @@ export function CustomProductSheet() {
     setBrandId(b.selectedBrandId ?? b.brands[0]?.id ?? null);
     setCategoryId(b.selectedCategoryId ?? b.categories[0]?.id ?? null);
     setSaveToCatalog(true);
-  }, [open, b.selectedBrandId, b.selectedCategoryId, b.brands, b.categories]);
+    setPhoto(null);
+    request.current = null;
+  }, [open, b.activeFloorId, b.selectedBrandId, b.selectedCategoryId, b.brands, b.categories]);
+
+  const pickPhoto = async () => {
+    const controller = lifecycle.current;
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 1, allowsEditing: false });
+      if (controller?.signal.aborted || result.canceled || !result.assets?.[0]) return;
+      setPhoto(result.assets[0]);
+    } catch (error: any) { toast.error(error?.message || "Could not choose the product photo"); }
+  };
 
   const commit = async () => {
     if (committing.current) return;
     if (!name.trim()) { toast.error("Name is required"); return; }
-    if (!brandId || !categoryId) { toast.error("Pick a brand and category"); return; }
+    if (saveToCatalog && (!brandId || !categoryId)) { toast.error("Pick a brand and category, or turn off Keep in catalogue for a one-off item"); return; }
     const p = Number(price);
     if (!Number.isFinite(p) || p <= 0) { toast.error("Enter a valid price"); return; }
     const catalogueMrp = mrp.trim() ? Number(mrp) : p;
@@ -56,40 +81,42 @@ export function CustomProductSheet() {
 
     committing.current = true;
     setBusy(true);
+    const controller = lifecycle.current;
     try {
-      if (saveToCatalog) {
+      const payload = {
+        name: name.trim(), sku: sku.trim(), brand_id: brandId || "", category_id: categoryId || "",
+        price: p, mrp: catalogueMrp, finish: finish.trim() || null, description: description.trim() || null, is_custom: true,
+      };
+      const fingerprint = JSON.stringify({ payload, saveToCatalog, photo: photo?.uri });
+      if (request.current?.fingerprint !== fingerprint) {
+        request.current = { fingerprint, id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}` };
+      }
+      if (photo) {
+        const form = new FormData();
+        form.append("product", JSON.stringify(payload));
+        form.append("request_id", request.current.id);
+        form.append("keep_in_catalog", String(saveToCatalog));
+        await appendImageUpload(form, photo);
+        if (controller?.signal.aborted) return;
+        const prod = await api.upload<Product>("/products/custom-with-media", form, { floorId: b.activeFloorId, signal: controller?.signal });
+        if (controller?.signal.aborted) return;
+        b.addFromProduct(prod);
+        toast.success(saveToCatalog ? `Added · ${prod.sku}` : "Added to quotation with photo");
+      } else {
         // Persist to catalog with is_custom=true so it's searchable in future.
         const prod = await api.post<Product>("/products/custom", {
-          name: name.trim(),
-          sku: sku.trim() || `CUSTOM-${Date.now().toString(36).toUpperCase()}`,
-          brand_id: brandId, category_id: categoryId,
-          price: p, mrp: catalogueMrp,
-          finish: finish.trim() || null, description: description.trim() || null,
-          is_custom: true,
-        });
+          ...payload, request_id: request.current.id, keep_in_catalog: saveToCatalog,
+        }, { floorId: b.activeFloorId, signal: controller?.signal });
+        if (controller?.signal.aborted) return;
         b.addFromProduct(prod);
-        toast.success(`Added · ${prod.sku}`);
-      } else {
-        // In-quotation only. Fabricate a synthetic "product" object.
-        const localId = `custom-${Date.now()}`;
-        const prod: Product = {
-          id: localId,
-          name: name.trim(),
-          sku: sku.trim() || `INLINE-${Date.now().toString(36).toUpperCase()}`,
-          brand_id: brandId, category_id: categoryId,
-          price: p, mrp: catalogueMrp,
-          finish: finish.trim() || null, description: description.trim() || null,
-          images: [], variants: [],
-        } as Product;
-        b.addFromProduct(prod);
-        toast.success("Added inline");
+        toast.success(saveToCatalog ? `Added · ${prod.sku}` : "Added to quotation");
       }
       b.setCustomProductSheetOpen(false);
     } catch (e: any) {
-      toast.error(e?.detail || "Could not add product");
+      if (!controller?.signal.aborted && e?.name !== "AbortError") toast.error(e?.detail || e?.message || "Could not add product. Your photo is kept here; please retry.");
     } finally {
       committing.current = false;
-      setBusy(false);
+      if (!controller?.signal.aborted) setBusy(false);
     }
   };
 
@@ -161,6 +188,19 @@ export function CustomProductSheet() {
                 placeholder="Optional — shown on quotation & PDF"
                 multiline style={[styles.input, { minHeight: 60 }]}
               />
+            </Field>
+
+            <Field label="Product photo">
+              {photo ? <View style={{ gap: 8 }}>
+                <ProductImage source={photo.uri} style={{ width: "100%", height: 160 }} contentFit="contain" fallbackLabel={name} testID="cp-photo-preview" />
+                <Pressable disabled={busy} onPress={() => setPhoto(null)} accessibilityRole="button" accessibilityLabel="Remove product photo" testID="cp-photo-remove" style={styles.secondary}>
+                  <Text style={styles.secondaryLabel}>Remove photo</Text>
+                </Pressable>
+              </View> : null}
+              <Pressable disabled={busy} onPress={pickPhoto} accessibilityRole="button" accessibilityLabel={photo ? "Choose another photo" : "Add product photo"} testID="cp-photo" style={styles.secondary}>
+                <Text style={styles.secondaryLabel}>{photo ? "Choose another photo" : "Add product photo"}</Text>
+              </Pressable>
+              <Text style={styles.checkboxHint}>The photo is uploaded when you add the product and stays with the saved quotation.</Text>
             </Field>
 
             <Pressable accessibilityRole="checkbox" accessibilityLabel="Keep in catalogue" accessibilityState={{ checked: saveToCatalog }} onPress={() => setSaveToCatalog((v) => !v)} style={styles.checkbox} testID="cp-save">

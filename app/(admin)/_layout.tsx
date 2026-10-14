@@ -538,33 +538,28 @@ export default function AdminLayout() {
     });
   };
 
-  if (isPhone) {
-    return (
-      <PaletteProvider>
-        <AppScaffold
-          testID="admin-mobile-shell"
-          style={{ backgroundColor: color.canvas }}
-          bottomNavigation={focusedQuotation ? null : <PhoneBar />}
-        >
-          <ConnectionStatus /><FloorAccessGate><CustomAccessRouteGate>{isPhone && !focusedQuotation ? <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 }}><FloorSwitcher /></View> : null}<Slot /></CustomAccessRouteGate></FloorAccessGate>
-        </AppScaffold>
-      </PaletteProvider>
-    );
-  }
-
+  // Keep the route's ancestor types and key stable when a phone rotates past
+  // the sidebar breakpoint. Replacing this tree used to unmount every form,
+  // including its selected photo, before the user could save it.
   return (
     <PaletteProvider>
       <View style={{ flex: 1, flexDirection: "row", backgroundColor: color.canvas }}>
-        <View role="navigation" accessibilityLabel="Primary" style={{
+        {!isPhone ? <View key="sidebar" role="navigation" accessibilityLabel="Primary" style={{
           width: sidebarCollapsed ? layout.rail : layout.sidebar,
           borderRightWidth: layout.hairline, borderRightColor: color.line,
           ...(Platform.OS === "web" ? ({ transition: "width 200ms cubic-bezier(0.2, 0, 0, 1)" } as any) : {}),
         }}>
           <Sidebar collapsed={sidebarCollapsed} onToggle={toggleSidebar} />
-        </View>
-        <View role="main" accessibilityLabel="Workspace content" style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
+        </View> : null}
+        <AppScaffold
+          key="workspace"
+          testID={isPhone ? "admin-mobile-shell" : "admin-desktop-shell"}
+          phoneSafeArea={isPhone}
+          style={{ backgroundColor: color.canvas, minHeight: 0 }}
+          bottomNavigation={isPhone && !focusedQuotation ? <PhoneBar /> : null}
+        >
           <ConnectionStatus /><FloorAccessGate><CustomAccessRouteGate>{isPhone && !focusedQuotation ? <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 }}><FloorSwitcher /></View> : null}<Slot /></CustomAccessRouteGate></FloorAccessGate>
-        </View>
+        </AppScaffold>
       </View>
     </PaletteProvider>
   );

@@ -191,7 +191,7 @@ async def test_quotation_only_page_can_load_builder_lookups_on_sanitary_floor(mo
     ("/api/customers/customer-1/quotations", "GET"),
     ("/api/customers/import-sources/ground-floor", "GET"),
     ("/api/customers", "POST"), ("/api/customers/customer-1", "PATCH"),
-    ("/api/products", "POST"), ("/api/products/custom", "POST"),
+    ("/api/products", "POST"), ("/api/products/product-1/media", "POST"),
     ("/api/products/product-1", "PATCH"), ("/api/products/product-1", "DELETE"),
     ("/api/brands", "POST"), ("/api/categories", "POST"),
 ])
@@ -454,3 +454,28 @@ async def test_runtime_scan_revokes_renamed_staff_and_customer_without_mutating_
     finally:
         for kind, subject in subjects:
             auth.invalidate_principal_cache(kind, subject)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["/api/products/custom", "/api/products/custom-with-media"])
+@pytest.mark.parametrize("resource,actions,grant_floor,active_floor,allowed", [
+    ("quotations", ["create"], "first-floor", "first-floor", True),
+    ("quotations", ["view"], "first-floor", "first-floor", False),
+    ("quotations", ["update"], "first-floor", "first-floor", False),
+    ("quotations", ["create"], "first-floor", "ground-floor", False),
+    ("quotations", ["create"], "ground-floor", "ground-floor", False),
+    ("tiles", ["create"], "ground-floor", "ground-floor", True),
+    ("tiles", ["view"], "ground-floor", "ground-floor", False),
+    ("tiles", ["create"], "ground-floor", "first-floor", False),
+    ("catalog", ["create"], "first-floor", "first-floor", True),
+])
+async def test_custom_product_uses_exact_create_grant_on_workflow_floor(monkeypatch, path, resource, actions, grant_floor, active_floor, allowed):
+    mock_staff(monkeypatch, [grant(resource=resource, actions=actions, floor=grant_floor)])
+    kwargs = dict(request=request(path, "POST", floor=active_floor), authorization="Bearer test", x_floor_id=active_floor, dl=None)
+    if allowed:
+        user = await auth.get_current_user(**kwargs)
+        assert auth.accessible_floor_ids(user) == [active_floor]
+    else:
+        with pytest.raises(HTTPException) as rejected:
+            await auth.get_current_user(**kwargs)
+        assert rejected.value.status_code == 403

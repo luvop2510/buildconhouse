@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 
 const scaffold = read("../src/components/mobile/AppScaffold.tsx");
-assert.match(scaffold, /edges=\{\["top", "left", "right"\]\}/);
+assert.match(scaffold, /edges=\{phoneSafeArea \? \["top", "left", "right"\] : \[\]\}/);
 assert.match(scaffold, /edges=\{\["bottom"\]\}/);
 
 const adminShell = read("../app/(admin)/_layout.tsx");

@@ -468,3 +468,30 @@ test('Ground Floor cold navigation starts both document reads in parallel', asyn
   const tasks = await assertHealthyInteraction(page, data);
   await info.attach('ground-floor-performance', { body: JSON.stringify({ readyMs, fixtureLatencyMs: LATENCY_MS, tasks, reads: data.reads }, null, 2), contentType: 'application/json' });
 });
+
+test('custom product form opens promptly beside the full catalog without extra catalog reads', async ({ page, baseURL }, info) => {
+  const data = await fixtureCatalog(page, baseURL!, realisticReplies);
+  await page.goto('/quotations/new', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('product-card-SCALE-0-0').first()).toBeVisible();
+  const addFirst = page.getByTestId('mobile-add-first');
+  if (await addFirst.isVisible()) await addFirst.click();
+  const picker = page.getByRole('dialog', { name: 'Add products', exact: true });
+  const controls = await picker.isVisible() ? picker : page;
+  const customAction = controls.getByTestId('explorer-custom-product');
+  const action = await customAction.isVisible() ? customAction : page.getByTestId('rail-custom-product');
+  const initialReads = data.reads.filter(read => read.path === '/api/products/families').length;
+  const started = performance.now();
+  await action.click();
+  const form = page.getByRole('dialog', { name: 'Custom product', exact: true });
+  await expect(form.getByTestId('cp-name')).toBeVisible();
+  await expect(form.getByTestId('cp-commit')).toBeVisible();
+  const openMs = performance.now() - started;
+  expect(openMs).toBeLessThan(750);
+  await form.getByTestId('cp-name').fill('Performance custom product');
+  await form.getByTestId('cp-price').fill('450');
+  await form.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(form).not.toBeVisible();
+  expect(data.reads.filter(read => read.path === '/api/products/families')).toHaveLength(initialReads);
+  const tasks = await assertHealthyInteraction(page, data);
+  await info.attach('custom-product-form-performance', { body: JSON.stringify({ openMs, fixtureLatencyMs: LATENCY_MS, tasks, reads: data.reads }, null, 2), contentType: 'application/json' });
+});

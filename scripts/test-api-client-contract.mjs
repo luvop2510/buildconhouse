@@ -1,3 +1,5 @@
+import './test-product-media-lifecycle.mjs';
+import './test-image-upload.mjs';
 import './test-api-cache-retention.mjs';
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -258,3 +260,59 @@ for (const path of ['../src/api/client.ts', '../src/api/client.web.ts']) {
   assert.equal(requests.filter(url => url.includes('/products')).length, 2);
 }
 console.log('Native/web stalled transports time out, evict shared reads, and recover while unrelated reads remain usable.');
+
+// Exercise real multipart transports: preserve auth/floor/CSRF, invalidate reads,
+// reject stale workspace results, and recover from timeouts on both clients.
+for (const path of ['../src/api/client.ts', '../src/api/client.web.ts']) {
+  const transports = [], timers = [];
+  const storage = { secureGet: async () => null, getItem: async () => 'first-floor',
+    secureSet: async () => {}, setItem: async () => {}, secureRemove: async () => {}, removeItem: async () => {} };
+  const module = { exports: {} };
+  vm.runInNewContext(ts.transpileModule(read(path), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText, {
+    module, exports: module.exports, require: () => ({ storage, browserStorage: storage }),
+    __DEV__: true, process: { env: { EXPO_PUBLIC_BACKEND_URL: 'https://api.example.test' } },
+    document: { cookie: 'forge_csrf=upload-csrf' }, FormData, Blob, AbortController, DOMException,
+    setTimeout: (callback, ms) => { const timer = { callback, ms }; timers.push(timer); return timer; }, clearTimeout: () => {},
+    fetch: (url, options) => new Promise((resolve, reject) => {
+      transports.push({ url, options, finish: value => resolve({ ok: true, text: async () => JSON.stringify(value) }) });
+      options.signal.addEventListener('abort', () => reject(new DOMException('fixture abort', 'AbortError')), { once: true });
+    }),
+  });
+  const client = module.exports;
+  await client.setToken('upload-token', 'staff'); client.setRequestFloorId('first-floor');
+  const firstRead = client.api.get('/products/p1/media', { cacheMs: 10000 });
+  await new Promise(resolve => setImmediate(resolve)); transports.at(-1).finish(['old']); await firstRead;
+  const form = new FormData(); form.append('file', new Blob(['photo'], { type: 'image/png' }), 'photo.png');
+  const upload = client.api.upload('/products/p1/media', form);
+  await new Promise(resolve => setImmediate(resolve));
+  const transport = transports.at(-1);
+  assert.equal(transport.options.body, form, `${path}: multipart body must remain FormData`);
+  assert.equal(transport.options.headers['Content-Type'], undefined, `${path}: transport owns multipart boundary`);
+  assert.equal(transport.options.headers['X-Floor-Id'], 'first-floor');
+  assert.equal(transport.options.headers.Authorization, 'Bearer upload-token');
+  if (path.endsWith('.web.ts')) {
+    assert.equal(transport.options.headers['X-CSRF-Token'], 'upload-csrf');
+    assert.equal(transport.options.credentials, 'same-origin');
+  }
+  transport.finish({ id: 'saved-media' }); await upload;
+  const freshRead = client.api.get('/products/p1/media', { cacheMs: 10000 });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(transports.length, 3, `${path}: media writes invalidate completed cached reads`);
+  transports.at(-1).finish(['fresh']); assert.equal((await freshRead)[0], 'fresh');
+  const stale = client.api.upload('/products/p1/media', form).then(value => ({ value }), error => ({ error }));
+  await new Promise(resolve => setImmediate(resolve)); const obsolete = transports.at(-1);
+  client.setRequestFloorId('ground-floor');
+  assert.equal(obsolete.options.signal.aborted, true);
+  assert.equal((await stale).error.name, 'AbortError', `${path}: old floor upload cannot publish`);
+  const stalled = client.api.upload('/products/p2/media', form).then(value => ({ value }), error => ({ error }));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(timers.at(-1).ms, 30000); timers.at(-1).callback();
+  assert.equal((await stalled).error.status, 408);
+  const retry = client.api.upload('/products/p2/media', form);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(transports.at(-1).options.headers['X-Floor-Id'], 'ground-floor');
+  transports.at(-1).finish({ id: 'retried' }); assert.equal((await retry).id, 'retried');
+}
+console.log('Native/web multipart auth, floor, CSRF, cache invalidation, workspace cancellation and timeout recovery passed.');

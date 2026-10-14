@@ -1,6 +1,15 @@
 import { Buffer } from 'node:buffer';
 
 const MAX_REQUEST_BODY_BYTES = 1_048_576;
+// Vercel Functions admit at most 4.5 MB. Keep multipart photo envelopes below
+// that ceiling while preserving the smaller bound for ordinary JSON writes.
+const MAX_PHOTO_BODY_BYTES = 4 * 1024 * 1024;
+
+export function requestBodyLimit(method, path, contentType) {
+  const photoRoute = /^products\/custom-with-media$|^products\/[^/]+\/(?:media(?:\/[^/]+\/replace)?|diagram-media|vitra-media)$|^families\/[^/]+\/media$/;
+  return method === 'POST' && photoRoute.test(path) && /^multipart\/form-data\s*;/i.test(contentType || '')
+    ? MAX_PHOTO_BODY_BYTES : MAX_REQUEST_BODY_BYTES;
+}
 // The browser client allows a request 30 seconds. Give the proxy nearly that
 // full window so it does not turn a healthy-but-slow Railway response into a
 // premature 504; retain a small margin for proxying the response downstream.
@@ -113,9 +122,10 @@ export function createHandler({ backendUrl = process.env.BACKEND_URL, fetchImpl 
     }
 
     let body;
-    try { body = unsafe ? await readBody(req) : undefined; }
+    const bodyLimit = requestBodyLimit(req.method, path, req.headers['content-type']);
+    try { body = unsafe ? await readBody(req, bodyLimit) : undefined; }
     catch (error) {
-      if (error instanceof BodyTooLargeError) return res.status(413).json({ detail: 'Request body exceeds the 1 MiB limit.' });
+      if (error instanceof BodyTooLargeError) return res.status(413).json({ detail: `Request body exceeds the ${bodyLimit / 1024 / 1024} MiB limit.` });
       console.error('Web API proxy request-body error:', error?.name || 'Error');
       return res.status(400).json({ detail: 'Unable to read request body.' });
     }

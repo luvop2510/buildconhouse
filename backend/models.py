@@ -579,6 +579,8 @@ class ProductCreate(BaseModel):
     concealed_skus: list[str] = []
     concealed_part: Optional[ConcealedPart] = None
     is_custom: bool = False
+    request_id: Optional[str] = Field(default=None, min_length=8, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    keep_in_catalog: bool = True
 
 
 class ProductPatch(BaseModel):

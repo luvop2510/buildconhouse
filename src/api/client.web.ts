@@ -148,7 +148,8 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: R
   const controller = new AbortController();
   activeRequests.set(controller, identityRead);
   const token = await getToken();
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const multipart = typeof FormData !== "undefined" && body instanceof FormData;
+  const headers: Record<string, string> = multipart ? {} : { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
   if (!/^(GET|HEAD|OPTIONS)$/i.test(method)) {
     Object.assign(headers, csrfHeaders());
@@ -168,7 +169,7 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: R
   }
   try {
     const response = await fetch(`${BASE}/api${path}`, {
-      method, headers, body: body ? JSON.stringify(body) : undefined, signal: controller.signal, credentials: "same-origin",
+      method, headers, body: multipart ? body as FormData : body ? JSON.stringify(body) : undefined, signal: controller.signal, credentials: "same-origin",
     });
     const text = await response.text();
     let data: unknown = null;
@@ -233,6 +234,7 @@ export const api = {
   put: <T>(path: string, body?: unknown, opts?: RequestOptions) => { return mutate<T>("PUT", path, body, opts); },
   patch: <T>(path: string, body?: unknown, opts?: RequestOptions) => { return mutate<T>("PATCH", path, body, opts); },
   delete: <T>(path: string, opts?: RequestOptions) => { return mutate<T>("DELETE", path, undefined, opts); },
+  upload: <T>(p: string, form: FormData, opts?: RequestOptions) => mutate<T>("POST", p, form, opts),
   authenticatedUrl: async (path: string, floorId?: string) => {
     const { token } = await request<{ token: string }>("POST", "/downloads/token", { target: `/api${path}` }, { floorId });
     return `${BASE}/api${path}${path.includes("?") ? "&" : "?"}dl=${encodeURIComponent(token)}`;

@@ -1,0 +1,59 @@
+{
+  "localAcceptance": {
+    "backendPasses": 2385,
+    "isolatedMongoCases": 2,
+    "responsive": {
+      "startTime": "2026-10-14T08:23:44.114Z",
+      "duration": 264561.305,
+      "expected": 162,
+      "skipped": 13,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "devices": {
+      "startTime": "2026-10-14T08:28:09.428Z",
+      "duration": 157513.263,
+      "expected": 88,
+      "skipped": 12,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "performance": {
+      "startTime": "2026-10-14T08:20:36.140Z",
+      "duration": 130603.416,
+      "expected": 48,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "bundlePages": 159,
+    "largestInitialJsKb": 452,
+    "typescript": "pass",
+    "lint": "pass",
+    "expoDoctor": "20/20",
+    "nativeUnsignedExports": "pass"
+  },
+  "export": {
+    "files": [
+      {
+        "path": "QuotationBuilder-14668c9c2baeda1dd029a18ca5e146c8.js",
+        "sha256": "985c10d44faee880dc8545f0a986e38914b23d5260aa730a6f7a1f6ae1760a71"
+      },
+      {
+        "path": "__common-d9ef59773d7bd149386675c7d8924389.js",
+        "sha256": "ecd61611ecf86e842dd80bec37e9d34015dc20d146f357241120176c97968225"
+      },
+      {
+        "path": "entry-68384ecf362c279101a96af8770c76d0.js",
+        "sha256": "e0125076bbf98ed9eab88c2bed6396b2aee733d78c3e1530c208b985f79a5d2f"
+      }
+    ]
+  },
+  "limits": {
+    "physicalDevices": "unverified",
+    "signedNative": "unverified",
+    "npmHigh": 22,
+    "npmModerate": 5,
+    "protectedMain": "not bypassed"
+  }
+}

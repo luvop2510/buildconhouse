@@ -5,13 +5,16 @@ imports the supabase driver directly.
 """
 from __future__ import annotations
 import logging
+import hashlib
 from typing import Optional, get_args
+from uuid import NAMESPACE_URL, uuid5
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from pydantic import ValidationError
 
-from auth import floor_inherit, floor_query, floor_scope_ids, get_current_user, require_min_role
+from auth import floor_inherit, floor_query, get_current_user, require_min_role
 from db import db
-from models import MediaRole, Product, ProductMedia, UserPublic
+from models import MediaRole, Product, ProductCreate, ProductMedia, UserPublic
 from services import catalog_service, media_service
 from services.product_image_normalizer import ProductImageNormalizationError
 
@@ -103,13 +106,59 @@ async def _assert_media_access(media_id: str, user: UserPublic) -> dict:
     return doc
 
 
+@router.post("/products/custom-with-media", response_model=Product)
+async def create_custom_product_with_media(
+    product: str = Form(...), request_id: str = Form(...), keep_in_catalog: bool = Form(True),
+    file: UploadFile = File(...), user: UserPublic = Depends(require_min_role("sales")),
+):
+    """Create and upload a photo within the quotation creator's own request.
+
+    No existing product identifier is accepted, so this sales workflow cannot
+    modify another creator's item or bypass ordinary catalog media permissions.
+    A stable request key resumes incomplete uploads and dedupes lost responses.
+    """
+    from routes.catalog_routes import _create_custom_record
+    try:
+        body = ProductCreate.model_validate_json(product)
+        body = ProductCreate.model_validate({**body.model_dump(), "is_custom": True, "request_id": request_id})
+        # ProductCreate historically allows negative prices; validate the
+        # actual persisted Product before writes to surface a proper 422.
+        Product(**{**body.model_dump(), "floor_id": "validation"})
+    except ValidationError:
+        raise HTTPException(status_code=422, detail="Enter a valid custom product and request identifier") from None
+    data = await _read_bounded_upload(file)
+    mime = file.content_type or "application/octet-stream"
+    if not mime.startswith("image/"):
+        raise HTTPException(status_code=422, detail="Choose a product image")
+    record = await _create_custom_record(body, user, keep_in_catalog=keep_in_catalog,
+                                         pending_media=True, image_sha1=hashlib.sha1(data).hexdigest())
+    brand = await db.brands.find_one({"id": record["brand_id"], "floor_id": record["floor_id"]}, {"_id": 0, "slug": 1}) if record["brand_id"] else None
+    try:
+        media = await media_service.upload_and_register(
+            data=data, mime=mime, brand_slug=(brand or {}).get("slug") or "custom",
+            product_id=record["id"], brand_id=record["brand_id"] or None, floor_id=record["floor_id"],
+            source_type="internal", role="hero", is_primary=True, sort_order=0,
+            uploaded_by=user.id, actor=user,
+            registration_id=str(uuid5(NAMESPACE_URL, f"forge-custom-photo:{record['id']}")),
+        )
+    except ProductImageNormalizationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not media.public_url:
+        raise HTTPException(status_code=503, detail="The product photo could not be published. Please retry.")
+    saved = await db.products.update_one({"id": record["id"], "floor_id": record["floor_id"], "custom_created_by": user.id},
+                                         {"$set": {"active": keep_in_catalog}})
+    if not saved.matched_count:
+        raise HTTPException(status_code=404, detail="Custom product no longer exists")
+    record["active"] = keep_in_catalog
+    media_service._apply_media_to_product(record, [media])
+    catalog_service.schedule_catalog_refresh()
+    return Product(**record)
+
+
 @router.get("/products/{product_id}/media", response_model=list[ProductMedia])
 async def list_product_media(product_id: str, user: UserPublic = Depends(get_current_user)):
-    await _brand_slug_for_product(product_id, user)
-    media = await catalog_service.media_for_product(product_id, floor_ids=floor_scope_ids(user))
-    if media is None:
-        raise HTTPException(status_code=404, detail="Product not found")
-    return media
+    _, _, _, floor_id = await _brand_slug_for_product(product_id, user)
+    return await media_service.list_media_for_product(product_id, floor_id=floor_id)
 
 
 @router.post("/products/{product_id}/vitra-media", response_model=Product, include_in_schema=False)

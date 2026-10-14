@@ -2,6 +2,32 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
+## Custom products, media and drag ordering — 2026-10-14
+
+Custom quotation items now always have a backend product id, including inactive
+quotation-only records. Do not restore synthetic ids: quotation create/autosave
+requires real floor-scoped products. `custom-with-media` validates and binds a
+request to member/floor/content; deterministic product/media Mongo `_id`s dedupe
+concurrent retries. Photos are Supabase objects with Mongo `product_media` metadata
+and quotation URL snapshots. Only the exact custom creation endpoints accept
+quotation-create grants; normal catalog/media edits retain their own permissions.
+
+All multipart uploads use the shared API transport and photo preparation helper.
+The browser preserves small originals and prepares larger photos below 3 MiB;
+Vercel admits 4 MiB envelopes only for photo routes, retaining ordinary 1 MiB
+bounds. Exact detail/media hydration reflects new/deleted photos before background
+catalog refresh. Do not reintroduce manual fetch uploads missing the floor header,
+CSRF, cancellation or cache invalidation.
+
+Product/room dragging preserves included parts and collapsed-room data. Recalculate
+on changed pointer/scroll using paired DOM order/geometry, apply the final drop,
+and use elapsed-time edge scrolling. Idle preview reorders previously overshot
+into another room. Keep the admin route subtree stable across viewport breakpoints:
+phone rotation previously destroyed custom form/photo state. Read
+`docs/audits/2026-10-14-custom-products-ordering.md` for exact verification and
+publication evidence. Physical devices/signing and existing npm security findings
+remain separate from browser/unsigned-export acceptance.
+
 ## iPad forms and multi-floor pre-order leads — 2026-10-13
 
 Follow-ups cover pre-order sales only. Operational/payment/purchase/dispatch/

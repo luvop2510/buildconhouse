@@ -156,12 +156,17 @@ def granted_floor_ids(grants, *, user_id: str, path: str, action: str, resource:
         # it never authorizes general product edits or catalog reads.
         quotation_default = method == "PATCH" and action == "update" and fullmatch(r"/api/products/[^/]+/concealed-part", path)
         quotation_lookup = method == "GET" and action == "view" and quotation_dependency_read(path)
-        if (quotation_default or quotation_lookup) and grant.get("resource") == "quotations" and floor is None:
+        quotation_custom = method == "POST" and action == "create" and path in {"/api/products/custom", "/api/products/custom-with-media"}
+        if (quotation_default or quotation_lookup or quotation_custom) and grant.get("resource") == "quotations" and floor is None:
             floor = "first-floor"
         if quotation_default and floor == "first-floor":
             resources = ("catalog", "quotations")
         elif quotation_lookup and floor == "first-floor":
             resources = (*resources, "quotations")
+        elif quotation_custom and floor == "first-floor":
+            resources = ("catalog", "quotations")
+        elif quotation_custom and floor == "ground-floor":
+            resources = ("catalog", "tiles")
         if any(grant_allows(grant, user_id=user_id, resource=candidate, action=capability, floor_id=floor)
                for candidate in resources
                for capability in (("export",) if furniture_delivery and candidate == "furniture_quotations"

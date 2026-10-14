@@ -20,7 +20,7 @@ async function builderFixture(page: Page) {
   });
   await page.route('**/api/products/custom', route => {
     customProducts.push(route.request().postDataJSON());
-    return route.fulfill({ json: { id: 'custom-saved', images: [], variants: [], ...customProducts.at(-1), sku: 'CUSTOM-SAVED' } });
+    return route.fulfill({ json: { id: `custom-saved-${customProducts.length}`, images: [], variants: [], ...customProducts.at(-1), sku: `CUSTOM-SAVED-${customProducts.length}` } });
   });
   await page.route(/\/api\/quotations\/q-mobile(?:\?.*)?$/, route => {
     if (route.request().method() === 'PATCH') document = { ...document, ...route.request().postDataJSON() };
@@ -105,7 +105,7 @@ test('critical mobile quotation adds custom products from full-screen picker and
   await page.screenshot({ path: info.outputPath('mobile-custom-product.png') });
   await custom.getByTestId('cp-commit').click();
   await expect(custom).not.toBeVisible();
-  expect(fixture.customProducts).toHaveLength(0);
+  expect(fixture.customProducts).toEqual([expect.objectContaining({ name: 'Measured custom shelf', keep_in_catalog: false })]);
   await expect.poll(() => fixture.saved().items.length).toBe(1);
   expect(fixture.saved().items[0]).toMatchObject({ name: 'Measured custom shelf', unit_price: 450, description: 'Cut to customer dimensions' });
   // The same action is available without first opening the picker.
@@ -115,9 +115,19 @@ test('critical mobile quotation adds custom products from full-screen picker and
   await custom.getByLabel('Custom product MRP').fill('0');
   await custom.getByTestId('cp-commit').click();
   await expect(custom).not.toBeVisible();
-  expect(fixture.customProducts).toEqual([expect.objectContaining({ name: 'Reusable custom basin', price: 900, mrp: 0, is_custom: true })]);
+  expect(fixture.customProducts).toEqual([
+    expect.objectContaining({ name: 'Measured custom shelf', keep_in_catalog: false }),
+    expect.objectContaining({ name: 'Reusable custom basin', price: 900, mrp: 0, is_custom: true, keep_in_catalog: true }),
+  ]);
   const review = page.getByTestId('mobile-review-quotation');
   if (await review.isVisible()) await review.click();
+  await expect(page.getByText('Measured custom shelf', { exact: true })).toBeVisible();
+  await expect(page.getByText('Reusable custom basin', { exact: true })).toBeVisible();
+  await expect.poll(() => fixture.saved().items.length).toBe(2);
+  await page.reload();
+  await expect(page.getByTestId('quotation-workspace')).toBeVisible();
+  const reloadedReview = page.getByTestId('mobile-review-quotation');
+  if (await reloadedReview.isVisible()) await reloadedReview.click();
   await expect(page.getByText('Measured custom shelf', { exact: true })).toBeVisible();
   await expect(page.getByText('Reusable custom basin', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
