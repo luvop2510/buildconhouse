@@ -39,5 +39,22 @@ document fingerprints and refuses changed or missing records. Private source,
 contact, price, backup and reconciliation artifacts stay outside Git and build
 contexts.
 
-Validation and publication evidence are appended after final current-source
-browser/performance acceptance, controlled import and provider rollout.
+Validation: 2,446 hermetic backend unit tests pass; the final focused importer/
+outcome/filter suite passes all 65 cases. TypeScript, scoped zero-warning lint
+and quotation contracts pass. The final quotation browser suite passes all
+64 cases across eight viewport/browser projects, with no skips, failures or
+flakes. The mandatory pre-push audit rebuilt the isolated release source and
+passed all 48 performance cases and all 159 page bundle budgets without retries
+or relaxed limits. Mongo/index/storage readiness passes, with no pending
+migrations.
+
+The atomic production import completed and verified its 57-document receipt.
+GitHub contains runtime commit `54b4feacdd1938a08fed8e6da02492062bded7dc`.
+Railway deployment `2e187639-f2a5-41bd-afa1-97a3480053e2` is SUCCESS and
+returns HTTP 200 readiness. Its 299-file upload was checked byte for byte against
+that commit; provider metadata confirms one always-running Singapore replica.
+The frontend publishing step initially exposed a configured Git author email
+that differs from the authenticated publishing account. This documentation
+commit uses that account's verified identity, preserving code history and
+project permissions. Existing required security findings and protected-main
+review remain independent of these passing functional checks.
