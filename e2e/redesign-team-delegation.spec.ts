@@ -772,7 +772,9 @@ test('critical existing retired notebook grants survive unrelated team edits and
   expect(writes[0].body).not.toHaveProperty("access_grants");
   await expect(page.getByTestId('edit-staff-sheet')).toHaveCount(0);
   await page.getByTestId('team-row-test-worker').click();
-  await switchFor(page, 'page-toggle-second-floor-notebook_quotations').uncheck();
+  // Revoking the only legacy page removes its whole row immediately, so
+  // assert removal rather than waiting for an unchecked, detached input.
+  await switchFor(page, 'page-toggle-second-floor-notebook_quotations').click();
   await expect(page.getByTestId('page-toggle-second-floor-notebook_quotations')).toHaveCount(0);
   await page.getByTestId('edit-staff-save').click();
   await expect.poll(() => writes.length).toBe(2);
