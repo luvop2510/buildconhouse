@@ -25,6 +25,7 @@ import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
 type Quotation = {
   id: string; number: string; customer_name: string;
   purchase_completion_status?: "active" | "completed";
+  customer_outcome?: "won" | "lost" | null;
   status: string; grand_total: number; created_at: string; items: any[];
 };
 
@@ -48,6 +49,7 @@ export default function QuotationsList() {
   const { view } = useLocalSearchParams<{ view?: string }>();
   const fulfilled = view === "fulfilled";
   const completed = view === "completed";
+  const outcome = view === "won" || view === "lost" ? view : null;
   const { staff } = useAuth();
   const canDeleteQuotations = useActionAccess("quotations", "delete", !!staff && ["owner", "admin", "manager"].includes(staff.role));
   const { isPhone } = useBp();
@@ -61,7 +63,7 @@ export default function QuotationsList() {
   const requestId = useRef(0);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  useEffect(() => { setStatusFilter("all"); }, [completed, fulfilled]);
+  useEffect(() => { setStatusFilter("all"); }, [completed, fulfilled, outcome]);
 
   const deleteQuotation = async () => {
     if (!deleteTarget) return;
@@ -80,12 +82,14 @@ export default function QuotationsList() {
     setLoadError(null);
     setItems(null);
     try {
-      const nextItems = await api.get<Quotation[]>(`/quotations?doc_type=standard&completion=${fulfilled ? "completed" : "active"}${fulfilled ? "" : `&view=${completed ? "completed" : "pending"}`}`);
+      const nextItems = await api.get<Quotation[]>(outcome
+        ? `/quotations?doc_type=standard&view=${outcome}`
+        : `/quotations?doc_type=standard&completion=${fulfilled ? "completed" : "active"}${fulfilled ? "" : `&view=${completed ? "completed" : "pending"}`}`);
       if (currentRequest === requestId.current) setItems(nextItems);
     } catch (e: any) {
       if (currentRequest === requestId.current) setLoadError(e?.detail || "Could not load quotations");
     }
-  }, [completed, fulfilled]);
+  }, [completed, fulfilled, outcome]);
   useFocusEffect(useCallback(() => {
     void load();
     return () => { requestId.current += 1; };
@@ -97,7 +101,7 @@ export default function QuotationsList() {
     return map;
   }, [items]);
 
-  const filters = fulfilled ? [...PENDING_FILTERS, ...COMPLETED_FILTERS.slice(1)] : completed ? COMPLETED_FILTERS : PENDING_FILTERS;
+  const filters = outcome ? [{ key: "all" as const, label: "All" }] : fulfilled ? [...PENDING_FILTERS, ...COMPLETED_FILTERS.slice(1)] : completed ? COMPLETED_FILTERS : PENDING_FILTERS;
 
   const filtered = useMemo(() => (items || []).filter((it) => {
     if (!matchesFilter(it.status, statusFilter)) return false;
@@ -109,8 +113,8 @@ export default function QuotationsList() {
 
   return (
     <AdminPage
-      title={fulfilled ? "100% Customers · Quotations" : completed ? "Approved & ordered quotations" : "Quotations"}
-      subtitle={loadError ? "Pipeline unavailable" : items ? `${items.length} ${fulfilled ? "100% completed" : completed ? "approved or ordered" : "pending"} · ${money(totalValue)} filtered` : "Loading pipeline…"}
+      title={outcome ? `${outcome === "won" ? "Won Customer" : "Lost Customer"} · Quotations` : fulfilled ? "100% Customers · Quotations" : completed ? "Approved & ordered quotations" : "Quotations"}
+      subtitle={loadError ? "Pipeline unavailable" : items ? `${items.length} ${outcome ? `${outcome} quotations` : fulfilled ? "100% completed" : completed ? "approved or ordered" : "pending"} · ${money(totalValue)} filtered` : "Loading pipeline…"}
       scroll={false}
       contentStyle={{ paddingHorizontal: 0, paddingTop: 0 }}
       right={
@@ -120,7 +124,7 @@ export default function QuotationsList() {
             <Text style={styles.lifecycleText}>{completed ? "Pending" : "Completed"}</Text>
           </Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel={fulfilled ? "View active customer quotations" : "View 100 percent completed customer quotations"} testID="quotations-fulfilled-toggle" onPress={() => router.push(`/(admin)/quotations?view=${fulfilled ? "pending" : "fulfilled"}` as any)} style={styles.lifecycleLink}><Text style={styles.lifecycleText}>{fulfilled ? "Active customers" : "100% Customers"}</Text></Pressable>
-          {!completed && !fulfilled ? <Pressable
+          {!completed && !fulfilled && !outcome ? <Pressable
             accessibilityRole="button"
             accessibilityLabel="Create new quotation"
             testID="new-quotation-btn"
@@ -144,6 +148,13 @@ export default function QuotationsList() {
         ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
         ListHeaderComponent={
           <View style={styles.listHeader}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={isPhone} contentContainerStyle={{ gap: 8 }}>
+              {(["lost", "won"] as const).map(value => <Pressable key={value} accessibilityRole="button" accessibilityLabel={`View ${value} customer quotations`}
+                accessibilityState={{ selected: outcome === value }} testID={`quotations-${value}-toggle`}
+                onPress={() => router.push(`/(admin)/quotations?view=${value}` as any)} style={styles.lifecycleLink}>
+                <Text style={styles.lifecycleText}>{value === "lost" ? "Lost Customer" : "Won Customer"}</Text>
+              </Pressable>)}
+            </ScrollView>
             <SearchField
               testID="quotations-search"
               value={q}
@@ -166,7 +177,7 @@ export default function QuotationsList() {
               {Array.from({ length: 6 }).map((_, i) => <View key={i} style={[styles.card, { gap: 10 }]}><Skeleton w={110} h={12} /><Skeleton w={220} h={16} /><Skeleton w={160} h={12} /></View>)}
             </View>
           ) : (
-            <EmptyState icon="file-text" title={q || statusFilter !== "all" ? "No quotations match" : "No quotations yet"} subtitle={q || statusFilter !== "all" ? "Try clearing filters or searching a different term." : "Press New Quotation to start building."} />
+            <EmptyState icon="file-text" title={q || statusFilter !== "all" ? "No quotations match" : "No quotations yet"} subtitle={q || statusFilter !== "all" ? "Try clearing filters or searching a different term." : outcome ? `No ${outcome} customer quotations have been recorded.` : "Press New Quotation to start building."} />
           )
         }
         renderItem={({ item }) => (
@@ -207,7 +218,7 @@ function QuotationRow({ q, onPress, canDelete, onDelete }: { q: Quotation; onPre
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: spacing.sm }}>
         <Text style={[styles.numberText, { flex: 1 }]} numberOfLines={1}>{q.number}</Text>
         <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
-          {q.purchase_completion_status === "completed" ? <Text style={[type.caption, { color: colors.success }]}>100% completed</Text> : <StatusBadge status={q.status} />}
+          {q.purchase_completion_status === "completed" ? <Text style={[type.caption, { color: colors.success }]}>100% completed</Text> : <StatusBadge status={q.customer_outcome || q.status} />}
           {canDelete ? <IconButton icon="trash-2" onPress={onDelete} size={32} tone="danger" accessibilityLabel="Delete quotation" testID={`delete-quotation-${q.id}`} /> : null}
         </View>
       </View>

@@ -105,6 +105,7 @@ export type QuotationHeader = {
 };
 
 export type RecentQuotation = {
+  customer_outcome?: "won" | "lost" | null;
   id: string; number: string;
   customer_id?: string | null; customer_name?: string | null;
   project_name?: string | null; phone?: string | null;

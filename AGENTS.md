@@ -2,6 +2,18 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
+## Historical Won/Lost customers — 2026-10-14
+
+Historical workbook outcomes use `quotation.customer_outcome`, independently
+of draft/ordered status, and closed manual follow-ups grouped by customer. Do
+not convert those outcomes into new financial orders. The quotation list and
+builder use floor-scoped `view=won|lost` queries; pending, sales automation and
+PDF follow-up producers exclude outcome-marked historical records. Ordinary
+edits preserve classification; Duplicate creates a fresh draft; Place Order
+requires a fresh quotation. Import receipts include follow-up fingerprints,
+fixed outcome timestamps and explicit shared-phone identity decisions. Read
+`docs/audits/2026-10-14-customer-outcomes.md` for acceptance and publication.
+
 ## Custom products, media and drag ordering — 2026-10-14
 
 Custom quotation items now always have a backend product id, including inactive

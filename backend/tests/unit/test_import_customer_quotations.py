@@ -133,6 +133,72 @@ def test_repeated_customer_across_brands_is_one_genuinely_new_customer():
     assert len({line["id"] for q in plan["quotations"] for line in q["items"]}) == 3
 
 
+@pytest.mark.parametrize("outcome", ["won", "lost"])
+def test_historical_outcome_groups_brand_quotes_and_preserves_commercial_source(outcome):
+    db, data = database(), manifest()
+    data["outcome_recorded_at"] = "2026-09-01T00:00:00+00:00"
+    data["quotations"][0].update(customer_outcome=outcome, outcome_reason="Owner classified this customer")
+    second = deepcopy(data["quotations"][0])
+    second.update(source_file="/private/second.xlsx", source_sha256="b" * 64)
+    data["quotations"].append(second)
+    plan = asyncio.run(importer.prepare_plan(db, data, "hash"))
+    assert len(plan["customers"]) == 1 and len(plan["followups"]) == 1
+    row = plan["followups"][0]
+    assert row["completed_outcome"] == outcome and row["status"] == "done"
+    assert row["auto_resolved"] is (outcome == "won")
+    assert row["assigned_to"] == "owner" and row["customer_phone"] == "9876543210"
+    assert row["value"] == 296.28 and len(row["quotation_import"]["quotation_ids"]) == 2
+    assert row["lost_reason"] == ("Owner classified this customer" if outcome == "lost" else None)
+    assert all(q["customer_outcome"] == outcome and q["status"] == "draft" and q["ordered_at"] is None for q in plan["quotations"])
+    again = asyncio.run(importer.prepare_plan(db, data, "hash"))
+    assert plan["plan_fingerprint"] == again["plan_fingerprint"]
+    assert not db.followups.docs
+
+
+def test_conflicting_customer_outcomes_and_unspecified_lost_reason_are_refused():
+    data = manifest()
+    data["outcome_recorded_at"] = "2026-09-01T00:00:00+00:00"
+    data["quotations"][0].update(customer_outcome="lost")
+    with pytest.raises(importer.ImportConflict, match="reason"):
+        importer.validate_manifest(data)
+    data["quotations"][0]["outcome_reason"] = "Owner classified lost"
+    second = deepcopy(data["quotations"][0])
+    second.update(source_file="/private/second.xlsx", source_sha256="b" * 64, customer_outcome="won")
+    data["quotations"].append(second)
+    with pytest.raises(importer.ImportConflict, match="conflicting outcomes"):
+        asyncio.run(importer.prepare_plan(database(), data, "hash"))
+
+
+@pytest.mark.parametrize("failure", [None, "followups", "event_outbox"])
+def test_outcome_import_is_atomic_replay_safe_and_has_no_financial_side_effects(monkeypatch, tmp_path, failure):
+    from services.analytics import cache
+    db, data = database(), manifest()
+    data["outcome_recorded_at"] = "2026-09-01T00:00:00+00:00"
+    data["quotations"][0].update(customer_outcome="won")
+    client = SimpleNamespace(start_session=AsyncMock(side_effect=lambda: Session(db)))
+    monkeypatch.setattr(cache, "bump", AsyncMock())
+    if failure:
+        db[failure].fail_insert = True
+    async def scenario():
+        plan = await importer.prepare_plan(db, data, "hash")
+        if failure:
+            with pytest.raises(RuntimeError, match="insert failure"):
+                await importer.apply_plan(db, client, data, "hash", plan, tmp_path)
+            assert not db.followups.docs and not db.quotations.docs and not db.event_outbox.docs
+        else:
+            await importer.apply_plan(db, client, data, "hash", plan, tmp_path)
+            assert len(db.followups.docs) == 1
+            retry = await importer.prepare_plan(db, data, "hash")
+            assert retry["already_applied"]
+            await importer.apply_plan(db, client, data, "hash", retry, tmp_path)
+            assert len(db.followups.docs) == 1
+            db.followups.docs[0]["completed_outcome"] = "lost"
+            with pytest.raises(importer.ImportConflict, match="changed or is missing"):
+                await importer.prepare_plan(db, data, "hash")
+        assert all(not db[name].docs for name in ("purchase_orders", "payments", "customer_orders", "notifications", "counters"))
+    asyncio.run(scenario())
+
+
 def test_reviewed_customer_id_accepts_name_alias_only_with_exact_floor_phone():
     db, data = database(), manifest()
     db.customers.docs.append({"id": "reviewed", "name": "Existing spelling", "phone": "+91 9876543210", "floor_id": "first-floor"})
@@ -147,6 +213,21 @@ def test_reviewed_customer_id_accepts_name_alias_only_with_exact_floor_phone():
         asyncio.run(importer.prepare_plan(db, data, "hash"))
     db.customers.docs[-1].update(phone="9876543210", floor_id="ground-floor")
     with pytest.raises(importer.ImportConflict, match="exact floor-local phone"):
+        asyncio.run(importer.prepare_plan(db, data, "hash"))
+
+
+def test_shared_phone_separate_profile_requires_exact_reviewed_identity_decision():
+    db, data = database(), manifest()
+    db.customers.docs.append({"id": "shared", "floor_id": "first-floor", "name": "Different Person", "phone": "9876543210"})
+    data["quotations"][0]["customer"]["approved_shared_phone_customer_ids"] = ["shared"]
+    with pytest.raises(importer.ImportConflict, match="recorded user decision"):
+        asyncio.run(importer.prepare_plan(db, data, "hash"))
+    data["decisions"] = {"shared_phone_identity": "User confirmed these are separate customers sharing the supplied phone"}
+    plan = asyncio.run(importer.prepare_plan(db, data, "hash"))
+    assert plan["customers"][0]["document"]["id"] != "shared"
+    assert plan["customers"][0]["document"]["phone"] == "9876543210"
+    db.customers.docs.append({"id": "extra", "floor_id": "first-floor", "name": "Another Person", "phone": "9876543210"})
+    with pytest.raises(importer.ImportConflict, match="exact reviewed"):
         asyncio.run(importer.prepare_plan(db, data, "hash"))
 
 

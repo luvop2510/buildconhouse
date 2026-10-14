@@ -20,6 +20,7 @@ type Line = { id: string; sku: string; name: string; qty: number; unit_price: nu
 type Quotation = {
   id: string; number: string; customer_name: string; status: string; floor_id?: string;
   purchase_completion_status?: "active" | "completed";
+  customer_outcome?: "won" | "lost" | null;
   items: Line[]; rooms: string[]; subtotal: number; discount_total: number;
   grand_total: number; created_at: string; notes?: string;
   created_by_name: string;
@@ -193,7 +194,8 @@ export default function QuotationDetail() {
         {relatedError ? <Alert tone="warning" title="Some related records are unavailable" description="Order links or activity may be incomplete. Reload to refresh them." /> : null}
         {/* Document summary */}
         <View style={styles.hero}>
-          <StatusBadge status={q.status} />
+          <StatusBadge status={q.customer_outcome || q.status} />
+          {q.customer_outcome ? <Text style={[type.caption, { marginTop: spacing.sm }]} testID="quotation-customer-outcome">{q.customer_outcome === "won" ? "Won Customer" : "Lost Customer"} recorded. Create a new quotation for a new sale.</Text> : null}
           {q.purchase_completion_status === "completed" ? <Text style={[type.caption, { color: colors.success, marginTop: spacing.sm }]}>100% completed</Text> : null}
           <Text accessibilityRole="header" aria-level={2} style={[type.titleLg, { marginTop: 10 }]} numberOfLines={2}>{q.customer_name || "Unknown customer"}</Text>
           <Text style={[type.bodyMuted, { marginTop: 4 }]}>
@@ -205,7 +207,7 @@ export default function QuotationDetail() {
               <Text style={type.caption}>Grand total</Text>
               <PriceTag price={q.grand_total} size="xl" />
             </View>
-            {q.status !== "ordered" && q.items.length > 0 ? (
+            {!q.customer_outcome && q.status !== "ordered" && q.items.length > 0 ? (
               <Pressable
                 onPress={() => router.push(`/(admin)/quotations/${id}/place-order` as any)}
                 style={({ pressed }) => [styles.placeOrder, { opacity: pressed ? 0.88 : 1 }]}

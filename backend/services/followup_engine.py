@@ -312,6 +312,8 @@ async def _tiles_pipeline_producer(quotations: list[dict], customers: dict[str, 
         }
 
     for q in quotations:
+        if q.get("customer_outcome") in {"won", "lost"}:
+            continue
         cust = customers.get(q.get("customer_id"))
         if not cust or not q.get("items"):
             continue
@@ -552,6 +554,8 @@ async def _reconcile_followups_locked() -> dict:
 
     # ---- Quotation-based rules ------------------------------------------------
     for q in quotations:
+        if q.get("customer_outcome") in {"won", "lost"}:
+            continue
         cust = customers.get(q.get("customer_id"))
         if not cust or not q.get("items"):
             continue
@@ -620,6 +624,8 @@ async def _reconcile_followups_locked() -> dict:
     # ---- Customer-inactivity rule -----------------------------------------------
     quotations_by_customer: dict[str, list[dict]] = {}
     for q in quotations:
+        if q.get("customer_outcome") in {"won", "lost"}:
+            continue
         quotations_by_customer.setdefault(q["customer_id"], []).append(q)
 
     for cid, cust in customers.items():

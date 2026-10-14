@@ -1,9 +1,12 @@
-"""Import reviewed workbook snapshots as open Sanitary Bathroom quotations.
+"""Import reviewed workbook snapshots and optional historical customer outcomes.
 
 Private JSON: batch_id, floor_id=first-floor, actor_id, quotations, optional
 new_brands/new_products/new_media. Each quotation has source_file/source_sha256,
 customer, items and subtotal/discount_total/grand_total. Source dates may be
-absent. Each item has sheet/row, sku/name/brand_name/category_id, optional exact
+absent. Optional customer_outcome=won/lost records closed follow-ups without
+creating financial orders; lost requires outcome_reason and outcome batches
+require a fixed outcome_recorded_at timestamp. Each item has sheet/row,
+sku/name/brand_name/category_id, optional exact
 product_id, mrp/qty/unit_price/discount_pct/net_amount and presentation fields.
 An explicit product_id permits a reviewed source-SKU alias; no fuzzy match runs.
 
@@ -28,7 +31,7 @@ from uuid import NAMESPACE_URL, uuid5
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from models import ActivityEvent, Brand, CustomerPublic, Product, ProductMedia, Quotation, QuotationLineItem, Referrer, UserPublic  # noqa: E402
+from models import ActivityEvent, Brand, CustomerPublic, Followup, Product, ProductMedia, Quotation, QuotationLineItem, Referrer, UserPublic  # noqa: E402
 from scripts.import_customer_orders import ImportConflict, _customer_match, _private_json, _same_money, fingerprint, normalized_name, normalized_phone  # noqa: E402
 from services.pricing import net_amount_list, recalc_quotation_totals  # noqa: E402
 from services.quotation_catalog_prices import line_catalog_snapshot  # noqa: E402
@@ -36,7 +39,7 @@ from services.quotation_catalog_prices import line_catalog_snapshot  # noqa: E40
 LINE_FIELDS = {"sku", "name", "description", "notes", "mrp", "qty", "unit_price", "discount_pct", "net_amount", "category_id", "room", "area", "finish", "colour", "dimension", "image", "exclude_dimension", "included_for_line_id", "included_qty_per_parent"}
 CUSTOMER_FIELDS = {"name", "phone", "alternate_phone", "company", "email", "address", "property_name", "city", "state", "pincode", "gstin", "tier", "notes"}
 QUOTE_FIELDS = {"notes", "valid_until", "project_name", "phone_snapshot", "address_snapshot", "reference_source", "doc_date", "doc_number", "attended_by", "prepared_by"}
-COLLECTIONS = ("customers", "referrers", "brands", "products", "product_media", "quotations", "activity_events", "event_outbox")
+COLLECTIONS = ("customers", "referrers", "brands", "products", "product_media", "quotations", "followups", "activity_events", "event_outbox")
 
 
 def identity(*parts: object) -> str:
@@ -67,6 +70,20 @@ def validate_manifest(manifest: dict) -> None:
         seen_files.add(source_file); seen_hashes.add(source_sha)
         if quote.get("status", "draft") != "draft" or quote.get("ordered_at"):
             raise ImportConflict("Workbook import only creates open draft quotations")
+        outcome = quote.get("customer_outcome")
+        if outcome not in (None, "won", "lost"):
+            raise ImportConflict("Customer outcome must be won or lost")
+        if outcome:
+            try:
+                recorded = datetime.fromisoformat(manifest["outcome_recorded_at"])
+                if recorded.tzinfo is None or recorded > datetime.now(timezone.utc):
+                    raise ValueError("Timestamp must have a timezone and not be future")
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ImportConflict("Outcome batches need a fixed non-future outcome_recorded_at timestamp with timezone") from exc
+        if outcome == "lost" and not str(quote.get("outcome_reason") or "").strip():
+            raise ImportConflict("Lost quotations require the supplied outcome reason")
+        if quote.get("outcome_reason") and not outcome:
+            raise ImportConflict("An outcome reason requires a customer outcome")
         for field in ("date", "doc_date", "valid_until"):
             if quote.get(field):
                 try:
@@ -218,7 +235,15 @@ async def prepare_plan(database, manifest: dict, manifest_sha: str, *, session=N
                 referrers.append(resolved); new_referrers.append(resolved)
             referral_fields = {"referrer_id": resolved["id"], "referrer_name": resolved["name"], "referrer_type": resolved["type"]}
         raw_customer = source["customer"]
-        if raw_customer.get("id"):
+        shared_ids = raw_customer.get("approved_shared_phone_customer_ids")
+        if shared_ids is not None:
+            phone = normalized_phone(raw_customer.get("phone"))
+            name = normalized_name(raw_customer.get("name"))
+            conflicts = [row for row in customers if normalized_phone(row.get("phone"), validate=False) == phone and normalized_name(row.get("name")) != name]
+            if raw_customer.get("id") or not phone or not isinstance(shared_ids, list) or not shared_ids or len(shared_ids) != len(set(shared_ids)) or {row["id"] for row in conflicts} != set(shared_ids) or not manifest.get("decisions", {}).get("shared_phone_identity"):
+                raise ImportConflict("A separate shared-phone customer requires the exact reviewed conflicting ids and recorded user decision")
+            matched = _customer_match(raw_customer, [row for row in customers if row["id"] not in shared_ids])
+        elif raw_customer.get("id"):
             matches = [row for row in customers if row["id"] == raw_customer["id"]]
             if len(matches) != 1 or not normalized_phone(raw_customer.get("phone")) or normalized_phone(matches[0].get("phone"), validate=False) != normalized_phone(raw_customer["phone"]):
                 raise ImportConflict("Explicit customer id must identify an exact floor-local phone match")
@@ -273,6 +298,9 @@ async def prepare_plan(database, manifest: dict, manifest_sha: str, *, session=N
         values.setdefault("address_snapshot", raw_customer.get("address") or customer.get("address"))
         quote = Quotation(id=quote_id, number=f"IMP-{manifest['batch_id']}-{len(quotes)+1:02d}", floor_id=floor, customer_id=customer["id"], customer_name=raw_customer["name"], status="draft", items=[QuotationLineItem(**line) for line in items], rooms=list(dict.fromkeys(line["room"] for line in items if line.get("room"))), created_by=actor.id, created_by_name=actor.full_name, subtotal=source["subtotal"], discount_total=source["discount_total"], grand_total=source["grand_total"], **values, **referral_fields).model_dump()
         quote["items"] = items
+        if source.get("customer_outcome"):
+            quote["customer_outcome"] = source["customer_outcome"]
+            quote["outcome_reason"] = source.get("outcome_reason")
         quote["quotation_import"] = {"batch_id": manifest["batch_id"], "manifest_sha256": manifest_sha, "source_file": source["source_file"], "source_sha256": source["source_sha256"], "source_metadata": source.get("source_metadata", {}), "source_summary": source.get("source_summary", {})}
         if await database.quotations.find_one({"number": quote["number"]}, session=session):
             raise ImportConflict("Import quotation number already exists")
@@ -280,7 +308,34 @@ async def prepare_plan(database, manifest: dict, manifest_sha: str, *, session=N
     used_products = {line["product_id"] for quote in quotes for line in quote["items"]}
     if any(row["id"] not in used_products for row in new_products) or any(not any(product["brand_id"] == row["id"] for product in new_products) for row in new_brands):
         raise ImportConflict("Manifest contains an unused new product or brand")
-    plan = {"batch_id": manifest["batch_id"], "floor_id": floor, "actor_id": actor.id, "actor_name": actor.full_name, "manifest_sha256": manifest_sha, "manifest_fingerprint": fingerprint(manifest), "customers": list(planned_customers.values()), "referrers": new_referrers, "new_brands": new_brands, "new_products": new_products, "new_media": new_media, "quotations": quotes}
+    followups = []
+    grouped = {}
+    for quote in quotes:
+        grouped.setdefault(quote["customer_id"], []).append(quote)
+    for customer_id, customer_quotes in grouped.items():
+        outcomes = {quote.get("customer_outcome") for quote in customer_quotes}
+        if len(outcomes) != 1:
+            raise ImportConflict("One customer cannot have conflicting outcomes within a batch")
+        outcome = outcomes.pop()
+        if not outcome:
+            continue
+        customer = planned_customers[customer_id]["document"]
+        quote = customer_quotes[0]
+        followup_id = identity("followup", floor, manifest["batch_id"], customer_id)
+        if await database.followups.find_one({"id": followup_id}, session=session):
+            raise ImportConflict("Historical outcome follow-up exists outside its receipt")
+        now = manifest["outcome_recorded_at"]
+        reason = "Customer marked lost by owner; detailed reason not supplied" if outcome == "lost" else "Customer marked won by owner"
+        supplied_reasons = list(dict.fromkeys(q.get("outcome_reason") for q in customer_quotes if q.get("outcome_reason")))
+        if supplied_reasons:
+            reason = "; ".join(supplied_reasons)
+        followup = Followup(id=followup_id, floor_id=floor, interested_floor_ids=[floor], customer_id=customer_id, customer_name=customer["name"], customer_phone=customer.get("phone"), customer_tier=customer.get("tier", "retail"), quotation_id=quote["id"], quotation_number=quote["number"], category="quotation", rule_type="manual", origin="quotation_workbook_outcome", source_key=f"quotation-workbook-outcome:{manifest['batch_id']}:{customer_id}", reference_source=quote.get("reference_source"), referrer_id=quote.get("referrer_id"), referrer_name=quote.get("referrer_name"), referrer_type=quote.get("referrer_type"), value=round(sum(q["grand_total"] for q in customer_quotes), 2), reason=reason, lost_reason=reason if outcome == "lost" else None, due_at=now, status="done", is_automated=False, auto_resolved=outcome == "won", completed_outcome=outcome, completed_at=now, assigned_to=actor.id, assigned_to_name=actor.full_name, resolution_note=reason).model_dump()
+        followup["quotation_import"] = {"batch_id": manifest["batch_id"], "manifest_sha256": manifest_sha, "quotation_ids": [q["id"] for q in customer_quotes], "source_files": [q["quotation_import"]["source_file"] for q in customer_quotes]}
+        followup["quotation_date"] = min((q["doc_date"] for q in customer_quotes if q.get("doc_date")), default=None)
+        followup["quotation_price"] = followup["value"]
+        followup["referred_by"] = quote["quotation_import"]["source_metadata"].get("reference_text") or quote.get("referrer_name")
+        followups.append(followup)
+    plan = {"batch_id": manifest["batch_id"], "floor_id": floor, "actor_id": actor.id, "actor_name": actor.full_name, "manifest_sha256": manifest_sha, "manifest_fingerprint": fingerprint(manifest), "customers": list(planned_customers.values()), "referrers": new_referrers, "new_brands": new_brands, "new_products": new_products, "new_media": new_media, "quotations": quotes, "followups": followups}
     plan["plan_fingerprint"] = fingerprint(_stable(plan))
     return plan
 
@@ -332,12 +387,17 @@ async def apply_plan(database, mongo_client, manifest: dict, manifest_sha: str, 
             for quote in plan["quotations"]:
                 await insert("quotations", quote)
                 await activity(quote, "quotations", "quotation.created")
+            for followup in plan["followups"]:
+                await insert("followups", followup)
+                event = ActivityEvent(id=identity("activity", manifest["batch_id"], "followups", followup["id"]), event_type="followup.completed", entity_type="followup", entity_id=followup["id"], actor_id=plan["actor_id"], actor_name=plan["actor_name"], floor_id=plan["floor_id"], customer_id=followup["customer_id"], quotation_id=followup["quotation_id"], summary="Historical customer outcome imported from reviewed workbook", payload={"batch_id": plan["batch_id"], "outcome": followup["completed_outcome"]}).model_dump()
+                event["automation_key"] = f"quotation-workbook:{manifest['batch_id']}:followups:{followup['id']}"
+                await insert("activity_events", event)
             receipt = {"id": identity("receipt", manifest["batch_id"]), "event_type": "QuotationWorkbookImport", "idempotency_key": f"quotation-workbook:{manifest['batch_id']}", "status": "completed", "manifest_sha256": manifest_sha, "manifest_fingerprint": fingerprint(manifest), "plan_fingerprint": plan["plan_fingerprint"], "floor_id": plan["floor_id"], "actor_id": plan["actor_id"], "created_at": datetime.now(timezone.utc).isoformat(), "documents": inventory, "quotation_ids": [quote["id"] for quote in plan["quotations"]], "result": {"quotations": len(plan["quotations"]), "new_products": len(plan["new_products"])}}
             await database.event_outbox.insert_one({"_id": receipt["id"], **receipt}, session=session)
             await verify_receipt(database, receipt, session=session)
     from services.analytics import cache
 
-    for collection in ("customers", "referrers", "brands", "products", "quotations", "product_media", "activity_events"):
+    for collection in ("customers", "referrers", "brands", "products", "quotations", "followups", "product_media", "activity_events"):
         await cache.bump(collection)
     _private_json(output_dir / f"receipt-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f')}.json", receipt)
     return {"already_applied": False, "quotations": len(plan["quotations"]), "new_products": len(plan["new_products"]), "backup": str(backup), "documents": len(inventory)}

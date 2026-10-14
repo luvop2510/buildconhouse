@@ -797,6 +797,10 @@ class Quotation(TimestampedModel):
     referrer_id: Optional[str] = None               # tracking is via a structured Referrer
     referrer_name: Optional[str] = None              # denormalized at write time — see Referrer
     status: QuotationStatus = "draft"
+    # Historical sales classification is independent of Place Order. Imported
+    # won/lost quotations must not create purchase/payment projections.
+    customer_outcome: Optional[Literal["won", "lost"]] = None
+    outcome_reason: Optional[str] = None
     # Stamped once, when status first becomes "ordered", and never rewritten.
     # EVERY revenue calculation dates by this field. updated_at cannot be used:
     # it is re-stamped on every edit, so editing an old order would move its

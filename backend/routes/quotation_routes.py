@@ -87,6 +87,28 @@ PENDING_QUOTATION_STATUSES = ("draft", "pending_approval", "sent")
 COMPLETED_QUOTATION_STATUSES = ("approved", "ordered", "won")
 
 
+def _quotation_view_query(view: str | None) -> dict:
+    """Keep historical sales outcomes separate from operational orders."""
+    if view == "pending":
+        return {
+            "status": {"$in": list(PENDING_QUOTATION_STATUSES)},
+            "customer_outcome": {"$nin": ["won", "lost"]},
+        }
+    if view == "completed":
+        return {"status": {"$in": list(COMPLETED_QUOTATION_STATUSES)}}
+    if view == "won":
+        return {"$or": [
+            {"customer_outcome": "won"},
+            {"status": {"$in": ["ordered", "won"]}, "customer_outcome": {"$ne": "lost"}},
+        ]}
+    if view == "lost":
+        return {"$or": [
+            {"customer_outcome": "lost"},
+            {"status": {"$in": ["lost", "rejected"]}, "customer_outcome": {"$ne": "won"}},
+        ]}
+    return {}
+
+
 async def _canonicalize_item_images(items, floor_id: str | None = None) -> list[dict]:
     """Resolve line-item images from current product media with snapshot fallback.
 
@@ -307,7 +329,7 @@ def _referrer_fields(referrer_type: str | None, referrer_doc: dict | None) -> di
 @router.get("")
 async def list_quotations(
     doc_type: str | None = None,
-    view: str | None = Query(None, pattern="^(pending|completed)$"),
+    view: str | None = Query(None, pattern="^(pending|completed|won|lost)$"),
     completion: str | None = Query(None, pattern="^(active|completed)$"),
     status: str | None = None,
     customer_id: str | None = None,
@@ -329,10 +351,7 @@ async def list_quotations(
         query["doc_type"] = {"$in": ["standard", None]}
     elif doc_type:
         query["doc_type"] = doc_type
-    if view == "pending":
-        query["status"] = {"$in": list(PENDING_QUOTATION_STATUSES)}
-    elif view == "completed":
-        query["status"] = {"$in": list(COMPLETED_QUOTATION_STATUSES)}
+    query.update(_quotation_view_query(view))
     selected_statuses = filter_values(status)
     if selected_statuses:
         allowed_statuses = query.get("status", {}).get("$in")
@@ -369,7 +388,8 @@ async def list_quotations(
 
 @router.get("/recent")
 async def recent_quotations(
-    limit: int = 8,
+    limit: int = Query(8, ge=1),
+    view: str | None = Query(None, pattern="^(pending|completed|won|lost)$"),
     user: UserPublic = Depends(get_current_user),
 ):
     """Compact list of recent quotations for the Builder V4 left-rail panel.
@@ -381,12 +401,14 @@ async def recent_quotations(
     # Standard quotations only — this list feeds the Quotation Builder's
     # left rail and the dashboard, neither of which can open a tile
     # document. Tile documents have their own Ground Floor screens.
+    _, limit = normalize_pagination(0, limit)
     docs = await db.quotations.find(
-        floor_query(user, {"doc_type": {"$nin": list(TILES_DOC_TYPES)}}),
+        floor_query(user, {"doc_type": {"$nin": list(TILES_DOC_TYPES)}, **_quotation_view_query(view)}),
         {
             "_id": 0, "id": 1, "number": 1, "customer_id": 1, "customer_name": 1,
             "project_name": 1, "phone_snapshot": 1, "grand_total": 1, "status": 1,
             "revisions": 1, "updated_at": 1, "created_at": 1,
+            "customer_outcome": 1, "outcome_reason": 1,
         },
     ).sort("updated_at", -1).limit(limit).to_list(limit)
     out = []
@@ -400,6 +422,8 @@ async def recent_quotations(
             "phone": d.get("phone_snapshot"),
             "grand_total": d.get("grand_total") or 0,
             "status": d.get("status") or "draft",
+            "customer_outcome": d.get("customer_outcome"),
+            "outcome_reason": d.get("outcome_reason"),
             "revision_count": len(d.get("revisions") or []),
             "updated_at": d.get("updated_at"),
             "created_at": d.get("created_at"),
@@ -415,7 +439,8 @@ async def _manual_stock_line(item: QuotationLineItem, user: UserPublic, *, floor
     """
     if not item.godown_stock_id or item.product_id != f"godown:{item.godown_stock_id}":
         return None
-    query = {"id": item.godown_stock_id, "product_id": item.product_id, "source_type": "manual"}
+    query = {"id": item.godown_stock_id, "product_id": item.product_id,
+             "source_type": {"$in": ["manual", "warehouse_import"]}}
     if floor_id:
         query["floor_id"] = floor_id
     return await db.godown_stock.find_one(floor_query(user, query), {"_id": 0, "floor_id": 1, "category_id": 1})
@@ -1638,6 +1663,14 @@ class PlaceOrderConfirmPayload(BaseModel):
     catalog_price_token: str | None = None
 
 
+def _require_active_sales_quotation(doc: dict) -> None:
+    if doc.get("customer_outcome") in {"won", "lost"}:
+        raise HTTPException(
+            status_code=409,
+            detail="This quotation has a recorded customer outcome. Duplicate it to start a new quotation before placing an order.",
+        )
+
+
 async def _godown_matches(doc: dict) -> list[dict]:
     """Return reusable sanitary stock for otherwise-to-be-produced lines."""
     # Returned sanitary material is deliberately isolated from Ground Floor
@@ -1755,6 +1788,7 @@ async def use_godown_stock(quotation_id: str, user: UserPublic = Depends(require
 @router.get("/{quotation_id}/place-order/preview")
 async def place_order_preview(quotation_id: str, user: UserPublic = Depends(require_min_role("sales"))):
     doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0})
+    _require_active_sales_quotation(doc)
     if not can_place_order(doc.get("doc_type", "standard"), doc.get("status", "draft")):
         raise HTTPException(status_code=400, detail="Confirm the quotation before placing the order")
     if not doc.get("items"):
@@ -1766,7 +1800,8 @@ async def place_order_preview(quotation_id: str, user: UserPublic = Depends(requ
 async def place_order_confirm(quotation_id: str, body: PlaceOrderConfirmPayload, user: UserPublic = Depends(require_min_role("sales"))):
     """Commit OrderPlaced once, then dispatch idempotent secondary automation."""
     # Authorize retries as well: an existing outbox row must not bypass floor access.
-    await get_floor_scoped_or_404(db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0, "id": 1, "floor_id": 1})
+    initial = await get_floor_scoped_or_404(db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0, "id": 1, "floor_id": 1, "customer_outcome": 1})
+    _require_active_sales_quotation(initial)
     key = f"order-placed:{quotation_id}"
     event = await db.event_outbox.find_one({"idempotency_key": key}, {"_id": 0})
     if not event:
@@ -1778,6 +1813,7 @@ async def place_order_confirm(quotation_id: str, body: PlaceOrderConfirmPayload,
                         db.quotations, quotation_id, user, not_found="Quotation not found",
                         projection={"_id": 0}, session=session,
                     )
+                    _require_active_sales_quotation(doc)
                     if not can_place_order(doc.get("doc_type", "standard"), doc.get("status", "draft")):
                         raise HTTPException(status_code=400, detail="Confirm the quotation before placing the order")
                     if not doc.get("items"):

@@ -96,6 +96,7 @@ export function BuilderTopbar({
           ) : null}
         </View>
         {b.customerCompleted ? <Text testID="quotation-customer-completed" style={[type.caption, { color: colors.success }]}>100% completed</Text> : null}
+        {b.customerOutcome ? <Text style={type.caption} testID="builder-customer-outcome">{b.customerOutcome === "won" ? "Won Customer" : "Lost Customer"} recorded. Create a new quotation for a new sale.</Text> : null}
         <Text
           style={[type.caption, { color: b.saveState === "error" ? colors.error : colors.onSurfaceMuted }]}
           testID="save-status"
@@ -143,7 +144,7 @@ export function BuilderTopbar({
           <Feather name="image" size={14} color={colors.onSurface} />
           <Text style={styles.workflowText}>Product PPT</Text>
         </Pressable> : null}
-        <Pressable
+        {!b.customerOutcome ? <Pressable
           accessibilityRole="button" accessibilityLabel="Place order"
           testID="place-order"
           onPress={b.placeOrder}
@@ -152,7 +153,7 @@ export function BuilderTopbar({
         >
           <Feather name="shopping-cart" size={14} color={colors.onBrand} />
           {isPhone ? null : <Text style={[styles.workflowText, { color: colors.onBrand }]}>Place Order</Text>}
-        </Pressable>
+        </Pressable> : null}
       </View> : null}
       {!isPhone ? <View style={{ flexDirection: "row", gap: 4, alignItems: "center" }}>
         {isDesktop && Platform.OS === "web" ? (
@@ -212,7 +213,7 @@ export function BuilderTopbar({
             { label: "Preview quotation", icon: "eye" as const, action: () => setPreviewOpen(true), disabled: !b.s.lines.length },
             { label: "Download quotation PDF", icon: "download" as const, action: () => setPdfOptionsOpen(true), disabled: b.workflowBusy || !b.s.lines.length },
             { label: "Download product PPT", icon: "image" as const, action: b.generateProductPpt, disabled: b.workflowBusy || !b.s.lines.length },
-            { label: "Place order", icon: "shopping-cart" as const, action: b.placeOrder, disabled: b.workflowBusy || !b.s.lines.length },
+            ...(!b.customerOutcome ? [{ label: "Place order", icon: "shopping-cart" as const, action: b.placeOrder, disabled: b.workflowBusy || !b.s.lines.length }] : []),
             { label: "Recent quotations", icon: "clock" as const, action: () => setRecentOpen(true), disabled: false },
           ].map(item => <Pressable key={item.label} accessibilityRole="button" accessibilityLabel={item.label} accessibilityState={{ disabled: item.disabled }} disabled={item.disabled}
             onPress={() => { setActionsOpen(false); item.action(); }} style={[styles.actionRow, item.disabled && { opacity: 0.4 }]}>

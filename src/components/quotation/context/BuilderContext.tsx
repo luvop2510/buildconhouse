@@ -204,6 +204,7 @@ export type BuilderApi = {
   quotationId: string | null;
   quotationNumber: string | null;
   customerCompleted: boolean;
+  customerOutcome: "won" | "lost" | null;
   saveState: SaveState;
   savedAt: Date | null;
   saveLabel: string;
@@ -385,6 +386,8 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   const [quotationId, setQuotationId] = useState<string | null>(null);
   const [quotationNumber, setQuotationNumber] = useState<string | null>(null);
   const [completionSnapshot, setCompletionSnapshot] = useState<{ id: string; customerId: string; floorId: string; completed: boolean } | null>(null);
+  const [outcomeSnapshot, setOutcomeSnapshot] = useState<{ id: string; floorId: string; outcome: "won" | "lost" } | null>(null);
+  const customerOutcome = outcomeSnapshot?.id === quotationId && outcomeSnapshot?.floorId === activeFloorId ? outcomeSnapshot.outcome : null;
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [workflowBusy, setWorkflowBusy] = useState(false);
@@ -782,10 +785,12 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     setRecoveryBusy(true);
     try {
       let copy = false;
+      let recoveredOutcome: "won" | "lost" | null = null;
       if (draft.quotationId) {
         try {
-          const server = await api.get<{ updated_at?: string; status?: string }>(`/quotations/${draft.quotationId}`, { floorId: activeFloorId });
+          const server = await api.get<{ updated_at?: string; status?: string; customer_outcome?: "won" | "lost" | null }>(`/quotations/${draft.quotationId}`, { floorId: activeFloorId });
           copy = draftNeedsCopy(draft, server);
+          recoveredOutcome = server.customer_outcome || null;
         } catch (error: any) {
           // An unavailable/deleted source cannot authorize overwriting it.
           // Restore locally as a separate draft, preserving every entered line.
@@ -802,6 +807,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
       serverSavedAtRef.current = copy ? null : draft.serverSavedAt;
       setQuotationId(copy ? null : draft.quotationId);
       setQuotationNumber(copy ? null : draft.quotationNumber);
+      setOutcomeSnapshot(!copy && draft.quotationId && recoveredOutcome ? { id: draft.quotationId, floorId: activeFloorId, outcome: recoveredOutcome } : null);
       history.replace(draft.state);
       setSaveState("idle");
       setSavedAt(null);
@@ -828,6 +834,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     try {
       const doc = await api.get<any>(`/quotations/${id}?with_completion=true`, { floorId: activeFloorId });
       if (request !== restoreRequest.current) return;
+      setOutcomeSnapshot(doc.customer_outcome === "won" || doc.customer_outcome === "lost" ? { id: doc.id, floorId: activeFloorId, outcome: doc.customer_outcome } : null);
       documentGeneration.current += 1;
       if (saveTimer.current) clearTimeout(saveTimer.current);
       const collapsed: Record<string, boolean> = {};
@@ -1544,6 +1551,10 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   }, [s.header.projectName, refreshRecentQuotations, onFinalize, activeFloorId]);
 
   const placeOrder = useCallback(async () => {
+    if (customerOutcome) {
+      toast.error("This quotation has a recorded customer outcome. Create a new quotation for a new sale.");
+      return;
+    }
     if (workflowBusy) return;
     const persistedId = await persist();
     if (!persistedId) return;
@@ -1558,7 +1569,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     } catch (error: any) {
       toast.error(typeof error?.detail === "string" ? error.detail : "Could not review order prices");
     } finally { setWorkflowBusy(false); }
-  }, [persist, workflowBusy, activeFloorId, confirmOrder]);
+  }, [persist, workflowBusy, activeFloorId, confirmOrder, customerOutcome]);
 
   // Web-only: cmd/ctrl+K focuses search
   useEffect(() => {
@@ -1602,7 +1613,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     customProductSheetOpen, setCustomProductSheetOpen,
     recentQuotations, refreshRecentQuotations, restoreQuotation, deleteQuotation, startNewQuotation,
     totals, usedCategoryIds, flatRows, lineBreakdownById, recoveryDraft, recoveryBusy, recoveryError, restoreLocalDraft, dismissRecovery,
-    quotationId, quotationNumber, customerCompleted, saveState, savedAt, saveLabel, persist, finalize,
+    quotationId, quotationNumber, customerCompleted, customerOutcome, saveState, savedAt, saveLabel, persist, finalize,
     workflowBusy, generateOfficialQuotation, generateProductPpt, placeOrder,
     setCustomer, createCustomer, importCustomerFromGround, customerSwitcherOpen, setCustomerSwitcherOpen,
     setReferrer, clearReferrer, createReferrer, referrerSwitcherOpen, setReferrerSwitcherOpen,
@@ -1631,7 +1642,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     customProductSheetOpen, setCustomProductSheetOpen,
     recentQuotations, refreshRecentQuotations, restoreQuotation, deleteQuotation, startNewQuotation,
     totals, usedCategoryIds, flatRows, lineBreakdownById, recoveryDraft, recoveryBusy, recoveryError, restoreLocalDraft, dismissRecovery,
-    quotationId, quotationNumber, customerCompleted, saveState, savedAt, saveLabel, persist, finalize,
+    quotationId, quotationNumber, customerCompleted, customerOutcome, saveState, savedAt, saveLabel, persist, finalize,
     workflowBusy, generateOfficialQuotation, generateProductPpt, placeOrder,
     setCustomer, createCustomer, importCustomerFromGround, customerSwitcherOpen, setCustomerSwitcherOpen,
     setReferrer, clearReferrer, createReferrer, referrerSwitcherOpen, setReferrerSwitcherOpen,
