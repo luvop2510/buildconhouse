@@ -28,7 +28,7 @@ type MediaItem = {
   is_primary: boolean; sort_order: number; quality: string;
 };
 
-type Pending = { uri: string; mimeType: string; replaceId?: string };
+type Pending = { uri: string; mimeType: string; file?: File; fileName?: string | null; fileSize?: number; replaceId?: string };
 
 /** The actual grid/upload/preview/delete UI, with no Sheet chrome of its own
  * — reusable as a standalone drawer (see ProductImageManager below) OR
@@ -89,7 +89,7 @@ export function ProductImageManagerBody({
     });
     if (controller?.signal.aborted || result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
-    setPending({ uri: asset.uri, mimeType: asset.mimeType || "image/jpeg", replaceId });
+    setPending({ uri: asset.uri, mimeType: asset.mimeType || "image/jpeg", file: asset.file, fileName: asset.fileName, fileSize: asset.fileSize, replaceId });
     } catch (error: any) {
       if (!controller?.signal.aborted) toast.error(error?.message || "Could not choose the product photo");
     }

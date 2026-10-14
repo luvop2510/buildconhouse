@@ -82,3 +82,15 @@ budgets. The mandatory push hook remains enabled and rebuilds before each push.
 
 Production publication and controlled live upload results are recorded below
 after provider rollout.
+
+## Production security-policy regression
+
+The first production photo journey on frontend revision `643ed12c` caught an
+additional defect: previewing the picker blob URL worked, but fetching that URL
+to create the multipart Blob was blocked by the site's `connect-src`. Custom
+creation without a photo succeeded. The photo request never reached the backend.
+The web helper now uses Expo's original `File` directly, and gallery preview state
+retains that file. The production security policy remains unchanged. The audit
+server now emits the actual Vercel security headers, covering the previously
+missing environment constraint in every browser journey. The File regression
+contract also asserts that uploading performs no URI fetch.

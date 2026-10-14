@@ -1,7 +1,7 @@
 import { Platform } from "react-native";
 import { uriToBlob } from "./uriToBlob";
 
-export type UploadImage = { uri: string; mimeType?: string | null; fileName?: string | null; fileSize?: number };
+export type UploadImage = { uri: string; mimeType?: string | null; fileName?: string | null; fileSize?: number; file?: File };
 
 /** Browsers require a Blob; native FormData streams the system picker's URI. */
 export async function appendImageUpload(form: FormData, image: UploadImage): Promise<void> {
@@ -9,7 +9,9 @@ export async function appendImageUpload(form: FormData, image: UploadImage): Pro
   const mime = image.mimeType || "image/jpeg";
   const name = image.fileName || `product-photo.${(mime.split("/")[1] || "jpg").replace("jpeg", "jpg")}`;
   if (Platform.OS === "web") {
-    const blob = await uriToBlob(image.uri);
+    // Expo's web picker supplies the original File. Fetching its blob URI is
+    // blocked by production connect-src; use the bytes already selected locally.
+    const blob = image.file || await uriToBlob(image.uri);
     if (blob.size > 20 * 1024 * 1024) throw new Error("Choose a product photo smaller than 20 MB.");
     const prepared = await prepareWebPhoto(blob.type ? blob : new Blob([blob], { type: mime }));
     form.append("file", prepared, prepared.type === mime ? name : `product-photo.${prepared.type.split("/")[1]}`);

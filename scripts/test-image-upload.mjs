@@ -72,3 +72,11 @@ const small = new Blob(['photo'], { type: 'image/png' });
     { uri: 'blob:too-big', fileSize: 21 * 1024 * 1024 }), /smaller than 20 MB/);
 }
 console.log('Photo upload source preservation, hosted byte limit, alpha, portrait, HEIC decode/error, URL release and native URI streaming passed.');
+{
+  const image = helper(), parts = [];
+  await image.appendImageUpload({ append: (...args) => parts.push(args) },
+    { uri: 'blob:csp-blocked', file: small, mimeType: 'image/png', fileName: 'original.png' });
+  assert.equal(parts[0][1], small);
+  assert.equal(parts[0][2], 'original.png');
+  assert.equal(image.calls.length, 0, 'web picker File uploads without fetching CSP-blocked blob URLs');
+}

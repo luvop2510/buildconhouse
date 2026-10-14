@@ -13,6 +13,10 @@ and quotation URL snapshots. Only the exact custom creation endpoints accept
 quotation-create grants; normal catalog/media edits retain their own permissions.
 
 All multipart uploads use the shared API transport and photo preparation helper.
+Web image-picker assets must retain their original `File`, including gallery
+preview state. Use that file directly: production `connect-src` blocks fetching
+picker blob URLs. Keep the production CSP unchanged; the audit server now serves
+the same headers so browser upload journeys cover this constraint.
 The browser preserves small originals and prepares larger photos below 3 MiB;
 Vercel admits 4 MiB envelopes only for photo routes, retaining ordinary 1 MiB
 bounds. Exact detail/media hydration reflects new/deleted photos before background
