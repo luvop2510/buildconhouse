@@ -8,6 +8,7 @@ There are NO taxes anywhere in Forge — the quotation's grand_total is the
 final price the customer pays, and payments accumulate against it directly.
 """
 from __future__ import annotations
+import re
 from services.multi_filters import filter_values, filter_condition
 import asyncio
 import logging
@@ -329,7 +330,7 @@ async def list_orders(
     aging_ranges = [_aging_range(value, custom_min_days, custom_max_days) for value in filter_values(overdue_period)]
     query: dict = {"status": {"$in": list(ORDER_STATUSES)}}
     if q:
-        term = {"$regex": q, "$options": "i"}
+        term = {"$regex": re.escape(q), "$options": "i"}
         query["$or"] = [
             {"number": term}, {"customer_name": term},
         ]
@@ -845,7 +846,7 @@ async def fully_paid_orders(
     if floor_ids is not None:
         query["floor_id"] = {"$in": floor_ids}
     if q:
-        term = {"$regex": q.strip(), "$options": "i"}
+        term = {"$regex": re.escape(q.strip()), "$options": "i"}
         query["$or"] = [{"number": term}, {"customer_name": term}]
     orders = await db.quotations.find(
         query,
@@ -937,7 +938,7 @@ def _history_filter(
         # indexed, so filtering on it keeps this fast and gap-free.
         query["created_at"] = date_range
     if q:
-        rx = {"$regex": q.strip(), "$options": "i"}
+        rx = {"$regex": re.escape(q.strip()), "$options": "i"}
         or_clause = [
             {"customer_name": rx}, {"quotation_number": rx}, {"reference": rx},
             {"note": rx}, {"cost_name": rx},

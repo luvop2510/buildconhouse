@@ -20,7 +20,7 @@ if (backend.status !== 0) process.exit(backend.status ?? 1);
 
 // Rebuild first: a passing audit of yesterday's export is not acceptance of
 // today's source. Each failure stops the audit and preserves its exit status.
-for (const script of ['build', 'test:mobile-budget', 'test:frontend-performance', 'test:page-loading-performance', 'test:catalog-pagination', 'test:api-client', 'test:sound-feedback', 'test:e2e:performance']) {
+for (const script of ['build', 'test:mobile-budget', 'test:frontend-performance', 'test:page-loading-performance', 'test:catalog-pagination', 'test:api-client', 'test:sound-feedback', 'test:release-stability', 'test:e2e:stability', 'test:e2e:performance']) {
   console.log(`Performance audit: npm run ${script}`);
   const result = spawnSync('npm', ['run', script], { stdio: 'inherit', env: auditEnv });
   if (result.error) throw result.error;
@@ -29,4 +29,4 @@ for (const script of ['build', 'test:mobile-budget', 'test:frontend-performance'
 const summary = spawnSync(process.execPath, ['scripts/summarize-performance.mjs'], { stdio: 'inherit', env: auditEnv });
 if (summary.error) throw summary.error;
 if (summary.status !== 0) process.exit(summary.status ?? 1);
-console.log('Performance audit passed: current release export, route budgets, loading/cancellation contracts and four-device browser scenarios.');
+console.log('Performance audit passed: current release export, every route and runtime stability, route budgets, loading/cancellation contracts and four-device browser scenarios.');

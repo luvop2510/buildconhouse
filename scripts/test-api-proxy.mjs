@@ -242,3 +242,36 @@ for (const method of ['GET', 'HEAD']) {
 
 console.log('API proxy security contract passed');
 console.error = originalConsoleError;
+
+// Browser restarts and deployment reloads retain the same revocable identity.
+{
+  const fixtureToken = (exp) => `fixture.${Buffer.from(JSON.stringify({ exp })).toString('base64url')}.signature`;
+  for (const endpoint of ['auth/login', 'auth/customer/login']) {
+    const exp = Math.floor(Date.now() / 1000) + 7200;
+    const token = fixtureToken(exp);
+    const res = response();
+    await createHandler({ backendUrl: 'https://api.example.test', fetchImpl: async () => Response.json({ access_token: token }) })(request({ method: 'POST', path: endpoint, headers: { origin: 'https://buildcon.example' } }), res);
+    assert.equal(res.payload.access_token, '');
+    for (const value of res.headers['Set-Cookie']) {
+      const maxAge = Number(value.match(/Max-Age=(\d+)/)?.[1]);
+      assert.ok(maxAge > 7100 && maxAge <= 7200, 'cookie persists no longer than the JWT');
+      assert.match(value, /Expires=/);
+      assert.match(value, /Secure;.*SameSite=Strict/);
+    }
+    assert.match(res.headers['Set-Cookie'][0], /HttpOnly/);
+  }
+  const token = fixtureToken(Math.floor(Date.now() / 1000) + 3600);
+  const res = response();
+  await createHandler({ backendUrl: 'https://api.example.test', fetchImpl: async (_url, options) => {
+    assert.equal(options.headers.get('authorization'), `Bearer ${token}`);
+    return Response.json({ id: 'existing-account' });
+  } })(request({ path: 'auth/me', headers: { cookie: `forge_session=${token}; forge_csrf=existing-csrf` } }), res);
+  assert.match(res.headers['Set-Cookie'][0], /Max-Age=/, 'existing session-only cookies migrate without another login');
+  assert.match(res.headers['Set-Cookie'][1], /forge_csrf=existing-csrf;/);
+  for (const status of [401, 403, 503]) {
+    const result = response();
+    await createHandler({ backendUrl: 'https://api.example.test', fetchImpl: async () => Response.json({ detail: 'Fixture failure' }, { status }) })(request({ path: 'auth/me', headers: { cookie: `forge_session=${token}` } }), result);
+    if (status === 401) assert.ok(result.headers['Set-Cookie'].every(value => value.includes('Max-Age=0')));
+    else assert.equal(result.headers['Set-Cookie'], undefined, 'permissions/outages preserve the session');
+  }
+}

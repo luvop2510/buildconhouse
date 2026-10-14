@@ -27,6 +27,7 @@ import { staffLandingPath } from "@/src/access-profiles";
 import { hasRouteDestination, isPersonalAccountRoute, moduleForRoute, resolveFloorRouteSegments } from "@/src/team-delegation";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { AppScaffold } from "@/src/components/mobile/AppScaffold";
+import { WorkspacePageBoundary } from "@/src/components/PageErrorBoundary";
 import { storage } from "@/src/utils/storage";
 import { FURNITURE_FLOOR_ID, KITCHEN_FLOOR_ID, SANITARY_FLOOR_ID, TILES_FLOOR_ID, floorDisplayLabel, floorLandingPath } from "@/src/constants/floors";
 
@@ -518,6 +519,12 @@ function CustomAccessRouteGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// The navigator must stay mounted when its page fails. Wrapping Slot itself
+// removes the active route and lets Expo redirect to the default child.
+// Slot forwards this React Navigation option to useNavigationBuilder; Expo's
+// narrower Slot type currently omits it.
+const pageScreenLayout = ({ children }: { children: React.ReactNode }) => <WorkspacePageBoundary>{children}</WorkspacePageBoundary>;
+
 export default function AdminLayout() {
   const { isPhone } = useBp();
   const builderSegments = useResolvedFloorSegments();
@@ -558,7 +565,7 @@ export default function AdminLayout() {
           style={{ backgroundColor: color.canvas, minHeight: 0 }}
           bottomNavigation={isPhone && !focusedQuotation ? <PhoneBar /> : null}
         >
-          <ConnectionStatus /><FloorAccessGate><CustomAccessRouteGate>{isPhone && !focusedQuotation ? <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 }}><FloorSwitcher /></View> : null}<Slot /></CustomAccessRouteGate></FloorAccessGate>
+          <ConnectionStatus /><FloorAccessGate><CustomAccessRouteGate>{isPhone && !focusedQuotation ? <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 }}><FloorSwitcher /></View> : null}<Slot {...({ screenLayout: pageScreenLayout } as React.ComponentProps<typeof Slot>)} /></CustomAccessRouteGate></FloorAccessGate>
         </AppScaffold>
       </View>
     </PaletteProvider>

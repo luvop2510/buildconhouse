@@ -12,6 +12,7 @@ Design notes:
   * PDF/exports live in a future iteration (Payments Milestone).
 """
 from __future__ import annotations
+import re
 from datetime import datetime, timezone
 import base64
 import binascii
@@ -258,7 +259,7 @@ async def list_purchase_orders(
     if quotation_id:
         query["quotation_id"] = quotation_id
     if q:
-        term = {"$regex": q, "$options": "i"}
+        term = {"$regex": re.escape(q), "$options": "i"}
         query["$or"] = [
             {"number": term},
             {"customer_name": term},

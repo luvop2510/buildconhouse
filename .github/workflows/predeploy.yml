@@ -53,9 +53,22 @@ jobs:
           npm run test:customer-draft-reset
           npm run test:team-contacts
           npm run test:quotation-whatsapp
+          npm run test:release-stability
           npm run test:quotation-media && npm run test:downloads && npm run test:quotation-contract && npm run test:quotation-concealed-parts && npm run test:purchases-contract && npm run test:notebook && npm run test:mobile-ux && npm run test:api-client && npm run test:api-proxy && npm run test:sales-periods && npm run test:monitoring-contract && npm run test:frontend-performance && npm run test:icon-fonts && npm run test:release-recovery && npm run test:web-worker && node scripts/verify-tile-orders-contract.mjs
           npm run build
           npm run test:mobile-budget
+      - name: Install release stability browsers
+        run: npx playwright install --with-deps chromium webkit
+      - name: Every-route and populated-response runtime acceptance
+        run: npm run test:e2e:stability
+      - name: Preserve release stability evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: predeploy-stability
+          path: output/playwright
+          if-no-files-found: error
+          retention-days: 3
       - name: Live MongoDB, Supabase and required-index check (read-only)
         working-directory: backend
         env:

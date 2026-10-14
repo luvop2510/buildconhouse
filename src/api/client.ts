@@ -157,7 +157,8 @@ async function request<T>(method: string, path: string, body?: any, opts?: Reque
   const multipart = typeof FormData !== "undefined" && body instanceof FormData;
   const headers: Record<string, string> = multipart ? {} : { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
-  const floorId = opts?.floorId ?? (await getRequestFloorId());
+  // Account restoration must not inherit a stale or newly revoked workspace.
+  const floorId = identityRead ? "" : opts?.floorId ?? await getRequestFloorId();
   if (floorId) headers["X-Floor-Id"] = floorId;
 
   if (identityRead ? identityVersion !== identityContextVersion : contextVersion !== requestContextVersion) {

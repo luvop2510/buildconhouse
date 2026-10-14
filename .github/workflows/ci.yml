@@ -133,6 +133,7 @@ jobs:
           npm run test:icon-fonts
           npm run test:font-assets
           npm run test:release-recovery
+          npm run test:release-stability
           npm run test:npm-audit
           npm run test:shell-quote-security
           npm run test:uri-decoder-security

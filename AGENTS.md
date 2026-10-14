@@ -2,6 +2,27 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
+## Runtime and session stability — 2026-10-15
+
+Web/native roots share `src/components/AuthGate.tsx`; do not fork routing again.
+Transient hydration and workspace 403 retain credentials behind recovery; only
+authoritative invalid/revoked identity clears them. Identity/assignment reads omit
+stale floors. BFF cookies persist only through JWT expiry (cap 30 days), and
+successful existing-session restoration upgrades them. Keep revocation and CSRF.
+
+Route failures use React Navigation screenLayout, retaining the navigator and
+session. A boundary around Slot itself unmounted the navigator during faults.
+Actual Expo AsyncRequireError says "Loading module" and carries request; retain
+strict same-origin module classification and explicit reload for mounted pages.
+Never auto-reload live forms. Literal search punctuation must remain escaped.
+
+The required Performance/pre-push audit includes immutable four-device every-page
+stability, populated stock/new quotation navigation, render/module failure and
+session recovery. New route files inherit coverage. The evidence verifier rejects
+missing scenarios, retries, skips and flakes. Preserve budgets/security/main
+protection. See docs/audits/2026-10-15-runtime-session-stability.md for findings,
+verification boundaries and the unresolved intermittent hosted-network observation.
+
 ## Sanitary warehouse replacement and photo editing — 2026-10-14
 
 Seven stock workbooks now back 1,015 active lots / 4,393 recorded units. Eight

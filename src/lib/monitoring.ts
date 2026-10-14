@@ -63,6 +63,16 @@ export function isSentryEnabled(): boolean {
   return !!configuredDsn();
 }
 
+/** React-caught page errors also need monitoring; the provider/session stays mounted. */
+export function captureRuntimeError(error: Error): void {
+  if (!isSentryEnabled()) return;
+  initSentry();
+  void sentryReady?.then((Sentry) => { Sentry.captureException(error); }).catch(() => {
+    // Optional diagnostics can never turn a contained page failure into an
+    // unhandled rejection. beforeSend strips messages and customer context.
+  });
+}
+
 /** Call once at app startup. Monitoring must never block the application. */
 export function initSentry(): void {
   const dsn = configuredDsn();

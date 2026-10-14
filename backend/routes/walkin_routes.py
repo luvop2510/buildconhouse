@@ -13,6 +13,7 @@ Reuses (no duplicate logic):
   - services/sequence.py           — next_number()
 """
 from __future__ import annotations
+import re
 
 import asyncio
 from datetime import datetime, timezone
@@ -277,11 +278,11 @@ async def list_walkins(
         filters["visited_at"] = rng
     if search:
         filters["$or"] = [
-            {"customer_name": {"$regex": search, "$options": "i"}},
-            {"customer_phone": {"$regex": search, "$options": "i"}},
-            {"salesperson_name": {"$regex": search, "$options": "i"}},
-            {"source": {"$regex": search, "$options": "i"}},
-            {"notes": {"$regex": search, "$options": "i"}},
+            {"customer_name": {"$regex": re.escape(search), "$options": "i"}},
+            {"customer_phone": {"$regex": re.escape(search), "$options": "i"}},
+            {"salesperson_name": {"$regex": re.escape(search), "$options": "i"}},
+            {"source": {"$regex": re.escape(search), "$options": "i"}},
+            {"notes": {"$regex": re.escape(search), "$options": "i"}},
         ]
     docs = await db.walkins.find(scoped_query(user, filters, floor_ids or floor_id), {"_id": 0}).sort("visited_at", -1).to_list(2000)
     if priority:

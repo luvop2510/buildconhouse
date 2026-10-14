@@ -21,7 +21,7 @@ async function loadAccess() {
   if (cache) return cache;
   if (!inflight) {
     const generation = accessGeneration;
-    inflight = api.get<FloorAccess>("/settings/floor-access").then((value) => {
+    inflight = api.get<FloorAccess>("/settings/floor-access", { floorId: "" }).then((value) => {
       // Do not let a request made under the previous staff session restore
       // that session's assignments after logout/login.
       if (generation === accessGeneration) {

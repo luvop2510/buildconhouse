@@ -316,3 +316,28 @@ for (const path of ['../src/api/client.ts', '../src/api/client.web.ts']) {
   transports.at(-1).finish({ id: 'retried' }); assert.equal((await retry).id, 'retried');
 }
 console.log('Native/web multipart auth, floor, CSRF, cache invalidation, workspace cancellation and timeout recovery passed.');
+
+// Stale persisted floors must never reject account/grant restoration. Explicit
+// business reads and writes still carry the selected workspace and isolation.
+for (const sourcePath of ['../src/api/client.ts', '../src/api/client.web.ts']) {
+  const requests = [];
+  const storage = { secureGet: async () => null, getItem: async () => 'revoked-floor' };
+  const module = { exports: {} };
+  vm.runInNewContext(ts.transpileModule(read(sourcePath), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText, {
+    module, exports: module.exports, require: () => ({ storage, browserStorage: storage }),
+    __DEV__: true, process: { env: {} }, document: { cookie: '' },
+    AbortController, DOMException, setTimeout, clearTimeout,
+    fetch: async (url, options) => { requests.push({ url, ...options }); return { ok: true, text: async () => '{"ok":true}' }; },
+  });
+  const { api } = module.exports;
+  for (const endpoint of ['/auth/me', '/auth/customer/me', '/settings/access-grants/me']) {
+    await api.get(endpoint, { floorId: 'also-revoked' });
+    assert.equal(requests.at(-1).headers['X-Floor-Id'], undefined, `${sourcePath}: ${endpoint} is account-wide`);
+  }
+  await api.get('/products');
+  assert.equal(requests.at(-1).headers['X-Floor-Id'], 'revoked-floor');
+  await api.post('/products', { name: 'fixture' }, { floorId: 'specific-floor' });
+  assert.equal(requests.at(-1).headers['X-Floor-Id'], 'specific-floor');
+}

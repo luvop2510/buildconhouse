@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { createWorker } from './web-worker.mjs';
+import { Buffer } from 'node:buffer';
+import { createWorker, sessionCookies } from './web-worker.mjs';
 const base='https://app.example.test';
 const request=(path='/api/orders',options={})=>new Request(base+path,options);
 let calls=0;
@@ -48,3 +49,35 @@ assert.equal((await worker.fetch(request('/assets/bundle.js.map'),mapAssets)).st
 assert.equal((await worker.fetch(request('/assets/bundle.js.MAP'),mapAssets)).status,404);
 assert.equal(mapAssetReads,0,'source maps must be denied before asset lookup');
 console.log('Web worker: CSRF, cookie isolation, malformed sessions, errors/timeouts, login, asset fallback passed');
+
+// Persist login cookies and upgrade existing cookies without extending expiry.
+{
+ const token=`fixture.${Buffer.from(JSON.stringify({exp:Math.floor(Date.now()/1000)+7200})).toString('base64url')}.signature`;
+ const persistent=createWorker('https://api.example.test',async()=>Response.json({access_token:token}));
+ const result=await persistent.fetch(request('/api/auth/login',{method:'POST',headers:{Origin:base}}),{});
+ assert.equal((await result.json()).access_token,'');
+ const cookieHeader=result.headers.get('set-cookie');
+ const ages=[...cookieHeader.matchAll(/Max-Age=(\d+)/g)].map(match=>Number(match[1]));
+ assert.equal(ages.length,2);assert.ok(ages.every(age=>age>7100 && age<=7200));
+ const restore=createWorker('https://api.example.test',async()=>Response.json({id:'same-account'}));
+ const restored=await restore.fetch(request('/api/auth/me',{headers:{Cookie:`forge_session=${token}; forge_csrf=retained`}}),{});
+ assert.match(restored.headers.get('set-cookie'),/Max-Age=/);assert.match(restored.headers.get('set-cookie'),/forge_csrf=retained;/);
+ for(const status of [401,403,503]) {
+   const denied=createWorker('https://api.example.test',async()=>Response.json({detail:'Fixture failure'},{status}));
+   const checked=await denied.fetch(request('/api/auth/me',{headers:{Cookie:`forge_session=${token}`}}),{});
+   assert.equal(Boolean(checked.headers.get('set-cookie')),status===401);
+   const proof=await denied.fetch(request('/api/auth/change-password',{method:'POST',headers:{Cookie:`forge_session=${token}; forge_csrf=csrf`,Origin:base,'X-CSRF-Token':'csrf'}}),{});
+   assert.equal(proof.headers.get('set-cookie'),null,'incorrect password proof does not discard the browser session');
+ }
+}
+
+{
+ const now=Date.now();
+ const fixtureToken=exp=>`fixture.${Buffer.from(JSON.stringify({exp})).toString('base64url')}.signature`;
+ for(const [exp,expected] of [[Math.floor(now/1000)-1,0],[Math.floor(now/1000)+90*86400,30*86400]]) {
+   for(const cookie of sessionCookies(fixtureToken(exp),'fixture-csrf',now)) assert.match(cookie,new RegExp(`Max-Age=${expected};`));
+ }
+ for(const token of ['opaque-legacy','broken.@@@.signature',fixtureToken('forever')]) {
+   assert.ok(sessionCookies(token,'fixture-csrf',now).every(cookie=>!cookie.includes('Max-Age=')), 'unparseable expiry never creates an indefinitely persistent credential');
+ }
+}

@@ -23,6 +23,46 @@ existing hook, including one managed through `core.hooksPath`; incorporate the
 command into that hook manually if needed. This hook is local to the checkout.
 CI remains the shared release gate.
 
+## Every-page crash and update gate
+
+The same audit now runs `test:e2e:stability` before performance measurements.
+This independently exercises **every discovered app page** with unavailable API
+data on Android Chrome, iPhone Safari, iPad Safari and desktop Chrome. New route
+files inherit these checks automatically. Each run freezes the freshly built
+export in its own directory; an editor rebuilding `dist` cannot change the
+assets being tested. `verify-release-stability.mjs` recomputes route discovery
+and rejects missing routes, projects, suites, failed/expected-failure cases,
+skips, retries, flakes, runner errors and pass counts without executed evidence.
+The manual predeployment workflow enforces the same browser suite.
+
+The unavailable-data matrix is supplemented by populated-response journeys:
+new quotation, 1,015 warehouse lots including null prices and unknown quantity,
+full-payload stock search with bounded card mounting, repeated SPA navigation,
+hard reload and retained authentication. Deliberately injected React render
+failures must stay inside the page boundary, retain the navigation shell and
+session, and recover through both retry and navigation. Update asset recovery
+also runs on all four devices. The shared runtime health guard catches browser
+errors/crashes **and React-caught render errors** reported on the console, and
+rejects a remaining error boundary. Its own browser regression proves that a
+page with visible text can still fail runtime acceptance.
+
+Earlier route smoke fixtures primarily exercised failed requests and watched
+`pageerror`; they could miss populated-data rendering faults caught by React.
+Bundle size and compilation alone also cannot certify navigation, a mounted
+auth-provider lifetime or preserved browser credentials. Keep successful-content,
+failure/retry, repeated-navigation and update-session scenarios for changed
+screens. Match API nullability and response envelopes, and include realistic
+list sizes. A generic page title, navigation shell or error fallback is never
+successful-content evidence. Intentional injected failures must name the exact
+expected error and prove recovery; never suppress a class of runtime errors.
+
+Required release evidence now also includes `stability-results.json` and
+`stability-summary.json` alongside failure screenshots and traces. For a focused
+development rerun, use the stability config directly; release acceptance requires
+the full unfiltered command and its coverage verifier. The existing required
+Performance check and local pre-push hook execute it automatically. A passing
+small subset or an older report cannot satisfy the verifier.
+
 ## Enforced budgets
 
 | Measure | Constraint |

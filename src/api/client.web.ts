@@ -154,7 +154,8 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: R
   if (!/^(GET|HEAD|OPTIONS)$/i.test(method)) {
     Object.assign(headers, csrfHeaders());
   }
-  const floorId = opts?.floorId ?? await getRequestFloorId();
+  // Account restoration must not inherit a stale or newly revoked workspace.
+  const floorId = identityRead ? "" : opts?.floorId ?? await getRequestFloorId();
   if (floorId) headers["X-Floor-Id"] = floorId;
   if (identityRead ? identityVersion !== identityContextVersion : contextVersion !== requestContextVersion) {
     activeRequests.delete(controller);

@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer';
+import { sessionCookies } from '../scripts/web-worker.mjs';
 
 const MAX_REQUEST_BODY_BYTES = 1_048_576;
 // Vercel Functions admit at most 4.5 MB. Keep multipart photo envelopes below
@@ -180,16 +181,16 @@ export function createHandler({ backendUrl = process.env.BACKEND_URL, fetchImpl 
       catch { return res.status(502).json({ detail: 'The upstream API returned an invalid login response.' }); }
       const token = payload?.access_token;
       if (token) {
-        const csrf = crypto.randomUUID() + crypto.randomUUID();
-        res.setHeader('Set-Cookie', [
-          `forge_session=${encodeURIComponent(token)}; Path=/api; Secure; HttpOnly; SameSite=Strict`,
-          `forge_csrf=${encodeURIComponent(csrf)}; Path=/; Secure; SameSite=Strict`,
-        ]);
+        res.setHeader('Set-Cookie', sessionCookies(token));
         payload.access_token = '';
         return res.status(upstreamResponse.status).json(payload);
       }
     }
-    if (path === 'auth/logout') {
+    const identityCheck = req.method === 'GET' && ['auth/me', 'auth/customer/me'].includes(path);
+    if (identityCheck && upstreamResponse.ok && session) {
+      res.setHeader('Set-Cookie', sessionCookies(decodeURIComponent(session), cookie(req, 'forge_csrf')));
+    }
+    if (path === 'auth/logout' || (identityCheck && upstreamResponse.status === 401)) {
       res.setHeader('Set-Cookie', [
         'forge_session=; Path=/api; Max-Age=0; Secure; HttpOnly; SameSite=Strict',
         'forge_csrf=; Path=/; Max-Age=0; Secure; SameSite=Strict',

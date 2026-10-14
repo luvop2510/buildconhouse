@@ -30,10 +30,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Verify audit failure and build configuration guards
-        run: node scripts/test-performance-audit-runner.mjs
+        run: |
+          node scripts/test-performance-audit-runner.mjs
+          node --experimental-strip-types --no-warnings scripts/test-release-stability.mjs
       - name: Install performance browsers
         run: npx playwright install --with-deps chromium webkit
-      - name: Audit current export, all route sizes, loading contracts and four devices
+      - name: Audit current export, all routes, runtime stability, loading and four devices
         env:
           BACKEND_URL: https://forge20-production-a8b0.up.railway.app
         run: npm run test:performance:audit

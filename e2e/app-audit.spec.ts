@@ -1,14 +1,11 @@
 import {expect,test} from '@playwright/test';
-import {readdirSync} from 'node:fs';
-import {join,relative} from 'node:path';
 import {mockSession} from './audit-fixtures';
-const app=join(process.cwd(),'app');
-function files(dir:string):string[]{return readdirSync(dir,{withFileTypes:true}).flatMap(f=>f.isDirectory()?files(join(dir,f.name)):[join(dir,f.name)]);}
-const routes=[...new Set(files(app).filter(f=>f.endsWith('.tsx')&&!/\/_|\/\+/.test(f)&&!f.endsWith('.web.tsx')).map(f=>'/'+relative(app,f).replace(/\([^/]+\)\//g,'').replace(/\.tsx$/,'').replace(/(^|\/)index$/,'').replace(/\/$/,'').replace('[floor]','kitchen').replace('[view]','followups').replace('[kind]','salespeople').replace(/\[[^\]]+\]/g,'audit-record')).filter(p=>p!=='/'&&!p.includes('set-new-password')&&p!=='/login'))];
-const critical=new Set(['/purchases','/tiles/orders','/tiles/quotation','/quotations/new','/sales-data','/followups']);
+import {stabilityRoutes,stabilityRouteTitle} from '../scripts/stability-routes';
+import {captureRuntimeHealth} from './runtime-health';
+const routes=stabilityRoutes();
 for(const path of routes){
- test(`${critical.has(path)?'critical ':''}${path} handles unavailable data and fits viewport`,async({page},info)=>{
-  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ test(stabilityRouteTitle(path),async({page},info)=>{
+  const health=captureRuntimeHealth(page);
   await mockSession(page,path);
   await page.goto(path);
   await expect(page.locator('body')).not.toContainText('Unmatched Route');
@@ -17,7 +14,7 @@ for(const path of routes){
   if (redirect) await expect(page).toHaveURL(new RegExp(`${redirect}$`));
   // Let bounded API retries settle before capturing the terminal data state.
   await page.waitForTimeout(1600);
-  expect(errors).toEqual([]);
+  await health.assertHealthy();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
   await page.screenshot({path:info.outputPath('page.png'),fullPage:true});
  });

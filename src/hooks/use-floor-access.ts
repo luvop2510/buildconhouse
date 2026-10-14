@@ -22,7 +22,7 @@ async function loadAccess() {
   if (cache) return cache;
   if (!inflight) {
     const generation = accessGeneration;
-    inflight = api.get<FloorAccess>("/settings/floor-access").then((value) => {
+    inflight = api.get<FloorAccess>("/settings/floor-access", { floorId: "" }).then((value) => {
       // A previous user's request can resolve after sign-out/sign-in. Do not
       // repopulate the shared cache with that user's floor assignments.
       if (generation === accessGeneration) {
