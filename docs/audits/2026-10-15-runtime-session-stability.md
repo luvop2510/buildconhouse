@@ -134,3 +134,11 @@ credentials. A short-lived run-owned QA session is an explicit required input.
 Optional provider protection headers are restricted to the deployment origin,
 never product-image hosts. Guard tests verify browser failure also stops before
 the promote command. Do not turn off provider or application authentication.
+
+The first hosted persistent-cookie assertion exposed a verifier precision bug:
+Chromium computed identical Max-Age cookies 63 microseconds apart, while direct
+API cookie storage rounded them to seconds. The verifier now requires exact
+matching server Max-Age/Expires attributes and browser timestamps within HTTP's
+one-second expiry precision. Regressions reject actual lifetime mismatches,
+session-only cookies, insecure flags and JWT extension. No application cookie
+policy, performance budget or test deadline was relaxed.

@@ -3,6 +3,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { chromium, webkit, devices, expect } from '@playwright/test';
 import { captureRuntimeHealth } from '../e2e/runtime-health.ts';
+import { assertPersistentCookies } from './verify-release-cookies.mjs';
 
 // Use a short-lived, run-owned QA session. Never sign in as another person's
 // browser, save credentials in reports, or mutate business records in a probe.
@@ -69,11 +70,13 @@ for (const [profile, engine, options] of [
       if (!await link.isVisible()) await page.getByRole('button', { name: 'More', exact: true }).click();
       await link.click();
     };
+    const identity = page.waitForResponse(response => response.url() === origin + '/api/auth/me' && response.status() === 200);
     await page.goto(origin + '/dashboard', { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId(profile === 'iphone-safari' ? 'bottom-nav-quotations' : 'nav-quotations')).toBeVisible({ timeout: 25000 });
     await navigate('Quotations');
     await expect(page.getByTestId('new-quotation-btn')).toBeVisible({ timeout: 25000 });
     await healthy('signed-in SPA quotation list');
+    const issuedHeaders = await (await identity).headerValues('set-cookie');
     for (const outcome of ['won', 'lost']) {
       for (let index = 0; index < imports[outcome].length; index++) {
         const doc = imports[outcome][index];
@@ -118,9 +121,7 @@ for (const [profile, engine, options] of [
     await expect(page.getByRole('tab', { name: /^Won orders(?: · \d+)?$/ })).toBeVisible({ timeout: 20000 });
     await healthy('Won orders wording');
     const cookies = await context.cookies();
-    const session = cookies.find(cookie => cookie.name === 'forge_session'), csrf = cookies.find(cookie => cookie.name === 'forge_csrf');
-    assert.ok(session?.httpOnly && session.secure && session.path === '/api');
-    assert.ok(session.expires > Date.now() / 1000 && session.expires <= expiry + 2 && csrf?.expires === session.expires && !csrf.httpOnly);
+    assertPersistentCookies(cookies, expiry, issuedHeaders);
     const storageState = await context.storageState();
     await context.close();
     // No credential reseeding or init script in this new browser context.
