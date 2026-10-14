@@ -29,6 +29,58 @@ async function navigate(page: Page, label: string) {
   await page.getByRole('link', { name: label, exact: true }).click();
 }
 
+// Historical imports are full documents, not empty drafts. Exercise the same
+// list -> customer quotation -> editor path as the production report, with
+// decimal quantities, absent MRPs and a collapsed room preserved by restoration.
+for (const outcome of ['won', 'lost'] as const) {
+  test(`critical populated imported ${outcome} customer opens from the list and edits without losing stock navigation`, async ({ page }) => {
+    const health = captureRuntimeHealth(page);
+    await fixtures(page);
+    const doc = {
+      id: `import-${outcome}`, number: `Q-IMPORT-${outcome}`, floor_id: 'first-floor',
+      customer_id: `customer-${outcome}`, customer_name: 'Imported customer', customer_outcome: outcome,
+      status: 'draft', created_by_name: 'Audit Owner', created_at: '2026-09-19T10:00:00Z',
+      updated_at: '2026-09-19T10:00:00Z', project_discount_pct: 0, category_discounts: {},
+      subtotal: 15000, discount_total: 0, grand_total: 15000, revision_count: 0,
+      rooms: ['Bath 1', 'Bath 2'], collapsed_rooms: ['Bath 2'],
+      items: Array.from({ length: 40 }, (_, index) => ({
+        id: `import-line-${index}`, product_id: `product-${index}`, sku: `IMPORT-${index}`,
+        name: `Imported fitting ${index}`, room: index < 20 ? 'Bath 1' : 'Bath 2',
+        qty: 1.5, unit_price: index === 1 ? 0 : 250, mrp: null, discount_pct: null,
+        category_id: null, finish: null, image: null, description: 'Imported workbook description',
+      })),
+    };
+    await page.route('**/api/quotations?**', route => route.fulfill({ json: new URL(route.request().url()).searchParams.get('view') === outcome ? [doc] : [] }));
+    await page.route(`**/api/quotations/${doc.id}?**`, route => route.fulfill({ json: doc }));
+    await page.route(`**/api/quotations/${doc.id}/breakdown`, route => route.fulfill({ json: {
+      lines: [], totals: { subtotal: doc.subtotal, discount_total: 0, grand_total: doc.grand_total }, project_discount_pct: 0, category_discounts: {},
+    } }));
+    await page.route(`**/api/activity/quotation/${doc.id}`, route => route.fulfill({ json: [] }));
+    await page.route(`**/api/purchase-orders?quotation_id=${doc.id}`, route => route.fulfill({ json: [] }));
+    await page.goto('/quotations');
+    await page.getByTestId(`quotations-${outcome}-toggle`).click();
+    await page.getByTestId(`quotation-${doc.id}`).click();
+    await expect(page.getByTestId('quotation-customer-outcome')).toContainText(`${outcome === 'won' ? 'Won' : 'Lost'} Customer recorded`);
+    await expect(page.getByText('Imported fitting 0', { exact: true })).toBeVisible();
+    await page.getByTestId('edit-quotation').click();
+    await expect(page.getByTestId('quotation-workspace')).toBeVisible();
+    const expand = page.getByTestId('expand-quotation-workspace');
+    if (await expand.isVisible()) await expand.click();
+    const quotationTab = page.getByTestId('builder-tab-quotation');
+    if (await quotationTab.isVisible()) await quotationTab.click();
+    await expect(page.getByTestId('qty-import-line-0')).toHaveValue('1.5');
+    await expect(page.getByTestId('builder-customer-outcome')).toContainText(`${outcome === 'won' ? 'Won' : 'Lost'} Customer recorded`);
+    await health.assertHealthy();
+    await page.goBack();
+    await expect(page.getByTestId('edit-quotation')).toBeVisible();
+    await navigate(page, 'Godown stock');
+    await expect(page.getByTestId('godown-lot-stable-stock-59')).toBeVisible();
+    await expect(page.getByTestId('godown-lot-stable-stock-60')).toHaveCount(0);
+    await expect(page.getByTestId('login-submit')).toHaveCount(0);
+    await health.assertHealthy();
+  });
+}
+
 test('critical opening new quotation and full warehouse repeatedly keeps navigation and session healthy', async ({ page }) => {
   const health = captureRuntimeHealth(page);
   await fixtures(page);

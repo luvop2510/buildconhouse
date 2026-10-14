@@ -17,6 +17,8 @@ export function promoteVerified({ candidate, sha, report, cli = 'vercel', run = 
   assert.equal(deployment.meta?.releaseSha, sha, 'Candidate source differs from reviewed source');
   const verification = run(process.execPath, [fileURLToPath(new URL('./verify-production-release.mjs', import.meta.url)), url.origin, ...(report ? [report] : [])], { stdio: 'inherit' });
   assert.equal(verification.status, 0, 'Candidate runtime/API/security verification failed; production promotion stopped');
+  const browserVerification = run(process.execPath, [fileURLToPath(new URL('./verify-authenticated-release.mjs', import.meta.url)), url.origin, sha, ...(report ? [report.replace(/\.json$/, '') + '-authenticated.json'] : [])], { stdio: 'inherit' });
+  assert.equal(browserVerification.status, 0, 'Candidate authenticated browser/session verification failed; production promotion stopped');
   const promotion = run(cli, ['promote', deployment.id, '--yes', '--scope', team], { stdio: 'inherit' });
   assert.equal(promotion.status, 0, 'Vercel promotion did not complete');
   return { id: deployment.id, sourceSha: sha };

@@ -21,6 +21,12 @@ cookies use the canonical CommonJS helper; standalone workers inline it. Require
 API tests execute compiled CommonJS and the actual emitted worker. Deploy a
 --skip-domain candidate, verify its authenticated journeys, then use
 scripts/promote-verified-vercel.mjs to verify source/API/assets before promotion.
+That guard also requires live authenticated desktop Chrome/iPhone Safari checks
+via scripts/verify-authenticated-release.mjs and FORGE_RELEASE_SESSION_FILE.
+Use a short-lived run-owned QA session, block business writes and revoke only
+that session after acceptance. Never weaken preview protection to test a build.
+The follow-up label is Won orders; the user confirmed a wording-only correction,
+preserving its existing current-member attribution/filtering behavior.
 
 The required Performance/pre-push audit includes immutable four-device every-page
 stability, populated stock/new quotation navigation, render/module failure and

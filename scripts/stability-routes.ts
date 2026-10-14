@@ -26,7 +26,12 @@ export function stabilityRouteTitle(path: string): string {
 export const stabilityProjects = ['android-chrome', 'iphone-safari', 'ipad-safari', 'desktop-chrome'];
 
 export const requiredStabilityScenarios: Record<string, string[]> = {
+  'redesign-followup-notes.spec.ts': [
+    'critical Won orders shows orders attributed to the current team member',
+  ],
   'redesign-runtime-stability.spec.ts': [
+    'critical populated imported won customer opens from the list and edits without losing stock navigation',
+    'critical populated imported lost customer opens from the list and edits without losing stock navigation',
     'critical opening new quotation and full warehouse repeatedly keeps navigation and session healthy',
     'critical page render failure preserves the shell and signed-in retry recovery',
     'critical page render failure preserves the shell and signed-in navigate recovery',

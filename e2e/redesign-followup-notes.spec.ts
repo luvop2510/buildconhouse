@@ -142,7 +142,7 @@ test('critical walk-in notes are read-only until marking the customer lost', asy
   expect(writes[1]).toEqual({ status: 'lost', notes: 'Cannot afford the service' });
 });
 
-test('critical Own orders shows orders attributed to the current team member', async ({ page }) => {
+test('critical Won orders shows orders attributed to the current team member', async ({ page }) => {
   await mockSession(page, '/followups');
   await page.route('**/api/followups/config/assignees', r => r.fulfill({ json: [] }));
   await page.route('**/api/followups/saved-views', r => r.fulfill({ json: [] }));
@@ -155,7 +155,7 @@ test('critical Own orders shows orders attributed to the current team member', a
     ] : [], page: 1, page_size: 100, has_more: false } });
   });
   await page.goto('/followups');
-  await page.getByRole('tab', { name: 'Own orders', exact: true }).click();
+  await page.getByRole('tab', { name: 'Won orders', exact: true }).click();
   await expect(page.getByText('My placed order', { exact: true })).toBeVisible();
   await expect(page.getByText('Another salesperson order', { exact: true })).toHaveCount(0);
   await expect.poll(() => filters.at(-1)?.get('assigned_to')).toBe('audit-owner');

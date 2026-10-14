@@ -510,7 +510,7 @@ export default function FollowupsScreen() {
 
   // An order can be placed from the quotation screen while this route remains
   // mounted in the navigator. Refresh on return so its follow-ups move to the
-  // Own orders view without relying on a manual page reload.
+  // Won orders view without relying on a manual page reload.
   useFocusEffect(useCallback(() => {
     void latestLoadList.current();
     if (summaryOpen) void refreshStatsQuiet();
@@ -947,7 +947,7 @@ export default function FollowupsScreen() {
       testID="followups-outcome-tabs"
       options={[
         { value: "active", label: "Follow-ups", icon: "inbox" },
-        { value: "won", label: `Own orders${outcomeCounts.won ? ` · ${outcomeCounts.won}` : ""}`, icon: "shopping-bag" },
+        { value: "won", label: `Won orders${outcomeCounts.won ? ` · ${outcomeCounts.won}` : ""}`, icon: "shopping-bag" },
         { value: "lost", label: `Loss${outcomeCounts.lost ? ` · ${outcomeCounts.lost}` : ""}`, icon: "user-x" },
       ]}
     />
@@ -1081,7 +1081,7 @@ export default function FollowupsScreen() {
       renderSectionHeader={({ section }) => {
         const meta = BUCKET_META[section.bucket];
         const isCollapsed = followupView === "active" && collapsed.has(section.bucket);
-        const label = followupView === "won" ? "Own orders" : followupView === "lost" ? "Loss" : meta.label;
+        const label = followupView === "won" ? "Won orders" : followupView === "lost" ? "Loss" : meta.label;
         const icon: FeatherName = followupView === "won" ? "shopping-bag" : followupView === "lost" ? "user-x" : meta.icon;
         return <Pressable accessibilityRole={followupView === "active" ? "button" : "header"} accessibilityLabel={label} accessibilityState={followupView === "active" ? { expanded: !isCollapsed } : undefined} onPress={() => followupView === "active" && toggleSection(section.bucket)} style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: 4, paddingHorizontal: horizontalPadding, backgroundColor: colors.surface }}>
           <Feather name={icon} size={14} color={colors.onSurfaceSecondary} /><Text style={type.overline}>{label}</Text><Badge label={String(section.itemCount)} tone="neutral" size="sm" /><View style={{ flex: 1 }} />{followupView === "active" ? <Feather name={isCollapsed ? "chevron-down" : "chevron-up"} size={16} color={colors.onSurfaceMuted} /> : null}

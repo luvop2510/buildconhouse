@@ -108,3 +108,29 @@ state, then runs actual candidate API/asset/cache/security checks before promoti
 Its tests prove inspection, verification and source mismatch failures prevent the
 promotion command. Candidate browser session checks precede invoking this guard.
 A successful provider build alone is insufficient release acceptance.
+
+## Reported customer click path and wording correction
+
+The user clarified that every customer click was affected, and supplied the
+Follow-ups screenshot: the requested correction is the name **Won orders**.
+Both the tab and completed section use that wording. Its established attribution
+and owner filters remain unchanged; this is not a request to expose everyone's
+orders or alter won/lost classifications.
+
+Required regressions now click both Won/Lost imported customer rows, render a
+40-line document with decimal quantities, absent MRPs and collapsed rooms, then
+enter its populated editor and return to the 1,015-lot warehouse. These eight
+new checks pass across all four browser/device projects. The follow-up workflow
+suite, including the corrected tab with preserved attribution, joins the required
+stability audit. Previously, quotation route smoke fixtures were mostly empty.
+
+The promotion guard now runs the authenticated browser verifier itself; a manual
+claim that someone opened the preview cannot substitute. It blocks promotion if
+real imported quotation clicks/editor restoration, warehouse search, the Won
+orders wording, persistent paired cookies or an unseeded browser-context restart
+fail on desktop Chromium or iPhone WebKit. All unsafe API methods are aborted;
+probe reports contain counts and scenario names without customer records or
+credentials. A short-lived run-owned QA session is an explicit required input.
+Optional provider protection headers are restricted to the deployment origin,
+never product-image hosts. Guard tests verify browser failure also stops before
+the promote command. Do not turn off provider or application authentication.

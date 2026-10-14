@@ -15,11 +15,13 @@ function exercise({ metadata = base, fail = -1, candidate = 'https://candidate.v
 }
 const good = exercise();
 assert.equal(good.error, undefined);
-assert.equal(good.calls.length, 3);
+assert.equal(good.calls.length, 4);
 assert.equal(good.calls[0].args[0], 'api');
 assert.ok(good.calls[1].args[0].endsWith('verify-production-release.mjs'));
-assert.deepEqual(good.calls[2].args.slice(0, 2), ['promote', 'dpl_fixture']);
-for (const [fail, expected] of [[0, 1], [1, 2], [2, 3]]) {
+assert.ok(good.calls[2].args[0].endsWith('verify-authenticated-release.mjs'));
+assert.equal(good.calls[2].args[2], sha);
+assert.deepEqual(good.calls[3].args.slice(0, 2), ['promote', 'dpl_fixture']);
+for (const [fail, expected] of [[0, 1], [1, 2], [2, 3], [3, 4]]) {
   const result = exercise({ fail }); assert.ok(result.error); assert.equal(result.calls.length, expected);
 }
 for (const metadata of [{ ...base, readyState: 'ERROR' }, { ...base, projectId: 'other-project' }, { ...base, meta: { releaseSha: 'b'.repeat(40) } }]) {
@@ -28,4 +30,4 @@ for (const metadata of [{ ...base, readyState: 'ERROR' }, { ...base, projectId: 
 for (const candidate of ['http://candidate.vercel.app', 'https://evil.test', 'https://user:password@candidate.vercel.app', 'https://candidate.vercel.app/other']) {
   const result = exercise({ candidate }); assert.ok(result.error); assert.equal(result.calls.length, 0);
 }
-console.log('Production promotion requires the reviewed READY candidate and successful real API/asset verification; every failure stops before promotion.');
+console.log('Production promotion requires the reviewed READY candidate, real API/assets and authenticated browser/session acceptance; every failure stops before promotion.');

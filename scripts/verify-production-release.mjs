@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
-// Read-only deployment verification: no credentials and no business writes.
+// Read-only deployment verification: no app credentials and no business writes.
 const [baseArg, output] = process.argv.slice(2);
 assert(baseArg, 'Usage: node scripts/verify-production-release.mjs https://app.example [report.json]');
 const base = new URL(baseArg);
@@ -12,7 +12,8 @@ const scripts = new Set();
 async function read(path) {
   const url = new URL(path, base);
   assert.equal(url.origin, base.origin);
-  const response = await fetch(url, { signal: AbortSignal.timeout(25000) });
+  const response = await fetch(url, { signal: AbortSignal.timeout(25000), redirect: 'error',
+    headers: process.env.VERCEL_AUTOMATION_BYPASS_SECRET ? { 'x-vercel-protection-bypass': process.env.VERCEL_AUTOMATION_BYPASS_SECRET } : {} });
   const body = await response.text();
   evidence.push({ path: url.pathname, status: response.status, contentType: response.headers.get('content-type'),
     cacheControl: response.headers.get('cache-control'), serverTiming: response.headers.get('server-timing') });
