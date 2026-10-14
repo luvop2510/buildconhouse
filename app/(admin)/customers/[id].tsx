@@ -566,7 +566,7 @@ export default function CustomerDetail() {
         {/* Tabs */}
         <NavigationTabs<Tab> value={tab} onChange={setTab} testID="customer-tab" options={[
           { value: "overview", label: "Overview" }, { value: "quotations", label: "Quotations" },
-          { value: "po_final", label: "PO Final" }, ...((isSanitaryFloor || isTilesFloor) ? [{ value: "purchases", label: isTilesFloor ? "Tile Orders" : "Purchases" }] : []), { value: "timeline", label: "Timeline" },
+          { value: "po_final", label: "PO Final" }, ...((isSanitaryFloor || isTilesFloor) ? [{ value: "purchases" as const, label: isTilesFloor ? "Tile Orders" : "Purchases" }] : []), { value: "timeline", label: "Timeline" },
         ]} />
         {tab === "quotations" || tab === "purchases" || tab === "timeline" ? <View style={styles.exportActions}>
           {tab === "quotations" ? <Button label="Export quotations .xlsx" icon="download" variant="secondary" size="sm" disabled={!quotations.length} onPress={() => void exportDetail("quotations")} testID="customer-export-quotations" /> : null}
