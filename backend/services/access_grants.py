@@ -96,6 +96,7 @@ POST_UPDATE_ROUTE_PATTERNS = (
     r"/api/walkins/[^/]+/(?:contact|visit-showroom)",
     r"/api/customers/[^/]+/(?:send-invite|reset-password)",
     r"/api/godown-stock/[^/]+/allocate",
+    r"/api/godown-stock/[^/]+/image",
     r"/api/quotations/[^/]+/items/[^/]+/cancel",
     r"/api/quotations/[^/]+/move-to-quotation",
     r"/api/quotations/[^/]+/place-order/confirm",

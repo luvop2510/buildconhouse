@@ -1,8 +1,9 @@
 import { api } from "./client";
+import { appendImageUpload, type UploadImage } from "@/src/utils/appendImageUpload";
 
 export type GodownLot = {
   id: string; product_id: string | null; sku: string; name: string; image?: string | null; finish?: string | null;
-  size?: string | null; feature?: string | null; category?: string | null;
+  size?: string | null; feature?: string | null; category?: string | null; quantity_missing?: boolean; archived?: boolean;
   brand_id?: string | null; brand_name?: string | null; qty_received: number; available_qty: number;
   loaned_out_qty?: number; transferable_qty?: number;
   source_customer_id?: string | null; source_customer_name?: string | null; source_purchased_at?: string | null;
@@ -44,4 +45,11 @@ export type CustomerTransferInput = {
 };
 export const transferGodownStockToCustomer = (stockId: string, body: CustomerTransferInput) =>
   api.post<CustomerStockTransfer>(`/godown-stock/${encodeURIComponent(stockId)}/customer-transfers`, body);
-export const updateGodownPricing = (id: string, body: { unit_price: number; price_variants: { label: string; price: number }[] }) => api.patch<GodownLot>(`/godown-stock/${encodeURIComponent(id)}/pricing`, body);
+export const updateGodownPricing = (id: string, body: { unit_price: number | null; price_variants: { label: string; price: number }[] }, signal?: AbortSignal) => api.patch<GodownLot>(`/godown-stock/${encodeURIComponent(id)}/pricing`, body, { signal });
+export const updateGodownDetails = (id: string, body: { unit_price?: number | null; image?: string | null; price_variants?: { label: string; price: number }[] }, signal?: AbortSignal, floorId?: string) => api.patch<GodownLot>(`/godown-stock/${encodeURIComponent(id)}/details`, body, { signal, floorId });
+export async function uploadGodownImage(id: string, image: UploadImage, signal?: AbortSignal, floorId?: string): Promise<GodownLot> {
+  const form = new FormData();
+  await appendImageUpload(form, image);
+  if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
+  return api.upload<GodownLot>(`/godown-stock/${encodeURIComponent(id)}/image`, form, { signal, floorId });
+}

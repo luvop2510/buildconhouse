@@ -6,7 +6,7 @@ const MAX_REQUEST_BODY_BYTES = 1_048_576;
 const MAX_PHOTO_BODY_BYTES = 4 * 1024 * 1024;
 
 export function requestBodyLimit(method, path, contentType) {
-  const photoRoute = /^products\/custom-with-media$|^products\/[^/]+\/(?:media(?:\/[^/]+\/replace)?|diagram-media|vitra-media)$|^families\/[^/]+\/media$/;
+  const photoRoute = /^products\/custom-with-media$|^products\/[^/]+\/(?:media(?:\/[^/]+\/replace)?|diagram-media|vitra-media)$|^families\/[^/]+\/media$|^godown-stock\/[^/]+\/image$/;
   return method === 'POST' && photoRoute.test(path) && /^multipart\/form-data\s*;/i.test(contentType || '')
     ? MAX_PHOTO_BODY_BYTES : MAX_REQUEST_BODY_BYTES;
 }

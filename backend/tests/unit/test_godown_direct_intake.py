@@ -77,7 +77,7 @@ def test_manual_intake_requires_price(monkeypatch):
 def test_existing_lot_price_can_be_completed(monkeypatch):
     class PriceStock:
         async def find_one_and_update(self, query, update, **_kwargs):
-            assert query["$and"][1] == {"id": "lot-1"}
+            assert query["$and"][1] == {"id": "lot-1", "archived": {"$ne": True}}
             return {"id": "lot-1", "floor_id": "first-floor", "name": "Valve", "available_qty": 2, **update["$set"]}
 
     monkeypatch.setattr(godown, "db", SimpleNamespace(godown_stock=PriceStock()))
@@ -106,7 +106,7 @@ def test_stock_search_is_literal_and_keeps_floor_and_availability_scope(monkeypa
     if history:
         assert "available_qty" not in stock.query
     else:
-        assert stock.query["$and"][1] == {"available_qty": {"$gt": 0}}
+        assert stock.query["$and"][1] == {"$or": [{"available_qty": {"$gt": 0}}, {"quantity_missing": True}]}
     assert all(next(iter(field.values()))["$regex"] == r"131\.221\.\(a\+\)\+"
                for field in stock.query["$or"])
 
@@ -144,6 +144,6 @@ def test_stock_only_quotation_line_requires_matching_lot_and_floor(monkeypatch):
     row = asyncio.run(quotation._manual_stock_line(matching, user(), floor_id="first-floor"))
     assert row["floor_id"] == "first-floor"
     scoped = lots.query.get("$and", [None, lots.query])[-1]
-    assert scoped == {"id": "lot-1", "product_id": "godown:lot-1", "source_type": "manual", "floor_id": "first-floor"}
+    assert scoped == {"id": "lot-1", "product_id": "godown:lot-1", "source_type": {"$in": ["manual", "warehouse_import"]}, "floor_id": "first-floor"}
     forged = matching.model_copy(update={"product_id": "godown:another-lot"})
     assert asyncio.run(quotation._manual_stock_line(forged, user())) is None

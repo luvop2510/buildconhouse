@@ -546,7 +546,8 @@ async def create_quotation(
             "allocated_by_name": user.full_name,
         }
         lot = await db.godown_stock.find_one_and_update(
-            floor_query(user, {"id": line.godown_stock_id, "$expr": {"$gte": [
+            floor_query(user, {"id": line.godown_stock_id, "product_id": line.product_id,
+                              "archived": {"$ne": True}, "quantity_missing": {"$ne": True}, "$expr": {"$gte": [
                 {"$subtract": [{"$ifNull": ["$available_qty", 0]}, {"$ifNull": ["$loaned_out_qty", 0]}]}, line.qty,
             ]}}),
             {"$inc": {"available_qty": -line.qty}, "$push": {"allocations": allocation}, "$set": {"updated_at": allocation_at}},
@@ -1682,7 +1683,8 @@ async def _godown_matches(doc: dict) -> list[dict]:
     if not product_ids:
         return []
     lots = await db.godown_stock.find(
-        {"floor_id": doc.get("floor_id"), "product_id": {"$in": product_ids}, "available_qty": {"$gt": 0}},
+        {"floor_id": doc.get("floor_id"), "product_id": {"$in": product_ids}, "available_qty": {"$gt": 0},
+         "archived": {"$ne": True}, "quantity_missing": {"$ne": True}},
         {"_id": 0, "id": 1, "product_id": 1, "available_qty": 1, "loaned_out_qty": 1, "source_customer_name": 1, "transferred_at": 1},
     ).sort("transferred_at", 1).to_list(500)
     available: dict[str, float] = {}
@@ -1751,7 +1753,7 @@ async def use_godown_stock(quotation_id: str, user: UserPublic = Depends(require
         remaining = float(raw.get("qty") or 0)
         if raw.get("godown_stock_id") or remaining <= 0:
             output.append(raw); continue
-        lots = await db.godown_stock.find({"floor_id": doc.get("floor_id"), "product_id": raw.get("product_id"), "available_qty": {"$gt": 0}}, {"_id": 0}).sort("transferred_at", 1).to_list(100)
+        lots = await db.godown_stock.find({"floor_id": doc.get("floor_id"), "product_id": raw.get("product_id"), "available_qty": {"$gt": 0}, "archived": {"$ne": True}, "quantity_missing": {"$ne": True}}, {"_id": 0}).sort("transferred_at", 1).to_list(100)
         for lot in lots:
             if remaining <= 1e-6: break
             qty = min(remaining, max(0.0, float(lot.get("available_qty") or 0) - float(lot.get("loaned_out_qty") or 0)))
@@ -1759,7 +1761,7 @@ async def use_godown_stock(quotation_id: str, user: UserPublic = Depends(require
                 continue
             at = now_iso()
             allocation = {"id": str(uuid4()), "quotation_id": doc["id"], "quotation_number": doc.get("number"), "customer_id": doc.get("customer_id"), "customer_name": doc.get("customer_name"), "qty": qty, "allocated_at": at, "allocated_by": user.id, "allocated_by_name": user.full_name}
-            claimed = await db.godown_stock.find_one_and_update({"id": lot["id"], "floor_id": doc.get("floor_id"), "$expr": {"$gte": [
+            claimed = await db.godown_stock.find_one_and_update({"id": lot["id"], "floor_id": doc.get("floor_id"), "archived": {"$ne": True}, "quantity_missing": {"$ne": True}, "$expr": {"$gte": [
                 {"$subtract": [{"$ifNull": ["$available_qty", 0]}, {"$ifNull": ["$loaned_out_qty", 0]}]}, qty,
             ]}}, {"$inc": {"available_qty": -qty}, "$push": {"allocations": allocation}, "$set": {"updated_at": at}}, return_document=ReturnDocument.AFTER)
             if not claimed:

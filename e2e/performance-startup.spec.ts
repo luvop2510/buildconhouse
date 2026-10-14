@@ -495,3 +495,32 @@ test('custom product form opens promptly beside the full catalog without extra c
   const tasks = await assertHealthyInteraction(page, data);
   await info.attach('custom-product-form-performance', { body: JSON.stringify({ openMs, fixtureLatencyMs: LATENCY_MS, tasks, reads: data.reads }, null, 2), contentType: 'application/json' });
 });
+
+test('godown replacement inventory renders a bounded batch and searches distant stock promptly', async ({ page, baseURL }, info) => {
+  const lots = Array.from({ length: 1100 }, (_, i) => ({
+    id: `warehouse-${i}`, product_id: `stock-product-${i}`, sku: `WAREHOUSE-${i}`,
+    name: `Warehouse product ${i}`, brand_name: i % 2 ? 'Duravit' : 'Grohe',
+    qty_received: 2, available_qty: 2, transferable_qty: 2,
+    unit_price: i % 2 ? null : 1000, stock_value: i % 2 ? null : 2000,
+    source_type: 'warehouse_import', transferred_at: '2026-10-14T10:00:00Z',
+  }));
+  const data = await fixtureCatalog(page, baseURL!, {
+    '/api/godown-stock': { lots, brands: [], total_available_qty: 2200,
+      total_stock_value: 1100000, unpriced_lot_count: 550 },
+  });
+  const started = performance.now();
+  await page.goto('/godown-stock', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByText('Warehouse product 0', { exact: true })).toBeVisible();
+  const readyMs = performance.now() - started;
+  expect(readyMs).toBeLessThan(2500);
+  await expect(page.getByText('Warehouse product 1099', { exact: true })).toHaveCount(0);
+  const searchStarted = performance.now();
+  await page.getByRole('textbox', { name: 'Search godown stock', exact: true }).fill('WAREHOUSE-1099');
+  await expect(page.getByText('Warehouse product 1099', { exact: true })).toBeVisible();
+  const searchMs = performance.now() - searchStarted;
+  expect(searchMs).toBeLessThan(1500);
+  expect(data.reads.filter(read => read.path === '/api/godown-stock')).toHaveLength(1);
+  const tasks = await assertHealthyInteraction(page, data);
+  await info.attach('godown-inventory-performance', { body: JSON.stringify({ readyMs, searchMs,
+    stockRows: lots.length, initialRenderLimit: 60, fixtureLatencyMs: LATENCY_MS, tasks }), contentType: 'application/json' });
+});

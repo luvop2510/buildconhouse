@@ -33,10 +33,13 @@ function response() {
 }
 
 assert.equal(validateBackendUrl('https://api.example.test/'), 'https://api.example.test');
-for (const path of ['products/custom-with-media', 'products/id/media', 'products/id/media/media-id/replace', 'products/id/diagram-media', 'families/family/media']) {
+for (const path of ['products/custom-with-media', 'products/id/media', 'products/id/media/media-id/replace', 'products/id/diagram-media', 'families/family/media', 'godown-stock/lot/image']) {
   assert.equal(requestBodyLimit('POST', path, 'multipart/form-data; boundary=test'), 4 * 1024 * 1024);
   assert.equal(requestBodyLimit('POST', path, 'application/json'), 1024 * 1024);
   assert.equal(requestBodyLimit('PATCH', path, 'multipart/form-data; boundary=test'), 1024 * 1024);
+}
+for (const path of ['godown-stock/image', 'godown-stock/lot/image/other', 'godown-stock/lot/details']) {
+  assert.equal(requestBodyLimit('POST', path, 'multipart/form-data; boundary=test'), 1024 * 1024);
 }
 assert.equal(requestBodyLimit('POST', 'auth/login', 'multipart/form-data; boundary=test'), 1024 * 1024);
 for (const value of ['', 'http://api.example.test', 'https://user:pass@api.example.test', 'not a url']) {
@@ -166,7 +169,7 @@ for (const path of [['products', 'families'], ['auth', 'login'], ['quotations', 
 
 // A normal photo above the former 1 MiB cap must arrive intact, with its
 // multipart boundary, selected floor and same-origin session protection.
-for (const path of [['products', 'custom-with-media'], ['products', 'product', 'media']]) {
+for (const path of [['products', 'custom-with-media'], ['products', 'product', 'media'], ['godown-stock', 'lot', 'image']]) {
   const body = Buffer.concat([Buffer.from('--photo\r\nContent-Type: image/jpeg\r\n\r\n'), Buffer.alloc(2 * 1024 * 1024, 37), Buffer.from('\r\n--photo--\r\n')]);
   const headers = { cookie: 'forge_session=fixture-session; forge_csrf=csrf', origin: 'https://buildcon.example', 'x-csrf-token': 'csrf', 'x-floor-id': 'ground-floor', 'content-type': 'multipart/form-data; boundary=photo' };
   const res = response();
