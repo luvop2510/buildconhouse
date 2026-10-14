@@ -41,6 +41,27 @@ for (const [profile, engine, options] of [
   const browser = await engine.launch();
   try {
     let context = await browser.newContext({ ...options, serviceWorkers: 'block' });
+    const pendingApi = new Set();
+    let lastApiActivity = Date.now();
+    const observeApi = current => {
+      current.on('request', request => {
+        const url = new URL(request.url());
+        if (url.origin === origin && url.pathname.startsWith('/api/')) {
+          pendingApi.add(request); lastApiActivity = Date.now();
+        }
+      });
+      const finish = request => {
+        if (pendingApi.delete(request)) lastApiActivity = Date.now();
+      };
+      current.on('requestfinished', finish);
+      current.on('requestfailed', finish);
+    };
+    observeApi(context);
+    // Hard navigation cancels document-owned background reads. Safari can
+    // report that cancellation as a CORS console error. Finish the probe's
+    // own reads first; retain the health guard and its existing deadlines.
+    const settleApi = () => expect.poll(() => pendingApi.size === 0 && Date.now() - lastApiActivity >= 200,
+      { timeout: 20000, message: 'Probe API reads must settle before navigation' }).toBe(true);
     context.setDefaultTimeout(20000);
     context.setDefaultNavigationTimeout(30000);
     const blockWrites = async current => current.route('**/*', route => {
@@ -61,6 +82,7 @@ for (const [profile, engine, options] of [
     let page = await context.newPage(), health = captureRuntimeHealth(page);
     const healthy = async name => {
       await expect(page.getByTestId('login-submit')).toHaveCount(0);
+      await settleApi();
       await health.assertHealthy();
       checks.push({ profile, name, passed: true });
       console.log(`${profile}: ${name} passed`);
@@ -95,6 +117,7 @@ for (const [profile, engine, options] of [
         await healthy(`${outcome} imported customer ${index + 1} restores its editor`);
         // A full document navigation also checks that direct links retain the
         // same cookie. List/detail/editor transitions above must remain clicks.
+        await settleApi();
         await page.goto(origin + '/quotations', { waitUntil: 'domcontentloaded' });
         await expect(page.getByTestId('new-quotation-btn')).toBeVisible({ timeout: 20000 });
       }
@@ -102,6 +125,7 @@ for (const [profile, engine, options] of [
     await page.getByTestId('new-quotation-btn').click();
     await expect(page.getByTestId('quotation-workspace')).toBeVisible({ timeout: 25000 });
     await healthy('new quotation opens by click');
+    await settleApi();
     await page.goto(origin + '/quotations', { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('new-quotation-btn')).toBeVisible({ timeout: 20000 });
     await navigate('Godown stock');
@@ -124,14 +148,18 @@ for (const [profile, engine, options] of [
     assertPersistentCookies(cookies, expiry, issuedHeaders);
     const storageState = await context.storageState();
     await context.close();
+    pendingApi.clear();
+    lastApiActivity = Date.now();
     // No credential reseeding or init script in this new browser context.
     context = await browser.newContext({ ...options, storageState, serviceWorkers: 'block' });
+    observeApi(context);
     context.setDefaultTimeout(20000);
     context.setDefaultNavigationTimeout(30000);
     await blockWrites(context);
     page = await context.newPage(); health = captureRuntimeHealth(page);
     await page.goto(origin + '/quotations', { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('new-quotation-btn')).toBeVisible({ timeout: 25000 });
+    await settleApi();
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('new-quotation-btn')).toBeVisible({ timeout: 20000 });
     await healthy('persistent signed-in browser restart and refresh');

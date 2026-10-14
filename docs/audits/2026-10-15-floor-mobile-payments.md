@@ -64,6 +64,12 @@ applied through the controlled job; verification confirms exactly three derived
 Kitchen grants, no remaining planned grant changes and no pending migrations.
 The staged candidate passed 19 API/asset/security checks and 32 real floor/mobile
 read-only checks before promotion. The full pre-push audit remains required.
+The final frozen-export supplemental run passes 120 floor/completion/Team cases.
+One new Team assertion now checks the removed legacy row after revocation,
+rather than waiting for the detached checkbox to remain unchecked. A hosted
+Safari probe exposed a pending-read cancellation in the verifier itself: it
+now waits for its own API reads before hard navigation and reload, resetting
+tracking across contexts. No runtime-error filter or deadline is relaxed.
 
 The independent npm audit still reports 22 high and five moderate findings,
 with no critical findings. No dependency finding, hook, performance budget,

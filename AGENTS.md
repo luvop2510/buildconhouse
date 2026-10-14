@@ -21,6 +21,10 @@ landing. Required stability acceptance includes payment entry/rotation and
 all-floor navigation/direct-link/switching checks. Real deployed read-only
 acceptance also uses scripts/verify-floor-mobile-release.mjs with a short-lived
 run-owned QA session; never record customer rows or tokens in release reports.
+The authenticated verifier waits for its own API reads to settle before hard
+navigation/reload and resets tracking across browser contexts. Safari reports
+canceled document reads as access-control console errors; never suppress those
+errors or weaken the runtime guard to compensate for premature probe navigation.
 
 ## Runtime and session stability — 2026-10-15
 
