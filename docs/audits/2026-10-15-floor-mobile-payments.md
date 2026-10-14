@@ -46,6 +46,12 @@ all eight payment browser profiles. A separate 40-case surrounding regression
 run passes after updating stale session-recovery and mobile quotation controls;
 portable screenshots replace machine-specific artifact paths.
 
+The current-source release audit passes 524 stability cases (77 routes on four
+profiles), plus 52 performance scenarios, without skips, failures, retries or
+flakes. All 159 exported pages meet the 576 KiB initial-JavaScript budget;
+the largest is 449 KiB gzip. All 43 configured functional contract commands
+pass; the optional route-drift baseline remains unconfigured.
+
 The required current-source performance audit also executes every discovered
 route and populated runtime/session recovery cases on four browser profiles.
 Payment entry/rotation and floor navigation/direct-link/switching regressions
@@ -53,7 +59,11 @@ are now mandatory in its evidence verifier. Deployment acceptance additionally
 uses scripts/verify-floor-mobile-release.mjs for real floor-specific API reads,
 cross-floor follow-up denial, navigation and compact payment layout, with no
 business writes. Final audit counts, deployment identities and timings must be
-recorded in the release ledger after these runs complete.
+recorded in the release ledger after these runs complete. Migration 0035 was
+applied through the controlled job; verification confirms exactly three derived
+Kitchen grants, no remaining planned grant changes and no pending migrations.
+The staged candidate passed 19 API/asset/security checks and 32 real floor/mobile
+read-only checks before promotion. The full pre-push audit remains required.
 
 The independent npm audit still reports 22 high and five moderate findings,
 with no critical findings. No dependency finding, hook, performance budget,

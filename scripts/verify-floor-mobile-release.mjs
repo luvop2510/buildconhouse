@@ -18,7 +18,7 @@ async function api(path, floor) {
   return fetch(origin + '/api' + path, { headers: { ...providerHeaders, Authorization: `Bearer ${token}`, 'X-Floor-Id': floor }, signal: AbortSignal.timeout(25000), redirect: 'error' });
 }
 for (const floor of floors) {
-  const response = await api('/followups/page?page=1&page_size=100&view=pending', floor);
+  const response = await api('/followups/page?page=1&page_size=100&view=active', floor);
   assert.equal(response.status, 200, `${floor}: shared inbox unavailable`);
   const { items } = await response.json();
   assert.ok(Array.isArray(items));
@@ -57,7 +57,7 @@ for (const [profile, engine, options] of [
       await page.goto(origin + '/followups', { waitUntil: 'domcontentloaded' });
       await expect(page.getByRole('tab', { name: /^Won orders(?: · \d+)?$/ })).toBeVisible();
       await expect(page.getByRole('link', { name: 'Catalog', exact: true })).toHaveCount(['first-floor', 'ground-floor'].includes(floor) ? 1 : 0);
-      if (profile === 'iphone-safari') await page.getByRole('button', { name: 'More', exact: true }).click();
+      if (profile === 'iphone-safari') await page.getByRole('navigation', { name: 'Primary', exact: true }).getByRole('button', { name: 'More', exact: true }).click();
       await expect(page.getByRole('link', { name: 'Purchases', exact: true })).toHaveCount(floor === 'first-floor' ? 1 : 0);
       await expect(page.getByRole('link', { name: /Kitchen lead|Furniture lead|Quotation Follow-up/ })).toHaveCount(0);
       assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('forge.active-floor'))), floor);
@@ -66,7 +66,7 @@ for (const [profile, engine, options] of [
       checks.push({ name: 'supported navigation and Won orders', profile, floor, passed: true });
       // Click navigation so pending inbox reads finish within the same document.
       const paymentLink = page.getByRole('link', { name: 'Payments', exact: true });
-      if (!await paymentLink.isVisible()) await page.getByRole('button', { name: 'More', exact: true }).click();
+      if (!await paymentLink.isVisible()) await page.getByRole('navigation', { name: 'Primary', exact: true }).getByRole('button', { name: 'More', exact: true }).click();
       await paymentLink.click();
       await expect(page.getByTestId('payments-page-details-toggle')).toHaveAttribute('aria-expanded', String(profile !== 'iphone-safari'));
       await expect(page.getByRole('heading', { name: 'Payments', exact: true })).toBeVisible();
