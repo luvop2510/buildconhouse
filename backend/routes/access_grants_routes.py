@@ -75,7 +75,7 @@ async def list_grant_resources(actor: UserPublic = Depends(require_owner)):
     floor_ids = [floor["id"] for floor in floors]
     return {
         "resources": [
-            {"key": key, "label": value["label"], "actions": value.get("actions", sorted(ACTIONS)),
+            {"key": key, "label": value["label"], "retired": value.get("retired", False), "actions": value.get("actions", sorted(ACTIONS)),
              "floor_ids": [floor for floor in floor_ids if not value.get("floor_ids") or floor in value["floor_ids"]],
              "description": value.get("description", f"Manage {value['label'].lower()} records on this floor.")}
             for key, value in RESOURCE_REGISTRY.items() if key != "reports"

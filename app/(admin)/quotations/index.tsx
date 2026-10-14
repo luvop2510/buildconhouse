@@ -47,8 +47,7 @@ export default function QuotationsList() {
   useRequireFloorAccess("first-floor");
   const router = useRouter();
   const { view } = useLocalSearchParams<{ view?: string }>();
-  const fulfilled = view === "fulfilled";
-  const completed = view === "completed";
+  const completed = view === "completed" || view === "fulfilled";
   const outcome = view === "won" || view === "lost" ? view : null;
   const { staff } = useAuth();
   const canDeleteQuotations = useActionAccess("quotations", "delete", !!staff && ["owner", "admin", "manager"].includes(staff.role));
@@ -63,7 +62,7 @@ export default function QuotationsList() {
   const requestId = useRef(0);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  useEffect(() => { setStatusFilter("all"); }, [completed, fulfilled, outcome]);
+  useEffect(() => { setStatusFilter("all"); }, [completed, outcome]);
 
   const deleteQuotation = async () => {
     if (!deleteTarget) return;
@@ -84,12 +83,12 @@ export default function QuotationsList() {
     try {
       const nextItems = await api.get<Quotation[]>(outcome
         ? `/quotations?doc_type=standard&view=${outcome}`
-        : `/quotations?doc_type=standard&completion=${fulfilled ? "completed" : "active"}${fulfilled ? "" : `&view=${completed ? "completed" : "pending"}`}`);
+        : `/quotations?doc_type=standard&view=${completed ? "completed" : "pending"}`);
       if (currentRequest === requestId.current) setItems(nextItems);
     } catch (e: any) {
       if (currentRequest === requestId.current) setLoadError(e?.detail || "Could not load quotations");
     }
-  }, [completed, fulfilled, outcome]);
+  }, [completed, outcome]);
   useFocusEffect(useCallback(() => {
     void load();
     return () => { requestId.current += 1; };
@@ -101,7 +100,7 @@ export default function QuotationsList() {
     return map;
   }, [items]);
 
-  const filters = outcome ? [{ key: "all" as const, label: "All" }] : fulfilled ? [...PENDING_FILTERS, ...COMPLETED_FILTERS.slice(1)] : completed ? COMPLETED_FILTERS : PENDING_FILTERS;
+  const filters = outcome ? [{ key: "all" as const, label: "All" }] : completed ? COMPLETED_FILTERS : PENDING_FILTERS;
 
   const filtered = useMemo(() => (items || []).filter((it) => {
     if (!matchesFilter(it.status, statusFilter)) return false;
@@ -113,8 +112,8 @@ export default function QuotationsList() {
 
   return (
     <AdminPage
-      title={outcome ? `${outcome === "won" ? "Won Customer" : "Lost Customer"} · Quotations` : fulfilled ? "100% Customers · Quotations" : completed ? "Approved & ordered quotations" : "Quotations"}
-      subtitle={loadError ? "Pipeline unavailable" : items ? `${items.length} ${outcome ? `${outcome} quotations` : fulfilled ? "100% completed" : completed ? "approved or ordered" : "pending"} · ${money(totalValue)} filtered` : "Loading pipeline…"}
+      title={outcome ? `${outcome === "won" ? "Won Customer" : "Lost Customer"} · Quotations` : completed ? "Approved & ordered quotations" : "Quotations"}
+      subtitle={loadError ? "Pipeline unavailable" : items ? `${items.length} ${outcome ? `${outcome} quotations` : completed ? "approved or ordered" : "pending"} · ${money(totalValue)} filtered` : "Loading pipeline…"}
       scroll={false}
       contentStyle={{ paddingHorizontal: 0, paddingTop: 0 }}
       right={
@@ -123,8 +122,7 @@ export default function QuotationsList() {
             testID="quotations-lifecycle-toggle" onPress={() => router.push(`/(admin)/quotations?view=${completed ? "pending" : "completed"}` as any)} style={styles.lifecycleLink}>
             <Text style={styles.lifecycleText}>{completed ? "Pending" : "Completed"}</Text>
           </Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel={fulfilled ? "View active customer quotations" : "View 100 percent completed customer quotations"} testID="quotations-fulfilled-toggle" onPress={() => router.push(`/(admin)/quotations?view=${fulfilled ? "pending" : "fulfilled"}` as any)} style={styles.lifecycleLink}><Text style={styles.lifecycleText}>{fulfilled ? "Active customers" : "100% Customers"}</Text></Pressable>
-          {!completed && !fulfilled && !outcome ? <Pressable
+          {!completed && !outcome ? <Pressable
             accessibilityRole="button"
             accessibilityLabel="Create new quotation"
             testID="new-quotation-btn"

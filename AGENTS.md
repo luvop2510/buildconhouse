@@ -2,6 +2,26 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
+## Mobile Payments and floor workspaces — 2026-10-15
+
+Payments defaults to a compact, collapsible overview on phones; toggling or
+rotation must preserve the payment sheet and its draft. Purchases and all its
+document APIs are Sanitary-only. Catalog navigation is Ground/Sanitary only.
+Kitchen/Furniture use shared Walk-ins and Follow-ups; old notebook bookmarks
+redirect without changing the current floor. Follow-up detail/actions and
+in-flight UI callbacks retain that concrete floor. Never reintroduce the duplicate
+100% quotation view: legacy fulfilled links normalize to Completed, including
+delivered orders. Keep Won order(s) wording and current-member attribution.
+
+Migration 0035 derives limited shared Follow-ups grants for eligible existing
+department staff; preserve its stage/action/floor/expiry guards. Retired grants
+remain revocable/history, cannot be newly assigned, and must not cause a redirect
+loop for accounts without a current page. The access screen is their stable
+landing. Required stability acceptance includes payment entry/rotation and
+all-floor navigation/direct-link/switching checks. Real deployed read-only
+acceptance also uses scripts/verify-floor-mobile-release.mjs with a short-lived
+run-owned QA session; never record customer rows or tokens in release reports.
+
 ## Runtime and session stability — 2026-10-15
 
 Web/native roots share `src/components/AuthGate.tsx`; do not fork routing again.

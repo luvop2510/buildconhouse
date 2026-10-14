@@ -18,6 +18,12 @@ POST_ORDER_RULES = frozenset({'payment_overdue', 'payment_partial', 'purchase_di
 STAFF_PROJECTION = {'_id': 0, 'id': 1, 'full_name': 1, 'role': 1, 'active': 1, 'floor_ids': 1, 'access_profile': 1, 'custom_access': 1, 'delegation_grants': 1, 'is_deleted': 1, 'deleted_at': 1}
 
 
+def _followup_resources(floor, notebook_converted):
+    if floor in {'second-floor', 'third-floor'}:
+        return ('followups', 'notebook_quotations' if notebook_converted else 'notebook_walkins')
+    return ('followups',)
+
+
 def can_assign(staff, floor, grants=(), notebook_converted=False):
     if not staff.get('active', True) or staff.get('is_deleted') or staff.get('deleted_at'):
         return False
@@ -26,9 +32,7 @@ def can_assign(staff, floor, grants=(), notebook_converted=False):
     profile = profile_floor_ids(staff.get('access_profile'))
     floors = profile if profile is not None else staff.get('floor_ids', [])
     if staff.get('custom_access'):
-        resources = ('notebook_quotations',) if notebook_converted else ('notebook_walkins',)
-        if floor not in {'second-floor', 'third-floor'}:
-            resources = ('followups',)
+        resources = _followup_resources(floor, notebook_converted)
         return floor in floors and any(all(any(grant_allows(g, user_id=staff['id'], resource=resource, action=action, floor_id=floor)
             for g in staff.get('delegation_grants', grants)) for action in ('view', 'update')) for resource in resources)
     if staff.get('access_profile') and profile is None:
@@ -180,8 +184,8 @@ async def update_interests(database, *, user, source, floor_ids, assignments=Non
             grants = await grants_for_user(database, user.id)
             for floor in destinations:
                 converted = bool((by_floor.get(floor) or source).get('is_converted'))
-                resource = ('notebook_quotations' if converted else 'notebook_walkins') if floor in {'second-floor', 'third-floor'} else 'followups'
-                if not all(any(grant_allows(g, user_id=user.id, resource=resource, action=action, floor_id=floor) for g in grants) for action in ('view', 'update')):
+                resources = _followup_resources(floor, converted)
+                if not any(all(any(grant_allows(g, user_id=user.id, resource=resource, action=action, floor_id=floor) for g in grants) for action in ('view', 'update')) for resource in resources):
                     raise HTTPException(403, 'The destination floor or notebook stage is outside your assigned access')
     if dry_run:
         return source

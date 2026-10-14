@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { retiredNotebookRedirect } from './retired-notebook-fixtures';
 import { mockSession } from './audit-fixtures';
 
 test('critical mobile tile editor retains document details and explicitly retries a failed save', async ({ page }) => {
@@ -22,33 +23,10 @@ test('critical mobile tile editor retains document details and explicitly retrie
   await expect(page.getByTestId('mobile-reference')).toHaveValue('Architect discussion');
 });
 
-test('critical notebook conversion retains price and concurrency token after failure', async ({ page }) => {
-  await mockSession(page, '/notebook/kitchen');
-  const row = { id: 'lead-one', customer_name: 'Kitchen customer', customer_phone: '9000000000', address: 'Project site', kitchen_type: 'GI', referred_by: '', referrer_id: null, referrer_name: '', referrer_type: null, architect_interior_designer: '', status: 'pending', notes: 'Confirm measurements', lost_reason: '', is_converted: false, converted_at: null, last_contacted_at: null, contact_attempts: 0, updated_at: '2026-09-01T12:00:00Z', quotation_price: null };
-  await page.route('**/api/followups/notebook/second-floor?**', r => r.fulfill({ json: { rows: [row], next_cursor: null } }));
-  const writes: any[] = [];
-  let fail = true;
-  await page.route('**/api/followups/notebook/second-floor/lead-one/convert', r => {
-    writes.push(r.request().postDataJSON());
-    return fail ? r.fulfill({ status: 503, json: { detail: 'Conversion unavailable' } }) : r.fulfill({ json: { ...row, is_converted: true, quotation_price: 12500.5 } });
-  });
-  await page.goto('/notebook/kitchen');
-  await page.getByRole('button', { name: 'Move to quotation', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Move to quotation follow-up', exact: true });
-  await dialog.getByLabel('Quotation price *', { exact: true }).fill('12500.50');
-  await expect(dialog.getByLabel('Follow-up note *', { exact: true })).toHaveCount(0);
-  expect(writes).toHaveLength(0);
-  await dialog.getByRole('button', { name: 'Move to quotation follow-up', exact: true }).click();
-  await expect(dialog.getByRole('alert')).toContainText('Conversion unavailable');
-  await expect(dialog.getByLabel('Quotation price *', { exact: true })).toHaveValue('12500.50');
-  fail = false;
-  await dialog.getByRole('button', { name: 'Move to quotation follow-up', exact: true }).click();
-  await expect(dialog).toHaveCount(0);
-  await expect(page.getByText('No walk-ins yet', { exact: true })).toBeVisible();
-  expect(writes).toEqual([
-    { quotation_price: 12500.5, updated_at: row.updated_at },
-    { quotation_price: 12500.5, updated_at: row.updated_at },
-  ]);
+test('critical retired kitchen conversion bookmark uses active-floor shared Walk-ins', async ({ page }) => {
+  await retiredNotebookRedirect(page, '/notebook/kitchen', 'walkins', 'second-floor');
+  await expect(page.getByRole('button', { name: 'Move to quotation', exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('walkin-new-btn')).toBeVisible();
 });
 
 test('critical tile release keeps selected split quantities until the server accepts them', async ({ page }) => {

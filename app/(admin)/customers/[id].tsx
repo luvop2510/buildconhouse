@@ -24,7 +24,7 @@ import { getCustomerStockTransfers, returnCustomerStockTransfer, type CustomerSt
 import { ProductImage } from "@/src/components/ProductImage";
 import { PoFinal } from "@/src/components/customers/PoFinal";
 import { tilesStageLabel } from "@/src/components/tiles/tilesStage";
-import { TILES_FLOOR_ID } from "@/src/constants/floors";
+import { SANITARY_FLOOR_ID, TILES_FLOOR_ID } from "@/src/constants/floors";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { toast } from "@/src/components/Toast";
 import { useAuth } from "@/src/state/auth";
@@ -141,6 +141,7 @@ export default function CustomerDetail() {
   const { isDesktop, isPhone } = useBp();
   const { selectedFloorId } = useFloorAccess();
   const isTilesFloor = selectedFloorId === TILES_FLOOR_ID;
+  const isSanitaryFloor = selectedFloorId === SANITARY_FLOOR_ID;
   const id = firstParam(rawId) || "";
   const routeSearch = firstParam(rawQ) || "";
   const routeBrand = firstParam(rawBrand);
@@ -209,21 +210,21 @@ export default function CustomerDetail() {
       .catch(() => { if (isCurrent()) setRelatedErrors(true); });
     const history = Promise.all([
       related<Quotation[]>(`/quotations?customer_id=${customerId}`, setQuotations),
-      related<PO[]>(`/purchase-orders?customer_id=${customerId}`, setPurchases),
+      isSanitaryFloor && related<PO[]>(`/purchase-orders?customer_id=${customerId}`, setPurchases),
       related<TimelineEvent[]>(`/activity/customer/${customerId}`, setTimeline),
     ]).finally(() => { if (isCurrent()) setRelatedLoading(false); });
     await Promise.all([primary, history]);
-  }, [id, selectedFloorId, coreContext]);
+  }, [id, selectedFloorId, coreContext, isSanitaryFloor]);
 
   const loadStockTransfers = useCallback(async () => {
-    if (!id || isTilesFloor) { setStockTransfers([]); return; }
+    if (!id || !isSanitaryFloor) { setStockTransfers([]); return; }
     try {
       const result = await getCustomerStockTransfers(id);
       setStockTransfers((result.transfers || []).filter((transfer) =>
         transfer.recipient_customer_id === id || (transfer.transfer_type !== "godown_stock" && transfer.status !== "completed")
       ));
     } catch { setStockTransfers([]); }
-  }, [id, isTilesFloor]);
+  }, [id, isSanitaryFloor]);
 
   const markLegacyStockReturned = useCallback(async (transferId: string) => {
     setReturningTransferId(transferId);
@@ -281,10 +282,9 @@ export default function CustomerDetail() {
 
   const loadWorkspace = useCallback(async (filters: WorkspaceServerFilters, requestId = invalidateWorkspace()) => {
     if (!id) return;
-    // Ground Floor has its own Tile Orders movement system.  Do not load the
-    // Sanitary Bathroom purchase tracker here; its stage catalog is a
-    // different workflow and was leaking into this customer screen.
-    if (isTilesFloor) {
+    // Purchasing is exclusive to Sanitary Bathroom. Ground Floor uses its
+    // independent Tile Orders workflow; the other floors have no tracker.
+    if (!isSanitaryFloor) {
       setWorkspace(null);
       setWorkspaceLoading(false);
       return;
@@ -297,6 +297,7 @@ export default function CustomerDetail() {
       const query = params.toString();
       const nextWorkspace = await api.get<Workspace>(
         `/purchases/customers/${id}/workspace${query ? `?${query}` : ""}`,
+        { floorId: SANITARY_FLOOR_ID },
       );
       if (requestId !== workspaceRequestIdRef.current) return;
       setWorkspace(nextWorkspace);
@@ -309,7 +310,7 @@ export default function CustomerDetail() {
     } finally {
       if (requestId === workspaceRequestIdRef.current) setWorkspaceLoading(false);
     }
-  }, [id, invalidateWorkspace, isTilesFloor]);
+  }, [id, invalidateWorkspace, isSanitaryFloor]);
 
   const markPurchaseLoanReturned = useCallback(async (transferId: string) => {
     setReturningPurchaseLoanId(transferId);
@@ -557,19 +558,19 @@ export default function CustomerDetail() {
         <View style={[styles.statsRow, !isDesktop && styles.statsRowMobile]}>
           <StatTile label="Lifetime Revenue" value={relatedLoading ? "Loading…" : relatedErrors ? "Unavailable" : moneyShort(totalRevenue)} icon="trending-up" tone="success" sub="Won + ordered" />
           <StatTile label="Quotations" value={relatedLoading || relatedErrors ? "—" : String(quotations.length)} icon="file-text" tone="brand" sub="All statuses" />
-          <StatTile label="Purchase Orders" value={relatedLoading || relatedErrors ? "—" : String(purchases.length)} icon="shopping-cart" tone="brand" sub="Across brands" />
+          {isSanitaryFloor ? <StatTile label="Purchase Orders" value={relatedLoading || relatedErrors ? "—" : String(purchases.length)} icon="shopping-cart" tone="brand" sub="Across brands" /> : null}
           <StatTile label="Activity" value={relatedLoading || relatedErrors ? "—" : String(timeline.length)} icon="activity" tone="neutral" sub="Events logged" />
         </View>
 
         </Disclosure>
         {/* Tabs */}
-        <NavigationTabs value={tab} onChange={setTab} testID="customer-tab" options={[
+        <NavigationTabs<Tab> value={tab} onChange={setTab} testID="customer-tab" options={[
           { value: "overview", label: "Overview" }, { value: "quotations", label: "Quotations" },
-          { value: "po_final", label: "PO Final" }, { value: "purchases", label: "Purchases" }, { value: "timeline", label: "Timeline" },
+          { value: "po_final", label: "PO Final" }, ...((isSanitaryFloor || isTilesFloor) ? [{ value: "purchases", label: isTilesFloor ? "Tile Orders" : "Purchases" }] : []), { value: "timeline", label: "Timeline" },
         ]} />
         {tab === "quotations" || tab === "purchases" || tab === "timeline" ? <View style={styles.exportActions}>
           {tab === "quotations" ? <Button label="Export quotations .xlsx" icon="download" variant="secondary" size="sm" disabled={!quotations.length} onPress={() => void exportDetail("quotations")} testID="customer-export-quotations" /> : null}
-          {tab === "purchases" && !isTilesFloor ? <><Button label="Export products .xlsx" icon="download" variant="secondary" size="sm" disabled={!visibleProducts.length} onPress={() => void exportDetail("products")} testID="customer-export-products" /><Button label="Export orders .xlsx" icon="download" variant="secondary" size="sm" disabled={!workspace?.purchase_orders.length} onPress={() => void exportDetail("orders")} testID="customer-export-orders" /></> : null}
+          {tab === "purchases" && isSanitaryFloor ? <><Button label="Export products .xlsx" icon="download" variant="secondary" size="sm" disabled={!visibleProducts.length} onPress={() => void exportDetail("products")} testID="customer-export-products" /><Button label="Export orders .xlsx" icon="download" variant="secondary" size="sm" disabled={!workspace?.purchase_orders.length} onPress={() => void exportDetail("orders")} testID="customer-export-orders" /></> : null}
           {tab === "timeline" ? <Button label="Export activity .xlsx" icon="download" variant="secondary" size="sm" disabled={!timeline.length} onPress={() => void exportDetail("timeline")} testID="customer-export-activity" /> : null}
         </View> : null}
 

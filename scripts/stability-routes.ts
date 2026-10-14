@@ -26,6 +26,20 @@ export function stabilityRouteTitle(path: string): string {
 export const stabilityProjects = ['android-chrome', 'iphone-safari', 'ipad-safari', 'desktop-chrome'];
 
 export const requiredStabilityScenarios: Record<string, string[]> = {
+  'responsive-shared-floor-navigation.spec.ts': [
+    ...['ground-floor', 'second-floor', 'third-floor'].map(floor => `critical ${floor} customer profile avoids sanitary purchasing requests`),
+    'critical Ground dashboard avoids sanitary purchasing requests',
+    'critical Ground catalog product avoids sanitary purchasing pipeline requests',
+    ...['first-floor', 'ground-floor'].map(floor => `critical switching ${floor} follow-ups to Furniture clears prior customer data`),
+    ...['ground-floor', 'first-floor', 'second-floor', 'third-floor'].map(floor => `critical ${floor} exposes only its supported workspaces on every navigation surface`),
+    ...[['second-floor', '/notebook/furniture'], ['third-floor', '/notebook/kitchen'], ['third-floor', '/notebook/kitchen/quotation-follow-up'], ['second-floor', '/notebook/furniture/quotation']].map(([floor, path]) => `critical retired ${path} preserves ${floor} instead of opening another floor`),
+    ...['ground-floor', 'second-floor', 'third-floor'].flatMap(floor => ['/purchases', '/purchases-completed', ...(floor === 'ground-floor' ? [] : ['/catalog'])].map(path => `critical ${floor} blocks a direct ${path} URL before business reads`)),
+  ],
+  'redesign-payments.spec.ts': [
+    'critical payment overview collapses without losing a payment draft on rotation',
+    'critical payment form keeps paise, validates overpayment, scrolls and retries with the same key',
+    'critical successful payment removes the settled order and shows the next customer',
+  ],
   'redesign-followup-notes.spec.ts': [
     'critical Won orders shows orders attributed to the current team member',
   ],

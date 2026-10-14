@@ -62,8 +62,10 @@ def test_routine_changes_preserve_historical_notes(monkeypatch, action, payload)
 def test_notebook_only_lost_can_write_note(monkeypatch, action, payload):
     database = AsyncMock()
     monkeypatch.setattr(routes, "db", database)
+    caller = user()
+    caller.active_floor_id = "second-floor"
     with pytest.raises(HTTPException) as error:
-        asyncio.run(action("second-floor", "lead-1", payload, user()))
+        asyncio.run(action("second-floor", "lead-1", payload, caller))
     assert error.value.status_code == 422
     assert database.mock_calls == []
 

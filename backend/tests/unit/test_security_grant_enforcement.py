@@ -105,8 +105,9 @@ async def test_update_grant_cannot_borrow_view_grant_on_other_floor(monkeypatch)
 ])
 @pytest.mark.parametrize("actions,allowed", [(["create"], False), (["update"], True)])
 async def test_post_business_mutations_require_update_instead_of_create(monkeypatch, path, resource, actions, allowed):
-    mock_staff(monkeypatch, [grant(resource=resource, actions=actions)])
-    kwargs = dict(request=request(path, "POST"), authorization="Bearer test", x_floor_id="ground-floor", dl=None)
+    floor = "first-floor" if resource == "purchases" else "ground-floor"
+    mock_staff(monkeypatch, [grant(resource=resource, actions=actions, floor=floor)])
+    kwargs = dict(request=request(path, "POST", floor=floor), authorization="Bearer test", x_floor_id=floor, dl=None)
     if allowed:
         assert (await auth.get_current_user(**kwargs)).id == "staff-1"
     else:

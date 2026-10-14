@@ -27,8 +27,7 @@ export default function QuotationTilesList() {
   useRequireFloorAccess("ground-floor");
   const router = useRouter();
   const { view } = useLocalSearchParams<{ view?: string }>();
-  const completed = view === "completed";
-  const fulfilled = view === "fulfilled";
+  const completed = view === "completed" || view === "fulfilled";
   const [documents, setDocuments] = useState<Record<TilesDoc["doc_type"], TilesDoc[]> | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -49,8 +48,8 @@ export default function QuotationTilesList() {
     setDocuments(null);
     try {
       const [selections, quotations] = await Promise.all([
-        api.get<TilesDoc[]>(`/quotations?doc_type=tiles_selection&completion=${fulfilled ? "completed" : "active"}${fulfilled ? "" : `&view=${completed ? "completed" : "pending"}`}`, { floorId: "ground-floor" }),
-        api.get<TilesDoc[]>(`/quotations?doc_type=tiles_quotation&completion=${fulfilled ? "completed" : "active"}${fulfilled ? "" : `&view=${completed ? "completed" : "pending"}`}`, { floorId: "ground-floor" }),
+        api.get<TilesDoc[]>(`/quotations?doc_type=tiles_selection&view=${completed ? "completed" : "pending"}`, { floorId: "ground-floor" }),
+        api.get<TilesDoc[]>(`/quotations?doc_type=tiles_quotation&view=${completed ? "completed" : "pending"}`, { floorId: "ground-floor" }),
       ]);
       if (requestId !== requestIdRef.current) return;
       const newestFirst = (docs: TilesDoc[]) => [...docs].sort(
@@ -63,7 +62,7 @@ export default function QuotationTilesList() {
     } finally {
       if (requestId === requestIdRef.current) setLoading(false);
     }
-  }, [completed, fulfilled]);
+  }, [completed]);
 
   useFocusEffect(useCallback(() => {
     void load();
@@ -79,7 +78,7 @@ export default function QuotationTilesList() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
-      <PageHeader title={fulfilled ? "100% Customers · Tiles" : completed ? "Approved & ordered tile documents" : "Tile quotations"} overline="Ground Floor · Tiles" actions={
+      <PageHeader title={completed ? "Approved & ordered tile documents" : "Tile quotations"} overline="Ground Floor · Tiles" actions={
         <View style={[styles.headerActions, compact && styles.headerActionsCompact]}>
           <Button
             label={completed ? "View pending" : "View completed"}
@@ -90,16 +89,7 @@ export default function QuotationTilesList() {
             fullWidth={compact}
             style={compact ? styles.compactAction : undefined}
           />
-          <Button
-            label={fulfilled ? "Active customers" : "100% Customers"}
-            variant="secondary"
-            icon="check-circle"
-            onPress={() => router.push(`/(admin)/tiles?view=${fulfilled ? "pending" : "fulfilled"}` as any)}
-            testID="tiles-fulfilled-toggle"
-            fullWidth={compact}
-            style={compact ? styles.compactAction : undefined}
-          />
-          {!completed && !fulfilled ? <Button
+          {!completed ? <Button
             label="Create new selection"
             variant="ghost"
             icon="grid"
@@ -108,7 +98,7 @@ export default function QuotationTilesList() {
             fullWidth={compact}
             style={compact ? styles.compactAction : undefined}
           /> : null}
-          {!completed && !fulfilled ? <Button
+          {!completed ? <Button
             label="Create new quotation"
             icon="layout"
             onPress={() => router.push("/(admin)/tiles/quotation" as any)}
@@ -141,7 +131,7 @@ export default function QuotationTilesList() {
           <Text style={type.bodyMuted}>Loading quotation tiles…</Text>
         </View>
       ) : docs?.length === 0 ? (
-        <EmptyState icon="layers" title={search ? "No matching documents" : `No ${fulfilled ? "100% completed " : completed ? "approved or ordered " : ""}${label} yet`} subtitle={search ? "Try a different customer or document number." : fulfilled ? "Customers appear after every active order quantity is delivered." : completed ? "Approved and order-placed selections or quotations will appear here." : `Create a new ${label.slice(0, -1)} to get started.`} />
+        <EmptyState icon="layers" title={search ? "No matching documents" : `No ${completed ? "approved or ordered " : ""}${label} yet`} subtitle={search ? "Try a different customer or document number." : completed ? "Approved and order-placed selections or quotations will appear here." : `Create a new ${label.slice(0, -1)} to get started.`} />
       ) : (
         <FlatList
           data={docs}

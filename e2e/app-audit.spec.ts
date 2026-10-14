@@ -10,7 +10,7 @@ for(const path of routes){
   await page.goto(path);
   await expect(page.locator('body')).not.toContainText('Unmatched Route');
   await expect.poll(()=>page.locator('body').innerText()).toMatch(/[A-Za-z]{4}/);
-  const redirect = ({ '/reports': '/dashboard', '/purchase-orders': '/purchases', '/notebook/kitchen/followups': '/notebook/kitchen' } as Record<string, string>)[path];
+  const redirect = ({ '/reports': '/dashboard', '/purchase-orders': '/purchases', '/notebook/kitchen/followups': '/walkins' } as Record<string, string>)[path];
   if (redirect) await expect(page).toHaveURL(new RegExp(`${redirect}$`));
   // Let bounded API retries settle before capturing the terminal data state.
   await page.waitForTimeout(1600);

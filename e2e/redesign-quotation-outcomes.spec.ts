@@ -79,12 +79,12 @@ test('critical quotation Lost Customer and Won Customer pages request terminal v
   await expect(page.getByTestId('quotation-q-lost-import')).toContainText('Lost');
   await expect(page.getByTestId('quotation-q-won-import')).toHaveCount(0);
   await expect(page.getByTestId('filter-draft')).toHaveCount(0);
-  if (['desktop', 'phone'].includes(info.project.name)) await page.screenshot({ path: `/Users/yashvardhansinhjhala/buildcon house/artifacts/2026-10-14-customer-outcomes-${info.project.name}-lost.png`, fullPage: true });
+  if (['desktop', 'phone'].includes(info.project.name)) await page.screenshot({ path: info.outputPath('customer-outcomes-lost.png'), fullPage: true });
   await page.getByTestId('quotations-won-toggle').click();
   await expect(page.getByText('Won Customer · Quotations', { exact: true })).toBeVisible();
   await expect(page.getByTestId('quotation-q-won-import')).toContainText('Won');
   await expect(page.getByTestId('quotation-q-lost-import')).toHaveCount(0);
-  if (['desktop', 'phone'].includes(info.project.name)) await page.screenshot({ path: `/Users/yashvardhansinhjhala/buildcon house/artifacts/2026-10-14-customer-outcomes-${info.project.name}-won.png`, fullPage: true });
+  if (['desktop', 'phone'].includes(info.project.name)) await page.screenshot({ path: info.outputPath('customer-outcomes-won.png'), fullPage: true });
   const terminal = queries.filter(params => ['won', 'lost'].includes(params.get('view') || ''));
   expect(terminal.map(params => params.get('view'))).toEqual(['lost', 'won']);
   expect(terminal.every(params => !params.has('completion') && !params.has('status'))).toBe(true);

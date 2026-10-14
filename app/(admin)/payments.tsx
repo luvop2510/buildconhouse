@@ -9,7 +9,7 @@ import { Disclosure } from "@/src/design/Disclosure";
 import { useReducedMotion } from "@/src/hooks/use-reduced-motion";
 import Feather from "@expo/vector-icons/Feather";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Linking, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -236,6 +236,10 @@ export default function PaymentsScreen() {
   };
 
   const [tab, setTab] = useState<TabKey>("collections");
+  // Keep this preference in screen state: rotating a phone must not reopen
+  // the upper header or remount the payment form while staff are entering it.
+  const [pageDetailsOpen, setPageDetailsOpen] = useState(!isPhone);
+  const pageDetailsId = useId();
 
   const [stats, setStats] = useState<Stats | null>(null);
   const [orders, setOrders] = useState<OrderRow[]>([]);
@@ -608,6 +612,24 @@ export default function PaymentsScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
+      <View style={{ minHeight: 48, flexShrink: 0, paddingHorizontal: isPhone ? spacing.lg : spacing.xl, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm }}>
+        <Text accessibilityRole={pageDetailsOpen ? undefined : "header"} aria-level={pageDetailsOpen ? undefined : 1}
+          style={pageDetailsOpen ? type.caption : type.titleLg}>{pageDetailsOpen ? "Payment overview" : "Payments"}</Text>
+        <Pressable
+          testID="payments-page-details-toggle"
+          accessibilityRole="button"
+          accessibilityLabel={pageDetailsOpen ? "Hide payment overview" : "Show payment overview"}
+          accessibilityState={{ expanded: pageDetailsOpen }}
+          aria-expanded={pageDetailsOpen}
+          aria-controls={pageDetailsId}
+          onPress={() => setPageDetailsOpen(open => !open)}
+          style={{ minHeight: 48, minWidth: 44, flexDirection: "row", alignItems: "center", gap: spacing.xs }}
+        >
+          <Text style={type.caption}>{pageDetailsOpen ? "Hide overview" : "Show overview"}</Text>
+          <Feather name={pageDetailsOpen ? "chevron-up" : "chevron-down"} size={iconSize.sm} color={colors.onSurfaceSecondary} />
+        </Pressable>
+      </View>
+      <View nativeID={pageDetailsId} testID="payments-page-details" style={{ flexShrink: 0, display: pageDetailsOpen ? "flex" : "none" }}>
       <PageHeader
         title="Payments"
         subtitle={tab === "collections"
@@ -630,6 +652,7 @@ export default function PaymentsScreen() {
           />
         )}
       />
+      </View>
 
       <View style={{ paddingHorizontal: isPhone ? spacing.lg : spacing.xl }}>
         <Tabs

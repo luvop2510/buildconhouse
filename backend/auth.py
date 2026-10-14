@@ -14,7 +14,7 @@ from db import db
 from models import Role, UserPublic, CustomerPublic
 from settings import settings
 from access_profiles import profile_allows_request
-from services.access_grants import action_for_api_request, granted_floor_ids, grants_for_user, is_common_access_request, request_resource
+from services.access_grants import action_for_api_request, granted_floor_ids, grants_for_user, is_common_access_request, is_global_followup_admin_request, request_resource
 
 JWT_SECRET = settings.jwt_secret
 JWT_ALG = settings.jwt_algorithm
@@ -195,6 +195,14 @@ async def authorize_staff_request(user: UserPublic, request: Request | None) -> 
     Request-local floor constraints are private model metadata: response and
     persisted user fields retain the account's normal assignments.
     """
+    if request is not None:
+        path = request.url.path
+        if any(path == prefix or path.startswith(f"{prefix}/") for prefix in ("/api/purchases", "/api/purchase-orders", "/api/suppliers")):
+            # Purchases is a Sanitary module, including for owners who may
+            # switch floors. A stale URL must not open it on another floor.
+            if floor_scope_ids(user) != ["first-floor"]:
+                raise HTTPException(status_code=404, detail="Purchases is available only on The Sanitary Bathroom floor")
+            object.__setattr__(user, "_module_floor_ids", ["first-floor"])
     if user.role == "owner":
         return user
     if request is None:
@@ -204,6 +212,8 @@ async def authorize_staff_request(user: UserPublic, request: Request | None) -> 
     path = request.url.path
     if not profile_allows_request(user.access_profile, request.method, path):
         raise HTTPException(status_code=403, detail="This account is not permitted to use this function")
+    if user.custom_access and is_global_followup_admin_request(request.method, path):
+        raise HTTPException(status_code=403, detail="Global follow-up automation requires full manager access")
     if user.custom_access and not is_common_access_request(request.method, path):
         action = action_for_api_request(request.method, path, request.query_params)
         cached_grants = getattr(request.state, "staff_access_grants", None)
@@ -212,7 +222,16 @@ async def authorize_staff_request(user: UserPublic, request: Request | None) -> 
         else:
             grants = await grants_for_user(db, user.id)
             request.state.staff_access_grants = (user.id, grants)
-        resource = await request_resource(db, path, request.query_params)
+        # The shared inbox can manage legacy notebook rows too. Its explicit
+        # grant covers the full follow-up surface; narrow notebook-only
+        # grants still use their stored-stage resolver below.
+        shared_followups = (path == "/api/followups" or path.startswith("/api/followups/")) and not path.startswith("/api/followups/notebook/")
+        shared_floors = granted_floor_ids(grants, user_id=user.id, path=path, action=action, resource="followups", method=request.method) if shared_followups and action else []
+        has_shared_grant = shared_followups and (
+            shared_floors is None or user.active_floor_id in shared_floors
+            or (not user.active_floor_id and bool(shared_floors))
+        )
+        resource = "followups" if has_shared_grant else await request_resource(db, path, request.query_params)
         if resource in {"notebook_walkins", "notebook_quotations"} and (path.count("/") > 4 or path.endswith("/contact")):
             object.__setattr__(user, "_custom_notebook_converted", resource == "notebook_quotations")
         floors = granted_floor_ids(grants, user_id=user.id, path=path, action=action, resource=resource, method=request.method) if action else []
@@ -539,11 +558,11 @@ def apply_effective_floor_ids(user: UserPublic) -> UserPublic:
 
 def accessible_floor_ids(user: UserPublic) -> list[str] | None:
     """None means all active floors; otherwise return explicit assignments."""
-    if user.role == "owner":
-        return None
     profile = getattr(user, "access_profile", None)
     profile_floors = profile_floor_ids(profile)
-    if profile_floors is not None:
+    if user.role == "owner":
+        allowed = None
+    elif profile_floors is not None:
         allowed = profile_floors
     # A malformed legacy profile is fail-closed, rather than becoming a
     # normal staff account through an accidental typo or partial migration.
@@ -551,7 +570,10 @@ def accessible_floor_ids(user: UserPublic) -> list[str] | None:
         allowed = []
     else:
         allowed = None if has_all_floor_access(user) else list(user.floor_ids or [])
-    granted = getattr(user, "_custom_grant_floor_ids", None)
+    module_floors = getattr(user, "_module_floor_ids", None)
+    if module_floors is not None:
+        allowed = list(module_floors) if allowed is None else [floor for floor in allowed if floor in module_floors]
+    granted = None if user.role == "owner" else getattr(user, "_custom_grant_floor_ids", None)
     if granted is not None:
         return list(granted) if allowed is None else [floor for floor in allowed if floor in granted]
     return allowed

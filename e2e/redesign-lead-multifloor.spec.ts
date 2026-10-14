@@ -113,10 +113,13 @@ test('critical retrying follow-up creation retains one draft identity and select
   expect(writes[1]).toEqual(writes[0]);
 });
 
-test('critical notebook Interested supports multiple floors with a named interior reference', async ({ page }) => {
-  await mockSession(page, '/notebook/kitchen/quotation-follow-up');
+test('critical shared Kitchen follow-up Interested supports multiple floors with a named interior reference', async ({ page }) => {
+  await mockSession(page, '/followups');
+  await page.addInitScript(() => localStorage.setItem('forge.active-floor', JSON.stringify('second-floor')));
+  await page.route('**/api/followups/config/assignees', r => r.fulfill({ json: [] }));
+  await page.route('**/api/followups/saved-views', r => r.fulfill({ json: [] }));
   const notebookLead = { ...lead, floor_id: 'second-floor', interested_floor_ids: ['second-floor'], kitchen_type: 'GI', address: '', referred_by: '', referrer_id: 'studio', referrer_name: 'Design Studio', referrer_type: 'interior_designer', architect_interior_designer: '', status: 'pending', is_converted: true, quotation_price: 12000 };
-  await page.route('**/api/followups/notebook/second-floor?**', r => r.fulfill({ json: { rows: [notebookLead], next_cursor: null } }));
+  await page.route('**/api/followups/page?**', r => r.fulfill({ json: { items: [{ ...notebookLead, status: 'open' }], page: 1, page_size: 100, has_more: false } }));
   const assigneeReads: URLSearchParams[] = [];
   await page.route('**/api/followups/assignees?**', r => {
     assigneeReads.push(new URL(r.request().url()).searchParams);
@@ -124,7 +127,7 @@ test('critical notebook Interested supports multiple floors with a named interio
   });
   const writes: any[] = [];
   await page.route('**/api/followups/scope-lead/interests', r => r.fulfill({ json: (writes.push(r.request().postDataJSON()), lead) }));
-  await page.goto('/notebook/kitchen/quotation-follow-up');
+  await page.goto('/followups');
   await page.getByTestId('interested-scope-lead').click();
   const dialog = page.getByRole('dialog', { name: 'Interested floors & team assignment', exact: true });
   await expect(dialog.getByText('Design Studio', { exact: true })).toBeVisible();

@@ -72,7 +72,7 @@ function PaletteSession({ open, onClose, selectedFloorId }: { open: boolean; onC
   const hasAccess = useModuleAccess();
   const canCustomers = hasAccess("customers");
   const canQuotes = hasAccess("quotations") && selectedFloorId === "first-floor";
-  const canCatalog = hasAccess("catalog");
+  const canCatalog = hasAccess("catalog") && ["ground-floor", "first-floor"].includes(selectedFloorId);
   const canNewQuotation = useActionAccess(selectedFloorId === "ground-floor" ? "tiles" : "quotations", "create");
   const canNewCustomer = useActionAccess("customers", "create");
   const canRecordPayment = useActionAccess("payments", "create");
@@ -166,7 +166,6 @@ function PaletteSession({ open, onClose, selectedFloorId }: { open: boolean; onC
     const nav: Item[] = NAV
       .filter(n => (!n.floors || n.floors.includes(selectedFloorId)) && (staff?.custom_access || !n.roles || !!staff && n.roles.includes(staff.role)) && hasAccess(n.match))
       .filter(n => !n.href.includes("/tiles") || selectedFloorId === "ground-floor")
-      .filter((n) => staff?.custom_access || !notebookOnly || ["catalog", "customers", "purchases", "payments", "payments-list"].includes(n.match) || (selectedFloorId === KITCHEN_FLOOR_ID ? n.href.includes("/notebook/kitchen") : n.href.includes("/notebook/furniture")))
       .filter((n) => match(n.label + " " + n.match))
       .map((n) => ({
         key: `n-${n.href}`, section: "Go to", icon: n.icon, title: n.label, run: () => go(n.href),

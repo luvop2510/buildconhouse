@@ -33,7 +33,7 @@ from openpyxl.utils import get_column_letter
 from pydantic import BaseModel
 from pymongo.errors import DuplicateKeyError
 
-from auth import floor_for_write, floor_inherit, floor_query, get_current_user, get_floor_scoped_or_404, require_floor_access, require_min_role, require_roles, accessible_floor_ids
+from auth import floor_for_write, floor_inherit, floor_query, floor_scope_ids, get_current_user, get_floor_scoped_or_404, require_floor_access, require_min_role, require_roles, accessible_floor_ids
 from db import db
 from models import (
     AutomationRuleUpdate, Followup, FollowupCallOutcomePayload, FollowupCompletePayload,
@@ -81,6 +81,18 @@ def require_notebook_floor(floor_id: str, user: UserPublic) -> None:
     require_floor_access(floor_id, user)
     if floor_id not in NOTEBOOK_FLOOR_IDS:
         raise HTTPException(status_code=404, detail="Notebook is available only on Kitchen or Furniture Floor")
+    if user.active_floor_id and floor_id != user.active_floor_id:
+        raise HTTPException(status_code=404, detail="Follow-up not found")
+
+
+async def _selected_followup_or_404(followup_id: str, user: UserPublic) -> dict:
+    """Record links must stay inside the same floor as the visible inbox."""
+    row = await get_floor_scoped_or_404(
+        db.followups, followup_id, user, not_found="Follow-up not found", projection={"_id": 0},
+    )
+    if row["floor_id"] not in floor_scope_ids(user):
+        raise HTTPException(status_code=404, detail="Follow-up not found")
+    return row
 
 
 async def _wake_snoozed(user: UserPublic) -> None:
@@ -143,10 +155,9 @@ def _notebook_conflict(error: NotebookConflictError) -> HTTPException:
 async def _notebook_referrer_fields(referrer_id: str | None, floor_id: str) -> dict:
     """Resolve a notebook partner from the directory pinned to its floor.
 
-    Notebook routes deliberately accept a floor URL independently of the
-    caller's currently selected floor.  The normal customer helper scopes via
-    that ambient selection, so resolve explicitly here after access has
-    already been authorized by ``require_notebook_floor``.
+    The URL floor must match the selected workspace, as enforced by
+    ``require_notebook_floor``. Keep the related lookup pinned to that same
+    validated floor so another floor's partner cannot enter this row.
     """
     if not referrer_id:
         return {"referrer_id": None, "referrer_name": None, "referrer_type": None}
@@ -1108,9 +1119,7 @@ async def list_assignments(
 # ─────────────────────────────────────────────────────────────────────────────
 @router.get("/{followup_id}")
 async def get_detail(followup_id: str, user: UserPublic = Depends(get_current_user)):
-    f = await get_floor_scoped_or_404(
-        db.followups, followup_id, user, not_found="Follow-up not found", projection={"_id": 0},
-    )
+    f = await _selected_followup_or_404(followup_id, user)
     if f.get("category") in lead_scope.POST_ORDER_CATEGORIES or f.get("rule_type") in lead_scope.POST_ORDER_RULES or f.get("purchase_id"):
         raise HTTPException(404, "This activity belongs in Orders")
     floor_id = f["floor_id"]
@@ -1146,8 +1155,6 @@ async def get_detail(followup_id: str, user: UserPublic = Depends(get_current_us
 async def create_followup(body: FollowupCreate, user: UserPublic = Depends(get_current_user)):
     _reject_action_note(body.notes)
     floor_id = floor_for_write(user)
-    if floor_id in {'second-floor', 'third-floor'}:
-        raise HTTPException(422, 'Use the Kitchen or Furniture notebook to add a follow-up on this floor')
     request_id = str(uuid5(NAMESPACE_URL, f'followup-create:{user.id}:{floor_id}:{body.request_key}')) if body.request_key else None
     fingerprint = hashlib.sha256(json.dumps(body.model_dump(mode='json', exclude={'request_key'}), sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     previous = await db.followups.find_one({'id': request_id, 'floor_id': floor_id}, {'_id': 0}) if request_id else None
@@ -1274,18 +1281,16 @@ async def delete_followup(
 ):
     """Permanently remove a follow-up during manager data cleanup."""
     _reject_action_note(notes)
-    f = await get_floor_scoped_or_404(
-        db.followups, followup_id, user, not_found="Follow-up not found", projection={"_id": 0},
-    )
-    result = await db.followups.delete_one({"id": followup_id})
+    f = await _selected_followup_or_404(followup_id, user)
+    result = await db.followups.delete_one(floor_query(user, {"id": followup_id}))
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Follow-up not found")
-    activity = await db.activity_events.delete_many({
+    activity = await db.activity_events.delete_many(floor_query(user, {
         "$or": [
             {"entity_type": "followup", "entity_id": followup_id},
             {"followup_id": followup_id},
         ],
-    })
+    }))
     await log_event(
         event_type="followup.deleted", entity_type="followup", entity_id=followup_id, actor=user,
         customer_id=f.get("customer_id"), floor_id=f.get("floor_id"),

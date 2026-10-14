@@ -95,6 +95,11 @@ test('workspace menu and shell controls retain 44px targets and keyboard focus',
 test('quotation room controls retain native target sizes on web and open the editor', async ({ page }, info) => {
   await mockSession(page, '/quotations/new');
   await page.goto('/quotations/new');
+  await expect(page.getByTestId('quotation-workspace')).toBeVisible();
+  const expand = page.getByTestId('expand-quotation-workspace');
+  if (await expand.isVisible()) await expand.click();
+  const quotationTab = page.getByTestId('builder-tab-quotation');
+  if (await quotationTab.isVisible()) await quotationTab.click();
   const panel = page.getByTestId('builder-quotation-panel-toggle');
   if (await panel.isVisible()) {
     await targetSize(panel);

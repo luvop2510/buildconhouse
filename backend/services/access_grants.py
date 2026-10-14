@@ -24,8 +24,8 @@ RESOURCE_REGISTRY: dict[str, dict[str, Any]] = {
     "walkins": {"label": "Walk-ins", "description": "The regular customer intake, journey, items and status register on every enabled floor."},
     "reports": {"label": "Reports"},
     "notifications": {"label": "Notifications"},
-    "notebook_walkins": {"label": "Legacy lead notebook", "floor_ids": ["second-floor", "third-floor"], "actions": ["view", "create", "update"], "description": "Add walk-ins, record contact attempts, and move leads to quotation follow-up."},
-    "notebook_quotations": {"label": "Quotation Follow-up", "floor_ids": ["second-floor", "third-floor"], "actions": ["view", "update"], "description": "Review converted leads, update quotation values, contact customers, and record outcomes."},
+    "notebook_walkins": {"label": "Legacy lead notebook", "retired": True, "floor_ids": ["second-floor", "third-floor"], "actions": ["view", "create", "update"], "description": "Add walk-ins, record contact attempts, and move leads to quotation follow-up."},
+    "notebook_quotations": {"label": "Quotation Follow-up", "retired": True, "floor_ids": ["second-floor", "third-floor"], "actions": ["view", "update"], "description": "Review converted leads, update quotation values, contact customers, and record outcomes."},
     "furniture_quotations": {"label": "RNB quotations", "floor_ids": ["third-floor"], "actions": ["view", "create", "update", "export"], "description": "Prepare RNB quotations, edit items and terms, download PDFs, and send configured WhatsApp exports."},
     "sales_data": {"label": "Sales Data", "actions": ["view", "export"], "description": "Review floor sales, customer and brand totals, and export reports."},
 }
@@ -33,12 +33,14 @@ RESOURCE_REGISTRY: dict[str, dict[str, Any]] = {
 RESOURCE_REGISTRY["dashboard"].update(actions=["view"], description="View today's floor summary and activity.")
 RESOURCE_REGISTRY["quotations"].update(floor_ids=["first-floor"], description="Create and manage Sanitary quotations, confirm orders, and export documents.")
 RESOURCE_REGISTRY["tiles"].update(floor_ids=["ground-floor"], description="Create tile selections and quotations, confirm orders, and export documents.")
+RESOURCE_REGISTRY["catalog"].update(floor_ids=["ground-floor", "first-floor"], description="Manage the selected Ground or Sanitary Bathroom catalog.")
 RESOURCE_REGISTRY["orders"].update(floor_ids=["ground-floor"], description="Manage tile purchase orders, dispatches, and delivery stages.")
 RESOURCE_REGISTRY["godown_stock"].update(floor_ids=["first-floor"], description="Manage godown stock and customer transfers.")
+RESOURCE_REGISTRY["purchases"].update(floor_ids=["first-floor"], description="Manage Sanitary Bathroom purchases and purchasing stages.")
 RESOURCE_REGISTRY["payments"].update(description="Manage payments and the Fully paid orders page.")
 RESOURCE_REGISTRY["notifications"].update(actions=["view"], description="View your notifications for the selected floor.")
 RESOURCE_REGISTRY["reports"].update(actions=["view", "export"])
-RESOURCE_REGISTRY["followups"].update(floor_ids=["ground-floor", "first-floor"], description="Manage the floor follow-up inbox. Kitchen and Furniture use their separate notebook pages.")
+RESOURCE_REGISTRY["followups"].update(floor_ids=["ground-floor", "first-floor", "second-floor", "third-floor"], description="Manage the selected floor's sales follow-up inbox.")
 for _resource in ("catalog", "purchases", "godown_stock", "payments", "orders", "walkins"):
     RESOURCE_REGISTRY[_resource]["actions"] = ["view", "create", "update", "export"]
 
@@ -138,6 +140,12 @@ def action_for_api_request(method: str, path: str, query=None) -> str | None:
     return action_for_http_method(method)
 
 
+def is_global_followup_admin_request(method: str, path: str) -> bool:
+    """A floor page grant cannot change organization-wide automation."""
+    return (method.upper() == "POST" and path == "/api/followups/reconcile"
+            or method.upper() == "PUT" and fullmatch(r"/api/followups/config/(?:automation-rules|workflow-transitions)/[^/]+", path) is not None)
+
+
 def granted_floor_ids(grants, *, user_id: str, path: str, action: str, resource: str | None = None, method: str | None = None) -> list[str] | None:
     """Floors authorized for this operation; None represents an explicit global grant."""
     floors = []
@@ -172,8 +180,8 @@ def granted_floor_ids(grants, *, user_id: str, path: str, action: str, resource:
                for candidate in resources
                for capability in (("export",) if furniture_delivery and candidate == "furniture_quotations"
                                   else ("create", "update") if quotation_default and candidate == "quotations" else (action,))):
-            if grant.get("resource") == "followups":
-                supported = RESOURCE_REGISTRY["followups"]["floor_ids"]
+            if grant.get("resource") in {"followups", "purchases", "catalog"}:
+                supported = RESOURCE_REGISTRY[grant["resource"]]["floor_ids"]
                 if floor is None:
                     floors.extend(supported)
                     continue

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { retiredNotebookRedirect } from './retired-notebook-fixtures';
 import { mockSession } from './audit-fixtures';
 
 const row = {
@@ -50,31 +51,25 @@ test('critical dashboard Done completes directly without a note', async ({ page 
   expect(writes).toEqual([{}]);
 });
 
-test('critical notebook Lost requires a reason and offers no manual Won action', async ({ page }) => {
-  await mockSession(page, '/notebook/kitchen/quotation-follow-up');
-  const lead = {
-    id: 'lead-one', customer_name: 'Kitchen customer', customer_phone: '9000000000', address: '',
-    kitchen_type: 'GI', referred_by: '', referrer_id: null, referrer_name: '', referrer_type: null,
-    architect_interior_designer: '', status: 'pending', notes: 'Previous discussion', lost_reason: '',
-    is_converted: true, converted_at: '2026-09-01T12:00:00Z', last_contacted_at: null, contact_attempts: 0,
-    updated_at: '2026-09-01T12:00:00Z', quotation_price: 12000,
-  };
-  await page.route('**/api/followups/notebook/second-floor?**', r => r.fulfill({ json: { rows: [lead], next_cursor: null } }));
-  const writes: any[] = [];
-  await page.route('**/api/followups/notebook/second-floor/lead-one/outcome', r => {
-    writes.push(r.request().postDataJSON());
-    return r.fulfill({ json: { ...lead, status: 'lost', notes: writes.at(-1).notes } });
-  });
-  await page.goto('/notebook/kitchen/quotation-follow-up');
+test('critical retired quotation follow-up uses the shared Lost reason workflow without a manual Won action', async ({ page }) => {
+  const lead = await retiredNotebookRedirect(page, '/notebook/kitchen/quotation-follow-up', 'followups', 'second-floor');
   await expect(page.getByRole('button', { name: /mark.*won/i })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Lost', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Mark lead as lost', exact: true });
-  await expect(dialog.getByRole('button', { name: 'Mark as lost', exact: true })).toBeDisabled();
+  await page.route('**/api/followups/retained-customer/contact', route => route.fulfill({ json: { channel: 'call', phone: '9000000000' } }));
+  const writes: any[] = [];
+  await page.route('**/api/followups/retained-customer/log-call', route => {
+    expect(route.request().headers()['x-floor-id']).toBe('second-floor');
+    writes.push(route.request().postDataJSON());
+    return route.fulfill({ json: { ...lead, status: 'done' } });
+  });
+  await page.getByTestId((page.viewportSize()?.width || 0) < 768 ? 'contact-retained-customer' : 'call-retained-customer').click();
+  const dialog = page.getByRole('dialog', { name: 'Log Call Outcome', exact: true });
+  await page.getByTestId('outcome-lost').click();
+  await expect(page.getByTestId('save-call-outcome')).toBeDisabled();
   expect(writes).toHaveLength(0);
-  await dialog.getByLabel('Lost reason *', { exact: true }).fill('Client chose another vendor');
-  await dialog.getByRole('button', { name: 'Mark as lost', exact: true }).click();
+  await page.getByTestId('outcome-notes').fill('Client chose another vendor');
+  await page.getByTestId('save-call-outcome').click();
   await expect(dialog).toHaveCount(0);
-  expect(writes).toEqual([{ outcome: 'lost', updated_at: lead.updated_at, notes: 'Client chose another vendor', lost_reason: 'Client chose another vendor' }]);
+  expect(writes).toEqual([{ outcome: 'lost', notes: 'Client chose another vendor' }]);
 });
 
 test('critical a routine call has no note field and only Lost requests a reason', async ({ page }) => {

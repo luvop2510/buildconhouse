@@ -745,3 +745,36 @@ test('critical staff password: delegated staff changes own password using old, n
   await expect(page).toHaveURL(/\/settings$/);
   expect(payload).toEqual({ current_password: 'OldMember!2026', new_password: 'RememberMe!2026', confirm_password: 'RememberMe!2026' });
 });
+
+const retiredNotebookCatalog = {
+  ...catalog,
+  resources: [...catalog.resources, { key: 'notebook_quotations', label: 'Legacy quotation follow-ups',
+    actions: ['view', 'update'], floor_ids: ['second-floor'], retired: true }],
+};
+
+test('critical retired notebook pages cannot be granted to new team members', async ({ page }) => {
+  await teamFixture(page, () => retiredNotebookCatalog);
+  await fillNewMember(page);
+  await switchFor(page, 'floor-toggle-second-floor').check();
+  await expect(page.getByTestId('page-toggle-second-floor-notebook_quotations')).toHaveCount(0);
+});
+
+test('critical existing retired notebook grants survive unrelated team edits and remain revocable', async ({ page }) => {
+  const { state, writes } = await teamFixture(page, () => retiredNotebookCatalog);
+  state.floorIds = ['second-floor'];
+  state.grants = [{ resource: 'notebook_quotations', floor_id: 'second-floor', actions: ['view', 'update'] }];
+  await page.getByTestId('team-row-test-worker').click();
+  await expect(switchFor(page, 'page-toggle-second-floor-notebook_quotations')).toBeChecked();
+  await expect(switchFor(page, 'action-toggle-second-floor-notebook_quotations-update')).toBeDisabled();
+  await page.getByTestId('edit-staff-name').fill('Updated worker');
+  await page.getByTestId('edit-staff-save').click();
+  await expect.poll(() => writes.length).toBe(1);
+  expect(writes[0].body).not.toHaveProperty("access_grants");
+  await expect(page.getByTestId('edit-staff-sheet')).toHaveCount(0);
+  await page.getByTestId('team-row-test-worker').click();
+  await switchFor(page, 'page-toggle-second-floor-notebook_quotations').uncheck();
+  await expect(page.getByTestId('page-toggle-second-floor-notebook_quotations')).toHaveCount(0);
+  await page.getByTestId('edit-staff-save').click();
+  await expect.poll(() => writes.length).toBe(2);
+  expect(writes[1].body.access_grants).not.toContainEqual(state.grants[0]);
+});

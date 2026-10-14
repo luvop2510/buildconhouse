@@ -236,9 +236,8 @@ async def test_create_notebook_reuses_the_same_floor_customer_row(monkeypatch):
 
     monkeypatch.setattr(followup_routes, "db", db)
     monkeypatch.setattr(followup_routes, "log_event", _log_event)
-    # The explicit second-floor URL remains valid even if the user's shell
-    # still carries a stale first-floor selection.
-    user = SimpleNamespace(active_floor_id="first-floor", floor_ids=["first-floor", "second-floor"], role="sales")
+    # Notebook retries stay inside the currently selected floor.
+    user = SimpleNamespace(active_floor_id="second-floor", floor_ids=["first-floor", "second-floor"], role="sales")
     body = NotebookFollowupCreatePayload(
         customer_name="A", customer_phone="9909906652", kitchen_type="GI",
     )

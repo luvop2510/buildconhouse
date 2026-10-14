@@ -266,13 +266,14 @@ def test_unconfirmed_legacy_won_quotation_does_not_block_preorder_lead(monkeypat
 
 
 @pytest.mark.parametrize('floor', ['second-floor', 'third-floor'])
-def test_generic_manual_create_directs_notebook_floors_to_canonical_route(monkeypatch, floor):
+def test_generic_manual_create_supports_kitchen_and_furniture_inboxes(monkeypatch, floor):
     db = database()
+    db.customers.rows = [{'id': 'customer', 'floor_id': floor, 'name': 'Customer'}]
     monkeypatch.setattr(routes, 'db', db)
-    with pytest.raises(HTTPException) as error:
-        asyncio.run(routes.create_followup(FollowupCreate(customer_id='customer', reason='Discuss'), principal(floors=(floor,))))
-    assert error.value.status_code == 422 and 'notebook' in error.value.detail
-    assert db.followups.writes == db.customers.writes == 0
+    monkeypatch.setattr(routes, 'log_event', AsyncMock())
+    row = asyncio.run(routes.create_followup(FollowupCreate(customer_id='customer', reason='Discuss'), principal(floors=(floor,))))
+    assert row.floor_id == floor and row.customer_id == 'customer'
+    assert db.followups.writes == 1 and db.customers.writes == 0
 
 
 def test_synthetic_phone_scope_discovers_existing_notebook_stage_on_its_own_floor():

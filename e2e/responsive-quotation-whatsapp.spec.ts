@@ -105,6 +105,11 @@ for (const kind of ['sanitary', 'tiles_selection', 'tiles_quotation'] as const) 
       return route.fulfill({ json: draft });
     });
     await page.goto(`${path}?quotationId=builder-wa`);
+    if (!tiles) {
+      await expect(page.getByTestId('quotation-workspace')).toBeVisible();
+      const expand = page.getByTestId('expand-quotation-workspace');
+      if (await expand.isVisible()) await expand.click();
+    }
     const action = page.getByRole('button', { name: tiles ? 'WhatsApp draft' : 'WhatsApp quotation draft', exact: true });
     await expect(action).toBeEnabled({ timeout: 20_000 });
     await action.click();

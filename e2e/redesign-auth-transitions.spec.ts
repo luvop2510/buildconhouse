@@ -135,7 +135,8 @@ test('critical transient startup identity failure preserves the saved session an
     ? { status: 503, json: { detail: 'Temporary identity transport failure' } }
     : { json: { id: 'recovered-owner', email: 'owner@example.test', full_name: 'Recovered Owner', role: 'owner', active: true, floor_ids: [] } }));
   await page.goto('/dashboard');
-  await expect(page.getByTestId('login-submit')).toBeVisible();
+  await expect(page.getByTestId('session-recovery')).toBeVisible();
+  await expect(page.getByTestId('login-submit')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: /^Good (morning|afternoon|evening), Recovered\.$/ })).toHaveCount(0);
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('forge.jwt.kind') || 'null'))).toBe('staff');
   unavailable = false;

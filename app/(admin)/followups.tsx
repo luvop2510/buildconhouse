@@ -271,6 +271,18 @@ async function settleBulkRequests(request: BulkRequest, ids: string[]): Promise<
 // Screen
 // ═══════════════════════════════════════════════════════════════════════════
 export default function FollowupsScreen() {
+  const { selectedFloorId } = useFloorAccess();
+  // Switching workspaces discards the entire previous inbox, including sheets,
+  // search, saved views and pending actions, before the new floor can render.
+  return <FollowupsWorkspace key={selectedFloorId} />;
+}
+
+function FollowupsWorkspace() {
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   const routeParams = useLocalSearchParams<{ workspace?: string }>();
   const { staff } = useAuth();
   const canDeleteFollowups = useActionAccess("followups", "delete", !!staff && MANAGER_ROLES.includes(staff.role));
@@ -358,7 +370,7 @@ export default function FollowupsScreen() {
     // The app shell normally waits for this, but retain the guard here for a
     // direct route/remount. A request with no floor header can be rejected or
     // return a different workspace, neither of which is an inbox failure.
-    if (!selectedFloorId) return [];
+    if (!selectedFloorId || !mounted.current) return [];
     if (pageNavigation && loadingPageRef.current) return [];
     if (pageNavigation) {
       loadingPageRef.current = true;
@@ -408,7 +420,7 @@ export default function FollowupsScreen() {
           throw error;
         }
       }
-      if (requestVersion !== listRequestVersion.current) return [];
+      if (!mounted.current || requestVersion !== listRequestVersion.current) return [];
       lastListLoadFailed.current = false;
       setRawItems(result.items);
       setListPage(result.page);
@@ -416,14 +428,14 @@ export default function FollowupsScreen() {
       setListError(null);
       return result.items;
     } catch (e: any) {
-      if (requestVersion !== listRequestVersion.current) return [];
+      if (!mounted.current || requestVersion !== listRequestVersion.current) return [];
       const message = e?.detail || "Could not load follow-ups";
       lastListLoadFailed.current = true;
       if (!pageNavigation) setListError(message);
       toast.error(message);
       return [];
     } finally {
-      if (requestVersion === listRequestVersion.current) {
+      if (mounted.current && requestVersion === listRequestVersion.current) {
         loadingPageRef.current = false;
         setLoadingPage(false);
         if (!pageNavigation) setLoading(false);
@@ -432,18 +444,18 @@ export default function FollowupsScreen() {
   }, [categoryFilter, followupView, kpiFilter, ownerFilter, priorityFilter, searchQuery, selectedFloorId, staff?.id, tierFilter, workspace]);
 
   const refreshStatsQuiet = useCallback(async () => {
-    if (!selectedFloorId) return;
+    if (!selectedFloorId || !mounted.current) return;
     try {
       const [s, m] = await Promise.all([
         api.get<Stats>("/followups/stats", { floorId: selectedFloorId }),
         api.get<Mission>("/followups/mission", { floorId: selectedFloorId }),
       ]);
-      setStats(s); setMission(m);
+      if (mounted.current) { setStats(s); setMission(m); }
     } catch { /* best-effort */ }
   }, [selectedFloorId]);
 
   const bootstrap = useCallback(async () => {
-    if (!selectedFloorId) return [];
+    if (!selectedFloorId || !mounted.current) return [];
     const floorId = selectedFloorId;
     // Keep entering the work queue cheap. The previous dashboard eagerly ran
     // three full-dataset summary queries alongside the inbox query; on a busy
@@ -456,7 +468,7 @@ export default function FollowupsScreen() {
     ]).then(([assigneesResult, customersResult, savedViewsResult]) => {
       // A new floor request may already be in flight. Never let a late,
       // otherwise successful summary response repaint the newer workspace.
-      if (bootstrappedFloorRef.current !== floorId) return;
+      if (!mounted.current || bootstrappedFloorRef.current !== floorId) return;
       if (assigneesResult.status === "fulfilled") setAssignees(assigneesResult.value);
       if (customersResult.status === "fulfilled") setCustomers(customersResult.value);
       if (savedViewsResult.status === "fulfilled") setSavedViews(savedViewsResult.value);
@@ -493,7 +505,7 @@ export default function FollowupsScreen() {
   const didApplyListFilters = useRef(false);
   useEffect(() => { latestLoadList.current = loadList; }, [loadList]);
   useEffect(() => {
-    if (!selectedFloorId) return;
+    if (!selectedFloorId || !mounted.current) return;
     if (!didApplyListFilters.current) {
       didApplyListFilters.current = true;
       return;
@@ -526,9 +538,9 @@ export default function FollowupsScreen() {
     setLoadingDetail(true);
     try {
       const loadedDetail = await api.get<Detail>(`/followups/${id}`, { signal: controller.signal, floorId: selectedFloorId });
-      if (version === detailRequestVersion.current) setDetail(loadedDetail);
+      if (mounted.current && version === detailRequestVersion.current) setDetail(loadedDetail);
     } catch (e: any) {
-      if (version !== detailRequestVersion.current || e?.name === "AbortError") return;
+      if (!mounted.current || version !== detailRequestVersion.current || e?.name === "AbortError") return;
       if (e?.status === 404) {
         // The card was completed, moved, or removed in another session. Put
         // the queue back in control instead of displaying a stale "not found"
@@ -543,7 +555,7 @@ export default function FollowupsScreen() {
       toast.error(e?.detail || "Could not load details");
       setDetail(null);
     } finally {
-      if (version === detailRequestVersion.current) setLoadingDetail(false);
+      if (mounted.current && version === detailRequestVersion.current) setLoadingDetail(false);
     }
   }, [selectedFloorId]);
 
@@ -568,15 +580,17 @@ export default function FollowupsScreen() {
   }, []);
 
   const runAction = useCallback((action: () => Promise<void>) => {
-    void action().catch((error: any) => toast.error(error?.detail || "Could not update follow-up"));
+    if (!mounted.current) return;
+    void action().catch((error: any) => { if (mounted.current) toast.error(error?.detail || "Could not update follow-up"); });
   }, []);
 
   // ── Actions ───────────────────────────────────────────────────────────────
   const contact = useCallback((f: Followup, channel: Channel) => {
     runAction(async () => {
       const res = await api.post<{ channel: string; phone?: string | null; wa_url?: string; email?: string | null }>(
-        `/followups/${f.id}/contact`, { channel },
+        `/followups/${f.id}/contact`, { channel }, { floorId: selectedFloorId },
       );
+      if (!mounted.current) return;
       if (channel === "call") {
         if (!res.phone) { toast.error("No phone number on file"); return; }
         await Linking.openURL(`tel:${res.phone}`).catch(() => toast.error("Open the phone app manually."));
@@ -591,58 +605,63 @@ export default function FollowupsScreen() {
       }
       patchLocal(f.id, { last_contacted_at: new Date().toISOString() });
     });
-  }, [patchLocal, runAction]);
+  }, [patchLocal, runAction, selectedFloorId]);
 
   const completeFollowup = useCallback((f: Followup) => {
     runAction(async () => {
-      const updated = await api.post<Followup>(`/followups/${f.id}/complete`, {});
+      const updated = await api.post<Followup>(`/followups/${f.id}/complete`, {}, { floorId: selectedFloorId });
+      if (!mounted.current) return;
       patchLocal(f.id, { ...updated, bucket: "completed" });
       toast.success("Marked complete");
       void refreshStatsQuiet();
     });
-  }, [patchLocal, refreshStatsQuiet, runAction]);
+  }, [patchLocal, refreshStatsQuiet, runAction, selectedFloorId]);
 
   const snoozeFollowup = useCallback((f: Followup, preset: "15m" | "1h" | "tomorrow" | "next_week") => {
     runAction(async () => {
-      const updated = await api.post<Followup>(`/followups/${f.id}/snooze`, { preset });
+      const updated = await api.post<Followup>(`/followups/${f.id}/snooze`, { preset }, { floorId: selectedFloorId });
+      if (!mounted.current) return;
       patchLocal(f.id, { ...updated, bucket: "snoozed" });
       toast.success("Snoozed");
       void refreshStatsQuiet();
     });
-  }, [patchLocal, refreshStatsQuiet, runAction]);
+  }, [patchLocal, refreshStatsQuiet, runAction, selectedFloorId]);
 
   const customSnooze = useCallback((f: Followup, untilIso: string) => {
     setCustomSnoozeFor(null);
     runAction(async () => {
-      const updated = await api.post<Followup>(`/followups/${f.id}/snooze`, { until: untilIso });
+      const updated = await api.post<Followup>(`/followups/${f.id}/snooze`, { until: untilIso }, { floorId: selectedFloorId });
+      if (!mounted.current) return;
       patchLocal(f.id, { ...updated, bucket: "snoozed" });
       toast.success("Snoozed");
       void refreshStatsQuiet();
     });
-  }, [patchLocal, refreshStatsQuiet, runAction]);
+  }, [patchLocal, refreshStatsQuiet, runAction, selectedFloorId]);
 
   const pushDue = useCallback((f: Followup, days: number) => {
     const dueDate = new Date(Date.now() + days * 86400000);
     const dueIso = dueDate.toISOString();
     const newBucket: Bucket = days === 1 ? "tomorrow" : days <= 7 ? "this_week" : "later";
     runAction(async () => {
-      const updated = await api.patch<Followup>(`/followups/${f.id}`, { due_at: dueIso });
+      const updated = await api.patch<Followup>(`/followups/${f.id}`, { due_at: dueIso }, { floorId: selectedFloorId });
+      if (!mounted.current) return;
       patchLocal(f.id, { ...updated, bucket: newBucket });
       toast.success(`Pushed ${days} day${days === 1 ? "" : "s"}`);
       void refreshStatsQuiet();
     });
-  }, [patchLocal, refreshStatsQuiet, runAction]);
+  }, [patchLocal, refreshStatsQuiet, runAction, selectedFloorId]);
 
   const assignFollowup = useCallback((f: Followup, _userId?: string) => { setScopeLeadIds([]); setScopeLead(f); }, []);
 
   const dismissFollowup = useCallback((f: Followup) => {
     runAction(async () => {
-      const updated = await api.patch<Followup>(`/followups/${f.id}`, { status: "dismissed" });
+      const updated = await api.patch<Followup>(`/followups/${f.id}`, { status: "dismissed" }, { floorId: selectedFloorId });
+      if (!mounted.current) return;
       patchLocal(f.id, { ...updated, bucket: "completed" });
       toast.success("Dismissed");
       void refreshStatsQuiet();
     });
-  }, [patchLocal, refreshStatsQuiet, runAction]);
+  }, [patchLocal, refreshStatsQuiet, runAction, selectedFloorId]);
 
   const deleteFollowup = useCallback(() => {
     if (!deleteTarget) return;
@@ -651,14 +670,15 @@ export default function FollowupsScreen() {
     runAction(async () => {
       setDeleting(true);
       try {
-        await api.delete(`/followups/${target.id}`);
+        await api.delete(`/followups/${target.id}`, { floorId: selectedFloorId });
+        if (!mounted.current) return;
         setRawItems((prev) => prev.filter((item) => item.id !== target.id));
         if (selectedId === target.id) clearSelectedDetail();
         toast.success("Follow-up deleted");
         void refreshStatsQuiet();
       } finally { setDeleting(false); }
     });
-  }, [clearSelectedDetail, deleteTarget, refreshStatsQuiet, selectedId, runAction]);
+  }, [clearSelectedDetail, deleteTarget, refreshStatsQuiet, selectedId, runAction, selectedFloorId]);
 
   const logCallOutcome = useCallback(async (f: Followup, outcome: string, notes?: string, nextFollowupAt?: string, response?: string, interestedFloorIds?: string[], assignments?: LeadScope["assignments"]) => {
     if ((outcome === "lost" || outcome === "rejected") && !notes?.trim()) { toast.error("A lost reason is required"); return; }
@@ -670,24 +690,26 @@ export default function FollowupsScreen() {
         response: response?.trim() || undefined,
         interested_floor_ids: interestedFloorIds,
         assignments,
-      });
+      }, { floorId: selectedFloorId });
+      if (!mounted.current) return;
       toast.success("Call logged");
       setCallOutcomeFor(null);
       setLossActionFor(null);
       await loadList();
       refreshStatsQuiet();
     } catch (e: any) { toast.error(e?.detail || "Could not log call"); }
-  }, [loadList, refreshStatsQuiet]);
+  }, [loadList, refreshStatsQuiet, selectedFloorId]);
 
   const createFollowup = useCallback(async (payload: any) => {
     try {
-      await api.post("/followups", payload);
+      await api.post("/followups", payload, { floorId: selectedFloorId });
+      if (!mounted.current) return;
       toast.success("Follow-up created");
       setNewSheet(false);
       await loadList();
       refreshStatsQuiet();
     } catch (e: any) { toast.error(e?.detail || "Could not create follow-up"); throw e; }
-  }, [loadList, refreshStatsQuiet]);
+  }, [loadList, refreshStatsQuiet, selectedFloorId]);
 
   // ── Filtering (100% client-side ⇒ instant) ──────────────────────────────
   const filtered = useMemo(() => {
@@ -802,6 +824,7 @@ export default function FollowupsScreen() {
     setBulkSaving(true);
     setBulkResult(null);
     const results = await settleBulkRequests(request, ids);
+    if (!mounted.current) return;
     bulkBusy.current = false;
     setBulkSaving(false);
     const succeeded = new Set(ids.filter((_, index) => results[index]?.status === "fulfilled"));
@@ -822,16 +845,16 @@ export default function FollowupsScreen() {
   const bulkSnooze = useCallback((preset: "1h" | "tomorrow" | "next_week") => {
     const ids = Array.from(selectedIds);
     runAction(async () => {
-      await runBulk({ label: "Snoozed", successPatch: { status: "snoozed", bucket: "snoozed" }, execute: (id) => api.post(`/followups/${id}/snooze`, { preset }) }, ids);
+      await runBulk({ label: "Snoozed", successPatch: { status: "snoozed", bucket: "snoozed" }, execute: (id) => mounted.current ? api.post(`/followups/${id}/snooze`, { preset }, { floorId: selectedFloorId }) : Promise.reject(new Error("Workspace changed")) }, ids);
     });
-  }, [runBulk, selectedIds, runAction]);
+  }, [runBulk, selectedIds, runAction, selectedFloorId]);
 
   const bulkComplete = useCallback(() => {
     const ids = Array.from(selectedIds);
     runAction(async () => {
-      await runBulk({ label: "Completed", successPatch: { status: "done", bucket: "completed", completed_at: new Date().toISOString() }, execute: (id) => api.post(`/followups/${id}/complete`, {}) }, ids);
+      await runBulk({ label: "Completed", successPatch: { status: "done", bucket: "completed", completed_at: new Date().toISOString() }, execute: (id) => mounted.current ? api.post(`/followups/${id}/complete`, {}, { floorId: selectedFloorId }) : Promise.reject(new Error("Workspace changed")) }, ids);
     });
-  }, [runBulk, selectedIds, runAction]);
+  }, [runBulk, selectedIds, runAction, selectedFloorId]);
 
   const bulkAssign = useCallback((_userId: string) => {
     const ids = Array.from(selectedIds);
@@ -860,16 +883,18 @@ export default function FollowupsScreen() {
   const saveCurrentView = useCallback(async (name: string) => {
     const filters = { q, kpiFilter, followupView, priorityFilter, categoryFilter, tierFilter, ownerFilter };
     try {
-      const v = await api.post<SavedView>("/followups/saved-views", { name, filters });
+      const v = await api.post<SavedView>("/followups/saved-views", { name, filters }, { floorId: selectedFloorId });
+      if (!mounted.current) return;
       setSavedViews((prev) => [v, ...prev]);
       toast.success("View saved");
     } catch (e: any) { toast.error(e?.detail || "Could not save view"); }
-  }, [q, kpiFilter, followupView, priorityFilter, categoryFilter, tierFilter, ownerFilter]);
+  }, [q, kpiFilter, followupView, priorityFilter, categoryFilter, tierFilter, ownerFilter, selectedFloorId]);
 
   const deleteSavedView = useCallback(async (id: string) => {
+    if (!mounted.current) return;
     setSavedViews((prev) => prev.filter((v) => v.id !== id));
-    try { await api.delete(`/followups/saved-views/${id}`); } catch { /* best-effort */ }
-  }, []);
+    try { await api.delete(`/followups/saved-views/${id}`, { floorId: selectedFloorId }); } catch { /* best-effort */ }
+  }, [selectedFloorId]);
 
   // ── Export ───────────────────────────────────────────────────────────────
   const doExport = useCallback(async (format: "xlsx" | "csv") => {
@@ -882,7 +907,8 @@ export default function FollowupsScreen() {
     if (workspace === "visit_showroom") qs.set("origin", "visit_showroom");
     if (q.trim()) qs.set("q", q.trim());
     try {
-      const url = await api.authenticatedUrl(`/followups/export?${qs.toString()}`);
+      const url = await api.authenticatedUrl(`/followups/export?${qs.toString()}`, selectedFloorId);
+      if (!mounted.current) return;
       if (Platform.OS === "web") {
         // @ts-ignore — web only
         window.open(url, "_blank");
@@ -891,7 +917,7 @@ export default function FollowupsScreen() {
       }
       toast.success("Export ready");
     } catch { toast.error("Could not export"); }
-  }, [kpiFilter, priorityFilter, categoryFilter, tierFilter, ownerFilter, q, staff, workspace]);
+  }, [kpiFilter, priorityFilter, categoryFilter, tierFilter, ownerFilter, q, staff, workspace, selectedFloorId]);
 
   // ── Keyboard shortcuts (web only) ───────────────────────────────────────
   useEffect(() => {
@@ -1530,7 +1556,7 @@ function FollowupCard({
             </Text>
           </View>
           {!isResolved ? <ScoreBadge score={f.priority_score} level={level} /> : (
-            <Badge label={f.completed_outcome === "lost" ? "Lost" : isWonOrderFollowup(f) ? "Own order" : f.status === "dismissed" ? "Dismissed" : (f.completed_outcome || "Done")} tone={f.completed_outcome === "lost" || f.status === "dismissed" ? "neutral" : "success"} size="sm" />
+            <Badge label={f.completed_outcome === "lost" ? "Lost" : isWonOrderFollowup(f) ? "Won order" : f.status === "dismissed" ? "Dismissed" : (f.completed_outcome || "Done")} tone={f.completed_outcome === "lost" || f.status === "dismissed" ? "neutral" : "success"} size="sm" />
           )}
         </View>
 

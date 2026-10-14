@@ -192,19 +192,20 @@ function FloorSwitcher({ compact = false }: { compact?: boolean }) {
 }
 
 const FLOOR_ROUTE_SEGMENTS: Record<string, string[]> = {
-  [SANITARY_FLOOR_ID]: ["quotations", "godown-stock"],
+  [SANITARY_FLOOR_ID]: ["quotations", "godown-stock", "purchases", "purchases-completed", "purchase-orders"],
   [TILES_FLOOR_ID]: ["tiles", "orders"],
   [KITCHEN_FLOOR_ID]: ["kitchen"],
   [FURNITURE_FLOOR_ID]: ["furniture", "furniture-quotations"],
 };
 
-const SHARED_FLOOR_ROUTES = ["catalog", "customers", "purchases", "purchases-completed", "payments", "payments-list", "walkins", "followups", "settings", "team", "notifications", "sales-data"];
+const SHARED_FLOOR_ROUTES = ["catalog", "customers", "payments", "payments-list", "walkins", "followups", "settings", "team", "notifications", "sales-data"];
 
 function isSharedFloorRoute(segments: string[]) {
   return SHARED_FLOOR_ROUTES.some(segment => segments.includes(segment));
 }
 
 function isRouteCompatibleWithFloor(segments: string[], floorId: string) {
+  if (segments.includes("catalog") && ![SANITARY_FLOOR_ID, TILES_FLOOR_ID].includes(floorId)) return false;
   return !Object.entries(FLOOR_ROUTE_SEGMENTS).some(([restrictedFloor, roots]) => (
     restrictedFloor !== floorId && roots.some((root) => segments.includes(root))
   ));
@@ -252,7 +253,8 @@ function useVisibleNav() {
   const { staff } = useAuth();
   const { access, selectedFloorId } = useFloorAccess();
   return (items: NavItem[]) => items.filter((item) => {
-    if (staff?.custom_access) return (!item.floors || item.floors.includes(selectedFloorId)) && hasAccess(item.match);
+    if (item.floors && selectedFloorId && !item.floors.includes(selectedFloorId)) return false;
+    if (staff?.custom_access) return hasAccess(item.match);
     // These units share floor-scoped business pages alongside their notebooks.
     if (selectedFloorId === KITCHEN_FLOOR_ID || selectedFloorId === FURNITURE_FLOOR_ID) {
       const shared = SHARED_FLOOR_ROUTES.includes(item.match);
@@ -361,7 +363,7 @@ function PhoneBar() {
   if (!shellReady) return <PhoneBarSkeleton />;
   const all = [...visible(PRIMARY), ...tilesNav.items, ...visible(SECONDARY)];
   const notebook = selectedFloorId === KITCHEN_FLOOR_ID || selectedFloorId === FURNITURE_FLOOR_ID;
-  const priorities = notebook ? all.filter(item => item.match === 'walkins' || item.href.includes('/notebook/'))
+  const priorities = notebook ? all.filter(item => item.match === 'walkins' || item.match === 'followups' || item.href.includes('/notebook/'))
     : ['dashboard', 'catalog', selectedFloorId === TILES_FLOOR_ID ? 'tiles' : 'quotations', 'followups']
       .flatMap(match => all.filter(item => item.match === match));
   const more = all.filter(item => !priorities.some(tab => tab.href === item.href));
@@ -458,6 +460,14 @@ function FloorAccessGate({ children }: { children: React.ReactNode }) {
     router.replace(`/(admin)${floorLandingPath(selectedFloorId)}` as any);
   }, [authLoading, staff, access, selectedFloorId, destinationReady, segments, router]);
 
+  const retiredWorkspaceRoute = Boolean(selectedFloorId && (
+    (["purchases", "purchases-completed", "purchase-orders"].some(part => segments.includes(part)) && selectedFloorId !== SANITARY_FLOOR_ID) ||
+    (segments.includes("catalog") && ![SANITARY_FLOOR_ID, TILES_FLOOR_ID].includes(selectedFloorId))
+  ));
+  useEffect(() => {
+    if (retiredWorkspaceRoute) router.replace(`/(admin)${floorLandingPath(selectedFloorId)}` as any);
+  }, [retiredWorkspaceRoute, router, selectedFloorId]);
+
   // Password, MFA and session management belong to the authenticated account,
   // even when every business floor has been switched off. Business routes
   // still require a concrete server-authorized floor below.
@@ -494,6 +504,7 @@ function FloorAccessGate({ children }: { children: React.ReactNode }) {
       </Pressable>
     </View>;
   }
+  if (retiredWorkspaceRoute) return null;
   return <>{children}</>;
 }
 

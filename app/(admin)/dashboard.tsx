@@ -123,7 +123,8 @@ export default function Today() {
   const canUpdateFollowups = useActionAccess("followups", "update");
   const canQuotations = useActionAccess("quotations", "view");
   const canPayments = useActionAccess("payments", "view");
-  const canPurchases = useActionAccess("purchases", "view");
+  const hasPurchasesAccess = useActionAccess("purchases", "view");
+  const canPurchases = selectedFloorId === "first-floor" && hasPurchasesAccess;
 
   const [mission, setMission] = useState<Mission | null>(null);
   const [queue, setQueue] = useState<Fu[] | null>(null);
