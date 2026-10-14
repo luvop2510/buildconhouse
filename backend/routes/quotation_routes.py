@@ -439,7 +439,8 @@ async def _manual_stock_line(item: QuotationLineItem, user: UserPublic, *, floor
     """
     if not item.godown_stock_id or item.product_id != f"godown:{item.godown_stock_id}":
         return None
-    query = {"id": item.godown_stock_id, "product_id": item.product_id, "source_type": "manual"}
+    query = {"id": item.godown_stock_id, "product_id": item.product_id,
+             "source_type": {"$in": ["manual", "warehouse_import"]}}
     if floor_id:
         query["floor_id"] = floor_id
     return await db.godown_stock.find_one(floor_query(user, query), {"_id": 0, "floor_id": 1, "category_id": 1})
