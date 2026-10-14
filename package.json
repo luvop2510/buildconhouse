@@ -28,7 +28,7 @@
     "test:frontend-drift": "node scripts/test-frontend-drift.mjs",
     "test:frontend-drift:browser": "playwright test --config playwright.forge-drift.config.ts --project=desktop --project=phone --workers=2",
     "test:mobile-budget": "node scripts/check-web-budget.mjs",
-    "test:api-proxy": "node --no-warnings scripts/test-api-proxy.mjs",
+    "test:api-proxy": "node --no-warnings scripts/test-api-proxy.mjs && node scripts/test-verified-promotion.mjs",
     "test:api-client": "node scripts/test-api-client-contract.mjs",
     "test:e2e:profiles": "playwright test --config playwright.config.ts",
     "test:web-worker": "node scripts/test-web-worker.mjs",

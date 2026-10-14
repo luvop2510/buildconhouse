@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import { EventEmitter } from 'node:events';
 import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import vm from 'node:vm';
+import ts from 'typescript';
 
 process.env.BACKEND_URL = 'https://api.example.test';
 const { createHandler, validateBackendUrl, requestBodyLimit } = await import('../api/[...path].js');
@@ -274,4 +277,27 @@ console.error = originalConsoleError;
     if (status === 401) assert.ok(result.headers['Set-Cookie'].every(value => value.includes('Max-Age=0')));
     else assert.equal(result.headers['Set-Cookie'], undefined, 'permissions/outages preserve the session');
   }
+}
+
+// Vercel transpiles the API entrypoint to CommonJS and disallows require(ESM),
+// even when the development Node release accepts it. Execute that artifact.
+{
+  const source = await readFile(new URL('../api/[...path].js', import.meta.url), 'utf8');
+  const artifact = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const compiled = { exports: {} };
+  const localRequire = createRequire(new URL('../api/[...path].js', import.meta.url));
+  vm.runInNewContext(artifact, {
+    module: compiled, exports: compiled.exports,
+    require(specifier) {
+      assert.ok(!specifier.endsWith('.mjs'), 'Vercel CommonJS entrypoint must not require an ES module');
+      return localRequire(specifier);
+    },
+    process, crypto, Buffer, fetch, Response, Headers, AbortController, URL, URLSearchParams, performance,
+    setTimeout, clearTimeout, TextEncoder, TextDecoder, console,
+  });
+  const result = response();
+  await compiled.exports.createHandler({ backendUrl: 'https://api.example.test', fetchImpl: async () => Response.json({ status: 'ok' }) })(request(), result);
+  assert.equal(result.statusCode, 200);
+  assert.equal(JSON.parse(result.payload.toString()).status, 'ok');
+  console.log('Vercel CommonJS runtime artifact imports and executes with ESM require disabled.');
 }

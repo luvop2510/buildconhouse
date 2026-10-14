@@ -16,7 +16,7 @@ try {
   await writeFile(join(directory, 'package.json'), '{"type":"module"}');
   await writeFile(join(directory, 'npm'), command, { mode: 0o755 });
   await writeFile(join(directory, 'python'), command, { mode: 0o755 });
-  const stages = ['backend', 'build', 'test:mobile-budget', 'test:frontend-performance', 'test:page-loading-performance', 'test:catalog-pagination', 'test:api-client', 'test:sound-feedback', 'test:release-stability', 'test:e2e:stability', 'test:e2e:performance'];
+  const stages = ['backend', 'build', 'test:mobile-budget', 'test:frontend-performance', 'test:page-loading-performance', 'test:catalog-pagination', 'test:api-client', 'test:api-proxy', 'test:sound-feedback', 'test:release-stability', 'test:e2e:stability', 'test:e2e:performance'];
   for (const failAt of ['backend', 'build', 'test:release-stability', 'test:e2e:stability', 'test:e2e:performance']) {
     await writeFile(log, '');
     const env = { ...process.env, PATH: `${directory}:${process.env.PATH}`, FORGE_AUDIT_PYTHON: join(directory, 'python'), AUDIT_TEST_LOG: log, AUDIT_FAIL_STAGE: failAt };

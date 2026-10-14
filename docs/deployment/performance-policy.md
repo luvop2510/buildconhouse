@@ -130,3 +130,21 @@ Future Infrastructure-as-Code migration must preview a plan that preserves the
 existing service, database/storage, variables and source; do not blindly apply
 an imported historical source-commit pin. Current runtime updates use the
 existing explicit project/service/environment and verify the resulting region.
+
+## Vercel candidate promotion
+
+Build a production candidate using `vercel deploy --prod --skip-domain`, with the
+complete reviewed source SHA in `releaseSha` deployment metadata. Check the actual
+candidate's authenticated page/session journeys before moving production aliases.
+Then run `node scripts/promote-verified-vercel.mjs <candidate-https-url> <full-sha>
+<report.json>` with the authenticated Vercel CLI on PATH (or FORGE_VERCEL_CLI).
+The guard checks project/source/readiness and runs the real public API, missing
+asset, security-header and cache verifier before promotion. Follow with the same
+checks on the public domains. A provider READY state or successful web build
+cannot certify that a serverless API function starts.
+
+The Vercel API is transpiled to CommonJS. Keep shared runtime helpers compatible
+with that loader; direct Node ESM imports can conceal ERR_REQUIRE_ESM. Required
+API tests execute the actual CommonJS artifact with ESM require disabled and boot
+the emitted standalone worker. Cookie generation has one canonical helper, inlined
+where a single-file worker upload cannot resolve local imports.

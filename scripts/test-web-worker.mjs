@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import { createWorker, sessionCookies } from './web-worker.mjs';
+import { standaloneWorkerSource } from './build-web-worker.mjs';
 const base='https://app.example.test';
 const request=(path='/api/orders',options={})=>new Request(base+path,options);
 let calls=0;
@@ -80,4 +81,17 @@ console.log('Web worker: CSRF, cookie isolation, malformed sessions, errors/time
  for(const token of ['opaque-legacy','broken.@@@.signature',fixtureToken('forever')]) {
    assert.ok(sessionCookies(token,'fixture-csrf',now).every(cookie=>!cookie.includes('Max-Age=')), 'unparseable expiry never creates an indefinitely persistent credential');
  }
+}
+
+// Exercise the actual standalone worker source emitted by production builds,
+// not just its source-module imports in the development Node process.
+{
+ const source = await standaloneWorkerSource();
+ assert.doesNotMatch(source, /^\s*import\s/m, 'Deployed workers cannot reference unpackaged local helpers');
+ const built = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+ const token = `fixture.${Buffer.from(JSON.stringify({ exp: 2000 })).toString('base64url')}.signature`;
+ assert.deepEqual(built.sessionCookies(token, 'csrf', 1000_000), sessionCookies(token, 'csrf', 1000_000));
+ const runtime = built.createWorker('https://api.example.test', async () => Response.json({ status: 'ok' }));
+ assert.equal((await runtime.fetch(request('/api/health'), {})).status, 200);
+ console.log('Actual standalone production worker boots without module dependencies and retains canonical cookie behavior.');
 }

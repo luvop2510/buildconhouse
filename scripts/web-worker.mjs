@@ -1,3 +1,6 @@
+import { sessionCookies } from './session-cookies.cjs';
+export { sessionCookies };
+
 // Production browser authentication boundary, shared by Sites and Pages builds.
 const SECURITY_HEADERS = {
   'Content-Security-Policy': "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://*.ingest.sentry.io; form-action 'self'",
@@ -14,23 +17,7 @@ function secure(response, api = false) {
 function cookie(request, name) {
   return request.headers.get('Cookie')?.split(';').map(p=>p.trim()).find(p=>p.startsWith(name+'='))?.slice(name.length+1);
 }
-// Only a trusted successful upstream login or identity check may issue these.
-// Persistence survives mobile browser restarts without extending JWT validity.
-export function sessionCookies(token, csrf, now = Date.now()) {
-  let lifetime = '';
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
-    if (typeof payload.exp === 'number' && Number.isFinite(payload.exp)) {
-      const seconds = Math.max(0, Math.min(30 * 24 * 60 * 60, Math.floor(payload.exp - now / 1000)));
-      lifetime = `; Max-Age=${seconds}; Expires=${new Date(now + seconds * 1000).toUTCString()}`;
-    }
-  } catch { /* Legacy opaque responses remain browser-session-only. */ }
-  const csrfValue = csrf || crypto.randomUUID() + crypto.randomUUID();
-  return [
-    `forge_session=${encodeURIComponent(token)}; Path=/api${lifetime}; Secure; HttpOnly; SameSite=Strict`,
-    `forge_csrf=${csrfValue}; Path=/${lifetime}; Secure; SameSite=Strict`,
-  ];
-}
+
 function persistSession(response, token, csrf) {
   const headers = new Headers(response.headers);
   for (const value of sessionCookies(token, csrf)) headers.append('Set-Cookie', value);

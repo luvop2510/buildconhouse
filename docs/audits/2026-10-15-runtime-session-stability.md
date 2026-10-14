@@ -86,3 +86,25 @@ The Vercel project is on Hobby; no paid platform upgrade is made. Preserve the
 existing Railway service, Singapore placement and signing/encryption secrets.
 Optional Sentry is unconfigured in this production environment; no external error
 alert delivery or physical-device/native signing acceptance is claimed.
+
+## Provider runtime packaging correction
+
+The first Vercel rollout built successfully but returned API 500s. Immediate
+post-deploy verification caught it and production was rolled back to the prior
+healthy frontend. Runtime logs confirmed ERR_REQUIRE_ESM: Vercel's CommonJS
+function loader rejected the newly imported web-worker.mjs. Direct development
+imports had not simulated that loader. The Railway backend remained healthy and
+a pre-deployment session continued to authorize reads after its rollout.
+
+Cookie generation now lives in a canonical CommonJS helper, loaded by Vercel and
+inlined into the standalone browser worker at build time. Regression tests execute
+the actual transpiled API with ESM require disabled and boot the actual standalone
+worker without local module imports. The pre-push audit now requires these API
+packaging tests too. No cookie security or expiry rule is loosened.
+
+Frontend publication uses a production candidate with --skip-domain. The
+promote-verified-vercel script verifies the exact source SHA, project and READY
+state, then runs actual candidate API/asset/cache/security checks before promotion.
+Its tests prove inspection, verification and source mismatch failures prevent the
+promotion command. Candidate browser session checks precede invoking this guard.
+A successful provider build alone is insufficient release acceptance.

@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { sessionCookies } from '../scripts/web-worker.mjs';
+import { sessionCookies } from '../scripts/session-cookies.cjs';
 
 const MAX_REQUEST_BODY_BYTES = 1_048_576;
 // Vercel Functions admit at most 4.5 MB. Keep multipart photo envelopes below

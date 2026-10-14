@@ -16,6 +16,12 @@ Actual Expo AsyncRequireError says "Loading module" and carries request; retain
 strict same-origin module classification and explicit reload for mounted pages.
 Never auto-reload live forms. Literal search punctuation must remain escaped.
 
+Vercel API loaders reject require(ESM), even when local Node accepts it. Shared
+cookies use the canonical CommonJS helper; standalone workers inline it. Required
+API tests execute compiled CommonJS and the actual emitted worker. Deploy a
+--skip-domain candidate, verify its authenticated journeys, then use
+scripts/promote-verified-vercel.mjs to verify source/API/assets before promotion.
+
 The required Performance/pre-push audit includes immutable four-device every-page
 stability, populated stock/new quotation navigation, render/module failure and
 session recovery. New route files inherit coverage. The evidence verifier rejects
