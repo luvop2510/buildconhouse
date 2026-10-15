@@ -142,7 +142,7 @@ export default function QuotationsList() {
         maxToRenderPerBatch={10}
         windowSize={7}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, isPhone && styles.listContentPhone]}
         ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
         ListHeaderComponent={
           <View style={styles.listHeader}>
@@ -261,6 +261,9 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   listContent: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.huge, flexGrow: 1 },
+  // Keep the pending quotation cards visibly detached from the phone edge;
+  // this list sits in a full-bleed AdminPage so the FlatList owns its gutter.
+  listContentPhone: { paddingHorizontal: spacing.s20 },
   listHeader: { gap: spacing.md, marginBottom: spacing.md },
   numberText: {
     fontSize: 12,
