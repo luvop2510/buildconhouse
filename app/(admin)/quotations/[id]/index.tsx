@@ -167,8 +167,11 @@ export default function QuotationDetail() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg, paddingBottom: spacing.huge }}>
-      <PageHeader title={q.number} overline="Quotation" back={() => router.back()} actions={
+      <ScrollView contentContainerStyle={[
+        styles.content,
+        { paddingHorizontal: isPhone ? spacing.lg : spacing.xl, paddingTop: isPhone ? spacing.md : spacing.xl },
+      ]}>
+      <PageHeader title={q.number} overline="Quotation" back={() => router.back()} actions={isPhone ? undefined : (
         <View style={{ flexDirection: "row", gap: isPhone ? 4 : 8, alignItems: "center", flexShrink: 0 }}>
           {isPhone ? (
             <IconButton icon="edit-3" tone="surface" onPress={() => router.push(`/(admin)/quotations/new?quotationId=${encodeURIComponent(id)}` as any)} testID="edit-quotation" accessibilityLabel="Edit quotation" />
@@ -188,12 +191,18 @@ export default function QuotationDetail() {
             )
           ) : null}
         </View>
-      } />
+      )} />
+      {isPhone ? <View style={styles.phoneHeaderActions}>
+        <IconButton icon="edit-3" tone="surface" onPress={() => router.push(`/(admin)/quotations/new?quotationId=${encodeURIComponent(id)}` as any)} testID="edit-quotation" accessibilityLabel="Edit quotation" />
+        <IconButton icon="download" tone="surface" onPress={() => setPdfOptionsOpen(true)} testID="download-pdf" accessibilityLabel="Download PDF" />
+        <IconButton icon="trash-2" tone="danger" onPress={() => setDeleteOpen(true)} testID="delete-quotation" accessibilityLabel="Delete quotation" />
+        {NEXT_STATUS[q.status] ? <IconButton icon="check" tone="brand" disabled={advancing} onPress={advance} testID="advance-status" accessibilityLabel={`Mark ${NEXT_STATUS[q.status].replace("_", " ")}`} /> : null}
+      </View> : null}
 
         {actionError ? <Alert tone="error" title="Action not completed" description={actionError} /> : null}
         {relatedError ? <Alert tone="warning" title="Some related records are unavailable" description="Order links or activity may be incomplete. Reload to refresh them." /> : null}
         {/* Document summary */}
-        <View style={styles.hero}>
+        <View style={styles.hero} testID="quotation-detail-summary">
           <StatusBadge status={q.customer_outcome || q.status} />
           {q.customer_outcome ? <Text style={[type.caption, { marginTop: spacing.sm }]} testID="quotation-customer-outcome">{q.customer_outcome === "won" ? "Won Customer" : "Lost Customer"} recorded. Create a new quotation for a new sale.</Text> : null}
           {q.purchase_completion_status === "completed" ? <Text style={[type.caption, { color: colors.success, marginTop: spacing.sm }]}>100% completed</Text> : null}
@@ -202,7 +211,7 @@ export default function QuotationDetail() {
             Prepared by {q.created_by_name} · {new Date(q.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}
           </Text>
           <View style={styles.heroDivider} />
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" }}>
+          <View style={[styles.heroTotalRow, isPhone && styles.heroTotalRowPhone]}>
             <View>
               <Text style={type.caption}>Grand total</Text>
               <PriceTag price={q.grand_total} size="xl" />
@@ -401,6 +410,10 @@ function GodownProvenance({ item }: { item: Line }) {
 }
 
 const styles = StyleSheet.create({
+  content: { width: "100%", maxWidth: 1120, alignSelf: "center", gap: spacing.lg, paddingBottom: spacing.huge },
+  phoneHeaderActions: { flexDirection: "row", justifyContent: "flex-end", flexWrap: "wrap", gap: spacing.sm, marginTop: -spacing.sm },
+  heroTotalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", gap: spacing.md },
+  heroTotalRowPhone: { flexWrap: "wrap", alignItems: "center" },
   centered: {
     flex: 1, alignItems: "center", justifyContent: "center",
     gap: spacing.md, padding: spacing.xl, backgroundColor: colors.surface,

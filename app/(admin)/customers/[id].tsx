@@ -641,29 +641,51 @@ export default function CustomerDetail() {
                     accessibilityRole="button"
                     accessibilityLabel={`Open quotation ${q.number}`}
                     onPress={() => openQuotation(q)}
-                    style={({ pressed, hovered }: any) => [styles.quotationOpen, {
+                    style={({ pressed, hovered }: any) => [styles.quotationOpen, isPhone && styles.quotationOpenPhone, {
                       backgroundColor: pressed ? colors.surfaceTertiary : hovered ? colors.surfaceSubtle : "transparent",
                     }]}
                     testID={`customer-quotation-${q.id}`}
                   >
-                    <Text style={[type.mono, { width: isDesktop ? 120 : undefined, flexShrink: 1 }]} numberOfLines={1}>{q.number}</Text>
-                    <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-                      <Text style={type.titleSm} numberOfLines={1}>{q.items.length} items</Text>
-                      <Text style={type.caption}>{fmtDate(q.created_at)}</Text>
-                    </View>
-                    <Text style={[type.mono, { width: isDesktop ? 110 : undefined, textAlign: isDesktop ? "right" : "left", fontWeight: "700" }]} numberOfLines={1}>
-                      {money(q.grand_total)}
-                    </Text>
-                    <StatusBadge status={q.status} />
+                    {isPhone ? (
+                      <>
+                        <View style={styles.mobileQuotationHeading}>
+                          <Text style={[type.mono, { flex: 1, minWidth: 0 }]} numberOfLines={1}>{q.number}</Text>
+                          <StatusBadge status={q.status} />
+                        </View>
+                        <View style={styles.mobileQuotationMeta}>
+                          <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                            <Text style={type.titleSm} numberOfLines={1}>{q.items.length} items</Text>
+                            <Text style={type.caption}>{fmtDate(q.created_at)}</Text>
+                          </View>
+                          <Text style={[type.mono, styles.mobileQuotationTotal]} numberOfLines={1}>
+                            {money(q.grand_total)}
+                          </Text>
+                        </View>
+                      </>
+                    ) : (
+                      <>
+                        <Text style={[type.mono, { width: 120, flexShrink: 1 }]} numberOfLines={1}>{q.number}</Text>
+                        <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                          <Text style={type.titleSm} numberOfLines={1}>{q.items.length} items</Text>
+                          <Text style={type.caption}>{fmtDate(q.created_at)}</Text>
+                        </View>
+                        <Text style={[type.mono, { width: 110, textAlign: "right", fontWeight: "700" }]} numberOfLines={1}>
+                          {money(q.grand_total)}
+                        </Text>
+                        <StatusBadge status={q.status} />
+                      </>
+                    )}
                   </Pressable>
-                  <Button
-                    label={isPhone ? "Manage" : "Manage products"}
-                    icon="edit-3"
-                    variant="secondary"
-                    size="sm"
-                    onPress={() => manageQuotation(q)}
-                    testID={`manage-quotation-products-${q.id}`}
-                  />
+                  <View style={isPhone ? styles.mobileQuotationActions : undefined}>
+                    <Button
+                      label={isPhone ? "Manage" : "Manage products"}
+                      icon="edit-3"
+                      variant="secondary"
+                      size="sm"
+                      onPress={() => manageQuotation(q)}
+                      testID={`manage-quotation-products-${q.id}`}
+                    />
+                  </View>
                 </View>
               ))}
             </Card>
@@ -1171,6 +1193,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   quotationOpen: { flex: 1, minWidth: 0, minHeight: 44, flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.sm },
+  quotationOpenPhone: { width: "100%", flexBasis: "100%", flexGrow: 1, flexDirection: "column", alignItems: "stretch", justifyContent: "center" },
+  mobileQuotationHeading: { width: "100%", minWidth: 0, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm },
+  mobileQuotationMeta: { width: "100%", minWidth: 0, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.md },
+  mobileQuotationTotal: { maxWidth: "48%", textAlign: "right", fontWeight: "700" },
+  mobileQuotationActions: { width: "100%", alignItems: "flex-end" },
   deliveryIcon: {
     width: 34, height: 34, borderRadius: 17, backgroundColor: "#F3DFA3",
     alignItems: "center", justifyContent: "center",
