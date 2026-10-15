@@ -614,7 +614,7 @@ export default function PaymentsScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
       <View style={{ minHeight: 48, flexShrink: 0, paddingHorizontal: isPhone ? spacing.lg : spacing.xl, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm }}>
         <Text accessibilityRole={pageDetailsOpen ? undefined : "header"} aria-level={pageDetailsOpen ? undefined : 1}
-          style={pageDetailsOpen ? type.caption : type.titleLg}>{pageDetailsOpen ? "Payment overview" : "Payments"}</Text>
+          style={[pageDetailsOpen ? type.caption : type.titleLg, { flex: 1, minWidth: 0 }]}>{pageDetailsOpen ? "Payment overview" : "Payments"}</Text>
         <Pressable
           testID="payments-page-details-toggle"
           accessibilityRole="button"

@@ -123,7 +123,7 @@ export function BuilderShell({ onBack }: { onBack: () => void }) {
                 above the grid. */}
             <ProductExplorer showCompactFilters={false} />
           </View>
-          <View style={{ width: quotationCollapsed ? 44 : quotationW, minHeight: 0, overflow: "hidden", borderLeftWidth: StyleSheet.hairlineWidth, borderColor: colors.border }}>
+          <View style={{ width: quotationCollapsed ? 45 : quotationW, minHeight: 0, overflow: "hidden", borderLeftWidth: StyleSheet.hairlineWidth, borderColor: colors.border }}>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={quotationCollapsed ? "Show quotation panel" : "Hide quotation panel"}
