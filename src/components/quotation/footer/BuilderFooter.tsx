@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors, font, money, radius, spacing, type } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";
+import { useInputActive } from "@/src/hooks/use-input-active";
 
 import { useBuilder } from "../context/BuilderContext";
 
@@ -50,8 +51,11 @@ export function BuilderFooter({ compact = false }: { compact?: boolean }) {
   const b = useBuilder();
   const insets = useSafeAreaInsets();
   const [expanded, setExpanded] = useState(false);
+  const inputActive = useInputActive();
 
   const canFinish = !!b.s.customerId && b.s.lines.length > 0;
+
+  if (compact && inputActive) return null;
 
   if (compact) {
     return (

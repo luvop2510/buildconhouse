@@ -22,7 +22,7 @@ import { ActivityTimeline, TimelineEvent } from "@/src/components/ActivityTimeli
 import {
   Avatar, Badge, Button, Card, Chip, ConfirmDialog, Dropdown, EmptyState, FilterBar,
   FormField, HeroCard, HoverCard, IconButton, Panel, PageHeader, SearchField,
-  SegmentedControl, Sheet, Skeleton, SkeletonList, StatTile,
+  SegmentedControl, Sheet, Skeleton, SkeletonList, StatTile, MobileFilterSection,
 } from "@/src/components/ds";
 import { toast } from "@/src/components/Toast";
 import { useAuth } from "@/src/state/auth";
@@ -154,7 +154,7 @@ type FollowupPage = {
   has_more: boolean;
 };
 
-type KpiFilter = Bucket | "waiting" | "all";
+type KpiFilter = Bucket | "waiting" | "expiring" | "all";
 type FollowupView = "active" | "won" | "lost";
 const FOLLOWUP_PAGE_SIZE = 100;
 
@@ -234,7 +234,8 @@ function dueLabel(f: Followup): string {
 }
 function isSameDay(aIso: string, b: Date): boolean {
   const a = new Date(aIso);
-  return a.toDateString() === b.toDateString();
+  const day = (date: Date) => new Date(date.getTime() + 330 * 60_000).toISOString().slice(0, 10);
+  return Number.isFinite(a.getTime()) && day(a) === day(b);
 }
 function greeting(): string {
   const h = new Date().getHours();
@@ -343,7 +344,6 @@ function FollowupsWorkspace() {
   const [deleteTarget, setDeleteTarget] = useState<Followup | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkResult, setBulkResult] = useState<BulkResult | null>(null);
   const bulkBusy = useRef(false);
@@ -393,7 +393,10 @@ function FollowupsWorkspace() {
       if (workspace === "visit_showroom") params.set("origin", "visit_showroom");
       if (workspace === "selection") params.set("rule_type", "selection_waiting");
       else if (workspace === "quotation_tiles") params.set("rule_type", "quotation_tiles_waiting");
-      if (kpiFilter !== "all") params.set("bucket", filterValues(kpiFilter).map(choice => choice === "completed" ? "completed_today" : choice).join(","));
+      if (kpiFilter === "expiring") {
+        params.set("rule_type", "quotation_expiring");
+        params.set("bucket", "expiring");
+      } else if (kpiFilter !== "all") params.set("bucket", filterValues(kpiFilter).map(choice => choice === "completed" ? "completed_today" : choice).join(","));
 
       let result: FollowupPage;
       try {
@@ -413,7 +416,8 @@ function FollowupsWorkspace() {
           if (categoryFilter !== "all") legacyParams.set("category", categoryFilter);
           if (tierFilter !== "all") legacyParams.set("customer_tier", tierFilter);
           if (ownerFilter !== "all") legacyParams.set("assigned_to", filterValues(ownerFilter).map(owner => owner === "mine" ? staff?.id || "" : owner).filter(Boolean).join(","));
-          if (kpiFilter !== "all") legacyParams.set("bucket", filterValues(kpiFilter).map(choice => choice === "completed" ? "completed_today" : choice).join(","));
+          if (kpiFilter === "expiring") legacyParams.set("bucket", "expiring");
+          else if (kpiFilter !== "all") legacyParams.set("bucket", filterValues(kpiFilter).map(choice => choice === "completed" ? "completed_today" : choice).join(","));
           const items = await api.get<Followup[]>(`/followups?${legacyParams.toString()}`, { floorId: selectedFloorId });
           result = { items, page: 1, page_size: FOLLOWUP_PAGE_SIZE, has_more: false };
         } else {
@@ -729,7 +733,8 @@ function FollowupsWorkspace() {
     if (kpiFilter !== "all") {
       const selectedBuckets = filterValues(kpiFilter);
       list = list.filter(f => selectedBuckets.some(choice =>
-        choice === "waiting" ? f.status === "open" && f.rule_type === "payment_partial"
+        choice === "expiring" ? f.status === "open" && f.rule_type === "quotation_expiring"
+        : choice === "waiting" ? f.status === "open" && f.rule_type === "payment_partial"
         : choice === "completed" ? f.bucket === "completed" && !!f.completed_at && isSameDay(f.completed_at, new Date())
         : f.bucket === choice));
     }
@@ -796,7 +801,19 @@ function FollowupsWorkspace() {
     return m;
   }, [rawItems]);
 
-  const toggleKpi = (v: KpiFilter) => setKpiFilter(cur => toggleFilterValue(cur, v));
+  const toggleKpi = (v: KpiFilter) => setKpiFilter(cur => cur === "expiring" ? v : toggleFilterValue(cur, v));
+  const openSummary = (value: KpiFilter) => {
+    setQ("");
+    setSearchQuery("");
+    setKpiFilter(value);
+    setFollowupView("active");
+    setWorkspace("all");
+    setPriorityFilter("all");
+    setCategoryFilter("all");
+    setOwnerFilter("all");
+    setCollapsed(new Set());
+    if (isPhone) setSummaryOpen(false);
+  };
   const toggleSection = (b: Bucket) => setCollapsed((prev) => {
     const n = new Set(prev);
     if (n.has(b)) n.delete(b); else n.add(b);
@@ -1015,21 +1032,18 @@ function FollowupsWorkspace() {
         compact={isPhone}
       />
 
-      <ScrollView horizontal={isPhone} showsHorizontalScrollIndicator={isPhone} contentContainerStyle={{ gap: spacing.md, paddingRight: isPhone ? spacing.md : 0 }} style={isPhone ? { marginHorizontal: -pagePad, paddingHorizontal: pagePad } : undefined}>
+      <ScrollView keyboardShouldPersistTaps="handled" horizontal={isPhone} showsHorizontalScrollIndicator={isPhone} contentContainerStyle={{ gap: spacing.md, paddingRight: isPhone ? spacing.md : 0 }} style={isPhone ? { marginHorizontal: -pagePad, paddingHorizontal: pagePad } : undefined}>
         <View style={{ flexDirection: "row", gap: spacing.md, flexWrap: isPhone ? "nowrap" : "wrap" }}>
           <StatTile label="Today's Tasks" value={stats ? stats.today_tasks : "—"} icon="sun" tone="brand"
             sub={stats?.today_critical ? `${stats.today_critical} critical` : "On track"}
-            onPress={() => toggleKpi("today")} style={filterValues(kpiFilter).includes("today") ? activeTileStyle : undefined} />
+            onPress={() => openSummary("today")} style={filterValues(kpiFilter).includes("today") ? activeTileStyle : undefined} />
           <StatTile label="Overdue Tasks" value={stats ? stats.overdue : "—"} icon="alert-circle" tone="danger"
             sub={stats?.overdue_critical ? `${stats.overdue_critical} critical` : "None overdue"}
-            onPress={() => toggleKpi("overdue")} style={filterValues(kpiFilter).includes("overdue") ? activeTileStyle : undefined} />
+            onPress={() => openSummary("overdue")} style={filterValues(kpiFilter).includes("overdue") ? activeTileStyle : undefined} />
           <StatTile label="Expiring Soon" value={stats ? stats.expiring_quotations_count : "—"} icon="clock" tone="warning"
-            sub="Quotations lapsing" onPress={() => setCategoryFilter("quotation")} />
+            onPress={() => openSummary("expiring")} />
           <StatTile label="Waiting For Customer" value={stats ? stats.waiting_for_customer : "—"} icon="watch" tone="warning"
-            sub="Ball's in their court" onPress={() => toggleKpi("waiting")} style={filterValues(kpiFilter).includes("waiting") ? activeTileStyle : undefined} />
-          <StatTile label="Completed Today" value={stats ? stats.completed_today : "—"} icon="check-circle" tone="success"
-            sub={stats ? `${stats.completed_trend >= 0 ? "+" : ""}${stats.completed_trend} vs yesterday` : undefined}
-            onPress={() => toggleKpi("completed")} style={filterValues(kpiFilter).includes("completed") ? activeTileStyle : undefined} />
+            onPress={() => openSummary("waiting")} style={filterValues(kpiFilter).includes("waiting") ? activeTileStyle : undefined} />
         </View>
       </ScrollView>
 
@@ -1045,16 +1059,12 @@ function FollowupsWorkspace() {
             {!isPhone ? <IconButton icon="help-circle" onPress={() => setShortcutHelp(true)} tone="surface" accessibilityLabel="Keyboard shortcuts" size={40} /> : null}
           </View>
           {q.trim() ? <Text style={type.caption}>{filtered.length} customer{filtered.length === 1 ? "" : "s"} found</Text> : null}
+          <MobileFilterSection testID="followups-filters">
           <FilterBar multiSelect label="PRIORITY" value={priorityFilter} onChange={setPriorityFilter as any} options={[
             { value: "all", label: "All priorities" }, { value: "critical", label: "Critical", count: priorityCounts.critical || undefined },
             { value: "high", label: "High", count: priorityCounts.high || undefined }, { value: "medium", label: "Medium", count: priorityCounts.medium || undefined },
             { value: "low", label: "Low", count: priorityCounts.low || undefined },
           ]} />
-          <Pressable accessibilityRole="button" accessibilityLabel="More filters" accessibilityState={{ expanded: filtersExpanded }} onPress={() => setFiltersExpanded((v) => !v)} style={{ flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", minHeight: 44, paddingVertical: 8 }}>
-            <Feather name={filtersExpanded ? "chevron-up" : "sliders"} size={14} color={colors.onSurfaceSecondary} />
-            <Text style={{ fontSize: 12, fontWeight: "700", color: colors.onSurfaceSecondary }}>{filtersExpanded ? "Hide filters" : "More filters"}{activeFilterCount ? ` (${activeFilterCount})` : ""}</Text>
-          </Pressable>
-          {filtersExpanded ? <>
             <FilterBar multiSelect label="TYPE" value={categoryFilter} onChange={setCategoryFilter} options={CATEGORY_OPTIONS} />
             <View style={{ flexDirection: "row", gap: spacing.md, alignItems: "center", flexWrap: "wrap" }}>
 
@@ -1063,7 +1073,7 @@ function FollowupsWorkspace() {
                 ...assignees.map(a => ({ label: a.full_name, value: a.id })),
               ]} />
             </View>
-          </> : null}
+          </MobileFilterSection>
           {kpiFilter !== "all" || activeFilterCount > 0 ? <Chip label="Clear filters ✕" active onPress={() => { setKpiFilter("all"); setFollowupView("active"); setPriorityFilter("all"); setCategoryFilter("all"); setOwnerFilter("all"); }} /> : null}
         </View>
       </Panel>
@@ -1089,9 +1099,10 @@ function FollowupsWorkspace() {
       keyExtractor={(item) => item.id}
       scrollEnabled={ownsScroll}
       stickySectionHeadersEnabled={false}
+      keyboardShouldPersistTaps="handled"
       style={ownsScroll ? { flex: 1 } : undefined}
       refreshControl={ownsScroll ? <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand} /> : undefined}
-      contentContainerStyle={phone ? { paddingBottom: 132 } : ownsScroll ? { paddingBottom: spacing.xxxl } : { gap: spacing.sm, paddingBottom: spacing.sm }}
+      contentContainerStyle={phone ? { paddingBottom: spacing.xl } : ownsScroll ? { paddingBottom: spacing.xxxl } : { gap: spacing.sm, paddingBottom: spacing.sm }}
       ListHeaderComponent={ownsScroll ? <View style={{ padding: pagePad, gap: spacing.md }}>{workspaceAndFilters}</View> : undefined}
       ListEmptyComponent={loading ? (
         <View style={{ paddingHorizontal: horizontalPadding, gap: spacing.md }}><Skeleton w="30%" h={16} radius={radius.sm} /><SkeletonList rows={4} /></View>

@@ -1,3 +1,4 @@
+import { MobileFilterSection } from "@/src/components/MobileFilterSection";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, View } from "react-native";
 import { Text } from "@/src/components/AppText";
@@ -33,11 +34,13 @@ export default function TeamAssign() {
   useEffect(() => { load(); return () => { generation.current += 1; }; }, [load]);
   return <AdminPage title="Team assign" overline="TEAM" subtitle="Assigned leads, contacts, calls, completed work and customer responses for every worker.">
     {!allowed ? <EmptyState icon="lock" title="Owner access only" subtitle="The owner can review team assignments and lead activity here." /> : <>
+      <MobileFilterSection testID="team-assign-filters">
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
         <Chip label="All floors" active={!floorIds.length} onPress={() => setFloorIds([])} />
         {floors.map(f => <Chip key={f.id} label={f.name} active={floorIds.includes(f.id)} onPress={() => setFloorIds(current => current.includes(f.id) ? current.filter(id => id !== f.id) : [...current, f.id])} />)}
         <Button label="Refresh" icon="refresh-cw" variant="secondary" onPress={() => load()} />
       </View>
+      </MobileFilterSection>
       {error ? <ErrorState title="Couldn't load team activity" onRetry={() => load()} /> : !report ? <LoadingState label="Loading team activity…" /> : !report.workers.length ? <EmptyState icon="users" title="No assigned leads" subtitle="Assign people from the Interested floors and Assign team options on each follow-up." /> : <View style={{ gap: spacing.md }}>
         {report.activity_truncated ? <Text style={type.caption}>Showing the most recent activity for this page. Worker totals include all matching leads and contacts.</Text> : null}
         {report.workers.map(worker => <Card key={worker.user_id} testID={`team-worker-${worker.user_id}`}>

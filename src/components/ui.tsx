@@ -1014,6 +1014,8 @@ export function StatTile({
   return (
     <Container
       onPress={onPress}
+      accessibilityRole={onPress ? "button" : undefined}
+      accessibilityLabel={onPress ? `${label}: ${value}` : undefined}
       style={[{
         flex: 1,
         minWidth: 150,

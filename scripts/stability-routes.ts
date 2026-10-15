@@ -26,6 +26,24 @@ export function stabilityRouteTitle(path: string): string {
 export const stabilityProjects = ['android-chrome', 'iphone-safari', 'ipad-safari', 'desktop-chrome'];
 
 export const requiredStabilityScenarios: Record<string, string[]> = {
+  'redesign-mobile-workspace.spec.ts': [
+    'critical mobile shell header stays fixed while only customer content scrolls',
+    'critical navigation stays hidden throughout mobile search and returns on blur',
+  ],
+  'redesign-mobile-filters.spec.ts': [
+    'critical mobile sales filters retain selected business units and unfinished date ranges while hidden',
+    'critical phone tile content scrolls normally and its action footer hides throughout quantity editing',
+  ],
+  'redesign-mobile-payments.spec.ts': [
+    'critical payment summary opens matching earned, partial, refund and outstanding customers',
+    'critical mobile payment history and collection filters hide without clearing selections',
+    'critical fully paid filters hide and retain their business unit',
+  ],
+  'redesign-mobile-summary.spec.ts': [
+    'critical Walk-in summary opens every matching metric and hidden filters retain selections',
+    'critical Follow-up expiring summary clears unrelated filters and opens its exact records',
+  ],
+
   'responsive-shared-floor-navigation.spec.ts': [
     ...['ground-floor', 'second-floor', 'third-floor'].map(floor => `critical ${floor} customer profile avoids sanitary purchasing requests`),
     'critical Ground dashboard avoids sanitary purchasing requests',

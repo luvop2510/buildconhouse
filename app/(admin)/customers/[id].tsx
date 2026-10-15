@@ -17,7 +17,7 @@ import {
   Avatar, Badge, Button, Card, Chip, EmptyState, FormField, PageHeader,
  Sheet, StatTile, StatusBadge, TextField,
 } from "@/src/components/ui";
-import { ConfirmDialog } from "@/src/components/ds";
+import { ConfirmDialog, MobileFilterSection } from "@/src/components/ds";
 import { api } from "@/src/api/client";
 import { returnPurchaseLoan } from "@/src/api/purchases";
 import { getCustomerStockTransfers, returnCustomerStockTransfer, type CustomerStockTransfer } from "@/src/api/godownStock";
@@ -163,6 +163,8 @@ export default function CustomerDetail() {
   const [availableBrands, setAvailableBrands] = useState<Workspace["brands"]>([]);
   const [availableStages, setAvailableStages] = useState<Workspace["stages"]>([]);
   const [tab, setTab] = useState<Tab>("overview");
+  const [revenueOnly, setRevenueOnly] = useState(false);
+  const [openOrdersVisible, setOpenOrdersVisible] = useState(false);
   const [productFilter, setProductFilter] = useState<string>("all");
   const [productSearch, setProductSearch] = useState(routeSearch);
   const [brandFilter, setBrandFilter] = useState<string | null>(routeBrand || null);
@@ -450,6 +452,8 @@ export default function CustomerDetail() {
     [quotations],
   );
 
+  const visibleQuotations = quotations.filter(q => !revenueOnly || q.status === "won" || q.status === "ordered");
+
   const tilesHistory = useMemo(
     () => quotations.filter((q) => q.doc_type === "tiles_selection" || q.doc_type === "tiles_quotation"),
     [quotations],
@@ -556,15 +560,15 @@ export default function CustomerDetail() {
         <Disclosure title="Customer summary">
         {/* Stats */}
         <View style={[styles.statsRow, !isDesktop && styles.statsRowMobile]}>
-          <StatTile label="Lifetime Revenue" value={relatedLoading ? "Loading…" : relatedErrors ? "Unavailable" : moneyShort(totalRevenue)} icon="trending-up" tone="success" sub="Won + ordered" />
-          <StatTile label="Quotations" value={relatedLoading || relatedErrors ? "—" : String(quotations.length)} icon="file-text" tone="brand" sub="All statuses" />
-          {isSanitaryFloor ? <StatTile label="Purchase Orders" value={relatedLoading || relatedErrors ? "—" : String(purchases.length)} icon="shopping-cart" tone="brand" sub="Across brands" /> : null}
-          <StatTile label="Activity" value={relatedLoading || relatedErrors ? "—" : String(timeline.length)} icon="activity" tone="neutral" sub="Events logged" />
+          <StatTile onPress={() => { setRevenueOnly(true); setTab("quotations"); }} label="Lifetime Revenue" value={relatedLoading ? "Loading…" : relatedErrors ? "Unavailable" : moneyShort(totalRevenue)} icon="trending-up" tone="success" sub="Won + ordered" />
+          <StatTile onPress={() => { setRevenueOnly(false); setTab("quotations"); }} label="Quotations" value={relatedLoading || relatedErrors ? "—" : String(quotations.length)} icon="file-text" tone="brand" sub="All statuses" />
+          {isSanitaryFloor ? <StatTile onPress={() => setTab("purchases")} label="Purchase Orders" value={relatedLoading || relatedErrors ? "—" : String(purchases.length)} icon="shopping-cart" tone="brand" sub="Across brands" /> : null}
+          <StatTile onPress={() => setTab("timeline")} label="Activity" value={relatedLoading || relatedErrors ? "—" : String(timeline.length)} icon="activity" tone="neutral" sub="Events logged" />
         </View>
 
         </Disclosure>
         {/* Tabs */}
-        <NavigationTabs<Tab> value={tab} onChange={setTab} testID="customer-tab" options={[
+        <NavigationTabs<Tab> value={tab} onChange={value => { setRevenueOnly(false); setTab(value); }} testID="customer-tab" options={[
           { value: "overview", label: "Overview" }, { value: "quotations", label: "Quotations" },
           { value: "po_final", label: "PO Final" }, ...((isSanitaryFloor || isTilesFloor) ? [{ value: "purchases" as const, label: isTilesFloor ? "Tile Orders" : "Purchases" }] : []), { value: "timeline", label: "Timeline" },
         ]} />
@@ -574,6 +578,7 @@ export default function CustomerDetail() {
           {tab === "timeline" ? <Button label="Export activity .xlsx" icon="download" variant="secondary" size="sm" disabled={!timeline.length} onPress={() => void exportDetail("timeline")} testID="customer-export-activity" /> : null}
         </View> : null}
 
+        {tab === "quotations" && revenueOnly ? <Chip label="Won + ordered · Show all quotations" active onPress={() => setRevenueOnly(false)} /> : null}
         {/* Body */}
         {tab === "overview" ? (
           <>
@@ -617,13 +622,13 @@ export default function CustomerDetail() {
             ) : null}
           </>
         ) : tab === "quotations" ? (
-          quotations.length === 0 ? (
+          visibleQuotations.length === 0 ? (
             <Card>
               <EmptyState icon="file-text" title={relatedLoading ? "Loading quotations…" : relatedErrors ? "Quotation records unavailable" : "No quotations yet"} subtitle={relatedLoading ? "Fetching this customer's quotations." : relatedErrors ? "Retry related records to see this customer’s quotations." : "This customer hasn't received a quotation."} />
             </Card>
           ) : (
             <Card padding={0}>
-              {quotations.map((q, i) => (
+              {visibleQuotations.map((q, i) => (
                 <View
                   key={q.id}
                   style={[
@@ -691,6 +696,7 @@ export default function CustomerDetail() {
                   autoCorrect={false}
                   testID="customer-workspace-search"
                 />
+                <MobileFilterSection testID="customer-purchase-filters">
                 <View style={{ gap: spacing.sm }}>
                   <Text style={type.caption}>Brands</Text>
                   <View style={styles.serverFilterWrap}>
@@ -759,6 +765,7 @@ export default function CustomerDetail() {
                     />
                   </View>
                 ) : null}
+                </MobileFilterSection>
               </View>
             </Card>
 
@@ -866,10 +873,10 @@ export default function CustomerDetail() {
 
               {/* Purchase summary */}
               <View style={[styles.statsRow, !isDesktop && styles.statsRowMobile]}>
-                <StatTile label="Order Value" value={moneyShort(workspace.summary.order_value ?? workspace.summary.total_value)} icon="shopping-bag" tone="brand" sub={`${workspace.summary.total_items} products`} />
-                <StatTile label="Outstanding" value={moneyShort(workspace.summary.outstanding_value)} icon="clock" tone="warning" sub={`${workspace.summary.outstanding_count} pending`} />
-                <StatTile label="Open POs" value={String(workspace.summary.open_pos)} icon="file-text" tone="brand" sub={`${purchases.length} total`} />
-                <StatTile label="Delayed" value={String(workspace.summary.blocked_count)} icon="alert-triangle" tone={workspace.summary.blocked_count > 0 ? "danger" : "success"} sub="Past SLA" />
+                <StatTile onPress={() => setProductFilter("all")} label="Order Value" value={moneyShort(workspace.summary.order_value ?? workspace.summary.total_value)} icon="shopping-bag" tone="brand" sub={`${workspace.summary.total_items} products`} />
+                <StatTile onPress={() => setProductFilter("outstanding")} label="Outstanding" value={moneyShort(workspace.summary.outstanding_value)} icon="clock" tone="warning" sub={`${workspace.summary.outstanding_count} pending`} />
+                <StatTile onPress={() => setOpenOrdersVisible(true)} label="Open POs" value={String(workspace.summary.open_pos)} icon="file-text" tone="brand" sub={`${purchases.length} total`} />
+                <StatTile onPress={() => setProductFilter("blocked")} label="Delayed" value={String(workspace.summary.blocked_count)} icon="alert-triangle" tone={workspace.summary.blocked_count > 0 ? "danger" : "success"} sub="Past SLA" />
               </View>
               {(workspace.summary.refund_due || 0) > 0 ? <Card style={{ backgroundColor: colors.errorBg, borderColor: colors.errorBorder }}>
                 <Text style={type.bodyStrong}>Refund due · {money(workspace.summary.refund_due || 0)}</Text>
@@ -1064,6 +1071,14 @@ export default function CustomerDetail() {
         )}
       </ScrollView>
 
+      <Sheet visible={openOrdersVisible} onClose={() => setOpenOrdersVisible(false)} title="Open purchase orders">
+        <View style={{ gap: spacing.sm }}>
+          {(workspace?.purchase_orders || []).filter(order => order.status !== "cancelled").map(order => (
+            <Button key={order.id} label={`${order.number} · ${money(order.current_order_value ?? order.grand_total)}`} variant="secondary" onPress={() => { setOpenOrdersVisible(false); router.push(`/(admin)/purchase-orders/${order.id}` as any); }} />
+          ))}
+          {!workspace?.purchase_orders.some(order => order.status !== "cancelled") ? <Text style={type.caption}>No open purchase orders.</Text> : null}
+        </View>
+      </Sheet>
       <MoveStageSheet
         visible={!!moveItem}
         item={moveItem ? toMovable(moveItem) : null}

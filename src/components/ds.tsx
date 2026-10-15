@@ -32,6 +32,7 @@ import {
 import { useBp } from "@/src/design/responsive";
 import { useReducedMotion } from "@/src/hooks/use-reduced-motion";
 import { filterValues, toggleFilterValue } from "@/src/utils/filters";
+export { MobileFilterSection } from "@/src/components/MobileFilterSection";
 
 // Re-export every existing primitive from ui.tsx.
 // Screens should import from "@/src/components/ds" going forward.

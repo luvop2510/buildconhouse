@@ -2,6 +2,19 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
+## Mobile workspace controls — 2026-10-15
+
+Version 1.0.2 keeps the compact app/page chrome outside the phone content scroll;
+phone table headers/columns are not sticky. Editing/search focus hides navigation
+and workflow footers; restore chrome after the blur-triggering tap, including
+focus moving to a button, to avoid moving its click target. Scroll containers
+with filter actions use keyboardShouldPersistTaps="handled". Shared
+MobileFilterSection retains mounted controls/drafts while hidden. Spending and
+Completed Today summary controls were explicitly removed at the user's request;
+do not reintroduce them. Exact expiring follow-up drilldown includes open,
+undated quotation-expiring rules under existing floor/grant checks. See
+`docs/audits/2026-10-15-mobile-workspace-1.0.2.md` and release evidence.
+
 ## Mobile Payments and floor workspaces — 2026-10-15
 
 Payments defaults to a compact, collapsible overview on phones; toggling or

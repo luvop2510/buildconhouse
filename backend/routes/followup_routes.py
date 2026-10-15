@@ -481,7 +481,10 @@ def _paged_followup_query(
             assigned_to=assigned_to, q=q, rule_type=rule_type, view=view, waiting=waiting,
             completed_today=completed_today, origin=origin,
         ) for choice in buckets]}
-    if bucket == "waiting":
+    expiring = bucket == "expiring"
+    if expiring:
+        rule_type, bucket = "quotation_expiring", None
+    elif bucket == "waiting":
         waiting, bucket = True, None
     elif bucket == "completed_today":
         completed_today, bucket = True, None
@@ -536,6 +539,8 @@ def _paged_followup_query(
             }
             if bucket in ranges:
                 clauses.extend([unresolved, {"due_at": ranges[bucket]}])
+    if expiring:
+        clauses.append({"status": "open"})
     if waiting:
         clauses.append({"status": "open", "rule_type": "payment_partial"})
     if completed_today:
@@ -652,7 +657,8 @@ async def list_followups(
         today, tomorrow = ist_day_bounds_utc()
         def matches_bucket(row):
             return any(
-                (row.get("status") == "open" and row.get("rule_type") == "payment_partial") if choice == "waiting"
+                (row.get("status") == "open" and row.get("rule_type") == "quotation_expiring") if choice == "expiring"
+                else (row.get("status") == "open" and row.get("rule_type") == "payment_partial") if choice == "waiting"
                 else (row.get("status") in {"done", "dismissed"} and today.isoformat() <= (row.get("completed_at") or "") < tomorrow.isoformat()) if choice == "completed_today"
                 else row["bucket"] == choice
                 for choice in selected_buckets

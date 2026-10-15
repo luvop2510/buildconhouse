@@ -12,7 +12,6 @@ import { Text } from "@/src/components/AppText";
 import { PageHeader } from "@/src/components/ui";
 import { useBp } from "@/src/design/responsive";
 import { color, font, layout, radius, space } from "@/src/design/tokens";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export function AdminPage({
   title,
@@ -37,11 +36,10 @@ export function AdminPage({
 }) {
   const Container: any = scroll ? ScrollView : View;
   const { gutter, isPhone } = useBp();
-  const insets = useSafeAreaInsets();
   const horizontalPadding = gutter;
 
   return (
-    <View style={{ flex: 1, backgroundColor: color.canvas }}>
+    <View style={{ flex: 1, minHeight: 0, backgroundColor: color.canvas }}>
       <PageHeader
         title={title}
         subtitle={subtitle || undefined}
@@ -53,11 +51,13 @@ export function AdminPage({
         {...(scroll
           ? {
               showsVerticalScrollIndicator: false,
+              keyboardShouldPersistTaps: "handled",
+              style: { flex: 1, minHeight: 0 },
               contentContainerStyle: {
                 paddingHorizontal: horizontalPadding,
                 paddingTop: isPhone ? space.x4 : space.x8,
-                // Keep the final row above the fixed phone navigation bar.
-                paddingBottom: isPhone ? space.x8 + layout.bottomBar + insets.bottom : space.x16,
+                // AppScaffold reserves navigation/safe-area space outside this scroll.
+                paddingBottom: isPhone ? space.x6 : space.x16,
                 gap: isPhone ? space.x4 : space.x5,
                 ...contentStyle,
               },

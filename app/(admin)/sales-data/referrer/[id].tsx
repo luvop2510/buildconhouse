@@ -1,3 +1,4 @@
+import { MobileFilterSection } from "@/src/components/MobileFilterSection";
 import { useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
@@ -60,6 +61,7 @@ export default function ReferrerDetail() {
       title={data?.referrer.name || "Referrer"}
       subtitle={data ? `₹${fmtMoney(data.total_revenue)} total revenue · ${DATE_PRESET_LABEL[preset]}` : undefined}
     >
+      <MobileFilterSection testID="referrer-filters">
       <PillTabs
         testID="referrer-detail-granularity"
         value={granularity}
@@ -69,6 +71,7 @@ export default function ReferrerDetail() {
           { value: "quarter", label: "Quarter" }, { value: "year", label: "Year" },
         ]}
       />
+      </MobileFilterSection>
       {error ? <ErrorState subtitle={error} onRetry={load} /> : null}
       {!error && !data ? <LoadingState label="Loading…" /> : null}
       {data ? (

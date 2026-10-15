@@ -11,6 +11,7 @@ import { Text, TextInput } from "@/src/components/AppText";
 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useBp } from "@/src/design/responsive";
+import { useInputActive } from "@/src/hooks/use-input-active";
 import { useState } from "react";
 import { ProductExplorer } from "../catalog/ProductExplorer";
 import { colors, money, spacing } from "@/src/theme/tokens";
@@ -35,6 +36,7 @@ export function QuotationPane({
   const b = useBuilder();
   const insets = useSafeAreaInsets();
   const { isPhone: viewportPhone } = useBp();
+  const inputActive = useInputActive();
   const [section, setSection] = useState<"products" | "quotation">("products");
   const browsing = browseInline && section === "products";
 
@@ -87,7 +89,7 @@ export function QuotationPane({
       <View style={[styles.body, browsing && { display: "none" }]}>
         <QuotationCanvas compact={compact} />
       </View>
-      {browsing ? <View style={[styles.browseFooter, { paddingBottom: Math.max(10, insets.bottom) }]}>
+      {browsing ? (viewportPhone && inputActive ? null : <View style={[styles.browseFooter, { paddingBottom: Math.max(10, insets.bottom) }]}>
         <View style={{ flex: 1, minWidth: 0 }} accessibilityLiveRegion="polite">
           <Text style={styles.focusMeta} numberOfLines={1}>{b.s.lines.length} items · {b.s.activeRoom}</Text>
           <Text style={styles.browseTotal} numberOfLines={1}>{money(b.totals.grand)}</Text>
@@ -98,7 +100,7 @@ export function QuotationPane({
           onPress={() => { setSection("quotation"); onMobileWorkspaceCollapsedChange?.(false); }}>
           <Text style={styles.reviewLabel}>Review</Text><Feather name="arrow-right" size={16} color={colors.onBrand} />
         </Pressable>
-      </View> : <BuilderFooter compact={compact} />}
+      </View>) : <BuilderFooter compact={compact} />}
     </View>
   );
 }

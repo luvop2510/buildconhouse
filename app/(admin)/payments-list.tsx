@@ -6,7 +6,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { api } from "@/src/api/client";
 import {
-  Button, Dropdown, EmptyState, ErrorState, PageHeader, SearchField, Skeleton,
+  Button, Dropdown, EmptyState, ErrorState, MobileFilterSection, PageHeader, SearchField, Skeleton,
 } from "@/src/components/ds";
 import { CellNumber, CellText, CellTitle, DataTable, type Column } from "@/src/components/tiles/TileTable";
 import { colors, spacing, type } from "@/src/theme/tokens";
@@ -115,8 +115,10 @@ export default function PaymentListScreen() {
       <ScrollView style={{ flex: 1, minHeight: 0 }} contentContainerStyle={[styles.content, isPhone && styles.contentPhone]}>
         <View style={styles.filters}>
           <View style={[styles.search, isPhone && styles.searchPhone]}><SearchField testID="payment-list-search" value={query} onChangeText={setQuery} onClear={() => setQuery("")} placeholder="Search client, invoice or reference…" /></View>
+          <MobileFilterSection testID="payment-list-filters" style={styles.filters}>
           <Dropdown label={floor === "all" ? "All business units" : floors.filter(item => filterValues(floor).includes(item.id)).map(item => item.name).join(", ") || floor} items={[{ label: "All business units", onPress: () => setFloor("all") }, ...floors.map((item) => ({ label: `${filterValues(floor).includes(item.id) ? "✓ " : ""}${item.name}`, onPress: () => setFloor(current => toggleFilterValue(current, item.id)) }))]} />
           <Dropdown label={SORT_OPTIONS.find((item) => item.value === sort)?.label || "Sort"} items={SORT_OPTIONS.map((item) => ({ label: item.label, onPress: () => setSort(item.value) }))} />
+          </MobileFilterSection>
         </View>
 
         {loadError ? <ErrorState title="Could not load fully paid orders" subtitle={loadError} onRetry={() => void load()} /> : loading ? (
@@ -143,7 +145,7 @@ export default function PaymentListScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.surface },
   content: { padding: spacing.xl, gap: spacing.lg, paddingBottom: spacing.xxxl },
-  contentPhone: { padding: spacing.lg, paddingBottom: 132 },
+  contentPhone: { padding: spacing.lg, paddingBottom: spacing.xl },
   filters: { flexDirection: "row", gap: spacing.sm, alignItems: "center", flexWrap: "wrap" },
   search: { flex: 1, minWidth: Platform.OS === "web" ? 280 : 220 },
   searchPhone: { flexBasis: "100%", minWidth: 0 },

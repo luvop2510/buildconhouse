@@ -1,3 +1,4 @@
+import { MobileFilterSection } from "@/src/components/MobileFilterSection";
 import Feather from "@expo/vector-icons/Feather";
 import { Button as SharedButton } from "@/src/design/controls";
 import { NavigationTabs } from "@/src/design/NavigationTabs";
@@ -20,6 +21,7 @@ import { Text, TextInput } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useBreakpoint } from "@/src/hooks/use-breakpoint";
+import { useInputActive } from "@/src/hooks/use-input-active";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
 
 const webCursor = Platform.OS === "web" ? ({ cursor: "pointer" } as any) : null;
@@ -216,11 +218,11 @@ export function Toolbar({ search, filters, actions }: { search?: ReactNode; filt
     <View onLayout={(event) => setAvailableWidth(event.nativeEvent.layout.width)} style={[styles.toolbar, compact ? styles.toolbarPhone : null]}>
       {search ? <View style={[styles.toolbarSearch, compact ? styles.toolbarSearchCompact : null]}>{search}</View> : null}
       <View style={[styles.toolbarTrailing, compact ? styles.toolbarTrailingPhone : null]}>
-        {filters ? (compact ? (
+        {filters ? <MobileFilterSection testID="tile-table-filters" style={compact ? { width: "100%" } : undefined}>{compact ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.toolbarFilterScroller} contentContainerStyle={[styles.toolbarFilters, styles.toolbarFiltersCompact]}>
             {filters}
           </ScrollView>
-        ) : <View style={styles.toolbarFilters}>{filters}</View>) : null}
+        ) : <View style={styles.toolbarFilters}>{filters}</View>}</MobileFilterSection> : null}
         {actions ? <View style={styles.toolbarActions}>{actions}</View> : null}
       </View>
     </View>
@@ -252,6 +254,8 @@ export function StatRow({ children, testID }: { children: ReactNode; testID?: st
 export function ActionBar({ children, testID }: { children: ReactNode; testID?: string }) {
   const gutter = usePageGutter();
   const { isPhone } = useBreakpoint();
+  const inputActive = useInputActive();
+  if (isPhone && inputActive) return null;
   return (
     <View style={[styles.actionBar, { paddingHorizontal: gutter }]} testID={testID}>
       <View style={[styles.actionBarInner, isPhone ? styles.actionBarInnerPhone : null]}>{children}</View>

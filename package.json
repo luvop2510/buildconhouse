@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "main": "expo-router/entry",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "scripts": {
     "preinstall": "./scripts/cmd-guard.js --preinstall",
     "postinstall": "node scripts/patch-react19-compat.mjs && node scripts/patch-uri-decoder-compat.mjs",
@@ -24,7 +24,7 @@
     "test:quotation-concealed-parts": "node --experimental-strip-types --no-warnings scripts/test-quotation-concealed-parts.mjs",
     "test:purchases-contract": "node scripts/test-purchases-contract.mjs && node scripts/test-purchase-floor-races.mjs",
     "test:notebook": "node --experimental-strip-types --no-warnings scripts/test-notebook.mjs",
-    "test:mobile-ux": "node scripts/test-mobile-ux-contract.mjs && node scripts/test-keyboard-viewport.mjs && node scripts/test-followup-floor-races.mjs",
+    "test:mobile-ux": "node scripts/test-mobile-ux-contract.mjs && node scripts/test-keyboard-viewport.mjs && node scripts/test-followup-floor-races.mjs && node scripts/test-input-active.mjs",
     "test:frontend-drift": "node scripts/test-frontend-drift.mjs",
     "test:frontend-drift:browser": "playwright test --config playwright.forge-drift.config.ts --project=desktop --project=phone --workers=2",
     "test:mobile-budget": "node scripts/check-web-budget.mjs",

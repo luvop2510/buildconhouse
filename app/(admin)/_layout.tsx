@@ -27,6 +27,7 @@ import { staffLandingPath } from "@/src/access-profiles";
 import { hasRouteDestination, isPersonalAccountRoute, moduleForRoute, resolveFloorRouteSegments } from "@/src/team-delegation";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { AppScaffold } from "@/src/components/mobile/AppScaffold";
+import { useInputActive } from "@/src/hooks/use-input-active";
 import { WorkspacePageBoundary } from "@/src/components/PageErrorBoundary";
 import { storage } from "@/src/utils/storage";
 import { FURNITURE_FLOOR_ID, KITCHEN_FLOOR_ID, SANITARY_FLOOR_ID, TILES_FLOOR_ID, floorDisplayLabel, floorLandingPath } from "@/src/constants/floors";
@@ -538,6 +539,7 @@ const pageScreenLayout = ({ children }: { children: React.ReactNode }) => <Works
 
 export default function AdminLayout() {
   const { isPhone } = useBp();
+  const inputActive = useInputActive();
   const builderSegments = useResolvedFloorSegments();
   const focusedQuotation = builderSegments.includes("quotations") && builderSegments.includes("new");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -574,9 +576,9 @@ export default function AdminLayout() {
           testID={isPhone ? "admin-mobile-shell" : "admin-desktop-shell"}
           phoneSafeArea={isPhone}
           style={{ backgroundColor: color.canvas, minHeight: 0 }}
-          bottomNavigation={isPhone && !focusedQuotation ? <PhoneBar /> : null}
+          bottomNavigation={isPhone && !focusedQuotation && !inputActive ? <PhoneBar /> : null}
         >
-          <ConnectionStatus /><FloorAccessGate><CustomAccessRouteGate>{isPhone && !focusedQuotation ? <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 }}><FloorSwitcher /></View> : null}<Slot {...({ screenLayout: pageScreenLayout } as React.ComponentProps<typeof Slot>)} /></CustomAccessRouteGate></FloorAccessGate>
+          <ConnectionStatus /><FloorAccessGate><CustomAccessRouteGate>{isPhone && !focusedQuotation && !inputActive ? <View testID="mobile-workspace-header" style={{ flexShrink: 0, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 }}><FloorSwitcher /></View> : null}<Slot {...({ screenLayout: pageScreenLayout } as React.ComponentProps<typeof Slot>)} /></CustomAccessRouteGate></FloorAccessGate>
         </AppScaffold>
       </View>
     </PaletteProvider>

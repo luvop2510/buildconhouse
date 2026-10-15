@@ -1,4 +1,4 @@
-import { FilterBar } from "@/src/components/ds";
+import { FilterBar, MobileFilterSection } from "@/src/components/ds";
 import { filterValues } from "@/src/utils/filters";
 // Quotation Tiles — single tab listing every Ground Floor tiles Selection
 // and Quotation, any stage, with two entry points to start a new one. See
@@ -109,6 +109,7 @@ export default function QuotationTilesList() {
         </View>
       } />
 
+      <MobileFilterSection testID="tiles-filters">
       <View style={styles.filterBar}>
         <FilterBar multiSelect
           value={documentType}
@@ -121,6 +122,7 @@ export default function QuotationTilesList() {
           ]}
         />
       </View>
+      </MobileFilterSection>
 
       <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}><SearchField value={search} onChangeText={setSearch} onClear={() => setSearch("")} placeholder="Search customer or document number" /></View>
       {loadError ? (
