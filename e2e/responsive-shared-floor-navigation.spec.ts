@@ -75,6 +75,8 @@ for (const [sourceFloor, sourceName] of [['first-floor', 'The Sanitary Bathroom'
     await page.goto('/followups');
     await expect(page.getByText(`${sourceFloor} exclusive customer`, { exact: true })).toBeVisible();
     await page.getByTestId('followups-search').fill('exclusive');
+    if (page.viewportSize()!.width < 768) await expect(page.getByTestId('floor-switcher')).toBeHidden();
+    await page.getByTestId('followups-search').blur();
     await page.getByTestId('floor-switcher').click();
     await page.getByRole('menuitem', { name: 'Furniture Floor', exact: true }).click();
     await expect(page.getByText('third-floor exclusive customer', { exact: true })).toBeVisible();
