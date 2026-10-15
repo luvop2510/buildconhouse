@@ -33,8 +33,18 @@ type Item = {
 
 export function PaletteProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState({ open: false, id: 0 });
-  const openPalette = useCallback(() => setSession((current) => current.open
-    ? current : { open: true, id: current.id + 1 }), []);
+  const returnFocusRef = useRef<View>(null);
+  const rememberTrigger = useCallback(() => {
+    if (Platform.OS !== "web") return;
+    const active = document.activeElement as HTMLElement | null;
+    if (active?.isConnected && active !== document.body && !active.closest('[role="dialog"][aria-label="Search workspace"]')) {
+      returnFocusRef.current = active as unknown as View;
+    }
+  }, []);
+  const openPalette = useCallback(() => {
+    rememberTrigger();
+    setSession((current) => current.open ? current : { open: true, id: current.id + 1 });
+  }, [rememberTrigger]);
   const value = useMemo(() => ({ open: openPalette }), [openPalette]);
 
   // Capture shortcuts before web TextInput stops bubbling keydown events.
@@ -43,6 +53,7 @@ export function PaletteProvider({ children }: { children: React.ReactNode }) {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
+        if (!session.open) rememberTrigger();
         setSession((current) => ({
           open: !current.open, id: current.open ? current.id : current.id + 1,
         }));
@@ -50,23 +61,23 @@ export function PaletteProvider({ children }: { children: React.ReactNode }) {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, []);
+  }, [rememberTrigger, session.open]);
 
   return (
     <PaletteContext.Provider value={value}>
       {children}
-      <PaletteHost key={session.id} open={session.open} onClose={() => setSession((current) =>
+      <PaletteHost key={session.id} open={session.open} returnFocusRef={returnFocusRef} onClose={() => setSession((current) =>
         current.id === session.id ? { ...current, open: false } : current)} />
     </PaletteContext.Provider>
   );
 }
 
-function PaletteHost(props: { open: boolean; onClose: () => void }) {
+function PaletteHost(props: { open: boolean; onClose: () => void; returnFocusRef: React.RefObject<View | null> }) {
   const { selectedFloorId } = useFloorAccess();
   return <PaletteSession key={selectedFloorId} {...props} selectedFloorId={selectedFloorId} />;
 }
 
-function PaletteSession({ open, onClose, selectedFloorId }: { open: boolean; onClose: () => void; selectedFloorId: string }) {
+function PaletteSession({ open, onClose, selectedFloorId, returnFocusRef }: { open: boolean; onClose: () => void; selectedFloorId: string; returnFocusRef: React.RefObject<View | null> }) {
   const router = useRouter();
   const { staff } = useAuth();
   const hasAccess = useModuleAccess();
@@ -93,7 +104,7 @@ function PaletteSession({ open, onClose, selectedFloorId }: { open: boolean; onC
   // The web Modal remains mounted for its exit animation. Keep isolation and
   // focus ownership until that portal actually closes; restoring on `open`
   // let its still-active native focus trap move focus onto the next backdrop.
-  const panelRef = useOverlayFocus(visible, onClose, open);
+  const panelRef = useOverlayFocus(visible, onClose, open, returnFocusRef);
   const productQuery = q.trim();
 
   // Each opening and floor gets a fresh session; only exit visibility outlives open.
@@ -115,6 +126,34 @@ function PaletteSession({ open, onClose, selectedFloorId }: { open: boolean; onC
       if (focusTimer !== undefined) clearTimeout(focusTimer);
     };
   }, [open, anim, reducedMotion]);
+
+  // React Native Web keeps a dismissed Modal in the tree for its exit
+  // animation. Restore the original keyboard trigger after that portal has
+  // actually been removed, so rapid close/reopen cycles cannot leave focus on
+  // the document body.
+  useEffect(() => {
+    if (visible || open || Platform.OS !== "web") return;
+    const target = returnFocusRef.current as unknown as HTMLElement | null;
+    let secondFrame = 0;
+    let restoreFrames = 0;
+    const restore = () => {
+      if (open) return;
+      const current = target?.isConnected ? target : document.querySelector<HTMLElement>('[data-testid="floor-switcher"]');
+      if (current) current.focus();
+      else if (restoreFrames++ < 60) requestAnimationFrame(restore);
+    };
+    const firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => {
+        restore();
+      });
+    });
+    const settledTimer = setTimeout(restore, 120);
+    return () => {
+      cancelAnimationFrame(firstFrame);
+      if (secondFrame) cancelAnimationFrame(secondFrame);
+      clearTimeout(settledTimer);
+    };
+  }, [visible, open, returnFocusRef]);
 
   // Scope prefetches to this open session; cancelled responses cannot repopulate it.
   useEffect(() => {

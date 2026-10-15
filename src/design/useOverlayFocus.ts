@@ -103,7 +103,7 @@ export function useOverlayFocus(open: boolean, onClose: () => void, dismissable 
         // RNW's portal survives its first dismissal frame. Focusing its
         // trigger while that portal still traps focus immediately sends
         // focus back into the closing form. Wait for its actual removal.
-        if (panel?.isConnected && closingFrames++ < 10) {
+        if (panel?.isConnected && closingFrames++ < 60) {
           requestAnimationFrame(restoreFocus);
           return;
         }
