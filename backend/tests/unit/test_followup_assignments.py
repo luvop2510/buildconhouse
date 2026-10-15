@@ -69,6 +69,14 @@ class _FakeFollowups:
         return self._filtered
 
 
+class _FakeUsers:
+    def find(self, *_args, **_kwargs):
+        return self
+
+    async def to_list(self, _n):
+        return []
+
+
 def test_shapes_and_sorts_rows_oldest_open_first(monkeypatch):
     docs = [
         {"id": "f-done", "assigned_to": "u1", "assigned_to_name": "A", "customer_name": "C1",
@@ -84,6 +92,7 @@ def test_shapes_and_sorts_rows_oldest_open_first(monkeypatch):
 
     class _Db:
         followups = _FakeFollowups(docs)
+        users = _FakeUsers()
 
     monkeypatch.setattr(followups, "db", _Db())
 
@@ -102,6 +111,7 @@ def test_excludes_completed_by_default(monkeypatch):
 
     class _Db:
         followups = _FakeFollowups(docs)
+        users = _FakeUsers()
 
     monkeypatch.setattr(followups, "db", _Db())
 

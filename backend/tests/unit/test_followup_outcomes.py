@@ -36,9 +36,14 @@ class _Followups:
         self.inserted.append(row)
 
 
+class _Users:
+    async def find_one(self, *_args, **_kwargs):
+        return None
+
+
 def _install(monkeypatch):
     store = _Followups()
-    monkeypatch.setattr(followups, "db", type("Db", (), {"followups": store})())
+    monkeypatch.setattr(followups, "db", type("Db", (), {"followups": store, "users": _Users()})())
     return store
 
 
