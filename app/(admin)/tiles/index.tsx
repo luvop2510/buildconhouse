@@ -19,6 +19,7 @@ import { tilesStageLabel } from "@/src/components/tiles/tilesStage";
 
 type TilesDoc = {
   id: string; number: string; doc_type: "tiles_selection" | "tiles_quotation";
+  doc_number?: string | null; doc_date?: string | null;
   purchase_completion_status?: "active" | "completed";
   status: string; customer_name: string; grand_total: number; updated_at: string;
 };
@@ -53,7 +54,7 @@ export default function QuotationTilesList() {
       ]);
       if (requestId !== requestIdRef.current) return;
       const newestFirst = (docs: TilesDoc[]) => [...docs].sort(
-        (a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""),
+        (a, b) => (b.doc_date || b.updated_at || "").localeCompare(a.doc_date || a.updated_at || ""),
       );
       setDocuments({ tiles_selection: newestFirst(selections), tiles_quotation: newestFirst(quotations) });
     } catch (error: any) {
@@ -73,7 +74,8 @@ export default function QuotationTilesList() {
     const route = doc.doc_type === "tiles_selection" ? "selection" : "quotation";
     router.push(`/(admin)/tiles/${route}?id=${doc.id}` as any);
   };
-  const docs = (documents ? [...documents.tiles_selection, ...documents.tiles_quotation].filter(doc => !filterValues(documentType).length || filterValues(documentType).includes(doc.doc_type)) : null)?.filter(doc => !search.trim() || `${doc.customer_name} ${doc.number}`.toLowerCase().includes(search.trim().toLowerCase())) ?? null;
+  const displayNumber = (doc: TilesDoc) => doc.doc_number || doc.number;
+  const docs = (documents ? [...documents.tiles_selection, ...documents.tiles_quotation].filter(doc => !filterValues(documentType).length || filterValues(documentType).includes(doc.doc_type)) : null)?.filter(doc => !search.trim() || `${doc.customer_name} ${doc.number} ${doc.doc_number || ""}`.toLowerCase().includes(search.trim().toLowerCase())) ?? null;
   const label = documentType === "tiles_selection" ? "selections" : documentType === "tiles_quotation" ? "quotations" : "documents";
 
   return (
@@ -147,13 +149,13 @@ export default function QuotationTilesList() {
               onPress={() => openDoc(item)}
               testID={`tiles-doc-${item.id}`}
               accessibilityRole="button"
-              accessibilityLabel={`Open ${item.doc_type === "tiles_selection" ? "selection" : "quotation"} ${item.number} for ${item.customer_name || "unnamed customer"}`}
+              accessibilityLabel={`Open ${item.doc_type === "tiles_selection" ? "selection" : "quotation"} ${displayNumber(item)} for ${item.customer_name || "unnamed customer"}`}
             >
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={{ fontSize: 14, fontWeight: "600", color: colors.onSurface }} numberOfLines={1}>
                   {item.customer_name || "Unnamed customer"}
                 </Text>
-                <Text style={type.caption} numberOfLines={1}>{item.number} · {tilesStageLabel(item.doc_type, item.status)}</Text>
+                <Text style={type.caption} numberOfLines={1}>{displayNumber(item)}{item.doc_date ? ` · ${item.doc_date}` : ""} · {tilesStageLabel(item.doc_type, item.status)}</Text>
                 {item.purchase_completion_status === "completed" ? <Text style={[type.caption, { color: colors.success }]}>100% completed</Text> : null}
               </View>
               <Text style={[type.mono, { fontSize: 13, fontWeight: "600" }]}>{money(item.grand_total || 0)}</Text>

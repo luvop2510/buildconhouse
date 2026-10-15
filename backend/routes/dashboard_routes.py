@@ -73,7 +73,8 @@ async def dashboard_stats(user: UserPublic = Depends(get_current_user)):
             db.quotations.aggregate(quotation_pipeline).to_list(1),
             db.customers.count_documents(floor_query(user, {})),
             db.products.count_documents(floor_query(user, {"active": True})),
-            db.followups.count_documents(floor_query(user, {"status": "open", "due_at": {"$lte": today_end}, "assigned_to": user.id})),
+            db.followups.count_documents(floor_query(user, {"status": "open", "due_at": {"$lte": today_end}, "assigned_to": user.id}))
+            if user.role != "owner" else asyncio.sleep(0, result=0),
         )
         revenue = quotation_result.get("revenue_month", [])
         pipeline = quotation_result.get("pipeline", [])

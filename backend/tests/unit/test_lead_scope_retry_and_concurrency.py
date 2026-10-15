@@ -250,6 +250,26 @@ def test_assignee_needs_both_view_and_update_even_when_grants_are_separate():
     assert lead_scope.can_assign({**staff, 'delegation_grants': [view, update]}, 'third-floor', notebook_converted=True)
 
 
+def test_owner_is_never_an_eligible_followup_assignee():
+    async def run():
+        db = database()
+        db.users.rows = [
+            {'id': 'owner', 'full_name': 'JK PATEL', 'role': 'owner', 'active': True},
+            {'id': 'worker', 'full_name': 'Worker', 'role': 'sales', 'active': True,
+             'floor_ids': ['first-floor']},
+        ]
+        eligible = await lead_scope.eligible_staff(db, ['first-floor'])
+        assert [(row['id'], row['eligible_floor_ids']) for row in eligible] == [
+            ('owner', []), ('worker', ['first-floor']),
+        ]
+        with pytest.raises(HTTPException) as error:
+            await lead_scope.validate_assignments(db, ['first-floor'], [
+                {'floor_id': 'first-floor', 'user_id': 'owner'},
+            ])
+        assert error.value.status_code == 422
+    asyncio.run(run())
+
+
 def test_unconfirmed_legacy_won_quotation_does_not_block_preorder_lead(monkeypatch):
     async def run():
         db = database()
@@ -273,6 +293,7 @@ def test_generic_manual_create_supports_kitchen_and_furniture_inboxes(monkeypatc
     monkeypatch.setattr(routes, 'log_event', AsyncMock())
     row = asyncio.run(routes.create_followup(FollowupCreate(customer_id='customer', reason='Discuss'), principal(floors=(floor,))))
     assert row.floor_id == floor and row.customer_id == 'customer'
+    assert row.assigned_to is None and row.assigned_to_name is None
     assert db.followups.writes == 1 and db.customers.writes == 0
 
 

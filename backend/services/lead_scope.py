@@ -28,7 +28,10 @@ def can_assign(staff, floor, grants=(), notebook_converted=False):
     if not staff.get('active', True) or staff.get('is_deleted') or staff.get('deleted_at'):
         return False
     if staff.get('role') == 'owner':
-        return True
+        # Owners delegate work and are never assignees. Keeping this rule in
+        # the shared eligibility check protects every floor and notebook
+        # workflow, including requests that bypass the Team UI.
+        return False
     profile = profile_floor_ids(staff.get('access_profile'))
     floors = profile if profile is not None else staff.get('floor_ids', [])
     if staff.get('custom_access'):
@@ -130,7 +133,13 @@ async def update_interests(database, *, user, source, floor_ids, assignments=Non
         raise HTTPException(409, 'Follow-ups cover only leads before an order is placed')
     requested_pairs = {(a.floor_id, a.user_id) if hasattr(a, 'floor_id') else (a['floor_id'], a['user_id']) for a in assignments or []}
     current_pairs = {(a['floor_id'], a['user_id']) for a in source.get('assignments', [])}
-    if source.get('lead_group_id') and set(floor_ids) == set(source.get('interested_floor_ids') or [source['floor_id']]) and (assignments is None or requested_pairs == current_pairs) and not metadata:
+    owner_rows = await database.users.find({'role': 'owner'}, {'_id': 0, 'id': 1}).to_list(1000)
+    owner_ids = {row['id'] for row in owner_rows}
+    has_owner_assignment = any(user_id in owner_ids for _, user_id in current_pairs)
+    if (source.get('lead_group_id')
+            and set(floor_ids) == set(source.get('interested_floor_ids') or [source['floor_id']])
+            and (assignments is None or requested_pairs == current_pairs)
+            and not has_owner_assignment and source.get('assigned_to') not in owner_ids and not metadata):
         return source
     group = source.get('lead_group_id') or source['id']
     existing = await database.followups.find({'$or': [{'lead_group_id': group, 'status': {'$in': ['open', 'snoozed']}}, {'id': source['id']}]}, {'_id': 0}).to_list(1000)
@@ -174,7 +183,17 @@ async def update_interests(database, *, user, source, floor_ids, assignments=Non
         if local:
             by_floor[floor] = local
     stages = {floor: bool((by_floor.get(floor) or source).get('is_converted')) for floor in floors}
-    selected_assignments = await validate_assignments(database, floors, assignments if assignments is not None else source.get('assignments', []), stages)
+    if assignments is None:
+        # Existing grouped leads can predate the owner-only-delegates rule.
+        # Clean stale owner entries on the next edit, while explicit attempts
+        # to assign an owner still fail validation below.
+        requested_assignments = [
+            item for item in source.get('assignments', [])
+            if (item.user_id if hasattr(item, 'user_id') else item.get('user_id')) not in owner_ids
+        ]
+    else:
+        requested_assignments = assignments
+    selected_assignments = await validate_assignments(database, floors, requested_assignments, stages)
     # Authentication authorized the source row's stage. Reused canonical rows
     # require their own stage capability before any floor receives a write.
     if getattr(user, 'custom_access', False):
@@ -199,7 +218,7 @@ async def update_interests(database, *, user, source, floor_ids, assignments=Non
             local_patch.update(status='open', completed_at=None, resolution_note=None)
         if floor_assignments:
             local_patch.update(assigned_to=floor_assignments[0]['user_id'], assigned_to_name=floor_assignments[0]['user_name'])
-        elif assignments is not None:
+        elif assignments is not None or (local or {}).get('assigned_to') in owner_ids:
             local_patch.update(assigned_to=None, assigned_to_name=None)
         if local:
             await database.followups.update_one({'id': local['id'], 'floor_id': floor}, {'$set': local_patch})

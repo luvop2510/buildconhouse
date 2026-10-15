@@ -212,9 +212,10 @@ async def _canonicalize_item_images(items, floor_id: str | None = None) -> list[
     return [{**item, "image": resolved_image(item)} for item in raw_items]
 
 
-def _require_tiles_quotation_address(doc_type: str, address: str | None) -> None:
-    """Reject tile quotations that cannot print a complete customer header."""
-    if doc_type == "tiles_quotation" and not str(address or "").strip():
+def _require_tiles_quotation_address(doc_type: str, address: str | None, *, historical_source: bool = False) -> None:
+    """Require new tile quotations to have an address, while retaining truthful
+    headers on historical source documents that were issued without one."""
+    if doc_type == "tiles_quotation" and not historical_source and not str(address or "").strip():
         raise HTTPException(
             status_code=400,
             detail="An address is required before a tile quotation can be generated.",
@@ -771,6 +772,7 @@ async def update_quotation(
     _require_tiles_quotation_address(
         doc.get("doc_type", "standard"),
         body.address_snapshot if body.address_snapshot is not None else doc.get("address_snapshot"),
+        historical_source=bool((doc.get("quotation_import") or {}).get("source_type") == "provided_pdf"),
     )
 
     update: dict = {}
@@ -1502,7 +1504,10 @@ async def quotation_pptx(quotation_id: str, user: UserPublic = Depends(get_curre
 async def _build_quotation_file(doc: dict, customer: dict, include_dimensions: bool = False) -> tuple[bytes, str]:
     """Use the same PDF render contract for downloads and customer snapshots."""
     doc_type = doc.get("doc_type") or "standard"
-    _require_tiles_quotation_address(doc_type, doc.get("address_snapshot"))
+    _require_tiles_quotation_address(
+        doc_type, doc.get("address_snapshot"),
+        historical_source=bool((doc.get("quotation_import") or {}).get("source_type") == "provided_pdf"),
+    )
     branding = await _pdf_branding()
     pdf_items = await _pdf_items(doc)
     if doc_type not in TILES_DOC_TYPES:
@@ -1534,7 +1539,10 @@ async def quotation_pdf(quotation_id: str, include_dimensions: bool = False, use
         {"id": doc["customer_id"], "floor_id": doc.get("floor_id")}, {"_id": 0, "password_hash": 0},
     ) or {}
     doc_type = doc.get("doc_type") or "standard"
-    _require_tiles_quotation_address(doc_type, doc.get("address_snapshot"))
+    _require_tiles_quotation_address(
+        doc_type, doc.get("address_snapshot"),
+        historical_source=bool((doc.get("quotation_import") or {}).get("source_type") == "provided_pdf"),
+    )
     pdf_bytes, filename = await _build_quotation_file(doc, customer, include_dimensions)
     revision = len(doc.get("revisions") or [])
     key = f"quotation-generated:{quotation_id}:revision:{revision}"

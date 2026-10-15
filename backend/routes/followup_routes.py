@@ -206,7 +206,7 @@ async def put_automation_rule(category: str, body: AutomationRuleUpdate, user: U
 @router.get("/config/assignees")
 async def assignees(_: UserPublic = Depends(get_current_user)):
     return await db.users.find(
-        {"active": True}, {"_id": 0, "id": 1, "full_name": 1, "role": 1},
+        {"active": True, "role": {"$ne": "owner"}}, {"_id": 0, "id": 1, "full_name": 1, "role": 1},
     ).sort("full_name", 1).to_list(100)
 
 
@@ -1027,6 +1027,8 @@ async def team_assign(floor_ids: str | None = None, page: int = Query(1, ge=1), 
     if floors:
         floors, _ = await lead_scope.validate_scope(db, user, floors, [])
         query["floor_id"] = {"$in": floors}
+    owner_rows = await db.users.find({"role": "owner"}, {"_id": 0, "id": 1}).to_list(1000)
+    owner_ids = {row["id"] for row in owner_rows}
     # Page lead details, while aggregate counters cover the full selection.
     assignments = {"$filter": {"input": {"$ifNull": ["$assignments", []]}, "as": "a", "cond": {"$eq": ["$$a.floor_id", "$floor_id"]}}}
     assignment_read = db.followups.aggregate([
@@ -1059,6 +1061,8 @@ async def team_assign(floor_ids: str | None = None, page: int = Query(1, ge=1), 
     workers = []
     for summary in assignment_rows:
         uid = summary["_id"]
+        if uid in owner_ids:
+            continue
         worker = page_workers.get(uid, {"user_id": uid, "user_name": summary.get("user_name") or uid, "leads": []})
         worker.update({k: summary[k] for k in ("assigned_leads", "completed_leads")})
         worker.update({k: contacts.get(uid, {}).get(k, 0) for k in ("contacts_made", "calls_made")})
@@ -1115,7 +1119,9 @@ async def list_assignments(
         floor_query(user, {"assigned_to": {"$ne": None}, "status": {"$in": status_filter}}),
         {"_id": 0},
     ).to_list(5000)
-    rows = [_assignment_row(f) for f in docs]
+    owners = await db.users.find({"role": "owner"}, {"_id": 0, "id": 1}).to_list(1000)
+    owner_ids = {row["id"] for row in owners}
+    rows = [_assignment_row(f) for f in docs if f.get("assigned_to") not in owner_ids]
     rows.sort(key=_assignment_sort_key)
     return rows
 
@@ -1187,7 +1193,7 @@ async def create_followup(body: FollowupCreate, user: UserPublic = Depends(get_c
 
     if body.assigned_to:
         await lead_scope.validate_scope(db, user, [floor_for_write(user)], [{"floor_id": floor_for_write(user), "user_id": body.assigned_to}])
-    assigned_to_name = user.full_name
+    assigned_to_name = None if user.role == "owner" and not body.assigned_to else user.full_name
     if body.assigned_to and body.assigned_to != user.id:
         au = await db.users.find_one({"id": body.assigned_to}, {"_id": 0, "full_name": 1})
         assigned_to_name = au["full_name"] if au else None
@@ -1208,7 +1214,7 @@ async def create_followup(body: FollowupCreate, user: UserPublic = Depends(get_c
         suggested_channel=body.channel, priority_score=score,
         priority_level=body.priority_level or level,
         due_at=body.due_at or now_iso(), is_automated=False,
-        assigned_to=body.assigned_to or user.id, assigned_to_name=assigned_to_name,
+        assigned_to=body.assigned_to or (None if user.role == "owner" else user.id), assigned_to_name=assigned_to_name,
         floor_id=floor_id,
     )
     if previous:
@@ -1466,10 +1472,17 @@ async def log_call(followup_id: str, body: FollowupCallOutcomePayload, user: Use
             raise HTTPException(422, "The next follow-up date must be in the future")
     if body.interested_floor_ids or body.assignments is not None:
         f = await lead_scope.update_interests(db, user=user, source=f, floor_ids=body.interested_floor_ids or f.get("interested_floor_ids") or [f["floor_id"]], assignments=body.assignments)
+    previous_assignee = f.get("assigned_to")
+    if previous_assignee and await db.users.find_one({"id": previous_assignee, "role": "owner"}, {"_id": 0, "id": 1}):
+        previous_assignee = None
     if outcome == "interested":
         # A transferred lead stays with the recipient, including the source
         # row and the new reminder; interest is not a placed/won order.
-        patch.update({"assigned_to": f.get("assigned_to") or user.id, "assigned_to_name": f.get("assigned_to_name") or user.full_name})
+        if previous_assignee or user.role != "owner":
+            patch.update({"assigned_to": previous_assignee or user.id,
+                          "assigned_to_name": f.get("assigned_to_name") if previous_assignee else user.full_name})
+        else:
+            patch.update({"assigned_to": None, "assigned_to_name": None})
 
     if outcome in ("interested", "call_back", "pending"):
         patch.update({"status": "done", "completed_at": now_iso(), "completed_outcome": outcome})
@@ -1500,7 +1513,8 @@ async def log_call(followup_id: str, body: FollowupCallOutcomePayload, user: Use
             next_action="Call customer", next_action_reason="Scheduled automatically from the previous call outcome.",
             suggested_channel="call", priority_score=f.get("priority_score", 50), priority_level=f.get("priority_level", "medium"),
             due_at=due.isoformat(), is_automated=False,
-            assigned_to=f.get("assigned_to") or user.id, assigned_to_name=f.get("assigned_to_name") or user.full_name,
+            assigned_to=previous_assignee or (None if user.role == "owner" else user.id),
+            assigned_to_name=(f.get("assigned_to_name") if previous_assignee else (None if user.role == "owner" else user.full_name)),
             tags=f.get("tags", []),
             floor_id=floor_inherit(f),
             lead_group_id=f.get("lead_group_id"), interested_floor_ids=f.get("interested_floor_ids", []),
