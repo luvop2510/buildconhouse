@@ -41,6 +41,17 @@ async function openSummary(page: Page) {
 test('critical payment summary opens matching earned, partial, refund and outstanding customers', async ({ page }) => {
   await fixture(page);
   await page.goto('/payments');
+  if ((page.viewportSize()?.width || 0) < 768) {
+    const chrome = page.getByTestId('mobile-workspace-header');
+    const scroll = page.getByTestId('payments-collections-scroll');
+    const contentTitle = page.getByRole('heading', { name: 'Payments', exact: true }).last();
+    const chromeTop = (await chrome.boundingBox())?.y;
+    const titleTop = (await contentTitle.boundingBox())?.y;
+    await scroll.evaluate(element => { element.scrollTop = 360; element.dispatchEvent(new Event('scroll', { bubbles: true })); });
+    await expect.poll(async () => (await contentTitle.boundingBox())?.y).toBeLessThan((titleTop || 360) - 20);
+    expect((await chrome.boundingBox())?.y).toBe(chromeTop);
+    await scroll.evaluate(element => element.scrollTo({ top: 0, behavior: 'instant' }));
+  }
   await openSummary(page);
   await expect(page.getByRole("button", { name: "View spending", exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'View earned', exact: true }).click();

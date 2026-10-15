@@ -40,13 +40,13 @@ export function AdminPage({
 
   return (
     <View style={{ flex: 1, minHeight: 0, backgroundColor: color.canvas }}>
-      <PageHeader
+      {!isPhone ? <PageHeader
         title={title}
         subtitle={subtitle || undefined}
         overline={overline}
         back={back}
         actions={right}
-      />
+      /> : null}
       <Container
         {...(scroll
           ? {
@@ -55,7 +55,7 @@ export function AdminPage({
               style: { flex: 1, minHeight: 0 },
               contentContainerStyle: {
                 paddingHorizontal: horizontalPadding,
-                paddingTop: isPhone ? space.x4 : space.x8,
+                paddingTop: isPhone ? 0 : space.x8,
                 // AppScaffold reserves navigation/safe-area space outside this scroll.
                 paddingBottom: isPhone ? space.x6 : space.x16,
                 gap: isPhone ? space.x4 : space.x5,
@@ -73,6 +73,14 @@ export function AdminPage({
               ],
             })}
       >
+        {isPhone ? <PageHeader
+          title={title}
+          subtitle={subtitle || undefined}
+          overline={overline}
+          back={back}
+          actions={right}
+          embedded
+        /> : null}
         {children}
       </Container>
     </View>

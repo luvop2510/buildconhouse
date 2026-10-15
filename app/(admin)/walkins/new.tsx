@@ -198,9 +198,9 @@ export default function NewWalkIn() {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={isPhone ? [] : ["top"]}>
-      <PageHeader title="Log Walk-in" overline="CRM" back={() => router.back()} />
       <KeyboardAvoidingView enabled={Platform.OS !== "web"} style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <ScrollView contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, paddingBottom: isPhone ? 132 : spacing.xxl, gap: spacing.md }} keyboardShouldPersistTaps="handled">
+          <PageHeader title="Log Walk-in" overline="CRM" back={() => router.back()} embedded />
           <Text style={type.overline}>Customer</Text>
           <TextField label="Customer Name *" value={name} onChangeText={setName} placeholder="Full name" testID="walkin-name" />
           <TextField label="Phone *" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="10-digit mobile" testID="walkin-phone" />

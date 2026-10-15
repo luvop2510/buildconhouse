@@ -107,25 +107,20 @@ export default function Customers() {
       });
     } catch (error: any) { toast.error(error?.message || "Could not export customers"); }
   };
+  const pageHeader = <PageHeader
+    title={isTileDeliveryLookup ? "Customer delivery lookup" : completed ? "100% Customers" : "Customers"}
+    subtitle={loadError ? "Customer data is unavailable" : items ? (isTileDeliveryLookup ? "Choose a customer to view their Ground Floor tile order and dispatch status." : `${items.length} ${completed ? "100% completed" : "active confirmed-order"} customers`) : "Loading customers…"}
+    overline={isTileDeliveryLookup ? "GROUND FLOOR · READ ONLY" : "CRM"}
+    actions={!isTileDeliveryLookup ? <Button icon="plus" label="Add Customer" variant="primary" size="md"
+      onPress={() => router.push("/(admin)/customers/new" as any)} /> : undefined}
+    embedded={isPhone}
+  />;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
-      <PageHeader
-        title={isTileDeliveryLookup ? "Customer delivery lookup" : completed ? "100% Customers" : "Customers"}
-        subtitle={loadError ? "Customer data is unavailable" : items ? (isTileDeliveryLookup ? "Choose a customer to view their Ground Floor tile order and dispatch status." : `${items.length} ${completed ? "100% completed" : "active confirmed-order"} customers`) : "Loading customers…"}
-        overline={isTileDeliveryLookup ? "GROUND FLOOR · READ ONLY" : "CRM"}
-        actions={!isTileDeliveryLookup ? (
-          <Button
-            icon="plus"
-            label="Add Customer"
-            variant="primary"
-            size="md"
-            onPress={() => router.push("/(admin)/customers/new" as any)}
-          />
-        ) : undefined}
-      />
-
+      {!isPhone ? pageHeader : null}
       <ScrollView contentContainerStyle={[styles.content, isPhone && styles.contentPhone]}>
+        {isPhone ? pageHeader : null}
         <Disclosure title="Customer summary" summary="Customer totals">
         {/* Stats */}
         <View style={[styles.statsRow, !isDesktop && styles.statsRowMobile]}>

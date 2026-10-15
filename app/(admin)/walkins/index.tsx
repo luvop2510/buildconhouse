@@ -169,15 +169,18 @@ export default function WalkInsScreen({
       toast.error(e?.detail || "Could not transfer customer");
     }
   };
+  const pageHeader = <PageHeader
+    title={title} overline={quotationFollowup ? "QUOTATION FOLLOW-UP" : "CRM"}
+    subtitle="Every customer journey starts here"
+    actions={canCreate ? <Button label="Log Walk-in" icon="user-plus" onPress={() => router.push((fixedFloorId ? `/(admin)/walkins/new?floor_id=${fixedFloorId}` : "/(admin)/walkins/new") as any)} testID="walkin-new-btn" /> : undefined}
+    embedded={isPhone}
+  />;
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={isPhone ? [] : ["top"]}>
-      <PageHeader
-        title={title} overline={quotationFollowup ? "QUOTATION FOLLOW-UP" : "CRM"}
-        subtitle="Every customer journey starts here"
-        actions={canCreate ? <Button label="Log Walk-in" icon="user-plus" onPress={() => router.push((fixedFloorId ? `/(admin)/walkins/new?floor_id=${fixedFloorId}` : "/(admin)/walkins/new") as any)} testID="walkin-new-btn" /> : undefined}
-      />
+      {!isPhone ? pageHeader : null}
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, paddingBottom: isPhone ? spacing.xl : spacing.xxxl }}>
+        {isPhone ? pageHeader : null}
         <Disclosure title="Walk-in summary">
         {summaryError ? <Text role="status" style={[type.bodyMuted, { marginBottom: spacing.sm }]}>Summary unavailable. Your walk-in register is still available below.</Text> : null}
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginBottom: spacing.lg }}>

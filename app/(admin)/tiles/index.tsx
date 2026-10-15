@@ -78,7 +78,12 @@ export default function QuotationTilesList() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
-      <PageHeader title={completed ? "Approved & ordered tile documents" : "Tile quotations"} overline="Ground Floor · Tiles" actions={
+      <FlatList
+        data={docs || []}
+        keyExtractor={(d) => d.id}
+        contentContainerStyle={{ padding: spacing.lg, gap: 8 }}
+        ListHeaderComponent={<View style={{ gap: spacing.md }}>
+      <PageHeader title={completed ? "Approved & ordered tile documents" : "Tile quotations"} overline="Ground Floor · Tiles" embedded actions={
         <View style={[styles.headerActions, compact && styles.headerActionsCompact]}>
           <Button
             label={completed ? "View pending" : "View completed"}
@@ -125,7 +130,8 @@ export default function QuotationTilesList() {
       </MobileFilterSection>
 
       <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}><SearchField value={search} onChangeText={setSearch} onClear={() => setSearch("")} placeholder="Search customer or document number" /></View>
-      {loadError ? (
+        </View>}
+        ListEmptyComponent={loadError ? (
         <ErrorState title="Couldn't load quotation tiles" subtitle={loadError} onRetry={() => void load()} />
       ) : loading && docs === null ? (
         <View style={styles.loading} accessibilityLiveRegion="polite">
@@ -134,12 +140,8 @@ export default function QuotationTilesList() {
         </View>
       ) : docs?.length === 0 ? (
         <EmptyState icon="layers" title={search ? "No matching documents" : `No ${completed ? "approved or ordered " : ""}${label} yet`} subtitle={search ? "Try a different customer or document number." : completed ? "Approved and order-placed selections or quotations will appear here." : `Create a new ${label.slice(0, -1)} to get started.`} />
-      ) : (
-        <FlatList
-          data={docs}
-          keyExtractor={(d) => d.id}
-          contentContainerStyle={{ padding: spacing.lg, gap: 8 }}
-          renderItem={({ item }) => (
+      ) : null}
+        renderItem={({ item }) => (
             <Pressable
               style={styles.row}
               onPress={() => openDoc(item)}
@@ -158,8 +160,7 @@ export default function QuotationTilesList() {
               <Feather name="chevron-right" size={16} color={colors.onSurfaceMuted} />
             </Pressable>
           )}
-        />
-      )}
+      />
     </SafeAreaView>
   );
 }

@@ -104,15 +104,15 @@ export default function PaymentListScreen() {
   ];
 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageHeader = <PageHeader title="Fully paid orders" overline="PAYMENTS"
+    subtitle="One row per order once 100% of its balance has been received."
+    embedded={isPhone} />;
 
   return (
     <SafeAreaView style={styles.screen} edges={isPhone ? [] : ["top"]}>
-      <PageHeader
-        title="Fully paid orders"
-        overline="PAYMENTS"
-        subtitle="One row per order once 100% of its balance has been received."
-      />
+      {!isPhone ? pageHeader : null}
       <ScrollView style={{ flex: 1, minHeight: 0 }} contentContainerStyle={[styles.content, isPhone && styles.contentPhone]}>
+        {isPhone ? pageHeader : null}
         <View style={styles.filters}>
           <View style={[styles.search, isPhone && styles.searchPhone]}><SearchField testID="payment-list-search" value={query} onChangeText={setQuery} onClear={() => setQuery("")} placeholder="Search client, invoice or reference…" /></View>
           <MobileFilterSection testID="payment-list-filters" style={styles.filters}>

@@ -167,6 +167,7 @@ export default function QuotationDetail() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
+      <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg, paddingBottom: spacing.huge }}>
       <PageHeader title={q.number} overline="Quotation" back={() => router.back()} actions={
         <View style={{ flexDirection: "row", gap: isPhone ? 4 : 8, alignItems: "center", flexShrink: 0 }}>
           {isPhone ? (
@@ -189,7 +190,6 @@ export default function QuotationDetail() {
         </View>
       } />
 
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg, paddingBottom: spacing.huge }}>
         {actionError ? <Alert tone="error" title="Action not completed" description={actionError} /> : null}
         {relatedError ? <Alert tone="warning" title="Some related records are unavailable" description="Order links or activity may be incomplete. Reload to refresh them." /> : null}
         {/* Document summary */}

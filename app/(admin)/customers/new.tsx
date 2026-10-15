@@ -73,7 +73,6 @@ export default function NewCustomer() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
-      <PageHeader title="Add Customer" overline="CRM" back={() => router.back()} />
       <KeyboardAvoidingView
         enabled={Platform.OS !== "web"}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -84,6 +83,7 @@ export default function NewCustomer() {
           contentContainerStyle={{ width: "100%", maxWidth: 720, alignSelf: "center", paddingHorizontal: gutter, paddingTop: isPhone ? spacing.lg : spacing.xl, gap: spacing.lg, paddingBottom: spacing.xxxl }}
           keyboardShouldPersistTaps="handled"
         >
+          <PageHeader title="Add Customer" overline="CRM" back={() => router.back()} embedded />
           <TextField
             label="Name *"
             placeholder="e.g. Rajesh Malhotra"

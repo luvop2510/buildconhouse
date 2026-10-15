@@ -499,6 +499,7 @@ export default function CustomerDetail() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
+      <ScrollView contentContainerStyle={{ padding: isPhone ? spacing.md : spacing.xl, gap: spacing.lg, paddingBottom: spacing.xxxl }}>
       <PageHeader
         title={customer.company || customer.name}
         subtitle={`${customer.email}${customer.city ? ` · ${customer.city}` : ""}`}
@@ -535,7 +536,6 @@ export default function CustomerDetail() {
         }
       />
 
-      <ScrollView contentContainerStyle={{ padding: isPhone ? spacing.md : spacing.xl, gap: spacing.lg, paddingBottom: spacing.xxxl }}>
         {/* Identity row */}
         <Card>
           <View style={{ flexDirection: "row", gap: spacing.lg, alignItems: "center", flexWrap: "wrap" }}>

@@ -141,8 +141,8 @@ export default function WalkInDetail() {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={isPhone ? [] : ["top"]}>
-      <PageHeader title={w.customer_name} overline={w.number} back={() => router.back()} />
       <ScrollView contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, paddingBottom: isPhone ? 132 : spacing.xxl, gap: spacing.md }}>
+        <PageHeader title={w.customer_name} overline={w.number} back={() => router.back()} embedded />
         <Card variant="outlined" style={{ gap: 4 }}>
           <Text style={type.bodyStrong}>{w.customer_phone} {w.alternate_phone ? `· Alt: ${w.alternate_phone}` : ""}</Text>
           {canUpdate ? <Button label="Interested floors · Assign team" icon="layers" variant="secondary" onPress={() => setScopeOpen(true)} testID="walkin-edit-interests" /> : null}

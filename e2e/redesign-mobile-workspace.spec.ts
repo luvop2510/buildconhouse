@@ -10,7 +10,7 @@ async function customers(page: import('@playwright/test').Page) {
   await expect(page.getByTestId('customer-mobile-0')).toBeVisible();
 }
 
-test('critical mobile shell header stays fixed while only customer content scrolls', async ({ page }) => {
+test('critical mobile shell stays fixed while the customer page header scrolls with content', async ({ page }) => {
   await customers(page);
   const phone = page.viewportSize()!.width < 768;
   const header = page.getByRole('heading', { name: 'Customers', exact: true });
@@ -18,6 +18,7 @@ test('critical mobile shell header stays fixed while only customer content scrol
   const workspace = page.getByTestId('mobile-workspace-header');
   const workspaceInitial = phone ? await workspace.boundingBox() : null;
   const card = page.getByTestId('customer-mobile-0');
+  const cardInitial = await card.boundingBox();
   const scroll = await card.evaluate(element => {
     for (let parent = element.parentElement; parent; parent = parent.parentElement) {
       if (/(auto|scroll)/.test(getComputedStyle(parent).overflowY) && parent.scrollHeight > parent.clientHeight + 200) {
@@ -28,10 +29,11 @@ test('critical mobile shell header stays fixed while only customer content scrol
     return 0;
   });
   expect(scroll).toBeGreaterThan(200);
-  await expect.poll(async () => (await header.boundingBox())!.y).toBe(initial!.y);
+  if (phone) await expect.poll(async () => (await header.boundingBox())!.y).toBeLessThan(initial!.y - 40);
+  else await expect.poll(async () => (await header.boundingBox())!.y).toBe(initial!.y);
   if (phone) expect((await workspace.boundingBox())!.y).toBe(workspaceInitial!.y);
   expect(await page.evaluate(() => document.scrollingElement!.scrollTop)).toBe(0);
-  await expect(card).not.toBeInViewport();
+  expect((await card.boundingBox())!.y).toBeLessThan(cardInitial!.y - 40);
 });
 
 test('critical navigation stays hidden throughout mobile search and returns on blur', async ({ page }) => {

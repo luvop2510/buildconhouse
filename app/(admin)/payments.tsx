@@ -638,11 +638,10 @@ export default function PaymentsScreen() {
     collectionsScrollRef.current?.scrollTo({ y: bodyTopRef.current, animated: false });
   };
 
-  return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
-      <View style={{ minHeight: 48, flexShrink: 0, paddingHorizontal: isPhone ? spacing.lg : spacing.xl, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm }}>
-        <Text accessibilityRole={pageDetailsOpen ? undefined : "header"} aria-level={pageDetailsOpen ? undefined : 1}
-          style={[pageDetailsOpen ? type.caption : type.titleLg, { flex: 1, minWidth: 0 }]}>{pageDetailsOpen ? "Payment overview" : "Payments"}</Text>
+  const workspaceHeading = (
+    <View style={{ gap: spacing.sm }}>
+      <View style={{ minHeight: 48, flexShrink: 0, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm }}>
+        <Text accessibilityRole="header" aria-level={1} style={[type.titleLg, { flex: 1, minWidth: 0 }]}>Payments</Text>
         <Pressable
           testID="payments-page-details-toggle"
           accessibilityRole="button"
@@ -657,45 +656,43 @@ export default function PaymentsScreen() {
           <Feather name={pageDetailsOpen ? "chevron-up" : "chevron-down"} size={iconSize.sm} color={colors.onSurfaceSecondary} />
         </Pressable>
       </View>
-      <View nativeID={pageDetailsId} testID="payments-page-details" style={{ flexShrink: 0, display: pageDetailsOpen ? "flex" : "none" }}>
-      <PageHeader
-        title="Payments"
-        subtitle={tab === "collections"
-          ? "Track outstanding balances, record payments, and send reminders."
-          : "Permanent reconciliation ledger — every collected payment, reconciled exactly with Collections."}
-        overline={tab === "collections" ? "COLLECTIONS" : "LEDGER"}
-        actions={tab !== "history" ? (
-          <Button label="Fully Paid Orders" icon="check-circle" variant="secondary"
-            onPress={() => router.push("/(admin)/payments-list" as any)} testID="fully-paid-orders-link" />
-        ) : (
-          <Dropdown
-            testID="history-export"
-            label="Export"
-            icon="download"
-            variant="secondary"
-            items={[
+      <View nativeID={pageDetailsId} testID="payments-page-details" style={{ display: pageDetailsOpen ? "flex" : "none" }}>
+        <PageHeader
+          title="Payments"
+          subtitle={tab === "collections"
+            ? "Track outstanding balances, record payments, and send reminders."
+            : "Permanent reconciliation ledger — every collected payment, reconciled exactly with Collections."}
+          overline={tab === "collections" ? "COLLECTIONS" : "LEDGER"}
+          embedded
+          actions={tab !== "history" ? (
+            <Button label="Fully Paid Orders" icon="check-circle" variant="secondary"
+              onPress={() => router.push("/(admin)/payments-list" as any)} testID="fully-paid-orders-link" />
+          ) : (
+            <Dropdown testID="history-export" label="Export" icon="download" variant="secondary" items={[
               { label: "Export as XLSX", icon: "file-text", onPress: () => exportHistory("xlsx") },
               { label: "Export as CSV", icon: "file", onPress: () => exportHistory("csv") },
-            ]}
-          />
-        )}
-      />
-      </View>
-
-      <View style={{ paddingHorizontal: isPhone ? spacing.lg : spacing.xl }}>
-        <Tabs
-          testID="payments-tabs"
-          value={tab}
-          onChange={setTab}
-          options={[
-            { value: "collections", label: "Collections" },
-            { value: "history", label: "Payment History", count: historyTotal || undefined },
-          ]}
+            ]} />
+          )}
         />
       </View>
+      <Tabs
+        testID="payments-tabs"
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: "collections", label: "Collections" },
+          { value: "history", label: "Payment History", count: historyTotal || undefined },
+        ]}
+      />
+    </View>
+  );
 
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
+      {!isPhone ? workspaceHeading : null}
       {tab === "collections" ? (
       <ScrollView testID="payments-collections-scroll" ref={collectionsScrollRef} style={{ flex: 1, minHeight: 0 }} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, gap: spacing.lg, paddingBottom: isPhone ? spacing.xl : spacing.xxxl }}>
+        {isPhone ? workspaceHeading : null}
         <Disclosure title="Collections summary" defaultOpen={!isPhone}>
           {statsError ? <ErrorState title="Summary unavailable" onRetry={() => void loadStats()} /> : null}
         {/* Stats */}
@@ -1013,6 +1010,7 @@ export default function PaymentsScreen() {
       </ScrollView>
       ) : (
         <PaymentHistoryTab
+          workspaceHeading={isPhone ? workspaceHeading : null}
           rows={historyRows}
           total={historyTotal}
           loading={historyLoading}
@@ -1091,6 +1089,7 @@ function DateInput({ value, onChange, placeholder, testID }: {
 }
 
 function PaymentHistoryTab(props: {
+  workspaceHeading: React.ReactNode | null;
   rows: HistoryRow[]; total: number; loading: boolean; error: string | null; onRetry: () => void;
   page: number; pageSize: number; onPageChange: (p: number) => void;
   q: string; onQChange: (v: string) => void;
@@ -1104,6 +1103,7 @@ function PaymentHistoryTab(props: {
 }) {
   const { isPhone } = useBp();
   const {
+    workspaceHeading,
     rows, total, loading, error, onRetry, page, pageSize, onPageChange,
     q, onQChange, unit, onUnitChange, floors,
     mode, onModeChange, dateFrom, onDateFromChange, dateTo, onDateToChange,
@@ -1168,6 +1168,7 @@ function PaymentHistoryTab(props: {
 
   return (
     <ScrollView keyboardShouldPersistTaps="handled" testID="payment-history-scroll" style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, gap: spacing.lg, paddingBottom: isPhone ? spacing.xl : spacing.xxxl }}>
+      {workspaceHeading}
       <Card padding={spacing.md} style={{ gap: spacing.md }}>
         <SearchField
           testID="history-search"

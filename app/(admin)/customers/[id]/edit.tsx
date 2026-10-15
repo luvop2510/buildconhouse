@@ -171,6 +171,16 @@ export default function EditCustomer() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
+      <KeyboardAvoidingView
+        enabled={Platform.OS !== "web"}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+      >
+        <ScrollView
+          contentContainerStyle={{ width: "100%", maxWidth: 720, alignSelf: "center", paddingHorizontal: gutter, paddingTop: isPhone ? 0 : spacing.xl, gap: spacing.lg, paddingBottom: spacing.xxxl }}
+          keyboardShouldPersistTaps="handled"
+        >
       <PageHeader
         title="Edit Customer"
         overline="CRM"
@@ -186,16 +196,6 @@ export default function EditCustomer() {
           />
         ) : undefined}
       />
-      <KeyboardAvoidingView
-        enabled={Platform.OS !== "web"}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
-      >
-        <ScrollView
-          contentContainerStyle={{ width: "100%", maxWidth: 720, alignSelf: "center", paddingHorizontal: gutter, paddingTop: isPhone ? spacing.lg : spacing.xl, gap: spacing.lg, paddingBottom: spacing.xxxl }}
-          keyboardShouldPersistTaps="handled"
-        >
           <TextField
             label="Name *"
             value={name}

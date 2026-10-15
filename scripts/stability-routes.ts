@@ -27,7 +27,7 @@ export const stabilityProjects = ['android-chrome', 'iphone-safari', 'ipad-safar
 
 export const requiredStabilityScenarios: Record<string, string[]> = {
   'redesign-mobile-workspace.spec.ts': [
-    'critical mobile shell header stays fixed while only customer content scrolls',
+    'critical mobile shell stays fixed while the customer page header scrolls with content',
     'critical navigation stays hidden throughout mobile search and returns on blur',
   ],
   'redesign-mobile-filters.spec.ts': [

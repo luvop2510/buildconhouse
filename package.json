@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "main": "expo-router/entry",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "scripts": {
     "preinstall": "./scripts/cmd-guard.js --preinstall",
     "postinstall": "node scripts/patch-react19-compat.mjs && node scripts/patch-uri-decoder-compat.mjs",

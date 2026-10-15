@@ -4,8 +4,11 @@ Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work 
 
 ## Mobile workspace controls — 2026-10-15
 
-Version 1.0.2 keeps the compact app/page chrome outside the phone content scroll;
-phone table headers/columns are not sticky. Editing/search focus hides navigation
+Version 1.0.3 keeps the compact app header outside the phone content scroll;
+page titles, page actions, filters and rows scroll together on phone layouts. Do
+not render a phone `PageHeader` as a sibling above its `ScrollView`, `FlatList` or
+`SectionList`. Phone table
+headers/columns are not sticky. Editing/search focus hides navigation
 and workflow footers; restore chrome after the blur-triggering tap, including
 focus moving to a button, to avoid moving its click target. Scroll containers
 with filter actions use keyboardShouldPersistTaps="handled". Shared

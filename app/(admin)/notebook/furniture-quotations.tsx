@@ -117,8 +117,8 @@ export default function FurnitureQuotations() {
   const totals = draft ? ledgerTotals(draft.charges, draft.deposits) : null;
   if (!authorized) return <EmptyState title="Loading Furniture Floor access" />;
   return <SafeAreaView style={styles.screen} edges={["top"]}>
-    <PageHeader title="Furniture quotations" subtitle="RNB quotation and customer deposits" />
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" testID="furniture-quotations">
+      <PageHeader title="Furniture quotations" subtitle="RNB quotation and customer deposits" embedded />
       {error ? <Alert tone="error" title={error} /> : null}
       {!draft ? <>
         {canCreate ? <Button label="New RNB quotation" icon="plus" disabled={Boolean(busy)} onPress={() => { requestVersion.current += 1; setSaved(null); setDraft(newDraft()); setError(null); setMessage(""); }} /> : null}

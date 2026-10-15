@@ -997,6 +997,18 @@ function FollowupsWorkspace() {
   );
   const workspaceAndFilters = (
     <>
+      {isPhone ? <PageHeader
+        overline="WORKSPACE"
+        title="Follow-ups"
+        subtitle="Calls, reminders and customer promises. One clear next step."
+        dense
+        embedded
+        actions={<View style={{ flexDirection: "row", gap: spacing.sm }}>
+          <IconButton icon="rotate-cw" onPress={onRefresh} tone="surface" accessibilityLabel="Refresh" size={40} />
+          {staff?.role === "owner" ? <IconButton icon="users" onPress={() => router.push("/(admin)/team-assign" as never)} tone="surface" accessibilityLabel="Team assign" size={40} /> : null}
+          <IconButton icon="plus" onPress={() => setNewSheet(true)} tone="brand" accessibilityLabel="New follow-up" size={40} testID="new-followup-btn" />
+        </View>}
+      /> : null}
       {followupViewControl}
       {(
 
@@ -1134,7 +1146,7 @@ function FollowupsWorkspace() {
   // ═══════════════════════════════════════════════════════════════════════
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
-      <PageHeader
+      {!isPhone ? <PageHeader
         overline="WORKSPACE"
         title="Follow-ups"
         subtitle="Calls, reminders and customer promises. One clear next step."
@@ -1164,7 +1176,7 @@ function FollowupsWorkspace() {
             </>
           )
         }
-      />
+      /> : null}
 
       {bulkResult ? (
         <View style={{ paddingHorizontal: pagePad, paddingTop: spacing.sm }}>
