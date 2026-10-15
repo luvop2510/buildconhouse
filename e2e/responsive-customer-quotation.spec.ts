@@ -39,9 +39,26 @@ test('critical customer quotation rows and sanitary quotation detail stay aligne
   const row = page.getByTestId('customer-quotation-mobile-quote');
   await expect(row).toBeVisible();
   const rowBox = await row.boundingBox();
-  if ((page.viewportSize()?.width ?? 0) < 700) expect(rowBox?.height).toBeGreaterThan(64);
+  const width = page.viewportSize()?.width ?? 0;
+  if (width < 700) {
+    expect(rowBox?.height).toBeGreaterThan(64);
+    expect(rowBox?.x).toBeGreaterThanOrEqual(12);
+    expect(rowBox!.x + rowBox!.width).toBeLessThanOrEqual(width - 12);
+  }
   await expect(page.getByTestId('manage-quotation-products-mobile-quote')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+
+  if (width <= 390) {
+    await page.getByTestId('manage-quotation-products-mobile-quote').click();
+    await page.getByRole('button', { name: /Review/ }).click();
+    await expect(page.getByTestId('room-header-Bathroom')).toBeVisible();
+    const roomHeader = await page.getByTestId('room-header-Bathroom').boundingBox();
+    expect(roomHeader?.x).toBeGreaterThanOrEqual(12);
+    expect(roomHeader!.x + roomHeader!.width).toBeLessThanOrEqual(width - 12);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    await page.goto('/customers/mobile-customer');
+    await page.getByTestId('customer-tab-quotations').click();
+  }
 
   await row.click();
   const summaryTitle = page.getByRole('heading', { name: 'Mobile Buyer', exact: true });
@@ -49,6 +66,17 @@ test('critical customer quotation rows and sanitary quotation detail stay aligne
   const summaryBox = await summaryTitle.boundingBox();
   expect(summaryBox?.x).toBeGreaterThanOrEqual(12);
   await expect(page.getByText('Bathroom basin', { exact: true })).toBeVisible();
+  if (width < 700) {
+    for (const selector of ['[data-testid="quotation-detail-summary"]', '[data-testid="quotation-line-line-one"]', '[data-testid="quotation-detail-totals"]']) {
+      const box = await page.locator(selector).boundingBox();
+      expect(box, `${selector} should have measurable mobile geometry`).not.toBeNull();
+      expect(box!.x, `${selector} should have a left gutter`).toBeGreaterThanOrEqual(16);
+      expect(box!.x + box!.width, `${selector} should have a right gutter`).toBeLessThanOrEqual(width - 16);
+    }
+    const itemText = await page.getByText('Bathroom basin', { exact: true }).boundingBox();
+    expect(itemText?.x).toBeGreaterThanOrEqual(24);
+    expect(itemText!.x + itemText!.width).toBeLessThanOrEqual(width - 24);
+  }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 
 });

@@ -47,11 +47,11 @@ test('critical tile release keeps selected split quantities until the server acc
   });
   await page.goto('/tiles/orders/po/po-one');
   await page.getByTestId('tile-release-quantity-tile-one').fill('4');
-  await page.getByTestId('tile-release-selected').click();
+  await page.getByRole('button', { name: 'Release', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Release unavailable');
   await expect(page.getByTestId('tile-release-quantity-tile-one')).toHaveValue('4');
   fail = false;
-  await page.getByTestId('tile-release-selected').click();
+  await page.getByRole('button', { name: 'Release', exact: true }).click();
   await expect(page.getByTestId('tile-release-quantity-tile-one')).toHaveValue('');
   expect(remaining).toBe(6);
   expect(writes).toEqual([{ items: [{ po_item_id: 'tile-one', qty: 4 }] }, { items: [{ po_item_id: 'tile-one', qty: 4 }] }]);

@@ -274,7 +274,7 @@ export default function QuotationDetail() {
               const pct = br?.discount_pct ?? (it.discount_pct ?? 0);
               const lineTotal = it.qty * it.unit_price * (1 - pct / 100);
               return (
-                <View key={it.id} style={styles.mobileLineCard}>
+                <View key={it.id} style={styles.mobileLineCard} testID={`quotation-line-${it.id}`}>
                   <View style={{ flexDirection: "row", gap: spacing.sm, alignItems: "flex-start" }}>
                     <View style={styles.lineIdx}>
                       <Text style={styles.lineIdxText}>{String(i + 1).padStart(2, "0")}</Text>
@@ -310,7 +310,7 @@ export default function QuotationDetail() {
         )}
 
         {/* Totals card */}
-        <Card variant="flat">
+        <Card variant="flat" testID="quotation-detail-totals">
           <View style={{ gap: 8 }}>
             {q.project_discount_pct ? (
               <Row label="Project discount" value={`${q.project_discount_pct}%`} />

@@ -41,7 +41,9 @@ for (const key of ['Enter', 'Space']) {
     await expect(card).toBeFocused();
     await page.keyboard.press(key);
     await expect(page).toHaveURL(/\/payments$/);
-    await expect(page.getByRole('heading', { name: 'Payments', exact: true })).toBeVisible();
+    // Desktop/tablet payments includes a second nested overview header with
+    // the same title; the workspace's primary heading is the first match.
+    await expect(page.getByRole('heading', { name: 'Payments', exact: true }).first()).toBeVisible();
   });
 }
 
