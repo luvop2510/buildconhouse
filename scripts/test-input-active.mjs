@@ -11,13 +11,20 @@ function mount(platform) {
   let cleanup;
   const events = new Map();
   const keyboard = new Map();
-  const document = { activeElement: null,
+  let mutation;
+  let disconnected = false;
+  const document = { activeElement: null, body: {},
     addEventListener: (event, handler) => events.set(event, handler),
     removeEventListener: event => events.delete(event),
   };
-  class Element { matches() { return this.editable; } }
+  class Element { isConnected = true; matches() { return this.editable; } }
   const module = { exports: {} };
   vm.runInNewContext(source, { module, exports: module.exports, document, HTMLElement: Element, queueMicrotask, setTimeout, clearTimeout,
+    MutationObserver: class {
+      constructor(callback) { mutation = callback; }
+      observe() {}
+      disconnect() { disconnected = true; }
+    },
     require: name => name === 'react' ? {
       useState: () => [active, value => { active = value; }],
       useEffect: effect => { cleanup = effect(); },
@@ -27,7 +34,8 @@ function mount(platform) {
   });
   module.exports.useInputActive();
   return { api: module.exports, active: () => active, document, events, keyboard,
-    input: () => Object.assign(new Element(), { editable: true }), cleanup: () => cleanup() };
+    input: () => Object.assign(new Element(), { editable: true }), mutate: () => mutation(),
+    disconnected: () => disconnected, cleanup: () => cleanup() };
 }
 const native = mount('ios');
 const first = Symbol('first');
@@ -48,6 +56,15 @@ assert.equal(native.keyboard.size, 0);
 
 const web = mount('web');
 assert.equal(web.active(), false);
+const removed = web.input();
+web.document.activeElement = removed;
+web.events.get('focusin')();
+removed.isConnected = false;
+web.document.activeElement = {};
+web.mutate();
+assert.equal(web.active(), true, 'input removal retains the blur tap-settlement delay');
+await new Promise(resolve => setTimeout(resolve, 170));
+assert.equal(web.active(), false, 'removing the focused input without focusout restores chrome');
 web.document.activeElement = web.input();
 web.events.get('focusin')();
 assert.equal(web.active(), true);
@@ -65,6 +82,7 @@ assert.equal(web.active(), false);
 web.document.activeElement = web.input();
 web.events.get('focusout')();
 web.cleanup();
+assert.equal(web.disconnected(), true, 'unmount disconnects removal observation');
 await new Promise(resolve => setTimeout(resolve, 170));
 assert.equal(web.active(), false, 'queued focus work cannot publish after unmount');
 assert.equal(web.events.size, 0);

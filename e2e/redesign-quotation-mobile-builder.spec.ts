@@ -119,13 +119,19 @@ test('critical mobile quotation adds custom products from full-screen picker and
     expect.objectContaining({ name: 'Measured custom shelf', keep_in_catalog: false }),
     expect.objectContaining({ name: 'Reusable custom basin', price: 900, mrp: 0, is_custom: true, keep_in_catalog: true }),
   ]);
-  await page.getByRole('button', { name: 'Review quotation', exact: true }).click();
+  // The two-pane tablet already displays the quotation beside the catalog.
+  const review = page.getByRole('button', { name: 'Review quotation', exact: true });
+  await expect(review.or(page.getByTestId('receipt-list')).filter({ visible: true }).first()).toBeVisible();
+  if (await review.isVisible()) await review.click();
+  await expect(page.getByTestId('receipt-list')).toBeVisible();
   await expect(page.getByText('Measured custom shelf', { exact: true })).toBeVisible();
   await expect(page.getByText('Reusable custom basin', { exact: true })).toBeVisible();
   await expect.poll(() => fixture.saved().items.length).toBe(2);
   await page.reload();
   await expect(page.getByTestId('quotation-workspace')).toBeVisible();
-  await page.getByRole('button', { name: 'Review quotation', exact: true }).click();
+  await expect(review.or(page.getByTestId('receipt-list')).filter({ visible: true }).first()).toBeVisible();
+  if (await review.isVisible()) await review.click();
+  await expect(page.getByTestId('receipt-list')).toBeVisible();
   await expect(page.getByText('Measured custom shelf', { exact: true })).toBeVisible();
   await expect(page.getByText('Reusable custom basin', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);

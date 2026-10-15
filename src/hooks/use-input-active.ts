@@ -16,9 +16,11 @@ export function useInputActive() {
   const [active, setActive] = useState(false);
   useEffect(() => {
     if (Platform.OS === "web") {
+      let editingElement: HTMLElement | null = null;
       const update = () => {
         const input = document.activeElement;
-        setActive(input instanceof HTMLElement && input.matches('input:not([type="button"]):not([type="checkbox"]):not([type="radio"]),textarea,[contenteditable="true"]'));
+        editingElement = input instanceof HTMLElement && input.matches('input:not([type="button"]):not([type="checkbox"]):not([type="radio"]),textarea,[contenteditable="true"]') ? input : null;
+        setActive(editingElement !== null);
       };
       let blurTimer: ReturnType<typeof setTimeout>;
       // Let the blur-triggering tap finish before restored chrome moves its target.
@@ -30,8 +32,18 @@ export function useInputActive() {
       };
       document.addEventListener("focusin", onFocus);
       document.addEventListener("focusout", afterBlur);
+      // WebKit can remove a focused modal input without emitting focusout.
+      // Reconcile that removal with the same tap-settlement delay as a blur.
+      const observer = new MutationObserver(() => {
+        if (editingElement && !editingElement.isConnected) {
+          editingElement = null;
+          afterBlur();
+        }
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
       update();
       return () => {
+        observer.disconnect();
         clearTimeout(blurTimer);
         document.removeEventListener("focusin", onFocus);
         document.removeEventListener("focusout", afterBlur);

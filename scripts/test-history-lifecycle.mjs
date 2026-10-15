@@ -128,6 +128,7 @@ function overlayFixture() {
     useEffect: effect, useLayoutEffect: effect,
   };
   const previous = { isConnected: true, focus() { document.activeElement = this; } };
+  const returnFocusRef = { current: previous };
   const input = { focus() { document.activeElement = this; }, getClientRects: () => [{}], getAttribute: () => null };
   const panel = { contains: target => target === input || target === panel,
     querySelectorAll: () => [input], focus() { document.activeElement = this; } };
@@ -141,10 +142,10 @@ function overlayFixture() {
   });
   function render(close, dismissable = true, open = true, explicitTrigger = false) {
     index = 0; pending = [];
-    module.useOverlayFocus(open, close, dismissable, explicitTrigger ? { current: previous } : undefined).current = panel;
+    module.useOverlayFocus(open, close, dismissable, explicitTrigger ? returnFocusRef : undefined).current = panel;
   }
   function commit() { for (const apply of pending) apply(); pending = []; if (timer) { const run = timer; timer = null; run(); } }
-  return { render, commit, events, previous, document,
+  return { render, commit, events, previous, document, returnFocusRef,
     flushFrames() { const pendingFrames = frames.splice(0); for (const frame of pendingFrames) frame(); },
     old: () => oldCalls++, newer: () => newCalls++,
     get calls() { return [oldCalls, newCalls]; },
@@ -200,6 +201,17 @@ test('focus restoration waits until the closing native web portal releases its t
   h.setPanelConnected(false); h.flushFrames();
   assert.equal(h.document.activeElement, h.previous);
   h.unmount(); assert.equal(h.events.size, 0);
+});
+
+test('overlay restores the live explicit trigger after responsive replacement', () => {
+  const h = overlayFixture();
+  h.render(h.old, true, true, true); h.commit();
+  h.previous.isConnected = false;
+  const replacement = { isConnected: true, focus() { h.document.activeElement = this; } };
+  h.returnFocusRef.current = replacement;
+  h.render(h.old, true, false, true); h.commit(); h.flushFrames();
+  assert.equal(h.document.activeElement, replacement);
+  h.unmount();
 });
 
 test('overlay restoration runs after native Modal cleanup changes focus', () => {

@@ -9,7 +9,7 @@
 import { filterValues, matchesFilter, toggleFilterValue } from "@/src/utils/filters";
 import Feather from "@expo/vector-icons/Feather";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Linking, Platform, Pressable, RefreshControl, ScrollView, SectionList, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 import { Swipeable } from "@/src/components/Swipeable";
@@ -1829,7 +1829,9 @@ function CallOutcomeSheet({ visible, f, initialOutcome, onClose, onSubmit }: {
   const [scopeDirty, setScopeDirty] = useState(false);
   const { floors: editableFloors } = useFloorAccess();
   const canEditCallScope = !!f && (f.interested_floor_ids || [f.floor_id || selectedFloorId]).every(id => editableFloors.some(floor => floor.id === id));
-  useEffect(() => { if (visible) { setOutcome(initialOutcome || null); setNotes(""); setNextFollowupAt(""); setResponse(""); setScopeDirty(false); setCallScope({ interested_floor_ids: f?.interested_floor_ids?.length ? f.interested_floor_ids : [f?.floor_id || selectedFloorId], assignments: f?.assignments || [] }); } }, [visible, initialOutcome, f, selectedFloorId]);
+  // Initialize before the sheet can accept a choice or a Lost reason. A passive
+  // effect could run after the first click and erase that new input.
+  useLayoutEffect(() => { if (visible) { setOutcome(initialOutcome || null); setNotes(""); setNextFollowupAt(""); setResponse(""); setScopeDirty(false); setCallScope({ interested_floor_ids: f?.interested_floor_ids?.length ? f.interested_floor_ids : [f?.floor_id || selectedFloorId], assignments: f?.assignments || [] }); } }, [visible, initialOutcome, f, selectedFloorId]);
   if (!f) return null;
   const notesRequired = outcome === "lost";
   const pending = outcome === "pending";

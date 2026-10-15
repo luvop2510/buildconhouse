@@ -6,6 +6,11 @@ import { Platform, View } from 'react-native';
 const portals: HTMLElement[] = [];
 const panels = new Map<HTMLElement, HTMLElement>();
 const isolated = new Map<HTMLElement, { inert: boolean; hidden: string | null }>();
+// Unlike the opening active element, an explicit trigger can be replaced by
+// responsive rendering while the overlay is mounted.
+function liveTrigger(ref?: RefObject<View | null>) {
+  return ref?.current as unknown as HTMLElement | null;
+}
 function isolate(element: HTMLElement) {
   if (isolated.has(element)) return;
   isolated.set(element, { inert: element.inert, hidden: element.getAttribute('aria-hidden') });
@@ -108,7 +113,11 @@ export function useOverlayFocus(open: boolean, onClose: () => void, dismissable 
           return;
         }
         const restoredPanel = restoredPortal ? panels.get(restoredPortal) : undefined;
-        if (previous?.isConnected && (!restoredPanel || restoredPanel.contains(previous))) previous.focus();
+        // A responsive header may replace the trigger while its sheet is open.
+        // Read the live explicit ref after dismissal, not only the opening node.
+        const explicit = liveTrigger(returnFocusRef);
+        const target = explicit?.isConnected ? explicit : previous;
+        if (target?.isConnected && (!restoredPanel || restoredPanel.contains(target))) target.focus();
         else if (restoredPanel?.isConnected) {
           const target = restoredPanel.querySelector<HTMLElement>('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),select:not(:disabled),a[href],[tabindex="0"]');
           (target || restoredPanel).focus();

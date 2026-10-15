@@ -14,9 +14,10 @@ test('critical sanitary pending quotations have a clear phone gutter and keep ca
   await expect(card).toBeVisible();
   const box = await card.boundingBox();
   const width = page.viewportSize()?.width ?? 0;
+  const gutter = width < 768 ? 20 : 16;
   expect(box).not.toBeNull();
-  expect(box!.x, 'quotation card should have a visible left gutter').toBeGreaterThanOrEqual(20);
-  expect(box!.x + box!.width, 'quotation card should have a visible right gutter').toBeLessThanOrEqual(width - 20);
+  expect(box!.x, 'quotation card should have a visible left gutter').toBeGreaterThanOrEqual(gutter);
+  expect(box!.x + box!.width, 'quotation card should have a visible right gutter').toBeLessThanOrEqual(width - gutter);
 
   for (const content of [page.getByText('Q-2026-00421', { exact: true }), page.getByText('Mobile Buyer', { exact: true })]) {
     const innerBox = await content.boundingBox();

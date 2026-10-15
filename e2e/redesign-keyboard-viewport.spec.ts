@@ -4,16 +4,16 @@ import { floors, mockSession } from './audit-fixtures';
 // Engine emulation does not open the operating system keyboard. Exercise the
 // real viewport event/DOM layout behavior with its documented geometry instead.
 async function keyboardFixture(page: Page) {
-  await page.addInitScript(() => {
+  await page.addInitScript(({ height, width }) => {
     const viewport = new EventTarget();
-    Object.assign(viewport, { height: innerHeight, width: innerWidth, offsetTop: 0, offsetLeft: 0, scale: 1 });
+    Object.assign(viewport, { height, width, offsetTop: 0, offsetLeft: 0, scale: 1 });
     Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport });
     (window as any).resizeKeyboard = (height: number, offsetTop = 0, scale = 1) => {
       Object.assign(viewport, { height, offsetTop, scale, width: innerWidth / scale });
       viewport.dispatchEvent(new Event('resize'));
       viewport.dispatchEvent(new Event('scroll'));
     };
-  });
+  }, page.viewportSize()!);
 }
 
 async function resizeKeyboard(page: Page, height: number, top = 0, scale = 1) {
@@ -78,7 +78,14 @@ test('critical keyboard viewport: staff drawer scrolls focused lower fields and 
   await inVisibleArea(role, 280);
   await resizeKeyboard(page, 100, 10, 2);
   expect(await page.evaluate(() => document.documentElement.style.getPropertyValue('--forge-visible-height'))).toBe('280px');
-  await resizeKeyboard(page, page.viewportSize()!.height);
+  // Rotate across the shell breakpoint while the same drawer remains open.
+  const originalViewport = page.viewportSize()!;
+  await page.setViewportSize({ width: originalViewport.height, height: originalViewport.width });
+  await resizeKeyboard(page, originalViewport.width);
+  await expect(role).toHaveValue('Ground Floor Sales');
+  await expect(page.getByTestId('add-staff-phone')).toHaveValue('9876543210');
+  await page.setViewportSize(originalViewport);
+  await resizeKeyboard(page, originalViewport.height);
   await panel.getByRole('button', { name: 'Close', exact: true }).click();
   await expect(panel).toHaveCount(0);
   await expect(page.getByTestId('team-add-btn')).toBeFocused();

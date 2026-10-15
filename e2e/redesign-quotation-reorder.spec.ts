@@ -225,28 +225,34 @@ test('critical quotation a product can be dragged down into another room without
     const destination = element.querySelector<HTMLElement>('[data-quotation-row="line-c"]');
     if (destination) element.scrollTop = destination.offsetTop + destination.offsetHeight / 2 - element.clientHeight / 2;
   });
-  // Stop before the destination first. The following step models continuing
-  // the same gesture past that product, with both settled insertion positions.
-  const beforeY = await page.locator('[data-quotation-row="line-c"]').evaluate(destination => {
-    const row = destination as HTMLElement;
-    return row.parentElement!.getBoundingClientRect().top + row.offsetTop + row.offsetHeight / 4;
-  });
-  expect(beforeY).toBeGreaterThan(canvas.y);
-  expect(beforeY).toBeLessThan(canvas.y + canvas.height);
-  await page.mouse.move(x, beforeY);
-  await expect.poll(() => page.locator('[data-quotation-row]').evaluateAll(elements => elements.map(element => element.getAttribute('data-quotation-row')))).toEqual(['hdr-Master Bath', 'line-b', 'hdr-Kitchen', 'line-a', 'line-c', 'hdr-Closed']);
-  const dropY = await page.getByTestId('receipt-list').evaluate(element => {
-    const destination = element.querySelector<HTMLElement>('[data-quotation-row="line-c"]');
-    const root = destination?.parentElement;
-    if (!destination || !root) throw new Error('Missing destination geometry');
-    // FLIP animates the visible rectangle during insertion. Hit testing uses
-    // layout coordinates, so scroll and choose the drop from those same bounds.
-    element.scrollTop = destination.offsetTop + destination.offsetHeight / 2 - element.clientHeight / 2;
-    return root.getBoundingClientRect().top + destination.offsetTop + destination.offsetHeight / 2 + 20;
-  });
-  expect(dropY).toBeGreaterThan(canvas.y);
-  expect(dropY).toBeLessThan(canvas.y + canvas.height);
-  await page.mouse.move(x, dropY);
+  // Preview insertion and browser scrolling can change layout between calls.
+  // Model both settled insertion positions using fresh bounds in each phase.
+  const moveToInsertion = async (after: boolean) => {
+    const intendedRows = after
+      ? ['hdr-Master Bath', 'line-b', 'hdr-Kitchen', 'line-c', 'line-a', 'hdr-Closed']
+      : ['hdr-Master Bath', 'line-b', 'hdr-Kitchen', 'line-a', 'line-c', 'hdr-Closed'];
+    await expect(async () => {
+      const dropY = await page.getByTestId('receipt-list').evaluate((element, after) => {
+        const destination = element.querySelector<HTMLElement>('[data-quotation-row="line-c"]');
+        const boundary = element.querySelector<HTMLElement>(after ? '[data-quotation-row="hdr-Closed"]' : '[data-quotation-row="hdr-Kitchen"]');
+        const root = destination?.parentElement;
+        if (!destination || !boundary || !root) throw new Error('Missing destination geometry');
+        element.scrollTop = destination.offsetTop + destination.offsetHeight / 2 - element.clientHeight / 2;
+        const top = root.getBoundingClientRect().top;
+        const productMid = top + destination.offsetTop + destination.offsetHeight / 2;
+        const boundaryMid = top + boundary.offsetTop + boundary.offsetHeight / 2;
+        const viewport = element.getBoundingClientRect();
+        const lower = Math.max(Math.min(productMid, boundaryMid) + 1, viewport.top + 65);
+        const upper = Math.min(Math.max(productMid, boundaryMid) - 1, viewport.bottom - 65);
+        if (lower >= upper) throw new Error('Destination insertion gap is outside the receipt');
+        return (lower + upper) / 2;
+      }, after);
+      await page.mouse.move(x, dropY);
+      expect(await page.locator('[data-quotation-row]').evaluateAll(elements => elements.map(element => element.getAttribute('data-quotation-row')))).toEqual(intendedRows);
+    }).toPass({ timeout: 5000 });
+  };
+  await moveToInsertion(false);
+  await moveToInsertion(true);
   await page.mouse.up();
   await expect.poll(() => getDocument().items.map(item => item.id)).toEqual(['line-b', 'line-c', 'line-a', 'line-hidden']);
   expect(getDocument().items.find(item => item.id === 'line-a')?.room).toBe('Kitchen');

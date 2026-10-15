@@ -101,6 +101,7 @@ function PaletteSession({ open, onClose, selectedFloorId, returnFocusRef }: { op
   const inputRef = useRef<TextInput>(null);
   const anim = useRef(new Animated.Value(0)).current;
   const [visible, setVisible] = useState(open);
+  const hasOpened = useRef(open);
   // The web Modal remains mounted for its exit animation. Keep isolation and
   // focus ownership until that portal actually closes; restoring on `open`
   // let its still-active native focus trap move focus onto the next backdrop.
@@ -132,26 +133,27 @@ function PaletteSession({ open, onClose, selectedFloorId, returnFocusRef }: { op
   // actually been removed, so rapid close/reopen cycles cannot leave focus on
   // the document body.
   useEffect(() => {
-    if (visible || open || Platform.OS !== "web") return;
-    const target = returnFocusRef.current as unknown as HTMLElement | null;
-    let secondFrame = 0;
+    if (open) hasOpened.current = true;
+    if (!hasOpened.current || visible || open || Platform.OS !== "web") return;
+    let cancelled = false;
+    let frame = 0;
     let restoreFrames = 0;
     const restore = () => {
-      if (open) return;
-      const current = target?.isConnected ? target : document.querySelector<HTMLElement>('[data-testid="floor-switcher"]');
-      if (current) current.focus();
-      else if (restoreFrames++ < 60) requestAnimationFrame(restore);
+      if (cancelled) return;
+      const explicit = returnFocusRef.current as unknown as HTMLElement | null;
+      const usable = (element: HTMLElement | null): element is HTMLElement => !!element?.isConnected && element.getClientRects().length > 0 && !element.closest('[inert]');
+      const current = usable(explicit) ? explicit : Array.from(document.querySelectorAll<HTMLElement>('[data-testid="floor-switcher"]')).find(element => usable(element));
+      // RNW retains the closing portal briefly; its focus trap must be gone.
+      if (current && !document.querySelector('[role="dialog"][aria-label="Search workspace"]')) {
+        current.focus();
+        if (document.activeElement === current) return;
+      }
+      if (restoreFrames++ < 60) frame = requestAnimationFrame(restore);
     };
-    const firstFrame = requestAnimationFrame(() => {
-      secondFrame = requestAnimationFrame(() => {
-        restore();
-      });
-    });
-    const settledTimer = setTimeout(restore, 120);
+    frame = requestAnimationFrame(restore);
     return () => {
-      cancelAnimationFrame(firstFrame);
-      if (secondFrame) cancelAnimationFrame(secondFrame);
-      clearTimeout(settledTimer);
+      cancelled = true;
+      cancelAnimationFrame(frame);
     };
   }, [visible, open, returnFocusRef]);
 

@@ -80,3 +80,57 @@ test('a pending old-floor contact cannot open another app after switching worksp
   old.state.contact({ id: 'sanitary-one' }, 'call');
   assert.equal(old.requests.length, count);
 });
+
+// Model a first click after layout but before passive effects. Initializing the
+// sheet in a passive effect must not erase a choice or typed Lost reason.
+const callOutcomeStart = source.indexOf('function CallOutcomeSheet(');
+const callOutcomeBodyEnd = source.indexOf('  if (!f) return null;', callOutcomeStart);
+assert.ok(callOutcomeStart >= 0 && callOutcomeBodyEnd > callOutcomeStart);
+const callOutcomeSource = source.slice(callOutcomeStart, callOutcomeBodyEnd) +
+  '  return { outcome, notes, setOutcome, setNotes };\n}\nexport { CallOutcomeSheet };';
+const callOutcomeCompiled = ts.transpileModule(callOutcomeSource, { compilerOptions: {
+  module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
+} }).outputText;
+function callOutcomeFixture() {
+  const slots = [], layout = [], passive = [];
+  let cursor = 0, current;
+  const schedule = queue => (callback, deps) => {
+    const index = cursor++;
+    if (!slots[index]?.deps || deps.some((value, i) => !Object.is(value, slots[index].deps[i]))) {
+      slots[index] = { deps };
+      queue.push(callback);
+    }
+  };
+  const exports = {};
+  vm.runInNewContext(callOutcomeCompiled, { exports,
+    useState(initial) {
+      const index = cursor++;
+      slots[index] ||= { value: initial };
+      return [slots[index].value, value => { slots[index].value = value; }];
+    },
+    useEffect: schedule(passive), useLayoutEffect: schedule(layout),
+    useFloorAccess: () => ({ selectedFloorId: 'first-floor', floors: [{ id: 'first-floor' }] }),
+  });
+  const props = { visible: false, f: null };
+  const render = () => {
+    cursor = 0;
+    current = exports.CallOutcomeSheet(props);
+    while (layout.length) layout.shift()();
+    cursor = 0; current = exports.CallOutcomeSheet(props);
+    return current;
+  };
+  const flushPassive = () => { while (passive.length) passive.shift()(); };
+  render(); flushPassive();
+  props.visible = true; props.f = { id: 'first-call', floor_id: 'first-floor' };
+  render();
+  return { render, flushPassive, get state() { return current; } };
+}
+
+test('opening call outcome initializes before the first choice and Lost reason', () => {
+  const h = callOutcomeFixture();
+  h.state.setOutcome('lost'); h.state.setNotes('Client chose another vendor');
+  h.render(); h.flushPassive();
+  const actual = h.render();
+  assert.equal(actual.outcome, 'lost', 'delayed initialization cannot erase the first selected outcome');
+  assert.equal(actual.notes, 'Client chose another vendor', 'delayed initialization cannot erase the first Lost reason');
+});

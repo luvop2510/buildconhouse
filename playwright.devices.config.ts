@@ -44,6 +44,7 @@ export default defineConfig({
     { name: 'android-chrome', use: { ...devices['Pixel 7'], browserName: 'chromium' } },
     { name: 'iphone-safari', use: { ...devices['iPhone 13'], browserName: 'webkit' } },
     { name: 'ipad-safari', use: { ...devices['iPad Pro 11'], browserName: 'webkit' } },
-    { name: 'desktop-firefox', use: { ...devices['Desktop Firefox'], browserName: 'firefox', viewport: { width: 1440, height: 900 } } },
+    // Exercise fixture contact requests without opening an operating-system dialer.
+    { name: 'desktop-firefox', use: { ...devices['Desktop Firefox'], browserName: 'firefox', viewport: { width: 1440, height: 900 }, launchOptions: { firefoxUserPrefs: { 'network.protocol-handler.external.tel': false } } } },
   ],
 });

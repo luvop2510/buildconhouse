@@ -94,11 +94,17 @@ test('critical six-character passwords: owner change rejects five and accepts si
   await page.getByTestId('current-password-input').fill('existing-password');
   await page.getByTestId('new-password-input').fill('12345');
   await page.getByTestId('confirm-password-input').fill('12345');
+  await expect(page.getByTestId('current-password-input')).toHaveValue('existing-password');
+  await expect(page.getByTestId('new-password-input')).toHaveValue('12345');
+  await expect(page.getByTestId('confirm-password-input')).toHaveValue('12345');
   await page.getByTestId('save-password-btn').click();
   await expect(page.getByText('New password must be at least 6 characters', { exact: true })).toBeVisible();
   expect(writes).toHaveLength(0);
   await page.getByTestId('new-password-input').fill('123456');
   await page.getByTestId('confirm-password-input').fill('123456');
+  await expect(page.getByTestId('current-password-input')).toHaveValue('existing-password');
+  await expect(page.getByTestId('new-password-input')).toHaveValue('123456');
+  await expect(page.getByTestId('confirm-password-input')).toHaveValue('123456');
   await page.getByTestId('save-password-btn').click();
   await expect(page).toHaveURL(/\/settings$/);
   expect(writes).toEqual([{ current_password: 'existing-password', new_password: '123456', confirm_password: '123456' }]);

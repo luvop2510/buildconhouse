@@ -22,6 +22,27 @@ async function openPalette(page: Page) {
   return { dialog, input };
 }
 
+test('critical initially closed command palette preserves password input focus', async ({ page }) => {
+  await mockSession(page, '/settings-password', false);
+  await page.goto('/settings-password');
+  const current = page.getByTestId('current-password-input');
+  await current.fill('initial-focus-fixture');
+  // Observe the whole initial restoration window, including both animation
+  // frames and the delayed fallback; a final focus assertion alone can miss it.
+  const stolenFocus = await current.evaluate(element => new Promise<boolean>(resolve => {
+    let lost = document.activeElement !== element;
+    const onFocus = (event: FocusEvent) => { if (event.target !== element) lost = true; };
+    document.addEventListener('focusin', onFocus);
+    setTimeout(() => {
+      document.removeEventListener('focusin', onFocus);
+      resolve(lost || document.activeElement !== element);
+    }, 200);
+  }));
+  expect(stolenFocus).toBe(false);
+  await expect(current).toHaveValue('initial-focus-fixture');
+  await expect(current).toBeFocused();
+});
+
 test('critical command palette keyboard close and rapid reopen start a fresh focused query', async ({ page }) => {
   await preparePalette(page);
   const trigger = page.getByTestId('floor-switcher').filter({ visible: true }).first();
