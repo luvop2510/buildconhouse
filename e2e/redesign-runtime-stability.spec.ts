@@ -96,6 +96,8 @@ test('critical opening new quotation and full warehouse repeatedly keeps navigat
     await expect(page.getByTestId('godown-lot-stable-stock-60')).toHaveCount(0);
     await page.getByRole('textbox', { name: 'Search godown stock', exact: true }).fill('STABLE-1014');
     await expect(page.getByTestId('godown-lot-stable-stock-1014')).toBeVisible();
+    if (page.viewportSize()!.width < 768) await expect(page.getByTestId('bottom-nav-more')).toBeHidden();
+    await page.getByRole('textbox', { name: 'Search godown stock', exact: true }).blur();
     await health.assertHealthy();
     await navigate(page, 'Customers');
     await expect(page.getByText('No customers yet', { exact: true })).toBeVisible();
