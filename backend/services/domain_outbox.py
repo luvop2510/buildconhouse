@@ -8,6 +8,7 @@ retry is safe after a process/network failure.
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
 from uuid import uuid4
@@ -671,19 +672,28 @@ async def dispatch_pending(limit: int = 100) -> list[dict]:
     ).sort("created_at", 1).to_list(limit)
     results = []
     for event in events:
+        claimed = None
         try:
             claimed = await _claim_event(event["id"])
             if not claimed:
                 continue
             results.append(await dispatch_event(event["id"], claim_id=claimed["claim_id"]))
         except Exception as exc:  # Persist failure safely; retry remains possible.
-            exhausted = int(event.get("attempts") or 0) + 1 >= MAX_DISPATCH_ATTEMPTS
+            if not claimed:
+                # A failed/ambiguous claim does not establish ownership. Let
+                # its lease expire without mutating another worker's event.
+                logging.getLogger("forge.outbox").warning("Outbox claim failed (%s)", type(exc).__name__)
+                continue
+            exhausted = int(claimed.get("attempts") or 0) + 1 >= MAX_DISPATCH_ATTEMPTS
             patch: dict = {"last_error": str(exc), "updated_at": now_iso()}
             if exhausted:
                 # Dead-letter: stop retrying, keep the event for operator review
                 # via GET /api/ops/outbox. Nothing is deleted.
                 patch["status"] = "dead_letter"
-            await db.event_outbox.update_one({"id": event["id"], "status": "processing"}, {"$set": patch, "$inc": {"attempts": 1}})
+            await db.event_outbox.update_one(
+                {"id": event["id"], "status": "processing", "claim_id": claimed["claim_id"]},
+                {"$set": patch, "$inc": {"attempts": 1}},
+            )
     return results
 
 

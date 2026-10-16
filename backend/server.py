@@ -378,10 +378,16 @@ async def readiness():
         return JSONResponse(status_code=503, content={"status": "error", "detail": "pending migrations", "migrations": pending})
     try:
         await db.command("ping")
-        from media_storage.supabase_driver import supabase_ready
-        await supabase_ready()
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Readiness dependency unavailable: database (%s)", type(exc).__name__)
         return JSONResponse(status_code=503, content={"status": "error", "detail": "database unavailable"})
+    try:
+        from media_storage.factory import storage_ready
+        await storage_ready()
+    except Exception as exc:  # noqa: BLE001
+        # Provider exception text can contain credentials, URLs or bodies.
+        logger.warning("Readiness dependency unavailable: storage (%s)", type(exc).__name__)
+        return JSONResponse(status_code=503, content={"status": "error", "detail": "storage unavailable"})
     return {"status": "ok", "pdf_renderer_revision": PDF_RENDERER_REVISION}
 
 

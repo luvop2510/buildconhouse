@@ -36,7 +36,14 @@ export function ReferrerField({ value, onChange, floorId, label = "Referred By",
     return () => { alive = false; };
   }, [open, floorId]);
   const filtered = useMemo(() => items.filter((item) => item.type === kind), [items, kind]);
-  const choose = (item: Referrer | null) => { onChange(item); setOpen(false); };
+  const close = () => {
+    // Creating a partner may finish after dismissal. Keep that response from
+    // selecting a partner in a newer draft or closing a reopened picker.
+    lifecycle.current += 1;
+    setAdding(false);
+    setOpen(false);
+  };
+  const choose = (item: Referrer | null) => { onChange(item); close(); };
   const add = async () => {
     if (!allowCreate || adding || !name.trim()) return;
     const version = lifecycle.current;
@@ -53,17 +60,17 @@ export function ReferrerField({ value, onChange, floorId, label = "Referred By",
 
   return <View style={{ gap: 6 }}>
     <Text style={type.label}>{label}</Text>
-    <Pressable onPress={() => setOpen(true)} style={{ minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md, justifyContent: "center" }}>
+    <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ expanded: open }} aria-haspopup="dialog" onPress={() => setOpen(true)} style={{ minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md, justifyContent: "center" }}>
       <Text style={type.body}>{value ? [value.name, value.company].filter(Boolean).join(" · ") : "Select architect or interior designer"}</Text>
     </Pressable>
-    <Sheet visible={open} onClose={() => setOpen(false)} title="Referred By" variant="bottom" testID="customer-referrer-sheet">
+    <Sheet visible={open} onClose={close} title="Referred By" variant="bottom" testID="customer-referrer-sheet">
       <ScrollView contentContainerStyle={{ padding: isPhone ? spacing.md : spacing.lg, gap: spacing.sm, paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
         {error ? <Alert tone="error" title={error} /> : null}
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
           {(["architect", "interior_designer"] as const).map((option) => <Button key={option} label={option === "architect" ? "Architect" : "Interior designer"} variant={kind === option ? "primary" : "secondary"} onPress={() => setKind(option)} />)}
         </View>
-        <Pressable onPress={() => choose(null)} style={{ paddingVertical: spacing.sm }}><Text style={type.body}>No referrer</Text></Pressable>
-        {filtered.map((item) => <Pressable key={item.id} onPress={() => choose(item)} style={{ paddingVertical: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border }}><Text style={type.body}>{[item.name, item.company].filter(Boolean).join(" · ")}</Text></Pressable>)}
+        <Pressable accessibilityRole="button" onPress={() => choose(null)} style={{ minHeight: 44, justifyContent: "center", paddingVertical: spacing.sm }}><Text style={type.body}>No referrer</Text></Pressable>
+        {filtered.map((item) => <Pressable key={item.id} accessibilityRole="button" onPress={() => choose(item)} style={{ minHeight: 44, justifyContent: "center", paddingVertical: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border }}><Text style={type.body}>{[item.name, item.company].filter(Boolean).join(" · ")}</Text></Pressable>)}
         {allowCreate ? <>
         <Text style={[type.label, { marginTop: spacing.md }]}>Add new {kind === "architect" ? "architect" : "interior designer"}</Text>
         <TextInput value={name} onChangeText={setName} placeholder="Designer / architect name" accessibilityLabel="Designer / architect name" style={{ minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md }} />

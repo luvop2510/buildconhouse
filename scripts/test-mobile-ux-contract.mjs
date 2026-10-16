@@ -138,8 +138,10 @@ assert.match(quotationList, /quotations-lifecycle-toggle/);
 
 const tileList = read("../app/(admin)/tiles/index.tsx");
 assert.doesNotMatch(tileList, /tiles-fulfilled-toggle/);
-assert.match(tileList, /doc_type=tiles_selection&view=\$\{completed \? "completed" : "pending"\}/);
-assert.match(tileList, /doc_type=tiles_quotation&view=\$\{completed \? "completed" : "pending"\}/);
+assert.match(tileList, /doc_type=\$\{docType\}&view=\$\{completed \? "completed" : "pending"\}/);
+assert.match(tileList, /loadType\("tiles_selection"\), loadType\("tiles_quotation"\)/);
+assert.match(tileList, /floorId: "ground-floor"/);
+assert.match(tileList, /if \(!floor.ready \|\| scopeRef.current !== scope\) return/);
 assert.match(tileList, /purchase_completion_status === "completed"/);
 assert.match(tileList, /tiles-lifecycle-toggle/);
 

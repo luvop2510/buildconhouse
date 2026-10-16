@@ -14,6 +14,8 @@ from urllib.parse import urlsplit
 def source_fingerprint(env: Mapping[str, str]) -> str:
     mongo_value = env.get("MONGO_URL", "")
     storage_value = env.get("SUPABASE_URL", "")
+    if env.get("MEDIA_STORAGE_DRIVER", "supabase") == "r2":
+        storage_value = "https://" + env.get("R2_ACCOUNT_ID", "") + ".r2.cloudflarestorage.com"
     database = env.get("DB_NAME", "")
     # The exporter selects the literal DB_NAME. Reject characters that parsers
     # might discard instead of certifying a normalized, different namespace.
@@ -37,6 +39,14 @@ def source_fingerprint(env: Mapping[str, str]) -> str:
     # Bind target identities, excluding Mongo username/password and storage keys.
     identity = {"mongo_scheme": mongo.scheme, "mongo_hosts": hosts,
                 "database": database, "storage_origin": "https://" + storage.netloc.lower()}
+    if env.get("MEDIA_STORAGE_DRIVER", "supabase") == "r2":
+        account = env.get("R2_ACCOUNT_ID", "")
+        if not re.fullmatch(r"[a-f0-9]{32}", account):
+            raise ValueError("invalid_source")
+        identity["storage_origin"] = f"https://{account}.r2.cloudflarestorage.com"
+        identity["buckets"] = [env.get("SUPABASE_PUBLIC_BUCKET", ""), env.get("SUPABASE_PRIVATE_BUCKET", "")]
+        if not all(identity["buckets"]) or identity["buckets"][0] == identity["buckets"][1]:
+            raise ValueError("invalid_source")
     return hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 

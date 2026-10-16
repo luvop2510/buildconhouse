@@ -3,12 +3,17 @@ name: Pre-deployment Gate
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   release-gate:
     runs-on: ubuntu-latest
     environment: production
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -54,6 +59,8 @@ jobs:
           npm run test:team-contacts
           npm run test:quotation-whatsapp
           npm run test:release-stability
+          node scripts/test-r2-media-worker.mjs
+          node scripts/test-tiles-loading.mjs
           npm run test:quotation-media && npm run test:downloads && npm run test:quotation-contract && npm run test:quotation-concealed-parts && npm run test:purchases-contract && npm run test:notebook && npm run test:mobile-ux && npm run test:api-client && npm run test:api-proxy && npm run test:sales-periods && npm run test:monitoring-contract && npm run test:frontend-performance && npm run test:icon-fonts && npm run test:release-recovery && npm run test:web-worker && node scripts/verify-tile-orders-contract.mjs
           npm run build
           npm run test:mobile-budget
@@ -69,7 +76,7 @@ jobs:
           path: output/playwright
           if-no-files-found: error
           retention-days: 3
-      - name: Live MongoDB, Supabase and required-index check (read-only)
+      - name: Live MongoDB, configured storage and required-index check (read-only)
         working-directory: backend
         env:
           MONGO_URL: ${{ secrets.MONGO_URL }}
@@ -79,9 +86,18 @@ jobs:
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           SUPABASE_PUBLIC_BUCKET: forge-products
           SUPABASE_PRIVATE_BUCKET: forge-private
-          MEDIA_STORAGE_DRIVER: supabase
+          MEDIA_STORAGE_DRIVER: ${{ vars.MEDIA_STORAGE_DRIVER }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_API_TOKEN: ${{ secrets.R2_API_TOKEN }}
+          R2_PUBLIC_URL: ${{ vars.R2_PUBLIC_URL }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           ENVIRONMENT: production
         run: |
+          case "$MEDIA_STORAGE_DRIVER" in
+            supabase|r2) ;;
+            *) echo "::error::Set production MEDIA_STORAGE_DRIVER to supabase or r2."; exit 1 ;;
+          esac
           python scripts/predeploy_backend_gate.py
           python scripts/predeploy_media_integrity.py --page-size 100 --delay-seconds 0.05

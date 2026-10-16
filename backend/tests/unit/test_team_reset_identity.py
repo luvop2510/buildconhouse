@@ -66,7 +66,7 @@ def test_login_uses_explicit_username_or_email_and_normalized_throttle(monkeypat
     request = Request({"type": "http", "method": "POST", "path": "/api/auth/login", "headers": []})
     response = asyncio.run(auth_routes.staff_login(LoginPayload(email=identifier, password="test-correct-password"), request))
     assert response.user.login_id == "JK PATEL"
-    assert calls == [query]
+    assert calls == [query, {"id": "owner", "password_hash": "test-hash"}]
     assert reservations == [normalize_login_id(identifier)]
     with pytest.raises(HTTPException, match="Invalid email or password"):
         asyncio.run(auth_routes.staff_login(LoginPayload(email=identifier, password="wrong"), request))

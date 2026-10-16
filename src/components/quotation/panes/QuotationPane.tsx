@@ -12,7 +12,7 @@ import { Text, TextInput } from "@/src/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useBp } from "@/src/design/responsive";
 import { useInputActive } from "@/src/hooks/use-input-active";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ProductExplorer } from "../catalog/ProductExplorer";
 import { colors, money, spacing } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";
@@ -38,7 +38,9 @@ export function QuotationPane({
   const { isPhone: viewportPhone } = useBp();
   const inputActive = useInputActive();
   const [section, setSection] = useState<"products" | "quotation">("products");
+  const [roomsOpen, setRoomsOpen] = useState(false);
   const browsing = browseInline && section === "products";
+  useEffect(() => { setRoomsOpen(false); }, [b.s.activeRoom]);
 
   return (
     <View style={styles.panel} testID="quotation-workspace">
@@ -85,15 +87,21 @@ export function QuotationPane({
         )}
       </View>}
 
+      {browsing && roomsOpen ? <View style={styles.browseRooms}><RoomChipRow /></View> : null}
       {browseInline ? <View style={[styles.body, !browsing && { display: "none" }]}><ProductExplorer showCompactFilters /></View> : null}
       <View style={[styles.body, browsing && { display: "none" }]}>
         <QuotationCanvas compact={compact} />
       </View>
       {browsing ? (viewportPhone && inputActive ? null : <View style={[styles.browseFooter, { paddingBottom: Math.max(10, insets.bottom) }]}>
-        <View style={{ flex: 1, minWidth: 0 }} accessibilityLiveRegion="polite">
-          <Text style={styles.focusMeta} numberOfLines={1}>{b.s.lines.length} items · {b.s.activeRoom}</Text>
+        <Pressable style={{ flex: 1, minWidth: 0, minHeight: 44, justifyContent: "center" }} accessibilityRole="button"
+          accessibilityLabel={`Adding to ${b.s.activeRoom}. Change room`} accessibilityState={{ expanded: roomsOpen }}
+          testID="browse-room-toggle" onPress={() => setRoomsOpen(value => !value)}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+            <Text style={[styles.focusMeta, { flexShrink: 1 }]} numberOfLines={1}>{b.s.lines.length} items · {b.s.activeRoom}</Text>
+            <Feather name={roomsOpen ? "chevron-up" : "chevron-down"} size={13} color={colors.onSurfaceSecondary} />
+          </View>
           <Text style={styles.browseTotal} numberOfLines={1}>{money(b.totals.grand)}</Text>
-        </View>
+        </Pressable>
         <Pressable accessibilityRole="button" accessibilityLabel="Add products to quotation" testID="mobile-add-first"
           onPress={() => b.setPickerSheetOpen(true)} style={styles.focusRestore}><Feather name="plus" size={18} color={ds.brassDeep} /></Pressable>
         <Pressable accessibilityRole="button" accessibilityLabel="Review quotation" testID="mobile-review-quotation" style={styles.review}
@@ -209,6 +217,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSecondary, gap: spacing.sm,
   },
   browseFooter: { minHeight: 72, paddingHorizontal: 12, paddingVertical: 10, gap: 10, flexDirection: "row", alignItems: "center", borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border, backgroundColor: colors.surface },
+  browseRooms: { paddingHorizontal: 12, paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
   browseTotal: { fontSize: 19, color: colors.onSurface, fontWeight: "600", fontVariant: ["tabular-nums"] },
   review: { minHeight: 44, flexDirection: "row", gap: 6, alignItems: "center", justifyContent: "center", paddingHorizontal: 14, borderRadius: 10, backgroundColor: colors.brand },
   reviewLabel: { fontSize: 13, fontWeight: "700", color: colors.onBrand },

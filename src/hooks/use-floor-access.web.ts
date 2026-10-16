@@ -125,8 +125,8 @@ export function useFloorAccess() {
   return { access, floors: access?.floors || [], selectedFloorId, selectFloor, loading: !access && !error, error, retry };
 }
 
-export function useRequireFloorAccess(floorId: string) {
-  const { access, selectedFloorId, selectFloor } = useFloorAccess();
+export function useRequireFloorAccessState(floorId: string) {
+  const { access, selectedFloorId, selectFloor, loading, error, retry } = useFloorAccess();
   const router = useRouter();
   const synchronizedFloorRef = useRef<string | null>(null);
   useEffect(() => {
@@ -143,5 +143,10 @@ export function useRequireFloorAccess(floorId: string) {
       if (selectedFloorId !== floorId) void selectFloor(floorId);
     }
   }, [access, floorId, router, selectedFloorId, selectFloor]);
-  return Boolean(access && (access.all_floors || access.floor_ids.includes(floorId)) && selectedFloorId === floorId);
+  const ready = Boolean(access && (access.all_floors || access.floor_ids.includes(floorId)) && selectedFloorId === floorId);
+  return { ready, loading, error, retry };
+}
+
+export function useRequireFloorAccess(floorId: string) {
+  return useRequireFloorAccessState(floorId).ready;
 }

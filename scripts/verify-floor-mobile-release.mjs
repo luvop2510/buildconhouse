@@ -69,7 +69,8 @@ for (const [profile, engine, options] of [
       if (!await paymentLink.isVisible()) await page.getByRole('navigation', { name: 'Primary', exact: true }).getByRole('button', { name: 'More', exact: true }).click();
       await paymentLink.click();
       await expect(page.getByTestId('payments-page-details-toggle')).toHaveAttribute('aria-expanded', String(profile !== 'iphone-safari'));
-      await expect(page.getByRole('heading', { name: 'Payments', exact: true })).toBeVisible();
+      // Desktop renders both the workspace and expanded-details headings.
+      await expect(page.getByRole('heading', { name: 'Payments', exact: true }).filter({ visible: true })).not.toHaveCount(0);
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
       await health.assertHealthy();
       checks.push({ name: 'mobile payment overview and layout', profile, floor, passed: true });

@@ -3,6 +3,7 @@ import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from auth import (
     TILES_FLOOR_ID, floor_for_write, floor_inherit, floor_query, get_current_customer, get_current_user,
@@ -93,7 +94,7 @@ async def create_customer(
     cust = CP(**data)
     to_store = cust.dict()
     if password:
-        to_store["password_hash"] = hash_password(password)
+        to_store["password_hash"] = await run_in_threadpool(hash_password, password)
     # customers_email_unique is sparse, but sparse only skips ABSENT fields —
     # an explicit null still gets indexed, so the second no-email customer
     # ever created crashed with a duplicate-key error on {email: null}.
@@ -397,7 +398,7 @@ async def _issue_temp_password(customer_id: str, *, kind: str, user: UserPublic)
     await db.customers.update_one(
         floor_query(user, {"id": customer_id}),
         {"$set": {
-            "password_hash": hash_password(temp_pw),
+            "password_hash": await run_in_threadpool(hash_password, temp_pw),
             "must_change_password": True,
             "temp_password_expires_at": expires_at,
             "updated_at": now_iso(),

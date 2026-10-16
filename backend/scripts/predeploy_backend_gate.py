@@ -17,8 +17,8 @@ def _load_checks():
     # Configuration/import failures also belong inside the safe output boundary.
     load_dotenv(BASE / ".env")
     from bootstrap import run_bootstrap
-    from media_storage.supabase_driver import supabase_ready
-    return run_bootstrap, supabase_ready
+    from media_storage.factory import storage_ready
+    return run_bootstrap, storage_ready
 
 
 def safe_failure(exc: Exception, *, phase: str) -> dict:
@@ -52,9 +52,11 @@ async def main() -> int:
         report = await run_bootstrap(enforce_indexes=True)
         checks["mongodb_ping"] = "pass" if report.checks.get("mongo", {}).get("connected") else "fail"
         checks["required_indexes"] = "pass" if not report.checks.get("mongo", {}).get("missing_indexes") else "fail"
-        phase = "supabase-buckets"
+        from settings import settings
+        provider = settings.media_storage_driver
+        phase = f"{provider}-buckets"
         await supabase_ready()  # explicit authenticated bucket access check
-        checks["supabase_buckets"] = "pass"
+        checks[f"{provider}_buckets"] = "pass"
         if not report.healthy:
             checks["bootstrap_errors"] = {"phase": "bootstrap", "error_count": len(report.errors)}
             print(json.dumps({"read_only": True, "checks": checks}, indent=2))

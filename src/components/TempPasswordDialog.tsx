@@ -2,8 +2,8 @@
 // customer invites keep their separate temporary-password policy. Credentials
 // are held only in local state and cleared when the caller closes this dialog.
 import * as Clipboard from "expo-clipboard";
-import { useState } from "react";
-import { View } from "react-native";
+import { useLayoutEffect, useRef, useState } from "react";
+import { Platform, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 
 import { Button, Sheet } from "@/src/components/ui";
@@ -30,14 +30,56 @@ export function TempPasswordDialog({
 }) {
   const { isPhone } = useBp();
   const [copied, setCopied] = useState(false);
+  const [copying, setCopying] = useState(false);
+  const copyGeneration = useRef(0);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const password = result?.password || result?.temporary_password;
 
+  useLayoutEffect(() => {
+    copyGeneration.current += 1;
+    setCopied(false);
+    setCopying(false);
+    return () => {
+      copyGeneration.current += 1;
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+    };
+  }, [visible, password]);
+
+  const close = () => {
+    copyGeneration.current += 1;
+    if (copyTimer.current) clearTimeout(copyTimer.current);
+    setCopied(false);
+    setCopying(false);
+    onClose();
+  };
+
   const copy = async () => {
-    if (!password) return;
-    await Clipboard.setStringAsync(password);
-    setCopied(true);
-    toast.success("Copied to clipboard");
-    setTimeout(() => setCopied(false), 2000);
+    if (!password || !visible || copying) return;
+    const generation = copyGeneration.current;
+    setCopying(true);
+    try {
+      // Expo's browser fallback treats an attempted execCommand as success
+      // even when it returns false. Require an acknowledged browser write;
+      // the selectable password remains available when copying is blocked.
+      const success = Platform.OS === "web"
+        ? typeof navigator !== "undefined" && !!navigator.clipboard && await navigator.clipboard.writeText(password).then(() => true)
+        : await Clipboard.setStringAsync(password);
+      if (generation !== copyGeneration.current) return;
+      if (!success) throw new Error("Clipboard unavailable");
+      setCopied(true);
+      toast.success("Copied to clipboard");
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => {
+        if (generation === copyGeneration.current) setCopied(false);
+      }, 2000);
+    } catch {
+      if (generation === copyGeneration.current) {
+        setCopied(false);
+        toast.error("Could not copy. Select the password to copy it manually.");
+      }
+    } finally {
+      if (generation === copyGeneration.current) setCopying(false);
+    }
   };
 
   const expiresLabel = (() => {
@@ -52,7 +94,7 @@ export function TempPasswordDialog({
   return (
     <Sheet
       visible={visible}
-      onClose={() => { setCopied(false); onClose(); }}
+      onClose={close}
       title={title}
       variant="modal"
       testID="temp-password-dialog"
@@ -74,6 +116,7 @@ export function TempPasswordDialog({
               icon={copied ? "check" : "copy"}
               variant={copied ? "secondary" : "primary"}
               onPress={copy}
+              loading={copying}
               fullWidth
             />
             {permanent ? <Text style={type.caption}>The member can change this password in Settings using their old password. The owner can also reset it.</Text> : expiresLabel ? (
@@ -90,7 +133,7 @@ export function TempPasswordDialog({
             {result?.message || "Invite sent."}
           </Text>
         )}
-        <Button testID="temp-password-done" label="Done" variant="ghost" onPress={onClose} fullWidth />
+        <Button testID="temp-password-done" label="Done" variant="ghost" onPress={close} fullWidth />
       </View>
     </Sheet>
   );

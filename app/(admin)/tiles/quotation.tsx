@@ -4,10 +4,14 @@
 import { useLocalSearchParams } from "expo-router";
 
 import { LazyQuotationBuilder } from "@/src/components/quotation/LazyQuotationBuilder";
-import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
+import { useRequireFloorAccessState } from "@/src/hooks/use-floor-access";
+import { ActivityIndicator, View } from "react-native";
+import { ErrorState } from "@/src/components/ui";
 
 export default function TilesQuotationScreen() {
-  useRequireFloorAccess("ground-floor");
+  const floor = useRequireFloorAccessState("ground-floor");
   const { productId, id, quotationId } = useLocalSearchParams<{ productId?: string; id?: string; quotationId?: string }>();
+  if (floor.error) return <ErrorState title="Couldn’t open Ground Floor" subtitle={floor.error} onRetry={() => void floor.retry()} />;
+  if (!floor.ready) return <View accessibilityLabel="Opening Ground Floor quotation workspace" style={{ flex: 1, alignItems: "center", justifyContent: "center" }}><ActivityIndicator /></View>;
   return <LazyQuotationBuilder mode="tiles_quotation" initialProductId={productId || null} initialQuotationId={id || quotationId || null} />;
 }

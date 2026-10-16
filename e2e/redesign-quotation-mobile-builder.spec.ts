@@ -136,3 +136,79 @@ test('critical mobile quotation adds custom products from full-screen picker and
   await expect(page.getByText('Reusable custom basin', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 });
+
+test('critical quotation search hides stale cards and recovers from an empty filtered result', async ({ page }) => {
+  await builderFixture(page);
+  let releaseSearch!: () => void;
+  const heldSearch = new Promise<void>(resolve => { releaseSearch = resolve; });
+  let requested = false;
+  await page.route('**/api/products/families?**', async route => {
+    if (new URL(route.request().url()).searchParams.get('q') !== 'No matching basin') return route.fallback();
+    requested = true;
+    await heldSearch;
+    return route.fulfill({ json: { total: 0, items: [] } });
+  });
+  const search = page.getByTestId('explorer-search').filter({ visible: true });
+  await search.fill('No matching basin');
+  await expect.poll(() => requested).toBe(true);
+  // Previous results must never remain addable under the new search term.
+  await expect(page.getByTestId('add-B-0').filter({ visible: true })).toHaveCount(0);
+  await expect(page.getByTestId('explorer-products-loading').filter({ visible: true })).toBeVisible();
+  releaseSearch();
+  await expect(page.getByText('No products match', { exact: true })).toBeVisible();
+  await page.getByTestId('explorer-clear-filters').click();
+  await expect(search).toHaveValue('');
+  await expect(page.getByTestId('add-B-0').filter({ visible: true })).toBeVisible();
+});
+
+test('critical mobile quotation chooses a room directly while browsing and retains the selection through review', async ({ page }, info) => {
+  test.skip(page.viewportSize()!.width >= 768, 'Single-pane phone workspace');
+  const fixture = await builderFixture(page);
+  const search = page.getByTestId('explorer-search').filter({ visible: true });
+  await search.fill('Basin');
+  await expect(page.getByTestId('browse-room-toggle')).toHaveCount(0);
+  await search.blur();
+  await expect(page.getByTestId('browse-room-toggle')).toBeVisible();
+  await page.getByTestId('browse-room-toggle').click();
+  await page.getByTestId('add-room-btn').filter({ visible: true }).click();
+  await page.getByTestId('room-input').fill('Guest Bath');
+  await page.getByTestId('submit-room').click();
+  await expect(page.getByTestId('browse-room-toggle')).toContainText('Guest Bath');
+  await page.getByTestId('add-B-0').click();
+  await expect(page.getByText('1 in this room', { exact: true })).toBeVisible();
+  await page.getByTestId('browse-room-toggle').click();
+  await page.screenshot({ path: info.outputPath('sanitary-browse-room-switch.png') });
+  await page.getByTestId('room-Master Bath').filter({ visible: true }).click();
+  await expect(page.getByText('1 in this room', { exact: true })).toHaveCount(0);
+  await page.getByTestId('add-B-1').click();
+  await page.getByTestId('mobile-review-quotation').click();
+  await expect.poll(() => fixture.saved().items.length).toBe(2);
+  expect(fixture.saved().items).toEqual(expect.arrayContaining([
+    expect.objectContaining({ product_id: 'basin-0', room: 'Guest Bath' }),
+    expect.objectContaining({ product_id: 'basin-1', room: 'Master Bath' }),
+  ]));
+  await page.screenshot({ path: info.outputPath('sanitary-room-selection-review.png') });
+});
+
+test('critical quotation search retries a failed query without losing its draft or search', async ({ page }) => {
+  const fixture = await builderFixture(page);
+  await page.getByTestId('add-B-0').filter({ visible: true }).click();
+  let attempts = 0;
+  await page.route('**/api/products/families?**', route => {
+    if (new URL(route.request().url()).searchParams.get('q') !== 'Recovery basin') return route.fallback();
+    attempts++;
+    return attempts === 1
+      ? route.fulfill({ status: 503, json: { detail: 'Catalog temporarily unavailable' } })
+      : route.fulfill({ json: { total: 1, items: [{ family_key: 'recovered', family_name: 'Recovery basin', brand_id: 'grohe', category_id: 'basins', min_price: 1800,
+        variants: [{ id: 'recovered', sku: 'RECOVERED', name: 'Recovery basin', price: 1800, mrp: 1800, stock: 2 }] }] } });
+  });
+  const search = page.getByTestId('explorer-search').filter({ visible: true });
+  await search.fill('Recovery basin');
+  await expect(page.getByText('Products unavailable', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('add-B-0').filter({ visible: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Try again', exact: true }).click();
+  await expect(search).toHaveValue('Recovery basin');
+  await expect(page.getByTestId('add-RECOVERED').filter({ visible: true })).toBeVisible();
+  await expect.poll(() => fixture.saved().items.length).toBe(1);
+  expect(fixture.saved().items[0]).toMatchObject({ product_id: 'basin-0', room: 'Master Bath' });
+});

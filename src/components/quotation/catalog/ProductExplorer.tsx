@@ -9,7 +9,7 @@ import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, FlatList, LayoutChangeEvent, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 
-import { EmptyState, ErrorState } from "@/src/components/ui";
+import { Button, EmptyState, ErrorState } from "@/src/components/ui";
 import { ProductImage } from "@/src/components/ProductImage";
 import { colors, money, PRODUCT_IMAGE_ASPECT_RATIO, radius, spacing } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";
@@ -62,6 +62,13 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
     if (!b.selectedCategoryIds.length) return null;
     return b.categories.filter(c => b.selectedCategoryIds.includes(c.id)).map(c => c.name).join(", ") || null;
   }, [b.categories, b.selectedCategoryIds]);
+  const hasFilters = !!(b.q.trim() || b.selectedBrandIds.length || b.selectedCategoryIds.length || b.selectedSizes.length);
+  const clearFilters = () => {
+    b.setQ("");
+    b.setSelectedBrandId(null);
+    b.setSelectedCategoryId(null);
+    b.setSelectedSizes([]);
+  };
 
   // ---- Recent searches (phone catalog experience parity) ----------------
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
@@ -222,7 +229,10 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
       <ProductFilterSheet open={showCompactFilters && filtersOpen} onClose={() => setFiltersOpen(false)} facets={facets} />
 
       <FlatList
-        data={b.products}
+        // A query keeps the previous page in memory until it settles. Never
+        // offer those cards as matches for the new search/filter, including
+        // the timeout path where the old page can still be present.
+        data={b.productLoading || b.productError ? [] : b.products}
         key={`grid-${numCols}`}
         numColumns={numCols}
         style={{ flex: 1, minHeight: 0 }}
@@ -253,7 +263,7 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
         onScroll={(e) => { if (isNearScrollEnd(e.nativeEvent, 0.5)) b.loadMoreProducts(); }}
         scrollEventThrottle={50}
         ListFooterComponent={
-          b.productLoadingMore ? (
+          b.productLoading || b.productError ? null : b.productLoadingMore ? (
             <View style={{ paddingVertical: 20, alignItems: "center" }}>
               <ActivityIndicator size="small" color={ds.brass} />
             </View>
@@ -265,7 +275,7 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
         }
         ListEmptyComponent={
           b.productLoading ? (
-            <View style={[styles.skeletonGrid, { flexDirection: numCols > 1 ? "row" : "column", flexWrap: "wrap" }]}>
+            <View testID="explorer-products-loading" accessibilityLabel="Loading products" accessibilityRole="progressbar" style={[styles.skeletonGrid, { flexDirection: numCols > 1 ? "row" : "column", flexWrap: "wrap" }]}>
               {Array.from({ length: numCols > 1 ? 12 : 6 }).map((_, i) => (
                 <View key={i} style={[styles.skeletonCard, { width: numCols > 1 ? `${100 / numCols}%` : "100%" }]}>
                   <View style={styles.skeletonMedia} />
@@ -280,7 +290,10 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
           ) : b.productError || b.referenceError ? (
             <ErrorState title="Products unavailable" subtitle={b.productError || b.referenceError || undefined} onRetry={() => { b.retryProducts(); b.retryReferenceData(); }} />
           ) : (
-            <EmptyState icon="package" title="No products match" subtitle="Try clearing filters or a different search term." />
+            <EmptyState icon="package" title={hasFilters ? "No products match" : "No products available"}
+              subtitle={hasFilters ? "Clear the search and filters to browse all products." : "Add a custom product or retry the catalog."}
+              action={hasFilters ? <Button label="Clear search and filters" testID="explorer-clear-filters" variant="secondary" onPress={clearFilters} /> :
+                <Button label="Retry catalog" variant="secondary" onPress={b.retryProducts} />} />
           )
         }
       />

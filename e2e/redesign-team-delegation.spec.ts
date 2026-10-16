@@ -83,6 +83,63 @@ test('critical six-character passwords: member reset rejects five and accepts si
   expect(writes[0].body).toEqual({ new_password: '123456', confirm_password: '123456' });
 });
 
+for (const clipboard of ['denied', 'unavailable', 'success'] as const) {
+  test(`critical password clipboard: ${clipboard} reports only acknowledged copies`, async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.addInitScript(mode => {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: mode === 'unavailable' ? undefined : {
+        writeText: async () => {
+          if (mode === 'denied') throw new DOMException('Permission denied', 'NotAllowedError');
+        },
+      } });
+      // The SDK's legacy web fallback used to report success despite false.
+      document.execCommand = () => false;
+    }, clipboard);
+    await teamFixture(page);
+    await page.getByTestId('team-row-test-worker').click();
+    await page.getByTestId('edit-staff-password').fill('123456');
+    await page.getByTestId('edit-staff-confirm-password').fill('123456');
+    await page.getByTestId('edit-staff-set-password').click();
+    await page.getByTestId('temp-password-copy').click();
+    if (clipboard === 'success') {
+      await expect(page.getByTestId('temp-password-copy')).toHaveAccessibleName('Copied');
+      await expect(page.getByText('Copied to clipboard', { exact: true })).toBeVisible();
+    } else {
+      await expect(page.getByText('Could not copy. Select the password to copy it manually.', { exact: true })).toBeVisible();
+      await expect(page.getByTestId('temp-password-copy')).toHaveAccessibleName('Copy password');
+      await expect(page.getByTestId('temp-password-value')).toHaveText('123456');
+    }
+    expect(errors).toEqual([]);
+  });
+}
+
+test('critical password clipboard: a delayed copy cannot mark a reopened credential as copied', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+      writeText: () => new Promise<void>(resolve => { (window as any).finishCredentialCopy = resolve; }),
+    } });
+  });
+  await teamFixture(page);
+  await page.getByTestId('team-row-test-worker').click();
+  const reset = async (password: string) => {
+    await page.getByTestId('edit-staff-password').fill(password);
+    await page.getByTestId('edit-staff-confirm-password').fill(password);
+    await page.getByTestId('edit-staff-set-password').click();
+    await expect(page.getByTestId('temp-password-value')).toHaveText(password);
+  };
+  await reset('123456');
+  await page.getByTestId('temp-password-copy').click();
+  await expect.poll(() => page.evaluate(() => typeof (window as any).finishCredentialCopy)).toBe('function');
+  await page.getByTestId('temp-password-done').click();
+  await reset('654321');
+  await page.evaluate(() => (window as any).finishCredentialCopy());
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await expect(page.getByTestId('temp-password-copy')).toHaveAccessibleName('Copy password');
+  await expect(page.getByTestId('temp-password-copy')).toBeEnabled();
+  await expect(page.getByText('Copied to clipboard', { exact: true })).toHaveCount(0);
+});
+
 test('critical six-character passwords: owner change rejects five and accepts six', async ({ page }) => {
   await mockSession(page, '/settings-password');
   const writes: unknown[] = [];

@@ -2,6 +2,31 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
+## Quotation recovery and R2 source integration — 2026-10-16
+
+Version 1.0.4 gates both quotation builders on synchronized floor access with
+explicit retry. Ground selection/quotation lists publish independently; an empty
+primary result must not wait for optional document reads. Saved tile restoration
+must succeed before editing/save/PDF actions. Persistence captures the document
+ID before awaits and retains mount/scope/generation checks after every write,
+including A → B → A. The first autosave's own new route ID must preserve edits
+made while creation was pending. Sanitary browsing hides stale search cards,
+offers filter reset/retry and lets phone users select the destination room.
+
+R2 recovery source is now part of the reviewed changes; preserve the configured
+R2 driver, exact public/private buckets and private visibility checks. Migration
+plans bind the Mongo cluster/database and storage identities, accept only explicit
+application collections and validate every journal entry before any write. Never
+rewrite audit/import history or replay an old unbound reference plan. Password
+proof runs off-thread; issued login sessions must be followed by current hash,
+account/portal/MFA revalidation so a completed reset cannot mint an old-password
+session. Preserve exact outbox claim ownership on failures.
+
+The release investigation found unpushed commits and successful previews serving
+older production source. Verify actual deployment identities rather than equating
+a branch push, preview READY or stale Railway Git metadata with production. See
+`docs/audits/2026-10-16-quotation-recovery-release.md` and the companion CI diagnosis.
+
 ## Mobile workspace controls — 2026-10-15
 
 Version 1.0.3 keeps the compact app header outside the phone content scroll;

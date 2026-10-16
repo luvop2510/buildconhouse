@@ -88,6 +88,9 @@ for (const [profile, engine, options] of [
       console.log(`${profile}: ${name} passed`);
     };
     const navigate = async label => {
+      // Focus recovery restores the phone bar asynchronously; wait before
+      // deciding whether the destination belongs in its More sheet.
+      if (profile === 'iphone-safari') await expect(page.getByRole('navigation', { name: 'Primary', exact: true })).toBeVisible();
       const link = page.getByRole('link', { name: label, exact: true });
       if (!await link.isVisible()) await page.getByRole('button', { name: 'More', exact: true }).click();
       await link.click();
@@ -139,6 +142,8 @@ for (const [profile, engine, options] of [
       await search.fill(last.sku);
       await expect(page.getByTestId(`godown-lot-${last.id}`)).toBeVisible();
       await search.fill('');
+      // End editing before using phone navigation, which is hidden during focus.
+      await search.blur();
     }
     await healthy('populated stock opens by click and searches beyond initial cards');
     await navigate('Follow-ups');

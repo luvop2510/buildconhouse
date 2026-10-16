@@ -4,6 +4,7 @@ REMOVED and replaced by routes/payment_routes.py. /followups has been REMOVED an
 replaced by the full Sales Command Center module at routes/followup_routes.py."""
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from starlette.concurrency import run_in_threadpool
 
 import os
 from re import fullmatch
@@ -229,7 +230,7 @@ async def health_system(_: UserPublic = Depends(require_min_role("admin"))):
 
     supabase_url = settings.supabase_url
     supabase_key = settings.supabase_service_role_key
-    supabase_configured = bool(supabase_url and supabase_key)
+    supabase_configured = settings.media_storage_driver == "supabase" and bool(supabase_url and supabase_key)
     supabase_ok = None
     supabase_error = None
     if supabase_configured:
@@ -259,7 +260,17 @@ async def health_system(_: UserPublic = Depends(require_min_role("admin"))):
             "MongoDB is pointing at a LOCAL/ephemeral instance — all data will be lost on the "
             "next session reset. Migrate to MongoDB Atlas to make this permanent."
         )
-    if not supabase_configured:
+    storage_status = {"driver": settings.media_storage_driver, "configured": supabase_configured,
+                      "connected": supabase_ok, "error": _sanitize_error(supabase_error)}
+    if settings.media_storage_driver == "r2":
+        from media_storage.factory import storage_ready
+        storage_status = {"driver": "r2", "configured": True, "connected": False, "error": None}
+        try:
+            await storage_ready()
+            storage_status["connected"] = True
+        except Exception as exc:
+            storage_status["error"] = type(exc).__name__
+    if not storage_status["configured"]:
         warnings.append(
             "Supabase Storage is not configured — product images/PDFs/attachments will be lost "
             "on the next session reset. Provide SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY."
@@ -275,12 +286,13 @@ async def health_system(_: UserPublic = Depends(require_min_role("admin"))):
         "version": FORGE_VERSION,
         "mongo": {"connected": mongo_ok, "is_local": is_local_mongo, "error": _sanitize_error(mongo_error)},
         "supabase": {"configured": supabase_configured, "connected": supabase_ok, "error": _sanitize_error(supabase_error)},
+        "storage": storage_status,
         "counts": counts,
         "secrets_loaded": secrets_loaded,
         "monitoring": monitoring_status,
         "catalog": catalog_diagnostics(),
         "warnings": warnings,
-        "healthy": mongo_ok and (supabase_ok is not False),
+        "healthy": mongo_ok and (storage_status["connected"] is not False),
     }
     _system_health_cache = (monotonic(), result)
     return result
@@ -396,7 +408,7 @@ async def create_team_member(body: TeamCreatePayload, user: UserPublic = Depends
             grants=[grant.model_dump() for grant in (body.access_grants or [])],
             actor_id=user.id, actor_name=user.full_name,
         )
-    doc["password_hash"] = hash_password(body.password)
+    doc["password_hash"] = await run_in_threadpool(hash_password, body.password)
     doc["password_encrypted"] = encrypt_password(body.password, doc["id"])
     doc.update(login_patch)
     try:
@@ -567,7 +579,7 @@ async def reset_team_member_password(
     password = body.new_password if body is not None else generate_temp_password()
     expires_at = None
     await _write_team_patch(target, {
-        "password_hash": hash_password(password),
+        "password_hash": await run_in_threadpool(hash_password, password),
         "password_encrypted": encrypt_password(password, user_id),
         "must_change_password": False,
         "temp_password_expires_at": expires_at,
