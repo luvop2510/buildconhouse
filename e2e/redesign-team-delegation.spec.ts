@@ -132,6 +132,9 @@ test('critical password clipboard: a delayed copy cannot mark a reopened credent
   await page.getByTestId('temp-password-copy').click();
   await expect.poll(() => page.evaluate(() => typeof (window as any).finishCredentialCopy)).toBe('function');
   await page.getByTestId('temp-password-done').click();
+  // Password reset closes the staff editor before showing the credential.
+  // Reopen that editor to issue the second credential through the real flow.
+  await page.getByTestId('team-row-test-worker').click();
   await reset('654321');
   await page.evaluate(() => (window as any).finishCredentialCopy());
   await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
