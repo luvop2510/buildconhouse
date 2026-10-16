@@ -202,6 +202,7 @@ test('quotation product failures do not report zero products and a successful em
   await expect(count).toHaveCount(0);
   failed = false;
   await page.getByRole('button', { name: 'Try again', exact: true }).click();
-  await expect(page.getByText('No products match', { exact: true })).toBeVisible();
+  await expect(page.getByText('No products available', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Retry catalog', exact: true })).toBeVisible();
   await expect(count).toHaveText('· 0 products');
 });
