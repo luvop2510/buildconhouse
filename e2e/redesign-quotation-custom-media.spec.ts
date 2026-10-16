@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { expect, test, type Page } from '@playwright/test';
 import { mockSession } from './audit-fixtures';
 
@@ -109,10 +110,16 @@ test('critical custom catalog photo retries preserve metadata and request identi
   expect(state.uploads[0].contentType).toContain('multipart/form-data; boundary=');
   // WebKit's interception protocol serializes multipart binary as UTF-8 text;
   // observe the actual browser FormData bytes before fetch for exact fidelity.
-  const transferred = await page.evaluate(() => (window as any).__customPhotoTransfers);
-  expect(Buffer.from(transferred[0].bytes)).toEqual(image);
-  expect(transferred[0]).toMatchObject({ type: 'image/png', size: image.length });
-  expect(Buffer.from(transferred[1].bytes)).toEqual(image);
+  // Keep exact byte fidelity without serializing two large integer arrays
+  // through WebKit's trace/protocol; that consumed most of the test deadline.
+  const transferred = await page.evaluate(async () => Promise.all(
+    (window as any).__customPhotoTransfers.map(async ({ bytes, type, size }: { bytes: number[]; type: string; size: number }) => {
+      const digest = await crypto.subtle.digest('SHA-256', new Uint8Array(bytes));
+      return { sha256: Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join(''), type, size };
+    }),
+  ));
+  const expectedTransfer = { sha256: createHash('sha256').update(image).digest('hex'), type: 'image/png', size: image.length };
+  expect(transferred).toEqual([expectedTransfer, expectedTransfer]);
   const requestId = field(state.uploads[0].body, 'request_id');
   expect(requestId).toBeTruthy();
   expect(field(state.uploads[1].body, 'request_id')).toBe(requestId);

@@ -134,3 +134,14 @@ promotion. Guard tests prove verifier ordering, origin/SHA/report forwarding and
 fail-closed behavior at every stage. The complete `npm run test:api-proxy`
 security/runtime/promotion/cookie contract passes. No live verifier or promotion
 was invoked while making this guard change.
+
+
+A later integrated iPhone photo/reload failure was traced to test protocol cost:
+serializing two full photo byte arrays consumed about 12 seconds, followed by
+several seconds of byte-array assertions. Reload then reached authentication as
+the unchanged 30-second global deadline expired. The fixture now computes SHA-256
+on each browser-observed FormData payload and compares both digests, MIME types
+and exact sizes to an independent Node digest. Retry identity, saved image and
+reload assertions remain unchanged; no deadlines or runtime guards were relaxed.
+The digest transform was checked against the actual binary fixture before the
+scoped browser rerun.

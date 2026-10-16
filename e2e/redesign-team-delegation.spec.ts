@@ -481,8 +481,13 @@ test('critical team members: delete requires confirmation and removes only that 
 for (const role of ['admin', 'manager', 'sales', 'purchase', 'warehouse', 'accounts', 'worker']) {
   test(`critical ${role} cannot manage members and can change own password`, async ({ page }) => {
     let managementRequests = 0;
+    const passwordWrites: unknown[] = [];
     await mockSession(page, '/team', false, { staff: { ...member, role, custom_access: false } });
     await page.route('**/api/team**', route => { managementRequests++; return route.fulfill({ status: 403, json: { detail: 'Owner only' } }); });
+    await page.route('**/api/auth/change-password', route => {
+      passwordWrites.push(route.request().postDataJSON());
+      return route.fulfill({ json: { changed: true } });
+    });
     await page.goto('/team');
     await expect(page.getByTestId('team-owner-only')).toBeVisible();
     await expect(page.getByTestId('team-add-btn')).toHaveCount(0);
@@ -493,7 +498,13 @@ for (const role of ['admin', 'manager', 'sales', 'purchase', 'warehouse', 'accou
     await expect(page.getByTestId('settings-nav-password')).toBeVisible();
     await page.goto('/settings-password');
     await expect(page.getByTestId('owner-managed-password')).toHaveCount(0);
-    await expect(page.getByTestId('save-password-btn')).toHaveCount(0);
+    await page.getByTestId('current-password-input').fill('CurrentMember!2026');
+    await page.getByTestId('new-password-input').fill('UpdatedMember!2026');
+    await page.getByTestId('confirm-password-input').fill('UpdatedMember!2026');
+    await page.getByTestId('save-password-btn').click();
+    await expect(page).toHaveURL(/\/settings$/);
+    expect(passwordWrites).toEqual([{ current_password: 'CurrentMember!2026', new_password: 'UpdatedMember!2026', confirm_password: 'UpdatedMember!2026' }]);
+    expect(managementRequests).toBe(0);
   });
 }
 

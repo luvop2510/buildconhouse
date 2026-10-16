@@ -134,20 +134,30 @@ test('critical sanitary family pagination preserves reused supplier keys across 
   await expect(page.getByRole('button', { name: 'View Brand A Alpha Basin', exact: true })).toBeVisible();
   // Scroll the actual native-web list; virtualization can extend its content
   // height as rows render, so continue until the next page is requested.
-  await expect.poll(async () => {
-    await page.getByRole('main', { name: 'Workspace content' }).evaluate(main => {
+  const scrollToEnd = async () => {
+    await page.getByRole('main', { name: 'Workspace content' }).evaluate(async main => {
       const scroller = Array.from(main.querySelectorAll<HTMLElement>('*'))
         .filter(element => element.clientHeight > 100 && /auto|scroll/.test(getComputedStyle(element).overflowY) && element.scrollHeight > element.clientHeight)
         .sort((a, b) => (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight))[0];
       if (!scroller) throw new Error('Catalog scroll container not found');
       scroller.scrollTop = scroller.scrollHeight;
+      // Let native-web apply the scroll event and virtual row measurements
+      // before deciding whether the newly mounted destination is reachable.
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
     });
+  };
+  await expect.poll(async () => {
+    await scrollToEnd();
     return page.getByRole('button', { name: 'View Brand A Alpha Shower', exact: true }).count();
   }).toBe(1);
-  await expect(page.getByRole('button', { name: 'View Brand B Beta Basin', exact: true })).toBeAttached();
   const last = page.getByRole('button', { name: 'View Brand A Alpha Shower', exact: true });
-  await expect(last).toBeAttached();
-  await last.scrollIntoViewIfNeeded();
+  // WebKit can apply a pending virtual-list scroll adjustment after the
+  // second page mounts. Reposition the real scroller before locating a card
+  // that virtualization may have unmounted; no timing budget is increased.
+  await expect.poll(async () => {
+    await scrollToEnd();
+    return await last.isVisible() && await page.getByRole('button', { name: 'View Brand B Beta Basin', exact: true }).isVisible();
+  }).toBe(true);
   await expect(last).toBeVisible();
   await expect(page.getByTestId('catalog-end-of-list')).toHaveText('Showing all 62 families');
   expect(pages).toEqual([0, 60]);

@@ -2039,24 +2039,24 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
     || isTablet
     || (workspaceWidth > 0 && workspaceWidth < PAPER_W + spacing.lg + 64);
 
-  if (doc.loading) return <View accessibilityLabel="Loading tile document" style={{ flex: 1, alignItems: "center", justifyContent: "center" }}><ActivityIndicator color={colors.brand} /></View>;
-
-  if (doc.restoreError) {
-    return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xl, gap: spacing.md }}>
-        <Feather name="alert-circle" size={28} color={colors.error} />
-        <Text style={[type.titleMd, { textAlign: "center" }]}>Couldn&apos;t open this tile document</Text>
-        <Text style={{ color: colors.onSurfaceSecondary, textAlign: "center" }}>{doc.restoreError}</Text>
-        <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          <ActionBtn label="Back" icon="chevron-left" onPress={() => router.back()} testID="tiles-restore-back" />
-          <ActionBtn label="Retry" icon="refresh-cw" primary onPress={doc.retryRestore} testID="tiles-restore-retry" />
-        </View>
-      </View>
-    );
-  }
-
+  // Keep this measured host mounted across restore/error/retry. Replacing
+  // it with an unmeasured loading View can leave the hydrated tablet editor
+  // at width zero, permanently selecting its one-column phone geometry.
   return (
     <View style={{ flex: 1 }} onLayout={(event) => setWorkspaceWidth(event.nativeEvent.layout.width)}>
+      {doc.loading ? (
+        <View accessibilityLabel="Loading tile document" style={{ flex: 1, alignItems: "center", justifyContent: "center" }}><ActivityIndicator color={colors.brand} /></View>
+      ) : doc.restoreError ? (
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xl, gap: spacing.md }}>
+          <Feather name="alert-circle" size={28} color={colors.error} />
+          <Text style={[type.titleMd, { textAlign: "center" }]}>Couldn&apos;t open this tile document</Text>
+          <Text style={{ color: colors.onSurfaceSecondary, textAlign: "center" }}>{doc.restoreError}</Text>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <ActionBtn label="Back" icon="chevron-left" onPress={() => router.back()} testID="tiles-restore-back" />
+            <ActionBtn label="Retry" icon="refresh-cw" primary onPress={doc.retryRestore} testID="tiles-restore-retry" />
+          </View>
+        </View>
+      ) : <>
       <WhatsAppQuotationSheet draft={doc.whatsappDraft} onClose={doc.closeWhatsApp} onRevoke={async () => {
         if (doc.docId) await api.delete(`/quotations/${doc.docId}/whatsapp-draft`, { floorId: TILES_FLOOR_ID });
       }} />
@@ -2114,6 +2114,7 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
       )}
     </SafeAreaView>
       )}
+      </>}
     </View>
   );
 }
