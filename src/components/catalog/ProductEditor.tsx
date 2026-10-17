@@ -9,19 +9,19 @@
 // onto the quotation document at the moment a product is added (see
 // backend/models.py + the /quotations/{id}/items endpoint), so this editor
 // only ever changes what FUTURE additions will copy in.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as ImagePicker from "expo-image-picker";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 
-import { api, csrfHeaders, getToken } from "@/src/api/client";
+import { api } from "@/src/api/client";
 import { ProductImageManagerBody } from "@/src/components/catalog/ProductImageManager";
 import { ProductImage } from "@/src/components/ProductImage";
 import { toast } from "@/src/components/Toast";
 import { Button, Dropdown, Sheet, TextField } from "@/src/components/ds";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
 import { useBp } from "@/src/design/responsive";
-import { uriToBlob } from "@/src/utils/uriToBlob";
+import { appendImageUpload } from "@/src/utils/appendImageUpload";
 
 type LookupItem = { id: string; name: string };
 
@@ -51,6 +51,13 @@ export function ProductEditor({
   initialTab?: Tab;
 }) {
   const { isPhone } = useBp();
+  const lifecycle = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    lifecycle.current = controller;
+    setUploadingKind(null);
+    return () => controller.abort();
+  }, [visible, productId]);
   const [tab, setTab] = useState<Tab>(initialTab);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -134,21 +141,17 @@ export function ProductEditor({
   const categoryName = categories.find((c) => c.id === form?.category_id)?.name || "Select category";
   const addDiagramPhoto = async (kind: "dimension" | "seat_cover") => {
     if (!productId || !form) return;
+    const controller = lifecycle.current;
     // Image-only selection uses the system picker without broad library access.
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 1, allowsEditing: false });
-    if (result.canceled || !result.assets?.[0]) return;
+    if (controller?.signal.aborted || result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
     setUploadingKind(kind);
     try {
-      const token = await getToken();
-      const mimeType = asset.mimeType || "image/jpeg";
       const formData = new FormData();
-      formData.append("file", await uriToBlob(asset.uri), `diagram-${kind}.${mimeType.split("/")[1] || "jpg"}`);
-      const response = await fetch(`${api.base}/api/products/${productId}/diagram-media?kind=${kind}`, {
-        method: "POST", headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...csrfHeaders() }, body: formData,
-      });
-      if (!response.ok) throw new Error(await response.text() || `Upload failed (${response.status})`);
-      const updated = await response.json();
+      await appendImageUpload(formData, asset);
+      const updated = await api.upload<Record<string, any>>(`/products/${productId}/diagram-media?kind=${kind}`, formData, { signal: controller?.signal });
+      if (controller?.signal.aborted) return;
       const fields = {
         dimension_image_urls: updated.dimension_image_urls || [],
         seat_cover_image_urls: updated.seat_cover_image_urls || [],
@@ -158,8 +161,8 @@ export function ProductEditor({
       onSaved?.(updated);
       toast.success(kind === "dimension" ? "Dimension photo added" : "Seat-cover photo added");
     } catch (error: any) {
-      toast.error(error?.message || "Couldn't upload photo");
-    } finally { setUploadingKind(null); }
+      if (!controller?.signal.aborted && error?.name !== "AbortError") toast.error(error?.message || "Couldn't upload photo");
+    } finally { if (!controller?.signal.aborted) setUploadingKind(null); }
   };
 
   return (
@@ -231,7 +234,12 @@ export function ProductEditor({
               ))}
               {hasChanges ? <Button label="Save photo removals" onPress={save} loading={saving} testID="diagram-save-media" /> : null}
             </View>
-          <ProductImageManagerBody productId={form.id} />
+          <ProductImageManagerBody productId={form.id} onChanged={() => {
+            const controller = lifecycle.current;
+            void api.get<Record<string, unknown>>(`/products/${form.id}`, { signal: controller?.signal }).then(updated => {
+              if (!controller?.signal.aborted) onSaved?.(updated);
+            }).catch(error => { if (!controller?.signal.aborted) toast.error(error?.message || "Could not refresh product images"); });
+          }} />
         </ScrollView>
       ) : (
         <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }} keyboardShouldPersistTaps="handled">

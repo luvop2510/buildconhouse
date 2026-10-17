@@ -6,12 +6,14 @@ generation in one place.
 """
 from __future__ import annotations
 import hashlib
+import asyncio
 import io
 import logging
 import re
 from typing import Optional
 
 from PIL import Image
+from pymongo.errors import DuplicateKeyError
 
 from auth import floor_inherit
 from db import db
@@ -94,6 +96,7 @@ async def upload_and_register(
     private: bool = False,
     actor: Optional[UserPublic] = None,
     force_landscape: bool = False,
+    registration_id: Optional[str] = None,
 ) -> ProductMedia:
     """Upload bytes to storage and persist metadata.
 
@@ -107,7 +110,7 @@ async def upload_and_register(
     """
     # Every ingestion path (manual upload, replacement and catalog import)
     # passes here, so normalize once before hashing/deduplicating/storing.
-    data, mime = normalize_product_image(data, mime, force_landscape=force_landscape)
+    data, mime = await asyncio.to_thread(normalize_product_image, data, mime, force_landscape=force_landscape)
     sha1 = hashlib.sha1(data).hexdigest()
 
     # Dedupe check
@@ -150,6 +153,7 @@ async def upload_and_register(
     obj = await storage.upload(bucket=bucket, key=key, data=data, content_type=mime)
 
     doc = ProductMedia(
+        **({"id": registration_id} if registration_id else {}),
         product_id=product_id, family_key=family_key, brand_id=brand_id, floor_id=floor_id,
         source_type=source_type, role=role, bucket=bucket, storage_key=key,
         public_url=obj.public_url, width=width, height=height, quality=quality,
@@ -157,8 +161,15 @@ async def upload_and_register(
         sort_order=sort_order, uploaded_by=uploaded_by, notes=notes,
     )
     try:
-        await db.product_media.insert_one(doc.model_dump())
-    except Exception:
+        persisted = doc.model_dump()
+        if registration_id:
+            persisted["_id"] = f"custom-media:{registration_id}"
+        await db.product_media.insert_one(persisted)
+    except Exception as registration_error:
+        if registration_id and isinstance(registration_error, DuplicateKeyError):
+            existing = await db.product_media.find_one({**scope_filter, "id": registration_id}, {"_id": 0})
+            if existing:
+                return ProductMedia(**existing)
         # Compensating action — don't leave an orphaned object in storage
         # with no metadata row pointing at it.
         try:
@@ -287,14 +298,17 @@ async def replace_media(
     return new_doc
 
 
-async def list_media_for_product(product_id: str, family_key: Optional[str] = None) -> list[ProductMedia]:
+async def list_media_for_product(product_id: str, family_key: Optional[str] = None, *, floor_id: Optional[str] = None) -> list[ProductMedia]:
     """Return all media attached to THIS product ONLY. `family_key` is
     accepted for backward compatibility with callers but intentionally
     unused for resolving a single product's own image — pooling in sibling
     media here previously caused finish/colour switches to show a different
     variant's photo (never a product's own). If a product has no media of
     its own, callers should render an empty state, not a sibling's photo."""
-    docs = await db.product_media.find({"product_id": product_id}, {"_id": 0}).to_list(500)
+    query = {"product_id": product_id}
+    if floor_id:
+        query["floor_id"] = floor_id
+    docs = await db.product_media.find(query, {"_id": 0}).to_list(500)
     prio = {"internal": 0, "manufacturer": 1, "supplier": 2}
     docs.sort(key=lambda d: (
         prio.get(d.get("source_type", "supplier"), 3),
@@ -390,7 +404,7 @@ async def hydrate_product_media(product: dict) -> dict:
     query per call and turns into an N+1 when looped."""
     if not product:
         return product
-    media = await list_media_for_product(product["id"], product.get("family_key"))
+    media = await list_media_for_product(product["id"], product.get("family_key"), floor_id=product.get("floor_id"))
     _apply_media_to_product(product, media)
     return product
 

@@ -1,5 +1,6 @@
 """Official BuildCon House quotation PDF — faithful A4 print template."""
 from __future__ import annotations
+from services.referrer_identity import referrer_label
 
 from collections import defaultdict
 from datetime import datetime
@@ -539,7 +540,10 @@ def _draw_footer(cv, doc, branding: dict | None = None) -> None:
 # Use each page's actual diagonal, including the shorter sanitary cover. The
 # inset accommodates printer margins while retaining the whole original mark.
 WATERMARK_PAGE_INSET = 4 * mm
-WATERMARK_INK_STRENGTH = 0.28
+# Blend the mark more fully into white stock so product tables remain the
+# strongest content on every page while the watermark still prints reliably.
+WATERMARK_INK_STRENGTH = 0.18
+HEADER_LOGO_INK_STRENGTH = 0.76
 
 
 def watermark_angle(page_width: float, page_height: float) -> float:
@@ -579,6 +583,39 @@ def _print_watermark_image(path: str, modified_ns: int) -> ImageReader:
     return ImageReader(printable)
 
 
+@functools.lru_cache(maxsize=4)
+def _print_header_logo_image(path: str, modified_ns: int) -> ImageReader:
+    """Return a lighter header wordmark while preserving its transparent edge."""
+    from PIL import Image as PILImage
+
+    with PILImage.open(path) as source:
+        rgba = source.convert("RGBA")
+    rgb = rgba.convert("RGB")
+    white = PILImage.new("RGB", rgb.size, "white")
+    lightened = PILImage.blend(white, rgb, HEADER_LOGO_INK_STRENGTH).convert("RGBA")
+    lightened.putalpha(rgba.getchannel("A"))
+    payload = BytesIO()
+    lightened.save(payload, format="PNG")
+    payload.seek(0)
+    return ImageReader(payload)
+
+
+class _HeaderLogo(Flowable):
+    """Draw the cached lightened RGBA wordmark in the quotation header."""
+
+    def __init__(self, image: ImageReader, width: float, height: float):
+        super().__init__()
+        self.image = image
+        self.width = width
+        self.height = height
+
+    def wrap(self, avail_width: float, avail_height: float) -> tuple[float, float]:
+        return min(self.width, avail_width), self.height
+
+    def draw(self) -> None:
+        self.canv.drawImage(self.image, 0, 0, width=self.width, height=self.height, mask="auto")
+
+
 def _draw_room_watermark(cv, doc, branding: dict | None = None) -> None:
     b = branding or {}
     if not b.get("show_watermark", True):
@@ -607,7 +644,11 @@ def _brand_header(right_title: str, styles: dict, style_key: str = "titleRight")
     logo: Flowable
     if LOGO_PATH.exists():
         logo_width = 43 * mm
-        logo = Image(str(LOGO_PATH), width=logo_width, height=logo_width / LOGO_RATIO, kind="proportional")
+        logo = _HeaderLogo(
+            _print_header_logo_image(str(LOGO_PATH), LOGO_PATH.stat().st_mtime_ns),
+            width=logo_width,
+            height=logo_width / LOGO_RATIO,
+        )
     else:
         logo = Paragraph("<b>BUILDCON HOUSE</b><br/><font size='8'>Let You Live Better</font>", styles["brandFallback"])
     table = Table([[logo, Paragraph(right_title, styles[style_key])]], colWidths=[_pw(165) * mm, _pw(102) * mm])
@@ -856,9 +897,9 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
             [Paragraph("CUSTOMER NAME", styles["label"]), Paragraph("CONTACT NO.", styles["label"]), Paragraph("SELECTION / QUOTATION DATE", styles["label"]), Paragraph("QUOTATION NO.", styles["label"])],
             [Paragraph(_escape(customer.get("company") or customer.get("name") or quotation.get("customer_name")), styles["body"]), Paragraph(_escape(quotation.get("phone_snapshot") or customer.get("phone") or ""), styles["body"]), Paragraph(created, styles["body"]), Paragraph(_escape(quotation.get("number")), styles["body"])],
             [Paragraph("REFERENCE", styles["label"]), Paragraph("ATTENDED BY", styles["label"]), Paragraph("PREPARED BY", styles["label"]), Paragraph("ADDRESS", styles["label"])],
-            [Paragraph(_escape(quotation.get("reference_source") or ""), styles["body"]), Paragraph(_escape(quotation.get("referrer_name") or ""), styles["body"]), Paragraph(_escape(b.get("footer_company_name") or "Buildcon House"), styles["body"]), Paragraph(_escape(quotation.get("address_snapshot") or customer.get("address") or ""), styles["body"])],
+            [Paragraph(_escape(" · ".join(filter(None, [quotation.get("reference_source"), referrer_label(quotation)]))), styles["body"]), Paragraph(_escape(quotation.get("referrer_name") or ""), styles["body"]), Paragraph(_escape(b.get("footer_company_name") or "Buildcon House"), styles["body"]), Paragraph(_escape(quotation.get("address_snapshot") or customer.get("address") or ""), styles["body"])],
         ]
-        meta_row_heights = [5 * mm, 5 * mm, 5 * mm, 6 * mm]
+        meta_row_heights = [5 * mm, 5 * mm, 5 * mm, None if referrer_label(quotation) else 6 * mm]
         meta_style = [
             ("LINEBELOW", (0, 1), (-1, 1), 0.4, LINE),
             ("LINEBELOW", (0, 3), (-1, 3), 0.4, LINE),

@@ -43,7 +43,6 @@ function fixture() {
     },
   };
   const mutation = deferred();
-  let noteAction;
   const api = new Proxy({}, { get: (_, method) => (...args) => {
     requests.push({ method, args });
     return method === 'list' ? Promise.resolve({ rows: [], next_cursor: null }) : mutation.promise;
@@ -53,16 +52,11 @@ function fixture() {
     'react-native': { StyleSheet: { create: value => value, hairlineWidth: 1 }, Linking: { openURL: url => { links.push(url); return Promise.resolve(); } } },
     '@/src/api/notebook': { notebookApi: api },
     '@/src/hooks/use-permissions': { useActionAccess: () => true },
+    '@/src/hooks/use-floor-access': { useFloorAccess: () => ({ floors: [{ id: 'second-floor', name: 'Kitchen' }, { id: 'third-floor', name: 'Furniture' }] }) },
     '@/src/design/responsive': { useBp: () => ({ isPhone: false }) },
     '@/src/design/tokens': { layout: {} },
     '@/src/theme/tokens': { colors: {}, radius: {}, spacing: {}, type: {} },
     '@/src/components/Toast': { toast: { success: message => notices.push(message), error: message => notices.push(message) } },
-  };
-  // Capture the action's execute function without relying on a sheet renderer.
-  const stateHook = react.useState;
-  react.useState = initial => {
-    const [value, setter] = stateHook(initial);
-    return [value, next => { if (next?.execute) noteAction = next; setter(next); }];
   };
   const exports = {};
   vm.runInNewContext(compiled, { exports, require: id => modules[id] || {}, setTimeout, clearTimeout });
@@ -74,7 +68,7 @@ function fixture() {
   render();
   return {
     notices, links, requests, mutation,
-    get state() { return state; }, get action() { return noteAction; },
+    get state() { return state; },
     unmount() { for (const hook of hooks) hook.cleanup?.(); },
     async settle() { for (let pass = 0; pass < 8; pass++) { await Promise.resolve(); if (dirty) render(); } },
   };
@@ -83,10 +77,9 @@ function fixture() {
 test('completed contact from an abandoned notebook cannot open another app or reload the previous floor', async () => {
   const view = fixture();
   view.state.contact({ id: 'old-lead', customer_name: 'Old customer' }, 'whatsapp');
-  const contact = view.action.execute('Contact note');
   view.unmount();
   view.mutation.resolve({ wa_url: 'https://wa.me/9000000000' });
-  await contact;
+  await view.settle();
   assert.equal(view.links.length, 0);
   assert.equal(view.requests.filter(request => request.method === 'list').length, 0);
   assert.equal(view.notices.length, 0);
@@ -94,7 +87,7 @@ test('completed contact from an abandoned notebook cannot open another app or re
 
 test('completed creation from an abandoned notebook produces no stale success notice', async () => {
   const view = fixture();
-  view.state.setDraft({ customer_name: 'Old draft', customer_phone: '9000000000', kitchen_type: 'GI' });
+  view.state.setDraft({ customer_name: 'Old draft', customer_phone: '9000000000', kitchen_type: 'GI', interested_floor_ids: ['second-floor'], assignments: [{ floor_id: 'second-floor', user_id: 'kitchen-worker' }] });
   await view.settle();
   const create = view.state.create();
   view.unmount();
@@ -107,7 +100,7 @@ test('completed creation from an abandoned notebook produces no stale success no
 
 test('successful creation reloads the latest active query instead of inserting a row outside its filter', async () => {
   const view = fixture();
-  view.state.setDraft({ customer_name: 'New draft', customer_phone: '9000000000', kitchen_type: 'GI' });
+  view.state.setDraft({ customer_name: 'New draft', customer_phone: '9000000000', kitchen_type: 'GI', interested_floor_ids: ['second-floor'], assignments: [{ floor_id: 'second-floor', user_id: 'kitchen-worker' }] });
   await view.settle();
   const create = view.state.create();
   view.state.setSearch('Different customer'); view.state.setFilter('pending');
@@ -124,7 +117,7 @@ test('successful creation reloads the latest active query instead of inserting a
 
 test('a duplicate converted customer reloads canonical walk-ins and reports its existing quotation stage', async () => {
   const view = fixture();
-  view.state.setDraft({ customer_name: 'Existing customer', customer_phone: '9000000000', kitchen_type: 'GI' });
+  view.state.setDraft({ customer_name: 'Existing customer', customer_phone: '9000000000', kitchen_type: 'GI', interested_floor_ids: ['second-floor'], assignments: [{ floor_id: 'second-floor', user_id: 'kitchen-worker' }] });
   await view.settle();
   const create = view.state.create();
   view.mutation.resolve({ id: 'existing-lead', is_converted: true });

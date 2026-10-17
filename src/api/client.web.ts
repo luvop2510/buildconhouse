@@ -21,6 +21,22 @@ const TOKEN_KIND_KEY = "forge.jwt.kind";
 const REQUEST_TIMEOUT_MS = 30_000;
 const inflightGets = new Map<string, Promise<unknown>>();
 const responseCache = new Map<string, { expiresAt: number; value: unknown }>();
+const MAX_RESPONSE_CACHE_ENTRIES = 64;
+
+function cacheResponse(key: string, value: unknown, ttlMs: number) {
+  const now = Date.now();
+  // Distinct searches/pages must not retain expired catalog payloads for the
+  // whole session. The bounded scan also keeps cleanup independent of URL reuse.
+  for (const [cachedKey, entry] of responseCache) {
+    if (entry.expiresAt <= now) responseCache.delete(cachedKey);
+  }
+  responseCache.delete(key);
+  while (responseCache.size >= MAX_RESPONSE_CACHE_ENTRIES) {
+    responseCache.delete(responseCache.keys().next().value!);
+  }
+  responseCache.set(key, { expiresAt: now + ttlMs, value });
+}
+
 const activeRequests = new Map<AbortController, boolean>();
 let tokenCache: string | null | undefined;
 let tokenKindCache: TokenKind | null | undefined;
@@ -132,12 +148,14 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: R
   const controller = new AbortController();
   activeRequests.set(controller, identityRead);
   const token = await getToken();
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const multipart = typeof FormData !== "undefined" && body instanceof FormData;
+  const headers: Record<string, string> = multipart ? {} : { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
   if (!/^(GET|HEAD|OPTIONS)$/i.test(method)) {
     Object.assign(headers, csrfHeaders());
   }
-  const floorId = opts?.floorId ?? await getRequestFloorId();
+  // Account restoration must not inherit a stale or newly revoked workspace.
+  const floorId = identityRead ? "" : opts?.floorId ?? await getRequestFloorId();
   if (floorId) headers["X-Floor-Id"] = floorId;
   if (identityRead ? identityVersion !== identityContextVersion : contextVersion !== requestContextVersion) {
     activeRequests.delete(controller);
@@ -152,7 +170,7 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: R
   }
   try {
     const response = await fetch(`${BASE}/api${path}`, {
-      method, headers, body: body ? JSON.stringify(body) : undefined, signal: controller.signal, credentials: "same-origin",
+      method, headers, body: multipart ? body as FormData : body ? JSON.stringify(body) : undefined, signal: controller.signal, credentials: "same-origin",
     });
     const text = await response.text();
     let data: unknown = null;
@@ -196,13 +214,18 @@ export const api = {
     const key = `${opts?.floorId ?? floorCache ?? "auto"}:${path}`;
     const cacheVersion = readCacheVersion;
     const cached = responseCache.get(key);
-    if (opts?.cacheMs !== 0 && cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.value as T);
+    if (opts?.cacheMs !== 0 && cached && cached.expiresAt > Date.now()) {
+      // Touch the entry so recently visited categories survive eviction.
+      responseCache.delete(key);
+      responseCache.set(key, cached);
+      return Promise.resolve(cached.value as T);
+    }
     if (cached) responseCache.delete(key);
     const existing = inflightGets.get(key);
     if (existing) return abortForConsumer(existing as Promise<T>, opts?.signal);
     // Consumer cancellation must not terminate a request shared by another view.
     const pending = request<T>("GET", path, undefined, { ...opts, signal: undefined }).then((value) => {
-      if (cacheVersion === readCacheVersion && opts?.cacheMs && opts.cacheMs > 0) responseCache.set(key, { expiresAt: Date.now() + opts.cacheMs, value });
+      if (cacheVersion === readCacheVersion && opts?.cacheMs && opts.cacheMs > 0) cacheResponse(key, value, opts.cacheMs);
       return value;
     }).finally(() => { if (inflightGets.get(key) === pending) inflightGets.delete(key); });
     inflightGets.set(key, pending);
@@ -212,6 +235,7 @@ export const api = {
   put: <T>(path: string, body?: unknown, opts?: RequestOptions) => { return mutate<T>("PUT", path, body, opts); },
   patch: <T>(path: string, body?: unknown, opts?: RequestOptions) => { return mutate<T>("PATCH", path, body, opts); },
   delete: <T>(path: string, opts?: RequestOptions) => { return mutate<T>("DELETE", path, undefined, opts); },
+  upload: <T>(p: string, form: FormData, opts?: RequestOptions) => mutate<T>("POST", p, form, opts),
   authenticatedUrl: async (path: string, floorId?: string) => {
     const { token } = await request<{ token: string }>("POST", "/downloads/token", { target: `/api${path}` }, { floorId });
     return `${BASE}/api${path}${path.includes("?") ? "&" : "?"}dl=${encodeURIComponent(token)}`;

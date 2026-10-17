@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 # Pull requests cover feature branches; main pushes validate the merged result.
 # Avoid running the same feature commit twice, and replace stale runs when a
 # newer commit arrives. All three required jobs still run for each PR revision.
@@ -21,6 +24,8 @@ jobs:
         working-directory: backend
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -69,6 +74,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -91,6 +98,8 @@ jobs:
         working-directory: .
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -105,10 +114,12 @@ jobs:
       - name: Existing frontend contract tests
         run: |
           npm run test:supplier-catalog
+          npm run test:catalog-pagination
           npm run test:quotation-media
           npm run test:downloads
           npm run test:quotation-contract
           npm run test:quotation-reorder
+          npm run test:quotation-individual
           npm run test:multi-filters
           npm run test:section-excel
           npm run test:quotation-concealed-parts
@@ -124,6 +135,8 @@ jobs:
           npm run test:furniture-rmb
           npm run test:api-proxy
           npm run test:web-worker
+          node scripts/test-r2-media-worker.mjs
+          node scripts/test-tiles-loading.mjs
           npm run test:sales-periods
           npm run test:monitoring-contract
           npm run test:frontend-performance
@@ -131,6 +144,7 @@ jobs:
           npm run test:icon-fonts
           npm run test:font-assets
           npm run test:release-recovery
+          npm run test:release-stability
           npm run test:npm-audit
           npm run test:shell-quote-security
           npm run test:uri-decoder-security
@@ -154,27 +168,37 @@ jobs:
       - name: Mobile initial-JavaScript budget
         run: npm run test:mobile-budget
       - name: Install audit browsers
+        id: audit-browsers
         run: npx playwright install --with-deps chromium firefox webkit
       - name: Release browser journeys and responsive audit
+        if: ${{ !cancelled() && steps.audit-browsers.outcome == 'success' }}
         run: npm run test:e2e:audit
-      - name: Six-size tablet, catalog and WhatsApp acceptance
+      # Once the build and browser installation pass, collect every independent
+      # suite's failures in this revision instead of hiding later regressions.
+      # No suite uses continue-on-error; any failed suite still fails the job.
+      - name: Seven-size tablet, catalog and WhatsApp acceptance
+        if: ${{ !cancelled() && steps.audit-browsers.outcome == 'success' }}
         run: npx playwright test --config playwright.responsive.config.ts responsive-
       - name: Member credentials and furniture touch-device acceptance
+        if: ${{ !cancelled() && steps.audit-browsers.outcome == 'success' }}
         run: npx playwright test --config playwright.devices.config.ts
-      - name: Catalog startup and progressive detail loading across devices
-        run: npm run test:e2e:performance
       - name: Publish browser result counts in the job summary
         if: always()
         run: |
           node --input-type=module <<'NODE'
           import { readFile, appendFile } from 'node:fs/promises';
           let summary = '### Browser acceptance evidence\n\n';
-          try {
-            const { stats } = JSON.parse(await readFile('output/playwright/audit-results.json', 'utf8'));
-            const count = key => Number.isSafeInteger(stats?.[key]) && stats[key] >= 0 ? stats[key] : 'unavailable';
-            summary += `Expected passes: ${count('expected')}; unexpected failures: ${count('unexpected')}; flaky: ${count('flaky')}; skipped: ${count('skipped')}.\n`;
-          } catch {
-            summary += 'Browser report unavailable. Inspect the browser test step; acceptance remains unverified.\n';
+          for (const [suite, file] of Object.entries({
+            audit: 'audit-results.json', responsive: 'responsive-results.json',
+            devices: 'device-results.json',
+          })) {
+            try {
+              const { stats } = JSON.parse(await readFile(`output/playwright/${file}`, 'utf8'));
+              const count = key => Number.isSafeInteger(stats?.[key]) && stats[key] >= 0 ? stats[key] : 'unavailable';
+              summary += `${suite}: expected passes ${count('expected')}; unexpected failures ${count('unexpected')}; flaky ${count('flaky')}; skipped ${count('skipped')}.\n\n`;
+            } catch {
+              summary += `${suite}: report unavailable. Inspect its test step; acceptance remains unverified.\n\n`;
+            }
           }
           summary += 'Browser checks do not certify signed native builds or physical devices. Required test and artifact failures still fail this job.\n';
           console.log(summary);

@@ -1,4 +1,4 @@
-import { FilterBar } from "@/src/components/ds";
+import { FilterBar, MobileFilterSection } from "@/src/components/ds";
 import { useEffect, useState } from "react";
 import { Pressable, View } from "react-native";
 import { Text } from "@/src/components/AppText";
@@ -68,7 +68,7 @@ export function SalesFilters({
   };
 
   return (
-    <View style={{ gap: isPhone ? spacing.md : spacing.lg, paddingBottom: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border }} testID="sales-data-filters">
+    <MobileFilterSection style={{ gap: isPhone ? spacing.md : spacing.lg, paddingBottom: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border }} testID="sales-data-filters">
       <Sheet open={!!picker} onClose={() => setPicker(null)} title={picker === "floor" ? "Business unit" : "Reporting period"}>
         <View style={{ gap: spacing.xs }}>
           {(picker === "floor" ? [{ value: "all", label: "All units" }, ...floors.map(f => ({ value: f.id, label: FLOOR_LABEL[f.id] || f.name }))] : [...PERIOD_PRESETS, { value: "custom", label: "Custom range" }]).map(option => <Pressable key={option.value} accessibilityRole="button" accessibilityState={{ selected: option.value === (picker === "floor" ? floorId : period.preset) }} onPress={() => {
@@ -144,6 +144,6 @@ export function SalesFilters({
           </View>
         </View>
       ) : null}
-    </View>
+    </MobileFilterSection>
   );
 }

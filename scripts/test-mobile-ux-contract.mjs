@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 
 const scaffold = read("../src/components/mobile/AppScaffold.tsx");
-assert.match(scaffold, /edges=\{\["top", "left", "right"\]\}/);
+assert.match(scaffold, /edges=\{phoneSafeArea \? \["top", "left", "right"\] : \[\]\}/);
 assert.match(scaffold, /edges=\{\["bottom"\]\}/);
 
 const adminShell = read("../app/(admin)/_layout.tsx");
@@ -23,9 +23,9 @@ assert.doesNotMatch(adminShell, /bottom-fab-new-quotation/);
 // must not mount a second copy that can race a route transition.
 assert.doesNotMatch(adminShell, /<Sheet open=\{moreOpen\}[\s\S]*?title="Workspace">\s*<FloorSwitcher/);
 assert.match(navigation, /match: "quotations", floors: \[SANITARY_FLOOR_ID\]/);
-assert.match(navigation, /match: "purchases", floors: \[SANITARY_FLOOR_ID, TILES_FLOOR_ID, KITCHEN_FLOOR_ID, FURNITURE_FLOOR_ID\]/);
-assert.match(navigation, /notebook\/kitchen\/quotation-follow-up/);
-assert.match(navigation, /notebook\/furniture\/quotation-follow-up/);
+assert.match(navigation, /match: "purchases", floors: \[SANITARY_FLOOR_ID\]/);
+assert.doesNotMatch(navigation, /quotation-follow-up|Kitchen lead notebook|Furniture lead notebook/);
+assert.match(navigation, /match: "catalog", floors: \[SANITARY_FLOOR_ID, TILES_FLOOR_ID\]/);
 
 const permissions = read("../src/hooks/use-permissions.ts");
 assert.match(permissions, /tiles:\s*"tiles"/);
@@ -129,19 +129,19 @@ assert.match(customerDetail, /const manageQuotation = \(quotation: Quotation\)/)
 assert.match(customerDetail, /\/\(admin\)\/tiles\/\$\{quotation\.doc_type === "tiles_selection" \? "selection" : "quotation"\}\?id=\$\{quotation\.id\}/);
 
 const quotationList = read("../app/(admin)/quotations/index.tsx");
-// Delivery completion is a separate customer view; approval stays independent.
-assert.match(quotationList, /doc_type=standard&completion=\$\{fulfilled \? "completed" : "active"\}/);
-assert.match(quotationList, /fulfilled \? "" : `&view=\$\{completed \? "completed" : "pending"\}/);
-assert.match(quotationList, /quotations-fulfilled-toggle/);
+// Completed is the sole quotation lifecycle list and retains delivered orders.
+assert.doesNotMatch(quotationList, /quotations-fulfilled-toggle/);
+assert.match(quotationList, /doc_type=standard&view=\$\{completed \? "completed" : "pending"\}/);
 assert.match(quotationList, /purchase_completion_status === "completed"/);
 assert.match(quotationList, /100% completed/);
 assert.match(quotationList, /quotations-lifecycle-toggle/);
 
 const tileList = read("../app/(admin)/tiles/index.tsx");
-assert.match(tileList, /doc_type=tiles_selection&completion=\$\{fulfilled \? "completed" : "active"\}/);
-assert.match(tileList, /doc_type=tiles_quotation&completion=\$\{fulfilled \? "completed" : "active"\}/);
-assert.match(tileList, /fulfilled \? "" : `&view=\$\{completed \? "completed" : "pending"\}/);
-assert.match(tileList, /tiles-fulfilled-toggle/);
+assert.doesNotMatch(tileList, /tiles-fulfilled-toggle/);
+assert.match(tileList, /doc_type=\$\{docType\}&view=\$\{completed \? "completed" : "pending"\}/);
+assert.match(tileList, /loadType\("tiles_selection"\), loadType\("tiles_quotation"\)/);
+assert.match(tileList, /floorId: "ground-floor"/);
+assert.match(tileList, /if \(!floor.ready \|\| scopeRef.current !== scope\) return/);
 assert.match(tileList, /purchase_completion_status === "completed"/);
 assert.match(tileList, /tiles-lifecycle-toggle/);
 
@@ -151,7 +151,7 @@ const explorer = read("../src/components/quotation/catalog/ProductExplorer.tsx")
 assert.match(builderShell, /mobileWorkspaceCollapsed/);
 assert.match(quotationPane, /collapse-quotation-workspace/);
 assert.match(quotationPane, /expand-quotation-workspace/);
-assert.match(explorer, /initialNumToRender=\{showCompactFilters \? 20 : 16\}/);
+assert.match(explorer, /initialNumToRender=\{catalogGridRows\(numCols, showCompactFilters \? 20 : 16\)\}/);
 
 const placeOrder = read("../app/(admin)/quotations/[id]/place-order.tsx");
 assert.match(placeOrder, /confirmBarPhone: \{ flexDirection: "column", alignItems: "stretch" \}/);

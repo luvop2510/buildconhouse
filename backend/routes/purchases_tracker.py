@@ -47,8 +47,9 @@ from starlette.concurrency import run_in_threadpool
 
 from auth import (
     TILES_FLOOR_ID, floor_inherit, floor_query, floor_scope_ids,
-    get_current_user, get_floor_scoped_or_404, require_min_role,
+    get_floor_scoped_or_404, require_min_role,
 )
+from services.purchase_workspace import get_purchase_workspace_user as get_current_user
 from db import client, db
 from models import (
     Chalan, ChalanLineItem, PurchaseCancellationEvent, PurchaseOrder, PurchaseOrderItem, PurchaseShortage, PurchaseStageEvent, PurchaseStatusEvent,
@@ -65,7 +66,7 @@ from services.domain_outbox import (
 )
 from services.followup_engine import reconcile_followups
 from services.purchase_images import hydrate_purchase_images
-from services.customer_completion import completed_customer_ids, completed_customer_pipeline
+from services.customer_completion import completed_customer_ids, completed_customer_pipeline, confirmed_customer_ids
 from services.purchase_stages import active_quantity, active_quantity_expression, delivery_timestamp, delivery_timestamp_expression, normalized_stage, stage_expression
 from services.sequence import next_number
 from services.transfer_workflow import execute_transfer, mark_loans_due_for_replenishment, settle_loan_transfer, transfer_history
@@ -577,13 +578,17 @@ def _completed_customer_pipeline(user: UserPublic, skip: int = 0, limit: int = 1
 async def active_customer_workspaces(
     include_completed: bool = Query(False), user: UserPublic = Depends(get_current_user),
 ):
-    """CRM layout stays available for new customers; completed buyers move out.
+    """Confirmed buyers on this floor; completed buyers move to their register.
 
-    Lookup evaluates every active item on this floor, including older orders.
+    Walk-in prospects stay in Walk-ins until they have an actual order. Derive
+    eligibility from orders, preserving legacy buyers and transferred owners.
     """
-    complete_ids = await completed_customer_ids(db, user) if not include_completed else set()
+    eligible_ids, complete_ids = await asyncio.gather(
+        confirmed_customer_ids(db, user),
+        completed_customer_ids(db, user) if not include_completed else asyncio.sleep(0, result=set()),
+    )
     rows = await db.customers.aggregate([
-        {"$match": floor_query(user, {"id": {"$nin": sorted(complete_ids)}})},
+        {"$match": floor_query(user, {"id": {"$in": sorted(eligible_ids - complete_ids)}})},
         {"$sort": {"name": 1, "id": 1}},
         {"$project": {"_id": 0, "id": 1, "name": 1, "company": 1, "email": 1, "phone": 1, "city": 1, "tier": 1}},
     ]).to_list(None)

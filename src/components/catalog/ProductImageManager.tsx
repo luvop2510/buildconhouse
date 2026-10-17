@@ -11,16 +11,16 @@
 // media id being swapped so the backend keeps its role/primary/position.
 import Feather from "@expo/vector-icons/Feather";
 import * as ImagePicker from "expo-image-picker";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 
-import { api, csrfHeaders, getToken } from "@/src/api/client";
+import { api } from "@/src/api/client";
 import { toast } from "@/src/components/Toast";
 import { Badge, Button, ConfirmDialog, EmptyState, Sheet } from "@/src/components/ds";
 import { ProductImage } from "@/src/components/ProductImage";
 import { colors, PRODUCT_IMAGE_ASPECT_RATIO, radius, spacing, type } from "@/src/theme/tokens";
-import { uriToBlob } from "@/src/utils/uriToBlob";
+import { appendImageUpload } from "@/src/utils/appendImageUpload";
 import { useBp } from "@/src/design/responsive";
 
 type MediaItem = {
@@ -28,7 +28,7 @@ type MediaItem = {
   is_primary: boolean; sort_order: number; quality: string;
 };
 
-type Pending = { uri: string; mimeType: string; replaceId?: string };
+type Pending = { uri: string; mimeType: string; file?: File; fileName?: string | null; fileSize?: number; replaceId?: string };
 
 /** The actual grid/upload/preview/delete UI, with no Sheet chrome of its own
  * — reusable as a standalone drawer (see ProductImageManager below) OR
@@ -47,6 +47,8 @@ export function ProductImageManagerBody({
 }) {
   const { isPhone } = useBp();
   const cols = isPhone ? 2 : 3;
+  const lifecycle = useRef<AbortController | null>(null);
+  const uploading = useRef(false);
   const [media, setMedia] = useState<MediaItem[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<Pending | null>(null);
@@ -55,7 +57,7 @@ export function ProductImageManagerBody({
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
       const list = await api.get<MediaItem[]>(`/products/${productId}/media`, { signal });
-      setMedia(list);
+      if (!signal?.aborted) setMedia(list);
     } catch (e: any) {
       if (signal?.aborted) return;
       toast.error(e?.message || "Couldn't load images");
@@ -65,13 +67,19 @@ export function ProductImageManagerBody({
 
   useEffect(() => {
     const controller = new AbortController();
+    lifecycle.current = controller;
+    uploading.current = false;
+    setBusy(false);
     setMedia(null);
     setPending(null);
+    setConfirmDeleteId(null);
     load(controller.signal);
     return () => controller.abort();
   }, [load]);
 
   const pick = async (replaceId?: string) => {
+    const controller = lifecycle.current;
+    try {
     // Image-only selection uses the system picker without broad library access.
     const result = await ImagePicker.launchImageLibraryAsync({
       // Preserve the original pixels for the backend's quality assessment and
@@ -79,62 +87,69 @@ export function ProductImageManagerBody({
       // a forced 16:10 crop is neither necessary nor desirable here.
       mediaTypes: ["images"], quality: 1, allowsEditing: false,
     });
-    if (result.canceled || !result.assets?.[0]) return;
+    if (controller?.signal.aborted || result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
-    setPending({ uri: asset.uri, mimeType: asset.mimeType || "image/jpeg", replaceId });
+    setPending({ uri: asset.uri, mimeType: asset.mimeType || "image/jpeg", file: asset.file, fileName: asset.fileName, fileSize: asset.fileSize, replaceId });
+    } catch (error: any) {
+      if (!controller?.signal.aborted) toast.error(error?.message || "Could not choose the product photo");
+    }
   };
 
   const confirmUpload = async () => {
-    if (!pending) return;
+    if (!pending || uploading.current) return;
+    uploading.current = true;
+    const controller = lifecycle.current;
     setBusy(true);
     try {
-      const token = await getToken();
-      const ext = (pending.mimeType.split("/")[1] || "jpg").replace("jpeg", "jpg");
-      const blob = await uriToBlob(pending.uri);
       const form = new FormData();
-      form.append("file", blob, `product-photo.${ext}`);
-      const url = pending.replaceId
-        ? `${api.base}/api/products/${productId}/media/${pending.replaceId}/replace`
-        : `${api.base}/api/products/${productId}/media`;
-      const r = await fetch(url, {
-        method: "POST",
-        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...csrfHeaders() },
-        body: form,
-      });
-      const text = await r.text();
-      if (!r.ok) { toast.error(text || `Upload failed (${r.status})`); return; }
+      await appendImageUpload(form, pending);
+      if (controller?.signal.aborted) return;
+      if (!pending.replaceId) {
+        form.append("source_type", "internal");
+        form.append("is_primary", String(!media?.length));
+      }
+      const path = pending.replaceId
+        ? `/products/${productId}/media/${pending.replaceId}/replace`
+        : `/products/${productId}/media`;
+      await api.upload(path, form, { signal: controller?.signal });
+      if (controller?.signal.aborted) return;
       toast.success(pending.replaceId ? "Image replaced" : "Image added");
       setPending(null);
-      await load();
-      onChanged?.();
+      await load(controller?.signal);
+      if (!controller?.signal.aborted) onChanged?.();
     } catch (e: any) {
-      toast.error(e?.message || "Upload failed");
+      if (!controller?.signal.aborted && e?.name !== "AbortError") toast.error(e?.message || "Upload failed");
     } finally {
-      setBusy(false);
+      if (lifecycle.current === controller) uploading.current = false;
+      if (!controller?.signal.aborted) setBusy(false);
     }
   };
 
   const setPrimary = async (id: string) => {
+    const controller = lifecycle.current;
     try {
-      await api.patch(`/media/${id}`, { is_primary: true });
-      await load();
-      onChanged?.();
-    } catch (e: any) { toast.error(e?.message || "Couldn't update"); }
+      await api.patch(`/media/${id}`, { is_primary: true }, { signal: controller?.signal });
+      if (controller?.signal.aborted) return;
+      await load(controller?.signal);
+      if (!controller?.signal.aborted) onChanged?.();
+    } catch (e: any) { if (!controller?.signal.aborted) toast.error(e?.message || "Couldn't update"); }
   };
 
   const doDelete = async () => {
     if (!confirmDeleteId) return;
+    const controller = lifecycle.current;
     setBusy(true);
     try {
-      await api.delete(`/media/${confirmDeleteId}`);
+      await api.delete(`/media/${confirmDeleteId}`, { signal: controller?.signal });
+      if (controller?.signal.aborted) return;
       toast.success("Image deleted");
       setConfirmDeleteId(null);
-      await load();
-      onChanged?.();
+      await load(controller?.signal);
+      if (!controller?.signal.aborted) onChanged?.();
     } catch (e: any) {
-      toast.error(e?.message || "Couldn't delete");
+      if (!controller?.signal.aborted) toast.error(e?.message || "Couldn't delete");
     } finally {
-      setBusy(false);
+      if (!controller?.signal.aborted) setBusy(false);
     }
   };
 
@@ -154,10 +169,10 @@ export function ProductImageManagerBody({
           <Button
             label="Choose a different photo"
             variant="secondary" icon="image" style={{ width: "100%" }}
-            onPress={() => pick(pending.replaceId)} testID="image-retake"
+            disabled={busy} onPress={() => pick(pending.replaceId)} testID="image-retake"
           />
           <View style={styles.previewActions}>
-            <Button label="Cancel" variant="secondary" style={{ flex: 1 }} onPress={() => setPending(null)} testID="image-preview-cancel" />
+            <Button label="Cancel" variant="secondary" style={{ flex: 1 }} disabled={busy} onPress={() => setPending(null)} testID="image-preview-cancel" />
             <Button
               label={pending.replaceId ? "Save replacement" : "Save image"}
               style={{ flex: 1 }} loading={busy} onPress={confirmUpload} testID="image-preview-save"

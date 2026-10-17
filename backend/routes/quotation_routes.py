@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from pymongo import ReturnDocument
 from starlette.concurrency import run_in_threadpool
 
@@ -85,6 +85,28 @@ TILES_DOC_TYPES = ("tiles_selection", "tiles_quotation")
 # while older live documents are gradually normalised.
 PENDING_QUOTATION_STATUSES = ("draft", "pending_approval", "sent")
 COMPLETED_QUOTATION_STATUSES = ("approved", "ordered", "won")
+
+
+def _quotation_view_query(view: str | None) -> dict:
+    """Keep historical sales outcomes separate from operational orders."""
+    if view == "pending":
+        return {
+            "status": {"$in": list(PENDING_QUOTATION_STATUSES)},
+            "customer_outcome": {"$nin": ["won", "lost"]},
+        }
+    if view == "completed":
+        return {"status": {"$in": list(COMPLETED_QUOTATION_STATUSES)}}
+    if view == "won":
+        return {"$or": [
+            {"customer_outcome": "won"},
+            {"status": {"$in": ["ordered", "won"]}, "customer_outcome": {"$ne": "lost"}},
+        ]}
+    if view == "lost":
+        return {"$or": [
+            {"customer_outcome": "lost"},
+            {"status": {"$in": ["lost", "rejected"]}, "customer_outcome": {"$ne": "won"}},
+        ]}
+    return {}
 
 
 async def _canonicalize_item_images(items, floor_id: str | None = None) -> list[dict]:
@@ -190,9 +212,10 @@ async def _canonicalize_item_images(items, floor_id: str | None = None) -> list[
     return [{**item, "image": resolved_image(item)} for item in raw_items]
 
 
-def _require_tiles_quotation_address(doc_type: str, address: str | None) -> None:
-    """Reject tile quotations that cannot print a complete customer header."""
-    if doc_type == "tiles_quotation" and not str(address or "").strip():
+def _require_tiles_quotation_address(doc_type: str, address: str | None, *, historical_source: bool = False) -> None:
+    """Require new tile quotations to have an address, while retaining truthful
+    headers on historical source documents that were issued without one."""
+    if doc_type == "tiles_quotation" and not historical_source and not str(address or "").strip():
         raise HTTPException(
             status_code=400,
             detail="An address is required before a tile quotation can be generated.",
@@ -307,7 +330,7 @@ def _referrer_fields(referrer_type: str | None, referrer_doc: dict | None) -> di
 @router.get("")
 async def list_quotations(
     doc_type: str | None = None,
-    view: str | None = Query(None, pattern="^(pending|completed)$"),
+    view: str | None = Query(None, pattern="^(pending|completed|won|lost)$"),
     completion: str | None = Query(None, pattern="^(active|completed)$"),
     status: str | None = None,
     customer_id: str | None = None,
@@ -329,10 +352,7 @@ async def list_quotations(
         query["doc_type"] = {"$in": ["standard", None]}
     elif doc_type:
         query["doc_type"] = doc_type
-    if view == "pending":
-        query["status"] = {"$in": list(PENDING_QUOTATION_STATUSES)}
-    elif view == "completed":
-        query["status"] = {"$in": list(COMPLETED_QUOTATION_STATUSES)}
+    query.update(_quotation_view_query(view))
     selected_statuses = filter_values(status)
     if selected_statuses:
         allowed_statuses = query.get("status", {}).get("$in")
@@ -369,7 +389,8 @@ async def list_quotations(
 
 @router.get("/recent")
 async def recent_quotations(
-    limit: int = 8,
+    limit: int = Query(8, ge=1),
+    view: str | None = Query(None, pattern="^(pending|completed|won|lost)$"),
     user: UserPublic = Depends(get_current_user),
 ):
     """Compact list of recent quotations for the Builder V4 left-rail panel.
@@ -381,12 +402,14 @@ async def recent_quotations(
     # Standard quotations only — this list feeds the Quotation Builder's
     # left rail and the dashboard, neither of which can open a tile
     # document. Tile documents have their own Ground Floor screens.
+    _, limit = normalize_pagination(0, limit)
     docs = await db.quotations.find(
-        floor_query(user, {"doc_type": {"$nin": list(TILES_DOC_TYPES)}}),
+        floor_query(user, {"doc_type": {"$nin": list(TILES_DOC_TYPES)}, **_quotation_view_query(view)}),
         {
             "_id": 0, "id": 1, "number": 1, "customer_id": 1, "customer_name": 1,
             "project_name": 1, "phone_snapshot": 1, "grand_total": 1, "status": 1,
             "revisions": 1, "updated_at": 1, "created_at": 1,
+            "customer_outcome": 1, "outcome_reason": 1,
         },
     ).sort("updated_at", -1).limit(limit).to_list(limit)
     out = []
@@ -400,6 +423,8 @@ async def recent_quotations(
             "phone": d.get("phone_snapshot"),
             "grand_total": d.get("grand_total") or 0,
             "status": d.get("status") or "draft",
+            "customer_outcome": d.get("customer_outcome"),
+            "outcome_reason": d.get("outcome_reason"),
             "revision_count": len(d.get("revisions") or []),
             "updated_at": d.get("updated_at"),
             "created_at": d.get("created_at"),
@@ -415,7 +440,8 @@ async def _manual_stock_line(item: QuotationLineItem, user: UserPublic, *, floor
     """
     if not item.godown_stock_id or item.product_id != f"godown:{item.godown_stock_id}":
         return None
-    query = {"id": item.godown_stock_id, "product_id": item.product_id, "source_type": "manual"}
+    query = {"id": item.godown_stock_id, "product_id": item.product_id,
+             "source_type": {"$in": ["manual", "warehouse_import"]}}
     if floor_id:
         query["floor_id"] = floor_id
     return await db.godown_stock.find_one(floor_query(user, query), {"_id": 0, "floor_id": 1, "category_id": 1})
@@ -521,7 +547,8 @@ async def create_quotation(
             "allocated_by_name": user.full_name,
         }
         lot = await db.godown_stock.find_one_and_update(
-            floor_query(user, {"id": line.godown_stock_id, "$expr": {"$gte": [
+            floor_query(user, {"id": line.godown_stock_id, "product_id": line.product_id,
+                              "archived": {"$ne": True}, "quantity_missing": {"$ne": True}, "$expr": {"$gte": [
                 {"$subtract": [{"$ifNull": ["$available_qty", 0]}, {"$ifNull": ["$loaned_out_qty", 0]}]}, line.qty,
             ]}}),
             {"$inc": {"available_qty": -line.qty}, "$push": {"allocations": allocation}, "$set": {"updated_at": allocation_at}},
@@ -604,14 +631,14 @@ async def _complete_pre_confirmation_followups(
     *,
     session=None,
     floor_id: str | None = None,
+    creator_id: str | None = None,
+    creator_name: str | None = None,
+    customer_id: str | None = None,
 ) -> int:
-    """Close reminders that existed before this quotation became an order.
+    """Consolidate the customer's pre-order reminders into its committed order.
 
-    The order-confirmed Operations handoff is deliberately excluded: it is
-    created *after* this transition and remains actionable until Operations
-    starts releasing material.  All other open or snoozed cards linked to the
-    quotation (including staff-created reminders) are sales follow-ups whose
-    purpose has been fulfilled by the confirmation.
+    Grouped floor records close in the same Mongo transaction. Lead assignments
+    remain as historical work; sales revenue still credits the quotation creator.
     """
     completed_at = now_iso()
     query = {
@@ -619,10 +646,46 @@ async def _complete_pre_confirmation_followups(
         "status": {"$in": ["open", "snoozed"]},
         "rule_type": {"$ne": "order_confirmed_ops"},
         "purchase_id": None,
+        "category": {"$nin": ["payment", "purchase", "operations"]},
         "$or": [{"notebook_key": None}, {"notebook_key": ""}],
     }
     if floor_id:
         query["floor_id"] = floor_id
+    if customer_id and floor_id:
+        # Showroom leads exist before a quotation and carry no quotation id.
+        # Only this customer's walk-in sales rows can join the confirmed sale.
+        query.pop("quotation_id")
+        notebook_scope = query.pop("$or")
+        query["$and"] = [
+            {"$or": notebook_scope},
+            {"$or": [
+                {"quotation_id": quotation_id},
+                {"customer_id": customer_id, "quotation_id": None},
+                {"customer_id": customer_id, "quotation_id": ""},
+            ]},
+        ]
+    # A customer may have one floor-local lead per selected department. Only
+    # groups linked to this order/customer join its transaction; unrelated
+    # leads remain scoped. Group metadata records the one consolidated order.
+    if floor_id and customer_id:
+        seeds_query = {"floor_id": floor_id, "$or": [{"quotation_id": quotation_id}, {"customer_id": customer_id, "quotation_id": {"$in": [None, ""]}}], "lead_group_id": {"$type": "string"}}
+        seeds = await db.followups.find(seeds_query, {"_id": 0, "lead_group_id": 1}, session=session).to_list(1000)
+        groups = list({row["lead_group_id"] for row in seeds})
+        if groups:
+            await db.followups.update_many({"lead_group_id": {"$in": groups}, "status": {"$in": ["open", "snoozed"]}}, {"$set": {
+                "status": "done", "notebook_status": "won", "completed_outcome": "won", "auto_resolved": True,
+                "completed_at": completed_at, "updated_at": completed_at, "snoozed_until": None,
+                "consolidated_order_id": quotation_id, "consolidated_order_floor_id": floor_id,
+                "resolution_note": f"Consolidated into order {quotation_number or quotation_id}",
+            }}, session=session)
+            # Group closure runs before the legacy open-row query below.
+            # Link this order's own floor rows and credit its creator here,
+            # while keeping each sibling's floor-local quotation identity.
+            await db.followups.update_many({"lead_group_id": {"$in": groups}, "floor_id": floor_id,
+                "consolidated_order_id": quotation_id, "completed_at": completed_at}, {"$set": {
+                "quotation_id": quotation_id, "quotation_number": quotation_number,
+                **({"assigned_to": creator_id, "assigned_to_name": creator_name} if creator_id else {}),
+            }}, session=session)
     result = await db.followups.update_many(
         query,
         {"$set": {
@@ -633,6 +696,9 @@ async def _complete_pre_confirmation_followups(
             # converted task. This outcome powers the dedicated Won orders
             # view in Follow-ups and is written only by the order transition.
             "completed_outcome": "won",
+            "quotation_id": quotation_id, "quotation_number": quotation_number,
+            "consolidated_order_id": quotation_id, "consolidated_order_floor_id": floor_id,
+            **({"assigned_to": creator_id, "assigned_to_name": creator_name} if creator_id else {}),
             "snoozed_until": None,
             "resolution_note": (
                 f"Completed automatically — order {quotation_number or quotation_id} was confirmed."
@@ -665,6 +731,7 @@ async def _complete_order_notebook_followups(doc: dict, *, session=None) -> int:
             "$or": [{"quotation_id": doc["id"]}, {"quotation_id": None}, {"quotation_id": ""}],
         },
         {"$set": {
+            **({"assigned_to": doc["created_by"], "assigned_to_name": doc.get("created_by_name")} if doc.get("created_by") else {}),
             "notebook_status": "won", "status": "done", "completed_outcome": "won",
             "auto_resolved": True, "completed_at": now, "updated_at": now,
             "snoozed_until": None,
@@ -705,6 +772,7 @@ async def update_quotation(
     _require_tiles_quotation_address(
         doc.get("doc_type", "standard"),
         body.address_snapshot if body.address_snapshot is not None else doc.get("address_snapshot"),
+        historical_source=bool((doc.get("quotation_import") or {}).get("source_type") == "provided_pdf"),
     )
 
     update: dict = {}
@@ -1436,7 +1504,10 @@ async def quotation_pptx(quotation_id: str, user: UserPublic = Depends(get_curre
 async def _build_quotation_file(doc: dict, customer: dict, include_dimensions: bool = False) -> tuple[bytes, str]:
     """Use the same PDF render contract for downloads and customer snapshots."""
     doc_type = doc.get("doc_type") or "standard"
-    _require_tiles_quotation_address(doc_type, doc.get("address_snapshot"))
+    _require_tiles_quotation_address(
+        doc_type, doc.get("address_snapshot"),
+        historical_source=bool((doc.get("quotation_import") or {}).get("source_type") == "provided_pdf"),
+    )
     branding = await _pdf_branding()
     pdf_items = await _pdf_items(doc)
     if doc_type not in TILES_DOC_TYPES:
@@ -1468,7 +1539,10 @@ async def quotation_pdf(quotation_id: str, include_dimensions: bool = False, use
         {"id": doc["customer_id"], "floor_id": doc.get("floor_id")}, {"_id": 0, "password_hash": 0},
     ) or {}
     doc_type = doc.get("doc_type") or "standard"
-    _require_tiles_quotation_address(doc_type, doc.get("address_snapshot"))
+    _require_tiles_quotation_address(
+        doc_type, doc.get("address_snapshot"),
+        historical_source=bool((doc.get("quotation_import") or {}).get("source_type") == "provided_pdf"),
+    )
     pdf_bytes, filename = await _build_quotation_file(doc, customer, include_dimensions)
     revision = len(doc.get("revisions") or [])
     key = f"quotation-generated:{quotation_id}:revision:{revision}"
@@ -1598,6 +1672,14 @@ class PlaceOrderConfirmPayload(BaseModel):
     catalog_price_token: str | None = None
 
 
+def _require_active_sales_quotation(doc: dict) -> None:
+    if doc.get("customer_outcome") in {"won", "lost"}:
+        raise HTTPException(
+            status_code=409,
+            detail="This quotation has a recorded customer outcome. Duplicate it to start a new quotation before placing an order.",
+        )
+
+
 async def _godown_matches(doc: dict) -> list[dict]:
     """Return reusable sanitary stock for otherwise-to-be-produced lines."""
     # Returned sanitary material is deliberately isolated from Ground Floor
@@ -1609,7 +1691,8 @@ async def _godown_matches(doc: dict) -> list[dict]:
     if not product_ids:
         return []
     lots = await db.godown_stock.find(
-        {"floor_id": doc.get("floor_id"), "product_id": {"$in": product_ids}, "available_qty": {"$gt": 0}},
+        {"floor_id": doc.get("floor_id"), "product_id": {"$in": product_ids}, "available_qty": {"$gt": 0},
+         "archived": {"$ne": True}, "quantity_missing": {"$ne": True}},
         {"_id": 0, "id": 1, "product_id": 1, "available_qty": 1, "loaned_out_qty": 1, "source_customer_name": 1, "transferred_at": 1},
     ).sort("transferred_at", 1).to_list(500)
     available: dict[str, float] = {}
@@ -1678,7 +1761,7 @@ async def use_godown_stock(quotation_id: str, user: UserPublic = Depends(require
         remaining = float(raw.get("qty") or 0)
         if raw.get("godown_stock_id") or remaining <= 0:
             output.append(raw); continue
-        lots = await db.godown_stock.find({"floor_id": doc.get("floor_id"), "product_id": raw.get("product_id"), "available_qty": {"$gt": 0}}, {"_id": 0}).sort("transferred_at", 1).to_list(100)
+        lots = await db.godown_stock.find({"floor_id": doc.get("floor_id"), "product_id": raw.get("product_id"), "available_qty": {"$gt": 0}, "archived": {"$ne": True}, "quantity_missing": {"$ne": True}}, {"_id": 0}).sort("transferred_at", 1).to_list(100)
         for lot in lots:
             if remaining <= 1e-6: break
             qty = min(remaining, max(0.0, float(lot.get("available_qty") or 0) - float(lot.get("loaned_out_qty") or 0)))
@@ -1686,7 +1769,7 @@ async def use_godown_stock(quotation_id: str, user: UserPublic = Depends(require
                 continue
             at = now_iso()
             allocation = {"id": str(uuid4()), "quotation_id": doc["id"], "quotation_number": doc.get("number"), "customer_id": doc.get("customer_id"), "customer_name": doc.get("customer_name"), "qty": qty, "allocated_at": at, "allocated_by": user.id, "allocated_by_name": user.full_name}
-            claimed = await db.godown_stock.find_one_and_update({"id": lot["id"], "floor_id": doc.get("floor_id"), "$expr": {"$gte": [
+            claimed = await db.godown_stock.find_one_and_update({"id": lot["id"], "floor_id": doc.get("floor_id"), "archived": {"$ne": True}, "quantity_missing": {"$ne": True}, "$expr": {"$gte": [
                 {"$subtract": [{"$ifNull": ["$available_qty", 0]}, {"$ifNull": ["$loaned_out_qty", 0]}]}, qty,
             ]}}, {"$inc": {"available_qty": -qty}, "$push": {"allocations": allocation}, "$set": {"updated_at": at}}, return_document=ReturnDocument.AFTER)
             if not claimed:
@@ -1715,6 +1798,7 @@ async def use_godown_stock(quotation_id: str, user: UserPublic = Depends(require
 @router.get("/{quotation_id}/place-order/preview")
 async def place_order_preview(quotation_id: str, user: UserPublic = Depends(require_min_role("sales"))):
     doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0})
+    _require_active_sales_quotation(doc)
     if not can_place_order(doc.get("doc_type", "standard"), doc.get("status", "draft")):
         raise HTTPException(status_code=400, detail="Confirm the quotation before placing the order")
     if not doc.get("items"):
@@ -1726,7 +1810,8 @@ async def place_order_preview(quotation_id: str, user: UserPublic = Depends(requ
 async def place_order_confirm(quotation_id: str, body: PlaceOrderConfirmPayload, user: UserPublic = Depends(require_min_role("sales"))):
     """Commit OrderPlaced once, then dispatch idempotent secondary automation."""
     # Authorize retries as well: an existing outbox row must not bypass floor access.
-    await get_floor_scoped_or_404(db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0, "id": 1, "floor_id": 1})
+    initial = await get_floor_scoped_or_404(db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0, "id": 1, "floor_id": 1, "customer_outcome": 1})
+    _require_active_sales_quotation(initial)
     key = f"order-placed:{quotation_id}"
     event = await db.event_outbox.find_one({"idempotency_key": key}, {"_id": 0})
     if not event:
@@ -1738,6 +1823,7 @@ async def place_order_confirm(quotation_id: str, body: PlaceOrderConfirmPayload,
                         db.quotations, quotation_id, user, not_found="Quotation not found",
                         projection={"_id": 0}, session=session,
                     )
+                    _require_active_sales_quotation(doc)
                     if not can_place_order(doc.get("doc_type", "standard"), doc.get("status", "draft")):
                         raise HTTPException(status_code=400, detail="Confirm the quotation before placing the order")
                     if not doc.get("items"):
@@ -1760,6 +1846,8 @@ async def place_order_confirm(quotation_id: str, body: PlaceOrderConfirmPayload,
                     await _complete_order_notebook_followups(doc, session=session)
                     await _complete_pre_confirmation_followups(
                         quotation_id, doc.get("number"), session=session, floor_id=doc.get("floor_id"),
+                        creator_id=doc.get("created_by"), creator_name=doc.get("created_by_name"),
+                        customer_id=doc.get("customer_id"),
                     )
                     event = await enqueue_after_primary_commit(
                         event_type=EVENT_ORDER_PLACED,
@@ -1808,28 +1896,60 @@ async def workflow_status(
     return {"quotation_id": quotation_id, "quotation_total": round(float(quotation.get("grand_total") or 0), 2), "events": events, "purchase_orders": purchase_orders, "payments": payments, "timeline": timeline, "followups": followups}
 
 
-# Customer sharing deliberately uses an opaque, expiring capability rather
-# than a staff JWT or the authenticated download token (which is single-use).
-@router.post("/{quotation_id}/whatsapp-draft")
-async def quotation_whatsapp_draft(quotation_id: str, include_dimensions: bool = False,
-                                   user: UserPublic = Depends(get_current_user)):
-    from services.quotation_shares import create_share, whatsapp_phone
-    doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user,
-                                      not_found="Quotation not found", projection={"_id": 0})
+class QuotationWhatsAppSendInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    message: str = Field(min_length=1, max_length=1024)
+    expected_updated_at: str = Field(max_length=64)
+    idempotency_key: str = Field(min_length=16, max_length=100)
+    include_dimensions: bool = False
+
+
+async def _quotation_recipient(doc: dict):
+    from services.quotation_shares import whatsapp_phone
     customer = await db.customers.find_one(
         {"id": doc["customer_id"], "floor_id": doc.get("floor_id")}, {"_id": 0, "password_hash": 0},
     )
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
-    phone = whatsapp_phone(customer.get("phone"))
+    return doc, customer, whatsapp_phone(customer.get("phone"))
+
+
+@router.post("/{quotation_id}/whatsapp-draft")
+async def quotation_whatsapp_draft(quotation_id: str, include_dimensions: bool = False,
+                                   user: UserPublic = Depends(get_current_user)):
+    """Prepare file delivery metadata; never mint a customer-facing link."""
+    from services.whatsapp_delivery import configured
+    doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user,
+                                      not_found="Quotation not found", projection={"_id": 0})
+    doc, customer, phone = await _quotation_recipient(doc)
+    # Sharing a local PDF remains available when a contact number/provider is absent.
+    filename = (tiles_pdf_filename(doc) if doc.get("doc_type") in TILES_DOC_TYPES
+                else quotation_pdf_filename(doc.get("customer_name") or customer.get("name")))
+    return {"id": doc["id"], "floor_id": doc.get("floor_id"), "phone": phone,
+            "customer_name": customer.get("name") or doc.get("customer_name") or "Customer",
+            "filename": filename, "expected_updated_at": doc.get("updated_at", ""),
+            "include_dimensions": include_dimensions, "direct_send_configured": configured()}
+
+
+@router.post("/{quotation_id}/whatsapp-send")
+async def send_quotation_whatsapp(quotation_id: str, body: QuotationWhatsAppSendInput,
+                                 user: UserPublic = Depends(get_current_user)):
+    from services.whatsapp_delivery import send_document
+    doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user,
+                                      not_found="Quotation not found", projection={"_id": 0})
+    doc, customer, phone = await _quotation_recipient(doc)
+    if body.expected_updated_at != doc.get("updated_at", ""):
+        raise HTTPException(409, "This quotation changed. Close sharing and prepare the PDF again.")
     if not phone:
-        raise HTTPException(status_code=422, detail="Add a valid WhatsApp phone number to the customer's contact details first")
-    pdf_bytes, filename = await _build_quotation_file(doc, customer, include_dimensions)
-    shared = await create_share(doc, pdf_bytes, filename, user.id)
-    # Creating/opening a draft cannot prove delivery and never marks it sent.
-    return {**shared, "phone": phone, "customer_name": customer.get("name") or doc.get("customer_name") or "Customer"}
+        raise HTTPException(422, "Add a valid WhatsApp phone number to the customer's contact details first")
+    data, filename = await _build_quotation_file(doc, customer, body.include_dimensions)
+    return await send_document(pdf_bytes=data, filename=filename, recipient_phone=phone,
+                               message=body.message, idempotency_key=body.idempotency_key,
+                               floor_id=doc["floor_id"], source_id=doc["id"], actor_id=user.id)
 
 
+# Existing expiring capabilities remain readable for compatibility; new sharing
+# actions above deliver PDF files and do not create public capability URLs.
 @router.api_route("/shared-pdf/{token}", methods=["GET", "HEAD"])
 async def shared_quotation_pdf(token: str):
     from services.quotation_shares import read_share

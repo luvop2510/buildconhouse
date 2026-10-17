@@ -1,6 +1,16 @@
 import { Buffer } from 'node:buffer';
+import { sessionCookies } from '../scripts/session-cookies.cjs';
 
 const MAX_REQUEST_BODY_BYTES = 1_048_576;
+// Vercel Functions admit at most 4.5 MB. Keep multipart photo envelopes below
+// that ceiling while preserving the smaller bound for ordinary JSON writes.
+const MAX_PHOTO_BODY_BYTES = 4 * 1024 * 1024;
+
+export function requestBodyLimit(method, path, contentType) {
+  const photoRoute = /^products\/custom-with-media$|^products\/[^/]+\/(?:media(?:\/[^/]+\/replace)?|diagram-media|vitra-media)$|^families\/[^/]+\/media$|^godown-stock\/[^/]+\/image$/;
+  return method === 'POST' && photoRoute.test(path) && /^multipart\/form-data\s*;/i.test(contentType || '')
+    ? MAX_PHOTO_BODY_BYTES : MAX_REQUEST_BODY_BYTES;
+}
 // The browser client allows a request 30 seconds. Give the proxy nearly that
 // full window so it does not turn a healthy-but-slow Railway response into a
 // premature 504; retain a small margin for proxying the response downstream.
@@ -68,10 +78,15 @@ export function readBody(req, maxBytes = MAX_REQUEST_BODY_BYTES) {
   });
 }
 
-export async function fetchWithTimeout(url, options, { fetchImpl = fetch, timeoutMs = UPSTREAM_TIMEOUT_MS } = {}) {
+export async function fetchWithTimeout(url, options, { fetchImpl = fetch, timeoutMs = UPSTREAM_TIMEOUT_MS, consume } = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try { return await fetchImpl(url, { ...options, signal: controller.signal }); }
+  try {
+    const response = await fetchImpl(url, { ...options, signal: controller.signal });
+    // A response can send headers and then stall indefinitely. Keep the same
+    // deadline active until its body is consumed, including login and downloads.
+    return consume ? await consume(response) : response;
+  }
   finally { clearTimeout(timeout); }
 }
 
@@ -108,16 +123,20 @@ export function createHandler({ backendUrl = process.env.BACKEND_URL, fetchImpl 
     }
 
     let body;
-    try { body = unsafe ? await readBody(req) : undefined; }
+    const bodyLimit = requestBodyLimit(req.method, path, req.headers['content-type']);
+    try { body = unsafe ? await readBody(req, bodyLimit) : undefined; }
     catch (error) {
-      if (error instanceof BodyTooLargeError) return res.status(413).json({ detail: 'Request body exceeds the 1 MiB limit.' });
+      if (error instanceof BodyTooLargeError) return res.status(413).json({ detail: `Request body exceeds the ${bodyLimit / 1024 / 1024} MiB limit.` });
       console.error('Web API proxy request-body error:', error?.name || 'Error');
       return res.status(400).json({ detail: 'Unable to read request body.' });
     }
 
     const upstream = new URL(`/api/${path}`, backend);
     Object.entries(req.query).forEach(([key, value]) => {
-      if (key !== 'path') upstream.searchParams.set(key, Array.isArray(value) ? value[0] : value);
+      if (key === 'path') return;
+      // Catalog lists use repeated query keys. Preserve every value as native
+      // requests and the web worker do; taking only the first hides choices.
+      for (const item of Array.isArray(value) ? value : [value]) upstream.searchParams.append(key, item);
     });
     const headers = new Headers();
     Object.entries(req.headers).forEach(([key, value]) => {
@@ -134,11 +153,12 @@ export function createHandler({ backendUrl = process.env.BACKEND_URL, fetchImpl 
     headers.set('x-forwarded-proto', 'https');
     if (host) headers.set('x-forwarded-host', host);
 
-    let upstreamResponse;
+    let upstreamResponse, upstreamBody;
+    const upstreamStarted = performance.now();
     try {
-      upstreamResponse = await fetchWithTimeout(upstream, {
+      ({ response: upstreamResponse, body: upstreamBody } = await fetchWithTimeout(upstream, {
         method: req.method, headers, body: body?.length ? body : undefined, redirect: 'manual',
-      }, { fetchImpl, timeoutMs });
+      }, { fetchImpl, timeoutMs, consume: async (response) => ({ response, body: Buffer.from(await response.arrayBuffer()) }) }));
     } catch (error) {
       if (error?.name === 'AbortError') return res.status(504).json({ detail: 'The upstream API timed out.' });
       console.error('Web API proxy upstream failure:', error);
@@ -147,26 +167,30 @@ export function createHandler({ backendUrl = process.env.BACKEND_URL, fetchImpl 
 
     // Keep backend processing time visible in browser diagnostics and preserve
     // rate-limit recovery guidance, including responses handled below as JSON.
-    for (const name of ['Server-Timing', 'Retry-After', 'Referrer-Policy']) {
+    for (const name of ['Retry-After', 'Referrer-Policy']) {
       const value = upstreamResponse.headers.get(name);
       if (value) res.setHeader(name, value);
     }
+    const appTiming = upstreamResponse.headers.get('server-timing');
+    res.setHeader('Server-Timing', [appTiming, `upstream;dur=${(performance.now() - upstreamStarted).toFixed(1)}`].filter(Boolean).join(', '));
 
     const isLogin = upstreamResponse.ok && (path === 'auth/login' || path === 'auth/customer/login');
     if (isLogin) {
-      const payload = await upstreamResponse.json();
+      let payload;
+      try { payload = JSON.parse(upstreamBody.toString('utf8')); }
+      catch { return res.status(502).json({ detail: 'The upstream API returned an invalid login response.' }); }
       const token = payload?.access_token;
       if (token) {
-        const csrf = crypto.randomUUID() + crypto.randomUUID();
-        res.setHeader('Set-Cookie', [
-          `forge_session=${encodeURIComponent(token)}; Path=/api; Secure; HttpOnly; SameSite=Strict`,
-          `forge_csrf=${encodeURIComponent(csrf)}; Path=/; Secure; SameSite=Strict`,
-        ]);
+        res.setHeader('Set-Cookie', sessionCookies(token));
         payload.access_token = '';
         return res.status(upstreamResponse.status).json(payload);
       }
     }
-    if (path === 'auth/logout') {
+    const identityCheck = req.method === 'GET' && ['auth/me', 'auth/customer/me'].includes(path);
+    if (identityCheck && upstreamResponse.ok && session) {
+      res.setHeader('Set-Cookie', sessionCookies(decodeURIComponent(session), cookie(req, 'forge_csrf')));
+    }
+    if (path === 'auth/logout' || (identityCheck && upstreamResponse.status === 401)) {
       res.setHeader('Set-Cookie', [
         'forge_session=; Path=/api; Max-Age=0; Secure; HttpOnly; SameSite=Strict',
         'forge_csrf=; Path=/; Max-Age=0; Secure; SameSite=Strict',
@@ -176,7 +200,7 @@ export function createHandler({ backendUrl = process.env.BACKEND_URL, fetchImpl 
     if (contentType) res.setHeader('Content-Type', contentType);
     const contentDisposition = upstreamResponse.headers.get('content-disposition');
     if (contentDisposition) res.setHeader('Content-Disposition', contentDisposition);
-    return res.status(upstreamResponse.status).send(Buffer.from(await upstreamResponse.arrayBuffer()));
+    return res.status(upstreamResponse.status).send(upstreamBody);
   };
 }
 

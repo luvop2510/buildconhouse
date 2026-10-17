@@ -1,3 +1,4 @@
+from unittest.mock import AsyncMock
 """Floor/page changes commit as one snapshot and never widen empty access."""
 from copy import deepcopy
 from types import SimpleNamespace
@@ -220,7 +221,7 @@ async def test_notebook_contact_binds_stored_page_and_rechecks_stage_in_write(mo
     user = UserPublic(id="staff", email="staff@example.com", full_name="Worker", role="worker", custom_access=True, floor_ids=["second-floor"], active_floor_id="second-floor")
     object.__setattr__(user, "_custom_notebook_converted", False)
     with pytest.raises(HTTPException) as exc:
-        await followup_routes.contact_followup("row", FollowupContactPayload(channel="call", notes="Call about kitchen"), user)
+        await followup_routes.contact_followup("row", FollowupContactPayload(channel="call"), user)
     assert exc.value.status_code == 409
 
 
@@ -242,8 +243,9 @@ async def test_readding_customer_cannot_change_existing_row_through_create(monke
     monkeypatch.setattr(followup_routes, "db", SimpleNamespace(followups=Rows(), customers=Customers()))
     monkeypatch.setattr(followup_routes, "resolve_or_create_customer", customer)
     monkeypatch.setattr(followup_routes, "_notebook_referrer_fields", partner)
+    monkeypatch.setattr(followup_routes.lead_scope, "validate_scope", AsyncMock())
     user = UserPublic(id="staff", email="staff@example.com", full_name="Worker", role="worker", custom_access=True, floor_ids=["second-floor"], active_floor_id="second-floor")
-    body = NotebookFollowupCreatePayload(customer_name="Customer", customer_phone="9999999999", kitchen_type="GI", referrer_id="partner")
+    body = NotebookFollowupCreatePayload(customer_name="Customer", customer_phone="9999999999", kitchen_type="GI", referrer_id="partner", assignments=[{"floor_id": "second-floor", "user_id": "staff"}])
     with pytest.raises(HTTPException) as exc:
         await followup_routes.create_notebook_row("second-floor", body, user)
     assert exc.value.status_code == status

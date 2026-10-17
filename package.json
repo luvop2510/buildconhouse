@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "main": "expo-router/entry",
-  "version": "1.0.1",
+  "version": "1.0.4",
   "scripts": {
     "preinstall": "./scripts/cmd-guard.js --preinstall",
     "postinstall": "node scripts/patch-react19-compat.mjs && node scripts/patch-uri-decoder-compat.mjs",
@@ -12,21 +12,23 @@
     "build": "node scripts/sites-build.mjs",
     "lint": "expo lint",
     "test:supplier-catalog": "node --experimental-strip-types --no-warnings scripts/test-catalog-source.mjs",
+    "test:catalog-pagination": "node scripts/test-catalog-pagination.mjs",
     "test:quotation-media": "node --experimental-strip-types --no-warnings scripts/test-quotation-media.mjs",
     "test:downloads": "node scripts/test-download-file.mjs",
     "test:quotation-contract": "node --experimental-strip-types --no-warnings scripts/test-quotation-contract.mjs",
     "test:quotation-reorder": "node --experimental-strip-types --no-warnings scripts/test-quotation-reorder.mjs",
+    "test:quotation-individual": "node scripts/test-quotation-individual.mjs",
     "test:multi-filters": "node --experimental-strip-types --no-warnings scripts/test-multi-filters.mjs",
     "test:section-excel": "node --experimental-strip-types --no-warnings scripts/test-section-excel.mjs",
     "preview:local": "node scripts/serve-local.mjs",
     "test:quotation-concealed-parts": "node --experimental-strip-types --no-warnings scripts/test-quotation-concealed-parts.mjs",
-    "test:purchases-contract": "node scripts/test-purchases-contract.mjs",
+    "test:purchases-contract": "node scripts/test-purchases-contract.mjs && node scripts/test-purchase-floor-races.mjs",
     "test:notebook": "node --experimental-strip-types --no-warnings scripts/test-notebook.mjs",
-    "test:mobile-ux": "node scripts/test-mobile-ux-contract.mjs",
+    "test:mobile-ux": "node scripts/test-mobile-ux-contract.mjs && node scripts/test-keyboard-viewport.mjs && node scripts/test-followup-floor-races.mjs && node scripts/test-input-active.mjs && node scripts/test-lead-assignee-races.mjs",
     "test:frontend-drift": "node scripts/test-frontend-drift.mjs",
     "test:frontend-drift:browser": "playwright test --config playwright.forge-drift.config.ts --project=desktop --project=phone --workers=2",
     "test:mobile-budget": "node scripts/check-web-budget.mjs",
-    "test:api-proxy": "node --no-warnings scripts/test-api-proxy.mjs",
+    "test:api-proxy": "node --no-warnings scripts/test-api-proxy.mjs && node scripts/test-verified-promotion.mjs",
     "test:api-client": "node scripts/test-api-client-contract.mjs",
     "test:e2e:profiles": "playwright test --config playwright.config.ts",
     "test:web-worker": "node scripts/test-web-worker.mjs",
@@ -34,6 +36,8 @@
     "test:monitoring-contract": "node scripts/test-monitoring-contract.mjs",
     "test:e2e:audit": "playwright test --config playwright.audit.config.ts",
     "test:frontend-performance": "node --experimental-strip-types --no-warnings scripts/test-frontend-performance.mjs",
+    "test:sound-feedback": "node scripts/test-sound-feedback.mjs",
+    "test:performance:audit": "node scripts/run-performance-audit.mjs",
     "test:e2e:performance": "playwright test --config playwright.performance.config.ts",
     "test:page-loading-performance": "node scripts/test-page-loading-performance.mjs",
     "test:icon-fonts": "node scripts/test-icon-font-contract.mjs",
@@ -55,7 +59,9 @@
     "test:furniture-rmb": "node --experimental-strip-types --no-warnings scripts/test-furniture-rmb.mjs",
     "test:native-release-config": "node scripts/test-native-release-config.mjs",
     "test:history-lifecycle": "node scripts/test-history-lifecycle.mjs",
-    "test:notebook-lifecycle": "node scripts/test-notebook-lifecycle.mjs"
+    "test:notebook-lifecycle": "node scripts/test-notebook-lifecycle.mjs",
+    "test:release-stability": "node --experimental-strip-types --no-warnings scripts/test-release-stability.mjs",
+    "test:e2e:stability": "playwright test --config playwright.stability.config.ts && node --experimental-strip-types --no-warnings scripts/verify-release-stability.mjs"
   },
   "dependencies": {
     "@expo/metro-runtime": "~55.0.12",
@@ -123,5 +129,5 @@
     }
   },
   "private": true,
-  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
+  "packageManager": "npm@11.17.0"
 }

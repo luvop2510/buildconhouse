@@ -1,0 +1,58 @@
+name: Performance
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# The push and PR for the same branch share a group. Replace obsolete runs;
+# only the current branch revision should consume the performance runner.
+concurrency:
+  group: performance-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  performance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install backend performance dependencies
+        run: pip install -r backend/requirements-prod.txt pytest pytest-asyncio
+      - name: Install dependencies
+        run: npm ci
+      - name: Verify audit failure and build configuration guards
+        run: |
+          node scripts/test-performance-audit-runner.mjs
+          node --experimental-strip-types --no-warnings scripts/test-release-stability.mjs
+      - name: Install performance browsers
+        run: npx playwright install --with-deps chromium webkit
+      - name: Audit current export, all routes, runtime stability, loading and four devices
+        env:
+          BACKEND_URL: https://forge20-production-a8b0.up.railway.app
+        run: npm run test:performance:audit
+      - name: Publish performance counts
+        if: always()
+        run: node scripts/summarize-performance.mjs
+      - name: Preserve performance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-audit
+          path: output/playwright
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 9

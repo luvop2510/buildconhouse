@@ -41,7 +41,9 @@ for (const key of ['Enter', 'Space']) {
     await expect(card).toBeFocused();
     await page.keyboard.press(key);
     await expect(page).toHaveURL(/\/payments$/);
-    await expect(page.getByRole('heading', { name: 'Payments', exact: true })).toBeVisible();
+    // Desktop/tablet payments includes a second nested overview header with
+    // the same title; the workspace's primary heading is the first match.
+    await expect(page.getByRole('heading', { name: 'Payments', exact: true }).first()).toBeVisible();
   });
 }
 
@@ -95,6 +97,11 @@ test('workspace menu and shell controls retain 44px targets and keyboard focus',
 test('quotation room controls retain native target sizes on web and open the editor', async ({ page }, info) => {
   await mockSession(page, '/quotations/new');
   await page.goto('/quotations/new');
+  await expect(page.getByTestId('quotation-workspace')).toBeVisible();
+  const expand = page.getByTestId('expand-quotation-workspace');
+  if (await expand.isVisible()) await expand.click();
+  const quotationTab = page.getByTestId('builder-tab-quotation');
+  if (await quotationTab.isVisible()) await quotationTab.click();
   const panel = page.getByTestId('builder-quotation-panel-toggle');
   if (await panel.isVisible()) {
     await targetSize(panel);
@@ -195,6 +202,7 @@ test('quotation product failures do not report zero products and a successful em
   await expect(count).toHaveCount(0);
   failed = false;
   await page.getByRole('button', { name: 'Try again', exact: true }).click();
-  await expect(page.getByText('No products match', { exact: true })).toBeVisible();
+  await expect(page.getByText('No products available', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Retry catalog', exact: true })).toBeVisible();
   await expect(count).toHaveText('· 0 products');
 });

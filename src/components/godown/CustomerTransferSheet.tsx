@@ -48,7 +48,7 @@ export function CustomerTransferSheet({ lot, initialMatch, onClose, onTransferre
     setCustomerId(initialMatch?.customer_id || "");
     setPurchaseItemId(initialMatch?.purchase_item_id || "");
     setCustomerSearch(""); setName(""); setPhone(""); setEmail(""); setReason("");
-    setUnitPrice(String(lot.unit_price ?? 0)); setDiscountPct("0"); setLoadError("");
+    setUnitPrice(lot.unit_price == null ? "" : String(lot.unit_price)); setDiscountPct("0"); setLoadError("");
     const freeQty = lot.transferable_qty ?? Math.max(0, lot.available_qty - (lot.loaned_out_qty || 0));
     setQty(String(Math.min(freeQty, initialMatch?.remaining_qty ?? freeQty)));
     setMatches(initialMatch ? [initialMatch] : []);
@@ -134,7 +134,7 @@ export function CustomerTransferSheet({ lot, initialMatch, onClose, onTransferre
       </View>}
       <View style={{ gap: 4 }}><Text style={type.overline}>QUANTITY TO TRANSFER</Text><TextInput accessibilityLabel="Transfer quantity" testID="godown-transfer-qty" value={qty} onChangeText={setQty} keyboardType="decimal-pad" style={inputStyle} /><Text style={type.caption}>Maximum {Number.isFinite(maxQty) ? maxQty : freeQty} available. Transferring reduces GoDown stock.</Text>{!validQty ? <Text style={{ color: colors.error }}>Enter a quantity greater than zero and no more than the available amount.</Text> : null}</View>
       <View style={{ flexDirection: isPhone ? "column" : "row", gap: spacing.sm }}>
-        <View style={{ flex: 1, gap: 4 }}><Text style={type.overline}>SELLING UNIT PRICE (₹)</Text><TextInput accessibilityLabel="Transfer unit price" testID="godown-transfer-price" value={unitPrice} onChangeText={setUnitPrice} keyboardType="decimal-pad" style={inputStyle} /><Text style={type.caption}>MRP {Number(lot.mrp ?? lot.unit_price ?? 0).toLocaleString("en-IN", { style: "currency", currency: "INR" })}</Text></View>
+        <View style={{ flex: 1, gap: 4 }}><Text style={type.overline}>SELLING UNIT PRICE (₹)</Text><TextInput accessibilityLabel="Transfer unit price" testID="godown-transfer-price" value={unitPrice} onChangeText={setUnitPrice} keyboardType="decimal-pad" style={inputStyle} /><Text style={type.caption}>MRP {lot.mrp == null && lot.unit_price == null ? "not recorded" : Number(lot.mrp ?? lot.unit_price).toLocaleString("en-IN", { style: "currency", currency: "INR" })}</Text></View>
         <View style={{ flex: 1, gap: 4 }}><Text style={type.overline}>DISCOUNT (%)</Text><TextInput accessibilityLabel="Transfer discount percentage" testID="godown-transfer-discount" value={discountPct} onChangeText={setDiscountPct} keyboardType="decimal-pad" style={inputStyle} /></View>
       </View>
       {!validPrice ? <Text style={{ color: colors.error }}>Enter a nonnegative price and a discount from 0 to 100%.</Text> : <Text testID="godown-transfer-total" style={type.body}>Net {netUnitPrice.toLocaleString("en-IN", { style: "currency", currency: "INR" })} per unit · Total {(netUnitPrice * amount || 0).toLocaleString("en-IN", { style: "currency", currency: "INR" })}</Text>}

@@ -152,6 +152,7 @@ async def _check_demo_accounts(database: Any) -> list[str]:
     emails — never raises, never added to report.errors: a pre-existing
     credential problem must not crash startup and turn into an outage."""
     from seed import DEMO_STAFF  # local import: avoids a module-level seed<->bootstrap coupling
+    from starlette.concurrency import run_in_threadpool
 
     detected: list[str] = []
     emails = [email for email, _name, _role in DEMO_STAFF]
@@ -164,7 +165,7 @@ async def _check_demo_accounts(database: Any) -> list[str]:
         if not pw_hash:
             continue
         try:
-            if bcrypt.checkpw(legacy_bytes, pw_hash.encode("utf-8")):
+            if await run_in_threadpool(bcrypt.checkpw, legacy_bytes, pw_hash.encode("utf-8")):
                 detected.append(doc["email"])
         except (ValueError, TypeError):
             continue
@@ -255,6 +256,18 @@ async def _check_mongo(cfg: Settings, report: BootstrapReport) -> None:
 
 
 async def _check_supabase(cfg: Settings, report: BootstrapReport) -> None:
+    if cfg.media_storage_driver == "r2":
+        from media_storage.r2_driver import R2StorageDriver
+        storage = R2StorageDriver(cfg=cfg)
+        try:
+            await storage.ready()
+            report.checks["r2"] = {"connected": True}
+        except Exception as exc:
+            report.checks["r2"] = {"connected": False}
+            report.errors.append(f"R2 readiness failed ({type(exc).__name__})")
+        finally:
+            await storage.close()
+        return
     headers = {
         "apikey": cfg.supabase_service_role_key,
         "Authorization": f"Bearer {cfg.supabase_service_role_key}",

@@ -6,12 +6,12 @@
 // Also exposes IconAction for right-cluster buttons (unchanged API for callers).
 import Feather from "@expo/vector-icons/Feather";
 import { Pressable, ScrollView, StyleSheet, View, ViewStyle } from "react-native";
+import type { Ref } from "react";
 import { Text } from "@/src/components/AppText";
 
 import { PageHeader } from "@/src/components/ui";
 import { useBp } from "@/src/design/responsive";
 import { color, font, layout, radius, space } from "@/src/design/tokens";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export function AdminPage({
   title,
@@ -36,27 +36,28 @@ export function AdminPage({
 }) {
   const Container: any = scroll ? ScrollView : View;
   const { gutter, isPhone } = useBp();
-  const insets = useSafeAreaInsets();
   const horizontalPadding = gutter;
 
   return (
-    <View style={{ flex: 1, backgroundColor: color.canvas }}>
-      <PageHeader
+    <View style={{ flex: 1, minHeight: 0, backgroundColor: color.canvas }}>
+      {!isPhone ? <PageHeader
         title={title}
         subtitle={subtitle || undefined}
         overline={overline}
         back={back}
         actions={right}
-      />
+      /> : null}
       <Container
         {...(scroll
           ? {
               showsVerticalScrollIndicator: false,
+              keyboardShouldPersistTaps: "handled",
+              style: { flex: 1, minHeight: 0 },
               contentContainerStyle: {
                 paddingHorizontal: horizontalPadding,
-                paddingTop: isPhone ? space.x4 : space.x8,
-                // Keep the final row above the fixed phone navigation bar.
-                paddingBottom: isPhone ? space.x8 + layout.bottomBar + insets.bottom : space.x16,
+                paddingTop: isPhone ? 0 : space.x8,
+                // AppScaffold reserves navigation/safe-area space outside this scroll.
+                paddingBottom: isPhone ? space.x6 : space.x16,
                 gap: isPhone ? space.x4 : space.x5,
                 ...contentStyle,
               },
@@ -72,6 +73,14 @@ export function AdminPage({
               ],
             })}
       >
+        {isPhone ? <PageHeader
+          title={title}
+          subtitle={subtitle || undefined}
+          overline={overline}
+          back={back}
+          actions={right}
+          embedded
+        /> : null}
         {children}
       </Container>
     </View>
@@ -82,17 +91,19 @@ export function AdminPage({
 // backwards-compat with older screens. Renders a bordered 40x40 tile with
 // centered icon + optional label chip. Uses tokens only.
 export function IconAction({
-  icon, label, onPress, testID, tone = "surface",
+  icon, label, onPress, testID, tone = "surface", focusRef,
 }: {
   icon: keyof typeof Feather.glyphMap;
   label?: string;
   onPress: () => void;
   testID?: string;
   tone?: "surface" | "brand";
+  focusRef?: Ref<View>;
 }) {
   const isBrand = tone === "brand";
   return (
     <Pressable
+      ref={focusRef}
       testID={testID}
       accessibilityRole="button"
       accessibilityLabel={label || icon.replace(/-/g, " ")}

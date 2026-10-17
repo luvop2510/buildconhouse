@@ -13,41 +13,44 @@ export type OverlayProps = {
   children: React.ReactNode; footer?: React.ReactNode; headerRight?: React.ReactNode;
   width?: number; maxHeight?: number; minHeight?: ViewStyle['minHeight']; testID?: string;
   header?: boolean; dismissable?: boolean; scroll?: boolean; presentation?: 'dialog' | 'drawer' | 'bottom' | 'fullscreen';
+  returnFocusRef?: React.RefObject<View | null>;
 };
 
 /** Shared native/web modal boundary. Existing sheets adapt their prop names here. */
 export function Overlay({ open, onClose, title, subtitle, children, footer, headerRight,
   width = 520, maxHeight = .92, minHeight, testID, dismissable = true,
-  header = true, scroll = true, presentation = 'dialog' }: OverlayProps) {
+  header = true, scroll = true, presentation = 'dialog', returnFocusRef }: OverlayProps) {
   const { isPhone } = useBp();
   const { height, width: viewportWidth } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const reducedMotion = useReducedMotion();
-  const panelRef = useOverlayFocus(open, onClose, dismissable);
+  const panelRef = useOverlayFocus(open, onClose, dismissable, returnFocusRef);
   const bottom = presentation === 'bottom' || (isPhone && presentation !== 'fullscreen');
   const drawer = !isPhone && presentation === 'drawer';
   const fullscreen = presentation === 'fullscreen';
+  const visibleHeight = Platform.OS === 'web' ? `calc(var(--forge-visible-height, 100dvh) * ${maxHeight})` as unknown as number : height * maxHeight;
+  const panelPadding = isPhone ? space.x4 : space.x5;
   const content = scroll ? <ScrollView keyboardShouldPersistTaps="handled"
-    style={{ flexShrink: 1 }} contentContainerStyle={{ padding: space.x5, gap: space.x3 }}>{children}</ScrollView>
+    style={{ flexShrink: 1, minHeight: 0 }} contentContainerStyle={{ padding: panelPadding, gap: space.x4 }}>{children}</ScrollView>
     : <View style={{ flex: 1, minHeight: 0 }}>{children}</View>;
   return <Modal visible={open} transparent animationType={Platform.OS === 'web' || reducedMotion ? 'none' : 'fade'}
     onRequestClose={dismissable ? onClose : undefined} statusBarTranslucent>
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+    <KeyboardAvoidingView enabled={Platform.OS !== 'web'} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
       <View style={{ flex: 1, backgroundColor: color.scrim, justifyContent: bottom ? 'flex-end' : 'center',
         alignItems: drawer ? 'flex-end' : 'center', padding: bottom || drawer || fullscreen ? 0 : space.x5 }}>
         {dismissable ? <Pressable tabIndex={-1} accessibilityLabel="Dismiss dialog" onPress={onClose}
           style={{ position: 'absolute', inset: 0 }} /> : null}
         <View ref={panelRef} testID={testID} role="dialog" aria-modal={true} tabIndex={-1}
           accessibilityViewIsModal accessibilityLabel={title || 'Dialog'}
-          style={{ backgroundColor: color.surface, ...shadow.overlay, overflow: 'hidden',
+          style={{ backgroundColor: color.surface, ...shadow.overlay, overflow: 'hidden', flexShrink: 1,
             width: bottom || fullscreen ? '100%' : Math.min(width, viewportWidth - (drawer ? 0 : 40)),
-            height: fullscreen || drawer ? '100%' : !scroll ? height * maxHeight : undefined,
-            maxHeight: fullscreen || drawer ? '100%' : height * maxHeight, minHeight,
+            height: fullscreen || drawer ? '100%' : !scroll ? visibleHeight : undefined,
+            maxHeight: fullscreen || drawer ? '100%' : visibleHeight, minHeight,
             borderRadius: bottom || fullscreen ? 0 : radius.xl,
             borderTopLeftRadius: fullscreen ? 0 : radius.xl, borderTopRightRadius: drawer || fullscreen ? 0 : radius.xl,
             paddingTop: fullscreen ? insets.top : 0, paddingBottom: bottom || fullscreen ? insets.bottom : 0 }}>
-          {header ? <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.x3,
-            padding: space.x5, borderBottomWidth: 1, borderBottomColor: color.line }}>
+          {header ? <View style={{ flexDirection: 'row', flexShrink: 0, alignItems: 'flex-start', gap: space.x3,
+            padding: panelPadding, borderBottomWidth: 1, borderBottomColor: color.line }}>
             <View style={{ flex: 1, minWidth: 0 }}>
               {title ? <Text accessibilityRole="header" aria-level={2} style={{ color: color.ink,
                 fontFamily: font.semibold, fontWeight: '600', fontSize: 20, lineHeight: 28 }}>{title}</Text> : null}
@@ -61,7 +64,7 @@ export function Overlay({ open, onClose, title, subtitle, children, footer, head
             </Pressable> : null}
           </View> : null}
           {content}
-          {footer ? <View style={{ padding: space.x5, borderTopWidth: 1, borderTopColor: color.line,
+          {footer ? <View style={{ padding: panelPadding, flexShrink: 0, borderTopWidth: 1, borderTopColor: color.line,
             flexDirection: 'row', flexWrap: 'wrap', gap: space.x3 }}>{footer}</View> : null}
         </View>
       </View>

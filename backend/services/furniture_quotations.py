@@ -86,6 +86,7 @@ class FurnitureQuotationInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     customer_name: str = Field(min_length=1, max_length=200)
     customer_phone: str = Field(min_length=8, max_length=30)
+    referrer_id: str | None = Field(None, max_length=128)
     charges: list[ChargeInput] = Field(min_length=1, max_length=200)
     deposits: list[DepositInput] = Field(default_factory=list, max_length=200)
     status: Literal["draft", "final"] = "draft"
@@ -179,5 +180,10 @@ def build_pdf(doc: dict) -> tuple[bytes, str]:
         ("ALIGN", (2, 2), (2, -1), "RIGHT"), ("FONTNAME", (0, 1), (-1, 1), "Helvetica-Bold"),
         ("TOPPADDING", (0, 0), (-1, -1), 9), ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
     ]))
-    page.build([table])
+    from services.referrer_identity import referrer_label
+    reference = referrer_label(doc)
+    header = [paragraph(f"Architect / interior designer: {reference}")] if reference else []
+    if doc.get("referrer_company"):
+        header.append(paragraph(doc["referrer_company"]))
+    page.build([*header, table])
     return out.getvalue(), f"Furniture-{doc['id']}.pdf"

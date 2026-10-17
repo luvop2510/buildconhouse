@@ -1,0 +1,439 @@
+{
+  "audit": {
+    "startTime": "2026-10-12T22:03:06.815Z",
+    "duration": 1422666.97,
+    "expected": 1635,
+    "skipped": 32,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "auditSkippedCases": [
+    {
+      "title": "critical command palette focused mobile Cancel Enter dismisses without navigating",
+      "project": "desktop",
+      "reasons": [
+        "Cancel is rendered only in the mobile palette"
+      ]
+    },
+    {
+      "title": "critical reduced-motion command palette Escape closes only the top quotation overlay",
+      "project": "desktop",
+      "reasons": [
+        "Quotation actions sheet is rendered only on phone layouts"
+      ]
+    },
+    {
+      "title": "critical command palette focused mobile Cancel Enter dismisses without navigating",
+      "project": "tablet",
+      "reasons": [
+        "Cancel is rendered only in the mobile palette"
+      ]
+    },
+    {
+      "title": "critical reduced-motion command palette Escape closes only the top quotation overlay",
+      "project": "tablet",
+      "reasons": [
+        "Quotation actions sheet is rendered only on phone layouts"
+      ]
+    },
+    {
+      "title": "critical command palette focused mobile Cancel Enter dismisses without navigating",
+      "project": "tablet-boundary",
+      "reasons": [
+        "Cancel is rendered only in the mobile palette"
+      ]
+    },
+    {
+      "title": "critical reduced-motion command palette Escape closes only the top quotation overlay",
+      "project": "tablet-boundary",
+      "reasons": [
+        "Quotation actions sheet is rendered only on phone layouts"
+      ]
+    },
+    {
+      "title": "critical command palette focused mobile Cancel Enter dismisses without navigating",
+      "project": "tablet-landscape",
+      "reasons": [
+        "Cancel is rendered only in the mobile palette"
+      ]
+    },
+    {
+      "title": "critical reduced-motion command palette Escape closes only the top quotation overlay",
+      "project": "tablet-landscape",
+      "reasons": [
+        "Quotation actions sheet is rendered only on phone layouts"
+      ]
+    },
+    {
+      "title": "critical command palette focused mobile Cancel Enter dismisses without navigating",
+      "project": "firefox",
+      "reasons": [
+        "Cancel is rendered only in the mobile palette"
+      ]
+    },
+    {
+      "title": "critical reduced-motion command palette Escape closes only the top quotation overlay",
+      "project": "firefox",
+      "reasons": [
+        "Quotation actions sheet is rendered only on phone layouts"
+      ]
+    },
+    {
+      "title": "critical quotation touch pointer reorder and Escape cancellation work without changing the total",
+      "project": "firefox",
+      "reasons": [
+        "Chromium CDP dispatches a real touch gesture; other engines cover mouse and keyboard ordering."
+      ]
+    },
+    {
+      "title": "critical quotation touch pointer reorder and Escape cancellation work without changing the total",
+      "project": "webkit",
+      "reasons": [
+        "Chromium CDP dispatches a real touch gesture; other engines cover mouse and keyboard ordering."
+      ]
+    },
+    {
+      "title": "critical tablet quotation picker shows at least five complete products and an accessible PDF action",
+      "project": "desktop",
+      "reasons": [
+        "Tablet portrait and landscape regression"
+      ]
+    },
+    {
+      "title": "critical tablet quotation picker shows at least five complete products and an accessible PDF action",
+      "project": "phone",
+      "reasons": [
+        "Tablet portrait and landscape regression"
+      ]
+    },
+    {
+      "title": "critical tablet quotation picker shows at least five complete products and an accessible PDF action",
+      "project": "small-phone",
+      "reasons": [
+        "Tablet portrait and landscape regression"
+      ]
+    },
+    {
+      "title": "critical tablet quotation picker shows at least five complete products and an accessible PDF action",
+      "project": "firefox",
+      "reasons": [
+        "Tablet portrait and landscape regression"
+      ]
+    },
+    {
+      "title": "critical tablet quotation picker shows at least five complete products and an accessible PDF action",
+      "project": "webkit",
+      "reasons": [
+        "Tablet portrait and landscape regression"
+      ]
+    },
+    {
+      "title": "critical tablet tiles selection keeps bounded images, editable fields and six visible choices",
+      "project": "desktop",
+      "reasons": [
+        "Tablet layout check"
+      ]
+    },
+    {
+      "title": "critical tablet tiles quotation keeps bounded images, editable fields and six visible choices",
+      "project": "desktop",
+      "reasons": [
+        "Tablet layout check"
+      ]
+    },
+    {
+      "title": "critical tablet purchases shows entire product images and usable controls",
+      "project": "desktop",
+      "reasons": [
+        "Tablet layout check"
+      ]
+    },
+    {
+      "title": "critical tablet tiles selection keeps bounded images, editable fields and six visible choices",
+      "project": "phone",
+      "reasons": [
+        "Tablet layout check"
+      ]
+    },
+    {
+      "title": "critical tablet tiles quotation keeps bounded images, editable fields and six visible choices",
+      "project": "phone",
+      "reasons": [
+        "Tablet layout check"
+      ]
+    },
+    {
+      "title": "critical tablet purchases shows entire product images and usable controls",
+      "project": "phone",
+      "reasons": [
+        "Tablet layout check"
+      ]
+    },
+    {
+      "title": "critical tablet tiles selection keeps bounded images, editable fields and six visible choices",
+      "project": "small-phone",
+      "reasons": [
+        "Tablet layout check"
+      ]
+    },
+    {
+      "title": "critical tablet tiles quotation keeps bounded images, editable fields and six visible choices",
+      "project": "small-phone",
+      "reasons": [
+        "Tablet layout check"
+      ]
+    },
+    {
+      "title": "critical tablet purchases shows entire product images and usable controls",
+      "project": "small-phone",
+      "reasons": [
+        "Tablet layout check"
+      ]
+    },
+    {
+      "title": "critical tablet tiles selection keeps bounded images, editable fields and six visible choices",
+      "project": "firefox",
+      "reasons": [
+        "Tablet layout check"
+      ]
+    },
+    {
+      "title": "critical tablet tiles quotation keeps bounded images, editable fields and six visible choices",
+      "project": "firefox",
+      "reasons": [
+        "Tablet layout check"
+      ]
+    },
+    {
+      "title": "critical tablet purchases shows entire product images and usable controls",
+      "project": "firefox",
+      "reasons": [
+        "Tablet layout check"
+      ]
+    },
+    {
+      "title": "critical tablet tiles selection keeps bounded images, editable fields and six visible choices",
+      "project": "webkit",
+      "reasons": [
+        "Tablet layout check"
+      ]
+    },
+    {
+      "title": "critical tablet tiles quotation keeps bounded images, editable fields and six visible choices",
+      "project": "webkit",
+      "reasons": [
+        "Tablet layout check"
+      ]
+    },
+    {
+      "title": "critical tablet purchases shows entire product images and usable controls",
+      "project": "webkit",
+      "reasons": [
+        "Tablet layout check"
+      ]
+    }
+  ],
+  "responsive": {
+    "startTime": "2026-10-12T22:26:50.561Z",
+    "duration": 307271.825,
+    "expected": 412,
+    "skipped": 15,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "responsiveSkippedCases": [
+    {
+      "title": "phone More destinations open with Enter and dismiss the workspace sheet",
+      "project": "tablet-portrait",
+      "reasons": [
+        "More sheet is the phone navigation variant."
+      ]
+    },
+    {
+      "title": "phone More destinations open with Enter and dismiss the workspace sheet",
+      "project": "tablet-landscape",
+      "reasons": [
+        "More sheet is the phone navigation variant."
+      ]
+    },
+    {
+      "title": "phone More destinations open with Enter and dismiss the workspace sheet",
+      "project": "laptop",
+      "reasons": [
+        "More sheet is the phone navigation variant."
+      ]
+    },
+    {
+      "title": "phone More destinations open with Enter and dismiss the workspace sheet",
+      "project": "desktop",
+      "reasons": [
+        "More sheet is the phone navigation variant."
+      ]
+    },
+    {
+      "title": "phone shell fills the available viewport and keeps navigation below scrollable content",
+      "project": "tablet-portrait",
+      "reasons": [
+        "The phone scaffold owns bottom navigation."
+      ]
+    },
+    {
+      "title": "phone More sheet wraps a long account name within its row and restores page space",
+      "project": "tablet-portrait",
+      "reasons": [
+        "The workspace sheet is phone navigation."
+      ]
+    },
+    {
+      "title": "phone shell fills the available viewport and keeps navigation below scrollable content",
+      "project": "tablet-landscape",
+      "reasons": [
+        "The phone scaffold owns bottom navigation."
+      ]
+    },
+    {
+      "title": "phone More sheet wraps a long account name within its row and restores page space",
+      "project": "tablet-landscape",
+      "reasons": [
+        "The workspace sheet is phone navigation."
+      ]
+    },
+    {
+      "title": "phone shell fills the available viewport and keeps navigation below scrollable content",
+      "project": "laptop",
+      "reasons": [
+        "The phone scaffold owns bottom navigation."
+      ]
+    },
+    {
+      "title": "phone More sheet wraps a long account name within its row and restores page space",
+      "project": "laptop",
+      "reasons": [
+        "The workspace sheet is phone navigation."
+      ]
+    },
+    {
+      "title": "phone shell fills the available viewport and keeps navigation below scrollable content",
+      "project": "desktop",
+      "reasons": [
+        "The phone scaffold owns bottom navigation."
+      ]
+    },
+    {
+      "title": "phone More sheet wraps a long account name within its row and restores page space",
+      "project": "desktop",
+      "reasons": [
+        "The workspace sheet is phone navigation."
+      ]
+    },
+    {
+      "title": "tablet and desktop left pane shows workspace and account names and persists keyboard collapse",
+      "project": "mobile-320",
+      "reasons": [
+        "Phones retain bottom navigation."
+      ]
+    },
+    {
+      "title": "tablet and desktop left pane shows workspace and account names and persists keyboard collapse",
+      "project": "mobile-360",
+      "reasons": [
+        "Phones retain bottom navigation."
+      ]
+    },
+    {
+      "title": "tablet and desktop left pane shows workspace and account names and persists keyboard collapse",
+      "project": "mobile-390",
+      "reasons": [
+        "Phones retain bottom navigation."
+      ]
+    }
+  ],
+  "devices": {
+    "startTime": "2026-10-12T22:31:59.928Z",
+    "duration": 407451.293,
+    "expected": 420,
+    "skipped": 8,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "devicesSkippedCases": [
+    {
+      "title": "critical command palette focused mobile Cancel Enter dismisses without navigating",
+      "project": "ipad-safari",
+      "reasons": [
+        "Cancel is rendered only in the mobile palette"
+      ]
+    },
+    {
+      "title": "critical reduced-motion command palette Escape closes only the top quotation overlay",
+      "project": "ipad-safari",
+      "reasons": [
+        "Quotation actions sheet is rendered only on phone layouts"
+      ]
+    },
+    {
+      "title": "critical command palette focused mobile Cancel Enter dismisses without navigating",
+      "project": "desktop-firefox",
+      "reasons": [
+        "Cancel is rendered only in the mobile palette"
+      ]
+    },
+    {
+      "title": "critical reduced-motion command palette Escape closes only the top quotation overlay",
+      "project": "desktop-firefox",
+      "reasons": [
+        "Quotation actions sheet is rendered only on phone layouts"
+      ]
+    },
+    {
+      "title": "phone shell fills the available viewport and keeps navigation below scrollable content",
+      "project": "ipad-safari",
+      "reasons": [
+        "The phone scaffold owns bottom navigation."
+      ]
+    },
+    {
+      "title": "phone More sheet wraps a long account name within its row and restores page space",
+      "project": "ipad-safari",
+      "reasons": [
+        "The workspace sheet is phone navigation."
+      ]
+    },
+    {
+      "title": "phone shell fills the available viewport and keeps navigation below scrollable content",
+      "project": "desktop-firefox",
+      "reasons": [
+        "The phone scaffold owns bottom navigation."
+      ]
+    },
+    {
+      "title": "phone More sheet wraps a long account name within its row and restores page space",
+      "project": "desktop-firefox",
+      "reasons": [
+        "The workspace sheet is phone navigation."
+      ]
+    }
+  ],
+  "performance": {
+    "startTime": "2026-10-12T22:48:46.562Z",
+    "duration": 84715.667,
+    "expected": 28,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "performanceFirstRun": {
+    "startTime": "2026-10-12T22:38:48.134Z",
+    "duration": 490446.908,
+    "expected": 27,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  },
+  "finalTotals": {
+    "passed": 2495,
+    "skipped": 55,
+    "failed": 0,
+    "flaky": 0
+  }
+}

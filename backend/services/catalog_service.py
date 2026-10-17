@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import logging
 import re
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field as dataclass_field, replace
 from contextvars import ContextVar
 from functools import wraps
 from bson import BSON
@@ -38,6 +39,9 @@ _SEARCH_FIELDS = (
 # `_canonical_sku_for_sha1`). Guards built around "identical photo across
 # siblings = mistake" must not apply here.
 _TILE_FLOOR_ID = "ground-floor"
+# Hierarchy exposes these labels for missing supplier metadata. Filtering a
+# visible choice must include the same products as that hierarchy branch.
+_HIERARCHY_FALLBACK_LABELS = {"subcategory": "General", "series": "Uncategorised"}
 
 
 @dataclass
@@ -55,15 +59,29 @@ class CatalogSnapshot:
     usage_by_user: dict[str, dict[str, dict]]
     loaded_at: float
     database_backed: bool = False
+    # Lazily built, bounded references into this snapshot. Hydrating each WC
+    # variant or legacy concealed association must not scan the whole catalog.
+    hydration_by_sku: dict[str, tuple[dict, ...]] | None = None
+    hydration_by_configuration: dict[str, tuple[dict, ...]] | None = None
+    source_bytes: int = 0
+    source_rows: dict[str, int | None] = dataclass_field(default_factory=dict)
 
 
 _snapshot_override: ContextVar[CatalogSnapshot | None] = ContextVar("catalog_snapshot_override", default=None)
-_SNAPSHOT_MAX_BYTES = 16 * 1024 * 1024
+# The October supplier imports raised the verified source data to ~20 MB.
+# The former 16 MiB cap silently sent this ordinary catalog through the
+# network-heavy fallback. Keep a finite budget with headroom for the active
+# catalog; Railway's 1 GiB process limit still bounds deployment memory.
+_SNAPSHOT_MAX_BYTES = 32 * 1024 * 1024
 _SNAPSHOT_ROW_LIMITS = {"products": 10000, "product_media": 20000, "brands": 2000, "categories": 2000, "product_usage": 50000}
 _SNAPSHOT_BATCH_SIZE = 512
 _snapshot: CatalogSnapshot | None = None
 _refresh_lock = asyncio.Lock()
 _background_refresh: asyncio.Task | None = None
+_refresh_generation = 0
+_refresh_retry_at = 0.0
+_REFRESH_RETRY_SECONDS = 15.0
+_logger = logging.getLogger(__name__)
 
 
 def _media_sort_key(row: dict) -> tuple[int, int, int]:
@@ -105,6 +123,10 @@ def _build_snapshot(
         rows.sort(key=_media_sort_key)
     for rows in media_family_raw.values():
         rows.sort(key=_media_sort_key)
+    # A photo attached to both a SKU and a family is one model referenced by
+    # two indexes, rather than two independently validated Python objects.
+    media_models = {id(row): ProductMedia(**row) for row in media_rows
+                    if row.get("product_id") or row.get("family_key")}
 
     global_usage: dict[str, int] = defaultdict(int)
     usage_by_user: dict[str, dict[str, dict]] = defaultdict(dict)
@@ -122,11 +144,11 @@ def _build_snapshot(
         product_by_id=product_by_id,
         products_by_family={key: tuple(rows) for key, rows in products_by_family_raw.items()},
         media_by_product={
-            key: tuple(ProductMedia(**row) for row in rows)
+            key: tuple(media_models[id(row)] for row in rows)
             for key, rows in media_product_raw.items()
         },
         media_by_family={
-            key: tuple(ProductMedia(**row) for row in rows)
+            key: tuple(media_models[id(row)] for row in rows)
             for key, rows in media_family_raw.items()
         },
         media_rows_by_product={key: tuple(rows) for key, rows in media_product_raw.items()},
@@ -162,44 +184,120 @@ async def refresh_catalog_snapshot(*, only_if_missing: bool = False) -> CatalogS
     The byte budget is shared by all collections. Cursors use bounded batches;
     crossing the threshold discards the partial cache, never partial results.
     """
-    global _snapshot
+    global _snapshot, _refresh_retry_at
     async with _refresh_lock:
         # Concurrent cold requests wait for the first warmup and reuse it.
         # Explicit post-write refreshes always reload the source collections.
         if only_if_missing and _snapshot is not None:
             return _snapshot
-        budget = [0]
-        collections = []
-        for name in ("products", "product_media", "brands", "categories", "product_usage"):
-            rows = await _bounded_snapshot_collection(name, {"active": True} if name == "products" else {}, budget)
-            if rows is None:
-                marker = _build_snapshot([], [], [], [], [])
-                marker.database_backed = True
-                _snapshot = marker
-                return _snapshot
-            collections.append(rows)
-        _snapshot = _build_snapshot(*collections)
-        return _snapshot
+        while True:
+            generation = _refresh_generation
+            budget = [0]
+            collection_names = ("products", "product_media", "brands", "categories", "product_usage")
+            # These collections are independent. TaskGroup also cancels and
+            # closes every cursor if one source fails, preserving the old model.
+            async with asyncio.TaskGroup() as group:
+                reads = [group.create_task(_bounded_snapshot_collection(
+                    name, {"active": True} if name == "products" else {}, budget,
+                )) for name in collection_names]
+            collections = [read.result() for read in reads]
+            if any(rows is None for rows in collections):
+                candidate = _build_snapshot([], [], [], [], [])
+                candidate.database_backed = True
+            else:
+                # Pydantic media validation/index creation must not freeze all
+                # other API requests during a cold or periodic catalog rebuild.
+                candidate = await asyncio.to_thread(_build_snapshot, *collections)
+            candidate.source_bytes = budget[0]
+            candidate.source_rows = dict(zip(collection_names, [
+                len(rows) if rows is not None else None for rows in collections
+            ]))
+            if generation != _refresh_generation:
+                # A completed write during source reads invalidates this build.
+                # Reload it rather than overwriting the immediate product edit.
+                continue
+            _snapshot = candidate
+            _refresh_retry_at = 0.0
+            log = _logger.warning if candidate.database_backed or budget[0] >= _SNAPSHOT_MAX_BYTES * .8 else _logger.info
+            log("Catalog mode=%s source_bytes=%d budget_bytes=%d source_rows=%s",
+                "database" if candidate.database_backed else "memory", budget[0],
+                _SNAPSHOT_MAX_BYTES, candidate.source_rows)
+            return _snapshot
+
+
+def catalog_diagnostics() -> dict:
+    """Operational counters only, safe for readiness and performance probes."""
+    snapshot = _snapshot
+    return {
+        "mode": "uninitialized" if snapshot is None else "database" if snapshot.database_backed else "memory",
+        "source_bytes": snapshot.source_bytes if snapshot else 0,
+        "budget_bytes": _SNAPSHOT_MAX_BYTES,
+        "source_rows": snapshot.source_rows if snapshot else {},
+        "refresh_in_flight": _background_refresh is not None and not _background_refresh.done(),
+        "retry_after_seconds": max(0, round(_refresh_retry_at - monotonic(), 1)),
+    }
+
+
+async def _background_catalog_refresh() -> CatalogSnapshot:
+    global _refresh_retry_at
+    try:
+        return await refresh_catalog_snapshot(only_if_missing=_snapshot is None)
+    except Exception:
+        _refresh_retry_at = monotonic() + _REFRESH_RETRY_SECONDS
+        _logger.exception("Catalog refresh failed; retaining the previous snapshot")
+        raise
+
+
+def _refresh_finished(task: asyncio.Task) -> None:
+    # Retrieve exceptions even if every request was cancelled or a warm request
+    # used stale data. The refresh coroutine logs its failure once.
+    if not task.cancelled():
+        task.exception()
+
+
+def _start_catalog_refresh() -> asyncio.Task:
+    global _background_refresh
+    if _background_refresh is None or _background_refresh.done():
+        _background_refresh = asyncio.create_task(_background_catalog_refresh())
+        _background_refresh.add_done_callback(_refresh_finished)
+    return _background_refresh
+
+
+async def stop_catalog_refresh() -> None:
+    """Finish ownership of background catalog work before Mongo shutdown."""
+    global _background_refresh
+    task = _background_refresh
+    _background_refresh = None
+    if task is not None and not task.done():
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 async def get_catalog_snapshot() -> CatalogSnapshot:
     override = _snapshot_override.get()
     if override is not None:
         return override
-    global _background_refresh
     if _snapshot is None:
-        return await refresh_catalog_snapshot(only_if_missing=True)
-    if monotonic() - _snapshot.loaded_at > _SNAPSHOT_MAX_AGE_SECONDS:
-        if _background_refresh is None or _background_refresh.done():
-            _background_refresh = asyncio.create_task(refresh_catalog_snapshot())
+        # All cold callers share success/failure and a disconnected client
+        # cannot cancel the shared warmup for other pages.
+        if monotonic() < _refresh_retry_at and _background_refresh is not None:
+            return await asyncio.shield(_background_refresh)
+        return await asyncio.shield(_start_catalog_refresh())
+    if (monotonic() - _snapshot.loaded_at > _SNAPSHOT_MAX_AGE_SECONDS
+            and monotonic() >= _refresh_retry_at):
+        _start_catalog_refresh()
     return _snapshot
 
 
 def schedule_catalog_refresh() -> None:
     """Refresh after a catalog/media mutation without delaying its response."""
-    global _background_refresh
-    if _background_refresh is None or _background_refresh.done():
-        _background_refresh = asyncio.create_task(refresh_catalog_snapshot())
+    global _refresh_generation
+    # Don't lose an invalidation when a prior refresh is already in flight.
+    _refresh_generation += 1
+    _start_catalog_refresh()
 
 
 def patch_product_in_snapshot(product_id: str, updates: dict) -> None:
@@ -227,6 +325,10 @@ def patch_product_in_snapshot(product_id: str, updates: dict) -> None:
     row = _snapshot.product_by_id.get(product_id)
     if row is not None:
         row.update(updates)
+        # A product edit can change its SKU or configuration group. Rebuild on
+        # the next read so the immediate edit path remains authoritative.
+        _snapshot.hydration_by_sku = None
+        _snapshot.hydration_by_configuration = None
     schedule_catalog_refresh()
 
 
@@ -252,19 +354,9 @@ async def note_product_usage(user_id: str, product_ids: list[str], at: str) -> N
                 "last_used_at": at,
             }
             global_usage[product_id] = global_usage.get(product_id, 0) + 1
-        _snapshot = CatalogSnapshot(
-            products=snapshot.products,
-            product_by_id=snapshot.product_by_id,
-            products_by_family=snapshot.products_by_family,
-            media_by_product=snapshot.media_by_product,
-            media_by_family=snapshot.media_by_family,
-            media_rows_by_product=snapshot.media_rows_by_product,
-            media_rows_by_family=snapshot.media_rows_by_family,
-            brands=snapshot.brands,
-            categories=snapshot.categories,
+        _snapshot = replace(snapshot,
             global_usage=global_usage,
             usage_by_user=usage_by_user,
-            loaded_at=snapshot.loaded_at,
         )
 
 
@@ -477,6 +569,24 @@ def _hydration_products(snapshot):
     return snapshot.product_by_id.values() if hasattr(snapshot, "product_by_id") else snapshot.products
 
 
+def _hydration_candidates(snapshot, *, sku=None, configuration_group=None):
+    if getattr(snapshot, "hydration_by_sku", None) is None or getattr(snapshot, "hydration_by_configuration", None) is None:
+        by_sku = defaultdict(list)
+        by_configuration = defaultdict(list)
+        for candidate in _hydration_products(snapshot):
+            if candidate.get("sku"):
+                by_sku[candidate["sku"]].append(candidate)
+            specs = candidate.get("specs") or {}
+            group = specs.get("configuration_group") if isinstance(specs, dict) else None
+            if isinstance(group, str) and group:
+                by_configuration[group].append(candidate)
+        snapshot.hydration_by_sku = {key: tuple(rows) for key, rows in by_sku.items()}
+        snapshot.hydration_by_configuration = {key: tuple(rows) for key, rows in by_configuration.items()}
+    if sku is not None:
+        return snapshot.hydration_by_sku.get(sku, ())
+    return snapshot.hydration_by_configuration.get(configuration_group, ())
+
+
 def _hydrate_concealed_part(product: dict, snapshot: CatalogSnapshot) -> None:
     """Fill a legacy SKU-only conceal configuration from this catalog snapshot.
 
@@ -502,7 +612,7 @@ def _hydrate_concealed_part(product: dict, snapshot: CatalogSnapshot) -> None:
         linked = snapshot.product_by_id.get(selected_id)
         linked = linked if eligible(linked) else None
     else:
-        matches = [candidate for candidate in _hydration_products(snapshot) if eligible(candidate)]
+        matches = [candidate for candidate in _hydration_candidates(snapshot, sku=sku) if eligible(candidate)]
         same_brand = [candidate for candidate in matches if candidate.get("brand_id") == product.get("brand_id")]
         linked = same_brand[0] if len(same_brand) == 1 else matches[0] if len(matches) == 1 else None
     if not linked:
@@ -544,7 +654,7 @@ def _configuration_options(product: dict, snapshot: CatalogSnapshot) -> list[dic
     finish = str(product.get("finish") or product.get("colour") or "").strip().casefold()
     options: list[dict] = []
     seen_labels: set[str] = set()
-    for candidate in _hydration_products(snapshot):
+    for candidate in _hydration_candidates(snapshot, configuration_group=group):
         candidate_specs = candidate.get("specs") or {}
         if (
             not isinstance(candidate_specs, dict)
@@ -660,13 +770,19 @@ def _family_listing_siblings(snapshot: CatalogSnapshot, product: dict) -> list[d
     return siblings
 
 
-def _unique_listings(rows: list[dict], *, per_category: bool = False) -> list[dict]:
+def _unique_listings(rows: list[dict], *, per_category: bool = False, per_placement: bool = False) -> list[dict]:
     """Keep the first matching source placement, retaining every row on the SKU."""
     seen = set()
     out = []
     for index, row in enumerate(rows):
         product_id = row.get("id", index)
-        key = (product_id, row.get("category_id")) if per_category else product_id
+        if per_placement:
+            key = (product_id, *((row.get(field) or _HIERARCHY_FALLBACK_LABELS[field])
+                                 if field in _HIERARCHY_FALLBACK_LABELS else row.get(field) for field in (
+                "category_id", "subcategory", "series", "family_key", "family_name",
+            )))
+        else:
+            key = (product_id, row.get("category_id")) if per_category else product_id
         if key in seen:
             continue
         seen.add(key)
@@ -706,7 +822,15 @@ def _matches_filters(product: dict, *, brand_id: Optional[str], category_id: Opt
         "finish": finish,
         "colour": colour,
     }
-    return all(value is None or (product.get(field) in value if isinstance(value, (list, tuple)) else product.get(field) == value) for field, value in expected.items())
+    def matches(field, value):
+        actual = product.get(field)
+        if field in _HIERARCHY_FALLBACK_LABELS:
+            label = _HIERARCHY_FALLBACK_LABELS[field]
+            requests_fallback = label in value if isinstance(value, (list, tuple)) else value == label
+            if requests_fallback and actual in (None, ""):
+                actual = label
+        return value is None or (actual in value if isinstance(value, (list, tuple)) else actual == value)
+    return all(matches(field, value) for field, value in expected.items())
 
 
 def _family_card_key(product: dict) -> tuple:
@@ -970,10 +1094,14 @@ async def resolve_size_variant(
 async def hierarchy_rows(floor_ids: Optional[list[str]] = None) -> tuple[list[dict], dict[str, dict], dict[str, dict]]:
     snapshot = await get_catalog_snapshot()
     groups: dict[tuple, dict] = {}
-    products = _unique_listings(_listing_products(snapshot), per_category=True)
+    # One SKU may be placed in multiple sections of the same worksheet.
+    # Keep each hierarchy branch while counting repeated rows in it once.
+    products = _unique_listings(_listing_products(snapshot), per_placement=True)
     products = products if floor_ids is None else [
         p for p in products if p.get("floor_id") in floor_ids
     ]
+    category_counts = Counter((p.get("brand_id"), p.get("category_id")) for p in
+                              _unique_listings(products, per_category=True))
     for product in products:
         key = (
             product.get("brand_id"), product.get("category_id"), product.get("subcategory"),
@@ -985,6 +1113,7 @@ async def hierarchy_rows(floor_ids: Optional[list[str]] = None) -> tuple[list[di
                 "series": key[3], "family_key": key[4], "family_name": key[5],
             },
             "product_count": 0,
+            "category_product_count": category_counts[(key[0], key[1])],
             "min_price": float(product.get("price") or 0),
             "sample_image": (product.get("images") or [None])[0],
             "image_quality": product.get("image_quality"),
@@ -1088,11 +1217,12 @@ async def list_family_groups(
         group.update(_size_metadata_for_products(family_products))
         sample_id = group["sample_product_id"]
         sample_media = snapshot.media_rows_by_product.get(sample_id, ())
-        hero = next((row for row in sample_media if row.get("public_url") and row.get("role") not in ("dimension", "seat-cover")), None)
-        if not hero:
-            hero = next((row for row in sample_media if row.get("public_url") and row.get("role") == "seat-cover"), None)
+        # Metadata must describe the exact preview selected above. Raw media
+        # order puts an internal gallery before a manufacturer's primary photo;
+        # selecting the first row here used to overwrite the correct hero.
+        hero = next((row for row in sample_media
+                     if group["sample_image"] and row.get("public_url") == group["sample_image"]), None)
         if hero:
-            group["sample_image"] = hero["public_url"]
             group["sample_image_quality"] = hero.get("quality") or group.get("sample_image_quality")
             group["sample_image_source"] = hero.get("source_type")
         page.append(group)
@@ -1105,7 +1235,9 @@ async def facet_buckets(
 ) -> dict:
     snapshot = await get_catalog_snapshot()
     products = [
-        row for row in _unique_listings(_listing_products(snapshot), per_category=True)
+        # Filter every source occurrence before bucket's (value, SKU) dedupe.
+        # Category-level dedupe here loses later same-category sections.
+        row for row in _listing_products(snapshot)
         if _matches_filters(
             row, brand_id=brand_id, category_id=category_id, subcategory=subcategory,
             series=series, family_key=None, finish=None, colour=None, floor_ids=floor_ids,
@@ -1234,11 +1366,11 @@ async def search_catalog(
         family["product_count"] = len(family["variants"])
         family.update(_size_metadata_for_products(family_products))
         media = snapshot.media_rows_by_product.get(family["sample_product_id"], ())
-        hero = next((row for row in media if row.get("public_url") and row.get("role") not in ("dimension", "seat-cover")), None)
-        if not hero:
-            hero = next((row for row in media if row.get("public_url") and row.get("role") == "seat-cover"), None)
+        family["hero_image_url"] = _primary_product_image(snapshot, family["sample_product_id"])
+        family["image_quality"] = sample.get("image_quality") if sample else None
+        hero = next((row for row in media
+                     if family["hero_image_url"] and row.get("public_url") == family["hero_image_url"]), None)
         if hero:
-            family["hero_image_url"] = hero.get("public_url")
             family["image_quality"] = hero.get("quality")
             family["image_source"] = hero.get("source_type")
     return {"query": query, "total": len(order), "grouped": True, "items": grouped}

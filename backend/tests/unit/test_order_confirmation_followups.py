@@ -39,7 +39,7 @@ def test_order_confirmation_completes_existing_sales_followups(monkeypatch):
     monkeypatch.setattr(quotation_routes, "db", type("Db", (), {"followups": followups})())
 
     changed = asyncio.run(
-        quotation_routes._complete_pre_confirmation_followups("q-1", "FQ-2026-0042")
+        quotation_routes._complete_pre_confirmation_followups("q-1", "FQ-2026-0042", creator_id="creator", creator_name="Original creator")
     )
 
     assert changed == 2
@@ -48,6 +48,8 @@ def test_order_confirmation_completes_existing_sales_followups(monkeypatch):
         assert row["status"] == "done"
         assert row["auto_resolved"] is True
         assert row["completed_outcome"] == "won"
+        assert row["assigned_to"] == "creator"
+        assert row["assigned_to_name"] == "Original creator"
         assert row["snoozed_until"] is None
         assert "FQ-2026-0042" in row["resolution_note"]
 

@@ -1,4 +1,4 @@
-import { FilterBar } from "@/src/components/ds";
+import { FilterBar, MobileFilterSection } from "@/src/components/ds";
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { View } from "react-native";
@@ -123,6 +123,7 @@ export default function ExecutiveOverview() {
           mobile — that slot's flex row does not wrap, so it pushed the whole
           page 153px wider than the viewport at 375px. Floor + preset filters
           both live in the body instead, where flexWrap genuinely wraps. */}
+      <MobileFilterSection testID="executive-filters">
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }} testID="executive-preset-filter">
         <PillTabs
           testID="executive-preset"
@@ -142,6 +143,7 @@ export default function ExecutiveOverview() {
           ]}
         />
       </View>
+      </MobileFilterSection>
 
       {error ? <ErrorState subtitle={error} onRetry={load} /> : null}
       {!error && !data ? <LoadingState label="Building the executive view…" /> : null}

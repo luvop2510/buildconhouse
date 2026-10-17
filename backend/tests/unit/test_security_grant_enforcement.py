@@ -105,8 +105,9 @@ async def test_update_grant_cannot_borrow_view_grant_on_other_floor(monkeypatch)
 ])
 @pytest.mark.parametrize("actions,allowed", [(["create"], False), (["update"], True)])
 async def test_post_business_mutations_require_update_instead_of_create(monkeypatch, path, resource, actions, allowed):
-    mock_staff(monkeypatch, [grant(resource=resource, actions=actions)])
-    kwargs = dict(request=request(path, "POST"), authorization="Bearer test", x_floor_id="ground-floor", dl=None)
+    floor = "first-floor" if resource == "purchases" else "ground-floor"
+    mock_staff(monkeypatch, [grant(resource=resource, actions=actions, floor=floor)])
+    kwargs = dict(request=request(path, "POST", floor=floor), authorization="Bearer test", x_floor_id=floor, dl=None)
     if allowed:
         assert (await auth.get_current_user(**kwargs)).id == "staff-1"
     else:
@@ -191,7 +192,7 @@ async def test_quotation_only_page_can_load_builder_lookups_on_sanitary_floor(mo
     ("/api/customers/customer-1/quotations", "GET"),
     ("/api/customers/import-sources/ground-floor", "GET"),
     ("/api/customers", "POST"), ("/api/customers/customer-1", "PATCH"),
-    ("/api/products", "POST"), ("/api/products/custom", "POST"),
+    ("/api/products", "POST"), ("/api/products/product-1/media", "POST"),
     ("/api/products/product-1", "PATCH"), ("/api/products/product-1", "DELETE"),
     ("/api/brands", "POST"), ("/api/categories", "POST"),
 ])
@@ -314,7 +315,7 @@ async def test_current_mfa_enrollment_and_version_bind_every_staff_session(monke
             pass
     class Users:
         async def find_one(self, _query, projection):
-            for secret in ("password_hash", "mfa_secret_encrypted", "mfa_pending", "mfa_recovery_hashes"):
+            for secret in ("password_hash", "password_encrypted", "mfa_secret_encrypted", "mfa_pending", "mfa_recovery_hashes"):
                 assert projection[secret] == 0
             return principal
     class Database:
@@ -454,3 +455,28 @@ async def test_runtime_scan_revokes_renamed_staff_and_customer_without_mutating_
     finally:
         for kind, subject in subjects:
             auth.invalidate_principal_cache(kind, subject)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["/api/products/custom", "/api/products/custom-with-media"])
+@pytest.mark.parametrize("resource,actions,grant_floor,active_floor,allowed", [
+    ("quotations", ["create"], "first-floor", "first-floor", True),
+    ("quotations", ["view"], "first-floor", "first-floor", False),
+    ("quotations", ["update"], "first-floor", "first-floor", False),
+    ("quotations", ["create"], "first-floor", "ground-floor", False),
+    ("quotations", ["create"], "ground-floor", "ground-floor", False),
+    ("tiles", ["create"], "ground-floor", "ground-floor", True),
+    ("tiles", ["view"], "ground-floor", "ground-floor", False),
+    ("tiles", ["create"], "ground-floor", "first-floor", False),
+    ("catalog", ["create"], "first-floor", "first-floor", True),
+])
+async def test_custom_product_uses_exact_create_grant_on_workflow_floor(monkeypatch, path, resource, actions, grant_floor, active_floor, allowed):
+    mock_staff(monkeypatch, [grant(resource=resource, actions=actions, floor=grant_floor)])
+    kwargs = dict(request=request(path, "POST", floor=active_floor), authorization="Bearer test", x_floor_id=active_floor, dl=None)
+    if allowed:
+        user = await auth.get_current_user(**kwargs)
+        assert auth.accessible_floor_ids(user) == [active_floor]
+    else:
+        with pytest.raises(HTTPException) as rejected:
+            await auth.get_current_user(**kwargs)
+        assert rejected.value.status_code == 403

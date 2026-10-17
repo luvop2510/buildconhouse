@@ -29,7 +29,7 @@ export default function SetNewPassword() {
     if (next !== confirm) { setError("Passwords don't match"); return; }
     setSaving(true);
     try {
-      await api.post("/auth/customer/change-password", { current_password: current, new_password: next });
+      await api.post("/auth/customer/change-password", { current_password: current, new_password: next, confirm_password: confirm });
       markPasswordChanged();
       toast.success("Password set — you're all set");
     } catch (e: any) {

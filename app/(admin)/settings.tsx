@@ -190,7 +190,7 @@ export default function Settings() {
           <Text style={type.overline}>Security · Active sessions</Text>
           {sessionsLoading ? <ActivityIndicator size="small" color={colors.onSurfaceMuted} /> : null}
         </View>
-        {staff?.role === "owner" ? <Pressable
+        <Pressable
           testID="settings-nav-password"
           accessibilityRole="link"
           onPress={() => router.push("/(admin)/settings-password" as any)}
@@ -202,7 +202,6 @@ export default function Settings() {
           <Text style={[type.bodyMuted, { flex: 1 }]}>Change password</Text>
           <Feather name="chevron-right" size={16} color={colors.onSurfaceMuted} />
         </Pressable>
-        : <Text testID="settings-owner-managed-password" style={[type.bodyMuted, { padding: spacing.md }]}>Your password is managed by the owner.</Text>}
         <Pressable testID="settings-nav-mfa" accessibilityRole="link" accessibilityLabel="Authenticator MFA"
           onPress={() => router.push("/(admin)/settings-mfa" as any)} style={styles.row}>
           <View style={styles.itemIcon}><Feather name="shield" size={14} color={colors.onSurfaceMuted} /></View>

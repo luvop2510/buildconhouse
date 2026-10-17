@@ -106,11 +106,19 @@
     // A generic JSON/API parse rejection is not proof of a failed script.
     // Parse syntax is eligible only for a global script error with its own
     // asset filename. Async failures need the specific Metro/chunk signature.
-    var chunkFailure = /Requiring unknown module\s+["']?\d+/.test(message) || /(?:Loading chunk .+ failed|ChunkLoadError)/.test(message);
+    var chunkFailure = /Requiring unknown module\s+["']?\d+/.test(message) || /(?:Loading (?:chunk|module) .+ failed|ChunkLoadError)/.test(message);
     var parseFailure = allowParseError && /Unexpected token ['"]?</.test(message) && sameOriginAsset(filename);
     var ownStack = (String(stack || '').match(/https?:\/\/[^\s)]+/g) || []).some(function (part) { return sameOriginAsset(part.replace(/:\d+(?::\d+)?$/, '')); });
     return parseFailure || (chunkFailure && (sameOriginAsset(filename) || ownStack));
   }
+
+  // React catches lazy-import rejections before global error listeners see
+  // them. A mounted page boundary can offer an explicit reload for a stale
+  // release without automatically discarding a live form or touching auth.
+  window.__FORGE_IS_RELEASE_ERROR__ = function (error) {
+    if (!error || typeof error !== 'object') return false;
+    return ownStartupError(String(error.message || ''), error.request, error.stack, false);
+  };
 
   window.addEventListener('error', function (event) {
     var target = event.target;
@@ -122,15 +130,20 @@
       return;
     }
     var error = event.error || {};
-    if (ownStartupError(event.message || error.message || '', event.filename, error.stack, true)) requestRecovery();
+    if (ownStartupError(event.message || error.message || '', event.filename || error.request, error.stack, true)) requestRecovery();
   }, true);
 
   window.addEventListener('unhandledrejection', function (event) {
     var reason = event.reason || {};
-    if (ownStartupError(reason.message || '', null, reason.stack, false)) requestRecovery();
+    if (ownStartupError(reason.message || '', reason.request, reason.stack, false)) requestRecovery();
   });
 
   document.addEventListener('DOMContentLoaded', function () {
     if (pending && !queued) { queued = true; setTimeout(recover, 0); }
   }, { once: true });
+
+  // A deferred script can stall without emitting an error or DOMContentLoaded.
+  // Offer control after a bounded wait, but never reload automatically or
+  // cover a mounted page. A late successful mount removes this panel.
+  setTimeout(manualReload, 20000);
 }());

@@ -4,6 +4,19 @@ export function optionalContact(value: unknown): string | null {
   return typeof value === "string" ? value.trim() || null : null;
 }
 
+/** One Phone field also keeps historical mobile-only accounts usable. */
+export function teamPhone(staff: { phone?: unknown; mobile?: unknown }): string | null {
+  return optionalContact(staff.phone) || optionalContact(staff.mobile);
+}
+
+export function teamPhonePatch(staff: { phone?: unknown; mobile?: unknown }, phone: string): Record<string, string | null> {
+  const value = optionalContact(phone);
+  if (value === teamPhone(staff)) return {};
+  // Clear the old alias only when the owner deliberately changes this contact.
+  // Unrelated edits preserve existing historical contact data.
+  return { phone: value, ...(optionalContact(staff.mobile) ? { mobile: null } : {}) };
+}
+
 export function validateTeamContacts(email: string, username: string, phone: string, mobile: string): string | null {
   const address = email.trim();
   if (!address && !username.trim()) return "Add an email or username so this person can sign in";

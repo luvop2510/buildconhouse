@@ -16,6 +16,9 @@ class _FakeCursor:
     def __aiter__(self):
         return self
 
+    def sort(self, *_args):
+        return self
+
     async def __anext__(self):
         try:
             return next(self._iter)

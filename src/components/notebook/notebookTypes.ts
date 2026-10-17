@@ -14,6 +14,10 @@ export type NotebookField =
 
 export type NotebookRow = {
   id: string;
+  floor_id?: string;
+  interested_floor_ids?: string[];
+  assignments?: import("@/src/api/leads").LeadAssignment[];
+  reference_source?: string | null;
   customer_name: string;
   customer_phone: string;
   address: string;

@@ -33,8 +33,18 @@ type Item = {
 
 export function PaletteProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState({ open: false, id: 0 });
-  const openPalette = useCallback(() => setSession((current) => current.open
-    ? current : { open: true, id: current.id + 1 }), []);
+  const returnFocusRef = useRef<View>(null);
+  const rememberTrigger = useCallback(() => {
+    if (Platform.OS !== "web") return;
+    const active = document.activeElement as HTMLElement | null;
+    if (active?.isConnected && active !== document.body && !active.closest('[role="dialog"][aria-label="Search workspace"]')) {
+      returnFocusRef.current = active as unknown as View;
+    }
+  }, []);
+  const openPalette = useCallback(() => {
+    rememberTrigger();
+    setSession((current) => current.open ? current : { open: true, id: current.id + 1 });
+  }, [rememberTrigger]);
   const value = useMemo(() => ({ open: openPalette }), [openPalette]);
 
   // Capture shortcuts before web TextInput stops bubbling keydown events.
@@ -43,6 +53,7 @@ export function PaletteProvider({ children }: { children: React.ReactNode }) {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
+        if (!session.open) rememberTrigger();
         setSession((current) => ({
           open: !current.open, id: current.open ? current.id : current.id + 1,
         }));
@@ -50,29 +61,29 @@ export function PaletteProvider({ children }: { children: React.ReactNode }) {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, []);
+  }, [rememberTrigger, session.open]);
 
   return (
     <PaletteContext.Provider value={value}>
       {children}
-      <PaletteHost key={session.id} open={session.open} onClose={() => setSession((current) =>
+      <PaletteHost key={session.id} open={session.open} returnFocusRef={returnFocusRef} onClose={() => setSession((current) =>
         current.id === session.id ? { ...current, open: false } : current)} />
     </PaletteContext.Provider>
   );
 }
 
-function PaletteHost(props: { open: boolean; onClose: () => void }) {
+function PaletteHost(props: { open: boolean; onClose: () => void; returnFocusRef: React.RefObject<View | null> }) {
   const { selectedFloorId } = useFloorAccess();
   return <PaletteSession key={selectedFloorId} {...props} selectedFloorId={selectedFloorId} />;
 }
 
-function PaletteSession({ open, onClose, selectedFloorId }: { open: boolean; onClose: () => void; selectedFloorId: string }) {
+function PaletteSession({ open, onClose, selectedFloorId, returnFocusRef }: { open: boolean; onClose: () => void; selectedFloorId: string; returnFocusRef: React.RefObject<View | null> }) {
   const router = useRouter();
   const { staff } = useAuth();
   const hasAccess = useModuleAccess();
   const canCustomers = hasAccess("customers");
   const canQuotes = hasAccess("quotations") && selectedFloorId === "first-floor";
-  const canCatalog = hasAccess("catalog");
+  const canCatalog = hasAccess("catalog") && ["ground-floor", "first-floor"].includes(selectedFloorId);
   const canNewQuotation = useActionAccess(selectedFloorId === "ground-floor" ? "tiles" : "quotations", "create");
   const canNewCustomer = useActionAccess("customers", "create");
   const canRecordPayment = useActionAccess("payments", "create");
@@ -90,10 +101,11 @@ function PaletteSession({ open, onClose, selectedFloorId }: { open: boolean; onC
   const inputRef = useRef<TextInput>(null);
   const anim = useRef(new Animated.Value(0)).current;
   const [visible, setVisible] = useState(open);
+  const hasOpened = useRef(open);
   // The web Modal remains mounted for its exit animation. Keep isolation and
   // focus ownership until that portal actually closes; restoring on `open`
   // let its still-active native focus trap move focus onto the next backdrop.
-  const panelRef = useOverlayFocus(visible, onClose, open);
+  const panelRef = useOverlayFocus(visible, onClose, open, returnFocusRef);
   const productQuery = q.trim();
 
   // Each opening and floor gets a fresh session; only exit visibility outlives open.
@@ -115,6 +127,35 @@ function PaletteSession({ open, onClose, selectedFloorId }: { open: boolean; onC
       if (focusTimer !== undefined) clearTimeout(focusTimer);
     };
   }, [open, anim, reducedMotion]);
+
+  // React Native Web keeps a dismissed Modal in the tree for its exit
+  // animation. Restore the original keyboard trigger after that portal has
+  // actually been removed, so rapid close/reopen cycles cannot leave focus on
+  // the document body.
+  useEffect(() => {
+    if (open) hasOpened.current = true;
+    if (!hasOpened.current || visible || open || Platform.OS !== "web") return;
+    let cancelled = false;
+    let frame = 0;
+    let restoreFrames = 0;
+    const restore = () => {
+      if (cancelled) return;
+      const explicit = returnFocusRef.current as unknown as HTMLElement | null;
+      const usable = (element: HTMLElement | null): element is HTMLElement => !!element?.isConnected && element.getClientRects().length > 0 && !element.closest('[inert]');
+      const current = usable(explicit) ? explicit : Array.from(document.querySelectorAll<HTMLElement>('[data-testid="floor-switcher"]')).find(element => usable(element));
+      // RNW retains the closing portal briefly; its focus trap must be gone.
+      if (current && !document.querySelector('[role="dialog"][aria-label="Search workspace"]')) {
+        current.focus();
+        if (document.activeElement === current) return;
+      }
+      if (restoreFrames++ < 60) frame = requestAnimationFrame(restore);
+    };
+    frame = requestAnimationFrame(restore);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frame);
+    };
+  }, [visible, open, returnFocusRef]);
 
   // Scope prefetches to this open session; cancelled responses cannot repopulate it.
   useEffect(() => {
@@ -166,7 +207,6 @@ function PaletteSession({ open, onClose, selectedFloorId }: { open: boolean; onC
     const nav: Item[] = NAV
       .filter(n => (!n.floors || n.floors.includes(selectedFloorId)) && (staff?.custom_access || !n.roles || !!staff && n.roles.includes(staff.role)) && hasAccess(n.match))
       .filter(n => !n.href.includes("/tiles") || selectedFloorId === "ground-floor")
-      .filter((n) => staff?.custom_access || !notebookOnly || ["catalog", "customers", "purchases", "payments", "payments-list"].includes(n.match) || (selectedFloorId === KITCHEN_FLOOR_ID ? n.href.includes("/notebook/kitchen") : n.href.includes("/notebook/furniture")))
       .filter((n) => match(n.label + " " + n.match))
       .map((n) => ({
         key: `n-${n.href}`, section: "Go to", icon: n.icon, title: n.label, run: () => go(n.href),
@@ -232,7 +272,7 @@ function PaletteSession({ open, onClose, selectedFloorId }: { open: boolean; onC
 
   return (
     <Modal visible transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+      <KeyboardAvoidingView enabled={Platform.OS !== "web"} behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: color.scrim, opacity: anim }]}>
           <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
         </Animated.View>
@@ -240,14 +280,15 @@ function PaletteSession({ open, onClose, selectedFloorId }: { open: boolean; onC
         <Animated.View ref={panelRef} role="dialog" aria-modal accessibilityLabel="Search workspace" tabIndex={-1}
           style={[
             {
-              backgroundColor: color.surface, overflow: "hidden",
+              backgroundColor: color.surface, overflow: "hidden", minHeight: 0, flexShrink: 1,
               opacity: anim, ...shadow.overlay,
             },
             isPhone
               ? { flex: 1, marginTop: insets.top, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl }
               : {
                   alignSelf: "center", width: Math.min(620, winW - 64),
-                  maxHeight: Math.min(460, winH - 160), marginTop: Math.max(70, winH * 0.14),
+                  maxHeight: Platform.OS === "web" ? 'min(460px, calc(var(--forge-visible-height, 100dvh) - 40px))' as unknown as number : Math.min(460, winH - 160),
+                  marginTop: Platform.OS === "web" ? 'min(70px, calc(var(--forge-visible-height, 100dvh) * .14))' as unknown as number : Math.max(70, winH * 0.14),
                   borderRadius: radius.xl,
                   transform: [
                     { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] }) },

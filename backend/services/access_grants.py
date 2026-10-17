@@ -24,8 +24,8 @@ RESOURCE_REGISTRY: dict[str, dict[str, Any]] = {
     "walkins": {"label": "Walk-ins", "description": "The regular customer intake, journey, items and status register on every enabled floor."},
     "reports": {"label": "Reports"},
     "notifications": {"label": "Notifications"},
-    "notebook_walkins": {"label": "Legacy lead notebook", "floor_ids": ["second-floor", "third-floor"], "actions": ["view", "create", "update"], "description": "Add walk-ins, record contact attempts, and move leads to quotation follow-up."},
-    "notebook_quotations": {"label": "Quotation Follow-up", "floor_ids": ["second-floor", "third-floor"], "actions": ["view", "update"], "description": "Review converted leads, update quotation values, contact customers, and record outcomes."},
+    "notebook_walkins": {"label": "Legacy lead notebook", "retired": True, "floor_ids": ["second-floor", "third-floor"], "actions": ["view", "create", "update"], "description": "Add walk-ins, record contact attempts, and move leads to quotation follow-up."},
+    "notebook_quotations": {"label": "Quotation Follow-up", "retired": True, "floor_ids": ["second-floor", "third-floor"], "actions": ["view", "update"], "description": "Review converted leads, update quotation values, contact customers, and record outcomes."},
     "furniture_quotations": {"label": "RNB quotations", "floor_ids": ["third-floor"], "actions": ["view", "create", "update", "export"], "description": "Prepare RNB quotations, edit items and terms, download PDFs, and send configured WhatsApp exports."},
     "sales_data": {"label": "Sales Data", "actions": ["view", "export"], "description": "Review floor sales, customer and brand totals, and export reports."},
 }
@@ -33,12 +33,14 @@ RESOURCE_REGISTRY: dict[str, dict[str, Any]] = {
 RESOURCE_REGISTRY["dashboard"].update(actions=["view"], description="View today's floor summary and activity.")
 RESOURCE_REGISTRY["quotations"].update(floor_ids=["first-floor"], description="Create and manage Sanitary quotations, confirm orders, and export documents.")
 RESOURCE_REGISTRY["tiles"].update(floor_ids=["ground-floor"], description="Create tile selections and quotations, confirm orders, and export documents.")
+RESOURCE_REGISTRY["catalog"].update(floor_ids=["ground-floor", "first-floor"], description="Manage the selected Ground or Sanitary Bathroom catalog.")
 RESOURCE_REGISTRY["orders"].update(floor_ids=["ground-floor"], description="Manage tile purchase orders, dispatches, and delivery stages.")
 RESOURCE_REGISTRY["godown_stock"].update(floor_ids=["first-floor"], description="Manage godown stock and customer transfers.")
+RESOURCE_REGISTRY["purchases"].update(floor_ids=["first-floor"], description="Manage Sanitary Bathroom purchases and purchasing stages.")
 RESOURCE_REGISTRY["payments"].update(description="Manage payments and the Fully paid orders page.")
 RESOURCE_REGISTRY["notifications"].update(actions=["view"], description="View your notifications for the selected floor.")
 RESOURCE_REGISTRY["reports"].update(actions=["view", "export"])
-RESOURCE_REGISTRY["followups"].update(floor_ids=["ground-floor", "first-floor"], description="Manage the floor follow-up inbox. Kitchen and Furniture use their separate notebook pages.")
+RESOURCE_REGISTRY["followups"].update(floor_ids=["ground-floor", "first-floor", "second-floor", "third-floor"], description="Manage the selected floor's sales follow-up inbox.")
 for _resource in ("catalog", "purchases", "godown_stock", "payments", "orders", "walkins"):
     RESOURCE_REGISTRY[_resource]["actions"] = ["view", "create", "update", "export"]
 
@@ -77,7 +79,7 @@ def is_common_access_request(method: str, path: str) -> bool:
     if method == "GET":
         return path in CUSTOM_ACCESS_COMMON_PATHS - {"/api/downloads/token", "/api/exports/page.xlsx", "/api/auth/logout"}
     if method == "POST":
-        return path in {"/api/auth/logout", "/api/auth/sessions/logout-all", "/api/downloads/token", "/api/exports/page.xlsx"}
+        return path in {"/api/auth/logout", "/api/auth/change-password", "/api/auth/sessions/logout-all", "/api/downloads/token", "/api/exports/page.xlsx"}
     return method == "DELETE" and fullmatch(r"/api/auth/sessions/[^/]+", path) is not None
 
 
@@ -96,6 +98,7 @@ POST_UPDATE_ROUTE_PATTERNS = (
     r"/api/walkins/[^/]+/(?:contact|visit-showroom)",
     r"/api/customers/[^/]+/(?:send-invite|reset-password)",
     r"/api/godown-stock/[^/]+/allocate",
+    r"/api/godown-stock/[^/]+/image",
     r"/api/quotations/[^/]+/items/[^/]+/cancel",
     r"/api/quotations/[^/]+/move-to-quotation",
     r"/api/quotations/[^/]+/place-order/confirm",
@@ -123,7 +126,7 @@ POST_UPDATE_ROUTE_PATTERNS = (
 def action_for_api_request(method: str, path: str, query=None) -> str | None:
     """Exports require the export capability even for direct authenticated GETs."""
     method = method.upper()
-    if method == "POST" and fullmatch(r"/api/furniture-quotations/[^/]+/whatsapp-send", path):
+    if method == "POST" and fullmatch(r"/api/(?:furniture-quotations|quotations)/[^/]+/whatsapp-send", path):
         return "export"
     if method in {"POST", "DELETE"} and fullmatch(r"/api/quotations/[^/]+/whatsapp-draft", path):
         return "export"
@@ -135,6 +138,12 @@ def action_for_api_request(method: str, path: str, query=None) -> str | None:
         if path.startswith("/api/analytics/") and query and query.get("format") in {"csv", "xlsx"}:
             return "export"
     return action_for_http_method(method)
+
+
+def is_global_followup_admin_request(method: str, path: str) -> bool:
+    """A floor page grant cannot change organization-wide automation."""
+    return (method.upper() == "POST" and path == "/api/followups/reconcile"
+            or method.upper() == "PUT" and fullmatch(r"/api/followups/config/(?:automation-rules|workflow-transitions)/[^/]+", path) is not None)
 
 
 def granted_floor_ids(grants, *, user_id: str, path: str, action: str, resource: str | None = None, method: str | None = None) -> list[str] | None:
@@ -156,18 +165,23 @@ def granted_floor_ids(grants, *, user_id: str, path: str, action: str, resource:
         # it never authorizes general product edits or catalog reads.
         quotation_default = method == "PATCH" and action == "update" and fullmatch(r"/api/products/[^/]+/concealed-part", path)
         quotation_lookup = method == "GET" and action == "view" and quotation_dependency_read(path)
-        if (quotation_default or quotation_lookup) and grant.get("resource") == "quotations" and floor is None:
+        quotation_custom = method == "POST" and action == "create" and path in {"/api/products/custom", "/api/products/custom-with-media"}
+        if (quotation_default or quotation_lookup or quotation_custom) and grant.get("resource") == "quotations" and floor is None:
             floor = "first-floor"
         if quotation_default and floor == "first-floor":
             resources = ("catalog", "quotations")
         elif quotation_lookup and floor == "first-floor":
             resources = (*resources, "quotations")
+        elif quotation_custom and floor == "first-floor":
+            resources = ("catalog", "quotations")
+        elif quotation_custom and floor == "ground-floor":
+            resources = ("catalog", "tiles")
         if any(grant_allows(grant, user_id=user_id, resource=candidate, action=capability, floor_id=floor)
                for candidate in resources
                for capability in (("export",) if furniture_delivery and candidate == "furniture_quotations"
                                   else ("create", "update") if quotation_default and candidate == "quotations" else (action,))):
-            if grant.get("resource") == "followups":
-                supported = RESOURCE_REGISTRY["followups"]["floor_ids"]
+            if grant.get("resource") in {"followups", "purchases", "catalog"}:
+                supported = RESOURCE_REGISTRY[grant["resource"]]["floor_ids"]
                 if floor is None:
                     floors.extend(supported)
                     continue
@@ -240,6 +254,8 @@ def resource_candidates_for_api_path(path: str, floor_id: str | None) -> tuple[s
         return ("furniture_quotations",)
     if path == "/api/referrers" or path.startswith("/api/referrers/"):
         return ("quotations", "tiles", "notebook_walkins", "notebook_quotations", "sales_data")
+    if path == "/api/followups/assignees":
+        return ("notebook_walkins", "notebook_quotations") if floor_id in {"second-floor", "third-floor"} else ("followups", "walkins")
     resource = resource_for_api_path(path)
     if resource is None:
         return ()
@@ -255,8 +271,8 @@ async def request_resource(database: Any, path: str, query: Any = None) -> str |
     access to a converted quotation. Generic contact uses the same resolver.
     """
     notebook = fullmatch(r"/api/followups/notebook/([^/]+)(?:/([^/]+)(?:/[^/]+)?)?", path)
-    generic = fullmatch(r"/api/followups/([^/]+)(?:/(snooze|complete|contact|log-call))?", path)
-    if generic and generic.group(1) in {"reconcile", "stats", "mission", "insights", "export", "saved-views", "page", "assignments"}:
+    generic = fullmatch(r"/api/followups/([^/]+)(?:/(snooze|complete|contact|log-call|interests))?", path)
+    if generic and generic.group(1) in {"reconcile", "stats", "mission", "insights", "export", "saved-views", "page", "assignments", "assignees", "team-assign"}:
         generic = None
     if notebook and not notebook.group(2):
         return "notebook_quotations" if query and query.get("view") == "quotation" else "notebook_walkins"
@@ -265,7 +281,7 @@ async def request_resource(database: Any, path: str, query: Any = None) -> str |
         if notebook:
             lookup["floor_id"] = notebook.group(1)
         row = await database.followups.find_one(lookup, {"_id": 0, "is_converted": 1, "notebook_key": 1})
-        if generic and row and row.get("notebook_key") and generic.group(2) != "contact":
+        if generic and row and row.get("notebook_key") and generic.group(2) not in {"contact", "interests"}:
             # Generic detail returns related quotations/payments; a notebook
             # grant covers only its narrow DTO and must use notebook URLs.
             return "__notebook_route_required"

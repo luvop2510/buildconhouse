@@ -100,3 +100,68 @@ test('critical grouped builder selects second SKU and persists its color name wi
   expect(fixture.black.sku).toBe('BLACK-SKU');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 });
+
+// Supplier family text is not globally unique. This deliberately puts each
+// namespace across server pages, so client deduplication cannot drop a card.
+test('critical sanitary family pagination preserves reused supplier keys across brands and categories', async ({ page }) => {
+  await familyCatalog(page, '/catalog');
+  const namespaces = [
+    { brand_id: 'brand-a', category_id: 'basins', family_name: 'Alpha Basin' },
+    { brand_id: 'brand-b', category_id: 'basins', family_name: 'Beta Basin' },
+    { brand_id: 'brand-a', category_id: 'showers', family_name: 'Alpha Shower' },
+  ];
+  const families = namespaces.map((namespace, index) => ({
+    ...namespace, family_key: 'supplier-reused-family', floor_id: 'first-floor',
+    sample_product_id: `namespace-product-${index}`, min_price: 100, max_price: 100,
+    product_count: 1, variants: [{ id: `namespace-product-${index}`, sku: `NS-${index}`, price: 100, mrp: 100 }],
+  }));
+  const fillers = Array.from({ length: 59 }, (_, index) => ({
+    ...families[0], family_key: `filler-${index}`, family_name: `Filler ${index}`,
+    sample_product_id: `filler-${index}`, variants: [{ id: `filler-${index}`, sku: `FILL-${index}`, price: 100, mrp: 100 }],
+  }));
+  const catalog = [families[0], ...fillers, ...families.slice(1)];
+  const pages: number[] = [];
+  const errors: string[] = [];
+  page.on('console', message => {
+    if (message.type() === 'error' && /same key|unique.*key/i.test(message.text())) errors.push(message.text());
+  });
+  await page.route('**/api/products/families?**', route => {
+    const skip = Number(new URL(route.request().url()).searchParams.get('skip') || 0);
+    pages.push(skip);
+    return route.fulfill({ json: { total: catalog.length, items: catalog.slice(skip, skip + 60) } });
+  });
+  await page.goto('/catalog');
+  await expect(page.getByRole('button', { name: 'View Brand A Alpha Basin', exact: true })).toBeVisible();
+  // Scroll the actual native-web list; virtualization can extend its content
+  // height as rows render, so continue until the next page is requested.
+  const scrollToEnd = async () => {
+    await page.getByRole('main', { name: 'Workspace content' }).evaluate(async main => {
+      const scroller = Array.from(main.querySelectorAll<HTMLElement>('*'))
+        .filter(element => element.clientHeight > 100 && /auto|scroll/.test(getComputedStyle(element).overflowY) && element.scrollHeight > element.clientHeight)
+        .sort((a, b) => (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight))[0];
+      if (!scroller) throw new Error('Catalog scroll container not found');
+      scroller.scrollTop = scroller.scrollHeight;
+      // Let native-web apply the scroll event and virtual row measurements
+      // before deciding whether the newly mounted destination is reachable.
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    });
+  };
+  await expect.poll(async () => {
+    await scrollToEnd();
+    return page.getByRole('button', { name: 'View Brand A Alpha Shower', exact: true }).count();
+  }).toBe(1);
+  const last = page.getByRole('button', { name: 'View Brand A Alpha Shower', exact: true });
+  // WebKit can apply a pending virtual-list scroll adjustment after the
+  // second page mounts. Reposition the real scroller before locating a card
+  // that virtualization may have unmounted; no timing budget is increased.
+  await expect.poll(async () => {
+    await scrollToEnd();
+    return await last.isVisible() && await page.getByRole('button', { name: 'View Brand B Beta Basin', exact: true }).isVisible();
+  }).toBe(true);
+  await expect(last).toBeVisible();
+  await expect(page.getByTestId('catalog-end-of-list')).toHaveText('Showing all 62 families');
+  expect(pages).toEqual([0, 60]);
+  expect(errors).toEqual([]);
+  await last.click();
+  await expect(page).toHaveURL(/\/catalog\/namespace-product-2$/);
+});

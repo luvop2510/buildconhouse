@@ -48,7 +48,7 @@ function saveMobileBrowserFile(blob: Blob, filename: string, errorLabel: string)
     const description = document.createElement("p");
     description.id = "mobile-file-save-description";
     dialog.setAttribute("aria-describedby", description.id);
-    description.textContent = `${filename} — tap Download to save it. If your browser opens a preview, use its Share menu to save the file.`;
+    description.textContent = `${filename}. On iPhone or iPad, choose Save to Files in the share sheet. Otherwise, tap Download; if your browser opens a preview, use its Share menu to save the file.`;
     const actions = document.createElement("div");
     Object.assign(actions.style, { display: "flex", flexWrap: "wrap", gap: "12px", marginTop: "20px" });
     let settled = false;
@@ -68,14 +68,12 @@ function saveMobileBrowserFile(blob: Blob, filename: string, errorLabel: string)
       actions.appendChild(element);
       return element;
     };
+    let saveOrShare: HTMLButtonElement | null = null;
     const download = button("Download", () => {
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
       anchor.download = filename;
-      // Older mobile viewers can ignore download; a new tab preserves the app.
-      anchor.target = "_blank";
-      anchor.rel = "noopener";
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -88,7 +86,7 @@ function saveMobileBrowserFile(blob: Blob, filename: string, errorLabel: string)
       if (typeof globalThis.File === "function" && typeof navigator.share === "function" && typeof navigator.canShare === "function") {
         const file = new globalThis.File([blob], filename, { type: blob.type || "application/octet-stream" });
         if (navigator.canShare({ files: [file] })) {
-          button("Share or save", () => {
+          saveOrShare = button("Save or share", () => {
             // Invoke share synchronously from this fresh user gesture.
             try {
               void navigator.share({ files: [file] }).then(() => finish(true)).catch((error) => {
@@ -96,6 +94,7 @@ function saveMobileBrowserFile(blob: Blob, filename: string, errorLabel: string)
               });
             } catch { toast.show(`Couldn't share the ${errorLabel} — use Download instead`); }
           });
+          actions.insertBefore(saveOrShare, download);
         }
       }
     } catch { /* Download remains available when file sharing is unsupported. */ }
@@ -122,7 +121,7 @@ function saveMobileBrowserFile(blob: Blob, filename: string, errorLabel: string)
         }
       };
     }
-    download.focus();
+    (saveOrShare || download).focus();
   });
 }
 
@@ -154,7 +153,7 @@ export async function downloadApiFile(path: string, filename: string, errorLabel
         : extension === "csv" ? "text/csv" : blob.type || "application/octet-stream";
       await Sharing.shareAsync(file.uri, {
         mimeType,
-        dialogTitle: `Save or share ${errorLabel}`,
+        dialogTitle: `Save ${errorLabel} to Files or share`,
       });
       return true;
     } catch {
@@ -176,6 +175,19 @@ export async function downloadApiFile(path: string, filename: string, errorLabel
   anchor.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
   return true;
+}
+
+// File-only sharing: a browser share payload contains the PDF attachment and no URL.
+// Fetching loses transient activation, so web uses a fresh user tap in the file panel.
+export async function shareApiPdf(path: string, filename: string, floorId?: string): Promise<boolean> {
+  if (Platform.OS !== "web") return downloadApiFile(path, filename, "PDF", floorId);
+  const blob = await fetchApiBlob(path, "PDF", floorId);
+  if (!blob) return false;
+  if (blob.type && blob.type !== "application/pdf") {
+    toast.show("The PDF could not be prepared. Try again.");
+    return false;
+  }
+  return saveMobileBrowserFile(blob, filename, "PDF");
 }
 
 // Print an authenticated PDF: web renders it into a hidden iframe and calls

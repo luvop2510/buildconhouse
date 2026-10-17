@@ -86,6 +86,11 @@ def serialize_notebook_row(document: dict[str, Any]) -> dict[str, Any]:
     converted = bool(document.get("is_converted"))
     row = {
         "id": document.get("id"),
+        "floor_id": document.get("floor_id"),
+        "interested_floor_ids": document.get("interested_floor_ids") or [document.get("floor_id")],
+        "assignments": document.get("assignments") or [],
+        "reference_source": document.get("reference_source"),
+        "lead_group_id": document.get("lead_group_id"),
         "customer_name": document.get("customer_name") or "",
         "customer_phone": document.get("customer_phone") or "",
         "address": document.get("address") or "",
@@ -159,6 +164,8 @@ def validate_notebook_patch(
         raise NotebookValidationError("Won follow-ups are locked")
     if previous_status == "won" and status != "won":
         raise NotebookValidationError("Won cannot return to another status")
+    if "notes" in clean and clean.get("notebook_status") != "lost":
+        raise NotebookValidationError("Notes can only be written when marking a client as lost")
     if status == "lost" and not str(merged.get("notes") or "").strip():
         raise NotebookValidationError("Notes are required before marking Lost")
     if status == "won" and previous_status != "won":
@@ -352,8 +359,9 @@ async def complete_notebook_row(
     if outcome == "lost" and not (lost_reason or "").strip():
         raise NotebookValidationError("A lost reason is required")
     if outcome == "won":
-        from services.order_confirmation import has_placed_order
-        if not await has_placed_order(db, current, floor_id=floor_id):
+        from services.order_confirmation import placed_order
+        order = await placed_order(db, current, floor_id=floor_id)
+        if not order:
             raise NotebookValidationError("Won is recorded only after an order is placed")
     elif outcome != "lost":
         raise NotebookValidationError("Invalid follow-up outcome")
@@ -368,10 +376,12 @@ async def complete_notebook_row(
         "lost_reason": (lost_reason or "").strip() if outcome == "lost" else None,
         "updated_at": now,
     }
-    if notes is not None:
-        update["notes"] = notes
-        if outcome == "won":
-            update["resolution_note"] = notes
+    if outcome == "won":
+        update["auto_resolved"] = True
+        if order.get("created_by"):
+            update.update({"assigned_to": order["created_by"], "assigned_to_name": order.get("created_by_name")})
+    if outcome == "lost":
+        update["notes"] = (lost_reason or "").strip()
     result = await db.followups.update_one(
         {**query, "updated_at": expected_updated_at}, {"$set": update},
     )

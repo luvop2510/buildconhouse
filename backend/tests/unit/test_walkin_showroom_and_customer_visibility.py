@@ -1,5 +1,6 @@
 """Walk-in transfer and confirmed-customer boundary, without external services."""
 import asyncio
+from unittest.mock import AsyncMock
 import importlib
 from types import SimpleNamespace
 
@@ -144,7 +145,7 @@ def test_showroom_tab_and_multi_filters_are_database_side():
     clauses = query["$and"][1]["$and"]
     assert {"origin": "visit_showroom"} in clauses
     assert {"category": {"$in": ["walk_in", "sales"]}} in clauses
-    assert {"assigned_to": {"$in": ["a", "b"]}} in clauses
+    assert {"$or": [{"assigned_to": {"$in": ["a", "b"]}}, {"assignments": {"$elemMatch": {"user_id": {"$in": ["a", "b"]}, "floor_id": "first-floor"}}}]} in clauses
 
 
 def test_migration_removes_only_verified_test_choices():
@@ -179,14 +180,61 @@ def test_showroom_pending_callback_keeps_origin_and_walkin_link(monkeypatch):
     from datetime import datetime, timedelta, timezone
     from models import FollowupCallOutcomePayload
     row = {"id": "showroom-1", "floor_id": "first-floor", "customer_id": "lead-1", "customer_name": "Lead",
-           "category": "walk_in", "origin": "visit_showroom", "walkin_id": "walkin-1", "due_at": "2026-01-01T00:00:00Z"}
+           "category": "walk_in", "origin": "visit_showroom", "walkin_id": "walkin-1", "due_at": "2026-01-01T00:00:00Z", "assigned_to": "selected-worker"}
     store = Store([row])
     inserted = []
     async def insert_one(document): inserted.append(document)
     store.insert_one = insert_one
-    monkeypatch.setattr(followup_routes, "db", SimpleNamespace(followups=store))
+    monkeypatch.setattr(followup_routes, "db", SimpleNamespace(followups=store, users=SimpleNamespace(find_one=AsyncMock(return_value=None))))
+    monkeypatch.setattr(followup_routes.lead_scope, "validate_assignments", AsyncMock(return_value=[{"floor_id": "first-floor", "user_id": "selected-worker", "user_name": "Selected worker"}]))
     asyncio.run(followup_routes.log_call("showroom-1", FollowupCallOutcomePayload(
-        outcome="pending", notes="Customer requested a call", next_followup_at=datetime.now(timezone.utc) + timedelta(days=2),
+        outcome="pending", next_followup_at=datetime.now(timezone.utc) + timedelta(days=2),
     ), user()))
     assert inserted[0]["origin"] == "visit_showroom"
     assert inserted[0]["walkin_id"] == "walkin-1"
+
+
+def test_showroom_transferred_walkin_permanently_exits_register_and_counts(monkeypatch):
+    walkins, _, _ = install_transfer(monkeypatch)
+    asyncio.run(walkin_routes.visit_showroom("walkin-1", user()))
+    # Querying after a hard reload must still omit the same durable source.
+    rows = asyncio.run(walkin_routes.list_walkins(user=user()))
+    counts = asyncio.run(walkin_routes.walkins_dashboard(floor_ids=None, user=user()))
+    assert rows == []
+    assert counts["total"] == counts["pending_followups"] == 0
+    assert len(walkins.rows) == 1  # Preserve the source and its audit identity.
+
+
+def test_historical_showroom_marker_alone_excludes_register(monkeypatch):
+    walkins, _, _ = install_transfer(monkeypatch)
+    walkins.rows[0]["showroom_transferred_at"] = "2026-10-11T00:00:00Z"
+    assert asyncio.run(walkin_routes.list_walkins(user=user())) == []
+
+
+def test_transferred_walkin_cannot_be_reopened_in_register(monkeypatch):
+    from models_walkins import WalkInUpdate
+    walkins, _, _ = install_transfer(monkeypatch)
+    asyncio.run(walkin_routes.visit_showroom("walkin-1", user()))
+    with pytest.raises(HTTPException) as caught:
+        asyncio.run(walkin_routes.update_walkin("walkin-1", WalkInUpdate(status="new"), user()))
+    assert caught.value.status_code == 409
+
+
+@pytest.mark.parametrize("patch", [{"notes": "Ordinary note"}, {"lost_reason": "Standalone reason"}])
+def test_walkin_non_loss_cannot_write_note(monkeypatch, patch):
+    from models_walkins import WalkInUpdate
+    walkins, _, _ = install_transfer(monkeypatch)
+    with pytest.raises(HTTPException) as caught:
+        asyncio.run(walkin_routes.update_walkin("walkin-1", WalkInUpdate(**patch), user()))
+    assert caught.value.status_code == 422
+    assert "notes" not in walkins.rows[0]
+
+
+def test_old_note_cannot_satisfy_new_lost_transition(monkeypatch):
+    from models_walkins import WalkInUpdate
+    walkins, _, _ = install_transfer(monkeypatch)
+    walkins.rows[0]["notes"] = "Old visit note"
+    with pytest.raises(HTTPException) as caught:
+        asyncio.run(walkin_routes.update_walkin("walkin-1", WalkInUpdate(status="lost"), user()))
+    assert caught.value.status_code == 422
+    assert walkins.rows[0]["status"] == "new"

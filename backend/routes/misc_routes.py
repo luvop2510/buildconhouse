@@ -3,7 +3,8 @@ by the full module at routes/purchase_routes.py. The /payments scaffold has been
 REMOVED and replaced by routes/payment_routes.py. /followups has been REMOVED and
 replaced by the full Sales Command Center module at routes/followup_routes.py."""
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from starlette.concurrency import run_in_threadpool
 
 import os
 from re import fullmatch
@@ -14,10 +15,13 @@ from auth import accessible_floor_ids, apply_staff_password_policy, floor_for_wr
 from db import db
 from models import FloorCreatePayload, FloorPublic, TeamCreatePayload, TeamPasswordResetPayload, TeamUpdatePayload, UserPublic, now_iso
 from services.activity_log import log_event
+from services.catalog_service import catalog_diagnostics
 from services.access_grants import build_delegation_snapshot, grants_allow, grants_for_user, resource_candidates_for_api_path
 from services.download_tokens import create_download_token
 from services.invite_service import generate_temp_password, get_invite_service
 from services.login_identity import normalize_login_id
+from services.team_credentials import decrypt_password, encrypt_password
+from services.rate_limit import clear_login_attempts, reserve_login_attempt
 from services.staff_contacts import read_staff_email, read_staff_phone
 from pymongo.errors import DuplicateKeyError
 from settings import settings
@@ -148,7 +152,8 @@ async def mint_download_token(
 
 @router.get("/settings/floors", response_model=list[FloorPublic])
 async def list_floors(user: UserPublic = Depends(get_current_user)):
-    await _ensure_default_floors()
+    # Startup's ensure_floor_scope creates defaults before readiness. Reads
+    # must not pay four remote upserts again on every workspace hydration.
     floors = await db.floors.find({"active": True}, {"_id": 0}).sort("created_at", 1).to_list(50)
     allowed = accessible_floor_ids(user)
     return floors if allowed is None else [floor for floor in floors if floor["id"] in allowed]
@@ -156,7 +161,6 @@ async def list_floors(user: UserPublic = Depends(get_current_user)):
 
 @router.get("/settings/floor-access")
 async def get_floor_access(user: UserPublic = Depends(get_current_user)):
-    await _ensure_default_floors()
     floors = await db.floors.find({"active": True}, {"_id": 0}).sort("created_at", 1).to_list(50)
     allowed = accessible_floor_ids(user)
     visible = floors if allowed is None else [floor for floor in floors if floor["id"] in allowed]
@@ -200,7 +204,7 @@ async def health_system(_: UserPublic = Depends(require_min_role("admin"))):
     """
     global _system_health_cache
     if _system_health_cache and monotonic() - _system_health_cache[0] < _SYSTEM_HEALTH_CACHE_TTL_SECONDS:
-        return _system_health_cache[1]
+        return {**_system_health_cache[1], "catalog": catalog_diagnostics()}
 
     mongo_url = settings.mongo_url
     is_local_mongo = ("localhost" in mongo_url) or ("127.0.0.1" in mongo_url) or (not mongo_url)
@@ -226,7 +230,7 @@ async def health_system(_: UserPublic = Depends(require_min_role("admin"))):
 
     supabase_url = settings.supabase_url
     supabase_key = settings.supabase_service_role_key
-    supabase_configured = bool(supabase_url and supabase_key)
+    supabase_configured = settings.media_storage_driver == "supabase" and bool(supabase_url and supabase_key)
     supabase_ok = None
     supabase_error = None
     if supabase_configured:
@@ -256,7 +260,17 @@ async def health_system(_: UserPublic = Depends(require_min_role("admin"))):
             "MongoDB is pointing at a LOCAL/ephemeral instance — all data will be lost on the "
             "next session reset. Migrate to MongoDB Atlas to make this permanent."
         )
-    if not supabase_configured:
+    storage_status = {"driver": settings.media_storage_driver, "configured": supabase_configured,
+                      "connected": supabase_ok, "error": _sanitize_error(supabase_error)}
+    if settings.media_storage_driver == "r2":
+        from media_storage.factory import storage_ready
+        storage_status = {"driver": "r2", "configured": True, "connected": False, "error": None}
+        try:
+            await storage_ready()
+            storage_status["connected"] = True
+        except Exception as exc:
+            storage_status["error"] = type(exc).__name__
+    if not storage_status["configured"]:
         warnings.append(
             "Supabase Storage is not configured — product images/PDFs/attachments will be lost "
             "on the next session reset. Provide SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY."
@@ -272,11 +286,13 @@ async def health_system(_: UserPublic = Depends(require_min_role("admin"))):
         "version": FORGE_VERSION,
         "mongo": {"connected": mongo_ok, "is_local": is_local_mongo, "error": _sanitize_error(mongo_error)},
         "supabase": {"configured": supabase_configured, "connected": supabase_ok, "error": _sanitize_error(supabase_error)},
+        "storage": storage_status,
         "counts": counts,
         "secrets_loaded": secrets_loaded,
         "monitoring": monitoring_status,
+        "catalog": catalog_diagnostics(),
         "warnings": warnings,
-        "healthy": mongo_ok and (supabase_ok is not False),
+        "healthy": mongo_ok and (storage_status["connected"] is not False),
     }
     _system_health_cache = (monotonic(), result)
     return result
@@ -309,7 +325,7 @@ async def list_notifications(user: UserPublic = Depends(get_current_user)):
 @router.get("/team")
 async def list_team(user: UserPublic = Depends(require_owner)):
     require_owner(user)
-    docs = await db.users.find({"deleted_at": {"$exists": False}}, {"_id": 0, "password_hash": 0}).sort("full_name", 1).to_list(200)
+    docs = await db.users.find({"deleted_at": {"$exists": False}}, {"_id": 0, "password_hash": 0, "password_encrypted": 0}).sort("full_name", 1).to_list(200)
     return [_team_public(doc) for doc in docs]
 
 
@@ -317,7 +333,7 @@ def _team_public(doc: dict) -> dict:
     from services.team_data_reset import OWNER_EMAIL, OWNER_ID
 
     safe = {key: value for key, value in doc.items() if key not in {
-        "_id", "password_hash", "mfa_secret_encrypted", "mfa_recovery_hashes", "mfa_pending",
+        "_id", "password_hash", "password_encrypted", "mfa_secret_encrypted", "mfa_recovery_hashes", "mfa_pending",
     }}
     safe.update(email=read_staff_email(doc.get("email")), phone=read_staff_phone(doc.get("phone")),
                 mobile=read_staff_phone(doc.get("mobile")))
@@ -392,7 +408,8 @@ async def create_team_member(body: TeamCreatePayload, user: UserPublic = Depends
             grants=[grant.model_dump() for grant in (body.access_grants or [])],
             actor_id=user.id, actor_name=user.full_name,
         )
-    doc["password_hash"] = hash_password(body.password)
+    doc["password_hash"] = await run_in_threadpool(hash_password, body.password)
+    doc["password_encrypted"] = encrypt_password(body.password, doc["id"])
     doc.update(login_patch)
     try:
         await db.users.insert_one(doc)
@@ -405,7 +422,7 @@ async def create_team_member(body: TeamCreatePayload, user: UserPublic = Depends
         actor=user, summary="Staff Account Created",
         payload={"role": role, "floor_ids": floor_ids, "access_profile": body.access_profile, "email": doc["email"]},
     )
-    return doc
+    return _team_public(doc)
 
 
 @router.patch("/team/{user_id}")
@@ -417,7 +434,7 @@ async def update_team_member(
         raise HTTPException(status_code=400, detail="You can't deactivate your own account")
     if user_id == user.id and body.role is not None and body.role != user.role:
         raise HTTPException(status_code=400, detail="You can't change your own role")
-    before = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
+    before = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0, "password_encrypted": 0})
     if not before or before.get("deleted_at"):
         raise HTTPException(status_code=404, detail="Team member not found")
     # Null clears optional profile, team-role, username and contact fields.
@@ -500,7 +517,7 @@ async def update_team_member(
     else:
         # Refresh display/contact data without revoking valid sessions.
         invalidate_principal_cache("staff", user_id)
-    doc = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
+    doc = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0, "password_encrypted": 0})
 
     if "role" in patch and patch["role"] != before.get("role"):
         await log_event(
@@ -529,6 +546,25 @@ async def update_team_member(
     return _team_public(doc)
 
 
+@router.post("/team/{user_id}/password")
+async def view_team_member_password(user_id: str, response: Response, request: Request, user: UserPublic = Depends(require_owner)):
+    """Reveal a single credential only after an explicit owner action."""
+    require_owner(user)
+    response.headers["Cache-Control"] = "no-store"
+    ip = request.client.host if request.client else None
+    rate_key = f"staff-pw-view:{user.id}"
+    await reserve_login_attempt(ip, rate_key)
+    target = await db.users.find_one({"id": user_id}, {"_id": 0, "id": 1, "deleted_at": 1, "password_encrypted": 1})
+    if not target or target.get("deleted_at"):
+        raise HTTPException(status_code=404, detail="Team member not found")
+    encrypted = target.get("password_encrypted")
+    password = decrypt_password(encrypted, user_id) if encrypted else None
+    await log_event(event_type="user.password_viewed", entity_type="user", entity_id=user_id,
+                    actor=user, summary="Owner Viewed Staff Password")
+    await clear_login_attempts(ip, rate_key)
+    return {"password": password, "reset_required": password is None}
+
+
 @router.post("/team/{user_id}/reset-password")
 async def reset_team_member_password(
     user_id: str, user: UserPublic = Depends(require_owner), body: Optional[TeamPasswordResetPayload] = None,
@@ -543,7 +579,8 @@ async def reset_team_member_password(
     password = body.new_password if body is not None else generate_temp_password()
     expires_at = None
     await _write_team_patch(target, {
-        "password_hash": hash_password(password),
+        "password_hash": await run_in_threadpool(hash_password, password),
+        "password_encrypted": encrypt_password(password, user_id),
         "must_change_password": False,
         "temp_password_expires_at": expires_at,
         "updated_at": now_iso(),

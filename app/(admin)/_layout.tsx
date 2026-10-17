@@ -27,6 +27,8 @@ import { staffLandingPath } from "@/src/access-profiles";
 import { hasRouteDestination, isPersonalAccountRoute, moduleForRoute, resolveFloorRouteSegments } from "@/src/team-delegation";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { AppScaffold } from "@/src/components/mobile/AppScaffold";
+import { useInputActive } from "@/src/hooks/use-input-active";
+import { WorkspacePageBoundary } from "@/src/components/PageErrorBoundary";
 import { storage } from "@/src/utils/storage";
 import { FURNITURE_FLOOR_ID, KITCHEN_FLOOR_ID, SANITARY_FLOOR_ID, TILES_FLOOR_ID, floorDisplayLabel, floorLandingPath } from "@/src/constants/floors";
 
@@ -191,19 +193,20 @@ function FloorSwitcher({ compact = false }: { compact?: boolean }) {
 }
 
 const FLOOR_ROUTE_SEGMENTS: Record<string, string[]> = {
-  [SANITARY_FLOOR_ID]: ["quotations", "godown-stock"],
+  [SANITARY_FLOOR_ID]: ["quotations", "godown-stock", "purchases", "purchases-completed", "purchase-orders"],
   [TILES_FLOOR_ID]: ["tiles", "orders"],
   [KITCHEN_FLOOR_ID]: ["kitchen"],
   [FURNITURE_FLOOR_ID]: ["furniture", "furniture-quotations"],
 };
 
-const SHARED_FLOOR_ROUTES = ["catalog", "customers", "purchases", "purchases-completed", "payments", "payments-list", "walkins", "followups", "settings", "team", "notifications", "sales-data"];
+const SHARED_FLOOR_ROUTES = ["catalog", "customers", "payments", "payments-list", "walkins", "followups", "settings", "team", "notifications", "sales-data"];
 
 function isSharedFloorRoute(segments: string[]) {
   return SHARED_FLOOR_ROUTES.some(segment => segments.includes(segment));
 }
 
 function isRouteCompatibleWithFloor(segments: string[], floorId: string) {
+  if (segments.includes("catalog") && ![SANITARY_FLOOR_ID, TILES_FLOOR_ID].includes(floorId)) return false;
   return !Object.entries(FLOOR_ROUTE_SEGMENTS).some(([restrictedFloor, roots]) => (
     restrictedFloor !== floorId && roots.some((root) => segments.includes(root))
   ));
@@ -251,7 +254,8 @@ function useVisibleNav() {
   const { staff } = useAuth();
   const { access, selectedFloorId } = useFloorAccess();
   return (items: NavItem[]) => items.filter((item) => {
-    if (staff?.custom_access) return (!item.floors || item.floors.includes(selectedFloorId)) && hasAccess(item.match);
+    if (item.floors && selectedFloorId && !item.floors.includes(selectedFloorId)) return false;
+    if (staff?.custom_access) return hasAccess(item.match);
     // These units share floor-scoped business pages alongside their notebooks.
     if (selectedFloorId === KITCHEN_FLOOR_ID || selectedFloorId === FURNITURE_FLOOR_ID) {
       const shared = SHARED_FLOOR_ROUTES.includes(item.match);
@@ -360,7 +364,7 @@ function PhoneBar() {
   if (!shellReady) return <PhoneBarSkeleton />;
   const all = [...visible(PRIMARY), ...tilesNav.items, ...visible(SECONDARY)];
   const notebook = selectedFloorId === KITCHEN_FLOOR_ID || selectedFloorId === FURNITURE_FLOOR_ID;
-  const priorities = notebook ? all.filter(item => item.match === 'walkins' || item.href.includes('/notebook/'))
+  const priorities = notebook ? all.filter(item => item.match === 'walkins' || item.match === 'followups' || item.href.includes('/notebook/'))
     : ['dashboard', 'catalog', selectedFloorId === TILES_FLOOR_ID ? 'tiles' : 'quotations', 'followups']
       .flatMap(match => all.filter(item => item.match === match));
   const more = all.filter(item => !priorities.some(tab => tab.href === item.href));
@@ -457,6 +461,14 @@ function FloorAccessGate({ children }: { children: React.ReactNode }) {
     router.replace(`/(admin)${floorLandingPath(selectedFloorId)}` as any);
   }, [authLoading, staff, access, selectedFloorId, destinationReady, segments, router]);
 
+  const retiredWorkspaceRoute = Boolean(selectedFloorId && (
+    (["purchases", "purchases-completed", "purchase-orders"].some(part => segments.includes(part)) && selectedFloorId !== SANITARY_FLOOR_ID) ||
+    (segments.includes("catalog") && ![SANITARY_FLOOR_ID, TILES_FLOOR_ID].includes(selectedFloorId))
+  ));
+  useEffect(() => {
+    if (retiredWorkspaceRoute) router.replace(`/(admin)${floorLandingPath(selectedFloorId)}` as any);
+  }, [retiredWorkspaceRoute, router, selectedFloorId]);
+
   // Password, MFA and session management belong to the authenticated account,
   // even when every business floor has been switched off. Business routes
   // still require a concrete server-authorized floor below.
@@ -493,6 +505,7 @@ function FloorAccessGate({ children }: { children: React.ReactNode }) {
       </Pressable>
     </View>;
   }
+  if (retiredWorkspaceRoute) return null;
   return <>{children}</>;
 }
 
@@ -518,8 +531,15 @@ function CustomAccessRouteGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// The navigator must stay mounted when its page fails. Wrapping Slot itself
+// removes the active route and lets Expo redirect to the default child.
+// Slot forwards this React Navigation option to useNavigationBuilder; Expo's
+// narrower Slot type currently omits it.
+const pageScreenLayout = ({ children }: { children: React.ReactNode }) => <WorkspacePageBoundary>{children}</WorkspacePageBoundary>;
+
 export default function AdminLayout() {
   const { isPhone } = useBp();
+  const inputActive = useInputActive();
   const builderSegments = useResolvedFloorSegments();
   const focusedQuotation = builderSegments.includes("quotations") && builderSegments.includes("new");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -538,33 +558,28 @@ export default function AdminLayout() {
     });
   };
 
-  if (isPhone) {
-    return (
-      <PaletteProvider>
-        <AppScaffold
-          testID="admin-mobile-shell"
-          style={{ backgroundColor: color.canvas }}
-          bottomNavigation={focusedQuotation ? null : <PhoneBar />}
-        >
-          <ConnectionStatus /><FloorAccessGate><CustomAccessRouteGate>{isPhone && !focusedQuotation ? <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 }}><FloorSwitcher /></View> : null}<Slot /></CustomAccessRouteGate></FloorAccessGate>
-        </AppScaffold>
-      </PaletteProvider>
-    );
-  }
-
+  // Keep the route's ancestor types and key stable when a phone rotates past
+  // the sidebar breakpoint. Replacing this tree used to unmount every form,
+  // including its selected photo, before the user could save it.
   return (
     <PaletteProvider>
       <View style={{ flex: 1, flexDirection: "row", backgroundColor: color.canvas }}>
-        <View role="navigation" accessibilityLabel="Primary" style={{
+        {!isPhone ? <View key="sidebar" role="navigation" accessibilityLabel="Primary" style={{
           width: sidebarCollapsed ? layout.rail : layout.sidebar,
           borderRightWidth: layout.hairline, borderRightColor: color.line,
           ...(Platform.OS === "web" ? ({ transition: "width 200ms cubic-bezier(0.2, 0, 0, 1)" } as any) : {}),
         }}>
           <Sidebar collapsed={sidebarCollapsed} onToggle={toggleSidebar} />
-        </View>
-        <View role="main" accessibilityLabel="Workspace content" style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
-          <ConnectionStatus /><FloorAccessGate><CustomAccessRouteGate>{isPhone && !focusedQuotation ? <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 }}><FloorSwitcher /></View> : null}<Slot /></CustomAccessRouteGate></FloorAccessGate>
-        </View>
+        </View> : null}
+        <AppScaffold
+          key="workspace"
+          testID={isPhone ? "admin-mobile-shell" : "admin-desktop-shell"}
+          phoneSafeArea={isPhone}
+          style={{ backgroundColor: color.canvas, minHeight: 0 }}
+          bottomNavigation={isPhone && !focusedQuotation && !inputActive ? <PhoneBar /> : null}
+        >
+          <ConnectionStatus /><FloorAccessGate><CustomAccessRouteGate>{isPhone && !focusedQuotation && !inputActive ? <View testID="mobile-workspace-header" style={{ flexShrink: 0, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 }}><FloorSwitcher /></View> : null}<Slot {...({ screenLayout: pageScreenLayout } as React.ComponentProps<typeof Slot>)} /></CustomAccessRouteGate></FloorAccessGate>
+        </AppScaffold>
       </View>
     </PaletteProvider>
   );

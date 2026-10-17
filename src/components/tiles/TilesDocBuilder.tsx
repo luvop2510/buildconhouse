@@ -1,3 +1,4 @@
+import { referrerLabel } from "@/src/utils/referrer";
 // TilesDocBuilder — Ground Floor → Tiles → Selection / Quotation.
 // -----------------------------------------------------------------------------
 // Each page renders as an editable on-screen replica of its official printed
@@ -233,6 +234,14 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   const router = useRouter();
   const { id, quotationId } = useLocalSearchParams<{ id?: string; quotationId?: string }>();
   const routeId = initialQuotationId || id || quotationId;
+  const documentScope = `${docType}:${routeId || "new"}`;
+  const documentScopeRef = useRef(documentScope);
+  const documentGenerationRef = useRef(0);
+  if (documentScopeRef.current !== documentScope) documentGenerationRef.current += 1;
+  documentScopeRef.current = documentScope;
+  const documentGeneration = documentGenerationRef.current;
+  const mountedRef = useRef(true);
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
   const [docId, setDocId] = useState<string | null>(null);
   const [docNumberServer, setDocNumberServer] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("draft");
@@ -241,6 +250,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   const customerIdRef = useRef<string | null>(null);
   const [customerSnapshot, setCustomerSnapshot] = useState<{ name: string; phone: string }>({ name: "", phone: "" });
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [partnerLabel, setPartnerLabel] = useState("");
   const [header, setHeader] = useState<TilesHeader>({
     customerName: "", phone: "", reference: "", docDate: defaultDocDate(docType),
     attendedBy: "", preparedBy: "", address: "", docNumber: "", transportationFee: "0",
@@ -259,6 +269,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   const persistRef = useRef<() => Promise<string | null>>(async () => null);
   const persistQueue = useRef<Promise<string | null>>(Promise.resolve(null));
   const persistedIdRef = useRef<string | null>(null);
+  const createdDocumentRef = useRef<{ id: string; docType: TilesDocType } | null>(null);
   const seededProductRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -268,19 +279,33 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   // Restore a saved document.
   useEffect(() => {
     if (!routeId) return;
+    // First autosave adds the new id to this same route. Its current draft
+    // may include edits made while POST was pending; fetching that older
+    // server snapshot would erase them before the next autosave.
+    if (createdDocumentRef.current?.id === routeId && createdDocumentRef.current.docType === docType) {
+      createdDocumentRef.current = null;
+      setLoading(false);
+      return;
+    }
     let alive = true;
+    const controller = new AbortController();
+    dirtyRef.current = false;
+    persistedIdRef.current = null;
     setLoading(true);
+    setSaveState("idle");
     setRestoreError(null);
+    setPartnerLabel("");
     (async () => {
       try {
-        const doc = await api.get<any>(`/quotations/${routeId}?with_completion=true`, { floorId: TILES_FLOOR_ID });
-        if (!alive) return;
+        const doc = await api.get<any>(`/quotations/${routeId}?with_completion=true`, { floorId: TILES_FLOOR_ID, signal: controller.signal });
+        if (!alive || documentScopeRef.current !== documentScope) return;
         if (doc.doc_type !== docType) {
           const canonicalRoute = doc.doc_type === "tiles_selection" ? "selection" : doc.doc_type === "tiles_quotation" ? "quotation" : null;
           toast.error(canonicalRoute ? "Opening this document in its correct workspace" : "That document is not a tile document");
           router.replace((canonicalRoute ? `/(admin)/tiles/${canonicalRoute}?id=${doc.id}` : "/(admin)/tiles") as any);
           return;
         }
+        persistedIdRef.current = doc.id;
         setDocId(doc.id);
         setDocNumberServer(doc.number || null);
         setStatus(normalizeTilesStatus(doc.status || "draft"));
@@ -293,6 +318,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         setCustomerId(doc.customer_id || null);
         customerIdRef.current = doc.customer_id || null;
         setCustomerSnapshot({ name: doc.customer_name || "", phone: doc.phone_snapshot || "" });
+        setPartnerLabel(referrerLabel(doc));
         setHeader({
           customerName: doc.customer_name || "",
           phone: doc.phone_snapshot || "",
@@ -329,14 +355,16 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         setRows(restored.length ? restored : [emptyRow()]);
       } catch (e: any) {
         const message = e?.detail || "Couldn't open that document";
-        if (alive) setRestoreError(message);
-        toast.error(message);
+        if (alive && documentScopeRef.current === documentScope) {
+          setRestoreError(message);
+          toast.error(message);
+        }
       } finally {
         if (alive) setLoading(false);
       }
     })();
-    return () => { alive = false; };
-  }, [routeId, docType, router, restoreAttempt]);
+    return () => { alive = false; controller.abort(); };
+  }, [routeId, docType, documentScope, router, restoreAttempt]);
 
   const markDirty = useCallback(() => {
     dirtyRef.current = true;
@@ -551,6 +579,9 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
 
   const persist = useCallback(async ({ silent = true }: { silent?: boolean } = {}): Promise<string | null> => {
     const run = async (): Promise<string | null> => {
+      const current = () => mountedRef.current && documentScopeRef.current === documentScope && documentGenerationRef.current === documentGeneration;
+      if (loading || restoreError || !current() || (routeId && docId !== routeId)) return null;
+      let id = persistedIdRef.current || docId;
       const savingRevision = editRevisionRef.current;
       const name = header.customerName.trim();
       if (!name) {
@@ -574,6 +605,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       let cid = customerIdRef.current || customerId;
       if (!cid) {
         const created = await api.post<Customer>("/customers", { name, phone: header.phone.trim() || null }, { floorId: TILES_FLOOR_ID });
+        if (!current()) return null;
         cid = created.id;
         customerIdRef.current = created.id;
         setCustomerId(created.id);
@@ -581,7 +613,8 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         setCustomers((cur) => [created, ...cur]);
       } else if (name !== customerSnapshot.name || header.phone.trim() !== customerSnapshot.phone) {
         // Header edits correct the customer record (typo fixes stay in sync).
-        await api.patch(`/customers/${cid}`, { name, phone: header.phone.trim() || null }).catch(() => {});
+        await api.patch(`/customers/${cid}`, { name, phone: header.phone.trim() || null }, { floorId: TILES_FLOOR_ID });
+        if (!current()) return null;
         setCustomerSnapshot({ name, phone: header.phone.trim() });
       }
 
@@ -598,11 +631,13 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         doc_number: header.docNumber.trim() || null,
         transportation_fee: docType === "tiles_quotation" ? num(header.transportationFee) : 0,
       };
-      let id = persistedIdRef.current || docId;
+      if (!current()) return null;
       if (!id) {
         const created = await api.post<{ id: string; number: string }>("/quotations", { ...payload, doc_type: docType }, { floorId: TILES_FLOOR_ID });
+        if (!current()) return null;
         id = created.id;
         persistedIdRef.current = created.id;
+        createdDocumentRef.current = { id: created.id, docType };
         setDocId(created.id);
         setDocNumberServer(created.number);
         if (docType === "tiles_quotation" && !header.docNumber.trim()) {
@@ -611,6 +646,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         router.setParams({ id: created.id });
       } else {
         const fresh = await api.patch<any>(`/quotations/${id}`, { ...payload, silent, reason: silent ? undefined : "Saved from tiles builder" }, { floorId: TILES_FLOOR_ID });
+        if (!current()) return null;
         setServerTotals({
           subtotal: Number(fresh.subtotal || 0),
           grandTotal: Number(fresh.grand_total || 0),
@@ -621,13 +657,14 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       setSaveState("saved");
       return id;
       } catch (e: any) {
+        if (!current()) return null;
         setSaveState("error");
         toast.error(e?.detail || "Save failed");
         return null;
       }
     };
     return enqueueQuotationPersist(persistQueue, run);
-  }, [header, customerId, customerSnapshot, docId, docType, buildItems, router, rows]);
+  }, [header, customerId, customerSnapshot, docId, docType, buildItems, router, rows, loading, restoreError, documentScope, documentGeneration, routeId]);
   persistRef.current = () => persist({ silent: true });
 
   // Autosave: create the document on the first meaningful edit, then silently
@@ -635,10 +672,10 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   // explicit workflow/PDF action before it acquired an id, which made the
   // Save-free editor lose a first draft if the tab was closed early.
   useEffect(() => {
-    if (!dirtyRef.current || !header.customerName.trim()) return;
+    if (loading || restoreError || (routeId && docId !== routeId) || !dirtyRef.current || !header.customerName.trim()) return;
     const timer = setTimeout(() => { void persistRef.current(); }, 900);
     return () => clearTimeout(timer);
-  }, [header, rows, docId]);
+  }, [header, rows, docId, loading, restoreError, routeId]);
 
   const generatePdf = useCallback(async () => {
     if (rows.some((row) => row.productId && !row.image?.trim())) {
@@ -663,7 +700,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       if (!id) return;
       setWhatsappDraft(await prepareQuotationWhatsAppDraft(id, TILES_FLOOR_ID));
     } catch (error: any) {
-      const message = error?.detail || "Could not prepare the WhatsApp quotation draft.";
+      const message = error?.detail || "Could not prepare the PDF for sharing.";
       setWorkflowError(message); toast.error(message);
     } finally { setBusy(null); }
   }, [busy, persist]);
@@ -752,6 +789,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     setCustomerId(customer.id);
     customerIdRef.current = customer.id;
     setCustomerSnapshot({ name: customer.name, phone: customer.phone || "" });
+    setPartnerLabel(referrerLabel(customer));
     setHeader((cur) => ({ ...cur, customerName: customer.name, phone: customer.phone || cur.phone }));
     markDirty();
   }, [markDirty]);
@@ -759,7 +797,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   return {
     docId, docNumberServer, loading, restoreError, retryRestore: () => setRestoreAttempt((value) => value + 1), header, setHeaderField, rows,
     updateRow, addRow, removeRow, applyProduct, selectRowSize, loadRowSizes,
-    customers, customerId, pickCustomer, setCustomerId,
+    customers, customerId, pickCustomer, setCustomerId, partnerLabel,
     saveState, retrySave: () => persist({ silent: true }), busy, generatePdf, print, placeOrder, serverTotals, previewTotals,
     whatsappDraft, closeWhatsApp: () => setWhatsappDraft(null), prepareWhatsApp,
     customerCompleted: Boolean(!loading && completionSnapshot?.completed && completionSnapshot.id === docId && completionSnapshot.customerId === customerId),
@@ -1101,6 +1139,7 @@ function MetaGrid({ doc }: { doc: ReturnType<typeof useTilesDoc> }) {
   ];
   return (
     <View style={metaStyles.grid}>
+      {doc.partnerLabel ? <Text style={type.caption}>Architect / interior designer: {doc.partnerLabel}</Text> : null}
       <View style={metaStyles.row}>
         <View style={metaStyles.cell}>
           <Text style={metaStyles.label}>CUSTOMER NAME</Text>
@@ -1798,6 +1837,7 @@ function MobileTilesEditor({
                   <TextField label={isSelection ? "Selection no." : "Quotation no."} value={doc.header.docNumber} onChangeText={(t: string) => doc.setHeaderField("docNumber", t)} testID="mobile-doc-number" />
                 </View>
                 <View style={mobileStyles.fieldFull}>
+                  {doc.partnerLabel ? <Text style={type.caption}>Architect / interior designer: {doc.partnerLabel}</Text> : null}
                   <TextField label="Reference" value={doc.header.reference} onChangeText={(t: string) => doc.setHeaderField("reference", t)} testID="mobile-reference" />
                 </View>
                 <View style={mobileStyles.fieldFull}>
@@ -1837,7 +1877,7 @@ function MobileTilesEditor({
       )}
 
       <View onLayout={(event) => setFooterHeight(event.nativeEvent.layout.height)} style={[mobileStyles.bottomBar, { paddingBottom: Math.max(spacing.lg, insets.bottom + spacing.sm) }]}>
-        <Button label="WhatsApp draft" icon="message-circle" onPress={doc.prepareWhatsApp} loading={doc.busy === "whatsapp"} disabled={!!doc.busy} variant="secondary" testID="tiles-mobile-whatsapp-draft" />
+        <Button label="Share PDF" icon="message-circle" onPress={doc.prepareWhatsApp} loading={doc.busy === "whatsapp"} disabled={!!doc.busy} variant="secondary" testID="tiles-mobile-whatsapp-draft" />
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
           <Button
             label="Download PDF" icon="download" onPress={doc.generatePdf}
@@ -2006,25 +2046,25 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
     || isTablet
     || (workspaceWidth > 0 && workspaceWidth < PAPER_W + spacing.lg + 64);
 
-  if (doc.restoreError) {
-    return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xl, gap: spacing.md }}>
-        <Feather name="alert-circle" size={28} color={colors.error} />
-        <Text style={[type.titleMd, { textAlign: "center" }]}>Couldn&apos;t open this tile document</Text>
-        <Text style={{ color: colors.onSurfaceSecondary, textAlign: "center" }}>{doc.restoreError}</Text>
-        <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          <ActionBtn label="Back" icon="chevron-left" onPress={() => router.back()} testID="tiles-restore-back" />
-          <ActionBtn label="Retry" icon="refresh-cw" primary onPress={doc.retryRestore} testID="tiles-restore-retry" />
-        </View>
-      </View>
-    );
-  }
-
+  // Keep this measured host mounted across restore/error/retry. Replacing
+  // it with an unmeasured loading View can leave the hydrated tablet editor
+  // at width zero, permanently selecting its one-column phone geometry.
   return (
     <View style={{ flex: 1 }} onLayout={(event) => setWorkspaceWidth(event.nativeEvent.layout.width)}>
-      <WhatsAppQuotationSheet draft={doc.whatsappDraft} onClose={doc.closeWhatsApp} onRevoke={async () => {
-        if (doc.docId) await api.delete(`/quotations/${doc.docId}/whatsapp-draft`, { floorId: TILES_FLOOR_ID });
-      }} />
+      {doc.loading ? (
+        <View accessibilityLabel="Loading tile document" style={{ flex: 1, alignItems: "center", justifyContent: "center" }}><ActivityIndicator color={colors.brand} /></View>
+      ) : doc.restoreError ? (
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xl, gap: spacing.md }}>
+          <Feather name="alert-circle" size={28} color={colors.error} />
+          <Text style={[type.titleMd, { textAlign: "center" }]}>Couldn&apos;t open this tile document</Text>
+          <Text style={{ color: colors.onSurfaceSecondary, textAlign: "center" }}>{doc.restoreError}</Text>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <ActionBtn label="Back" icon="chevron-left" onPress={() => router.back()} testID="tiles-restore-back" />
+            <ActionBtn label="Retry" icon="refresh-cw" primary onPress={doc.retryRestore} testID="tiles-restore-retry" />
+          </View>
+        </View>
+      ) : <>
+      <WhatsAppQuotationSheet draft={doc.whatsappDraft} onClose={doc.closeWhatsApp} />
       {useResponsiveEditor ? <MobileTilesEditor docType={docType} doc={doc} router={router} onDelete={confirmDelete} workspaceWidth={workspaceWidth} /> : (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surfaceSecondary }} edges={["top"]}>
       <View style={shellStyles.topbar}>
@@ -2050,7 +2090,7 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
               testID="tiles-workflow-action"
             />
           ) : null}
-          <ActionBtn label="WhatsApp draft" icon="message-circle" onPress={doc.prepareWhatsApp} loading={doc.busy === "whatsapp"} testID="tiles-whatsapp-draft" />
+          <ActionBtn label="Share PDF" icon="message-circle" onPress={doc.prepareWhatsApp} loading={doc.busy === "whatsapp"} testID="tiles-whatsapp-draft" />
           <ActionBtn
             label={isSelection ? "Generate selection PDF" : "Generate quotation PDF"}
             icon="file-text"
@@ -2079,6 +2119,7 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
       )}
     </SafeAreaView>
       )}
+      </>}
     </View>
   );
 }

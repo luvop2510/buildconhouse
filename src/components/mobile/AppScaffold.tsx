@@ -14,17 +14,19 @@ export function AppScaffold({
   bottomNavigation,
   style,
   testID,
+  phoneSafeArea = true,
 }: {
   children: React.ReactNode;
   bottomNavigation: React.ReactNode;
   style?: StyleProp<ViewStyle>;
   testID?: string;
+  phoneSafeArea?: boolean;
 }) {
   return (
     <SafeAreaView
       testID={testID}
-      edges={["top", "left", "right"]}
-      style={[{ flex: 1, minWidth: 0, backgroundColor: color.canvas }, style]}
+      edges={phoneSafeArea ? ["top", "left", "right"] : []}
+      style={[{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden", backgroundColor: color.canvas }, style]}
     >
       <View role="main" accessibilityLabel="Workspace content" style={{ flex: 1, minWidth: 0, minHeight: 0 }}>{children}</View>
       {bottomNavigation ? <SafeAreaView

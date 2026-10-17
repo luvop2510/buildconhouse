@@ -1,0 +1,62 @@
+[
+  {
+    "name": "audit",
+    "command": "npx playwright test --config playwright.audit.config.ts",
+    "startedAt": "2026-10-12T23:46:14.078Z",
+    "status": 0,
+    "stats": {
+      "startTime": "2026-10-12T23:46:14.816Z",
+      "duration": 1017040.53,
+      "expected": 1667,
+      "skipped": 32,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "errors": []
+  },
+  {
+    "name": "responsive",
+    "command": "npx playwright test --config playwright.responsive.config.ts responsive-",
+    "startedAt": "2026-10-13T00:03:12.049Z",
+    "status": 0,
+    "stats": {
+      "startTime": "2026-10-13T00:03:12.920Z",
+      "duration": 389817.766,
+      "expected": 412,
+      "skipped": 15,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "errors": []
+  },
+  {
+    "name": "devices",
+    "command": "npx playwright test --config playwright.devices.config.ts",
+    "startedAt": "2026-10-13T00:09:42.934Z",
+    "status": 0,
+    "stats": {
+      "startTime": "2026-10-13T00:09:44.087Z",
+      "duration": 405613.917,
+      "expected": 420,
+      "skipped": 8,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "errors": []
+  },
+  {
+    "name": "performance",
+    "command": "npx playwright test --config playwright.performance.config.ts",
+    "startedAt": "2026-10-13T00:16:29.788Z",
+    "status": 0,
+    "stats": {
+      "startTime": "2026-10-13T00:16:30.624Z",
+      "duration": 82501.02,
+      "expected": 28,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "errors": []
+  }
+]

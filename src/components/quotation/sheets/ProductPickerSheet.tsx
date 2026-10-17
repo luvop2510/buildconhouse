@@ -3,6 +3,7 @@
 // mobile use. Keeping this route on ProductExplorer is what gives Sanitary
 // Bathroom Add Products the same shop-style filters and responsive browsing
 // experience as the inline quotation catalog.
+import { useState } from "react";
 import { Overlay } from "@/src/design/Overlay";
 import Feather from "@expo/vector-icons/Feather";
 import { Pressable, StyleSheet, View } from "react-native";
@@ -17,6 +18,7 @@ import { useBuilder } from "../context/BuilderContext";
 
 export function ProductPickerSheet() {
   const b = useBuilder();
+  const [roomsOpen, setRoomsOpen] = useState(false);
 
   return (
     <Overlay open={b.pickerSheetOpen} onClose={() => b.setPickerSheetOpen(false)} title="Add products" presentation="fullscreen" scroll={false} header={false}>
@@ -28,9 +30,13 @@ export function ProductPickerSheet() {
           <Text accessibilityRole="header" style={type.titleMd}>Add products</Text>
           <View style={{ width: 22 }} />
         </View>
-        <View style={{ paddingHorizontal: 12, paddingVertical: 8 }}>
-          <Text style={styles.destination}>Adding to {b.s.activeRoom}</Text>
-          <RoomChipRow />
+        <View style={{ paddingHorizontal: 12 }}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Choose room for added products" accessibilityState={{ expanded: roomsOpen }}
+            testID="picker-room-toggle" onPress={() => setRoomsOpen(value => !value)} style={styles.roomToggle}>
+            <Text style={[styles.destination, { flex: 1, marginBottom: 0 }]} numberOfLines={1}>Adding to {b.s.activeRoom}</Text>
+            <Text style={styles.changeRoom}>Change room</Text><Feather name={roomsOpen ? "chevron-up" : "chevron-down"} size={14} color={colors.onSurfaceSecondary} />
+          </Pressable>
+          {roomsOpen ? <View style={{ paddingBottom: 8 }}><RoomChipRow /></View> : null}
         </View>
         <View style={{ flex: 1, minHeight: 0 }}>
           {/* This is the only product view without the persistent BrandRail,
@@ -52,6 +58,8 @@ export function ProductPickerSheet() {
 }
 
 const styles = StyleSheet.create({
+  roomToggle: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 6 },
+  changeRoom: { fontSize: 12, fontWeight: "600", color: colors.onSurfaceSecondary },
   summary: { flexDirection: "row", alignItems: "center", padding: 12, gap: 12, borderTopWidth: 1, borderColor: colors.border },
   destination: { fontSize: 12, color: colors.onSurfaceSecondary, marginBottom: 4 },
   total: { fontSize: 20, fontWeight: "600", color: colors.onSurface },
@@ -59,7 +67,7 @@ const styles = StyleSheet.create({
   reviewLabel: { fontSize: 13, fontWeight: "700", color: colors.onBrand },
   head: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "center",
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md, paddingVertical: 6,
     borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
     backgroundColor: colors.surface,
   },

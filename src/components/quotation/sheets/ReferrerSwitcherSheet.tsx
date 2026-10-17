@@ -1,3 +1,4 @@
+import { referrerCode } from "@/src/utils/referrer";
 // Referrer switcher — searchable list of architects/interior designers +
 // inline "create new" form. Opens from the topbar's "Referred By" field.
 import { useMemo, useState } from "react";
@@ -108,7 +109,7 @@ export function ReferrerSwitcherSheet() {
           </Pressable>
           {filtered.map((r) => (
             <Pressable key={r.id} testID={`referrer-row-${r.id}`} onPress={() => pick(r.id, r.name)} style={styles.row}>
-              <Text style={type.body}>{r.name}</Text>
+              <Text style={type.body}>{r.name}</Text><Text style={type.caption}>{referrerCode(r.id, r.type)}{r.customers_acquired == null ? "" : ` · ${r.customers_acquired} customers brought`}</Text>
             </Pressable>
           ))}
           {canCreateReferrer ? <Button label="+ Add new" variant="secondary" onPress={() => setCreating(true)} testID="referrer-add-new" /> : null}

@@ -1,5 +1,5 @@
 import Feather from '@expo/vector-icons/Feather';
-import React, { useRef } from 'react';
+import React from 'react';
 import { Platform, Pressable, ScrollView, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 import { color, font, radius, space } from './tokens';
@@ -8,13 +8,12 @@ export function NavigationTabs<T extends string>({ value, options, onChange, tes
   value: T; options: { value: T; label: string; count?: number; icon?: keyof typeof Feather.glyphMap }[];
   onChange: (value: T) => void; testID?: string; fullWidth?: boolean; disabled?: boolean; segmented?: boolean;
 }) {
-  const refs = useRef<Record<string, View | null>>({});
   const tabs = <View role="tablist" style={{ flexDirection: 'row', gap: segmented ? 4 : space.x5,
     padding: segmented ? 4 : 0, backgroundColor: segmented ? color.sunken : 'transparent',
     borderRadius: radius.sm, flexGrow: fullWidth ? 1 : undefined }}>
     {options.map((option, index) => {
       const active = value === option.value;
-      return <Pressable key={option.value} ref={el => { refs.current[option.value] = el; }}
+      return <Pressable key={option.value}
         testID={testID ? `${testID}-${option.value}` : undefined} role="tab"
         aria-selected={active} accessibilityLabel={option.label} accessibilityState={{ selected: active, disabled }} disabled={disabled}
         tabIndex={active ? 0 : -1} onPress={() => onChange(option.value)}
@@ -25,7 +24,16 @@ export function NavigationTabs<T extends string>({ value, options, onChange, tes
             : event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1 : -1;
           if (next < 0) return;
           event.preventDefault(); onChange(options[next].value);
-          (refs.current[options[next].value] as unknown as HTMLElement)?.focus();
+          // Let the selected state commit before moving DOM focus. Focusing
+          // the previous render here can be dropped when the tablist rerenders.
+          requestAnimationFrame(() => {
+            const nextValue = String(options[next].value);
+            const target = testID
+              ? document.querySelector<HTMLElement>(`[data-testid="${testID}-${nextValue}"]`)
+              : Array.from(document.querySelectorAll<HTMLElement>('[role="tab"]'))
+                .find(tab => tab.getAttribute('aria-label') === options[next].label);
+            target?.focus();
+          });
         }} : {})}
         style={({ pressed }) => ({ minHeight: 44, paddingHorizontal: segmented ? 10 : 2,
           flex: fullWidth ? 1 : undefined, flexShrink: 0, flexDirection: 'row', gap: 6,

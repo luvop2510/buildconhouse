@@ -1,50 +1,142 @@
 import { expect, test } from '@playwright/test';
 import { mockSession } from './audit-fixtures';
 
-test('a bookmarked department notebook synchronizes its floor before loading records', async ({ page }) => {
-  await mockSession(page, '/notebook/furniture', false);
-  await page.addInitScript(() => localStorage.setItem('forge.active-floor', JSON.stringify('second-floor')));
-  const reads: string[] = [];
-  await page.route('**/api/followups/notebook/**', route => {
-    reads.push(route.request().headers()['x-floor-id']);
-    return route.fulfill({ json: { rows: [], next_cursor: null } });
-  });
-  await page.goto('/notebook/furniture');
-  await expect(page).toHaveURL(/\/notebook\/furniture$/);
-  await expect(page.getByRole('heading', { name: 'Furniture Floor Walk-ins', exact: true })).toBeVisible();
-  await expect(page.getByTestId('floor-switcher')).toHaveAccessibleName('Switch workspace. Current workspace: Furniture Floor');
-  await expect.poll(() => reads.length).toBeGreaterThan(0);
-  expect(reads.every(floor => floor === 'third-floor')).toBe(true);
-});
-
-for (const [floor, path] of [['second-floor', '/notebook/kitchen'], ['third-floor', '/notebook/furniture'], ['ground-floor', '/tiles']] as const) {
-  test(`${floor} exposes shared Purchases and completed customers while RNB remains furniture-only`, async ({ page }) => {
-    await mockSession(page, path, false);
+for (const [floor, label] of [['ground-floor', 'Ground Floor'], ['first-floor', 'The Sanitary Bathroom'], ['second-floor', 'Kitchen Floor'], ['third-floor', 'Furniture Floor']] as const) {
+  test(`critical ${floor} exposes only its supported workspaces on every navigation surface`, async ({ page }) => {
+    await mockSession(page, '/followups', false);
     await page.addInitScript(id => localStorage.setItem('forge.active-floor', JSON.stringify(id)), floor);
-    await page.route('**/api/followups/notebook/**', route => route.fulfill({ json: { rows: [], next_cursor: null } }));
-    await page.route('**/api/purchases/**', route => {
+    await page.route('**/api/followups/page?**', route => {
       expect(route.request().headers()['x-floor-id']).toBe(floor);
-      const pathname = new URL(route.request().url()).pathname;
-      const json = pathname.endsWith('/items/page') ? { items: [], total: 0, next_skip: null, has_more: false, summaries: { blocked_count: 0, sla_days: 7, stage_counts: {} } }
-        : pathname.endsWith('/brands') ? { brands: [], all: 0 } : [];
-      return route.fulfill({ json });
+      return route.fulfill({ json: { items: [], page: 1, page_size: 100, has_more: false } });
     });
-    await page.goto(path);
-    await expect(page.getByRole('link', { name: floor === 'ground-floor' ? 'Quotations' : 'Walk-ins', exact: true })).toBeVisible();
-    const sidebarPurchases = page.getByRole('link', { name: 'Purchases', exact: true });
-    if (await sidebarPurchases.isVisible()) {
-      await expect(page.getByRole('link', { name: 'RNB quotations', exact: true })).toHaveCount(floor === 'third-floor' ? 1 : 0);
-      await sidebarPurchases.click();
-    } else {
-      await expect(page.getByRole('link', { name: 'RNB quotations', exact: true })).toHaveCount(floor === 'third-floor' ? 1 : 0);
-      await page.getByRole('button', { name: 'More', exact: true }).click();
-      await page.getByRole('link', { name: 'Purchases', exact: true }).click();
+    await page.goto('/followups');
+    await expect(page.getByTestId('floor-switcher')).toHaveAccessibleName(`Switch workspace. Current workspace: ${label}`);
+    await expect(page.getByRole('link', { name: 'Follow-ups', exact: true })).toBeVisible();
+    const labels = new Set(await page.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('aria-label'))));
+    const more = page.getByRole('button', { name: 'More', exact: true });
+    if (await more.isVisible()) {
+      await more.click();
+      await expect(page.getByRole('dialog', { name: 'Workspace', exact: true })).toBeVisible();
+      for (const label of await page.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('aria-label')))) labels.add(label);
     }
-    await expect(page).toHaveURL(/\/purchases$/);
-    await page.getByTestId('view-customers').click();
-    await page.getByRole('button', { name: 'Open 100 percent complete customers', exact: true }).click();
-    await expect(page).toHaveURL(/\/purchases-completed$/);
-    await expect(page.getByText(/100% Customers/, { exact: false }).first()).toBeVisible();
+    expect(labels.has('Walk-ins')).toBe(true);
+    expect(labels.has('Follow-ups')).toBe(true);
+    expect(labels.has('Purchases')).toBe(floor === 'first-floor');
+    expect(labels.has('Catalog')).toBe(['first-floor', 'ground-floor'].includes(floor));
+    expect(labels.has('RNB quotations')).toBe(floor === 'third-floor');
+    expect([...labels].some(label => /Kitchen lead|Furniture lead|Quotation Follow-up/.test(label || ''))).toBe(false);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   });
 }
+
+for (const [floor, path] of [['second-floor', '/notebook/furniture'], ['third-floor', '/notebook/kitchen'], ['third-floor', '/notebook/kitchen/quotation-follow-up'], ['second-floor', '/notebook/furniture/quotation']] as const) {
+  test(`critical retired ${path} preserves ${floor} instead of opening another floor`, async ({ page }) => {
+    await mockSession(page, path, false);
+    await page.addInitScript(id => localStorage.setItem('forge.active-floor', JSON.stringify(id)), floor);
+    let retiredReads = 0;
+    await page.route('**/api/followups/notebook/**', route => { retiredReads++; return route.fulfill({ json: { rows: [], next_cursor: null } }); });
+    await page.goto(path);
+    await expect(page).toHaveURL(new RegExp(`${path.includes('/quotation') ? '/followups' : '/walkins'}$`));
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('forge.active-floor')!))).toBe(floor);
+    expect(retiredReads).toBe(0);
+  });
+}
+
+for (const floor of ['ground-floor', 'second-floor', 'third-floor']) {
+  for (const path of ['/purchases', '/purchases-completed', ...(floor === 'ground-floor' ? [] : ['/catalog'])]) {
+    test(`critical ${floor} blocks a direct ${path} URL before business reads`, async ({ page }) => {
+      await mockSession(page, path, false);
+      await page.addInitScript(id => localStorage.setItem('forge.active-floor', JSON.stringify(id)), floor);
+      let businessReads = 0;
+      await page.route(/\/api\/(purchases|products|brands|categories)(?:\/|\?|$)/, route => { businessReads++; return route.fulfill({ json: [] }); });
+      await page.goto(path);
+      await expect(page).toHaveURL(new RegExp(`${floor === 'ground-floor' ? '/tiles' : '/walkins'}$`));
+      expect(businessReads).toBe(0);
+      expect(await page.evaluate(() => JSON.parse(localStorage.getItem('forge.active-floor')!))).toBe(floor);
+    });
+  }
+}
+
+for (const [sourceFloor, sourceName] of [['first-floor', 'The Sanitary Bathroom'], ['ground-floor', 'Ground Floor']] as const) {
+  test(`critical switching ${sourceFloor} follow-ups to Furniture clears prior customer data`, async ({ page }) => {
+    await mockSession(page, '/followups', false);
+    await page.addInitScript(id => localStorage.setItem('forge.active-floor', JSON.stringify(id)), sourceFloor);
+    const reads: string[] = [];
+    await page.route('**/api/followups/page?**', route => {
+      const floor = route.request().headers()['x-floor-id']; reads.push(floor);
+      const now = new Date().toISOString();
+      return route.fulfill({ json: { items: [{ id: floor, floor_id: floor, customer_id: floor,
+        customer_name: `${floor} exclusive customer`, customer_phone: '9000000000', customer_tier: 'retail',
+        rule_type: 'manual', category: 'general', value: 100, reason: 'Check interest', next_action: 'Call customer',
+        reason_factors: [], suggested_channel: 'call', priority_score: 60, priority_level: 'high', due_at: now,
+        status: 'open', is_automated: false, auto_resolved: false, contact_attempts: 0, tags: [], bucket: 'today',
+        created_at: now, updated_at: now }], page: 1, page_size: 100, has_more: false } });
+    });
+    await page.goto('/followups');
+    await expect(page.getByText(`${sourceFloor} exclusive customer`, { exact: true })).toBeVisible();
+    await page.getByTestId('followups-search').fill('exclusive');
+    if (page.viewportSize()!.width < 768) await expect(page.getByTestId('floor-switcher')).toBeHidden();
+    await page.getByTestId('followups-search').blur();
+    await page.getByTestId('floor-switcher').click();
+    await page.getByRole('menuitem', { name: 'Furniture Floor', exact: true }).click();
+    await expect(page.getByText('third-floor exclusive customer', { exact: true })).toBeVisible();
+    await expect(page.getByText(`${sourceFloor} exclusive customer`, { exact: true })).toHaveCount(0);
+    await expect(page.getByTestId('followups-search')).toHaveValue('');
+    await expect(page).toHaveURL(/\/followups$/);
+    expect(reads.at(-1)).toBe('third-floor');
+    await page.getByTestId('floor-switcher').click();
+    await page.getByRole('menuitem', { name: sourceName, exact: true }).click();
+    await expect(page.getByText(`${sourceFloor} exclusive customer`, { exact: true })).toBeVisible();
+    await expect(page.getByText('third-floor exclusive customer', { exact: true })).toHaveCount(0);
+    expect(reads.at(-1)).toBe(sourceFloor);
+  });
+}
+
+for (const floor of ['ground-floor', 'second-floor', 'third-floor']) {
+  test(`critical ${floor} customer profile avoids sanitary purchasing requests`, async ({ page }) => {
+    await mockSession(page, '/customers/scoped-client', false);
+    await page.addInitScript(id => localStorage.setItem('forge.active-floor', JSON.stringify(id)), floor);
+    const forbidden: string[] = [];
+    await page.route(/\/api\/(purchases|purchase-orders|godown-stock)(?:\/|\?|$)/, route => {
+      forbidden.push(route.request().url());
+      return route.fulfill({ status: 403, json: { detail: 'Sanitary-only service' } });
+    });
+    await page.route('**/api/customers/scoped-client?**', route => route.fulfill({ json: { id: 'scoped-client', name: 'Scoped Buyer', company: 'Scoped Buyer', phone: '9000000000', tier: 'retail' } }));
+    await page.route('**/api/quotations?customer_id=**', route => route.fulfill({ json: [] }));
+    await page.route('**/api/activity/customer/scoped-client', route => route.fulfill({ json: [] }));
+    await page.goto('/customers/scoped-client');
+    await expect(page.getByText('Scoped Buyer', { exact: true }).first()).toBeVisible();
+    await page.getByRole('tab', { name: 'Timeline', exact: true }).click();
+    await expect(page.getByText('Some related records could not be loaded. Counts may be incomplete.', { exact: true })).toHaveCount(0);
+    if (floor === 'ground-floor') {
+      await page.getByRole('tab', { name: 'Tile Orders', exact: true }).click();
+      await expect(page.getByTestId('customer-ground-floor-tile-orders')).toBeVisible();
+    } else await expect(page.getByRole('tab', { name: 'Purchases', exact: true })).toHaveCount(0);
+    expect(forbidden).toEqual([]);
+  });
+}
+
+test('critical Ground dashboard avoids sanitary purchasing requests', async ({ page }) => {
+  await mockSession(page, '/dashboard', false);
+  await page.addInitScript(() => localStorage.setItem('forge.active-floor', JSON.stringify('ground-floor')));
+  const forbidden: string[] = [];
+  await page.route('**/api/purchases/**', route => { forbidden.push(route.request().url()); return route.fulfill({ status: 403, json: { detail: 'Sanitary-only service' } }); });
+  await page.route('**/api/dashboard/stats', route => route.fulfill({ json: { revenue_month: 0, open_pipeline: 0, pending_approval: 0, quotes_this_month: 0 } }));
+  await page.goto('/dashboard');
+  await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Purchases', exact: true })).toHaveCount(0);
+  expect(forbidden).toEqual([]);
+});
+
+test('critical Ground catalog product avoids sanitary purchasing pipeline requests', async ({ page }) => {
+  await mockSession(page, '/catalog/scoped-product', false);
+  await page.addInitScript(() => localStorage.setItem('forge.active-floor', JSON.stringify('ground-floor')));
+  const forbidden: string[] = [];
+  await page.route('**/api/purchases/**', route => { forbidden.push(route.request().url()); return route.fulfill({ status: 403, json: { detail: 'Sanitary-only service' } }); });
+  await page.route('**/api/products/scoped-product', route => route.fulfill({ json: { id: 'scoped-product', name: 'Scoped Product', sku: 'SCOPED', floor_id: 'ground-floor', price: 100, mrp: 100, brand_id: 'example', category_id: 'tiles', images: [], tags: [], stock: 0 } }));
+  await page.route('**/api/products/scoped-product/alternates?**', route => route.fulfill({ json: { items: [] } }));
+  await page.route('**/api/brands', route => route.fulfill({ json: [] }));
+  await page.goto('/catalog/scoped-product');
+  await expect(page.getByText('Scoped Product', { exact: true }).first()).toBeVisible();
+  expect(forbidden).toEqual([]);
+});

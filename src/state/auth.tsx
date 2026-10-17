@@ -1,7 +1,7 @@
 // Auth store. Single React context that any screen consumes.
 // Supports staff + customer email/password login.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 
 import { clearBuilderDrafts, ensureBuilderDraftReset } from "@/src/components/quotation/helpers/draftStorage";
 import { api, clearToken, getToken, getTokenKind, setToken, TokenKind } from "@/src/api/client";
@@ -40,6 +40,8 @@ export type CustomerUser = {
 
 type AuthState = {
   loading: boolean;
+  sessionError: string | null;
+  retrySession: () => Promise<void>;
   kind: TokenKind | null;
   staff: StaffUser | null;
   customer: CustomerUser | null;
@@ -50,7 +52,7 @@ type AuthState = {
 };
 
 // Owner access cannot be reduced by historical delegation fields. Staff
-// passwords stay owner-managed even when an older response carries the flag.
+// passwords stay permanent even when an older response carries the flag.
 function normalizeStaffIdentity(user: StaffUser): StaffUser {
   return {
     ...user, must_change_password: false,
@@ -62,6 +64,8 @@ const AuthCtx = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const automaticRetries = useRef(0);
   const [kind, setKind] = useState<TokenKind | null>(null);
   const [staff, setStaff] = useState<StaffUser | null>(null);
   const [customer, setCustomer] = useState<CustomerUser | null>(null);
@@ -81,6 +85,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const hydrate = useCallback(async () => {
     const operation = ++operationGeneration.current;
     const isCurrent = () => operationGeneration.current === operation;
+    setLoading(true);
     try {
       await ensureBuilderDraftReset();
       if (!isCurrent()) return;
@@ -90,6 +95,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const token = Platform.OS === "web" ? "cookie-session" : await getToken();
       if (!isCurrent()) return;
       if (!token || !k) {
+        setSessionError(null);
         setStaff(null); setCustomer(null); setKind(null);
         return;
       }
@@ -107,13 +113,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!isCurrent()) return;
         setKind(k); setCustomer(me); setStaff(null);
       }
+      automaticRetries.current = 0;
+      setSessionError(null);
     } catch (error) {
       if (!isCurrent()) return;
       // A canceled request or temporary outage does not revoke a session.
       // In WebKit, unloading a document can reject its fetch before React
       // cleans up; clearing storage then would erase the next page’s session.
       const status = error && typeof error === "object" && "status" in error ? error.status : undefined;
-      if (status !== 401 && status !== 403) return;
+      const detail = error instanceof Error ? error.message : "";
+      const accountForbidden = status === 403 && [
+        "Not a staff token", "Not a customer token", "Portal access is disabled",
+      ].includes(detail);
+      if (status !== 401 && !accountForbidden) {
+        // Keep credentials for retry, but never expose business screens before
+        // identity AND personal grants have been authoritatively restored.
+        setStaff(null); setCustomer(null); setKind(null);
+        setSessionError("We couldn’t restore your session. Check your connection and try again.");
+        return;
+      }
+      setSessionError(null);
       await clearBuilderDrafts();
       if (!isCurrent()) return;
       await updateCredentials(operation, clearToken);
@@ -129,10 +148,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => { operationGeneration.current += 1; };
   }, [hydrate]);
 
+  useEffect(() => {
+    if (!sessionError || loading) return;
+    // Two short deploy/network retries; then keep the explicit recovery view.
+    // Foreground/network events still recover a device that was offline.
+    const timer = automaticRetries.current < 2
+      ? setTimeout(() => { automaticRetries.current += 1; void hydrate(); }, automaticRetries.current === 0 ? 1000 : 3000)
+      : undefined;
+    const retry = () => { void hydrate(); };
+    const visible = () => { if (document.visibilityState === "visible") retry(); };
+    const native = Platform.OS !== "web" ? AppState.addEventListener("change", state => { if (state === "active") retry(); }) : null;
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      window.addEventListener("online", retry);
+      window.addEventListener("focus", retry);
+      document.addEventListener("visibilitychange", visible);
+    }
+    return () => {
+      if (timer !== undefined) clearTimeout(timer);
+      native?.remove();
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        window.removeEventListener("online", retry);
+        window.removeEventListener("focus", retry);
+        document.removeEventListener("visibilitychange", visible);
+      }
+    };
+  }, [sessionError, loading, hydrate]);
+
   const loginStaff = useCallback(async (email: string, password: string, factor?: { mfa_code?: string; recovery_code?: string }) => {
     const operation = ++operationGeneration.current;
     const isCurrent = () => operationGeneration.current === operation;
     setLoading(true);
+    setSessionError(null);
+    automaticRetries.current = 0;
     try {
       await ensureBuilderDraftReset();
       if (!isCurrent()) return;
@@ -179,6 +226,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const operation = ++operationGeneration.current;
     const isCurrent = () => operationGeneration.current === operation;
     setLoading(true);
+    setSessionError(null);
+    automaticRetries.current = 0;
     try {
       await ensureBuilderDraftReset();
       if (!isCurrent()) return;
@@ -204,6 +253,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const operation = ++operationGeneration.current;
     const isCurrent = () => operationGeneration.current === operation;
     setLoading(true);
+    setSessionError(null);
+    automaticRetries.current = 0;
     try {
       try { await api.post("/auth/logout"); } catch { /* best-effort */ }
       if (!isCurrent()) return;
@@ -220,9 +271,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo(
     () => ({
-      loading, kind, staff, customer, loginStaff, loginCustomer, logout, markPasswordChanged,
+      loading, sessionError, retrySession: hydrate, kind, staff, customer, loginStaff, loginCustomer, logout, markPasswordChanged,
     }),
-    [loading, kind, staff, customer, loginStaff, loginCustomer, logout, markPasswordChanged],
+    [loading, sessionError, hydrate, kind, staff, customer, loginStaff, loginCustomer, logout, markPasswordChanged],
   );
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;

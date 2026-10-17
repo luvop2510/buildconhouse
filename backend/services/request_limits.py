@@ -1,5 +1,6 @@
 """Bound incoming bodies before FastAPI parses JSON or spools multipart files."""
 import asyncio
+from re import fullmatch
 
 from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse
@@ -19,7 +20,8 @@ class RequestBodyLimitMiddleware:
         headers = dict(scope.get("headers", []))
         multipart = headers.get(b"content-type", b"").lower().startswith(b"multipart/form-data")
         limit = self.upload_limit if multipart else self.body_limit
-        if scope.get("path", "").startswith("/api/auth/"):
+        path = scope.get("path", "")
+        if path.startswith("/api/auth/") or fullmatch(r"/api/team/[^/]+/(?:password|reset-password)", path):
             limit = min(limit, 64 * 1024)
         declared = headers.get(b"content-length")
         if declared is not None:

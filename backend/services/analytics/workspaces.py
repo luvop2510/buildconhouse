@@ -48,13 +48,13 @@ def workspace_pipeline(match: dict, relationship_kind: str | None = None) -> lis
             "relationships": [
                 {"$match": relationships},
                 {"$group": {
-                    "_id": {"id": "$referrer_id", "name": "$referrer_name"},
+                    "_id": "$referrer_id", "name": {"$max": "$referrer_name"},
                     "type": {"$first": "$referrer_type"}, "revenue": {"$sum": "$grand_total"},
                     "orders": {"$sum": 1}, "customers": {"$addToSet": "$customer_id"},
                     "last_order_at": {"$max": "$ordered_at"},
                 }},
-                {"$sort": {"revenue": -1, "_id.id": 1, "_id.name": 1}}, {"$limit": 100},
-                {"$project": {"_id": 0, "id": "$_id.id", "name": "$_id.name", "type": 1,
+                {"$sort": {"revenue": -1, "_id": 1}}, {"$limit": 100},
+                {"$project": {"_id": 0, "id": "$_id", "name": 1, "type": 1,
                               "revenue": 1, "orders": 1, "customers": {"$size": "$customers"}, "last_order_at": 1}},
             ],
         }},

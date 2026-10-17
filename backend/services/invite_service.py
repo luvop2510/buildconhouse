@@ -107,7 +107,7 @@ class ManualInviteService(InviteService):
             expires_at=expires_at,
             message=(
                 f"{verb} generated for {recipient_name}. Share it with them directly — "
-                "it will not be shown again. Only the owner can change this password."
+                "the owner can view it in Team. The member can also change it in Settings."
                 if kind == "staff_reset" else
                 f"{verb} generated for {recipient_name}. Share it with them directly — "
                 "it will not be shown again and expires in 72 hours if unused."

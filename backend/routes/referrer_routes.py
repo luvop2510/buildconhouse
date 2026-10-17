@@ -5,7 +5,7 @@ update/delete for v1 — see
 docs/superpowers/specs/2026-07-27-sales-data-dashboard-design.md."""
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from auth import floor_for_write, floor_query, get_floor_scoped_or_404, require_min_role
+from auth import accessible_floor_ids, floor_for_write, floor_query, get_floor_scoped_or_404, require_min_role
 from db import db
 from models import Referrer, ReferrerCreate, ReferrerType, UserPublic
 
@@ -17,11 +17,18 @@ async def list_referrers(
     type: ReferrerType | None = Query(None),
     include_inactive: bool = Query(False),
     user: UserPublic = Depends(require_min_role("sales")),
+    include_counts: bool = False,
 ):
     query: dict = floor_query(user)
     if type:
         query["type"] = type
     docs = await db.referrers.find(query, {"_id": 0}).sort("name", 1).to_list(2000)
+    if include_counts:
+        scope = query.get("floor_id")
+        floors = [scope] if isinstance(scope, str) else (scope.get("$in") if isinstance(scope, dict) else accessible_floor_ids(user))
+        from services.referrer_identity import acquired_counts
+        counts = await acquired_counts(db, [d["id"] for d in docs], floors)
+        docs = [{**d, "customers_acquired": counts.get(d["id"], 0)} for d in docs]
     return [Referrer(**d) for d in docs if include_inactive or d.get("active") is not False]
 
 

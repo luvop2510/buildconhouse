@@ -13,7 +13,7 @@ import { api } from "@/src/api/client";
 import { useBp } from "@/src/design/responsive";
 import {
   Avatar, Badge, Button, Chip, ConfirmDialog, EmptyState, IconButton, PageHeader,
-  SearchField, Skeleton, StatTile,
+  SearchField, Skeleton, StatTile, MobileFilterSection,
 } from "@/src/components/ds";
 import { colors, icon as iconSize, radius, spacing, type } from "@/src/theme/tokens";
 import { useAuth } from "@/src/state/auth";
@@ -107,25 +107,20 @@ export default function Customers() {
       });
     } catch (error: any) { toast.error(error?.message || "Could not export customers"); }
   };
+  const pageHeader = <PageHeader
+    title={isTileDeliveryLookup ? "Customer delivery lookup" : completed ? "100% Customers" : "Customers"}
+    subtitle={loadError ? "Customer data is unavailable" : items ? (isTileDeliveryLookup ? "Choose a customer to view their Ground Floor tile order and dispatch status." : `${items.length} ${completed ? "100% completed" : "active confirmed-order"} customers`) : "Loading customers…"}
+    overline={isTileDeliveryLookup ? "GROUND FLOOR · READ ONLY" : "CRM"}
+    actions={!isTileDeliveryLookup ? <Button icon="plus" label="Add Customer" variant="primary" size="md"
+      onPress={() => router.push("/(admin)/customers/new" as any)} /> : undefined}
+    embedded={isPhone}
+  />;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
-      <PageHeader
-        title={isTileDeliveryLookup ? "Customer delivery lookup" : completed ? "100% Customers" : "Customers"}
-        subtitle={loadError ? "Customer data is unavailable" : items ? (isTileDeliveryLookup ? "Choose a customer to view their Ground Floor tile order and dispatch status." : `${items.length} ${completed ? "100% completed" : "active confirmed-order"} customers`) : "Loading customers…"}
-        overline={isTileDeliveryLookup ? "GROUND FLOOR · READ ONLY" : "CRM"}
-        actions={!isTileDeliveryLookup ? (
-          <Button
-            icon="plus"
-            label="Add Customer"
-            variant="primary"
-            size="md"
-            onPress={() => router.push("/(admin)/customers/new" as any)}
-          />
-        ) : undefined}
-      />
-
+      {!isPhone ? pageHeader : null}
       <ScrollView contentContainerStyle={[styles.content, isPhone && styles.contentPhone]}>
+        {isPhone ? pageHeader : null}
         <Disclosure title="Customer summary" summary="Customer totals">
         {/* Stats */}
         <View style={[styles.statsRow, !isDesktop && styles.statsRowMobile]}>
@@ -135,6 +130,7 @@ export default function Customers() {
             icon="users"
             tone="brand"
             sub={completed ? "100% completed orders" : "Active confirmed orders"}
+            onPress={() => { setQ(""); setVisibleCount(CUSTOMER_RENDER_BATCH); }}
             dense={isPhone}
             style={isPhone ? styles.statPhone : undefined}
           />
@@ -151,10 +147,12 @@ export default function Customers() {
             placeholder="Search customers, cities, companies…"
             testID="customers-search"
           />
+          <MobileFilterSection testID="customers-filters">
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
             <Chip label="Active customers" active={!completed} testID="customers-active-tab" onPress={() => router.push("/(admin)/customers" as any)} />
             <Chip label="100% Customers" active={completed} testID="customers-completed-tab" onPress={() => router.push("/(admin)/customers?view=completed" as any)} />
           </View>
+          </MobileFilterSection>
           {!isTileDeliveryLookup ? <Pressable accessibilityRole="button" accessibilityLabel="Export filtered customer accounts to Excel" testID="customers-export-excel" disabled={!filtered.length} onPress={() => void exportCustomers()} style={[styles.exportButton, !filtered.length && { opacity: .45 }]}><Feather name="download" size={16} color={colors.brand} /><Text style={styles.exportText}>Export customer accounts .xlsx</Text></Pressable> : null}
         </View>
 

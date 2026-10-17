@@ -1,4 +1,4 @@
-import { FilterBar } from "@/src/components/ds";
+import { FilterBar, MobileFilterSection } from "@/src/components/ds";
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import Feather from "@expo/vector-icons/Feather";
@@ -145,6 +145,7 @@ export default function TodaysPrioritiesScreen() {
       title="Today's Priorities"
       subtitle={data ? `${data.total} thing${data.total === 1 ? "" : "s"} need attention` : undefined}
     >
+      <MobileFilterSection testID="today-filters">
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }} testID="today-floor-filter">
         <FilterBar multiSelect
           testID="today-floor-tabs"
@@ -156,6 +157,7 @@ export default function TodaysPrioritiesScreen() {
           ]}
         />
       </View>
+      </MobileFilterSection>
 
       {error ? <ErrorState subtitle={error} onRetry={load} /> : null}
       {!error && !data ? <LoadingState label="Building today's priorities…" /> : null}

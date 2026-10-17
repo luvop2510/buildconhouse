@@ -26,52 +26,26 @@ test('critical Customer active and 100 percent views request shared fulfillment 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 });
 
-test('critical Quotations has a separate 100 percent customer view from approved orders', async ({ page }) => {
-  await mockSession(page, '/quotations', false);
-  const requests: URL[] = [];
-  await page.route('**/api/quotations?**', route => {
-    const url = new URL(route.request().url());
-    requests.push(url);
-    const completed = url.searchParams.get('completion') === 'completed';
-    return route.fulfill({ json: [{ id: completed ? 'done' : 'open', number: completed ? 'Q-DONE' : 'Q-OPEN', customer_name: completed ? 'Completed Buyer' : 'Active Buyer', status: 'ordered', grand_total: 250, created_at: '2026-10-10', items: [], purchase_completion_status: completed ? 'completed' : 'active' }] });
+for (const [path, rowPrefix, kind] of [['/quotations', 'quotation', 'standard'], ['/tiles', 'tiles-doc', 'tiles_quotation']] as const) {
+  test(`critical ${path} Completed includes fulfilled orders without an extra customer page`, async ({ page }) => {
+    await mockSession(page, path, false);
+    const requests: URL[] = [];
+    await page.route('**/api/quotations?**', route => {
+      const url = new URL(route.request().url()); requests.push(url);
+      const type = url.searchParams.get('doc_type');
+      return route.fulfill({ json: [{ id: `done-${type}`, number: 'Q-DONE', doc_type: type, customer_name: 'Completed Buyer', status: 'ordered', grand_total: 250, created_at: '2026-10-10', updated_at: '2026-10-10', items: [], purchase_completion_status: 'completed' }] });
+    });
+    await page.goto(`${path}?view=completed`);
+    await expect(page.getByTestId(`${rowPrefix}-done-${kind}`)).toBeVisible();
+    await expect(page.getByText('100% completed', { exact: true })).toBeVisible();
+    await expect(page.getByTestId(path === '/tiles' ? 'tiles-fulfilled-toggle' : 'quotations-fulfilled-toggle')).toHaveCount(0);
+    expect(requests.some(url => url.searchParams.get('view') === 'completed' && !url.searchParams.has('completion'))).toBe(true);
+    await page.goto(`${path}?view=fulfilled`);
+    await expect(page.getByTestId(`${rowPrefix}-done-${kind}`)).toBeVisible();
+    await expect(page.getByText(/100% Customers/)).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   });
-  await page.goto('/quotations?view=completed');
-  await expect(page.getByTestId('quotation-open')).toBeVisible();
-  await page.getByTestId('quotations-fulfilled-toggle').click();
-  await expect(page.getByTestId('quotation-done')).toBeVisible();
-  await expect(page.getByTestId('quotation-open')).toHaveCount(0);
-  await expect(page.getByText('100% completed', { exact: true })).toBeVisible();
-  expect(requests.some(url => url.searchParams.get('view') === 'completed' && url.searchParams.get('completion') === 'active')).toBe(true);
-  expect(requests.some(url => url.searchParams.get('completion') === 'completed' && !url.searchParams.has('view'))).toBe(true);
-  await page.getByTestId('quotations-fulfilled-toggle').click();
-  await expect(page.getByTestId('quotation-open')).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-});
-
-test('critical Ground Tile documents separate delivery completion from approval lifecycle', async ({ page }) => {
-  await mockSession(page, '/tiles', false);
-  const requests: URL[] = [];
-  await page.route('**/api/quotations?**', route => {
-    const url = new URL(route.request().url());
-    requests.push(url);
-    const fulfilled = url.searchParams.get('completion') === 'completed';
-    const docType = url.searchParams.get('doc_type');
-    return route.fulfill({ json: [{ id: `${fulfilled ? 'done' : 'open'}-${docType}`, number: fulfilled ? 'T-DONE' : 'T-OPEN', doc_type: docType, customer_name: fulfilled ? 'Completed Tile Buyer' : 'Active Tile Buyer', status: 'ordered', grand_total: 250, updated_at: '2026-10-10', purchase_completion_status: fulfilled ? 'completed' : 'active' }] });
-  });
-  await page.goto('/tiles?view=completed');
-  await expect(page.getByTestId('tiles-doc-open-tiles_quotation')).toBeVisible();
-  await page.getByTestId('tiles-fulfilled-toggle').click();
-  await expect(page.getByTestId('tiles-doc-done-tiles_quotation')).toBeVisible();
-  await expect(page.getByTestId('tiles-doc-open-tiles_quotation')).toHaveCount(0);
-  await expect(page.getByText('100% completed', { exact: true })).toBeVisible();
-  for (const kind of ['tiles_selection', 'tiles_quotation']) {
-    expect(requests.some(url => url.searchParams.get('doc_type') === kind && url.searchParams.get('view') === 'completed' && url.searchParams.get('completion') === 'active')).toBe(true);
-    expect(requests.some(url => url.searchParams.get('doc_type') === kind && url.searchParams.get('completion') === 'completed' && !url.searchParams.has('view'))).toBe(true);
-  }
-  await page.getByTestId('tiles-fulfilled-toggle').click();
-  await expect(page.getByTestId('tiles-doc-open-tiles_quotation')).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-});
+}
 
 for (const action of ['move', 'transfer'] as const) {
   test(`critical Purchases ${action} refreshes the customer rail immediately`, async ({ page }) => {
@@ -123,6 +97,9 @@ for (const kind of ['standard', 'tiles_quotation'] as const) {
       });
       await page.goto(path);
       await expect.poll(() => requests.length).toBeGreaterThan(0);
+      if (kind === 'standard' && (page.viewportSize()?.width ?? 1440) < 700) {
+        await page.getByRole('button', { name: 'Show quotation workspace', exact: true }).click();
+      }
       if (completion === 'completed') await expect(page.getByTestId('quotation-customer-completed')).toHaveText('100% completed');
       else {
         await expect(page.getByText(/Q-COMPLETE/).first()).toBeVisible();

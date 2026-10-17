@@ -32,6 +32,9 @@ const products = Array.from({ length: 8 }, (_, index) => ({
       await page.goto(`/tiles/${kind}?quotationId=tile-doc`);
       await expect(page.getByTestId('mobile-name-0')).toHaveValue('Stone tile 1');
       const thumb = page.getByTestId('mobile-thumb-0');
+      // React Native publishes container layout separately from restored data.
+      // Wait for the measured tablet layout, keeping the same image budget.
+      await expect.poll(async () => (await thumb.boundingBox())?.width ?? Infinity).toBeLessThanOrEqual(160);
       const bounds = await thumb.boundingBox();
       expect(bounds!.width).toBeLessThanOrEqual(160);
       expect(bounds!.height).toBeLessThanOrEqual(100);

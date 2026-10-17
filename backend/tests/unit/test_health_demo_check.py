@@ -88,3 +88,28 @@ def test_startup_bootstrap_result_primes_health_demo_cache(monkeypatch):
     monkeypatch.setattr(server, "db", _FakeDb())
 
     assert asyncio.run(server.health()) == {"status": "ok", "pdf_renderer_revision": server.PDF_RENDERER_REVISION}
+
+
+@pytest.mark.parametrize("dependency", ["database", "storage"])
+def test_readiness_names_the_failed_dependency_without_exposing_provider_details(monkeypatch, caplog, dependency):
+    private = "provider-secret-and-private-customer-data"
+    checks = []
+
+    class Database:
+        async def command(self, *_args):
+            checks.append("database")
+            if dependency == "database":
+                raise RuntimeError(private)
+
+    async def storage():
+        checks.append("storage")
+        raise RuntimeError(private)
+
+    monkeypatch.setattr(server, "db", Database())
+    monkeypatch.setattr("media_storage.supabase_driver.supabase_ready", storage)
+    result = asyncio.run(server.readiness())
+    assert result.status_code == 503
+    assert result.body == ('{"status":"error","detail":"' + dependency + ' unavailable"}').encode()
+    assert checks == (["database"] if dependency == "database" else ["database", "storage"])
+    assert private not in result.body.decode() and private not in caplog.text
+    assert f"Readiness dependency unavailable: {dependency} (RuntimeError)" in caplog.text

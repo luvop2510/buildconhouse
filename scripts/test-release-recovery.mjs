@@ -29,7 +29,7 @@ function harness({ storage = new Map(), storageFails = false, initial = '', inte
     querySelectorAll() { return entry ? [{ src: entry }] : []; },
   });
   const location = { origin: base, href: `${base}${pathname}`, pathname, reload() { reloads++; } };
-  vm.runInNewContext(source, { window, document, location, URL, setTimeout(callback) { timers.push(callback); },
+  vm.runInNewContext(source, { window, document, location, URL, setTimeout(callback, delay = 0) { timers.push({ callback, delay }); },
     sessionStorage: { getItem(key) { if (storageFails) throw Error('blocked'); return storage.get(key); }, setItem(key, value) { if (storageFails) throw Error('blocked'); storage.set(key, value); }, removeItem(key) { if (storageFails) throw Error('blocked'); storage.delete(key); } },
     MutationObserver: class { constructor(callback) { observerCallback = callback; } observe() {} disconnect() {} },
   });
@@ -38,10 +38,16 @@ function harness({ storage = new Map(), storageFails = false, initial = '', inte
     for (const [key, value] of Object.entries(values)) Object.defineProperty(actual, key, { value });
     window.dispatchEvent(actual);
   }
-  return { root, body, document, storage, initialRoute: window.__FORGE_INITIAL_ROUTE__, get reloads() { return reloads; }, panel() { return body.children.find(element => element.id === 'release-startup-recovery'); }, flush() { while (timers.length) timers.shift()(); }, event,
+  return { root, body, document, storage, initialRoute: window.__FORGE_INITIAL_ROUTE__, isReleaseError: window.__FORGE_IS_RELEASE_ERROR__, get reloads() { return reloads; }, panel() { return body.children.find(element => element.id === 'release-startup-recovery'); }, flush(maxDelay = 0) { let index; while ((index = timers.findIndex(timer => timer.delay <= maxDelay)) >= 0) timers.splice(index, 1)[0].callback(); }, event,
     script(url = asset) { event({ target: { tagName: 'SCRIPT', src: url } }); }, mutate() { root.innerHTML = '<div>Live app</div>'; root.children = [new Element('div')]; observerCallback?.(); },
   };
 }
+const stalled = harness({ readyState: 'loading', initial: '<div>Loading</div>' });
+stalled.flush(); assert.equal(stalled.panel(), undefined);
+stalled.flush(20000); assert.ok(stalled.panel(), 'Stalled startup must provide a visible manual recovery action');
+assert.equal(stalled.reloads, 0); stalled.mutate(); assert.equal(stalled.panel(), undefined);
+const liveWatchdog = harness(); liveWatchdog.mutate(); liveWatchdog.flush(20000);
+assert.equal(liveWatchdog.panel(), undefined); assert.equal(liveWatchdog.reloads, 0);
 const routeStorage = new Map();
 assert.equal(harness({ storage: routeStorage, pathname: '/quotations/new?productId=basin' }).initialRoute, '/quotations/new?productId=basin');
 assert.equal(harness({ storage: routeStorage, pathname: '/access' }).initialRoute, '/quotations/new?productId=basin');
@@ -49,6 +55,16 @@ harness({ storage: routeStorage, pathname: '/login' });
 assert.equal(routeStorage.has('forge.pending-initial-route'), false);
 assert.equal(harness({ storage: new Map([['forge.pending-initial-route', '//untrusted.test']]), pathname: '/access' }).initialRoute, '/access');
 
+const detector = harness();
+assert.equal(detector.isReleaseError({ message: 'Loading chunk 27 failed', stack: `Error\n at load (${asset}:1:2)` }), true);
+assert.equal(detector.isReleaseError({ message: 'Requiring unknown module "669".', stack: `Error\n at p (${base}/_expo/static/js/web/__expo-metro-runtime-hash.js:2:3)` }), true);
+assert.equal(detector.isReleaseError({ message: 'TypeError: name is undefined', stack: `Error\n at render (${asset}:1:2)` }), false);
+assert.equal(detector.isReleaseError({ message: 'Loading chunk 27 failed', stack: 'Error\n at load (https://third.example.test/script.js:1:2)' }), false);
+assert.equal(detector.isReleaseError(null), false);
+assert.equal(detector.isReleaseError({ name: 'AsyncRequireError', message: `Loading module ${base}/_expo/static/js/web/QuotationBuilder-old.js failed.\n(error: ${base}/_expo/static/js/web/QuotationBuilder-old.js)`, request: `${base}/_expo/static/js/web/QuotationBuilder-old.js` }), true);
+assert.equal(detector.isReleaseError({ name: 'AsyncRequireError', message: 'Loading module https://third.example.test/module.js failed.', request: 'https://third.example.test/module.js' }), false);
+detector.mutate(); detector.isReleaseError({ message: 'Loading chunk 27 failed', stack: `Error\n at load (${asset}:1:2)` }); detector.flush();
+assert.equal(detector.reloads, 0, 'Classification must not reload mounted UI or discard form state');
 const first = harness(); first.script(); first.script(); first.flush(); assert.equal(first.reloads, 1);
 const retry = harness({ storage: first.storage }); retry.script(); retry.flush(); assert.equal(retry.reloads, 0);
 assert.equal(retry.panel().attributes.role, 'alert'); assert.match(retry.panel().style.cssText, /position:fixed;inset:0/); assert.equal(retry.panel().children[2].focused, true); assert.equal(retry.panel().children[2].textContent, 'Reload app');

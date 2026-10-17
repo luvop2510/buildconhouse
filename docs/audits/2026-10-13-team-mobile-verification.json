@@ -1,0 +1,52 @@
+{
+  "backend": {
+    "passed": 2326,
+    "warnings": 10
+  },
+  "frontendContracts": {
+    "passedCommands": 42,
+    "optionalDrift": "no configured baseline"
+  },
+  "typecheck": "pass",
+  "lint": "pass",
+  "migration": "0033 applied; no pending migrations",
+  "npmVulnerabilities": {
+    "info": 0,
+    "low": 0,
+    "moderate": 5,
+    "high": 22,
+    "critical": 0,
+    "total": 27
+  },
+  "predeploy": {
+    "read_only": true,
+    "checks": {
+      "mongodb_ping": "pass",
+      "required_indexes": "pass",
+      "supabase_buckets": "pass"
+    }
+  },
+  "performanceDiagnosticRuns": [
+    {
+      "passed": 36,
+      "failed": 4,
+      "concurrentBrowserWork": true
+    },
+    {
+      "passed": 39,
+      "failed": 1,
+      "failedPrimaryMs": 2596.15,
+      "ceilingMs": 2500
+    }
+  ],
+  "browser": {
+    "workflowPassed": 195,
+    "unchangedStandaloneContactPassed": 1,
+    "mobilePassed": 70,
+    "mobileStandalonePassed": 2,
+    "mobileSurroundingPassed": 14,
+    "mobileIntentionalSkips": 9,
+    "authPhonePassed": 26,
+    "authWebkitPassed": 3
+  }
+}

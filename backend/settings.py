@@ -51,10 +51,15 @@ class Settings:
     environment: str
     demo_password: str | None
     mfa_encryption_key: str | None = None
+    r2_account_id: str = ""
+    r2_access_key_id: str = ""
+    r2_secret_access_key: str = ""
+    r2_api_token: str = ""
+    r2_public_url: str = ""
 
     def readiness_flags(self) -> dict[str, bool]:
         """Safe, non-secret status values for diagnostics and health responses."""
-        return {
+        flags = {
             "MONGO_URL": bool(self.mongo_url),
             "DB_NAME": bool(self.db_name),
             "JWT_SECRET": bool(self.jwt_secret),
@@ -64,6 +69,14 @@ class Settings:
             "SUPABASE_PUBLIC_BUCKET": bool(self.supabase_public_bucket),
             "SUPABASE_PRIVATE_BUCKET": bool(self.supabase_private_bucket),
         }
+        if self.media_storage_driver == "r2":
+            flags = {k: v for k, v in flags.items() if not k.startswith("SUPABASE_")}
+            flags.update({"R2_ACCOUNT_ID": bool(self.r2_account_id),
+                          "R2_ACCESS_KEY_ID": bool(self.r2_access_key_id),
+                          "R2_SECRET_ACCESS_KEY": bool(self.r2_secret_access_key),
+                          "R2_API_TOKEN": bool(self.r2_api_token),
+                          "R2_PUBLIC_URL": bool(self.r2_public_url)})
+        return flags
 
 
 def _required(env: Mapping[str, str], name: str) -> str:
@@ -116,9 +129,14 @@ def load_settings(
             valid_key = False
         if not valid_key:
             raise ConfigurationError("MFA_ENCRYPTION_KEY must be a canonical URL-safe base64 Fernet key containing 32 bytes.")
-    supabase_url = _required(env, "SUPABASE_URL").rstrip("/")
-    service_key = _required(env, "SUPABASE_SERVICE_ROLE_KEY")
-    anon_key = _required(env, "SUPABASE_ANON_KEY")
+    driver = (env.get("MEDIA_STORAGE_DRIVER") or "supabase").strip().lower()
+    if driver not in {"supabase", "r2"}:
+        raise ConfigurationError("Unsupported MEDIA_STORAGE_DRIVER; supported: supabase, r2.")
+    def source_value(name: str) -> str:
+        return _required(env, name) if driver == "supabase" else (env.get(name) or "").strip()
+    supabase_url = source_value("SUPABASE_URL").rstrip("/")
+    service_key = source_value("SUPABASE_SERVICE_ROLE_KEY")
+    anon_key = source_value("SUPABASE_ANON_KEY")
     public_bucket = _required(env, "SUPABASE_PUBLIC_BUCKET")
     private_bucket = _required(env, "SUPABASE_PRIVATE_BUCKET")
 
@@ -131,8 +149,20 @@ def load_settings(
     if len(jwt_secret) < 32:
         raise ConfigurationError("JWT_SECRET must contain at least 32 characters.")
     parsed = urlparse(supabase_url)
-    if parsed.scheme != "https" or not parsed.netloc:
+    if driver == "supabase" and (parsed.scheme != "https" or not parsed.netloc):
         raise ConfigurationError("SUPABASE_URL must be a valid https:// project URL.")
+    r2 = {name: _required(env, name) if driver == "r2" else (env.get(name) or "").strip()
+          for name in ("R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_API_TOKEN", "R2_PUBLIC_URL")}
+    if driver == "r2":
+        import re
+        if not re.fullmatch(r"[a-f0-9]{32}", r2["R2_ACCOUNT_ID"]):
+            raise ConfigurationError("R2_ACCOUNT_ID must contain 32 lowercase hexadecimal characters.")
+        parsed_r2 = urlparse(r2["R2_PUBLIC_URL"])
+        if (parsed_r2.scheme != "https" or not parsed_r2.hostname or parsed_r2.username
+                or parsed_r2.password or parsed_r2.query or parsed_r2.fragment or parsed_r2.path not in {"", "/"}):
+            raise ConfigurationError("R2_PUBLIC_URL must be an HTTPS bucket domain origin.")
+        if public_bucket == private_bucket:
+            raise ConfigurationError("Public and private storage buckets must differ.")
 
     try:
         jwt_exp_minutes = int(env.get("JWT_EXP_MINUTES", "43200"))
@@ -149,12 +179,6 @@ def load_settings(
     mongo_server_selection_timeout_ms = _positive_int(env, "MONGO_SERVER_SELECTION_TIMEOUT_MS", 10_000)
     mongo_socket_timeout_ms = _positive_int(env, "MONGO_SOCKET_TIMEOUT_MS", 30_000)
     mongo_wait_queue_timeout_ms = _positive_int(env, "MONGO_WAIT_QUEUE_TIMEOUT_MS", 10_000)
-
-    driver = (env.get("MEDIA_STORAGE_DRIVER") or "supabase").strip().lower()
-    if driver != "supabase":
-        raise ConfigurationError(
-            f"Unsupported MEDIA_STORAGE_DRIVER={driver!r}; Forge production currently requires 'supabase'."
-        )
 
     # Unset means assume the most restrictive setting — a missing ENVIRONMENT
     # var must never be silently treated as a safe non-production default.
@@ -200,6 +224,11 @@ def load_settings(
         environment=environment,
         demo_password=demo_password,
         mfa_encryption_key=mfa_encryption_key,
+        r2_account_id=r2["R2_ACCOUNT_ID"],
+        r2_access_key_id=r2["R2_ACCESS_KEY_ID"],
+        r2_secret_access_key=r2["R2_SECRET_ACCESS_KEY"],
+        r2_api_token=r2["R2_API_TOKEN"],
+        r2_public_url=r2["R2_PUBLIC_URL"].rstrip("/"),
     )
 
 

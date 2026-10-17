@@ -1,0 +1,41 @@
+[
+  {
+    "action": "fill",
+    "start_ms": 22435.58,
+    "params": {
+      "selector": "internal:testid=[data-testid=\"line-disc-input\"s]",
+      "strict": true,
+      "value": "20"
+    }
+  },
+  {
+    "time_ms": 22437.013,
+    "input_at_action": "  locator resolved to <input rows=\"1\" value=\"\" dir=\"auto\" autocorrect=\"on\" autocomplete=\"on\" spellcheck=\"true\" inputmode=\"decimal\" autocapitalize=\"sentences\" virtualkeyboardpolicy=\"auto\" data-testid=\"line-disc-input\" placeholder=\"Empty \u2192 inherit from room / category / project\" class=\"css-11aywtz r-6taxm2 r-j54yjz r-u5d2px r-1867qdf r-rs99b7 r-1k7obvh r-a023e6 r-1mmae3n r-gu64tb\"/>"
+  },
+  {
+    "persisted_parent": [
+      {
+        "id": "line-old",
+        "qty": 3,
+        "area": "Revised area",
+        "discount_pct": 100
+      }
+    ]
+  },
+  {
+    "snapshot_phase": "after",
+    "snapshot_time_ms": 22444.851,
+    "input_after_fill": {
+      "testid": "line-disc-input",
+      "value": "1020"
+    }
+  },
+  {
+    "snapshot_phase": "before",
+    "snapshot_time_ms": 22446.151,
+    "input_after_fill": {
+      "testid": "line-disc-input",
+      "value": "1020"
+    }
+  }
+]

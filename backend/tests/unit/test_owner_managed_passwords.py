@@ -84,6 +84,8 @@ def setup(monkeypatch):
         monkeypatch.setattr(routes, "db", database)
         monkeypatch.setattr(routes, "log_event", log)
         monkeypatch.setattr(routes, "hash_password", lambda pw: f"hash:{pw}")
+        monkeypatch.setattr(routes, "reserve_login_attempt", reserve)
+        monkeypatch.setattr(routes, "clear_login_attempts", clear)
     monkeypatch.setattr(misc_routes, "revoke_all_sessions", revoke)
     monkeypatch.setattr(misc_routes, "get_invite_service", lambda: ManualInviteService())
     monkeypatch.setattr(auth_routes, "reserve_login_attempt", reserve)
@@ -101,7 +103,7 @@ def request(path="/api/auth/login", method="POST"):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("role", ["admin", "manager", "sales", "purchase", "warehouse", "accounts", "worker"])
 @pytest.mark.parametrize("custom", [False, True])
-async def test_nonowners_cannot_change_own_password_or_manage_staff(setup, role, custom):
+async def test_nonowners_cannot_manage_other_staff(setup, role, custom):
     user = principal(role, custom_access=custom)
     create = TeamCreatePayload(email="new@example.com", full_name="New", role="sales", floor_ids=["ground-floor"], password=PASSWORD)
     calls = [
@@ -110,7 +112,6 @@ async def test_nonowners_cannot_change_own_password_or_manage_staff(setup, role,
         misc_routes.update_team_member("member", TeamUpdatePayload(full_name="Changed"), user),
         misc_routes.reset_team_member_password("member", user, TeamPasswordResetPayload(new_password=NEW_PASSWORD)),
         misc_routes.delete_team_member("member", user),
-        auth_routes.staff_change_password(ChangePasswordPayload(current_password=PASSWORD, new_password=NEW_PASSWORD), request(), user),
     ]
     for call in calls:
         with pytest.raises(HTTPException) as error:
@@ -126,8 +127,8 @@ async def test_nonowners_cannot_change_own_password_or_manage_staff(setup, role,
     ("POST", "/api/team", {"email": "new@example.com", "full_name": "New", "role": "sales", "password": PASSWORD}),
     ("PATCH", "/api/team/member", {"full_name": "Changed"}),
     ("POST", "/api/team/member/reset-password", {"new_password": NEW_PASSWORD}),
+    ("POST", "/api/team/member/password", None),
     ("DELETE", "/api/team/member", None),
-    ("POST", "/api/auth/change-password", {"current_password": PASSWORD, "new_password": NEW_PASSWORD}),
 ])
 async def test_http_dependencies_reject_custom_admin_management(setup, method, path, body):
     app = FastAPI()
@@ -149,6 +150,8 @@ async def test_created_member_uses_permanent_account_specific_credentials(setup)
     assert "password_hash" not in created
     response = await auth_routes.staff_login(LoginPayload(email=" NEW STAFF ", password=PASSWORD), request())
     assert response.user.id == created["id"]
+    assert "password_encrypted" not in response.model_dump()["user"]
+    assert "password_hash" not in response.model_dump()["user"]
     assert response.user.must_change_password is False
     assert setup.issued_sessions == [("staff", created["id"])]
     with pytest.raises(HTTPException) as error:
@@ -188,7 +191,7 @@ async def test_owner_reset_revokes_only_target_and_keeps_credential_permanent(se
     assert setup.users.docs[0]["must_change_password"] is False
     assert setup.users.docs[0]["temp_password_expires_at"] is None
     assert result["password"] == NEW_PASSWORD == result["temporary_password"]
-    assert result["expires_at"] is None and "Only the owner" in result["message"]
+    assert result["expires_at"] is None and "member can also change" in result["message"]
     assert "72 hours" not in result["message"]
     with pytest.raises(HTTPException):
         await auth_routes.staff_login(LoginPayload(email="member@example.com", password=PASSWORD), request())
@@ -348,7 +351,7 @@ async def test_username_index_race_returns_conflict(setup, monkeypatch, operatio
 
 
 @pytest.mark.asyncio
-async def test_owner_reset_stores_bcrypt_hash_only_for_selected_account(setup, monkeypatch):
+async def test_owner_reset_stores_bcrypt_hash_and_encrypted_copy_only_for_selected_account(setup, monkeypatch):
     setup.users.docs.append(member(id="other", email="other@example.com"))
     monkeypatch.setattr(misc_routes, "hash_password", auth.hash_password)
     await misc_routes.reset_team_member_password("member", principal(), TeamPasswordResetPayload(new_password=NEW_PASSWORD))
@@ -402,3 +405,108 @@ async def test_owner_reset_invalidates_only_target_principal_cache(monkeypatch):
     assert auth._cached_principal("staff", "member", "session-two") is None
     assert auth._cached_principal("staff", "other", "session-other") is not None
     assert calls == [({"user_type": "staff", "user_id": "member", "revoked": {"$ne": True}}, {"$set": {"revoked": True}})]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", ["owner", "admin", "manager", "sales", "purchase", "warehouse", "accounts", "worker"])
+async def test_every_staff_role_can_change_own_password(setup, monkeypatch, role):
+    from services.team_credentials import decrypt_password
+    setup.users.docs = [member(id="actor", role=role)]
+    revoked = []
+    async def revoke(*args):
+        revoked.append(args)
+    monkeypatch.setattr(auth_routes, "_revoke_other_sessions", revoke)
+    result = await auth_routes.staff_change_password(
+        ChangePasswordPayload(current_password=PASSWORD, new_password=NEW_PASSWORD, confirm_password=NEW_PASSWORD),
+        request(), principal(role), "Bearer own-session")
+    assert result == {"changed": True}
+    stored = setup.users.docs[0]
+    assert stored["password_hash"] == f"hash:{NEW_PASSWORD}"
+    assert decrypt_password(stored["password_encrypted"], "actor") == NEW_PASSWORD
+    assert PASSWORD not in stored["password_encrypted"] and NEW_PASSWORD not in stored["password_encrypted"]
+    assert revoked == [("staff", "actor", "Bearer own-session")]
+    assert setup.events[-1]["event_type"] == "user.password_changed"
+    assert NEW_PASSWORD not in repr(setup.events)
+
+
+@pytest.mark.asyncio
+async def test_owner_reveal_is_explicit_audited_and_excluded_from_other_reads(setup):
+    from starlette.responses import Response
+    from services.team_credentials import encrypt_password
+    setup.users.docs[0]["password_encrypted"] = encrypt_password(PASSWORD, "member")
+    response = Response()
+    result = await misc_routes.view_team_member_password("member", response, request(), principal())
+    assert result == {"password": PASSWORD, "reset_required": False}
+    assert response.headers["Cache-Control"] == "no-store"
+    listed = await misc_routes.list_team(principal())
+    assert "password_encrypted" not in listed[0] and "password_hash" not in listed[0]
+    assert setup.events[-1]["event_type"] == "user.password_viewed"
+    assert PASSWORD not in repr(setup.events)
+
+
+@pytest.mark.asyncio
+async def test_owner_reveal_legacy_requires_reset_and_rejects_nonowner(setup):
+    from starlette.responses import Response
+    assert await misc_routes.view_team_member_password("member", Response(), request(), principal()) == {"password": None, "reset_required": True}
+    with pytest.raises(HTTPException) as error:
+        await misc_routes.view_team_member_password("member", Response(), request(), principal("admin", custom_access=True))
+    assert error.value.status_code == 403
+    await misc_routes.reset_team_member_password("member", principal(), TeamPasswordResetPayload(new_password=NEW_PASSWORD, confirm_password=NEW_PASSWORD))
+    assert (await misc_routes.view_team_member_password("member", Response(), request(), principal()))["password"] == NEW_PASSWORD
+
+
+@pytest.mark.asyncio
+async def test_created_credentials_are_recoverable_without_leaking_ciphertext(setup):
+    from starlette.responses import Response
+    created = await misc_routes.create_team_member(TeamCreatePayload(email="new@example.com", full_name="New", role="sales", floor_ids=["ground-floor"], password=PASSWORD), principal())
+    assert "password_encrypted" not in created
+    assert (await misc_routes.view_team_member_password(created["id"], Response(), request(), principal()))["password"] == PASSWORD
+
+
+def test_ciphertext_is_bound_to_member_and_authenticated():
+    from services.team_credentials import decrypt_password, encrypt_password
+    encrypted = encrypt_password(PASSWORD, "member")
+    assert decrypt_password(encrypted, "member") == PASSWORD
+    for value, user in [(encrypted, "other"), (encrypted[:-8] + "tampered", "member")]:
+        with pytest.raises(HTTPException) as error:
+            decrypt_password(value, user)
+        assert error.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_http_confirmation_mismatch_is_rejected_without_writes(setup):
+    app = FastAPI()
+    app.include_router(misc_routes.router, prefix="/api")
+    app.include_router(auth_routes.router, prefix="/api")
+    app.dependency_overrides[auth.get_current_user] = lambda: principal()
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        for path, body in [
+            ("/api/auth/change-password", {"current_password": PASSWORD, "new_password": NEW_PASSWORD, "confirm_password": "mismatch"}),
+            ("/api/team/member/reset-password", {"new_password": NEW_PASSWORD, "confirm_password": "mismatch"}),
+        ]:
+            result = await client.post(path, json=body)
+            assert result.status_code == 422
+    assert setup.users.updates == []
+
+
+@pytest.mark.asyncio
+async def test_self_change_rejects_password_reset_race(setup, monkeypatch):
+    setup.users.docs = [member(id="actor")]
+    original = setup.users.update_one
+    async def concurrently_reset(query, update):
+        setup.users.docs[0]["password_hash"] = "hash:concurrently-reset"
+        return await original(query, update)
+    monkeypatch.setattr(setup.users, "update_one", concurrently_reset)
+    with pytest.raises(HTTPException) as error:
+        await auth_routes.staff_change_password(ChangePasswordPayload(current_password=PASSWORD, new_password=NEW_PASSWORD), request(), principal("sales"))
+    assert error.value.status_code == 409
+    assert setup.users.docs[0]["password_hash"] == "hash:concurrently-reset"
+    assert "password_encrypted" not in setup.users.docs[0]
+
+
+@pytest.mark.asyncio
+async def test_delegated_and_profile_members_may_change_only_own_credentials():
+    from access_profiles import PROFILE_MODULES
+    for profile in [None, *PROFILE_MODULES]:
+        user = principal("sales", custom_access=True, access_profile=profile)
+        assert await auth.authorize_staff_request(user, request("/api/auth/change-password")) is user

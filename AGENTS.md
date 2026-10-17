@@ -2,6 +2,314 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
+## PDF sharing, assigned follow-ups and references — 2026-10-17
+
+Quotation/selection sharing creates no public PDF capability. Share actual PDF
+files through the device/browser file sheet; optional configured WhatsApp
+Business delivery uploads PDF bytes and retains revision/idempotency/status
+guards. Existing expiring capability reads remain compatible. Never restore a
+wa.me document-link draft. Furniture retains its separate PDF ledger workflow.
+
+Human-created follow-ups require explicitly selected eligible workers on every
+interested floor, including legacy notebook/customer entry and callback/pending
+successors without an existing valid assignment. Validate before writes and
+retain destination stage/grant checks. Sales is retired as a new/manual type;
+historical sales records remain readable. Owner filter overflow is bounded and
+scrollable. Do not silently substitute the creator for a missing assignment.
+
+Structured architect/interior UUIDs produce stable ARC-/INT- display codes.
+Customer, quotation/PDF, furniture and follow-up views retain name/code/company
+where available; floor-scoped acquisition counts deduplicate phone identity across
+sources. Exact-ID count lookup is distinct from the analytics top-100 leaderboard.
+Legacy NTS/free-text names are recovered without guessing a directory identity.
+No migration is required; preserve existing IDs and floor isolation.
+
+See `docs/audits/2026-10-17-pdf-followup-reference-release.md` for verification
+and the direct-WhatsApp provider configuration limitation.
+
+## Quotation recovery and R2 source integration — 2026-10-16
+
+Version 1.0.4 gates both quotation builders on synchronized floor access with
+explicit retry. Ground selection/quotation lists publish independently; an empty
+primary result must not wait for optional document reads. Saved tile restoration
+must succeed before editing/save/PDF actions. Persistence captures the document
+ID before awaits and retains mount/scope/generation checks after every write,
+including A → B → A. The first autosave's own new route ID must preserve edits
+made while creation was pending. Sanitary browsing hides stale search cards,
+offers filter reset/retry and lets phone users select the destination room.
+
+R2 recovery source is now part of the reviewed changes; preserve the configured
+R2 driver, exact public/private buckets and private visibility checks. Migration
+plans bind the Mongo cluster/database and storage identities, accept only explicit
+application collections and validate every journal entry before any write. Never
+rewrite audit/import history or replay an old unbound reference plan. Password
+proof runs off-thread; issued login sessions must be followed by current hash,
+account/portal/MFA revalidation so a completed reset cannot mint an old-password
+session. Preserve exact outbox claim ownership on failures.
+
+The release investigation found unpushed commits and successful previews serving
+older production source. Verify actual deployment identities rather than equating
+a branch push, preview READY or stale Railway Git metadata with production. See
+`docs/audits/2026-10-16-quotation-recovery-release.md` and the companion CI diagnosis.
+
+## Mobile workspace controls — 2026-10-15
+
+Version 1.0.3 keeps the compact app header outside the phone content scroll;
+page titles, page actions, filters and rows scroll together on phone layouts. Do
+not render a phone `PageHeader` as a sibling above its `ScrollView`, `FlatList` or
+`SectionList`. Phone table
+headers/columns are not sticky. Editing/search focus hides navigation
+and workflow footers; restore chrome after the blur-triggering tap, including
+focus moving to a button, to avoid moving its click target. Scroll containers
+with filter actions use keyboardShouldPersistTaps="handled". Shared
+MobileFilterSection retains mounted controls/drafts while hidden. Spending and
+Completed Today summary controls were explicitly removed at the user's request;
+do not reintroduce them. Exact expiring follow-up drilldown includes open,
+undated quotation-expiring rules under existing floor/grant checks. See
+`docs/audits/2026-10-15-mobile-workspace-1.0.2.md` and release evidence.
+
+## Mobile Payments and floor workspaces — 2026-10-15
+
+Payments defaults to a compact, collapsible overview on phones; toggling or
+rotation must preserve the payment sheet and its draft. Purchases and all its
+document APIs are Sanitary-only. Catalog navigation is Ground/Sanitary only.
+Kitchen/Furniture use shared Walk-ins and Follow-ups; old notebook bookmarks
+redirect without changing the current floor. Follow-up detail/actions and
+in-flight UI callbacks retain that concrete floor. Never reintroduce the duplicate
+100% quotation view: legacy fulfilled links normalize to Completed, including
+delivered orders. Keep Won order(s) wording and current-member attribution.
+
+Migration 0035 derives limited shared Follow-ups grants for eligible existing
+department staff; preserve its stage/action/floor/expiry guards. Retired grants
+remain revocable/history, cannot be newly assigned, and must not cause a redirect
+loop for accounts without a current page. The access screen is their stable
+landing. Required stability acceptance includes payment entry/rotation and
+all-floor navigation/direct-link/switching checks. Real deployed read-only
+acceptance also uses scripts/verify-floor-mobile-release.mjs with a short-lived
+run-owned QA session; never record customer rows or tokens in release reports.
+The authenticated verifier waits for its own API reads to settle before hard
+navigation/reload and resets tracking across browser contexts. Safari reports
+canceled document reads as access-control console errors; never suppress those
+errors or weaken the runtime guard to compensate for premature probe navigation.
+
+## Runtime and session stability — 2026-10-15
+
+Web/native roots share `src/components/AuthGate.tsx`; do not fork routing again.
+Transient hydration and workspace 403 retain credentials behind recovery; only
+authoritative invalid/revoked identity clears them. Identity/assignment reads omit
+stale floors. BFF cookies persist only through JWT expiry (cap 30 days), and
+successful existing-session restoration upgrades them. Keep revocation and CSRF.
+
+Route failures use React Navigation screenLayout, retaining the navigator and
+session. A boundary around Slot itself unmounted the navigator during faults.
+Actual Expo AsyncRequireError says "Loading module" and carries request; retain
+strict same-origin module classification and explicit reload for mounted pages.
+Never auto-reload live forms. Literal search punctuation must remain escaped.
+
+Vercel API loaders reject require(ESM), even when local Node accepts it. Shared
+cookies use the canonical CommonJS helper; standalone workers inline it. Required
+API tests execute compiled CommonJS and the actual emitted worker. Deploy a
+--skip-domain candidate, verify its authenticated journeys, then use
+scripts/promote-verified-vercel.mjs to verify source/API/assets before promotion.
+That guard also requires live authenticated desktop Chrome/iPhone Safari checks
+via scripts/verify-authenticated-release.mjs and FORGE_RELEASE_SESSION_FILE.
+Use a short-lived run-owned QA session, block business writes and revoke only
+that session after acceptance. Never weaken preview protection to test a build.
+The follow-up label is Won orders; the user confirmed a wording-only correction,
+preserving its existing current-member attribution/filtering behavior.
+
+The required Performance/pre-push audit includes immutable four-device every-page
+stability, populated stock/new quotation navigation, render/module failure and
+session recovery. New route files inherit coverage. The evidence verifier rejects
+missing scenarios, retries, skips and flakes. Preserve budgets/security/main
+protection. See docs/audits/2026-10-15-runtime-session-stability.md for findings,
+verification boundaries and the unresolved intermittent hosted-network observation.
+
+## Sanitary warehouse replacement and photo editing — 2026-10-14
+
+Seven stock workbooks now back 1,015 active lots / 4,393 recorded units. Eight
+old lots are archived with purchase/allocation history intact. Keep archived and
+quantity_missing lots out of every new allocation/transfer path, including
+quotation matching; unknown quantity uses a flagged zero technical placeholder.
+Warehouse-only quotation identities require their exact backing lot and floor.
+Duravit has eleven new catalog products; unknown prices carry explicit
+price_status=unspecified and specs.price_status, while stock prices stay null.
+
+Lot price/HTTPS image overrides and multipart uploads use floor-scoped update
+permissions. godown_stock_media stores immutable lot photos separately from
+catalog product_media. Preserve original picker File, shared authenticated
+transport, cancellation and exact photo envelope limits. Stock reads exclude
+bulky private provenance, fail explicitly above 2,000 lots and render 60 cards
+initially while searching the complete bounded payload. Reviewed imports use
+source hashes, private backups, stock fingerprints, atomic archive/insert and
+durable replay receipts; never delete historical lots or silently reset edits.
+See docs/audits/2026-10-14-godown-stock-replacement.md for live evidence and
+explicit unresolved source fields.
+
+## Historical Won/Lost customers — 2026-10-14
+
+Historical workbook outcomes use `quotation.customer_outcome`, independently
+of draft/ordered status, and closed manual follow-ups grouped by customer. Do
+not convert those outcomes into new financial orders. The quotation list and
+builder use floor-scoped `view=won|lost` queries; pending, sales automation and
+PDF follow-up producers exclude outcome-marked historical records. Ordinary
+edits preserve classification; Duplicate creates a fresh draft; Place Order
+requires a fresh quotation. Import receipts include follow-up fingerprints,
+fixed outcome timestamps and explicit shared-phone identity decisions. Read
+`docs/audits/2026-10-14-customer-outcomes.md` for acceptance and publication.
+
+## Custom products, media and drag ordering — 2026-10-14
+
+Custom quotation items now always have a backend product id, including inactive
+quotation-only records. Do not restore synthetic ids: quotation create/autosave
+requires real floor-scoped products. `custom-with-media` validates and binds a
+request to member/floor/content; deterministic product/media Mongo `_id`s dedupe
+concurrent retries. Photos are Supabase objects with Mongo `product_media` metadata
+and quotation URL snapshots. Only the exact custom creation endpoints accept
+quotation-create grants; normal catalog/media edits retain their own permissions.
+
+All multipart uploads use the shared API transport and photo preparation helper.
+Web image-picker assets must retain their original `File`, including gallery
+preview state. Use that file directly: production `connect-src` blocks fetching
+picker blob URLs. Keep the production CSP unchanged; the audit server now serves
+the same headers so browser upload journeys cover this constraint.
+The browser preserves small originals and prepares larger photos below 3 MiB;
+Vercel admits 4 MiB envelopes only for photo routes, retaining ordinary 1 MiB
+bounds. Exact detail/media hydration reflects new/deleted photos before background
+catalog refresh. Do not reintroduce manual fetch uploads missing the floor header,
+CSRF, cancellation or cache invalidation.
+
+Product/room dragging preserves included parts and collapsed-room data. Recalculate
+on changed pointer/scroll using paired DOM order/geometry, apply the final drop,
+and use elapsed-time edge scrolling. Idle preview reorders previously overshot
+into another room. Keep the admin route subtree stable across viewport breakpoints:
+phone rotation previously destroyed custom form/photo state. Read
+`docs/audits/2026-10-14-custom-products-ordering.md` for exact verification and
+publication evidence. Physical devices/signing and existing npm security findings
+remain separate from browser/unsigned-export acceptance.
+
+## iPad forms and multi-floor pre-order leads — 2026-10-13
+
+Follow-ups cover pre-order sales only. Operational/payment/purchase/dispatch/
+delivery reminders are retired; committed orders consolidate related floor leads
+while retaining historical worker assignments and quotation-creator attribution.
+Multi-floor interested/assignment edits preserve floor-local records and require
+the actual destination notebook stage's view/update grants. Typed-phone intake
+resolves existing destination stages too. Manual creation retries use a member/
+floor-bound request key and persisted fingerprint. Call outcomes consume only
+their own pending attempt. Team assign is owner-only with full aggregate counts,
+paged details and explicit activity truncation. Interior reporting counts acquired
+people before an order and deduplicates their phone identity across floors.
+
+Web roots and overlay portals track Safari's visual viewport; do not restore
+closing-modal focus before its portal is removed or apply keyboard resizing to
+pinch zoom. Team shows one Phone field and preserves distinct legacy contact data.
+Migration 0034 was applied through the controlled production job; the post-apply
+dry run has no pending migrations. Runtime b9a06838 is live on both Vercel and
+Railway. The user clarified a
+total HTTP response requirement under 2 ms; current hosted baseline samples fail
+it. The user subsequently accepted that measured gap and explicitly requested
+GitHub push/live migration/Vercel/Railway publication. Preserve the existing
+performance budgets and verify deployment readiness and actual source. Read docs/audits/2026-10-13-ipad-multifloor-leads.md and its
+companion verification JSON for local checks, actual deployment identities,
+post-deploy timings and retained hosted cold-load limitations. Protected main
+remains unmerged; existing dependency security findings are not suppressed.
+
+## Passwords, lost reasons and mobile workflow update — 2026-10-13
+
+Current policy supersedes the older owner-managed-only password notes below:
+staff may change their own password with current/new/confirmation; Team and role
+management remain owner-only. Owner credential reveal is explicit/audited/no-store,
+with bcrypt login and identity-bound encrypted recovery copies. Legacy hashes
+need reset before reveal. Preserve the existing MFA encryption root (JWT fallback)
+across deployments and synchronize every credential-write path, including controlled
+Team reset. Do not expose ciphertext/hash in ordinary responses or diagnostics.
+
+Routine customer/follow-up/notebook actions accept no notes; only Lost requires a
+reason. Visit Showroom permanently excludes the source walk-in from registers/counts
+and keeps one retry-safe follow-up. Interested transferred leads keep recipient
+ownership; only committed orders count won. Own orders defaults to current member,
+and actual won sales belong to the quotation creator, including unlinked same-floor
+showroom leads. Migration 0033 repairs confirmed historical attribution while
+preserving ambiguous/unrelated history. Purchases explicitly request one selected
+floor and reject stale callbacks. Phone quotation browsing defaults full screen,
+filters use a sheet, custom products and description/edit/review parity remain.
+See docs/audits/2026-10-13-team-mobile-workflows.md for evidence and release outcome.
+
+## Performance constraints — 2026-10-13 incident repair
+
+Performance is a release requirement for every feature/change. Read
+`docs/deployment/performance-policy.md` and run `npm run test:performance:audit`
+against current source before publication. The installed local pre-push hook
+and independent push/PR Performance workflow enforce this audit; do not bypass
+them, increase deadlines, suppress page errors, or reuse an old export.
+All exported routes inherit bundle budgets; extend interaction/loading fixtures
+for new heavy pages. Backend unit tests always use hermetic CI settings.
+
+Verified incident: production source BSON grew to ~19.7 MB, exceeding the old
+16 MiB snapshot cap and silently forcing catalog hierarchy/family reads through
+remote Mongo aggregation. The cache remains bounded at 32 MiB with unchanged
+row caps; diagnostics/warnings reveal fallback. Parallel source reads, shared
+refresh/failure/backoff, off-loop construction and generation invalidation retain
+safe floor/media/write behavior. Do not introduce per-page full-catalog reads.
+`backend/scripts/benchmark_catalog_performance.py` is a read-only, configured
+dataset service audit: no bootstrap/migrations/sessions/business writes; mode,
+counts and numeric timings only. Its warmed computation budgets exclude HTTP,
+authentication/browser/network. Verify live serving regions and latency after
+deployment; historical SFO/IAD evidence no longer describes the target setup.
+
+Catalog/Builder/Tiles cursors consume raw server rows even when displayed rows
+are deduplicated/dropped; empty pages terminate pagination. Guard both starting
+and publishing async work against current query/floor/mount; gate simultaneous
+scroll callbacks synchronously. Multi-column FlatList budgets count rows, not
+cards. Optional sound playback must observe asynchronous browser rejections.
+See `docs/audits/2026-10-13-performance-incident.md` for release evidence.
+
+Release verified: runtime `f06017d3`, Vercel Mumbai deployment
+`dpl_Hs5yLbZbgPZe1rXciuho3WhDotdp`, Railway Singapore deployment
+`0fbd1855-ceed-4e95-9e78-ba65e17b2792`; catalog memory mode confirmed live.
+The nested Railway JSON was ignored and its new legacy registration rejected;
+provider settings now persist one Singapore replica/no sleep. Inspect actual
+provider metadata on future releases. Full local acceptance: 2,305 backend,
+434 route/workflow browser and 40 performance browser passes. Performance CI
+passes on the runtime commit. Main now requires performance alongside the
+three functional/security checks with administrator enforcement and review.
+The 22 high/five moderate npm findings still fail the independent security gate.
+Authenticated hosted content works without captured runtime errors, but fixture
+timings are not a universal 2.5-second production/physical-device certificate.
+
+## Quotation filters and walk-in visibility — 2026-10-13 follow-up
+
+Quotation brand/category filters are now single-choice; finish/color filter rows
+and their hidden saved state are removed. Legacy mixed scopes normalize safely,
+and failed category reads offer retry in both compact picker and desktop rail.
+Vercel preserves repeated query values for other catalog screens. Purchases uses
+actual-order customer eligibility, excluding unconfirmed walk-in profiles while
+preserving legacy/transferred buyers. Eligibility/completion reads are parallel.
+Catalog hydration uses lazy candidate indexes with edit invalidation and unchanged
+scope/finish/ambiguity checks. The review also fixes Team contact initialization
+before interaction; the unchanged rapid-clear browser case and actual hook
+regression verify it. Final functional acceptance: 2,288 backend passes, 42
+frontend commands, 2,527 browser passes / 55 intentional skips / zero failures or
+flakes; all 157 generated pages fit the bundle budget. Fresh bathroom matrix:
+146 scopes, zero discrepancies. Npm remains 22 high/five moderate; protected main
+is not bypassed. Publication/deployment evidence belongs in
+`docs/audits/2026-10-13-quotation-walkins-release.md`.
+
+## Stability, quotation and catalog — 2026-10-13
+
+Response caches now release expired entries and retain 64 recent responses;
+quotation line multi-select is removed, individual workflows remain, and rows
+reuse memoized pricing. Catalog occurrence/fallback counting is repaired in warm
+and Mongo paths with 146 authoritative scopes verified. Session-cache generations
+and post-write invalidation close revocation refill races. Final local checks:
+2,283 backend passes, 42 frontend commands, 2,495 browser passes / 55 intentional
+skips / zero failures, production web export and all route budgets pass.
+Npm audit still fails (22 high / five moderate); no suppression or protected-main
+bypass. The user subsequently explicitly requested GitHub/Vercel/Railway
+publication. See `docs/audits/2026-10-13-goal-report.md` and the release ledger
+for deployment outcomes. Physical-device acceptance remains unverified.
+
 ## Performance and password minimum — 2026-10-12
 
 Version 1.0.1 fixes bounded catalog batching/shared cold warmup, parallel analytics
