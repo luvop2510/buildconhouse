@@ -41,10 +41,15 @@ async function openSummary(page: Page) {
 test('critical payment summary opens matching earned, partial, refund and outstanding customers', async ({ page }) => {
   await fixture(page);
   await page.goto('/payments');
+  // The debounced initial order read replaces the loading/queue layout with
+  // the selected order. Measure the ready page so that replacement cannot
+  // reset the scroll between the gesture and its geometry assertion.
+  await expect(page.getByTestId('wa-reminder-btn')).toBeVisible();
   if ((page.viewportSize()?.width || 0) < 768) {
     const chrome = page.getByTestId('mobile-workspace-header');
     const scroll = page.getByTestId('payments-collections-scroll');
     const contentTitle = page.getByRole('heading', { name: 'Payments', exact: true }).last();
+    await expect.poll(() => scroll.evaluate(element => element.scrollHeight - element.clientHeight)).toBeGreaterThan(20);
     const chromeTop = (await chrome.boundingBox())?.y;
     const titleTop = (await contentTitle.boundingBox())?.y;
     await scroll.evaluate(element => { element.scrollTop = 360; element.dispatchEvent(new Event('scroll', { bubbles: true })); });
