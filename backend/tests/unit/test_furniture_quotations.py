@@ -208,3 +208,27 @@ def test_send_uses_saved_pdf_normalized_phone_and_idempotent_delivery(monkeypatc
     with pytest.raises(HTTPException):
         asyncio.run(routes.send_quotation(doc["id"], request, staff()))
     sender.assert_not_awaited()
+
+
+def test_furniture_create_snapshots_authorized_partner_name_and_company(monkeypatch):
+    collection = SimpleNamespace(insert_one=AsyncMock())
+    directory = SimpleNamespace(find_one=AsyncMock(return_value={"company": "NTS Studio"}))
+    resolver = AsyncMock(return_value={"referrer_id": "partner-1", "referrer_name": "NTS", "referrer_type": "architect"})
+    monkeypatch.setattr(routes, "db", SimpleNamespace(furniture_quotations=collection, referrers=directory))
+    monkeypatch.setattr(routes, "referrer_fields", resolver)
+    user = staff()
+    result = asyncio.run(routes.create_quotation(body(referrer_id="partner-1"), user))
+    resolver.assert_awaited_once_with(routes.db, "partner-1", "third-floor", user)
+    assert result["referrer_name"] == "NTS"
+    assert result["referrer_company"] == "NTS Studio"
+    assert collection.insert_one.call_args.args[0]["referrer_id"] == "partner-1"
+
+
+def test_furniture_update_can_explicitly_clear_partner_without_changing_history_when_omitted(monkeypatch):
+    doc = {**document(), "referrer_id": "partner-1", "referrer_name": "NTS", "referrer_type": "architect", "referrer_company": "NTS Studio"}
+    collection = SimpleNamespace(find_one=AsyncMock(return_value=doc), update_one=AsyncMock(return_value=SimpleNamespace(modified_count=1)))
+    monkeypatch.setattr(routes, "db", SimpleNamespace(furniture_quotations=collection))
+    kept = asyncio.run(routes.update_quotation(doc["id"], editable(doc, expected_updated_at=NOW), staff()))
+    assert kept["referrer_name"] == "NTS"
+    cleared = asyncio.run(routes.update_quotation(doc["id"], editable(doc, expected_updated_at=NOW, referrer_id=None), staff()))
+    assert cleared["referrer_id"] is None and cleared["referrer_company"] is None

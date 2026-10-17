@@ -3,12 +3,14 @@ import { FURNITURE_FLOOR_ID } from "@/src/constants/floors";
 
 export type FurnitureCharge = { id?: string; description: string; amount_rmb: string; created_at?: string; updated_at?: string };
 export type FurnitureDeposit = { id?: string; description: string; currency: "INR" | "USD" | "RMB"; amount: string; rate: string; amount_rmb?: string; created_at?: string; updated_at?: string };
-export type FurnitureDraft = { customer_name: string; customer_phone: string; charges: FurnitureCharge[]; deposits: FurnitureDeposit[]; status: "draft" | "final" };
+export type FurnitureDraft = { referrer_id?: string | null; referrer_name?: string | null; referrer_type?: "architect" | "interior_designer" | null; referrer_company?: string | null; referrer_customers_acquired?: number | null; customer_name: string; customer_phone: string; charges: FurnitureCharge[]; deposits: FurnitureDeposit[]; status: "draft" | "final" };
 export type FurnitureQuotation = FurnitureDraft & { id: string; floor_id: string; created_at: string; updated_at: string; revision: number; total_payable_rmb: string; total_received_rmb: string; balance_rmb: string };
 export type FurnitureSummary = Omit<FurnitureQuotation, "charges" | "deposits">;
 export type WhatsAppReceipt = { status: string; message_id?: string; updated_at?: string; error_code?: string; idempotency_key?: string };
 const options = { floorId: FURNITURE_FLOOR_ID };
-const payload = (body: FurnitureDraft) => ({ ...body,
+const payload = (body: FurnitureDraft) => ({
+  customer_name: body.customer_name, customer_phone: body.customer_phone, status: body.status,
+  referrer_id: body.referrer_id ?? null,
   charges: body.charges.map(({ id, description, amount_rmb }) => ({ ...(id ? { id } : {}), description, amount_rmb })),
   deposits: body.deposits.map(({ id, description, currency, amount, rate }) => ({ ...(id ? { id } : {}), description, currency, amount, rate })),
 });

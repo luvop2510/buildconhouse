@@ -1,5 +1,6 @@
 """Official BuildCon House quotation PDF — faithful A4 print template."""
 from __future__ import annotations
+from services.referrer_identity import referrer_label
 
 from collections import defaultdict
 from datetime import datetime
@@ -896,9 +897,9 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
             [Paragraph("CUSTOMER NAME", styles["label"]), Paragraph("CONTACT NO.", styles["label"]), Paragraph("SELECTION / QUOTATION DATE", styles["label"]), Paragraph("QUOTATION NO.", styles["label"])],
             [Paragraph(_escape(customer.get("company") or customer.get("name") or quotation.get("customer_name")), styles["body"]), Paragraph(_escape(quotation.get("phone_snapshot") or customer.get("phone") or ""), styles["body"]), Paragraph(created, styles["body"]), Paragraph(_escape(quotation.get("number")), styles["body"])],
             [Paragraph("REFERENCE", styles["label"]), Paragraph("ATTENDED BY", styles["label"]), Paragraph("PREPARED BY", styles["label"]), Paragraph("ADDRESS", styles["label"])],
-            [Paragraph(_escape(quotation.get("reference_source") or ""), styles["body"]), Paragraph(_escape(quotation.get("referrer_name") or ""), styles["body"]), Paragraph(_escape(b.get("footer_company_name") or "Buildcon House"), styles["body"]), Paragraph(_escape(quotation.get("address_snapshot") or customer.get("address") or ""), styles["body"])],
+            [Paragraph(_escape(" · ".join(filter(None, [quotation.get("reference_source"), referrer_label(quotation)]))), styles["body"]), Paragraph(_escape(quotation.get("referrer_name") or ""), styles["body"]), Paragraph(_escape(b.get("footer_company_name") or "Buildcon House"), styles["body"]), Paragraph(_escape(quotation.get("address_snapshot") or customer.get("address") or ""), styles["body"])],
         ]
-        meta_row_heights = [5 * mm, 5 * mm, 5 * mm, 6 * mm]
+        meta_row_heights = [5 * mm, 5 * mm, 5 * mm, None if referrer_label(quotation) else 6 * mm]
         meta_style = [
             ("LINEBELOW", (0, 1), (-1, 1), 0.4, LINE),
             ("LINEBELOW", (0, 3), (-1, 3), 0.4, LINE),

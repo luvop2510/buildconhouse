@@ -1,3 +1,6 @@
+import { LeadScopeFields } from "@/src/components/leads/LeadScopeFields";
+import type { LeadScope } from "@/src/api/leads";
+import { referrerLabel } from "@/src/utils/referrer";
 import { filterValues, toggleFilterValue } from "@/src/utils/filters";
 import { Disclosure } from "@/src/design/Disclosure";
 import { NavigationTabs } from "@/src/design/NavigationTabs";
@@ -41,6 +44,8 @@ type Customer = {
   phone?: string | null; city?: string | null; purchase_completion_status?: "active" | "completed";
   address?: string | null;
   property_name?: string | null;
+  referrer_id?: string | null; referrer_name?: string | null; referrer_type?: string | null;
+  referrer_company?: string | null; referrer_customers_acquired?: number | null;
 };
 type Quotation = { id: string; number: string; status: string; doc_type?: string; grand_total: number; created_at: string; items: any[] };
 type PO = { id: string; number: string; brand_name?: string | null; status: string; grand_total: number; created_at: string };
@@ -87,20 +92,23 @@ const WALK_IN_DAY_OPTIONS = [2, 4, 7, 14];
 function WalkInFollowupSheet({ visible, onClose, customer, onCreate }: {
   visible: boolean; onClose: () => void; customer: Customer; onCreate: (payload: any) => Promise<void>;
 }) {
+  const { selectedFloorId } = useFloorAccess();
+  const [scope, setScope] = useState<LeadScope>({ interested_floor_ids: [], assignments: [] });
   const [reason, setReason] = useState("Walk-in visit — no quotation yet.");
   const [days, setDays] = useState(4);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (visible) { setReason("Walk-in visit — no quotation yet."); setDays(4); }
-  }, [visible]);
+    if (visible) { setReason("Walk-in visit — no quotation yet."); setDays(4); setScope({ interested_floor_ids: selectedFloorId ? [selectedFloorId] : [], assignments: [] }); }
+  }, [visible, selectedFloorId]);
 
   const submit = async () => {
     if (!reason.trim()) { toast.error("Add a reason"); return; }
+    if (!scope.interested_floor_ids.length || scope.interested_floor_ids.some(floor => !scope.assignments.some(a => a.floor_id === floor && a.user_id))) { toast.error("Select a team member for each interested floor"); return; }
     setSaving(true);
     try {
       const dueIso = new Date(Date.now() + days * 86400000).toISOString();
-      await onCreate({ customer_id: customer.id, category: "sales", channel: "call", reason: reason.trim(), due_at: dueIso });
+      await onCreate({ customer_id: customer.id, category: "walk_in", channel: "call", reason: reason.trim(), due_at: dueIso, ...scope });
     } finally { setSaving(false); }
   };
 
@@ -112,7 +120,7 @@ function WalkInFollowupSheet({ visible, onClose, customer, onCreate }: {
         <Button label="Add Reminder" variant="primary" icon="plus" loading={saving} onPress={submit} size="md" testID="walkin-followup-save" />
       </>}
     >
-      <View style={{ padding: spacing.xl, gap: spacing.lg }}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: spacing.xl, gap: spacing.lg }}>
         <FormField label="Reason" required helper="What should the salesperson do and why?">
           <TextField value={reason} onChangeText={setReason} placeholder="e.g. Browsed tile samples, wants a quote next week" testID="walkin-followup-reason" />
         </FormField>
@@ -123,7 +131,8 @@ function WalkInFollowupSheet({ visible, onClose, customer, onCreate }: {
             ))}
           </View>
         </FormField>
-      </View>
+        <LeadScopeFields assignmentsRequired reference={false} customerId={customer.id} value={scope} onChange={setScope} />
+      </ScrollView>
     </Sheet>
   );
 }
@@ -590,6 +599,12 @@ export default function CustomerDetail() {
                 {customer.address ? <Button label="View on map" icon="map-pin" variant="secondary" size="sm" onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(customer.address || "")}`)} /> : null}
               </View>
             </Card>
+            {customer.referrer_id || customer.referrer_name ? <Card testID="customer-referrer-detail">
+              <Text style={[type.overline, { marginBottom: spacing.md }]}>Architect / interior designer</Text>
+              <Text style={type.bodyStrong}>{referrerLabel(customer)}</Text>
+              {customer.referrer_company ? <Text style={type.body}>{customer.referrer_company}</Text> : null}
+              {customer.referrer_customers_acquired != null ? <Text style={type.caption}>{customer.referrer_customers_acquired} customers brought to this floor</Text> : null}
+            </Card> : null}
             <Card>
               <Text style={[type.overline, { marginBottom: spacing.md }]}>Latest activity</Text>
               <ActivityTimeline events={timeline.slice(0, 8)} dense emptyLabel={relatedLoading ? "Loading activity…" : "No activity yet"} />

@@ -87,7 +87,7 @@ test('completed contact from an abandoned notebook cannot open another app or re
 
 test('completed creation from an abandoned notebook produces no stale success notice', async () => {
   const view = fixture();
-  view.state.setDraft({ customer_name: 'Old draft', customer_phone: '9000000000', kitchen_type: 'GI', interested_floor_ids: ['second-floor'], assignments: [] });
+  view.state.setDraft({ customer_name: 'Old draft', customer_phone: '9000000000', kitchen_type: 'GI', interested_floor_ids: ['second-floor'], assignments: [{ floor_id: 'second-floor', user_id: 'kitchen-worker' }] });
   await view.settle();
   const create = view.state.create();
   view.unmount();
@@ -100,7 +100,7 @@ test('completed creation from an abandoned notebook produces no stale success no
 
 test('successful creation reloads the latest active query instead of inserting a row outside its filter', async () => {
   const view = fixture();
-  view.state.setDraft({ customer_name: 'New draft', customer_phone: '9000000000', kitchen_type: 'GI', interested_floor_ids: ['second-floor'], assignments: [] });
+  view.state.setDraft({ customer_name: 'New draft', customer_phone: '9000000000', kitchen_type: 'GI', interested_floor_ids: ['second-floor'], assignments: [{ floor_id: 'second-floor', user_id: 'kitchen-worker' }] });
   await view.settle();
   const create = view.state.create();
   view.state.setSearch('Different customer'); view.state.setFilter('pending');
@@ -117,7 +117,7 @@ test('successful creation reloads the latest active query instead of inserting a
 
 test('a duplicate converted customer reloads canonical walk-ins and reports its existing quotation stage', async () => {
   const view = fixture();
-  view.state.setDraft({ customer_name: 'Existing customer', customer_phone: '9000000000', kitchen_type: 'GI', interested_floor_ids: ['second-floor'], assignments: [] });
+  view.state.setDraft({ customer_name: 'Existing customer', customer_phone: '9000000000', kitchen_type: 'GI', interested_floor_ids: ['second-floor'], assignments: [{ floor_id: 'second-floor', user_id: 'kitchen-worker' }] });
   await view.settle();
   const create = view.state.create();
   view.mutation.resolve({ id: 'existing-lead', is_converted: true });

@@ -177,6 +177,19 @@ export async function downloadApiFile(path: string, filename: string, errorLabel
   return true;
 }
 
+// File-only sharing: a browser share payload contains the PDF attachment and no URL.
+// Fetching loses transient activation, so web uses a fresh user tap in the file panel.
+export async function shareApiPdf(path: string, filename: string, floorId?: string): Promise<boolean> {
+  if (Platform.OS !== "web") return downloadApiFile(path, filename, "PDF", floorId);
+  const blob = await fetchApiBlob(path, "PDF", floorId);
+  if (!blob) return false;
+  if (blob.type && blob.type !== "application/pdf") {
+    toast.show("The PDF could not be prepared. Try again.");
+    return false;
+  }
+  return saveMobileBrowserFile(blob, filename, "PDF");
+}
+
 // Print an authenticated PDF: web renders it into a hidden iframe and calls
 // print() so the browser's print dialog opens directly on the document;
 // native falls back to opening the PDF (the OS viewer offers Print).

@@ -200,6 +200,8 @@ class CustomerUpdatePayload(BaseModel):
 
 
 class CustomerPublic(CustomerBase, TimestampedModel):
+    referrer_company: Optional[str] = None
+    referrer_customers_acquired: Optional[int] = None
     # Computed on demand; never use persisted metadata to decide fulfillment.
     purchase_completion_status: Optional[Literal["active", "completed"]] = None
     # Required here (not on CustomerBase — see the comment there) so every
@@ -753,6 +755,7 @@ class RoomDiscountCfg(BaseModel):
 # architect/interior_designer. See
 # docs/superpowers/specs/2026-07-27-sales-data-dashboard-design.md.
 class Referrer(TimestampedModel):
+    customers_acquired: Optional[int] = None
     name: str
     type: ReferrerType
     floor_id: str

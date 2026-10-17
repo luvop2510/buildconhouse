@@ -12,6 +12,8 @@ const lead = {
 const workers = [
   { id: 'worker-a', full_name: 'Sanitary staff', role: 'sales', floor_ids: ['first-floor'] },
   { id: 'worker-b', full_name: 'Both floors staff', role: 'sales', floor_ids: ['first-floor', 'ground-floor'] },
+  { id: 'worker-c', full_name: 'Kitchen worker', role: 'worker', floor_ids: ['second-floor'] },
+  { id: 'worker-d', full_name: 'Furniture worker', role: 'worker', floor_ids: ['third-floor'] },
 ];
 
 async function mockLeads(page: Parameters<typeof mockSession>[0]) {
@@ -59,14 +61,30 @@ test('critical adding a follow-up exposes only pre-order types and saves all sel
   await page.getByTestId('new-followup-btn').click();
   const dialog = page.getByRole('dialog', { name: 'New Follow-up', exact: true });
   await dialog.getByText('Multi-floor client', { exact: true }).click();
+  await expect(dialog.getByText('Sales', { exact: true })).toHaveCount(0);
   await expect(dialog.getByText('Payment', { exact: true })).toHaveCount(0);
   await expect(dialog.getByText('Dispatch', { exact: true })).toHaveCount(0);
   await expect(dialog.getByText('Delivery', { exact: true })).toHaveCount(0);
   await dialog.getByTestId('new-followup-reason').fill('Discuss flooring samples');
   await dialog.getByTestId('lead-floors-all').click();
   await dialog.getByTestId('create-followup').click();
+  await expect(dialog).toBeVisible();
+  expect(writes).toHaveLength(0);
+  await dialog.getByTestId('lead-assign-first-floor-worker-a').click();
+  await dialog.getByTestId('lead-assign-ground-floor-worker-b').click();
+  await dialog.getByTestId('lead-assign-second-floor-worker-c').click();
+  await dialog.getByTestId('create-followup').click();
+  expect(writes).toHaveLength(0);
+  await dialog.getByTestId('lead-assign-third-floor-worker-d').click();
+  await dialog.getByTestId('create-followup').click();
   await expect(dialog).toHaveCount(0);
   expect(writes[0].interested_floor_ids).toHaveLength(4);
+  expect(writes[0].assignments).toEqual([
+    expect.objectContaining({ floor_id: 'first-floor', user_id: 'worker-a' }),
+    expect.objectContaining({ floor_id: 'ground-floor', user_id: 'worker-b' }),
+    expect.objectContaining({ floor_id: 'second-floor', user_id: 'worker-c' }),
+    expect.objectContaining({ floor_id: 'third-floor', user_id: 'worker-d' }),
+  ]);
 });
 
 test('critical team assign displays worker workload, responses and activity across selected floors', async ({ page }) => {
@@ -102,6 +120,15 @@ test('critical retrying follow-up creation retains one draft identity and select
   await dialog.getByTestId('new-followup-reason').fill('Discuss flooring samples');
   await dialog.getByTestId('lead-floors-all').click();
   await dialog.getByTestId('create-followup').click();
+  await expect(dialog).toBeVisible();
+  expect(writes).toHaveLength(0);
+  await dialog.getByTestId('lead-assign-first-floor-worker-a').click();
+  await dialog.getByTestId('lead-assign-ground-floor-worker-b').click();
+  await dialog.getByTestId('lead-assign-second-floor-worker-c').click();
+  await dialog.getByTestId('create-followup').click();
+  expect(writes).toHaveLength(0);
+  await dialog.getByTestId('lead-assign-third-floor-worker-d').click();
+  await dialog.getByTestId('create-followup').click();
   await expect.poll(() => writes.length).toBe(1);
   await expect(dialog.getByTestId('new-followup-reason')).toHaveValue('Discuss flooring samples');
   await expect(dialog.getByTestId('lead-floors-all')).toHaveAttribute('aria-pressed', 'true');
@@ -130,7 +157,7 @@ test('critical shared Kitchen follow-up Interested supports multiple floors with
   await page.goto('/followups');
   await page.getByTestId('interested-scope-lead').click();
   const dialog = page.getByRole('dialog', { name: 'Interested floors & team assignment', exact: true });
-  await expect(dialog.getByText('Design Studio', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('Design Studio · INT-STUDIO', { exact: true })).toBeVisible();
   await dialog.getByTestId('lead-floor-third-floor').click();
   await dialog.getByTestId('lead-assign-third-floor-worker-b').click();
   expect(assigneeReads.at(-1)?.get('source_id')).toBe('scope-lead');
@@ -167,3 +194,52 @@ test('critical team assign floor filters and pagination retain aggregate worker 
   await expect.poll(() => reads.at(-1)?.get('floor_ids')).toBe('first-floor');
   await expect.poll(() => reads.at(-1)?.get('page')).toBe('1');
 });
+
+
+test('critical owner filter stays within the panel and scrolls to the last employee', async ({ page }) => {
+  await mockLeads(page);
+  const owners = Array.from({ length: 30 }, (_, index) => ({ id: `owner-filter-${index}`, full_name: `Employee ${index + 1}`, role: 'worker' }));
+  await page.route('**/api/followups/config/assignees', r => r.fulfill({ json: owners }));
+  await page.goto('/followups');
+  const collapsedFilters = page.getByTestId('followups-filters-toggle');
+  if (await collapsedFilters.isVisible() && await collapsedFilters.getAttribute('aria-expanded') === 'false') await collapsedFilters.click();
+  const first = page.getByTestId('followups-owner-all');
+  await expect(first).toBeVisible();
+  const scroller = first.locator('..').locator('..');
+  const dimensions = await scroller.evaluate(element => ({ width: element.clientWidth, content: element.scrollWidth, left: element.getBoundingClientRect().left, right: element.getBoundingClientRect().right, viewport: window.innerWidth }));
+  expect(dimensions.content).toBeGreaterThan(dimensions.width);
+  expect(dimensions.left).toBeGreaterThanOrEqual(0);
+  expect(dimensions.right).toBeLessThanOrEqual(dimensions.viewport);
+  await scroller.evaluate(element => { element.scrollLeft = element.scrollWidth; });
+  await expect.poll(() => scroller.evaluate(element => element.scrollLeft)).toBeGreaterThan(0);
+  const last = page.getByTestId('followups-owner-owner-filter-29');
+  await last.click();
+  await expect(last).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByRole('checkbox', { name: 'Sales', exact: true })).toHaveCount(0);
+});
+
+for (const inherited of [false, true]) {
+  test(`critical successor reminder ${inherited ? 'retains an eligible selected worker' : 'requires a selected worker before saving'}`, async ({ page }) => {
+    await mockLeads(page);
+    const item = { ...lead, assigned_to: inherited ? 'worker-a' : null, assigned_to_name: inherited ? 'Sanitary staff' : null };
+    await page.route('**/api/followups/page?**', r => r.fulfill({ json: { items: [item], page: 1, page_size: 100, has_more: false } }));
+    await page.route('**/api/followups/scope-lead/contact', r => r.fulfill({ json: { channel: 'call', phone: '9000000000' } }));
+    const writes: any[] = [];
+    await page.route('**/api/followups/scope-lead/log-call', r => r.fulfill({ json: (writes.push(r.request().postDataJSON()), item) }));
+    await page.goto('/followups');
+    const contact = page.getByTestId((page.viewportSize()?.width || 0) < 768 ? 'contact-scope-lead' : 'call-scope-lead');
+    await contact.click();
+    const dialog = page.getByRole('dialog', { name: 'Log Call Outcome', exact: true });
+    await dialog.getByTestId('outcome-call_back').click();
+    if (!inherited) {
+      await expect(dialog.getByTestId('save-call-outcome')).toBeDisabled();
+      expect(writes).toHaveLength(0);
+      await dialog.getByTestId('lead-assign-first-floor-worker-a').click();
+    }
+    await expect(dialog.getByTestId('lead-assign-first-floor-worker-a')).toHaveAttribute('aria-pressed', 'true');
+    await dialog.getByTestId('save-call-outcome').click();
+    await expect(dialog).toHaveCount(0);
+    expect(writes[0].outcome).toBe('call_back');
+    if (!inherited) expect(writes[0].assignments).toEqual([expect.objectContaining({ floor_id: 'first-floor', user_id: 'worker-a' })]);
+  });
+}

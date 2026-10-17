@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from pymongo import ReturnDocument
 from starlette.concurrency import run_in_threadpool
 
@@ -1896,28 +1896,60 @@ async def workflow_status(
     return {"quotation_id": quotation_id, "quotation_total": round(float(quotation.get("grand_total") or 0), 2), "events": events, "purchase_orders": purchase_orders, "payments": payments, "timeline": timeline, "followups": followups}
 
 
-# Customer sharing deliberately uses an opaque, expiring capability rather
-# than a staff JWT or the authenticated download token (which is single-use).
-@router.post("/{quotation_id}/whatsapp-draft")
-async def quotation_whatsapp_draft(quotation_id: str, include_dimensions: bool = False,
-                                   user: UserPublic = Depends(get_current_user)):
-    from services.quotation_shares import create_share, whatsapp_phone
-    doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user,
-                                      not_found="Quotation not found", projection={"_id": 0})
+class QuotationWhatsAppSendInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    message: str = Field(min_length=1, max_length=1024)
+    expected_updated_at: str = Field(max_length=64)
+    idempotency_key: str = Field(min_length=16, max_length=100)
+    include_dimensions: bool = False
+
+
+async def _quotation_recipient(doc: dict):
+    from services.quotation_shares import whatsapp_phone
     customer = await db.customers.find_one(
         {"id": doc["customer_id"], "floor_id": doc.get("floor_id")}, {"_id": 0, "password_hash": 0},
     )
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
-    phone = whatsapp_phone(customer.get("phone"))
+    return doc, customer, whatsapp_phone(customer.get("phone"))
+
+
+@router.post("/{quotation_id}/whatsapp-draft")
+async def quotation_whatsapp_draft(quotation_id: str, include_dimensions: bool = False,
+                                   user: UserPublic = Depends(get_current_user)):
+    """Prepare file delivery metadata; never mint a customer-facing link."""
+    from services.whatsapp_delivery import configured
+    doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user,
+                                      not_found="Quotation not found", projection={"_id": 0})
+    doc, customer, phone = await _quotation_recipient(doc)
+    # Sharing a local PDF remains available when a contact number/provider is absent.
+    filename = (tiles_pdf_filename(doc) if doc.get("doc_type") in TILES_DOC_TYPES
+                else quotation_pdf_filename(doc.get("customer_name") or customer.get("name")))
+    return {"id": doc["id"], "floor_id": doc.get("floor_id"), "phone": phone,
+            "customer_name": customer.get("name") or doc.get("customer_name") or "Customer",
+            "filename": filename, "expected_updated_at": doc.get("updated_at", ""),
+            "include_dimensions": include_dimensions, "direct_send_configured": configured()}
+
+
+@router.post("/{quotation_id}/whatsapp-send")
+async def send_quotation_whatsapp(quotation_id: str, body: QuotationWhatsAppSendInput,
+                                 user: UserPublic = Depends(get_current_user)):
+    from services.whatsapp_delivery import send_document
+    doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user,
+                                      not_found="Quotation not found", projection={"_id": 0})
+    doc, customer, phone = await _quotation_recipient(doc)
+    if body.expected_updated_at != doc.get("updated_at", ""):
+        raise HTTPException(409, "This quotation changed. Close sharing and prepare the PDF again.")
     if not phone:
-        raise HTTPException(status_code=422, detail="Add a valid WhatsApp phone number to the customer's contact details first")
-    pdf_bytes, filename = await _build_quotation_file(doc, customer, include_dimensions)
-    shared = await create_share(doc, pdf_bytes, filename, user.id)
-    # Creating/opening a draft cannot prove delivery and never marks it sent.
-    return {**shared, "phone": phone, "customer_name": customer.get("name") or doc.get("customer_name") or "Customer"}
+        raise HTTPException(422, "Add a valid WhatsApp phone number to the customer's contact details first")
+    data, filename = await _build_quotation_file(doc, customer, body.include_dimensions)
+    return await send_document(pdf_bytes=data, filename=filename, recipient_phone=phone,
+                               message=body.message, idempotency_key=body.idempotency_key,
+                               floor_id=doc["floor_id"], source_id=doc["id"], actor_id=user.id)
 
 
+# Existing expiring capabilities remain readable for compatibility; new sharing
+# actions above deliver PDF files and do not create public capability URLs.
 @router.api_route("/shared-pdf/{token}", methods=["GET", "HEAD"])
 async def shared_quotation_pdf(token: str):
     from services.quotation_shares import read_share

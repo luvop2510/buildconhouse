@@ -109,6 +109,11 @@ def database():
                            users=Collection(), access_grants=Collection())
 
 
+def selected_worker(db, floors):
+    db.users.rows.append({'id': 'selected-worker', 'full_name': 'Selected worker', 'role': 'sales', 'active': True, 'floor_ids': list(floors)})
+    return [{'floor_id': floor, 'user_id': 'selected-worker'} for floor in floors]
+
+
 def principal(uid='owner', custom=False, floors=('second-floor', 'third-floor')):
     return UserPublic(id=uid, email=f'{uid}@example.test', full_name=uid, role='worker' if custom else 'owner',
                       custom_access=custom, floor_ids=list(floors), active_floor_id=floors[0])
@@ -200,7 +205,7 @@ def test_create_retry_after_persisted_sibling_failure_finishes_one_group_and_rej
         monkeypatch.setattr(routes, 'db', db)
         events = AsyncMock()
         monkeypatch.setattr(routes, 'log_event', events)
-        body = FollowupCreate(customer_id='customer', reason='Discuss samples', request_key='draft-one-123', interested_floor_ids=['first-floor', 'ground-floor'], assignments=[])
+        body = FollowupCreate(customer_id='customer', reason='Discuss samples', request_key='draft-one-123', interested_floor_ids=['first-floor', 'ground-floor'], assignments=selected_worker(db, ['first-floor', 'ground-floor']))
         async def fail_after_sibling(query, update):
             if update.get('$setOnInsert', {}).get('floor_id') == 'ground-floor':
                 db.followups.after_update = None
@@ -278,7 +283,7 @@ def test_unconfirmed_legacy_won_quotation_does_not_block_preorder_lead(monkeypat
         monkeypatch.setattr(routes, 'db', db)
         monkeypatch.setattr(routes, 'log_event', AsyncMock())
         body = FollowupCreate(customer_id='customer', quotation_id='legacy-won', reason='Confirm selection',
-                              request_key='unconfirmed-won-draft', interested_floor_ids=['first-floor'], assignments=[])
+                              request_key='unconfirmed-won-draft', interested_floor_ids=['first-floor'], assignments=selected_worker(db, ['first-floor']))
         row = await routes.create_followup(body, principal(floors=('first-floor',)))
         assert row.status == 'open' and row.quotation_id == 'legacy-won'
         assert db.quotations.rows[0]['status'] == 'won'
@@ -291,10 +296,11 @@ def test_generic_manual_create_supports_kitchen_and_furniture_inboxes(monkeypatc
     db.customers.rows = [{'id': 'customer', 'floor_id': floor, 'name': 'Customer'}]
     monkeypatch.setattr(routes, 'db', db)
     monkeypatch.setattr(routes, 'log_event', AsyncMock())
-    row = asyncio.run(routes.create_followup(FollowupCreate(customer_id='customer', reason='Discuss'), principal(floors=(floor,))))
+    assignments = selected_worker(db, [floor])
+    row = asyncio.run(routes.create_followup(FollowupCreate(customer_id='customer', reason='Discuss', assignments=assignments), principal(floors=(floor,))))
     assert row.floor_id == floor and row.customer_id == 'customer'
-    assert row.assigned_to is None and row.assigned_to_name is None
-    assert db.followups.writes == 1 and db.customers.writes == 0
+    assert row.assigned_to == 'selected-worker' and row.assigned_to_name == 'Selected worker'
+    assert db.followups.writes >= 1 and db.customers.writes == 0
 
 
 def test_synthetic_phone_scope_discovers_existing_notebook_stage_on_its_own_floor():
@@ -304,3 +310,165 @@ def test_synthetic_phone_scope_discovers_existing_notebook_stage_on_its_own_floo
         db.followups.rows = [{'id': 'canonical', 'notebook_key': 'second-floor:kitchen', 'is_converted': True}]
         assert await lead_scope.notebook_stages(db, {'floor_id': 'second-floor', 'customer_phone': '9876543210'}, ['second-floor']) == {'second-floor': True}
     asyncio.run(run())
+
+
+@pytest.mark.parametrize('floor', ['ground-floor', 'first-floor', 'second-floor', 'third-floor'])
+@pytest.mark.parametrize('actor_kind', ['owner', 'worker'])
+def test_new_followup_requires_explicit_assignment_before_any_write(monkeypatch, floor, actor_kind):
+    db = database()
+    db.customers.rows = [{'id': 'customer', 'floor_id': floor, 'name': 'Customer'}]
+    actor = principal('creator', custom=actor_kind == 'worker', floors=(floor,))
+    monkeypatch.setattr(routes, 'db', db)
+    with pytest.raises(HTTPException, match='Select a team member') as error:
+        asyncio.run(routes.create_followup(FollowupCreate(customer_id='customer', reason='Discuss'), actor))
+    assert error.value.status_code == 422
+    assert db.followups.writes == db.customers.writes == 0
+
+
+@pytest.mark.parametrize('worker_patch', [
+    {'role': 'owner'}, {'active': False}, {'is_deleted': True}, {'floor_ids': ['ground-floor']},
+    {'role': 'worker', 'custom_access': True, 'delegation_grants': []},
+])
+def test_new_followup_rejects_ineligible_assignee_without_writes(monkeypatch, worker_patch):
+    db = database()
+    db.customers.rows = [{'id': 'customer', 'floor_id': 'first-floor', 'name': 'Customer'}]
+    assignments = selected_worker(db, ['first-floor'])
+    db.users.rows[0].update(worker_patch)
+    monkeypatch.setattr(routes, 'db', db)
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(routes.create_followup(FollowupCreate(customer_id='customer', reason='Discuss', assignments=assignments), principal(floors=('first-floor',))))
+    assert error.value.status_code == 422
+    assert db.followups.writes == db.customers.writes == 0
+
+
+def test_new_multifloor_followup_requires_worker_for_every_interested_floor(monkeypatch):
+    db = database()
+    db.customers.rows = [{'id': 'customer', 'floor_id': 'first-floor', 'name': 'Customer', 'phone': '9876543210'}]
+    assignments = selected_worker(db, ['first-floor'])
+    monkeypatch.setattr(routes, 'db', db)
+    body = FollowupCreate(customer_id='customer', reason='Discuss', interested_floor_ids=['first-floor', 'ground-floor'], assignments=assignments)
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(routes.create_followup(body, principal(floors=('first-floor',))))
+    assert error.value.status_code == 422
+    assert db.followups.writes == db.customers.writes == 0
+
+
+@pytest.mark.parametrize('floor', ['ground-floor', 'first-floor', 'second-floor', 'third-floor'])
+def test_new_followup_accepts_explicit_eligible_worker_and_uses_authoritative_name(monkeypatch, floor):
+    db = database()
+    db.customers.rows = [{'id': 'customer', 'floor_id': floor, 'name': 'Customer'}]
+    assignments = selected_worker(db, [floor])
+    assignments[0]['user_name'] = 'Forged name'
+    monkeypatch.setattr(routes, 'db', db)
+    monkeypatch.setattr(routes, 'log_event', AsyncMock())
+    row = asyncio.run(routes.create_followup(FollowupCreate(customer_id='customer', reason='Discuss', assignments=assignments), principal(floors=(floor,))))
+    assert row.assigned_to == 'selected-worker' and row.assigned_to_name == 'Selected worker'
+    assert row.assignments[0].user_name == 'Selected worker'
+
+
+def test_legacy_explicit_assigned_to_is_validated_and_preserved(monkeypatch):
+    db = database()
+    db.customers.rows = [{'id': 'customer', 'floor_id': 'first-floor', 'name': 'Customer'}]
+    selected_worker(db, ['first-floor'])
+    monkeypatch.setattr(routes, 'db', db)
+    monkeypatch.setattr(routes, 'log_event', AsyncMock())
+    row = asyncio.run(routes.create_followup(FollowupCreate(customer_id='customer', reason='Discuss', assigned_to='selected-worker'), principal(floors=('first-floor',))))
+    assert row.assigned_to == 'selected-worker'
+
+
+def test_removed_sales_type_cannot_be_used_for_new_manual_followups(monkeypatch):
+    db = database()
+    monkeypatch.setattr(routes, 'db', db)
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(routes.create_followup(FollowupCreate(customer_id='customer', reason='Discuss', category='sales'), principal(floors=('first-floor',))))
+    assert error.value.status_code == 422 and 'follow-up type' in error.value.detail
+    assert db.followups.writes == 0
+
+
+def test_new_followup_enforces_existing_destination_notebook_stage_before_writes(monkeypatch):
+    db = database()
+    db.customers.rows = [
+        {'id': 'customer', 'floor_id': 'first-floor', 'name': 'Customer', 'phone': '9876543210'},
+        {'id': 'kitchen-customer', 'floor_id': 'second-floor', 'name': 'Customer', 'phone_normalized': '9876543210'},
+    ]
+    db.followups.rows = [{**source_row('second-floor'), 'id': 'canonical', 'customer_id': 'kitchen-customer', 'notebook_key': 'second-floor:kitchen-customer', 'is_converted': True}]
+    assignments = selected_worker(db, ['first-floor'])
+    db.users.rows.append({'id': 'kitchen-worker', 'full_name': 'Kitchen', 'role': 'worker', 'active': True, 'custom_access': True, 'floor_ids': ['second-floor'], 'delegation_grants': [grant('kitchen-worker', 'second-floor', 'notebook_walkins')]})
+    assignments.append({'floor_id': 'second-floor', 'user_id': 'kitchen-worker'})
+    monkeypatch.setattr(routes, 'db', db)
+    body = FollowupCreate(customer_id='customer', reason='Discuss', interested_floor_ids=['first-floor', 'second-floor'], assignments=assignments)
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(routes.create_followup(body, principal(floors=('first-floor',))))
+    assert error.value.status_code == 422
+    assert db.followups.writes == db.customers.writes == 0
+
+
+def test_reference_enrichment_uses_floor_local_customer_batch_and_directory(monkeypatch):
+    async def run():
+        db = database()
+        db.referrers = Collection([
+            {'id': 'partner', 'floor_id': 'first-floor', 'name': 'NTS Studio', 'type': 'architect', 'company': 'NTS'},
+            {'id': 'foreign', 'floor_id': 'third-floor', 'name': 'Private studio', 'type': 'architect'},
+        ])
+        db.customers.rows = [
+            {'id': 'customer', 'floor_id': 'first-floor', 'referrer_id': 'partner', 'referrer_name': 'Old label'},
+            {'id': 'customer', 'floor_id': 'third-floor', 'referrer_id': 'foreign'},
+            {'id': 'legacy', 'floor_id': 'first-floor', 'architect_interior_designer': 'Exact NTS Name'},
+        ]
+        rows = [{'id': 'one', 'floor_id': 'first-floor', 'customer_id': 'customer'},
+                {'id': 'two', 'floor_id': 'first-floor', 'customer_id': 'customer'},
+                {'id': 'three', 'floor_id': 'first-floor', 'customer_id': 'legacy'}]
+        monkeypatch.setattr(routes, 'db', db)
+        counts = AsyncMock(return_value={'partner': 7})
+        monkeypatch.setattr(routes, 'acquired_counts', counts)
+        worker = UserPublic(id='limited', email='limited@example.test', full_name='Limited', role='sales', floor_ids=['first-floor'], active_floor_id='first-floor')
+        result = await routes._enrich_followup_references(rows, worker)
+        for row in result[:2]:
+            assert row['referrer_id'] == 'partner' and row['referrer_name'] == 'NTS Studio'
+            assert row['referrer_type'] == 'architect' and row['referrer_company'] == 'NTS'
+            assert row['referrer_customers_acquired'] == 7
+        assert result[2]['referrer_name'] == 'Exact NTS Name' and not result[2].get('referrer_id')
+        counts.assert_awaited_once_with(db, ['partner'], ['first-floor'])
+    asyncio.run(run())
+
+
+def test_reference_enrichment_cannot_read_directory_from_inaccessible_floor(monkeypatch):
+    async def run():
+        db = database()
+        db.referrers = Collection([{'id': 'partner', 'floor_id': 'third-floor', 'name': 'Private company'}])
+        db.customers.rows = [{'id': 'customer', 'floor_id': 'first-floor', 'referrer_id': 'partner', 'referrer_name': 'Recorded reference'}]
+        monkeypatch.setattr(routes, 'db', db)
+        monkeypatch.setattr(routes, 'acquired_counts', AsyncMock(return_value={}))
+        worker = UserPublic(id='limited', email='limited@example.test', full_name='Limited', role='sales', floor_ids=['first-floor'], active_floor_id='first-floor')
+        rows = await routes._enrich_followup_references([{'floor_id': 'first-floor', 'customer_id': 'customer'}], worker)
+        assert rows[0]['referrer_name'] == 'Recorded reference'
+        assert rows[0]['referrer_company'] is None
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('outcome', ['interested', 'call_back', 'pending'])
+def test_unassigned_call_outcome_cannot_create_an_unassigned_successor(monkeypatch, outcome):
+    from datetime import datetime, timedelta, timezone
+    db = database()
+    db.followups.rows = [source_row('first-floor')]
+    monkeypatch.setattr(routes, 'db', db)
+    body = FollowupCallOutcomePayload(outcome=outcome, next_followup_at=datetime.now(timezone.utc) + timedelta(days=3))
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(routes.log_call('source', body, principal(floors=('first-floor',))))
+    assert error.value.status_code == 422
+    assert db.followups.writes == 0 and len(db.followups.rows) == 1
+
+
+@pytest.mark.parametrize('outcome', ['interested', 'call_back', 'pending'])
+def test_call_outcome_reuses_existing_eligible_assignment_without_reselection(monkeypatch, outcome):
+    from datetime import datetime, timedelta, timezone
+    db = database()
+    selected_worker(db, ['first-floor'])
+    db.followups.rows = [{**source_row('first-floor'), 'assigned_to': 'selected-worker', 'assigned_to_name': 'Old worker name'}]
+    monkeypatch.setattr(routes, 'db', db)
+    monkeypatch.setattr(routes, 'log_event', AsyncMock())
+    body = FollowupCallOutcomePayload(outcome=outcome, next_followup_at=datetime.now(timezone.utc) + timedelta(days=3))
+    asyncio.run(routes.log_call('source', body, principal(floors=('first-floor',))))
+    successor = next(row for row in db.followups.rows if row['id'] != 'source')
+    assert successor['assigned_to'] == 'selected-worker' and successor['assigned_to_name'] == 'Selected worker'
+    assert successor['assignments'] == [{'floor_id': 'first-floor', 'user_id': 'selected-worker', 'user_name': 'Selected worker'}]

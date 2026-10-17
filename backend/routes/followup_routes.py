@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from services.export import spreadsheet_cell
 from services.multi_filters import predicate, values
+from services.referrer_identity import acquired_counts, legacy_referrer_name
 
 import asyncio
 import base64
@@ -564,6 +565,53 @@ def _paged_followup_query(
     return floor_query(user, base)
 
 
+async def _enrich_followup_references(rows, user, customers=None):
+    """Hydrate attribution in bounded floor-local batches, never per lead."""
+    by_floor = {}
+    for row in rows:
+        if row.get("floor_id"):
+            by_floor.setdefault(row["floor_id"], []).append(row)
+    for floor, local_rows in by_floor.items():
+        customer_ids = list(dict.fromkeys(row["customer_id"] for row in local_rows if row.get("customer_id")))
+        if customers is None:
+            customer_rows = await db.customers.find({"floor_id": floor, "id": {"$in": customer_ids}}, {
+                "_id": 0, "id": 1, "referrer_id": 1, "referrer_name": 1, "referrer_type": 1,
+                "architect_name": 1, "interior_designer_name": 1, "architect_interior_designer": 1, "architect": 1,
+            }).to_list(len(customer_ids)) if customer_ids else []
+        else:
+            customer_rows = [customer for customer in customers if customer and customer.get("floor_id") == floor]
+        customer_map = {customer["id"]: customer for customer in customer_rows}
+        for row in local_rows:
+            customer = customer_map.get(row.get("customer_id"), {})
+            if not row.get("referrer_id") and customer.get("referrer_id"):
+                for key in ("referrer_id", "referrer_name", "referrer_type"):
+                    row[key] = customer.get(key)
+            if not row.get("referrer_name"):
+                row["referrer_name"] = legacy_referrer_name(row) or customer.get("referrer_name") or legacy_referrer_name(customer)
+        ids = list(dict.fromkeys(row["referrer_id"] for row in local_rows if row.get("referrer_id")))
+        if not ids:
+            continue
+        selector = {"id": {"$in": ids}}
+        permitted = accessible_floor_ids(user)
+        if permitted is not None:
+            selector["floor_id"] = {"$in": permitted}
+        partners, counts = await asyncio.gather(
+            db.referrers.find(selector, {"_id": 0, "id": 1, "name": 1, "type": 1, "company": 1}).to_list(len(ids)),
+            acquired_counts(db, ids, [floor]),
+        )
+        directory = {partner["id"]: partner for partner in partners}
+        for row in local_rows:
+            partner_id = row.get("referrer_id")
+            if not partner_id:
+                continue
+            partner = directory.get(partner_id, {})
+            row["referrer_name"] = partner.get("name") or row.get("referrer_name")
+            row["referrer_type"] = partner.get("type") or row.get("referrer_type")
+            row["referrer_company"] = partner.get("company")
+            row["referrer_customers_acquired"] = counts.get(partner_id, 0)
+    return rows
+
+
 @router.get("/page")
 async def list_followups_page(
     bucket: Optional[str] = None,
@@ -612,6 +660,7 @@ async def list_followups_page(
     for row in rows:
         row["bucket"] = compute_bucket(row)
         row["effective_priority_level"] = row.get("manual_priority_override") or row.get("priority_level")
+    await _enrich_followup_references(rows, user)
     return {"items": rows, "page": page, "page_size": page_size, "has_more": has_more}
 
 
@@ -668,7 +717,7 @@ async def list_followups(
         docs = [d for d in docs if d["effective_priority_level"] in values(priority)]
 
     docs.sort(key=lambda d: _followup_sort_key(d, user.id))
-    return docs[:limit]
+    return await _enrich_followup_references(docs[:limit], user)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -726,6 +775,7 @@ async def create_notebook_row(
 ):
     require_notebook_floor(floor_id, user)
     _reject_action_note(body.notes)
+    _required_create_assignments(body.interested_floor_ids or [floor_id], body.assignments)
     patch = body.model_dump(exclude_none=True, exclude={"notes", "interested_floor_ids", "assignments", "reference_source"})
     if body.interested_floor_ids or body.assignments is not None:
         await lead_scope.validate_scope(db, user, body.interested_floor_ids or [floor_id], [], source_floor=floor_id)
@@ -1145,6 +1195,7 @@ async def get_detail(followup_id: str, user: UserPublic = Depends(get_current_us
                             "valid_until": 1, "updated_at": 1, "created_by_name": 1}).sort("updated_at", -1).to_list(200),
         timeline_for(entity_type="followup", entity_id=followup_id, limit=60, floor_ids=[floor_id]),
     )
+    await _enrich_followup_references([f], user, [customer])
     creators = Counter(q.get("created_by_name") for q in pending_quotations if q.get("created_by_name"))
     preferred = creators.most_common(1)[0][0] if creators else None
     touches = [parse_iso(q.get("updated_at")) for q in pending_quotations]
@@ -1163,6 +1214,18 @@ async def get_detail(followup_id: str, user: UserPublic = Depends(get_current_us
 # ─────────────────────────────────────────────────────────────────────────────
 # Manual create + edit
 # ─────────────────────────────────────────────────────────────────────────────
+def _required_create_assignments(floors, assignments, assigned_to=None, source_floor=None):
+    """Every newly created floor-local lead needs an explicit worker selection."""
+    selected = list(assignments or [])
+    if assigned_to and not any((a.floor_id if hasattr(a, "floor_id") else a.get("floor_id")) == source_floor for a in selected):
+        selected = [{"floor_id": source_floor, "user_id": assigned_to}]
+    assigned_floors = {(a.floor_id if hasattr(a, "floor_id") else a.get("floor_id")) for a in selected
+                       if (a.user_id if hasattr(a, "user_id") else a.get("user_id"))}
+    if not floors or any(floor not in assigned_floors for floor in floors):
+        raise HTTPException(422, "Select a team member for each interested floor")
+    return selected
+
+
 @router.post("", response_model=Followup)
 async def create_followup(body: FollowupCreate, user: UserPublic = Depends(get_current_user)):
     _reject_action_note(body.notes)
@@ -1177,6 +1240,10 @@ async def create_followup(body: FollowupCreate, user: UserPublic = Depends(get_c
             return Followup(**previous)
     if body.category in lead_scope.POST_ORDER_CATEGORIES or body.purchase_id:
         raise HTTPException(422, "Follow-ups cover only activities before an order is placed")
+    if body.category == "sales":
+        raise HTTPException(422, "Choose General, Quotation, Selection or Walk-in as the follow-up type")
+    interested_floors = body.interested_floor_ids or [floor_id]
+    selected_assignments = _required_create_assignments(interested_floors, body.assignments, body.assigned_to, floor_id)
     cust = await db.customers.find_one(floor_query(user, {"id": body.customer_id}), {"_id": 0})
     if not cust:
         raise HTTPException(status_code=404, detail="Customer not found")
@@ -1191,12 +1258,7 @@ async def create_followup(body: FollowupCreate, user: UserPublic = Depends(get_c
     value = float(quotation.get("grand_total", 0)) if quotation else 0.0
     score, level = score_followup(value, 0, 12, tier)
 
-    if body.assigned_to:
-        await lead_scope.validate_scope(db, user, [floor_for_write(user)], [{"floor_id": floor_for_write(user), "user_id": body.assigned_to}])
-    assigned_to_name = None if user.role == "owner" and not body.assigned_to else user.full_name
-    if body.assigned_to and body.assigned_to != user.id:
-        au = await db.users.find_one({"id": body.assigned_to}, {"_id": 0, "full_name": 1})
-        assigned_to_name = au["full_name"] if au else None
+    assigned_to_name = None
 
     action_label = {"call": "Call customer", "whatsapp": "Send WhatsApp", "email": "Send Email", "visit": "Schedule showroom visit"}
     f = Followup(
@@ -1214,7 +1276,7 @@ async def create_followup(body: FollowupCreate, user: UserPublic = Depends(get_c
         suggested_channel=body.channel, priority_score=score,
         priority_level=body.priority_level or level,
         due_at=body.due_at or now_iso(), is_automated=False,
-        assigned_to=body.assigned_to or (None if user.role == "owner" else user.id), assigned_to_name=assigned_to_name,
+        assigned_to=None, assigned_to_name=assigned_to_name,
         floor_id=floor_id,
     )
     if previous:
@@ -1222,8 +1284,8 @@ async def create_followup(body: FollowupCreate, user: UserPublic = Depends(get_c
     metadata = {"reference_source": body.reference_source}
     if body.referrer_id:
         metadata.update(await lead_scope.referrer_fields(db, body.referrer_id, f.floor_id, user))
-    if body.interested_floor_ids or body.assignments is not None or body.reference_source or body.referrer_id:
-        await lead_scope.update_interests(db, user=user, source=f.model_dump(), floor_ids=body.interested_floor_ids or [f.floor_id], assignments=body.assignments, metadata=metadata, dry_run=True)
+    if selected_assignments:
+        await lead_scope.update_interests(db, user=user, source=f.model_dump(), floor_ids=interested_floors, assignments=selected_assignments, metadata=metadata, dry_run=True)
     if request_id:
         identity = {'_id': f'followup-create:{request_id}'}
         await db.followups.update_one(identity, {'$setOnInsert': {**f.model_dump(), 'create_request_fingerprint': fingerprint}}, upsert=True)
@@ -1235,8 +1297,8 @@ async def create_followup(body: FollowupCreate, user: UserPublic = Depends(get_c
         f = Followup(**stored)
     else:
         await db.followups.insert_one(f.model_dump())
-    if body.interested_floor_ids or body.assignments is not None or body.reference_source or body.referrer_id:
-        document = await lead_scope.update_interests(db, user=user, source=f.model_dump(), floor_ids=body.interested_floor_ids or [f.floor_id], assignments=body.assignments, metadata=metadata)
+    if selected_assignments:
+        document = await lead_scope.update_interests(db, user=user, source=f.model_dump(), floor_ids=interested_floors, assignments=selected_assignments, metadata=metadata)
         f = Followup(**document)
     completion = await db.followups.update_one({'id': f.id, 'create_request_complete': {'$ne': True}}, {'$set': {'create_request_complete': True}}) if request_id else None
     if completion is None or completion.matched_count:
@@ -1470,11 +1532,21 @@ async def log_call(followup_id: str, body: FollowupCallOutcomePayload, user: Use
         next_due = body.next_followup_at
         if next_due is None or (next_due.replace(tzinfo=timezone.utc) if next_due.tzinfo is None else next_due.astimezone(timezone.utc)) <= now_dt:
             raise HTTPException(422, "The next follow-up date must be in the future")
+    successor_assignments = None
+    if outcome in ("interested", "call_back", "pending"):
+        selected = body.assignments if body.assignments is not None else f.get("assignments")
+        selected = _required_create_assignments([f["floor_id"]], selected, f.get("assigned_to") if body.assignments is None else None, f["floor_id"])
+        local_selected = [item for item in selected if (item.floor_id if hasattr(item, "floor_id") else item["floor_id"]) == f["floor_id"]]
+        successor_assignments = await lead_scope.validate_assignments(db, [f["floor_id"]], local_selected, bool(f.get("is_converted")))
     if body.interested_floor_ids or body.assignments is not None:
         f = await lead_scope.update_interests(db, user=user, source=f, floor_ids=body.interested_floor_ids or f.get("interested_floor_ids") or [f["floor_id"]], assignments=body.assignments)
     previous_assignee = f.get("assigned_to")
     if previous_assignee and await db.users.find_one({"id": previous_assignee, "role": "owner"}, {"_id": 0, "id": 1}):
         previous_assignee = None
+    if successor_assignments:
+        previous_assignee = successor_assignments[0]["user_id"]
+        f = {**f, "assigned_to": previous_assignee, "assigned_to_name": successor_assignments[0]["user_name"],
+             "assignments": [a for a in f.get("assignments", []) if a["floor_id"] != f["floor_id"]] + successor_assignments}
     if outcome == "interested":
         # A transferred lead stays with the recipient, including the source
         # row and the new reminder; interest is not a placed/won order.

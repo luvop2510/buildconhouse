@@ -1,5 +1,6 @@
 """Floor switching cannot expose another floor's follow-ups or Purchases."""
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
@@ -172,7 +173,8 @@ async def test_shared_inbox_can_create_floor_local_followups(monkeypatch, floor)
 
     monkeypatch.setattr(followup_routes, "db", SimpleNamespace(followups=Rows(), customers=Customers(), quotations=Quotations()))
     monkeypatch.setattr(followup_routes, "log_event", log)
-    result = await followup_routes.create_followup(FollowupCreate(customer_id="customer", reason="Call customer"), user(floor))
+    monkeypatch.setattr(lead_scope, "update_interests", AsyncMock(side_effect=lambda *_args, **kwargs: kwargs["source"]))
+    result = await followup_routes.create_followup(FollowupCreate(customer_id="customer", reason="Call customer", assignments=[{"floor_id": floor, "user_id": "worker"}]), user(floor))
     assert result.floor_id == floor
     assert len(inserted) == 1 and inserted[0]["floor_id"] == floor
 

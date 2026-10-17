@@ -2,6 +2,31 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
+## PDF sharing, assigned follow-ups and references — 2026-10-17
+
+Quotation/selection sharing creates no public PDF capability. Share actual PDF
+files through the device/browser file sheet; optional configured WhatsApp
+Business delivery uploads PDF bytes and retains revision/idempotency/status
+guards. Existing expiring capability reads remain compatible. Never restore a
+wa.me document-link draft. Furniture retains its separate PDF ledger workflow.
+
+Human-created follow-ups require explicitly selected eligible workers on every
+interested floor, including legacy notebook/customer entry and callback/pending
+successors without an existing valid assignment. Validate before writes and
+retain destination stage/grant checks. Sales is retired as a new/manual type;
+historical sales records remain readable. Owner filter overflow is bounded and
+scrollable. Do not silently substitute the creator for a missing assignment.
+
+Structured architect/interior UUIDs produce stable ARC-/INT- display codes.
+Customer, quotation/PDF, furniture and follow-up views retain name/code/company
+where available; floor-scoped acquisition counts deduplicate phone identity across
+sources. Exact-ID count lookup is distinct from the analytics top-100 leaderboard.
+Legacy NTS/free-text names are recovered without guessing a directory identity.
+No migration is required; preserve existing IDs and floor isolation.
+
+See `docs/audits/2026-10-17-pdf-followup-reference-release.md` for verification
+and the direct-WhatsApp provider configuration limitation.
+
 ## Quotation recovery and R2 source integration — 2026-10-16
 
 Version 1.0.4 gates both quotation builders on synchronized floor access with

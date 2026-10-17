@@ -526,7 +526,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     if (!referrerSwitcherOpen) return;
     const controller = new AbortController();
     if (!activeFloorId) return;
-    api.get<Referrer[]>("/referrers", { floorId: activeFloorId, signal: controller.signal, cacheMs: 5 * 60_000 })
+    api.get<Referrer[]>("/referrers?include_counts=true", { floorId: activeFloorId, signal: controller.signal, cacheMs: 5 * 60_000 })
       .then(setReferrers)
       .catch((error: any) => {
         if (error?.name !== "AbortError") console.warn("Failed to load referrers", error);

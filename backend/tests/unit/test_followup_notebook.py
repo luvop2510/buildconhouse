@@ -1,4 +1,5 @@
 import pytest
+from unittest.mock import AsyncMock
 from types import SimpleNamespace
 
 from services.followup_notebook import (
@@ -240,7 +241,10 @@ async def test_create_notebook_reuses_the_same_floor_customer_row(monkeypatch):
     user = SimpleNamespace(active_floor_id="second-floor", floor_ids=["first-floor", "second-floor"], role="sales")
     body = NotebookFollowupCreatePayload(
         customer_name="A", customer_phone="9909906652", kitchen_type="GI",
+        assignments=[{"floor_id": "second-floor", "user_id": "worker"}],
     )
+    monkeypatch.setattr(followup_routes.lead_scope, "validate_scope", AsyncMock())
+    monkeypatch.setattr(followup_routes.lead_scope, "update_interests", AsyncMock(side_effect=lambda *_args, **kwargs: kwargs["source"]))
 
     first = await followup_routes.create_notebook_row("second-floor", body, user)
     second = await followup_routes.create_notebook_row("second-floor", body, user)

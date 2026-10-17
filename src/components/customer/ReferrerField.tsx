@@ -2,12 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 
+import { referrerCode } from "@/src/utils/referrer";
 import { api } from "@/src/api/client";
 import { Alert, Button, Sheet } from "@/src/components/ui";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
 import { useBp } from "@/src/design/responsive";
 
-type Referrer = { id: string; name: string; company?: string | null; type: "architect" | "interior_designer" };
+type Referrer = { customers_acquired?: number | null; id: string; name: string; company?: string | null; type: "architect" | "interior_designer" };
 type ReferrerValue = Pick<Referrer, "id" | "name" | "type" | "company"> | null;
 
 export function ReferrerField({ value, onChange, floorId, label = "Referred By", allowCreate = true }: { value: ReferrerValue; onChange: (value: ReferrerValue) => void; floorId?: string; label?: string; allowCreate?: boolean }) {
@@ -30,7 +31,7 @@ export function ReferrerField({ value, onChange, floorId, label = "Referred By",
     if (!open) return;
     let alive = true;
     setError(null); setItems([]);
-    void api.get<Referrer[]>("/referrers", floorId ? { floorId } : undefined)
+    void api.get<Referrer[]>("/referrers?include_counts=true", floorId ? { floorId } : undefined)
       .then((result) => { if (alive) setItems(result); })
       .catch(() => { if (alive) setError("Could not load architects and interior designers. Close and reopen to retry."); });
     return () => { alive = false; };
@@ -61,7 +62,7 @@ export function ReferrerField({ value, onChange, floorId, label = "Referred By",
   return <View style={{ gap: 6 }}>
     <Text style={type.label}>{label}</Text>
     <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ expanded: open }} aria-haspopup="dialog" onPress={() => setOpen(true)} style={{ minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md, justifyContent: "center" }}>
-      <Text style={type.body}>{value ? [value.name, value.company].filter(Boolean).join(" · ") : "Select architect or interior designer"}</Text>
+      <Text style={type.body}>{value ? [value.name, value.company, referrerCode(value.id, value.type)].filter(Boolean).join(" · ") : "Select architect or interior designer"}</Text>
     </Pressable>
     <Sheet visible={open} onClose={close} title="Referred By" variant="bottom" testID="customer-referrer-sheet">
       <ScrollView contentContainerStyle={{ padding: isPhone ? spacing.md : spacing.lg, gap: spacing.sm, paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
@@ -70,7 +71,7 @@ export function ReferrerField({ value, onChange, floorId, label = "Referred By",
           {(["architect", "interior_designer"] as const).map((option) => <Button key={option} label={option === "architect" ? "Architect" : "Interior designer"} variant={kind === option ? "primary" : "secondary"} onPress={() => setKind(option)} />)}
         </View>
         <Pressable accessibilityRole="button" onPress={() => choose(null)} style={{ minHeight: 44, justifyContent: "center", paddingVertical: spacing.sm }}><Text style={type.body}>No referrer</Text></Pressable>
-        {filtered.map((item) => <Pressable key={item.id} accessibilityRole="button" onPress={() => choose(item)} style={{ minHeight: 44, justifyContent: "center", paddingVertical: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border }}><Text style={type.body}>{[item.name, item.company].filter(Boolean).join(" · ")}</Text></Pressable>)}
+        {filtered.map((item) => <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={item.name} onPress={() => choose(item)} style={{ minHeight: 44, justifyContent: "center", paddingVertical: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border }}><Text style={type.body}>{[item.name, item.company, referrerCode(item.id, item.type), item.customers_acquired == null ? null : `${item.customers_acquired} customers brought`].filter(Boolean).join(" · ")}</Text></Pressable>)}
         {allowCreate ? <>
         <Text style={[type.label, { marginTop: spacing.md }]}>Add new {kind === "architect" ? "architect" : "interior designer"}</Text>
         <TextInput value={name} onChangeText={setName} placeholder="Designer / architect name" accessibilityLabel="Designer / architect name" style={{ minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md }} />

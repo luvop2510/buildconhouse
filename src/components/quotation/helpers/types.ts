@@ -88,6 +88,7 @@ export type Customer = {
 };
 
 export type Referrer = {
+  customers_acquired?: number | null;
   id: string; name: string; type: "architect" | "interior_designer";
   phone?: string | null; company?: string | null;
 };

@@ -47,7 +47,7 @@ def acquisition_pipeline(f: AnalyticsFilter, floors, window, kind=None, order_ma
     first = "quotations" if f.brand_id else "customers"
     pipeline = source(first)
     if not f.brand_id:
-        for collection in ("walkins", "followups", "quotations"):
+        for collection in ("walkins", "followups", "quotations", "furniture_quotations"):
             pipeline.append({"$unionWith": {"coll": collection, "pipeline": source(collection)}})
     pipeline.extend([
         {"$group": {"_id": {"referrer": "$referrer_id", "person": "$person"},

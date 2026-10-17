@@ -1,5 +1,6 @@
 """Walk-in transfer and confirmed-customer boundary, without external services."""
 import asyncio
+from unittest.mock import AsyncMock
 import importlib
 from types import SimpleNamespace
 
@@ -179,12 +180,13 @@ def test_showroom_pending_callback_keeps_origin_and_walkin_link(monkeypatch):
     from datetime import datetime, timedelta, timezone
     from models import FollowupCallOutcomePayload
     row = {"id": "showroom-1", "floor_id": "first-floor", "customer_id": "lead-1", "customer_name": "Lead",
-           "category": "walk_in", "origin": "visit_showroom", "walkin_id": "walkin-1", "due_at": "2026-01-01T00:00:00Z"}
+           "category": "walk_in", "origin": "visit_showroom", "walkin_id": "walkin-1", "due_at": "2026-01-01T00:00:00Z", "assigned_to": "selected-worker"}
     store = Store([row])
     inserted = []
     async def insert_one(document): inserted.append(document)
     store.insert_one = insert_one
-    monkeypatch.setattr(followup_routes, "db", SimpleNamespace(followups=store))
+    monkeypatch.setattr(followup_routes, "db", SimpleNamespace(followups=store, users=SimpleNamespace(find_one=AsyncMock(return_value=None))))
+    monkeypatch.setattr(followup_routes.lead_scope, "validate_assignments", AsyncMock(return_value=[{"floor_id": "first-floor", "user_id": "selected-worker", "user_name": "Selected worker"}]))
     asyncio.run(followup_routes.log_call("showroom-1", FollowupCallOutcomePayload(
         outcome="pending", next_followup_at=datetime.now(timezone.utc) + timedelta(days=2),
     ), user()))

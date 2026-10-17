@@ -1,3 +1,4 @@
+import { referrerLabel } from "@/src/utils/referrer";
 // ═══════════════════════════════════════════════════════════════════════════
 // Follow-ups · Sales Command Center — Design System V2.
 // Superhuman Inbox × Linear. Every card is ranked by a deterministic AI
@@ -51,6 +52,9 @@ type Followup = {
   reference_source?: string | null;
   referrer_id?: string | null;
   referrer_name?: string | null;
+  architect_interior_designer?: string | null;
+  referrer_company?: string | null;
+  referrer_customers_acquired?: number | null;
   referrer_type?: "architect" | "interior_designer" | null;
   rule_type: string;
   category: string;
@@ -191,7 +195,6 @@ const CATEGORY_OPTIONS = [
   { value: "all", label: "All types" },
   { value: "selection", label: "Tile Selection" },
   { value: "quotation", label: "Quotation" },
-  { value: "sales", label: "Sales" },
   { value: "general", label: "General" },
 ];
 
@@ -891,7 +894,7 @@ function FollowupsWorkspace() {
     setKpiFilter(flt.kpiFilter || "all");
     setFollowupView(flt.followupView || "active");
     setPriorityFilter(flt.priorityFilter || "all");
-    setCategoryFilter(flt.categoryFilter || "all");
+    setCategoryFilter(filterValues(flt.categoryFilter || "all").filter(value => value !== "sales").join(",") || "all");
     setOwnerFilter(flt.ownerFilter || "all");
     setSavedViewsSheet(false);
     toast.success(`Applied "${v.name}"`);
@@ -1078,9 +1081,8 @@ function FollowupsWorkspace() {
             { value: "low", label: "Low", count: priorityCounts.low || undefined },
           ]} />
             <FilterBar multiSelect label="TYPE" value={categoryFilter} onChange={setCategoryFilter} options={CATEGORY_OPTIONS} />
-            <View style={{ flexDirection: "row", gap: spacing.md, alignItems: "center", flexWrap: "wrap" }}>
-
-              <FilterBar multiSelect label="OWNER" value={ownerFilter} onChange={setOwnerFilter} options={[
+            <View style={{ width: "100%", minWidth: 0 }}>
+              <FilterBar testID="followups-owner" multiSelect label="OWNER" value={ownerFilter} onChange={setOwnerFilter} options={[
                 { label: "All owners", value: "all" }, { label: "Mine", value: "mine" },
                 ...assignees.map(a => ({ label: a.full_name, value: a.id })),
               ]} />
@@ -1585,7 +1587,7 @@ function FollowupCard({
 
         {f.interested_floor_ids?.length ? <Text style={type.bodySm}>Interested: {f.interested_floor_ids.map(id => floorNames.find(floor => floor.id === id)?.name || id).join(", ")}</Text> : null}
         {!isResolved ? <Button label="Interested floors · Assign team" icon="layers" variant="secondary" size="sm" onPress={() => onAssign(f, "")} testID={`interested-${f.id}`} /> : null}
-        {f.referrer_name || f.reference_source ? <Text style={type.caption}>{[f.reference_source, f.referrer_name].filter(Boolean).join(" · ")}</Text> : null}
+        {f.referrer_name || f.architect_interior_designer || f.reference_source ? <Text style={type.caption}>{[f.reference_source, referrerLabel(f) || f.architect_interior_designer, f.referrer_company, f.referrer_customers_acquired != null ? `${f.referrer_customers_acquired} customers brought` : null].filter(Boolean).join(" · ")}</Text> : null}
         {/* Revenue — dedicated visual chip (was buried in prose; audit gap) */}
         {f.value > 0 ? (
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", backgroundColor: colors.surfaceTertiary, borderRadius: radius.sm, paddingHorizontal: 8, paddingVertical: 3 }}>
@@ -1778,6 +1780,7 @@ function ContextPanel({ detail, loading, embedded, compact }: { detail: Detail |
             />
           </View>
           {customer.address ? <Text style={type.caption}>{customer.address}</Text> : null}
+          {followup.referrer_name || followup.architect_interior_designer ? <Text style={type.caption}>{[referrerLabel(followup) || followup.architect_interior_designer, followup.referrer_company, followup.referrer_customers_acquired != null ? `${followup.referrer_customers_acquired} customers brought` : null].filter(Boolean).join(" · ")}</Text> : null}
           {(followup.assigned_to_name || stats.preferred_salesperson) ? (
             <Text style={type.caption}>
               Salesperson: {followup.assigned_to_name || "—"}
@@ -1831,17 +1834,19 @@ function CallOutcomeSheet({ visible, f, initialOutcome, onClose, onSubmit }: {
   const canEditCallScope = !!f && (f.interested_floor_ids || [f.floor_id || selectedFloorId]).every(id => editableFloors.some(floor => floor.id === id));
   // Initialize before the sheet can accept a choice or a Lost reason. A passive
   // effect could run after the first click and erase that new input.
-  useLayoutEffect(() => { if (visible) { setOutcome(initialOutcome || null); setNotes(""); setNextFollowupAt(""); setResponse(""); setScopeDirty(false); setCallScope({ interested_floor_ids: f?.interested_floor_ids?.length ? f.interested_floor_ids : [f?.floor_id || selectedFloorId], assignments: f?.assignments || [] }); } }, [visible, initialOutcome, f, selectedFloorId]);
+  useLayoutEffect(() => { if (visible) { setOutcome(initialOutcome || null); setNotes(""); setNextFollowupAt(""); setResponse(""); setScopeDirty(false); setCallScope({ interested_floor_ids: f?.interested_floor_ids?.length ? f.interested_floor_ids : [f?.floor_id || selectedFloorId], assignments: f?.assignments?.length ? f.assignments : f?.assigned_to ? [{ floor_id: f.floor_id || selectedFloorId, user_id: f.assigned_to, user_name: f.assigned_to_name || undefined }] : [] }); } }, [visible, initialOutcome, f, selectedFloorId]);
   if (!f) return null;
   const notesRequired = outcome === "lost";
   const pending = outcome === "pending";
-  const canSave = !!outcome && (!notesRequired || !!notes.trim()) && (!pending || !!nextFollowupAt.trim());
+  const createsSuccessor = outcome === "interested" || outcome === "call_back" || pending;
+  const hasLocalAssignee = callScope.assignments.some(a => a.floor_id === (f.floor_id || selectedFloorId) && a.user_id);
+  const canSave = (!createsSuccessor || hasLocalAssignee) && !!outcome && (!notesRequired || !!notes.trim()) && (!pending || !!nextFollowupAt.trim());
   return (
     <Sheet visible={visible} onClose={onClose} variant="modal" title="Log Call Outcome" subtitle={f.customer_name} width={440}
       footer={<>
         <Button label="Cancel" variant="secondary" onPress={onClose} size="md" />
         <View style={{ flex: 1 }} />
-        <Button label="Save" variant="primary" icon="check" disabled={!canSave} onPress={() => outcome && onSubmit(f, outcome, notesRequired ? notes.trim() : undefined, nextFollowupAt.trim() || undefined, response, outcome === "interested" && scopeDirty && canEditCallScope ? callScope.interested_floor_ids : undefined, outcome === "interested" && scopeDirty && canEditCallScope ? callScope.assignments : undefined)} size="md" testID="save-call-outcome" />
+        <Button label="Save" variant="primary" icon="check" disabled={!canSave} onPress={() => outcome && onSubmit(f, outcome, notesRequired ? notes.trim() : undefined, nextFollowupAt.trim() || undefined, response, createsSuccessor && scopeDirty && canEditCallScope ? callScope.interested_floor_ids : undefined, createsSuccessor && scopeDirty && canEditCallScope ? callScope.assignments : undefined)} size="md" testID="save-call-outcome" />
       </>}
     >
       <ScrollView contentContainerStyle={{ padding: spacing.xl, gap: spacing.md }}>
@@ -1865,7 +1870,7 @@ function CallOutcomeSheet({ visible, f, initialOutcome, onClose, onSubmit }: {
             );
           })}
         </View>
-        {outcome === "interested" && canEditCallScope ? <LeadScopeFields value={callScope} onChange={value => { setCallScope(value); setScopeDirty(true); }} sourceId={f.id} sourceFloorId={f.floor_id || selectedFloorId} reference={false} /> : null}
+        {createsSuccessor && canEditCallScope ? <LeadScopeFields assignmentsRequired requiredFloorId={f.floor_id || selectedFloorId} value={callScope} onChange={value => { setCallScope(value); setScopeDirty(true); }} sourceId={f.id} sourceFloorId={f.floor_id || selectedFloorId} reference={false} /> : null}
         <FormField label="Customer response"><TextInput value={response} onChangeText={setResponse} placeholder="What did the customer say?" style={styles.textArea} multiline testID="lead-call-response" /></FormField>
         {pending ? (
           <FormField label="Next follow-up date" helper="Required — enter when the customer asked you to reconnect (for example, 2026-08-14T10:00).">
@@ -1936,7 +1941,7 @@ function CustomSnoozeSheet({ visible, f, onClose, onSave }: { visible: boolean; 
 // ─────────────────────────────────────────────────────────────────────────────
 // NewFollowupSheet — manual reminder
 // ─────────────────────────────────────────────────────────────────────────────
-const NEW_CATEGORIES = ["general", "quotation", "selection", "sales", "walk_in"] as const;
+const NEW_CATEGORIES = ["general", "quotation", "selection", "walk_in"] as const;
 const NEW_CHANNELS: Channel[] = ["call", "whatsapp", "email", "visit"];
 function NewFollowupSheet({ visible, onClose, customers, assignees, defaultAssignee, onCreate }: {
   visible: boolean; onClose: () => void; customers: CustomerLite[]; assignees: Assignee[]; defaultAssignee?: string;
@@ -1985,6 +1990,7 @@ function NewFollowupSheet({ visible, onClose, customers, assignees, defaultAssig
     if (!customerId) { toast.error("Choose a customer"); return; }
     if (!reason.trim()) { toast.error("Add a reason"); return; }
     if (!scope.interested_floor_ids.length) { toast.error("Choose at least one interested floor"); return; }
+    if (scope.interested_floor_ids.some(floorId => !scope.assignments.some(a => a.floor_id === floorId && a.user_id))) { toast.error("Select a team member for each interested floor"); return; }
     const payload = { customer_id: customerId, category, channel, reason: reason.trim(), ...scope };
     const signature = JSON.stringify(payload);
     // Unchanged retries finish the same request. Editing a rejected draft is
@@ -2045,7 +2051,7 @@ function NewFollowupSheet({ visible, onClose, customers, assignees, defaultAssig
             style={styles.textArea} multiline testID="new-followup-reason" />
         </FormField>
 
-        <LeadScopeFields value={scope} onChange={setScope} customerId={customerId || undefined} partner={partner} onPartnerChange={setPartner} />
+        <LeadScopeFields assignmentsRequired value={scope} onChange={setScope} customerId={customerId || undefined} partner={partner} onPartnerChange={setPartner} />
         </ScrollView>
       </View>
     </Sheet>

@@ -3,6 +3,7 @@ caller's active floor. It previously ran four raw, unscoped queries, so the
 insights panel always showed global (in practice, 100% first-floor) numbers
 regardless of which floor was selected."""
 from __future__ import annotations
+from unittest.mock import AsyncMock
 
 import asyncio
 
@@ -102,14 +103,17 @@ def test_log_call_reschedule_inherits_source_followup_floor(monkeypatch):
 
     fake_followups = _FakeFollowups({
         "id": "f-1", "customer_id": "cust-1", "customer_name": "Test Customer",
+        "assigned_to": "selected-worker",
         "floor_id": "ground-floor",
     })
 
     class _Db:
         followups = fake_followups
+        users = type("Users", (), {"find_one": AsyncMock(return_value=None)})()
 
     monkeypatch.setattr(followups, "db", _Db())
 
+    monkeypatch.setattr(followups.lead_scope, "validate_assignments", AsyncMock(return_value=[{"floor_id": "ground-floor", "user_id": "selected-worker", "user_name": "Selected worker"}]))
     asyncio.run(followups.log_call(
         "f-1", FollowupCallOutcomePayload(outcome="call_back"), user=_user("ground-floor"),
     ))

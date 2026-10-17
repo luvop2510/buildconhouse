@@ -1,3 +1,4 @@
+import { referrerCode } from "@/src/utils/referrer";
 // QuotationPane V4 — the right pane in the V4 shell.
 // Renders: sticky header (number + save state + status), room chip row, canvas
 // (rooms + line items), footer (notes + discount + totals + place order).
@@ -179,7 +180,7 @@ function CompactHeaderFields() {
       >
         <Text style={styles.fieldLabel}>Referred by</Text>
         <View style={styles.customerValueRow}>
-          <Text style={styles.fieldValue} numberOfLines={1}>{b.s.header.referrerName || "None"}</Text>
+          <Text style={styles.fieldValue}>{[b.s.header.referrerName, referrerCode(b.s.header.referrerId, b.s.header.referrerType)].filter(Boolean).join(" · ") || "None"}</Text>
           <Feather name="chevron-down" size={12} color={colors.onSurfaceMuted} />
         </View>
       </Pressable>

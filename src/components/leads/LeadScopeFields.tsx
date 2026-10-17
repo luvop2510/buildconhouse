@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 import { Text } from "@/src/components/AppText";
 import { leadsApi, type LeadAssignee, type LeadScope } from "@/src/api/leads";
@@ -9,9 +9,9 @@ import { spacing, type } from "@/src/theme/tokens";
 
 export type LeadPartner = { id: string; name: string; company?: string | null; type: "architect" | "interior_designer" } | null;
 /** The server returns eligible workers for each floor, including area grants. */
-export function LeadScopeFields({ value, onChange, partner, onPartnerChange, reference = true, requiredFloorId, converted = false, sourceId, customerId, customerPhone, sourceFloorId }: {
+export function LeadScopeFields({ value, onChange, partner, onPartnerChange, reference = true, assignmentsRequired = false, requiredFloorId, converted = false, sourceId, customerId, customerPhone, sourceFloorId }: {
   value: LeadScope; onChange: (value: LeadScope) => void; partner?: LeadPartner;
-  onPartnerChange?: (partner: LeadPartner) => void; reference?: boolean; requiredFloorId?: string; converted?: boolean; sourceId?: string; customerId?: string; customerPhone?: string; sourceFloorId?: string;
+  onPartnerChange?: (partner: LeadPartner) => void; reference?: boolean; assignmentsRequired?: boolean; requiredFloorId?: string; converted?: boolean; sourceId?: string; customerId?: string; customerPhone?: string; sourceFloorId?: string;
 }) {
   const { floors } = useFloorAccess();
   const [workers, setWorkers] = useState<LeadAssignee[]>([]);
@@ -19,18 +19,30 @@ export function LeadScopeFields({ value, onChange, partner, onPartnerChange, ref
   const [retry, setRetry] = useState(0);
   const [loading, setLoading] = useState(false);
   const floorKey = [...value.interested_floor_ids].sort().join(",");
+  const eligibilityKey = JSON.stringify([floorKey, converted, sourceId, customerId, customerPhone, sourceFloorId]);
+  const latest = useRef({ value, onChange, eligibilityKey });
+  latest.current = { value, onChange, eligibilityKey };
   useEffect(() => {
     let active = true;
+    const isCurrent = () => active && latest.current.eligibilityKey === eligibilityKey;
     setWorkers([]); setError(false);
     if (!floorKey) { setLoading(false); return; }
     setLoading(true);
     const timer = setTimeout(() => {
-      void leadsApi.assignees(floorKey.split(","), converted, sourceId, customerId, customerPhone, sourceFloorId).then(rows => { if (active) setWorkers(rows); })
-        .catch(() => { if (active) setError(true); })
-        .finally(() => { if (active) setLoading(false); });
+      void leadsApi.assignees(floorKey.split(","), converted, sourceId, customerId, customerPhone, sourceFloorId).then(rows => {
+        if (!isCurrent()) return;
+        setWorkers(rows);
+        // Legacy owners, retired grants and inactive staff cannot remain hidden
+        // selections that prevent the user from assigning an eligible worker.
+        const current = latest.current.value;
+        const eligible = current.assignments.filter(a => rows.some(worker => worker.id === a.user_id && worker.floor_ids.includes(a.floor_id)));
+        if (eligible.length !== current.assignments.length) latest.current.onChange({ ...current, assignments: eligible });
+      })
+        .catch(() => { if (isCurrent()) setError(true); })
+        .finally(() => { if (isCurrent()) setLoading(false); });
     }, customerPhone && !sourceId && !customerId ? 250 : 0);
     return () => { active = false; clearTimeout(timer); };
-  }, [floorKey, retry, converted, sourceId, customerId, customerPhone, sourceFloorId]);
+  }, [eligibilityKey, floorKey, retry, converted, sourceId, customerId, customerPhone, sourceFloorId]);
   const changeFloors = (ids: string[]) => {
     const selected = requiredFloorId && !ids.includes(requiredFloorId) ? [requiredFloorId, ...ids] : ids;
     onChange({ ...value, interested_floor_ids: selected, assignments: value.assignments.filter(a => selected.includes(a.floor_id)) });
@@ -41,7 +53,8 @@ export function LeadScopeFields({ value, onChange, partner, onPartnerChange, ref
       <Chip label="Select all floors" active={floors.length > 0 && floors.every(f => value.interested_floor_ids.includes(f.id))} onPress={() => changeFloors(floors.map(f => f.id))} testID="lead-floors-all" />
       {floors.map(f => <Chip key={f.id} label={f.name} active={value.interested_floor_ids.includes(f.id)} testID={`lead-floor-${f.id}`} onPress={() => changeFloors(value.interested_floor_ids.includes(f.id) ? value.interested_floor_ids.filter(id => id !== f.id) : [...value.interested_floor_ids, f.id])} />)}
     </View>
-    <Text style={type.label}>Assign team members by floor</Text>
+    <Text style={type.label}>Assign team members by floor{assignmentsRequired ? " *" : ""}</Text>
+    {assignmentsRequired ? <Text style={type.caption}>Select at least one team member for each interested floor.</Text> : null}
     {loading ? <Text style={type.caption}>Loading eligible team members…</Text> : null}
     {error ? <Alert tone="error" title="Could not load eligible team members" action={<Button label="Retry" variant="secondary" onPress={() => setRetry(n => n + 1)} />} /> : null}
     {!loading && !error ? value.interested_floor_ids.map(floorId => <View key={floorId} style={{ gap: spacing.sm }}>

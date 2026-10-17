@@ -8,11 +8,12 @@ const row = {
   value: 12000, reason: 'Confirm delivery', reason_factors: [], next_action: 'Call customer',
   suggested_channel: 'call', priority_score: 70, priority_level: 'high', due_at: new Date().toISOString(),
   status: 'open', is_automated: false, auto_resolved: false, contact_attempts: 0, tags: [], bucket: 'today',
-  created_at: new Date().toISOString(), updated_at: new Date().toISOString(), assigned_to: 'audit-owner',
+  created_at: new Date().toISOString(), updated_at: new Date().toISOString(), assigned_to: 'eligible-worker', floor_id: 'first-floor',
 };
 
 test('critical Follow-ups Done is note-free and retains the task after a failed save', async ({ page }) => {
   await mockSession(page, '/followups');
+  await page.route('**/api/followups/assignees?**', r => r.fulfill({ json: [{ id: 'eligible-worker', full_name: 'Eligible worker', role: 'sales', floor_ids: ['first-floor'] }] }));
   await page.route('**/api/followups/config/assignees', r => r.fulfill({ json: [] }));
   await page.route('**/api/followups/saved-views', r => r.fulfill({ json: [] }));
   await page.route('**/api/followups/page?**', r => r.fulfill({ json: { items: [row], page: 1, page_size: 100, has_more: false } }));
@@ -74,6 +75,7 @@ test('critical retired quotation follow-up uses the shared Lost reason workflow 
 
 test('critical a routine call has no note field and only Lost requests a reason', async ({ page }) => {
   await mockSession(page, '/followups');
+  await page.route('**/api/followups/assignees?**', r => r.fulfill({ json: [{ id: 'eligible-worker', full_name: 'Eligible worker', role: 'sales', floor_ids: ['first-floor'] }] }));
   await page.route('**/api/followups/config/assignees', r => r.fulfill({ json: [] }));
   await page.route('**/api/followups/saved-views', r => r.fulfill({ json: [] }));
   await page.route('**/api/followups/page?**', r => r.fulfill({ json: { items: [row], page: 1, page_size: 100, has_more: false } }));
@@ -139,13 +141,14 @@ test('critical walk-in notes are read-only until marking the customer lost', asy
 
 test('critical Won orders shows orders attributed to the current team member', async ({ page }) => {
   await mockSession(page, '/followups');
+  await page.route('**/api/followups/assignees?**', r => r.fulfill({ json: [{ id: 'eligible-worker', full_name: 'Eligible worker', role: 'sales', floor_ids: ['first-floor'] }] }));
   await page.route('**/api/followups/config/assignees', r => r.fulfill({ json: [] }));
   await page.route('**/api/followups/saved-views', r => r.fulfill({ json: [] }));
   const filters: URLSearchParams[] = [];
   await page.route('**/api/followups/page?**', r => {
     const params = new URL(r.request().url()).searchParams; filters.push(params);
     return r.fulfill({ json: { items: params.get('view') === 'won' ? [
-      { ...row, id: 'my-order', customer_name: 'My placed order', status: 'done', auto_resolved: true, completed_outcome: 'won', bucket: 'completed' },
+      { ...row, id: 'my-order', customer_name: 'My placed order', assigned_to: 'audit-owner', status: 'done', auto_resolved: true, completed_outcome: 'won', bucket: 'completed' },
       { ...row, id: 'other-order', customer_name: 'Another salesperson order', assigned_to: 'other-user', status: 'done', auto_resolved: true, completed_outcome: 'won', bucket: 'completed' },
     ] : [], page: 1, page_size: 100, has_more: false } });
   });

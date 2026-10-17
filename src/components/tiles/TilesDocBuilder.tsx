@@ -1,3 +1,4 @@
+import { referrerLabel } from "@/src/utils/referrer";
 // TilesDocBuilder — Ground Floor → Tiles → Selection / Quotation.
 // -----------------------------------------------------------------------------
 // Each page renders as an editable on-screen replica of its official printed
@@ -249,6 +250,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   const customerIdRef = useRef<string | null>(null);
   const [customerSnapshot, setCustomerSnapshot] = useState<{ name: string; phone: string }>({ name: "", phone: "" });
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [partnerLabel, setPartnerLabel] = useState("");
   const [header, setHeader] = useState<TilesHeader>({
     customerName: "", phone: "", reference: "", docDate: defaultDocDate(docType),
     attendedBy: "", preparedBy: "", address: "", docNumber: "", transportationFee: "0",
@@ -292,6 +294,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     setLoading(true);
     setSaveState("idle");
     setRestoreError(null);
+    setPartnerLabel("");
     (async () => {
       try {
         const doc = await api.get<any>(`/quotations/${routeId}?with_completion=true`, { floorId: TILES_FLOOR_ID, signal: controller.signal });
@@ -315,6 +318,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         setCustomerId(doc.customer_id || null);
         customerIdRef.current = doc.customer_id || null;
         setCustomerSnapshot({ name: doc.customer_name || "", phone: doc.phone_snapshot || "" });
+        setPartnerLabel(referrerLabel(doc));
         setHeader({
           customerName: doc.customer_name || "",
           phone: doc.phone_snapshot || "",
@@ -696,7 +700,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       if (!id) return;
       setWhatsappDraft(await prepareQuotationWhatsAppDraft(id, TILES_FLOOR_ID));
     } catch (error: any) {
-      const message = error?.detail || "Could not prepare the WhatsApp quotation draft.";
+      const message = error?.detail || "Could not prepare the PDF for sharing.";
       setWorkflowError(message); toast.error(message);
     } finally { setBusy(null); }
   }, [busy, persist]);
@@ -785,6 +789,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     setCustomerId(customer.id);
     customerIdRef.current = customer.id;
     setCustomerSnapshot({ name: customer.name, phone: customer.phone || "" });
+    setPartnerLabel(referrerLabel(customer));
     setHeader((cur) => ({ ...cur, customerName: customer.name, phone: customer.phone || cur.phone }));
     markDirty();
   }, [markDirty]);
@@ -792,7 +797,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   return {
     docId, docNumberServer, loading, restoreError, retryRestore: () => setRestoreAttempt((value) => value + 1), header, setHeaderField, rows,
     updateRow, addRow, removeRow, applyProduct, selectRowSize, loadRowSizes,
-    customers, customerId, pickCustomer, setCustomerId,
+    customers, customerId, pickCustomer, setCustomerId, partnerLabel,
     saveState, retrySave: () => persist({ silent: true }), busy, generatePdf, print, placeOrder, serverTotals, previewTotals,
     whatsappDraft, closeWhatsApp: () => setWhatsappDraft(null), prepareWhatsApp,
     customerCompleted: Boolean(!loading && completionSnapshot?.completed && completionSnapshot.id === docId && completionSnapshot.customerId === customerId),
@@ -1134,6 +1139,7 @@ function MetaGrid({ doc }: { doc: ReturnType<typeof useTilesDoc> }) {
   ];
   return (
     <View style={metaStyles.grid}>
+      {doc.partnerLabel ? <Text style={type.caption}>Architect / interior designer: {doc.partnerLabel}</Text> : null}
       <View style={metaStyles.row}>
         <View style={metaStyles.cell}>
           <Text style={metaStyles.label}>CUSTOMER NAME</Text>
@@ -1831,6 +1837,7 @@ function MobileTilesEditor({
                   <TextField label={isSelection ? "Selection no." : "Quotation no."} value={doc.header.docNumber} onChangeText={(t: string) => doc.setHeaderField("docNumber", t)} testID="mobile-doc-number" />
                 </View>
                 <View style={mobileStyles.fieldFull}>
+                  {doc.partnerLabel ? <Text style={type.caption}>Architect / interior designer: {doc.partnerLabel}</Text> : null}
                   <TextField label="Reference" value={doc.header.reference} onChangeText={(t: string) => doc.setHeaderField("reference", t)} testID="mobile-reference" />
                 </View>
                 <View style={mobileStyles.fieldFull}>
@@ -1870,7 +1877,7 @@ function MobileTilesEditor({
       )}
 
       <View onLayout={(event) => setFooterHeight(event.nativeEvent.layout.height)} style={[mobileStyles.bottomBar, { paddingBottom: Math.max(spacing.lg, insets.bottom + spacing.sm) }]}>
-        <Button label="WhatsApp draft" icon="message-circle" onPress={doc.prepareWhatsApp} loading={doc.busy === "whatsapp"} disabled={!!doc.busy} variant="secondary" testID="tiles-mobile-whatsapp-draft" />
+        <Button label="Share PDF" icon="message-circle" onPress={doc.prepareWhatsApp} loading={doc.busy === "whatsapp"} disabled={!!doc.busy} variant="secondary" testID="tiles-mobile-whatsapp-draft" />
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
           <Button
             label="Download PDF" icon="download" onPress={doc.generatePdf}
@@ -2057,9 +2064,7 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
           </View>
         </View>
       ) : <>
-      <WhatsAppQuotationSheet draft={doc.whatsappDraft} onClose={doc.closeWhatsApp} onRevoke={async () => {
-        if (doc.docId) await api.delete(`/quotations/${doc.docId}/whatsapp-draft`, { floorId: TILES_FLOOR_ID });
-      }} />
+      <WhatsAppQuotationSheet draft={doc.whatsappDraft} onClose={doc.closeWhatsApp} />
       {useResponsiveEditor ? <MobileTilesEditor docType={docType} doc={doc} router={router} onDelete={confirmDelete} workspaceWidth={workspaceWidth} /> : (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surfaceSecondary }} edges={["top"]}>
       <View style={shellStyles.topbar}>
@@ -2085,7 +2090,7 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
               testID="tiles-workflow-action"
             />
           ) : null}
-          <ActionBtn label="WhatsApp draft" icon="message-circle" onPress={doc.prepareWhatsApp} loading={doc.busy === "whatsapp"} testID="tiles-whatsapp-draft" />
+          <ActionBtn label="Share PDF" icon="message-circle" onPress={doc.prepareWhatsApp} loading={doc.busy === "whatsapp"} testID="tiles-whatsapp-draft" />
           <ActionBtn
             label={isSelection ? "Generate selection PDF" : "Generate quotation PDF"}
             icon="file-text"

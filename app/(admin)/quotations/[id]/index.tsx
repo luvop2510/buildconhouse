@@ -1,3 +1,4 @@
+import { referrerLabel } from "@/src/utils/referrer";
 import Feather from "@expo/vector-icons/Feather";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -21,6 +22,7 @@ type Quotation = {
   id: string; number: string; customer_name: string; status: string; floor_id?: string;
   purchase_completion_status?: "active" | "completed";
   customer_outcome?: "won" | "lost" | null;
+  customer_id?: string; referrer_id?: string | null; referrer_name?: string | null; referrer_type?: string | null;
   items: Line[]; rooms: string[]; subtotal: number; discount_total: number;
   grand_total: number; created_at: string; notes?: string;
   created_by_name: string;
@@ -59,7 +61,7 @@ export default function QuotationDetail() {
     if (!q || preparingWhatsApp) return;
     setPreparingWhatsApp(true); setActionError(null);
     try { setWhatsappDraft(await prepareQuotationWhatsAppDraft(q.id, q.floor_id || "first-floor")); }
-    catch (error: any) { setActionError(error?.detail || "Could not prepare the WhatsApp quotation draft."); }
+    catch (error: any) { setActionError(error?.detail || "Could not prepare the PDF for sharing."); }
     finally { setPreparingWhatsApp(false); }
   };
   const [deleting, setDeleting] = useState(false);
@@ -210,6 +212,10 @@ export default function QuotationDetail() {
           <Text style={[type.bodyMuted, { marginTop: 4 }]}>
             Prepared by {q.created_by_name} · {new Date(q.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}
           </Text>
+          {q.referrer_id || q.referrer_name ? <View style={{ marginTop: spacing.sm, gap: spacing.xs }}>
+            <Text style={type.bodyMuted}>Architect / interior designer: {referrerLabel(q)}</Text>
+            {q.customer_id ? <Button label="View reference and customers brought" variant="secondary" size="sm" onPress={() => router.push(`/(admin)/customers/${q.customer_id}` as any)} /> : null}
+          </View> : null}
           <View style={styles.heroDivider} />
           <View style={[styles.heroTotalRow, isPhone && styles.heroTotalRowPhone]}>
             <View>
@@ -227,7 +233,7 @@ export default function QuotationDetail() {
               </Pressable>
             ) : null}
           </View>
-          <View style={{ marginTop: 12, alignSelf: "flex-start" }}><Button label="WhatsApp draft" icon="message-circle" variant="secondary" size="sm" loading={preparingWhatsApp} disabled={!q.items.length || preparingWhatsApp} onPress={() => void prepareWhatsApp()} testID="quotation-whatsapp-draft" /></View>
+          <View style={{ marginTop: 12, alignSelf: "flex-start" }}><Button label="Share PDF" icon="message-circle" variant="secondary" size="sm" loading={preparingWhatsApp} disabled={!q.items.length || preparingWhatsApp} onPress={() => void prepareWhatsApp()} testID="quotation-whatsapp-draft" /></View>
           {isPhone ? <View style={{ marginTop: 12, alignSelf: "flex-start" }}><Button label="Download product PPT" icon="image" variant="secondary" size="sm" onPress={openPpt} testID="download-ppt" /></View> : null}
         </View>
 
@@ -369,9 +375,7 @@ export default function QuotationDetail() {
           </View>
         </Card>
       </ScrollView>
-      <WhatsAppQuotationSheet draft={whatsappDraft} onClose={() => setWhatsappDraft(null)} onRevoke={async () => {
-        await api.delete(`/quotations/${id}/whatsapp-draft`, { floorId: q.floor_id || "first-floor" });
-      }} />
+      <WhatsAppQuotationSheet draft={whatsappDraft} onClose={() => setWhatsappDraft(null)} />
       <BottomSheet visible={pdfOptionsOpen} onClose={() => setPdfOptionsOpen(false)} title="Download quotation PDF" testID="quotation-detail-pdf-options">
         <View style={{ gap: spacing.sm, paddingBottom: spacing.lg }}>
           <Text style={type.bodyMuted}>Include Vitra dimension diagrams in this PDF?</Text>

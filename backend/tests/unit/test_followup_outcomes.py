@@ -21,7 +21,7 @@ class _Followups:
     def __init__(self):
         self.row = {
             "id": "followup-1", "floor_id": "first-floor", "customer_id": "customer-1",
-            "customer_name": "Client", "category": "sales", "due_at": "2026-01-01T00:00:00+00:00",
+            "customer_name": "Client", "category": "sales", "assigned_to": "selected-worker", "assigned_to_name": "Selected worker", "due_at": "2026-01-01T00:00:00+00:00",
         }
         self.updated: dict | None = None
         self.inserted: list[dict] = []
@@ -36,7 +36,19 @@ class _Followups:
         self.inserted.append(row)
 
 
+class _UserCursor:
+    def sort(self, *_args):
+        return self
+
+    async def to_list(self, _limit):
+        return [{"id": uid, "full_name": name, "active": True, "role": "sales", "floor_ids": ["first-floor"]}
+                for uid, name in [("selected-worker", "Selected worker"), ("receiving-salesperson", "Receiving salesperson")]]
+
+
 class _Users:
+    def find(self, *_args):
+        return _UserCursor()
+
     async def find_one(self, *_args, **_kwargs):
         return None
 

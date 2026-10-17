@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 from auth import (
-    TILES_FLOOR_ID, floor_for_write, floor_inherit, floor_query, get_current_customer, get_current_user,
+    TILES_FLOOR_ID, accessible_floor_ids, floor_for_write, floor_inherit, floor_query, get_current_customer, get_current_user,
     get_floor_scoped_or_404, hash_password, invalidate_principal_cache, require_floor_access, require_min_role, revoke_all_sessions,
 )
 from db import db
@@ -224,6 +224,37 @@ async def get_customer(customer_id: str, with_completion: bool = False, user: Us
     doc = await get_floor_scoped_or_404(
         db.customers, customer_id, user, not_found="Customer not found", projection={"_id": 0, "password_hash": 0},
     )
+    from services.referrer_identity import acquired_counts, legacy_referrer_name
+    if not doc.get("referrer_name"):
+        doc = {**doc, "referrer_name": legacy_referrer_name(doc)}
+    if not doc.get("referrer_id") and not doc.get("referrer_name"):
+        # Notebook/walk-in legacy names were never part of CustomerPublic. Keep
+        # the original spelling and only inspect this customer's actual floor.
+        for collection in (db.followups, db.walkins):
+            legacy = await collection.find_one({
+                "customer_id": customer_id, "floor_id": doc["floor_id"], "is_deleted": {"$ne": True},
+                "$or": [{key: {"$exists": True, "$nin": [None, ""]}} for key in
+                        ("referrer_id", "referrer_name", "architect_name", "interior_designer_name", "architect_interior_designer", "architect")],
+            }, {"_id": 0}, sort=[("updated_at", -1)])
+            if legacy:
+                doc = {**doc, "referrer_id": legacy.get("referrer_id"),
+                       "referrer_name": legacy.get("referrer_name") or legacy_referrer_name(legacy),
+                       "referrer_type": legacy.get("referrer_type")}
+                break
+    if doc.get("referrer_id"):
+        # Attribution can originate on another interested floor. Restrict its
+        # directory lookup to the caller's permitted floors, not the ambient one.
+        selector = {"id": doc["referrer_id"]}
+        floors = accessible_floor_ids(user)
+        if floors is not None:
+            selector["floor_id"] = {"$in": floors}
+        partner = await db.referrers.find_one(selector, {"_id": 0})
+        if partner:
+            doc = {**doc, "referrer_name": partner.get("name") or doc.get("referrer_name"),
+                   "referrer_type": partner.get("type") or doc.get("referrer_type"),
+                   "referrer_company": partner.get("company")}
+        counts = await acquired_counts(db, [doc["referrer_id"]], [doc["floor_id"]])
+        doc["referrer_customers_acquired"] = counts.get(doc["referrer_id"], 0)
     if with_completion:
         completion_user = user.model_copy(update={"active_floor_id": doc["floor_id"]})
         complete_ids = await completed_customer_ids(db, completion_user, [customer_id])
