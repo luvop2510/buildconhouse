@@ -4,6 +4,11 @@ import test from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
 
+const referrerExports = {};
+vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../src/utils/referrer.ts', import.meta.url), 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText, { exports: referrerExports });
+
 const source = readFileSync(new URL('../app/(admin)/tiles/index.tsx', import.meta.url), 'utf8');
 const marker = '  return (\n    <SafeAreaView';
 assert.ok(source.includes(marker));
@@ -82,6 +87,7 @@ function builder() {
   const request = method => (url, payload, options) => { const pending = deferred(); requests.push({ ...pending, method, url, payload, options }); return pending.promise; };
   const router = { setParams(value) { parameterUpdates.push(value); params = { ...params, ...value }; dirty = true; }, replace() {}, push() {} };
   const modules = {
+    '@/src/utils/referrer': referrerExports,
     react, 'react-native': { StyleSheet: { create: value => value }, Platform: { OS: 'web' } },
     'expo-router': { useRouter: () => router, useLocalSearchParams: () => params },
     '@/src/api/client': { api: { get: (url, options) => { if (url === '/customers') return Promise.resolve([]); return request('GET')(url, undefined, options); }, post: request('POST'), patch: request('PATCH') } },
