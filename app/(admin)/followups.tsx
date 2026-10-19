@@ -1948,11 +1948,14 @@ function NewFollowupSheet({ visible, onClose, customers, assignees, defaultAssig
   onCreate: (payload: any) => void;
 }) {
   const { isPhone } = useBp();
+  const [customerMode, setCustomerMode] = useState<"existing" | "new">("existing");
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [chosenCustomer, setChosenCustomer] = useState<CustomerLite | null>(null);
   const createRequestKey = useRef<string | null>(null);
   const createRequestSignature = useRef<string | null>(null);
   const [customerQuery, setCustomerQuery] = useState("");
+  const [newCustomerName, setNewCustomerName] = useState("");
+  const [newCustomerPhone, setNewCustomerPhone] = useState("");
   const [searchedCustomers, setSearchedCustomers] = useState<CustomerLite[] | null>(null);
   const [customerSearchFailed, setCustomerSearchFailed] = useState(false);
   const [category, setCategory] = useState<string>("general");
@@ -1964,7 +1967,7 @@ function NewFollowupSheet({ visible, onClose, customers, assignees, defaultAssig
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (visible) { createRequestKey.current = newLeadRequestKey(); createRequestSignature.current = null; setCustomerId(null); setChosenCustomer(null); setCustomerQuery(""); setCategory("general"); setChannel("call"); setReason(""); setPartner(null); setScope({ interested_floor_ids: selectedFloorId ? [selectedFloorId] : [], assignments: [] }); }
+    if (visible) { createRequestKey.current = newLeadRequestKey(); createRequestSignature.current = null; setCustomerMode("existing"); setCustomerId(null); setChosenCustomer(null); setCustomerQuery(""); setNewCustomerName(""); setNewCustomerPhone(""); setCategory("general"); setChannel("call"); setReason(""); setPartner(null); setScope({ interested_floor_ids: selectedFloorId ? [selectedFloorId] : [], assignments: [] }); }
   }, [visible, defaultAssignee, selectedFloorId]);
 
   useEffect(() => {
@@ -1987,11 +1990,18 @@ function NewFollowupSheet({ visible, onClose, customers, assignees, defaultAssig
   const selectedCustomer = chosenCustomer || customers.find((c) => c.id === customerId);
 
   const submit = async () => {
-    if (!customerId) { toast.error("Choose a customer"); return; }
+    if (customerMode === "existing" && !customerId) { toast.error("Choose an existing customer"); return; }
+    if (customerMode === "new" && !newCustomerName.trim()) { toast.error("Enter the customer's name"); return; }
+    if (customerMode === "new" && !newCustomerPhone.trim()) { toast.error("Enter the customer's mobile number"); return; }
     if (!reason.trim()) { toast.error("Add a reason"); return; }
     if (!scope.interested_floor_ids.length) { toast.error("Choose at least one interested floor"); return; }
     if (scope.interested_floor_ids.some(floorId => !scope.assignments.some(a => a.floor_id === floorId && a.user_id))) { toast.error("Select a team member for each interested floor"); return; }
-    const payload = { customer_id: customerId, category, channel, reason: reason.trim(), ...scope };
+    const payload = {
+      ...(customerMode === "existing" ? { customer_id: customerId } : {
+        new_customer_name: newCustomerName.trim(), new_customer_phone: newCustomerPhone.trim(),
+      }),
+      category, channel, reason: reason.trim(), ...scope,
+    };
     const signature = JSON.stringify(payload);
     // Unchanged retries finish the same request. Editing a rejected draft is
     // an intentional new request, rather than reusing a key for other data.
@@ -2013,22 +2023,37 @@ function NewFollowupSheet({ visible, onClose, customers, assignees, defaultAssig
     >
       <View style={{ flex: 1 }}>
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, gap: spacing.lg, paddingBottom: isPhone ? 120 : spacing.xl }}>
-        <FormField label="Customer" required>
-          <SearchField value={selectedCustomer ? (selectedCustomer.company || selectedCustomer.name) : customerQuery}
-            onChangeText={(v) => { setCustomerQuery(v); setCustomerId(null); setChosenCustomer(null); }} placeholder="Search customer…" onClear={() => { setCustomerQuery(""); setCustomerId(null); setChosenCustomer(null); }} />
-          {customerSearchFailed ? <Text style={type.caption}>Customer search failed. Edit your search to retry.</Text> : null}
-          {!customerId && matches.length ? (
-            <View style={{ borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, marginTop: 6, overflow: "hidden" }}>
-              {matches.map((c) => (
-                <Pressable key={c.id} onPress={() => { setCustomerId(c.id); setChosenCustomer(c); setCustomerQuery(""); }}
-                  style={{ padding: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider }}>
-                  <Text style={type.bodySm}>{c.company || c.name}</Text>
-                  {c.phone ? <Text style={type.caption}>{c.phone}</Text> : null}
-                </Pressable>
-              ))}
-            </View>
-          ) : null}
+        <FormField label="Customer type">
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <Chip label="Existing customer" active={customerMode === "existing"} onPress={() => setCustomerMode("existing")} />
+            <Chip label="New customer" active={customerMode === "new"} onPress={() => setCustomerMode("new")} />
+          </View>
         </FormField>
+        {customerMode === "existing" ? <FormField label="Customer" required>
+            <SearchField value={selectedCustomer ? (selectedCustomer.company || selectedCustomer.name) : customerQuery}
+              onChangeText={(v) => { setCustomerQuery(v); setCustomerId(null); setChosenCustomer(null); }} placeholder="Search customer…" onClear={() => { setCustomerQuery(""); setCustomerId(null); setChosenCustomer(null); }} />
+            {customerSearchFailed ? <Text style={type.caption}>Customer search failed. Edit your search to retry.</Text> : null}
+            {!customerId && matches.length ? (
+              <View style={{ borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, marginTop: 6, overflow: "hidden" }}>
+                {matches.map((c) => (
+                  <Pressable key={c.id} onPress={() => { setCustomerId(c.id); setChosenCustomer(c); setCustomerQuery(""); }}
+                    style={{ padding: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider }}>
+                    <Text style={type.bodySm}>{c.company || c.name}</Text>
+                    {c.phone ? <Text style={type.caption}>{c.phone}</Text> : null}
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
+        </FormField> : <>
+          <FormField label="Customer name" required>
+            <TextInput value={newCustomerName} onChangeText={setNewCustomerName} placeholder="Customer name"
+              placeholderTextColor={colors.onSurfaceMuted} style={styles.textInput} testID="new-followup-customer-name" />
+          </FormField>
+          <FormField label="Mobile number" required>
+            <TextInput value={newCustomerPhone} onChangeText={setNewCustomerPhone} placeholder="Mobile number"
+              placeholderTextColor={colors.onSurfaceMuted} keyboardType="phone-pad" style={styles.textInput} testID="new-followup-customer-mobile" />
+          </FormField>
+        </>}
 
         <FormField label="Type">
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
@@ -2051,7 +2076,10 @@ function NewFollowupSheet({ visible, onClose, customers, assignees, defaultAssig
             style={styles.textArea} multiline testID="new-followup-reason" />
         </FormField>
 
-        <LeadScopeFields assignmentsRequired value={scope} onChange={setScope} customerId={customerId || undefined} partner={partner} onPartnerChange={setPartner} />
+        <LeadScopeFields assignmentsRequired value={scope} onChange={setScope}
+          customerId={customerMode === "existing" ? customerId || undefined : undefined}
+          customerPhone={customerMode === "new" ? newCustomerPhone : undefined} sourceFloorId={selectedFloorId || undefined}
+          partner={partner} onPartnerChange={setPartner} />
         </ScrollView>
       </View>
     </Sheet>

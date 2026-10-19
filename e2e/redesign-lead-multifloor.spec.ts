@@ -87,6 +87,25 @@ test('critical adding a follow-up exposes only pre-order types and saves all sel
   ]);
 });
 
+test('critical new follow-up can add a customer with a mobile number', async ({ page }) => {
+  await mockLeads(page);
+  const writes: any[] = [];
+  await page.route('**/api/followups', r => r.fulfill({ json: (writes.push(r.request().postDataJSON()), lead) }));
+  await page.goto('/followups');
+  await page.getByTestId('new-followup-btn').click();
+  const dialog = page.getByRole('dialog', { name: 'New Follow-up', exact: true });
+  await dialog.getByText('New customer', { exact: true }).click();
+  await dialog.getByTestId('new-followup-customer-name').fill('New walk-in customer');
+  await dialog.getByTestId('new-followup-customer-mobile').fill('9876543210');
+  await dialog.getByTestId('new-followup-reason').fill('Discuss flooring samples');
+  await dialog.getByTestId('lead-assign-first-floor-worker-a').click();
+  await dialog.getByTestId('create-followup').click();
+  await expect(dialog).toHaveCount(0);
+  expect(writes).toHaveLength(1);
+  expect(writes[0]).toMatchObject({ new_customer_name: 'New walk-in customer', new_customer_phone: '9876543210' });
+  expect(writes[0]).not.toHaveProperty('customer_id');
+});
+
 test('critical team assign displays worker workload, responses and activity across selected floors', async ({ page }) => {
   await mockSession(page, '/team-assign');
   await page.route('**/api/followups/team-assign?**', r => r.fulfill({ json: {

@@ -1244,7 +1244,24 @@ async def create_followup(body: FollowupCreate, user: UserPublic = Depends(get_c
         raise HTTPException(422, "Choose General, Quotation, Selection or Walk-in as the follow-up type")
     interested_floors = body.interested_floor_ids or [floor_id]
     selected_assignments = _required_create_assignments(interested_floors, body.assignments, body.assigned_to, floor_id)
-    cust = await db.customers.find_one(floor_query(user, {"id": body.customer_id}), {"_id": 0})
+    new_customer_details = None
+    if body.customer_id and (body.new_customer_name or body.new_customer_phone):
+        raise HTTPException(422, "Choose an existing customer or enter a new customer's details")
+    if body.customer_id:
+        cust = await db.customers.find_one(floor_query(user, {"id": body.customer_id}), {"_id": 0})
+    elif body.new_customer_name and body.new_customer_phone:
+        mobile = normalize_mobile(body.new_customer_phone)
+        if not body.new_customer_name.strip():
+            raise HTTPException(422, "Customer name is required")
+        if len(mobile) != 10:
+            raise HTTPException(422, "Mobile number must contain 10 digits")
+        new_customer_details = (body.new_customer_name.strip(), body.new_customer_phone.strip())
+        cust = {
+            "id": str(uuid5(NAMESPACE_URL, f'followup-customer:{request_id}')) if request_id else str(uuid4()),
+            "name": new_customer_details[0], "phone": new_customer_details[1], "tier": "retail",
+        }
+    else:
+        raise HTTPException(422, "Choose a customer or add a customer name and mobile number")
     if not cust:
         raise HTTPException(status_code=404, detail="Customer not found")
     quotation = await db.quotations.find_one(floor_query(user, {"id": body.quotation_id}), {"_id": 0}) if body.quotation_id else None
@@ -1252,7 +1269,7 @@ async def create_followup(body: FollowupCreate, user: UserPublic = Depends(get_c
         raise HTTPException(404, "Quotation not found")
     if quotation and quotation.get("status") == "ordered":
         raise HTTPException(409, "This quotation is already an order")
-    if await db.quotations.find_one({"customer_id": cust["id"], "floor_id": floor_id, "status": "ordered"}, {"_id": 0, "id": 1}):
+    if not new_customer_details and await db.quotations.find_one({"customer_id": cust["id"], "floor_id": floor_id, "status": "ordered"}, {"_id": 0, "id": 1}):
         raise HTTPException(409, "This customer already placed an order")
     tier = cust.get("tier", "retail")
     value = float(quotation.get("grand_total", 0)) if quotation else 0.0
@@ -1286,6 +1303,28 @@ async def create_followup(body: FollowupCreate, user: UserPublic = Depends(get_c
         metadata.update(await lead_scope.referrer_fields(db, body.referrer_id, f.floor_id, user))
     if selected_assignments:
         await lead_scope.update_interests(db, user=user, source=f.model_dump(), floor_ids=interested_floors, assignments=selected_assignments, metadata=metadata, dry_run=True)
+    if new_customer_details:
+        try:
+            cust, customer_created = await resolve_or_create_customer(
+                db, user=user, floor_id=floor_id,
+                name=new_customer_details[0], phone=new_customer_details[1], address=None,
+                return_created=True,
+            )
+        except NotebookValidationError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        f = f.model_copy(update={
+            "customer_id": cust["id"],
+            "customer_name": cust.get("company") or cust.get("name"),
+            "customer_phone": cust.get("phone"),
+            "customer_tier": cust.get("tier", "retail"),
+        })
+        if await db.quotations.find_one({"customer_id": cust["id"], "floor_id": floor_id, "status": "ordered"}, {"_id": 0, "id": 1}):
+            raise HTTPException(409, "This customer already placed an order")
+        if customer_created:
+            await log_event(
+                event_type="customer.created", entity_type="customer", entity_id=cust["id"],
+                customer_id=cust["id"], actor=user, summary="Customer Created with Follow-up",
+            )
     if request_id:
         identity = {'_id': f'followup-create:{request_id}'}
         await db.followups.update_one(identity, {'$setOnInsert': {**f.model_dump(), 'create_request_fingerprint': fingerprint}}, upsert=True)

@@ -1454,7 +1454,9 @@ class FollowupCreate(BaseModel):
     assignments: Optional[list[FollowupAssignment]] = Field(default=None, max_length=100)
     reference_source: Optional[str] = Field(default=None, max_length=200)
     referrer_id: Optional[str] = None
-    customer_id: str
+    customer_id: Optional[str] = None
+    new_customer_name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    new_customer_phone: Optional[str] = Field(default=None, min_length=1, max_length=40)
     quotation_id: Optional[str] = None
     purchase_id: Optional[str] = None
     category: FollowupCategory = "general"

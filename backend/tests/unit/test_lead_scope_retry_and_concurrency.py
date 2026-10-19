@@ -303,6 +303,64 @@ def test_generic_manual_create_supports_kitchen_and_furniture_inboxes(monkeypatc
     assert db.followups.writes >= 1 and db.customers.writes == 0
 
 
+def test_new_customer_followup_creates_floor_scoped_profile_with_mobile_and_reuses_it(monkeypatch):
+    async def run():
+        db = database()
+        actor = principal(floors=('first-floor',))
+        monkeypatch.setattr(routes, 'db', db)
+        events = AsyncMock()
+        monkeypatch.setattr(routes, 'log_event', events)
+        assignments = selected_worker(db, ['first-floor'])
+        first = await routes.create_followup(FollowupCreate(
+            new_customer_name='New Customer', new_customer_phone='+91 98765 43210',
+            reason='Discuss samples', request_key='new-customer-followup-1',
+            assignments=assignments,
+        ), actor)
+        assert first.customer_name == 'New Customer'
+        assert first.customer_phone == '+91 98765 43210'
+        assert len(db.customers.rows) == 1
+        assert db.customers.rows[0]['floor_id'] == 'first-floor'
+        assert db.customers.rows[0]['phone_normalized'] == '9876543210'
+        assert events.await_args_list[0].kwargs['event_type'] == 'customer.created'
+
+        second = await routes.create_followup(FollowupCreate(
+            new_customer_name='Another spelling', new_customer_phone='9876543210',
+            reason='Follow up again', assignments=assignments,
+        ), actor)
+        assert second.customer_id == first.customer_id
+        assert len(db.customers.rows) == 1
+        assert sum(call.kwargs['event_type'] == 'customer.created' for call in events.await_args_list) == 1
+
+    asyncio.run(run())
+
+
+def test_new_customer_followup_validation_precedes_profile_creation(monkeypatch):
+    async def run():
+        db = database()
+        actor = principal(floors=('first-floor',))
+        events = AsyncMock()
+        monkeypatch.setattr(routes, 'db', db)
+        monkeypatch.setattr(routes, 'log_event', events)
+        monkeypatch.setattr(lead_scope, 'referrer_fields', AsyncMock(side_effect=HTTPException(422, 'Referrer not found')))
+        with pytest.raises(HTTPException, match='Referrer not found'):
+            await routes.create_followup(FollowupCreate(
+                new_customer_name='New Customer', new_customer_phone='9876543210',
+                reason='Discuss samples', request_key='new-customer-followup-2', referrer_id='missing',
+                assignments=selected_worker(db, ['first-floor']),
+            ), actor)
+        assert db.customers.rows == []
+        assert events.await_count == 0
+
+        with pytest.raises(HTTPException, match='10 digits'):
+            await routes.create_followup(FollowupCreate(
+                new_customer_name='New Customer', new_customer_phone='12',
+                reason='Discuss samples', assignments=selected_worker(db, ['first-floor']),
+            ), actor)
+        assert db.customers.rows == []
+
+    asyncio.run(run())
+
+
 def test_synthetic_phone_scope_discovers_existing_notebook_stage_on_its_own_floor():
     async def run():
         db = database()

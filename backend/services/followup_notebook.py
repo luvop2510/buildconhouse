@@ -231,7 +231,8 @@ def notebook_query(user: Any, floor_id: str, extra: dict[str, Any] | None = None
 
 async def resolve_or_create_customer(
     db: Any, *, user: Any, floor_id: str, name: str, phone: str, address: str | None,
-) -> dict[str, Any]:
+    return_created: bool = False,
+) -> dict[str, Any] | tuple[dict[str, Any], bool]:
     """Find or create one floor-scoped customer for a notebook row."""
     normalized = normalize_mobile(phone)
     if not normalized:
@@ -250,7 +251,7 @@ async def resolve_or_create_customer(
                 customer = candidate
                 break
     if customer:
-        return customer
+        return (customer, False) if return_created else customer
 
     now = now_iso()
     document = {
@@ -264,9 +265,9 @@ async def resolve_or_create_customer(
     except DuplicateKeyError:
         customer = await db.customers.find_one(query, {"_id": 0})
         if customer:
-            return customer
+            return (customer, False) if return_created else customer
         raise
-    return document
+    return (document, True) if return_created else document
 
 
 async def patch_notebook_row(
