@@ -53,12 +53,12 @@ test('critical dashboard Done completes directly without a note', async ({ page 
 });
 
 test('critical retired quotation follow-up uses the shared Lost reason workflow without a manual Won action', async ({ page }) => {
-  const lead = await retiredNotebookRedirect(page, '/notebook/kitchen/quotation-follow-up', 'followups', 'second-floor');
+  const lead = await retiredNotebookRedirect(page, '/notebook/furniture/quotation-follow-up', 'followups', 'third-floor');
   await expect(page.getByRole('button', { name: /mark.*won/i })).toHaveCount(0);
   await page.route('**/api/followups/retained-customer/contact', route => route.fulfill({ json: { channel: 'call', phone: '9000000000' } }));
   const writes: any[] = [];
   await page.route('**/api/followups/retained-customer/log-call', route => {
-    expect(route.request().headers()['x-floor-id']).toBe('second-floor');
+    expect(route.request().headers()['x-floor-id']).toBe('third-floor');
     writes.push(route.request().postDataJSON());
     return route.fulfill({ json: { ...lead, status: 'done' } });
   });

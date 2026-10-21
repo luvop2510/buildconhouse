@@ -159,17 +159,17 @@ test('critical retrying follow-up creation retains one draft identity and select
   expect(writes[1]).toEqual(writes[0]);
 });
 
-test('critical shared Kitchen follow-up Interested supports multiple floors with a named interior reference', async ({ page }) => {
+test('critical shared Furniture follow-up Interested supports multiple floors with a named interior reference', async ({ page }) => {
   await mockSession(page, '/followups');
-  await page.addInitScript(() => localStorage.setItem('forge.active-floor', JSON.stringify('second-floor')));
+  await page.addInitScript(() => localStorage.setItem('forge.active-floor', JSON.stringify('third-floor')));
   await page.route('**/api/followups/config/assignees', r => r.fulfill({ json: [] }));
   await page.route('**/api/followups/saved-views', r => r.fulfill({ json: [] }));
-  const notebookLead = { ...lead, floor_id: 'second-floor', interested_floor_ids: ['second-floor'], kitchen_type: 'GI', address: '', referred_by: '', referrer_id: 'studio', referrer_name: 'Design Studio', referrer_type: 'interior_designer', architect_interior_designer: '', status: 'pending', is_converted: true, quotation_price: 12000 };
+  const notebookLead = { ...lead, floor_id: 'third-floor', interested_floor_ids: ['third-floor'], kitchen_type: 'GI', address: '', referred_by: '', referrer_id: 'studio', referrer_name: 'Design Studio', referrer_type: 'interior_designer', architect_interior_designer: '', status: 'pending', is_converted: true, quotation_price: 12000 };
   await page.route('**/api/followups/page?**', r => r.fulfill({ json: { items: [{ ...notebookLead, status: 'open' }], page: 1, page_size: 100, has_more: false } }));
   const assigneeReads: URLSearchParams[] = [];
   await page.route('**/api/followups/assignees?**', r => {
     assigneeReads.push(new URL(r.request().url()).searchParams);
-    return r.fulfill({ json: [{ ...workers[1], floor_ids: ['second-floor', 'third-floor'] }] });
+    return r.fulfill({ json: [{ ...workers[1], floor_ids: ['first-floor', 'third-floor'] }] });
   });
   const writes: any[] = [];
   await page.route('**/api/followups/scope-lead/interests', r => r.fulfill({ json: (writes.push(r.request().postDataJSON()), lead) }));
@@ -177,12 +177,12 @@ test('critical shared Kitchen follow-up Interested supports multiple floors with
   await page.getByTestId('interested-scope-lead').click();
   const dialog = page.getByRole('dialog', { name: 'Interested floors & team assignment', exact: true });
   await expect(dialog.getByText('Design Studio · INT-STUDIO', { exact: true })).toBeVisible();
-  await dialog.getByTestId('lead-floor-third-floor').click();
-  await dialog.getByTestId('lead-assign-third-floor-worker-b').click();
+  await dialog.getByTestId('lead-floor-first-floor').click();
+  await dialog.getByTestId('lead-assign-first-floor-worker-b').click();
   expect(assigneeReads.at(-1)?.get('source_id')).toBe('scope-lead');
   await dialog.getByTestId('lead-scope-save').click();
   await expect(dialog).toHaveCount(0);
-  expect(writes[0]).toMatchObject({ interested_floor_ids: ['second-floor', 'third-floor'], referrer_id: 'studio', assignments: [{ floor_id: 'third-floor', user_id: 'worker-b' }] });
+  expect(writes[0]).toMatchObject({ interested_floor_ids: ['third-floor', 'first-floor'], referrer_id: 'studio', assignments: [{ floor_id: 'first-floor', user_id: 'worker-b' }] });
 });
 
 test('critical team assign is owner-only and does not fetch team activity for staff', async ({ page }) => {

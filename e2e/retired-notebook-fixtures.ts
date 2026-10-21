@@ -32,7 +32,19 @@ export async function retiredNotebookRedirect(page: Page, path: string, destinat
     expect(route.request().headers()['x-floor-id']).toBe(floorId);
     return route.fulfill({ json: destination === 'followups' ? { items: [row], page: 1, page_size: 100, has_more: false } : [{ ...row, status: 'new' }] });
   });
+  if (floorId === 'second-floor') await page.route('**/api/kitchen-projects**', route => {
+    const pathname = new URL(route.request().url()).pathname;
+    return route.fulfill({ json: pathname.endsWith('/configuration') ? { version: 1, department_manager_user_ids: [], files: { max_bytes: 25000000, allowed_types: ['application/pdf'] } } : pathname.endsWith('/assignees') ? { rows: [] } : { rows: [], total: 0, limit: 25, page: 1 } });
+  });
   await page.goto(path);
+  if (floorId === 'second-floor') {
+    await expect(page).toHaveURL(/\/kitchen\/stages\/lead$/);
+    await expect(page.getByTestId('kitchen-search')).toBeVisible();
+    await expect(page.getByTestId('walkin-new-btn')).toHaveCount(0);
+    await expect(page.getByTestId('new-followup-btn')).toHaveCount(0);
+    expect(retiredReads).toBe(0);
+    return row;
+  }
   await expect(page).toHaveURL(new RegExp(`/${destination}$`));
   await expect(page.getByText('Retained floor customer', { exact: true })).toBeVisible();
   expect(retiredReads).toBe(0);

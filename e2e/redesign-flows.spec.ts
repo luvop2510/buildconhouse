@@ -78,7 +78,7 @@ test('critical order preview shows progressive loading, recovers and retains the
 });
 
 test('critical shared dialog contains keyboard focus, closes on Escape and restores its trigger', async ({ page }) => {
-  await retiredNotebookRedirect(page, '/notebook/kitchen/quotation-follow-up', 'followups', 'second-floor');
+  await retiredNotebookRedirect(page, '/notebook/furniture/quotation-follow-up', 'followups', 'third-floor');
   const trigger = page.getByTestId('new-followup-btn');
   await trigger.focus();
   await trigger.click();

@@ -47,10 +47,11 @@ test('critical Sanitary Purchases scopes items, customers and facets to its own 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 });
 
-for (const [floor, destination] of [['ground-floor', '/tiles'], ['second-floor', '/walkins'], ['third-floor', '/walkins']] as const) {
+for (const [floor, destination] of [['ground-floor', '/tiles'], ['second-floor', '/kitchen/stages/lead'], ['third-floor', '/walkins']] as const) {
   test(`critical ${floor} denies direct Purchases URLs without reads or changing its floor`, async ({ page }) => {
     await mockSession(page, '/purchases', false);
     await page.addInitScript(id => localStorage.setItem('forge.active-floor', JSON.stringify(id)), floor);
+    if (floor === 'second-floor') await page.route('**/api/kitchen-projects**', route => route.fulfill({ json: new URL(route.request().url()).pathname.endsWith('/configuration') ? { version: 1, department_manager_user_ids: [] } : { rows: [], total: 0, page: 1, limit: 25 } }));
     const reads: string[] = [];
     await page.route(/\/api\/(?:purchases|purchase-orders)(?:\/|\?|$)/, route => {
       reads.push(route.request().url());

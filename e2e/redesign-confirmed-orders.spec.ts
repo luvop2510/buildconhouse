@@ -7,7 +7,8 @@ for (const floor of [{ slug: 'kitchen', id: 'second-floor' }, { slug: 'furniture
     await retiredNotebookRedirect(page, `/notebook/${floor.slug}/quotation-follow-up`, 'followups', floor.id);
     await expect(page.getByRole('button', { name: /mark.*won/i })).toHaveCount(0);
     await expect(page.getByTestId('notebook-list')).toHaveCount(0);
-    await expect(page.getByTestId('interested-retained-customer')).toBeVisible();
+    if (floor.id === 'second-floor') await expect(page.getByTestId('kitchen-search')).toBeVisible();
+    else await expect(page.getByTestId('interested-retained-customer')).toBeVisible();
   });
 }
 

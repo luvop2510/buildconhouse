@@ -26,7 +26,7 @@ test('critical mobile tile editor retains document details and explicitly retrie
 test('critical retired kitchen conversion bookmark uses active-floor shared Walk-ins', async ({ page }) => {
   await retiredNotebookRedirect(page, '/notebook/kitchen', 'walkins', 'second-floor');
   await expect(page.getByRole('button', { name: 'Move to quotation', exact: true })).toHaveCount(0);
-  await expect(page.getByTestId('walkin-new-btn')).toBeVisible();
+  await expect(page.getByTestId('kitchen-create')).toBeVisible();
 });
 
 test('critical tile release keeps selected split quantities until the server accepts them', async ({ page }) => {
