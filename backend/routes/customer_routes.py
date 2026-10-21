@@ -374,42 +374,64 @@ async def delete_customer(
             ),
         )
 
-    legacy_results = await asyncio.gather(
-        db.walkins.update_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}, {"$unset": {"gender": ""}}),
-        db.followups.update_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}, {"$unset": {"gender": ""}}),
-        db.quotations.update_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}, {"$unset": {"gender": ""}}),
-    )
-    followups_result, walkins_result, pending_payments_result, quotations_result, activity_result = await asyncio.gather(
-        db.followups.delete_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}),
-        db.walkins.delete_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}),
-        db.payments.delete_many({
-            "floor_id": existing.get("floor_id"),
-            "$or": [
-                {"customer_id": customer_id, "status": {"$ne": "completed"}},
-                {"quotation_id": quotation_ref, "status": {"$ne": "completed"}},
-            ],
-        }),
-        db.quotations.delete_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}),
-        db.activity_events.delete_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}),
-    )
-    customer_result = await db.customers.delete_one({"id": customer_id, "floor_id": existing.get("floor_id")})
-    if customer_result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Customer not found")
-    return {
-        "ok": True,
-        "customer_id": customer_id,
-        "deleted": {
-            "customers": customer_result.deleted_count,
-            "quotations": quotations_result.deleted_count,
-            "followups": followups_result.deleted_count,
-            "walkins": walkins_result.deleted_count,
-            "pending_payments": pending_payments_result.deleted_count,
-            "activity_events": activity_result.deleted_count,
-            "legacy_gender_fields": sum(getattr(result, "modified_count", 0) for result in legacy_results),
-        },
-        "protected": {"purchase_orders": 0, "completed_payments": 0},
-        "customer_name": existing.get("name"),
-    }
+    delete_token = None
+    if existing.get("floor_id") == "second-floor":
+        from uuid import uuid4
+        delete_token = str(uuid4())
+        claimed = await db.customers.update_one(
+            {"id": customer_id, "floor_id": "second-floor",
+             "kitchen_reference_reserved": {"$ne": True}, "kitchen_delete_token": {"$exists": False}},
+            {"$set": {"kitchen_delete_token": delete_token}})
+        if not claimed.matched_count:
+            raise HTTPException(409, "Customer has a Kitchen project reservation or another deletion is running")
+        # Include pre-pin legacy aggregates. New creators cannot cross the
+        # tombstone while this authoritative reference check runs.
+        if await db.kitchen_projects.count_documents({"customer_id": customer_id, "floor_id": "second-floor"}):
+            await db.customers.update_one({"id": customer_id, "kitchen_delete_token": delete_token},
+                                          {"$unset": {"kitchen_delete_token": ""}})
+            raise HTTPException(409, "Kitchen projects reference this customer; preserve its canonical identity")
+    try:
+        legacy_results = await asyncio.gather(
+            db.walkins.update_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}, {"$unset": {"gender": ""}}),
+            db.followups.update_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}, {"$unset": {"gender": ""}}),
+            db.quotations.update_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}, {"$unset": {"gender": ""}}),
+        )
+        followups_result, walkins_result, pending_payments_result, quotations_result, activity_result = await asyncio.gather(
+            db.followups.delete_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}),
+            db.walkins.delete_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}),
+            db.payments.delete_many({
+                "floor_id": existing.get("floor_id"),
+                "$or": [
+                    {"customer_id": customer_id, "status": {"$ne": "completed"}},
+                    {"quotation_id": quotation_ref, "status": {"$ne": "completed"}},
+                ],
+            }),
+            db.quotations.delete_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}),
+            db.activity_events.delete_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}),
+        )
+        customer_result = await db.customers.delete_one({"id": customer_id, "floor_id": existing.get("floor_id")})
+        if customer_result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Customer not found")
+        return {
+            "ok": True,
+            "customer_id": customer_id,
+            "deleted": {
+                "customers": customer_result.deleted_count,
+                "quotations": quotations_result.deleted_count,
+                "followups": followups_result.deleted_count,
+                "walkins": walkins_result.deleted_count,
+                "pending_payments": pending_payments_result.deleted_count,
+                "activity_events": activity_result.deleted_count,
+                "legacy_gender_fields": sum(getattr(result, "modified_count", 0) for result in legacy_results),
+            },
+            "protected": {"purchase_orders": 0, "completed_payments": 0},
+            "customer_name": existing.get("name"),
+        }
+    finally:
+        if delete_token:
+            await db.customers.update_one({"id": customer_id, "kitchen_delete_token": delete_token},
+                                          {"$unset": {"kitchen_delete_token": ""}})
+
 
 
 async def _issue_temp_password(customer_id: str, *, kind: str, user: UserPublic):

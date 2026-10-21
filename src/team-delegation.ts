@@ -109,6 +109,7 @@ export function moduleForRoute(segments: string[]): string | null {
     if (segments.includes("kitchen")) return "walkins";
     if (segments.includes("furniture")) return "walkins";
   }
+  if (segments.includes("kitchen") && !segments.includes("notebook")) return "kitchen-projects";
   if (segments.includes("tiles")) return segments.includes("orders") ? "orders" : "tiles";
   for (const module of ["payments", "payments-list", "quotations", "catalog", "customers", "purchases", "godown-stock", "followups", "notifications", "walkins", "dashboard", "sales-data"]) {
     if (segments.includes(module)) return module;

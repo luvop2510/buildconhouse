@@ -70,6 +70,78 @@ jobs:
         run: docker build -t buildcon-backend .
         working-directory: backend
 
+  kitchen-persistence:
+    runs-on: ubuntu-latest
+    services:
+      kitchen-mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping:1}).ok'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      PYTHON_DOTENV_DISABLED: "1"
+      KITCHEN_TEST_MONGO_URL: mongodb://127.0.0.1:27017
+      MONGO_URL: mongodb://127.0.0.1:27017
+      DB_NAME: forge_ci_kitchen_tests
+      JWT_SECRET: ci-kitchen-test-secret-not-a-real-secret-32chars
+      JWT_ALGORITHM: HS256
+      JWT_EXP_MINUTES: "60"
+      MEDIA_STORAGE_DRIVER: supabase
+      SUPABASE_URL: https://ci-placeholder.supabase.co
+      SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-not-real
+      SUPABASE_ANON_KEY: ci-placeholder-not-real
+      SUPABASE_PUBLIC_BUCKET: forge-products
+      SUPABASE_PRIVATE_BUCKET: forge-private
+      FORGE_ALLOW_DEMO_SEED: "false"
+      ENVIRONMENT: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing backend and test dependencies
+        run: pip install -r requirements-prod.txt pytest pytest-asyncio
+      # Run only the explicitly isolated suite. Historical integration files
+      # require deployed services and must never join this job by a broad glob.
+      - name: Verify Kitchen persistence and direct API authorization
+        run: python -m pytest tests/integration/test_kitchen_projects_mongo.py -v
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install existing frontend dependencies
+        working-directory: .
+        run: npm ci
+      - name: Install Kitchen acceptance browsers
+        working-directory: .
+        run: npx playwright install --with-deps chromium firefox webkit
+      - name: Verify exported Kitchen UI against actual API and Mongo
+        working-directory: .
+        env:
+          FORGE_AUDIT_PYTHON: python
+          EXPO_NO_DOTENV: "1"
+        run: node scripts/test-kitchen-e2e.mjs
+      - name: Preserve Kitchen browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kitchen-browser-acceptance
+          path: |
+            output/playwright/kitchen-results.json
+            output/playwright/kitchen
+          if-no-files-found: error
+          retention-days: 3
+
   frontend-security:
     runs-on: ubuntu-latest
     steps:

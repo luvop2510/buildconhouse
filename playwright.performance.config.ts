@@ -4,7 +4,7 @@ import { defineConfig, devices } from '@playwright/test';
 // model API latency; no account, business data or external host is contacted.
 export default defineConfig({
   testDir: './e2e',
-  testMatch: 'performance-startup.spec.ts',
+  testMatch: ['performance-startup.spec.ts', 'performance-kitchen.spec.ts'],
   timeout: 30_000,
   workers: 1,
   retries: 0,

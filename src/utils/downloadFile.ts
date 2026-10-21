@@ -6,6 +6,46 @@ import { Linking, Platform } from "react-native";
 
 import { api, getToken } from "@/src/api/client";
 import { toast } from "@/src/components/Toast";
+import type { File as NativeFile } from "expo-file-system";
+
+export async function createPreparedNativeFile(filename: string): Promise<NativeFile> {
+  const { File, Paths } = await import("expo-file-system");
+  const safeName = filename.replace(/[\\/]/g, "").trim() || "download";
+  const file = new File(Paths.cache, `${Date.now()}-${Math.random().toString(36).slice(2)}-${safeName}`);
+  file.create();
+  return file;
+}
+
+/** The caller owns the temporary file and removes it after the share sheet closes. */
+export async function sharePreparedNativeFile(file: NativeFile, filename: string, contentType: string, errorLabel = "file"): Promise<boolean> {
+  const Sharing = await import("expo-sharing");
+  if (!await Sharing.isAvailableAsync()) {
+    toast.show("Sharing is unavailable on this device");
+    return false;
+  }
+  const extension = filename.split(".").pop()?.toLowerCase();
+  const mimeType = extension === "pdf" ? "application/pdf"
+    : extension === "pptx" ? "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    : extension === "xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    : extension === "csv" ? "text/csv" : contentType || "application/octet-stream";
+  await Sharing.shareAsync(file.uri, { mimeType, dialogTitle: `Save ${errorLabel} to Files or share` });
+  return true;
+}
+
+// React Native's Blob implements FileReader, but not Blob.arrayBuffer().
+function nativeBlobBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Could not read the downloaded file."));
+    reader.onload = () => {
+      const value = typeof reader.result === "string" ? reader.result : "";
+      const comma = value.indexOf(",");
+      if (comma < 0 || !value.slice(0, comma).endsWith(";base64")) reject(new Error("Invalid downloaded file."));
+      else resolve(value.slice(comma + 1));
+    };
+    reader.readAsDataURL(blob);
+  });
+}
 
 async function fetchApiBlob(path: string, errorLabel: string, floorId?: string): Promise<Blob | null> {
   const token = await getToken();
@@ -131,40 +171,28 @@ function saveMobileBrowserFile(blob: Blob, filename: string, errorLabel: string)
 // URLs, so desktop web uses an <a download> click instead. Native shares a
 // named local file; mobile web offers a fresh Save/Share tap after fetching.
 export async function downloadApiFile(path: string, filename: string, errorLabel = "file", floorId?: string): Promise<boolean> {
+  const blob = await fetchApiBlob(path, errorLabel, floorId);
+  return blob ? savePreparedFile(blob, filename, errorLabel) : false;
+}
+
+/** Save already authenticated, verified bytes through the same device file UI. */
+export async function savePreparedFile(blob: Blob, filename: string, errorLabel = "file"): Promise<boolean> {
   if (Platform.OS !== "web") {
-    const blob = await fetchApiBlob(path, errorLabel, floorId);
-    if (!blob) return false;
+    let file: NativeFile | undefined;
     try {
-      const [{ File, Paths }, Sharing] = await Promise.all([
-        import("expo-file-system"), import("expo-sharing"),
-      ]);
-      if (!await Sharing.isAvailableAsync()) {
-        toast.show("Sharing is unavailable on this device");
-        return false;
-      }
-      const safeName = filename.replace(/[\\/]/g, "").trim() || "download";
-      const file = new File(Paths.cache, `${Date.now()}-${safeName}`);
-      file.create();
-      file.write(new Uint8Array(await blob.arrayBuffer()));
-      const extension = safeName.split(".").pop()?.toLowerCase();
-      const mimeType = extension === "pdf" ? "application/pdf"
-        : extension === "pptx" ? "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-        : extension === "xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        : extension === "csv" ? "text/csv" : blob.type || "application/octet-stream";
-      await Sharing.shareAsync(file.uri, {
-        mimeType,
-        dialogTitle: `Save ${errorLabel} to Files or share`,
-      });
-      return true;
+      const base64 = await nativeBlobBase64(blob);
+      file = await createPreparedNativeFile(filename);
+      file.write(base64, { encoding: "base64" });
+      return await sharePreparedNativeFile(file, filename, blob.type, errorLabel);
     } catch {
       toast.show(`Couldn't open the ${errorLabel}`);
       return false;
+    } finally {
+      if (file?.exists) file.delete();
     }
   }
   const mobileBrowser = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
     || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-  const blob = await fetchApiBlob(path, errorLabel, floorId);
-  if (!blob) return false;
   if (mobileBrowser) return saveMobileBrowserFile(blob, filename, errorLabel);
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");

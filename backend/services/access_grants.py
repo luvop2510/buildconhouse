@@ -16,6 +16,7 @@ RESOURCE_REGISTRY: dict[str, dict[str, Any]] = {
     "tiles": {"label": "Tile quotations"},
     "catalog": {"label": "Catalog"},
     "customers": {"label": "Customers"},
+    "kitchen_projects": {"label": "Kitchen projects", "floor_ids": ["second-floor"], "actions": ["view", "create", "update", "export"], "description": "Manage connected kitchen projects, stage history and protected documents. Assignment and manager authority require separate configuration."},
     "purchases": {"label": "Purchases"},
     "godown_stock": {"label": "Godown stock"},
     "payments": {"label": "Payments"},
@@ -93,6 +94,8 @@ MFA_ACCOUNT_REQUESTS = frozenset({
 # unrelated child creation routes and future endpoints from inheriting an
 # action merely because their name contains "move", "cancel", or "confirm".
 POST_UPDATE_ROUTE_PATTERNS = (
+    r"/api/kitchen-projects/[^/]+/commands",
+    r"/api/kitchen-projects/[^/]+/attachments",
     r"/api/followups/notebook/[^/]+/[^/]+/(?:convert|outcome)",
     r"/api/followups/[^/]+/(?:contact|snooze|complete|log-call)",
     r"/api/walkins/[^/]+/(?:contact|visit-showroom)",
@@ -229,6 +232,7 @@ def resource_for_api_path(path: str) -> str | None:
         ("/api/brands", "catalog"), ("/api/categories", "catalog"),
         ("/api/families", "catalog"),
         ("/api/customers", "customers"),
+        ("/api/kitchen-projects", "kitchen_projects"),
         ("/api/purchases", "purchases"), ("/api/purchase-orders", "purchases"),
         ("/api/suppliers", "purchases"), ("/api/followups", "followups"),
         ("/api/godown-stock", "godown_stock"),

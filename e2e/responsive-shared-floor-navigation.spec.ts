@@ -11,7 +11,16 @@ for (const [floor, label] of [['ground-floor', 'Ground Floor'], ['first-floor', 
     });
     await page.goto('/followups');
     await expect(page.getByTestId('floor-switcher')).toHaveAccessibleName(`Switch workspace. Current workspace: ${label}`);
-    await expect(page.getByRole('link', { name: 'Follow-ups', exact: true })).toBeVisible();
+    if (floor === 'second-floor') {
+      for (const [name, href] of [['Overview', '/kitchen'], ['Projects', '/kitchen/projects'], ['Workflow', '/kitchen/workflow'], ['Completed', '/kitchen/completed']]) {
+        const destination = page.getByRole('link', { name, exact: true });
+        await expect(destination).toBeVisible();
+        await expect(destination).toHaveAttribute('href', href);
+      }
+    } else {
+      await expect(page.locator('a[href="/kitchen/projects"]')).toHaveCount(0);
+      await expect(page.getByRole('link', { name: 'Follow-ups', exact: true })).toBeVisible();
+    }
     const labels = new Set(await page.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('aria-label'))));
     const more = page.getByRole('button', { name: 'More', exact: true });
     if (await more.isVisible()) {
@@ -19,6 +28,7 @@ for (const [floor, label] of [['ground-floor', 'Ground Floor'], ['first-floor', 
       await expect(page.getByRole('dialog', { name: 'Workspace', exact: true })).toBeVisible();
       for (const label of await page.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('aria-label')))) labels.add(label);
     }
+    if (floor === 'second-floor') await expect(page.getByRole('link', { name: 'Follow-ups', exact: true })).toBeVisible();
     expect(labels.has('Walk-ins')).toBe(true);
     expect(labels.has('Follow-ups')).toBe(true);
     expect(labels.has('Purchases')).toBe(floor === 'first-floor');

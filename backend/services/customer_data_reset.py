@@ -55,6 +55,12 @@ async def reset_customer_data(database, client, *, request_id: str) -> dict:
         prior = await database.settings.find_one({"id": receipt_id}, session=session)
         if prior:
             return {**prior["receipt"], "already_applied": True}
+        # This historical reset predates Kitchen and cannot discard its
+        # canonical customers/history. Maintenance blocks all runtime writers;
+        # this guard is also inside the reset transaction's snapshot.
+        if (await database.kitchen_projects.find_one({}, session=session)
+                or await database.customers.find_one({"kitchen_reference_reserved": True}, session=session)):
+            raise RuntimeError("Customer reset cannot remove Kitchen-linked identities; prepare a reviewed Kitchen reconciliation first")
         deleted = {}
         customer_names = [row["name"] async for row in database.customers.find(
             {}, {"name": 1}, session=session) if len(row.get("name") or "") >= 3]

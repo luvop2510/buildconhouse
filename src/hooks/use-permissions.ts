@@ -17,6 +17,7 @@ const MODULE_GRANT_RESOURCE: Record<string, string> = {
   purchases: "purchases", payments: "payments", followups: "followups", notifications: "notifications",
   "godown-stock": "godown_stock",
   "furniture-quotations": "furniture_quotations", "payments-list": "payments",
+  "kitchen-projects": "kitchen_projects",
   kitchen: "notebook_walkins", furniture: "notebook_walkins", "quotation-follow-up": "notebook_quotations",
   orders: "orders", tiles: "tiles", walkins: "walkins", reports: "reports",
   "sales-data": "sales_data",
@@ -86,6 +87,7 @@ export function useModuleAccess() {
   const { selectedFloorId } = useFloorAccess();
   return useCallback(
     (moduleKey: string) => {
+      if (moduleKey.startsWith("kitchen-")) moduleKey = "kitchen-projects";
       if (!staff) return true;
       if (staff.role === "owner") return true;
       if (moduleKey === "team") return false;

@@ -2,6 +2,8 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir:'./e2e',testMatch:['app-audit.spec.ts','release-journeys.spec.ts','redesign-*.spec.ts'],timeout:30000,workers:3,retries:0,
   reporter:[['list'],['json',{outputFile:'output/playwright/audit-results.json'}]],
+  // Real API/Mongo Kitchen acceptance has its own guarded harness and CI job.
+  testIgnore: ['**/redesign-kitchen-projects.spec.ts'],
   outputDir:'./output/playwright/audit',
   use:{baseURL:process.env.E2E_BASE_URL || 'http://127.0.0.1:8090',screenshot:'only-on-failure',trace:'retain-on-failure'},
   webServer: process.env.E2E_BASE_URL ? undefined : {

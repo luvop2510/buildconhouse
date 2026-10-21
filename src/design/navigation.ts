@@ -1,5 +1,5 @@
 import type { FeatherName } from "./components";
-import { SANITARY_FLOOR_ID, TILES_FLOOR_ID, FURNITURE_FLOOR_ID } from "@/src/constants/floors";
+import { SANITARY_FLOOR_ID, TILES_FLOOR_ID, FURNITURE_FLOOR_ID, KITCHEN_FLOOR_ID } from "@/src/constants/floors";
 export type NavItem = {
   href: string; label: string; icon: FeatherName; match: string; roles?: string[];
   // Business units this destination exists in. Omitted = every unit.
@@ -16,6 +16,10 @@ export type NavItem = {
 };
 
 export const PRIMARY: NavItem[] = [
+  { href: "/(admin)/kitchen", label: "Overview", icon: "home", match: "kitchen-overview", floors: [KITCHEN_FLOOR_ID] },
+  { href: "/(admin)/kitchen/projects", label: "Projects", icon: "layers", match: "kitchen-projects", floors: [KITCHEN_FLOOR_ID] },
+  { href: "/(admin)/kitchen/workflow", label: "Workflow", icon: "git-branch", match: "kitchen-workflow", floors: [KITCHEN_FLOOR_ID] },
+  { href: "/(admin)/kitchen/completed", label: "Completed", icon: "check-circle", match: "kitchen-completed", floors: [KITCHEN_FLOOR_ID] },
   { href: "/(admin)/dashboard", label: "Today", icon: "sunrise", match: "dashboard" },
   { href: "/(admin)/walkins", label: "Walk-ins", icon: "user-plus", match: "walkins" },
   { href: "/(admin)/quotations", label: "Quotations", icon: "file-text", match: "quotations", floors: [SANITARY_FLOOR_ID] },

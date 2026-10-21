@@ -72,6 +72,7 @@ from services.floor_scope import ensure_floor_scope  # noqa: E402
 from services.customer_data_reset import customer_reset_maintenance, reset_customer_data, cleanup_reset_files  # noqa: E402
 from services.quotation_shares import ensure_quotation_share_indexes  # noqa: E402
 from routes.furniture_quotation_routes import router as furniture_quotation_router  # noqa: E402
+from routes.kitchen_routes import router as kitchen_router  # noqa: E402
 from routes.whatsapp_routes import router as whatsapp_router  # noqa: E402
 
 
@@ -400,6 +401,7 @@ api.include_router(customer_router)
 api.include_router(po_final_router)
 api.include_router(quotation_router)
 api.include_router(furniture_quotation_router)
+api.include_router(kitchen_router)
 api.include_router(whatsapp_router)
 api.include_router(misc_router)
 api.include_router(media_router)

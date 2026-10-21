@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+from bson import json_util
 
 from media_storage.base import StorageError
 from media_storage.supabase_driver import SupabaseStorageDriver
@@ -202,3 +203,67 @@ async def test_inventory_rejects_cycles_duplicates_unsafe_keys_and_provider_erro
     with pytest.raises(StorageError) as error:
         _ = [row async for row in driver.iter_objects(bucket="public")]
     assert "customer secret" not in str(error.value)
+
+
+def kitchen_logical_snapshot(tmp_path, content):
+    directory = tmp_path / "logical"
+    directory.mkdir(mode=0o700)
+    attachment = {"bucket": "private", "storage_key": "kitchen/second-floor/synthetic/drawing",
+                  "sha256": hashlib.sha256(content).hexdigest(), "size_bytes": len(content)}
+    data = (json_util.dumps({"_id": "synthetic-project", "attachments": [attachment]},
+                           json_options=json_util.CANONICAL_JSON_OPTIONS) + "\n").encode()
+    snapshots.write_private(directory / "kitchen_projects.jsonl", data)
+    snapshots.write_json(directory / "manifest.json", {"format": 1, "collections": {
+        "kitchen_projects": {"count": 1, "sha256": hashlib.sha256(data).hexdigest()}}})
+    return directory, attachment
+
+
+@pytest.mark.asyncio
+async def test_kitchen_logical_references_bind_actual_bytes_and_restore_privately(tmp_path):
+    content = b"AC1032" + bytes(32)
+    logical, attachment = kitchen_logical_snapshot(tmp_path, content)
+    refs = snapshots.references(logical)
+    assert refs == [{"bucket": "private", "key": attachment["storage_key"],
+                     "sha256": attachment["sha256"], "size_bytes": len(content)}]
+    storage = Storage()
+    storage.data[("private", attachment["storage_key"])] = content
+    storage.types[("private", attachment["storage_key"])] = "image/vnd.dwg"
+    _, archive_path, manifest = await archive(tmp_path, storage, refs)
+    assert manifest["reference_coverage_complete"] is True
+    assert manifest["reference_rows"] == 1
+    assert manifest["missing_references"] == []
+    restored = await snapshots.restore(storage, archive_path, target_bucket="private",
+                                      target_prefix="restore-drills/kitchen-test-1234/",
+                                      confirm_prefix="restore-drills/kitchen-test-1234/",
+                                      report=tmp_path / "kitchen-restore.json")
+    assert restored["objects_verified"] == 3
+    assert storage.data[("private", "restore-drills/kitchen-test-1234/private/" + attachment["storage_key"])] == content
+    assert storage.data[("private", attachment["storage_key"])] == content
+    assert restored["production_promoted"] is False
+
+
+@pytest.mark.asyncio
+async def test_missing_kitchen_object_cannot_be_reported_as_complete_reference_coverage(tmp_path):
+    logical, attachment = kitchen_logical_snapshot(tmp_path, b"private-kitchen-file")
+    _, _, manifest = await archive(tmp_path, refs=snapshots.references(logical))
+    assert manifest["reference_coverage_complete"] is False
+    assert manifest["missing_references"] == [{"bucket": "private", "key": attachment["storage_key"]}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("problem", ["hash", "size"])
+async def test_changed_kitchen_reference_bytes_fail_before_archive_completion(tmp_path, problem):
+    logical, attachment = kitchen_logical_snapshot(tmp_path, b"expected-kitchen-bytes")
+    storage = Storage()
+    storage.data[("private", attachment["storage_key"])] = (b"different-kitchen-byte" if problem == "hash" else b"short")
+    with pytest.raises(ExceptionGroup):
+        await archive(tmp_path, storage, snapshots.references(logical))
+    assert not (tmp_path / "snapshot/manifest.json").exists()
+    assert storage.uploads == []
+
+
+def test_tampered_kitchen_logical_reference_file_is_not_trusted(tmp_path):
+    logical, _ = kitchen_logical_snapshot(tmp_path, b"private-kitchen-file")
+    (logical / "kitchen_projects.jsonl").write_text('{}\n')
+    with pytest.raises(ValueError, match="checksum"):
+        snapshots.references(logical)

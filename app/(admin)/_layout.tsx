@@ -50,6 +50,13 @@ function WorkspaceLink({ href, onPress, ...props }: Omit<React.ComponentProps<ty
 }
 
 function isNavActive(item: NavItem, segments: string[]): boolean {
+  if (item.match.startsWith("kitchen-") && segments.includes("kitchen") && !segments.includes("notebook")) {
+    const section = segments[segments.indexOf("kitchen") + 1];
+    if (item.match === "kitchen-overview") return !section || section === "index";
+    if (item.match === "kitchen-completed") return section === "completed";
+    if (item.match === "kitchen-workflow") return section === "workflow" || section === "stages";
+    return ![undefined, "index", "completed", "workflow", "stages"].includes(section);
+  }
   if (item.match === "tiles") return segments.includes("tiles") && !segments.includes("orders");
   if (item.match === "purchases") return segments.includes("purchases") || segments.includes("purchases-completed");
   // The root notebook route is Walk-ins. It must not remain highlighted when
@@ -254,15 +261,16 @@ function useVisibleNav() {
   const { staff } = useAuth();
   const { access, selectedFloorId } = useFloorAccess();
   return (items: NavItem[]) => items.filter((item) => {
+    const permission = item.match.startsWith("kitchen-") ? "kitchen-projects" : item.match;
     if (item.floors && selectedFloorId && !item.floors.includes(selectedFloorId)) return false;
-    if (staff?.custom_access) return hasAccess(item.match);
+    if (staff?.custom_access) return hasAccess(permission);
     // These units share floor-scoped business pages alongside their notebooks.
     if (selectedFloorId === KITCHEN_FLOOR_ID || selectedFloorId === FURNITURE_FLOOR_ID) {
       const shared = SHARED_FLOOR_ROUTES.includes(item.match);
-      return (shared || Boolean(item.floors?.includes(selectedFloorId))) && hasAccess(item.match);
+      return (shared || Boolean(item.floors?.includes(selectedFloorId))) && hasAccess(permission);
     }
     if (item.roles && (!staff?.role || !item.roles.includes(staff.role))) return false;
-    if (!hasAccess(item.match)) return false;
+    if (!hasAccess(permission)) return false;
     if (!item.floors) return true;
     // While the floor is still resolving, keep the item — hiding it first and
     // showing it a frame later reads as the nav flickering on every load.
@@ -307,9 +315,11 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
         ) : <SearchTrigger />}
       </View>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: space.x3, gap: 1, alignItems: collapsed ? "center" : "stretch" }} showsVerticalScrollIndicator={false}>
-        {(["Daily work", "Records & operations", "Management"] as const).map(group => {
+        {(["Kitchen", "Daily work", "Records & operations", "Management"] as const).map(group => {
           const destinations = group === "Management" ? visible(SECONDARY)
             : [...visible(PRIMARY), ...tilesNav.items].filter(n => {
+              if (group === "Kitchen") return n.match.startsWith("kitchen-");
+              if (n.match.startsWith("kitchen-")) return false;
               const daily = ["dashboard", "walkins", "followups", "catalog", "quotations", "tiles", "kitchen", "furniture", "quotation-follow-up"].includes(n.match);
               return group === "Daily work" ? daily : !daily;
             });
@@ -364,7 +374,8 @@ function PhoneBar() {
   if (!shellReady) return <PhoneBarSkeleton />;
   const all = [...visible(PRIMARY), ...tilesNav.items, ...visible(SECONDARY)];
   const notebook = selectedFloorId === KITCHEN_FLOOR_ID || selectedFloorId === FURNITURE_FLOOR_ID;
-  const priorities = notebook ? all.filter(item => item.match === 'walkins' || item.match === 'followups' || item.href.includes('/notebook/'))
+  const priorities = selectedFloorId === KITCHEN_FLOOR_ID ? all.filter(item => item.match.startsWith('kitchen-'))
+    : notebook ? all.filter(item => item.match === 'walkins' || item.match === 'followups' || item.href.includes('/notebook/'))
     : ['dashboard', 'catalog', selectedFloorId === TILES_FLOOR_ID ? 'tiles' : 'quotations', 'followups']
       .flatMap(match => all.filter(item => item.match === match));
   const more = all.filter(item => !priorities.some(tab => tab.href === item.href));
