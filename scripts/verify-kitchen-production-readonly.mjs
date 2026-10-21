@@ -11,7 +11,7 @@ import { createHash } from 'node:crypto';
 import { chromium, expect } from '@playwright/test';
 import { captureRuntimeHealth } from '../e2e/runtime-health.ts';
 import { assertPersistentCookies } from './verify-release-cookies.mjs';
-import { canonicalCandidate, loadKitchenPromotionPackage, validateRunningObservation, RAILWAY_TARGET, RUNTIME_ROOT_FILES, RUNTIME_DIRECTORIES } from './promote-verified-vercel.mjs';
+import { canonicalCandidate, loadKitchenPromotionPackage, validateRunningObservation, validateReleaseException, RAILWAY_TARGET, RUNTIME_ROOT_FILES, RUNTIME_DIRECTORIES } from './promote-verified-vercel.mjs';
 
 const readPaths = new Set(['/api/health', '/api/health/ready', '/api/auth/me', '/api/kitchen-projects/configuration', '/api/kitchen-projects/dashboard', '/api/kitchen-projects?limit=1']);
 export async function productionRequest(context, origin, headers, method, path, data) {
@@ -79,7 +79,8 @@ async def main():
             'project_id': os.environ.get('RAILWAY_PROJECT_ID'), 'environment_id': os.environ.get('RAILWAY_ENVIRONMENT_ID'),
             'service_id': os.environ.get('RAILWAY_SERVICE_ID'), 'deployment_id': os.environ.get('RAILWAY_DEPLOYMENT_ID'),
             'files': files, 'database_fingerprint': database_fingerprint, 'private_storage_fingerprint': private_storage_fingerprint,
-            'mongo_ping': True, 'private_bucket_verified': True, 'pending_migrations': pending}, sort_keys=True))
+            'mongo_ping': True, 'private_bucket_verified': True, 'pending_migrations': pending,
+            'kitchen_owner_only': os.environ.get('FORGE_KITCHEN_OWNER_ONLY', 'false').lower() == 'true'}, sort_keys=True))
     finally:
         client.close()
 try:
@@ -97,6 +98,7 @@ export function measureRunningService(prepared, { run = spawnSync, cli = process
   try { measured = JSON.parse(result.stdout.trim()); } catch { assert.fail('Running-service probe did not return its exact credential-free JSON observation'); }
   validateRunningObservation(measured, prepared.source, { ...RAILWAY_TARGET, deployment_id: prepared.provider.deployment_id, source_sha: prepared.plan.release_sha });
   for (const key of ['database_fingerprint', 'private_storage_fingerprint']) assert.equal(measured[key], prepared.binding[key], `Fresh serving ${key} differs from reviewed proof`);
+  if (prepared.releaseException) assert.equal(measured.kitchen_owner_only, true, 'Fresh running Kitchen owner-only flag changed');
   return measured;
 }
 export function verifyReviewedRuntimeInventory(source, sha, { run = spawnSync } = {}) {
@@ -125,7 +127,8 @@ export function verifyReviewedRuntimeInventory(source, sha, { run = spawnSync } 
   return { sourceSha: sha, runtimeFilesVerifiedAgainstGit: entries.length };
 }
 
-export function verifyProtectedSource(sha, { run = spawnSync, cli = 'gh' } = {}) {
+export function verifyProtectedSource(sha, { run = spawnSync, cli = 'gh', plan } = {}) {
+  const exception = plan ? validateReleaseException(plan, sha) : null;
   const get = path => {
     const result = run(cli, ['api', path, '--method', 'GET'], { encoding: 'utf8', timeout: 30000, maxBuffer: 2 * 1024 * 1024 });
     assert.equal(result.status, 0, 'Cannot inspect required protected-main GitHub evidence');
@@ -133,7 +136,7 @@ export function verifyProtectedSource(sha, { run = spawnSync, cli = 'gh' } = {})
   };
   const repository = 'repos/luvop2510/buildconhouse';
   const branch = get(repository + '/branches/main');
-  assert.equal(branch.commit?.sha, sha, 'Reviewed source has not reached current protected main');
+  if (!exception) assert.equal(branch.commit?.sha, sha, 'Reviewed source has not reached current protected main');
   const protection = get(repository + '/branches/main/protection');
   assert.equal(protection.enforce_admins?.enabled, true, 'Administrator branch protection must remain enforced');
   assert.equal(protection.required_status_checks?.strict, true, 'Required checks must remain up to date');
@@ -143,9 +146,22 @@ export function verifyProtectedSource(sha, { run = spawnSync, cli = 'gh' } = {})
   for (const name of required) assert.ok(contexts.includes(name), `Required protected-main check missing: ${name}`);
   const runs = get(repository + '/commits/' + sha + '/check-runs?per_page=100');
   assert.ok(runs.total_count <= 100, 'Check-run evidence is paginated; inspect the complete exact-head result set');
-  for (const name of required) {
+  for (const name of exception ? required.filter(name => name !== 'frontend-security') : required) {
     const matching = (runs.check_runs || []).filter(row => row.name === name).sort((a, b) => b.id - a.id);
     assert.ok(matching.length && matching[0].head_sha === sha && matching[0].status === 'completed' && matching[0].conclusion === 'success', `Exact protected-main ${name} check is not successful`);
+  }
+  if (exception) {
+    const pull = get(repository + '/pulls/16');
+    assert.equal(pull.number, 16); assert.equal(pull.state, 'open');
+    assert.equal(pull.base?.ref, 'main'); assert.equal(pull.head?.sha, sha, 'Exception source differs from current Kitchen PR head');
+    const security = (runs.check_runs || []).filter(row => row.name === 'frontend-security').sort((a, b) => b.id - a.id)[0];
+    assert.ok(security && security.head_sha === sha && security.status === 'completed', 'Current source security result is unavailable');
+    assert.ok(['success', 'failure'].includes(security.conclusion), 'Current source security gate was not executed to a pass/fail result');
+    return { sourceSha: sha, protectedMain: false, branchProtectionsPreserved: true, sourcePullRequest: 16,
+      requiredChecks: required.filter(name => name !== 'frontend-security'),
+      releaseException: { authority: exception.authority, expiresAt: exception.expires_at, waivers: exception.waivers },
+      frontendSecurity: { actualConclusion: security.conclusion, disposition: 'waived-by-explicit-owner-instruction', passed: security.conclusion === 'success' },
+      independentReview: { disposition: 'waived-by-explicit-owner-instruction', approved: false } };
   }
   const pulls = get(repository + '/commits/' + sha + '/pulls?per_page=100');
   assert.ok(pulls.length < 100, 'Pull-request evidence is paginated');
@@ -178,7 +194,7 @@ export async function verifyProductionReadonly([manifestPath, output, candidate,
   const sessions = [];
   let browser;
   try {
-    report.protectedSource = verifyProtectedSource(sha);
+    report.protectedSource = verifyProtectedSource(sha, { plan });
     report.reviewedRuntimeInventory = verifyReviewedRuntimeInventory(prepared.source, sha);
     report.measuredBinding = measureRunningService(prepared);
     report.checks.push({ check: 'fresh-running-container-source-data-storage-matches-reviewed-proof', passed: true });
@@ -187,7 +203,7 @@ export async function verifyProductionReadonly([manifestPath, output, candidate,
     let blockedWrites = 0;
     async function login(role) {
       const account = plan.accounts[role], credential = credentials[account.credential_key];
-      assert.ok(credential?.email && credential?.password, 'Missing run-owned QA credentials');
+      assert.ok(credential?.email && credential?.password, 'Missing approved principal credentials');
       const context = await browser.newContext({ baseURL: origin, serviceWorkers: 'block', viewport: { width: 1440, height: 1000 } });
       await context.route('**/*', productionBrowserRoute(origin, bypass, () => { blockedWrites += 1; }));
       const baseHeaders = { Origin: origin, ...(bypass ? { 'x-vercel-protection-bypass': bypass } : {}) };
@@ -215,7 +231,7 @@ export async function verifyProductionReadonly([manifestPath, output, candidate,
       assert.equal((await ready.json()).status, 'ok', 'Existing-site backend reports degraded readiness');
     }
     report.checks.push({ check: 'existing-site-health-readiness', passed: true });
-    const denied = await login('denied');
+    const denied = prepared.releaseException ? null : await login('denied');
     for (const path of ['/api/kitchen-projects/configuration', '/api/kitchen-projects/dashboard', '/api/kitchen-projects?limit=1']) {
       const response = await productionRequest(owner.context, origin, owner.headers, 'GET', path);
       assert.equal(response.status(), 200, 'Required authorized Kitchen read failed');
@@ -223,9 +239,11 @@ export async function verifyProductionReadonly([manifestPath, output, candidate,
       if (path.endsWith('configuration')) assert.ok(Array.isArray(body.department_manager_user_ids) && Number.isInteger(body.version));
       else if (path.endsWith('dashboard')) assert.ok(Number.isInteger(body.active_projects) && body.active_projects >= 0 && typeof body.active_order_value === 'string');
       else assert.ok(Array.isArray(body.rows) && body.rows.length <= 1 && Number.isInteger(body.total));
-      assert.equal((await productionRequest(denied.context, origin, denied.headers, 'GET', path)).status(), 403, 'Denied principal accessed Kitchen');
-      report.checks.push({ check: 'authorized-and-denied-primary-read', path, passed: true });
+      if (denied) assert.equal((await productionRequest(denied.context, origin, denied.headers, 'GET', path)).status(), 403, 'Denied principal accessed Kitchen');
+      else assert.equal((await productionRequest(owner.context, origin, { ...owner.headers, 'X-Floor-Id': 'first-floor' }, 'GET', path)).status(), 403, 'Wrong-floor owner request accessed Kitchen');
+      report.checks.push({ check: denied ? 'authorized-and-denied-primary-read' : 'authorized-and-wrong-floor-primary-read', path, passed: true });
     }
+    if (!denied) report.verificationLimits = { loggedInDeniedPrincipal: 'Not executed: only the existing owner account is authorized for this hosted release. Local real API denial coverage is separate.', accountsCreated: false };
     const anonymous = await browser.newContext({ baseURL: origin, serviceWorkers: 'block' });
     try {
       assert.equal((await productionRequest(anonymous, origin, { ...(bypass ? { 'x-vercel-protection-bypass': bypass } : {}) }, 'GET', '/api/kitchen-projects?limit=1')).status(), 401);
@@ -237,11 +255,15 @@ export async function verifyProductionReadonly([manifestPath, output, candidate,
     owner.context.on('requestfinished', finished); owner.context.on('requestfailed', finished);
     owner.context.on('response', response => { if (new URL(response.url()).origin === origin && new URL(response.url()).pathname.startsWith('/api/') && response.status() >= 400) failedRead = true; });
     const settle = () => expect.poll(() => pending.size === 0 && Date.now() - activity >= 200, { timeout: 20000 }).toBe(true);
-    for (const [path, apiPath, marker] of [['/kitchen', '/api/kitchen-projects/dashboard', 'kitchen-metric-active'], ['/kitchen/projects', '/api/kitchen-projects', 'kitchen-search'], ['/kitchen/settings', '/api/kitchen-projects/configuration', 'kitchen-policy-save']]) {
+    for (const stage of ['lead', 'visit', 'cad', 'design', 'quotation', 'order', 'production', 'installation', 'completed']) {
+      const path = `/kitchen/stages/${stage}`;
       await settle();
-      const ready = page.waitForResponse(response => new URL(response.url()).origin === origin && new URL(response.url()).pathname === apiPath && response.request().method() === 'GET' && response.status() === 200);
+      const ready = page.waitForResponse(response => {
+        const url = new URL(response.url());
+        return url.origin === origin && url.pathname === '/api/kitchen-projects' && url.searchParams.get('stage') === stage && response.request().method() === 'GET' && response.status() === 200;
+      });
       await page.goto(origin + path); await ready; await settle();
-      await expect(page.getByTestId(marker)).toHaveCount(1); await expect(page.getByTestId('login-submit')).toHaveCount(0);
+      await expect(page.getByTestId('kitchen-search')).toHaveCount(1); await expect(page.getByTestId('login-submit')).toHaveCount(0);
       assert.equal(failedRead, false, 'Browser Kitchen primary/auxiliary read failed');
       assert.equal(blockedWrites, 0, 'Read-only browser attempted a mutation');
       await health.assertHealthy();

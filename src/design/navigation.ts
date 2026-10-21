@@ -18,10 +18,15 @@ export type NavItem = {
 export const KITCHEN_OWNER_ONLY = process.env.EXPO_PUBLIC_KITCHEN_OWNER_ONLY === "true";
 
 export const PRIMARY: NavItem[] = [
-  { href: "/(admin)/kitchen", label: "Overview", icon: "home", match: "kitchen-overview", floors: [KITCHEN_FLOOR_ID] },
-  { href: "/(admin)/kitchen/projects", label: "Projects", icon: "layers", match: "kitchen-projects", floors: [KITCHEN_FLOOR_ID] },
-  { href: "/(admin)/kitchen/workflow", label: "Workflow", icon: "git-branch", match: "kitchen-workflow", floors: [KITCHEN_FLOOR_ID] },
-  { href: "/(admin)/kitchen/completed", label: "Completed", icon: "check-circle", match: "kitchen-completed", floors: [KITCHEN_FLOOR_ID] },
+  { href: "/(admin)/kitchen/stages/lead", label: "Lead", icon: "user-plus", match: "kitchen-lead", floors: [KITCHEN_FLOOR_ID] },
+  { href: "/(admin)/kitchen/stages/visit", label: "Visit", icon: "map-pin", match: "kitchen-visit", floors: [KITCHEN_FLOOR_ID] },
+  { href: "/(admin)/kitchen/stages/cad", label: "CAD File", icon: "file", match: "kitchen-cad", floors: [KITCHEN_FLOOR_ID] },
+  { href: "/(admin)/kitchen/stages/design", label: "Design", icon: "edit-3", match: "kitchen-design", floors: [KITCHEN_FLOOR_ID] },
+  { href: "/(admin)/kitchen/stages/quotation", label: "Quotation", icon: "file-text", match: "kitchen-quotation", floors: [KITCHEN_FLOOR_ID] },
+  { href: "/(admin)/kitchen/stages/order", label: "Order", icon: "check-square", match: "kitchen-order", floors: [KITCHEN_FLOOR_ID] },
+  { href: "/(admin)/kitchen/stages/production", label: "Production", icon: "tool", match: "kitchen-production", floors: [KITCHEN_FLOOR_ID] },
+  { href: "/(admin)/kitchen/stages/installation", label: "Installation", icon: "home", match: "kitchen-installation", floors: [KITCHEN_FLOOR_ID] },
+  { href: "/(admin)/kitchen/stages/completed", label: "Completed", icon: "check-circle", match: "kitchen-completed", floors: [KITCHEN_FLOOR_ID] },
   { href: "/(admin)/dashboard", label: "Today", icon: "sunrise", match: "dashboard" },
   { href: "/(admin)/walkins", label: "Walk-ins", icon: "user-plus", match: "walkins" },
   { href: "/(admin)/quotations", label: "Quotations", icon: "file-text", match: "quotations", floors: [SANITARY_FLOOR_ID] },

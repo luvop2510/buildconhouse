@@ -205,6 +205,7 @@ function PaletteSession({ open, onClose, selectedFloorId, returnFocusRef }: { op
     ] as Item[]).filter(a => a.key === "a-newq" ? canNewQuotation && hasAccess(selectedFloorId === "ground-floor" ? "tiles" : "quotations") : a.key === "a-cust" ? canNewCustomer && canCustomers : canRecordPayment && hasAccess("payments")).filter((a) => match(a.title + " " + a.keywords));
 
     const nav: Item[] = NAV
+      .filter(n => selectedFloorId !== KITCHEN_FLOOR_ID || n.match.startsWith("kitchen-"))
       .filter(n => (!n.floors || n.floors.includes(selectedFloorId)) && (staff?.custom_access || !n.roles || !!staff && n.roles.includes(staff.role)) && hasAccess(n.match))
       .filter(n => !n.href.includes("/tiles") || selectedFloorId === "ground-floor")
       .filter((n) => match(n.label + " " + n.match))

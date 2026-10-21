@@ -12,6 +12,11 @@ const project = 'prj_RuZWSvov1AkP2UDmWaea6925wWlU';
 export const KITCHEN_BINDING_PATH = '/api/health/kitchen-release-binding';
 export const EXISTING_SITE_DOMAIN = 'buildconhouse.in';
 export const RAILWAY_TARGET = Object.freeze({ project_id: '4d4a8d55-2e5e-43dc-b3a2-298e4455f210', environment_id: '3ee5a85e-c436-4010-8103-8e8a49186dd1', service_id: '9683fa61-7c70-4fce-ba6d-210b0cff5267' });
+export const KITCHEN_RELEASE_AUTHORITY = Object.freeze({
+  thread_id: '01a15b3b-d46b-7d00-8f07-0eb1100c142c',
+  exception_turn_id: '01a15dff-7167-73b0-a171-d76fbd4933bd',
+  owner_only_turn_id: '01a15e19-d93d-71b1-9a2e-5a30613d3beb',
+});
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const reference = value => assert.ok(typeof value === 'string' && value.trim().length >= 6, 'Missing reviewed evidence reference');
 const review = value => { assert.equal(value?.approved, true, 'Evidence must be independently reviewed'); reference(value.reviewer); reference(value.reference); };
@@ -19,6 +24,35 @@ export function canonicalCandidate(value) {
   const url = new URL(value);
   assert.ok(url.protocol === 'https:' && url.hostname.endsWith('.vercel.app') && !url.username && !url.password && url.pathname === '/' && !url.search && !url.hash, 'Use an HTTPS canonical candidate deployment URL');
   return url;
+}
+// A manifest must deliberately bind this retrieved human instruction to one
+// candidate and source. It never follows from an environment flag or old note.
+// The fixed release window prevents reusing this authority for future releases.
+export function validateReleaseException(plan, sha) {
+  const exception = plan.release_exception;
+  if (exception === undefined) return null;
+  assert.equal(exception?.schema, 'kitchen-owner-release-exception/v1');
+  assert.equal(plan.publication_mode, 'existing-site');
+  assert.equal(plan.target_domain, EXISTING_SITE_DOMAIN);
+  assert.equal(exception.release, 'kitchen-nine-page-2026-10-21');
+  assert.equal(plan.release_sha, sha); assert.match(sha || '', /^[a-f0-9]{40}$/);
+  assert.equal(exception.source_sha, sha);
+  assert.equal(exception.candidate_deployment_id, plan.candidate_deployment_id);
+  assert.ok(/^dpl_[A-Za-z0-9_-]+$/.test(plan.candidate_deployment_id || ''));
+  assert.equal(canonicalCandidate(exception.candidate_url).origin, canonicalCandidate(plan.candidate_url).origin);
+  assert.equal(exception.target_domain, EXISTING_SITE_DOMAIN);
+  for (const [key, value] of Object.entries(KITCHEN_RELEASE_AUTHORITY)) assert.equal(exception.authority?.[key], value, 'Wrong retrieved human release authority');
+  assert.equal(exception.authority?.verified_via, 'codex.read_thread');
+  assert.equal(exception.authority?.answer, 'Authorize this release exception');
+  assert.equal(exception.owner_only, true);
+  assert.deepEqual(exception.waivers?.slice().sort(), ['frontend-security', 'independent-review', 'protected-main-publication']);
+  const expiry = Date.parse(exception.expires_at);
+  assert.ok(Number.isFinite(expiry) && expiry > Date.now() && expiry <= Date.parse('2026-10-22T18:29:59Z'), 'One-release exception is missing or outside its release window');
+  assert.equal(plan.account_mode, 'existing-owner-only');
+  assert.equal(plan.run_owned_sessions, true);
+  reference(plan.accounts?.owner?.credential_key); reference(plan.accounts?.owner?.user_id);
+  assert.equal(plan.accounts?.denied, undefined, 'Owner-only qualification must not introduce another principal');
+  return exception;
 }
 export function validateRuntimeBinding(binding, environment, candidate, sha) {
   assert.equal(binding?.schema, 'kitchen-runtime-binding/v1', 'Measured runtime binding proof is required');
@@ -140,12 +174,17 @@ export function loadKitchenPromotionPackage({ manifestPath, candidate, sha, read
   reference(authorization.reference); reference(authorization.rollback_reference); reference(authorization.rollback_deployment_id);
   assert.notEqual(authorization.rollback_deployment_id, plan.candidate_deployment_id);
   assert.ok(Date.parse(authorization.expires_at) > Date.now(), 'Production authorization expired');
-  assert.equal(plan.run_owned_qa_accounts, true);
-  for (const role of ['owner', 'denied']) {
-    reference(plan.accounts?.[role]?.credential_key); reference(plan.accounts?.[role]?.user_id);
+  const releaseException = validateReleaseException(plan, sha);
+  if (releaseException) {
+    assert.equal(runtime.kitchen_owner_only, true, 'Running Kitchen owner-only launch flag is not verified');
+  } else {
+    assert.equal(plan.run_owned_qa_accounts, true);
+    for (const role of ['owner', 'denied']) {
+      reference(plan.accounts?.[role]?.credential_key); reference(plan.accounts?.[role]?.user_id);
+    }
+    assert.notEqual(plan.accounts.owner.user_id, plan.accounts.denied.user_id);
   }
-  assert.notEqual(plan.accounts.owner.user_id, plan.accounts.denied.user_id);
-  return { plan, trial, binding, source, runtime, provider, recovery, manifestSha256: hash(bytes), trialSha256: trial ? plan.isolated_trial.sha256 : null };
+  return { plan, trial, binding, source, runtime, provider, recovery, releaseException, manifestSha256: hash(bytes), trialSha256: trial ? plan.isolated_trial.sha256 : null };
 }
 
 export function promoteVerified({ candidate, sha, report, kitchenManifest = process.env.FORGE_KITCHEN_PROMOTION_MANIFEST, cli = 'vercel', run = spawnSync, read = readFileSync }) {

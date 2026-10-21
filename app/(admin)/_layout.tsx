@@ -6,7 +6,7 @@ import { PRIMARY, SECONDARY, TILES_ITEMS, type NavItem } from "@/src/design/navi
 // One brass bar marks where you are. The command palette lives here (⌘K).
 // ─────────────────────────────────────────────────────────────────────────────
 import Feather from "@expo/vector-icons/Feather";
-import { Slot, useRouter, useSegments, useLocalSearchParams } from "expo-router";
+import { Slot, useRouter, useSegments, useLocalSearchParams, usePathname } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text } from "@/src/components/AppText";
@@ -34,8 +34,10 @@ import { FURNITURE_FLOOR_ID, KITCHEN_FLOOR_ID, SANITARY_FLOOR_ID, TILES_FLOOR_ID
 
 function useResolvedFloorSegments(): string[] {
   const segments = useSegments() as string[];
-  const { floor } = useLocalSearchParams<{ floor?: string }>();
-  return resolveFloorRouteSegments(segments, floor);
+  const { floor, stage } = useLocalSearchParams<{ floor?: string; stage?: string }>();
+  const pathname = usePathname();
+  const activeStage = pathname.match(/^\/kitchen\/(?:[^/]+\/)?stages\/([^/]+)$/)?.[1] || stage;
+  return resolveFloorRouteSegments(segments, floor).map(part => part === "[stage]" && activeStage ? activeStage : part);
 }
 
 // A web link needs an actual href for native Enter activation. Keep the
@@ -51,11 +53,8 @@ function WorkspaceLink({ href, onPress, ...props }: Omit<React.ComponentProps<ty
 
 function isNavActive(item: NavItem, segments: string[]): boolean {
   if (item.match.startsWith("kitchen-") && segments.includes("kitchen") && !segments.includes("notebook")) {
-    const section = segments[segments.indexOf("kitchen") + 1];
-    if (item.match === "kitchen-overview") return !section || section === "index";
-    if (item.match === "kitchen-completed") return section === "completed";
-    if (item.match === "kitchen-workflow") return section === "workflow" || section === "stages";
-    return ![undefined, "index", "completed", "workflow", "stages"].includes(section);
+    const stageIndex = segments.indexOf("stages");
+    return stageIndex >= 0 && item.match === `kitchen-${segments[stageIndex + 1]}`;
   }
   if (item.match === "tiles") return segments.includes("tiles") && !segments.includes("orders");
   if (item.match === "purchases") return segments.includes("purchases") || segments.includes("purchases-completed");
@@ -213,6 +212,7 @@ function isSharedFloorRoute(segments: string[]) {
 }
 
 function isRouteCompatibleWithFloor(segments: string[], floorId: string) {
+  if (floorId === KITCHEN_FLOOR_ID && !segments.includes("kitchen") && !isPersonalAccountRoute(segments)) return false;
   if (segments.includes("catalog") && ![SANITARY_FLOOR_ID, TILES_FLOOR_ID].includes(floorId)) return false;
   return !Object.entries(FLOOR_ROUTE_SEGMENTS).some(([restrictedFloor, roots]) => (
     restrictedFloor !== floorId && roots.some((root) => segments.includes(root))
@@ -261,6 +261,7 @@ function useVisibleNav() {
   const { staff } = useAuth();
   const { access, selectedFloorId } = useFloorAccess();
   return (items: NavItem[]) => items.filter((item) => {
+    if (selectedFloorId === KITCHEN_FLOOR_ID && !item.match.startsWith("kitchen-")) return false;
     const permission = item.match.startsWith("kitchen-") ? "kitchen-projects" : item.match;
     if (item.floors && selectedFloorId && !item.floors.includes(selectedFloorId)) return false;
     if (staff?.custom_access) return hasAccess(permission);
@@ -336,7 +337,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
         <Menu
           triggerLabel="Account menu"
           align="left"
-          items={[{
+          items={[{ label: "My account", icon: "user", onPress: () => router.push("/(admin)/settings") }, {
             label: "Sign out", icon: "log-out", tone: "risk",
             onPress: async () => { await logout(); router.replace("/(auth)/login"); },
           }]}
@@ -374,7 +375,7 @@ function PhoneBar() {
   if (!shellReady) return <PhoneBarSkeleton />;
   const all = [...visible(PRIMARY), ...tilesNav.items, ...visible(SECONDARY)];
   const notebook = selectedFloorId === KITCHEN_FLOOR_ID || selectedFloorId === FURNITURE_FLOOR_ID;
-  const priorities = selectedFloorId === KITCHEN_FLOOR_ID ? all.filter(item => item.match.startsWith('kitchen-'))
+  const priorities = selectedFloorId === KITCHEN_FLOOR_ID ? all.filter(item => item.match.startsWith('kitchen-')).slice(0, 3)
     : notebook ? all.filter(item => item.match === 'walkins' || item.match === 'followups' || item.href.includes('/notebook/'))
     : ['dashboard', 'catalog', selectedFloorId === TILES_FLOOR_ID ? 'tiles' : 'quotations', 'followups']
       .flatMap(match => all.filter(item => item.match === match));
@@ -395,14 +396,14 @@ function PhoneBar() {
         </Text>
       </WorkspaceLink>)}
       <Pressable testID={notebook ? "bottom-nav-notebook-workspace" : "bottom-nav-more"}
-        accessibilityRole="button" accessibilityLabel="More" accessibilityState={{ expanded: moreOpen, selected: moreActive }}
+        accessibilityRole="button" accessibilityLabel={selectedFloorId === KITCHEN_FLOOR_ID ? "All stages" : "More"} accessibilityState={{ expanded: moreOpen, selected: moreActive }}
         aria-expanded={moreOpen}
         onPress={() => setMoreOpen(true)} style={styles.tab}>
         <View style={[styles.tabIconWrap, moreActive && styles.tabIconWrapActive]}><Feather name="menu" size={20} color={moreActive ? color.action : color.inkMid} /></View>
-        <Text style={[styles.tabLabel, moreActive && styles.tabLabelActive]}>More</Text>
+        <Text style={[styles.tabLabel, moreActive && styles.tabLabelActive]}>{selectedFloorId === KITCHEN_FLOOR_ID ? "All stages" : "More"}</Text>
       </Pressable>
     </View>
-    <Sheet open={moreOpen} onClose={() => setMoreOpen(false)} title="Workspace">
+    <Sheet open={moreOpen} onClose={() => setMoreOpen(false)} title={selectedFloorId === KITCHEN_FLOOR_ID ? "Kitchen stages" : "Workspace"}>
       {!notebook ? <Pressable accessibilityRole="button" accessibilityLabel="Search everything"
         onPress={() => { setMoreOpen(false); setTimeout(palette.open, 200); }} style={styles.moreRow}>
         <Feather name="search" size={18} color={color.inkMid} /><Text style={styles.moreLabel}>Search everything</Text>
@@ -416,6 +417,10 @@ function PhoneBar() {
       <View style={[styles.moreRow, { height: 'auto', minHeight: 56 }]}><Avatar name={staff?.full_name} />
         <View style={{ flex: 1 }}><Text style={styles.moreLabel}>{staff?.full_name}</Text><Text style={{ color: color.inkMid }}>{roleLabel[staff?.role || '']}</Text></View>
       </View>
+      <Pressable accessibilityRole="button" accessibilityLabel="My account" style={styles.moreRow}
+        onPress={() => { setMoreOpen(false); router.push('/(admin)/settings'); }}>
+        <Feather name="user" size={18} color={color.inkMid} /><Text style={styles.moreLabel}>My account</Text>
+      </Pressable>
       <Pressable accessibilityRole="button" accessibilityLabel="Sign out" style={styles.moreRow}
         onPress={async () => { setMoreOpen(false); await logout(); router.replace('/(auth)/login'); }}>
         <Feather name="log-out" size={18} color={color.risk} /><Text style={[styles.moreLabel, { color: color.risk }]}>Sign out</Text>
@@ -473,6 +478,7 @@ function FloorAccessGate({ children }: { children: React.ReactNode }) {
   }, [authLoading, staff, access, selectedFloorId, destinationReady, segments, router]);
 
   const retiredWorkspaceRoute = Boolean(selectedFloorId && (
+    (selectedFloorId === KITCHEN_FLOOR_ID && destinationReady && !segments.includes("kitchen") && !isPersonalAccountRoute(segments)) ||
     (["purchases", "purchases-completed", "purchase-orders"].some(part => segments.includes(part)) && selectedFloorId !== SANITARY_FLOOR_ID) ||
     (segments.includes("catalog") && ![SANITARY_FLOOR_ID, TILES_FLOOR_ID].includes(selectedFloorId))
   ));

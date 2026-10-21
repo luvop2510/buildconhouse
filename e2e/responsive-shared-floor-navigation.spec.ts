@@ -1,36 +1,47 @@
 import { expect, test } from '@playwright/test';
 import { mockSession } from './audit-fixtures';
 
+const kitchenStages = ['lead', 'visit', 'cad', 'design', 'quotation', 'order', 'production', 'installation', 'completed'];
+const kitchenLabels = ['Lead', 'Visit', 'CAD File', 'Design', 'Quotation', 'Order', 'Production', 'Installation', 'Completed'];
+async function kitchenReads(page: import('@playwright/test').Page) {
+  await page.route('**/api/kitchen-projects**', route => {
+    const path = new URL(route.request().url()).pathname;
+    return route.fulfill({ json: path.endsWith('/assignees') ? { rows: [] } : path.endsWith('/configuration') ? { version: 1, department_manager_user_ids: [], files: { max_bytes: 786432, allowed_types: [] } } : { rows: [], total: 0, page: 1, limit: 25 } });
+  });
+}
 for (const [floor, label] of [['ground-floor', 'Ground Floor'], ['first-floor', 'The Sanitary Bathroom'], ['second-floor', 'Kitchen Floor'], ['third-floor', 'Furniture Floor']] as const) {
   test(`critical ${floor} exposes only its supported workspaces on every navigation surface`, async ({ page }) => {
     await mockSession(page, '/followups', false);
     await page.addInitScript(id => localStorage.setItem('forge.active-floor', JSON.stringify(id)), floor);
+    await kitchenReads(page);
     await page.route('**/api/followups/page?**', route => {
       expect(route.request().headers()['x-floor-id']).toBe(floor);
       return route.fulfill({ json: { items: [], page: 1, page_size: 100, has_more: false } });
     });
     await page.goto('/followups');
     await expect(page.getByTestId('floor-switcher')).toHaveAccessibleName(`Switch workspace. Current workspace: ${label}`);
-    if (floor === 'second-floor') {
-      for (const [name, href] of [['Overview', '/kitchen'], ['Projects', '/kitchen/projects'], ['Workflow', '/kitchen/workflow'], ['Completed', '/kitchen/completed']]) {
-        const destination = page.getByRole('link', { name, exact: true });
-        await expect(destination).toBeVisible();
-        await expect(destination).toHaveAttribute('href', href);
-      }
-    } else {
-      await expect(page.locator('a[href="/kitchen/projects"]')).toHaveCount(0);
-      await expect(page.getByRole('link', { name: 'Follow-ups', exact: true })).toBeVisible();
+    const kitchen = floor === 'second-floor';
+    if (kitchen) {
+      await expect(page).toHaveURL(/\/kitchen\/stages\/lead$/);
+      const activeStage = page.getByTestId(page.viewportSize()!.width < 768 ? 'bottom-nav-kitchen-lead' : 'nav-kitchen-lead');
+      await expect(activeStage).toHaveAttribute('aria-selected', 'true');
     }
     const labels = new Set(await page.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('aria-label'))));
-    const more = page.getByRole('button', { name: 'More', exact: true });
+    const more = page.getByRole('button', { name: kitchen ? 'All stages' : 'More', exact: true });
     if (await more.isVisible()) {
       await more.click();
-      await expect(page.getByRole('dialog', { name: 'Workspace', exact: true })).toBeVisible();
+      await expect(page.getByRole('dialog', { name: kitchen ? 'Kitchen stages' : 'Workspace', exact: true })).toBeVisible();
       for (const label of await page.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('aria-label')))) labels.add(label);
     }
-    if (floor === 'second-floor') await expect(page.getByRole('link', { name: 'Follow-ups', exact: true })).toBeVisible();
-    expect(labels.has('Walk-ins')).toBe(true);
-    expect(labels.has('Follow-ups')).toBe(true);
+    if (kitchen) {
+      for (const [index, name] of kitchenLabels.entries()) {
+        expect(labels.has(name), `Kitchen navigation includes ${name}`).toBe(true);
+        await expect(page.locator(`a[href="/kitchen/stages/${kitchenStages[index]}"]`)).toHaveCount(1);
+      }
+      for (const retired of ['Overview', 'Projects', 'Workflow', 'Sales Data', 'Customers', 'Walk-ins', 'Follow-ups', 'Payments', 'Team', 'Settings']) expect(labels.has(retired), `${retired} is not a Kitchen page`).toBe(false);
+    } else await expect(page.locator('a[href="/kitchen/stages/lead"]')).toHaveCount(0);
+    expect(labels.has('Walk-ins')).toBe(!kitchen);
+    expect(labels.has('Follow-ups')).toBe(!kitchen);
     expect(labels.has('Purchases')).toBe(floor === 'first-floor');
     expect(labels.has('Catalog')).toBe(['first-floor', 'ground-floor'].includes(floor));
     expect(labels.has('RNB quotations')).toBe(floor === 'third-floor');
@@ -42,11 +53,12 @@ for (const [floor, label] of [['ground-floor', 'Ground Floor'], ['first-floor', 
 for (const [floor, path] of [['second-floor', '/notebook/furniture'], ['third-floor', '/notebook/kitchen'], ['third-floor', '/notebook/kitchen/quotation-follow-up'], ['second-floor', '/notebook/furniture/quotation']] as const) {
   test(`critical retired ${path} preserves ${floor} instead of opening another floor`, async ({ page }) => {
     await mockSession(page, path, false);
+    await kitchenReads(page);
     await page.addInitScript(id => localStorage.setItem('forge.active-floor', JSON.stringify(id)), floor);
     let retiredReads = 0;
     await page.route('**/api/followups/notebook/**', route => { retiredReads++; return route.fulfill({ json: { rows: [], next_cursor: null } }); });
     await page.goto(path);
-    await expect(page).toHaveURL(new RegExp(`${path.includes('/quotation') ? '/followups' : '/walkins'}$`));
+    await expect(page).toHaveURL(new RegExp(`${floor === 'second-floor' ? '/kitchen/stages/lead' : path.includes('/quotation') ? '/followups' : '/walkins'}$`));
     expect(await page.evaluate(() => JSON.parse(localStorage.getItem('forge.active-floor')!))).toBe(floor);
     expect(retiredReads).toBe(0);
   });
@@ -56,11 +68,12 @@ for (const floor of ['ground-floor', 'second-floor', 'third-floor']) {
   for (const path of ['/purchases', '/purchases-completed', ...(floor === 'ground-floor' ? [] : ['/catalog'])]) {
     test(`critical ${floor} blocks a direct ${path} URL before business reads`, async ({ page }) => {
       await mockSession(page, path, false);
+      await kitchenReads(page);
       await page.addInitScript(id => localStorage.setItem('forge.active-floor', JSON.stringify(id)), floor);
       let businessReads = 0;
       await page.route(/\/api\/(purchases|products|brands|categories)(?:\/|\?|$)/, route => { businessReads++; return route.fulfill({ json: [] }); });
       await page.goto(path);
-      await expect(page).toHaveURL(new RegExp(`${floor === 'ground-floor' ? '/tiles' : '/walkins'}$`));
+      await expect(page).toHaveURL(new RegExp(`${floor === 'ground-floor' ? '/tiles' : floor === 'second-floor' ? '/kitchen/stages/lead' : '/walkins'}$`));
       expect(businessReads).toBe(0);
       expect(await page.evaluate(() => JSON.parse(localStorage.getItem('forge.active-floor')!))).toBe(floor);
     });
@@ -105,6 +118,7 @@ for (const [sourceFloor, sourceName] of [['first-floor', 'The Sanitary Bathroom'
 for (const floor of ['ground-floor', 'second-floor', 'third-floor']) {
   test(`critical ${floor} customer profile avoids sanitary purchasing requests`, async ({ page }) => {
     await mockSession(page, '/customers/scoped-client', false);
+    await kitchenReads(page);
     await page.addInitScript(id => localStorage.setItem('forge.active-floor', JSON.stringify(id)), floor);
     const forbidden: string[] = [];
     await page.route(/\/api\/(purchases|purchase-orders|godown-stock)(?:\/|\?|$)/, route => {
@@ -115,6 +129,11 @@ for (const floor of ['ground-floor', 'second-floor', 'third-floor']) {
     await page.route('**/api/quotations?customer_id=**', route => route.fulfill({ json: [] }));
     await page.route('**/api/activity/customer/scoped-client', route => route.fulfill({ json: [] }));
     await page.goto('/customers/scoped-client');
+    if (floor === 'second-floor') {
+      await expect(page).toHaveURL(/\/kitchen\/stages\/lead$/);
+      expect(forbidden).toEqual([]);
+      return;
+    }
     await expect(page.getByText('Scoped Buyer', { exact: true }).first()).toBeVisible();
     await page.getByRole('tab', { name: 'Timeline', exact: true }).click();
     await expect(page.getByText('Some related records could not be loaded. Counts may be incomplete.', { exact: true })).toHaveCount(0);

@@ -31,7 +31,7 @@ export type KitchenWork = { status: "Not Started" | "In Production" | "In Progre
 export type KitchenOrder = { id: string; approval_identity?: string; authorization_invalidated?: boolean; confirmed: boolean; status: "Confirmed" | "On Hold" | "Cancelled"; order_date: string; original_amount: string; final_amount: string; confirmation_document_id?: string | null; notes?: string | null; quotation_version_id: string; advance: { received: boolean; amount: string; date?: string | null }; amendments: { id: string; amount: string; reason: string; date: string; customer_approved: boolean }[] };
 export type KitchenAttachment = { id: string; filename: string; size_bytes: number; content_type: string; sha256?: string };
 export const KITCHEN_DECISION_CONTRACT = "2026-10-20" as const;
-export const KITCHEN_FILE_TYPES = ["application/pdf", "image/vnd.dwg", "image/vnd.dxf", "image/jpeg", "image/png", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"];
+export const KITCHEN_FILE_TYPES = ["application/pdf", "image/jpeg", "image/png", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"];
 export type KitchenPolicy = {
   decision_contract?: string | null; department_manager_user_ids?: string[];
   version: number; identity_timing: "creation" | "conversion" | null; cad_require_received: boolean | null; cad_require_progress_100: boolean | null;
@@ -46,6 +46,9 @@ export type KitchenDashboard = { stage_counts?: Record<KitchenStage, number>; wo
 export type KitchenProject = {
   id: string; reference: string; project_reference?: string | null; customer_id: string; customer: KitchenCustomer;
   version: number; stage: KitchenStage; lead: KitchenLead; visit: KitchenVisit; cad: KitchenCad;
+  current_design?: Pick<KitchenVersion, "id" | "number" | "response" | "shared_date" | "handoff_date" | "presentation_date" | "received_date" | "amount" | "design_version_id" | "workflow_cycle"> | null;
+  current_quotation?: Pick<KitchenVersion, "id" | "number" | "response" | "shared_date" | "handoff_date" | "presentation_date" | "received_date" | "amount" | "design_version_id" | "workflow_cycle"> | null;
+  current_order?: Omit<KitchenOrder, "amendments" | "notes"> | null;
   assignments: Partial<Record<KitchenStage, string | null>>; assigned_to?: string | null; assigned_to_name?: string | null;
   next_action?: string | null; deadline?: string | null; target_completion_date?: string | null;
   design_revision_count: number | null; site_visit_count: number | null; known_design_revision_count?: number; known_site_visit_count?: number;
@@ -72,7 +75,7 @@ export type KitchenQuery = {
   date_field?: string; sort?: string; direction?: "asc" | "desc"; page?: number; limit?: number; completed?: string; duplicate_review?: "pending";
 };
 export type KitchenFileTransfer = { transfer_id: string; size_bytes: number; chunk_bytes: number; part_count: number; state: "open" | "finishing" | "completed"; expires_at: string };
-export type KitchenCreate = { customer_id: string; idempotency_key: string; lead: KitchenLead; assigned_to?: string };
+export type KitchenCreate = { customer_id?: string; customer?: { name: string; phone: string; address?: string }; idempotency_key: string; lead: KitchenLead; assigned_to?: string };
 export type KitchenCommand = "review_duplicate" | "edit_lead" | "convert" | "save_visit" | "save_cad" | "advance_stage" | "assign" | "metadata" | "design_present" | "design_share" | "design_response" | "design_revision" | "design_handoff" | "quotation_receive" | "quotation_share" | "quotation_response" | "order_confirm" | "order_document" | "order_advance" | "order_amend" | "order_status" | "exception" | "production_update" | "installation_update" | "site_visit" | "approval";
 const options = { floorId: KITCHEN_FLOOR_ID, cacheMs: 0 };
 const query = (values: Record<string, string | number | undefined>) => {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
-import { promoteVerified, KITCHEN_BINDING_PATH, loadKitchenPromotionPackage, RUNTIME_ROOT_FILES, RUNTIME_DIRECTORIES, RAILWAY_TARGET } from './promote-verified-vercel.mjs';
+import { promoteVerified, KITCHEN_BINDING_PATH, loadKitchenPromotionPackage, RUNTIME_ROOT_FILES, RUNTIME_DIRECTORIES, RAILWAY_TARGET, KITCHEN_RELEASE_AUTHORITY } from './promote-verified-vercel.mjs';
 import { assertPersistentCookies } from './verify-release-cookies.mjs';
 const sha = 'a'.repeat(40);
 const digest = value => createHash('sha256').update(value).digest('hex');
@@ -149,6 +149,48 @@ for (const options of [
   assert.equal(result.calls.length, 0, 'Insufficient evidence stops before any provider call');
 }
 console.log('Existing-site promotion package passed: no isolated-host dependency; missing/stale/tampered/provider/container/source/backup/rollback/user-instruction proof fails before provider calls. Synthetic evidence only.');
+
+// Freeze only the synthetic one-release fixture's clock; this preserves its
+// expiry regression after the real authorization window has closed.
+const ActualReleaseDate = globalThis.Date;
+globalThis.Date = class extends ActualReleaseDate {
+  constructor(...args) { super(...(args.length ? args : ['2026-10-21T15:00:00Z'])); }
+  static now() { return ActualReleaseDate.parse('2026-10-21T15:00:00Z'); }
+};
+try {
+function exceptionPlan(plan) {
+  plan.account_mode = 'existing-owner-only'; plan.run_owned_sessions = true;
+  delete plan.accounts.denied; delete plan.run_owned_qa_accounts;
+  plan.release_exception = { schema: 'kitchen-owner-release-exception/v1', release: 'kitchen-nine-page-2026-10-21',
+    source_sha: sha, candidate_deployment_id: plan.candidate_deployment_id, candidate_url: plan.candidate_url, target_domain: plan.target_domain,
+    expires_at: '2026-10-22T18:29:59Z', owner_only: true,
+    waivers: ['frontend-security', 'independent-review', 'protected-main-publication'],
+    authority: { ...KITCHEN_RELEASE_AUTHORITY, verified_via: 'codex.read_thread', answer: 'Authorize this release exception' } };
+}
+const exceptionOptions = { changePlan: exceptionPlan, changeRuntime: value => { value.kitchen_owner_only = true; } };
+const allowedException = existingExercise(exceptionOptions);
+assert.equal(allowedException.error, undefined); assert.equal(allowedException.calls.length, 6);
+for (const mutate of [
+  p => { delete p.release_exception.authority; }, p => { p.release_exception.source_sha = 'f'.repeat(40); },
+  p => { p.release_exception.candidate_deployment_id = 'dpl_other'; }, p => { p.release_exception.candidate_url = 'https://another.vercel.app'; },
+  p => { p.release_exception.authority.exception_turn_id = 'another-turn'; }, p => { p.release_exception.authority.answer = 'an old note'; },
+  p => { p.release_exception.target_domain = 'other.example'; }, p => { p.release_exception.release = 'future-release'; },
+  p => { p.release_exception.expires_at = '2000-01-01T00:00:00Z'; }, p => { p.release_exception.expires_at = '2099-01-01T00:00:00Z'; },
+  p => { p.release_exception.waivers.push('performance'); }, p => { p.release_exception.owner_only = false; },
+  p => { p.run_owned_sessions = false; }, p => { p.accounts.denied = { user_id: 'unapproved-principal' }; },
+]) {
+  const result = existingExercise({ ...exceptionOptions, changePlan: plan => { exceptionPlan(plan); mutate(plan); } });
+  assert.ok(result.error, 'Exception must remain bound to this retrieved authority/source/candidate/scope/window');
+  assert.equal(result.calls.length, 0);
+}
+for (const options of [
+  { ...exceptionOptions, changeRuntime: value => { value.kitchen_owner_only = false; } },
+  { ...exceptionOptions, changeRecovery: value => { value.private_objects_bytes_verified = false; } },
+  { ...exceptionOptions, changeProvider: value => { value.status = 'BUILDING'; } },
+]) assert.ok(existingExercise(options).error, 'The exception never waives launch, recovery or runtime evidence');
+console.log('One-release exception package: exact retrieved human authority, source/candidate/domain/expiry and existing-owner scope required; runtime/source/recovery/default guards preserved. Synthetic only.');
+
+} finally { globalThis.Date = ActualReleaseDate; }
 
 const cookieFixture = [
   { name: 'forge_session', expires: 2000.358264, path: '/api', httpOnly: true, secure: true, sameSite: 'Strict' },

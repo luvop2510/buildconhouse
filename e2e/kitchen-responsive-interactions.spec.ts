@@ -11,38 +11,69 @@ async function seedBrowser(page: Page) {
   });
 }
 
-test('responsive board and table retain their truthful representations through width changes', async ({ page }, testInfo) => {
+test('Lead records a new customer inline, carries identity forward and reuses their phone on retry', async ({ page, context }, info) => {
+  const health = captureRuntimeHealth(page);
+  await seedBrowser(page);
+  await page.goto('/kitchen/stages/lead');
+  await page.getByTestId('kitchen-create').click();
+  await expect(page.getByTestId('kitchen-create-submit')).toBeDisabled();
+  const phone = `9${String(Date.now() + Math.floor(Math.random() * 1000000)).slice(-9)}`;
+  const name = `Inline Kitchen ${info.project.name}`;
+  await page.getByTestId('kitchen-customer-name').fill(name);
+  await page.getByTestId('kitchen-customer-phone').fill(phone);
+  await page.getByTestId('kitchen-create-lead-site_location').fill('Synthetic inline intake site');
+  const saved = page.waitForResponse(response => new URL(response.url()).pathname === '/api/kitchen-projects' && response.request().method() === 'POST');
+  await page.getByTestId('kitchen-create-submit').click();
+  const response = await saved;
+  expect(response.ok(), await response.text()).toBe(true);
+  const project = await response.json();
+  expect(project.customer).toMatchObject({ name, phone });
+  expect(project.stage).toBe('lead');
+  await expect(page).toHaveURL(current => current.pathname === `/kitchen/${project.id}/stages/lead`);
+  await expect(page.getByTestId('kitchen-project-detail')).toContainText(name);
+  const converted = page.waitForResponse(response => response.request().postDataJSON()?.command === 'convert');
+  await page.getByTestId('kitchen-convert').click();
+  const visit = await (await converted).json();
+  expect(visit).toMatchObject({ id: project.id, customer_id: project.customer_id, stage: 'visit' });
+  const reused = await context.request.post('/api/kitchen-projects', { headers, data: { customer: { name: 'Do not overwrite this existing customer', phone: `+91 ${phone}` }, idempotency_key: `inline-reuse-${Date.now()}-${Math.random()}`, lead: { site_location: 'Second synthetic location' } } });
+  expect(reused.ok(), await reused.text()).toBe(true);
+  expect(await reused.json()).toMatchObject({ customer_id: project.customer_id, customer: { name }, stage: 'lead', duplicate_review: { status: 'pending' } });
+  await health.assertHealthy();
+});
+
+test('responsive board and table retain their truthful representations through width changes', async ({ page, context }, testInfo) => {
+  const created = await context.request.post('/api/kitchen-projects', { headers, data: { customer_id: process.env.KITCHEN_E2E_CUSTOMER_ID, idempotency_key: `responsive-board-${Date.now()}-${Math.random()}`, lead: { site_location: 'Independent responsive board site' } } });
+  expect(created.ok(), await created.text()).toBe(true);
   const health = captureRuntimeHealth(page);
   await seedBrowser(page);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/kitchen/projects?view=board');
+  await page.goto('/kitchen/stages/lead?view=board');
   await expect(page.getByTestId('kitchen-board-compact')).toBeVisible();
   await expect(page.getByTestId('kitchen-board')).toContainText('Cards and column counts show this page');
-  await page.getByTestId('kitchen-board-stage').click();
-  await page.getByRole('menuitem', { name: 'Completed', exact: true }).click();
-  await expect(page).toHaveURL(/board_stage=completed/);
-  await expect(page.getByTestId('kitchen-board-group-completed')).toBeVisible();
-  await expect(page.getByTestId('kitchen-board-group-lead')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-board-group-lead')).toBeVisible();
+  await expect(page.getByTestId('kitchen-board-group-completed')).toHaveCount(0);
   for (const [width, height] of [[768, 1024], [820, 1180], [844, 390], [320, 720]]) {
     await page.setViewportSize({ width, height });
     await expect(page.getByTestId('kitchen-board-compact')).toBeVisible();
-    await expect(page.getByTestId('kitchen-board-group-completed')).toBeVisible();
+    await expect(page.getByTestId('kitchen-board-group-lead')).toBeVisible();
     const geometry = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }));
     expect(geometry.document, `${width}×${height} root fits`).toBeLessThanOrEqual(geometry.viewport + 1);
     await page.screenshot({ path: testInfo.outputPath(`compact-board-${width}x${height}.png`) });
   }
   await page.getByTestId('kitchen-view-menu').click();
   await page.getByRole('menuitem', { name: 'Table', exact: true }).click();
-  await expect(page.getByTestId('kitchen-table')).toContainText('Every column remains visible');
+  await expect(page.getByTestId('kitchen-table')).toBeVisible();
   const row = page.getByRole('row').first();
-  await expect(row).toContainText('Stage / status:');
-  await expect(row).toContainText('Order amount:');
+  await expect(row).toContainText('Status:');
+  await expect(row).toContainText('Phone:');
+  await expect(row).toContainText('Site location:');
+  await expect(row).toContainText('Budget:');
   await expect(row).toContainText('Target completion:');
   await expect(row).toContainText('Next action:');
   await health.assertHealthy();
 });
 
-test('stage filters use status choices and calendar inputs; aggregate cards open server-scoped queues', async ({ page, context, baseURL }, testInfo) => {
+test('stage filters use status choices and calendar inputs; navigation stays within the nine queues', async ({ page }, testInfo) => {
   const health = captureRuntimeHealth(page);
   const pending = new Set<import('@playwright/test').Request>();
   let activity = Date.now();
@@ -72,20 +103,14 @@ test('stage filters use status choices and calendar inputs; aggregate cards open
   await page.getByTestId('kitchen-filters-apply').click();
   await expect(page).toHaveURL(current => current.searchParams.get('status') === 'Visited' && current.searchParams.get('date_from') === '2026-10-21');
   await settle();
-  await page.goto('/kitchen');
-  const aggregate = await context.request.get(`${baseURL}/api/kitchen-projects/dashboard`, { headers });
-  expect(aggregate.ok()).toBeTruthy();
-  const dashboard = await aggregate.json();
-  await page.getByTestId('kitchen-metric-active').click();
-  await expect(page).toHaveURL(current => current.searchParams.get('attention') === 'active');
-  const active = await context.request.get(`${baseURL}/api/kitchen-projects?attention=active`, { headers });
-  expect(active.ok()).toBeTruthy();
-  expect((await active.json()).total).toBe(dashboard.active_projects);
-  await settle();
-  await page.goto('/kitchen/workflow');
-  await expect(page.getByTestId('kitchen-workflow-pending_approval')).toBeVisible();
-  await page.getByTestId('kitchen-workflow-next_action_overdue').click();
-  await expect(page).toHaveURL(current => current.searchParams.get('attention') === 'next_action_overdue');
+  const queueRead = page.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === '/api/kitchen-projects' && new URL(response.url()).searchParams.get('stage') === 'design');
+  await page.getByTestId('kitchen-stage-navigation').click();
+  await page.getByRole('menuitem', { name: '4. Design', exact: true }).click();
+  await expect(page).toHaveURL(/\/kitchen\/stages\/design$/);
+  const response = await queueRead;
+  expect(response.ok()).toBeTruthy();
+  expect((await response.json()).rows.every((row: { stage: string }) => row.stage === 'design')).toBe(true);
+  await expect(page.getByTestId('kitchen-create')).toHaveCount(0);
   await settle();
   await health.assertHealthy();
 });

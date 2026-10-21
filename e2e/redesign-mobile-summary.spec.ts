@@ -62,12 +62,15 @@ for (const metric of ['expiring'] as const) {
     await mockSession(page, '/followups');
     const queries: URLSearchParams[] = [];
     const now = new Date().toISOString();
+    let releaseSearch!: () => void;
+    const heldSearch = new Promise<void>(resolve => { releaseSearch = resolve; });
     const base = { customer_id: 'summary-customer', customer_tier: 'retail', customer_phone: '9876543210', floor_id: 'first-floor', category: 'quotation', reason: 'Summary record', next_action: 'Contact customer', reason_factors: [], suggested_channel: 'call', priority_score: 50, priority_level: 'medium', due_at: now, contact_attempts: 0, tags: [], created_at: now, updated_at: now };
     await page.route('**/api/followups/stats', route => route.fulfill({ json: { today_tasks: 0, overdue: 0, expiring_quotations_count: 1, waiting_for_customer: 0, completed_today: 2, completed_trend: 0, rules: [], workspace_counts: {} } }));
     await page.route('**/api/followups/mission', route => route.fulfill({ json: null }));
-    await page.route('**/api/followups/page?**', route => {
+    await page.route('**/api/followups/page?**', async route => {
       const params = new URL(route.request().url()).searchParams;
       queries.push(params);
+      if (params.get('q') === 'Unrelated search') await heldSearch;
       const items = params.get('bucket') === 'completed_today'
         ? ['won', 'lost'].map(outcome => ({ ...base, id: outcome, customer_name: `Completed ${outcome}`, rule_type: 'manual', status: 'done', bucket: 'completed', completed_outcome: outcome, completed_at: now, auto_resolved: outcome === 'won' }))
         : [
@@ -77,10 +80,30 @@ for (const metric of ['expiring'] as const) {
       return route.fulfill({ json: { items, page: 1, page_size: 100, has_more: false } });
     });
     await page.goto('/followups');
+    await expect(page.getByText('Expiring customer', { exact: true })).toBeVisible();
     await page.getByTestId('followups-search').fill('Unrelated search');
+    await expect.poll(() => queries.at(-1)?.get('q')).toBe('Unrelated search');
     await page.getByRole('button', { name: 'Summary', exact: true }).click();
     await expect(page.getByRole('button', { name: /^Completed Today:/ })).toHaveCount(0);
-    await page.getByRole('button', { name: metric === 'expiring' ? /^Expiring Soon:/ : /^Completed Today:/ }).click();
+    const summaryAction = page.getByRole('button', { name: /^Expiring Soon:/ });
+    await summaryAction.scrollIntoViewIfNeeded();
+    const beforeSettle = await summaryAction.boundingBox();
+    expect(beforeSettle).not.toBeNull();
+    const searchResponse = page.waitForResponse(response => response.url().includes('/api/followups/page?') && new URL(response.url()).searchParams.get('q') === 'Unrelated search');
+    await page.mouse.move(beforeSettle!.x + beforeSettle!.width / 2, beforeSettle!.y + beforeSettle!.height / 2);
+    await page.mouse.down();
+    try {
+      releaseSearch();
+      await searchResponse;
+      // The queue's loading state settles during the gesture. Optional content
+      // must not move the tile out from under the worker's finger or pointer.
+      await expect(page.getByText('Summary unavailable. Your task queue is still available below.', { exact: true })).toBeVisible();
+      const afterSettle = await summaryAction.boundingBox();
+      expect(afterSettle?.y).toBeCloseTo(beforeSettle!.y, 0);
+    } finally {
+      releaseSearch();
+      await page.mouse.up();
+    }
     await expect(page.getByTestId('followups-search')).toHaveValue('');
     if (metric === 'expiring') {
       await expect.poll(() => queries.at(-1)?.get('rule_type')).toBe('quotation_expiring');

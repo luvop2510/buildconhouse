@@ -81,6 +81,8 @@ class KitchenFileTransfers:
         project = await self.db.kitchen_projects.find_one({"id": project_id, "floor_id": access.KITCHEN_FLOOR})
         await access.require_project(self.db, user, project, policy, "update")
         await access.require_current_task(self.db, user, project, policy)
+        if project["stage"] == "cad":
+            raise HTTPException(422, "CAD File records receipt and design progress only; no files are uploaded in this stage")
         if project["stage"] == "completed" or project.get("lifecycle_status") in {"On Hold", "Cancelled"}:
             raise HTTPException(422, "Resume or reopen the project before uploading")
         return project, policy
@@ -133,8 +135,9 @@ class KitchenFileTransfers:
         return self.public(row)
 
     async def put_part(self, user, project_id, transfer_id, index, body):
-        await self.authorized(user, project_id)
+        _, policy = await self.authorized(user, project_id)
         row = await self.session(user, project_id, transfer_id)
+        validate_file_metadata(row["content_type"], row["filename"], policy)
         if row["state"] != "open":
             raise HTTPException(409, "This transfer has already finished")
         count = math.ceil(row["size_bytes"] / CHUNK_BYTES)
@@ -169,10 +172,11 @@ class KitchenFileTransfers:
         return {"index": index, "sha256": digest, "size_bytes": len(data)}
 
     async def finish(self, user, project_id, transfer_id, body, storage, bucket):
-        await self.authorized(user, project_id)
+        _, policy = await self.authorized(user, project_id)
         row = await self.session(user, project_id, transfer_id)
         if row["state"] == "completed":
             return await self.projects.get(user, project_id)
+        validate_file_metadata(row["content_type"], row["filename"], policy)
         if row["state"] == "finishing" and row.get("assembled_sha256"):
             project = await self.db.kitchen_projects.find_one({"id": project_id, "floor_id": access.KITCHEN_FLOOR})
             signature = fingerprint({"command": "attachment", "sha256": row["assembled_sha256"],

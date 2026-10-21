@@ -131,9 +131,9 @@ try {
   assert.equal(download.status(), 200);
   assert.equal(createHash('sha256').update(await download.body()).digest('hex'), createHash('sha256').update(bytes).digest('hex'));
   assert.equal((await api(denied, 'get', `/${projectId}/attachments/${attachmentId}`)).status(), 403);
-  const large = Buffer.alloc(25_000_000, 65); large.write('AC1032');
+  const large = Buffer.alloc(25_000_000, 65); large.write('%PDF-1.4');
   const largeHash = createHash('sha256').update(large).digest('hex');
-  const transferStart = await api(owner, 'post', `/${projectId}/file-transfers`, { expected_version: project.version, idempotency_key: randomUUID(), filename: 'synthetic-25mb.dwg', content_type: 'image/vnd.dwg', size_bytes: large.length, sha256: largeHash });
+  const transferStart = await api(owner, 'post', `/${projectId}/file-transfers`, { expected_version: project.version, idempotency_key: randomUUID(), filename: 'synthetic-25mb.pdf', content_type: 'image/vnd.pdf', size_bytes: large.length, sha256: largeHash });
   assert.equal(transferStart.status(), 200, '25 MB transfer startup');
   const transfer = await transferStart.json();
   for (let index = 0; index < transfer.part_count; index++) {
@@ -188,8 +188,9 @@ try {
   assert.equal(exported.status(), 200);
   assert.ok((await exported.text()).includes(reference));
   report.checks.push({ check: 'actual-hosted-lifecycle-private-bytes-idempotent-visits-export-and-denials', passed: true });
-  const urls = ['/kitchen', ...['projects', 'workflow', 'completed', 'new', 'review', 'settings'].map(page => `/kitchen/${page}`),
-    ...stages.map(stage => `/kitchen/stages/${stage}`), `/kitchen/${projectId}`, ...['documents', 'history', 'assignments', 'exceptions'].map(page => `/kitchen/${projectId}/${page}`), ...stages.map(stage => `/kitchen/${projectId}/stages/${stage}`)];
+  const urls = [...stages.map(stage => `/kitchen/stages/${stage}`), `/kitchen/${projectId}`,
+    ...['documents', 'history', 'assignments', 'exceptions'].map(page => `/kitchen/${projectId}/${page}`),
+    ...stages.map(stage => `/kitchen/${projectId}/stages/${stage}`)];
   for (const [profile, engine, options] of [['desktop-chromium', chromium, { viewport: { width: 1440, height: 1000 } }], ['iphone-webkit', webkit, devices['iPhone 13']]]) {
     const viewBrowser = await engine.launch();
     try {
@@ -225,14 +226,7 @@ try {
           else if (path.endsWith('/assignments')) await expect(page.getByTestId('kitchen-next-action')).toBeVisible();
           else if (path.endsWith('/exceptions')) await expect(page.getByTestId('kitchen-exception-reason')).toBeVisible();
           else if (path.includes('/stages/')) await expect(page.getByTestId('kitchen-current-task-region')).toBeVisible();
-          else await expect(page.getByTestId('kitchen-open-current-stage')).toBeVisible();
-        } else if (path === '/kitchen' || path === '/kitchen/workflow') {
-          required.push('/api/kitchen-projects/dashboard');
-          await expect(page.getByTestId(path === '/kitchen' ? 'kitchen-metric-active' : 'kitchen-workflow-pending_approval')).toBeVisible();
-        } else if (path === '/kitchen/settings') await expect(page.getByTestId('kitchen-policy-save')).toBeVisible();
-        else if (path === '/kitchen/new') {
-          required.push('/api/kitchen-projects/customers');
-          await expect(page.getByTestId('kitchen-create-page')).toBeVisible();
+          else await expect(page.getByTestId('kitchen-current-task-region')).toBeVisible();
         } else {
           required.push('/api/kitchen-projects');
           await expect(page.getByTestId('kitchen-search')).toBeVisible();

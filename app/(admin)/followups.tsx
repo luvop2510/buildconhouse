@@ -1037,16 +1037,6 @@ function FollowupsWorkspace() {
         <Chip label="Summary" active={summaryOpen} onPress={toggleSummary} />
       </View>
       {summaryOpen ? <View style={{ gap: spacing.md }}>
-      <MissionHero
-        mission={mission}
-        loading={loading}
-        onOpenPriority={(id) => {
-          const followup = rawItems.find((item) => item.id === id);
-          if (followup) selectCard(followup);
-        }}
-        compact={isPhone}
-      />
-
       <ScrollView keyboardShouldPersistTaps="handled" horizontal={isPhone} showsHorizontalScrollIndicator={isPhone} contentContainerStyle={{ gap: spacing.md, paddingRight: isPhone ? spacing.md : 0 }} style={isPhone ? { marginHorizontal: -pagePad, paddingHorizontal: pagePad } : undefined}>
         <View style={{ flexDirection: "row", gap: spacing.md, flexWrap: isPhone ? "nowrap" : "wrap" }}>
           <StatTile label="Today's Tasks" value={stats ? stats.today_tasks : "—"} icon="sun" tone="brand"
@@ -1061,6 +1051,18 @@ function FollowupsWorkspace() {
             onPress={() => openSummary("waiting")} style={filterValues(kpiFilter).includes("waiting") ? activeTileStyle : undefined} />
         </View>
       </ScrollView>
+
+      {/* Keep summary actions above asynchronous mission/list content so a
+          loading-state change cannot move a tile during an active press. */}
+      <MissionHero
+        mission={mission}
+        loading={loading}
+        onOpenPriority={(id) => {
+          const followup = rawItems.find((item) => item.id === id);
+          if (followup) selectCard(followup);
+        }}
+        compact={isPhone}
+      />
 
       </View> : null}
 

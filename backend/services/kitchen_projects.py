@@ -316,6 +316,15 @@ class KitchenProjectService:
     async def public(self, project, user, policy, *, summary=False, replayed=False):
         result = {k: copy.deepcopy(v) for k, v in project.items() if k not in {"_id", "command_receipts", "creation_fingerprint", "customer_phone_normalized", "customer_name_normalized"}}
         if summary:
+            version_fields = {"id", "number", "response", "shared_date", "handoff_date", "presentation_date", "received_date",
+                              "amount", "design_version_id", "workflow_cycle", "attachment_id", "url"}
+            order_fields = {"id", "confirmed", "status", "order_date", "final_amount", "original_amount", "quotation_version_id",
+                            "confirmation_document_id", "authorization_invalidated", "advance"}
+            for source, target, fields in (("design_versions", "current_design", version_fields),
+                                           ("quotation_versions", "current_quotation", version_fields),
+                                           ("orders", "current_order", order_fields)):
+                latest = project.get(source, [])
+                result[target] = {key: copy.deepcopy(value) for key, value in latest[-1].items() if key in fields} if latest else None
             for key in HISTORY_FIELDS:
                 result.pop(key, None)
         result["project_reference"] = project.get("project_reference") or project["reference"]
@@ -404,6 +413,8 @@ class KitchenProjectService:
         await access.require_current_task(self.db, user, project, policy)
         if project["version"] != expected_version:
             raise HTTPException(409, "Kitchen project changed; reload before uploading")
+        if project["stage"] == "cad":
+            raise HTTPException(422, "CAD File records receipt and design progress only; no files are uploaded in this stage")
         await asyncio.to_thread(validate_file, data, content_type, filename, policy, max_file_bytes)
         if project["stage"] == "completed" or project.get("lifecycle_status") in {"On Hold", "Cancelled"}:
             raise HTTPException(422, "The owner must resume or reopen the project before adding files")
@@ -459,21 +470,54 @@ class KitchenProjectService:
         async with self.admission(user, "create"):
             return await self._create(user, body)
 
+    async def lead_customer(self, details):
+        """Resolve inline intake once without overwriting an existing contact.
+
+        Creation admission serializes Kitchen intake. The deterministic Mongo
+        identity also makes retry after a failed project write reuse the contact.
+        Older contacts may contain spacing or an Indian country-code prefix.
+        Ambiguous matches require explicit selection instead of guessing.
+        """
+        from models import CustomerPublic
+        digits = re.sub(r"\D", "", details.phone)
+        normalized = digits[2:] if len(digits) == 12 and digits.startswith("91") else digits
+        prefix = r"(?:9\D*1\D*)?" if len(normalized) == 10 else ""
+        pattern = r"^\D*" + prefix + r"\D*".join(normalized) + r"\D*$"
+        query = {"floor_id": access.KITCHEN_FLOOR, "kitchen_delete_token": {"$exists": False},
+                 "phone": {"$regex": pattern}}
+        projection = {"_id": 0, "id": 1, "name": 1, "phone": 1, "address": 1}
+        matches = await self.db.customers.find(query, projection).limit(2).to_list(2)
+        if len(matches) > 1:
+            raise HTTPException(409, "Several existing customers use this phone number; select the correct customer")
+        if matches:
+            return {key: value for key, value in matches[0].items() if key in projection and key != "_id"}
+        customer_id = str(uuid5(NAMESPACE_URL, f"kitchen-customer:{access.KITCHEN_FLOOR}:{normalized}"))
+        contact = CustomerPublic(id=customer_id, floor_id=access.KITCHEN_FLOOR, **details.model_dump()).model_dump()
+        contact.pop("email", None)  # The sparse unique email index excludes absent fields.
+        contact.update(_id=customer_id, created_by_source="kitchen_lead")
+        try:
+            await self.db.customers.insert_one(contact)
+        except DuplicateKeyError:
+            existing = await self.db.customers.find_one({"id": customer_id, **query}, projection)
+            if not existing:
+                raise HTTPException(409, "Customer details changed during intake; select the existing customer and retry")
+            contact = existing
+        return {key: value for key, value in contact.items() if key in projection and key != "_id"}
+
     async def _create(self, user, body):
         await access.require_capability(self.db, user, "create")
         policy = await self.policy()
         project_id = str(uuid5(NAMESPACE_URL, f"kitchen:{user.id}:{access.KITCHEN_FLOOR}:{body.idempotency_key}"))
-        digest = fingerprint(body.model_dump(exclude={"idempotency_key"}))
+        request_fields = body.model_dump(exclude={"idempotency_key"})
+        if body.customer is None:
+            request_fields.pop("customer")  # Preserve receipts created before inline intake existed.
+        digest = fingerprint(request_fields)
         previous = await self.db.kitchen_projects.find_one({"id": project_id, "floor_id": access.KITCHEN_FLOOR})
         if previous:
             await access.require_project(self.db, user, previous, policy, "create")
             if previous.get("creation_fingerprint") != digest:
                 raise HTTPException(409, "This creation key was already used with different fields")
             return await self.public(previous, user, policy, replayed=True)
-        customer = await self.db.customers.find_one({"id": body.customer_id, "floor_id": access.KITCHEN_FLOOR},
-                                                  {"_id": 0, "id": 1, "name": 1, "phone": 1, "address": 1})
-        if not customer:
-            raise HTTPException(404, "Kitchen customer not found; select an existing customer")
         assigned = None
         if body.assigned_to:
             if not access.can_assign(user, policy):
@@ -484,11 +528,19 @@ class KitchenProjectService:
         lead = body.lead.model_dump()
         if lead["status"] == "Lost" and not lead.get("lost_reason"):
             raise HTTPException(422, "A lost reason is required")
+        if not str(lead.get("site_location") or "").strip():
+            raise HTTPException(422, "Customer Name, Phone Number and Site Location are required")
+        customer = (await self.lead_customer(body.customer) if body.customer is not None else
+                    await self.db.customers.find_one({"id": body.customer_id, "floor_id": access.KITCHEN_FLOOR},
+                                                    {"_id": 0, "id": 1, "name": 1, "phone": 1, "address": 1}))
+        if not customer:
+            raise HTTPException(404, "Kitchen customer not found; select an existing customer")
+        customer_id = customer["id"]
         now = timestamp()
         reference = "KIT-" + project_id.replace("-", "").upper()[:16]
         project = {"_id": project_id, "id": project_id, "reference": reference,
                    "project_reference": reference,
-                   "floor_id": access.KITCHEN_FLOOR, "customer_id": body.customer_id, "customer": customer,
+                   "floor_id": access.KITCHEN_FLOOR, "customer_id": customer_id, "customer": customer,
                    "customer_phone_normalized": re.sub(r"\D", "", customer.get("phone") or "")[-10:],
                    "customer_name_normalized": " ".join((customer.get("name") or "").casefold().split()),
                    "version": 1, "stage": "lead", "status": lead["status"], "lead": lead,
@@ -505,10 +557,10 @@ class KitchenProjectService:
                    **{key: [] for key in HISTORY_FIELDS}}
         if lead_error(project):
             raise HTTPException(422, lead_error(project))
-        selector = duplicate_selector(body.customer_id, project["customer_phone_normalized"], project["customer_name_normalized"], project_id)
+        selector = duplicate_selector(customer_id, project["customer_phone_normalized"], project["customer_name_normalized"], project_id)
         candidates = await self.db.kitchen_projects.find(selector, {"_id": 0, "id": 1}).limit(100).to_list(100)
         project["duplicate_review"] = {"status": "pending" if candidates else "cleared", "candidate_ids": [row["id"] for row in candidates]}
-        project["activity"] = [event(user, "project.created", {"customer_id": body.customer_id})]
+        project["activity"] = [event(user, "project.created", {"customer_id": customer_id})]
         project["command_receipts"] = [{"actor_id": user.id, "key": body.idempotency_key,
                                          "fingerprint": digest, "version": 1, "command": "create"}]
         required = required_fields_error(project, "lead", policy)
@@ -522,7 +574,7 @@ class KitchenProjectService:
         # committed. An interrupted create can retry its deterministic ID;
         # an unused pin needs explicit isolated reconciliation to release.
         reservation = await self.db.customers.update_one(
-            {"id": body.customer_id, "floor_id": access.KITCHEN_FLOOR,
+            {"id": customer_id, "floor_id": access.KITCHEN_FLOOR,
              "kitchen_delete_token": {"$exists": False}},
             {"$set": {"kitchen_reference_reserved": True}})
         if not reservation.matched_count:
@@ -538,7 +590,7 @@ class KitchenProjectService:
                 raise HTTPException(409, "This creation key was already used with different fields")
             return await self.public(previous, user, policy, replayed=True)
         result = await self.public(project, user, policy)
-        candidates = [{"customer_id": body.customer_id}]
+        candidates = [{"customer_id": customer_id}]
         if project["customer_phone_normalized"]:
             candidates.append({"customer_phone_normalized": project["customer_phone_normalized"]})
         if project["customer_name_normalized"]:
@@ -809,6 +861,10 @@ class KitchenProjectService:
         total = await self.db.kitchen_projects.count_documents(compiled)
         sort_field = {"customer": "customer.name", "assignee": "assigned_to_name", "order_amount": "order_amount_paise"}.get(sort, sort)
         projection = {key: 0 for key in HISTORY_FIELDS}
+        # Stage tables need the current commercial fields, never the full
+        # version ledger. Mongo returns only the latest version; public() then
+        # whitelists its bounded display fields and removes embedded history.
+        projection.update({key: {"$slice": -1} for key in ("design_versions", "quotation_versions", "orders")})
         rows = await self.db.kitchen_projects.find(compiled, projection).sort([(sort_field, 1 if direction == "asc" else -1), ("id", 1)]).skip((page - 1) * limit).limit(limit).to_list(limit)
         return {"rows": [await self.public(row, user, policy, summary=True) for row in rows], "total": total, "page": page, "limit": limit}
 

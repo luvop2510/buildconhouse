@@ -3,6 +3,7 @@
 Independent Mongo tests prove the real query/constraint/HTTP boundaries.
 """
 import copy
+import re
 
 import pytest
 from fastapi import HTTPException
@@ -34,6 +35,8 @@ def matches(doc, query):
             if not any(matches(doc, part) for part in expected):
                 return False
         elif isinstance(expected, dict):
+            if "$regex" in expected and re.search(expected["$regex"], str(field(key) or "")) is None:
+                return False
             if "$exists" in expected and (field(key) is not None) != expected["$exists"]:
                 return False
             if "$ne" in expected and field(key) == expected["$ne"]:
@@ -142,6 +145,85 @@ async def test_create_replay_preserves_customer_and_allows_second_project(setup)
     with pytest.raises(HTTPException) as different:
         await service.create(owner, create_request(customer_id="customer-a", idempotency_key="creation-a", lead={"budget": "125.11"}))
     assert different.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_inline_lead_intake_creates_one_customer_and_preserves_identity_through_conversion(setup):
+    database, service, owner = setup
+    body = create_request(customer={"name": "New kitchen enquiry", "phone": "+91 98888 00123", "address": "New site"},
+                          idempotency_key="inline-create")
+    first = await service.create(owner, body)
+    replay = await service.create(owner, body)
+    assert first["id"] == replay["id"] and replay["replayed"]
+    assert len(database.customers.rows) == 2
+    contact = next(row for row in database.customers.rows if row["id"] == first["customer_id"])
+    assert contact["floor_id"] == "second-floor" and "email" not in contact
+    assert contact["kitchen_reference_reserved"] is True
+    assert first["customer"] == {"id": contact["id"], "name": "New kitchen enquiry", "phone": "+91 98888 00123", "address": "New site"}
+    converted = await service.command(owner, first["id"], cmd(1, "convert"))
+    assert converted["customer_id"] == first["customer_id"] and converted["customer"] == first["customer"]
+    assert len(database.customers.rows) == 2
+
+
+@pytest.mark.asyncio
+async def test_inline_intake_reuses_phone_contact_without_overwriting_or_crossing_floors(setup):
+    database, service, owner = setup
+    original = copy.deepcopy(database.customers.rows[0])
+    body = create_request(customer={"name": "Typed alternative", "phone": "9000000000", "address": "Another location"},
+                          idempotency_key="inline-reuse")
+    created = await service.create(owner, body)
+    assert created["customer_id"] == original["id"] and created["customer"]["name"] == original["name"]
+    assert database.customers.rows[0]["address"] == original["address"] and len(database.customers.rows) == 1
+    database.customers.rows.append({"_id": "other-floor", "id": "other-floor", "name": "Sanitary customer",
+                                    "phone": "9888800123", "floor_id": "first-floor"})
+    other = await service.create(owner, create_request(customer={"name": "Kitchen customer", "phone": "9888800123"},
+                                                       idempotency_key="inline-floor"))
+    assert other["customer_id"] != "other-floor" and other["customer"]["name"] == "Kitchen customer"
+
+
+@pytest.mark.asyncio
+async def test_inline_intake_retry_after_project_write_failure_reuses_created_customer(setup, monkeypatch):
+    database, service, owner = setup
+    body = create_request(customer={"name": "New enquiry", "phone": "9888800123"}, idempotency_key="inline-recovery")
+    insert = database.kitchen_projects.insert_one
+    async def unavailable(_):
+        raise RuntimeError("Synthetic write interruption")
+    monkeypatch.setattr(database.kitchen_projects, "insert_one", unavailable)
+    with pytest.raises(RuntimeError):
+        await service.create(owner, body)
+    assert len(database.customers.rows) == 2 and not database.kitchen_projects.rows
+    saved_contact = database.customers.rows[-1]["id"]
+    monkeypatch.setattr(database.kitchen_projects, "insert_one", insert)
+    recovered = await service.create(owner, body)
+    assert recovered["customer_id"] == saved_contact
+    assert len(database.customers.rows) == 2 and len(database.kitchen_projects.rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_inline_intake_validates_before_writes_and_refuses_ambiguous_contacts(setup):
+    database, service, owner = setup
+    staff = UserPublic(id="staff-a", full_name="Staff A", role="sales", floor_ids=["second-floor"], active_floor_id="second-floor")
+    body = create_request(customer={"name": "New enquiry", "phone": "9888800123"}, idempotency_key="inline-permission")
+    with pytest.raises(HTTPException):
+        await service.create(staff, body)
+    with pytest.raises(HTTPException):
+        await service.create(owner, body.model_copy(update={"lead": LeadFields()}))
+    assert len(database.customers.rows) == 1 and not database.kitchen_projects.rows
+    database.customers.rows.append({**database.customers.rows[0], "id": "existing-duplicate"})
+    with pytest.raises(HTTPException) as ambiguous:
+        await service.create(owner, create_request(customer={"name": "Any name", "phone": "9000000000"},
+                                                  idempotency_key="inline-ambiguous"))
+    assert ambiguous.value.status_code == 409 and "select" in ambiguous.value.detail
+    assert len(database.customers.rows) == 2 and not database.kitchen_projects.rows
+
+
+def test_lead_requires_one_customer_source_and_valid_inline_identity():
+    for payload in ({}, {"customer_id": "a", "customer": {"name": "A", "phone": "123"}},
+                    {"customer": {"name": " ", "phone": "123"}},
+                    {"customer": {"name": "A", "phone": "---"}},
+                    {"customer": {"name": "A", "phone": "123", "floor_id": "first-floor"}}):
+        with pytest.raises(ValidationError):
+            CreateProject(idempotency_key="invalid-inline", **payload)
 
 
 @pytest.mark.asyncio
@@ -367,8 +449,6 @@ def office_bytes(extension, additions=None, *, main=None):
 
 @pytest.mark.parametrize("extension,mime,data", [
     (".pdf", "application/pdf", b"%PDF-1.4\nSynthetic"),
-    (".dwg", "application/acad", b"AC1032" + b"\0" * 26),
-    (".dxf", "application/x-dxf", b"0\nSECTION\n2\nHEADER\n0\nENDSEC\n0\nEOF\n"),
     (".jpg", "image/jpeg", b"\xff\xd8\xff\xe0Synthetic"),
     (".png", "image/png", b"\x89PNG\r\n\x1a\nSynthetic"),
     (".docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", None),
@@ -396,7 +476,7 @@ def test_resolved_d10_permitted_types_match_extension_mime_and_content(extension
     ("folder\\escape.pdf", "application/pdf", b"%PDF-1.4", 422),
     ("wrong.pdf", "image/png", b"\x89PNG\r\n\x1a\n", 415),
     ("payload.exe.pdf", "application/pdf", b"MZ-executable", 415),
-    ("large.dwg", "image/vnd.dwg", b"AC1032" + b"\0" * (768 * 1024), 413),
+    ("large.pdf", "application/pdf", b"%PDF-1.4" + b"\0" * (768 * 1024), 413),
 ])
 def test_resolved_d10_unsafe_files_and_unchanged_transport_limit(filename, mime, data, code):
     from services.kitchen_attachments import validate_file
@@ -447,7 +527,9 @@ def test_resolved_d10_cad_octet_stream_alias_and_office_encoding_do_not_bypass_v
     policy = kitchen_projects.resolved_policy({})
     cad = b"AC1032" + b"\0" * 26
     for mime in ("", "application/octet-stream"):
-        assert validate_file(cad, mime, "synthetic.dwg", policy)
+        with pytest.raises(HTTPException) as cad_rejected:
+            validate_file(cad, mime, "synthetic.dwg", policy)
+        assert cad_rejected.value.status_code == 415
         with pytest.raises(HTTPException) as arbitrary:
             validate_file(b"MZ-executable", mime, "synthetic.exe", policy)
         assert arbitrary.value.status_code == 415
@@ -459,7 +541,7 @@ def test_resolved_d10_cad_octet_stream_alias_and_office_encoding_do_not_bypass_v
         assert unsafe.value.status_code == 415
 
 
-def test_resolved_d10_binary_dxf_typed_framing_and_utf8_text_are_validated():
+def test_cad_formats_and_binary_text_content_are_never_uploaded():
     import struct
     from services.kitchen_attachments import validate_file
     policy = kitchen_projects.resolved_policy({})
@@ -468,12 +550,32 @@ def test_resolved_d10_binary_dxf_typed_framing_and_utf8_text_are_validated():
     binary = sentinel + b"".join(struct.pack("<H", group) + value + b"\0" for group, value in pairs)
     legacy_binary = sentinel + b"".join(bytes([group]) + value + b"\0" for group, value in pairs)
     unicode_text = "0\nSECTION\n2\nHEADER\n1\nकिचन\n0\nENDSEC\n0\nEOF\n".encode("utf-8")
-    for content in (binary, legacy_binary, unicode_text):
-        assert validate_file(content, "image/vnd.dxf", "synthetic.dxf", policy)
-    for content in (sentinel, binary[:-1], binary[:-4], binary + b"trailing", sentinel + b"\0", binary.replace(b"ENDSEC", b"NOTEND")):
+    for content in (binary, legacy_binary, unicode_text, sentinel, binary[:-1], binary[:-4], binary + b"trailing", sentinel + b"\0", binary.replace(b"ENDSEC", b"NOTEND")):
         with pytest.raises(HTTPException) as bad:
             validate_file(content, "image/vnd.dxf", "synthetic.dxf", policy)
         assert bad.value.status_code == 415
+
+
+@pytest.mark.parametrize("extension,mime", [
+    (".dwg", "image/vnd.dwg"), (".dxf", "image/vnd.dxf"),
+    (".DWG", "application/octet-stream"), (".dxf", "application/octet-stream"),
+    (".dwg", "application/pdf"), (".dxf", "image/png"),
+    (".pdf", "application/acad"), (".pdf", "application/x-acad"),
+    (".pdf", "application/x-dwg"), (".pdf", "application/dwg"), (".pdf", "image/x-dwg"),
+    (".pdf", "application/dxf"), (".pdf", "application/x-dxf"), (".pdf", "image/x-dxf"),
+])
+def test_cad_extensions_and_type_aliases_cannot_enter_new_uploads(extension, mime):
+    from models_kitchen import FilePolicy
+    from services.kitchen_attachments import validate_file_metadata
+    policy = kitchen_projects.resolved_policy({})
+    assert not {"image/vnd.dwg", "image/vnd.dxf"} & set(policy["files"]["allowed_types"])
+    # Even a stale saved policy cannot restore retired file formats.
+    policy["files"]["allowed_types"].extend(["image/vnd.dwg", "image/vnd.dxf"])
+    with pytest.raises(HTTPException) as invalid:
+        validate_file_metadata(mime, "drawing" + extension, policy)
+    assert invalid.value.status_code == 415
+    with pytest.raises(ValidationError):
+        FilePolicy(allowed_types=["image/vnd.dwg"], max_bytes=1000)
 
 
 def test_resolved_d10_xlsx_print_settings_are_bounded_data_parts_not_blanket_binary_rejection():

@@ -18,11 +18,11 @@ const priorityExpression = adminShell.match(/const priorities = ([\s\S]*?);\n\s*
 assert.ok(priorityExpression, "Phone navigation must define its visible priority destinations");
 const prioritiesFor = new Function("all", "notebook", "selectedFloorId", "KITCHEN_FLOOR_ID", "FURNITURE_FLOOR_ID", "TILES_FLOOR_ID", `return (${priorityExpression[1]});`);
 const destination = (match, href = `/${match}`) => ({ match, href });
-const kitchenDestinations = ["kitchen-overview", "kitchen-projects", "kitchen-workflow", "kitchen-completed"].map(key => destination(key));
+const kitchenDestinations = ["kitchen-lead", "kitchen-visit", "kitchen-cad", "kitchen-design", "kitchen-quotation", "kitchen-order", "kitchen-production", "kitchen-installation", "kitchen-completed"].map(key => destination(key));
 const sharedDestinations = [destination("walkins"), destination("followups"), destination("customers"), destination("settings")];
 const priorityMatches = (all, floor) => prioritiesFor(all, ["second-floor", "third-floor"].includes(floor), floor, "second-floor", "third-floor", "ground-floor").map(item => item.match);
-assert.deepEqual(priorityMatches([...kitchenDestinations, ...sharedDestinations], "second-floor"), ["kitchen-overview", "kitchen-projects", "kitchen-workflow", "kitchen-completed"]);
-assert.deepEqual(priorityMatches([kitchenDestinations[1], ...sharedDestinations], "second-floor"), ["kitchen-projects"], "A hidden Kitchen destination must not be reintroduced into the phone bar");
+assert.deepEqual(priorityMatches([...kitchenDestinations, ...sharedDestinations], "second-floor"), ["kitchen-lead", "kitchen-visit", "kitchen-cad"]);
+assert.deepEqual(priorityMatches([kitchenDestinations[1], ...sharedDestinations], "second-floor"), ["kitchen-visit"], "A hidden Kitchen destination must not be reintroduced into the phone bar");
 assert.deepEqual(priorityMatches([...sharedDestinations, destination("furniture-quotations", "/notebook/furniture-quotations")], "third-floor"), ["walkins", "followups", "furniture-quotations"]);
 assert.deepEqual(priorityMatches(["dashboard", "catalog", "quotations", "followups", "payments"].map(key => destination(key)), "first-floor"), ["dashboard", "catalog", "quotations", "followups"]);
 assert.match(adminShell, /selectedFloorId === KITCHEN_FLOOR_ID \|\| selectedFloorId === FURNITURE_FLOOR_ID/);

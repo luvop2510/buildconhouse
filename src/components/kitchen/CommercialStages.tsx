@@ -130,7 +130,7 @@ export function CommercialStages({ project, stage, disabled, command, hasUnsaved
         </KitchenPanel> : <KitchenPanel title="Approved order amendment"><Text style={type.bodyMuted}>No current order to amend. Confirm an order against the current approved quotation first.</Text></KitchenPanel>;
 
   return <View style={{ gap: spacing.lg, display: ["lead", "visit", "cad"].includes(stage) ? "none" : "flex" }}>
-    {!active && stage !== "completed" ? <Alert tone="info" title="Stage record" description="Review the saved stage record here. Current work is available from the project overview; previous versions are in History." /> : null}
+    {!active && stage !== "completed" ? <Alert tone="info" title="Stage record" description="Review the saved stage record here. Use the current stage for ongoing work; previous versions are in History." /> : null}
     {stage === "design" ? <>
       <KitchenPanel title="Design presentation"><Text style={type.bodyStrong}>{design ? `Current design · Version ${design.number}` : "No current design recorded"}</Text><Text style={type.body}>Customer-requested revisions: {historicalCount(project.design_revision_count, project.known_design_revision_count)}</Text>
         <Text style={type.body}>Customer approval: {design?.response || "Pending"} · Shared: {displayDate(design?.shared_date)}</Text>

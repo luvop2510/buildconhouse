@@ -15,7 +15,7 @@ test('Kitchen bounded project page loads and searches within existing budgets', 
     assignments: {}, design_revision_count: 0, site_visit_count: 0, order_amount: null,
     permissions: { can_update: true, can_assign: true, can_configure: true },
   }));
-  await mockSession(page, '/kitchen/projects', false);
+  await mockSession(page, '/kitchen/stages/lead', false);
   await page.addInitScript(() => localStorage.setItem('forge.active-floor', JSON.stringify('second-floor')));
   await page.context().route('**/*', route => {
     if (new URL(route.request().url()).origin !== new URL(baseURL!).origin) {
@@ -46,7 +46,7 @@ test('Kitchen bounded project page loads and searches within existing budgets', 
     return route.fulfill({ status: 500, json: { detail: 'Unexpected kitchen fixture request' } });
   });
   const start = performance.now();
-  await page.goto('/kitchen/projects', { waitUntil: 'domcontentloaded' });
+  await page.goto('/kitchen/stages/lead', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('kitchen-project-kitchen-performance-0')).toBeVisible();
   const readyMs = performance.now() - start;
   expect(readyMs).toBeLessThan(2500);

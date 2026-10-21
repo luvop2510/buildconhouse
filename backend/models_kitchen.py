@@ -82,11 +82,33 @@ class CadFields(StrictModel):
     ready: StrictBool = False
 
 
+class LeadCustomer(StrictModel):
+    name: Annotated[str, Field(min_length=1, max_length=250)]
+    phone: Annotated[str, Field(min_length=1, max_length=80)]
+    address: Text | None = None
+
+    @field_validator("phone")
+    @classmethod
+    def contact_number(cls, value):
+        import re
+        digits = re.sub(r"\D", "", value)
+        if not digits or len(digits) > 15:
+            raise ValueError("Enter a valid phone number")
+        return value
+
+
 class CreateProject(StrictModel):
-    customer_id: Identifier
+    customer_id: Identifier | None = None
+    customer: LeadCustomer | None = None
     idempotency_key: CommandKey
     lead: LeadFields = Field(default_factory=LeadFields)
     assigned_to: Identifier | None = None
+
+    @model_validator(mode="after")
+    def one_customer_source(self):
+        if (self.customer_id is None) == (self.customer is None):
+            raise ValueError("Select an existing customer or enter the new customer's details")
+        return self
 
 
 class ProjectCommand(StrictModel):
@@ -174,7 +196,7 @@ class MetricsPolicy(StrictModel):
 
 
 class FilePolicy(StrictModel):
-    allowed_types: list[Literal["application/pdf", "image/jpeg", "image/png", "image/vnd.dwg", "image/vnd.dxf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]] = Field(min_length=1, max_length=7)
+    allowed_types: list[Literal["application/pdf", "image/jpeg", "image/png", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]] = Field(min_length=1, max_length=5)
     max_bytes: Annotated[StrictInt, Field(ge=1, le=25_000_000)]
     single_request_max_bytes: Literal[786432] = 786432
     chunk_bytes: Literal[524288] = 524288

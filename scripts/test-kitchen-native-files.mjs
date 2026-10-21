@@ -7,8 +7,8 @@ import ts from 'typescript';
 // Execute the real transport against the installed native API contract. This
 // proves control flow and byte identity; it is not a signed physical-device run.
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
-const source = Buffer.alloc(1_100_000, 17); source.write('AC1015');
-const files = new Map([['file:///selected.dwg', Buffer.from(source)]]);
+const source = Buffer.alloc(1_100_000, 17); source.write('%PDF-1.4');
+const files = new Map([['file:///selected.pdf', Buffer.from(source)]]);
 const shares = [];
 const errors = [];
 let sharingAvailable = true;
@@ -72,13 +72,13 @@ modules['@/src/api/kitchenProjects'] = { kitchenProjectsApi: {
   },
 } };
 const transport = load('../src/components/kitchen/KitchenFileTransport.ts');
-const asset = { uri: 'file:///selected.dwg', name: 'Drawing.dwg', mimeType: 'application/acad', size: source.length };
+const asset = { uri: 'file:///selected.pdf', name: 'Drawing.pdf', mimeType: 'application/pdf', size: source.length };
 for (const OS of ['ios', 'android']) {
   modules['react-native'].Platform.OS = OS;
   const progress = [];
   await transport.uploadKitchenFile({ id: 'project', version: 1 }, asset, `new-file-${OS}`, value => progress.push(value), () => {});
   assert.equal(progress.at(-1), 100);
-  const attachment = { id: 'attachment', filename: 'Drawing.dwg', content_type: 'application/acad', size_bytes: source.length, sha256: sha(source) };
+  const attachment = { id: 'attachment', filename: 'Drawing.pdf', content_type: 'application/pdf', size_bytes: source.length, sha256: sha(source) };
   assert.equal(await transport.downloadKitchenFile('project', attachment, () => {}), true);
   assert.deepEqual(shares.at(-1).bytes, source);
   assert.equal(files.size, 1, 'large native download closes and deletes the verified temporary file');

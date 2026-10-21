@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
-import { RUNTIME_ROOT_FILES, RUNTIME_DIRECTORIES, RAILWAY_TARGET, validateRunningObservation } from './promote-verified-vercel.mjs';
+import { RUNTIME_ROOT_FILES, RUNTIME_DIRECTORIES, RAILWAY_TARGET, validateRunningObservation, KITCHEN_RELEASE_AUTHORITY } from './promote-verified-vercel.mjs';
 import { productionRequest, productionBrowserRoute, measureRunningService, verifyProtectedSource, verifyReviewedRuntimeInventory, RUNNING_SERVICE_PROBE } from './verify-kitchen-production-readonly.mjs';
 
 // No browser launch, network, deployment, database or credentials. Exercise the
@@ -102,3 +102,47 @@ for (const change of [v => { v[0].commit.sha = 'f'.repeat(40); }, v => { v[1].en
   v => { v[4][0].state = 'DISMISSED'; }, v => { v[4][0].user.login = 'author'; }, v => { v[4][0].commit_id = 'f'.repeat(40); }]) assert.throws(sourceCheck(change));
 assert.throws(() => verifyProtectedSource(sha, { run: () => ({ status: 1 }) }), /protected-main GitHub evidence/);
 console.log('Production Kitchen readonly guards passed: exact reads/session exceptions, no redirects/secrets/business writes; fresh deployed-container inventory/data/storage identity; protected-main exact-source security/review checks. Synthetic adapters only; no live calls.');
+
+// Freeze only the synthetic one-release fixture's clock; this preserves its
+// expiry regression after the real authorization window has closed.
+const ActualReleaseDate = globalThis.Date;
+globalThis.Date = class extends ActualReleaseDate {
+  constructor(...args) { super(...(args.length ? args : ['2026-10-21T15:00:00Z'])); }
+  static now() { return ActualReleaseDate.parse('2026-10-21T15:00:00Z'); }
+};
+try {
+const exceptionPlan = { publication_mode: 'existing-site', target_domain: 'buildconhouse.in', release_sha: sha,
+  candidate_url: 'https://immutable.vercel.app', candidate_deployment_id: 'dpl_fixture', account_mode: 'existing-owner-only', run_owned_sessions: true,
+  accounts: { owner: { user_id: 'existing-owner', credential_key: 'existing-owner-credential' } },
+  release_exception: { schema: 'kitchen-owner-release-exception/v1', release: 'kitchen-nine-page-2026-10-21', source_sha: sha,
+    candidate_url: 'https://immutable.vercel.app', candidate_deployment_id: 'dpl_fixture', target_domain: 'buildconhouse.in',
+    owner_only: true, expires_at: '2026-10-22T18:29:59Z', waivers: ['frontend-security', 'independent-review', 'protected-main-publication'],
+    authority: { ...KITCHEN_RELEASE_AUTHORITY, verified_via: 'codex.read_thread', answer: 'Authorize this release exception' } } };
+function exceptionSourceCheck(change = () => {}) {
+  const values = responses().slice(0, 3);
+  values[0].commit.sha = 'f'.repeat(40); // Source deliberately remains unmerged.
+  values[2].check_runs.find(row => row.name === 'frontend-security').conclusion = 'failure';
+  values.push({ number: 16, state: 'open', base: { ref: 'main' }, head: { sha } });
+  change(values); let count = 0;
+  return verifyProtectedSource(sha, { plan: exceptionPlan, cli: 'fixture-gh', run(command, args) {
+    assert.equal(command, 'fixture-gh'); assert.equal(args[0], 'api');
+    return { status: 0, stdout: JSON.stringify(values[count++]) };
+  } });
+}
+const waived = exceptionSourceCheck();
+assert.equal(waived.protectedMain, false); assert.equal(waived.branchProtectionsPreserved, true);
+assert.equal(waived.frontendSecurity.actualConclusion, 'failure'); assert.equal(waived.frontendSecurity.passed, false);
+assert.equal(waived.independentReview.approved, false);
+for (const change of [
+  v => { v[1].enforce_admins.enabled = false; }, v => { v[1].required_status_checks.strict = false; },
+  v => { v[1].required_status_checks.contexts = ['backend']; }, v => { v[1].required_pull_request_reviews.required_approving_review_count = 0; },
+  ...['backend', 'frontend', 'performance'].map(name => v => { v[2].check_runs.find(row => row.name === name).conclusion = 'failure'; }),
+  v => { v[2].check_runs.find(row => row.name === 'performance').head_sha = 'f'.repeat(40); },
+  v => { v[2].check_runs.find(row => row.name === 'frontend-security').status = 'in_progress'; },
+  v => { v[3].head.sha = 'f'.repeat(40); }, v => { v[3].state = 'closed'; },
+]) assert.throws(() => exceptionSourceCheck(change));
+assert.throws(() => measureRunningService({ ...prepared, releaseException: exceptionPlan.release_exception }, { run: () => ({ status: 0, stdout: JSON.stringify({ ...runtime, kitchen_owner_only: false }) }) }), /owner-only/);
+assert.doesNotMatch(RUNNING_SERVICE_PROBE, /insert_|update_|delete_|upload\(/);
+console.log('Exception source guard: unchanged strict/admin/review/check protections, exact open PR head, backend/frontend/performance success and completed real security result required; waived failures are explicitly reported unpassed. No live calls.');
+
+} finally { globalThis.Date = ActualReleaseDate; }

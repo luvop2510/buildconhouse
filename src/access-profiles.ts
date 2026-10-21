@@ -53,7 +53,7 @@ export function staffLandingPath(profile?: AccessProfile | null, grants?: Person
       customers: "/(admin)/customers", purchases: "/(admin)/purchases", followups: "/(admin)/followups",
       orders: "/(admin)/tiles/orders", walkins: "/(admin)/walkins", dashboard: "/(admin)/dashboard",
       notifications: "/(admin)/notifications", tiles: "/(admin)/tiles", godown_stock: "/(admin)/godown-stock",
-      kitchen_projects: "/(admin)/kitchen",
+      kitchen_projects: "/(admin)/kitchen/stages/lead",
       furniture_quotations: "/(admin)/notebook/furniture-quotations", sales_data: "/(admin)/sales-data",
   };
   // Legacy stage-specific notebook grants do not authorize the replacement
@@ -66,6 +66,7 @@ export function staffLandingPath(profile?: AccessProfile | null, grants?: Person
     furniture_quotations: ["third-floor"],
   };
   const permitted = grants?.find((grant) => {
+    if ((floorId || grant.floor_id) === "second-floor" && grant.resource !== "kitchen_projects") return false;
     if (!routeByResource[grant.resource] || !grant.actions.includes("view") || (floorId && grant.floor_id && grant.floor_id !== floorId)) return false;
     const targetFloor = floorId || grant.floor_id;
     return !targetFloor || !supportedFloors[grant.resource] || supportedFloors[grant.resource].includes(targetFloor);

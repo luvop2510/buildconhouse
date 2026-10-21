@@ -66,6 +66,8 @@ test('30 meaningful URLs: every current stage, persisted pages and scoped queues
       expect(project.stage).toBe(stage);
       await visit(`/kitchen/${project.id}/stages/${stage}`, 'kitchen-current-task-region', `/api/kitchen-projects/${project.id}`);
       await expect(page.getByRole('heading', { name: labels[stage], exact: true }).first()).toBeVisible();
+      const sidebarStage = page.getByTestId(`nav-kitchen-${stage}`);
+      if (await sidebarStage.isVisible()) await expect(sidebarStage).toHaveAttribute('aria-selected', 'true');
       if (stage === 'lead') project = await command(context, project, 'convert');
       if (stage === 'visit') {
         project = await command(context, project, 'save_visit', { status: 'Visited', interested: true, requirements: 'Saved showroom requirements' });
@@ -106,11 +108,11 @@ test('30 meaningful URLs: every current stage, persisted pages and scoped queues
       }
     }
     for (const [path, marker, api] of [
-      ['/kitchen', 'kitchen-section-projects', '/api/kitchen-projects/dashboard'],
+      ['/kitchen', 'kitchen-search', '/api/kitchen-projects'],
       ['/kitchen/projects', 'kitchen-search', '/api/kitchen-projects'],
-      ['/kitchen/workflow', 'kitchen-workflow-lead', '/api/kitchen-projects/configuration'],
+      ['/kitchen/workflow', 'kitchen-search', '/api/kitchen-projects'],
       ['/kitchen/completed', 'kitchen-search', '/api/kitchen-projects'],
-      ['/kitchen/new', 'kitchen-customer', '/api/kitchen-projects/configuration'],
+      ['/kitchen/new', 'kitchen-customer-name', '/api/kitchen-projects/configuration'],
       ['/kitchen/review', 'kitchen-search', '/api/kitchen-projects'],
       ['/kitchen/settings', 'kitchen-policy-save', '/api/kitchen-projects/configuration'],
       ...stages.map(stage => [`/kitchen/stages/${stage}`, 'kitchen-search', '/api/kitchen-projects']),
@@ -183,20 +185,16 @@ test('browser Back cancellation and expanded text preserve a directly linked cur
   const health = captureRuntimeHealth(page);
   const project = await created(context);
   await seed(page);
-  await page.goto(`/kitchen/projects?search=${project.reference}&view=list`);
+  await page.goto(`/kitchen/stages/lead?search=${project.reference}&view=list`);
   await page.getByTestId(`kitchen-project-${project.id}`).click();
-  await page.getByTestId('kitchen-open-current-stage').click();
   const leadDetails = page.getByTestId('kitchen-lead-details-toggle');
   await expect(leadDetails).toBeVisible();
   if (!await page.getByTestId('kitchen-lead-notes').isVisible()) await leadDetails.click();
   await page.getByTestId('kitchen-lead-notes').fill('Synthetic expanded-text draft');
-  await page.goBack(); // sibling overview
-  await expect(page).toHaveURL(current => current.pathname === `/kitchen/${project.id}`);
   const cancelled = page.waitForEvent('dialog').then(dialog => dialog.dismiss());
-  await page.goBack(); // originating list, declined
+  await page.goBack(); // Leaving the current task would discard unsaved entries.
   await cancelled;
-  await expect(page).toHaveURL(current => current.pathname === `/kitchen/${project.id}`);
-  await page.getByTestId('kitchen-open-current-stage').click();
+  await expect(page).toHaveURL(current => current.pathname === `/kitchen/${project.id}/stages/lead`);
   await expect(page.getByTestId('kitchen-lead-notes')).toHaveValue('Synthetic expanded-text draft');
   const collapsed = page.getByRole('button', { name: 'Collapse sidebar', exact: true });
   if (await collapsed.isVisible()) {

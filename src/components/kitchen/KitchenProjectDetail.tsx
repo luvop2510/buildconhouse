@@ -1,113 +1,74 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Linking, Pressable, View, useWindowDimensions } from "react-native";
+import { Linking, View } from "react-native";
 import Feather from "@expo/vector-icons/Feather";
 import { Text } from "@/src/components/AppText";
 import { AdminPage } from "@/src/components/AdminPage";
 import { Alert, Button, Chip, ErrorState, LoadingState, Sheet, TextField } from "@/src/components/ds";
 import { Menu } from "@/src/design/navigationControls";
 import { NavigationLink } from "@/src/design/NavigationLink";
-import { useBp } from "@/src/design/responsive";
 import { KITCHEN_STAGES, STAGE_LABELS, type KitchenCad, type KitchenLead, type KitchenProject, type KitchenStage, type KitchenVisit } from "@/src/api/kitchenProjects";
-import { Choice, displayDate, ErrorNotice, KitchenFloor, KitchenPanel, historicalCount, rupees } from "./shared";
+import { Choice, displayDate, ErrorNotice, KitchenFloor, KitchenPanel, rupees } from "./shared";
 import { KitchenDateField } from "./KitchenFilters";
 import { LeadFields } from "./KitchenLeadFields";
-import { colors, radius, spacing, type } from "@/src/theme/tokens";
+import { colors, spacing, type } from "@/src/theme/tokens";
 import { CommercialStages } from "./CommercialStages";
 import { KitchenDocuments } from "./KitchenDocuments";
 import { kitchenProjectPath, kitchenStage, useKitchenDraft, useKitchenProject } from "./KitchenProjectState";
 
 type ProjectPage = "overview" | "stage" | "documents" | "history" | "assignments" | "exceptions";
-const pageLabels = { overview: "Project overview", stage: "Current task", documents: "Documents", history: "History", assignments: "Plan & assignment", exceptions: "Owner actions" };
 
-export function KitchenProjectDetail({ page = "overview" }: { page?: ProjectPage }) {
+export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage }) {
   const state = useKitchenProject();
   const { project, loading, failure, policy, policyError, workers, workerError, retryWorkers, reload, updateProject, submission, command, returnTo, retainedDraft } = state;
   const { stage: parameter } = useLocalSearchParams<{ stage?: string }>();
   const router = useRouter();
-  const [workflowOpen, setWorkflowOpen] = useState(false);
+  const [panel, setPanel] = useState<ProjectPage | "workflow" | null>(["documents", "history", "assignments", "exceptions"].includes(page) ? page : null);
+  const lastStage = useRef(project?.stage);
+  useEffect(() => { if (lastStage.current && project?.stage !== lastStage.current) setPanel(null); lastStage.current = project?.stage; }, [project?.stage]);
   const selected = kitchenStage(parameter) || project?.stage || "lead";
-  const title = page === "overview" ? project?.customer.name || "Kitchen project" : page === "stage" ? STAGE_LABELS[selected] : pageLabels[page];
   const path = (suffix = "") => kitchenProjectPath(state.id, suffix, returnTo);
   const canUpdate = project?.permissions?.can_update === true;
   const held = project?.lifecycle_status === "On Hold" || project?.lifecycle_status === "Cancelled";
-  const back = () => { if (router.canGoBack()) router.back(); else router.replace((page === "overview" ? returnTo : path()) as any); };
+  const back = () => { if (router.canGoBack()) router.back(); else router.replace(returnTo as any); };
   const actionLabel = project ? currentTaskLabel(project) : "Open current task";
   const disabled = !canUpdate || submission.busy || loading || Boolean(failure);
-  if (page === "stage" && parameter && !kitchenStage(parameter)) return <KitchenFloor><AdminPage title="Workflow" back={back}><ErrorState title="Stage unavailable" subtitle="Choose a stage from this project's workflow." /></AdminPage></KitchenFloor>;
-  return <KitchenFloor><AdminPage title={title} overline={project ? `${project.project_reference || project.reference}${page === "overview" ? "" : ` · ${project.customer.name}`}` : "Kitchen"}
-    back={back}
-    right={project && page === "overview" ? <Button label={actionLabel} onPress={() => router.push(path(`/stages/${project.stage}`) as any)} testID="kitchen-open-current-stage" /> : project && page === "stage" ? <Button label="Workflow" icon="list" variant="secondary" onPress={() => setWorkflowOpen(true)} testID="kitchen-open-workflow" /> : undefined}
-    contentStyle={{ width: "100%", maxWidth: 1160, alignSelf: "center" }}>
+  if (parameter && !kitchenStage(parameter)) return <KitchenFloor><AdminPage title="Kitchen" back={back}><ErrorState title="Stage unavailable" subtitle="Choose one of the nine Kitchen stages." /></AdminPage></KitchenFloor>;
+  return <KitchenFloor><AdminPage title={STAGE_LABELS[selected]} overline={project ? `${project.project_reference || project.reference} · ${project.customer.name}` : "Kitchen"} back={back}
+    right={project ? <Button label="Stage history" icon="list" variant="secondary" onPress={() => setPanel("workflow")} testID="kitchen-open-workflow" /> : undefined}
+    contentStyle={{ width: "100%", maxWidth: 1000, alignSelf: "center" }}>
     {failure ? <ErrorState title="Project unavailable" subtitle={failure} onRetry={reload} /> : null}
     {loading && !project ? <LoadingState label="Loading project…" /> : null}
     {project ? <View style={{ gap: spacing.lg }} testID="kitchen-project-detail">
       <View testID={!loading && !failure ? "kitchen-project-ready" : "kitchen-project-loading"} />
-      <ProjectNavigation page={page} project={project} path={path} selected={selected} />
+      <KitchenPanel><View style={{ gap: spacing.sm }}><Text style={type.bodyStrong}>{project.customer.name}</Text><Text style={type.bodyMuted}>{project.customer.phone || "Phone not recorded"} · {project.lead.site_location || project.customer.address || "Site not recorded"}</Text>{project.is_legacy ? <Text style={type.caption}>Legacy project · unknown historical dates and counts remain unavailable.</Text> : null}<Text style={type.caption}>Assigned to {workers.find(worker => worker.id === project.assignments[selected])?.full_name || "Unassigned"}{project.deadline ? ` · Due ${displayDate(project.deadline)}` : ""}</Text></View></KitchenPanel>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }} testID="kitchen-project-tools">
+        <Button label="Documents" icon="paperclip" variant="secondary" onPress={() => setPanel("documents")} testID="kitchen-project-nav-documents" />
+        <Button label="History" icon="clock" variant="secondary" onPress={() => setPanel("history")} testID="kitchen-project-nav-history" />
+        <Button label="Assignment & dates" icon="user" variant="secondary" onPress={() => setPanel("assignments")} testID="kitchen-project-nav-assignments" />
+        <Menu triggerLabel="Project actions" triggerTestID="kitchen-project-actions" items={[{ label: "Reload saved project", icon: "refresh-cw", onPress: reload }, ...(project.permissions?.can_approve_exceptions ? [{ label: "Hold, cancel or revise project", icon: "settings" as const, onPress: () => setPanel("exceptions") }] : [])]}><View style={{ padding: spacing.sm }}><Feather name="more-horizontal" size={20} color={colors.onSurfaceSecondary} /></View></Menu>
+      </View>
       {loading ? <Text style={type.caption}>Refreshing saved project…</Text> : null}
-      {policyError && page === "documents" ? <Alert tone="warning" title="Upload settings unavailable" description="Reload the project to check the upload settings." action={<Button label="Reload" variant="secondary" onPress={reload} />} /> : null}
-      {state.dirty ? <Text accessibilityLiveRegion="polite" style={type.caption} testID="kitchen-unsaved-notice">Unsaved changes · kept while you move between this project’s pages. Save before leaving.</Text> : null}
+      {state.dirty ? <Text accessibilityLiveRegion="polite" style={type.caption} testID="kitchen-unsaved-notice">Unsaved changes · save before leaving this project.</Text> : null}
       {retainedDraft ? <Alert tone="info" title="Drafts retained" description="The latest saved record is loaded. Your unsaved entries are kept for review." /> : null}
       <ErrorNotice error={submission.error} stale={submission.stale} onReload={reload} />
       {held ? <Alert tone="warning" title={`Project ${project.lifecycle_status}`} description="The owner must resume the project before routine work can continue." /> : null}
-      {page === "overview" ? <ProjectOverview project={project} path={path} /> : null}
-      {page === "stage" ? <View testID="kitchen-current-task-region" style={{ gap: spacing.lg, width: "100%", maxWidth: 780, alignSelf: "center" }}>
-        <View style={{ flexDirection: "row", gap: spacing.md, justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" }}>
-          <Text style={type.bodyMuted}>{selected === project.stage ? `Current task · ${project.status || STAGE_LABELS[selected]}` : "Reviewing stage records"}</Text>
-          <Text style={type.caption}>Assigned to {workers.find(worker => worker.id === project.assignments[selected])?.full_name || "Unassigned"}</Text>
-        </View>
-        {selected !== project.stage ? <Alert tone="info" title="Stage records" description={`The project is currently in ${STAGE_LABELS[project.stage]}. This stage is read only. Use Current task to continue assigned work.`} action={<Button label={actionLabel} variant="secondary" onPress={() => router.push(path(`/stages/${project.stage}`) as any)} />} /> : null}
-        {!canUpdate ? <View testID="kitchen-read-only-notice"><Alert tone="info" title="View only" description="You can review the project history. Changes and uploads require permission for the current task." /></View> : null}
+      <View testID="kitchen-current-task-region" style={{ gap: spacing.lg, width: "100%", maxWidth: 780, alignSelf: "center" }}>
+        <Text style={type.bodyMuted}>{selected === project.stage ? `Current stage · ${STAGE_LABELS[selected]} · ${project.status || STAGE_LABELS[selected]}` : "Earlier stage records"}</Text>
+        {selected !== project.stage ? <Alert tone="info" title="Stage records" description={`This project is now in ${STAGE_LABELS[project.stage]}. Earlier records are read only.`} action={<Button label={actionLabel} variant="secondary" onPress={() => router.replace(path(`/stages/${project.stage}`) as any)} testID="kitchen-open-current-stage" />} /> : null}
+        {!canUpdate ? <View testID="kitchen-read-only-notice"><Alert tone="info" title="View only" description="Changes and uploads require permission for this project's current stage." /></View> : null}
         {project.commercial_basis_invalidated ? <Alert tone="warning" title="Fresh commercial approvals required" description="Present and approve a new design, then renew the quotation and order approvals. Earlier records remain in History." /> : null}
         {selected === "lead" ? <DuplicateReview project={project} disabled={disabled || Boolean(held)} /> : null}
         <EarlyStage project={project} stage={selected} disabled={disabled || Boolean(held)} />
         <CommercialStages project={project} stage={selected} disabled={disabled || Boolean(held)} command={command} hasUnsavedChanges={state.currentTaskDirty} />
-      </View> : null}
-      {page === "documents" ? <View style={{ width: "100%", maxWidth: 780, alignSelf: "center" }}><KitchenDocuments project={project} policy={policy} disabled={disabled || Boolean(held)} onUpdated={updateProject} onReload={reload} /></View> : null}
-      {page === "history" ? <ProjectHistory project={project} /> : null}
-      {page === "assignments" ? <ProjectPlan project={project} disabled={disabled || Boolean(held)} workers={workers} workerError={workerError} onRetryWorkers={retryWorkers} /> : null}
-      {page === "exceptions" ? <ProjectExceptions project={project} disabled={disabled} /> : null}
+      </View>
+      <Sheet visible={panel === "documents"} onClose={() => setPanel(null)} title="Project documents" testID="kitchen-documents-sheet">{policyError ? <Alert tone="warning" title="Upload settings unavailable" action={<Button label="Reload" variant="secondary" onPress={reload} />} /> : null}<KitchenDocuments project={project} policy={policy} disabled={disabled || Boolean(held)} onUpdated={updateProject} onReload={reload} /></Sheet>
+      <Sheet visible={panel === "history"} onClose={() => setPanel(null)} title="Project history" testID="kitchen-history-sheet"><ProjectHistory project={project} /></Sheet>
+      <Sheet visible={panel === "assignments"} onClose={() => setPanel(null)} title="Assignment & dates" testID="kitchen-assignment-sheet"><ProjectPlan project={project} disabled={disabled || Boolean(held)} workers={workers} workerError={workerError} onRetryWorkers={retryWorkers} /></Sheet>
+      <Sheet visible={panel === "exceptions"} onClose={() => setPanel(null)} title="Project changes" testID="kitchen-exceptions-sheet"><ProjectExceptions project={project} disabled={disabled} /></Sheet>
+      <Sheet visible={panel === "workflow"} onClose={() => setPanel(null)} title="Project stages" testID="kitchen-workflow-sheet"><WorkflowRows project={project} path={path} onNavigate={() => setPanel(null)} /></Sheet>
     </View> : null}
-    <Sheet visible={workflowOpen} onClose={() => setWorkflowOpen(false)} title="Project workflow" testID="kitchen-workflow-sheet">
-      {project ? <WorkflowRows project={project} path={path} onNavigate={() => setWorkflowOpen(false)} /> : null}
-    </Sheet>
   </AdminPage></KitchenFloor>;
-}
-
-function ProjectNavigation({ page, project, path, selected }: { page: ProjectPage; project: KitchenProject; path: (suffix?: string) => string; selected: KitchenStage }) {
-  const links: { page: ProjectPage; label: string; suffix: string }[] = [
-    { page: "overview", label: "Overview", suffix: "" }, { page: "stage", label: "Current task", suffix: `/stages/${project.stage}` },
-    { page: "documents", label: "Documents", suffix: "/documents" }, { page: "history", label: "History", suffix: "/history" },
-    { page: "assignments", label: "Plan", suffix: "/assignments" },
-  ];
-  const router = useRouter();
-  const { isPhone } = useBp();
-  const { reload } = useKitchenProject();
-  const [pagesOpen, setPagesOpen] = useState(false);
-  const [contentWidth, setContentWidth] = useState(0);
-  const { fontScale } = useWindowDimensions();
-  const compact = isPhone || contentWidth < 680 * fontScale;
-  const currentLink = (target: ProjectPage) => page === target && (target !== "stage" || selected === project.stage);
-  const actions = <Menu triggerLabel="Project actions" triggerTestID="kitchen-project-actions" items={[
-    { label: "Reload saved project", icon: "refresh-cw", onPress: reload },
-    ...(project.permissions?.can_approve_exceptions ? [{ label: "Owner actions", icon: "settings" as const, onPress: () => router.push(path("/exceptions") as any) }] : []),
-  ]}><View style={{ padding: spacing.sm }}><Feather name="more-horizontal" size={20} color={colors.onSurfaceSecondary} /></View></Menu>;
-  return <View onLayout={event => setContentWidth(event.nativeEvent.layout.width)} style={{ width: "100%" }}>
-    {compact ? <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.md }}>
-      <Button label={page === "stage" && selected !== project.stage ? `${STAGE_LABELS[selected]} records` : pageLabels[page]} icon="chevron-down" variant="secondary" onPress={() => setPagesOpen(true)} testID="kitchen-project-pages" />{actions}
-    </View> : <View style={{ flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderColor: colors.border }}>
-      <View style={{ flex: 1, flexDirection: "row", gap: spacing.lg }}>
-        {links.map(link => <NavigationLink key={link.page} href={path(link.suffix) as any} accessibilityRole="link" accessibilityState={{ selected: currentLink(link.page) }} testID={`kitchen-project-nav-${link.page}`}
-          style={{ minHeight: 48, justifyContent: "center", borderBottomWidth: 2, borderBottomColor: currentLink(link.page) ? colors.brand : "transparent", paddingHorizontal: spacing.xs }}>
-          <Text style={[type.bodyStrong, { color: currentLink(link.page) ? colors.brand : colors.onSurfaceSecondary }]}>{link.label}</Text>
-        </NavigationLink>)}
-      </View>{actions}
-    </View>}
-    <Sheet visible={compact && pagesOpen} onClose={() => setPagesOpen(false)} title="Project pages" testID="kitchen-project-pages-sheet">
-      {links.map(link => <RouteRow key={link.page} title={link.label} subtitle={currentLink(link.page) ? "Current page" : undefined} href={path(link.suffix)} testID={`kitchen-project-nav-${link.page}`} onNavigate={() => setPagesOpen(false)} />)}
-      {project.permissions?.can_approve_exceptions ? <RouteRow title="Owner actions" href={path("/exceptions")} testID="kitchen-project-nav-exceptions" onNavigate={() => setPagesOpen(false)} /> : null}
-    </Sheet>
-  </View>;
 }
 
 function RouteRow({ title, subtitle, href, testID, trailing, onNavigate }: { title: string; subtitle?: string; href: string; testID?: string; trailing?: string; onNavigate?: () => void }) {
@@ -124,46 +85,9 @@ function currentTaskLabel(project: KitchenProject) {
   return ({ lead: "Review lead", visit: "Record showroom visit", cad: "Update CAD progress", design: "Review design", quotation: "Review quotation", order: "Review order", production: "Update production", installation: "Update installation", completed: "Review completed project" })[project.stage];
 }
 
-function ProjectOverview({ project, path }: { project: KitchenProject; path: (suffix?: string) => string }) {
-  const { isPhone } = useBp();
-  const { workers } = useKitchenProject();
-  const nextStage = KITCHEN_STAGES[KITCHEN_STAGES.indexOf(project.stage) + 1];
-  const blocker = project.blocked_transitions?.find(row => row.target_stage === nextStage)?.reason;
-  const [workflowOpen, setWorkflowOpen] = useState(!isPhone);
-  return <View style={{ gap: spacing.lg }}>
-    <KitchenPanel title={STAGE_LABELS[project.stage]}>
-      <Text style={type.bodyMuted}>{project.status || "Pending"}{project.lifecycle_status ? ` · ${project.lifecycle_status}` : ""}</Text>
-      <Text style={type.bodyStrong}>{project.next_action || currentTaskLabel(project)}</Text>
-      <Text style={type.bodyMuted}>Responsible: {workers.find(worker => worker.id === project.assignments[project.stage])?.full_name || "Unassigned — the owner or selected manager can assign this task in Plan."}</Text>
-      {blocker ? <Text style={type.bodyMuted}>Before continuing: {blocker}</Text> : null}
-      <Text style={type.bodyMuted}>{project.lead.site_location || project.customer.address || "Site not recorded"}</Text>
-      <Text style={type.body}>{project.customer.phone || "Phone not recorded"}</Text>
-      {project.deadline ? <Text style={type.caption}>Next action due {displayDate(project.deadline)}</Text> : null}
-      {project.target_completion_date ? <Text style={type.caption}>Target completion {displayDate(project.target_completion_date)}</Text> : null}
-      {project.commercial_basis_invalidated ? <Alert tone="warning" title="New approval cycle" description="Earlier commercial approvals are retained in History. Current work needs renewed approvals." /> : null}
-      {project.duplicate_review?.status === "pending" ? <Alert tone="warning" title="Owner duplicate review pending" description="Review this lead in the current task before conversion." /> : null}
-    </KitchenPanel>
-    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.lg }}>
-      {[{ label: "Order value", value: rupees(project.commercial_basis_invalidated ? null : project.order_amount) },
-        { label: "Design revisions", value: historicalCount(project.design_revision_count, project.known_design_revision_count) },
-        { label: "Actual site visits", value: historicalCount(project.site_visit_count, project.known_site_visit_count) }].map(item => <View key={item.label} style={{ flex: 1, minWidth: 160, gap: spacing.xs, paddingVertical: spacing.sm }}><Text style={type.caption}>{item.label}</Text><Text style={type.titleMd}>{item.value}</Text></View>)}
-    </View>
-    {project.is_legacy ? <Text style={type.caption}>Legacy project{project.source_reference ? ` · ${project.source_reference}` : ""}. Unknown historical dates and counts remain unavailable.</Text> : null}
-    <View style={{ flexDirection: isPhone ? "column" : "row", gap: spacing.lg, alignItems: "flex-start" }}>
-      <View style={{ flex: 1, width: "100%", gap: spacing.sm }}>
-        <RouteRow title="Documents" subtitle={`${project.attachments?.length || 0} private files`} href={path("/documents")} testID="kitchen-summary-documents" />
-        <RouteRow title="History" subtitle="Versions, approvals and recorded changes" href={path("/history")} />
-        <RouteRow title="Plan & assignment" subtitle="Responsible person, next action and dates" href={path("/assignments")} />
-      </View>
-      <View style={{ flex: 1, width: "100%", borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.lg, backgroundColor: colors.surfaceSecondary }}>
-        <Pressable accessibilityRole="button" accessibilityState={{ expanded: workflowOpen }} onPress={() => setWorkflowOpen(value => !value)} style={{ minHeight: 44, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}><Text style={type.titleMd}>Project workflow</Text><Feather name={workflowOpen ? "chevron-up" : "chevron-down"} size={18} color={colors.onSurfaceSecondary} /></Pressable>
-        {workflowOpen ? <WorkflowRows project={project} path={path} /> : null}
-      </View>
-    </View>
-  </View>;
-}
 function WorkflowRows({ project, path, onNavigate }: { project: KitchenProject; path: (suffix?: string) => string; onNavigate?: () => void }) {
-  return <View>{KITCHEN_STAGES.map((stage, index) => <RouteRow key={stage} title={`${index + 1}. ${STAGE_LABELS[stage]}`} subtitle={stage === project.stage ? "Current task" : KITCHEN_STAGES.indexOf(stage) < KITCHEN_STAGES.indexOf(project.stage) ? "Review earlier records" : "Upcoming stage"} href={path(`/stages/${stage}`)} trailing={stage === project.stage ? project.status : undefined} testID={`kitchen-stage-${stage}`} onNavigate={onNavigate} />)}</View>;
+  const current = KITCHEN_STAGES.indexOf(project.stage);
+  return <View>{KITCHEN_STAGES.map((stage, index) => index > current ? <View key={stage} testID={`kitchen-stage-${stage}`} style={{ minHeight: 64, paddingVertical: spacing.md, gap: spacing.xs, borderBottomWidth: 1, borderColor: colors.border }}><Text style={type.bodyMuted}>{index + 1}. {STAGE_LABELS[stage]}</Text><Text style={type.caption}>Upcoming · complete the current stage first</Text></View> : <RouteRow key={stage} title={`${index + 1}. ${STAGE_LABELS[stage]}`} subtitle={stage === project.stage ? "Current stage" : "Review earlier records"} href={path(`/stages/${stage}`)} trailing={stage === project.stage ? project.status : undefined} testID={`kitchen-stage-${stage}`} onNavigate={onNavigate} />)}</View>;
 }
 
 function DuplicateReview({ project, disabled }: { project: KitchenProject; disabled: boolean }) {
@@ -267,9 +191,8 @@ function ProjectExceptions({ project, disabled }: { project: KitchenProject; dis
 const historyCategories = { activity: "Activity", designs: "Design versions", quotations: "Quotation versions", revisions: "Customer revisions", orders: "Orders", visits: "Site visits", approvals: "Approvals", work: "Earlier work cycles", exceptions: "Owner changes & review" };
 function ProjectHistory({ project }: { project: KitchenProject }) {
   const params = useLocalSearchParams<{ category?: string }>();
-  const router = useRouter();
   const { workers, policy } = useKitchenProject();
-  const category = params.category && Object.prototype.hasOwnProperty.call(historyCategories, params.category) ? params.category as keyof typeof historyCategories : "activity";
+  const [category, setCategory] = useState<keyof typeof historyCategories>(params.category && Object.prototype.hasOwnProperty.call(historyCategories, params.category) ? params.category as keyof typeof historyCategories : "activity");
   const [limit, setLimit] = useState(30);
   const actor = (id?: string) => !id ? "Not recorded" : [...(project.activity || [])].reverse().find(event => event.actor_id === id && event.actor_name)?.actor_name || workers.find(worker => worker.id === id)?.full_name || `Staff member ${id}`;
   const documentName = (id?: string | null) => id ? project.attachments?.find(file => file.id === id)?.filename || "Saved project attachment" : "Not attached";
@@ -307,7 +230,7 @@ function ProjectHistory({ project }: { project: KitchenProject }) {
   }
   return <View style={{ gap: spacing.lg, width: "100%", maxWidth: 860, alignSelf: "center" }}>
     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: spacing.md }}>
-      <Menu triggerLabel="Choose history category" triggerTestID="kitchen-history-category" align="left" items={Object.entries(historyCategories).map(([key, label]) => ({ label, onPress: () => { setLimit(30); router.setParams({ category: key }); } }))}><Text style={type.titleMd}>{historyCategories[category]} ▾</Text></Menu><Text style={type.caption}>{entries.length} records</Text>
+      <Menu triggerLabel="Choose history category" triggerTestID="kitchen-history-category" align="left" items={Object.entries(historyCategories).map(([key, label]) => ({ label, onPress: () => { setLimit(30); setCategory(key as keyof typeof historyCategories); } }))}><Text style={type.titleMd}>{historyCategories[category]} ▾</Text></Menu><Text style={type.caption}>{entries.length} records</Text>
     </View>
     <KitchenPanel>{!entries.length ? <Text style={type.bodyMuted}>No {historyCategories[category].toLowerCase()} recorded.</Text> : entries.slice(0, limit).map(entry => <View key={entry.id} style={{ gap: spacing.sm, paddingVertical: spacing.md, borderBottomWidth: 1, borderColor: colors.border }}>
       <Text style={type.bodyStrong}>{entry.title}</Text>{entry.lines.map((line, index) => <Text key={index} style={type.bodyMuted}>{line}</Text>)}

@@ -58,7 +58,7 @@ export function KitchenPolicyEditor({ policy, workers, workerError, onSaved, onR
       <Text style={type.body}>Active order value includes each current, matching confirmed order once on active projects. Drafts, invalidated commercial terms and inactive projects are excluded.</Text>
     </KitchenPanel>
     <KitchenPanel title="Private documents and retention">
-      <Text style={type.body}>Allowed formats: PDF, DWG, DXF, JPG/JPEG, PNG, DOCX and XLSX. Files stay private, are retained, and are shared manually. This tracker does not send customer messages.</Text>
+      <Text style={type.body}>Allowed formats: PDF, JPG/JPEG, PNG, DOCX and XLSX. Files stay private, are retained, and are shared manually. This tracker does not send customer messages.</Text>
       <Alert tone="warning" title="Current file limit: 25 MB (25,000,000 bytes)" description="Files larger than 768 KiB use bounded private parts; ordinary request limits stay unchanged. Interrupted uploads retain temporary parts for up to 24 hours. Committed private files remain retained." />
     </KitchenPanel>
     </View> : null}

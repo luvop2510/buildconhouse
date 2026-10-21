@@ -232,6 +232,60 @@ async def reach_stage(env, target):
     return project
 
 
+def test_inline_lead_intake_uses_one_floor_local_contact_and_retries_without_duplication():
+    async def run():
+        async with environment() as env:
+            path = "/api/kitchen-projects"
+            body = {"customer": {"name": "New inline enquiry", "phone": "+91 98888 00123", "address": "Inline site"},
+                    "lead": {"site_location": "Inline site", "status": "New"}, "idempotency_key": str(uuid4())}
+            forbidden = await env["api"].post(path, json=body, headers=headers(env, "worker"))
+            assert forbidden.status_code in {403, 422}
+            assert await env["db"].customers.count_documents({"phone": body["customer"]["phone"]}) == 0
+            first = await env["api"].post(path, json=body, headers=headers(env))
+            assert first.status_code == 200, first.text
+            project = first.json()
+            retry = await env["api"].post(path, json=body, headers=headers(env))
+            assert retry.status_code == 200 and retry.json()["id"] == project["id"] and retry.json()["replayed"]
+            assert await env["db"].customers.count_documents({"id": project["customer_id"]}) == 1
+            second = await env["api"].post(path, json={**body, "customer": {"name": "Different typed name", "phone": "9888800123"},
+                                                      "idempotency_key": str(uuid4())}, headers=headers(env))
+            assert second.status_code == 200, second.text
+            assert second.json()["customer_id"] == project["customer_id"]
+            assert second.json()["customer"]["name"] == "New inline enquiry"
+            assert second.json()["duplicate_review"]["status"] == "pending"
+            assert await env["db"].customers.count_documents({"floor_id": "second-floor"}) == 2
+            project = await accepted(env, project, "convert")
+            assert project["stage"] == "visit" and project["customer"]["name"] == "New inline enquiry"
+            # The directory's pre-existing formatted number is reused too.
+            reused = await env["api"].post(path, json={**body, "customer": {"name": "Typed existing name", "phone": "+91 99000 00031"},
+                                                      "idempotency_key": str(uuid4())}, headers=headers(env))
+            assert reused.status_code == 200 and reused.json()["customer_id"] == env["ids"]["customer"]
+            assert await env["db"].customers.count_documents({"floor_id": "second-floor"}) == 2
+            # A contact in another department must never be linked across floors.
+            scoped = await env["api"].post(path, json={**body, "customer": {"name": "Separate Kitchen contact", "phone": "9900000032"},
+                                                      "idempotency_key": str(uuid4())}, headers=headers(env))
+            assert scoped.status_code == 200 and scoped.json()["customer_id"] != env["ids"]["other_customer"]
+    asyncio.run(run())
+
+
+def test_stage_list_carries_latest_commercial_fields_without_exposing_history():
+    async def run():
+        async with environment() as env:
+            await configure(env)
+            project = await reach_stage(env, "order")
+            response = await env["api"].get("/api/kitchen-projects?stage=order", headers=headers(env))
+            assert response.status_code == 200, response.text
+            row = next(value for value in response.json()["rows"] if value["id"] == project["id"])
+            assert row["current_design"]["id"] == project["design_versions"][-1]["id"]
+            assert row["current_design"]["response"] == "Approved" and row["current_design"]["handoff_date"]
+            assert row["current_quotation"]["amount"] == "1000.01" and row["current_quotation"]["response"] == "Approved"
+            assert row["current_order"]["confirmed"] and row["current_order"]["final_amount"] == "1000.01"
+            assert row["current_order"]["advance"]["received"] is False
+            assert "amendments" not in row["current_order"] and "actor_id" not in row["current_design"]
+            assert not ({"design_versions", "quotation_versions", "orders", "activity", "attachments", "command_receipts"} & row.keys())
+    asyncio.run(run())
+
+
 def test_q01_q03_q11_customer_reuse_conversion_assignment_and_roundtrip():
     async def run():
         async with environment() as env:
@@ -1131,6 +1185,74 @@ def test_resolved_d09_legacy_unknown_counts_remain_null_after_new_events_and_exp
     asyncio.run(run())
 
 
+def test_cad_uploads_rejected_for_both_transports_and_cad_stage_preserves_history(monkeypatch):
+    import hashlib
+    from media_storage import factory
+    class HistoryStorage:
+        calls = 0
+        async def require_private_bucket(self, bucket):
+            assert bucket == "forge-private"
+        async def download(self, **kwargs):
+            return b"AC1032 historical drawing bytes"
+        async def exists(self, **kwargs):
+            self.calls += 1
+            raise AssertionError("Rejected CAD upload reached object storage")
+    storage = HistoryStorage()
+    monkeypatch.setattr(factory, "get_media_storage", lambda: storage)
+    async def run():
+        async with environment() as env:
+            project, _ = await create_project(env)
+            route = f"/api/kitchen-projects/{project['id']}"
+            snapshot = await env["db"].kitchen_projects.find_one({"id": project["id"]})
+            for filename, mime in (("drawing.dwg", "image/vnd.dwg"), ("drawing.dxf", "image/vnd.dxf"),
+                                    ("drawing.DWG", "application/octet-stream"), ("drawing.dxf", "application/octet-stream"),
+                                    ("drawing.dwg", "application/pdf"), ("drawing.pdf", "application/acad"),
+                                    ("drawing.pdf", "application/x-dxf")):
+                ordinary = await env["api"].post(route + "/attachments", headers=headers(env),
+                    data={"expected_version": str(project["version"]), "idempotency_key": str(uuid4())},
+                    files={"file": (filename, b"AC1032" + b"x" * 94, mime)})
+                chunked = await env["api"].post(route + "/file-transfers", headers=headers(env),
+                    json={"expected_version": project["version"], "idempotency_key": str(uuid4()),
+                          "filename": filename, "content_type": mime, "size_bytes": 100})
+                assert ordinary.status_code == chunked.status_code == 415, (ordinary.text, chunked.text)
+            assert await env["db"].kitchen_projects.find_one({"id": project["id"]}) == snapshot
+            assert await env["db"].kitchen_file_transfers.count_documents({}) == 0
+            # An unfinished pre-change transfer cannot continue sending CAD
+            # parts or publish a new attachment after the format is retired.
+            from datetime import datetime, timedelta, timezone
+            transfer_id = str(uuid4())
+            await env["db"].kitchen_file_transfers.insert_one({"_id": env["ids"]["owner"], "project_id": project["id"],
+                "transfer_id": transfer_id, "filename": "staged.dwg", "content_type": "image/vnd.dwg", "state": "open",
+                "size_bytes": 1, "expires_at": datetime.now(timezone.utc) + timedelta(hours=1)})
+            root = route + "/file-transfers/" + transfer_id
+            part = await env["api"].put(root + "/parts/0", headers=headers(env), json={"data_base64": "eA=="})
+            finish = await env["api"].post(root + "/finish", headers=headers(env), json={"expected_version": project["version"]})
+            assert part.status_code == finish.status_code == 415
+            assert await env["db"].kitchen_file_parts.count_documents({}) == 0
+            await env["db"].kitchen_file_transfers.delete_many({})
+            project = await reach_stage(env, "cad")
+            route = f"/api/kitchen-projects/{project['id']}"
+            historical = {"id": "historical-cad", "filename": "earlier.dwg", "content_type": "image/vnd.dwg",
+                          "bucket": "forge-private", "storage_key": "old-private-object",
+                          "sha256": hashlib.sha256(b"AC1032 historical drawing bytes").hexdigest(), "size_bytes": 30}
+            await env["db"].kitchen_projects.update_one({"id": project["id"]}, {"$set": {"attachments": [historical]}})
+            saved = (await env["api"].get(route, headers=headers(env))).json()
+            assert saved["attachments"][0]["filename"] == "earlier.dwg" and "storage_key" not in saved["attachments"][0]
+            download = await env["api"].get(route + "/attachments/historical-cad", headers=headers(env))
+            assert download.status_code == 200 and download.content == b"AC1032 historical drawing bytes"
+            ordinary = await env["api"].post(route + "/attachments", headers=headers(env),
+                data={"expected_version": str(project["version"]), "idempotency_key": str(uuid4())},
+                files={"file": ("new.pdf", b"%PDF-1.4 synthetic", "application/pdf")})
+            chunked = await env["api"].post(route + "/file-transfers", headers=headers(env),
+                json={"expected_version": project["version"], "idempotency_key": str(uuid4()),
+                      "filename": "new.pdf", "content_type": "application/pdf", "size_bytes": 100})
+            assert ordinary.status_code == chunked.status_code == 422
+            assert "receipt and design progress only" in ordinary.text
+            assert storage.calls == 0
+            assert await env["db"].kitchen_file_transfers.count_documents({}) == 0
+    asyncio.run(run())
+
+
 def test_resolved_d10_all_formats_private_roundtrip_and_rejected_content_leave_no_success(monkeypatch, tmp_path):
     import io
     import zipfile
@@ -1180,10 +1302,6 @@ def test_resolved_d10_all_formats_private_roundtrip_and_rejected_content_leave_n
             route = f"/api/kitchen-projects/{project['id']}/attachments"
             for filename, mime, content in [
                 ("synthetic.pdf", "application/pdf", b"%PDF-1.4\nSynthetic"),
-                ("synthetic.dwg", "application/acad", b"AC1032" + b"\0" * 26),
-                ("synthetic.dxf", "application/x-dxf", b"0\nSECTION\n2\nHEADER\n0\nENDSEC\n0\nEOF\n"),
-                ("binary.dxf", "image/vnd.dxf", binary_dxf),
-                ("utf8.dxf", "image/vnd.dxf", "0\nSECTION\n2\nHEADER\n1\nकिचन\n0\nENDSEC\n0\nEOF\n".encode("utf-8")),
                 ("synthetic.jpg", "image/jpeg", b"\xff\xd8\xff\xe0Synthetic"),
                 ("synthetic.png", "image/png", b"\x89PNG\r\n\x1a\nSynthetic"),
                 ("synthetic.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", office("docx")),
@@ -1203,14 +1321,14 @@ def test_resolved_d10_all_formats_private_roundtrip_and_rejected_content_leave_n
                 assert download.headers["cache-control"] == "no-store"
                 hidden = await env["api"].get(f"{route}/{attachment['id']}", headers=headers(env, "worker"))
                 assert hidden.status_code == 404
-            assert len(project["attachments"]) == 10
+            assert len(project["attachments"]) == 6
             before = await env["db"].kitchen_projects.find_one({"id": project["id"]})
             for filename, mime, content, code in [
                 ("malformed.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", b"PK\x03\x04broken", 415),
                 ("forged.dwg", "image/vnd.dwg", b"MZ" + b"\0" * 100, 415),
                 ("incomplete.dxf", "image/vnd.dxf", b"0\nSECTION\n0\nENDSEC\n", 415),
                 ("truncated-binary.dxf", "image/vnd.dxf", binary_dxf[:-1], 415),
-                ("oversized.dwg", "image/vnd.dwg", b"AC1032" + b"\0" * (768 * 1024), 413),
+                ("oversized.pdf", "application/pdf", b"%PDF-1.4" + b"\0" * (768 * 1024), 413),
             ]:
                 failed = await env["api"].post(route, headers=headers(env), data={
                     "expected_version": str(project["version"]), "idempotency_key": str(uuid4())},
@@ -1549,18 +1667,18 @@ def test_25mb_private_transfer_boundary_retry_integrity_and_bounded_download(mon
             await configure(env)
             project, _ = await create_project(env)
             path = f"/api/kitchen-projects/{project['id']}"
-            content = b'AC1032' + b'Synthetic private DWG bytes ' * ((MAX_TRANSFER_BYTES // 28) + 10)
+            content = b'%PDF-1' + b'Synthetic private PDF bytes ' * ((MAX_TRANSFER_BYTES // 28) + 10)
             content = (content + b'x' * MAX_TRANSFER_BYTES)[:MAX_TRANSFER_BYTES]
             checksum = hashlib.sha256(content).hexdigest()
             key = str(uuid4())
-            body = {'expected_version': project['version'], 'idempotency_key': key, 'filename': 'synthetic-25mb.dwg',
-                    'content_type': 'image/vnd.dwg', 'size_bytes': len(content), 'sha256': checksum}
+            body = {'expected_version': project['version'], 'idempotency_key': key, 'filename': 'synthetic-25mb.pdf',
+                    'content_type': 'application/pdf', 'size_bytes': len(content), 'sha256': checksum}
             oversize = await env['api'].post(path + '/file-transfers', headers=headers(env), json={**body, 'size_bytes': MAX_TRANSFER_BYTES + 1})
             assert oversize.status_code == 422
             denied = await env['api'].post(path + '/file-transfers', headers=headers(env, 'denied'), json=body)
             assert denied.status_code == 403
             ordinary = await env['api'].post(path + '/attachments', headers=headers(env), data={'expected_version': str(project['version']), 'idempotency_key': str(uuid4())},
-                files={'file': ('large.dwg', content[:800000], 'image/vnd.dwg')})
+                files={'file': ('large.pdf', content[:800000], 'application/pdf')})
             assert ordinary.status_code == 413  # ordinary request limit did not grow
             started = await env['api'].post(path + '/file-transfers', headers=headers(env), json=body)
             assert started.status_code == 200, started.text
@@ -1629,16 +1747,16 @@ def test_large_transfer_cancel_expiry_corruption_and_permission_revocation(monke
             await configure(env)
             project, _ = await create_project(env)
             path = f"/api/kitchen-projects/{project['id']}/file-transfers"
-            body = {'expected_version': project['version'], 'idempotency_key': str(uuid4()), 'filename': 'synthetic.dwg', 'content_type': 'image/vnd.dwg', 'size_bytes': CHUNK_BYTES, 'sha256': '0' * 64}
+            body = {'expected_version': project['version'], 'idempotency_key': str(uuid4()), 'filename': 'synthetic.pdf', 'content_type': 'application/pdf', 'size_bytes': CHUNK_BYTES, 'sha256': '0' * 64}
             started = await env['api'].post(path, headers=headers(env), json=body)
             assert started.status_code == 200
             tid = started.json()['transfer_id']
-            other = await env['api'].post(path, headers=headers(env), json={**body, 'idempotency_key': str(uuid4()), 'filename': 'different.dwg'})
+            other = await env['api'].post(path, headers=headers(env), json={**body, 'idempotency_key': str(uuid4()), 'filename': 'different.pdf'})
             assert other.status_code == 409  # one bounded staging slot per actor
             root = path + '/' + tid
             malformed = await env['api'].put(root + '/parts/0', headers=headers(env), json={'data_base64': 'not-base64!'})
             assert malformed.status_code == 422
-            data = b'AC1032' + b'x' * (CHUNK_BYTES - 6)
+            data = b'%PDF-1' + b'x' * (CHUNK_BYTES - 6)
             valid = await env['api'].put(root + '/parts/0', headers=headers(env), json={'data_base64': base64.b64encode(data).decode()})
             assert valid.status_code == 200
             wrong_checksum = await env['api'].post(root + '/finish', headers=headers(env), json={'expected_version': project['version']})
@@ -1690,12 +1808,12 @@ def test_checksum_free_new_key_does_not_replay_different_same_size_file(monkeypa
         async with environment() as env:
             project, _ = await create_project(env)
             route = f"/api/kitchen-projects/{project['id']}/file-transfers"
-            contents = [b"AC1032" + b"a" * 94, b"AC1032" + b"b" * 94]
+            contents = [b"%PDF-1" + b"a" * 94, b"%PDF-1" + b"b" * 94]
             transfer_ids = []
             first_key = str(uuid4())
             for index, data in enumerate(contents):
                 body = {"expected_version": project["version"], "idempotency_key": first_key if index == 0 else str(uuid4()),
-                    "filename": "same.dwg", "content_type": "image/vnd.dwg", "size_bytes": len(data)}
+                    "filename": "same.pdf", "content_type": "application/pdf", "size_bytes": len(data)}
                 begun = await env["api"].post(route, headers=headers(env), json=body)
                 assert begun.status_code == 200, begun.text
                 tid = begun.json()["transfer_id"]
@@ -1745,11 +1863,11 @@ def test_expired_finish_lease_recovers_dead_worker_and_live_claim_cannot_be_stol
             project, _ = await create_project(env)
             route = f"/api/kitchen-projects/{project['id']}/file-transfers"
             body = {"expected_version": project["version"], "idempotency_key": str(uuid4()),
-                "filename": "recovery.dwg", "content_type": "image/vnd.dwg", "size_bytes": 100}
+                "filename": "recovery.pdf", "content_type": "application/pdf", "size_bytes": 100}
             begun = await env["api"].post(route, headers=headers(env), json=body)
             tid = begun.json()["transfer_id"]
             root = f"{route}/{tid}"
-            await env["api"].put(root + "/parts/0", headers=headers(env), json={"data_base64": base64.b64encode(b"AC1032" + b"a" * 94).decode()})
+            await env["api"].put(root + "/parts/0", headers=headers(env), json={"data_base64": base64.b64encode(b"%PDF-1" + b"a" * 94).decode()})
             # Durable state of a process killed before its first attachment
             # receipt. No actual configured worker is stopped by this test.
             await env["db"].kitchen_file_transfers.update_one({"transfer_id": tid}, {"$set": {
@@ -1813,17 +1931,17 @@ def test_late_part_after_cancel_is_removed_without_overwriting_new_transfer(monk
                 def __getattr__(self, name):
                     return getattr(env["db"], name)
             service = KitchenFileTransfers(Database())
-            body = {"expected_version": project["version"], "filename": "race.dwg", "content_type": "image/vnd.dwg", "size_bytes": 100}
+            body = {"expected_version": project["version"], "filename": "race.pdf", "content_type": "application/pdf", "size_bytes": 100}
             first = await service.begin(user, project["id"], TransferStart(**body, idempotency_key=str(uuid4())))
             pending = asyncio.create_task(service.put_part(user, project["id"], first["transfer_id"], 0,
-                TransferChunk(data_base64=base64.b64encode(b"AC1032" + b"a" * 94).decode())))
+                TransferChunk(data_base64=base64.b64encode(b"%PDF-1" + b"a" * 94).decode())))
             try:
                 await asyncio.wait_for(entered.wait(), 3)
                 assert (await service.cancel(user, project["id"], first["transfer_id"]))["discarded"]
                 second = await service.begin(user, project["id"], TransferStart(**body, idempotency_key=str(uuid4())))
                 if write_replacement_before_late_part:
                     await service.put_part(user, project["id"], second["transfer_id"], 0,
-                        TransferChunk(data_base64=base64.b64encode(b"AC1032" + b"b" * 94).decode()))
+                        TransferChunk(data_base64=base64.b64encode(b"%PDF-1" + b"b" * 94).decode()))
             finally:
                 release.set()
                 from fastapi import HTTPException
@@ -1834,10 +1952,10 @@ def test_late_part_after_cancel_is_removed_without_overwriting_new_transfer(monk
             if not write_replacement_before_late_part:
                 assert await original.count_documents({}) == 0
                 await service.put_part(user, project["id"], second["transfer_id"], 0,
-                    TransferChunk(data_base64=base64.b64encode(b"AC1032" + b"b" * 94).decode()))
+                    TransferChunk(data_base64=base64.b64encode(b"%PDF-1" + b"b" * 94).decode()))
             assert await original.count_documents({}) == 1
             saved = await original.find_one({"transfer_id": second["transfer_id"]})
-            assert saved["data"] == b"AC1032" + b"b" * 94
+            assert saved["data"] == b"%PDF-1" + b"b" * 94
             await service.cancel(user, project["id"], second["transfer_id"])
             assert await original.count_documents({}) == 0
     asyncio.run(run())
@@ -1872,11 +1990,11 @@ def test_late_old_finalizer_cannot_duplicate_attachment_or_reset_new_claim(monke
             project, _ = await create_project(env)
             route = f"/api/kitchen-projects/{project['id']}/file-transfers"
             body = {"expected_version": project["version"], "idempotency_key": str(uuid4()),
-                "filename": "late-finalize.dwg", "content_type": "image/vnd.dwg", "size_bytes": 100}
+                "filename": "late-finalize.pdf", "content_type": "application/pdf", "size_bytes": 100}
             begun = await env["api"].post(route, headers=headers(env), json=body)
             tid = begun.json()["transfer_id"]
             root = f"{route}/{tid}"
-            await env["api"].put(root + "/parts/0", headers=headers(env), json={"data_base64": base64.b64encode(b"AC1032" + b"a" * 94).decode()})
+            await env["api"].put(root + "/parts/0", headers=headers(env), json={"data_base64": base64.b64encode(b"%PDF-1" + b"a" * 94).decode()})
             old = asyncio.create_task(env["api"].post(root + "/finish", headers=headers(env), json={"expected_version": project["version"]}))
             try:
                 await asyncio.wait_for(entered.wait(), 3)

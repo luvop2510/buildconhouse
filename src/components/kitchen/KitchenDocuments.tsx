@@ -31,13 +31,14 @@ export function KitchenDocuments({ project, policy, disabled, onUpdated, onReloa
   const [unfinished, setUnfinished] = useState<{ transfer_id: string; project_id: string } | null>(null);
   useEffect(() => { let live = true; kitchenProjectsApi.ownTransfer(project.id).then(value => { if (live) setUnfinished(value.transfer); }).catch(() => { if (live && !disabled) setTransferError("Unfinished upload status could not be checked. Reload before starting a large file."); }); return () => { live = false; }; }, [project.id, disabled, setTransferError]);
   const files = policy?.files;
+  const canUpload = !disabled && project.stage !== "cad";
   const pick = async () => {
     try { const result = await DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true, multiple: false }); if (!result.canceled) setPicked(result.assets[0]); }
     catch { submission.setError("The file picker could not open. Try again."); }
   };
   const upload = () => {
     if (!picked || !files) return;
-    if (!/\.(pdf|dwg|dxf|jpe?g|png|docx|xlsx)$/i.test(picked.name)) { submission.setError("Choose a PDF, DWG, DXF, JPG/JPEG, PNG, DOCX or XLSX file. The server also validates its content."); return; }
+    if (!/\.(pdf|jpe?g|png|docx|xlsx)$/i.test(picked.name)) { submission.setError("Choose a PDF, JPG/JPEG, PNG, DOCX or XLSX file. The server also validates its content."); return; }
     const maximum = Math.min(files.max_bytes, KITCHEN_MAX_FILE_BYTES);
     if (!picked.size || picked.size > maximum) { submission.setError(`Choose a nonempty file up to 25 MB (${maximum.toLocaleString()} bytes).`); return; }
     void submission.submit({ id: project.id, uri: picked.uri, name: picked.name, size: picked.size }, async key => {
@@ -53,12 +54,13 @@ export function KitchenDocuments({ project, policy, disabled, onUpdated, onReloa
   return <View style={{ gap: spacing.lg }} testID="kitchen-documents-page"><KitchenPanel title="Private documents">
     {(project.attachments || []).map(file => <View key={file.id} style={{ gap: spacing.sm }}><Text style={type.body}>{file.filename} · {Math.ceil(file.size_bytes / 1024)} KiB</Text><Button label={`Download ${file.filename}`} variant="secondary" disabled={savingFile} onPress={() => { setSavingFile(true); void (file.size_bytes > 768 * 1024 ? downloadKitchenFile(project.id, file, setProgress) : downloadApiFile(kitchenProjectsApi.attachmentPath(project.id, file.id), file.filename, "project document", KITCHEN_FLOOR_ID)).catch(error => submission.setError(error instanceof Error ? error.message : "File download failed. Retry the download.")).finally(() => { setSavingFile(false); setProgress(0); }); }} /></View>)}
     {!project.attachments?.length ? <Text style={type.bodyMuted}>No documents uploaded.</Text> : null}
-  </KitchenPanel><KitchenPanel title="Add a document">
+  </KitchenPanel>{project.stage !== "cad" ? <KitchenPanel title="Add a document">
     <Text style={type.bodyMuted}>Files remain private. Sharing with the customer is recorded in the relevant stage.</Text>
-    {!files ? <Alert tone="info" title="Upload settings unavailable" description="Ask the owner to complete Kitchen setup." /> : <Text style={type.caption}>PDF, DWG, DXF, JPG/JPEG, PNG, DOCX or XLSX · Up to 25 MB (25,000,000 bytes). Larger files transfer in private, verified parts.</Text>}
-    {!disabled && files ? <><Button label="Choose document" variant="secondary" disabled={submission.busy} onPress={() => void pick()} testID="kitchen-document-pick" />{picked ? <><Text style={type.body}>{picked.name}</Text><Button label="Upload selected document" loading={submission.busy} onPress={upload} testID="kitchen-document-upload" /></> : null}</> : null}
-    {(submission.busy || savingFile) && progress > 0 ? <Text accessibilityLiveRegion="polite" style={type.body} testID="kitchen-file-progress">File transfer {progress}%{progress === 95 ? " · Verifying and saving…" : ""}</Text> : null}
+    {!files ? <Alert tone="info" title="Upload settings unavailable" description="Ask the owner to complete Kitchen setup." /> : <Text style={type.caption}>PDF, JPG/JPEG, PNG, DOCX or XLSX · Up to 25 MB (25,000,000 bytes). Larger files transfer in private, verified parts.</Text>}
+    {canUpload && files ? <><Button label="Choose document" variant="secondary" disabled={submission.busy} onPress={() => void pick()} testID="kitchen-document-pick" />{picked ? <><Text style={type.body}>{picked.name}</Text><Button label="Upload selected document" loading={submission.busy} onPress={upload} testID="kitchen-document-upload" /></> : null}</> : null}
     {unfinished && !submission.busy ? <Alert tone="info" title="Unfinished file transfer" description="Choose the same file and retry to resume safely, or discard its temporary parts. No file is attached until verification finishes." action={<Button label="Discard unfinished upload" variant="secondary" onPress={() => { void kitchenProjectsApi.cancelTransfer(unfinished.project_id, unfinished.transfer_id).then(() => { setUnfinished(null); submission.clearFeedback(); }).catch(error => submission.setError(String(error?.message || "Could not discard temporary parts."))); }} testID="kitchen-file-discard" />} /> : null}
+  </KitchenPanel> : null}
+    {(submission.busy || savingFile) && progress > 0 ? <Text accessibilityLiveRegion="polite" style={type.body} testID="kitchen-file-progress">File transfer {progress}%{progress === 95 ? " · Verifying and saving…" : ""}</Text> : null}
     <ErrorNotice error={submission.error} stale={submission.stale} onReload={onReload} />
-  </KitchenPanel></View>;
+  </View>;
 }

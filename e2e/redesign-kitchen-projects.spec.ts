@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type APIRequestContext } from '@playwright/test';
 import { captureRuntimeHealth } from './runtime-health';
 
 // This suite intentionally does not import mockSession or intercept any API.
@@ -13,27 +13,29 @@ async function seedBrowser(page: Page) {
 async function projectReady(page: Page) {
   await expect(page.getByTestId('kitchen-project-ready')).toHaveCount(1);
 }
+async function closeProjectPanel(page: Page) {
+  const panel = page.locator('[data-testid^="kitchen-"][data-testid$="-sheet"][role="dialog"]:visible');
+  if (await panel.isVisible()) await panel.getByRole('button', { name: 'Close', exact: true }).click();
+}
 async function openProjectPage(page: Page, section: 'overview' | 'stage' | 'documents' | 'history' | 'assignments' | 'exceptions') {
   await projectReady(page);
-  const link = page.getByTestId(`kitchen-project-nav-${section}`);
-  if (!await link.isVisible()) {
-    await page.getByTestId('kitchen-project-pages').click();
-    await page.getByTestId('kitchen-project-pages-sheet').getByTestId(`kitchen-project-nav-${section}`).click();
-  } else await link.click();
-  await expect(page.getByTestId('kitchen-project-pages-sheet')).not.toBeVisible();
-  const suffix = section === 'stage' ? '/stages/' : section === 'overview' ? null : `/${section}`;
-  if (suffix) await expect(page).toHaveURL(current => section === 'stage' ? current.pathname.includes(suffix) : current.pathname.endsWith(suffix));
-  else await expect(page).toHaveURL(/\/kitchen\/[^/?]+(?:\?.*)?$/);
-  if (section === 'stage') await expect(page.getByTestId('kitchen-current-task-region')).toBeVisible();
+  await closeProjectPanel(page);
+  if (section === 'overview' || section === 'stage') {
+    if (await page.getByTestId('kitchen-open-current-stage').isVisible()) await page.getByTestId('kitchen-open-current-stage').click();
+    await expect(page.getByTestId('kitchen-current-task-region')).toBeVisible();
+  } else if (section === 'exceptions') {
+    await page.getByTestId('kitchen-project-actions').click();
+    await page.getByRole('menuitem', { name: 'Hold, cancel or revise project', exact: true }).click();
+    await expect(page.getByTestId('kitchen-exceptions-sheet')).toBeVisible();
+  } else {
+    const before = page.url();
+    await page.getByTestId(`kitchen-project-nav-${section}`).click();
+    await expect(page.getByTestId(`kitchen-${section === 'assignments' ? 'assignment' : section}-sheet`)).toBeVisible();
+    await expect(page).toHaveURL(before);
+  }
   await projectReady(page);
 }
-async function openCurrentTask(page: Page) {
-  await projectReady(page);
-  await page.getByTestId('kitchen-open-current-stage').click();
-  await expect(page).toHaveURL(/\/kitchen\/[^/?]+\/stages\/[^/?]+(?:\?.*)?$/);
-  await expect(page.getByTestId('kitchen-current-task-region')).toBeVisible();
-  await projectReady(page);
-}
+async function openCurrentTask(page: Page) { await openProjectPage(page, 'stage'); }
 
 async function openDisclosure(page: Page, id: string) {
   const disclosure = page.getByTestId(`kitchen-disclose-${id}`);
@@ -48,7 +50,7 @@ async function openStageRecord(page: Page, stage: string) {
 async function reviewDistinctIfNeeded(page: Page) {
   await projectReady(page);
   if (await page.getByTestId('kitchen-open-current-stage').isVisible()) await openCurrentTask(page);
-  await expect(page).toHaveURL(/\/stages\/lead(?:\?.*)?$/);
+  await expect(page.getByTestId('kitchen-lead-site_location')).toBeVisible();
   await projectReady(page);
   await expect(page.getByTestId('kitchen-lead-site_location')).toBeVisible();
   if (!await page.getByTestId('kitchen-duplicate-distinct').isVisible()) return;
@@ -60,6 +62,21 @@ async function reviewDistinctIfNeeded(page: Page) {
   expect(response.ok(), await response.text()).toBeTruthy();
 }
 
+async function readyForDocuments(context: APIRequestContext, initial: any) {
+  let project = initial;
+  async function command(name: string, payload: Record<string, unknown> = {}) {
+    const response = await context.post(`/api/kitchen-projects/${project.id}/commands`, { headers: { 'X-Floor-Id': 'second-floor' }, data: { expected_version: project.version, idempotency_key: `document-stage-${name}-${Date.now()}-${Math.random()}`, command: name, payload } });
+    expect(response.ok(), `${name}: ${await response.text()}`).toBeTruthy(); project = await response.json();
+  }
+  if (project.duplicate_review?.status === 'pending') await command('review_duplicate', { decision: 'distinct_project', reason: 'Separate synthetic document test project' });
+  await command('convert');
+  await command('save_visit', { status: 'Visited', interested: true, requirements: 'Synthetic private document acceptance' });
+  await command('advance_stage', { target_stage: 'cad' });
+  await command('save_cad', { received: true, progress: 100, status: 'Completed' });
+  await command('advance_stage', { target_stage: 'design' });
+  return project;
+}
+
 test('Q01 Q02 Q03 Q12 Q13: real lead/visit persistence, manual assignment and rejected CAD gate', async ({ page, context, browser, baseURL }, testInfo) => {
   const health = captureRuntimeHealth(page);
   const customerId = process.env.KITCHEN_E2E_CUSTOMER_ID;
@@ -68,9 +85,10 @@ test('Q01 Q02 Q03 Q12 Q13: real lead/visit persistence, manual assignment and re
   expect(workerId, 'Runner provides its synthetic eligible employee').toBeTruthy();
   await seedBrowser(page);
   await page.goto('/kitchen');
-  await expect(page.getByTestId('kitchen-section-workflow')).toBeVisible();
+  await expect(page.getByTestId('kitchen-stage-navigation')).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('v4-department-overview.png') });
   await page.getByTestId('kitchen-create').click();
+  await page.getByTestId('kitchen-existing-customer').click();
   await page.getByTestId('kitchen-customer').fill('Kitchen acceptance customer');
   await page.getByTestId(`kitchen-customer-${customerId}`).click();
   await expect(page.getByTestId('kitchen-create-submit')).toBeDisabled();
@@ -84,7 +102,7 @@ test('Q01 Q02 Q03 Q12 Q13: real lead/visit persistence, manual assignment and re
   const project = await created.json();
   expect(project.customer_id).toBe(customerId);
   expect(project.project_reference).toBe(project.reference);
-  await expect(page).toHaveURL(new RegExp(`/kitchen/${project.id}(?:\\?.*)?$`));
+  await expect(page).toHaveURL(new RegExp(`/kitchen/${project.id}/stages/lead(?:\\?.*)?$`));
   await projectReady(page);
   await page.screenshot({ path: testInfo.outputPath('v4-project-overview.png') });
   // A second HTTP read proves the app uses the persisted canonical identity.
@@ -117,7 +135,7 @@ test('Q01 Q02 Q03 Q12 Q13: real lead/visit persistence, manual assignment and re
   await page.getByTestId('kitchen-visit-save').click();
   expect((await savedVisit).ok()).toBeTruthy();
   // Both list modes read the saved Visit record and the selected worker.
-  await page.goto(`/kitchen/projects?search=${encodeURIComponent(project.reference)}&view=list`);
+  await page.goto(`/kitchen/stages/visit?search=${encodeURIComponent(project.reference)}&view=list`);
   await expect(page.getByTestId(`kitchen-project-${project.id}`)).toContainText('Kitchen acceptance worker');
   await page.getByTestId('kitchen-view-menu').click();
   await page.getByRole('menuitem', { name: 'Table', exact: true }).click();
@@ -151,13 +169,14 @@ test('Q04 to Q09: all nine stages preserve versions, exact counters and late man
   await seedBrowser(page);
   await page.goto('/kitchen');
   await page.getByTestId('kitchen-create').click();
+  await page.getByTestId('kitchen-existing-customer').click();
   await page.getByTestId('kitchen-customer').fill('Kitchen acceptance customer');
   await page.getByTestId(`kitchen-customer-${process.env.KITCHEN_E2E_CUSTOMER_ID}`).click();
   await page.getByTestId('kitchen-create-lead-site_location').fill('Full lifecycle synthetic site');
   const creation = page.waitForResponse(response => response.url().endsWith('/api/kitchen-projects') && response.request().method() === 'POST');
   await page.getByTestId('kitchen-create-submit').click();
   const project = await (await creation).json();
-  await expect(page).toHaveURL(new RegExp(`/kitchen/${project.id}(?:\\?.*)?$`));
+  await expect(page).toHaveURL(new RegExp(`/kitchen/${project.id}/stages/lead(?:\\?.*)?$`));
   async function click(id: string, command: string) {
     const pending = page.waitForResponse(response => response.url().endsWith(`/api/kitchen-projects/${project.id}/commands`) && response.request().postDataJSON()?.command === command);
     await page.getByTestId(id).click();
@@ -218,6 +237,11 @@ test('Q04 to Q09: all nine stages preserve versions, exact counters and late man
   await page.getByTestId('kitchen-cad-status-completed').click();
   await expect(page.getByTestId('kitchen-cad-ready-yes')).toHaveCount(0);
   await click('kitchen-cad-save', 'save_cad');
+  await page.screenshot({ path: testInfo.outputPath('cad-progress-only.png') });
+  await openProjectPage(page, 'documents');
+  await expect(page.getByTestId('kitchen-document-pick')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-document-upload')).toHaveCount(0);
+  await openProjectPage(page, 'stage');
   await click('kitchen-advance-design', 'advance_stage');
   await expect(page.getByTestId('kitchen-design-handoff')).toHaveCount(0);
   await blocked('kitchen-advance-quotation');
@@ -307,8 +331,8 @@ test('Q04 to Q09: all nine stages preserve versions, exact counters and late man
   // Reopening must replace the retained Completed draft with the returned
   // persisted Installation state, without remounting the project provider.
   await page.getByTestId('kitchen-project-actions').click();
-  await page.getByRole('menuitem', { name: 'Owner actions', exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/kitchen/${project.id}/exceptions(?:\\?.*)?$`));
+  await page.getByRole('menuitem', { name: 'Hold, cancel or revise project', exact: true }).click();
+  await expect(page.getByTestId('kitchen-exceptions-sheet')).toBeVisible();
   await page.getByTestId('kitchen-exception-reason').fill('Owner reopens the completed installation for a final adjustment');
   const reopened = await click('kitchen-exception-save', 'exception');
   expect(reopened.stage).toBe('installation');
@@ -318,7 +342,7 @@ test('Q04 to Q09: all nine stages preserve versions, exact counters and late man
   await expect(page.getByTestId('kitchen-installation-status-in-progress')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('kitchen-installation-complete')).toHaveValue('');
   await expect(page.getByTestId('kitchen-installation-start')).toHaveValue('2026-10-20');
-  await openProjectPage(page, 'documents');
+  await openProjectPage(page, 'history');
   await openProjectPage(page, 'stage');
   await expect(page.getByTestId('kitchen-installation-status-in-progress')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('kitchen-installation-complete')).toHaveValue('');
@@ -332,8 +356,7 @@ test('Q04 to Q09: all nine stages preserve versions, exact counters and late man
   expect(await reclosed.json()).toMatchObject({ stage: 'completed', design_revision_count: 1, site_visit_count: 2, order_amount: '1100.01' });
   await page.reload();
   await expect(page.getByText('Total design revisions: 1', { exact: true })).toBeVisible();
-  await page.goto('/kitchen');
-  await page.getByTestId('kitchen-section-completed').click();
+  await page.goto('/kitchen/stages/completed?view=list');
   await expect(page.getByTestId(`kitchen-project-${project.id}`)).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('completed-list.png') });
   await health.assertHealthy();
@@ -451,7 +474,7 @@ test('D06: owner reasoned return to Design preserves prior approved commerce and
   await expect(page.getByTestId('kitchen-project-detail')).toBeVisible();
   await expect(page.getByTestId('kitchen-return-design')).toHaveCount(0);
   await page.getByTestId('kitchen-project-actions').click();
-  await expect(page.getByRole('menuitem', { name: 'Owner actions', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('menuitem', { name: 'Hold, cancel or revise project', exact: true })).toHaveCount(0);
   await page.keyboard.press('Escape');
   await context.addCookies([{ name: 'kitchen_acceptance_session', value: 'owner', url: baseURL! }]);
   await page.goto(`/kitchen/${project.id}/stages/production`);
@@ -459,8 +482,8 @@ test('D06: owner reasoned return to Design preserves prior approved commerce and
   await expect(page.getByTestId('kitchen-unsaved-notice')).toBeVisible();
   await expect(page.getByTestId('kitchen-return-design')).toHaveCount(0);
   await page.getByTestId('kitchen-project-actions').click();
-  await page.getByRole('menuitem', { name: 'Owner actions', exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/kitchen/${project.id}/exceptions(?:\\?.*)?$`));
+  await page.getByRole('menuitem', { name: 'Hold, cancel or revise project', exact: true }).click();
+  await expect(page.getByTestId('kitchen-exceptions-sheet')).toBeVisible();
   await expect(page.getByTestId('kitchen-return-design')).toBeDisabled();
   await page.getByTestId('kitchen-exception-reason').fill('Owner authorizes post-approval cabinet changes');
   const returned = page.waitForResponse(response => response.url().endsWith(`/api/kitchen-projects/${project.id}/commands`) && response.request().postDataJSON()?.command === 'exception');
@@ -529,8 +552,7 @@ test('D09: legacy completed records show unavailable counts and blank historical
   const projectId = process.env.KITCHEN_E2E_LEGACY_PROJECT_ID;
   expect(projectId, 'Harness seeds one explicit synthetic legacy row without runtime import').toBeTruthy();
   await seedBrowser(page);
-  await page.goto('/kitchen');
-  await page.getByTestId('kitchen-section-completed').click();
+  await page.goto('/kitchen/stages/completed?view=list');
   const card = page.getByTestId(`kitchen-project-${projectId}`);
   await expect(card).toBeVisible();
   await expect(card).toContainText('Historical count unavailable');
@@ -571,9 +593,9 @@ test('D10 Q22: original selected file uploads privately and authorized download 
     idempotency_key: `private-document-${Date.now()}`, lead: { site_location: 'Synthetic document site' },
   } });
   expect(created.ok(), await created.text()).toBeTruthy();
-  const project = await created.json();
+  const project = await readyForDocuments(context.request, await created.json());
   await seedBrowser(page);
-  await page.goto(`/kitchen/${project.id}`);
+  await page.goto(`/kitchen/${project.id}/stages/design`);
   await openProjectPage(page, 'documents');
   const chooser = page.waitForEvent('filechooser');
   await page.getByTestId('kitchen-document-pick').click();
@@ -609,28 +631,25 @@ test('Q18 v4: project pages separate work from files and history while preservin
   await seedBrowser(page);
   await page.goto(`/kitchen/${project.id}`);
   // Summary is a distinct place to orient, with no editing or upload form.
-  await expect(page.getByTestId('kitchen-lead-save')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-current-task-region')).toBeVisible();
   await expect(page.getByTestId('kitchen-document-pick')).toHaveCount(0);
   await expect(page.getByTestId('kitchen-exception-reason')).toHaveCount(0);
   await openCurrentTask(page);
   const notes = page.getByTestId('kitchen-lead-notes');
-  await notes.fill('Unsaved enquiry retained across sibling pages');
-  await openProjectPage(page, 'documents');
-  await expect(page).toHaveURL(new RegExp(`/kitchen/${project.id}/documents(?:\\?.*)?$`));
-  await expect(page.getByTestId('kitchen-document-pick')).toBeVisible();
-  await expect(page.getByTestId('kitchen-lead-save')).toHaveCount(0);
+  await notes.fill('Unsaved enquiry retained across project tools');
+  await expect(page.getByTestId('kitchen-project-nav-documents')).toBeVisible();
   await openProjectPage(page, 'history');
-  await expect(page).toHaveURL(new RegExp(`/kitchen/${project.id}/history(?:\\?.*)?$`));
+  await expect(page.getByTestId('kitchen-history-sheet')).toBeVisible();
   await expect(page.getByTestId('kitchen-history-category')).toBeVisible();
   await expect(page.getByTestId('kitchen-document-pick')).toHaveCount(0);
   await openProjectPage(page, 'stage');
-  await expect(notes).toHaveValue('Unsaved enquiry retained across sibling pages');
+  await expect(notes).toHaveValue('Unsaved enquiry retained across project tools');
   const savedLead = page.waitForResponse(response => response.url().endsWith(`/api/kitchen-projects/${project.id}/commands`) && response.request().postDataJSON()?.command === 'edit_lead');
   await page.getByTestId('kitchen-lead-save').click();
   const saved = await savedLead;
   expect(saved.ok(), await saved.text()).toBeTruthy();
   project = await saved.json();
-  expect(project.lead.notes).toBe('Unsaved enquiry retained across sibling pages');
+  expect(project.lead.notes).toBe('Unsaved enquiry retained across project tools');
   async function command(name: string, payload: Record<string, unknown> = {}) {
     const response = await context.request.post(`${baseURL}/api/kitchen-projects/${project.id}/commands`, { headers, data: {
       expected_version: project.version, idempotency_key: `drafts-${name}-${Date.now()}-${Math.random()}`, command: name, payload,
@@ -652,7 +671,7 @@ test('Q18 v4: project pages separate work from files and history while preservin
   await openProjectPage(page, 'history');
   await openProjectPage(page, 'assignments');
   await expect(page.getByTestId('kitchen-assign-save')).toBeVisible();
-  await expect(page.getByTestId('kitchen-design-present')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-assignment-sheet')).toBeVisible();
   await openProjectPage(page, 'stage');
   await expect(page.getByTestId('kitchen-design-date')).toHaveValue('2026-10-20');
   await expect(page.getByTestId('kitchen-design-url')).toHaveValue('https://example.com/synthetic-draft-design');
@@ -683,12 +702,9 @@ test('Q02 Q18 Q19 v4: stage queues deep-link correctly and project Back restores
   expect(creation.ok(), await creation.text()).toBeTruthy();
   const project = await creation.json();
   await seedBrowser(page);
-  await page.goto('/kitchen/workflow');
-  await expect(page.getByTestId('kitchen-workflow-lead')).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath('v4-department-workflow.png') });
   const stageRead = page.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === '/api/kitchen-projects' && new URL(response.url()).searchParams.get('stage') === 'lead');
-  await page.getByTestId('kitchen-workflow-lead').click();
-  await expect(page).toHaveURL(/\/kitchen\/stages\/lead(?:\?.*)?$/);
+  await page.goto('/kitchen/stages/lead');
+  await expect(page.getByTestId('kitchen-stage-navigation')).toBeVisible();
   const queue = await stageRead;
   expect(queue.ok(), await queue.text()).toBeTruthy();
   expect((await queue.json()).rows.every((row: { stage: string }) => row.stage === 'lead')).toBe(true);
@@ -701,18 +717,18 @@ test('Q02 Q18 Q19 v4: stage queues deep-link correctly and project Back restores
   await expect(page.getByTestId('kitchen-search')).toHaveValue(project.reference);
   await expect(page.getByTestId(`kitchen-project-${project.id}`)).toBeVisible();
   await expect(page).toHaveURL(stageURL);
-  const origin = `/kitchen/projects?search=${encodeURIComponent(project.reference)}&stage=lead&sort=reference&direction=asc&view=list&page=1`;
+  const origin = `/kitchen/stages/lead?search=${encodeURIComponent(project.reference)}&sort=reference&direction=asc&view=list&page=1`;
   await page.goto(origin);
   await page.getByTestId(`kitchen-project-${project.id}`).click();
-  await expect(page).toHaveURL(new RegExp(`/kitchen/${project.id}\\?returnTo=`));
+  await expect(page).toHaveURL(new RegExp(`/kitchen/${project.id}/stages/lead\\?returnTo=`));
   await openCurrentTask(page);
-  await openProjectPage(page, 'documents');
+  await openProjectPage(page, 'history');
   await openProjectPage(page, 'overview');
   await page.goto(origin);
   await page.getByTestId(`kitchen-project-${project.id}`).click();
   await projectReady(page);
   await page.getByRole('button', { name: 'Back', exact: true }).click();
-  await expect(page).toHaveURL(current => current.pathname === '/kitchen/projects');
+  await expect(page).toHaveURL(current => current.pathname === '/kitchen/stages/lead');
   const restored = new URL(page.url());
   const expectedOrigin = new URL(origin, baseURL);
   expect([...restored.searchParams.entries()].sort()).toEqual([...expectedOrigin.searchParams.entries()].sort());
@@ -732,7 +748,7 @@ test('Q18: dirty scope guards global navigation, programmatic Back and browser u
   expect(response.ok(), await response.text()).toBeTruthy();
   const project = await response.json();
   await seedBrowser(page);
-  const origin = `/kitchen/projects?search=${project.reference}&view=list`;
+  const origin = `/kitchen/stages/lead?search=${project.reference}&view=list`;
   await page.goto(origin);
   await page.getByTestId(`kitchen-project-${project.id}`).click();
   await openCurrentTask(page);
@@ -742,35 +758,21 @@ test('Q18: dirty scope guards global navigation, programmatic Back and browser u
   const dialogs: string[] = [];
   const dismiss = async (dialog: import('@playwright/test').Dialog) => { dialogs.push(dialog.type()); await dialog.dismiss(); };
   page.on('dialog', dismiss);
-  await openProjectPage(page, 'documents');
+  await openProjectPage(page, 'history');
   await openProjectPage(page, 'stage');
   await expect(notes).toHaveValue('Unsaved guard draft');
   expect(dialogs, 'Sibling pages retain drafts without exit confirmation').toEqual([]);
-  // Project header uses router.back(), so these cover a programmatic removal,
-  // independently of the document-level anchor click listener.
-  await page.getByRole('button', { name: 'Back', exact: true }).click();
-  await expect(page).toHaveURL(/\/documents(?:\?.*)?$/);
-  await page.getByRole('button', { name: 'Back', exact: true }).click();
-  await expect(page).toHaveURL(/\/stages\/lead(?:\?.*)?$/);
-  await page.getByRole('button', { name: 'Back', exact: true }).click();
-  await expect(page).toHaveURL(current => current.pathname === `/kitchen/${project.id}`);
   await page.getByRole('button', { name: 'Back', exact: true }).click();
   await expect.poll(() => dialogs.length).toBe(1);
-  await expect(page).toHaveURL(current => current.pathname === `/kitchen/${project.id}`);
-  await openProjectPage(page, 'stage');
+  await expect(page).toHaveURL(current => current.pathname === `/kitchen/${project.id}/stages/lead`);
   await expect(notes).toHaveValue('Unsaved guard draft');
-  // The existing global Projects destination is a real anchor on all layouts.
-  const global = page.locator('a[href="/kitchen/projects"]:visible').first();
+  const global = page.locator('a[href="/kitchen/stages/lead"]:visible').first();
   await global.click();
   await expect.poll(() => dialogs.length).toBe(2);
   await expect(notes).toHaveValue('Unsaved guard draft');
-  // Browser Back must also retain the project when the user declines exit.
-  await page.goBack(); // sibling overview
-  await expect(page).toHaveURL(current => current.pathname === `/kitchen/${project.id}`);
-  await page.goBack(); // originating list would leave the dirty provider
+  await page.goBack();
   await expect.poll(() => dialogs.length).toBe(3);
-  await expect(page).toHaveURL(current => current.pathname === `/kitchen/${project.id}`);
-  await openProjectPage(page, 'stage');
+  await expect(page).toHaveURL(current => current.pathname === `/kitchen/${project.id}/stages/lead`);
   await expect(notes).toHaveValue('Unsaved guard draft');
   const unload = page.waitForEvent('dialog', { predicate: dialog => dialog.type() === 'beforeunload' });
   // A deliberately canceled reload has no completed navigation to await.
@@ -796,11 +798,11 @@ test('Q18: clean Back and Forward traverse history and a direct project link use
   } });
   const project = await response.json();
   await seedBrowser(page);
-  const origin = `/kitchen/projects?search=${project.reference}&view=list`;
+  const origin = `/kitchen/stages/lead?search=${project.reference}&view=list`;
   await page.goto(origin); await page.getByTestId(`kitchen-project-${project.id}`).click(); await projectReady(page);
   const projectURL = page.url();
   await page.getByRole('button', { name: 'Back', exact: true }).click();
-  await expect(page).toHaveURL(current => current.pathname === '/kitchen/projects');
+  await expect(page).toHaveURL(current => current.pathname === '/kitchen/stages/lead');
   await page.goForward(); await expect(page).toHaveURL(projectURL); await projectReady(page);
   await health.assertHealthy();
   const direct = await browser.newContext({ viewport: page.viewportSize() || undefined });
@@ -808,26 +810,29 @@ test('Q18: clean Back and Forward traverse history and a direct project link use
     const directPage = await direct.newPage(); const directHealth = captureRuntimeHealth(directPage); await seedBrowser(directPage);
     await directPage.goto(`${baseURL}/kitchen/${project.id}?returnTo=${encodeURIComponent('https://untrusted.example/')}`);
     await projectReady(directPage); await directPage.getByRole('button', { name: 'Back', exact: true }).click();
-    await expect(directPage).toHaveURL(current => current.origin === baseURL && current.pathname === '/kitchen/projects');
+    await expect(directPage).toHaveURL(current => current.origin === baseURL && current.pathname === '/kitchen/stages/lead');
     await directHealth.assertHealthy();
   } finally { await direct.close(); }
 });
 
 test('Q18: New Lead cancellation protects entered fields and explicit discard does not leak into another lead', async ({ page }, info) => {
   const health = captureRuntimeHealth(page);
-  await seedBrowser(page); await page.goto('/kitchen/new');
-  await page.getByTestId(`kitchen-customer-${process.env.KITCHEN_E2E_CUSTOMER_ID}`).click();
+  await seedBrowser(page); await page.goto('/kitchen/stages/lead');
+  await page.getByTestId('kitchen-create').click();
+  await page.getByTestId('kitchen-customer-name').fill('New enquiry');
+  await page.getByTestId('kitchen-customer-phone').fill('9000000011');
   await page.getByTestId('kitchen-create-lead-site_location').fill('Unsaved new lead draft');
   const original = page.url();
   const dismissed = page.waitForEvent('dialog').then(async dialog => { expect(dialog.type()).toBe('confirm'); await dialog.dismiss(); });
-  await page.getByRole('button', { name: 'Back', exact: true }).click(); await dismissed;
+  await page.getByTestId('kitchen-create-sheet').getByRole('button', { name: 'Close', exact: true }).click(); await dismissed;
   await expect(page).toHaveURL(original);
   await expect(page.getByTestId('kitchen-create-lead-site_location')).toHaveValue('Unsaved new lead draft');
   const accepted = page.waitForEvent('dialog').then(async dialog => { expect(dialog.type()).toBe('confirm'); await dialog.accept(); });
-  await page.getByRole('button', { name: 'Back', exact: true }).click(); await accepted;
-  await expect(page).toHaveURL(current => current.pathname === '/kitchen');
-  await page.goto('/kitchen/new');
-  await page.getByTestId(`kitchen-customer-${process.env.KITCHEN_E2E_CUSTOMER_ID}`).click();
+  await page.getByTestId('kitchen-create-sheet').getByRole('button', { name: 'Close', exact: true }).click(); await accepted;
+  await expect(page.getByTestId('kitchen-create-sheet')).not.toBeVisible();
+  await page.getByTestId('kitchen-create').click();
+  await expect(page.getByTestId('kitchen-customer-name')).toHaveValue('');
+  await expect(page.getByTestId('kitchen-customer-phone')).toHaveValue('');
   await expect(page.getByTestId('kitchen-create-lead-site_location')).toHaveValue('');
   await health.assertHealthy();
   await page.screenshot({ path: info.outputPath('new-lead-discarded.png') });
@@ -839,12 +844,12 @@ test('D10: private large-file upload resumes after interruption and downloads ve
   const { readFile } = await import('node:fs/promises');
   const health = captureRuntimeHealth(page);
   const response = await context.request.post('/api/kitchen-projects', { headers: { 'X-Floor-Id': 'second-floor' }, data: {
-    customer_id: process.env.KITCHEN_E2E_CUSTOMER_ID, idempotency_key: `large-${Date.now()}`, lead: { site_location: 'Synthetic large CAD site' },
+    customer_id: process.env.KITCHEN_E2E_CUSTOMER_ID, idempotency_key: `large-${Date.now()}`, lead: { site_location: 'Synthetic large design presentation site' },
   } });
   expect(response.ok()).toBeTruthy();
-  const project = await response.json();
+  const project = await readyForDocuments(context.request, await response.json());
   const size = info.project.name === 'kitchen-desktop' ? 25_000_000 : 3_000_000;
-  const bytes = Buffer.alloc(size, 65); bytes.write('AC1032');
+  const bytes = Buffer.alloc(size, 65); bytes.write('%PDF-1.4');
   const sha256 = createHash('sha256').update(bytes).digest('hex');
   await seedBrowser(page); await page.goto(`/kitchen/${project.id}/documents`);
   let interrupted = false;
@@ -856,7 +861,7 @@ test('D10: private large-file upload resumes after interruption and downloads ve
   page.on('request', request => { if (request.url().includes('/file-transfers/')) envelopes.push(request.postDataBuffer()?.length || 0); });
   const picker = page.waitForEvent('filechooser');
   await page.getByTestId('kitchen-document-pick').click();
-  await (await picker).setFiles({ name: 'synthetic-large.dwg', mimeType: 'image/vnd.dwg', buffer: bytes });
+  await (await picker).setFiles({ name: 'synthetic-large.pdf', mimeType: 'application/pdf', buffer: bytes });
   await page.getByTestId('kitchen-document-upload').click();
   await expect(page.getByText('Could not save', { exact: true })).toBeVisible();
   expect(interrupted).toBe(true);
@@ -873,7 +878,7 @@ test('D10: private large-file upload resumes after interruption and downloads ve
   expect(canonical.attachments[0].size_bytes).toBe(size);
   expect(envelopes.every(length => length < 1024 * 1024)).toBe(true);
   const downloading = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Download synthetic-large.dwg', exact: true }).click();
+  await page.getByRole('button', { name: 'Download synthetic-large.pdf', exact: true }).click();
   if (await page.getByTestId('mobile-file-save').isVisible()) await page.getByTestId('mobile-file-download').click();
   // Mobile file preparation is asynchronous; wait for the fresh save sheet.
   else if (info.project.name !== 'kitchen-desktop') { await expect(page.getByTestId('mobile-file-save')).toBeVisible(); await page.getByTestId('mobile-file-download').click(); }
