@@ -67,7 +67,7 @@ test('30 meaningful URLs: every current stage, persisted pages and scoped queues
       await visit(`/kitchen/${project.id}/stages/${stage}`, 'kitchen-current-task-region', `/api/kitchen-projects/${project.id}`);
       await expect(page.getByRole('heading', { name: labels[stage], exact: true }).first()).toBeVisible();
       const sidebarStage = page.getByTestId(`nav-kitchen-${stage}`);
-      if (await sidebarStage.isVisible()) await expect(sidebarStage).toHaveAttribute('aria-selected', 'true');
+      if (await sidebarStage.isVisible()) await expect(sidebarStage).toHaveAttribute('aria-current', 'page');
       if (stage === 'lead') project = await command(context, project, 'convert');
       if (stage === 'visit') {
         project = await command(context, project, 'save_visit', { status: 'Visited', interested: true, requirements: 'Saved showroom requirements' });
