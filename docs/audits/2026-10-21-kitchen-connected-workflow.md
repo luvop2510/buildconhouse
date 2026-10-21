@@ -12,14 +12,14 @@ The final UX review also moved stale-record Reload below the alert on phones and
 
 ## Local evidence
 
-- Full backend: 3,094 passes, zero failures/skips, eight existing SWIG/PyMuPDF deprecation warnings. Includes the named isolated Mongo suite, 109 focused Kitchen checks and 9 targeted hold/manager/closure scenarios.
+- Full backend: 3,094 passes, zero failures/skips, three existing Pydantic deprecation warnings in fresh Python 3.12/Pillow 13 verification. Includes the named isolated Mongo suite, 109 focused Kitchen checks and 9 targeted hold/manager/closure scenarios.
 - Prior full actual API/Mongo browser run (before the final handoff/alert corrections): 98 passes, zero failures/skips/flakes/retries; 68 workflow/interaction checks across four profiles plus 30 matrix scenarios across 10 profiles. Matrix visits 30 meaningful Kitchen URLs on each profile, 300 visits in total. Chromium, WebKit and Firefox cover 320/360/390/430/768/820/1024/1440 px and 844×390 landscape.
 - Prior full fresh export audit (before the final handoff/alert corrections): 620 stability and 60 performance passes. 187 exported HTML artifacts, largest initial JS 484 KiB gzip under 576 KiB budget. Kitchen long-page fixtures include 500 activity records, 120 design versions and 120 private files at 200 ms controlled API latency. These are not hosted timings.
 - TypeScript, full zero-warning lint, 44 CI contract commands, separate Tile Orders, native file contracts, promotion/redirect/read-only guards and Expo Doctor 20/20 pass.
 
 Existing functional route deadlines remain 30 seconds. The new large-file correctness scenario has a 90 second deadline; it is not a route/performance budget. Desktop transfers exactly 25 MB; other browser workflow profiles transfer 3 MB. CSS 150 percent text stress is not OS zoom or native Dynamic Type. Roles/state combinations are sampled; physical keyboards, screenreaders and owner UAT remain separate.
 
-The final corrections passed TypeScript and Kitchen lint. Fresh focused desktop/iPhone journey and manager reconciliation checks passed; new-cycle regression results and the new release pre-push audit are retained separately in the continuation evidence. The Kitchen CI job installs all three browser engines and runs the real API/Mongo suite independently from the general mocked audit.
+Clean checkouts explicitly load the official Expo platform types through src/expo-types.d.ts, without requiring the ignored generated expo-env.d.ts. Pillow is pinned to 13.0.0 in both backend requirement files, correcting eight newly reported vulnerabilities. The fresh Python 3.12/Pillow 13 full backend suite passes, and the production dependency audit reports zero known vulnerabilities across 54 dependencies. The final corrections passed clean-worktree TypeScript and focused lint. Fresh focused desktop/iPhone journey and manager reconciliation checks passed; new-cycle regression results and the new release pre-push audit are retained separately in the continuation evidence. The Kitchen CI job installs all three browser engines and runs the real API/Mongo suite independently from the general mocked audit.
 
 ## Publication boundary
 
