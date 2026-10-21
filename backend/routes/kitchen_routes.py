@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 
 from typing import Literal
 
@@ -16,7 +17,13 @@ from models_kitchen import ConfigurePolicy, CreateProject, ProjectCommand, Stage
 from services.kitchen_projects import KitchenProjectService
 from services.kitchen_file_transfers import KitchenFileTransfers, TransferStart, TransferChunk, TransferFinish
 
-router = APIRouter(prefix="/kitchen-projects", tags=["kitchen-projects"])
+async def require_kitchen_launch_access(user: UserPublic = Depends(get_current_user)):
+    if os.environ.get("FORGE_KITCHEN_OWNER_ONLY", "false").lower() == "true" and user.role != "owner":
+        raise HTTPException(403, "Kitchen is currently available to the owner only")
+
+
+router = APIRouter(prefix="/kitchen-projects", tags=["kitchen-projects"],
+                   dependencies=[Depends(require_kitchen_launch_access)])
 
 
 @router.get("/customers")
