@@ -10,11 +10,12 @@ import { colors, radius, spacing, type } from "@/src/theme/tokens";
 import { KitchenOption } from "./KitchenFilters";
 import { useAuth } from "@/src/state/auth";
 import { KITCHEN_OWNER_ONLY } from "@/src/design/navigation";
+import { hasGrantAccess } from "@/src/team-delegation";
 
 export function KitchenFloor({ children }: { children: ReactNode }) {
   const access = useRequireFloorAccessState(KITCHEN_FLOOR_ID);
   const { staff } = useAuth();
-  if (KITCHEN_OWNER_ONLY && staff && staff.role !== "owner") return <AdminPage title="Kitchen"><ErrorState title="Owner access required" subtitle="Kitchen is currently available to the owner only." /></AdminPage>;
+  if (KITCHEN_OWNER_ONLY && staff && staff.role !== "owner" && (!staff.custom_access || !hasGrantAccess(staff.access_grants, KITCHEN_FLOOR_ID, "kitchen_projects"))) return <AdminPage title="Kitchen"><ErrorState title="Owner access required" subtitle="Kitchen is currently available to the owner only." /></AdminPage>;
   if (access.error) return <AdminPage title="Kitchen projects"><ErrorState title="Kitchen access unavailable" subtitle={access.error} onRetry={access.retry} /></AdminPage>;
   if (!access.ready) return <AdminPage title="Kitchen projects"><LoadingState label="Checking Kitchen access…" /></AdminPage>;
   return <>{children}</>;

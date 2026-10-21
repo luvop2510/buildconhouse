@@ -11,6 +11,7 @@ import { useAuth } from "@/src/state/auth";
 import { PROFILE_MODULES } from "@/src/access-profiles";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { GrantAction, hasGrantAccess } from "@/src/team-delegation";
+import { KITCHEN_OWNER_ONLY } from "@/src/design/navigation";
 
 const MODULE_GRANT_RESOURCE: Record<string, string> = {
   dashboard: "dashboard", quotations: "quotations", catalog: "catalog", customers: "customers",
@@ -96,6 +97,7 @@ export function useModuleAccess() {
         const resource = MODULE_GRANT_RESOURCE[moduleKey];
         return Boolean(resource && hasGrantAccess(staff.access_grants, selectedFloorId, resource));
       }
+      if (KITCHEN_OWNER_ONLY && moduleKey === "kitchen-projects") return false;
       if (!data) return true;
       const profileModules = staff.access_profile ? PROFILE_MODULES[staff.access_profile] : undefined;
       if (profileModules) return profileModules.has(moduleKey);

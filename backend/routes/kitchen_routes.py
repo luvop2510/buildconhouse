@@ -17,8 +17,10 @@ from models_kitchen import ConfigurePolicy, CreateProject, ProjectCommand, Stage
 from services.kitchen_projects import KitchenProjectService
 from services.kitchen_file_transfers import KitchenFileTransfers, TransferStart, TransferChunk, TransferFinish
 
+# Delegated accounts are already checked for the exact floor/page/action by
+# get_current_user. Legacy role labels alone must not open this launch.
 async def require_kitchen_launch_access(user: UserPublic = Depends(get_current_user)):
-    if os.environ.get("FORGE_KITCHEN_OWNER_ONLY", "false").lower() == "true" and user.role != "owner":
+    if os.environ.get("FORGE_KITCHEN_OWNER_ONLY", "false").lower() == "true" and user.role != "owner" and not user.custom_access:
         raise HTTPException(403, "Kitchen is currently available to the owner only")
 
 

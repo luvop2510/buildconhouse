@@ -16,13 +16,12 @@ export type NavItem = {
 };
 
 export const KITCHEN_OWNER_ONLY = process.env.EXPO_PUBLIC_KITCHEN_OWNER_ONLY === "true";
-const kitchenLaunchRoles = KITCHEN_OWNER_ONLY ? ["owner"] : undefined;
 
 export const PRIMARY: NavItem[] = [
-  { href: "/(admin)/kitchen", label: "Overview", icon: "home", match: "kitchen-overview", floors: [KITCHEN_FLOOR_ID], roles: kitchenLaunchRoles },
-  { href: "/(admin)/kitchen/projects", label: "Projects", icon: "layers", match: "kitchen-projects", floors: [KITCHEN_FLOOR_ID], roles: kitchenLaunchRoles },
-  { href: "/(admin)/kitchen/workflow", label: "Workflow", icon: "git-branch", match: "kitchen-workflow", floors: [KITCHEN_FLOOR_ID], roles: kitchenLaunchRoles },
-  { href: "/(admin)/kitchen/completed", label: "Completed", icon: "check-circle", match: "kitchen-completed", floors: [KITCHEN_FLOOR_ID], roles: kitchenLaunchRoles },
+  { href: "/(admin)/kitchen", label: "Overview", icon: "home", match: "kitchen-overview", floors: [KITCHEN_FLOOR_ID] },
+  { href: "/(admin)/kitchen/projects", label: "Projects", icon: "layers", match: "kitchen-projects", floors: [KITCHEN_FLOOR_ID] },
+  { href: "/(admin)/kitchen/workflow", label: "Workflow", icon: "git-branch", match: "kitchen-workflow", floors: [KITCHEN_FLOOR_ID] },
+  { href: "/(admin)/kitchen/completed", label: "Completed", icon: "check-circle", match: "kitchen-completed", floors: [KITCHEN_FLOOR_ID] },
   { href: "/(admin)/dashboard", label: "Today", icon: "sunrise", match: "dashboard" },
   { href: "/(admin)/walkins", label: "Walk-ins", icon: "user-plus", match: "walkins" },
   { href: "/(admin)/quotations", label: "Quotations", icon: "file-text", match: "quotations", floors: [SANITARY_FLOOR_ID] },

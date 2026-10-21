@@ -34,5 +34,7 @@ async def test_owner_launch_preserves_owner_and_normal_department_mode(monkeypat
     worker = UserPublic(id="worker-test", full_name="Worker test", role="worker")
     monkeypatch.setenv("FORGE_KITCHEN_OWNER_ONLY", "true")
     await require_kitchen_launch_access(owner)
+    # Exact actions for delegated staff are enforced by get_current_user.
+    await require_kitchen_launch_access(UserPublic(id="delegated-test", full_name="Delegated test", role="worker", custom_access=True))
     monkeypatch.setenv("FORGE_KITCHEN_OWNER_ONLY", "false")
     await require_kitchen_launch_access(worker)

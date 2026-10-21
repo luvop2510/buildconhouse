@@ -199,7 +199,7 @@ function DelegationOptions({ options, error, onRetry, value, onChange, disabled 
 }) {
   if (error) return <ErrorState title="Access options unavailable" onRetry={onRetry} />;
   if (!options) return <Text style={type.caption}>Loading floors and pages…</Text>;
-  return <FloorDelegationEditor floors={options.floors} catalog={options.catalog} value={value} onChange={onChange} disabled={disabled} />;
+  return <View style={{ gap: spacing.md }}><Text style={type.caption} testID="team-kitchen-access-help">For Kitchen employees, enable Kitchen Floor, then Kitchen projects and the actions they need. This includes Overview, Projects, Workflow, Completed, stage history and documents. Assign their projects from Kitchen; page access alone does not grant manager approvals.</Text><FloorDelegationEditor floors={options.floors} catalog={options.catalog} value={value} onChange={onChange} disabled={disabled} /></View>;
 }
 
 function AddStaffSheet({ visible, options, optionsError, onRetry, onClose, onCreated, returnFocusRef }: {
