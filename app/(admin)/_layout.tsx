@@ -96,6 +96,7 @@ function SideItem({ item, active, onPress, compact = false }: { item: NavItem; a
       accessibilityLabel={item.label}
         {...(Platform.OS === "web" ? { title: item.label } : {})}
       accessibilityState={{ selected: active }}
+      aria-current={active ? "page" : undefined}
       style={({ pressed, hovered }: any) => [
         styles.sideItem,
         compact && styles.sideItemCompact,
@@ -387,6 +388,7 @@ function PhoneBar() {
     <View role="navigation" accessibilityLabel="Primary" style={styles.phoneBar}>
       {priorities.map(item => <WorkspaceLink href={item.href} key={item.href} testID={`bottom-nav-${item.match}`}
         accessibilityRole="link" accessibilityLabel={item.label} accessibilityState={{ selected: isActive(item) }}
+        aria-current={isActive(item) ? "page" : undefined}
         onPress={() => router.push(item.href as any)} style={styles.tab}>
         <View style={[styles.tabIconWrap, isActive(item) && styles.tabIconWrapActive]}>
           <Feather name={item.icon} size={20} color={isActive(item) ? color.action : color.inkMid} />

@@ -24,7 +24,7 @@ for (const [floor, label] of [['ground-floor', 'Ground Floor'], ['first-floor', 
     if (kitchen) {
       await expect(page).toHaveURL(/\/kitchen\/stages\/lead$/);
       const activeStage = page.getByTestId(page.viewportSize()!.width < 768 ? 'bottom-nav-kitchen-lead' : 'nav-kitchen-lead');
-      await expect(activeStage).toHaveAttribute('aria-selected', 'true');
+      await expect(activeStage).toHaveAttribute('aria-current', 'page');
     }
     const labels = new Set(await page.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('aria-label'))));
     const more = page.getByRole('button', { name: kitchen ? 'All stages' : 'More', exact: true });
