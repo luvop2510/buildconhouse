@@ -1,34 +1,95 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { preparationScripts, runPerformanceAudit, verifyBrowserEvidence, verifyExport } from './run-performance-audit.mjs';
 
-// Execute the actual release gate with disposable command stubs. A failed
-// stage must stop publication checks, and normal push shells must rebuild
-// without loading .env or needing an ad hoc BACKEND_URL export.
-const directory = await mkdtemp(join(tmpdir(), 'forge-performance-gate-'));
+// Exercise the actual orchestrator with disposable files/command adapters.
+// No build, browser, provider or operating database is started by these tests.
+const directory = mkdtempSync(join(tmpdir(), 'forge-performance-gate-'));
+const profiles = ['android-chrome', 'iphone-safari', 'ipad-safari', 'desktop-chrome'];
+const stages = ['backend', ...preparationScripts, 'test:e2e:stability', 'test:e2e:performance', 'summary'];
+const env = { ...process.env, GITHUB_ACTIONS: 'true', GITHUB_RUN_ID: '1234', GITHUB_RUN_ATTEMPT: '2', GITHUB_SHA: 'a'.repeat(40),
+  PERFORMANCE_EXPORT_ARTIFACT_ID: '987', PERFORMANCE_EXPORT_ARTIFACT_DIGEST: 'b'.repeat(64),
+  PERFORMANCE_PREPARE_RESULT: 'success', PERFORMANCE_STABILITY_RESULT: 'success', PERFORMANCE_TIMING_RESULT: 'success' };
+delete env.BACKEND_URL;
+function write(path, value) { const target = join(directory, path); mkdirSync(dirname(target), { recursive: true }); writeFileSync(target, typeof value === 'string' ? value : JSON.stringify(value)); }
+function read(path) { return JSON.parse(readFileSync(join(directory, path), 'utf8')); }
+function report(phase) {
+  const perDevice = phase === 'stability' ? 155 : 15;
+  const specs = profiles.flatMap(projectName => Array.from({ length: perDevice }, (_, index) => ({ file: `${phase}.spec.ts`, title: `case ${index}`, ok: true,
+    tests: [{ projectName, timeout: 30000, expectedStatus: 'passed', status: 'expected', results: [{ status: 'passed', retry: 0, errors: [] }] }] })));
+  return { config: { projects: profiles.map(name => ({ name, retries: 0, timeout: 30000 })) }, suites: [{ specs }],
+    stats: { expected: specs.length, unexpected: 0, skipped: 0, flaky: 0 }, errors: [] };
+}
+let calls = [], failAt;
+function run(command, args, options) {
+  const stage = command === 'npm' ? args[1] : args.includes('scripts/summarize-performance.mjs') ? 'summary' : args.includes('scripts/verify-release-stability.mjs') ? 'verify-stability' : 'backend';
+  calls.push(stage);
+  if (stage !== 'backend') { assert.equal(options.env.EXPO_NO_DOTENV, '1'); assert.match(options.env.BACKEND_URL, /^https:\/\/forge20-production-a8b0\.up\.railway\.app$/); }
+  else { assert.equal(options.env.DB_NAME, 'forge_ci_unit_tests'); assert.equal(options.env.PYTHON_DOTENV_DISABLED, '1'); }
+  if (stage === failAt) return { status: 42 };
+  if (stage === 'build') { write('dist/client/index.html', '<html>fresh export</html>'); write('dist/client/chunk.js', 'current source'); }
+  if (stage === 'test:mobile-budget') write('output/playwright/bundle-budget.json', { pages: [{ gzipKb: 480 }] });
+  if (stage === 'test:e2e:stability') { write('output/playwright/stability-results.json', report('stability')); write('output/playwright/stability-summary.json', { passed: 620 }); }
+  if (stage === 'test:e2e:performance') write('output/playwright/performance-results.json', report('timing'));
+  if (stage === 'summary') write('output/playwright/performance-summary.json', { stats: read('output/playwright/performance-results.json').stats });
+  return { status: 0 };
+}
+const audit = (phase, overrides = {}) => runPerformanceAudit({ args: phase ? [`--ci-phase=${phase}`] : [], env: { ...env, ...overrides }, root: directory, run });
 try {
-  await mkdir(join(directory, 'backend'));
-  const log = join(directory, 'commands.jsonl');
-  const command = `#!${process.execPath}\nimport { appendFileSync } from 'node:fs';\nconst stage = process.argv[1].endsWith('npm') ? process.argv[3] : 'backend';\nappendFileSync(process.env.AUDIT_TEST_LOG, JSON.stringify({ stage, backend: process.env.BACKEND_URL, noDotenv: process.env.EXPO_NO_DOTENV }) + '\\n');\nprocess.exit(stage === process.env.AUDIT_FAIL_STAGE ? 42 : 0);\n`;
-  await writeFile(join(directory, 'package.json'), '{"type":"module"}');
-  await writeFile(join(directory, 'npm'), command, { mode: 0o755 });
-  await writeFile(join(directory, 'python'), command, { mode: 0o755 });
-  const stages = ['backend', 'build', 'test:mobile-budget', 'test:frontend-performance', 'test:page-loading-performance', 'test:catalog-pagination', 'test:api-client', 'test:api-proxy', 'test:sound-feedback', 'test:release-stability', 'test:e2e:stability', 'test:e2e:performance'];
-  for (const failAt of ['backend', 'build', 'test:release-stability', 'test:e2e:stability', 'test:e2e:performance']) {
-    await writeFile(log, '');
-    const env = { ...process.env, PATH: `${directory}:${process.env.PATH}`, FORGE_AUDIT_PYTHON: join(directory, 'python'), AUDIT_TEST_LOG: log, AUDIT_FAIL_STAGE: failAt };
-    delete env.BACKEND_URL;
-    const result = spawnSync(process.execPath, [fileURLToPath(new URL('./run-performance-audit.mjs', import.meta.url))], { cwd: directory, env, encoding: 'utf8' });
-    assert.equal(result.status, 42, result.stderr);
-    const calls = (await readFile(log, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
-    assert.deepEqual(calls.map(call => call.stage), stages.slice(0, stages.indexOf(failAt) + 1));
-    for (const call of calls.filter(call => call.stage !== 'backend')) {
-      assert.match(call.backend, /^https:\/\/forge20-production-a8b0\.up\.railway\.app$/);
-      assert.equal(call.noDotenv, '1');
-    }
+  for (const failure of stages) {
+    calls = []; failAt = failure;
+    assert.throws(() => audit(), error => error.exitCode === 42);
+    assert.deepEqual(calls, stages.slice(0, stages.indexOf(failure) + 1), 'Full default must preserve exact order and failure status');
   }
-  console.log('Actual performance runner stops on backend/build/browser failures and rebuilds with production configuration and dotenv disabled.');
-} finally { await rm(directory, { recursive: true, force: true }); }
+  failAt = undefined; calls = []; audit(); assert.deepEqual(calls, stages, 'Full default includes fresh build, all contracts, both browser suites and summary');
+  for (const phase of ['prepare', 'stability', 'timing', 'aggregate']) {
+    calls = []; assert.throws(() => audit(phase, { GITHUB_ACTIONS: '' }), /restricted/); assert.deepEqual(calls, []);
+  }
+  assert.throws(() => runPerformanceAudit({ args: ['--reuse-export'], env, root: directory, run }));
+  assert.throws(() => runPerformanceAudit({ args: ['--ci-phase=timing', '--grep=x'], env, root: directory, run }));
+  calls = []; audit('prepare'); assert.deepEqual(calls, ['backend', ...preparationScripts]);
+  assert.deepEqual(read('output/performance-ci/export.json').identity, { run: '1234', attempt: '2', sha: 'a'.repeat(40) });
+  for (const override of [{ GITHUB_RUN_ID: 'foreign' }, { GITHUB_RUN_ID: '999' }, { GITHUB_RUN_ATTEMPT: '1' }, { GITHUB_SHA: 'c'.repeat(40) },
+    { PERFORMANCE_EXPORT_ARTIFACT_ID: '' }, { PERFORMANCE_EXPORT_ARTIFACT_DIGEST: '' }]) {
+    calls = []; assert.throws(() => audit('stability', override)); assert.deepEqual(calls, [], 'Foreign/missing artifact identity stops before browser execution');
+  }
+  write('dist/client/chunk.js', 'tampered'); assert.throws(() => verifyExport(directory, env), /bytes/); write('dist/client/chunk.js', 'current source');
+  write('dist/client/extra.js', 'foreign'); assert.throws(() => verifyExport(directory, env), /bytes/); rmSync(join(directory, 'dist/client/extra.js'));
+  for (const [phase, stage] of [['stability', 'test:e2e:stability'], ['timing', 'test:e2e:performance']]) {
+    calls = []; failAt = stage; assert.throws(() => audit(phase), error => error.exitCode === 42); assert.deepEqual(calls, [stage]);
+    assert.equal(readFileSync(join(directory, 'output/performance-ci/export.json'), 'utf8').includes('1234'), true);
+  }
+  failAt = undefined; calls = []; audit('stability'); assert.deepEqual(calls, ['test:e2e:stability']);
+  calls = []; audit('timing'); assert.deepEqual(calls, ['test:e2e:performance', 'summary']);
+  calls = []; audit('aggregate'); assert.deepEqual(calls, ['verify-stability', 'summary']);
+  const receiptPath = 'output/performance-ci/timing.json', receipt = read(receiptPath);
+  for (const change of [v => { v.identity.run = '999'; }, v => { v.identity.attempt = '1'; }, v => { v.identity.sha = 'f'.repeat(40); },
+    v => { v.artifact.id = '123'; }, v => { v.artifact.digest = 'f'.repeat(64); }, v => { v.manifestSha256 = 'f'.repeat(64); },
+    v => { delete v.files['output/playwright/performance-results.json']; }]) {
+    const mutated = structuredClone(receipt); change(mutated); write(receiptPath, mutated); calls = [];
+    assert.throws(() => audit('aggregate')); assert.deepEqual(calls, [], 'Foreign/tampered receipt never reaches aggregate acceptance');
+  }
+  write(receiptPath, receipt);
+  rmSync(join(directory, receiptPath)); assert.throws(() => audit('aggregate')); write(receiptPath, receipt);
+  const timing = read('output/playwright/performance-results.json'); write('output/playwright/performance-results.json', { ...timing, errors: ['tampered'] });
+  assert.throws(() => audit('aggregate'), /evidence changed/); write('output/playwright/performance-results.json', timing);
+  for (const phase of ['PREPARE', 'STABILITY', 'TIMING']) for (const status of ['', 'skipped', 'cancelled', 'failure']) {
+    calls = []; assert.throws(() => audit('aggregate', { [`PERFORMANCE_${phase}_RESULT`]: status }), /job did not succeed/); assert.deepEqual(calls, []);
+  }
+  for (const phase of ['stability', 'timing']) for (const change of [v => { v.stats.skipped = 1; }, v => { v.stats.flaky = 1; }, v => { v.errors = ['crash']; },
+    v => { v.config.projects.pop(); }, v => { v.config.projects[0].retries = 1; }, v => { v.config.projects[0].timeout = 60000; },
+    v => { v.suites[0].specs.pop(); v.stats.expected--; }, v => { v.suites[0].specs[0].tests[0].results[0].retry = 1; },
+    v => { v.suites[0].specs[0].tests[0].results.push({ status: 'passed', retry: 1 }); }, v => { v.suites[0].specs[1] = v.suites[0].specs[0]; }]) {
+    const value = report(phase); change(value); assert.throws(() => verifyBrowserEvidence(value, phase));
+  }
+  for (const failure of ['verify-stability', 'summary']) { failAt = failure; assert.throws(() => audit('aggregate'), error => error.exitCode === 42); }
+  const workflow = readFileSync(new URL('../.github/workflows/performance.yml', import.meta.url), 'utf8');
+  assert.equal((workflow.match(/timeout-minutes: 20/g) || []).length, 4);
+  assert.match(workflow, /performance:\n    if: always\(\)\n    needs: \[prepare, stability, timing\]/);
+  assert.equal((workflow.match(/uses: actions\/upload-artifact@v4/g) || []).length, 4);
+  assert.equal((workflow.match(/if-no-files-found: error/g) || []).length, 4);
+  assert.match(workflow, /artifact-digest/); assert.match(workflow, /artifact-ids: \$\{\{ needs.prepare.outputs.export_id \}\}/);
+  console.log('Performance orchestration guards passed: unchanged full local order, every failure propagates; same-run immutable export, full 620/60 four-profile evidence, cross-run/tamper/truncation rejection and all-phase aggregate/artifact failures remain blocking. No build/browser/live calls.');
+} finally { rmSync(directory, { recursive: true, force: true }); }

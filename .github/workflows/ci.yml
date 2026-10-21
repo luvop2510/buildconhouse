@@ -69,6 +69,22 @@ jobs:
       - name: Docker build
         run: docker build -t buildcon-backend .
         working-directory: backend
+      - name: Import the built backend image with isolated runtime settings
+        run: |
+          docker run --rm --entrypoint python \
+            -e MONGO_URL=mongodb://127.0.0.1:1 \
+            -e DB_NAME=forge_ci_image_import \
+            -e JWT_SECRET=ci-image-import-secret-not-real-32characters \
+            -e JWT_ALGORITHM=HS256 -e JWT_EXP_MINUTES=60 \
+            -e MEDIA_STORAGE_DRIVER=supabase \
+            -e SUPABASE_URL=https://ci-placeholder.supabase.co \
+            -e SUPABASE_SERVICE_ROLE_KEY=ci-placeholder-not-real \
+            -e SUPABASE_ANON_KEY=ci-placeholder-not-real \
+            -e SUPABASE_PUBLIC_BUCKET=forge-products \
+            -e SUPABASE_PRIVATE_BUCKET=forge-private \
+            -e FORGE_ALLOW_DEMO_SEED=false -e ENVIRONMENT=production \
+            -e PYTHON_DOTENV_DISABLED=1 \
+            buildcon-backend -c "from server import app; assert callable(app)"
 
   kitchen-persistence:
     runs-on: ubuntu-latest
