@@ -49,6 +49,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: performance-export-${{ github.run_id }}-${{ github.run_attempt }}
+          # Expo emits _expo/.routes.json; preserve it in the exact export.
+          include-hidden-files: true
           path: |
             dist/client
             output/playwright/bundle-budget.json
