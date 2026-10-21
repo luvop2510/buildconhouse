@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { mockSession } from './audit-fixtures';
+import { captureRuntimeHealth } from './runtime-health';
 
 const baseWalkin = {
   number: 'WI-SUMMARY', customer_id: 'summary-customer', customer_phone: '9876543210', alternate_phone: null,
@@ -57,6 +58,7 @@ test('critical Walk-in summary opens every matching metric and hidden filters re
 
 for (const metric of ['expiring'] as const) {
   test(`critical Follow-up ${metric} summary clears unrelated filters and opens its exact records`, async ({ page }) => {
+    const runtime = captureRuntimeHealth(page);
     await mockSession(page, '/followups');
     const queries: URLSearchParams[] = [];
     const now = new Date().toISOString();
@@ -91,5 +93,38 @@ for (const metric of ['expiring'] as const) {
     }
     expect(queries.at(-1)?.has('q')).toBe(false);
     expect(queries.at(-1)?.has('category')).toBe(false);
+
+    if ((page.viewportSize()?.width || 1440) < 700) {
+      // A real press can outlast the blur settlement delay. Restoring phone
+      // chrome before release moves the target and cancels RN's onPress.
+      const search = page.getByTestId('followups-search');
+      const chrome = page.getByTestId('mobile-workspace-header');
+      await search.fill('Held press search');
+      await expect.poll(() => queries.at(-1)?.get('q')).toBe('Held press search');
+      await page.getByRole('button', { name: 'Summary', exact: true }).click();
+      await search.focus();
+      await expect(chrome).toBeHidden();
+      const expiring = page.getByRole('button', { name: /^Expiring Soon:/ });
+      await expiring.scrollIntoViewIfNeeded();
+      const beforePress = await expiring.boundingBox();
+      expect(beforePress).not.toBeNull();
+      await page.mouse.move(beforePress!.x + beforePress!.width / 2, beforePress!.y + beforePress!.height / 2);
+      await page.mouse.down();
+      try {
+        // Intentional gesture duration, beyond the existing 150ms blur delay.
+        await page.waitForTimeout(250);
+        await expect(chrome).toBeHidden();
+        const duringPress = await expiring.boundingBox();
+        expect(duringPress?.y).toBeCloseTo(beforePress!.y, 0);
+      } finally {
+        await page.mouse.up();
+      }
+      await expect(search).toHaveValue('');
+      await expect.poll(() => queries.at(-1)?.get('rule_type')).toBe('quotation_expiring');
+      expect(queries.at(-1)?.has('q')).toBe(false);
+      await expect(page.getByText('Expiring customer', { exact: true })).toBeVisible();
+      await expect(chrome).toBeVisible();
+    }
+    await runtime.assertHealthy();
   });
 }

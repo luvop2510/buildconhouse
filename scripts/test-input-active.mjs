@@ -10,6 +10,7 @@ function mount(platform) {
   let active = false;
   let cleanup;
   const events = new Map();
+  const windowEvents = new Map();
   const keyboard = new Map();
   let mutation;
   let disconnected = false;
@@ -17,9 +18,13 @@ function mount(platform) {
     addEventListener: (event, handler) => events.set(event, handler),
     removeEventListener: event => events.delete(event),
   };
+  const window = {
+    addEventListener: (event, handler) => windowEvents.set(event, handler),
+    removeEventListener: event => windowEvents.delete(event),
+  };
   class Element { isConnected = true; matches() { return this.editable; } }
   const module = { exports: {} };
-  vm.runInNewContext(source, { module, exports: module.exports, document, HTMLElement: Element, queueMicrotask, setTimeout, clearTimeout,
+  vm.runInNewContext(source, { module, exports: module.exports, document, window, HTMLElement: Element, queueMicrotask, setTimeout, clearTimeout,
     MutationObserver: class {
       constructor(callback) { mutation = callback; }
       observe() {}
@@ -33,7 +38,7 @@ function mount(platform) {
     } } },
   });
   module.exports.useInputActive();
-  return { api: module.exports, active: () => active, document, events, keyboard,
+  return { api: module.exports, active: () => active, document, events, windowEvents, keyboard,
     input: () => Object.assign(new Element(), { editable: true }), mutate: () => mutation(),
     disconnected: () => disconnected, cleanup: () => cleanup() };
 }
@@ -80,10 +85,34 @@ assert.equal(web.active(), true, 'focusing the tapped button cannot restore chro
 await new Promise(resolve => setTimeout(resolve, 170));
 assert.equal(web.active(), false);
 web.document.activeElement = web.input();
+web.events.get('focusin')();
+web.events.get('pointerdown')?.({ pointerId: 1 });
+web.document.activeElement = {};
+web.events.get('focusout')();
+await new Promise(resolve => setTimeout(resolve, 170));
+assert.equal(web.active(), true, 'chrome stays hidden while the blur-triggering press is held');
+web.events.get('pointerdown')?.({ pointerId: 2 });
+web.windowEvents.get('pointerup')?.({ pointerId: 1 });
+await new Promise(resolve => setTimeout(resolve, 170));
+assert.equal(web.active(), true, 'releasing one pointer does not move another active target');
+web.windowEvents.get('pointercancel')?.({ pointerId: 2 });
+assert.equal(web.active(), true, 'pointer cancellation retains click settlement');
+await new Promise(resolve => setTimeout(resolve, 170));
+assert.equal(web.active(), false, 'the last pointer cancellation restores chrome after settlement');
+web.document.activeElement = web.input();
+web.events.get('focusin')();
+web.events.get('pointerdown')?.({ pointerId: 3 });
+web.document.activeElement = {};
+web.events.get('focusout')();
+web.windowEvents.get('blur')?.();
+await new Promise(resolve => setTimeout(resolve, 170));
+assert.equal(web.active(), false, 'leaving the window cannot leave a stale pressed pointer');
+web.document.activeElement = web.input();
 web.events.get('focusout')();
 web.cleanup();
 assert.equal(web.disconnected(), true, 'unmount disconnects removal observation');
 await new Promise(resolve => setTimeout(resolve, 170));
 assert.equal(web.active(), false, 'queued focus work cannot publish after unmount');
 assert.equal(web.events.size, 0);
+assert.equal(web.windowEvents.size, 0);
 console.log('Input activity: web focus/transfer/unmount and native hardware/software keyboard lifecycle passed');
