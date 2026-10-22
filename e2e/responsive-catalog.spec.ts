@@ -38,7 +38,11 @@ test('catalog filter and clear controls support keyboard and readable names', as
   await expect(page.getByTestId('catalog-filters')).not.toBeVisible();
   await expect(filter).toBeFocused();
   const search = page.getByRole('textbox', { name: 'Search catalog', exact: true });
+  // Wait for the dismissed sheet to stop intercepting a user's next click.
+  await search.click();
+  await expect(search).toBeFocused();
   await search.fill('basin');
+  await expect(search).toHaveValue('basin');
   const clear = page.getByRole('button', { name: 'Clear catalog search', exact: true });
   const target = await clear.boundingBox();
   expect(target!.width).toBeGreaterThanOrEqual(44);
