@@ -83,6 +83,14 @@ for (const metric of ['expiring'] as const) {
     await expect(page.getByText('Expiring customer', { exact: true })).toBeVisible();
     await page.getByTestId('followups-search').fill('Unrelated search');
     await expect.poll(() => queries.at(-1)?.get('q')).toBe('Unrelated search');
+    // This gesture isolates a queue response settling while pressed. Finish
+    // the preceding editing session before measuring its target; otherwise
+    // phone chrome can return between boundingBox() and mouse.down(). The
+    // separate held-press check below covers the focused-input transition.
+    await page.getByTestId('followups-search').blur();
+    if ((page.viewportSize()?.width || 1440) < 700) {
+      await expect(page.getByTestId('mobile-workspace-header')).toBeVisible();
+    }
     await page.getByRole('button', { name: 'Summary', exact: true }).click();
     await expect(page.getByRole('button', { name: /^Completed Today:/ })).toHaveCount(0);
     const summaryAction = page.getByRole('button', { name: /^Expiring Soon:/ });
