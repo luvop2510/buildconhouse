@@ -1,7 +1,10 @@
 import { expect, test } from '@playwright/test';
 import { floors, mockSession } from './audit-fixtures';
 
-for (const floor of floors) {
+// Kitchen has a dedicated stage workspace; it is not a regular Walk-ins floor.
+// Keep the Kitchen permission boundary explicit below instead of pretending
+// its stage workspace is a regular Walk-ins floor.
+for (const floor of floors.filter(floor => floor.id !== 'second-floor')) {
   test(`critical delegated Walk-ins uses the regular register and intake on ${floor.id}`, async ({ page }) => {
     const grants = [{ resource: 'walkins', floor_id: floor.id, actions: ['view', 'create', 'update'] }];
     const staff = { id: 'walkin-worker', email: 'worker@example.test', full_name: 'Walk-in Worker', role: 'worker',
@@ -58,3 +61,22 @@ for (const floor of floors) {
     await expect(page.getByText(/^(VIP|TRADE|RETAIL)$/)).toHaveCount(0);
   });
 }
+
+test('critical Kitchen walk-ins grants cannot open the shared register or intake', async ({ page }) => {
+  const staff = { id: 'kitchen-walkin-worker', email: 'kitchen-worker@example.test', full_name: 'Kitchen Worker', role: 'worker',
+    active: true, custom_access: true, floor_ids: ['second-floor'] };
+  await mockSession(page, '/walkins', false, { staff,
+    grants: [{ resource: 'walkins', floor_id: 'second-floor', actions: ['view', 'create', 'update'] }],
+    floorAccess: { all_floors: false, floors: floors.filter(floor => floor.id === 'second-floor'), floor_ids: ['second-floor'] },
+  });
+  let reads = 0;
+  await page.route('**/api/walkins**', route => { reads++; return route.fulfill({ json: [] }); });
+  await page.goto('/walkins');
+  await expect(page).toHaveURL(/\/access$/);
+  await expect(page.getByTestId('no-page-access')).toContainText('No pages enabled on this floor');
+  expect(reads).toBe(0);
+  await expect(page.getByTestId('walkin-new-btn')).toHaveCount(0);
+  await page.goto('/walkins/new');
+  await expect(page).toHaveURL(/\/access$/);
+  expect(reads).toBe(0);
+});
