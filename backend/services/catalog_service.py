@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import hashlib
 import logging
 import re
 from collections import Counter, defaultdict
@@ -64,6 +65,8 @@ class CatalogSnapshot:
     hydration_by_sku: dict[str, tuple[dict, ...]] | None = None
     hydration_by_configuration: dict[str, tuple[dict, ...]] | None = None
     source_bytes: int = 0
+    source_signatures: dict[str, str] = dataclass_field(default_factory=dict)
+    source_generation: int = 0
     source_rows: dict[str, int | None] = dataclass_field(default_factory=dict)
 
 
@@ -71,7 +74,8 @@ _snapshot_override: ContextVar[CatalogSnapshot | None] = ContextVar("catalog_sna
 # The October supplier imports raised the verified source data to ~20 MB.
 # The former 16 MiB cap silently sent this ordinary catalog through the
 # network-heavy fallback. Keep a finite budget with headroom for the active
-# catalog; Railway's 1 GiB process limit still bounds deployment memory.
+# catalog. Unchanged warm refreshes stream source signatures instead of
+# allocating a second catalog: decoded Python objects are much larger than BSON.
 _SNAPSHOT_MAX_BYTES = 32 * 1024 * 1024
 _SNAPSHOT_ROW_LIMITS = {"products": 10000, "product_media": 20000, "brands": 2000, "categories": 2000, "product_usage": 50000}
 _SNAPSHOT_BATCH_SIZE = 512
@@ -161,20 +165,30 @@ def _build_snapshot(
     )
 
 
-async def _bounded_snapshot_collection(name: str, query: dict, budget: list[int]) -> list[dict] | None:
+async def _bounded_snapshot_collection(
+    name: str, query: dict, budget: list[int], *, retain_rows: bool = True,
+    signatures: dict[str, str] | None = None,
+) -> list[dict] | None:
     rows: list[dict] = []
-    # A 32-document batch made normal catalogs pay hundreds of remote
-    # getMore round trips. Mongo still bounds each batch by its wire byte cap;
-    # the shared byte/row guards below bound retained snapshot data.
+    count = 0
+    signature = hashlib.sha256()
+    # The cursor's bounded batch is the only decoded source retained during
+    # an unchanged refresh. Keep identical byte/row guards in both modes.
     cursor = db[name].find(query, {"_id": 0}).batch_size(_SNAPSHOT_BATCH_SIZE)
     try:
         async for row in cursor:
-            budget[0] += len(BSON.encode(row))
-            if len(rows) >= _SNAPSHOT_ROW_LIMITS[name] or budget[0] > _SNAPSHOT_MAX_BYTES:
+            encoded = BSON.encode(row)
+            budget[0] += len(encoded)
+            if count >= _SNAPSHOT_ROW_LIMITS[name] or budget[0] > _SNAPSHOT_MAX_BYTES:
                 return None
-            rows.append(row)
+            count += 1
+            signature.update(encoded)
+            if retain_rows:
+                rows.append(row)
     finally:
         await cursor.close()
+    if signatures is not None:
+        signatures[name] = signature.hexdigest()
     return rows
 
 
@@ -194,11 +208,32 @@ async def refresh_catalog_snapshot(*, only_if_missing: bool = False) -> CatalogS
             generation = _refresh_generation
             budget = [0]
             collection_names = ("products", "product_media", "brands", "categories", "product_usage")
+            # A routine five-minute refresh used to retain the old snapshot
+            # while decoding and validating an identical second one. Compare
+            # bounded source streams first; keep the complete warm algorithms.
+            previous = _snapshot
+            if (previous is not None and not previous.database_backed
+                    and previous.source_signatures and previous.source_generation == generation):
+                observed: dict[str, str] = {}
+                async with asyncio.TaskGroup() as group:
+                    scans = [group.create_task(_bounded_snapshot_collection(
+                        name, {"active": True} if name == "products" else {}, budget,
+                        retain_rows=False, signatures=observed,
+                    )) for name in collection_names]
+                if generation != _refresh_generation:
+                    continue
+                if all(scan.result() is not None for scan in scans) and observed == previous.source_signatures:
+                    _snapshot = replace(previous, loaded_at=monotonic())
+                    _refresh_retry_at = 0.0
+                    return _snapshot
+                budget = [0]
+            signatures: dict[str, str] = {}
             # These collections are independent. TaskGroup also cancels and
             # closes every cursor if one source fails, preserving the old model.
             async with asyncio.TaskGroup() as group:
                 reads = [group.create_task(_bounded_snapshot_collection(
                     name, {"active": True} if name == "products" else {}, budget,
+                    signatures=signatures,
                 )) for name in collection_names]
             collections = [read.result() for read in reads]
             if any(rows is None for rows in collections):
@@ -209,12 +244,16 @@ async def refresh_catalog_snapshot(*, only_if_missing: bool = False) -> CatalogS
                 # other API requests during a cold or periodic catalog rebuild.
                 candidate = await asyncio.to_thread(_build_snapshot, *collections)
             candidate.source_bytes = budget[0]
+            candidate.source_signatures = signatures
+            candidate.source_generation = generation
             candidate.source_rows = dict(zip(collection_names, [
                 len(rows) if rows is not None else None for rows in collections
             ]))
             if generation != _refresh_generation:
                 # A completed write during source reads invalidates this build.
                 # Reload it rather than overwriting the immediate product edit.
+                # Do not retain an abandoned decoded catalog during the retry.
+                del candidate, collections, reads
                 continue
             _snapshot = candidate
             _refresh_retry_at = 0.0

@@ -203,3 +203,31 @@ def test_database_matches_warm_cache_for_sort_details_related_sizes_media_and_us
             assert canonical[1]['image'] is None
         finally: client.close()
     asyncio.run(run())
+
+
+def test_unchanged_warm_refresh_reuses_catalog_and_real_mongo_changes_rebuild(mongo_url, monkeypatch):
+    async def run():
+        client = AsyncIOMotorClient(mongo_url)
+        db = client.catalog_unchanged_refresh
+        setup(monkeypatch, db)
+        try:
+            await seed(db)
+            await db.products.insert_one(product(1))
+            first = await catalog.refresh_catalog_snapshot()
+            unchanged = await catalog.refresh_catalog_snapshot()
+            assert not unchanged.database_backed
+            assert unchanged.product_by_id is first.product_by_id
+            assert unchanged.source_signatures == first.source_signatures
+            assert unchanged.loaded_at >= first.loaded_at
+            # Simulate an offline import: no process-local invalidation event.
+            await db.products.update_one({"id": "p1"}, {"$set": {"price": 456.0, "name": "Imported update"}})
+            changed = await catalog.refresh_catalog_snapshot()
+            assert changed.product_by_id["p1"]["price"] == 456.0
+            assert changed.product_by_id["p1"]["name"] == "Imported update"
+            assert changed.source_signatures != first.source_signatures
+            assert first.product_by_id["p1"]["price"] == 2.0
+            result = await catalog.list_products_page(**list_arguments())
+            assert result["items"][0]["price"] == 456.0
+        finally:
+            client.close()
+    asyncio.run(run())
