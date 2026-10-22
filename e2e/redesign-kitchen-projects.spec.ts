@@ -87,7 +87,22 @@ test('Q01 Q02 Q03 Q12 Q13: real lead/visit persistence, manual assignment and re
   await page.goto('/kitchen');
   await expect(page.getByTestId('kitchen-stage-navigation')).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('v4-department-overview.png') });
+  await page.setViewportSize({ width: 360, height: 600 });
   await page.getByTestId('kitchen-create').click();
+  const createScroll = page.getByTestId('kitchen-create-scroll');
+  await expect(createScroll).toBeVisible();
+  const sheetBody = await createScroll.evaluate(element => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+    paddingLeft: Number.parseFloat(getComputedStyle(element.firstElementChild!).paddingLeft),
+    paddingTop: Number.parseFloat(getComputedStyle(element.firstElementChild!).paddingTop),
+  }));
+  expect(sheetBody.paddingLeft, 'Add Lead content has breathing room on narrow screens').toBeGreaterThanOrEqual(16);
+  expect(sheetBody.paddingTop, 'Add Lead content is inset from the sheet header').toBeGreaterThanOrEqual(16);
+  expect(sheetBody.scrollHeight, 'Long Add Lead forms scroll inside the sheet').toBeGreaterThan(sheetBody.clientHeight);
+  await createScroll.evaluate(element => { element.scrollTop = element.scrollHeight; });
+  await expect(page.getByTestId('kitchen-create-submit')).toBeInViewport();
+  await createScroll.evaluate(element => { element.scrollTop = 0; });
   await page.getByTestId('kitchen-existing-customer').click();
   await page.getByTestId('kitchen-customer').fill('Kitchen acceptance customer');
   await page.getByTestId(`kitchen-customer-${customerId}`).click();

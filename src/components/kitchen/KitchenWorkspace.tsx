@@ -75,7 +75,15 @@ function Workspace({ stage = "lead" }: WorkspaceProps) {
       <ProjectList key={stage} page={page} stage={stage} values={values} setValues={setValues} returnTo={returnTo} search={search} setSearch={setSearch} workers={workers} workerError={workerError} retry={retry} onRetry={() => setRetry(value => value + 1)} canExport={canExport} isPhone={isPhone} />
     </View>
     <Sheet visible={createOpen && stage === "lead"} onClose={() => requestCreateClose.current ? requestCreateClose.current() : closeCreate()} title="Add lead" testID="kitchen-create-sheet">
-      {!createAccess ? <ErrorState title="Lead creation access required" /> : !canCreate ? <ErrorState title="Assignment authority required" subtitle="The owner or a selected department manager creates and assigns leads." /> : <CreateLead onRegisterClose={handler => { requestCreateClose.current = handler; }} onClose={closeCreate} onCreated={project => { closeCreate(); router.push(url(`/kitchen/${project.id}/stages/lead`, { returnTo: path }) as any); }} workers={workers} workerError={workerError} canAssign={canAssign} />}
+      <ScrollView
+        testID="kitchen-create-scroll"
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator
+        style={{ flex: 1, minHeight: 0 }}
+        contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xl, gap: spacing.lg }}
+      >
+        {!createAccess ? <ErrorState title="Lead creation access required" /> : !canCreate ? <ErrorState title="Assignment authority required" subtitle="The owner or a selected department manager creates and assigns leads." /> : <CreateLead onRegisterClose={handler => { requestCreateClose.current = handler; }} onClose={closeCreate} onCreated={project => { closeCreate(); router.push(url(`/kitchen/${project.id}/stages/lead`, { returnTo: path }) as any); }} workers={workers} workerError={workerError} canAssign={canAssign} />}
+      </ScrollView>
     </Sheet>
     <Sheet visible={settingsOpen} onClose={closeSettings} title="Department settings" testID="kitchen-settings-sheet">
       {!owner ? <ErrorState title="Owner access required" /> : policyError ? <ErrorState title="Settings unavailable" subtitle={policyError} onRetry={() => setRetry(value => value + 1)} /> : policy ? <KitchenPolicyEditor policy={policy} workers={workers} workerError={workerError || workersLoading} onSaved={value => { setPolicy(value); setRetry(current => current + 1); }} onReload={() => setRetry(value => value + 1)} /> : <LoadingState label="Loading settings…" />}
