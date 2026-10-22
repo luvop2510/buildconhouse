@@ -11,6 +11,70 @@ async function seedBrowser(page: Page) {
   });
 }
 
+test('Kitchen panels keep padded fields and every stage reachable in a short viewport', async ({ page, context }, info) => {
+  await page.setViewportSize({ width: page.viewportSize()!.width, height: 600 });
+  await seedBrowser(page);
+  await page.goto('/kitchen/stages/lead');
+  await page.getByTestId('kitchen-create').click();
+  const leadPanel = await page.getByTestId('kitchen-create-sheet').boundingBox();
+  const name = await page.getByTestId('kitchen-customer-name').boundingBox();
+  expect(name!.x - leadPanel!.x, 'The rendered customer input keeps the panel gutter').toBeGreaterThanOrEqual(16);
+  await page.getByTestId('kitchen-create-lead-details-toggle').click();
+  if (info.project.name === 'kitchen-desktop') {
+    const body = page.getByTestId('kitchen-create-sheet-scroll');
+    await body.hover();
+    await page.mouse.wheel(0, 2000);
+    await expect.poll(() => body.evaluate(element => element.scrollTop), { message: 'A real desktop wheel gesture scrolls the Add Lead body' }).toBeGreaterThan(0);
+    await expect(page.getByTestId('kitchen-create-submit')).toBeInViewport();
+  } else await page.getByTestId('kitchen-create-submit').scrollIntoViewIfNeeded();
+  const submit = await page.getByTestId('kitchen-create-submit').boundingBox();
+  expect(submit!.y + submit!.height).toBeLessThanOrEqual(leadPanel!.y + leadPanel!.height);
+  await page.screenshot({ path: info.outputPath('add-lead-panel.png') });
+  await page.getByTestId('kitchen-create-sheet-close').click();
+  await page.getByTestId('kitchen-filters-open').click();
+  const filters = page.getByTestId('kitchen-filters');
+  await page.getByTestId('kitchen-filters-apply').scrollIntoViewIfNeeded();
+  const panel = await filters.boundingBox();
+  const apply = await page.getByTestId('kitchen-filters-apply').boundingBox();
+  expect(apply!.x - panel!.x, 'Filter controls have an inner gutter').toBeGreaterThanOrEqual(16);
+  expect(apply!.y + apply!.height, 'Apply remains within the visible panel').toBeLessThanOrEqual(panel!.y + panel!.height);
+  await page.getByTestId('kitchen-filters-apply').click();
+  const created = await context.request.post('/api/kitchen-projects', { headers, data: { customer_id: process.env.KITCHEN_E2E_CUSTOMER_ID, idempotency_key: `panel-scroll-${Date.now()}-${Math.random()}`, lead: { site_location: 'Panel reachability check' } } });
+  expect(created.ok()).toBe(true);
+  const project = await created.json();
+  await page.goto(`/kitchen/${project.id}/stages/lead`);
+  await page.getByTestId('kitchen-open-workflow').click();
+  await page.getByTestId('kitchen-stage-completed').scrollIntoViewIfNeeded();
+  const workflow = await page.getByTestId('kitchen-workflow-sheet').boundingBox();
+  const completed = await page.getByTestId('kitchen-stage-completed').boundingBox();
+  expect(completed!.x - workflow!.x).toBeGreaterThanOrEqual(16);
+  expect(completed!.y + completed!.height).toBeLessThanOrEqual(workflow!.y + workflow!.height);
+  await page.screenshot({ path: info.outputPath('workflow-panel.png') });
+});
+
+test('Kitchen customer details remain editable and persist after reopening the full customer editor', async ({ page, context }) => {
+  const phone = `9${String(Date.now() + Math.floor(Math.random() * 1000000)).slice(-9)}`;
+  const created = await context.request.post('/api/kitchen-projects', { headers, data: { customer: { name: 'Kitchen editable customer', phone }, idempotency_key: `editable-customer-${Date.now()}-${Math.random()}`, lead: { site_location: 'Customer editor acceptance site' } } });
+  expect(created.ok(), await created.text()).toBe(true);
+  const project = await created.json();
+  await seedBrowser(page);
+  await page.goto(`/kitchen/${project.id}/stages/lead`);
+  await page.getByTestId('kitchen-edit-customer').click();
+  await expect(page).toHaveURL(new RegExp(`/customers/${project.customer_id}/edit$`));
+  await expect(page.getByTestId('edit-customer-name')).toHaveValue('Kitchen editable customer');
+  await page.getByTestId('edit-customer-name').fill('Kitchen updated customer');
+  await page.getByTestId('edit-customer-property-name').fill('Updated kitchen property');
+  const saved = page.waitForResponse(response => response.request().method() === 'PATCH' && new URL(response.url()).pathname === `/api/customers/${project.customer_id}`);
+  await page.getByTestId('edit-customer-save').click();
+  const response = await saved;
+  expect(response.ok(), await response.text()).toBe(true);
+  const persisted = await context.request.get(`/api/customers/${project.customer_id}`, { headers });
+  expect(await persisted.json()).toMatchObject({ name: 'Kitchen updated customer', property_name: 'Updated kitchen property', phone });
+  await page.reload();
+  await expect(page.getByTestId('edit-customer-name')).toHaveValue('Kitchen updated customer');
+  await expect(page.getByTestId('edit-customer-property-name')).toHaveValue('Updated kitchen property');
+});
+
 test('Lead records a new customer inline, carries identity forward and reuses their phone on retry', async ({ page, context }, info) => {
   const health = captureRuntimeHealth(page);
   await seedBrowser(page);

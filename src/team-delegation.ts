@@ -95,6 +95,12 @@ export function isPersonalAccountRoute(segments: string[]): boolean {
   return pages.length === 1 && ["access", "settings", "settings-password", "settings-mfa", "settings-privacy", "settings-terms"].includes(pages[0]);
 }
 
+/** Kitchen keeps its stage navigation while opening the linked customer's editor. */
+export function isCustomerEditorRoute(segments: string[]): boolean {
+  const pages = segments.filter((part) => !part.startsWith("("));
+  return pages.length === 3 && pages[0] === "customers" && pages[1] !== "new" && pages[2] === "edit";
+}
+
 export function personalAccountPath(pathname: string | undefined): string | null {
   if (!pathname) return null;
   const segments = pathname.split("/").filter(Boolean);

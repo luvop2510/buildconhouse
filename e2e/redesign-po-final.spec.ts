@@ -35,6 +35,13 @@ test('critical customer shows commercial order value and PO Final on desktop and
   await page.getByTestId('customer-tab-purchases').click();
   await expect(page.getByText('Order Value')).toBeVisible();
   await expect(page.getByText('₹2.51 L')).toBeVisible();
+  await page.getByRole('button', { name: /^Open POs/ }).click();
+  const orders = page.getByRole('dialog', { name: 'Open purchase orders' });
+  const orderButton = orders.getByRole('button', { name: /^PO-1/ });
+  const panel = await orders.boundingBox();
+  const button = await orderButton.boundingBox();
+  expect(button!.x - panel!.x, 'Customer order picker has a safe inner gutter').toBeGreaterThanOrEqual(16);
+  await orders.getByRole('button', { name: 'Close', exact: true }).click();
   await page.getByTestId('customer-tab-po_final').click();
   await expect(page.getByTestId('customer-po-final')).toContainText('VitrA basin');
   await expect(page.getByTestId('customer-po-final')).toContainText('Borrowed product received');

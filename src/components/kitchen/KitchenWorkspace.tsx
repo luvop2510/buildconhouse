@@ -74,18 +74,10 @@ function Workspace({ stage = "lead" }: WorkspaceProps) {
       <View style={{ maxWidth: 380 }}><SelectFilter label="Kitchen stage" value={stage} options={KITCHEN_STAGES.map((value, index) => ({ value, label: `${index + 1}. ${STAGE_LABELS[value]}` }))} onChange={value => router.push(`/kitchen/stages/${value}` as any)} testID="kitchen-stage-navigation" /></View>
       <ProjectList key={stage} page={page} stage={stage} values={values} setValues={setValues} returnTo={returnTo} search={search} setSearch={setSearch} workers={workers} workerError={workerError} retry={retry} onRetry={() => setRetry(value => value + 1)} canExport={canExport} isPhone={isPhone} />
     </View>
-    <Sheet visible={createOpen && stage === "lead"} onClose={() => requestCreateClose.current ? requestCreateClose.current() : closeCreate()} title="Add lead" testID="kitchen-create-sheet">
-      <ScrollView
-        testID="kitchen-create-scroll"
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator
-        style={{ flex: 1, minHeight: 0 }}
-        contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xl, gap: spacing.lg }}
-      >
+    <Sheet scroll visible={createOpen && stage === "lead"} onClose={() => requestCreateClose.current ? requestCreateClose.current() : closeCreate()} title="Add lead" testID="kitchen-create-sheet">
         {!createAccess ? <ErrorState title="Lead creation access required" /> : !canCreate ? <ErrorState title="Assignment authority required" subtitle="The owner or a selected department manager creates and assigns leads." /> : <CreateLead onRegisterClose={handler => { requestCreateClose.current = handler; }} onClose={closeCreate} onCreated={project => { closeCreate(); router.push(url(`/kitchen/${project.id}/stages/lead`, { returnTo: path }) as any); }} workers={workers} workerError={workerError} canAssign={canAssign} />}
-      </ScrollView>
     </Sheet>
-    <Sheet visible={settingsOpen} onClose={closeSettings} title="Department settings" testID="kitchen-settings-sheet">
+    <Sheet scroll visible={settingsOpen} onClose={closeSettings} title="Department settings" testID="kitchen-settings-sheet">
       {!owner ? <ErrorState title="Owner access required" /> : policyError ? <ErrorState title="Settings unavailable" subtitle={policyError} onRetry={() => setRetry(value => value + 1)} /> : policy ? <KitchenPolicyEditor policy={policy} workers={workers} workerError={workerError || workersLoading} onSaved={value => { setPolicy(value); setRetry(current => current + 1); }} onReload={() => setRetry(value => value + 1)} /> : <LoadingState label="Loading settings…" />}
     </Sheet>
   </AdminPage>;
@@ -130,7 +122,7 @@ function ProjectFilters({ visible, onClose, page, stage, values, workers, worker
   const selectedStage = page === "stage" ? stage : draft.stage as KitchenStage;
   const statuses = selectedStage && KITCHEN_STAGE_STATUSES[selectedStage] || [...new Set(Object.values(KITCHEN_STAGE_STATUSES).flat())];
   const invalidDates = Boolean(draft.date_from && draft.date_to && draft.date_from > draft.date_to);
-  return <Sheet visible={visible} onClose={onClose} title="Filter projects" variant="drawer" testID="kitchen-filters"><View style={{ gap: spacing.lg }}>
+  return <Sheet scroll visible={visible} onClose={onClose} title="Filter projects" variant="drawer" testID="kitchen-filters"><View style={{ gap: spacing.lg }}>
     {page === "projects" ? <SelectFilter label="Stage" value={draft.stage} options={[{ value: "", label: "All stages" }, ...KITCHEN_STAGES.map(value => ({ value, label: STAGE_LABELS[value] }))]} onChange={value => change("stage", value)} testID="kitchen-stage-filter" /> : null}
     {page !== "completed" && page !== "review" ? <SelectFilter label={selectedStage ? `${STAGE_LABELS[selectedStage]} status` : "Status across stages"} value={draft.status} options={[{ value: "", label: "Any status" }, ...statuses.map(value => ({ value, label: value }))]} onChange={value => change("status", value)} testID="kitchen-status-filter" /> : null}
     {page !== "completed" && page !== "review" ? <SelectFilter label="Needs attention" value={draft.attention} options={[{ value: "", label: "All projects" }, ...Object.entries(KITCHEN_ATTENTION_LABELS).map(([value, label]) => ({ value, label }))]} onChange={value => change("attention", value)} testID="kitchen-attention-filter" /> : null}

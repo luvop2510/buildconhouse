@@ -16,7 +16,7 @@ export function DocumentChoice({ project, value, onChange, disabled, label = "Pr
   return <View style={{ gap: spacing.sm }}><Text style={type.label}>{label}</Text>
     <Button label={project.attachments?.find(file => file.id === value)?.filename || "Choose a document"} variant="secondary" disabled={disabled || !project.attachments?.length} onPress={() => setOpen(true)} />
     {!project.attachments?.length ? <Text style={type.caption}>Add files in Documents, then select one here.</Text> : null}
-    <Sheet visible={open} onClose={() => setOpen(false)} title={label}>
+    <Sheet scroll visible={open} onClose={() => setOpen(false)} title={label}>
       <Button label="No attachment" variant="ghost" onPress={() => { onChange(""); setOpen(false); }} />
       {(project.attachments || []).map(file => <Button key={file.id} label={file.filename} variant="secondary" onPress={() => { onChange(file.id); setOpen(false); }} />)}
     </Sheet>

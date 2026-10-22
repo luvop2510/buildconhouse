@@ -1108,7 +1108,7 @@ export default function CustomerDetail() {
         )}
       </ScrollView>
 
-      <Sheet visible={openOrdersVisible} onClose={() => setOpenOrdersVisible(false)} title="Open purchase orders">
+      <Sheet scroll visible={openOrdersVisible} onClose={() => setOpenOrdersVisible(false)} title="Open purchase orders">
         <View style={{ gap: spacing.sm }}>
           {(workspace?.purchase_orders || []).filter(order => order.status !== "cancelled").map(order => (
             <Button key={order.id} label={`${order.number} · ${money(order.current_order_value ?? order.grand_total)}`} variant="secondary" onPress={() => { setOpenOrdersVisible(false); router.push(`/(admin)/purchase-orders/${order.id}` as any); }} />

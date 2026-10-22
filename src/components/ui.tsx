@@ -926,9 +926,9 @@ export function Icon({
 // Chrome (header + body scroll area + footer) identical for every screen.
 // ──────────────────────────────────────────────────────────────────────────
 type SheetVariant = "drawer" | "modal" | "bottom";
-export function Sheet({ visible, variant = "drawer", ...props }: Omit<React.ComponentProps<typeof Overlay>, "open" | "presentation"> & {
+export function Sheet({ visible, variant = "drawer", scroll = false, ...props }: Omit<React.ComponentProps<typeof Overlay>, "open" | "presentation"> & {
   visible: boolean; variant?: SheetVariant;
-}) { return <Overlay {...props} open={visible} scroll={false} presentation={variant === "modal" ? "dialog" : variant} />; }
+}) { return <Overlay {...props} open={visible} scroll={scroll} presentation={variant === "modal" ? "dialog" : variant} />; }
 
 // ──────────────────────────────────────────────────────────────────────────
 // PageHeader — every screen top. Always identical chrome.

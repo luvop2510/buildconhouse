@@ -89,7 +89,7 @@ test('Q01 Q02 Q03 Q12 Q13: real lead/visit persistence, manual assignment and re
   await page.screenshot({ path: testInfo.outputPath('v4-department-overview.png') });
   await page.setViewportSize({ width: 360, height: 600 });
   await page.getByTestId('kitchen-create').click();
-  const createScroll = page.getByTestId('kitchen-create-scroll');
+  const createScroll = page.getByTestId('kitchen-create-sheet-scroll');
   await expect(createScroll).toBeVisible();
   const sheetBody = await createScroll.evaluate(element => ({
     clientHeight: element.clientHeight,
@@ -100,6 +100,9 @@ test('Q01 Q02 Q03 Q12 Q13: real lead/visit persistence, manual assignment and re
   expect(sheetBody.paddingLeft, 'Add Lead content has breathing room on narrow screens').toBeGreaterThanOrEqual(16);
   expect(sheetBody.paddingTop, 'Add Lead content is inset from the sheet header').toBeGreaterThanOrEqual(16);
   expect(sheetBody.scrollHeight, 'Long Add Lead forms scroll inside the sheet').toBeGreaterThan(sheetBody.clientHeight);
+  const panelBounds = await page.getByTestId('kitchen-create-sheet').boundingBox();
+  const fieldBounds = await page.getByTestId('kitchen-customer-name').boundingBox();
+  expect(fieldBounds!.x - panelBounds!.x, 'The actual input is inset from the panel edge').toBeGreaterThanOrEqual(16);
   await createScroll.evaluate(element => { element.scrollTop = element.scrollHeight; });
   await expect(page.getByTestId('kitchen-create-submit')).toBeInViewport();
   await createScroll.evaluate(element => { element.scrollTop = 0; });

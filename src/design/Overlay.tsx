@@ -30,7 +30,7 @@ export function Overlay({ open, onClose, title, subtitle, children, footer, head
   const fullscreen = presentation === 'fullscreen';
   const visibleHeight = Platform.OS === 'web' ? `calc(var(--forge-visible-height, 100dvh) * ${maxHeight})` as unknown as number : height * maxHeight;
   const panelPadding = isPhone ? space.x4 : space.x5;
-  const content = scroll ? <ScrollView keyboardShouldPersistTaps="handled"
+  const content = scroll ? <ScrollView testID={testID ? `${testID}-scroll` : undefined} keyboardShouldPersistTaps="handled"
     style={{ flexShrink: 1, minHeight: 0 }} contentContainerStyle={{ padding: panelPadding, gap: space.x4 }}>{children}</ScrollView>
     : <View style={{ flex: 1, minHeight: 0 }}>{children}</View>;
   return <Modal visible={open} transparent animationType={Platform.OS === 'web' || reducedMotion ? 'none' : 'fade'}

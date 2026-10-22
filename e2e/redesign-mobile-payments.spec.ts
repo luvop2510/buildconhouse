@@ -38,6 +38,16 @@ async function openSummary(page: Page) {
   if ((await summary.getAttribute('aria-expanded')) === 'false') await summary.click();
 }
 
+test('critical payment page heading keeps the same safe gutter as the collection content', async ({ page }) => {
+  await fixture(page);
+  await page.goto('/payments');
+  await expect(page.getByTestId('wa-reminder-btn')).toBeVisible();
+  const heading = page.getByRole('heading', { name: 'Payments', exact: true }).first();
+  const title = await heading.boundingBox();
+  const scroll = await page.getByTestId('payments-collections-scroll').boundingBox();
+  expect(title!.x - scroll!.x, 'Payments title must not touch the workspace edge').toBeGreaterThanOrEqual(16);
+});
+
 test('critical payment summary opens matching earned, partial, refund and outstanding customers', async ({ page }) => {
   await fixture(page);
   await page.goto('/payments');

@@ -22,6 +22,7 @@ export default defineConfig({
       ['iphone390', 'webkit', 390, 844], ['android430', 'chromium', 430, 932],
       ['tablet768', 'webkit', 768, 1024], ['tablet820', 'webkit', 820, 1180],
       ['tablet1024', 'webkit', 1024, 1366], ['desktop1440', 'chromium', 1440, 1000],
+      ['desktop1920', 'chromium', 1920, 1080], ['desktop2560', 'chromium', 2560, 1440],
       ['landscape844', 'webkit', 844, 390], ['firefox1440', 'firefox', 1440, 1000],
     ].map(([name, browserName, width, height]) => ({ name: `matrix-${name}`, testMatch: matrix,
       use: { browserName: browserName as 'chromium' | 'webkit' | 'firefox', viewport: { width: Number(width), height: Number(height) } } })),

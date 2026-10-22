@@ -70,11 +70,13 @@ async def environment():
     import db as connection
     from routes import customer_routes, kitchen_routes
     from services.access_grants import build_grant
+    from services import activity_log
 
     client = AsyncIOMotorClient(url, serverSelectionTimeoutMS=3000)
     database = client[f"forge_kitchen_acceptance_{uuid4().hex}"]
     patches = [(auth, "db", auth.db), (connection, "db", connection.db),
-               (kitchen_routes, "db", kitchen_routes.db), (customer_routes, "db", customer_routes.db)]
+               (kitchen_routes, "db", kitchen_routes.db), (customer_routes, "db", customer_routes.db),
+               (activity_log, "db", activity_log.db)]
     for module, name, _ in patches:
         setattr(module, name, database)
     ids = {key: str(uuid4()) for key in ("owner", "worker", "manager", "denied", "customer", "other_customer")}

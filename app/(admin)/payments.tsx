@@ -226,7 +226,7 @@ const HISTORY_SORTS: { value: string; label: string }[] = [
 
 // ═══════════════════════════════════════════════════════════════════════════
 export default function PaymentsScreen() {
-  const { isDesktop, isTabletLandscape, isPhone, height } = useBp();
+  const { isDesktop, isTabletLandscape, isPhone, height, gutter } = useBp();
   const sideBySide = isDesktop || isTabletLandscape;
   const compactCostForm = isPhone || isTabletLandscape;
   const { selectedFloorId, selectFloor } = useFloorAccess();
@@ -639,7 +639,7 @@ export default function PaymentsScreen() {
   };
 
   const workspaceHeading = (
-    <View style={{ gap: spacing.sm }}>
+    <View style={{ gap: spacing.sm, ...(!isPhone ? { paddingHorizontal: gutter, paddingTop: spacing.lg, paddingBottom: spacing.md } : {}) }}>
       <View style={{ minHeight: 48, flexShrink: 0, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm }}>
         <Text accessibilityRole="header" aria-level={1} style={[type.titleLg, { flex: 1, minWidth: 0 }]}>Payments</Text>
         <Pressable

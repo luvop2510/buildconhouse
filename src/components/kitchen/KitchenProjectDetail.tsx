@@ -7,6 +7,7 @@ import { AdminPage } from "@/src/components/AdminPage";
 import { Alert, Button, Chip, ErrorState, LoadingState, Sheet, TextField } from "@/src/components/ds";
 import { Menu } from "@/src/design/navigationControls";
 import { NavigationLink } from "@/src/design/NavigationLink";
+import { useActionAccess } from "@/src/hooks/use-permissions";
 import { KITCHEN_STAGES, STAGE_LABELS, type KitchenCad, type KitchenLead, type KitchenProject, type KitchenStage, type KitchenVisit } from "@/src/api/kitchenProjects";
 import { Choice, displayDate, ErrorNotice, KitchenFloor, KitchenPanel, rupees } from "./shared";
 import { KitchenDateField } from "./KitchenFilters";
@@ -19,6 +20,7 @@ import { kitchenProjectPath, kitchenStage, useKitchenDraft, useKitchenProject } 
 type ProjectPage = "overview" | "stage" | "documents" | "history" | "assignments" | "exceptions";
 
 export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage }) {
+  const canEditCustomer = useActionAccess("customers", "update", false);
   const state = useKitchenProject();
   const { project, loading, failure, policy, policyError, workers, workerError, retryWorkers, reload, updateProject, submission, command, returnTo, retainedDraft } = state;
   const { stage: parameter } = useLocalSearchParams<{ stage?: string }>();
@@ -43,6 +45,7 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
       <View testID={!loading && !failure ? "kitchen-project-ready" : "kitchen-project-loading"} />
       <KitchenPanel><View style={{ gap: spacing.sm }}><Text style={type.bodyStrong}>{project.customer.name}</Text><Text style={type.bodyMuted}>{project.customer.phone || "Phone not recorded"} · {project.lead.site_location || project.customer.address || "Site not recorded"}</Text>{project.is_legacy ? <Text style={type.caption}>Legacy project · unknown historical dates and counts remain unavailable.</Text> : null}<Text style={type.caption}>Assigned to {workers.find(worker => worker.id === project.assignments[selected])?.full_name || "Unassigned"}{project.deadline ? ` · Due ${displayDate(project.deadline)}` : ""}</Text></View></KitchenPanel>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }} testID="kitchen-project-tools">
+        {canEditCustomer ? <Button label="Edit customer" icon="edit-2" variant="secondary" onPress={() => router.push(`/customers/${project.customer_id}/edit` as any)} testID="kitchen-edit-customer" /> : null}
         <Button label="Documents" icon="paperclip" variant="secondary" onPress={() => setPanel("documents")} testID="kitchen-project-nav-documents" />
         <Button label="History" icon="clock" variant="secondary" onPress={() => setPanel("history")} testID="kitchen-project-nav-history" />
         <Button label="Assignment & dates" icon="user" variant="secondary" onPress={() => setPanel("assignments")} testID="kitchen-project-nav-assignments" />
@@ -62,11 +65,11 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
         <EarlyStage project={project} stage={selected} disabled={disabled || Boolean(held)} />
         <CommercialStages project={project} stage={selected} disabled={disabled || Boolean(held)} command={command} hasUnsavedChanges={state.currentTaskDirty} />
       </View>
-      <Sheet visible={panel === "documents"} onClose={() => setPanel(null)} title="Project documents" testID="kitchen-documents-sheet">{policyError ? <Alert tone="warning" title="Upload settings unavailable" action={<Button label="Reload" variant="secondary" onPress={reload} />} /> : null}<KitchenDocuments project={project} policy={policy} disabled={disabled || Boolean(held)} onUpdated={updateProject} onReload={reload} /></Sheet>
-      <Sheet visible={panel === "history"} onClose={() => setPanel(null)} title="Project history" testID="kitchen-history-sheet"><ProjectHistory project={project} /></Sheet>
-      <Sheet visible={panel === "assignments"} onClose={() => setPanel(null)} title="Assignment & dates" testID="kitchen-assignment-sheet"><ProjectPlan project={project} disabled={disabled || Boolean(held)} workers={workers} workerError={workerError} onRetryWorkers={retryWorkers} /></Sheet>
-      <Sheet visible={panel === "exceptions"} onClose={() => setPanel(null)} title="Project changes" testID="kitchen-exceptions-sheet"><ProjectExceptions project={project} disabled={disabled} /></Sheet>
-      <Sheet visible={panel === "workflow"} onClose={() => setPanel(null)} title="Project stages" testID="kitchen-workflow-sheet"><WorkflowRows project={project} path={path} onNavigate={() => setPanel(null)} /></Sheet>
+      <Sheet scroll visible={panel === "documents"} onClose={() => setPanel(null)} title="Project documents" testID="kitchen-documents-sheet">{policyError ? <Alert tone="warning" title="Upload settings unavailable" action={<Button label="Reload" variant="secondary" onPress={reload} />} /> : null}<KitchenDocuments project={project} policy={policy} disabled={disabled || Boolean(held)} onUpdated={updateProject} onReload={reload} /></Sheet>
+      <Sheet scroll visible={panel === "history"} onClose={() => setPanel(null)} title="Project history" testID="kitchen-history-sheet"><ProjectHistory project={project} /></Sheet>
+      <Sheet scroll visible={panel === "assignments"} onClose={() => setPanel(null)} title="Assignment & dates" testID="kitchen-assignment-sheet"><ProjectPlan project={project} disabled={disabled || Boolean(held)} workers={workers} workerError={workerError} onRetryWorkers={retryWorkers} /></Sheet>
+      <Sheet scroll visible={panel === "exceptions"} onClose={() => setPanel(null)} title="Project changes" testID="kitchen-exceptions-sheet"><ProjectExceptions project={project} disabled={disabled} /></Sheet>
+      <Sheet scroll visible={panel === "workflow"} onClose={() => setPanel(null)} title="Project stages" testID="kitchen-workflow-sheet"><WorkflowRows project={project} path={path} onNavigate={() => setPanel(null)} /></Sheet>
     </View> : null}
   </AdminPage></KitchenFloor>;
 }
