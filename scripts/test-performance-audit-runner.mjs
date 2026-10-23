@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { runInNewContext } from 'node:vm';
 import { preparationScripts, runPerformanceAudit, verifyBrowserEvidence, verifyExport } from './run-performance-audit.mjs';
 
 // Exercise the actual orchestrator with disposable files/command adapters.
@@ -91,5 +92,37 @@ try {
   assert.equal((workflow.match(/uses: actions\/upload-artifact@v4/g) || []).length, 4);
   assert.equal((workflow.match(/if-no-files-found: error/g) || []).length, 4);
   assert.match(workflow, /artifact-digest/); assert.match(workflow, /artifact-ids: \$\{\{ needs.prepare.outputs.export_id \}\}/);
+  const browserChecks = [];
+  const image = 'mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27';
+  for (const phase of ['stability', 'timing']) {
+    const job = workflow.split(`  ${phase}:\n`)[1]?.split(/\n  [a-z]+:\n/)[0];
+    assert.ok(job, 'Both browser phases must exist');
+    assert.ok(job.includes(`image: ${image}`), 'Use the immutable matching official browser image');
+    assert.match(job, /options: --ipc=host/);
+    assert.match(job, /node-version: "22"/);
+    assert.match(job, /run: npm ci/);
+    assert.doesNotMatch(job, /playwright install|apt-get|apt install/, 'Browser jobs must not depend on OS mirror installs');
+    assert.ok(job.includes(`--ci-phase=${phase}`));
+    const check = job.match(/node <<'NODE'\n([\s\S]*?)\n          NODE/);
+    assert.ok(check, 'Fail fast when the pinned image and installed browsers differ');
+    browserChecks.push(check[1].replace(/^          /gm, ''));
+  }
+  assert.equal(browserChecks[0], browserChecks[1]);
+  const verifyInstalledBrowsers = (version, missing) => {
+    const checked = [];
+    runInNewContext(browserChecks[0], { console: { log() {} }, require(name) {
+      if (name === 'node:assert/strict') return assert;
+      if (name === 'node:fs') return { constants: { X_OK: 1 }, accessSync(path, mode) {
+        assert.equal(mode, 1); if (path === missing) throw new Error('Missing browser executable'); checked.push(path);
+      } };
+      if (name === '@playwright/test/package.json') return { version };
+      if (name === '@playwright/test') return { chromium: { executablePath: () => '/browsers/chromium' }, webkit: { executablePath: () => '/browsers/webkit' } };
+      throw new Error('Unexpected module');
+    } });
+    return checked;
+  };
+  assert.deepEqual(verifyInstalledBrowsers('1.63.0'), ['/browsers/chromium', '/browsers/webkit']);
+  assert.throws(() => verifyInstalledBrowsers('1.64.0'), /pinned browser image/);
+  for (const browser of ['chromium', 'webkit']) assert.throws(() => verifyInstalledBrowsers('1.63.0', `/browsers/${browser}`), /Missing browser executable/);
   console.log('Performance orchestration guards passed: unchanged full local order, every failure propagates; same-run immutable export, full 620/60 four-profile evidence, cross-run/tamper/truncation rejection and all-phase aggregate/artifact failures remain blocking. No build/browser/live calls.');
 } finally { rmSync(directory, { recursive: true, force: true }); }

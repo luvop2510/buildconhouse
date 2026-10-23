@@ -91,7 +91,7 @@ test('critical Visit Showroom retries a failed transfer and opens only showroom-
   await expect(page.getByText('Transfer unavailable; retry', { exact: true })).toBeVisible();
   await expect(page).toHaveURL(/\/walkins$/);
   await page.getByTestId('walkin-visit-showroom-walkin-showroom').click();
-  await expect(page).toHaveURL(/\/followups\?workspace=visit_showroom$/);
+  await expect(page).toHaveURL(current => current.pathname === '/followups' && current.searchParams.get('workspace') === 'visit_showroom' && current.searchParams.get('showroom_followup') === 'showroom:walkin-showroom');
   await expect.poll(() => requestedOrigins.at(-1)).toBe('visit_showroom');
   await expect(page.getByText('Transferred showroom visitor', { exact: true })).toBeVisible();
   await expect(page.getByText('Unrelated follow-up', { exact: true })).toHaveCount(0);
@@ -137,4 +137,51 @@ test('critical Customers requests confirmed orders while prospective contacts st
   await expect(page.getByText('Unconfirmed prospect', { exact: true })).toHaveCount(0);
   expect(confirmedQueries.length).toBeGreaterThan(0);
   expect(confirmedQueries.every(value => value === 'true')).toBe(true);
+});
+
+
+test('critical Follow-ups workspace tabs publish durable showroom and quotation routes', async ({ page }) => {
+  await mockSession(page, '/followups', false);
+  await page.addInitScript(() => localStorage.setItem('forge.active-floor', JSON.stringify('ground-floor')));
+  await page.route('**/api/followups/config/**', route => route.fulfill({ json: [] }));
+  await page.route('**/api/followups/saved-views', route => route.fulfill({ json: [] }));
+  await page.route('**/api/followups/page?**', route => {
+    const origin = new URL(route.request().url()).searchParams.get('origin');
+    return route.fulfill({ json: { items: origin ? [followup('showroom:durable', 'Durable showroom visitor', 'visit_showroom')] : [], page: 1, page_size: 100, has_more: false } });
+  });
+  await page.goto('/followups');
+  await page.getByTestId('followups-workspace-tabs-visit_showroom').click();
+  await expect(page).toHaveURL(url => url.searchParams.get('workspace') === 'visit_showroom');
+  await expect(page.getByText('Durable showroom visitor', { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByText('Durable showroom visitor', { exact: true })).toBeVisible();
+  await page.getByTestId('followups-workspace-tabs-quotation_tiles').click();
+  await expect(page).toHaveURL(url => url.searchParams.get('workspace') === 'quotation_tiles');
+  const request = page.waitForRequest(request => new URL(request.url()).pathname === '/api/followups/page' && new URL(request.url()).searchParams.get('rule_type') === 'quotation_tiles_waiting');
+  await page.reload(); await request;
+  await expect(page.getByTestId('followups-workspace-tabs-quotation_tiles')).toHaveAttribute('aria-selected', 'true');
+});
+
+test('critical walk-in detail transfer opens showroom follow-ups on the actual record floor', async ({ page }) => {
+  await mockSession(page, '/walkins/walkin-showroom', false);
+  const crossFloor = { ...walkin, floor_id: 'ground-floor' };
+  await page.route('**/api/walkins/walkin-showroom', route => route.fulfill({ json: crossFloor }));
+  await page.route('**/api/walkins/walkin-showroom/timeline', route => route.fulfill({ json: [] }));
+  await page.route('**/api/walkins/assignees', route => route.fulfill({ json: [] }));
+  await page.route('**/api/walkins/walkin-showroom/visit-showroom', route => {
+    expect(route.request().headers()['x-floor-id']).toBe('ground-floor');
+    return route.fulfill({ json: { walkin_id: walkin.id, followup_id: 'showroom:detail-transfer' } });
+  });
+  await page.route('**/api/followups/config/**', route => route.fulfill({ json: [] }));
+  await page.route('**/api/followups/saved-views', route => route.fulfill({ json: [] }));
+  await page.route('**/api/followups/page?**', route => {
+    expect(route.request().headers()['x-floor-id']).toBe('ground-floor');
+    expect(new URL(route.request().url()).searchParams.get('origin')).toBe('visit_showroom');
+    return route.fulfill({ json: { items: [{ ...followup('showroom:detail-transfer', 'Detail showroom visitor', 'visit_showroom'), floor_id: 'ground-floor' }], page: 1, page_size: 100, has_more: false } });
+  });
+  await page.goto('/walkins/walkin-showroom');
+  await page.getByTestId('walkin-visit-showroom').click();
+  await expect(page).toHaveURL(url => url.pathname === '/followups' && url.searchParams.get('showroom_followup') === 'showroom:detail-transfer');
+  await expect(page.getByText('Detail showroom visitor', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('floor-switcher')).toHaveAccessibleName('Switch workspace. Current workspace: Ground Floor');
 });

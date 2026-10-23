@@ -133,7 +133,8 @@ test('responsive board and table retain their truthful representations through w
   await expect(row).toContainText('Site location:');
   await expect(row).toContainText('Budget:');
   await expect(row).toContainText('Target completion:');
-  await expect(row).toContainText('Next action:');
+  await expect(row).not.toContainText('Next action:');
+  await expect(row).not.toContainText('Assigned to:');
   await health.assertHealthy();
 });
 
@@ -256,4 +257,55 @@ test('historical choices expose disabled state and cannot take keyboard focus', 
   await page.keyboard.press('Enter');
   await expect(choice).toHaveAttribute('aria-pressed', before!);
   await health.assertHealthy();
+});
+
+
+test('a delayed reload cannot replace a newer committed Kitchen save', async ({ page, context }) => {
+  const health = captureRuntimeHealth(page);
+  const created = await context.request.post('/api/kitchen-projects', { headers, data: {
+    customer: { name: 'Kitchen reload version test', phone: `9${String(Date.now() + Math.floor(Math.random() * 1000000)).slice(-9)}` },
+    lead: { site_location: 'Synthetic reload version site', notes: 'Original saved note' },
+    idempotency_key: `reload-version-${Date.now()}-${Math.random()}`,
+  } });
+  expect(created.ok(), await created.text()).toBe(true);
+  const project = await created.json();
+  await seedBrowser(page);
+  await page.goto(`/kitchen/${project.id}/stages/lead`);
+  await expect(page.getByTestId('kitchen-project-ready')).toHaveCount(1);
+  await page.getByTestId('kitchen-lead-notes').fill('Newest committed note');
+  let allowSave!: () => void, saveStarted!: () => void, releaseRead!: () => void, readCaptured!: () => void;
+  const saveGate = new Promise<void>(resolve => { allowSave = resolve; });
+  const saveSeen = new Promise<void>(resolve => { saveStarted = resolve; });
+  const readGate = new Promise<void>(resolve => { releaseRead = resolve; });
+  const readSeen = new Promise<void>(resolve => { readCaptured = resolve; });
+  const commands = `**/api/kitchen-projects/${project.id}/commands`;
+  const detail = `**/api/kitchen-projects/${project.id}`;
+  await page.route(commands, async route => { saveStarted(); await saveGate; await route.continue(); });
+  await page.route(detail, async route => {
+    const snapshot = await route.fetch();
+    expect((await snapshot.json()).version).toBe(project.version);
+    readCaptured(); await readGate; await route.fulfill({ response: snapshot });
+  });
+  try {
+    await page.getByTestId('kitchen-lead-save').click();
+    await saveSeen;
+    await page.getByTestId('kitchen-project-actions').click();
+    await page.getByRole('menuitem', { name: 'Reload saved project', exact: true }).click();
+    await readSeen;
+    const committed = page.waitForResponse(response => response.url().endsWith('/commands') && response.request().postDataJSON()?.command === 'edit_lead');
+    allowSave();
+    const saved = await committed;
+    expect(saved.ok(), await saved.text()).toBe(true);
+    const latest = await saved.json();
+    releaseRead();
+    await expect(page.getByTestId('kitchen-project-ready')).toHaveCount(1);
+    await page.unroute(commands); await page.unroute(detail);
+    const nextSave = page.waitForResponse(response => response.url().endsWith('/commands'));
+    await page.getByTestId('kitchen-lead-save').click();
+    const next = await nextSave;
+    expect(next.request().postDataJSON().expected_version).toBe(latest.version);
+    expect(next.ok(), await next.text()).toBe(true);
+    expect((await next.json()).lead.notes).toBe('Newest committed note');
+    await health.assertHealthy();
+  } finally { allowSave(); releaseRead(); await page.unroute(commands); await page.unroute(detail); }
 });

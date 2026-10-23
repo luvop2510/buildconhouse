@@ -1,3 +1,4 @@
+import { TILES_FLOOR_ID } from "@/src/constants/floors";
 // frontend/src/components/tiles/CreateDispatchSheet.tsx
 // "Create dispatch" straight from the Dispatch List — the tab used to be
 // history-only, so raising a dispatch meant knowing to go find the right
@@ -190,7 +191,7 @@ export function CreateDispatchSheet({ onClose, onCreated }: { onClose: () => voi
     onClose();
     if (chalanId) {
       try {
-        await downloadApiFile(`/tile-orders/chalans/${chalanId}/pdf`, `Chalan-${chalanId}.pdf`, "Chalan PDF");
+        await downloadApiFile(`/tile-orders/chalans/${chalanId}/pdf`, `Chalan-${chalanId}.pdf`, "Chalan PDF", TILES_FLOOR_ID);
       } catch {
         toast.error("Dispatch saved. Open the Chalan from the Dispatch List.");
       }

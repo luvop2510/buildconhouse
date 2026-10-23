@@ -67,7 +67,7 @@ from services.transfer_workflow import ensure_transfer_indexes  # noqa: E402
 from services.download_tokens import ensure_download_token_indexes  # noqa: E402
 from services.tile_order_indexes import ensure_tile_order_indexes  # noqa: E402
 from migrations.runner import pending_migrations, run_migrations  # noqa: E402
-from services.followup_engine import reconcile_followups  # noqa: E402
+from services.followup_engine import followup_worker  # noqa: E402
 from services.floor_scope import ensure_floor_scope  # noqa: E402
 from services.customer_data_reset import customer_reset_maintenance, reset_customer_data, cleanup_reset_files  # noqa: E402
 from services.quotation_shares import ensure_quotation_share_indexes  # noqa: E402
@@ -191,7 +191,7 @@ async def _startup(app: FastAPI) -> None:
         logger.info("Catalog read model ready: %d products.", len(snapshot.products))
     app.state.optional_startup_tasks = [
         asyncio.create_task(_run_optional_startup_task("automation-rule seed", _seed_automation_rules)),
-        asyncio.create_task(_run_optional_startup_task("follow-up reconciliation", reconcile_followups)),
+        asyncio.create_task(followup_worker()),
     ]
     logger.info("Forge API ready; infrastructure preflight passed.")
     logger.info("Monitoring status: sentry=%s", _monitoring_status["sentry"])

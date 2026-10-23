@@ -287,7 +287,7 @@ function FollowupsWorkspace() {
     mounted.current = true;
     return () => { mounted.current = false; };
   }, []);
-  const routeParams = useLocalSearchParams<{ workspace?: string }>();
+  const routeParams = useLocalSearchParams<{ workspace?: string; showroom_followup?: string }>();
   const { staff } = useAuth();
   const canDeleteFollowups = useActionAccess("followups", "delete", !!staff && MANAGER_ROLES.includes(staff.role));
   const { selectedFloorId, floors } = useFloorAccess();
@@ -358,15 +358,23 @@ function FollowupsWorkspace() {
   // living inside the same premium inbox rather than separate screens, per
   // design decision to reuse existing components and avoid a new visual
   // style. Walk-ins / Payments workspaces land in a later phase.
-  const [workspace, setWorkspace] = useState<"all" | "selection" | "quotation_tiles" | "visit_showroom">(routeParams.workspace === "visit_showroom" ? "visit_showroom" : "all");
+  type Workspace = "all" | "selection" | "quotation_tiles" | "visit_showroom";
   const hasTileFollowupWorkspaces = selectedFloorId === "ground-floor";
+  const requestedWorkspace = routeParams.workspace;
+  const workspace: Workspace = requestedWorkspace === "visit_showroom" ? "visit_showroom"
+    : hasTileFollowupWorkspaces && (requestedWorkspace === "selection" || requestedWorkspace === "quotation_tiles") ? requestedWorkspace : "all";
+  const setWorkspace = (value: Workspace) => router.setParams({ workspace: value, showroom_followup: "" });
 
-  // Tile selection/quotation workspaces are a Ground Floor workflow.  The
-  // shared Follow-ups route must not make Sanitary Bathroom users inherit its
-  // tabs (or leave a stale tile filter active after switching floors).
+  // A transfer is an explicit request to see the new active showroom entry.
+  // A previously mounted inbox may still carry Won, search or owner filters.
   useEffect(() => {
-    if (!hasTileFollowupWorkspaces) setWorkspace(current => current === "visit_showroom" ? current : "all");
-  }, [hasTileFollowupWorkspaces]);
+    if (!routeParams.showroom_followup) return;
+    setQ(""); setSearchQuery(""); setFollowupView("active");
+    setKpiFilter("all"); setPriorityFilter("all"); setCategoryFilter("all"); setOwnerFilter("all");
+    detailRequestVersion.current += 1; detailAbortController.current?.abort();
+    setSelectedId(null); setDetail(null); setLoadingDetail(false); setCustomerPreviewOpen(false);
+    setSelectedIds(new Set()); setBulkResult(null); setCollapsed(new Set());
+  }, [routeParams.showroom_followup]);
 
   // ── Data loading ──────────────────────────────────────────────────────────
   const loadList = useCallback(async (nextPage = 1, pageNavigation = false) => {

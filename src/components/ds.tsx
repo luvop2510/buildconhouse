@@ -42,7 +42,7 @@ export {
   LoadingState, PageHeader, PillTabs, PriceTag, ProgressBar,
   ScreenTitle, SearchField, SectionHeader, SegmentedControl, Sheet, Skeleton,
   SkeletonCard, SkeletonGrid, SkeletonList, SkeletonRow, StatTile, StatusBadge,
-  Table, TableCell, TableHeader, TableRow, Tabs, TextField, Toolbar,
+  Table, TableCell, TableHeader, TableRow, tableMinWidth, Tabs, TextField, Toolbar,
 } from "@/src/components/ui";
 
 type FeatherName = keyof typeof Feather.glyphMap;

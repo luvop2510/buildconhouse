@@ -1,6 +1,7 @@
 import { Stack } from "expo-router";
 import { useEffect } from "react";
-import { View } from "react-native";
+import { ActivityIndicator, Pressable, View } from "react-native";
+import { Text } from "@/src/components/AppText";
 
 import { InitialAccountRouteProvider } from "@/src/state/initial-account-route";
 import { AuthProvider } from "@/src/state/auth";
@@ -9,6 +10,7 @@ import { colors } from "@/src/theme/tokens";
 import { ToastHost } from "@/src/components/Toast";
 import { initPerformanceSignals, initSentry } from "@/src/lib/monitoring";
 import { useAppFonts } from "@/src/hooks/use-app-fonts";
+import { reloadAppFonts } from "@/src/hooks/app-font-recovery.web";
 import { useKeyboardViewport } from "@/src/hooks/use-keyboard-viewport";
 
 /**
@@ -25,15 +27,24 @@ export default function RootLayout() {
   useKeyboardViewport();
   const [loaded, error] = useAppFonts();
   useEffect(() => { initSentry(); initPerformanceSignals(); }, []);
-  if (!loaded && !error) return null;
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <InitialAccountRouteProvider>
         <AuthProvider>
-          <AuthGate>
-            <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }} />
-          </AuthGate>
-          <ToastHost />
+          {error ? <View testID="app-font-error" style={{ flex: 1, padding: 24, alignItems: "center", justifyContent: "center", gap: 16 }}>
+            <Text accessibilityRole="header" style={{ fontSize: 22, fontWeight: "600", color: colors.onSurface }}>Unable to load the workspace</Text>
+            <Text style={{ color: colors.onSurfaceSecondary, textAlign: "center", maxWidth: 420 }}>Check your connection and try again.</Text>
+            <Pressable accessibilityRole="button" onPress={reloadAppFonts} style={{ backgroundColor: colors.brand, borderRadius: 8, paddingHorizontal: 24, paddingVertical: 14 }}>
+              <Text style={{ color: colors.onBrand, fontWeight: "600" }}>Try again</Text>
+            </Pressable>
+          </View> : !loaded ? <View testID="app-font-loading" style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+            <ActivityIndicator accessibilityLabel="Loading workspace" color={colors.brand} size="large" />
+          </View> : <>
+            <AuthGate>
+              <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }} />
+            </AuthGate>
+            <ToastHost />
+          </>}
         </AuthProvider>
       </InitialAccountRouteProvider>
     </View>

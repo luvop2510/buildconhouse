@@ -128,8 +128,8 @@ jobs:
         run: pip install -r requirements-prod.txt pytest pytest-asyncio
       # Run only the explicitly isolated suite. Historical integration files
       # require deployed services and must never join this job by a broad glob.
-      - name: Verify Kitchen persistence and direct API authorization
-        run: python -m pytest tests/integration/test_kitchen_projects_mongo.py -v
+      - name: Verify Kitchen persistence and shared showroom transfers
+        run: python -m pytest tests/integration/test_kitchen_projects_mongo.py tests/integration/test_shared_followup_showroom_mongo.py -v
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -215,6 +215,8 @@ jobs:
           npm run test:notebook
           npm run test:notebook-lifecycle
           npm run test:mobile-ux
+          npm run test:kitchen-dates
+          npm run test:table-layout
           npm run test:api-client
           npm run test:auth-provider-races
           npm run test:team-contacts
@@ -261,6 +263,9 @@ jobs:
       - name: Release browser journeys and responsive audit
         if: ${{ !cancelled() && steps.audit-browsers.outcome == 'success' }}
         run: npm run test:e2e:audit
+      - name: Populated tables across all floors and screen sizes
+        if: ${{ !cancelled() && steps.audit-browsers.outcome == 'success' }}
+        run: npm run test:e2e:tables
       # Once the build and browser installation pass, collect every independent
       # suite's failures in this revision instead of hiding later regressions.
       # No suite uses continue-on-error; any failed suite still fails the job.
@@ -279,6 +284,7 @@ jobs:
           for (const [suite, file] of Object.entries({
             audit: 'audit-results.json', responsive: 'responsive-results.json',
             devices: 'device-results.json',
+            tables: 'table-results.json',
           })) {
             try {
               const { stats } = JSON.parse(await readFile(`output/playwright/${file}`, 'utf8'));

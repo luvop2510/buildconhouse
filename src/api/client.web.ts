@@ -134,7 +134,7 @@ export function csrfHeaders(): Record<string, string> {
   // throw before fetch and prevent even logout or a fresh credential login.
   return csrf ? { "X-CSRF-Token": csrf } : {};
 }
-async function getRequestFloorId() {
+export async function getRequestFloorId() {
   if (floorCache === undefined) {
     const stored = (await browserStorage.getItem<string>(SELECTED_FLOOR_KEY, "")) || "";
     if (floorCache === undefined) floorCache = stored;

@@ -16,7 +16,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 from pymongo.errors import DuplicateKeyError
 
-from models_kitchen import (AdvancePayload, AssignmentPayload, CadFields, ConfigurePolicy,
+from models_kitchen import (AdvancePayload, CadFields, ConfigurePolicy,
                             LeadFields, MetadataPayload, PolicyFields, STAGES, VisitFields)
 from services import kitchen_access as access
 from services import kitchen_workflow as workflow
@@ -33,14 +33,13 @@ DECISION_CONTRACT = "2026-10-20"
 def attention_expressions(policy, now=None):
     """One server definition for dashboard metrics and their list drilldowns.
 
-    Dates are compared as instants, including historical explicit offsets. Bad
-    or missing deadlines never become overdue. No client page count is used.
+    Completion targets use the business date in India. Retired next-action
+    deadlines remain in history but never become overdue. No client page count is used.
     """
     now = now or datetime.now(timezone.utc)
     today = now.astimezone(timezone(timedelta(hours=5, minutes=30))).date().isoformat()
     active = {"$and": [{"$ne": ["$stage", "completed"]},
         {"$not": [{"$in": [{"$ifNull": ["$status", None]}, ["Lost", "Cancelled", "On Hold"]]}]}]}
-    deadline = {"$convert": {"input": "$deadline", "to": "date", "onError": None, "onNull": None}}
     pending = []
     for scope, stage in (("production", "order"), ("closure", "installation")):
         subject = {"$ifNull": [f"$approval_subjects.{scope}", None]}
@@ -68,7 +67,7 @@ def attention_expressions(policy, now=None):
     ]}}}
     return {"active": active, "on_hold": {"$eq": ["$status", "On Hold"]},
         "pending_approval": {"$and": [active, {"$or": pending}]},
-        "next_action_overdue": {"$and": [active, {"$ne": [deadline, None]}, {"$lt": [deadline, now]}]},
+        "next_action_overdue": {"$literal": False},
         "completion_overdue": {"$and": [active,
             {"$ne": [{"$ifNull": ["$target_completion_date", None]}, None]},
             {"$ne": [{"$ifNull": ["$target_completion_date", ""]}, ""]},
@@ -86,14 +85,14 @@ def resolved_policy(policy):
     result = copy.deepcopy(policy)
     managers = result.get("department_manager_user_ids", []) if result.get("decision_contract") == DECISION_CONTRACT else []
     result.update(identity_timing="creation", cad_require_received=True, cad_require_progress_100=True,
-        assignment_user_ids=managers, unassigned_visibility="owner",
+        assignment_user_ids=[], unassigned_visibility="all_authorized",
         department_manager_user_ids=managers,
         production={"require_advance": True, "minimum_advance_amount": None, "minimum_advance_percent": None,
                     "require_confirmation_document": False, "require_manager_approval": True, "manager_user_ids": managers},
         closure={"require_manager_approval": True, "manager_user_ids": managers},
         exceptions={"allow_hold": True, "allow_cancel": True, "allow_reopen": True,
                     "allow_return_to_design": True, "manager_user_ids": []},
-        metrics={"hold_is_active": False, "overdue_date": "either", "confirmed_value_include_completed": False,
+        metrics={"hold_is_active": False, "overdue_date": "target_completion", "confirmed_value_include_completed": False,
                  "confirmed_value_include_cancelled": False},
         required_fields=None, history_corrections=None,
         files={"allowed_types": list(FILE_EXTENSIONS), "max_bytes": MAX_TRANSFER_BYTES, "single_request_max_bytes": MAX_FILE_BYTES, "chunk_bytes": 512 * 1024})
@@ -171,7 +170,7 @@ def required_fields_error(project, stage, policy):
         source = project.get(key, [])[-1] if project.get(key) else {}
     missing = []
     for name in fields:
-        value = project.get("assignments", {}).get(stage) if name == "assigned_to" else source.get(name)
+        value = source.get(name)
         if value is None or isinstance(value, str) and not value.strip():
             missing.append(name)
     return "Configured required fields are missing: " + ", ".join(missing) if missing else None
@@ -349,8 +348,8 @@ class KitchenProjectService:
         if "attachments" in result:
             result["attachments"] = [{k: v for k, v in attachment.items() if k not in {"storage_key", "bucket"}}
                                      for attachment in result["attachments"]]
-        result["permissions"] = {"can_update": await access.capability(self.db, user, "update") and access.current_task_assigned(project, user, policy),
-                                 "can_assign": access.can_assign(user, policy) and await access.capability(self.db, user, "update"), "can_configure": access.owner(user)}
+        result["permissions"] = {"can_update": await access.capability(self.db, user, "update"),
+                                 "can_assign": False, "can_configure": access.owner(user)}
         result["permissions"]["can_review_duplicate"] = access.owner(user)
         for scope in ("production", "closure"):
             result["permissions"][f"can_approve_{scope}"] = access.department_manager(user, policy) and await access.capability(self.db, user, "update")
@@ -430,8 +429,7 @@ class KitchenProjectService:
         updated["command_receipts"].append({"actor_id": user.id, "key": key, "fingerprint": signature,
                                            "version": updated["version"], "command": "attachment"})
         bounded(updated)
-        # Re-read the task after provider I/O; the employee may still be allowed
-        # to read history while a new stage/assignment belongs to someone else.
+        # Re-read the project and access after provider I/O before the CAS write.
         # Orphan bytes on a CAS loss remain private and unreferenced.
         latest_task = await self.db.kitchen_projects.find_one({"id": project_id, "floor_id": access.KITCHEN_FLOOR})
         await access.require_project(self.db, user, latest_task, policy, "update")
@@ -518,13 +516,6 @@ class KitchenProjectService:
             if previous.get("creation_fingerprint") != digest:
                 raise HTTPException(409, "This creation key was already used with different fields")
             return await self.public(previous, user, policy, replayed=True)
-        assigned = None
-        if body.assigned_to:
-            if not access.can_assign(user, policy):
-                raise HTTPException(403, "Only the owner or an explicitly selected department manager can assign project staff")
-            assigned = await access.validate_assignee(self.db, body.assigned_to)
-        if not access.can_assign(user, policy) and not assigned:
-            raise HTTPException(422, "Ask the owner or selected department manager to assign this project")
         lead = body.lead.model_dump()
         if lead["status"] == "Lost" and not lead.get("lost_reason"):
             raise HTTPException(422, "A lost reason is required")
@@ -545,10 +536,10 @@ class KitchenProjectService:
                    "customer_name_normalized": " ".join((customer.get("name") or "").casefold().split()),
                    "version": 1, "stage": "lead", "status": lead["status"], "lead": lead,
                    "visit": VisitFields().model_dump(), "cad": CadFields().model_dump(),
-                   "assignments": {"lead": assigned["id"]} if assigned else {},
-                   "assignment_names": {"lead": assigned["full_name"]} if assigned else {},
-                   "assigned_to": assigned["id"] if assigned else None,
-                   "assigned_to_name": assigned["full_name"] if assigned else None,
+                   "assignments": {},
+                   "assignment_names": {},
+                   "assigned_to": None,
+                   "assigned_to_name": None,
                    "next_action": None, "deadline": None, "target_completion_date": None,
                    "design_revision_count": 0, "site_visit_count": 0, "known_design_revision_count": 0, "known_site_visit_count": 0, "order_amount": None,
                    "workflow_cycle": 1, "commercial_basis_invalidated": False, "work_history": [],
@@ -607,8 +598,8 @@ class KitchenProjectService:
         policy = await self.policy()
         project = await self.db.kitchen_projects.find_one({"id": project_id, "floor_id": access.KITCHEN_FLOOR})
         await access.require_project(self.db, user, project, policy, "update")
-        if body.command == "assign" and not access.can_assign(user, policy):
-            raise HTTPException(403, "Only the owner or an explicitly selected department manager can assign project staff")
+        if body.command == "assign":
+            raise HTTPException(422, "Kitchen stage assignments have been removed")
         digest = fingerprint({"command": body.command, "payload": body.payload})
         receipt = next((r for r in project["command_receipts"] if r["actor_id"] == user.id and r["key"] == body.idempotency_key), None)
         if receipt:
@@ -617,9 +608,9 @@ class KitchenProjectService:
             return await self.public(project, user, policy, replayed=True)
         # Replays above are read-only acknowledgments of committed work. New
         # routine writes must respect an owner hold/cancellation in every stage,
-        # including early-stage/plan commands outside workflow.apply. Assignment
-        # and duplicate review retain their explicit authority checks below.
-        if project.get("lifecycle_status") in {"On Hold", "Cancelled"} and body.command not in {"order_status", "exception", "assign", "review_duplicate"}:
+        # including early-stage/plan commands outside workflow.apply. Duplicate
+        # review retains its explicit authority checks below.
+        if project.get("lifecycle_status") in {"On Hold", "Cancelled"} and body.command not in {"order_status", "exception", "review_duplicate"}:
             raise HTTPException(422, "The owner must resume this held or cancelled project before routine changes")
         await access.require_current_task(self.db, user, project, policy)
         if body.expected_version != project["version"]:
@@ -631,13 +622,12 @@ class KitchenProjectService:
             stage, model = {"edit_lead": ("lead", LeadFields), "save_visit": ("visit", VisitFields), "save_cad": ("cad", CadFields)}[command]
             if project["stage"] != stage:
                 raise HTTPException(422, f"This command is available only in the {stage} stage")
-            updated[stage] = validate(model, {**project[stage], **payload}).model_dump()
+            saved_fields = {key: value for key, value in project[stage].items() if key != "next_action"}
+            updated[stage] = {**project[stage], **validate(model, {**saved_fields, **payload}).model_dump()}
             if stage == "cad":
                 updated["cad"]["ready"] = updated["cad"]["received"] and updated["cad"]["progress"] == 100 and updated["cad"]["status"] == "Completed"
             if stage == "lead" and lead_error(updated):
                 raise HTTPException(422, lead_error(updated))
-            if stage == "visit" and "next_action" in payload:
-                updated["next_action"] = updated["visit"]["next_action"]
             if stage == "lead" and project[stage]["status"] == "Lost" and updated[stage]["status"] != "Lost":
                 raise HTTPException(422, "Lost leads cannot be reopened through ordinary editing")
             if stage == "lead" and updated[stage]["status"] == "Lost" and not updated[stage].get("lost_reason"):
@@ -667,19 +657,8 @@ class KitchenProjectService:
                 "reason": review.reason, "reviewed_by": user.id, "reviewed_at": timestamp()}
             if review.decision == "duplicate":
                 updated["lead"].update(status="Lost", lost_reason=review.reason)
-        elif command == "assign":
-            assignment = validate(AssignmentPayload, payload)
-            chosen = await access.validate_assignee(self.db, assignment.user_id)
-            if chosen:
-                updated["assignments"][assignment.stage] = chosen["id"]
-                updated["assignment_names"][assignment.stage] = chosen["full_name"]
-            else:
-                updated["assignments"].pop(assignment.stage, None)
-                updated["assignment_names"].pop(assignment.stage, None)
         elif command == "metadata":
             updated.update(validate(MetadataPayload, payload).model_dump(exclude_unset=True))
-            if project["stage"] == "visit" and "next_action" in payload:
-                updated["visit"]["next_action"] = updated["next_action"]
         elif command in workflow.COMMANDS:
             if command == "design_revision" and project.get("design_versions") and project["design_versions"][-1].get("response") == "Approved" and not access.owner(user):
                 raise HTTPException(403, "Only the owner can authorize changing an approved design")
@@ -760,10 +739,8 @@ class KitchenProjectService:
 
     async def assignees(self, user):
         await access.require_capability(self.db, user, "view")
-        policy = await self.policy()
-        if not access.can_assign(user, policy):
-            return {"rows": [{"id": user.id, "full_name": user.full_name, "role": user.role}]}
-        return {"rows": await access.eligible_staff(self.db)}
+        # The owner still selects approval managers through this legacy endpoint.
+        return {"rows": await access.eligible_staff(self.db) if access.owner(user) else []}
 
     async def dashboard(self, user):
         await access.require_capability(self.db, user, "view")

@@ -103,7 +103,7 @@ try {
           return;
         }
         response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
-        response.end('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kitchen synthetic pilot</title><h1>Local synthetic Kitchen pilot</h1><p>Disposable test records; no production writes.</p><p>Select an account. Return here to switch accounts. Department manager approvals require the selected manager account.</p><ul><li><a href="/__kitchen-pilot?role=owner">Synthetic owner</a></li><li><a href="/__kitchen-pilot?role=manager">Selected department manager</a></li><li><a href="/__kitchen-pilot?role=worker">Ordinary assigned employee</a></li></ul><p>Use only synthetic data. This pilot ends when its local process stops.</p></html>');
+        response.end('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kitchen synthetic pilot</title><h1>Local synthetic Kitchen pilot</h1><p>Disposable test records; no production writes.</p><p>Select an account. Return here to switch accounts. Department manager approvals require the selected manager account.</p><ul><li><a href="/__kitchen-pilot?role=owner">Synthetic owner</a></li><li><a href="/__kitchen-pilot?role=manager">Selected department manager</a></li><li><a href="/__kitchen-pilot?role=worker">Kitchen staff</a></li></ul><p>Use only synthetic data. This pilot ends when its local process stops.</p></html>');
         return;
       }
       if (pathname.startsWith('/api/')) {

@@ -62,6 +62,10 @@ jobs:
   stability:
     needs: prepare
     runs-on: ubuntu-latest
+    # Match @playwright/test exactly; avoid OS mirror downloads inside the audit deadline.
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+      options: --ipc=host
     timeout-minutes: 20
     outputs:
       evidence_id: ${{ steps.evidence.outputs.artifact-id }}
@@ -78,7 +82,17 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
-      - run: npx playwright install --with-deps chromium webkit
+      - name: Verify pinned Playwright browsers
+        run: |
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const { accessSync, constants } = require('node:fs');
+          const { version } = require('@playwright/test/package.json');
+          assert.equal(version, '1.63.0', 'Update the pinned browser image with @playwright/test');
+          const { chromium, webkit } = require('@playwright/test');
+          for (const browser of [chromium, webkit]) accessSync(browser.executablePath(), constants.X_OK);
+          console.log('Pinned Playwright version and Chromium/WebKit executables verified');
+          NODE
       - uses: actions/download-artifact@v4
         with:
           merge-multiple: true
@@ -104,6 +118,10 @@ jobs:
   timing:
     needs: prepare
     runs-on: ubuntu-latest
+    # Match @playwright/test exactly; avoid OS mirror downloads inside the audit deadline.
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+      options: --ipc=host
     timeout-minutes: 20
     outputs:
       evidence_id: ${{ steps.evidence.outputs.artifact-id }}
@@ -120,7 +138,17 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
-      - run: npx playwright install --with-deps chromium webkit
+      - name: Verify pinned Playwright browsers
+        run: |
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const { accessSync, constants } = require('node:fs');
+          const { version } = require('@playwright/test/package.json');
+          assert.equal(version, '1.63.0', 'Update the pinned browser image with @playwright/test');
+          const { chromium, webkit } = require('@playwright/test');
+          for (const browser of [chromium, webkit]) accessSync(browser.executablePath(), constants.X_OK);
+          console.log('Pinned Playwright version and Chromium/WebKit executables verified');
+          NODE
       - uses: actions/download-artifact@v4
         with:
           merge-multiple: true

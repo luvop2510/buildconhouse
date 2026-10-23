@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { View } from "react-native";
-import { Button, TextField } from "@/src/components/ds";
+import { KitchenButton as Button, KitchenTextField as TextField } from "./KitchenPrimitives";
 import type { KitchenLead } from "@/src/api/kitchenProjects";
 import { KitchenDateField } from "./KitchenFilters";
 import { Choice } from "./shared";
@@ -8,11 +8,11 @@ import { spacing } from "@/src/theme/tokens";
 const leadStatuses = ["New", "Contacted", "Qualified", "Lost"] as const;
 export function LeadFields({ value, onChange, disabled, prefix = "kitchen-lead" }: { value: KitchenLead; onChange: (lead: KitchenLead) => void; disabled?: boolean; prefix?: string }) {
   const [showDetails, setShowDetails] = useState(Boolean(value.lead_source || value.kitchen_type || value.budget || value.notes));
-  return <View style={{ gap: spacing.md }}>
+  return <View style={{ gap: 24 }}>
     <TextField label="Site location (required)" value={value.site_location || ""} onChangeText={site_location => onChange({ ...value, site_location })} editable={!disabled} testID={`${prefix}-site_location`} />
     <KitchenDateField label="Lead date" value={value.lead_date || ""} onChange={lead_date => onChange({ ...value, lead_date: lead_date || null })} disabled={disabled} testID={`${prefix}-date`} />
     <Choice label="Lead status" value={value.status} values={leadStatuses} onChange={status => onChange({ ...value, status })} disabled={disabled} testID={`${prefix}-status`} />
-    {value.status === "Lost" ? <TextField label="Lost reason" value={value.lost_reason || ""} onChangeText={lost_reason => onChange({ ...value, lost_reason })} editable={!disabled} multiline testID={`${prefix}-lost-reason`} /> : null}
+    {value.status === "Lost" ? <TextField label="Lost reason (required)" value={value.lost_reason || ""} onChangeText={lost_reason => onChange({ ...value, lost_reason })} editable={!disabled} multiline testID={`${prefix}-lost-reason`} /> : null}
     <Button label={showDetails ? "Hide enquiry details" : "Add enquiry details"} variant="secondary" onPress={() => setShowDetails(value => !value)} testID={`${prefix}-details-toggle`} />
     <View style={{ gap: spacing.md, display: showDetails ? "flex" : "none" }}>
     <TextField label="Lead source" placeholder="Instagram, referral, showroom walk-in" value={value.lead_source || ""} onChangeText={lead_source => onChange({ ...value, lead_source })} editable={!disabled} testID={`${prefix}-source`} />

@@ -16,7 +16,7 @@ RESOURCE_REGISTRY: dict[str, dict[str, Any]] = {
     "tiles": {"label": "Tile quotations"},
     "catalog": {"label": "Catalog"},
     "customers": {"label": "Customers"},
-    "kitchen_projects": {"label": "Kitchen projects", "floor_ids": ["second-floor"], "actions": ["view", "create", "update", "export"], "description": "Overview, Projects, Workflow, Completed and all nine stage pages, history and private documents. Choose view, create, update and export. Staff see assigned projects only; manager approvals require separate owner configuration."},
+    "kitchen_projects": {"label": "Kitchen projects", "floor_ids": ["second-floor"], "actions": ["view", "create", "update", "export"], "description": "Overview, Projects, Workflow, Completed and all nine stage pages, history and private documents. Choose view, create, update and export. Staff access Kitchen projects with the selected permissions; manager approvals require separate owner configuration."},
     "purchases": {"label": "Purchases"},
     "godown_stock": {"label": "Godown stock"},
     "payments": {"label": "Payments"},

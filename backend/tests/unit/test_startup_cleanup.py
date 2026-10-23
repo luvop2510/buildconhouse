@@ -18,8 +18,9 @@ class _HealthyPreflight:
 
 
 @pytest.mark.asyncio
-async def test_startup_failure_after_worker_start_cleans_up_resources(monkeypatch):
-    """A failed readiness task must not leak the outbox worker or media client."""
+@pytest.mark.parametrize("fail_snapshot", [True, False])
+async def test_startup_failure_after_worker_start_cleans_up_resources(monkeypatch, fail_snapshot):
+    """Both normal shutdown and failed startup must release owned workers."""
     closed = False
 
     async def noop(*_args, **_kwargs):
@@ -35,7 +36,9 @@ async def test_startup_failure_after_worker_start_cleans_up_resources(monkeypatc
         await asyncio.Event().wait()
 
     async def broken_snapshot():
-        raise RuntimeError("catalog readiness failed")
+        if fail_snapshot:
+            raise RuntimeError("catalog readiness failed")
+        return SimpleNamespace(products=[])
 
     class Storage:
         async def close(self):
@@ -65,15 +68,23 @@ async def test_startup_failure_after_worker_start_cleans_up_resources(monkeypatc
     monkeypatch.setattr(server, "ensure_quotation_share_indexes", noop)
     monkeypatch.setattr(server, "dispatch_pending", noop)
     monkeypatch.setattr(server, "outbox_worker", worker)
+    monkeypatch.setattr(server, "followup_worker", worker)
+    monkeypatch.setattr(server, "_seed_automation_rules", noop)
     monkeypatch.setattr(server.catalog_service, "refresh_catalog_snapshot", broken_snapshot)
     monkeypatch.setattr(server, "get_media_storage", lambda: Storage())
     monkeypatch.setattr(server, "client", Client())
     monkeypatch.setattr(server, "settings", SimpleNamespace(environment="test"))
 
     app = FastAPI()
-    with pytest.raises(RuntimeError, match="catalog readiness failed"):
+    if fail_snapshot:
+        with pytest.raises(RuntimeError, match="catalog readiness failed"):
+            async with server.lifespan(app):
+                pass
+    else:
         async with server.lifespan(app):
-            pass
+            await asyncio.sleep(0)
+            assert not app.state.optional_startup_tasks[1].done()
+        assert app.state.optional_startup_tasks[1].cancelled()
 
     assert app.state.outbox_worker.cancelled()
     assert closed

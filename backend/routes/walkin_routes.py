@@ -392,6 +392,9 @@ async def visit_showroom(walkin_id: str, user: UserPublic = Depends(require_min_
         raise HTTPException(status_code=404, detail="Walk-in not found")
     if walkin.get("status") == "lost":
         raise HTTPException(status_code=409, detail="Reopen this lost walk-in before transferring to follow-ups")
+    customer_id = walkin.get("customer_id")
+    if not isinstance(customer_id, str) or not customer_id.strip():
+        raise HTTPException(status_code=409, detail="This walk-in has no confirmed customer identity. Review it before transferring.")
     now = now_iso()
     followup_id = walkin.get("scope_followup_id") or f"showroom:{walkin_id}"
     followup = Followup(
@@ -414,6 +417,31 @@ async def visit_showroom(walkin_id: str, user: UserPublic = Depends(require_min_
         # Acknowledge only our exact, authorized follow-up identity.
         if not await db.followups.find_one(identity, {"_id": 0, "id": 1}):
             raise
+    # Assigned/multi-floor intake already created this canonical lead with
+    # origin="walkin". An insert-only upsert cannot move that existing row
+    # into the showroom inbox; promote its routing metadata while retaining
+    # its assignments, contact history, shared group and completion state.
+    # This also repairs a previously interrupted transfer on an explicit retry.
+    confirmed_identity = {**identity, "customer_id": customer_id,
+                          "walkin_id": walkin_id, "rule_type": "manual"}
+    if not await db.followups.find_one(
+        {**confirmed_identity, "origin": {"$in": ["walkin", "visit_showroom"]}}, {"_id": 0, "id": 1},
+    ):
+        raise HTTPException(status_code=409, detail="The linked follow-up does not match this walk-in. Review its customer and source before transferring.")
+    promoted = await db.followups.update_one(
+        {**confirmed_identity, "origin": "walkin"},
+        {"$set": {
+            "origin": "visit_showroom", "walkin_id": walkin_id,
+            "reason": "Visit Showroom", "next_action": "Arrange showroom visit",
+            "next_action_reason": "Transferred from the walk-in register",
+            "suggested_channel": "visit", "is_automated": False,
+            "updated_at": now,
+        }},
+    )
+    if not promoted.modified_count and not await db.followups.find_one(
+        {**confirmed_identity, "origin": "visit_showroom"}, {"_id": 0, "id": 1},
+    ):
+        raise HTTPException(status_code=409, detail="The linked follow-up changed. Reload this walk-in before transferring.")
     result = await db.walkins.update_one(
         {**{"id": walkin_id, "floor_id": walkin["floor_id"]}, "showroom_followup_id": {"$ne": followup_id}},
         {"$set": {"showroom_followup_id": followup_id, "showroom_transferred_at": now, "updated_at": now}},
