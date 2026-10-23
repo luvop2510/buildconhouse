@@ -212,3 +212,31 @@ test('critical quotation search retries a failed query without losing its draft 
   await expect.poll(() => fixture.saved().items.length).toBe(1);
   expect(fixture.saved().items[0]).toMatchObject({ product_id: 'basin-0', room: 'Master Bath' });
 });
+
+test('critical product add feedback does not block a deliberate second quantity addition', async ({ page }) => {
+  await builderFixture(page);
+  const add = page.getByTestId('add-B-0').first();
+  // Ignore a duplicate tap, while keeping the feedback animation separate
+  // from the next deliberate quantity change.
+  await add.dblclick();
+  await expect(page.getByText('1 in this room', { exact: true }).first()).toBeVisible();
+  await page.waitForTimeout(250);
+  await add.click();
+  await expect(page.getByText('2 in this room', { exact: true }).first()).toBeVisible();
+});
+
+
+test('critical quotation room actions preserve the room name in a narrow desktop panel', async ({ page }) => {
+  await builderFixture(page);
+  await page.getByTestId('add-B-0').first().click();
+  const review = page.getByTestId('mobile-review-quotation');
+  if (await review.isVisible()) await review.click();
+  const room = page.getByTestId('room-name-Master Bath');
+  await expect(room).toBeVisible();
+  expect((await room.boundingBox())!.width).toBeGreaterThan(140);
+  for (const action of ['room-rename-Master Bath', 'room-discount-Master Bath', 'room-dup-Master Bath', 'room-delete-Master Bath']) {
+    const box = await page.getByTestId(action).boundingBox();
+    expect(box!.width).toBeGreaterThanOrEqual(44);
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+  }
+});

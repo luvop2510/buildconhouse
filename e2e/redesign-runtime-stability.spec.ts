@@ -23,8 +23,13 @@ async function fixtures(page: Page) {
 }
 
 async function navigate(page: Page, label: string) {
-  if (page.viewportSize()!.width < 768 && !(await page.getByRole('link', { name: label, exact: true }).isVisible())) {
-    await page.getByRole('button', { name: 'More', exact: true }).click();
+  if (page.viewportSize()!.width < 768) {
+    // A hard recovery mounts the phone navigation after session/floor reads.
+    // Wait for its complete bar before deciding whether this link is overflow.
+    await expect(page.getByTestId('bottom-nav-more')).toBeVisible();
+    if (!(await page.getByRole('link', { name: label, exact: true }).isVisible())) {
+      await page.getByRole('button', { name: 'More', exact: true }).click();
+    }
   }
   await page.getByRole('link', { name: label, exact: true }).click();
 }
@@ -153,7 +158,7 @@ test('critical a failed quotation module offers reload and retains the signed-in
   });
   await page.goto('/quotations');
   await page.getByTestId('new-quotation-btn').click();
-  await expect(page.getByTestId('route-error-boundary')).toContainText('An app update is available.');
+  await expect(page.getByTestId('route-error-boundary')).toContainText('The app files for this page could not be downloaded.');
   expect(failures).toBeGreaterThan(0);
   await expect(page.getByTestId('login-submit')).toHaveCount(0);
   // Phone quotation editing deliberately hides the general navigation bar.
@@ -163,5 +168,34 @@ test('critical a failed quotation module offers reload and retains the signed-in
   await expect(page.getByTestId('quotation-workspace')).toBeVisible();
   await expect(page).toHaveURL(/\/quotations\/new/);
   await expect(page.getByTestId('login-submit')).toHaveCount(0);
+  await health.assertHealthy();
+});
+
+// A module-level React.lazy keeps its rejected promise after ordinary SPA
+// navigation. Open home must leave that module graph, so opening the same
+// quotation after a transient download failure can succeed without signing in.
+test('critical opening home after a failed module clears the rejected import before returning', async ({ page }) => {
+  const health = captureRuntimeHealth(page, { expectedErrors: [/Loading module .* failed|AsyncRequireError|The above error occurred|An error occurred in the .* component/i, /^Asset request failed: \/_expo\/static\/js\/web\/QuotationBuilder-.* 404$/] });
+  await fixtures(page);
+  let block = true;
+  let documents = 0;
+  page.on('request', request => {
+    if (request.isNavigationRequest() && request.frame() === page.mainFrame()) documents++;
+  });
+  await page.route('**/QuotationBuilder-*.js', route => block
+    ? route.fulfill({ status: 404, contentType: 'application/javascript', body: '' })
+    : route.continue());
+  await page.goto('/quotations');
+  await page.getByTestId('new-quotation-btn').click();
+  await expect(page.getByTestId('route-error-boundary')).toBeVisible();
+  block = false;
+  const before = documents;
+  await page.getByRole('button', { name: 'Open workspace home', exact: true }).click();
+  await expect(page.getByTestId('route-error-boundary')).toHaveCount(0);
+  await navigate(page, 'Quotations');
+  await page.getByTestId('new-quotation-btn').click();
+  await expect(page.getByTestId('quotation-workspace')).toBeVisible();
+  await expect(page.getByTestId('login-submit')).toHaveCount(0);
+  expect(documents).toBe(before + 1);
   await health.assertHealthy();
 });

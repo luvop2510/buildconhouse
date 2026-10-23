@@ -173,6 +173,7 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
               return (
                 <Pressable
                   key={opt.k}
+                  accessibilityRole="button" accessibilityState={{ selected: on }}
                   onPress={() => b.setSortKey(opt.k)}
                   style={[styles.sortChip, on && styles.sortChipActive]}
                   testID={`sort-${opt.k}`}
@@ -190,6 +191,7 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
               return (
                 <Pressable
                   key={opt.k}
+                  accessibilityRole="button" accessibilityState={{ selected: on }}
                   onPress={() => b.setSortKey(opt.k)}
                   style={[styles.sortChip, on && styles.sortChipActive]}
                   testID={`sort-${opt.k}`}
@@ -372,7 +374,7 @@ function ProductGridCardImpl({ product, compact, width, favourite, addedQty, onT
       </View>
 
       <View style={[styles.cardBody, compact && styles.cardBodyCompact]}>
-        <Pressable accessibilityRole="button" accessibilityLabel={`Details for ${product.name}`} onPress={() => onOpenModal(product)}><Text style={[styles.cardName, compact && styles.cardNameCompact]} numberOfLines={2}>{product.name}</Text></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Details for ${product.name}`} onPress={() => onOpenModal(product)} style={styles.cardNameTarget}><Text style={[styles.cardName, compact && styles.cardNameCompact]} numberOfLines={2}>{product.name}</Text></Pressable>
         <Text style={styles.cardSku} numberOfLines={1}>
           {selectedSku}{product.brand_name ? ` · ${product.brand_name}` : ""}
         </Text>
@@ -423,16 +425,17 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
     backgroundColor: colors.surfaceSecondary, gap: spacing.sm,
   },
-  headCompact: { paddingHorizontal: 12, paddingVertical: 8, gap: 6 },
+  headCompact: { paddingHorizontal: 16, paddingVertical: 8, gap: 6 },
+  cardNameTarget: { minHeight: 44, justifyContent: "center" },
   filterToolbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
   filterTrigger: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 8 },
   customTrigger: { borderWidth: 1, borderColor: colors.border, borderRadius: 10, backgroundColor: colors.surface },
-  filterTriggerLabel: { fontSize: 12, fontWeight: "600", color: colors.onSurface },
+  filterTriggerLabel: { fontSize: 13, fontWeight: "600", color: colors.onSurface },
   filterHint: { fontSize: 11, color: colors.onSurfaceSecondary },
   cardAdd: { minHeight: 44, alignItems: "center", justifyContent: "center", marginTop: 4 },
-  addedLabel: { fontSize: 11, color: ds.brassDeep, fontWeight: "600" },
+  addedLabel: { fontSize: 12, color: ds.brassDeep, fontWeight: "600" },
   chooseFinish: { minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 4 },
-  finishLabel: { flex: 1, fontSize: 11, color: colors.onSurfaceSecondary },
+  finishLabel: { flex: 1, fontSize: 12, color: colors.onSurfaceSecondary },
   crumbs: { flexDirection: "row", alignItems: "center", gap: 6 },
   crumb: { flexShrink: 1, fontSize: 13, fontWeight: "600", color: colors.onSurfaceSecondary },
   crumbActive: { color: colors.onSurface },
@@ -507,9 +510,9 @@ const styles = StyleSheet.create({
   // keeps every card in the grid the same height regardless of content.
   cardBody: { padding: 10, gap: 6 },
   cardBodyCompact: { padding: 10, gap: 5 },
-  cardName: { fontSize: 13, fontWeight: "600", color: colors.onSurface, lineHeight: 17, minHeight: 34 },
-  cardNameCompact: { fontSize: 13, lineHeight: 17, minHeight: 34 },
-  cardSku: { fontSize: 11, color: colors.onSurfaceMuted, fontVariant: ["tabular-nums"] },
+  cardName: { fontSize: 14, fontWeight: "600", color: colors.onSurface, lineHeight: 19, minHeight: 38 },
+  cardNameCompact: { fontSize: 14, lineHeight: 19, minHeight: 38 },
+  cardSku: { fontSize: 12, color: colors.onSurfaceMuted, fontVariant: ["tabular-nums"] },
   priceRow: { flexDirection: "row", alignItems: "center", gap: 6, minHeight: 32 },
   priceCol: { flex: 1, minWidth: 0 },
   price: { fontSize: 14, fontWeight: "600", color: colors.onSurface, fontVariant: ["tabular-nums"], letterSpacing: -0.1 },

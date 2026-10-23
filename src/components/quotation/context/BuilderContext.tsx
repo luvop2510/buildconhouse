@@ -37,6 +37,8 @@ import { productImageList } from "../helpers/media";
 import { applyQuotationRowOrder, moveQuotationLine } from "../helpers/reorder";
 import { restoreSingleCatalogChoice } from "../helpers/catalogFilters";
 import { suggestedProductArea } from "../helpers/areas";
+import { godownQuotationPrice } from "../helpers/godown";
+import type { GodownLot } from "@/src/api/godownStock";
 import { addProductAndConcealedPart, syncDefaultIncludedParts } from "../helpers/concealedParts";
 import {
   Brand, BuilderRow, BuilderState, Category, Customer, DEFAULT_ROOMS, DescSheetState, DiscountSheetState,
@@ -1171,32 +1173,36 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     })();
   }, [initialProductId, initialCatalogEntryId, addFromProduct, activeFloorId]);
 
-  const appliedInitialGodownRef = useRef(false);
+  const appliedInitialGodownRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!initialGodownStockId || !activeFloorId || appliedInitialGodownRef.current) return;
-    appliedInitialGodownRef.current = true;
+    const seedKey = `${activeFloorId}:${initialGodownStockId}:${initialGodownVariant ?? "base"}`;
+    if (!initialGodownStockId || !activeFloorId || appliedInitialGodownRef.current === seedKey) return;
+    const controller = new AbortController();
+    const generation = documentGeneration.current;
     (async () => {
       try {
-        const lot = await api.get<any>(`/godown-stock/${initialGodownStockId}`, { floorId: activeFloorId });
-        if (!(Number(lot.transferable_qty ?? lot.available_qty) > 0)) throw new Error("This lot is no longer available");
-        const variantIndex = initialGodownVariant === null || initialGodownVariant === undefined ? -1 : Number(initialGodownVariant);
-        const variant = Number.isInteger(variantIndex) && variantIndex >= 0 ? lot.price_variants?.[variantIndex] : null;
-        const selectedPrice = Number(variant?.price ?? lot.unit_price ?? 0);
-        history.apply(cur => ({ ...cur, lines: [...cur.lines, {
-          id: `godown-${lot.id}-${Date.now()}`, product_id: lot.product_id, sku: lot.sku, name: lot.name,
+        const lot = await api.get<GodownLot & { category_id?: string | null }>(`/godown-stock/${encodeURIComponent(initialGodownStockId)}`, { floorId: activeFloorId, signal: controller.signal });
+        if (controller.signal.aborted || generation !== documentGeneration.current) return;
+        const selected = godownQuotationPrice(lot, initialGodownVariant);
+        appliedInitialGodownRef.current = seedKey;
+        applyHistory(cur => ({ ...cur, lines: [...cur.lines, {
+          id: `godown-${lot.id}-${Date.now()}`, product_id: lot.product_id!, sku: lot.sku, name: lot.name,
           image: lot.image || null, category_id: lot.category_id || null, room: cur.activeRoom,
-          area: suggestedProductArea(lot.name, categoryById[lot.category_id || ""]), qty: 1, unit_price: selectedPrice,
+          area: suggestedProductArea(lot.name, categoryById[lot.category_id || ""]), qty: 1, unit_price: selected.price,
           mrp: null, discount_pct: null, finish: lot.finish || null,
-          description: variant?.label ? `Price variant: ${variant.label}` : null,
+          description: selected.label ? `Price variant: ${selected.label}` : null,
           godown_stock_id: lot.id,
           godown_source_customer_name: lot.source_customer_name || null,
           godown_source_purchased_at: lot.source_purchased_at || null,
           godown_transferred_at: lot.transferred_at || null,
         }] }));
         toast.success(`${lot.name} added from godown stock — select a customer to reserve it`);
-      } catch (e: any) { toast.error(e?.detail || "That godown lot is no longer available"); }
+      } catch (e: any) {
+        if (!controller.signal.aborted && generation === documentGeneration.current) toast.error(e?.detail || e?.message || "That godown lot is no longer available");
+      }
     })();
-  }, [initialGodownStockId, initialGodownVariant, activeFloorId, history, categoryById]);
+    return () => controller.abort();
+  }, [initialGodownStockId, initialGodownVariant, activeFloorId, applyHistory, categoryById]);
 
   const updateLine = useCallback((id: string, patch: Partial<Line>, coalesceKey?: string) =>
     history.apply(

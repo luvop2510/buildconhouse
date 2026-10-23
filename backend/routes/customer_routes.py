@@ -9,7 +9,7 @@ from auth import (
     TILES_FLOOR_ID, accessible_floor_ids, floor_for_write, floor_inherit, floor_query, get_current_customer, get_current_user,
     get_floor_scoped_or_404, hash_password, invalidate_principal_cache, require_floor_access, require_min_role, revoke_all_sessions,
 )
-from db import db
+from db import db, client
 from models import (
     CustomerCreate, CustomerPublic, CustomerUpdatePayload, UserPublic, now_iso,
 )
@@ -205,7 +205,7 @@ async def import_customer_from_floor(
     # and avoid an index conflict; a later per-floor email migration can add
     # this field back without changing the import contract.
     target_customer = CustomerPublic(floor_id=body.target_floor_id, **copied)
-    await db.customers.insert_one(target_customer.dict(exclude={"email"}))
+    await db.customers.insert_one({**target_customer.dict(exclude={"email"}), "imported_from_customer_id": source["id"]})
     await log_event(
         event_type="customer.imported", entity_type="customer", entity_id=target_customer.id,
         customer_id=target_customer.id, actor=user, floor_id=body.target_floor_id,
@@ -317,121 +317,39 @@ async def update_customer(
     return CustomerPublic(**doc)
 
 
+def _customer_deletion_owner(user: UserPublic = Depends(get_current_user)) -> UserPublic:
+    # Cross-floor removal of paid financial data is deliberately not delegated
+    # through page grants or the manager role.
+    if user.role != "owner":
+        raise HTTPException(403, "Only the owner can delete all customer data")
+    return user
+
+
+@router.get("/customers/{customer_id}/deletion-preview")
+async def preview_customer_deletion(
+    customer_id: str, furniture_ids: str = "", user: UserPublic = Depends(_customer_deletion_owner),
+):
+    _customer_deletion_owner(user)
+    await get_floor_scoped_or_404(db.customers, customer_id, user, not_found="Customer not found")
+    from services.customer_deletion import plan_deletion, public_plan
+    return public_plan(await plan_deletion(db, customer_id=customer_id, furniture_ids=tuple(filter(None, furniture_ids.split(",")))), user.id)
+
+
 @router.delete("/customers/{customer_id}")
 async def delete_customer(
-    customer_id: str,
-    user: UserPublic = Depends(require_min_role("manager")),
+    customer_id: str, confirmation: str = "", furniture_ids: str = "",
+    user: UserPublic = Depends(_customer_deletion_owner),
 ):
-    """Delete an unused customer and disposable sales-workflow records.
-
-    Purchase orders and completed payments are immutable business records, so
-    either kind of reference blocks the operation.
-    """
-    try:
-        existing = await get_floor_scoped_or_404(
-            db.customers, customer_id, user, not_found="Customer not found", projection={"_id": 0},
-        )
-    except HTTPException as error:
-        # A repeated cleanup request is safe after the first successful
-        # deletion. Keep the response shape stable without exposing records
-        # outside the caller's floor scope.
-        if error.status_code == 404:
-            return {
-                "ok": True,
-                "customer_id": customer_id,
-                "deleted": {
-                    "customers": 0, "quotations": 0, "followups": 0,
-                    "walkins": 0, "pending_payments": 0, "activity_events": 0,
-                    "legacy_gender_fields": 0,
-                },
-                "protected": {"purchase_orders": 0, "completed_payments": 0},
-            }
-        raise
-    quotation_docs = await db.quotations.find(
-        {"customer_id": customer_id, "floor_id": existing.get("floor_id")}, {"_id": 0, "id": 1},
-    ).to_list(5000)
-    quotation_ids = [doc["id"] for doc in quotation_docs if doc.get("id")]
-    quotation_ref = {"$in": quotation_ids} if quotation_ids else {"$in": ["__none__"]}
-    po_count, completed_payment_count = await asyncio.gather(
-        db.purchase_orders.count_documents({
-            "floor_id": existing.get("floor_id"),
-            "$or": [{"customer_id": customer_id}, {"quotation_id": quotation_ref}],
-        }),
-        db.payments.count_documents({
-            "floor_id": existing.get("floor_id"),
-            "$or": [
-                {"customer_id": customer_id, "status": "completed"},
-                {"quotation_id": quotation_ref, "status": "completed"},
-            ],
-        }),
-    )
-    if po_count or completed_payment_count:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f"Cannot delete — {po_count} purchase order(s) and {completed_payment_count} completed payment(s) "
-                "reference this customer or its quotations. Preserve the customer for financial reconciliation."
-            ),
-        )
-
-    delete_token = None
-    if existing.get("floor_id") == "second-floor":
-        from uuid import uuid4
-        delete_token = str(uuid4())
-        claimed = await db.customers.update_one(
-            {"id": customer_id, "floor_id": "second-floor",
-             "kitchen_reference_reserved": {"$ne": True}, "kitchen_delete_token": {"$exists": False}},
-            {"$set": {"kitchen_delete_token": delete_token}})
-        if not claimed.matched_count:
-            raise HTTPException(409, "Customer has a Kitchen project reservation or another deletion is running")
-        # Include pre-pin legacy aggregates. New creators cannot cross the
-        # tombstone while this authoritative reference check runs.
-        if await db.kitchen_projects.count_documents({"customer_id": customer_id, "floor_id": "second-floor"}):
-            await db.customers.update_one({"id": customer_id, "kitchen_delete_token": delete_token},
-                                          {"$unset": {"kitchen_delete_token": ""}})
-            raise HTTPException(409, "Kitchen projects reference this customer; preserve its canonical identity")
-    try:
-        legacy_results = await asyncio.gather(
-            db.walkins.update_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}, {"$unset": {"gender": ""}}),
-            db.followups.update_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}, {"$unset": {"gender": ""}}),
-            db.quotations.update_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}, {"$unset": {"gender": ""}}),
-        )
-        followups_result, walkins_result, pending_payments_result, quotations_result, activity_result = await asyncio.gather(
-            db.followups.delete_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}),
-            db.walkins.delete_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}),
-            db.payments.delete_many({
-                "floor_id": existing.get("floor_id"),
-                "$or": [
-                    {"customer_id": customer_id, "status": {"$ne": "completed"}},
-                    {"quotation_id": quotation_ref, "status": {"$ne": "completed"}},
-                ],
-            }),
-            db.quotations.delete_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}),
-            db.activity_events.delete_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}),
-        )
-        customer_result = await db.customers.delete_one({"id": customer_id, "floor_id": existing.get("floor_id")})
-        if customer_result.deleted_count == 0:
-            raise HTTPException(status_code=404, detail="Customer not found")
-        return {
-            "ok": True,
-            "customer_id": customer_id,
-            "deleted": {
-                "customers": customer_result.deleted_count,
-                "quotations": quotations_result.deleted_count,
-                "followups": followups_result.deleted_count,
-                "walkins": walkins_result.deleted_count,
-                "pending_payments": pending_payments_result.deleted_count,
-                "activity_events": activity_result.deleted_count,
-                "legacy_gender_fields": sum(getattr(result, "modified_count", 0) for result in legacy_results),
-            },
-            "protected": {"purchase_orders": 0, "completed_payments": 0},
-            "customer_name": existing.get("name"),
-        }
-    finally:
-        if delete_token:
-            await db.customers.update_one({"id": customer_id, "kitchen_delete_token": delete_token},
-                                          {"$unset": {"kitchen_delete_token": ""}})
-
+    """Remove exactly the owner's reviewed customer graph, including orders."""
+    _customer_deletion_owner(user)
+    from services.customer_deletion import delete_customer_graph
+    if not await db.settings.find_one({"id": "customer-deletion:" + customer_id}):
+        await get_floor_scoped_or_404(db.customers, customer_id, user, not_found="Customer not found")
+    result = await delete_customer_graph(db, client, customer_id, user.id, confirmation, tuple(filter(None, furniture_ids.split(","))))
+    # Invalidate current-process principal reads immediately. Other processes
+    # reload the now-missing identity under their normal short cache expiry.
+    invalidate_principal_cache("customer", customer_id)
+    return result
 
 
 async def _issue_temp_password(customer_id: str, *, kind: str, user: UserPublic):

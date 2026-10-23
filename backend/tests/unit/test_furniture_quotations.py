@@ -232,3 +232,50 @@ def test_furniture_update_can_explicitly_clear_partner_without_changing_history_
     assert kept["referrer_name"] == "NTS"
     cleared = asyncio.run(routes.update_quotation(doc["id"], editable(doc, expected_updated_at=NOW, referrer_id=None), staff()))
     assert cleared["referrer_id"] is None and cleared["referrer_company"] is None
+
+
+def test_customer_link_survives_legacy_clients_and_finalized_deposit_edits():
+    linked = document(customer_id="customer-furniture")
+    assert linked["customer_id"] == "customer-furniture"
+    assert prepare_document(editable(linked), LATER, linked)["customer_id"] == "customer-furniture"
+    finalized = document(status="final", customer_id="customer-furniture")
+    assert prepare_document(editable(finalized, status="final"), LATER, finalized)["customer_id"] == "customer-furniture"
+    with pytest.raises(HTTPException) as error:
+        prepare_document(editable(finalized, status="final", customer_id="different-customer"), LATER, finalized)
+    assert error.value.status_code == 409
+    legacy = document()
+    assert prepare_document(editable(legacy), LATER, legacy)["customer_id"] is None
+
+
+def test_furniture_creation_persists_real_customer_link(monkeypatch):
+    quotations = SimpleNamespace(insert_one=AsyncMock())
+    customers = SimpleNamespace(find_one=AsyncMock(return_value={"id": "customer-furniture", "floor_id": "third-floor", "name": "Furniture customer"}))
+    monkeypatch.setattr(routes, "db", SimpleNamespace(furniture_quotations=quotations, customers=customers))
+    result = asyncio.run(routes.create_quotation(body(customer_id="customer-furniture"), staff()))
+    assert result["customer_id"] == "customer-furniture"
+    assert quotations.insert_one.call_args.args[0]["customer_id"] == "customer-furniture"
+    customers.find_one.assert_awaited_once()
+
+
+@pytest.mark.parametrize("customer", [None, {"id": "other-floor", "floor_id": "first-floor"}, {"id": "legacy", "floor_id": None}])
+def test_furniture_customer_link_rejects_missing_foreign_or_unscoped_ids_before_insert(monkeypatch, customer):
+    quotations = SimpleNamespace(insert_one=AsyncMock())
+    customers = SimpleNamespace(find_one=AsyncMock(return_value=customer))
+    monkeypatch.setattr(routes, "db", SimpleNamespace(furniture_quotations=quotations, customers=customers))
+    # Even an all-floor owner cannot bind a Furniture ledger to another floor.
+    user = UserPublic(id="owner", email="owner@example.test", full_name="Owner", role="owner", active_floor_id="third-floor")
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(routes.create_quotation(body(customer_id="other-floor"), user))
+    assert error.value.status_code == 404
+    quotations.insert_one.assert_not_awaited()
+
+
+def test_furniture_customer_link_rejects_unauthorized_floor_before_lookup(monkeypatch):
+    quotations = SimpleNamespace(insert_one=AsyncMock())
+    customers = SimpleNamespace(find_one=AsyncMock())
+    monkeypatch.setattr(routes, "db", SimpleNamespace(furniture_quotations=quotations, customers=customers))
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(routes.create_quotation(body(customer_id="customer-furniture"), staff("first-floor")))
+    assert error.value.status_code == 403
+    customers.find_one.assert_not_awaited()
+    quotations.insert_one.assert_not_awaited()

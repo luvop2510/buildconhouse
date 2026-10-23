@@ -1,3 +1,4 @@
+from services.followup_engine import reconcile_followups_admitted
 """Sanitary godown stock — returned/declined material that can be reused.
 
 Lots are intentionally separate from tile logistics.  Each lot preserves its
@@ -959,7 +960,7 @@ async def intake_stock(body: Intake, user: UserPublic = Depends(require_min_role
     if payment:
         # Outstanding-balance follow-ups are derived from the same ledger.
         # Run reconciliation after the transaction commits, never inside it.
-        asyncio.create_task(reconcile_followups())
+        asyncio.create_task(reconcile_followups_admitted())
     return _stock_view(lot)
 
 

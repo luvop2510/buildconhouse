@@ -581,3 +581,16 @@ Both were flagged during code review of Task 17/19 as real gaps of the same shap
 - **Migration idempotency:** `backend/migrations/` migrations must be forward-only and safe to run twice, but MongoDB's `create_index` throws `OperationFailure` code 85 (`IndexOptionsConflict`) if a same-key index already exists under a different name — this has happened twice already (see `migrations/0002` and `0003`'s docstrings). Always wrap `create_index` calls the way `migrations/0003`'s `_create_index_tolerant` helper does.
 - **Catalog is an in-memory snapshot, not per-request Mongo queries:** `backend/services/catalog_service.py` loads the whole product catalog into memory at startup (Atlas is ~228ms round-trip away; the full catalog is a few MB) and refreshes on writes. Don't add per-request Mongo queries to catalog read paths — thread new filters through the existing `_matches_filters`/snapshot functions instead.
 - **Floor `first-floor`'s display name is "The Sanitary Bathroom"** in the live `db.floors` collection, but its `id`/`slug` is still literally `"first-floor"` — don't rename the slug, only ever the `name` field, or every `floor_id` reference throughout the codebase breaks.
+
+## Customer graph deletion and recovery — 2026-10-24
+
+Customer-wide removal is owner-only from Customers, with exact preview/HMAC and
+transactional graph cleanup. Ordinary quotation deletion remains document-scoped.
+Preserve shared PO chalan evidence and actual dispatched quantities: raw legacy
+stage labels cannot establish a stock return. Old unlinked Furniture matches
+require explicit owner selection; new ledgers may bind a real floor-scoped ID.
+
+The mutation-admission middleware and background follow-up/outbox admission prevent
+in-flight child writes after graph deletion. Never expire writer tokens or clear
+an exclusive token while old writers may still execute. See the operational
+recovery procedure in docs/audits/2026-10-24-workspace-repair.md. No new migration.

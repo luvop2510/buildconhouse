@@ -23,6 +23,7 @@ Endpoints:
 The tracker does NOT concern itself with taxes — Forge uses final prices only.
 """
 from __future__ import annotations
+from services.followup_engine import reconcile_followups_admitted
 from services.multi_filters import filter_values, filter_condition
 
 from services.export import spreadsheet_cell
@@ -1298,7 +1299,7 @@ async def _attempt_stage_change(
 
         new_status = await _sync_po_status_with_stages(po["id"], user)
         if to_stage in ("dispatched", "in_transit", "delivered") or new_status:
-            asyncio.create_task(reconcile_followups())
+            asyncio.create_task(reconcile_followups_admitted())
 
         return {
             "po_id": po["id"], "item_id": item_id, "split": True,
@@ -1363,7 +1364,7 @@ async def _attempt_stage_change(
     if to_stage in ("dispatched", "in_transit", "delivered") or new_status:
         # Dispatch/delivery reminders derive from item stage/PO status —
         # event-triggered refresh right here, not a cron job.
-        asyncio.create_task(reconcile_followups())
+        asyncio.create_task(reconcile_followups_admitted())
     return {
         "po_id": po["id"], "item_id": item_id,
         "from_stage": from_stage, "to_stage": to_stage,
@@ -1866,7 +1867,7 @@ async def transfer_item(
     # Payment/Follow-up automation must reflect this transfer immediately —
     # the new order needs its own reminder timeline, and a shortage (if any)
     # needs to surface as a "recommend reorder" card. Event-triggered, no cron.
-    asyncio.create_task(reconcile_followups())
+    asyncio.create_task(reconcile_followups_admitted())
 
     return {
         "source": {
@@ -1982,7 +1983,7 @@ async def create_po_for_shortage(
         summary=f"Reorder PO {new_po.number} created for {s['shortage_qty']:g} × {s['name']}",
         payload={"shortage_id": shortage_id, "po_id": new_po.id, "po_number": new_po.number},
     )
-    asyncio.create_task(reconcile_followups())
+    asyncio.create_task(reconcile_followups_admitted())
     return {"po_id": new_po.id, "po_number": new_po.number, "shortage_id": shortage_id}
 
 
@@ -2004,7 +2005,7 @@ async def dismiss_shortage(
             "reason": body.note or s.get("reason"), "updated_at": now,
         }},
     )
-    asyncio.create_task(reconcile_followups())
+    asyncio.create_task(reconcile_followups_admitted())
     return {"ok": True}
 
 

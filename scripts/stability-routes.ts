@@ -26,6 +26,9 @@ export function stabilityRouteTitle(path: string): string {
 export const stabilityProjects = ['android-chrome', 'iphone-safari', 'ipad-safari', 'desktop-chrome'];
 
 export const requiredStabilityScenarios: Record<string, string[]> = {
+  'redesign-quotation-workspace.spec.ts': [
+    'critical quotation workspace keeps title and actions in the padded scrolling frame',
+  ],
   'redesign-mobile-startup.spec.ts': [
     'critical owner navigation works after login while unrelated role permissions are pending',
     'critical delegated navigation works after login while unrelated role permissions are pending',
@@ -78,6 +81,7 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
     'critical page render failure preserves the shell and signed-in retry recovery',
     'critical page render failure preserves the shell and signed-in navigate recovery',
     'critical a failed quotation module offers reload and retains the signed-in destination',
+    'critical opening home after a failed module clears the rejected import before returning',
   ],
   'redesign-session-recovery.spec.ts': [
     'critical session restoration recovers from 503 without a password or losing its destination',

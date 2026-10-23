@@ -99,3 +99,54 @@ test('critical warehouse photo upload retains the selected file and saves price 
   await expect.poll(() => writes.map(write => write.path)).toEqual(['image', 'details']);
   await expect(page.getByTestId('godown-lot-photo-lot')).toContainText('2,500');
 });
+
+test('critical warehouse-only details and unpriced quotation actions always offer a next step', async ({ page }, info) => {
+  await mockSession(page, '/godown-stock', false);
+  let lot = { id: 'warehouse-only', product_id: 'godown:warehouse-only', sku: 'LOCAL-1', name: 'Warehouse mixer',
+    brand_name: 'Local stock', qty_received: 2, available_qty: 2, transferable_qty: 2,
+    unit_price: null as number | null, stock_value: null as number | null, image: null, price_variants: [], source_type: 'warehouse_import' };
+  await page.route('**/api/godown-stock?**', route => route.fulfill({ json: {
+    lots: [lot], brands: [], total_available_qty: 2, total_stock_value: lot.stock_value || 0, unpriced_lot_count: lot.unit_price === null ? 1 : 0,
+  } }));
+  await page.route('**/api/godown-stock/warehouse-only/details', route => {
+    lot = { ...lot, ...route.request().postDataJSON(), stock_value: 4000 };
+    return route.fulfill({ json: lot });
+  });
+  await page.route('**/api/godown-stock/warehouse-only', route => route.fulfill({ json: lot }));
+  await page.route('**/api/categories**', route => route.fulfill({ json: [] }));
+  await page.route('**/api/brands**', route => route.fulfill({ json: [] }));
+  await page.route('**/api/quotations/recent?**', route => route.fulfill({ json: [] }));
+  await page.route('**/api/products/families?**', route => route.fulfill({ json: { total: 0, items: [] } }));
+  await page.goto('/godown-stock');
+  const card = page.getByTestId('godown-lot-warehouse-only');
+  await card.getByRole('button', { name: 'View stock details for Warehouse mixer' }).click();
+  await expect(card).toContainText('Imported from the godown stock workbook');
+  await card.getByRole('button', { name: 'Set price and add Warehouse mixer to a new quotation' }).click();
+  await expect(card.getByTestId('godown-price-warehouse-only')).toBeVisible();
+  await expect(card).toContainText('Enter a unit price to add this stock to a quotation.');
+  await card.getByTestId('godown-price-warehouse-only').fill('2000');
+  await page.screenshot({ path: info.outputPath('godown-price-first-editor.png') });
+  await card.getByTestId('godown-save-warehouse-only').click();
+  await expect(page).toHaveURL(/\/quotations\/new\?godownStockId=warehouse-only$/);
+  await expect(page.getByText('Warehouse mixer added from godown stock — select a customer to reserve it', { exact: true })).toBeVisible();
+  const review = page.getByTestId('mobile-review-quotation');
+  if (await review.isVisible()) await review.click();
+  await expect(page.locator('[data-testid^="qty-godown-warehouse-only-"]')).toHaveValue('1');
+  await page.screenshot({ path: info.outputPath('godown-seeded-quotation.png') });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+});
+
+test('critical a godown quotation deep link rejects an unrecorded price instead of creating a free line', async ({ page }) => {
+  await mockSession(page, '/quotations/new', false);
+  await page.route('**/api/categories**', route => route.fulfill({ json: [] }));
+  await page.route('**/api/brands**', route => route.fulfill({ json: [] }));
+  await page.route('**/api/quotations/recent?**', route => route.fulfill({ json: [] }));
+  await page.route('**/api/products/families?**', route => route.fulfill({ json: { total: 0, items: [] } }));
+  await page.route('**/api/godown-stock/unpriced', route => route.fulfill({ json: {
+    id: 'unpriced', product_id: 'godown:unpriced', name: 'Unpriced warehouse mixer', sku: 'UNPRICED',
+    available_qty: 2, transferable_qty: 2, unit_price: null,
+  } }));
+  await page.goto('/quotations/new?godownStockId=unpriced');
+  await expect(page.getByText('Record a unit price in Godown stock before adding this lot to a quotation.', { exact: true })).toBeVisible();
+  await expect(page.locator('[data-testid^="qty-godown-unpriced-"]')).toHaveCount(0);
+});

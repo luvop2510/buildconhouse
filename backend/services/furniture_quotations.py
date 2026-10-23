@@ -83,6 +83,7 @@ class DepositInput(BaseModel):
 
 
 class FurnitureQuotationInput(BaseModel):
+    customer_id: str | None = Field(None, min_length=1, max_length=128)
     model_config = ConfigDict(extra="forbid")
     customer_name: str = Field(min_length=1, max_length=200)
     customer_phone: str = Field(min_length=8, max_length=30)
@@ -129,13 +130,14 @@ def prepare_document(body: FurnitureQuotationInput, now: str, previous: dict | N
                            "updated_at": prior.get("updated_at", now) if unchanged else now})
         return result
     charges, deposits = entries(body.charges, "charges"), entries(body.deposits, "deposits")
+    customer_id = body.customer_id if "customer_id" in body.model_fields_set else previous.get("customer_id")
     if previous.get("status") == "final":
-        if (body.status != "final" or body.customer_name != previous["customer_name"]
+        if (customer_id != previous.get("customer_id") or body.status != "final" or body.customer_name != previous["customer_name"]
                 or body.customer_phone != previous["customer_phone"] or charges != previous["charges"]):
             raise HTTPException(409, "Finalized quotation charges and customer details are locked. Deposits can still be updated.")
     payable = sum((Decimal(row["amount_rmb"]) for row in charges), Decimal(0))
     received = sum((Decimal(row["amount_rmb"]) for row in deposits), Decimal(0))
-    return {"customer_name": body.customer_name, "customer_phone": body.customer_phone,
+    return {"customer_id": customer_id, "customer_name": body.customer_name, "customer_phone": body.customer_phone,
             "charges": charges, "deposits": deposits, "status": body.status,
             "total_payable_rmb": decimal_text(payable), "total_received_rmb": decimal_text(received),
             "balance_rmb": decimal_text(payable - received), "updated_at": now,

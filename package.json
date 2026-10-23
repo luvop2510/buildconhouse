@@ -41,7 +41,7 @@
     "test:e2e:performance": "playwright test --config playwright.performance.config.ts",
     "test:page-loading-performance": "node scripts/test-page-loading-performance.mjs",
     "test:icon-fonts": "node scripts/test-icon-font-contract.mjs",
-    "test:release-recovery": "node scripts/test-release-recovery.mjs",
+    "test:release-recovery": "node scripts/test-release-recovery.mjs && node scripts/test-page-error-boundary.mjs",
     "test:npm-audit": "node scripts/test-npm-audit.mjs",
     "test:service-health": "node scripts/test-service-health.mjs",
     "test:app-text": "node --experimental-strip-types --no-warnings scripts/test-app-text.mjs",
