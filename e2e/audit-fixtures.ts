@@ -19,7 +19,8 @@ export async function mockSession(page: Page, path: string, failures = true, opt
   await page.route('**/api/**', async route => {
     const p = new URL(route.request().url()).pathname;
     let body: unknown;
-    if (p === '/api/auth/me') body=options.staff || {id:'audit-owner',email:'owner@example.test',full_name:'Audit Owner',role:'owner',active:true,floor_ids:floors.map(f=>f.id)};
+    if (p === '/api/health/ready') body={status:'ok'};
+    else if (p === '/api/auth/me') body=options.staff || {id:'audit-owner',email:'owner@example.test',full_name:'Audit Owner',role:'owner',active:true,floor_ids:floors.map(f=>f.id)};
     else if (p === '/api/auth/customer/me') body={id:'audit-customer',email:'customer@example.test',name:'Audit Customer',tier:'retail',portal_enabled:true};
     else if(p==='/api/settings/floor-access') body=options.floorAccess || {all_floors:true,floors,floor_ids:floors.map(f=>f.id)};
     else if(p==='/api/settings/access-grants/me' && options.grants !== undefined) body={grants:options.grants};

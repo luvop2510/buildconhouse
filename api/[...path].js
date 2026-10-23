@@ -15,6 +15,7 @@ export function requestBodyLimit(method, path, contentType) {
 // full window so it does not turn a healthy-but-slow Railway response into a
 // premature 504; retain a small margin for proxying the response downstream.
 const UPSTREAM_TIMEOUT_MS = 28_000;
+const READINESS_TIMEOUT_MS = 3_500;
 
 const SECURITY_HEADERS = {
   'Content-Security-Policy': "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://*.ingest.sentry.io; form-action 'self'",
@@ -158,7 +159,7 @@ export function createHandler({ backendUrl = process.env.BACKEND_URL, fetchImpl 
     try {
       ({ response: upstreamResponse, body: upstreamBody } = await fetchWithTimeout(upstream, {
         method: req.method, headers, body: body?.length ? body : undefined, redirect: 'manual',
-      }, { fetchImpl, timeoutMs, consume: async (response) => ({ response, body: Buffer.from(await response.arrayBuffer()) }) }));
+      }, { fetchImpl, timeoutMs: req.method === 'GET' && path === 'health/ready' ? Math.min(timeoutMs, READINESS_TIMEOUT_MS) : timeoutMs, consume: async (response) => ({ response, body: Buffer.from(await response.arrayBuffer()) }) }));
     } catch (error) {
       if (error?.name === 'AbortError') return res.status(504).json({ detail: 'The upstream API timed out.' });
       console.error('Web API proxy upstream failure:', error);

@@ -2,6 +2,21 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
+## Backend wake recovery — 2026-10-24
+
+Web startup uses one shared anonymous readiness attempt, up to 60 seconds total,
+with four-second browser probes and 3.5-second proxy attempts. Continue as soon
+as ready; never turn that budget into a fixed delay or extend every API request.
+Ordinary request limits and write semantics stay intact. Preserve initial-route
+storage, identity/floor generation guards and the root navigator; the startup
+screen layout holds initial effects but never removes already-open forms.
+Render-specific waiting/awake copy must reflect readiness, not elapsed time.
+Native startup retains its existing transport and account-check wording.
+See docs/audits/2026-10-24-backend-startup.md for the release evidence. Frontend-only
+publication may use scripts/promote-verified-frontend.mjs with an unchanged,
+verified running backend and current review/performance/hosted evidence; backend,
+data, storage and Kitchen workflow releases retain their stronger existing gate.
+
 ## PDF sharing, assigned follow-ups and references — 2026-10-17
 
 Quotation/selection sharing creates no public PDF capability. Share actual PDF

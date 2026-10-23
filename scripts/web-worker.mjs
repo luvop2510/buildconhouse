@@ -73,12 +73,22 @@ export function createWorker(backendUrl, fetchImpl = fetch, timeoutMs = 28000) {
       }
       headers.set('X-Forwarded-Proto','https'); headers.set('X-Forwarded-Host',url.host);
       const controller=new AbortController();
-      const timer=setTimeout(()=>controller.abort(),timeoutMs);
+      const readinessProbe=request.method==='GET' && url.pathname==='/api/health/ready';
+      const probeTimeout=readinessProbe ? Math.min(timeoutMs,3500) : timeoutMs;
+      const timer=setTimeout(()=>controller.abort(),probeTimeout);
       try {
         let response=await fetchImpl(new Request(new URL(url.pathname+url.search,backendUrl),{
           method:request.method,headers,body:['GET','HEAD'].includes(request.method)?undefined:request.body,
           redirect:'manual',signal:controller.signal,...(request.body?{duplex:'half'}:{}),
         }));
+        if(readinessProbe) {
+          // Keep the short probe deadline active through its small JSON body.
+          // Ordinary downloads retain their existing streaming behavior.
+          const body=await response.arrayBuffer();
+          const probeHeaders=new Headers(response.headers);
+          probeHeaders.delete('Content-Length'); probeHeaders.delete('Content-Encoding');
+          response=new Response(body,{status:response.status,statusText:response.statusText,headers:probeHeaders});
+        }
         if(response.ok && ['/api/auth/login','/api/auth/customer/login'].includes(url.pathname)) response=await loginSession(response);
         if(response.ok && session && request.method==='GET' && ['/api/auth/me','/api/auth/customer/me'].includes(url.pathname)) {
           response=persistSession(response, decodeURIComponent(session), csrf);

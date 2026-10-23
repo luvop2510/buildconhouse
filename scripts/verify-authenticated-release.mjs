@@ -36,6 +36,8 @@ for (const outcome of ['won', 'lost']) {
 const checks = [];
 for (const [profile, engine, options] of [
   ['desktop-chrome', chromium, { viewport: { width: 1440, height: 1000 } }],
+  ['tablet-chrome', chromium, { viewport: { width: 834, height: 1112 } }],
+  ['ipad-safari', webkit, devices['iPad Pro 11']],
   ['iphone-safari', webkit, devices['iPhone 13']],
 ]) {
   const browser = await engine.launch();

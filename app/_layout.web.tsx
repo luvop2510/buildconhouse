@@ -1,11 +1,13 @@
 import { Stack } from "expo-router";
 import { useEffect } from "react";
-import { ActivityIndicator, Pressable, View } from "react-native";
+import { Pressable, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 
 import { InitialAccountRouteProvider } from "@/src/state/initial-account-route";
 import { AuthProvider } from "@/src/state/auth";
 import { AuthGate } from "@/src/components/AuthGate";
+import { BackendServerStatus } from "@/src/components/BackendServerStatus";
+import { startupScreenLayout } from "@/src/components/StartupScreen";
 import { colors } from "@/src/theme/tokens";
 import { ToastHost } from "@/src/components/Toast";
 import { initPerformanceSignals, initSentry } from "@/src/lib/monitoring";
@@ -38,10 +40,10 @@ export default function RootLayout() {
               <Text style={{ color: colors.onBrand, fontWeight: "600" }}>Try again</Text>
             </Pressable>
           </View> : !loaded ? <View testID="app-font-loading" style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-            <ActivityIndicator accessibilityLabel="Loading workspace" color={colors.brand} size="large" />
+            <BackendServerStatus detail="Preparing the sign-in screen." />
           </View> : <>
             <AuthGate>
-              <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }} />
+              <Stack screenLayout={startupScreenLayout} screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }} />
             </AuthGate>
             <ToastHost />
           </>}

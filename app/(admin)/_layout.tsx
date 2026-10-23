@@ -8,7 +8,7 @@ import { PRIMARY, SECONDARY, TILES_ITEMS, type NavItem } from "@/src/design/navi
 import Feather from "@expo/vector-icons/Feather";
 import { Slot, useRouter, useSegments, useLocalSearchParams, usePathname } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -17,6 +17,7 @@ import {
 } from "@/src/design/components";
 import { PaletteProvider } from "@/src/design/CommandPalette";
 import { useBp } from "@/src/design/responsive";
+import { BackendServerStatus } from "@/src/components/BackendServerStatus";
 import { color, font, layout, radius, space } from "@/src/design/tokens";
 import { NavigationLink } from "@/src/design/NavigationLink";
 import { BuildConLogo } from "@/src/design/BrandLogo";
@@ -503,9 +504,7 @@ function FloorAccessGate({ children }: { children: React.ReactNode }) {
   // an X-Floor-Id for a different staff account.
   if (loading) {
     return <View testID="floor-access-loading" accessibilityLiveRegion="polite" style={styles.floorAccessState}>
-      <ActivityIndicator color={color.brass} />
-      <Text style={styles.floorAccessTitle}>Loading your workspace…</Text>
-      <Text style={styles.floorAccessCopy}>Checking the floors assigned to your account.</Text>
+      <BackendServerStatus detail="Checking the floors assigned to your account." />
     </View>;
   }
   if (error) {

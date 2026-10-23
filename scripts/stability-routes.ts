@@ -83,6 +83,10 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
     'critical a failed quotation module offers reload and retains the signed-in destination',
     'critical opening home after a failed module clears the rejected import before returning',
   ],
+  'redesign-backend-startup.spec.ts': [
+    'critical backend wake retains destination and waits before authenticated reads',
+    'critical backend startup shows failure after the full minute and explicit retry restores the saved route',
+  ],
   'redesign-session-recovery.spec.ts': [
     'critical session restoration recovers from 503 without a password or losing its destination',
     'critical session restoration recovers from 403 without a password or losing its destination',

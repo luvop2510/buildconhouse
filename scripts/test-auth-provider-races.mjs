@@ -64,6 +64,7 @@ function provider(platform, options = {}) {
     },
   };
   const modules = {
+    '@/src/lib/backend-startup': { ensureBackendReady: async () => {} },
     react,
     'react/jsx-runtime': { jsx: (_type, props) => ({ props }) },
     'react-native': { Platform: { OS: platform }, AppState: { addEventListener: (name, listener) => { listeners.set(name, listener); return { remove() { listeners.delete(name); } }; } } },

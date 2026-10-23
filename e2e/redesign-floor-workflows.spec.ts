@@ -52,9 +52,13 @@ test('critical a floor-changing quotation deep link preserves pending identity h
   try {
     await page.goto('/quotations/new?quotationId=pending-identity-order');
     await started;
-    await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('forge.active-floor') || 'null'))).toBe('first-floor');
+    // Startup now holds business screen effects until identity is known. It
+    // must not fetch a quotation or change the saved floor on that old session.
+    expect(requestedFloors).toEqual([]);
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('forge.active-floor') || 'null'))).toBe('ground-floor');
     releaseIdentity();
     await expect(page.getByTestId('quotation-workspace')).toBeVisible();
+    await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('forge.active-floor') || 'null'))).toBe('first-floor');
     await expect.poll(() => requestedFloors.length).toBeGreaterThan(0);
     expect(requestedFloors.every(floor => floor === 'first-floor')).toBe(true);
     await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('forge.jwt.kind') || 'null'))).toBe('staff');
