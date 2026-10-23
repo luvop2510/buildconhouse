@@ -202,7 +202,7 @@ async def test_inline_intake_retry_after_project_write_failure_reuses_created_cu
 @pytest.mark.asyncio
 async def test_inline_intake_validates_before_writes_and_refuses_ambiguous_contacts(setup):
     database, service, owner = setup
-    staff = UserPublic(id="staff-a", full_name="Staff A", role="sales", floor_ids=["second-floor"], active_floor_id="second-floor")
+    staff = UserPublic(id="staff-a", full_name="Staff A", role="sales", custom_access=True, floor_ids=["second-floor"], active_floor_id="second-floor")
     body = create_request(customer={"name": "New enquiry", "phone": "9888800123"}, idempotency_key="inline-permission")
     with pytest.raises(HTTPException):
         await service.create(staff, body)
@@ -241,7 +241,7 @@ async def test_visited_gate_retries_stale_versions_and_atomic_history(setup):
     replay = await service.command(owner, first["id"], visit)
     assert replay["version"] == saved["version"] == 3 and replay["replayed"]
     with pytest.raises(HTTPException) as stale:
-        await service.command(owner, first["id"], cmd(2, "metadata", {"next_action": "Stale"}))
+        await service.command(owner, first["id"], cmd(2, "metadata", {"target_completion_date": "2026-10-19"}))
     assert stale.value.status_code == 409
     advanced = await service.command(owner, first["id"], cmd(3, "advance_stage", {"target_stage": "cad"}))
     assert advanced["site_visit_count"] == advanced["design_revision_count"] == 0
@@ -258,14 +258,19 @@ async def test_permission_scope_customer_floor_and_assignment(setup):
     database, service, owner = setup
     first = await service.create(owner, create_request(customer_id="customer-a", idempotency_key="creation-a"))
     staff = UserPublic(id="staff-a", full_name="Staff A", role="sales", floor_ids=["second-floor"], active_floor_id="second-floor")
-    with pytest.raises(HTTPException) as inaccessible:
-        await service.get(staff, first["id"])
-    assert inaccessible.value.status_code == 404
-    assigned = await service.command(owner, first["id"], cmd(1, "assign", {"stage": "lead", "user_id": "staff-a"}))
-    assert assigned["assigned_to"] == "staff-a"
     assert (await service.get(staff, first["id"]))["id"] == first["id"]
+    assert first["permissions"]["can_assign"] is False
+    with pytest.raises(HTTPException) as retired:
+        await service.command(owner, first["id"], cmd(1, "assign", {"stage": "lead", "user_id": "staff-a"}))
+    assert retired.value.status_code == 422
+    saved = await service.command(staff, first["id"], cmd(1, "edit_lead", {"notes": "No assignment needed"}))
+    assert saved["lead"]["notes"] == "No assignment needed"
+    own = await service.create(staff, create_request(customer_id="customer-a", idempotency_key="staff-create"))
+    assert own["assignments"] == {} and own["permissions"]["can_update"]
+    denied = UserPublic(id="denied", full_name="No access", role="sales", custom_access=True,
+                        floor_ids=["second-floor"], active_floor_id="second-floor")
     with pytest.raises(HTTPException) as forbidden:
-        await service.command(staff, first["id"], cmd(2, "assign", {"stage": "visit", "user_id": "staff-a"}))
+        await service.get(denied, first["id"])
     assert forbidden.value.status_code == 403
     database.customers.rows[0]["floor_id"] = "first-floor"
     with pytest.raises(HTTPException) as other_floor:
@@ -299,7 +304,12 @@ def test_strict_dates_money_and_command_fields():
         MetadataPayload(deadline="2026-10-19T09:30:00")
     with pytest.raises(ValidationError):
         create_request(customer_id="customer-a", idempotency_key="creation-a", site_visit_count=9)
-    assert MetadataPayload(deadline="2026-10-19T09:30:00+05:30").deadline == "2026-10-19T04:00:00+00:00"
+    assert MetadataPayload(target_completion_date="2026-10-19").target_completion_date == "2026-10-19"
+    for payload in ({"next_action": "Retired"}, {"deadline": "2026-10-19T04:00:00+00:00"}):
+        with pytest.raises(ValidationError):
+            MetadataPayload(**payload)
+    with pytest.raises(ValidationError):
+        create_request(customer_id="customer-a", idempotency_key="creation-a", assigned_to="staff-a")
 
 
 @pytest.mark.asyncio
@@ -329,8 +339,8 @@ async def test_mandatory_lead_identity_fields_reject_before_customer_pin(setup):
         database.customers.rows[0][key] = original
     created = await service.create(owner, create_request(customer_id="customer-a", idempotency_key="creation-a"))
     converted = await service.command(owner, created["id"], cmd(1, "convert"))
-    saved = await service.command(owner, created["id"], cmd(2, "save_visit", {"status": "Visited", "interested": True, "requirements": "Layout", "next_action": "CAD next"}))
-    assert converted["version"] == 2 and saved["next_action"] == "CAD next"
+    saved = await service.command(owner, created["id"], cmd(2, "save_visit", {"status": "Visited", "interested": True, "requirements": "Layout"}))
+    assert converted["version"] == 2 and saved["visit"]["requirements"] == "Layout"
     advanced = await service.command(owner, created["id"], cmd(3, "advance_stage", {"target_stage": "cad"}))
     assert advanced["visit"]["visit_date"] is None  # optional/unknown date is not invented
 
@@ -601,3 +611,36 @@ def test_resolved_d10_xlsx_print_settings_are_bounded_data_parts_not_blanket_bin
         with pytest.raises(HTTPException) as unsafe:
             validate_file(data, mime, "unsafe-settings.xlsx", policy)
         assert unsafe.value.status_code == 415
+
+
+@pytest.mark.asyncio
+async def test_retired_kitchen_fields_reject_new_writes_and_preserve_history(setup):
+    database, service, owner = setup
+    project = await service.create(owner, create_request(customer_id="customer-a", idempotency_key="legacy-edit"))
+    project = await service.command(owner, project["id"], cmd(1, "convert"))
+    stored = database.kitchen_projects.rows[0]
+    stored["visit"]["next_action"] = "Historical action"
+    stored["next_action"] = "Historical action"
+    stored["deadline"] = "2020-01-01T00:00:00Z"
+    stored["assignments"] = {"visit": "historical-worker"}
+    for command, payload in (("save_visit", {"next_action": "New action"}),
+                             ("metadata", {"next_action": "New action"}),
+                             ("metadata", {"deadline": "2026-10-23T10:00:00Z"})):
+        with pytest.raises(HTTPException) as retired:
+            await service.command(owner, project["id"], cmd(2, command, payload))
+        assert retired.value.status_code == 422
+        assert database.kitchen_projects.rows[0]["version"] == 2
+    saved = await service.command(owner, project["id"], cmd(2, "save_visit", {"visit_date": "2026-10-23"}))
+    assert saved["visit"]["next_action"] == saved["next_action"] == "Historical action"
+    assert saved["assignments"] == {"visit": "historical-worker"}
+    assert kitchen_projects.attention_expressions(await service.policy())["next_action_overdue"] == {"$literal": False}
+
+
+@pytest.mark.asyncio
+async def test_approval_manager_choices_remain_available_to_owner_only(setup):
+    database, service, owner = setup
+    staff = UserPublic(id="staff-a", full_name="Staff A", role="sales", floor_ids=["second-floor"], active_floor_id="second-floor")
+    assert (await service.assignees(owner))["rows"] == [{"id": "staff-a", "full_name": "Staff A", "role": "sales"}]
+    assert (await service.assignees(staff))["rows"] == []
+    policy = await service.public_policy(owner)
+    assert policy["production"]["require_manager_approval"] and policy["closure"]["require_manager_approval"]

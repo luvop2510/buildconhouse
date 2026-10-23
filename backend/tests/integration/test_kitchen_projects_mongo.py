@@ -4,7 +4,7 @@ Opt in with KITCHEN_TEST_MONGO_URL pointing at a run-owned loopback mongod.
 Never collect the historical integration directory to run this file.
 
 Acceptance map (API coverage is distinct from UI, remote storage and business UAT):
-Q01/Q02/Q03/Q11: lead/visit persistence, assignment, retry and CAS tests below.
+Q01/Q02/Q03/Q11: lead/visit persistence, retired assignments, retry and CAS tests below.
 Q10/Q13/Q21/Q22: direct auth/floor/forged-command/transition negatives below.
 Q04-Q09/Q14-Q16: full lifecycle plus independent race/authority/gate tests below.
 Q12: strict field round trips and negative payloads below; UI audited separately.
@@ -240,7 +240,7 @@ def test_inline_lead_intake_uses_one_floor_local_contact_and_retries_without_dup
             path = "/api/kitchen-projects"
             body = {"customer": {"name": "New inline enquiry", "phone": "+91 98888 00123", "address": "Inline site"},
                     "lead": {"site_location": "Inline site", "status": "New"}, "idempotency_key": str(uuid4())}
-            forbidden = await env["api"].post(path, json=body, headers=headers(env, "worker"))
+            forbidden = await env["api"].post(path, json=body, headers=headers(env, "denied"))
             assert forbidden.status_code in {403, 422}
             assert await env["db"].customers.count_documents({"phone": body["customer"]["phone"]}) == 0
             first = await env["api"].post(path, json=body, headers=headers(env))
@@ -288,7 +288,7 @@ def test_stage_list_carries_latest_commercial_fields_without_exposing_history():
     asyncio.run(run())
 
 
-def test_q01_q03_q11_customer_reuse_conversion_assignment_and_roundtrip():
+def test_q01_q03_q11_customer_reuse_conversion_and_retired_assignment():
     async def run():
         async with environment() as env:
             project, body = await create_project(env)
@@ -298,9 +298,8 @@ def test_q01_q03_q11_customer_reuse_conversion_assignment_and_roundtrip():
             assert await env["db"].customers.count_documents({"id": env["ids"]["customer"]}) == 1
             different, _ = await create_project(env)
             assert different["id"] != project["id"] and different["customer_id"] == project["customer_id"]
-            assigned = await command(env, project, "assign", {"stage": "visit", "user_id": env["ids"]["worker"]})
-            assert assigned.status_code == 200, assigned.text
-            project = assigned.json()
+            retired = await command(env, project, "assign", {"stage": "visit", "user_id": env["ids"]["worker"]})
+            assert retired.status_code == 422, retired.text
             project = await accepted(env, project, "review_duplicate", {"decision": "distinct_project", "reason": "Owner verified separate site"})
             conversion_key = str(uuid4())
             converted = await command(env, project, "convert", key=conversion_key)
@@ -316,7 +315,7 @@ def test_q01_q03_q11_customer_reuse_conversion_assignment_and_roundtrip():
             assert saved["project_reference"] == project["project_reference"]
             stored = await env["db"].kitchen_projects.find_one({"id": saved["id"]})
             assert stored["version"] == saved["version"] and stored["stage"] == "visit"
-            assert stored["assignments"]["visit"] == env["ids"]["worker"]
+            assert stored["assignments"] == {}
             assert saved["lead"]["budget"] == "250000.01" and saved["lead"]["notes"] == "Acceptance lead note"
             assert saved["lead"]["lead_date"] == "2026-10-19"
             assert await env["db"].kitchen_projects.count_documents({}) == 2
@@ -366,9 +365,9 @@ def test_q11_q21_concurrent_cas_and_idempotency_payload_conflicts_are_atomic():
             assert saved["version"] == project["version"] + 1
             winner = next(result.json() for result in results if result.status_code == 200)
             key = str(uuid4())
-            first = await command(env, winner, "metadata", {"next_action": "Call customer"}, key=key)
+            first = await command(env, winner, "metadata", {"target_completion_date": "2026-10-23"}, key=key)
             assert first.status_code == 200, first.text
-            changed = await command(env, winner, "metadata", {"next_action": "Altered same key"}, key=key)
+            changed = await command(env, winner, "metadata", {"target_completion_date": "2026-10-24"}, key=key)
             assert changed.status_code == 409, changed.text
             before = await env["db"].kitchen_projects.find_one({"id": project["id"]})
             forged = await command(env, first.json(), "edit_lead", {"stage": "completed", "site_visit_count": 90, "actor_id": "forged"})
@@ -416,30 +415,26 @@ def test_q19_query_pagination_and_filtered_totals_share_canonical_records():
     asyncio.run(run())
 
 
-def test_q10_project_scope_assignment_authority_and_session_revocation():
+def test_q10_grant_scope_without_assignment_and_session_revocation():
     async def run():
         async with environment() as env:
             project, _ = await create_project(env)
             unrelated, _ = await create_project(env)
-            assigned = await command(env, project, "assign", {"stage": "lead", "user_id": env["ids"]["worker"]})
-            assert assigned.status_code == 200, assigned.text
-            project = assigned.json()
-            visible = await env["api"].get(f"/api/kitchen-projects/{project['id']}", headers=headers(env, "worker"))
-            assert visible.status_code == 200, visible.text
-            hidden = await env["api"].get(f"/api/kitchen-projects/{unrelated['id']}", headers=headers(env, "worker"))
-            assert hidden.status_code == 404, hidden.text
+            for row in (project, unrelated):
+                visible = await env["api"].get(f"/api/kitchen-projects/{row['id']}", headers=headers(env, "worker"))
+                assert visible.status_code == 200 and visible.json()["permissions"]["can_update"]
             page = await env["api"].get("/api/kitchen-projects", headers=headers(env, "worker"))
-            assert page.status_code == 200 and page.json()["total"] == 1
-            assert [row["id"] for row in page.json()["rows"]] == [project["id"]]
-            reassignment = await command(env, project, "assign", {"stage": "visit", "user_id": env["ids"]["worker"]}, actor="worker")
-            assert reassignment.status_code == 403, reassignment.text
-            hidden_write = await command(env, unrelated, "convert", actor="worker")
-            assert hidden_write.status_code == 404, hidden_write.text
+            assert page.status_code == 200 and page.json()["total"] == 2
+            retired = await command(env, project, "assign", {"stage": "visit", "user_id": env["ids"]["worker"]}, actor="worker")
+            assert retired.status_code == 422
+            edited = await command(env, unrelated, "edit_lead", {"notes": "Delegated without assignment"}, actor="worker")
+            assert edited.status_code == 200
+            denied = await command(env, unrelated, "edit_lead", {"notes": "No grant"}, actor="denied")
+            assert denied.status_code == 403
             import auth
             await env["db"].user_sessions.update_many({"user_id": env["ids"]["owner"]}, {"$set": {"revoked": True}})
             auth.invalidate_principal_cache("staff", env["ids"]["owner"])
-            replay = await command(env, project, "convert")
-            assert replay.status_code == 401, replay.text
+            assert (await command(env, project, "convert")).status_code == 401
     asyncio.run(run())
 
 
@@ -535,7 +530,7 @@ def test_q04_to_q09_versions_revisions_production_visits_and_late_closure(tmp_pa
             exported = await env["api"].get("/api/kitchen-projects/export", headers=headers(env))
             assert exported.status_code == 200 and "1200.01" in exported.text
             assert "Actual site visits" in exported.text
-            await blocked("metadata", {"next_action": "Forbidden terminal edit"})
+            await blocked("metadata", {"target_completion_date": "2026-10-23"})
             # Q23: actual BSON snapshot/restore into a distinct empty database.
             from scripts.recovery_snapshot import export_database, restore_database
             snapshot = tmp_path / "kitchen-synthetic-snapshot"
@@ -607,7 +602,6 @@ def test_independent_q10_q16_unconfigured_manager_identity_and_subject_invalidat
             await configure(env)
             owner_approval = await command(env, order, "approval", {"scope": "production", "decision": "Approved"})
             assert owner_approval.status_code == 403
-            order = await accepted(env, order, "assign", {"stage": "order", "user_id": env["ids"]["worker"]})
             role_manager_approval = await command(env, order, "approval", {"scope": "production", "decision": "Approved"}, actor="worker")
             assert role_manager_approval.status_code == 403
             manager_policy = await env["api"].put("/api/kitchen-projects/configuration", headers=headers(env, "manager"),
@@ -694,14 +688,14 @@ def test_independent_q17_q19_q20_numeric_sort_full_export_filters_and_ist_bounda
             metrics = dashboard.json()
             assert metrics["active_projects"] == 3
             assert metrics["on_hold_projects"] == 1
-            assert metrics["next_action_overdue_projects"] == 1
+            assert metrics["next_action_overdue_projects"] == 0
             assert metrics["completion_overdue_projects"] == 1
             assert metrics["active_order_value"] == "10.01"
             assert metrics["stage_counts"] == {"lead": 3, "visit": 0, "cad": 0, "design": 0,
                 "quotation": 0, "order": 3, "production": 0, "installation": 0, "completed": 105}
             assert metrics["workload"] == [{"assignee_id": env["ids"]["worker"], "assignee_name": None, "project_count": 3}]
             for attention, expected in (("active", 3), ("on_hold", 1), ("pending_approval", 0),
-                    ("next_action_overdue", 1), ("completion_overdue", 1), ("active_order", 1)):
+                    ("next_action_overdue", 0), ("completion_overdue", 1), ("active_order", 1)):
                 response = await env["api"].get(f"/api/kitchen-projects?attention={attention}", headers=headers(env))
                 assert response.status_code == 200, response.text
                 assert response.json()["total"] == expected, attention
@@ -902,9 +896,9 @@ def test_q22_private_attachment_bytes_permissions_and_failed_upload(monkeypatch,
             data = b"%PDF-1.4\nSynthetic private document"
             path = f"/api/kitchen-projects/{project['id']}/attachments"
             fields = {"expected_version": str(project["version"]), "idempotency_key": str(uuid4())}
-            blocked = await env["api"].post(path, headers=headers(env, "worker"), data=fields,
+            blocked = await env["api"].post(path, headers=headers(env, "denied"), data=fields,
                 files={"file": ("synthetic.pdf", data, "application/pdf")})
-            assert blocked.status_code == 404
+            assert blocked.status_code == 403
             policy = await env["api"].put("/api/kitchen-projects/configuration", headers=headers(env),
                 json={"expected_version": 1, "decision_contract": "2026-10-20", "files": {"allowed_types": ["application/pdf"], "max_bytes": 100000}})
             assert policy.status_code == 200
@@ -1021,7 +1015,7 @@ def test_q22_private_attachment_bytes_permissions_and_failed_upload(monkeypatch,
     asyncio.run(run())
 
 
-def test_resolved_d04_d08_mandatory_fields_duplicate_owner_review_and_manager_assignment():
+def test_resolved_d04_d08_mandatory_fields_duplicate_owner_review_and_delegation():
     async def run():
         async with environment() as env:
             await configure(env)
@@ -1050,14 +1044,13 @@ def test_resolved_d04_d08_mandatory_fields_duplicate_owner_review_and_manager_as
             assert first["id"] in second["duplicate_review"]["candidate_ids"]
             queue = await env["api"].get("/api/kitchen-projects?duplicate_review=pending", headers=headers(env))
             assert queue.status_code == 200 and second["id"] in {r["id"] for r in queue.json()["rows"]}
-            # Selected manager sees unassigned work and can assign it, but does
-            # not inherit owner exception or duplicate decision authority.
+            # Delegated staff see work without assignment; selected managers
+            # do not inherit owner exception or duplicate decision authority.
             managed = await env["api"].get(f"/api/kitchen-projects/{second['id']}", headers=headers(env, "manager"))
-            assert managed.status_code == 200 and managed.json()["permissions"]["can_assign"]
-            second = await accepted(env, second, "assign", {"stage": "lead", "user_id": env["ids"]["worker"]}, actor="manager")
+            assert managed.status_code == 200 and not managed.json()["permissions"]["can_assign"]
             worker_read = await env["api"].get(f"/api/kitchen-projects/{second['id']}", headers=headers(env, "worker"))
             assert worker_read.status_code == 200 and "candidate_ids" not in worker_read.json()["duplicate_review"]
-            assert first["id"] not in worker_read.text  # Also redact historical before/after audit snapshots.
+            assert "candidate_ids" not in json.dumps(worker_read.json()["activity"])
             assert not worker_read.json()["permissions"]["can_review_duplicate"]
             for actor in ("worker", "manager"):
                 denied = await command(env, second, "review_duplicate", {"decision": "distinct_project", "reason": "Not owner"}, actor=actor)
@@ -1321,8 +1314,8 @@ def test_resolved_d10_all_formats_private_roundtrip_and_rejected_content_leave_n
                 download = await env["api"].get(f"{route}/{attachment['id']}", headers=headers(env))
                 assert download.status_code == 200 and download.content == content
                 assert download.headers["cache-control"] == "no-store"
-                hidden = await env["api"].get(f"{route}/{attachment['id']}", headers=headers(env, "worker"))
-                assert hidden.status_code == 404
+                hidden = await env["api"].get(f"{route}/{attachment['id']}", headers=headers(env, "denied"))
+                assert hidden.status_code == 403
             assert len(project["attachments"]) == 6
             before = await env["db"].kitchen_projects.find_one({"id": project["id"]})
             for filename, mime, content, code in [
@@ -1390,12 +1383,11 @@ def test_resolved_d09_migration_preview_real_mongo_is_repeatable_preserves_sourc
     asyncio.run(run())
 
 
-def test_resolved_d07_active_order_value_uses_current_confirmed_basis_and_assigned_scope_once():
+def test_resolved_d07_active_order_value_uses_current_confirmed_basis_and_grant_scope_once():
     async def run():
         async with environment() as env:
             await configure(env)
             project = await reach_stage(env, "order")
-            project = await accepted(env, project, "assign", {"stage": "order", "user_id": env["ids"]["worker"]})
             async def metrics(actor="owner"):
                 response = await env["api"].get("/api/kitchen-projects/dashboard", headers=headers(env, actor))
                 assert response.status_code == 200
@@ -1411,19 +1403,18 @@ def test_resolved_d07_active_order_value_uses_current_confirmed_basis_and_assign
             assert (await metrics())["active_order_value"] == "1500.03"
             project = await accepted(env, project, "exception", {"action": "return_to_design", "reason": "Owner approved design change"})
             assert (await metrics())["active_order_value"] == "0.00"  # Historical confirmed order cannot remain current value.
-            # Assignment follows project visibility over its lifecycle; unrelated
-            # current confirmed orders stay absent from employee metrics/lists.
+            # Kitchen grants cover the workspace throughout its lifecycle.
             other = await reach_stage(env, "order")
             own = await metrics("worker")
-            assert own["active_projects"] == 1 and own["active_order_value"] == "0.00"
+            assert own["active_projects"] == 2 and own["active_order_value"] == "1000.01"
             all_rows = await metrics("manager")
             assert all_rows["active_projects"] == 2 and all_rows["active_order_value"] == "1000.01"
             direct = await env["api"].get(f"/api/kitchen-projects/{other['id']}", headers=headers(env, "worker"))
-            assert direct.status_code == 404
+            assert direct.status_code == 200
     asyncio.run(run())
 
 
-def test_resolved_d04_history_read_does_not_authorize_another_current_task_or_upload(monkeypatch):
+def test_delegated_stage_updates_and_upload_cas_survive_assignment_retirement(monkeypatch):
     from media_storage import factory
     class OwnedStorage:
         calls = 0
@@ -1447,7 +1438,7 @@ def test_resolved_d04_history_read_does_not_authorize_another_current_task_or_up
     async def run():
         async with environment() as env:
             await configure(env)
-            project, _ = await create_project(env, assigned_to=env["ids"]["worker"])
+            project, _ = await create_project(env)
             original_lead = project
             conversion_key = str(uuid4())
             project = await accepted(env, project, "convert", key=conversion_key, actor="worker")
@@ -1455,18 +1446,7 @@ def test_resolved_d04_history_read_does_not_authorize_another_current_task_or_up
             assert replay.status_code == 200 and replay.json()["version"] == project["version"] and replay.json()["replayed"]
             route = f"/api/kitchen-projects/{project['id']}"
             history = await env["api"].get(route, headers=headers(env, "worker"))
-            assert history.status_code == 200 and not history.json()["permissions"]["can_update"]
-            before = await env["db"].kitchen_projects.find_one({"id": project["id"]})
-            for name, payload in (("save_visit", {"status": "Visited", "requirements": "Another employee task", "interested": True}),
-                                  ("metadata", {"next_action": "Another task's deadline"})):
-                denied = await command(env, project, name, payload, actor="worker")
-                assert denied.status_code == 403, (name, denied.text)
-            denied_upload = await env["api"].post(f"{route}/attachments", headers=headers(env, "worker"),
-                data={"expected_version": str(project["version"]), "idempotency_key": str(uuid4())},
-                files={"file": ("another-task.pdf", b"%PDF-1.4\nSynthetic", "application/pdf")})
-            assert denied_upload.status_code == 403 and storage.calls == 0
-            assert await env["db"].kitchen_projects.find_one({"id": project["id"]}) == before
-            project = await accepted(env, project, "assign", {"stage": "visit", "user_id": env["ids"]["worker"]}, actor="manager")
+            assert history.status_code == 200 and history.json()["permissions"]["can_update"]
             project = await accepted(env, project, "save_visit", {"status": "Visited", "requirements": "Own task", "interested": True}, actor="worker")
             assert project["permissions"]["can_update"]
             uploaded = await env["api"].post(f"{route}/attachments", headers=headers(env, "worker"),
@@ -1481,7 +1461,7 @@ def test_resolved_d04_history_read_does_not_authorize_another_current_task_or_up
                 files={"file": ("revoked-task.pdf", b"%PDF-1.4\nRevoked while upload pending", "application/pdf")}))
             try:
                 await asyncio.wait_for(storage.started.wait(), timeout=3)
-                project = await accepted(env, project, "assign", {"stage": "visit", "user_id": None})
+                project = await accepted(env, project, "metadata", {"target_completion_date": "2026-10-23"})
             finally:
                 storage.release.set()
                 result = await pending
@@ -1557,15 +1537,16 @@ def test_attention_drilldowns_share_metrics_dates_approval_subjects_and_role_sco
             hidden = copy.deepcopy(fixtures[0])
             hidden.update(id="other-floor", reference="OTHER-FLOOR", floor_id="first-floor")
             await env["db"].kitchen_projects.insert_many([*fixtures, hidden])
-            for actor, active, pending in (("owner", 7, 2), ("manager", 7, 2), ("worker", 4, 1)):
+            for actor, active, pending in (("owner", 7, 2), ("manager", 7, 2), ("worker", 7, 2)):
                 response = await env["api"].get("/api/kitchen-projects/dashboard", headers=headers(env, actor))
                 assert response.status_code == 200, response.text
                 metrics = response.json()
                 assert metrics["active_projects"] == active
                 assert metrics["pending_approvals"] == pending
-                assert metrics["next_action_overdue_projects"] == metrics["completion_overdue_projects"] == 1
+                assert metrics["next_action_overdue_projects"] == 0
+                assert metrics["completion_overdue_projects"] == 1
                 for attention, expected in (("active", active), ("pending_approval", pending),
-                        ("next_action_overdue", 1), ("completion_overdue", 1), ("active_order", 0), ("on_hold", 0)):
+                        ("next_action_overdue", 0), ("completion_overdue", 1), ("active_order", 0), ("on_hold", 0)):
                     listed = await env["api"].get(f"/api/kitchen-projects?attention={attention}", headers=headers(env, actor))
                     assert listed.status_code == 200, listed.text
                     assert listed.json()["total"] == expected, (actor, attention)
@@ -1619,7 +1600,7 @@ if __name__ == "__main__":
         factory.get_media_storage = lambda: PilotPrivateStorage()
         async with environment() as env:
             await configure(env)  # Test-only browser/pilot identities, never production configuration.
-            legacy, _ = await create_project(env, assigned_to=env["ids"]["worker"], lead={"site_location": "Synthetic legacy site"})
+            legacy, _ = await create_project(env, lead={"site_location": "Synthetic legacy site"})
             await env["db"].kitchen_projects.update_one({"id": legacy["id"]}, {"$set": {
                 "stage": "completed", "status": "Completed", "completion_date": None,
                 "is_legacy": True, "source_reference": "SYNTHETIC-NOTEBOOK-17", "project_reference": None,
@@ -1728,8 +1709,8 @@ def test_25mb_private_transfer_boundary_retry_integrity_and_bounded_download(mon
                 downloaded.extend(part)
             assert hashlib.sha256(downloaded).hexdigest() == checksum
             assert storage.reads == 1  # bounded immutable cache avoids 48 full provider reads
-            forbidden = await env['api'].get(path + f"/attachments/{attachment['id']}/parts/0", headers=headers(env, 'worker'))
-            assert forbidden.status_code == 404
+            forbidden = await env['api'].get(path + f"/attachments/{attachment['id']}/parts/0", headers=headers(env, 'denied'))
+            assert forbidden.status_code == 403
             other_floor = await env['api'].get(path + f"/attachments/{attachment['id']}/parts/0", headers={**headers(env), 'X-Floor-Id': 'first-floor'})
             assert other_floor.status_code == 403
     asyncio.run(run())
@@ -1776,11 +1757,12 @@ def test_large_transfer_cancel_expiry_corruption_and_permission_revocation(monke
             expired = await env['api'].put(path + '/' + expired_id + '/parts/0', headers=headers(env), json={'data_base64': base64.b64encode(data).decode()})
             assert expired.status_code == 410
             await env['api'].delete(path + '/' + expired_id, headers=headers(env))
-            project = await accepted(env, project, 'assign', {'stage': 'lead', 'user_id': env['ids']['worker']})
             worker = await env['api'].post(path, headers=headers(env, 'worker'), json={**body, 'expected_version': project['version'], 'idempotency_key': str(uuid4())})
             assert worker.status_code == 200
             worker_id = worker.json()['transfer_id']
-            await accepted(env, project, 'assign', {'stage': 'lead', 'user_id': env['ids']['manager']})
+            await env['db'].users.update_one({'id': env['ids']['worker']}, {'$set': {'delegation_grants': []}})
+            import auth
+            auth.invalidate_principal_cache('staff', env['ids']['worker'])
             lost = await env['api'].put(path + '/' + worker_id + '/parts/0', headers=headers(env, 'worker'), json={'data_base64': base64.b64encode(data).decode()})
             assert lost.status_code in {403, 404}
     asyncio.run(run())
@@ -2032,12 +2014,11 @@ def test_held_early_tasks_block_routine_writes_but_preserve_replay_history_and_o
     async def run():
         async with environment() as env:
             project = await reach_stage(env, stage)
-            project = await accepted(env, project, "assign", {"stage": stage, "user_id": env["ids"]["worker"]})
             replay_key = str(uuid4())
             project = await accepted(env, project, edit, payload, actor="worker", key=replay_key)
             project = await accepted(env, project, "order_status", {"status": held_status, "reason": "Owner paused this work"})
             snapshot = await env["db"].kitchen_projects.find_one({"id": project["id"]})
-            for name, fields in ((edit, {**payload, "notes": "Should be rejected"}), ("metadata", {"next_action": "Must not overwrite held plan"})):
+            for name, fields in ((edit, {**payload, "notes": "Should be rejected"}), ("metadata", {"target_completion_date": "2026-10-23"})):
                 rejected = await command(env, project, name, fields, actor="worker")
                 assert rejected.status_code == 422 and "resume" in rejected.text
                 assert await env["db"].kitchen_projects.find_one({"id": project["id"]}) == snapshot
@@ -2046,14 +2027,62 @@ def test_held_early_tasks_block_routine_writes_but_preserve_replay_history_and_o
             assert replayed.json()["version"] == project["version"]
             assert await env["db"].kitchen_projects.find_one({"id": project["id"]}) == snapshot
             assert (await env["api"].get(f"/api/kitchen-projects/{project['id']}", headers=headers(env, "worker"))).status_code == 200
-            # Explicitly authorized assignment stays available to the owner;
-            # the hold is not turned into an unrelated assignment restriction.
-            project = await accepted(env, project, "assign", {"stage": stage, "user_id": env["ids"]["worker"]})
             if stage == "lead":
                 project = await accepted(env, project, "review_duplicate", {"decision": "distinct_project", "reason": "Owner reviewed while paused"})
             project = await accepted(env, project, "order_status", {"status": "Confirmed", "reason": "Owner resumes current task"})
             project = await accepted(env, project, edit, {**payload, "notes": "Saved after owner resume"}, actor="worker")
-            project = await accepted(env, project, "metadata", {"next_action": "Allowed after owner resume"}, actor="worker")
+            project = await accepted(env, project, "metadata", {"target_completion_date": "2026-10-23"}, actor="worker")
             assert project[stage]["notes"] == "Saved after owner resume"
-            assert project["next_action"] == "Allowed after owner resume"
+            assert project["target_completion_date"] == "2026-10-23"
+    asyncio.run(run())
+
+
+def test_retired_kitchen_writes_reject_before_persistence_but_delegated_intake_works():
+    async def run():
+        async with environment() as env:
+            body = {"customer_id": env["ids"]["customer"], "idempotency_key": str(uuid4()),
+                    "lead": {"site_location": "Delegated site"}}
+            retired_create = await env["api"].post("/api/kitchen-projects", headers=headers(env, "worker"),
+                json={**body, "assigned_to": env["ids"]["worker"]})
+            assert retired_create.status_code == 422
+            assert await env["db"].kitchen_projects.count_documents({}) == 0
+            created = await env["api"].post("/api/kitchen-projects", headers=headers(env, "worker"), json=body)
+            assert created.status_code == 200, created.text
+            project = created.json()
+            assert project["assignments"] == {} and project["permissions"]["can_update"]
+            project = await accepted(env, project, "convert", actor="worker")
+            before = await env["db"].kitchen_projects.find_one({"id": project["id"]})
+            for name, payload in (("save_visit", {"next_action": "Retired"}),
+                                  ("metadata", {"next_action": "Retired"}),
+                                  ("metadata", {"deadline": "2026-10-23T09:00:00Z"})):
+                rejected = await command(env, project, name, payload, actor="worker")
+                assert rejected.status_code == 422, (name, rejected.text)
+                assert await env["db"].kitchen_projects.find_one({"id": project["id"]}) == before
+            project = await accepted(env, project, "save_visit", {"visit_date": "2026-10-23"}, actor="worker")
+            changed = await accepted(env, project, "save_visit", {"visit_date": "2026-10-24"}, actor="worker")
+            assert changed["visit"]["visit_date"] == "2026-10-24"
+    asyncio.run(run())
+
+
+def test_kitchen_assignment_retirement_preserves_view_only_grant_and_floor_limits():
+    async def run():
+        async with environment() as env:
+            project, _ = await create_project(env)
+            worker = await env["db"].users.find_one({"id": env["ids"]["worker"]})
+            grants = worker["delegation_grants"]
+            grants[0]["actions"] = ["view"]
+            await env["db"].users.update_one({"id": env["ids"]["worker"]}, {"$set": {"delegation_grants": grants}})
+            import auth
+            auth.invalidate_principal_cache("staff", env["ids"]["worker"])
+            visible = await env["api"].get(f"/api/kitchen-projects/{project['id']}", headers=headers(env, "worker"))
+            assert visible.status_code == 200 and not visible.json()["permissions"]["can_update"]
+            assert not visible.json()["permissions"]["can_assign"]
+            before = await env["db"].kitchen_projects.find_one({"id": project["id"]})
+            edited = await command(env, project, "edit_lead", {"notes": "View cannot write"}, actor="worker")
+            assert edited.status_code == 403
+            assert await env["db"].kitchen_projects.find_one({"id": project["id"]}) == before
+            other_floor = await env["api"].get(f"/api/kitchen-projects/{project['id']}", headers=headers(env, "worker", floor="first-floor"))
+            assert other_floor.status_code == 403
+            exported = await env["api"].get("/api/kitchen-projects/export", headers=headers(env, "worker"))
+            assert exported.status_code == 403
     asyncio.run(run())

@@ -1,7 +1,7 @@
 """Strict Kitchen commands and resolved-policy adoption contracts."""
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Annotated, Any, Literal
 
@@ -69,7 +69,6 @@ class VisitFields(StrictModel):
     notes: Text | None = None
     status: Literal["Scheduled", "Visited", "Follow-up Required"] = "Scheduled"
     interested: StrictBool | None = None
-    next_action: ShortText | None = None
 
     _visit_date = field_validator("visit_date", mode="before")(date_only)
 
@@ -102,7 +101,6 @@ class CreateProject(StrictModel):
     customer: LeadCustomer | None = None
     idempotency_key: CommandKey
     lead: LeadFields = Field(default_factory=LeadFields)
-    assigned_to: Identifier | None = None
 
     @model_validator(mode="after")
     def one_customer_source(self):
@@ -121,34 +119,14 @@ class ProjectCommand(StrictModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
-class AssignmentPayload(StrictModel):
-    stage: Stage
-    user_id: Identifier | None
-
-
 class AdvancePayload(StrictModel):
     target_stage: Stage
 
 
 class MetadataPayload(StrictModel):
-    next_action: ShortText | None = None
-    deadline: str | None = None
     target_completion_date: str | None = None
 
     _target = field_validator("target_completion_date", mode="before")(date_only)
-
-    @field_validator("deadline")
-    @classmethod
-    def timestamp(cls, value):
-        if value is None:
-            return None
-        try:
-            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError as exc:
-            raise ValueError("Deadline must be an ISO timestamp with timezone") from exc
-        if parsed.tzinfo is None:
-            raise ValueError("Deadline must include timezone")
-        return parsed.astimezone(timezone.utc).isoformat()
 
 
 class ProductionPolicy(StrictModel):
@@ -203,14 +181,14 @@ class FilePolicy(StrictModel):
 
 
 REQUIRED_FIELDS = {
-    "lead": {"site_location", "lead_source", "kitchen_type", "budget", "notes", "lead_date", "assigned_to"},
-    "visit": {"visit_date", "display_model", "requirements", "budget_discussion", "notes", "interested", "next_action", "assigned_to"},
-    "cad": {"received", "progress", "status", "notes", "ready", "assigned_to"},
-    "design": {"presentation_date", "attachment_id", "url", "notes", "assigned_to"},
-    "quotation": {"received_date", "amount", "attachment_id", "url", "notes", "assigned_to"},
-    "order": {"order_date", "confirmation_document_id", "notes", "assigned_to"},
-    "production": {"start_date", "completion_date", "notes", "assigned_to"},
-    "installation": {"start_date", "completion_date", "notes", "assigned_to"},
+    "lead": {"site_location", "lead_source", "kitchen_type", "budget", "notes", "lead_date"},
+    "visit": {"visit_date", "display_model", "requirements", "budget_discussion", "notes", "interested"},
+    "cad": {"received", "progress", "status", "notes", "ready"},
+    "design": {"presentation_date", "attachment_id", "url", "notes"},
+    "quotation": {"received_date", "amount", "attachment_id", "url", "notes"},
+    "order": {"order_date", "confirmation_document_id", "notes"},
+    "production": {"start_date", "completion_date", "notes"},
+    "installation": {"start_date", "completion_date", "notes"},
 }
 
 

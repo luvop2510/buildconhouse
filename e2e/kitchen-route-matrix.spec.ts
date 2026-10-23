@@ -145,12 +145,11 @@ test('invalid URLs and independent allowed/denied role scopes preserve authority
     try {
       await actor.addCookies([{ name: 'kitchen_acceptance_session', value: role, url: baseURL! }]);
       const response = await actor.request.get(`/api/kitchen-projects/${project.id}`, { headers });
-      expect(response.status(), `${role}: unassigned project`).toBe(role === 'manager' ? 200 : role === 'anonymous' ? 401 : role === 'denied' ? 403 : 404);
-      checks.push({ role, state: 'unassigned project', status: response.status() });
+      expect(response.status(), `${role}: workspace grant`).toBe(role === 'anonymous' ? 401 : role === 'denied' ? 403 : 200);
+      checks.push({ role, state: 'workspace grant', status: response.status() });
       if (role === 'worker') {
         const list = await actor.request.get('/api/kitchen-projects?limit=25', { headers });
-        expect((await list.json()).rows.some((row: any) => row.id === project.id)).toBe(false);
-        project = await command(context, project, 'assign', { stage: 'lead', user_id: process.env.KITCHEN_E2E_WORKER_ID });
+        expect((await list.json()).rows.some((row: any) => row.id === project.id)).toBe(true);
         const allowed = await actor.request.get(`/api/kitchen-projects/${project.id}`, { headers });
         expect(allowed.status()).toBe(200);
         expect((await allowed.json()).permissions.can_update).toBe(true);
@@ -159,13 +158,14 @@ test('invalid URLs and independent allowed/denied role scopes preserve authority
         await expect(actorPage.getByTestId('kitchen-lead-save')).toBeVisible();
         project = await command(context, project, 'convert');
         await actorPage.goto(`/kitchen/${project.id}/stages/visit`);
-        await expect(actorPage.getByTestId('kitchen-read-only-notice')).toBeVisible();
-        await expect(actorPage.getByTestId('kitchen-visit-save')).toHaveCount(0);
+        await expect(actorPage.getByTestId('kitchen-read-only-notice')).toHaveCount(0);
+        await expect(actorPage.getByTestId('kitchen-visit-save')).toBeVisible();
         const write = await actor.request.post(`/api/kitchen-projects/${project.id}/commands`, { headers, data: {
-          expected_version: project.version, idempotency_key: randomUUID(), command: 'save_visit', payload: { requirements: 'Denied other task' },
+          expected_version: project.version, idempotency_key: randomUUID(), command: 'save_visit', payload: { requirements: 'Granted Kitchen task' },
         } });
-        expect(write.status()).toBe(403);
-        checks.push({ role, state: 'assigned history; current task unassigned', read: 200, write: write.status() });
+        expect(write.status()).toBe(200);
+        project = await write.json();
+        checks.push({ role, state: 'grant-based current task and history', read: 200, write: write.status() });
         await actorHealth.assertHealthy();
       }
       if (role === 'manager') {
