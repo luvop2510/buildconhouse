@@ -13,6 +13,7 @@ trigger condition no longer holds (e.g. the customer placed an order).
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -392,6 +393,23 @@ async def _operational_followup_producer(quotations: list[dict], customers: dict
 # ─────────────────────────────────────────────────────────────────────────────
 _reconcile_lock = asyncio.Lock()
 _reconcile_requested = False
+
+
+async def followup_worker() -> None:
+    """Re-evaluate time-based reminders even when no business record changes.
+
+    Runs after readiness and shares the mutation reconciler's coalescing lock.
+    The five-minute polling interval never changes configured reminder dates.
+    """
+    logger = logging.getLogger("forge.followups")
+    while True:
+        try:
+            await reconcile_followups()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Follow-up reconciliation failed; retrying next cycle")
+        await asyncio.sleep(300)
 
 
 async def reconcile_followups() -> dict:

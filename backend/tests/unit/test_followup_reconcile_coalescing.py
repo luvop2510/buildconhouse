@@ -1,7 +1,31 @@
 """A mutation after an in-flight snapshot must receive a fresh reconcile pass."""
 import asyncio
+import pytest
 
 from services import followup_engine as engine
+
+
+def test_elapsed_time_reminders_refresh_without_a_mutation_and_recover_from_errors(monkeypatch):
+    async def scenario():
+        calls, intervals = [], []
+
+        async def reconcile():
+            calls.append(len(calls))
+            if len(calls) == 1:
+                raise RuntimeError("transient database failure")
+
+        async def sleep(seconds):
+            intervals.append(seconds)
+            if len(intervals) == 3:
+                raise asyncio.CancelledError()
+
+        monkeypatch.setattr(engine, "reconcile_followups", reconcile)
+        monkeypatch.setattr(engine.asyncio, "sleep", sleep)
+        with pytest.raises(asyncio.CancelledError):
+            await engine.followup_worker()
+        assert len(calls) == 3, "Due reminders must refresh without a business write"
+        assert intervals == [300, 300, 300]
+    asyncio.run(scenario())
 
 
 def test_mutations_during_a_snapshot_are_coalesced_without_losing_late_documents(monkeypatch):

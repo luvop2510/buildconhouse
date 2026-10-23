@@ -57,6 +57,17 @@ try {
     await writeFile(join(app, file), 'export default function Page() {}');
   }
   assert.deepEqual(stabilityRoutes(directory), ['/new-feature', '/new-feature/audit-record', '/new-feature/browser-only']);
+  // Official browser containers mount the repository under /__w. Only route
+  // segments may be classified as private; an ancestor must never erase coverage.
+  for (const parent of ['__w', '+container']) {
+    const containerRoot = join(directory, parent, 'repo');
+    await mkdir(join(containerRoot, 'app', '(admin)'), { recursive: true });
+    for (const file of ['_layout.tsx', '+html.tsx', 'visible.tsx']) {
+      await writeFile(join(containerRoot, 'app', file), 'export default function Page() {}');
+    }
+    await writeFile(join(containerRoot, 'app', '(admin)', 'customers.tsx'), 'export default function Page() {}');
+    assert.deepEqual(stabilityRoutes(containerRoot), ['/customers', '/visible']);
+  }
   assert.throws(() => verifyStabilityReport(passing, [...routes, '/new-feature']), /Missing or duplicate route/);
 } finally { await rm(directory, { recursive: true, force: true }); }
 console.log('Release stability gate rejects missing routes/devices/suites, skips, flakes, retries, runner errors and misleading pass counts; new routes inherit required coverage.');

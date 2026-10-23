@@ -26,21 +26,25 @@ async def repair(database, floor: str, *, apply: bool = False) -> dict:
              "showroom_followup_id": {"$type": "string", "$ne": ""}}
     async for walkin in database.walkins.find(query, {"_id": 0, "id": 1, "customer_id": 1,
             "showroom_followup_id": 1}):
+        customer_id, walkin_id = walkin.get("customer_id"), walkin.get("id")
+        if any(not isinstance(value, str) or not value.strip() for value in (customer_id, walkin_id)):
+            result["conflicts"] += 1
+            continue
         identity = {"id": walkin["showroom_followup_id"], "floor_id": floor}
         row = await database.followups.find_one(identity, {"_id": 0})
-        if row and row.get("origin") == "visit_showroom":
-            continue
         # Never guess another customer's identity or repurpose an unrelated lead.
-        if (not row or row.get("origin") != "walkin" or row.get("rule_type") != "manual"
-                or row.get("customer_id") != walkin.get("customer_id")
-                or row.get("walkin_id") != walkin["id"]):
+        if (not row or row.get("origin") not in {"walkin", "visit_showroom"} or row.get("rule_type") != "manual"
+                or row.get("customer_id") != customer_id
+                or row.get("walkin_id") != walkin_id):
             result["conflicts"] += 1
+            continue
+        if row.get("origin") == "visit_showroom":
             continue
         result["candidates"] += 1
         if apply:
             changed = await database.followups.update_one(
                 {**identity, "origin": "walkin", "rule_type": "manual",
-                 "customer_id": walkin["customer_id"], "walkin_id": walkin["id"]},
+                 "customer_id": customer_id, "walkin_id": walkin_id},
                 {"$set": {"origin": "visit_showroom"}},
             )
             result["repaired"] += changed.modified_count

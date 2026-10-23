@@ -10,9 +10,9 @@ function files(directory: string): string[] {
 // route automatically makes its successful execution mandatory on every device.
 export function stabilityRoutes(root = process.cwd()): string[] {
   const app = join(root, 'app');
-  return [...new Set(files(app)
-    .filter(file => /\.[jt]sx?$/.test(file) && !/\/_|\/\+/.test(file) && !/\.(?:ios|android|native)\.[jt]sx?$/.test(file))
-    .map(file => '/' + relative(app, file).replace(/\([^/]+\)\//g, '').replace(/(?:\.web)?\.[jt]sx?$/, '')
+  return [...new Set(files(app).map(file => relative(app, file))
+    .filter(file => /\.[jt]sx?$/.test(file) && !/(?:^|\/)[_+]/.test(file) && !/\.(?:ios|android|native)\.[jt]sx?$/.test(file))
+    .map(file => '/' + file.replace(/\([^/]+\)\//g, '').replace(/(?:\.web)?\.[jt]sx?$/, '')
       .replace(/(^|\/)index$/, '').replace(/\/$/, '').replace('[floor]', 'kitchen')
       .replace('[view]', 'followups').replace('[kind]', 'salespeople').replace(/\[[^\]]+\]/g, 'audit-record'))
     .filter(path => path !== '/' && path !== '/set-new-password' && path !== '/login'))].sort();

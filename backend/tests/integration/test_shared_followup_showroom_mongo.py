@@ -99,3 +99,50 @@ def test_showroom_repair_refuses_ambiguous_customer_or_missing_followup():
             assert await database.followups.count_documents({}) == 1
             assert await database.followups.find_one({"id": "wrong"}, {"_id": 0}) == row
     asyncio.run(scenario())
+
+
+def test_showroom_transfer_rejects_same_floor_unrelated_identity_without_mutation(monkeypatch):
+    async def scenario():
+        async with environment() as env:
+            with monkeypatch.context() as patch:
+                patch.setattr(walkin_routes, "db", env["db"])
+                env["app"].include_router(walkin_routes.router, prefix="/api")
+                floor = "first-floor"
+                original = Followup(id="unrelated-target", floor_id=floor, customer_id="other-customer",
+                    customer_name="Unrelated synthetic visitor", walkin_id="other-walkin",
+                    origin="walkin", rule_type="manual", status="done", due_at=now_iso(), completed_at=now_iso()).model_dump()
+                walkin = WalkIn(id="stale-source", floor_id=floor, number="WI-STALE", customer_id="source-customer",
+                    customer_name="Synthetic source", customer_phone="9900000042", salesperson_id="worker",
+                    scope_followup_id=original["id"], visited_at=now_iso()).model_dump()
+                await env["db"].followups.insert_one(dict(original))
+                await env["db"].walkins.insert_one(dict(walkin))
+                for _ in range(2):
+                    response = await env["api"].post("/api/walkins/stale-source/visit-showroom", headers=headers(env, floor=floor))
+                    assert response.status_code == 409, response.text
+                assert await env["db"].followups.find_one({"id": original["id"]}, {"_id": 0}) == original
+                assert await env["db"].walkins.find_one({"id": walkin["id"]}, {"_id": 0}) == walkin
+                assert await env["db"].activity_events.count_documents({"event_type": "walkin.visit_showroom"}) == 0
+    asyncio.run(scenario())
+
+
+def test_showroom_repair_refuses_missing_empty_or_invalid_customer_identities():
+    async def scenario():
+        async with environment() as env:
+            database, floor = env["db"], "first-floor"
+            originals = []
+            for index, value in enumerate([None, "", "   ", 123, "missing"]):
+                walkin = {"id": f"malformed-{index}", "floor_id": floor, "is_deleted": False,
+                          "showroom_transferred_at": now_iso(), "showroom_followup_id": f"target-{index}"}
+                row = {"id": walkin["showroom_followup_id"], "floor_id": floor, "walkin_id": walkin["id"],
+                       "origin": "walkin", "rule_type": "manual", "status": "done", "completed_at": now_iso()}
+                if value != "missing":
+                    walkin["customer_id"] = row["customer_id"] = value
+                await database.walkins.insert_one(walkin)
+                originals.append(dict(row))
+                await database.followups.insert_one(dict(row))
+            for apply in (False, True, True):
+                result = await repair(database, floor, apply=apply)
+                assert result["candidates"] == result["repaired"] == 0
+                assert result["conflicts"] == len(originals)
+            assert await database.followups.find({}, {"_id": 0}).sort("id", 1).to_list(10) == originals
+    asyncio.run(scenario())

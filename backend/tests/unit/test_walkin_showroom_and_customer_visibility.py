@@ -107,7 +107,7 @@ def test_showroom_transfer_promotes_existing_assigned_walkin_lead(monkeypatch):
     walkins.rows[0].update(scope_followup_id="walkin-lead:walkin-1", assignments=assignments)
     followups.rows.append({
         "id": "walkin-lead:walkin-1", "floor_id": "first-floor", "origin": "walkin",
-        "walkin_id": "walkin-1", "status": "open", "assignments": assignments,
+        "walkin_id": "walkin-1", "customer_id": "lead-1", "rule_type": "manual", "status": "open", "assignments": assignments,
         "assigned_to": "selected-worker", "lead_group_id": "shared-group", "contact_attempts": 3,
     })
     first = asyncio.run(walkin_routes.visit_showroom("walkin-1", user()))
@@ -131,7 +131,7 @@ def test_showroom_retry_repairs_legacy_transferred_origin_without_reopening_hist
     history = {"status": "done", "completed_at": "2026-10-20T00:00:00Z", "contact_attempts": 4,
                "due_at": "2026-10-19T00:00:00Z", "assigned_to": "selected-worker",
                "assignments": [{"floor_id": "first-floor", "user_id": "selected-worker"}]}
-    followups.rows.append({"id": identity, "floor_id": "first-floor", "origin": "walkin", **history})
+    followups.rows.append({"id": identity, "floor_id": "first-floor", "origin": "walkin", "walkin_id": "walkin-1", "customer_id": "lead-1", "rule_type": "manual", **history})
     asyncio.run(walkin_routes.visit_showroom("walkin-1", user()))
     assert followups.rows[0]["origin"] == "visit_showroom"
     assert all(followups.rows[0][key] == value for key, value in history.items())
@@ -275,3 +275,54 @@ def test_old_note_cannot_satisfy_new_lost_transition(monkeypatch):
         asyncio.run(walkin_routes.update_walkin("walkin-1", WalkInUpdate(status="lost"), user()))
     assert caught.value.status_code == 422
     assert walkins.rows[0]["status"] == "new"
+
+
+@pytest.mark.parametrize("change", [
+    {"customer_id": "other-customer"}, {"customer_id": None}, {"walkin_id": "other-walkin"},
+    {"rule_type": "quotation_followup"}, {"origin": "quotation"},
+    {"origin": "visit_showroom", "customer_id": "other-customer"},
+])
+def test_showroom_transfer_rejects_unrelated_link_without_hiding_walkin(monkeypatch, change):
+    walkins, followups, events = install_transfer(monkeypatch)
+    walkins.rows[0]["scope_followup_id"] = "stale-link"
+    row = {"id": "stale-link", "floor_id": "first-floor", "origin": "walkin",
+           "walkin_id": "walkin-1", "customer_id": "lead-1", "rule_type": "manual", "status": "done", **change}
+    followups.rows.append(dict(row))
+    with pytest.raises(HTTPException) as caught:
+        asyncio.run(walkin_routes.visit_showroom("walkin-1", user()))
+    assert caught.value.status_code == 409
+    assert followups.rows == [row]
+    assert "showroom_followup_id" not in walkins.rows[0]
+    assert events == []
+
+
+@pytest.mark.parametrize("customer_id", [None, "", "   ", 123])
+def test_showroom_transfer_rejects_missing_customer_before_writing(monkeypatch, customer_id):
+    walkins, followups, events = install_transfer(monkeypatch)
+    walkins.rows[0]["customer_id"] = customer_id
+    with pytest.raises(HTTPException) as caught:
+        asyncio.run(walkin_routes.visit_showroom("walkin-1", user()))
+    assert caught.value.status_code == 409
+    assert followups.rows == events == []
+    assert "showroom_followup_id" not in walkins.rows[0]
+
+
+def test_showroom_promotion_rechecks_identity_after_validation_race(monkeypatch):
+    walkins, followups, events = install_transfer(monkeypatch)
+    walkins.rows[0]["scope_followup_id"] = "linked"
+    followups.rows.append({"id": "linked", "floor_id": "first-floor", "origin": "walkin",
+                           "walkin_id": "walkin-1", "customer_id": "lead-1", "rule_type": "manual", "status": "open"})
+    update = followups.update_one
+
+    async def changed_before_promotion(query, patch, upsert=False):
+        if "$set" in patch and patch["$set"].get("origin") == "visit_showroom":
+            followups.rows[0]["customer_id"] = "another-customer"
+        return await update(query, patch, upsert=upsert)
+
+    monkeypatch.setattr(followups, "update_one", changed_before_promotion)
+    with pytest.raises(HTTPException) as caught:
+        asyncio.run(walkin_routes.visit_showroom("walkin-1", user()))
+    assert caught.value.status_code == 409
+    assert followups.rows[0]["origin"] == "walkin"
+    assert "showroom_followup_id" not in walkins.rows[0]
+    assert events == []
