@@ -35,7 +35,7 @@ Browser startup registers all four text weights and the bundled Feather font in
 static HTML so requests can begin before JavaScript. The exported page displays a
 loading indicator until the browser's FontFaceSet confirms that every required
 face has decoded. Expo's CSS-registration check alone is insufficient on Safari;
-its FontFaceObserver path can also wait indefinitely for an unused weight. The
+its FontFaceObserver path can also wait up to twelve seconds for a weight. The
 browser hook explicitly starts each decode while session restoration runs in
 parallel. A failed request or a 12-second stall displays a retry action instead
 of mounting a form with fallback text or missing icons.
