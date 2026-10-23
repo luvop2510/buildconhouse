@@ -117,6 +117,12 @@ export function useOverlayFocus(open: boolean, onClose: () => void, dismissable 
         // Read the live explicit ref after dismissal, not only the opening node.
         const explicit = liveTrigger(returnFocusRef);
         const target = explicit?.isConnected ? explicit : previous;
+        // Closing portals can outlive dismissal by several frames. A user may
+        // already be editing the next field when restoration finally runs.
+        // Keep that live destination, including a field in the underlying dialog.
+        const focused = document.activeElement as HTMLElement | null;
+        if (focused?.isConnected && focused !== document.body && !panel?.contains(focused)
+          && (!restoredPanel || restoredPanel.contains(focused))) return;
         if (target?.isConnected && (!restoredPanel || restoredPanel.contains(target))) target.focus();
         else if (restoredPanel?.isConnected) {
           const target = restoredPanel.querySelector<HTMLElement>('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),select:not(:disabled),a[href],[tabindex="0"]');
