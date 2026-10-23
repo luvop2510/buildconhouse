@@ -26,6 +26,16 @@ export function stabilityRouteTitle(path: string): string {
 export const stabilityProjects = ['android-chrome', 'iphone-safari', 'ipad-safari', 'desktop-chrome'];
 
 export const requiredStabilityScenarios: Record<string, string[]> = {
+  'redesign-mobile-startup.spec.ts': [
+    'critical owner navigation works after login while unrelated role permissions are pending',
+    'critical delegated navigation works after login while unrelated role permissions are pending',
+    'critical legacy navigation retains its applicable role matrix restrictions',
+  ],
+  'redesign-font-readiness.spec.ts': [
+    'cold sign-in waits for decoded text and icon fonts before the first form paint',
+    'failed font assets show recovery and a retry reload reaches the complete sign-in form',
+    'a stalled font request reaches bounded recovery and late completion cannot reveal the form',
+  ],
   'redesign-mobile-workspace.spec.ts': [
     'critical mobile shell stays fixed while the customer page header scrolls with content',
     'critical navigation stays hidden throughout mobile search and returns on blur',

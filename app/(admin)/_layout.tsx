@@ -372,7 +372,11 @@ function PhoneBar() {
   const { access, selectedFloorId, loading: floorLoading } = useFloorAccess();
   const { loading: permissionsLoading } = usePermissionMatrix();
   const [moreOpen, setMoreOpen] = useState(false);
-  const shellReady = Boolean(staff && access && selectedFloorId && !floorLoading && !permissionsLoading);
+  // Owners and delegated members derive visibility from their identity/grants,
+  // not the legacy role matrix. A slow matrix must not strand those accounts
+  // behind inert phone navigation after their authorized workspace has loaded.
+  const permissionsReady = staff?.role === "owner" || staff?.custom_access || !permissionsLoading;
+  const shellReady = Boolean(staff && access && selectedFloorId && !floorLoading && permissionsReady);
   if (!shellReady) return <PhoneBarSkeleton />;
   const all = [...visible(PRIMARY), ...tilesNav.items, ...visible(SECONDARY)];
   const notebook = selectedFloorId === KITCHEN_FLOOR_ID || selectedFloorId === FURNITURE_FLOOR_ID;

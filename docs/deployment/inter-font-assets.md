@@ -30,3 +30,21 @@ check their loaded status. Unsigned iOS/Android JavaScript exports verify
 native packaging only. Neither those exports nor viewport tests establish
 signed binary or physical-device acceptance. Reduced download size alone
 does not establish a regional latency target or availability guarantee.
+
+Browser startup registers all four text weights and the bundled Feather font in
+static HTML so requests can begin before JavaScript. The exported page displays a
+loading indicator until the browser's FontFaceSet confirms that every required
+face has decoded. Expo's CSS-registration check alone is insufficient on Safari;
+its FontFaceObserver path can also wait indefinitely for an unused weight. The
+browser hook explicitly starts each decode while session restoration runs in
+parallel. A failed request or a 12-second stall displays a retry action instead
+of mounting a form with fallback text or missing icons.
+
+Retry reloads before a form is mounted. It adds a one-use, same-origin font URL
+nonce because Safari may retain a failed font response across an ordinary reload.
+Normal starts retain the canonical immutable asset URLs. Native/Expo Go preload
+the same bundled Feather font used by components, without a font CDN dependency.
+
+Run `npx playwright test --config playwright.fonts.config.ts` after the release
+web export to check initial HTML, delayed fonts, reload, HTTP 503 recovery and
+bounded stalled-request recovery on Chrome, iPhone Safari and iPad Safari.
