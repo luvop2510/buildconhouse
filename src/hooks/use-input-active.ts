@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Keyboard, Platform } from "react-native";
+import { flushInputRestoration } from "./flush-input-restoration";
 
 const focusedInputs = new Set<symbol>();
 const listeners = new Set<() => void>();
@@ -32,7 +33,7 @@ export function useInputActive() {
       const afterBlur = () => {
         clearTimeout(blurTimer);
         restorePending = true;
-        if (activePointers.size === 0) blurTimer = setTimeout(update, 150);
+        if (activePointers.size === 0) blurTimer = setTimeout(() => flushInputRestoration(update), 150);
       };
       const onPointerDown = (event: PointerEvent) => {
         activePointers.add(event.pointerId);

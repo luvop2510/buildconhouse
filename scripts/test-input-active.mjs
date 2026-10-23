@@ -6,8 +6,10 @@ import ts from 'typescript';
 const source = ts.transpileModule(readFileSync('src/hooks/use-input-active.ts', 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
-function mount(platform) {
+function mount(platform, { deferCommit = false } = {}) {
   let active = false;
+  const pending = [];
+  const commit = () => { for (const next of pending.splice(0)) active = typeof next === 'function' ? next(active) : next; };
   let cleanup;
   const events = new Map();
   const windowEvents = new Map();
@@ -30,8 +32,18 @@ function mount(platform) {
       observe() {}
       disconnect() { disconnected = true; }
     },
-    require: name => name === 'react' ? {
-      useState: () => [active, value => { active = value; }],
+    require: name => name === './flush-input-restoration' ? { flushInputRestoration(update) {
+      const adapter = ts.transpileModule(readFileSync(`src/hooks/flush-input-restoration${platform === 'web' ? '.web' : ''}.ts`, 'utf8'), {
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+      }).outputText;
+      const boundary = { exports: {} };
+      vm.runInNewContext(adapter, { module: boundary, exports: boundary.exports, require: dependency => {
+        assert.equal(dependency, 'react-dom');
+        return { flushSync(callback) { callback(); commit(); } };
+      } });
+      boundary.exports.flushInputRestoration(update);
+    } } : name === 'react' ? {
+      useState: () => [active, value => { pending.push(value); if (!deferCommit) commit(); }],
       useEffect: effect => { cleanup = effect(); },
     } : { Platform: { OS: platform }, Keyboard: { addListener: (event, handler) => {
       keyboard.set(event, handler); return { remove: () => keyboard.delete(event) };
@@ -40,6 +52,7 @@ function mount(platform) {
   module.exports.useInputActive();
   return { api: module.exports, active: () => active, document, events, windowEvents, keyboard,
     input: () => Object.assign(new Element(), { editable: true }), mutate: () => mutation(),
+    commit, pendingCount: () => pending.length,
     disconnected: () => disconnected, cleanup: () => cleanup() };
 }
 const native = mount('ios');
@@ -115,4 +128,31 @@ await new Promise(resolve => setTimeout(resolve, 170));
 assert.equal(web.active(), false, 'queued focus work cannot publish after unmount');
 assert.equal(web.events.size, 0);
 assert.equal(web.windowEvents.size, 0);
+
+// React can defer an ordinary timer's setState until the next pointer press.
+// Restoration must finish inside its timer, before the next target is chosen.
+const deferred = mount('web', { deferCommit: true });
+deferred.document.activeElement = deferred.input();
+deferred.events.get('focusin')(); deferred.commit();
+assert.equal(deferred.active(), true);
+deferred.document.activeElement = {};
+deferred.events.get('focusout')();
+await new Promise(resolve => setTimeout(resolve, 170));
+assert.equal(deferred.active(), false, 'restore commits before the timer returns instead of remaining queued for a later click');
+assert.equal(deferred.pendingCount(), 0, 'no stale chrome restoration may commit during the next press');
+deferred.events.get('pointerdown')({ pointerId: 7 });
+deferred.commit();
+assert.equal(deferred.active(), false, 'the next target keeps the already-restored geometry');
+deferred.windowEvents.get('pointerup')({ pointerId: 7 });
+deferred.document.activeElement = deferred.input();
+deferred.events.get('focusin')(); deferred.commit();
+deferred.events.get('pointerdown')({ pointerId: 8 });
+deferred.document.activeElement = {};
+deferred.events.get('focusout')();
+await new Promise(resolve => setTimeout(resolve, 170));
+assert.equal(deferred.active(), true, 'restoration still waits through the entire active press');
+deferred.windowEvents.get('pointerup')({ pointerId: 8 });
+await new Promise(resolve => setTimeout(resolve, 170));
+assert.equal(deferred.active(), false);
+deferred.cleanup();
 console.log('Input activity: web focus/transfer/unmount and native hardware/software keyboard lifecycle passed');
