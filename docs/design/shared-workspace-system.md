@@ -22,6 +22,8 @@ Import `Table`, `TableHeader`, `TableRow` and `TableCell` from the shared design
 
 Header and body columns must have the same `width` or `flex` values. Fixed widths remain fixed; flexible columns share the available space using a zero flex basis. The table minimum width includes every column, every inter-column gap, both row gutters and the outer border. Flexible columns reserve 120 px per flex unit before horizontal scrolling becomes necessary. `tableMinWidth` in `src/components/tableLayout.ts` is the shared calculation; it is also exported through the design-system entry point.
 
+Specialized tables that retain their own scroll region use the same `handleTableScrollKey` helper, a descriptive label, a focusable web scroll region and table semantics. Furniture's currency ledger and Ground's Tile Orders table follow this contract. Home/End and Left/Right operate only when the region itself has focus; child controls and modified shortcuts retain their normal keys.
+
 Cells constrain their direct content and links to the column width, retain shrinkable containers and wrap plain strings, long identifiers and URLs. Row height grows with text; neither the table nor cell clips essential content. Use caller-specified truncation only for secondary information with an accessible way to read the full value. Do not put fixed-height containers around multiline cells. Right-aligned numeric cells retain their header alignment.
 
 Very narrow views may use labelled record lists when the complete record remains available. This is a presentation change: preserve the same filters, sorting, counts, actions and navigation destinations. A table selected on a regular screen must not create page-level horizontal overflow.

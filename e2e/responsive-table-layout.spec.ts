@@ -90,7 +90,12 @@ test('Ground order table preserves aligned columns or operable compact records',
   }], total: 1, page: 1, page_size: 30, has_more: false } }));
   await page.goto('/tiles/orders');
   const table = page.getByTestId('tile-orders-customer-table'); await expect(table).toContainText(longName);
-  if (await table.getByRole('cell').count()) await assertCellGeometry(table);
+  if (await table.getByRole('cell').count()) {
+    await assertCellGeometry(table);
+    const scroll = page.getByTestId('tile-orders-customer-table-scroll');
+    await keyboardScroll(page, scroll);
+    await scroll.evaluate(element => { element.scrollLeft = 0; });
+  }
   else await expect(page.getByTestId('tile-orders-customer-layout-order')).toBeVisible();
   await fitsPage(page); await health.assertHealthy();
   await page.screenshot({ path: info.outputPath('ground-table.png') });
@@ -112,7 +117,7 @@ test('Furniture seven-column ledger contains long descriptions and scrolls insid
   await ledger.getByRole('columnheader').first().scrollIntoViewIfNeeded();
   const before = await ledger.evaluate(element => ({ scroll: element.scrollWidth, width: element.clientWidth }));
   if (before.scroll > before.width + 1) {
-    await ledger.evaluate(element => { element.scrollLeft = element.scrollWidth; });
+    await keyboardScroll(page, ledger);
     expect(await ledger.evaluate(element => element.scrollLeft)).toBeGreaterThan(0);
     await expect(ledger.getByRole('columnheader', { name: 'DATE', exact: true })).toBeInViewport();
   }

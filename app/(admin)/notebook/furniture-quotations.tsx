@@ -5,6 +5,7 @@ import { Text } from "@/src/components/AppText";
 import { ReferrerField } from "@/src/components/customer/ReferrerField";
 import { referrerLabel } from "@/src/utils/referrer";
 import { Alert, Button, Chip, EmptyState, PageHeader, TextField } from "@/src/components/ui";
+import { handleTableScrollKey } from "@/src/components/tableLayout";
 import { toast } from "@/src/components/Toast";
 import { furnitureQuotationsApi, type FurnitureDraft, type FurnitureQuotation, type FurnitureSummary, type WhatsAppReceipt } from "@/src/api/furnitureQuotations";
 import { FURNITURE_FLOOR_ID } from "@/src/constants/floors";
@@ -169,8 +170,11 @@ export default function FurnitureQuotations() {
         <Text style={type.titleMd}>Quotation preview</Text>
         {previewWidth !== null && previewWidth < LEDGER_WIDTH ? <Text style={type.bodyMuted}>Scroll horizontally to view all seven columns.</Text> : null}
         <Text style={[styles.heading, type.titleMd]}>{draft.customer_name || "RDCL"}</Text>
-        <ScrollView horizontal contentContainerStyle={styles.table} onLayout={(event) => setPreviewWidth(event.nativeEvent.layout.width)} testID="furniture-ledger-preview">
-          <View>
+        <ScrollView horizontal contentContainerStyle={styles.table} onLayout={(event) => setPreviewWidth(event.nativeEvent.layout.width)} testID="furniture-ledger-preview"
+          accessibilityLabel="Furniture quotation ledger. Scroll horizontally for more columns." tabIndex={Platform.OS === "web" ? 0 : undefined}
+          keyboardShouldPersistTaps="handled" showsHorizontalScrollIndicator
+          {...(Platform.OS === "web" ? { onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => handleTableScrollKey(event) } : {})}>
+          <View role="table" accessibilityLabel="Furniture quotation ledger">
             <View role="row" style={[styles.tableRow, styles.tableHeader]}>{["RNB", "DESCRIPTION", "RNB", "DESCRIPTION", "AMOUNT", "RATE", "DATE"].map((label, index) => <Text role="columnheader" key={`${label}-${index}`} style={[styles.cell, type.label, styles.darkText]}>{label}</Text>)}</View>
             {Array.from({ length: Math.max(draft.charges.length, draft.deposits.length, 5) }, (_, index) => {
               const charge = draft.charges[index], deposit = draft.deposits[index];
