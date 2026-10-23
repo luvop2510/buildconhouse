@@ -7,7 +7,6 @@ import { InitialAccountRouteProvider } from "@/src/state/initial-account-route";
 import { AuthProvider } from "@/src/state/auth";
 import { AuthGate } from "@/src/components/AuthGate";
 import { BackendServerStatus } from "@/src/components/BackendServerStatus";
-import { startupScreenLayout } from "@/src/components/StartupScreen";
 import { colors } from "@/src/theme/tokens";
 import { ToastHost } from "@/src/components/Toast";
 import { initPerformanceSignals, initSentry } from "@/src/lib/monitoring";
@@ -43,7 +42,7 @@ export default function RootLayout() {
             <BackendServerStatus detail="Preparing the sign-in screen." />
           </View> : <>
             <AuthGate>
-              <Stack screenLayout={startupScreenLayout} screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }} />
+              <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }} />
             </AuthGate>
             <ToastHost />
           </>}

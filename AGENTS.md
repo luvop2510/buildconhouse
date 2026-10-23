@@ -9,7 +9,8 @@ with four-second browser probes and 3.5-second proxy attempts. Continue as soon
 as ready; never turn that budget into a fixed delay or extend every API request.
 Ordinary request limits and write semantics stay intact. Preserve initial-route
 storage, identity/floor generation guards and the root navigator; the startup
-screen layout holds initial effects but never removes already-open forms.
+leaf screen layouts hold initial effects while their navigators remain mounted,
+and never remove already-open forms. Metadata reads wait for restored identity.
 Render-specific waiting/awake copy must reflect readiness, not elapsed time.
 Native startup retains its existing transport and account-check wording.
 See docs/audits/2026-10-24-backend-startup.md for the release evidence. Frontend-only

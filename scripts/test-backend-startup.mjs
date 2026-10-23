@@ -184,6 +184,69 @@ test('web health probe is anonymous, uncached, abortable, and bounded to four se
   assert.equal(developmentRequests[0].options.cache, 'no-store');
 });
 
+test('web health probe aborts a stalled response body and continues before the full wake window', async () => {
+  const startupSource = readFileSync(new URL('../src/lib/backend-startup.web.ts', import.meta.url), 'utf8');
+  const compiled = ts.transpileModule(startupSource, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const runtime = { time: 0, timeoutMs: 0, timeoutCallback: undefined, requests: 0, bodyReads: 0, bodyAborts: 0 };
+  const moduleExports = {};
+  const fetch = async (_url, options) => {
+    runtime.requests++;
+    if (runtime.requests > 1) return { ok: true, json: async () => ({ status: 'ok' }) };
+
+    // Headers arrive immediately, but the body stream never completes until
+    // the probe's own abort signal fires.
+    return {
+      ok: true,
+      json: () => {
+        runtime.bodyReads++;
+        return new Promise((_resolve, reject) => {
+          options.signal.addEventListener('abort', () => {
+            runtime.bodyAborts++;
+            reject(new DOMException('Body read aborted', 'AbortError'));
+          }, { once: true });
+          queueMicrotask(() => {
+            runtime.time += runtime.timeoutMs;
+            runtime.timeoutCallback();
+          });
+        });
+      },
+    };
+  };
+  const probeSetTimeout = (callback, ms) => {
+    runtime.timeoutCallback = callback;
+    runtime.timeoutMs = ms;
+    return 1;
+  };
+  const controllerExports = {};
+  vm.runInNewContext(controllerCode, {
+    exports: controllerExports,
+    Date: { now: () => runtime.time },
+    setTimeout: (callback, ms) => {
+      runtime.time += ms;
+      queueMicrotask(callback);
+      return 2;
+    },
+  });
+  vm.runInNewContext(compiled, {
+    exports: moduleExports, AbortController, DOMException, fetch,
+    setTimeout: probeSetTimeout, clearTimeout: () => {}, __DEV__: false,
+    process: { env: {} },
+    require: name => {
+      assert.equal(name, './backend-startup-controller');
+      return controllerExports;
+    },
+  });
+
+  await moduleExports.ensureBackendReady();
+  assert.equal(runtime.bodyReads, 1, 'the first response body should stall after headers arrive');
+  assert.equal(runtime.bodyAborts, 1, 'the stalled body must be aborted by the probe timeout');
+  assert.equal(runtime.timeoutMs, 4_000);
+  assert.equal(runtime.requests, 2, 'a new probe should run after the stalled body is aborted');
+  assert.ok(runtime.time < 60_000, `a later ready probe should recover before the wake deadline: ${runtime.time}ms`);
+});
+
 test('Vercel proxy and standalone worker bound readiness to 3.5s while normal API calls retain 28s', async () => {
   process.env.BACKEND_URL = 'https://api.example.test';
   const [{ createHandler }, { createWorker }] = await Promise.all([

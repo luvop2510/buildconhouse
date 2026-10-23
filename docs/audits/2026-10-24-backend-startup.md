@@ -19,8 +19,8 @@ destination. Automatic session recovery cannot start consecutive minute-long
 attempts. Public pages and the anonymous login form remain usable during a
 background wake; credential submission waits for readiness before sending once.
 
-The root navigator remains mounted. Its initial screen effects wait for
-authoritative identity restoration, so route hooks do not send data requests
+The root and child navigators remain mounted. Leaf screen effects and workspace
+metadata reads wait for authoritative identity restoration, so route hooks do not send data requests
 while the server is asleep. After first admission, screens retain their mounted
 forms and drafts during session recovery. Expo may temporarily normalize a
 pending nested route to `/access`; the existing initial-route storage retains
@@ -41,7 +41,7 @@ immediate warm completion, a wake around 50 seconds, bounded attempts, anonymous
 uncached probes, cancellation, shared callers and unchanged ordinary timeouts.
 Final release results and deployment identities are recorded after publication.
 
-Focused acceptance before the release audit: seven startup/proxy unit cases,
+Focused acceptance before the release audit: eight startup/proxy unit cases,
 105 existing authentication race cases, TypeScript and focused ESLint pass.
 The 54-case desktop/tablet/phone startup, sign-in and floor workflow run had
 51 passes and three stale static-sign-in fixture assumptions. The export has
@@ -50,3 +50,15 @@ repair; those three checks now require the explicit waiting indicator and no
 interactive form before runtime initialization, then a real successful sign-in.
 All three corrected cases pass without retries or increased deadlines. Both
 new wake/recovery cases pass on all three viewport profiles.
+
+The first full audit caught a Back/Forward regression caused by deferring a
+nested navigator at the root screen layout. The corrected gate wraps leaf
+content inside the existing group navigators. The web-specific floor hook and
+permission/chrome reads also wait for identity. The failed audit is retained;
+only a complete new audit may qualify the corrected source for publication.
+
+After this correction, all 12 wake/recovery and browser Back/Forward/reload
+cases pass on Android Chrome, iPhone Safari, iPad Safari and desktop Chrome.
+Eight unit cases include a response body that stalls after successful headers;
+it is aborted within the same four-second probe budget. TypeScript, focused
+ESLint and authentication race cases pass. Full publication acceptance follows.

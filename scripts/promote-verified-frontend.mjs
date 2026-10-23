@@ -108,10 +108,10 @@ function validateChangedPaths({ frontendSha, backendSha, run }) {
   assert.equal(result.status, 0, 'Cannot inspect frontend release changes');
   const paths = result.stdout.split(/\r?\n/).filter(Boolean).sort();
   const runtimeStartupPaths = new Set([
-    'src/components/AuthGate.tsx', 'src/state/auth.tsx', 'src/hooks/use-floor-access.ts',
+    'src/components/AuthGate.tsx', 'src/state/auth.tsx', 'src/hooks/use-floor-access.ts', 'src/hooks/use-floor-access.web.ts',
     'src/components/BackendServerStatus.tsx', 'src/components/StartupScreen.tsx',
     'src/lib/backend-startup-controller.ts', 'src/lib/backend-startup.web.ts', 'src/lib/backend-startup.ts',
-    'app/_layout.web.tsx', 'app/(admin)/_layout.tsx',
+    'app/_layout.web.tsx', 'app/(admin)/_layout.tsx', 'app/(customer)/_layout.tsx', 'src/hooks/use-permissions.ts', 'src/design/CommandPalette.tsx',
   ]);
   const securitySensitive = path => !runtimeStartupPaths.has(path) &&
     /(^|\/)(?:auth|security|permissions?|csrf|sessions?)(?:\/|\.|$)|(?:cookie|csp|content-security|access-control)/i.test(path);
