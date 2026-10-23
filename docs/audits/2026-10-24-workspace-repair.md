@@ -94,10 +94,17 @@ The original Home/reopen regression reproduces the retained rejected import;
 16 repaired boundary scenarios pass on four device profiles. The quotation
 workspace passes six sizes including 320px and iPhone Safari. Earlier focused stock
 acceptance passed 25 scenarios; final-source verification is recorded separately.
-3,123 backend unit cases pass; actual loopback-replica HTTP/transaction acceptance
+3,128 backend unit cases pass; actual loopback-replica HTTP/transaction acceptance
 proves in-flight writer rejection, stale-confirmation rejection, successful cleanup
 and unrelated-customer preservation. Production preflight is read-only and reports
 healthy Mongo/indexes/storage and zero pending migrations.
+
+Final focused browser acceptance: 48 passed with four viewport-specific skips;
+the four initial customer-dialog failures exposed missing web `aria-checked`,
+which was corrected and verified in a separate four-profile passing run. New
+Furniture customer selection, save payload and reopen pass on desktop and phone.
+TypeScript, lint and 17 frontend contract commands pass. These are local results;
+the full performance audit and authenticated hosted checks remain separate gates.
 
 Inspector checks run on the real export with synthetic local API responses.
 The only explicit allowance is `font-count`: Expo registers Inter's weight files

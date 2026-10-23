@@ -106,6 +106,11 @@ for (const [profile, engine, options] of [
       for (let index = 0; index < imports[outcome].length; index++) {
         const doc = imports[outcome][index];
         await page.getByTestId(`quotations-${outcome}-toggle`).click();
+        await expect(page.getByText(`${outcome === 'won' ? 'Won' : 'Lost'} Customer · Quotations`, { exact: true })).toBeVisible();
+        // The quotation ledger virtualizes long customer lists. Use its real
+        // search control to select each bounded acceptance record, including
+        // records outside the initial rendered window.
+        await page.getByTestId('quotations-search').fill(doc.number);
         await page.getByTestId(`quotation-${doc.id}`).click();
         await expect(page.getByTestId('quotation-customer-outcome')).toContainText(`${outcome === 'won' ? 'Won' : 'Lost'} Customer recorded`, { timeout: 20000 });
         await healthy(`${outcome} imported customer ${index + 1} opens by click`);
