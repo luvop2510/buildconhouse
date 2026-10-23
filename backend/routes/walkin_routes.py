@@ -414,6 +414,21 @@ async def visit_showroom(walkin_id: str, user: UserPublic = Depends(require_min_
         # Acknowledge only our exact, authorized follow-up identity.
         if not await db.followups.find_one(identity, {"_id": 0, "id": 1}):
             raise
+    # Assigned/multi-floor intake already created this canonical lead with
+    # origin="walkin". An insert-only upsert cannot move that existing row
+    # into the showroom inbox; promote its routing metadata while retaining
+    # its assignments, contact history, shared group and completion state.
+    # This also repairs a previously interrupted transfer on an explicit retry.
+    await db.followups.update_one(
+        {**identity, "origin": {"$ne": "visit_showroom"}},
+        {"$set": {
+            "origin": "visit_showroom", "walkin_id": walkin_id,
+            "reason": "Visit Showroom", "next_action": "Arrange showroom visit",
+            "next_action_reason": "Transferred from the walk-in register",
+            "suggested_channel": "visit", "is_automated": False,
+            "updated_at": now,
+        }},
+    )
     result = await db.walkins.update_one(
         {**{"id": walkin_id, "floor_id": walkin["floor_id"]}, "showroom_followup_id": {"$ne": followup_id}},
         {"$set": {"showroom_followup_id": followup_id, "showroom_transferred_at": now, "updated_at": now}},

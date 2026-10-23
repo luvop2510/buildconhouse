@@ -101,6 +101,43 @@ def test_showroom_transfer_never_reopens_completed_followup(monkeypatch):
     assert followups.rows[0]["status"] == "done"
 
 
+def test_showroom_transfer_promotes_existing_assigned_walkin_lead(monkeypatch):
+    walkins, followups, events = install_transfer(monkeypatch)
+    assignments = [{"floor_id": "first-floor", "user_id": "selected-worker", "user_name": "Selected worker"}]
+    walkins.rows[0].update(scope_followup_id="walkin-lead:walkin-1", assignments=assignments)
+    followups.rows.append({
+        "id": "walkin-lead:walkin-1", "floor_id": "first-floor", "origin": "walkin",
+        "walkin_id": "walkin-1", "status": "open", "assignments": assignments,
+        "assigned_to": "selected-worker", "lead_group_id": "shared-group", "contact_attempts": 3,
+    })
+    first = asyncio.run(walkin_routes.visit_showroom("walkin-1", user()))
+    repeated = asyncio.run(walkin_routes.visit_showroom("walkin-1", user()))
+    assert first == repeated == {"walkin_id": "walkin-1", "followup_id": "walkin-lead:walkin-1"}
+    assert len(followups.rows) == len(events) == 1
+    row = followups.rows[0]
+    assert row["origin"] == "visit_showroom", "The transferred lead must match the showroom list filter"
+    assert row["status"] == "open"
+    assert row["assigned_to"] == "selected-worker"
+    assert row["assignments"] == assignments
+    assert row["lead_group_id"] == "shared-group"
+    assert row["contact_attempts"] == 3
+
+
+def test_showroom_retry_repairs_legacy_transferred_origin_without_reopening_history(monkeypatch):
+    walkins, followups, events = install_transfer(monkeypatch)
+    identity = "walkin-lead:walkin-1"
+    walkins.rows[0].update(scope_followup_id=identity, showroom_followup_id=identity,
+                          showroom_transferred_at="2026-10-19T00:00:00Z")
+    history = {"status": "done", "completed_at": "2026-10-20T00:00:00Z", "contact_attempts": 4,
+               "due_at": "2026-10-19T00:00:00Z", "assigned_to": "selected-worker",
+               "assignments": [{"floor_id": "first-floor", "user_id": "selected-worker"}]}
+    followups.rows.append({"id": identity, "floor_id": "first-floor", "origin": "walkin", **history})
+    asyncio.run(walkin_routes.visit_showroom("walkin-1", user()))
+    assert followups.rows[0]["origin"] == "visit_showroom"
+    assert all(followups.rows[0][key] == value for key, value in history.items())
+    assert events == []
+
+
 def test_showroom_transfer_cannot_read_another_floor(monkeypatch):
     _, followups, _ = install_transfer(monkeypatch)
     with pytest.raises(HTTPException) as caught:

@@ -94,11 +94,12 @@ export default function WalkInDetail() {
   const visitShowroom = async () => {
     setBusy(true);
     try {
-      await walkinsApi.visitShowroom(id, requestOptions);
+      const targetFloor = w?.floor_id || floor_id;
+      const transfer = await walkinsApi.visitShowroom(id, targetFloor ? { floorId: targetFloor } : requestOptions);
       toast.success("Transferred to Visit Showroom follow-ups");
       if (!hasModuleAccess("followups")) { void load(); return; }
-      if (floor_id) await setSelectedFloorId(floor_id);
-      router.push("/(admin)/followups?workspace=visit_showroom" as any);
+      if (targetFloor) void setSelectedFloorId(targetFloor).catch(() => {});
+      router.push(`/(admin)/followups?workspace=visit_showroom&showroom_followup=${encodeURIComponent(transfer.followup_id)}` as any);
     } catch (e: any) { toast.error(e?.detail || "Could not transfer to follow-ups"); }
     finally { setBusy(false); }
   };

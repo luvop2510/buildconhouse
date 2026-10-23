@@ -139,7 +139,7 @@ export default function WalkInsScreen({
   };
   const visitShowroom = async (w: WalkIn) => {
     try {
-      await walkinsApi.visitShowroom(w.id, { floorId: w.floor_id });
+      const transfer = await walkinsApi.visitShowroom(w.id, { floorId: w.floor_id });
       setItems(current => current.filter(item => item.id !== w.id));
       toast.success("Transferred to Visit Showroom follow-ups");
       // Navigate before the new floor selection triggers the shell's floor
@@ -147,7 +147,7 @@ export default function WalkInsScreen({
       // record's floor, so it remains the destination for this transfer.
       if (!hasModuleAccess("followups")) return;
       void setSelectedFloorId(w.floor_id).catch(() => {});
-      router.push(`/(admin)/followups?workspace=visit_showroom` as any);
+      router.push(`/(admin)/followups?workspace=visit_showroom&showroom_followup=${encodeURIComponent(transfer.followup_id)}` as any);
     } catch (e: any) { toast.error(e?.detail || "Could not transfer to follow-ups"); }
   };
   const saveQuotationPrice = async (w: WalkIn, quotationPrice: number | null) => {

@@ -8,7 +8,7 @@ const source = readFileSync(new URL('../app/(admin)/followups.tsx', import.meta.
 assert.match(source, /<FollowupsWorkspace key=\{selectedFloorId\}/);
 const marker = '  // ── Filtering (100% client-side';
 const instrumented = source.replace('function FollowupsWorkspace()', 'export function FollowupsWorkspace()')
-  .replace(marker, '  return { loadList, loadDetail, refreshStatsQuiet, contact, rawItems, detail, stats };\n' + marker);
+  .replace(marker, '  return { loadList, loadDetail, refreshStatsQuiet, contact, rawItems, detail, stats, workspace, setWorkspace, q, setQ, followupView, setFollowupView, priorityFilter, setPriorityFilter };\n' + marker);
 assert.notEqual(instrumented, source);
 const compiled = ts.transpileModule(instrumented, { compilerOptions: {
   module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX,
@@ -17,6 +17,8 @@ const deferred = () => { let resolve; const promise = new Promise(done => { reso
 function fixture(floor = 'first-floor') {
   const hooks = [], effects = [], requests = [], links = [], notices = [];
   let index = 0, dirty = false, state;
+  const routeParams = {};
+  const router = { setParams(patch) { Object.assign(routeParams, patch); dirty = true; } };
   const same = (a, b) => a && b && a.length === b.length && a.every((v, i) => Object.is(v, b[i]));
   const react = {
     memo: value => value,
@@ -30,7 +32,7 @@ function fixture(floor = 'first-floor') {
   const modules = {
     react,
     'react-native': { StyleSheet: { create: value => value, hairlineWidth: 1 }, Platform: { OS: 'web' }, Linking: { openURL: url => { links.push(url); return Promise.resolve(); } } },
-    'expo-router': { useRouter: () => ({}), useLocalSearchParams: () => ({}), useFocusEffect() {} },
+    'expo-router': { useRouter: () => router, useLocalSearchParams: () => routeParams, useFocusEffect() {} },
     'react-native-safe-area-context': { useSafeAreaInsets: () => ({ bottom: 0 }) },
     '@/src/design/responsive': { useBp: () => ({ isDesktop: true }) },
     '@/src/hooks/use-floor-access': { useFloorAccess: () => ({ selectedFloorId: floor, floors: [] }) },
@@ -45,7 +47,7 @@ function fixture(floor = 'first-floor') {
   vm.runInNewContext(compiled, { exports, require: id => modules[id] || {}, AbortController, URLSearchParams, setTimeout, clearTimeout });
   const render = () => { index = 0; dirty = false; state = exports.FollowupsWorkspace(); while (effects.length) effects.shift()(); };
   render();
-  return { requests, links, notices, get state() { return state; }, unmount() { hooks.forEach(hook => hook.cleanup?.()); },
+  return { requests, links, notices, routeParams, navigate(patch) { Object.assign(routeParams, patch); dirty = true; }, get state() { return state; }, unmount() { hooks.forEach(hook => hook.cleanup?.()); },
     async settle() { for (let pass = 0; pass < 12; pass++) { await Promise.resolve(); if (dirty) render(); } },
   };
 }
@@ -79,6 +81,31 @@ test('a pending old-floor contact cannot open another app after switching worksp
   await old.state.loadList(); await old.state.refreshStatsQuiet();
   old.state.contact({ id: 'sanitary-one' }, 'call');
   assert.equal(old.requests.length, count);
+});
+
+test('a mounted inbox accepts showroom transfer navigation and clears filters that hide the new entry', async () => {
+  const h = fixture();
+  h.state.setQ('Previous quotation'); h.state.setFollowupView('won'); h.state.setPriorityFilter('critical');
+  await h.settle();
+  h.navigate({ workspace: 'visit_showroom', showroom_followup: 'showroom:new-walkin' });
+  await h.settle();
+  assert.equal(h.state.workspace, 'visit_showroom');
+  assert.equal(h.state.q, ''); assert.equal(h.state.followupView, 'active'); assert.equal(h.state.priorityFilter, 'all');
+  const latest = h.requests.filter(request => request.path.includes('/followups/page?')).at(-1);
+  const query = new URLSearchParams(latest.path.split('?')[1]);
+  assert.equal(query.get('origin'), 'visit_showroom'); assert.equal(query.get('view'), 'active');
+  assert.equal(query.has('q'), false); assert.equal(query.has('priority'), false);
+  h.unmount();
+});
+
+test('follow-up workspace tabs publish a route that survives navigation and reload', async () => {
+  const h = fixture('ground-floor');
+  h.state.setWorkspace('quotation_tiles'); await h.settle();
+  assert.equal(h.routeParams.workspace, 'quotation_tiles');
+  assert.equal(h.state.workspace, 'quotation_tiles');
+  h.state.setWorkspace('all'); await h.settle();
+  assert.equal(h.routeParams.workspace, 'all');
+  h.unmount();
 });
 
 // Model a first click after layout but before passive effects. Initializing the

@@ -4,7 +4,7 @@
 // open dance in the whole app instead of one per screen.
 import { Linking, Platform } from "react-native";
 
-import { api, getToken } from "@/src/api/client";
+import { api, getRequestFloorId, getToken } from "@/src/api/client";
 import { toast } from "@/src/components/Toast";
 import type { File as NativeFile } from "expo-file-system";
 
@@ -48,14 +48,16 @@ function nativeBlobBase64(blob: Blob): Promise<string> {
 }
 
 async function fetchApiBlob(path: string, errorLabel: string, floorId?: string): Promise<Blob | null> {
-  const token = await getToken();
+  // Capture the selected workspace before token hydration can yield to a floor switch.
+  const floor = floorId === undefined ? getRequestFloorId() : Promise.resolve(floorId);
+  const [token, requestFloorId] = await Promise.all([getToken(), floor]);
   if (!token && Platform.OS !== "web") {
     toast.show("Please sign in again");
     return null;
   }
   try {
     const res = await fetch(`${api.base}/api${path}`, {
-      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(floorId ? { "X-Floor-Id": floorId } : {}) }, credentials: "same-origin",
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(requestFloorId ? { "X-Floor-Id": requestFloorId } : {}) }, credentials: "same-origin",
     });
     if (!res.ok) {
       let detail = "";
@@ -251,20 +253,9 @@ export async function printApiFile(path: string, errorLabel = "file", floorId?: 
 }
 
 export async function openApiFile(path: string, errorLabel = "file", floorId?: string): Promise<void> {
-  const token = await getToken();
-  if (!token && Platform.OS !== "web") {
-    toast.show("Please sign in again");
-    return;
-  }
+  const blob = await fetchApiBlob(path, errorLabel, floorId);
+  if (!blob) return;
   try {
-    const res = await fetch(`${api.base}/api${path}`, {
-      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(floorId ? { "X-Floor-Id": floorId } : {}) }, credentials: "same-origin",
-    });
-    if (!res.ok) {
-      toast.show(res.status === 404 ? `That ${errorLabel} isn't available` : `Couldn't download the ${errorLabel}`);
-      return;
-    }
-    const blob = await res.blob();
     if (Platform.OS === "web") {
       const url = URL.createObjectURL(blob);
       window.open(url, "_blank");
@@ -274,7 +265,5 @@ export async function openApiFile(path: string, errorLabel = "file", floorId?: s
     const reader = new FileReader();
     reader.onloadend = () => Linking.openURL(reader.result as string);
     reader.readAsDataURL(blob);
-  } catch {
-    toast.show(`Couldn't download the ${errorLabel} — check your connection`);
-  }
+  } catch { toast.show(`Couldn't open the ${errorLabel}`); }
 }

@@ -28,6 +28,7 @@ assert.equal(requests[0].headers["X-Floor-Id"], "ground-floor");
 assert.equal(requests[0].headers["X-CSRF-Token"], "csrf-value");
 assert.equal(JSON.parse(requests[0].body).target, `/api${path}`);
 
+// Downloads without an explicit floor inherit the selected workspace.
 // Mobile fetch failures stay in the app; successful generation waits for a
 // fresh tap before handing the blob to Safari's downloader or share sheet.
 for (const document of [
@@ -62,7 +63,7 @@ for (const navigator of [
     module, exports: module.exports, navigator, File: navigator.fileUnsupported ? undefined : File, Blob,
     require: name => name === "react-native" ? { Platform: { OS: "web" } } : name.includes("Toast")
       ? { toast: { show: value => errors.push(value) } }
-      : { getToken: async () => null, api: { base: "", authenticatedUrl: () => { throw new Error("Mobile downloads must not navigate to a one-use URL"); } } },
+      : { getToken: async () => null, getRequestFloorId: async () => "ground-floor", api: { base: "", authenticatedUrl: () => { throw new Error("Mobile downloads must not navigate to a one-use URL"); } } },
     document: { body: makeElement("body"), createElement: makeElement },
     URL: { createObjectURL: () => "blob:ready-pdf", revokeObjectURL() {} }, setTimeout() {},
     fetch: async (url, options) => {
@@ -71,7 +72,7 @@ for (const navigator of [
         : { ok: true, blob: async () => new Blob([document.body], { type: document.type }) };
     },
   });
-  const saving = module.exports.downloadApiFile(document.path, document.filename, document.label, "ground-floor");
+  const saving = module.exports.downloadApiFile(document.path, document.filename, document.label);
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(clicks, 0, "the async fetch must not trigger a download without a fresh tap");
   assert.equal(fetches[0].options.headers["X-Floor-Id"], "ground-floor");
@@ -114,3 +115,37 @@ for (const navigator of [
 }
 }
 console.log("PDF/PPT downloads: floor binding, mobile fresh-gesture save, and recoverable generation failures passed");
+
+// A slow token hydration must not move an in-flight download to another floor.
+{
+  const module = { exports: {} };
+  const fetches = [];
+  const previews = [];
+  let selectedFloor = 'ground-floor';
+  let releaseToken;
+  const token = new Promise(resolve => { releaseToken = resolve; });
+  const element = () => ({ style: {}, click() {}, remove() {} });
+  vm.runInNewContext(compile('../src/utils/downloadFile.ts'), {
+    module, exports: module.exports, navigator: { userAgent: 'Desktop Chrome' }, Blob,
+    require: name => name === 'react-native' ? { Platform: { OS: 'web' } } : name.includes('Toast')
+      ? { toast: { show: message => { throw new Error(message); } } }
+      : { getToken: () => token, getRequestFloorId: () => Promise.resolve(selectedFloor), api: { base: '' } },
+    document: { body: { appendChild() {} }, createElement: element },
+    window: { open: url => previews.push(url) },
+    URL: { createObjectURL: () => 'blob:pdf', revokeObjectURL() {} }, setTimeout() {},
+    fetch: async (url, options) => { fetches.push({ url, ...options }); return { ok: true, blob: async () => new Blob(['%PDF-1.4'], { type: 'application/pdf' }) }; },
+  });
+  const pending = module.exports.downloadApiFile('/tile-orders/chalans/fixture/pdf', 'Chalan.pdf');
+  selectedFloor = 'first-floor';
+  releaseToken('fixture-token');
+  assert.equal(await pending, true);
+  assert.equal(fetches[0].headers['X-Floor-Id'], 'ground-floor', 'capture selected floor before awaiting token hydration');
+  assert.equal(fetches[0].headers.Authorization, 'Bearer fixture-token');
+  assert.equal(fetches[0].credentials, 'same-origin', 'cookie authentication is retained');
+  await module.exports.downloadApiFile('/fixture.pdf', 'Fixture.pdf', 'PDF', 'second-floor');
+  assert.equal(fetches[1].headers['X-Floor-Id'], 'second-floor', 'explicit source floor wins over ambient selection');
+  await module.exports.openApiFile('/preview.pdf', 'PDF');
+  assert.equal(fetches[2].headers['X-Floor-Id'], 'first-floor', 'preview uses the same floor-aware transport');
+  assert.deepEqual(previews, ['blob:pdf']);
+}
+console.log('PDF download/preview: selected-floor fallback, explicit floor, delayed token race and cookie credentials passed');

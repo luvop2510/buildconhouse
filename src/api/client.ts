@@ -121,7 +121,7 @@ function isIdentityRead(method: string, path: string) {
 
 export function csrfHeaders(): Record<string, string> { return {}; }
 
-async function getRequestFloorId() {
+export async function getRequestFloorId() {
   if (floorCache !== undefined) return floorCache || "";
   const stored = (await storage.getItem<string>(SELECTED_FLOOR_KEY, "")) || "";
   if (floorCache === undefined) floorCache = stored;
