@@ -89,6 +89,8 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
     'critical customer quotation deep link recovers from an unavailable document after reload',
   ],
   'redesign-release-recovery.spec.ts': [
+    'critical startup paints and hydrates without requesting the legacy head bootstrap',
+    'critical startup paints its static loading indicator while recovery is pending then hydrates',
     'critical failed startup asset reloads once and reaches usable login',
     'critical repeated startup asset failure stops retrying and exposes a visible reload action',
   ],

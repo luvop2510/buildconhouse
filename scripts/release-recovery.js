@@ -1,6 +1,10 @@
 /* Run before Expo: recover a failed, empty startup without touching live UI. */
 (function () {
   'use strict';
+  // This blocking bootstrap follows the parsed root and precedes every
+  // deferred Expo script. Keep hydration here instead of a separate HEAD
+  // request that can prevent the static loading indicator from painting.
+  globalThis.__EXPO_ROUTER_HYDRATE__ = true;
   // Capture business deep links before Expo initializes and can normalize an
   // unmounted admin Slot to /access. Keep this tab's pending destination across
   // a reload in that short initialization window; the mounted shell clears it.

@@ -40,10 +40,12 @@ expo.on('exit', async (code, signal) => {
       if (entry.isDirectory()) await injectRecovery(path);
       else if (entry.name.endsWith('.html')) {
         const originalHtml = await readFile(path, 'utf8');
-        // Expo emits a tiny inline hydration flag. Externalize that exact
-        // bootstrap so the production script-src 'self' policy can execute
-        // it without permitting arbitrary inline scripts.
-        const html = originalHtml.replace(/<script\b(?![^>]*\bsrc=)[^>]*>\s*globalThis\.__EXPO_ROUTER_HYDRATE__=true;\s*<\/script>/g, '<script src="/expo-hydrate.js"></script>');
+        // The recovery bootstrap sets Expo's hydration flag before any deferred
+        // runtime executes. Remove its redundant HEAD request, including tags
+        // left by an earlier postprocess pass, without loosening script-src.
+        const html = originalHtml
+          .replace(/<script\b(?![^>]*\bsrc=)[^>]*>\s*globalThis\.__EXPO_ROUTER_HYDRATE__=true;\s*<\/script>/g, '')
+          .replace(/<script\b(?=[^>]*\bsrc=["']\/expo-hydrate\.js["'])[^>]*>\s*<\/script>/g, '');
         if (!html.includes('src="/release-recovery.js"')) {
           const bootstrap = '<script src="/release-recovery.js"></script>';
           const firstExpoScript = /<script\b(?=[^>]*\bsrc=["']\/_expo\/static\/js\/web\/)[^>]*>/i;

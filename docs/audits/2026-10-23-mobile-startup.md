@@ -32,6 +32,13 @@ sets a one-use retry nonce. On the next mount only the known application font
 faces' same-origin source URLs receive that nonce. Ordinary loads retain their
 immutable asset URLs. No automatic reload discards an active form or session.
 
+The recovery bootstrap now initializes Expo hydration after the static root and
+before the deferred runtime scripts. The redundant synchronous head script is
+removed, so its download cannot block parsing the loading indicator. Its legacy
+asset remains available for older HTML, and the content security policy is
+unchanged. A held-head-script regression failed on both mobile browsers before
+this change; browser coverage also holds recovery itself to verify static paint.
+
 ## Verification and limits
 
 The delayed-font and delayed-matrix regressions fail against the baseline. The
