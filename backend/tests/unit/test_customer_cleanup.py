@@ -372,6 +372,13 @@ def test_all_customer_deletion_requires_owner_even_with_custom_page_grants(role)
     assert error.value.status_code == 403
 
 
+def test_customer_deletion_without_review_confirmation_is_rejected():
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(customer_routes.delete_customer('c1', user=user()))
+    assert error.value.status_code == 409
+    assert 'Review' in error.value.detail
+
+
 def test_explicit_import_field_works_without_historical_activity_and_reverse_selection():
     database = Database({'customers': [
         {'id': 'c1', 'floor_id': 'ground-floor'},

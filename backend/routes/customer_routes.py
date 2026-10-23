@@ -9,7 +9,7 @@ from auth import (
     TILES_FLOOR_ID, accessible_floor_ids, floor_for_write, floor_inherit, floor_query, get_current_customer, get_current_user,
     get_floor_scoped_or_404, hash_password, invalidate_principal_cache, require_floor_access, require_min_role, revoke_all_sessions,
 )
-from db import db, client
+from db import db
 from models import (
     CustomerCreate, CustomerPublic, CustomerUpdatePayload, UserPublic, now_iso,
 )
@@ -342,10 +342,12 @@ async def delete_customer(
 ):
     """Remove exactly the owner's reviewed customer graph, including orders."""
     _customer_deletion_owner(user)
+    if not confirmation:
+        raise HTTPException(409, "Review the customer deletion summary before confirming.")
     from services.customer_deletion import delete_customer_graph
     if not await db.settings.find_one({"id": "customer-deletion:" + customer_id}):
         await get_floor_scoped_or_404(db.customers, customer_id, user, not_found="Customer not found")
-    result = await delete_customer_graph(db, client, customer_id, user.id, confirmation, tuple(filter(None, furniture_ids.split(","))))
+    result = await delete_customer_graph(db, db.client, customer_id, user.id, confirmation, tuple(filter(None, furniture_ids.split(","))))
     # Invalidate current-process principal reads immediately. Other processes
     # reload the now-missing identity under their normal short cache expiry.
     invalidate_principal_cache("customer", customer_id)

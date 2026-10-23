@@ -6,7 +6,6 @@ import httpx
 import pytest
 from fastapi import FastAPI, HTTPException
 from motor.motor_asyncio import AsyncIOMotorClient
-from services.customer_deletion import delete_customer_graph, plan_deletion, public_plan
 from services.mutation_admission import MutationAdmissionMiddleware, admission
 
 
@@ -17,15 +16,22 @@ def test_concurrent_save_cannot_resurrect_deleted_customer(monkeypatch):
     assert os.environ.get('PYTHON_DOTENV_DISABLED') == '1'
     async def scenario():
         import db
+        from models import UserPublic
+        from routes import customer_routes
         client = AsyncIOMotorClient(uri, serverSelectionTimeoutMS=3000)
         name = 'forge_deletion_qa_' + uuid4().hex
         database = client[name]
         monkeypatch.setattr(db, 'db', database)
+        monkeypatch.setattr(customer_routes, 'db', database)
         customer = {'id':'target','name':'Synthetic target','phone':'9000000000','floor_id':'first-floor'}
         await database.customers.insert_many([customer,{'id':'survivor','name':'Keep','floor_id':'first-floor'}])
         entered, release = asyncio.Event(), asyncio.Event()
         app = FastAPI()
         app.add_middleware(MutationAdmissionMiddleware)
+        owner = UserPublic(id='owner', email='owner@qa.invalid', full_name='Synthetic owner',
+                           role='owner', active_floor_id='first-floor', floor_ids=[])
+        app.dependency_overrides[customer_routes._customer_deletion_owner] = lambda: owner
+        app.include_router(customer_routes.router, prefix='/api')
         @app.post('/api/quotations')
         async def save():
             if not await database.customers.find_one({'id':'target'}): raise HTTPException(404)
@@ -34,12 +40,11 @@ def test_concurrent_save_cannot_resurrect_deleted_customer(monkeypatch):
             await database.quotations.insert_one({'id':'new','customer_id':'target','floor_id':'first-floor','status':'draft'})
             await database.activity_events.insert_one({'id':'log','customer_id':'target'})
             return {'ok':True}
-        @app.delete('/api/customers/target')
-        async def remove(confirmation: str):
-            return await delete_customer_graph(database, client,'target','owner',confirmation)
         try:
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://qa') as http:
-                before = public_plan(await plan_deletion(database,customer_id='target'),'owner')
+                preview = await http.get('/api/customers/target/deletion-preview')
+                assert preview.status_code == 200, preview.text
+                before = preview.json()
                 saving = asyncio.create_task(http.post('/api/quotations'))
                 await asyncio.wait_for(entered.wait(),3)
                 blocked = await http.delete('/api/customers/target',params={'confirmation':before['confirmation']})
@@ -49,7 +54,7 @@ def test_concurrent_save_cannot_resurrect_deleted_customer(monkeypatch):
                 assert (await saving).status_code == 200
                 stale = await http.delete('/api/customers/target',params={'confirmation':before['confirmation']})
                 assert stale.status_code == 409
-                fresh = public_plan(await plan_deletion(database,customer_id='target'),'owner')
+                fresh = (await http.get('/api/customers/target/deletion-preview')).json()
                 deleted = await http.delete('/api/customers/target',params={'confirmation':fresh['confirmation']})
                 assert deleted.status_code == 200, deleted.text
                 assert await database.quotations.count_documents({}) == 0

@@ -94,7 +94,7 @@ The original Home/reopen regression reproduces the retained rejected import;
 16 repaired boundary scenarios pass on four device profiles. The quotation
 workspace passes six sizes including 320px and iPhone Safari. Earlier focused stock
 acceptance passed 25 scenarios; final-source verification is recorded separately.
-3,128 backend unit cases pass; actual loopback-replica HTTP/transaction acceptance
+3,129 backend unit cases pass; actual loopback-replica HTTP/transaction acceptance
 proves in-flight writer rejection, stale-confirmation rejection, successful cleanup
 and unrelated-customer preservation. Production preflight is read-only and reports
 healthy Mongo/indexes/storage and zero pending migrations.
@@ -105,6 +105,15 @@ which was corrected and verified in a separate four-profile passing run. New
 Furniture customer selection, save payload and reopen pass on desktop and phone.
 TypeScript, lint and 17 frontend contract commands pass. These are local results;
 the full performance audit and authenticated hosted checks remain separate gates.
+
+GitHub's independent Kitchen race test exposed an incorrectly paired transaction
+client when the route uses an independently connected database. The route now
+uses that database's own client and rejects absent review confirmation before
+opening a transaction. The real replica test now mounts the actual customer
+preview/delete routes and middleware instead of a miniature deletion handler.
+It passes, alongside 87 Kitchen/showroom/customer checks. CI runs the replica
+acceptance on a separate, run-owned loopback Mongo service; its existing standalone
+Kitchen Mongo and historical integration exclusions remain intact.
 
 Inspector checks run on the real export with synthetic local API responses.
 The only explicit allowance is `font-count`: Expo registers Inter's weight files
