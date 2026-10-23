@@ -137,3 +137,11 @@ upstream signature-verification advisory lists no patched version; an SDK downgr
 is not a compatible incidental fix. No suppression or branch-protection change is
 part of this work. Deployment and full final audit results remain pending until
 recorded from their authoritative processes.
+
+The subsequent independent backend security scan identified three advisories in
+pypdf 6.21.1 (CVE-2026-115572, CVE-2026-115585, CVE-2026-115580). Both backend
+dependency manifests now pin the patched [6.21.2 release](https://pypi.org/project/pypdf/6.21.2/).
+Fresh pip-audit checks 54 resolved packages with zero known vulnerabilities.
+All 3,129 backend unit cases, including PDF generation/extraction checks, pass
+with 6.21.2 loaded from an isolated test dependency directory. No shared test
+environment was upgraded in place. The five npm findings are separate and remain.
