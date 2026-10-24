@@ -1,7 +1,7 @@
 export type GrantAction = "view" | "create" | "update" | "delete" | "export";
 export type DelegationFloor = { id: string; name: string };
 export type DelegationResource = {
-  key: string; label: string; actions: GrantAction[]; floor_ids: string[]; description?: string; retired?: boolean;
+  key: string; label: string; actions: GrantAction[]; floor_ids: string[]; description?: string; retired?: boolean; assignable_floor_ids?: string[];
 };
 export type DelegationGrant = { resource: string; actions: GrantAction[]; floor_id: string };
 export type DelegationState = { floorIds: string[]; grants: DelegationGrant[] };
@@ -26,6 +26,8 @@ export function isDelegationCatalog(value: unknown, floors: DelegationFloor[]): 
     if (!resource || typeof resource.key !== "string" || !resource.key || keys.has(resource.key)
       || typeof resource.label !== "string" || !resource.label.trim()
       || !Array.isArray(resource.floor_ids) || resource.floor_ids.some((floor) => !floorIds.has(floor))
+      || (resource.assignable_floor_ids !== undefined && (!Array.isArray(resource.assignable_floor_ids)
+        || resource.assignable_floor_ids.some((floor) => !resource.floor_ids.includes(floor))))
       || !Array.isArray(resource.actions) || !resource.actions.includes("view")
       || resource.actions.some((action) => !ACTION_ORDER.includes(action)
         || typeof candidate.action_descriptions?.[action] !== "string" || !candidate.action_descriptions[action].trim())) return false;
@@ -44,14 +46,14 @@ export function toggleFloor(state: DelegationState, floorId: string, enabled: bo
 
 export function togglePage(state: DelegationState, floorId: string, resource: DelegationResource, enabled: boolean): DelegationState {
   if (!state.floorIds.includes(floorId) || !resource.floor_ids.includes(floorId)) return state;
-  if (resource.retired && enabled) return state;
+  if (enabled && (resource.retired || !isResourceAssignable(resource, floorId))) return state;
   if (enabled && state.grants.some((grant) => grant.floor_id === floorId && grant.resource === resource.key)) return state;
   const grants = state.grants.filter((grant) => grant.floor_id !== floorId || grant.resource !== resource.key);
   return { ...state, grants: enabled ? [...grants, { floor_id: floorId, resource: resource.key, actions: ["view"] }] : grants };
 }
 
 export function toggleAction(state: DelegationState, floorId: string, resource: DelegationResource, action: GrantAction, enabled: boolean): DelegationState {
-  if (resource.retired || action === "view" || !resource.actions.includes(action) || !state.floorIds.includes(floorId) || !resource.floor_ids.includes(floorId)) return state;
+  if (!isResourceAssignable(resource, floorId) || action === "view" || !resource.actions.includes(action) || !state.floorIds.includes(floorId) || !resource.floor_ids.includes(floorId)) return state;
   return { ...state, grants: state.grants.map((grant) => {
     if (grant.floor_id !== floorId || grant.resource !== resource.key) return grant;
     const selected = enabled ? [...new Set([...grant.actions, "view" as const, action])] : grant.actions.filter((value) => value !== action);
@@ -123,4 +125,24 @@ export function moduleForRoute(segments: string[]): string | null {
   if (segments.includes("purchases-completed") || segments.includes("purchase-orders")) return "purchases";
   if (segments.includes("reports")) return "sales-data";
   return "restricted";
+}
+
+/** Catalog visibility must never delete saved compatibility grants. */
+export function isResourceAssignable(resource: DelegationResource, floorId: string): boolean {
+  if (floorId === "second-floor" && resource.key !== "kitchen_projects") return false;
+  return !resource.retired && (resource.assignable_floor_ids ?? resource.floor_ids).includes(floorId);
+}
+
+export function delegationPagesForFloor(resources: DelegationResource[], grants: DelegationGrant[], floorId: string): DelegationResource[] {
+  return resources.filter((resource) => resource.floor_ids.includes(floorId) &&
+    (isResourceAssignable(resource, floorId) || grants.some((grant) => grant.floor_id === floorId && grant.resource === resource.key)));
+}
+
+/** Navigation labels are the current page inventory; grants keep stable API keys. */
+export function delegationPageLabels(resource: string, floorId: string, navigation: { href: string; label: string; floors?: string[]; roles?: string[] }[]): string[] {
+  return [...new Set(navigation.filter((page) => {
+    if (page.floors && !page.floors.includes(floorId) || page.roles?.length) return false;
+    const module = moduleForRoute(page.href.split("/").filter(Boolean));
+    return (module === "payments-list" ? "payments" : module?.replaceAll("-", "_")) === resource;
+  }).map((page) => page.label))];
 }

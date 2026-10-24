@@ -1,12 +1,11 @@
 import { api } from "@/src/api/client";
 import { KITCHEN_FLOOR_ID } from "@/src/constants/floors";
 
-export const KITCHEN_STAGES = ["lead", "visit", "cad", "design", "quotation", "order", "production", "installation", "completed"] as const;
-export type KitchenStage = typeof KITCHEN_STAGES[number];
-export const STAGE_LABELS: Record<KitchenStage, string> = {
-  lead: "Lead", visit: "Visit", cad: "CAD File", design: "Design", quotation: "Quotation",
-  order: "Order", production: "Production", installation: "Installation", completed: "Completed",
-};
+import { KITCHEN_WORKSPACE_PAGES } from "@/src/kitchen-workspace-pages";
+
+export type KitchenStage = typeof KITCHEN_WORKSPACE_PAGES[number]["stage"];
+export const KITCHEN_STAGES: readonly KitchenStage[] = KITCHEN_WORKSPACE_PAGES.map(page => page.stage);
+export const STAGE_LABELS = Object.fromEntries(KITCHEN_WORKSPACE_PAGES.map(page => [page.stage, page.label])) as Record<KitchenStage, string>;
 export type KitchenCustomer = { id: string; name: string; phone?: string | null; address?: string | null };
 export type KitchenAssignee = { id: string; full_name: string; role: string };
 export type KitchenLead = {

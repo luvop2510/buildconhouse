@@ -10,7 +10,7 @@ from auth import get_current_user, invalidate_principal_cache, require_owner
 from db import db
 from models import UserPublic
 from services.access_grants import (
-    ACTIONS, ACTION_DESCRIPTIONS, RESOURCE_REGISTRY, build_delegation_snapshot,
+    ACTION_DESCRIPTIONS, build_delegation_snapshot, delegation_resource_catalog,
     build_grant, grants_for_user, is_expired,
     is_valid_resource, normalized_actions, resource_supports, utc_now_iso,
 )
@@ -74,12 +74,7 @@ async def list_grant_resources(actor: UserPublic = Depends(require_owner)):
     floors = await db.floors.find({"active": {"$ne": False}}, {"_id": 0, "id": 1}).to_list(50)
     floor_ids = [floor["id"] for floor in floors]
     return {
-        "resources": [
-            {"key": key, "label": value["label"], "retired": value.get("retired", False), "actions": value.get("actions", sorted(ACTIONS)),
-             "floor_ids": [floor for floor in floor_ids if not value.get("floor_ids") or floor in value["floor_ids"]],
-             "description": value.get("description", f"Manage {value['label'].lower()} records on this floor.")}
-            for key, value in RESOURCE_REGISTRY.items() if key != "reports"
-        ],
+        "resources": delegation_resource_catalog(floor_ids),
         "action_descriptions": ACTION_DESCRIPTIONS,
     }
 

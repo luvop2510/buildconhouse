@@ -16,7 +16,7 @@ RESOURCE_REGISTRY: dict[str, dict[str, Any]] = {
     "tiles": {"label": "Tile quotations"},
     "catalog": {"label": "Catalog"},
     "customers": {"label": "Customers"},
-    "kitchen_projects": {"label": "Kitchen projects", "floor_ids": ["second-floor"], "actions": ["view", "create", "update", "export"], "description": "Overview, Projects, Workflow, Completed and all nine stage pages, history and private documents. Choose view, create, update and export. Staff access Kitchen projects with the selected permissions; manager approvals require separate owner configuration."},
+    "kitchen_projects": {"label": "Kitchen workspace", "floor_ids": ["second-floor"], "actions": ["view", "create", "update", "export"], "description": "Access the current Kitchen workflow pages, stage history and private documents with the selected view, create, update and export permissions. Updated workflow pages retain workspace access. Manager approvals require separate owner configuration."},
     "purchases": {"label": "Purchases"},
     "godown_stock": {"label": "Godown stock"},
     "payments": {"label": "Payments"},
@@ -44,6 +44,33 @@ RESOURCE_REGISTRY["reports"].update(actions=["view", "export"])
 RESOURCE_REGISTRY["followups"].update(floor_ids=["ground-floor", "first-floor", "second-floor", "third-floor"], description="Manage the selected floor's sales follow-up inbox.")
 for _resource in ("catalog", "purchases", "godown_stock", "payments", "orders", "walkins"):
     RESOURCE_REGISTRY[_resource]["actions"] = ["view", "create", "update", "export"]
+
+
+
+def delegation_resource_catalog(floor_ids: list[str]) -> list[dict[str, Any]]:
+    """Separate current assignment choices from historical grant support.
+
+    Kitchen has its own stage workspace. Shared registers remain recognized
+    for stored grants and explicit revocation, but are not offered as Kitchen
+    destinations when provisioning staff. Never narrow floor_ids here: clients
+    use it to round-trip previously saved permissions without losing them.
+    """
+    resources = []
+    for key, metadata in RESOURCE_REGISTRY.items():
+        if key == "reports":
+            continue
+        supported = [floor for floor in floor_ids
+                     if not metadata.get("floor_ids") or floor in metadata["floor_ids"]]
+        assignable = [] if metadata.get("retired") else [
+            floor for floor in supported if floor != "second-floor" or key == "kitchen_projects"
+        ]
+        resources.append({
+            "key": key, "label": metadata["label"], "retired": metadata.get("retired", False),
+            "actions": metadata.get("actions", sorted(ACTIONS)),
+            "floor_ids": supported, "assignable_floor_ids": assignable,
+            "description": metadata.get("description", f"Manage {metadata['label'].lower()} records on this floor."),
+        })
+    return resources
 
 ACTION_DESCRIPTIONS = {
     "view": "Open the page and read its records.",

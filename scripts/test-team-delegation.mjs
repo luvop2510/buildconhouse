@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { toggleFloor, togglePage, toggleAction, loadDelegation, hasGrantAccess, moduleForRoute, resolveFloorRouteSegments, hasRouteDestination, isPersonalAccountRoute, personalAccountPath, isDelegationCatalog } from '../src/team-delegation.ts';
+import { toggleFloor, togglePage, toggleAction, loadDelegation, hasGrantAccess, moduleForRoute, resolveFloorRouteSegments, hasRouteDestination, isPersonalAccountRoute, personalAccountPath, isDelegationCatalog, delegationPagesForFloor, isResourceAssignable } from '../src/team-delegation.ts';
 import { staffLandingPath } from '../src/access-profiles.ts';
 
 const floors = ['ground-floor', 'first-floor', 'second-floor', 'third-floor'];
@@ -11,7 +11,7 @@ for (let mask = 0; mask < 16; mask++) {
   let state = { floorIds: [], grants: [] };
   for (let index = 0; index < floors.length; index++) state = toggleFloor(state, floors[index], Boolean(mask & (1 << index)));
   for (const floor of floors) state = togglePage(state, floor, payments, true);
-  assert.equal(state.floorIds.length, state.grants.length);
+  assert.equal(state.floorIds.filter(floor => floor !== "second-floor").length, state.grants.length);
   for (const grant of state.grants) assert.deepEqual(grant.actions, ['view']);
   for (const floor of floors) {
     const original = state;
@@ -119,3 +119,17 @@ assert.deepEqual(togglePage(historical, 'third-floor', legacyNotebook, false).gr
 
 assert.equal(staffLandingPath(null, [{ resource: 'notebook_walkins', actions: ['view'], floor_id: 'third-floor' }, { resource: 'followups', actions: ['view'], floor_id: 'third-floor' }], 'third-floor'), '/(admin)/followups');
 assert.equal(staffLandingPath(null, [{ resource: 'purchases', actions: ['view'], floor_id: 'ground-floor' }], 'ground-floor'), '/(admin)/access');
+
+const currentKitchen = { key: 'kitchen_projects', label: 'Kitchen workspace', actions: ['view', 'create', 'update', 'export'], floor_ids: ['second-floor'], assignable_floor_ids: ['second-floor'] };
+const compatibilityPayments = { ...payments, assignable_floor_ids: ['ground-floor', 'first-floor', 'third-floor'] };
+assert.deepEqual(delegationPagesForFloor([compatibilityPayments, currentKitchen], [], 'second-floor'), [currentKitchen]);
+const historicGrant = { resource: 'payments', actions: ['view', 'update'], floor_id: 'second-floor' };
+const historicState = loadDelegation(['second-floor'], [historicGrant], [compatibilityPayments, currentKitchen]);
+assert.deepEqual(historicState.grants, [historicGrant], 'catalog presentation must round-trip old grants');
+assert.deepEqual(delegationPagesForFloor([compatibilityPayments, currentKitchen], historicState.grants, 'second-floor'), [compatibilityPayments, currentKitchen]);
+assert.equal(isResourceAssignable(compatibilityPayments, 'second-floor'), false);
+assert.deepEqual(togglePage(historicState, 'second-floor', compatibilityPayments, false).grants, []);
+assert.deepEqual(togglePage({ floorIds: ['second-floor'], grants: [] }, 'second-floor', compatibilityPayments, true).grants, []);
+assert.equal(isDelegationCatalog({ resources: [{ ...currentKitchen, assignable_floor_ids: ['first-floor'] }], action_descriptions: {view:'Read',create:'Add',update:'Edit',export:'Download'} }, floors.map(id => ({id,name:id}))), false);
+await import('./test-kitchen-workspace-pages.mjs');
+console.log('Kitchen catalog preserves existing access and rejects obsolete new assignments');
