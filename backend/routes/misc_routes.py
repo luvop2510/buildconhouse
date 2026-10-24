@@ -514,9 +514,9 @@ async def update_team_member(
         # authorization so floor/page edits apply immediately without signing
         # the delegate out or discarding their in-progress work.
         invalidate_principal_cache("staff", user_id)
-        # Deactivation is the exception: revoke sessions so they stay closed
-        # if the account is later re-enabled.
-        if patch.get("active") is False:
+        # Account-state changes revoke stale sessions on both disable and
+        # re-enable. Floor/page/role edits only refresh cached authorization.
+        if "active" in patch:
             await revoke_all_sessions("staff", user_id)
     else:
         # Refresh display/contact data without revoking valid sessions.
