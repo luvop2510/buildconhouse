@@ -4,7 +4,25 @@ import { mockSession } from './audit-fixtures';
 test('critical staff navigation survives browser back forward and a hard reload', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
+  const pendingReads = new Set<import('@playwright/test').Request>();
+  let lastReadActivity = Date.now();
+  page.on('request', request => {
+    if (request.method() === 'GET' && new URL(request.url()).pathname.startsWith('/api/')) {
+      pendingReads.add(request);
+      lastReadActivity = Date.now();
+    }
+  });
+  const finishRead = (request: import('@playwright/test').Request) => {
+    if (pendingReads.delete(request)) lastReadActivity = Date.now();
+  };
+  page.on('requestfinished', finishRead);
+  page.on('requestfailed', finishRead);
+  // Safari reports document-owned reads canceled by history/reload as access
+  // control errors. Finish this probe's reads before changing its document.
+  const settleReads = () => expect.poll(() => pendingReads.size === 0 && Date.now() - lastReadActivity >= 200,
+    { message: 'Navigation probe API reads must finish before history or reload' }).toBe(true);
   await mockSession(page, '/customers', false, { seedStorageOnce: true });
+  await page.route('**/api/products/families?**', route => route.fulfill({ json: { items: [], total: 0 } }));
   await page.goto('/customers');
   await expect(page.getByText('No customers yet', { exact: true })).toBeVisible();
   const catalog = page.getByTestId(page.viewportSize()!.width < 768 ? 'bottom-nav-catalog' : 'nav-catalog');
@@ -12,16 +30,23 @@ test('critical staff navigation survives browser back forward and a hard reload'
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL(/\/catalog$/);
   await expect(page.getByTestId('floor-switcher')).toBeVisible();
+  await expect(page.getByText('No products on this floor yet', { exact: true })).toBeVisible();
+  await settleReads();
   await page.goBack();
   await expect(page).toHaveURL(/\/customers$/);
   await expect(page.getByText('No customers yet', { exact: true })).toBeVisible();
+  await settleReads();
   await page.goForward();
   await expect(page).toHaveURL(/\/catalog$/);
+  await expect(page.getByText('No products on this floor yet', { exact: true })).toBeVisible();
+  await settleReads();
   await page.reload();
   await expect(page).toHaveURL(/\/catalog$/);
   await expect(page.getByTestId('floor-switcher')).toHaveAccessibleName('Switch workspace. Current workspace: The Sanitary Bathroom');
   await expect(page.getByTestId('login-submit')).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  await expect(page.getByText('No products on this floor yet', { exact: true })).toBeVisible();
+  await settleReads();
   expect(errors).toEqual([]);
 });
 
