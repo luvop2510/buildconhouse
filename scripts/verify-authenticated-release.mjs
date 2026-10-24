@@ -66,12 +66,22 @@ for (const [profile, engine, options] of [
       { timeout: 20000, message: 'Probe API reads must settle before navigation' }).toBe(true);
     context.setDefaultTimeout(20000);
     context.setDefaultNavigationTimeout(30000);
-    const blockWrites = async current => current.route('**/*', route => {
-      const request = route.request(), url = new URL(request.url());
-      if (url.origin === origin && /^\/api(?:\/|$)/.test(url.pathname) && !['GET', 'HEAD', 'OPTIONS'].includes(request.method())) return route.abort('blockedbyclient');
-      // Never send a provider bypass secret to product-image/storage hosts.
-      return route.continue(url.origin === origin ? { headers: { ...request.headers(), ...deploymentHeaders } } : {});
-    });
+    const blockWrites = async current => {
+      const handler = route => {
+        const request = route.request(), url = new URL(request.url());
+        if (url.origin === origin && /^\/api(?:\/|$)/.test(url.pathname) && !['GET', 'HEAD', 'OPTIONS'].includes(request.method())) return route.abort('blockedbyclient');
+        // Never send a provider bypass secret to product-image/storage hosts.
+        return bypass && url.origin === origin
+          ? route.continue({ headers: { ...request.headers(), ...deploymentHeaders } })
+          : route.continue();
+      };
+      if (bypass) return current.route('**/*', handler);
+      await Promise.all([
+        current.route(`${origin}/api`, handler),
+        current.route(`${origin}/api?**`, handler),
+        current.route(`${origin}/api/**`, handler),
+      ]);
+    };
     await blockWrites(context);
     await context.addCookies([
       { name: 'forge_session', value: token, domain: new URL(origin).hostname, path: '/api', httpOnly: true, secure: true, sameSite: 'Strict' },
