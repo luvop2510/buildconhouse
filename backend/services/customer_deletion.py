@@ -18,6 +18,7 @@ from pymongo.write_concern import WriteConcern
 
 from models import now_iso
 from services.purchase_stages import active_quantity, dispatched_chalan_quantity, normalized_stage
+from services.godown_transfer_receipts import preserve_removed_history
 from settings import settings
 
 LIMIT = 10000
@@ -339,6 +340,12 @@ def public_plan(plan, actor_id):
 
 
 async def apply_plan(database, plan, session):
+    # History removal must not erase evidence that a transfer consumed stock.
+    # Install the minimal receipt in the same transaction before redaction/deletion.
+    observed_transfers = [*plan["delete"].get("godown_customer_transfers", []),
+                          *(original for original, _update in plan["updates"].get("godown_customer_transfers", []))]
+    for transfer in observed_transfers:
+        await preserve_removed_history(database, transfer, session)
     for collection, changes in plan["updates"].items():
         for original, update in changes:
             await database[collection].update_one(selector(original), update, session=session)

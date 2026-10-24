@@ -83,6 +83,14 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
     'critical a failed quotation module offers reload and retains the signed-in destination',
     'critical opening home after a failed module clears the rejected import before returning',
   ],
+  'redesign-godown-transfer-retry.spec.ts': [
+    'critical uncertain stock transfer retains its original command through close and reopen',
+    'critical retrying transfer recipients retains the entered customer and quantity',
+    'critical a rejected transfer retry can be corrected without changing its command key',
+    'critical pending stock transfer cannot be dismissed or submitted twice',
+    'critical a committed transfer conflict is reviewed before starting another transfer',
+    'critical removed customer history resolves a transfer without recreating the customer',
+  ],
   'redesign-backend-startup.spec.ts': [
     'critical backend wake retains destination and waits before authenticated reads',
     'critical backend startup shows failure after the full minute and explicit retry restores the saved route',

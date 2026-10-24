@@ -16,10 +16,15 @@ async function fixtures(page: Page) {
   await page.route('**/api/products/families?**', route => route.fulfill({ json: { total: 0, items: [] } }));
   await page.route('**/api/quotations?**', route => route.fulfill({ json: [] }));
   await page.route('**/api/quotations/recent?**', route => route.fulfill({ json: [] }));
-  await page.route('**/api/godown-stock?**', route => route.fulfill({ json: {
-    lots: Array.from({ length: 1015 }, (_, index) => stock(index)), brands: [],
-    total_available_qty: 2028, total_stock_value: 2535000, unpriced_lot_count: 508,
-  } }));
+  await page.route('**/api/godown-stock?**', route => {
+    const query = new URL(route.request().url()).searchParams;
+    const matching = Array.from({ length: 1015 }, (_, index) => stock(index)).filter(lot => `${lot.sku} ${lot.name}`.toLowerCase().includes((query.get('q') || '').toLowerCase()));
+    const offset = Number(query.get('offset') || 0), limit = Number(query.get('limit') || 60);
+    return route.fulfill({ json: { lots: matching.slice(offset, offset + limit).map(lot => ({ ...lot, history_loaded: false })), brands: [],
+      total_available_qty: 2028, total_stock_value: 2535000, unpriced_lot_count: 508, total_lots: matching.length,
+      available_lot_count: matching.filter(lot => !lot.quantity_missing).length, unknown_quantity_count: matching.filter(lot => lot.quantity_missing).length,
+      zero_lot_count: 0, next_offset: offset + limit < matching.length ? offset + limit : null } });
+  });
 }
 
 async function navigate(page: Page, label: string) {

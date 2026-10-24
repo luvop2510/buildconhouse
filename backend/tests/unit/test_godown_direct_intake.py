@@ -74,6 +74,110 @@ def test_manual_intake_requires_price(monkeypatch):
     assert exc.value.status_code == 422
 
 
+class CommandStock(Stock):
+    async def find_one(self, query, *_args):
+        def matches(row, fields):
+            return all(all(matches(row, part) for part in value) if key == "$and" else
+                       row.get(key) in value["$in"] if isinstance(value, dict) and "$in" in value else
+                       row.get(key) == value for key, value in fields.items())
+        result = next((row for row in self.inserted if matches(row, query)), None)
+        await asyncio.sleep(0)
+        return result
+
+    async def insert_one(self, row):
+        from pymongo.errors import DuplicateKeyError
+        if any(existing.get("_id") == row.get("_id") for existing in self.inserted):
+            raise DuplicateKeyError("command already inserted")
+        self.inserted.append(row)
+
+
+def command_body(**changes):
+    return godown.DirectIntake(qty=3, sku="321", name="Valve", unit_price=125,
+                              idempotency_key="intake-command-1", **changes)
+
+
+def test_direct_intake_retry_returns_original_lot_and_preserves_later_balance(monkeypatch):
+    stock = CommandStock()
+    events = []
+    async def log(**kwargs): events.append(kwargs)
+    monkeypatch.setattr(godown, "db", SimpleNamespace(products=Products(), godown_stock=stock))
+    monkeypatch.setattr(godown, "log_event", log)
+    first = asyncio.run(godown.direct_intake(command_body(), user()))
+    stock.inserted[0]["available_qty"] = 1
+    second = asyncio.run(godown.direct_intake(command_body(), user()))
+    assert first["id"] == second["id"]
+    assert second["available_qty"] == 1
+    assert second["idempotent"] is True
+    assert len(stock.inserted) == len(events) == 1
+    assert "intake_command" not in first and "_id" not in first
+
+
+def test_direct_intake_rejects_changed_command_details(monkeypatch):
+    stock = CommandStock()
+    monkeypatch.setattr(godown, "db", SimpleNamespace(products=Products(), godown_stock=stock))
+    monkeypatch.setattr(godown, "log_event", lambda **_kwargs: asyncio.sleep(0))
+    asyncio.run(godown.direct_intake(command_body(), user()))
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(godown.direct_intake(command_body().model_copy(update={"qty": 4}), user()))
+    assert exc.value.status_code == 409
+    assert len(stock.inserted) == 1
+
+
+def test_direct_intake_command_is_actor_and_floor_bound(monkeypatch):
+    stock = CommandStock()
+    monkeypatch.setattr(godown, "db", SimpleNamespace(products=Products(), godown_stock=stock))
+    monkeypatch.setattr(godown, "log_event", lambda **_kwargs: asyncio.sleep(0))
+    first = asyncio.run(godown.direct_intake(command_body(), user()))
+    another_actor = asyncio.run(godown.direct_intake(command_body(), user().model_copy(update={"id": "u-2"})))
+    another_floor = asyncio.run(godown.direct_intake(command_body(), user().model_copy(update={"active_floor_id": "ground-floor"})))
+    assert len({first["id"], another_actor["id"], another_floor["id"]}) == 3
+
+
+def test_concurrent_direct_intake_requests_insert_once(monkeypatch):
+    stock = CommandStock()
+    monkeypatch.setattr(godown, "db", SimpleNamespace(products=Products(), godown_stock=stock))
+    monkeypatch.setattr(godown, "log_event", lambda **_kwargs: asyncio.sleep(0))
+    async def submit():
+        return await asyncio.gather(*(godown.direct_intake(command_body(), user()) for _ in range(2)))
+    first, second = asyncio.run(submit())
+    assert first["id"] == second["id"]
+    assert len(stock.inserted) == 1
+
+
+def test_unknown_insert_outcome_replays_without_adding_again(monkeypatch):
+    from pymongo.errors import ConnectionFailure
+    class LostResponseStock(CommandStock):
+        async def insert_one(self, row):
+            await super().insert_one(row)
+            raise ConnectionFailure("response lost after commit")
+    stock = LostResponseStock()
+    monkeypatch.setattr(godown, "db", SimpleNamespace(products=Products(), godown_stock=stock))
+    monkeypatch.setattr(godown, "log_event", lambda **_kwargs: asyncio.sleep(0))
+    with pytest.raises(ConnectionFailure):
+        asyncio.run(godown.direct_intake(command_body(), user()))
+    result = asyncio.run(godown.direct_intake(command_body(), user()))
+    assert result["idempotent"] is True
+    assert len(stock.inserted) == 1
+
+
+def test_archived_intake_receipt_cannot_recreate_stock(monkeypatch):
+    stock = CommandStock()
+    monkeypatch.setattr(godown, "db", SimpleNamespace(products=Products(), godown_stock=stock))
+    monkeypatch.setattr(godown, "log_event", lambda **_kwargs: asyncio.sleep(0))
+    asyncio.run(godown.direct_intake(command_body(), user()))
+    stock.inserted[0]["archived"] = True
+    result = asyncio.run(godown.direct_intake(command_body(), user()))
+    assert result["archived"] is True and result["transferable_qty"] == 0
+    assert len(stock.inserted) == 1
+
+
+@pytest.mark.parametrize("field,value", [("qty", float("inf")), ("qty", float("nan")), ("unit_price", float("inf"))])
+def test_direct_intake_quantities_and_prices_are_finite(field, value):
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        godown.DirectIntake(**{"qty": 1, "unit_price": 10, field: value})
+
+
 def test_existing_lot_price_can_be_completed(monkeypatch):
     class PriceStock:
         async def find_one_and_update(self, query, update, **_kwargs):

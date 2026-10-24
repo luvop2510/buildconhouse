@@ -8,7 +8,7 @@ import ts from 'typescript';
 // switches abort fetch, so this also covers callbacks whose transport has
 // already completed, including native/retained-screen interleavings.
 const source = readFileSync(process.argv[2] || new URL('../app/(admin)/godown-stock.tsx', import.meta.url), 'utf8');
-const instrumented = source.replace('  if (loading) return', '  return { load, data, newLot, poFinalMatches };\n  if (loading) return');
+const instrumented = source.replace('  if (!hasCurrentData && error) return', '  return { load, loadMore, data, newLot, poFinalMatches, hasCurrentData, loading, error };\n  if (!hasCurrentData && error) return');
 assert.notEqual(instrumented, source, 'The screen state observation point must exist');
 const compiled = ts.transpileModule(instrumented, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
@@ -77,7 +77,7 @@ function screen(newStockId) {
     '@/src/theme/tokens': { colors: {}, radius: {}, spacing: {}, type: {} },
     '@/src/components/Toast': { toast: { error: message => errors.push(message) } },
     '@/src/api/godownStock': {
-      getGodownStock: (_params, requestFloor) => { const pending = deferred(); stocks.push({ ...pending, floor: requestFloor }); return pending.promise; },
+      getGodownStock: (params, requestFloor) => { const pending = deferred(); stocks.push({ ...pending, floor: requestFloor, params }); return pending.promise; },
       getPoFinalMatches: id => { const pending = deferred(); matches.push({ ...pending, id }); return pending.promise; },
     },
   };
@@ -119,6 +119,52 @@ test('a delayed inventory response cannot replace the current floor inventory', 
   fixture.stocks[1].resolve(response('Ground stock')); await fixture.settle();
   fixture.stocks[0].resolve(response('Stale sanitary stock')); await fixture.settle();
   assert.equal(fixture.state.data.lots[0].name, 'Ground stock');
+});
+
+test('repeated pagination clicks coalesce and late pages cannot cross a floor switch', async () => {
+  const fixture = screen(); fixture.render();
+  fixture.stocks[0].resolve({ ...response('Sanitary stock'), total_lots: 120, next_offset: 60 }); await fixture.settle();
+  const oldMore = fixture.state.loadMore;
+  const first = oldMore(), duplicate = oldMore();
+  assert.equal(fixture.stocks.length, 2);
+  assert.match(fixture.stocks[1].params, /offset=60/);
+  await duplicate;
+  fixture.switchFloor('ground-floor');
+  fixture.stocks[2].resolve({ ...response('Ground stock'), total_lots: 1, next_offset: null }); await fixture.settle();
+  fixture.stocks[1].resolve({ ...response('Old sanitary page'), total_lots: 120, next_offset: null }); await first; await fixture.settle();
+  assert.equal(fixture.state.data.lots[0].name, 'Ground stock');
+  await oldMore();
+  assert.equal(fixture.stocks.length, 3);
+});
+
+test('same-floor refresh and failure retain usable inventory, and retry publishes the current balance', async () => {
+  const fixture = screen(); fixture.render();
+  assert.equal(fixture.state.hasCurrentData, false);
+  fixture.stocks[0].resolve(response('Counted stock')); await fixture.settle();
+  assert.equal(fixture.state.hasCurrentData, true);
+  const refresh = fixture.state.load(); await fixture.settle();
+  assert.equal(fixture.state.loading, true);
+  assert.equal(fixture.state.hasCurrentData, true);
+  assert.equal(fixture.state.data.lots[0].name, 'Counted stock');
+  fixture.stocks[1].reject({ detail: 'Network unavailable' }); await refresh; await fixture.settle();
+  assert.equal(fixture.state.loading, false);
+  assert.equal(fixture.state.error, 'Network unavailable');
+  assert.equal(fixture.state.hasCurrentData, true);
+  const retry = fixture.state.load(); await fixture.settle();
+  assert.equal(fixture.state.error, null);
+  fixture.stocks[2].resolve(response('Updated stock')); await retry; await fixture.settle();
+  assert.equal(fixture.state.data.lots[0].name, 'Updated stock');
+});
+
+test('switching floors hides retained rows until the destination inventory arrives', async () => {
+  const fixture = screen(); fixture.render();
+  fixture.stocks[0].resolve(response('Sanitary stock')); await fixture.settle();
+  fixture.switchFloor('ground-floor');
+  assert.equal(fixture.state.hasCurrentData, false);
+  await fixture.settle();
+  assert.equal(fixture.state.hasCurrentData, false);
+  fixture.stocks[1].resolve(response('Ground stock')); await fixture.settle();
+  assert.equal(fixture.state.hasCurrentData, true);
 });
 
 for (const outcome of ['matches', 'error']) {

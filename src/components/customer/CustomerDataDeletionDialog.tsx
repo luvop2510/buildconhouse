@@ -32,6 +32,7 @@ export function CustomerDataDeletionDialog({ customer, onClose, onDeleted }: {
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
+  const [outcomeUnknown, setOutcomeUnknown] = useState(false);
   const generation = useRef(0);
   const id = customer?.id;
   const load = useCallback(async (selected: string[] = []) => {
@@ -40,6 +41,7 @@ export function CustomerDataDeletionDialog({ customer, onClose, onDeleted }: {
     setLoading(true);
     setPreview(null);
     setError("");
+    setOutcomeUnknown(false);
     try {
       const result = await api.get<Preview>(`/customers/${encodeURIComponent(id)}/deletion-preview?furniture_ids=${encodeURIComponent(selected.join(","))}`);
       if (request === generation.current) setPreview(result);
@@ -53,6 +55,7 @@ export function CustomerDataDeletionDialog({ customer, onClose, onDeleted }: {
     setPreview(null);
     setError("");
     setDeleting(false);
+    setOutcomeUnknown(false);
     void load();
     return () => { generation.current += 1; };
   }, [load]);
@@ -68,10 +71,13 @@ export function CustomerDataDeletionDialog({ customer, onClose, onDeleted }: {
       if (request === generation.current) onDeleted(targetId);
     } catch (e: any) {
       if (request === generation.current) {
-        setError(e?.detail || "Customer data could not be deleted. Try again.");
-        // Any conflict requires a fresh, explicit review. Never reuse a
-        // previously confirmed count after a changed payment/order.
-        setPreview(null);
+        const uncertain = !e?.status || e.status === 408 || e.status >= 500;
+        setOutcomeUnknown(uncertain);
+        setError(uncertain ? "Deletion outcome could not be confirmed. Retry the same confirmed deletion to resolve its result." : e?.detail || "Customer data could not be deleted. Review current data before trying again.");
+        // The backend has a durable deletion receipt. Preserve the exact
+        // confirmation on transport failure so a retry can resolve a commit
+        // whose response was lost. A rejected/conflicting request needs review.
+        if (!uncertain) setPreview(null);
       }
     } finally {
       if (request === generation.current) setDeleting(false);
@@ -84,7 +90,7 @@ export function CustomerDataDeletionDialog({ customer, onClose, onDeleted }: {
     footer={<>
       <Button label="Cancel" variant="secondary" onPress={onClose} disabled={deleting} />
       <View style={{ flex: 1 }} />
-      <Button label="Delete all customer data" variant="danger" onPress={remove} loading={deleting}
+      <Button label={outcomeUnknown ? "Retry confirmed deletion" : "Delete all customer data"} variant="danger" onPress={remove} loading={deleting}
         disabled={!preview || loading || deleting} testID="confirm-delete-customer-list-confirm" />
     </>}>
     <View style={{ padding: spacing.lg, gap: spacing.md }}>
@@ -100,7 +106,7 @@ export function CustomerDataDeletionDialog({ customer, onClose, onDeleted }: {
           <Text style={type.body}>These records share a phone number but have no profile link. Select only those belonging to this customer. Unselected records are kept.</Text>
           {(preview.furniture_candidates || []).map(candidate => <Pressable key={candidate.id} accessibilityRole="checkbox"
             accessibilityLabel={`Include furniture quotation ${candidate.customer_name || candidate.id}`}
-            accessibilityState={{ checked: candidate.selected }} aria-checked={candidate.selected} onPress={() => {
+            disabled={deleting || outcomeUnknown} accessibilityState={{ checked: candidate.selected, disabled: deleting || outcomeUnknown }} aria-checked={candidate.selected} onPress={() => {
               const selected = new Set(preview.selected_furniture_ids || []);
               if (selected.has(candidate.id)) selected.delete(candidate.id); else selected.add(candidate.id);
               void load([...selected]);
@@ -113,7 +119,7 @@ export function CustomerDataDeletionDialog({ customer, onClose, onDeleted }: {
       </View> : null}
       {error ? <View style={{ gap: spacing.sm }}>
         <Text accessibilityRole="alert" style={[type.body, { color: colors.error }]}>{error}</Text>
-        <Button label="Review current data" variant="secondary" onPress={() => { void load(); }} disabled={loading || deleting} />
+        {!outcomeUnknown ? <Button label="Review current data" variant="secondary" onPress={() => { void load(); }} disabled={loading || deleting} /> : null}
       </View> : null}
     </View>
   </Sheet>;

@@ -1,6 +1,57 @@
 import { test, expect } from '@playwright/test';
 import { mockSession } from './audit-fixtures';
 
+for (const outcome of ['lost-response', 'conflict']) {
+  test(`critical customer deletion recovers ${outcome} with the correct confirmation lifecycle`, async ({ page }, info) => {
+    await mockSession(page, '/customers', false);
+    let removed = false;
+    let previews = 0;
+    const commands: string[] = [];
+    await page.route('**/api/customers?**', route => route.fulfill({ json: removed ? [] : [
+      { id: 'retry-target', name: 'Retry Buyer', company: 'Retry Buyer', phone: '9000000002' },
+    ] }));
+    await page.route('**/api/customers/retry-target/deletion-preview?**', route => {
+      previews += 1;
+      expect(removed).toBe(false);
+      return route.fulfill({ json: { customer_id: 'retry-target', confirmation: `review-${previews}`,
+        counts: { customers: 1, quotations: 2 }, selected_furniture_ids: [], furniture_candidates: [] } });
+    });
+    await page.route('**/api/customers/retry-target?**', route => {
+      commands.push(new URL(route.request().url()).searchParams.get('confirmation')!);
+      if (commands.length === 1) {
+        removed = outcome === 'lost-response';
+        return route.fulfill({ status: removed ? 504 : 409, json: { detail: removed ? 'Response lost' : 'Customer data changed. Review again.' } });
+      }
+      removed = true;
+      return route.fulfill({ json: { ok: true, already_deleted: outcome === 'lost-response' } });
+    });
+    await page.goto('/customers');
+    await page.getByTestId('delete-customer-retry-target').click();
+    const dialog = page.getByTestId('confirm-delete-customer-list');
+    const confirm = dialog.getByTestId('confirm-delete-customer-list-confirm');
+    await expect(dialog.getByTestId('customer-deletion-summary')).toBeVisible();
+    await confirm.click();
+    if (outcome === 'lost-response') {
+      await expect(confirm).toHaveText('Retry confirmed deletion');
+      await expect(dialog.getByTestId('customer-deletion-summary')).toBeVisible();
+      expect(previews).toBe(1);
+      await page.screenshot({ path: info.outputPath('customer-deletion-outcome-unknown.png') });
+      await confirm.click();
+      expect(commands).toEqual(['review-1', 'review-1']);
+    } else {
+      await expect(confirm).toBeDisabled();
+      await expect(dialog.getByTestId('customer-deletion-summary')).toHaveCount(0);
+      await page.screenshot({ path: info.outputPath('customer-deletion-conflict-review.png') });
+      await dialog.getByRole('button', { name: 'Review current data', exact: true }).click();
+      await expect(confirm).toBeEnabled();
+      await confirm.click();
+      expect(commands).toEqual(['review-1', 'review-2']);
+    }
+    await expect(page.getByTestId('customer-retry-target')).toHaveCount(0);
+    await expect(dialog).toHaveCount(0);
+  });
+}
+
 test('critical customer deletion reviews linked records and legacy Furniture without affecting another customer', async ({ page }) => {
   await mockSession(page, '/customers', false);
   let removed = false;

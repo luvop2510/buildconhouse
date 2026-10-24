@@ -907,6 +907,7 @@ async def get_item(item_id: str, user: UserPublic = Depends(get_current_user)):
 # Mutations — move, bulk move, transfer
 # =============================================================================
 class MoveBody(BaseModel):
+    idempotency_key: Optional[str] = Field(default=None, min_length=8, max_length=160)
     stage: PurchaseStage
     note: Optional[str] = None
     qty: Optional[float] = Field(default=None, gt=0, allow_inf_nan=False)  # partial move — e.g. "3 of 20"
@@ -1114,17 +1115,17 @@ async def _sync_po_status_with_stages(po_id: str, user: UserPublic) -> Optional[
 
 async def _apply_stage_change(
     item_id: str, to_stage: str, user: UserPublic, note: Optional[str],
-    qty: Optional[float] = None, *, max_attempts: int = 3,
+    qty: Optional[float] = None, *, max_attempts: int = 3, idempotency_key: Optional[str] = None,
 ) -> dict:
-    """Retry wrapper around `_attempt_stage_change`. Each attempt re-reads the
-    item fresh, so a lost optimistic-concurrency race (another move landed
-    first) is resolved transparently by recomputing against the new state —
-    this is what makes an accidental double-click/near-simultaneous request
-    "just work" instead of surfacing an error in the common case. Only after
-    `max_attempts` genuine conflicts in a row do we give up and tell the
-    caller, with enough state to refresh intelligently."""
+    """Retry optimistic-concurrency conflicts against fresh item state.
+
+    Keyed commands resolve their atomic receipt before recomputing quantities:
+    a repeated partial move must never split the remaining source a second
+    time. Legacy unkeyed callers retain their prior behavior. Exhausted CAS
+    conflicts return enough current state for the caller to refresh.
+    """
     for _ in range(max_attempts):
-        result = await _attempt_stage_change(item_id, to_stage, user, note, qty)
+        result = await _attempt_stage_change(item_id, to_stage, user, note, qty, **({"idempotency_key": idempotency_key} if idempotency_key else {}))
         if not result.get("conflict"):
             if to_stage == "in_box":
                 arrived_item_id = result.get("new_item_id") or result.get("item_id") or item_id
@@ -1146,7 +1147,7 @@ async def _apply_stage_change(
 
 async def _attempt_stage_change(
     item_id: str, to_stage: str, user: UserPublic, note: Optional[str],
-    qty: Optional[float] = None,
+    qty: Optional[float] = None, *, idempotency_key: Optional[str] = None,
 ) -> dict:
     """One attempt at an atomic update of a single item's stage — writes a
     stage_history entry. Returns `{"conflict": True, "expected_qty": ...}`
@@ -1164,6 +1165,19 @@ async def _attempt_stage_change(
     po = await db.purchase_orders.find_one(floor_query(user, {"items.id": item_id}), {"_id": 0})
     if not po:
         raise HTTPException(status_code=404, detail="Item not found")
+    command_key = None
+    payload_hash = None
+    if idempotency_key:
+        command_key = hashlib.sha256(json.dumps([user.id, item_id, idempotency_key]).encode()).hexdigest()
+        payload_hash = hashlib.sha256(json.dumps([to_stage, note, qty], allow_nan=False).encode()).hexdigest()
+        receipt = (po.get("movement_receipts") or {}).get(command_key)
+        if receipt:
+            if receipt.get("payload_sha256") != payload_hash:
+                raise HTTPException(409, "This movement was already recorded with different details. Review the item before moving more stock.")
+            # The quantity change already committed. Repair optional post-write
+            # status synchronization without moving or splitting again.
+            status = await _sync_po_status_with_stages(po["id"], user)
+            return {**receipt["result"], "idempotent": True, "po_status_synced_to": status}
     it = next((i for i in po.get("items", []) if i.get("id") == item_id), None)
     if not it:
         raise HTTPException(status_code=404, detail="Item not found")
@@ -1190,7 +1204,7 @@ async def _attempt_stage_change(
 
     is_partial = move_qty < full_qty - 1e-6
 
-    if not is_partial and from_stage == to_stage:
+    if not is_partial and from_stage == to_stage and not command_key:
         return {"po_id": po["id"], "item_id": item_id, "no_change": True}
 
     now = now_iso()
@@ -1207,6 +1221,16 @@ async def _attempt_stage_change(
         "id": po["id"], "floor_id": po.get("floor_id"), "status": {"$ne": "cancelled"},
         "items": {"$elemMatch": item_guard}, "chalans": po.get("chalans"),
     }
+    if command_key:
+        mutation_guard[f"movement_receipts.{command_key}"] = {"$exists": False}
+
+    def receipt_fields(result):
+        return {f"movement_receipts.{command_key}": {"payload_sha256": payload_hash, "result": result}} if command_key else {}
+
+    if not is_partial and from_stage == to_stage:
+        result = {"po_id": po["id"], "item_id": item_id, "no_change": True}
+        saved = await db.purchase_orders.update_one(mutation_guard, {"$set": receipt_fields(result)})
+        return result if saved.matched_count else {"conflict": True, "expected_qty": full_qty}
 
     # -------------------------------------------------------------------
     # PARTIAL MOVE — split the line into two tracked pieces.
@@ -1261,6 +1285,11 @@ async def _attempt_stage_change(
             "last_moved_at": now, "last_moved_by": user.id,
             "last_moved_by_name": user.full_name,
         }
+        result = {
+            "po_id": po["id"], "item_id": item_id, "split": True,
+            "new_item_id": new_item_id, "from_stage": from_stage, "to_stage": to_stage,
+            "qty_moved": move_qty, "qty_remaining": remaining,
+        }
         cas_result = await db.purchase_orders.update_one(
             mutation_guard,
             [{"$set": {
@@ -1276,6 +1305,7 @@ async def _attempt_stage_change(
                     {"$literal": [new_item]},
                 ]},
                 "updated_at": now,
+                **{key: {"$literal": value} for key, value in receipt_fields(result).items()},
             }}],
         )
         if cas_result.matched_count == 0:
@@ -1301,13 +1331,7 @@ async def _attempt_stage_change(
         if to_stage in ("dispatched", "in_transit", "delivered") or new_status:
             asyncio.create_task(reconcile_followups_admitted())
 
-        return {
-            "po_id": po["id"], "item_id": item_id, "split": True,
-            "new_item_id": new_item_id,
-            "from_stage": from_stage, "to_stage": to_stage,
-            "qty_moved": move_qty, "qty_remaining": remaining,
-            "po_status_synced_to": new_status,
-        }
+        return {**result, "po_status_synced_to": new_status}
 
     # -------------------------------------------------------------------
     # FULL MOVE — existing behaviour, whole line advances together.
@@ -1322,6 +1346,7 @@ async def _attempt_stage_change(
     # instead of `qty` — lower severity here (a lost update just means a
     # last-write-wins stage instead of corrupted quantities), but the same
     # primitive is essentially free and keeps both branches consistent.
+    result = {"po_id": po["id"], "item_id": item_id, "from_stage": from_stage, "to_stage": to_stage}
     cas_result = await db.purchase_orders.update_one(
         mutation_guard,
         {
@@ -1333,6 +1358,7 @@ async def _attempt_stage_change(
                 "items.$.last_moved_by": user.id,
                 "items.$.last_moved_by_name": user.full_name,
                 "updated_at": now,
+                **receipt_fields(result),
             },
             "$push": {"items.$.stage_history": ev},
         },
@@ -1365,11 +1391,7 @@ async def _attempt_stage_change(
         # Dispatch/delivery reminders derive from item stage/PO status —
         # event-triggered refresh right here, not a cron job.
         asyncio.create_task(reconcile_followups_admitted())
-    return {
-        "po_id": po["id"], "item_id": item_id,
-        "from_stage": from_stage, "to_stage": to_stage,
-        "po_status_synced_to": new_status,
-    }
+    return {**result, "po_status_synced_to": new_status}
 
 
 @router.post("/items/{item_id}/move")
@@ -1380,7 +1402,7 @@ async def move_item(
 ):
     if body.stage not in PURCHASE_STAGES:
         raise HTTPException(status_code=400, detail=f"Unknown stage '{body.stage}'")
-    return await _apply_stage_change(item_id, body.stage, user, body.note, body.qty)
+    return await _apply_stage_change(item_id, body.stage, user, body.note, body.qty, **({"idempotency_key": body.idempotency_key} if body.idempotency_key else {}))
 
 
 @router.post("/items/{item_id}/cancel")

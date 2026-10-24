@@ -48,7 +48,7 @@
     "test:app-text": "node --experimental-strip-types --no-warnings scripts/test-app-text.mjs",
     "test:legal-config": "node --experimental-strip-types --no-warnings scripts/test-legal-config.mjs",
     "test:native-permissions": "node scripts/test-native-permissions.mjs",
-    "test:stock-floor-races": "node scripts/test-stock-floor-races.mjs",
+    "test:stock-floor-races": "node scripts/test-stock-floor-races.mjs && node scripts/test-godown-transfer-recovery.mjs",
     "test:uptime-monitor": "node scripts/test-uptime-monitor.mjs",
     "test:shell-quote-security": "node scripts/test-shell-quote-security.mjs",
     "test:uri-decoder-security": "node scripts/test-uri-decoder-security.mjs",

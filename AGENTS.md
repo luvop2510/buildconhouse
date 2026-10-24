@@ -622,3 +622,58 @@ The mutation-admission middleware and background follow-up/outbox admission prev
 in-flight child writes after graph deletion. Never expire writer tokens or clear
 an exclusive token while old writers may still execute. See the operational
 recovery procedure in docs/audits/2026-10-24-workspace-repair.md. No new migration.
+
+## Local uncounted-stock workflow — 2026-10-24
+
+Unpublished quantity-count work adds an exact stock-update POST route for
+previously uncounted lots. Preserve its missing/zero distinction, explicit
+date/source, original provenance, atomic count/receipt write, version/history
+guards and floor admission. A confirmed opening count is not a supplier receipt.
+Never overwrite an already-counted/moved lot through this endpoint. Count replay
+must return the current balance without restoring later-consumed stock. Internal
+command metadata stays outside public count history. Direct intake now requires
+an entered quantity rather than defaulting to one. See
+docs/audits/2026-10-24-godown-quantity-counts.md for local acceptance and limits;
+no production quantity replacement or publication is claimed.
+
+## Local stock pagination — 2026-10-24
+
+The unpublished stock screen uses server-side 60-lot pages and literal search.
+Keep whole-floor totals independent of filtered result counts and update totals
+with per-lot deltas, never sums of the loaded page. Initial pages exclude movement
+arrays; exact-floor history loads independently on demand. Same-query refresh
+retains the opened window and card drafts; obsolete floor/query responses cannot
+publish. Complete exports explicitly use the compatible no-limit endpoint and
+must fail rather than truncate above its lot/movement ceilings. This supersedes
+the older complete-payload client search description for the local implementation.
+Detail and mutation responses retain the same exact-product catalog image
+fallback as list reads. See docs/audits/2026-10-24-godown-paging.md for acceptance
+and unresolved performance failures. This is not production publication evidence.
+
+## Stock photo delivery investigation — 2026-10-25
+
+The live stock URL audit found 119 lots without URLs and 266 lots whose legacy
+Supabase URLs returned HTTP 402. Do not treat a nonempty URL as photo coverage or
+blindly replace its hostname: all 266 same-key R2 targets initially failed too.
+The supplied workbooks yield exact SHA256/SKU/brand recovery matches for 248
+stock-media records. Their bound plan, rollback journal and per-object full-byte
+receipts are private in the parent workspace review outputs. Final verification
+confirms 248 live lot-image links and matching media links restored, with every
+other field and all current stock quantities preserved. Eighteen legacy URLs and
+119 missing URLs remain. Never run the old
+stock-replacement import to recover photos; quantities and provenance must stay
+intact. Preserve the optional missing/loading/failed photo copy on stock cards.
+See docs/audits/2026-10-25-godown-image-delivery.md for current scope and limits.
+
+## Local stock customer-transfer recovery — 2026-10-25
+
+The unpublished transfer sheet binds metadata/writes to its actor/floor/lot,
+coalesces synchronous submissions, retains an uncertain body/key across mounted
+close/reopen and keeps metadata retry separate from draft initialization. New
+receipts bind the full body/actor in the existing transaction; public views strip
+that internal hash. Preserve sanitized committed-conflict review and explicit
+acknowledgement before clearing a key for a new intent. Confirmed transfers close
+before list refresh completes. Full unmount/reload persistence is still open;
+do not claim durable recovery from the mounted map. The stock hook script and
+four-device stability registry require these scenarios. See
+docs/audits/2026-10-25-godown-transfer-recovery.md for evidence and remaining gates.

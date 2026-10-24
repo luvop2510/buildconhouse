@@ -508,6 +508,18 @@ test('godown replacement inventory renders a bounded batch and searches distant 
     '/api/godown-stock': { lots, brands: [], total_available_qty: 2200,
       total_stock_value: 1100000, unpriced_lot_count: 550 },
   });
+  await page.route('**/api/godown-stock?**', async route => {
+    await new Promise(resolve => setTimeout(resolve, LATENCY_MS));
+    const query = new URL(route.request().url()).searchParams;
+    expect(query.get('limit')).toBe('60');
+    expect(query.get('with_movements')).toBe('false');
+    const matching = lots.filter(lot => `${lot.sku} ${lot.name}`.toLowerCase().includes((query.get('q') || '').toLowerCase()));
+    const offset = Number(query.get('offset') || 0);
+    return route.fulfill({ json: { lots: matching.slice(offset, offset + 60).map(lot => ({ ...lot, history_loaded: false })), brands: [],
+      total_available_qty: 2200, total_stock_value: 1100000, unpriced_lot_count: 550,
+      total_lots: matching.length, available_lot_count: matching.length, unknown_quantity_count: 0, zero_lot_count: 0,
+      next_offset: offset + 60 < matching.length ? offset + 60 : null } });
+  });
   const started = performance.now();
   await page.goto('/godown-stock', { waitUntil: 'domcontentloaded' });
   await expect(page.getByText('Warehouse product 0', { exact: true })).toBeVisible();
@@ -519,8 +531,9 @@ test('godown replacement inventory renders a bounded batch and searches distant 
   await expect(page.getByText('Warehouse product 1099', { exact: true })).toBeVisible();
   const searchMs = performance.now() - searchStarted;
   expect(searchMs).toBeLessThan(1500);
-  expect(data.reads.filter(read => read.path === '/api/godown-stock')).toHaveLength(1);
+  expect(data.reads.filter(read => read.path === '/api/godown-stock')).toHaveLength(2);
+  expect(data.reads.filter(read => read.path.endsWith('/history'))).toHaveLength(0);
   const tasks = await assertHealthyInteraction(page, data);
   await info.attach('godown-inventory-performance', { body: JSON.stringify({ readyMs, searchMs,
-    stockRows: lots.length, initialRenderLimit: 60, fixtureLatencyMs: LATENCY_MS, tasks }), contentType: 'application/json' });
+    stockRows: lots.length, initialResponseRows: 60, initialRenderLimit: 60, fixtureLatencyMs: LATENCY_MS, tasks }), contentType: 'application/json' });
 });

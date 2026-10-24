@@ -198,6 +198,8 @@ def test_stock_photo_upload_requires_update_grant_for_exact_route():
     from services.access_grants import action_for_api_request, resource_for_api_path
     assert resource_for_api_path("/api/godown-stock/lot/image") == "godown_stock"
     assert action_for_api_request("POST", "/api/godown-stock/lot/image") == "update"
+    assert action_for_api_request("POST", "/api/godown-stock/lot/quantity-count") == "update"
+    assert action_for_api_request("POST", "/api/godown-stock/lot/quantity-count/unrelated") == "create"
     assert action_for_api_request("PATCH", "/api/godown-stock/lot/details") == "update"
     assert action_for_api_request("POST", "/api/godown-stock/lot/image/unrelated") == "create"
 

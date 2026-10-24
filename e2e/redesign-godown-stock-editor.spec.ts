@@ -1,6 +1,136 @@
 import { expect, test } from '@playwright/test';
 import { mockSession } from './audit-fixtures';
 
+test('critical stock photos distinguish missing, loading and failed images and recover after replacement', async ({ page }, info) => {
+  await mockSession(page, '/godown-stock', false);
+  let release!: () => void;
+  const heldPhoto = new Promise<void>(resolve => { release = resolve; });
+  let lot = { id: 'photo-state', product_id: 'godown:photo-state', sku: 'PHOTO-1', name: 'Photo review basin',
+    qty_received: 2, available_qty: 2, transferable_qty: 2, unit_price: 100, stock_value: 200,
+    image: 'https://images.test/held-photo.png' as string | null };
+  await page.route('https://images.test/held-photo.png', async route => {
+    await heldPhoto;
+    await route.fulfill({ status: 404 });
+  });
+  await page.route('https://images.test/replacement.png', route => route.fulfill({ status: 200, contentType: 'image/png',
+    body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a2ioAAAAASUVORK5CYII=', 'base64') }));
+  await page.route('**/api/godown-stock?**', route => route.fulfill({ json: {
+    lots: [lot, { ...lot, id: 'no-photo', name: 'Unphotographed basin', image: null }],
+    brands: [], total_available_qty: 4, total_stock_value: 400, unpriced_lot_count: 0,
+  } }));
+  await page.route('**/api/godown-stock/photo-state/details', route => {
+    lot = { ...lot, ...route.request().postDataJSON() };
+    return route.fulfill({ json: lot });
+  });
+  await page.goto('/godown-stock');
+  const card = page.getByTestId('godown-lot-photo-state');
+  await expect(card.getByText('Loading photo', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('godown-lot-no-photo').getByText('Photo needed', { exact: true })).toBeVisible();
+  release();
+  await expect(card.getByText('Photo unavailable', { exact: true })).toBeVisible();
+  await page.getByTestId('godown-edit-photo-state').click();
+  await page.getByTestId('godown-image-url-photo-state').fill('https://images.test/replacement.png');
+  await page.getByTestId('godown-save-photo-state').click();
+  await expect(card.getByText('Photo unavailable', { exact: true })).toHaveCount(0);
+  await expect(card.getByText('Loading photo', { exact: true })).toHaveCount(0);
+  await expect(card.getByLabel('Photo review basin product image')).toBeVisible();
+  await page.screenshot({ path: info.outputPath('stock-photo-states.png'), fullPage: true });
+});
+
+test('critical direct stock intake retries the same command and starts a new key after confirmed success', async ({ page }) => {
+  await mockSession(page, '/godown-stock', false);
+  const lot = { id: 'intake-lot', product_id: 'godown:intake-lot', sku: 'VALVE-1', name: 'Intake valve',
+    qty_received: 3, available_qty: 3, transferable_qty: 3, unit_price: 125, stock_value: 375 };
+  await page.route('**/api/godown-stock?**', route => route.fulfill({ json: {
+    lots: [], brands: [], total_available_qty: 0, total_stock_value: 0, unpriced_lot_count: 0,
+  } }));
+  await page.route('**/api/godown-stock/intake-lot/po-final-matches', route => route.fulfill({ json: { matches: [] } }));
+  const commands: Record<string, unknown>[] = [];
+  await page.route('**/api/godown-stock/direct-intakes', route => {
+    expect(route.request().headers()['x-floor-id']).toBe('first-floor');
+    commands.push(route.request().postDataJSON());
+    // Simulate the server completing intake while its response cannot be used.
+    return route.fulfill(commands.length === 1
+      ? { status: 504, json: { detail: 'Response lost. Retry to confirm this intake.' } }
+      : { json: { ...lot, idempotent: commands.length === 2 } });
+  });
+  await page.goto('/godown-stock');
+  const fill = async () => {
+    await page.getByRole('button', { name: 'Add product to godown', exact: true }).click();
+    await page.getByRole('tab', { name: 'Product not in catalog', exact: true }).click();
+    await page.getByRole('textbox', { name: 'SKU code', exact: true }).fill('VALVE-1');
+    await page.getByRole('textbox', { name: 'Product name', exact: true }).fill('Intake valve');
+    await page.getByRole('textbox', { name: 'Unit price', exact: true }).fill('125');
+    await page.getByRole('textbox', { name: 'Quantity to add', exact: true }).fill('3');
+  };
+  await fill();
+  const submit = page.getByRole('button', { name: 'Add to godown stock', exact: true });
+  await submit.click();
+  await expect.poll(() => commands.length).toBe(1);
+  await expect(submit).toBeEnabled();
+  await expect(page.getByRole('textbox', { name: 'Quantity to add', exact: true })).toHaveValue('3');
+  await submit.click();
+  await expect(submit).toHaveCount(0);
+  expect(commands[1]).toEqual(commands[0]);
+  expect(commands[0].idempotency_key).toMatch(/^[0-9a-f-]{36}$/);
+  await fill();
+  await submit.click();
+  await expect(submit).toHaveCount(0);
+  expect(commands).toHaveLength(3);
+  expect(commands[2].idempotency_key).not.toBe(commands[0].idempotency_key);
+});
+
+test('critical stock refresh preserves another lot draft after transfer and offers recovery on read failure', async ({ page }, info) => {
+  await mockSession(page, '/godown-stock', false);
+  const stock = { id: 'transfer-lot', product_id: 'product', sku: 'TRANSFER', name: 'Transfer basin',
+    brand_name: 'Duravit', qty_received: 2, available_qty: 2, transferable_qty: 2,
+    unit_price: 1000, stock_value: 2000, image: null, price_variants: [] };
+  const draftLot = { ...stock, id: 'draft-lot', sku: 'DRAFT', name: 'Draft basin' };
+  let reads = 0;
+  let transfers = 0;
+  let releaseRefresh!: () => void;
+  const pendingRefresh = new Promise<void>(resolve => { releaseRefresh = resolve; });
+  await page.route('**/api/godown-stock?**', async route => {
+    reads += 1;
+    if (reads === 2) {
+      await pendingRefresh;
+      await route.fulfill({ status: 503, json: { detail: 'Temporary stock read failure' } });
+      return;
+    }
+    await route.fulfill({ json: { lots: [stock, draftLot], brands: [], total_available_qty: 4,
+      total_stock_value: 4000, unpriced_lot_count: 0 } });
+  });
+  await page.route('**/api/customers', route => route.fulfill({ json: [{ id: 'recipient', name: 'Stock recipient' }] }));
+  await page.route('**/api/godown-stock/transfer-lot/po-final-matches', route => route.fulfill({ json: { matches: [] } }));
+  await page.route('**/api/godown-stock/transfer-lot/customer-transfers', route => {
+    transfers += 1;
+    return route.fulfill({ json: { id: 'transfer-receipt', recipient_customer_name: 'Stock recipient' } });
+  });
+  await page.goto('/godown-stock');
+  await page.getByTestId('godown-edit-draft-lot').click();
+  const draft = page.getByTestId('godown-price-draft-lot');
+  await draft.fill('2345');
+  // Keep the exact DOM instance as evidence that refresh did not remount it.
+  await draft.evaluate(input => { (window as any).__stockDraftInput = input; });
+  await page.getByRole('button', { name: 'Transfer Transfer basin to a customer', exact: true }).click();
+  await page.getByTestId('godown-recipient-recipient').click();
+  await page.getByTestId('godown-customer-transfer-submit').click();
+  await expect(page.getByTestId('godown-refresh-status')).toContainText('Refreshing stock');
+  await expect(draft).toHaveValue('2345');
+  expect(await draft.evaluate(input => (window as any).__stockDraftInput === input)).toBe(true);
+  releaseRefresh();
+  await expect(page.getByTestId('godown-refresh-status')).toContainText('Displayed quantities may be out of date');
+  await expect(page.getByTestId('godown-customer-transfer-submit')).toHaveCount(0);
+  await expect(draft).toHaveValue('2345');
+  await page.getByTestId('godown-refresh-status').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: info.outputPath('stock-refresh-draft-recovery.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Retry stock refresh', exact: true }).click();
+  await expect(page.getByTestId('godown-refresh-status')).toHaveCount(0);
+  await expect(draft).toHaveValue('2345');
+  expect(await draft.evaluate(input => (window as any).__stockDraftInput === input)).toBe(true);
+  expect(transfers).toBe(1);
+});
+
 test('critical warehouse stock edits price and image, keeps unknown quantities visible and fits each viewport', async ({ page }, info) => {
   await mockSession(page, '/godown-stock', false);
   let lot = { id: 'duravit-lot', product_id: 'duravit-product', sku: '2328480000',
