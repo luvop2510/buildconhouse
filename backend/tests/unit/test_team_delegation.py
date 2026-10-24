@@ -62,11 +62,11 @@ def owner():
 ])
 async def test_replace_saves_floors_and_all_pages_in_one_atomic_user_write(monkeypatch, floors, grants):
     db = database()
-    revoked = []
-    async def revoke(user_id):
-        revoked.append(user_id)
+    refreshed = []
+    async def refresh(user_id):
+        refreshed.append(user_id)
     monkeypatch.setattr(routes, "db", db)
-    monkeypatch.setattr(routes, "_revoke_grant_subject", revoke)
+    monkeypatch.setattr(routes, "_refresh_grant_subject", refresh)
     result = await routes.replace_access_grants("staff", routes.DelegationInput(floor_ids=floors, grants=grants), owner())
     assert len(db.users.updates) == 1
     saved = db.users.updates[0]["$set"]
@@ -74,7 +74,7 @@ async def test_replace_saves_floors_and_all_pages_in_one_atomic_user_write(monke
     assert saved["delegation_grants"] == result["grants"]
     assert saved["custom_access"] is True and saved["access_profile"] is None
     assert await grants_for_user(db, "staff") == result["grants"]
-    assert revoked == ["staff"]
+    assert refreshed == ["staff"]
 
 
 @pytest.mark.asyncio
@@ -104,10 +104,10 @@ async def test_deleting_final_grant_keeps_default_deny_and_ignores_legacy_rows(m
     db = database()
     snapshot = await build_delegation_snapshot(db, user_id="staff", floor_ids=["ground-floor"], grants=[allocation()], actor_id="owner", actor_name="Owner")
     db.users.doc.update(custom_access=True, floor_ids=["ground-floor"], delegation_grants=snapshot)
-    async def revoke(_user_id):
+    async def refresh(_user_id):
         pass
     monkeypatch.setattr(routes, "db", db)
-    monkeypatch.setattr(routes, "_revoke_grant_subject", revoke)
+    monkeypatch.setattr(routes, "_refresh_grant_subject", refresh)
     await routes.delete_access_grant("staff", snapshot[0]["id"], owner())
     assert db.users.doc["custom_access"] is True
     assert db.users.doc["delegation_grants"] == []
@@ -148,7 +148,7 @@ async def test_custom_team_create_can_have_no_enabled_floors_without_role_fallba
 
 
 @pytest.mark.asyncio
-async def test_team_patch_atomically_replaces_floors_and_grants_and_revokes_sessions(monkeypatch):
+async def test_team_patch_atomically_replaces_floors_and_grants_without_revoking_sessions(monkeypatch):
     db = database()
     revoked = []
     async def revoke(_kind, user_id):
@@ -163,7 +163,7 @@ async def test_team_patch_atomically_replaces_floors_and_grants_and_revokes_sess
     assert result["floor_ids"] == ["ground-floor", "third-floor"]
     assert result["team_role"] == "Delivery lead"
     assert len(result["delegation_grants"]) == 2
-    assert result["access_profile"] is None and revoked == ["staff"]
+    assert result["access_profile"] is None and revoked == []
 
 
 @pytest.mark.asyncio

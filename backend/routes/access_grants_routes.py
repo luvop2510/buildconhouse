@@ -6,7 +6,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from auth import get_current_user, invalidate_principal_cache, require_owner, revoke_all_sessions
+from auth import get_current_user, invalidate_principal_cache, require_owner
 from db import db
 from models import UserPublic
 from services.access_grants import (
@@ -61,11 +61,11 @@ async def _validate_floor(floor_id: str | None) -> None:
         raise HTTPException(status_code=422, detail="floor_id must refer to an active floor")
 
 
-async def _revoke_grant_subject(user_id: str) -> None:
-    # Grant state is authorization state. Revoke every active device so stale
-    # sessions cannot continue after an owner removes or narrows a grant.
+async def _refresh_grant_subject(user_id: str) -> None:
+    # Authorization is loaded from the current user record on API requests.
+    # Refresh cached principal data so grant changes apply immediately, while
+    # preserving the delegate's authenticated devices and current work.
     invalidate_principal_cache("staff", user_id)
-    await revoke_all_sessions("staff", user_id)
 
 
 @router.get("/resources")
@@ -116,7 +116,7 @@ async def replace_access_grants(user_id: str, body: DelegationInput, actor: User
         "floor_ids": body.floor_ids, "delegation_grants": snapshot, "custom_access": True,
         "access_profile": None, "updated_at": utc_now_iso(),
     }})
-    await _revoke_grant_subject(user_id)
+    await _refresh_grant_subject(user_id)
     return {"user_id": user_id, "floor_ids": body.floor_ids, "custom_access": True, "grants": snapshot}
 
 
@@ -148,7 +148,7 @@ async def create_access_grant(
     # applies the grants as a default-deny allow-list.
     await db.users.update_one({"id": user_id}, {"$set": {"custom_access": True, "access_profile": None,
         "delegation_grants": snapshot, "updated_at": utc_now_iso()}})
-    await _revoke_grant_subject(user_id)
+    await _refresh_grant_subject(user_id)
     grant.pop("_id", None)
     return grant
 
@@ -166,5 +166,5 @@ async def delete_access_grant(
         raise HTTPException(status_code=404, detail="Access grant not found")
     await db.users.update_one({"id": user_id}, {"$set": {"custom_access": True, "delegation_grants": snapshot,
         "access_profile": None, "updated_at": utc_now_iso()}})
-    await _revoke_grant_subject(user_id)
+    await _refresh_grant_subject(user_id)
     return {"deleted": True, "id": grant_id}

@@ -509,11 +509,15 @@ async def update_team_member(
     security_fields = ("role", "floor_ids", "access_profile", "custom_access", "delegation_grants", "active")
     security_changed = any(field in patch and patch[field] != before.get(field) for field in security_fields)
     if security_changed:
+        # The authenticated principal and grants are read from the current
+        # user record, not trusted from the login token. Invalidate cached
+        # authorization so floor/page edits apply immediately without signing
+        # the delegate out or discarding their in-progress work.
         invalidate_principal_cache("staff", user_id)
-        # Roles/floors/profiles are authorization claims. Revoke every device
-        # before returning the updated account so stale tokens cannot retain
-        # the old scope for their remaining JWT lifetime.
-        await revoke_all_sessions("staff", user_id)
+        # Deactivation is the exception: revoke sessions so they stay closed
+        # if the account is later re-enabled.
+        if patch.get("active") is False:
+            await revoke_all_sessions("staff", user_id)
     else:
         # Refresh display/contact data without revoking valid sessions.
         invalidate_principal_cache("staff", user_id)
