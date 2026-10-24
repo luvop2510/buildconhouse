@@ -110,3 +110,50 @@ test('unconfigured WhatsApp and unsaved edits do not claim a send', async ({ pag
   await expect(page.getByRole('button', { name: 'Download PDF', exact: true })).toBeDisabled();
   await expect(page.getByText('Save your changes before downloading or sending the PDF.', { exact: true })).toBeVisible();
 });
+
+
+test('furniture PDF file sharing works without a WhatsApp Business provider and exposes no link', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'canShare', { configurable: true, value: () => true });
+    Object.defineProperty(navigator, 'share', { configurable: true, value: async (payload: ShareData) => {
+      const file = payload.files?.[0];
+      (window as unknown as { sharedPdf: unknown }).sharedPdf = {
+        filename: file?.name, type: file?.type, content: await file?.text(), url: payload.url,
+      };
+    } });
+  });
+  await fixture(page, false);
+  await page.route('**/api/furniture-quotations/rmb-one/pdf', route => {
+    expect(route.request().headers()['x-floor-id']).toBe('third-floor');
+    return route.fulfill({ contentType: 'application/pdf', body: '%PDF-1.4 furniture attachment' });
+  });
+  await page.getByTestId('share-furniture-quotation-pdf').click();
+  await page.getByRole('button', { name: 'Save or share', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { sharedPdf: unknown }).sharedPdf)).toEqual({
+    filename: 'RDCL.pdf', type: 'application/pdf', content: '%PDF-1.4 furniture attachment',
+  });
+  await expect(page.getByTestId('share-furniture-quotation-pdf')).toBeEnabled();
+});
+
+test('furniture quotations save the selected architect identity and show studio and customer count', async ({ page }) => {
+  await fixture(page);
+  await page.route('**/api/referrers?include_counts=true', route => {
+    expect(route.request().headers()['x-floor-id']).toBe('third-floor');
+    return route.fulfill({ json: [{ id: 'architect-nts', name: 'Nilesh', company: 'NTS Studio', type: 'architect', customers_acquired: 4 }] });
+  });
+  await page.route('**/api/furniture-quotations/rmb-one', route => {
+    const body = route.request().postDataJSON();
+    expect(body.referrer_id).toBe('architect-nts');
+    expect(body).not.toHaveProperty('referrer_name');
+    expect(body).not.toHaveProperty('referrer_type');
+    return route.fulfill({ json: { ...saved, revision: 2, referrer_id: 'architect-nts',
+      referrer_name: 'Nilesh', referrer_type: 'architect', referrer_company: 'NTS Studio', referrer_customers_acquired: 4 } });
+  });
+  await page.getByRole('button', { name: 'Referred By', exact: true }).click();
+  await expect(page.getByTestId('customer-referrer-sheet')).toContainText('NTS Studio');
+  await page.getByRole('button', { name: 'Nilesh', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Referred By', exact: true })).toContainText('ARC-ARCHITECT-NTS');
+  await page.getByRole('button', { name: 'Save quotation', exact: true }).click();
+  await expect(page.getByText('4 customers brought', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Referred By', exact: true })).toContainText('NTS Studio');
+});

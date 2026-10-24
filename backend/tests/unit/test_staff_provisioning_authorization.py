@@ -93,7 +93,7 @@ def test_team_create_rejects_an_unassigned_non_manager_before_writing(monkeypatc
         asyncio.run(misc_routes.create_team_member(body, admin))
 
 
-def test_clearing_a_profile_preserves_valid_floor_access_and_revokes_sessions(monkeypatch):
+def test_clearing_a_profile_preserves_valid_floor_access_and_revokes_stale_session(monkeypatch):
     before = {
         "id": "staff-1", "email": "staff@example.com", "full_name": "Staff", "role": "sales",
         "floor_ids": ["ground-floor"], "access_profile": "ground_tile_quotations_followups", "active": True,
@@ -131,3 +131,35 @@ def test_clearing_a_profile_preserves_valid_floor_access_and_revokes_sessions(mo
     assert result["floor_ids"] == ["ground-floor"]
     assert revoked == ["staff-1"]
     assert events == ["user.access_profile_changed"]
+
+
+def test_deactivating_staff_revokes_sessions(monkeypatch):
+    stored = {
+        "id": "staff-1", "email": "staff@example.com", "full_name": "Staff", "role": "worker",
+        "floor_ids": ["second-floor"], "custom_access": True, "active": True,
+    }
+
+    class Users:
+        async def find_one(self, *_args, **_kwargs):
+            return stored.copy()
+
+        async def update_one(self, _query, update):
+            stored.update(update["$set"])
+            return SimpleNamespace(matched_count=1)
+
+    revoked: list[tuple[str, str]] = []
+    async def revoke(kind, user_id):
+        revoked.append((kind, user_id))
+    async def log_event(**_kwargs):
+        pass
+
+    monkeypatch.setattr(misc_routes, "db", SimpleNamespace(users=Users()))
+    monkeypatch.setattr(misc_routes, "revoke_all_sessions", revoke)
+    monkeypatch.setattr(misc_routes, "invalidate_principal_cache", lambda *_args: None)
+    monkeypatch.setattr(misc_routes, "log_event", log_event)
+    admin = UserPublic(email="owner@example.com", full_name="Owner", role="owner")
+
+    asyncio.run(misc_routes.update_team_member("staff-1", TeamUpdatePayload(active=False), admin))
+
+    assert stored["active"] is False
+    assert revoked == [("staff", "staff-1")]

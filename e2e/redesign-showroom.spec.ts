@@ -232,6 +232,7 @@ test('critical quotation picker keeps nested dialogs isolated and preserves sele
   await expect(picker).toContainText('1 items in quotation');
   await page.getByTestId('picker-view-quotation').click();
   await expect(picker).toHaveCount(0);
+  await page.getByTestId('mobile-review-quotation').click();
   await expect(page.getByTestId('mobile-finalize')).toBeDisabled(); // Customer is still required.
   await page.screenshot({ path: info.outputPath('quotation-selected.png'), fullPage: true });
   await expect.poll(() => page.evaluate(() => localStorage.getItem('forge.builder.draft.v1.audit-owner.first-floor'))).not.toBeNull();
@@ -242,7 +243,8 @@ test('critical quotation picker keeps nested dialogs isolated and preserves sele
   await expect(recovery).toBeVisible();
   await page.getByRole('button', { name: 'Restore draft', exact: true }).click();
   await expect(recovery).toHaveCount(0);
-  await expect(page.getByText('Basin', { exact: true }).first()).toBeVisible();
+  await page.getByTestId('mobile-review-quotation').click();
+  await expect(page.getByRole('button', { name: 'Reorder Basin · White', exact: true })).toBeVisible();
   await expect(page.getByTestId('mobile-finalize')).toBeDisabled();
 });
 

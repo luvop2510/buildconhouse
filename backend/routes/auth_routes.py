@@ -3,10 +3,11 @@ from typing import Optional
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from starlette.concurrency import run_in_threadpool
 
 from auth import (
     apply_effective_floor_ids, apply_staff_password_policy, create_session, create_token, decode_token, get_current_customer, get_current_session, get_current_user,
-    hash_password, invalidate_principal_cache, require_owner, verify_password,
+    hash_password, invalidate_principal_cache, verify_password,
 )
 from db import db
 from models import (
@@ -18,6 +19,7 @@ from services.invite_service import is_temp_password_expired
 from services.rate_limit import clear_login_attempts, reserve_login_attempt
 from services import mfa
 from services.password_policy import is_known_default_password
+from services.team_credentials import encrypt_password
 from services.login_identity import normalize_login_id
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -46,7 +48,45 @@ async def _revoke_other_sessions(kind: str, user_id: str, authorization: Optiona
     query: dict = {"user_type": kind, "user_id": user_id, "revoked": {"$ne": True}}
     if current_sid:
         query["id"] = {"$ne": current_sid}
-    await db.user_sessions.update_many(query, {"$set": {"revoked": True}})
+    try:
+        await db.user_sessions.update_many(query, {"$set": {"revoked": True}})
+    finally:
+        invalidate_principal_cache(kind, user_id)
+
+
+async def _revalidate_password_login(kind: str, proved: dict, sid: str) -> dict:
+    """Bind an already-issued session to current credentials and permissions.
+
+    A reset can finish while password/MFA proof runs off-thread. Insert the
+    session before rereading identity: an earlier reset is detected here and
+    a later reset's ordinary revocation sees this session. Never return proof
+    from the stale pre-verification principal or expose credential material.
+    """
+    collection = db.users if kind == "staff" else db.customers
+    try:
+        current = await collection.find_one(
+            {"id": proved["id"], "password_hash": proved["password_hash"]}, {"_id": 0},
+        )
+        if not current or current.get("deleted_at"):
+            raise HTTPException(status_code=401, detail="Account changed. Please sign in again.")
+        if not current.get("active", True):
+            raise HTTPException(status_code=403, detail="Account disabled")
+        if kind == "staff":
+            if (bool(current.get("mfa_enabled")) != bool(proved.get("mfa_enabled"))
+                    or current.get("mfa_version", 0) != proved.get("mfa_version", 0)):
+                raise HTTPException(status_code=401, detail="Second-factor settings changed. Please sign in again.")
+        else:
+            if not current.get("portal_enabled"):
+                raise HTTPException(status_code=403, detail="Portal access is disabled for this account. Contact your account manager.")
+            if current.get("must_change_password") and is_temp_password_expired(current.get("temp_password_expires_at")):
+                raise HTTPException(status_code=401, detail="This temporary password has expired. Ask your account manager to resend the invite.")
+        return current
+    except Exception:
+        await db.user_sessions.update_one(
+            {"id": sid, "user_type": kind, "user_id": proved["id"]}, {"$set": {"revoked": True}},
+        )
+        invalidate_principal_cache(kind, proved["id"])
+        raise
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -60,22 +100,26 @@ async def staff_login(body: LoginPayload, request: Request):
     # separately indexed; full names never become an implicit login alias.
     query = {"email": identifier} if "@" in identifier else {"login_id_key": identifier}
     doc = await db.users.find_one(query, {"_id": 0})
-    if not doc or not verify_password(body.password, doc.get("password_hash", "")):
+    # bcrypt deliberately costs CPU. Keep it off the API event loop so a
+    # password check cannot pause unrelated requests or readiness probes.
+    if not doc or not await run_in_threadpool(verify_password, body.password, doc.get("password_hash", "")):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     if not doc.get("active", True):
         raise HTTPException(status_code=403, detail="Account disabled")
     doc = apply_staff_password_policy(doc)
     if doc.get("mfa_enabled"):
         await mfa.consume_factor(doc, body.mfa_code, body.recovery_code)
-    await clear_login_attempts(ip, identifier)
     sid = await create_session("staff", doc["id"], request, login_method="password+mfa" if doc.get("mfa_enabled") else "password")
     if doc.get("mfa_enabled"):
         await db.user_sessions.update_one({"id": sid}, {"$set": {"mfa_verified": True, "mfa_version": doc.get("mfa_version", 0)}})
+    doc = apply_staff_password_policy(await _revalidate_password_login("staff", doc, sid))
+    await clear_login_attempts(ip, identifier)
     token = create_token(doc["id"], "staff", {
         "role": doc["role"], "session_id": sid, "access_profile": doc.get("access_profile"),
         "custom_access": bool(doc.get("custom_access")),
     })
     doc.pop("password_hash", None)
+    doc.pop("password_encrypted", None)
     await log_event(
         event_type="user.login", entity_type="user", entity_id=doc["id"],
         actor_id=doc["id"], actor_name=doc.get("full_name"), summary="Staff Login",
@@ -92,10 +136,10 @@ async def staff_me(user: UserPublic = Depends(get_current_user)):
 async def staff_change_password(
     body: ChangePasswordPayload,
     request: Request,
-    user: UserPublic = Depends(require_owner),
+    user: UserPublic = Depends(get_current_user),
     authorization: Optional[str] = Header(None),
 ):
-    """Only owners can change their own password, with their current password.
+    """Every staff member can change their own password with their current password.
 
     Security: a valid session token alone (stolen or leaked) doesn't hand an
     attacker the account — they still need the CURRENT password, and this
@@ -103,24 +147,28 @@ async def staff_change_password(
     Reuses the same (ip, identifier) rate limiter as /login, keyed on the
     user's own id rather than email so it's scoped per-account regardless of
     what email is on file."""
-    require_owner(user)
     ip = _client_ip(request)
     await reserve_login_attempt(ip, f"staff-pw:{user.id}")
     doc = await db.users.find_one({"id": user.id}, {"_id": 0, "password_hash": 1})
-    if not doc or not verify_password(body.current_password, doc.get("password_hash", "")):
+    if not doc or not await run_in_threadpool(verify_password, body.current_password, doc.get("password_hash", "")):
         raise HTTPException(status_code=401, detail="Current password is incorrect")
     await clear_login_attempts(ip, f"staff-pw:{user.id}")
-    await db.users.update_one(
-        {"id": user.id},
+    result = await db.users.update_one(
+        {"id": user.id, "password_hash": doc["password_hash"], "active": {"$ne": False}, "deleted_at": {"$exists": False}},
         {"$set": {
-            "password_hash": hash_password(body.new_password),
+            "password_hash": await run_in_threadpool(hash_password, body.new_password),
+            "password_encrypted": encrypt_password(body.new_password, user.id),
             "must_change_password": False,
             "temp_password_expires_at": None,
             "updated_at": now_iso(),
         }},
     )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=409, detail="Your account changed. Sign in again before changing the password")
     invalidate_principal_cache("staff", user.id)
     await _revoke_other_sessions("staff", user.id, authorization)
+    await log_event(event_type="user.password_changed", entity_type="user", entity_id=user.id,
+                    actor=user, summary="Staff Password Changed")
     return {"changed": True}
 
 
@@ -131,7 +179,7 @@ async def customer_login(body: CustomerLoginPayload, request: Request):
     if is_known_default_password(body.password):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     doc = await db.customers.find_one({"email": body.email.lower()}, {"_id": 0})
-    if not doc or not doc.get("password_hash") or not verify_password(body.password, doc["password_hash"]):
+    if not doc or not doc.get("password_hash") or not await run_in_threadpool(verify_password, body.password, doc["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     if not doc.get("portal_enabled"):
         raise HTTPException(status_code=403, detail="Portal access is disabled for this account. Contact your account manager.")
@@ -140,8 +188,9 @@ async def customer_login(body: CustomerLoginPayload, request: Request):
             status_code=401,
             detail="This temporary password has expired. Ask your account manager to resend the invite.",
         )
-    await clear_login_attempts(ip, body.email)
     sid = await create_session("customer", doc["id"], request, login_method="password")
+    doc = await _revalidate_password_login("customer", doc, sid)
+    await clear_login_attempts(ip, body.email)
     token = create_token(doc["id"], "customer", {"session_id": sid})
     doc.pop("password_hash", None)
     await log_event(
@@ -165,18 +214,20 @@ async def customer_change_password(
     ip = _client_ip(request)
     await reserve_login_attempt(ip, f"customer-pw:{cust.id}")
     doc = await db.customers.find_one({"id": cust.id}, {"_id": 0, "password_hash": 1})
-    if not doc or not doc.get("password_hash") or not verify_password(body.current_password, doc["password_hash"]):
+    if not doc or not doc.get("password_hash") or not await run_in_threadpool(verify_password, body.current_password, doc["password_hash"]):
         raise HTTPException(status_code=401, detail="Current password is incorrect")
     await clear_login_attempts(ip, f"customer-pw:{cust.id}")
-    await db.customers.update_one(
-        {"id": cust.id},
+    result = await db.customers.update_one(
+        {"id": cust.id, "password_hash": doc["password_hash"]},
         {"$set": {
-            "password_hash": hash_password(body.new_password),
+            "password_hash": await run_in_threadpool(hash_password, body.new_password),
             "must_change_password": False,
             "temp_password_expires_at": None,
             "updated_at": now_iso(),
         }},
     )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=409, detail="Your account changed. Sign in again before changing the password")
     invalidate_principal_cache("customer", cust.id)
     await _revoke_other_sessions("customer", cust.id, authorization)
     return {"changed": True}
@@ -214,7 +265,10 @@ async def logout_current_session(authorization: Optional[str] = Header(None)):
     if not sid:
         return {"revoked": False}
     invalidate_principal_cache(payload.get("kind", ""), payload.get("sub", ""), sid)
-    await db.user_sessions.update_one({"id": sid}, {"$set": {"revoked": True}})
+    try:
+        await db.user_sessions.update_one({"id": sid}, {"$set": {"revoked": True}})
+    finally:
+        invalidate_principal_cache(payload.get("kind", ""), payload.get("sub", ""), sid)
     return {"revoked": True}
 
 
@@ -239,9 +293,12 @@ async def logout_all_sessions(session: tuple[str, str, str] = Depends(get_curren
     """Revoke every active session for this user — 'logout from all devices'."""
     kind, sub, _ = session
     invalidate_principal_cache(kind, sub)
-    res = await db.user_sessions.update_many(
-        {"user_type": kind, "user_id": sub, "revoked": {"$ne": True}}, {"$set": {"revoked": True}},
-    )
+    try:
+        res = await db.user_sessions.update_many(
+            {"user_type": kind, "user_id": sub, "revoked": {"$ne": True}}, {"$set": {"revoked": True}},
+        )
+    finally:
+        invalidate_principal_cache(kind, sub)
     return {"revoked_count": res.modified_count}
 
 
@@ -249,9 +306,12 @@ async def logout_all_sessions(session: tuple[str, str, str] = Depends(get_curren
 async def revoke_one_session(session_id: str, session: tuple[str, str, str] = Depends(get_current_session)):
     kind, sub, _ = session
     invalidate_principal_cache(kind, sub, session_id)
-    res = await db.user_sessions.update_one(
-        {"id": session_id, "user_type": kind, "user_id": sub}, {"$set": {"revoked": True}},
-    )
+    try:
+        res = await db.user_sessions.update_one(
+            {"id": session_id, "user_type": kind, "user_id": sub}, {"$set": {"revoked": True}},
+        )
+    finally:
+        invalidate_principal_cache(kind, sub, session_id)
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Session not found")
     return {"revoked": True}
@@ -262,7 +322,7 @@ async def revoke_one_session(session_id: str, session: tuple[str, str, str] = De
 async def _mfa_password(body: MFAProofPayload, request: Request, user: UserPublic) -> dict:
     await reserve_login_attempt(_client_ip(request), f"staff-mfa:{user.id}")
     doc = await db.users.find_one({"id": user.id}, {"_id": 0})
-    if not doc or not verify_password(body.current_password, doc.get("password_hash", "")):
+    if not doc or not await run_in_threadpool(verify_password, body.current_password, doc.get("password_hash", "")):
         raise HTTPException(status_code=401, detail="Current password is incorrect")
     return doc
 
@@ -273,12 +333,15 @@ async def _mfa_sessions(user: UserPublic, version: int, enabled: bool) -> None:
     query = {"user_type": "staff", "user_id": user.id, "revoked": {"$ne": True}}
     if user.session_id:
         query["id"] = {"$ne": user.session_id}
-    await db.user_sessions.update_many(query, {"$set": {"revoked": True}})
-    if user.session_id:
-        await db.user_sessions.update_one(
-            {"id": user.session_id, "user_type": "staff", "user_id": user.id, "revoked": {"$ne": True}},
-            {"$set": {"mfa_verified": enabled, "mfa_version": version}},
-        )
+    try:
+        await db.user_sessions.update_many(query, {"$set": {"revoked": True}})
+        if user.session_id:
+            await db.user_sessions.update_one(
+                {"id": user.session_id, "user_type": "staff", "user_id": user.id, "revoked": {"$ne": True}},
+                {"$set": {"mfa_verified": enabled, "mfa_version": version}},
+            )
+    finally:
+        invalidate_principal_cache("staff", user.id)
 
 
 @router.get("/mfa/status")

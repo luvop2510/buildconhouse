@@ -80,7 +80,67 @@ test('critical six-character passwords: member reset rejects five and accepts si
   await page.getByTestId('edit-staff-confirm-password').fill('123456');
   await page.getByTestId('edit-staff-set-password').click();
   await expect(page.getByTestId('temp-password-value')).toHaveText('123456');
-  expect(writes[0].body).toEqual({ new_password: '123456' });
+  expect(writes[0].body).toEqual({ new_password: '123456', confirm_password: '123456' });
+});
+
+for (const clipboard of ['denied', 'unavailable', 'success'] as const) {
+  test(`critical password clipboard: ${clipboard} reports only acknowledged copies`, async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.addInitScript(mode => {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: mode === 'unavailable' ? undefined : {
+        writeText: async () => {
+          if (mode === 'denied') throw new DOMException('Permission denied', 'NotAllowedError');
+        },
+      } });
+      // The SDK's legacy web fallback used to report success despite false.
+      document.execCommand = () => false;
+    }, clipboard);
+    await teamFixture(page);
+    await page.getByTestId('team-row-test-worker').click();
+    await page.getByTestId('edit-staff-password').fill('123456');
+    await page.getByTestId('edit-staff-confirm-password').fill('123456');
+    await page.getByTestId('edit-staff-set-password').click();
+    await page.getByTestId('temp-password-copy').click();
+    if (clipboard === 'success') {
+      await expect(page.getByTestId('temp-password-copy')).toHaveAccessibleName('Copied');
+      await expect(page.getByText('Copied to clipboard', { exact: true })).toBeVisible();
+    } else {
+      await expect(page.getByText('Could not copy. Select the password to copy it manually.', { exact: true })).toBeVisible();
+      await expect(page.getByTestId('temp-password-copy')).toHaveAccessibleName('Copy password');
+      await expect(page.getByTestId('temp-password-value')).toHaveText('123456');
+    }
+    expect(errors).toEqual([]);
+  });
+}
+
+test('critical password clipboard: a delayed copy cannot mark a reopened credential as copied', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+      writeText: () => new Promise<void>(resolve => { (window as any).finishCredentialCopy = resolve; }),
+    } });
+  });
+  await teamFixture(page);
+  await page.getByTestId('team-row-test-worker').click();
+  const reset = async (password: string) => {
+    await page.getByTestId('edit-staff-password').fill(password);
+    await page.getByTestId('edit-staff-confirm-password').fill(password);
+    await page.getByTestId('edit-staff-set-password').click();
+    await expect(page.getByTestId('temp-password-value')).toHaveText(password);
+  };
+  await reset('123456');
+  await page.getByTestId('temp-password-copy').click();
+  await expect.poll(() => page.evaluate(() => typeof (window as any).finishCredentialCopy)).toBe('function');
+  await page.getByTestId('temp-password-done').click();
+  // Password reset closes the staff editor before showing the credential.
+  // Reopen that editor to issue the second credential through the real flow.
+  await page.getByTestId('team-row-test-worker').click();
+  await reset('654321');
+  await page.evaluate(() => (window as any).finishCredentialCopy());
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await expect(page.getByTestId('temp-password-copy')).toHaveAccessibleName('Copy password');
+  await expect(page.getByTestId('temp-password-copy')).toBeEnabled();
+  await expect(page.getByText('Copied to clipboard', { exact: true })).toHaveCount(0);
 });
 
 test('critical six-character passwords: owner change rejects five and accepts six', async ({ page }) => {
@@ -94,14 +154,20 @@ test('critical six-character passwords: owner change rejects five and accepts si
   await page.getByTestId('current-password-input').fill('existing-password');
   await page.getByTestId('new-password-input').fill('12345');
   await page.getByTestId('confirm-password-input').fill('12345');
+  await expect(page.getByTestId('current-password-input')).toHaveValue('existing-password');
+  await expect(page.getByTestId('new-password-input')).toHaveValue('12345');
+  await expect(page.getByTestId('confirm-password-input')).toHaveValue('12345');
   await page.getByTestId('save-password-btn').click();
   await expect(page.getByText('New password must be at least 6 characters', { exact: true })).toBeVisible();
   expect(writes).toHaveLength(0);
   await page.getByTestId('new-password-input').fill('123456');
   await page.getByTestId('confirm-password-input').fill('123456');
+  await expect(page.getByTestId('current-password-input')).toHaveValue('existing-password');
+  await expect(page.getByTestId('new-password-input')).toHaveValue('123456');
+  await expect(page.getByTestId('confirm-password-input')).toHaveValue('123456');
   await page.getByTestId('save-password-btn').click();
   await expect(page).toHaveURL(/\/settings$/);
-  expect(writes).toEqual([{ current_password: 'existing-password', new_password: '123456' }]);
+  expect(writes).toEqual([{ current_password: 'existing-password', new_password: '123456', confirm_password: '123456' }]);
 });
 
 // These browser journeys exercise the release export and intercept every API
@@ -301,22 +367,22 @@ test('critical team delegation: custom Settings preserves account controls and h
   for (const id of ['team', 'permissions', 'access-grants', 'company', 'pdf', 'catalog', 'walkins', 'notifications', 'system']) await expect(page.getByTestId(`settings-nav-${id}`)).toHaveCount(0);
   await expect(page.getByText('No active sessions found.', { exact: true })).toBeVisible();
   expect(sessionReads).toBe(1);
-  await expect(page.getByTestId('settings-nav-password')).toHaveCount(0);
-  await expect(page.getByTestId('settings-owner-managed-password')).toBeVisible();
+  await expect(page.getByTestId('settings-nav-password')).toBeVisible();
+  await expect(page.getByTestId('settings-owner-managed-password')).toHaveCount(0);
 });
 
 
 test('critical team delegation: account password deep link survives hydration and root still lands on no access', async ({ page }) => {
   await personalSession(page, [], '/settings-password');
   await expect(page).toHaveURL(/\/settings-password$/);
-  await expect(page.getByRole('heading', { name: 'Password managed by owner', exact: true })).toBeVisible();
-  await expect(page.getByTestId('owner-managed-password')).toBeVisible();
-  await expect(page.getByTestId('current-password-input')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Change password', exact: true })).toBeVisible();
+  await expect(page.getByTestId('owner-managed-password')).toHaveCount(0);
+  await expect(page.getByTestId('current-password-input')).toBeVisible();
   await expect(page.getByTestId('no-page-access')).toHaveCount(0);
   await page.reload();
   await expect(page).toHaveURL(/\/settings-password$/);
-  await expect(page.getByTestId('owner-managed-password')).toBeVisible();
-  await expect(page.getByTestId('current-password-input')).toHaveCount(0);
+  await expect(page.getByTestId('owner-managed-password')).toHaveCount(0);
+  await expect(page.getByTestId('current-password-input')).toBeVisible();
   await page.goto('/');
   await expect(page).toHaveURL(/\/access$/);
   await expect(page.getByTestId('no-page-access')).toBeVisible();
@@ -332,18 +398,18 @@ test('critical team delegation: no assigned floors keeps personal security pages
   }, []);
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByText('Ground Floor Sales', { exact: true })).toBeVisible();
-  await expect(page.getByTestId('settings-nav-password')).toHaveCount(0);
-  await expect(page.getByTestId('settings-owner-managed-password')).toBeVisible();
+  await expect(page.getByTestId('settings-nav-password')).toBeVisible();
+  await expect(page.getByTestId('settings-owner-managed-password')).toHaveCount(0);
   await expect(page.getByTestId('settings-nav-mfa')).toBeVisible();
   await expect(page.getByTestId('logout-all-devices')).toBeVisible();
   await expect(page.getByTestId('floor-access-empty')).toHaveCount(0);
   await page.goto('/settings-password');
-  await expect(page.getByTestId('owner-managed-password')).toBeVisible();
-  await expect(page.getByTestId('current-password-input')).toHaveCount(0);
+  await expect(page.getByTestId('owner-managed-password')).toHaveCount(0);
+  await expect(page.getByTestId('current-password-input')).toBeVisible();
   await expect(page).toHaveURL(/\/settings-password$/);
   await page.reload();
-  await expect(page.getByTestId('owner-managed-password')).toBeVisible();
-  await expect(page.getByTestId('current-password-input')).toHaveCount(0);
+  await expect(page.getByTestId('owner-managed-password')).toHaveCount(0);
+  await expect(page.getByTestId('current-password-input')).toBeVisible();
   await expect(page).toHaveURL(/\/settings-password$/);
   await page.goto('/settings-mfa');
   await expect(page.getByRole('heading', { name: 'Authenticator MFA', exact: true })).toBeVisible();
@@ -364,12 +430,12 @@ test('critical team delegation: a no-floor member with a legacy password flag ca
   await page.goto('/settings');
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByTestId('force-change-current')).toHaveCount(0);
-  await expect(page.getByTestId('settings-owner-managed-password')).toBeVisible();
-  await expect(page.getByTestId('settings-nav-password')).toHaveCount(0);
+  await expect(page.getByTestId('settings-owner-managed-password')).toHaveCount(0);
+  await expect(page.getByTestId('settings-nav-password')).toBeVisible();
 });
 
 
-test('critical team passwords: owner sets one member password and it remains owner managed', async ({ page }) => {
+test('critical team passwords: owner resets one member password and the member can change it', async ({ page }) => {
   const { writes } = await teamFixture(page);
   await page.getByTestId('team-row-test-worker').click();
   await expect(page.getByTestId('edit-staff-set-password')).toHaveAccessibleName('Save entered password');
@@ -381,8 +447,8 @@ test('critical team passwords: owner sets one member password and it remains own
   await page.getByTestId('edit-staff-set-password').click();
   await expect(page.getByTestId('temp-password-dialog')).toBeVisible();
   await expect(page.getByTestId('temp-password-value')).toHaveText('SpecificMember!2026');
-  await expect(page.getByText('This password applies only to this account and remains valid until the owner changes it. The member cannot change it.', { exact: true })).toBeVisible();
-  expect(writes).toEqual([{ path: '/api/team/test-worker/reset-password', method: 'POST', body: { new_password: 'SpecificMember!2026' } }]);
+  await expect(page.getByText('The member can change this password in Settings using their old password. The owner can also reset it.', { exact: true })).toBeVisible();
+  expect(writes).toEqual([{ path: '/api/team/test-worker/reset-password', method: 'POST', body: { new_password: 'SpecificMember!2026', confirm_password: 'SpecificMember!2026' } }]);
   await page.getByTestId('temp-password-done').click();
   await expect(page.getByTestId('temp-password-value')).toHaveCount(0);
 });
@@ -413,21 +479,32 @@ test('critical team members: delete requires confirmation and removes only that 
 });
 
 for (const role of ['admin', 'manager', 'sales', 'purchase', 'warehouse', 'accounts', 'worker']) {
-  test(`critical ${role} cannot use member management or own password changes`, async ({ page }) => {
+  test(`critical ${role} cannot manage members and can change own password`, async ({ page }) => {
     let managementRequests = 0;
+    const passwordWrites: unknown[] = [];
     await mockSession(page, '/team', false, { staff: { ...member, role, custom_access: false } });
     await page.route('**/api/team**', route => { managementRequests++; return route.fulfill({ status: 403, json: { detail: 'Owner only' } }); });
+    await page.route('**/api/auth/change-password', route => {
+      passwordWrites.push(route.request().postDataJSON());
+      return route.fulfill({ json: { changed: true } });
+    });
     await page.goto('/team');
     await expect(page.getByTestId('team-owner-only')).toBeVisible();
     await expect(page.getByTestId('team-add-btn')).toHaveCount(0);
     expect(managementRequests).toBe(0);
     await page.goto('/settings');
-    await expect(page.getByTestId('settings-owner-managed-password')).toBeVisible();
+    await expect(page.getByTestId('settings-owner-managed-password')).toHaveCount(0);
     await expect(page.getByTestId('settings-nav-team')).toHaveCount(0);
-    await expect(page.getByTestId('settings-nav-password')).toHaveCount(0);
+    await expect(page.getByTestId('settings-nav-password')).toBeVisible();
     await page.goto('/settings-password');
-    await expect(page.getByTestId('owner-managed-password')).toBeVisible();
-    await expect(page.getByTestId('save-password-btn')).toHaveCount(0);
+    await expect(page.getByTestId('owner-managed-password')).toHaveCount(0);
+    await page.getByTestId('current-password-input').fill('CurrentMember!2026');
+    await page.getByTestId('new-password-input').fill('UpdatedMember!2026');
+    await page.getByTestId('confirm-password-input').fill('UpdatedMember!2026');
+    await page.getByTestId('save-password-btn').click();
+    await expect(page).toHaveURL(/\/settings$/);
+    expect(passwordWrites).toEqual([{ current_password: 'CurrentMember!2026', new_password: 'UpdatedMember!2026', confirm_password: 'UpdatedMember!2026' }]);
+    expect(managementRequests).toBe(0);
   });
 }
 
@@ -496,9 +573,9 @@ test('critical team contacts: malformed legacy responses cannot crash display or
   await expect(page.getByTestId('team-email-test-worker')).toHaveCount(0);
   await expect(page.getByTestId('team-phone-test-worker')).toHaveCount(0);
   await page.getByTestId('team-row-test-worker').click();
-  for (const field of ['email', 'phone', 'mobile']) await expect(page.getByTestId(`edit-staff-${field}`)).toHaveValue('');
+  for (const field of ['email', 'phone']) await expect(page.getByTestId(`edit-staff-${field}`)).toHaveValue('');
   if ((page.viewportSize()?.width || 0) >= 768) {
-    const boxes = await Promise.all(['phone', 'mobile', 'email'].map(field => page.getByTestId(`edit-staff-${field}`).boundingBox()));
+    const boxes = await Promise.all(['phone', 'email'].map(field => page.getByTestId(`edit-staff-${field}`).boundingBox()));
     for (const box of boxes) expect(box).not.toBeNull();
     expect(Math.max(...boxes.map(box => box!.y)) - Math.min(...boxes.map(box => box!.y))).toBeLessThan(2);
   }
@@ -518,17 +595,17 @@ test('critical team contacts: username-only creation, contact changes, clearing,
   await fillNewMember(page);
   await page.getByTestId('add-staff-email').fill('');
   await page.getByTestId('add-staff-phone').fill('+91 (079) 2345-6789');
-  await page.getByTestId('add-staff-mobile').fill('+91 98765 43210');
+  await expect(page.getByTestId('add-staff-mobile')).toHaveCount(0);
   await page.getByTestId('add-staff-save').click();
   const row = page.getByTestId('team-row-created-worker');
   await expect(row).toBeVisible();
   await expect(page.getByTestId('team-email-created-worker')).toHaveCount(0);
-  expect(writes[0].body).toMatchObject({ email: null, phone: '+91 (079) 2345-6789', mobile: '+91 98765 43210', login_id: 'NEW WORKER' });
+  expect(writes[0].body).toMatchObject({ email: null, phone: '+91 (079) 2345-6789', login_id: 'NEW WORKER' });
   await page.reload();
   await expect(row).toBeVisible();
   await row.click();
   await expect(page.getByTestId('edit-staff-phone')).toHaveValue('+91 (079) 2345-6789');
-  await expect(page.getByTestId('edit-staff-mobile')).toHaveValue('+91 98765 43210');
+  await expect(page.getByTestId('edit-staff-mobile')).toHaveCount(0);
   await page.getByTestId('edit-staff-email').fill(' new-worker@example.test ');
   await page.getByTestId('edit-staff-save').click();
   await expect(page.getByTestId('team-email-created-worker')).toHaveText('new-worker@example.test');
@@ -536,12 +613,11 @@ test('critical team contacts: username-only creation, contact changes, clearing,
   await page.reload();
   await row.click();
   await page.getByTestId('edit-staff-phone').fill('');
-  await page.getByTestId('edit-staff-mobile').fill('');
   await page.getByTestId('edit-staff-email').fill('');
   await page.getByTestId('edit-staff-save').click();
   await expect(page.getByTestId('team-phone-created-worker')).toHaveCount(0);
   await expect(page.getByTestId('team-email-created-worker')).toHaveCount(0);
-  expect(writes[2].body).toEqual({ email: null, phone: null, mobile: null });
+  expect(writes[2].body).toEqual({ email: null, phone: null });
   await page.reload();
   await row.click();
   await page.getByTestId('edit-staff-delete').click();
@@ -559,7 +635,6 @@ test('critical team contacts: invalid inputs block writes and preserve the draft
   for (const [id, value, message] of [
     ['email', 'bad-address', 'Enter a valid email address'],
     ['phone', '123', 'Phone must contain 7–15 digits, with an optional country code'],
-    ['mobile', '+91 abc 1234567', 'Mobile must contain 7–15 digits, with an optional country code'],
   ]) {
     await page.getByTestId(`add-staff-${id}`).fill(value);
     await page.getByTestId('add-staff-save').click();
@@ -572,6 +647,27 @@ test('critical team contacts: invalid inputs block writes and preserve the draft
   await expect(page.getByRole('alert')).toHaveText('Add an email or username so this person can sign in');
   await expect(page.getByTestId('add-staff-name')).toHaveValue('New Worker');
   expect(writes).toHaveLength(0);
+});
+
+test('critical team contacts: legacy mobile-only number stays usable through the unified Phone field', async ({ page }) => {
+  const { state, writes } = await teamFixture(page);
+  state.members[0] = { ...state.members[0], phone: null, mobile: '9876543210' };
+  await page.reload();
+  await expect(page.getByTestId('team-phone-test-worker')).toHaveText('Phone: 9876543210');
+  await page.getByTestId('team-row-test-worker').click();
+  await expect(page.getByTestId('edit-staff-phone')).toHaveValue('9876543210');
+  await expect(page.getByTestId('edit-staff-mobile')).toHaveCount(0);
+  await page.getByTestId('edit-staff-email').fill('updated@example.test');
+  await page.getByTestId('edit-staff-save').click();
+  await expect(page.getByTestId('edit-staff-sheet')).toHaveCount(0);
+  expect(writes[0].body).toEqual({ email: 'updated@example.test' });
+  await page.getByTestId('team-row-test-worker').click();
+  await page.getByTestId('edit-staff-phone').fill('');
+  await page.getByTestId('edit-staff-save').click();
+  await expect(page.getByTestId('edit-staff-sheet')).toHaveCount(0);
+  expect(writes[1].body).toEqual({ phone: null, mobile: null });
+  await page.reload();
+  await expect(page.getByTestId('team-phone-test-worker')).toHaveCount(0);
 });
 
 test('critical team contacts: contact-only edits preserve legacy role and credentials when access fails', async ({ page }) => {
@@ -593,11 +689,11 @@ test('critical team contacts: JK owner contact save never rewrites identity or a
   state.members = [{ ...member, id: 'audit-owner', login_id: 'JK', full_name: 'JK PATEL', role: 'owner' }];
   await page.reload();
   await page.getByTestId('team-row-audit-owner').click();
-  await page.getByTestId('edit-staff-mobile').fill('+91 98765 43210');
+  await page.getByTestId('edit-staff-phone').fill('+91 98765 43210');
   await page.getByTestId('edit-staff-save').click();
   await expect(page.getByTestId('edit-staff-sheet')).toHaveCount(0);
-  expect(writes[0]).toMatchObject({ path: '/api/team/audit-owner', body: { mobile: '+91 98765 43210' } });
-  expect(Object.keys(writes[0].body)).toEqual(['mobile']);
+  expect(writes[0]).toMatchObject({ path: '/api/team/audit-owner', body: { phone: '+91 98765 43210' } });
+  expect(Object.keys(writes[0].body)).toEqual(['phone']);
   await page.reload();
   await expect(page.getByTestId('team-add-btn')).toBeVisible();
 });
@@ -668,4 +764,96 @@ test('critical team contacts: a delayed older refresh cannot resurrect a deleted
   await oldResponse;
   await expect(page.getByTestId('team-row-test-worker')).toHaveCount(0);
   await expect(page.getByText('No team members', { exact: true })).toBeVisible();
+});
+
+
+test('critical team password: owner can reveal, hide and reopen without retaining credentials', async ({ page }) => {
+  await teamFixture(page);
+  let reads = 0;
+  await page.route('**/api/team/test-worker/password', route => {
+    reads++;
+    return route.fulfill({ json: { password: 'CurrentMember!2026', reset_required: false } });
+  });
+  await page.getByTestId('team-row-test-worker').click();
+  await expect(page.getByTestId('edit-staff-current-password')).toHaveCount(0);
+  await page.getByTestId('edit-staff-view-password').click();
+  await expect(page.getByTestId('edit-staff-current-password')).toHaveText('CurrentMember!2026');
+  await page.getByTestId('edit-staff-view-password').click();
+  await expect(page.getByTestId('edit-staff-current-password')).toHaveCount(0);
+  expect(reads).toBe(1);
+  await page.getByTestId('edit-staff-view-password').click();
+  await expect(page.getByTestId('edit-staff-current-password')).toBeVisible();
+  await page.getByTestId('edit-staff-sheet').getByRole('button', { name: 'Close', exact: true }).click();
+  await page.getByTestId('team-row-test-worker').click();
+  await expect(page.getByTestId('edit-staff-current-password')).toHaveCount(0);
+});
+
+
+test('critical team password: legacy password offers a simple reset', async ({ page }) => {
+  const { writes } = await teamFixture(page);
+  await page.route('**/api/team/test-worker/password', route => route.fulfill({ json: { password: null, reset_required: true } }));
+  await page.getByTestId('team-row-test-worker').click();
+  await page.getByTestId('edit-staff-view-password').click();
+  await expect(page.getByTestId('edit-staff-password-unavailable')).toContainText('Reset it below');
+  await page.getByTestId('edit-staff-password').fill('RememberMe!2026');
+  await page.getByTestId('edit-staff-confirm-password').fill('Different!2026');
+  await page.getByTestId('edit-staff-set-password').click();
+  await expect(page.getByText("Passwords don't match", { exact: true })).toBeVisible();
+  expect(writes).toHaveLength(0);
+  await page.getByTestId('edit-staff-confirm-password').fill('RememberMe!2026');
+  await page.getByTestId('edit-staff-set-password').click();
+  await expect(page.getByTestId('temp-password-value')).toHaveText('RememberMe!2026');
+  expect(writes[0].body).toEqual({ new_password: 'RememberMe!2026', confirm_password: 'RememberMe!2026' });
+});
+
+
+test('critical staff password: delegated staff changes own password using old, new and confirmation', async ({ page }) => {
+  let payload: unknown;
+  await personalSession(page, [], '/settings-password', async () => {
+    await page.route('**/api/auth/change-password', route => {
+      payload = route.request().postDataJSON();
+      return route.fulfill({ json: { changed: true } });
+    });
+  });
+  await page.getByTestId('current-password-input').fill('OldMember!2026');
+  await page.getByTestId('new-password-input').fill('RememberMe!2026');
+  await page.getByTestId('confirm-password-input').fill('RememberMe!2026');
+  await page.getByTestId('save-password-btn').click();
+  await expect(page).toHaveURL(/\/settings$/);
+  expect(payload).toEqual({ current_password: 'OldMember!2026', new_password: 'RememberMe!2026', confirm_password: 'RememberMe!2026' });
+});
+
+const retiredNotebookCatalog = {
+  ...catalog,
+  resources: [...catalog.resources, { key: 'notebook_quotations', label: 'Legacy quotation follow-ups',
+    actions: ['view', 'update'], floor_ids: ['second-floor'], retired: true }],
+};
+
+test('critical retired notebook pages cannot be granted to new team members', async ({ page }) => {
+  await teamFixture(page, () => retiredNotebookCatalog);
+  await fillNewMember(page);
+  await switchFor(page, 'floor-toggle-second-floor').check();
+  await expect(page.getByTestId('page-toggle-second-floor-notebook_quotations')).toHaveCount(0);
+});
+
+test('critical existing retired notebook grants survive unrelated team edits and remain revocable', async ({ page }) => {
+  const { state, writes } = await teamFixture(page, () => retiredNotebookCatalog);
+  state.floorIds = ['second-floor'];
+  state.grants = [{ resource: 'notebook_quotations', floor_id: 'second-floor', actions: ['view', 'update'] }];
+  await page.getByTestId('team-row-test-worker').click();
+  await expect(switchFor(page, 'page-toggle-second-floor-notebook_quotations')).toBeChecked();
+  await expect(switchFor(page, 'action-toggle-second-floor-notebook_quotations-update')).toBeDisabled();
+  await page.getByTestId('edit-staff-name').fill('Updated worker');
+  await page.getByTestId('edit-staff-save').click();
+  await expect.poll(() => writes.length).toBe(1);
+  expect(writes[0].body).not.toHaveProperty("access_grants");
+  await expect(page.getByTestId('edit-staff-sheet')).toHaveCount(0);
+  await page.getByTestId('team-row-test-worker').click();
+  // Revoking the only legacy page removes its whole row immediately, so
+  // assert removal rather than waiting for an unchecked, detached input.
+  await switchFor(page, 'page-toggle-second-floor-notebook_quotations').click();
+  await expect(page.getByTestId('page-toggle-second-floor-notebook_quotations')).toHaveCount(0);
+  await page.getByTestId('edit-staff-save').click();
+  await expect.poll(() => writes.length).toBe(2);
+  expect(writes[1].body.access_grants).not.toContainEqual(state.grants[0]);
 });

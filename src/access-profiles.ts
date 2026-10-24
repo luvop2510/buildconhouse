@@ -48,19 +48,30 @@ export const PROFILE_MODULES: Record<AccessProfile, Set<string>> = {
 };
 
 export function staffLandingPath(profile?: AccessProfile | null, grants?: PersonalGrant[], floorId?: string): string {
-  const permitted = grants?.find((grant) => grant.actions.includes("view") && (!floorId || !grant.floor_id || grant.floor_id === floorId));
-  if (permitted) {
-    const routeByResource: Record<string, string> = {
+  const routeByResource: Record<string, string> = {
       payments: "/(admin)/payments", quotations: "/(admin)/quotations", catalog: "/(admin)/catalog",
       customers: "/(admin)/customers", purchases: "/(admin)/purchases", followups: "/(admin)/followups",
       orders: "/(admin)/tiles/orders", walkins: "/(admin)/walkins", dashboard: "/(admin)/dashboard",
       notifications: "/(admin)/notifications", tiles: "/(admin)/tiles", godown_stock: "/(admin)/godown-stock",
+      kitchen_projects: "/(admin)/kitchen/stages/lead",
       furniture_quotations: "/(admin)/notebook/furniture-quotations", sales_data: "/(admin)/sales-data",
-      notebook_walkins: (floorId || permitted.floor_id) === "third-floor" ? "/(admin)/notebook/furniture" : "/(admin)/notebook/kitchen",
-      notebook_quotations: (floorId || permitted.floor_id) === "third-floor" ? "/(admin)/notebook/furniture/quotation-follow-up" : "/(admin)/notebook/kitchen/quotation-follow-up",
-    };
-    if (routeByResource[permitted.resource]) return routeByResource[permitted.resource];
-  }
+  };
+  // Legacy stage-specific notebook grants do not authorize the replacement
+  // shared registers. Choose a supported page, or the stable account access
+  // screen, so a retired-only account never redirects to its own denial.
+  const supportedFloors: Record<string, string[]> = {
+    quotations: ["first-floor"], purchases: ["first-floor"], godown_stock: ["first-floor"],
+    catalog: ["ground-floor", "first-floor"], tiles: ["ground-floor"], orders: ["ground-floor"],
+    kitchen_projects: ["second-floor"],
+    furniture_quotations: ["third-floor"],
+  };
+  const permitted = grants?.find((grant) => {
+    if ((floorId || grant.floor_id) === "second-floor" && grant.resource !== "kitchen_projects") return false;
+    if (!routeByResource[grant.resource] || !grant.actions.includes("view") || (floorId && grant.floor_id && grant.floor_id !== floorId)) return false;
+    const targetFloor = floorId || grant.floor_id;
+    return !targetFloor || !supportedFloors[grant.resource] || supportedFloors[grant.resource].includes(targetFloor);
+  });
+  if (permitted) return routeByResource[permitted.resource];
   if (grants !== undefined) return "/(admin)/access";
   switch (profile) {
     case "ground_tile_quotations_followups": return "/(admin)/tiles";

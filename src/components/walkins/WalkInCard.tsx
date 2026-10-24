@@ -93,7 +93,7 @@ export function WalkInCard({
         <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.xs, flexWrap: "wrap" }}>
           <IconButton icon="phone" onPress={onCall} size={34} tone="brandLight" accessibilityLabel="Call" testID={`walkin-call-${w.id}`} />
           {onWhatsApp ? <IconButton icon="message-circle" onPress={onWhatsApp} size={34} tone="surface" accessibilityLabel="WhatsApp" testID={`walkin-wa-${w.id}`} /> : null}
-          {onVisitShowroom && w.status !== "lost" ? (
+          {onVisitShowroom && !w.showroom_followup_id && !w.showroom_transferred_at && w.status !== "lost" ? (
             <Button label={w.showroom_followup_id ? "View Visit Showroom" : "Visit Showroom"} icon="home" size="sm" loading={transferring} onPress={() => {
               if (transferring) return;
               setTransferring(true);

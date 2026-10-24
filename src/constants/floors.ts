@@ -34,7 +34,7 @@ export function floorDisplayLabel(floor: { id?: string; slug?: string; name?: st
 
 export function floorLandingPath(floorId: string): string {
   if (floorId === TILES_FLOOR_ID) return "/tiles";
-  if (floorId === KITCHEN_FLOOR_ID) return "/walkins";
+  if (floorId === KITCHEN_FLOOR_ID) return "/kitchen/stages/lead";
   if (floorId === FURNITURE_FLOOR_ID) return "/walkins";
   return "/dashboard";
 }

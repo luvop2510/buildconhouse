@@ -55,6 +55,8 @@ def cold_catalog(monkeypatch):
     monkeypatch.setattr(catalog, "_snapshot", None)
     monkeypatch.setattr(catalog, "_refresh_lock", asyncio.Lock())
     monkeypatch.setattr(catalog, "_background_refresh", None)
+    monkeypatch.setattr(catalog, "_refresh_retry_at", 0.0)
+    monkeypatch.setattr(catalog, "_refresh_generation", 0)
     return fake
 
 
@@ -83,8 +85,8 @@ def test_catalog_growth_limits_discard_partial_snapshot_and_close_cursor(cold_ca
     snapshot = asyncio.run(catalog.get_catalog_snapshot())
     assert snapshot.database_backed is True
     assert snapshot.products == ()
-    assert len(cold_catalog.reads) == 1
-    assert cold_catalog.reads[0][2].closed is True
+    assert len(cold_catalog.reads) == 5
+    assert all(cursor.closed for _, _, cursor in cold_catalog.reads)
 
 
 class ParallelReads:

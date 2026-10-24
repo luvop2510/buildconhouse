@@ -7,7 +7,13 @@ import ts from 'typescript';
 // Execute the production screen hooks, holding secondary responses indefinitely.
 // A fake clock makes the initial-load/search distinction deterministic and tests
 // callbacks whose network response has completed during a route/floor change.
+const catalogExports = {};
+vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../src/services/catalogService.ts', import.meta.url), 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText, { exports: catalogExports, require: () => ({}), URLSearchParams });
+
 const specs = {
+  tiles: ['../src/components/tiles/TilesProductPicker.tsx', '  return (\n    <Overlay', 'query, setQuery, results, total, loading, loadingMore, hasMore, loadMore'],
   customer: ['../app/(admin)/customers/[id].tsx', '  const createWalkInFollowup =', 'customer, quotations, purchases, timeline, loadError, relatedErrors, relatedLoading, loadCore'],
   quotation: ['../app/(admin)/quotations/[id]/index.tsx', '  const openPdf =', 'q, breakdown, timeline, linkedPos, loading, loadError, relatedError, relatedLoading, breakdownLoading, load'],
   catalog: ['../app/(admin)/catalog/index.tsx', '  const brandById:', 'q, searchQuery, setQ, setMode, setBrandId, families, products, total, hasMore, loadMore'],
@@ -26,6 +32,7 @@ function screen(kind, width = 'desktop') {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
   const hooks = [], effects = [], requests = [], timers = new Map();
+  let open = true;
   let cursor = 0, dirty = false, state, routeId = 'fixture', floor = 'first-floor', ready = true, mounted = true, nextTimer = 0;
   const same = (a, b) => a && b && a.length === b.length && a.every((value, index) => Object.is(value, b[index]));
   const effect = (callback, deps) => {
@@ -37,6 +44,7 @@ function screen(kind, width = 'desktop') {
     }
   };
   const react = {
+    memo: component => component,
     useState(initial) {
       const slot = cursor++;
       hooks[slot] ||= { value: typeof initial === 'function' ? initial() : initial };
@@ -67,7 +75,8 @@ function screen(kind, width = 'desktop') {
   const bp = { isPhone: width === 'phone', isDesktop: width === 'desktop', productCols: width === 'phone' ? 2 : 5 };
   const modules = {
     react,
-    'react-native': { StyleSheet: { create: value => value }, Platform: { OS: 'web' } },
+    'react-native': { StyleSheet: { create: value => value }, Platform: { OS: 'web' }, useWindowDimensions: () => ({ width: 390 }) },
+    './tilePresentation': { tilesPickerColumns: () => 1 },
     'expo-router': { useRouter: () => ({}), useLocalSearchParams: () => ({ id: routeId }) },
     '@/src/api/client': { api: { get } },
     '@/src/api/godownStock': { getCustomerStockTransfers: async () => ({ transfers: [] }) },
@@ -79,9 +88,10 @@ function screen(kind, width = 'desktop') {
     '@/src/hooks/use-breakpoint': { useBreakpoint: () => bp },
     '@/src/theme/tokens': { colors: {}, spacing: {}, radius: {}, icon: {}, type: new Proxy({}, { get: () => ({}) }) },
     '@/src/services/catalogService': {
-      catalogReferences: { brands: async () => [], categories: async () => [], hierarchy: async () => ({ tree: [] }) },
+      catalogReferences: { facets: async () => ({}), brands: async () => [], categories: async () => [], hierarchy: async () => ({ tree: [] }) },
       fetchCatalogPage: (query, skip, limit, options) => get('catalog-page', { ...options, query, skip, limit }),
-      mergeCatalogPage: (current, incoming) => [...current, ...incoming],
+      mergeCatalogPage: catalogExports.mergeCatalogPage,
+      catalogPageProgress: catalogExports.catalogPageProgress,
     },
   };
   const exports = {};
@@ -90,15 +100,16 @@ function screen(kind, width = 'desktop') {
     setTimeout: (callback, delay) => { const id = ++nextTimer; timers.set(id, { callback, delay }); return id; },
     clearTimeout: id => timers.delete(id),
   });
-  const render = () => {
+  const render = (flushEffects = true) => {
     cursor = 0; dirty = false;
-    state = exports.default();
-    while (effects.length) effects.shift()();
+    state = kind === 'tiles' ? exports.TilesProductPicker({ open, onClose() {}, onPick() {} }) : exports.default();
+    while (flushEffects && effects.length) effects.shift()();
     return state;
   };
   return {
     requests, render,
     get state() { return state; },
+    setOpen(value) { open = value; render(); },
     changeRoute(value) { routeId = value; render(); },
     changeFloor(value) { floor = value; render(); },
     setReady(value) { ready = value; render(); },
@@ -235,4 +246,118 @@ test('catalog mode changes fetch immediately and old family pages cannot replace
   await fixture.settle();
   assert.equal(fixture.state.products[0].id, 'product');
   assert.equal(fixture.state.families, null);
+});
+
+
+test('catalog overlapping pages advance the server cursor and empty pages stop fetching', async () => {
+  const fixture = screen('catalog'); fixture.render(); await fixture.settle();
+  const initial = fixture.requests.filter(request => request.path === 'catalog-page');
+  for (const request of initial) request.resolve({ total: 5, items: [{ family_key: 'a' }, { family_key: 'b' }] });
+  await fixture.settle();
+  const loading = fixture.state.loadMore();
+  const second = fixture.requests.at(-1);
+  assert.equal(second.options.skip, 2);
+  second.resolve({ total: 5, items: [{ family_key: 'b' }, { family_key: 'c' }] });
+  await loading; await fixture.settle();
+  assert.equal(fixture.state.families.length, 3, 'Overlapping server row is shown only once');
+  const pending = fixture.state.loadMore();
+  const third = fixture.requests.at(-1);
+  assert.equal(third.options.skip, 4, 'Advance by consumed server rows, including overlap');
+  third.resolve({ total: 5, items: [] });
+  await pending; await fixture.settle();
+  assert.equal(fixture.state.hasMore, false);
+  const before = fixture.requests.length;
+  await fixture.state.loadMore(); await fixture.settle();
+  assert.equal(fixture.requests.length, before, 'Repeated end-reached cannot refetch the empty page');
+});
+
+test('catalog delayed previous-floor page cannot change the new floor cursor', async () => {
+  const fixture = screen('catalog'); fixture.render(); await fixture.settle();
+  const stale = fixture.requests.filter(request => request.path === 'catalog-page');
+  fixture.changeFloor('ground-floor'); await fixture.settle();
+  const current = fixture.requests.filter(request => request.path === 'catalog-page' && !stale.includes(request));
+  current.at(-1).resolve({ total: 4, items: [{ family_key: 'ground' }] });
+  await fixture.settle();
+  for (const request of stale) request.resolve({ total: 100, items: Array.from({ length: 60 }, (_, i) => ({ family_key: `stale-${i}` })) });
+  await fixture.settle();
+  const pending = fixture.state.loadMore();
+  const next = fixture.requests.at(-1);
+  assert.equal(next.options.skip, 1);
+  assert.equal(next.options.floorId, 'ground-floor');
+  next.resolve({ total: 4, items: [] }); await pending; await fixture.settle();
+});
+
+test('catalog ignores a retained previous-floor pagination callback', async () => {
+  const fixture = screen('catalog'); fixture.render(); await fixture.settle();
+  const initial = fixture.requests.filter(request => request.path === 'catalog-page');
+  for (const request of initial) request.resolve({ total: 5, items: [{ family_key: 'sanitary' }] });
+  await fixture.settle();
+  const previous = fixture.state.loadMore;
+  fixture.changeFloor('ground-floor'); await fixture.settle();
+  const count = fixture.requests.length;
+  void previous(); await fixture.settle();
+  assert.equal(fixture.requests.length, count, 'A deferred old scroll event must not fetch or publish another floor');
+});
+
+
+test('catalog pagination callbacks do not start work after unmount', async () => {
+  const fixture = screen('catalog'); fixture.render(); await fixture.settle();
+  for (const request of fixture.requests.filter(request => request.path === 'catalog-page')) request.resolve({ total: 10, items: [{ family_key: 'loaded' }] });
+  await fixture.settle();
+  const previous = fixture.state.loadMore;
+  fixture.unmount();
+  const count = fixture.requests.length;
+  await previous(); await fixture.settle();
+  assert.equal(fixture.requests.length, count);
+});
+
+
+test('Ground Floor picker deduplicates simultaneous scroll reads and stops after an empty page', async () => {
+  const fixture = screen('tiles'); fixture.render(); await fixture.settle();
+  fixture.requests[0].resolve({ total: 5, items: [{ id: 'a' }, { id: 'b' }] }); await fixture.settle();
+  fixture.state.loadMore(); fixture.state.loadMore();
+  assert.equal(fixture.requests.length, 2, 'Scroll and end-reached share one pending page');
+  fixture.requests[1].resolve({ total: 5, items: [{ id: 'b' }, { id: 'c' }] }); await fixture.settle();
+  assert.equal(fixture.state.results.length, 3);
+  fixture.state.loadMore();
+  assert.equal(fixture.requests[2].options.skip, 4, 'Ground Floor consumes overlapping server rows');
+  fixture.requests[2].resolve({ total: 5, items: [] }); await fixture.settle();
+  assert.equal(fixture.state.hasMore, false);
+  fixture.state.loadMore(); assert.equal(fixture.requests.length, 3);
+});
+
+test('Ground Floor typing immediately revokes earlier results during the debounce', async () => {
+  const fixture = screen('tiles'); fixture.render(); await fixture.settle();
+  fixture.state.setQuery('current'); fixture.render(); await fixture.settle();
+  fixture.requests[0].resolve({ total: 1, items: [{ id: 'stale' }] }); await fixture.settle();
+  assert.equal(fixture.state.results.length, 0);
+  fixture.runTimers(180); await fixture.settle();
+  fixture.requests[1].resolve({ total: 1, items: [{ id: 'current' }] }); await fixture.settle();
+  assert.equal(fixture.state.results[0].id, 'current');
+});
+
+test('Ground Floor closed picker rejects responses and retained scroll callbacks', async () => {
+  const fixture = screen('tiles'); fixture.render(); await fixture.settle();
+  fixture.requests[0].resolve({ total: 4, items: [{ id: 'visible' }] }); await fixture.settle();
+  const callback = fixture.state.loadMore;
+  callback(); const pending = fixture.requests[1];
+  fixture.setOpen(false); await fixture.settle();
+  pending.resolve({ total: 4, items: [{ id: 'closed' }] }); await fixture.settle();
+  assert.equal(fixture.state.results.length, 1);
+  callback(); assert.equal(fixture.requests.length, 2);
+});
+
+
+test('catalog response between a changed render and passive effects cannot publish obsolete data', async () => {
+  const fixture = screen('catalog'); fixture.render(); await fixture.settle();
+  const stale = fixture.requests.filter(request => request.path === 'catalog-page');
+  fixture.state.setQ('changed'); fixture.render(false);
+  for (const request of stale) request.resolve({ total: 1, items: [{ family_key: 'obsolete' }] });
+  await fixture.settle();
+  assert.equal(fixture.state.families, null);
+  fixture.render(); await fixture.settle();
+  fixture.runTimers(250); await fixture.settle();
+  const current = fixture.requests.at(-1);
+  current.resolve({ total: 1, items: [{ family_key: 'current' }] }); await fixture.settle();
+  assert.equal(fixture.state.families[0].family_key, 'current');
 });

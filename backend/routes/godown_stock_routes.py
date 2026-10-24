@@ -10,8 +10,8 @@ import re
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 from pymongo.errors import DuplicateKeyError, PyMongoError
 
 from auth import floor_for_write, floor_query, get_current_user, get_floor_scoped_or_404, require_min_role
@@ -27,6 +27,9 @@ from services.followup_engine import reconcile_followups
 from services.notifications import notify
 from services.sequence import next_number
 from services.pricing import per_line_net_amounts, recalc_quotation_totals, stamp_net_amounts
+from services import godown_media_service
+from services.product_image_normalizer import ProductImageNormalizationError
+from routes.media_routes import _read_bounded_upload
 
 router = APIRouter(prefix="/godown-stock", tags=["godown-stock"])
 logger = logging.getLogger(__name__)
@@ -57,12 +60,33 @@ class Allocation(BaseModel):
 
 class StockPriceVariant(BaseModel):
     label: str = Field(min_length=1, max_length=80)
-    price: float = Field(ge=0)
+    price: float = Field(ge=0, allow_inf_nan=False)
 
 
 class StockPricingUpdate(BaseModel):
-    unit_price: float = Field(ge=0)
+    unit_price: float | None = Field(ge=0, allow_inf_nan=False)
     price_variants: list[StockPriceVariant] = Field(default_factory=list, max_length=20)
+
+
+class StockDetailsUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    unit_price: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    price_variants: list[StockPriceVariant] | None = Field(default=None, max_length=20)
+    image: HttpUrl | None = None
+
+    @field_validator("image")
+    @classmethod
+    def public_image_url(cls, value):
+        if value is not None and (value.scheme != "https" or value.username or value.password):
+            raise ValueError("Use a public HTTPS image URL without credentials")
+        return value
+
+    @field_validator("price_variants")
+    @classmethod
+    def non_null_variants(cls, value):
+        if value is None:
+            raise ValueError("Use an empty list to remove price variants")
+        return value
 
 
 class DirectIntake(BaseModel):
@@ -103,9 +127,9 @@ class ReturnTransfer(BaseModel):
 
 
 def _stock_view(lot: dict) -> dict:
-    row = {key: value for key, value in lot.items() if key != "_id"}
-    row["stock_value"] = round(float(row.get("available_qty") or 0) * float(row["unit_price"]), 2) if row.get("unit_price") is not None else None
-    row["transferable_qty"] = max(0.0, round(float(row.get("available_qty") or 0) - float(row.get("loaned_out_qty") or 0), 4))
+    row = {key: value for key, value in lot.items() if key not in {"_id", "source_provenance", "catalog_provenance", "image_local"}}
+    row["stock_value"] = round(float(row.get("available_qty") or 0) * float(row["unit_price"]), 2) if row.get("unit_price") is not None and not row.get("quantity_missing") else None
+    row["transferable_qty"] = 0 if row.get("quantity_missing") or row.get("archived") else max(0.0, round(float(row.get("available_qty") or 0) - float(row.get("loaned_out_qty") or 0), 4))
     return row
 
 
@@ -130,6 +154,8 @@ def _same_product(lot: dict, item: dict) -> str | None:
 
 
 async def _po_final_matches(lot: dict) -> dict:
+    if lot.get("archived") or lot.get("quantity_missing"):
+        return {"matches": [], "total_ordered_qty": 0, "transferable_qty": 0}
     rows = await db.purchase_orders.find(
         {"floor_id": lot["floor_id"], "items.stage": "po_final", "status": {"$ne": "cancelled"}},
         {"_id": 0, "id": 1, "number": 1, "customer_id": 1, "customer_name": 1, "items": 1},
@@ -303,14 +329,17 @@ async def list_stock(
     include_history: bool = False,
     user: UserPublic = Depends(get_current_user),
 ):
-    query: dict = floor_query(user, {} if include_history else {"available_qty": {"$gt": 0}})
+    query: dict = floor_query(user, {} if include_history else {"$or": [{"available_qty": {"$gt": 0}}, {"quantity_missing": True}]})
+    query["archived"] = {"$ne": True}
     if brand_id:
         query["brand_id"] = brand_id
     if q and q.strip():
         literal = re.escape(q.strip())
         query["$or"] = [{field: {"$regex": literal, "$options": "i"}}
                         for field in ("name", "sku", "brand_name")]
-    lots = await db.godown_stock.find(query, {"_id": 0}).sort("transferred_at", -1).to_list(500)
+    lots = await db.godown_stock.find(query, {"_id": 0, "source_provenance": 0, "catalog_provenance": 0, "image_local": 0}).sort("transferred_at", -1).to_list(2001)
+    if len(lots) > 2000:
+        raise HTTPException(status_code=409, detail="More than 2,000 stock lots match. Select a brand or search to narrow the list.")
     transfer_map: dict[str, list[dict]] = {}
     if include_history and lots:
         transfers = await db.godown_customer_transfers.find(
@@ -323,8 +352,9 @@ async def list_stock(
         key = lot.get("brand_id") or lot.get("brand_name") or "unbranded"
         row = brands.setdefault(key, {"id": lot.get("brand_id"), "name": lot.get("brand_name") or "Other", "lot_count": 0, "available_qty": 0})
         row["lot_count"] += 1
-        row["available_qty"] += float(lot.get("available_qty") or 0)
-    return {"lots": [{**_stock_view(lot), "customer_transfers": transfer_map.get(lot["id"], [])} for lot in lots], "brands": sorted(brands.values(), key=lambda row: row["name"].lower()), "total_available_qty": sum(float(lot.get("available_qty") or 0) for lot in lots), "total_stock_value": round(sum(float(lot.get("available_qty") or 0) * float(lot["unit_price"]) for lot in lots if lot.get("unit_price") is not None), 2), "unpriced_lot_count": sum(1 for lot in lots if float(lot.get("available_qty") or 0) > 0 and lot.get("unit_price") is None)}
+        if not lot.get("quantity_missing"):
+            row["available_qty"] += float(lot.get("available_qty") or 0)
+    return {"lots": [{**_stock_view(lot), "customer_transfers": transfer_map.get(lot["id"], [])} for lot in lots], "brands": sorted(brands.values(), key=lambda row: row["name"].lower()), "total_available_qty": sum(float(lot.get("available_qty") or 0) for lot in lots if not lot.get("quantity_missing")), "total_stock_value": round(sum(float(lot.get("available_qty") or 0) * float(lot["unit_price"]) for lot in lots if lot.get("unit_price") is not None and not lot.get("quantity_missing")), 2), "unpriced_lot_count": sum(1 for lot in lots if (float(lot.get("available_qty") or 0) > 0 or lot.get("quantity_missing")) and lot.get("unit_price") is None)}
 
 
 @router.get("/sku-suggestions")
@@ -332,9 +362,31 @@ async def sku_suggestions(prefix: str = Query(min_length=1, max_length=80), user
     """Literal, floor-scoped SKU prefix lookup for direct stock intake."""
     rows = await db.products.find(
         floor_query(user, {"sku": {"$regex": f"^{re.escape(prefix.strip())}", "$options": "i"}, "active": {"$ne": False}}),
-        {"_id": 0, "id": 1, "sku": 1, "name": 1, "brand_id": 1, "brand_name": 1, "hero_image_url": 1, "images": 1, "size": 1, "category_id": 1},
+        {"_id": 0, "id": 1, "sku": 1, "name": 1, "brand_id": 1, "brand_name": 1, "hero_image_url": 1, "images": 1, "size": 1, "category_id": 1, "floor_id": 1},
     ).sort("sku", 1).to_list(30)
-    return [{"id": row["id"], "sku": row.get("sku"), "name": row.get("name"), "brand_name": row.get("brand_name"), "image": row.get("hero_image_url") or (row.get("images") or [None])[0], "size": row.get("size"), "category_id": row.get("category_id")} for row in rows]
+    images = await _catalog_images(rows)
+    return [{"id": row["id"], "sku": row.get("sku"), "name": row.get("name"), "brand_name": row.get("brand_name"), "image": images.get(row["id"]), "size": row.get("size"), "category_id": row.get("category_id")} for row in rows]
+
+
+async def _catalog_images(products: list[dict]) -> dict[str, str | None]:
+    images = {row["id"]: row.get("hero_image_url") or (row.get("images") or [None])[0] for row in products}
+    missing = [row for row in products if not images[row["id"]]]
+    if not missing:
+        return images
+    # One bounded exact-product batch; never borrow a sibling finish or scan
+    # the catalog for a similar-looking image.
+    media = await db.product_media.find({"$or": [
+        {"product_id": row["id"], "floor_id": row["floor_id"], "brand_id": row.get("brand_id")}
+        for row in missing
+    ], "role": {"$in": ["hero", "gallery"]}, "mime": {"$regex": "^image/"}}, {"_id": 0}).sort([
+        ("is_primary", -1), ("sort_order", 1), ("id", 1),
+    ]).to_list(600)
+    owners = {row["id"]: row for row in missing}
+    for photo in media:
+        owner = owners.get(photo.get("product_id"))
+        if owner and photo.get("floor_id") == owner["floor_id"] and photo.get("brand_id") == owner.get("brand_id") and photo.get("public_url"):
+            images[owner["id"]] = images.get(owner["id"]) or photo["public_url"]
+    return images
 
 
 @router.get("/customer-transfers")
@@ -533,6 +585,10 @@ async def _transfer_stock_to_customer_once(stock_id: str, body: CustomerTransfer
             lot = await db.godown_stock.find_one(floor_query(user, {"id": stock_id}), {"_id": 0}, session=session)
             if not lot:
                 raise HTTPException(status_code=404, detail="Godown stock lot not found")
+            if lot.get("archived") or lot.get("quantity_missing"):
+                raise HTTPException(status_code=409, detail="This stock lot has no confirmed available quantity")
+            if body.unit_price is None and lot.get("unit_price") is None:
+                raise HTTPException(status_code=422, detail="Record a unit price before transferring this stock")
             if float(lot.get("available_qty") or 0) - float(lot.get("loaned_out_qty") or 0) < body.qty:
                 raise HTTPException(status_code=409, detail="Requested quantity exceeds stock available for customer transfer")
             recipient = None
@@ -659,7 +715,7 @@ async def _transfer_stock_to_customer_once(stock_id: str, body: CustomerTransfer
                 await db.purchase_orders.insert_one(matched_po, session=session)
 
             reserved = await db.godown_stock.update_one(
-                {"id": stock_id, "floor_id": lot["floor_id"], "$expr": {"$gte": [
+                {"id": stock_id, "floor_id": lot["floor_id"], "archived": {"$ne": True}, "quantity_missing": {"$ne": True}, "$expr": {"$gte": [
                     {"$subtract": [{"$ifNull": ["$available_qty", 0]}, {"$ifNull": ["$loaned_out_qty", 0]}]}, body.qty,
                 ]}},
                 {"$inc": {"available_qty": -body.qty}, "$set": {"updated_at": at}}, session=session,
@@ -736,7 +792,7 @@ async def get_stock(stock_id: str, user: UserPublic = Depends(get_current_user))
 async def update_stock_pricing(stock_id: str, body: StockPricingUpdate, user: UserPublic = Depends(require_min_role("warehouse"))):
     at = now_iso()
     lot = await db.godown_stock.find_one_and_update(
-        floor_query(user, {"id": stock_id}),
+        floor_query(user, {"id": stock_id, "archived": {"$ne": True}}),
         {"$set": {"unit_price": body.unit_price, "price_variants": [variant.model_dump() for variant in body.price_variants], "updated_at": at}},
         return_document=ReturnDocument.AFTER,
     )
@@ -744,6 +800,56 @@ async def update_stock_pricing(stock_id: str, body: StockPricingUpdate, user: Us
         raise HTTPException(status_code=404, detail="Godown stock lot not found")
     await log_event(event_type="godown_stock.pricing_updated", entity_type="godown_stock", entity_id=stock_id, actor=user, floor_id=lot["floor_id"], summary=f"Updated pricing for {lot['name']}", payload={"unit_price": body.unit_price, "variant_count": len(body.price_variants)})
     return _stock_view(lot)
+
+
+@router.patch("/{stock_id}/details")
+async def update_stock_details(stock_id: str, body: StockDetailsUpdate, user: UserPublic = Depends(require_min_role("warehouse"))):
+    changes = body.model_dump(mode="json", exclude_unset=True)
+    if not changes:
+        raise HTTPException(status_code=422, detail="Provide a price, image or price variants to update")
+    # A stock image override affects this lot only; previously issued quotes
+    # and the manufacturer's catalog photo retain their original snapshots.
+    if "image" in changes:
+        changes["image_media_id"] = None
+    lot = await db.godown_stock.find_one_and_update(
+        floor_query(user, {"id": stock_id, "archived": {"$ne": True}}),
+        {"$set": {**changes, "updated_at": now_iso()}}, return_document=ReturnDocument.AFTER,
+    )
+    if not lot:
+        raise HTTPException(status_code=404, detail="Godown stock lot not found")
+    await log_event(event_type="godown_stock.details_updated", entity_type="godown_stock", entity_id=stock_id,
+                    actor=user, floor_id=lot["floor_id"], summary=f"Updated stock details for {lot['name']}",
+                    payload={"fields": sorted(body.model_fields_set)})
+    return _stock_view(lot)
+
+
+@router.post("/{stock_id}/image")
+async def upload_stock_image(stock_id: str, file: UploadFile = File(...), user: UserPublic = Depends(require_min_role("warehouse"))):
+    lot = await db.godown_stock.find_one(floor_query(user, {"id": stock_id, "archived": {"$ne": True}}), {"_id": 0})
+    if not lot:
+        raise HTTPException(status_code=404, detail="Godown stock lot not found")
+    if not (file.content_type or "").startswith("image/"):
+        raise HTTPException(status_code=400, detail="Choose a JPG, PNG, WebP or GIF photo")
+    data = await _read_bounded_upload(file)
+    try:
+        media = await godown_media_service.upload_stock_photo(data=data, mime=file.content_type,
+                                                              lot=lot, actor_id=user.id)
+    except ProductImageNormalizationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    updated = await db.godown_stock.find_one_and_update(
+        {"id": stock_id, "floor_id": lot["floor_id"], "archived": {"$ne": True}},
+        {"$set": {"image": media["public_url"], "image_media_id": media["id"], "updated_at": now_iso()}},
+        return_document=ReturnDocument.AFTER,
+    )
+    if not updated:
+        # The registered photo remains attributed to the archived lot. Keep
+        # historical bytes and metadata together rather than deleting a URL
+        # that may already be present in an issued quotation.
+        raise HTTPException(status_code=409, detail="Stock changed while saving the photo; refresh and try again")
+    await log_event(event_type="godown_stock.image_updated", entity_type="godown_stock", entity_id=stock_id,
+                    actor=user, floor_id=lot["floor_id"], summary=f"Updated photo for {lot['name']}",
+                    payload={"media_id": media["id"]})
+    return _stock_view(updated)
 
 
 @router.post("/direct-intakes")
@@ -764,6 +870,11 @@ async def direct_intake(body: DirectIntake, user: UserPublic = Depends(require_m
         raise HTTPException(status_code=422, detail="Unit price is required for a product outside the catalog")
     at = now_iso()
     lot_id = str(uuid4())
+    catalog_price = product.get("mrp") if product and (product.get("price_status") or (product.get("specs") or {}).get("price_status")) != "unspecified" else None
+    # Catalog models retain a numeric zero placeholder for unknown prices.
+    # Carry the explicit unknown status into stock instead of asserting a gift.
+    stock_price = body.unit_price if body.unit_price is not None else catalog_price
+    stock_mrp = catalog_price if catalog_price is not None else body.unit_price
     lot = {
         "id": lot_id, "floor_id": floor_id,
         # Stock-only lines use an opaque id tied to this lot. It is never
@@ -772,15 +883,15 @@ async def direct_intake(body: DirectIntake, user: UserPublic = Depends(require_m
         "product_id": (product or {}).get("id") or f"godown:{lot_id}",
         "sku": (product or {}).get("sku") or (body.sku or "").strip(),
         "name": (product or {}).get("name") or (body.name or "").strip(),
-        "image": (product or {}).get("hero_image_url") or ((product or {}).get("images") or [None])[0] or body.image,
+        "image": (await _catalog_images([product])).get(product["id"]) if product else body.image,
         "size": (product or {}).get("size") or body.size,
         "feature": (product or {}).get("feature") or body.feature,
         "category": body.category,
         "category_id": (product or {}).get("category_id"),
         "brand_id": (product or {}).get("brand_id"),
         "brand_name": (product or {}).get("brand_name") or body.brand,
-        "mrp": float(product.get("mrp") if product and product.get("mrp") is not None else body.unit_price or 0),
-        "unit_price": body.unit_price if body.unit_price is not None else (float(product["mrp"]) if product and product.get("mrp") is not None else None),
+        "mrp": float(stock_mrp) if stock_mrp is not None else None,
+        "unit_price": float(stock_price) if stock_price is not None else None,
         "discount_pct": 0,
         "price_variants": [variant.model_dump() for variant in body.price_variants],
         "qty_received": body.qty, "available_qty": body.qty,
@@ -860,7 +971,7 @@ async def allocate_stock(stock_id: str, body: Allocation, user: UserPublic = Dep
     at = now_iso()
     allocation = {"id": str(uuid4()), "quotation_id": quote["id"], "quotation_number": quote.get("number"), "customer_id": quote.get("customer_id"), "customer_name": quote.get("customer_name"), "qty": body.qty, "allocated_at": at, "allocated_by": user.id, "allocated_by_name": user.full_name}
     lot = await db.godown_stock.find_one_and_update(
-        floor_query(user, {"id": stock_id, "$expr": {"$gte": [
+        floor_query(user, {"id": stock_id, "archived": {"$ne": True}, "quantity_missing": {"$ne": True}, "unit_price": {"$ne": None}, "$expr": {"$gte": [
             {"$subtract": [{"$ifNull": ["$available_qty", 0]}, {"$ifNull": ["$loaned_out_qty", 0]}]}, body.qty,
         ]}}),
         {"$inc": {"available_qty": -body.qty}, "$push": {"allocations": allocation}, "$set": {"updated_at": at}},

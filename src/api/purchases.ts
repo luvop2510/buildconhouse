@@ -117,17 +117,17 @@ export function purchasesPagePath(query: PurchasesPageQuery): string {
   return `/purchases/items/page?${params.toString()}`;
 }
 
-export function getPurchasesPage(query: PurchasesPageQuery, signal?: AbortSignal) {
-  return api.get<PurchasesPage>(purchasesPagePath(query), { signal });
+export function getPurchasesPage(query: PurchasesPageQuery, signal?: AbortSignal, floorId?: string) {
+  return api.get<PurchasesPage>(purchasesPagePath(query), { signal, floorId });
 }
 
-/** CRM workspaces on this floor, with fully delivered customers moved out. */
-export function getPurchaseCustomers(signal?: AbortSignal, includeCompleted = false) {
-  return api.get<PurchaseCustomer[]>(`/purchases/customer-workspaces?include_completed=${includeCompleted}`, { signal });
+/** Confirmed buyers on this floor, with fully delivered customers moved out. */
+export function getPurchaseCustomers(signal?: AbortSignal, includeCompleted = false, floorId?: string) {
+  return api.get<PurchaseCustomer[]>(`/purchases/customer-workspaces?include_completed=${includeCompleted}`, { signal, floorId });
 }
 
-export function getPurchaseCustomerWorkspace(customerId: string, signal?: AbortSignal) {
-  return api.get<PurchaseCustomerWorkspace>(`/purchases/customers/${customerId}/workspace`, { signal });
+export function getPurchaseCustomerWorkspace(customerId: string, signal?: AbortSignal, floorId?: string) {
+  return api.get<PurchaseCustomerWorkspace>(`/purchases/customers/${customerId}/workspace`, { signal, floorId });
 }
 
 export function cancelPurchaseItem(itemId: string, reason?: string) {

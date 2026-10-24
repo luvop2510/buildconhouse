@@ -12,6 +12,7 @@ Design notes:
   * PDF/exports live in a future iteration (Payments Milestone).
 """
 from __future__ import annotations
+import re
 from datetime import datetime, timezone
 import base64
 import binascii
@@ -21,7 +22,8 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from auth import floor_query, get_current_user, require_min_role
+from auth import floor_query, require_min_role
+from services.purchase_workspace import get_purchase_workspace_user as get_current_user
 from db import db
 from models import (
     PurchaseAttachment, PurchaseAttachmentCreate, PurchaseOrder, PurchaseOrderItem,
@@ -257,7 +259,7 @@ async def list_purchase_orders(
     if quotation_id:
         query["quotation_id"] = quotation_id
     if q:
-        term = {"$regex": q, "$options": "i"}
+        term = {"$regex": re.escape(q), "$options": "i"}
         query["$or"] = [
             {"number": term},
             {"customer_name": term},

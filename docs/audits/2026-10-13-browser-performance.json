@@ -1,0 +1,2187 @@
+{
+  "scope": "Same Mac/release export, 200ms intercepted API fixture, one cold sample per device per run; differences are descriptive, not causal latency guarantees. WebKit does not expose Chromium long-task observation.",
+  "coldStartup": [
+    {
+      "device": "android-chrome",
+      "browserVersion": "153.0.8010.12",
+      "latencyMs": 200,
+      "beforeReadyMs": 1621.4859159999999,
+      "afterReadyMs": 1554.2007500000002,
+      "beforeRequestAfterReferencesMs": 0.12704100000019025,
+      "afterRequestAfterReferencesMs": 0.4745419999999285,
+      "afterConsoleErrors": [],
+      "afterFailedRequests": [],
+      "afterLongTasksMs": [
+        72
+      ]
+    },
+    {
+      "device": "iphone-safari",
+      "browserVersion": "26.6",
+      "latencyMs": 200,
+      "beforeReadyMs": 2115.1924999999997,
+      "afterReadyMs": 1772.5557919999997,
+      "beforeRequestAfterReferencesMs": 0.37479199999961565,
+      "afterRequestAfterReferencesMs": 0.1801250000003165,
+      "afterConsoleErrors": [],
+      "afterFailedRequests": [],
+      "afterLongTasksMs": []
+    },
+    {
+      "device": "ipad-safari",
+      "browserVersion": "26.6",
+      "latencyMs": 200,
+      "beforeReadyMs": 1664.0144590000002,
+      "afterReadyMs": 1605.5435840000002,
+      "beforeRequestAfterReferencesMs": 0.21387499999991633,
+      "afterRequestAfterReferencesMs": 0.3324160000001939,
+      "afterConsoleErrors": [],
+      "afterFailedRequests": [],
+      "afterLongTasksMs": []
+    },
+    {
+      "device": "desktop-chrome",
+      "browserVersion": "153.0.8010.12",
+      "latencyMs": 200,
+      "beforeReadyMs": 1558.8623339999997,
+      "afterReadyMs": 1508.1333339999999,
+      "beforeRequestAfterReferencesMs": 0.700249999999869,
+      "afterRequestAfterReferencesMs": 0.1855000000000473,
+      "afterConsoleErrors": [],
+      "afterFailedRequests": [],
+      "afterLongTasksMs": [
+        60
+      ]
+    }
+  ],
+  "finalStatistics": {
+    "startTime": "2026-10-12T22:48:46.562Z",
+    "duration": 84715.667,
+    "expected": 28,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "attachments": [
+    {
+      "name": "catalog-startup-timing",
+      "project": "android-chrome",
+      "data": {
+        "device": "android-chrome",
+        "browserVersion": "153.0.8010.12",
+        "fixtureLatencyMs": 200,
+        "readyMs": 1554.2007500000002,
+        "requestAfterFloorMs": 343.1962090000002,
+        "requestAfterReferencesMs": 0.4745419999999285,
+        "reads": [
+          {
+            "path": "/api/auth/me",
+            "query": "",
+            "atMs": 266.19716700000004,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/floor-access",
+            "query": "",
+            "atMs": 568.3325,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/permission-matrix",
+            "query": "",
+            "atMs": 568.579125,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 1114.801459,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/brands",
+            "query": "",
+            "atMs": 1115.0709170000002,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/categories",
+            "query": "",
+            "atMs": 1115.1639590000002,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/hierarchy",
+            "query": "",
+            "atMs": 1115.428,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/products/families",
+            "query": "?limit=60&skip=0",
+            "atMs": 1115.5454590000002,
+            "floor": "first-floor"
+          }
+        ],
+        "longTasksMs": [
+          72
+        ],
+        "consoleErrors": [],
+        "failedRequests": []
+      }
+    },
+    {
+      "name": "customer-primary-ready",
+      "project": "android-chrome",
+      "data": {
+        "device": "android-chrome",
+        "readyMs": 1436.768916,
+        "held": [
+          "/api/quotations",
+          "/api/purchase-orders",
+          "/api/activity/customer/performance-customer",
+          "/api/godown-stock/customer-transfers",
+          "/api/purchases/customers/performance-customer/workspace"
+        ],
+        "reads": [
+          {
+            "path": "/api/settings/permission-matrix",
+            "query": "",
+            "atMs": 322.7062499999997,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/floor-access",
+            "query": "",
+            "atMs": 322.9565419999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/auth/me",
+            "query": "",
+            "atMs": 323.1317089999998,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers/performance-customer",
+            "query": "?with_completion=true",
+            "atMs": 835.405917,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/quotations",
+            "query": "?customer_id=performance-customer",
+            "atMs": 835.5651669999997,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/purchase-orders",
+            "query": "?customer_id=performance-customer",
+            "atMs": 835.6164999999996,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/activity/customer/performance-customer",
+            "query": "",
+            "atMs": 835.650584,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/godown-stock/customer-transfers",
+            "query": "?customer_id=performance-customer",
+            "atMs": 835.8015839999998,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/purchases/customers/performance-customer/workspace",
+            "query": "",
+            "atMs": 1054.7841669999998,
+            "floor": "first-floor"
+          }
+        ]
+      }
+    },
+    {
+      "name": "quotation-primary-ready",
+      "project": "android-chrome",
+      "data": {
+        "device": "android-chrome",
+        "readyMs": 1439.6698750000005,
+        "held": [
+          "/api/quotations/performance-quotation/breakdown",
+          "/api/activity/quotation/performance-quotation",
+          "/api/purchase-orders"
+        ],
+        "reads": [
+          {
+            "path": "/api/settings/permission-matrix",
+            "query": "",
+            "atMs": 322.27287499999966,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/floor-access",
+            "query": "",
+            "atMs": 322.5578749999995,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/auth/me",
+            "query": "",
+            "atMs": 322.6175830000002,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/quotations/performance-quotation",
+            "query": "?with_completion=true",
+            "atMs": 834.0266249999995,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/quotations/performance-quotation/breakdown",
+            "query": "",
+            "atMs": 834.1593750000002,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/activity/quotation/performance-quotation",
+            "query": "",
+            "atMs": 834.2007910000002,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/purchase-orders",
+            "query": "?quotation_id=performance-quotation",
+            "atMs": 834.2305829999996,
+            "floor": "first-floor"
+          }
+        ]
+      }
+    },
+    {
+      "name": "navigation-rotation-timings",
+      "project": "android-chrome",
+      "data": {
+        "cpuThrottle": 4,
+        "fixtureLatencyMs": 200,
+        "timings": [
+          875.1419999999998,
+          176.4717499999988,
+          78.41679099999965,
+          99.27166600000055
+        ],
+        "reads": [
+          {
+            "path": "/api/auth/me",
+            "query": "",
+            "atMs": 434.366,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/floor-access",
+            "query": "",
+            "atMs": 727.4760409999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/permission-matrix",
+            "query": "",
+            "atMs": 727.5974160000005,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 1323.3227499999994,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 2069.666000000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/brands",
+            "query": "",
+            "atMs": 2069.7850830000007,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/categories",
+            "query": "",
+            "atMs": 2069.8450410000005,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/hierarchy",
+            "query": "",
+            "atMs": 2069.961958,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/products/families",
+            "query": "?limit=60&skip=0",
+            "atMs": 2069.984166,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 2645.9453329999997,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 2926.8050000000003,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 2996.2117500000004,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 3237.925916,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 3303.4147080000002,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 3564.477291000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 3673.45125,
+            "floor": "first-floor"
+          }
+        ],
+        "consoleErrors": [],
+        "failedRequests": []
+      }
+    },
+    {
+      "name": "repeated-session-navigation",
+      "project": "android-chrome",
+      "data": {
+        "visits": 12,
+        "device": "android-chrome",
+        "fixtureLatencyMs": 200,
+        "timings": [
+          822.3880000000008,
+          27.751667000000452,
+          25.852958000003127,
+          23.44208400000207,
+          26.177999999999884,
+          28.88429200000246,
+          18.289542000002257,
+          17.937834000000294,
+          25.056083000003127,
+          19.137332999998762,
+          23.62791599999764,
+          24.01587500000096
+        ],
+        "reads": [
+          {
+            "path": "/api/settings/permission-matrix",
+            "query": "",
+            "atMs": 323.46149999999943,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/floor-access",
+            "query": "",
+            "atMs": 323.5762080000004,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/auth/me",
+            "query": "",
+            "atMs": 323.76329199999964,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 857.5340830000005,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 1744.9129169999997,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/brands",
+            "query": "",
+            "atMs": 1745.0630419999998,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/categories",
+            "query": "",
+            "atMs": 1745.1103330000005,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/hierarchy",
+            "query": "",
+            "atMs": 1745.1507920000004,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/products/families",
+            "query": "?limit=60&skip=0",
+            "atMs": 1745.337707999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 2253.6212080000005,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 2563.6382080000003,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 2583.429875,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 2890.511624999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 2908.177749999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 3210.6399170000004,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 3228.1128329999992,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 3534.5750829999997,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 3552.119125000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 3854.6436250000006,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 3877.99525,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 4176.5510829999985,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 4191.466499999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 4488.856082999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 4503.242707999998,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 4805.1367500000015,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 4823.267416999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 5120.875250000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 5135.824124999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 5441.112291999998,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 5457.602416999998,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 5760.091457999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 5777.397000000001,
+            "floor": "first-floor"
+          }
+        ],
+        "consoleErrors": [],
+        "failedRequests": []
+      }
+    },
+    {
+      "name": "catalog-startup-timing",
+      "project": "iphone-safari",
+      "data": {
+        "device": "iphone-safari",
+        "browserVersion": "26.6",
+        "fixtureLatencyMs": 200,
+        "readyMs": 1772.5557919999997,
+        "requestAfterFloorMs": 71.01308300000028,
+        "requestAfterReferencesMs": 0.1801250000003165,
+        "reads": [
+          {
+            "path": "/api/auth/me",
+            "query": "",
+            "atMs": 529.8547080000003,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/floor-access",
+            "query": "",
+            "atMs": 826.4186670000004,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/permission-matrix",
+            "query": "",
+            "atMs": 826.7539580000002,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 1105.661125,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/brands",
+            "query": "",
+            "atMs": 1106.261458,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/categories",
+            "query": "",
+            "atMs": 1106.33475,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/hierarchy",
+            "query": "",
+            "atMs": 1106.390542,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/products/families",
+            "query": "?limit=60&skip=0",
+            "atMs": 1106.4415830000003,
+            "floor": "first-floor"
+          }
+        ],
+        "longTasksMs": [],
+        "consoleErrors": [],
+        "failedRequests": []
+      }
+    },
+    {
+      "name": "customer-primary-ready",
+      "project": "iphone-safari",
+      "data": {
+        "device": "iphone-safari",
+        "readyMs": 1470.7157079999997,
+        "held": [
+          "/api/quotations",
+          "/api/purchase-orders",
+          "/api/activity/customer/performance-customer",
+          "/api/godown-stock/customer-transfers",
+          "/api/purchases/customers/performance-customer/workspace"
+        ],
+        "reads": [
+          {
+            "path": "/api/settings/permission-matrix",
+            "query": "",
+            "atMs": 335.29299999999967,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/floor-access",
+            "query": "",
+            "atMs": 335.53858299999956,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/auth/me",
+            "query": "",
+            "atMs": 335.5913329999994,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers/performance-customer",
+            "query": "?with_completion=true",
+            "atMs": 882.9833330000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/quotations",
+            "query": "?customer_id=performance-customer",
+            "atMs": 883.1398330000002,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/purchase-orders",
+            "query": "?customer_id=performance-customer",
+            "atMs": 883.1978749999998,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/activity/customer/performance-customer",
+            "query": "",
+            "atMs": 883.2337079999998,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/godown-stock/customer-transfers",
+            "query": "?customer_id=performance-customer",
+            "atMs": 883.2639170000002,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/purchases/customers/performance-customer/workspace",
+            "query": "",
+            "atMs": 1092.264542,
+            "floor": "first-floor"
+          }
+        ]
+      }
+    },
+    {
+      "name": "quotation-primary-ready",
+      "project": "iphone-safari",
+      "data": {
+        "device": "iphone-safari",
+        "readyMs": 1457.754,
+        "held": [
+          "/api/quotations/performance-quotation/breakdown",
+          "/api/activity/quotation/performance-quotation",
+          "/api/purchase-orders"
+        ],
+        "reads": [
+          {
+            "path": "/api/settings/permission-matrix",
+            "query": "",
+            "atMs": 337.415833,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/floor-access",
+            "query": "",
+            "atMs": 337.6335419999996,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/auth/me",
+            "query": "",
+            "atMs": 337.6849579999998,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/quotations/performance-quotation",
+            "query": "?with_completion=true",
+            "atMs": 874.8312079999996,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/quotations/performance-quotation/breakdown",
+            "query": "",
+            "atMs": 875.2637500000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/activity/quotation/performance-quotation",
+            "query": "",
+            "atMs": 876.1214169999994,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/purchase-orders",
+            "query": "?quotation_id=performance-quotation",
+            "atMs": 876.3990829999993,
+            "floor": "first-floor"
+          }
+        ]
+      }
+    },
+    {
+      "name": "navigation-rotation-timings",
+      "project": "iphone-safari",
+      "data": {
+        "cpuThrottle": "unavailable on this engine",
+        "fixtureLatencyMs": 200,
+        "timings": [
+          859.8950409999998,
+          97.74670800000058,
+          35.98283300000003,
+          42.09345799999937
+        ],
+        "reads": [
+          {
+            "path": "/api/auth/me",
+            "query": "",
+            "atMs": 142.81004200000098,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/floor-access",
+            "query": "",
+            "atMs": 443.82258400000137,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/permission-matrix",
+            "query": "",
+            "atMs": 444.1424999999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 992.2463340000013,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 1798.8279170000005,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/brands",
+            "query": "",
+            "atMs": 1800.2369589999998,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/categories",
+            "query": "",
+            "atMs": 1800.3278340000015,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/hierarchy",
+            "query": "",
+            "atMs": 1800.408875000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/products/families",
+            "query": "?limit=60&skip=0",
+            "atMs": 1800.6509170000008,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 2405.3099170000005,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 2738.6655840000003,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 2783.614584000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 3064.986959,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 3092.309792,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 3414.395834000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 3450.2000420000004,
+            "floor": "first-floor"
+          }
+        ],
+        "consoleErrors": [],
+        "failedRequests": []
+      }
+    },
+    {
+      "name": "repeated-session-navigation",
+      "project": "iphone-safari",
+      "data": {
+        "visits": 12,
+        "device": "iphone-safari",
+        "fixtureLatencyMs": 200,
+        "timings": [
+          856.7498750000013,
+          40.04637500000172,
+          37.525666000001365,
+          37.577666000001045,
+          41.53308300000208,
+          37.823959000001196,
+          42.25316700000258,
+          36.73225000000093,
+          24.30987499999901,
+          32.03154100000029,
+          30.385207999999693,
+          24.72395900000265
+        ],
+        "reads": [
+          {
+            "path": "/api/auth/me",
+            "query": "",
+            "atMs": 148.57908300000054,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/floor-access",
+            "query": "",
+            "atMs": 449.42341600000145,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/permission-matrix",
+            "query": "",
+            "atMs": 449.72599999999875,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 1002.6922909999994,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 1800.963208000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/brands",
+            "query": "",
+            "atMs": 1803.072165999998,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/categories",
+            "query": "",
+            "atMs": 1803.2422909999987,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/hierarchy",
+            "query": "",
+            "atMs": 1803.4973329999993,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/products/families",
+            "query": "?limit=60&skip=0",
+            "atMs": 1803.6884160000009,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 2342.510957999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 2687.0872500000005,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 2719.0661660000005,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 3036.945541000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 3064.1258750000015,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 3382.4067910000012,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 3410.3134580000005,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 3735.5552910000006,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 3762.4824579999986,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 4085.0732080000016,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 4112.340666,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 4448.517583000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 4466.273333000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 4782.434249999998,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 4808.640166000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 5121.785499999998,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 5148.533415999998,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 5475.076375000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 5499.152999999998,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 5820.829207999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 5848.673458000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 6170.238333000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 6194.606499999998,
+            "floor": "first-floor"
+          }
+        ],
+        "consoleErrors": [],
+        "failedRequests": []
+      }
+    },
+    {
+      "name": "catalog-startup-timing",
+      "project": "ipad-safari",
+      "data": {
+        "device": "ipad-safari",
+        "browserVersion": "26.6",
+        "fixtureLatencyMs": 200,
+        "readyMs": 1605.5435840000002,
+        "requestAfterFloorMs": 328.47262500000033,
+        "requestAfterReferencesMs": 0.3324160000001939,
+        "reads": [
+          {
+            "path": "/api/auth/me",
+            "query": "",
+            "atMs": 263.1460000000002,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/floor-access",
+            "query": "",
+            "atMs": 579.5205409999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/permission-matrix",
+            "query": "",
+            "atMs": 579.8702499999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 1109.629125,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/brands",
+            "query": "",
+            "atMs": 1110.314875,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/categories",
+            "query": "",
+            "atMs": 1110.5230000000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/hierarchy",
+            "query": "",
+            "atMs": 1110.583416,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/products/families",
+            "query": "?limit=60&skip=0",
+            "atMs": 1110.6472910000002,
+            "floor": "first-floor"
+          }
+        ],
+        "longTasksMs": [],
+        "consoleErrors": [],
+        "failedRequests": []
+      }
+    },
+    {
+      "name": "customer-primary-ready",
+      "project": "ipad-safari",
+      "data": {
+        "device": "ipad-safari",
+        "readyMs": 1515.2003339999997,
+        "held": [
+          "/api/quotations",
+          "/api/purchase-orders",
+          "/api/activity/customer/performance-customer",
+          "/api/godown-stock/customer-transfers",
+          "/api/purchases/customers/performance-customer/workspace"
+        ],
+        "reads": [
+          {
+            "path": "/api/auth/me",
+            "query": "",
+            "atMs": 153.0241249999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/floor-access",
+            "query": "",
+            "atMs": 463.5846669999996,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/permission-matrix",
+            "query": "",
+            "atMs": 463.6913749999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers/performance-customer",
+            "query": "?with_completion=true",
+            "atMs": 995.9579170000002,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/quotations",
+            "query": "?customer_id=performance-customer",
+            "atMs": 996.1367089999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/purchase-orders",
+            "query": "?customer_id=performance-customer",
+            "atMs": 996.2085000000002,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/activity/customer/performance-customer",
+            "query": "",
+            "atMs": 996.2551669999998,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/godown-stock/customer-transfers",
+            "query": "?customer_id=performance-customer",
+            "atMs": 996.2921670000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/purchases/customers/performance-customer/workspace",
+            "query": "",
+            "atMs": 1228.3468339999995,
+            "floor": "first-floor"
+          }
+        ]
+      }
+    },
+    {
+      "name": "quotation-primary-ready",
+      "project": "ipad-safari",
+      "data": {
+        "device": "ipad-safari",
+        "readyMs": 1479.837958,
+        "held": [
+          "/api/quotations/performance-quotation/breakdown",
+          "/api/activity/quotation/performance-quotation",
+          "/api/purchase-orders"
+        ],
+        "reads": [
+          {
+            "path": "/api/settings/permission-matrix",
+            "query": "",
+            "atMs": 361.0199160000002,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/floor-access",
+            "query": "",
+            "atMs": 361.77929099999983,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/auth/me",
+            "query": "",
+            "atMs": 363.326333,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/quotations/performance-quotation",
+            "query": "?with_completion=true",
+            "atMs": 884.8799159999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/quotations/performance-quotation/breakdown",
+            "query": "",
+            "atMs": 886.2323329999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/activity/quotation/performance-quotation",
+            "query": "",
+            "atMs": 886.3979579999996,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/purchase-orders",
+            "query": "?quotation_id=performance-quotation",
+            "atMs": 886.4726659999997,
+            "floor": "first-floor"
+          }
+        ]
+      }
+    },
+    {
+      "name": "navigation-rotation-timings",
+      "project": "ipad-safari",
+      "data": {
+        "cpuThrottle": "unavailable on this engine",
+        "fixtureLatencyMs": 200,
+        "timings": [
+          920.4542089999995,
+          80.17266600000039,
+          46.63570900000013,
+          54.78045799999927
+        ],
+        "reads": [
+          {
+            "path": "/api/settings/permission-matrix",
+            "query": "",
+            "atMs": 385.94425000000047,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/floor-access",
+            "query": "",
+            "atMs": 386.558583,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/auth/me",
+            "query": "",
+            "atMs": 386.9233750000003,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 908.5993749999998,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 1613.6267499999994,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 1984.0642499999994,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/brands",
+            "query": "",
+            "atMs": 1984.417875000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/categories",
+            "query": "",
+            "atMs": 1984.5210829999996,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/hierarchy",
+            "query": "",
+            "atMs": 1984.5789999999997,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/products/families",
+            "query": "?limit=60&skip=0",
+            "atMs": 1984.6348749999997,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 2771.3756250000006,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 3107.2432910000007,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 3143.5140410000004,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 3418.8690000000006,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 3465.0173749999994,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 3807.0940410000003,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 3848.882708000001,
+            "floor": "first-floor"
+          }
+        ],
+        "consoleErrors": [],
+        "failedRequests": []
+      }
+    },
+    {
+      "name": "repeated-session-navigation",
+      "project": "ipad-safari",
+      "data": {
+        "visits": 12,
+        "device": "ipad-safari",
+        "fixtureLatencyMs": 200,
+        "timings": [
+          856.7373750000006,
+          54.97741699999824,
+          51.74716699999772,
+          34.458458000000974,
+          27.529625000002852,
+          48.01474999999846,
+          45.06587500000023,
+          53.503875000002154,
+          38.96166599999924,
+          47.16179199999897,
+          31.494249999999738,
+          32.54970800000228
+        ],
+        "reads": [
+          {
+            "path": "/api/auth/me",
+            "query": "",
+            "atMs": 151.20970900000066,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/floor-access",
+            "query": "",
+            "atMs": 464.35333399999945,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/permission-matrix",
+            "query": "",
+            "atMs": 464.47004200000083,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 1007.8256249999995,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 1844.3769589999993,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/brands",
+            "query": "",
+            "atMs": 1844.8280839999989,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/categories",
+            "query": "",
+            "atMs": 1845.1187499999996,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/hierarchy",
+            "query": "",
+            "atMs": 1845.8516670000008,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/products/families",
+            "query": "?limit=60&skip=0",
+            "atMs": 1845.9145420000004,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 2383.7378750000007,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 2697.268417000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 2747.184459000002,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 3060.725042,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 3110.7198340000014,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 3443.135791999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 3472.5728340000005,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 3783.4547919999986,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 3802.186416999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 4121.454791999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 4161.720500000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 4481.502084000002,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 4519.608042000002,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 4869.637042,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 4893.545209000002,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 5203.542584000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 5237.708499999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 5553.518000000002,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 5595.949167000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 5913.890583999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 5951.922042,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 6280.364334,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 6315.8175839999985,
+            "floor": "first-floor"
+          }
+        ],
+        "consoleErrors": [],
+        "failedRequests": []
+      }
+    },
+    {
+      "name": "catalog-startup-timing",
+      "project": "desktop-chrome",
+      "data": {
+        "device": "desktop-chrome",
+        "browserVersion": "153.0.8010.12",
+        "fixtureLatencyMs": 200,
+        "readyMs": 1508.1333339999999,
+        "requestAfterFloorMs": 313.788417,
+        "requestAfterReferencesMs": 0.1855000000000473,
+        "reads": [
+          {
+            "path": "/api/settings/permission-matrix",
+            "query": "",
+            "atMs": 376.269458,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/floor-access",
+            "query": "",
+            "atMs": 376.567,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/auth/me",
+            "query": "",
+            "atMs": 376.9229170000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 895.2054580000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/brands",
+            "query": "",
+            "atMs": 895.341375,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/categories",
+            "query": "",
+            "atMs": 895.3955000000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/hierarchy",
+            "query": "",
+            "atMs": 895.445917,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/products/families",
+            "query": "?limit=60&skip=0",
+            "atMs": 895.526875,
+            "floor": "first-floor"
+          }
+        ],
+        "longTasksMs": [
+          60
+        ],
+        "consoleErrors": [],
+        "failedRequests": []
+      }
+    },
+    {
+      "name": "customer-primary-ready",
+      "project": "desktop-chrome",
+      "data": {
+        "device": "desktop-chrome",
+        "readyMs": 1466.408167,
+        "held": [
+          "/api/quotations",
+          "/api/purchase-orders",
+          "/api/activity/customer/performance-customer",
+          "/api/godown-stock/customer-transfers",
+          "/api/purchases/customers/performance-customer/workspace"
+        ],
+        "reads": [
+          {
+            "path": "/api/settings/permission-matrix",
+            "query": "",
+            "atMs": 339.4678749999998,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/floor-access",
+            "query": "",
+            "atMs": 339.73704099999986,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/auth/me",
+            "query": "",
+            "atMs": 339.7931249999997,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers/performance-customer",
+            "query": "?with_completion=true",
+            "atMs": 861.2788329999998,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/quotations",
+            "query": "?customer_id=performance-customer",
+            "atMs": 862.257208,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/purchase-orders",
+            "query": "?customer_id=performance-customer",
+            "atMs": 862.3727079999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/activity/customer/performance-customer",
+            "query": "",
+            "atMs": 862.4532499999996,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/godown-stock/customer-transfers",
+            "query": "?customer_id=performance-customer",
+            "atMs": 862.5217079999998,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/purchases/customers/performance-customer/workspace",
+            "query": "",
+            "atMs": 1082.2292499999999,
+            "floor": "first-floor"
+          }
+        ]
+      }
+    },
+    {
+      "name": "quotation-primary-ready",
+      "project": "desktop-chrome",
+      "data": {
+        "device": "desktop-chrome",
+        "readyMs": 1466.7412919999997,
+        "held": [
+          "/api/quotations/performance-quotation/breakdown",
+          "/api/activity/quotation/performance-quotation",
+          "/api/purchase-orders"
+        ],
+        "reads": [
+          {
+            "path": "/api/settings/permission-matrix",
+            "query": "",
+            "atMs": 345.6129580000006,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/floor-access",
+            "query": "",
+            "atMs": 346.8330420000002,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/auth/me",
+            "query": "",
+            "atMs": 346.9490420000002,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/quotations/performance-quotation",
+            "query": "?with_completion=true",
+            "atMs": 862.3760420000008,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/quotations/performance-quotation/breakdown",
+            "query": "",
+            "atMs": 862.5879580000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/activity/quotation/performance-quotation",
+            "query": "",
+            "atMs": 862.6520420000006,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/purchase-orders",
+            "query": "?quotation_id=performance-quotation",
+            "atMs": 862.7101670000002,
+            "floor": "first-floor"
+          }
+        ]
+      }
+    },
+    {
+      "name": "navigation-rotation-timings",
+      "project": "desktop-chrome",
+      "data": {
+        "cpuThrottle": 4,
+        "fixtureLatencyMs": 200,
+        "timings": [
+          945.478000000001,
+          100.0260419999995,
+          80.6700409999994,
+          93.53316600000107
+        ],
+        "reads": [
+          {
+            "path": "/api/auth/me",
+            "query": "",
+            "atMs": 425.4544589999996,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/floor-access",
+            "query": "",
+            "atMs": 734.9754170000006,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/permission-matrix",
+            "query": "",
+            "atMs": 735.8754170000002,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 1310.3371670000006,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 1779.3082499999991,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 2127.711291999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/brands",
+            "query": "",
+            "atMs": 2127.766084,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/categories",
+            "query": "",
+            "atMs": 2127.787125,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/hierarchy",
+            "query": "",
+            "atMs": 2127.8861669999997,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/products/families",
+            "query": "?limit=60&skip=0",
+            "atMs": 2127.9245,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 2707.404583999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 2971.225834,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 3033.5734170000005,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 3279.2293340000006,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 3368.036208999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 3639.173916999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 3721.552375,
+            "floor": "first-floor"
+          }
+        ],
+        "consoleErrors": [],
+        "failedRequests": []
+      }
+    },
+    {
+      "name": "repeated-session-navigation",
+      "project": "desktop-chrome",
+      "data": {
+        "visits": 12,
+        "device": "desktop-chrome",
+        "fixtureLatencyMs": 200,
+        "timings": [
+          879.4075420000008,
+          41.025792000000365,
+          25.103832999999213,
+          26.295416999997542,
+          24.371250000000146,
+          22.95670799999789,
+          24.162249999997584,
+          23.380291999998008,
+          23.97804200000246,
+          22.415750000000116,
+          19.908040999998775,
+          21.877666999997018
+        ],
+        "reads": [
+          {
+            "path": "/api/settings/permission-matrix",
+            "query": "",
+            "atMs": 344.3169170000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/settings/floor-access",
+            "query": "",
+            "atMs": 344.5125420000004,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/auth/me",
+            "query": "",
+            "atMs": 345.38687500000015,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 860.1221249999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 1758.4519170000003,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/brands",
+            "query": "",
+            "atMs": 1758.5806670000002,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/categories",
+            "query": "",
+            "atMs": 1758.6410419999993,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/hierarchy",
+            "query": "",
+            "atMs": 1758.6912919999995,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/products/families",
+            "query": "?limit=60&skip=0",
+            "atMs": 1758.739458,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 2335.0424169999987,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 2604.359457999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 2636.9237919999996,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 2940.6953749999993,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 2959.778291999999,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 3266.3409169999995,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 3285.4310830000013,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 3590.343082999998,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 3608.6155830000007,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 3911.6747080000005,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 3929.5213749999984,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 4235.572332999998,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 4253.902667,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 4557.139083,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 4574.886874999998,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 4877.429041999998,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 4895.582250000001,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 5201.438499999998,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 5218.084249999998,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 5520.157792,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 5537.266957999998,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/catalog/facets",
+            "query": "",
+            "atMs": 5843.9609169999985,
+            "floor": "first-floor"
+          },
+          {
+            "path": "/api/customers",
+            "query": "?confirmed_only=true&completion=active",
+            "atMs": 5861.0205829999995,
+            "floor": "first-floor"
+          }
+        ],
+        "consoleErrors": [],
+        "failedRequests": []
+      }
+    }
+  ]
+}

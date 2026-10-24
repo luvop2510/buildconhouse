@@ -1,3 +1,5 @@
+import { LeadScopeFields, type LeadPartner } from "@/src/components/leads/LeadScopeFields";
+import type { LeadScope } from "@/src/api/leads";
 import { Disclosure } from "@/src/design/Disclosure";
 // Log Walk-in — Phase 4 (2026-07-30), extended for the CRM Foundation spec
 // (2026-08): full Customer capture (address/city/state/pincode), explicit
@@ -46,7 +48,6 @@ export default function NewWalkIn() {
   const [pincode, setPincode] = useState("");
 
   const [budget, setBudget] = useState("");
-  const [notes, setNotes] = useState("");
   const [products, setProducts] = useState("");
   const [source, setSource] = useState("Walk-in");
   const [sources, setSources] = useState<string[]>(["Walk-in", "Reference", "Architect", "Builder", "Social Media", "Existing Customer", "Other"]);
@@ -54,6 +55,8 @@ export default function NewWalkIn() {
   const [architect, setArchitect] = useState("");
   const [builder, setBuilder] = useState("");
   const [floorId, setFloorId] = useState(routeFloorId || selectedFloorId || floors[0]?.id || "");
+  const [scope, setScope] = useState<LeadScope>({ interested_floor_ids: [routeFloorId || selectedFloorId || floors[0]?.id || ""].filter(Boolean), assignments: [] });
+  const [partner, setPartner] = useState<LeadPartner>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Salesperson — explicit, required, defaults to the logged-in staff but
@@ -98,6 +101,10 @@ export default function NewWalkIn() {
     if (routeFloorId) { setFloorId(routeFloorId); return; }
     if (!floorId && (selectedFloorId || floors[0]?.id)) setFloorId(selectedFloorId || floors[0]?.id);
   }, [routeFloorId, selectedFloorId, floors, floorId]);
+  useEffect(() => {
+    if (!floorId || !floors.some(floor => floor.id === floorId)) return;
+    setScope(current => current.interested_floor_ids.length ? current : { ...current, interested_floor_ids: [floorId] });
+  }, [floorId, floors]);
 
   useEffect(() => {
     const digits = phone.replace(/\D/g, "");
@@ -153,8 +160,9 @@ export default function NewWalkIn() {
         source, reference_contact: referenceContact.trim() || undefined,
         architect: architect.trim() || undefined, builder: builder.trim() || undefined,
         salesperson_id: salespersonId, floor_id: floorId,
+        ...scope, referrer_id: partner?.id || null,
         interested_products: products.split(",").map((p) => p.trim()).filter(Boolean),
-        budget: budget ? Number(budget) : undefined, notes: notes.trim() || undefined,
+        budget: budget ? Number(budget) : undefined,
         use_existing_customer_id: useExistingId, force_new_customer: force,
       });
       toast.success("Walk-in logged");
@@ -177,6 +185,7 @@ export default function NewWalkIn() {
   const save = async () => {
     if (!name.trim()) { setError("Name is required"); toast.error("Enter the customer's name"); return; }
     if (!phone.trim()) { setError("Phone is required"); toast.error("Enter a phone number"); return; }
+    if (!scope.interested_floor_ids.length) { setError("Select at least one interested floor"); return; }
     if (!floorId) { setError("Department is required"); toast.error("Select an interested department"); return; }
     if (!salespersonId) { setError("Salesperson is required"); toast.error("Assign a salesperson"); return; }
     setError(null);
@@ -189,9 +198,9 @@ export default function NewWalkIn() {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={isPhone ? [] : ["top"]}>
-      <PageHeader title="Log Walk-in" overline="CRM" back={() => router.back()} />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+      <KeyboardAvoidingView enabled={Platform.OS !== "web"} style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <ScrollView contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, paddingBottom: isPhone ? 132 : spacing.xxl, gap: spacing.md }} keyboardShouldPersistTaps="handled">
+          <PageHeader title="Log Walk-in" overline="CRM" back={() => router.back()} embedded />
           <Text style={type.overline}>Customer</Text>
           <TextField label="Customer Name *" value={name} onChangeText={setName} placeholder="Full name" testID="walkin-name" />
           <TextField label="Phone *" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="10-digit mobile" testID="walkin-phone" />
@@ -240,12 +249,7 @@ export default function NewWalkIn() {
             testID="walkin-salesperson-row"
           />
 
-          <Text style={type.bodyStrong}>Interested Department *</Text>
-          <View style={{ flexDirection: "row", gap: spacing.xs, flexWrap: "wrap" }}>
-            {floors.map((f) => (
-              <Chip key={f.id} label={f.name} active={floorId === f.id} onPress={() => setFloorId(f.id)} testID={`walkin-floor-${f.id}`} />
-            ))}
-          </View>
+          <LeadScopeFields customerPhone={phone} sourceFloorId={floorId} value={scope} onChange={value => { setScope(value); if (value.interested_floor_ids.length && !value.interested_floor_ids.includes(floorId)) setFloorId(value.interested_floor_ids[0]); }} partner={partner} onPartnerChange={setPartner} reference={false} />
 
           <Text style={type.bodyStrong}>Lead Source</Text>
           <View style={{ flexDirection: "row", gap: spacing.xs, flexWrap: "wrap" }}>
@@ -261,7 +265,7 @@ export default function NewWalkIn() {
 
           <TextField label="Interested Products" value={products} onChangeText={setProducts} placeholder="Comma-separated, e.g. Vitrified Tiles, Granite" testID="walkin-products" />
           <TextField label="Budget (₹)" value={budget} onChangeText={setBudget} keyboardType="numeric" placeholder="Optional" testID="walkin-budget" />
-          <TextField label="Notes" value={notes} onChangeText={setNotes} placeholder="Optional" multiline numberOfLines={3} testID="walkin-notes" /></Disclosure>
+          </Disclosure>
 
         </ScrollView>
         <View style={styles.submitFooter}>

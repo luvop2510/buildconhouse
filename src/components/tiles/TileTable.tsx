@@ -220,7 +220,7 @@ export function DataTable<T>({
   // not let `fillViewport` silently introduce a second vertical responder
   // when such a table is rendered inside PageShell (especially on tablets).
   const innerScroll = Boolean(fillViewport) && bodyMaxHeight != null && scrollOwner === "self";
-  const pinEnabled = stickyWidth > 0
+  const pinEnabled = !isPhone && stickyWidth > 0
     && !innerScroll
     && availableWidth > 0
     && availableWidth - stickyWidth >= MIN_UNPINNED_WIDTH;
@@ -349,7 +349,7 @@ export function DataTable<T>({
           ]}
         >
           <ScrollableBody enabled={innerScroll} maxHeight={bodyMaxHeight ?? 0}>
-          <View role="row" style={[styles.headerRow, innerScroll ? stickyHeader : null]}>
+          <View role="row" style={[styles.headerRow, innerScroll && !isPhone ? stickyHeader : null]}>
             {columns.map((column) => (
               <View
                 key={column.key}

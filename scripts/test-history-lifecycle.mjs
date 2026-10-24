@@ -128,6 +128,7 @@ function overlayFixture() {
     useEffect: effect, useLayoutEffect: effect,
   };
   const previous = { isConnected: true, focus() { document.activeElement = this; } };
+  const returnFocusRef = { current: previous };
   const input = { focus() { document.activeElement = this; }, getClientRects: () => [{}], getAttribute: () => null };
   const panel = { contains: target => target === input || target === panel,
     querySelectorAll: () => [input], focus() { document.activeElement = this; } };
@@ -139,15 +140,16 @@ function overlayFixture() {
     document, HTMLElement: class {}, setTimeout: callback => { timer = callback; return 1; }, clearTimeout: () => { timer = null; },
     requestAnimationFrame: callback => { frames.push(callback); return frames.length; },
   });
-  function render(close, dismissable = true, open = true) {
+  function render(close, dismissable = true, open = true, explicitTrigger = false) {
     index = 0; pending = [];
-    module.useOverlayFocus(open, close, dismissable).current = panel;
+    module.useOverlayFocus(open, close, dismissable, explicitTrigger ? returnFocusRef : undefined).current = panel;
   }
   function commit() { for (const apply of pending) apply(); pending = []; if (timer) { const run = timer; timer = null; run(); } }
-  return { render, commit, events, previous, document,
+  return { render, commit, events, previous, document, returnFocusRef,
     flushFrames() { const pendingFrames = frames.splice(0); for (const frame of pendingFrames) frame(); },
     old: () => oldCalls++, newer: () => newCalls++,
     get calls() { return [oldCalls, newCalls]; },
+    setPanelConnected(value) { panel.isConnected = value; },
     escape() { events.get('keyup')?.({ key: 'Escape', preventDefault() {}, stopImmediatePropagation() {} }); },
     unmount() { for (const hook of hooks) hook?.cleanup?.(); },
   };
@@ -181,6 +183,35 @@ test('overlay cleanup removes listeners and restores the trigger on close and un
   h.render(h.old); h.commit(); h.unmount();
   h.flushFrames();
   assert.equal(h.events.size, 0); assert.equal(h.document.activeElement, h.previous);
+});
+
+test('an autoFocus child cannot replace an explicit overlay trigger', () => {
+  const h = overlayFixture();
+  h.document.activeElement = { isConnected: true, focus() {} }; // child autoFocus before parent effects
+  h.render(h.old, true, true, true); h.commit(); h.render(h.old, true, false); h.commit(); h.flushFrames();
+  assert.equal(h.document.activeElement, h.previous);
+  h.unmount(); assert.equal(h.events.size, 0);
+});
+
+test('focus restoration waits until the closing native web portal releases its trap', () => {
+  const h = overlayFixture();
+  h.render(h.old, true, true, true); h.commit(); h.setPanelConnected(true);
+  h.render(h.old, true, false); h.commit(); h.flushFrames();
+  assert.notEqual(h.document.activeElement, h.previous);
+  h.setPanelConnected(false); h.flushFrames();
+  assert.equal(h.document.activeElement, h.previous);
+  h.unmount(); assert.equal(h.events.size, 0);
+});
+
+test('overlay restores the live explicit trigger after responsive replacement', () => {
+  const h = overlayFixture();
+  h.render(h.old, true, true, true); h.commit();
+  h.previous.isConnected = false;
+  const replacement = { isConnected: true, focus() { h.document.activeElement = this; } };
+  h.returnFocusRef.current = replacement;
+  h.render(h.old, true, false, true); h.commit(); h.flushFrames();
+  assert.equal(h.document.activeElement, replacement);
+  h.unmount();
 });
 
 test('overlay restoration runs after native Modal cleanup changes focus', () => {

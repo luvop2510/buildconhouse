@@ -41,8 +41,9 @@ class _Recorder:
     def __init__(self):
         self.last_query = None
 
-    def find(self, query, *_a, **_kw):
+    def find(self, query, projection=None, *_a, **_kw):
         self.last_query = query
+        self.last_projection = projection
         self.cursor = _Cursor([])
         return self.cursor
 
@@ -174,3 +175,50 @@ def test_quotation_status_multi_select_intersects_lifecycle_scope(monkeypatch):
     asyncio.run(quotation_routes.list_quotations(status="ordered", view="pending", user=_user()))
     assert _flatten(fake_db.quotations.last_query)["status"] == {"$in": []}
     assert _flatten(fake_db.quotations.last_query)["floor_id"] == {"$in": ["ground-floor"]}
+
+
+@pytest.mark.parametrize("view", ["won", "lost"])
+def test_outcome_quotation_views_include_imports_without_promoting_to_orders(monkeypatch, view):
+    fake_db = _FakeDb()
+    monkeypatch.setattr(quotation_routes, "db", fake_db)
+    asyncio.run(quotation_routes.list_quotations(doc_type="standard", view=view, user=_user()))
+    query = _flatten(fake_db.quotations.last_query)
+    assert query["floor_id"] == {"$in": ["ground-floor"]}
+    assert query["doc_type"] == {"$in": ["standard", None]}
+    assert query["$or"][0] == {"customer_outcome": view}
+    # Approved quotations remain pre-order approvals, not won sales.
+    if view == "won":
+        assert query["$or"][1]["status"] == {"$in": ["ordered", "won"]}
+
+
+def test_historical_outcomes_are_excluded_from_pending_quotations(monkeypatch):
+    fake_db = _FakeDb()
+    monkeypatch.setattr(quotation_routes, "db", fake_db)
+    asyncio.run(quotation_routes.list_quotations(view="pending", user=_user()))
+    assert _flatten(fake_db.quotations.last_query)["customer_outcome"] == {"$nin": ["won", "lost"]}
+
+
+@pytest.mark.parametrize("view", ["won", "lost"])
+def test_recent_quotations_share_outcome_filters_and_remain_bounded(monkeypatch, view):
+    fake_db = _FakeDb()
+    monkeypatch.setattr(quotation_routes, "db", fake_db)
+    asyncio.run(quotation_routes.recent_quotations(limit=101, view=view, user=_user()))
+    query = _flatten(fake_db.quotations.last_query)
+    assert query["$or"][0] == {"customer_outcome": view}
+    assert query["floor_id"] == {"$in": ["ground-floor"]}
+    assert query["doc_type"] == {"$nin": ["tiles_selection", "tiles_quotation"]}
+    assert fake_db.quotations.last_projection["customer_outcome"] == 1
+    assert fake_db.quotations.cursor.limit_value == 100
+    with pytest.raises(ValueError):
+        asyncio.run(quotation_routes.recent_quotations(limit=0, view=view, user=_user()))
+
+
+def test_recent_quotations_return_outcome_on_draft_import(monkeypatch):
+    class Quotations:
+        def find(self, *args):
+            return _Cursor([{"id": "import", "status": "draft", "customer_outcome": "lost", "outcome_reason": "Imported at user request"}])
+    monkeypatch.setattr(quotation_routes, "db", SimpleNamespace(quotations=Quotations()))
+    result = asyncio.run(quotation_routes.recent_quotations(view="lost", user=_user()))
+    assert result[0]["status"] == "draft"
+    assert result[0]["customer_outcome"] == "lost"
+    assert result[0]["outcome_reason"] == "Imported at user request"

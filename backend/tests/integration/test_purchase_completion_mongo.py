@@ -134,8 +134,60 @@ def test_active_crm_workspace_moves_completed_customers_but_stock_keeps_them(mon
             await db.purchase_orders.insert_many([po("done", "complete"), po("open", "open", [item(stage="in_box")])])
             active = await tracker.active_customer_workspaces(include_completed=False, user=user())
             all_customers = await tracker.active_customer_workspaces(include_completed=True, user=user())
-            assert {c["id"] for c in active} == {"open", "new"}
-            assert {c["id"] for c in all_customers} == {"complete", "open", "new"}
+            assert {c["id"] for c in active} == {"open"}
+            assert {c["id"] for c in all_customers} == {"complete", "open"}
+        finally:
+            client.close()
+    asyncio.run(run())
+
+
+def test_walkin_prospects_stay_out_of_customer_and_purchase_directories_until_ordered(mongo_url, monkeypatch):
+    from fastapi import Response
+    from routes import customer_routes
+
+    async def run():
+        client = AsyncIOMotorClient(mongo_url)
+        db = client.completion
+        monkeypatch.setattr(tracker, "db", db)
+        monkeypatch.setattr(customer_routes, "db", db)
+        try:
+            identities = ["walkin", "draft", "cancelled", "converted", "legacy", "tile", "transferred", "foreign", "complete"]
+            await db.customers.insert_many([
+                {"id": c, "name": c, "floor_id": "first-floor", "lifecycle": "prospect"}
+                for c in identities
+            ])
+            await db.walkins.insert_many([
+                {"id": f"wi-{c}", "customer_id": c, "floor_id": "first-floor", "status": "new", "is_deleted": False}
+                for c in ["walkin", "draft", "converted"]
+            ])
+            await db.quotations.insert_many([
+                {"id": f"q-{c}", "customer_id": c, "floor_id": "first-floor", "status": status}
+                for c, status in [("draft", "draft"), ("converted", "ordered"), ("cancelled", "cancelled")]
+            ] + [{"id": "q-foreign", "customer_id": "foreign", "floor_id": "ground-floor", "status": "ordered"}])
+            await db.customer_orders.insert_many([
+                {"id": "tile", "customer_id": "tile", "floor_id": "first-floor", "is_deleted": False},
+                {"id": "deleted", "customer_id": "cancelled", "floor_id": "first-floor", "is_deleted": True},
+            ])
+            await db.purchase_orders.insert_many([
+                po("legacy", "legacy", [item(stage="in_box")]),
+                po("transfer", "cancelled", [item(stage="in_box", customer_id="transferred", customer_name="Transferred")]),
+                po("cancelled", "cancelled", status="cancelled"),
+                po("complete", "complete"),
+                po("foreign", "foreign", [item(stage="in_box")], floor_id="ground-floor"),
+            ])
+            confirmed = {"converted", "legacy", "tile", "transferred", "complete"}
+            active = confirmed - {"complete"}
+            assert {c["id"] for c in await tracker.active_customer_workspaces(False, user())} == active
+            assert {c["id"] for c in await tracker.active_customer_workspaces(True, user())} == confirmed
+            directory = await customer_routes.list_customers(Response(), skip=0, limit=500, confirmed_only=True, user=user())
+            assert {c.id for c in directory} == confirmed
+            internal = await customer_routes.list_customers(Response(), skip=0, limit=500, confirmed_only=False, user=user())
+            assert {c.id for c in internal} == set(identities)
+            # Hiding a prospect never removes its register row or identity.
+            assert await db.walkins.count_documents({}) == 3
+            assert await db.customers.count_documents({}) == len(identities)
+            await db.quotations.update_one({"id": "q-draft"}, {"$set": {"status": "won"}})
+            assert {c["id"] for c in await tracker.active_customer_workspaces(False, user())} == active | {"draft"}
         finally:
             client.close()
     asyncio.run(run())

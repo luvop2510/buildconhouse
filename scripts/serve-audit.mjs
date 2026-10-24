@@ -5,8 +5,10 @@ import { resolve, extname, sep } from 'node:path';
 // Serve the actual release export. This server deliberately has no API proxy:
 // browser journeys must intercept requests and can never write to production.
 const root = resolve(process.env.AUDIT_ROOT || 'dist/client');
+const productionHeaders = JSON.parse(await readFile(new URL('../vercel.json', import.meta.url), 'utf8')).routes.find(rule => rule.src === '/(.*)').headers;
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.ttf': 'font/ttf', '.woff2': 'font/woff2' };
 createServer(async (request, response) => {
+  for (const [key, value] of Object.entries(productionHeaders)) response.setHeader(key, value);
   try {
     const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
     if (pathname.startsWith('/api/')) {

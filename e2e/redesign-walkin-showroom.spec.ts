@@ -24,22 +24,23 @@ async function walkinReads(page: Page) {
   } }));
 }
 
-test('switching to Kitchen Floor opens the regular walk-in workspace', async ({ page }) => {
+test('switching to Kitchen Floor opens its dedicated Lead stage workspace', async ({ page }) => {
   await mockSession(page, '/dashboard');
   await page.goto('/dashboard');
   await page.getByTestId('floor-switcher').click();
   await page.getByRole('menuitem', { name: 'Kitchen Floor', exact: true }).click();
-  await expect(page).toHaveURL(/\/walkins$/);
+  await expect(page).toHaveURL(/\/kitchen\/stages\/lead$/);
   await expect(page.getByTestId('floor-switcher')).toHaveAccessibleName('Switch workspace. Current workspace: Kitchen Floor');
-  await expect(page.getByRole('heading', { name: 'Walk-ins', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Lead', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /add lead/i })).toBeVisible();
 });
 
-test('a saved Kitchen Floor workspace opens the regular walk-in page', async ({ page }) => {
+test('a saved Kitchen Floor workspace opens its dedicated Lead stage workspace', async ({ page }) => {
   await mockSession(page, '/dashboard');
   await page.addInitScript(() => localStorage.setItem('forge.active-floor', JSON.stringify('second-floor')));
   await page.goto('/dashboard');
-  await expect(page).toHaveURL(/\/walkins$/);
-  await expect(page.getByRole('heading', { name: 'Walk-ins', exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/kitchen\/stages\/lead$/);
+  await expect(page.getByRole('heading', { name: 'Lead', exact: true })).toBeVisible();
 });
 
 test('critical walk-ins combines multiple floors and lead sources in the same backend request', async ({ page }) => {
@@ -54,10 +55,10 @@ test('critical walk-ins combines multiple floors and lead sources in the same ba
   await expect(page.getByTestId('floor-switcher')).toBeVisible();
   await expect(page.getByTestId('walkins-floor-first-floor')).toHaveAttribute('aria-pressed', 'true');
   await expect.poll(() => filters.at(-1)?.get('floor_ids')).toBe('first-floor');
-  await page.getByTestId('walkins-floor-second-floor').click();
+  await page.getByTestId('walkins-floor-ground-floor').click();
   await page.getByTestId('walkins-source-filters-Reference').click();
   await page.getByTestId('walkins-source-filters-Instagram').click();
-  await expect.poll(() => filters.at(-1)?.get('floor_ids')).toBe('first-floor,second-floor');
+  await expect.poll(() => filters.at(-1)?.get('floor_ids')).toBe('first-floor,ground-floor');
   await expect.poll(() => filters.at(-1)?.get('source')).toBe('Reference,Instagram');
   await expect(page.getByTestId('walkins-source-filters-Reference')).toHaveAttribute('aria-checked', 'true');
   await expect(page.getByTestId('walkins-source-filters-Instagram')).toHaveAttribute('aria-checked', 'true');
@@ -67,11 +68,13 @@ test('critical walk-ins combines multiple floors and lead sources in the same ba
 test('critical Visit Showroom retries a failed transfer and opens only showroom-origin follow-ups', async ({ page }) => {
   await mockSession(page, '/walkins');
   await walkinReads(page);
-  await page.route('**/api/walkins?**', route => route.fulfill({ json: [{ ...walkin, floor_id: 'second-floor' }] }));
+  let transferred = false;
+  await page.route('**/api/walkins?**', route => route.fulfill({ json: transferred ? [] : [{ ...walkin, floor_id: 'ground-floor' }] }));
   let attempts = 0;
   await page.route('**/api/walkins/walkin-showroom/visit-showroom', route => {
-    expect(route.request().headers()['x-floor-id']).toBe('second-floor');
+    expect(route.request().headers()['x-floor-id']).toBe('ground-floor');
     attempts += 1;
+    if (attempts > 1) transferred = true;
     return attempts === 1 ? route.fulfill({ status: 503, json: { detail: 'Transfer unavailable; retry' } })
       : route.fulfill({ json: { walkin_id: walkin.id, followup_id: 'showroom:walkin-showroom' } });
   });
@@ -93,13 +96,19 @@ test('critical Visit Showroom retries a failed transfer and opens only showroom-
   await expect(page.getByText('Transferred showroom visitor', { exact: true })).toBeVisible();
   await expect(page.getByText('Unrelated follow-up', { exact: true })).toHaveCount(0);
   expect(attempts).toBe(2);
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('forge.active-floor') || 'null'))).toBe('second-floor');
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('forge.active-floor') || 'null'))).toBe('ground-floor');
+  await page.goto('/walkins');
+  await expect(page.getByTestId('walkin-card-walkin-showroom')).toHaveCount(0);
+  await expect(page.getByTestId('walkin-visit-showroom-walkin-showroom')).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByTestId('walkin-card-walkin-showroom')).toHaveCount(0);
+  expect(attempts).toBe(2);
 });
 
 test('critical multi-floor walk-in actions use the selected records floor', async ({ page }) => {
   await mockSession(page, '/walkins');
   await walkinReads(page);
-  const crossFloor = { ...walkin, floor_id: 'second-floor' };
+  const crossFloor = { ...walkin, floor_id: 'ground-floor' };
   await page.route('**/api/walkins?**', route => route.fulfill({ json: [crossFloor] }));
   let requestedFloor: string | undefined;
   await page.route('**/api/walkins/walkin-showroom', route => {
@@ -108,8 +117,9 @@ test('critical multi-floor walk-in actions use the selected records floor', asyn
     return route.fulfill({ json: { ...crossFloor, status: 'selection_scheduled' } });
   });
   await page.goto('/walkins');
+  await page.getByTestId('walkins-floor-ground-floor').click();
   await page.getByTestId('walkin-schedule-walkin-showroom').click();
-  await expect.poll(() => requestedFloor).toBe('second-floor');
+  await expect.poll(() => requestedFloor).toBe('ground-floor');
   await expect(page.getByText('Marked as Selection Scheduled', { exact: true })).toBeVisible();
 });
 

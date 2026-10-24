@@ -1,0 +1,20 @@
+{
+  "sourceCommit": "0d30cf84a326cd5e018d95873fcccd7937a26df7",
+  "vercel": {
+    "id": "dpl_GS3rtExZ96v986S5RPRdnbq5hqrm",
+    "readyState": "READY",
+    "url": "https://buildcon-house-hn2o4ky16-yug19.vercel.app",
+    "aliases": [
+      "https://buildconhouse.in",
+      "https://www.buildconhouse.in"
+    ],
+    "readOnlyReleaseChecks": 19,
+    "hostedFixtureBrowserTestsPassed": 8
+  },
+  "railway": {
+    "id": "7c96f99c-19e7-4c62-a8bf-2ba5dd62a4f1",
+    "status": "SUCCESS",
+    "url": "https://forge20-production-a8b0.up.railway.app"
+  },
+  "protectedMainMerged": false
+}

@@ -13,7 +13,7 @@ import { colors, font, money, radius, type } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";
 
 import { useBuilder } from "../context/BuilderContext";
-import { computeLineBreakdown, effectivePct, sourceBadge } from "../helpers/pricing";
+import { effectivePct, sourceBadge } from "../helpers/pricing";
 import { FinishSwatch } from "../shared/VariantChip";
 import { grabCursor } from "../shared/grabCursor";
 import type { Line, RoomDiscount } from "../helpers/types";
@@ -67,8 +67,7 @@ function LineRowImpl({
   // is allocated across eligible lines, so calculating this row from only its
   // own effective percentage makes the visible line total disagree with the
   // quotation grand total.
-  const resolved = computeLineBreakdown(b.s.lines, projDisc, catDiscs, roomDiscs || {})
-    .find((row) => row.line.id === l.id);
+  const resolved = b.lineBreakdownById[l.id];
   const badge = sourceBadge(resolved?.source || eff.source);
   const total = resolved?.net ?? 0;
   const focused = b.assistantFocus?.kind === "line" && b.assistantFocus.line_id === l.id;
@@ -115,7 +114,7 @@ function LineRowImpl({
         transition={120}
       />
       <View style={styles.content}>
-        <View style={styles.heading}>
+        <View style={[styles.heading, isPhone && { flexDirection: "column", gap: 4 }]}>
           <View style={styles.nameGroup}>
             <Text style={styles.name} numberOfLines={isPhone ? 2 : 1}>{l.name}</Text>
             {isIncluded ? <Badge tone="success" label="Included" /> : null}
@@ -137,7 +136,8 @@ function LineRowImpl({
             placeholder="Area for PPT, e.g. Basin Area"
             placeholderTextColor={colors.onSurfaceMuted}
             returnKeyType="done"
-            style={styles.areaInput}
+            editable={!isIncluded}
+            style={[styles.areaInput, isPhone && { fontSize: 16 }]}
           />
         </View>
         <View style={styles.areaRow}>
@@ -148,6 +148,7 @@ function LineRowImpl({
             accessibilityRole="checkbox"
             accessibilityLabel={`Exclude dimension diagram from PDF for ${l.name}`}
             accessibilityState={{ checked: !!l.exclude_dimension }}
+            style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}
             onPress={() => b.updateLine(l.id, { exclude_dimension: !l.exclude_dimension })}
           >
             <Feather name={l.exclude_dimension ? "check-square" : "square"} size={15} color={colors.onSurfaceMuted} />
@@ -160,11 +161,11 @@ function LineRowImpl({
           ) : <>
             <View style={styles.mini}>
               <Text style={styles.miniLabel}>QTY</Text>
-              <TextInput testID={`qty-${l.id}`} value={qtyDraft} keyboardType="number-pad" onChangeText={setQtyDraft} onBlur={commitQty} onSubmitEditing={commitQty} style={styles.miniVal} selectTextOnFocus />
+              <TextInput testID={`qty-${l.id}`} value={qtyDraft} keyboardType="number-pad" onChangeText={setQtyDraft} onBlur={commitQty} onSubmitEditing={commitQty} style={[styles.miniVal, isPhone && { fontSize: 16 }]} selectTextOnFocus />
             </View>
             <View style={styles.mini}>
               <Text style={styles.miniLabel}>RATE</Text>
-              <TextInput testID={`rate-${l.id}`} value={rateDraft} keyboardType="decimal-pad" onChangeText={setRateDraft} onBlur={commitRate} onSubmitEditing={commitRate} style={styles.miniVal} selectTextOnFocus />
+              <TextInput testID={`rate-${l.id}`} value={rateDraft} keyboardType="decimal-pad" onChangeText={setRateDraft} onBlur={commitRate} onSubmitEditing={commitRate} style={[styles.miniVal, isPhone && { fontSize: 16 }]} selectTextOnFocus />
             </View>
             <Pressable testID={`disc-${l.id}`} onPress={() => b.setDiscountSheet({ kind: "line", line_id: l.id })} style={[styles.mini, { justifyContent: "center", flexDirection: "row", alignItems: "center", gap: 4 }]}>
               <Text style={styles.miniLabel}>DISC</Text>
@@ -272,7 +273,7 @@ const styles = StyleSheet.create({
   miniVal: { fontSize: 13, fontFamily: font.medium, fontWeight: "500", color: colors.onSurface, padding: 0, minWidth: 40, fontVariant: ["tabular-nums"] },
   controls: { flexDirection: "row", gap: 6, marginTop: 2, flexWrap: "wrap" },
   includedHint: { alignSelf: "center", fontSize: 11, color: colors.onSurfaceMuted, fontStyle: "italic" },
-  icon: { width: 40, height: 40, borderRadius: 9, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceTertiary },
+  icon: { width: 44, height: 44, borderRadius: 9, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceTertiary },
   iconSelected: { backgroundColor: ds.brassTint, borderWidth: StyleSheet.hairlineWidth, borderColor: ds.brassLine },
   iconPressed: { opacity: 0.72, transform: [{ scale: 0.96 }] },
   removeIcon: { backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },

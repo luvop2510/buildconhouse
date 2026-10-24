@@ -1,27 +1,14 @@
 import { expect, test } from '@playwright/test';
+import { retiredNotebookRedirect } from './retired-notebook-fixtures';
 import { mockSession } from './audit-fixtures';
 
 for (const floor of [{ slug: 'kitchen', id: 'second-floor' }, { slug: 'furniture', id: 'third-floor' }]) {
-  test(`critical ${floor.slug} quotation notebook virtualizes long lists and offers no manual Won action`, async ({ page }, info) => {
-    await mockSession(page, `/notebook/${floor.slug}/quotation-follow-up`, false);
-    const rows = Array.from({ length: 120 }, (_, index) => ({
-      id: `lead-${index}`, customer_name: `Fixture customer ${index}`, customer_phone: '9000000000', address: 'Project site',
-      kitchen_type: 'GI', referred_by: '', referrer_id: null, referrer_name: '', referrer_type: null, architect_interior_designer: '',
-      status: 'pending', notes: 'Confirm measurements', lost_reason: '', is_converted: true, converted_at: '2026-10-01T10:00:00Z',
-      last_contacted_at: null, contact_attempts: 0, updated_at: '2026-10-01T10:00:00Z', quotation_price: 25000,
-    }));
-    await page.route(`**/api/followups/notebook/${floor.id}?**`, route => route.fulfill({ json: { rows, next_cursor: null } }));
-    await page.goto(`/notebook/${floor.slug}/quotation-follow-up`);
-    await expect(page.getByTestId('notebook-list')).toBeVisible();
-    await expect(page.getByText('Fixture customer 0', { exact: true })).toBeVisible();
+  test(`critical ${floor.slug} quotation notebook redirects to active-floor shared follow-ups without a manual Won action`, async ({ page }) => {
+    await retiredNotebookRedirect(page, `/notebook/${floor.slug}/quotation-follow-up`, 'followups', floor.id);
     await expect(page.getByRole('button', { name: /mark.*won/i })).toHaveCount(0);
-    await expect.poll(() => page.getByRole('button', { name: 'Call', exact: true }).count()).toBeLessThan(120);
-    const mounted = await page.getByRole('button', { name: 'Call', exact: true }).count();
-    await info.attach('virtualization-evidence', { body: `Mounted ${mounted} of 120 customer cards at ${page.viewportSize()!.width}px (previous ScrollView mounted 120).`, contentType: 'text/plain' });
-    await page.getByRole('button', { name: 'Lost', exact: true }).first().click();
-    await expect(page.getByRole('dialog', { name: 'Mark lead as lost', exact: true })).toBeVisible();
-    await expect(page.getByLabel('Lost reason *', { exact: true })).toBeVisible();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    await expect(page.getByTestId('notebook-list')).toHaveCount(0);
+    if (floor.id === 'second-floor') await expect(page.getByTestId('kitchen-search')).toBeVisible();
+    else await expect(page.getByTestId('interested-retained-customer')).toBeVisible();
   });
 }
 

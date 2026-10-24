@@ -61,11 +61,14 @@ async def _validate_floor(floor_id: str | None) -> None:
         raise HTTPException(status_code=422, detail="floor_id must refer to an active floor")
 
 
-async def _revoke_grant_subject(user_id: str) -> None:
-    # Grant state is authorization state. Revoke every active device so stale
-    # sessions cannot continue after an owner removes or narrows a grant.
+async def _refresh_grant_subject(user_id: str, *, preserve_sessions: bool) -> None:
+    # Sessions identify the member; they do not carry the grant snapshot.
+    # Drop local cached principal data. Custom page grants are loaded from the
+    # database on every request, so replacing those grants for an already
+    # delegated member takes effect immediately without a new login.
     invalidate_principal_cache("staff", user_id)
-    await revoke_all_sessions("staff", user_id)
+    if not preserve_sessions:
+        await revoke_all_sessions("staff", user_id)
 
 
 @router.get("/resources")
@@ -75,7 +78,7 @@ async def list_grant_resources(actor: UserPublic = Depends(require_owner)):
     floor_ids = [floor["id"] for floor in floors]
     return {
         "resources": [
-            {"key": key, "label": value["label"], "actions": value.get("actions", sorted(ACTIONS)),
+            {"key": key, "label": value["label"], "retired": value.get("retired", False), "actions": value.get("actions", sorted(ACTIONS)),
              "floor_ids": [floor for floor in floor_ids if not value.get("floor_ids") or floor in value["floor_ids"]],
              "description": value.get("description", f"Manage {value['label'].lower()} records on this floor.")}
             for key, value in RESOURCE_REGISTRY.items() if key != "reports"
@@ -116,7 +119,12 @@ async def replace_access_grants(user_id: str, body: DelegationInput, actor: User
         "floor_ids": body.floor_ids, "delegation_grants": snapshot, "custom_access": True,
         "access_profile": None, "updated_at": utc_now_iso(),
     }})
-    await _revoke_grant_subject(user_id)
+    await _refresh_grant_subject(
+        user_id,
+        preserve_sessions=(bool(target.get("custom_access"))
+                           and not target.get("access_profile")
+                           and target.get("floor_ids", []) == body.floor_ids),
+    )
     return {"user_id": user_id, "floor_ids": body.floor_ids, "custom_access": True, "grants": snapshot}
 
 
@@ -144,11 +152,13 @@ async def create_access_grant(
                 grant[key] = existing[key]
     snapshot = [row for row in current if row.get("id") != grant["id"]] + [grant]
     # A user with one or more grants is deliberately in custom-access mode.
-    # Their next sign-in token carries this state and the server middleware
-    # applies the grants as a default-deny allow-list.
+    # The server reloads this state on the member's next request and applies
+    # the grants as a default-deny allow-list without ending active sessions.
     await db.users.update_one({"id": user_id}, {"$set": {"custom_access": True, "access_profile": None,
         "delegation_grants": snapshot, "updated_at": utc_now_iso()}})
-    await _revoke_grant_subject(user_id)
+    await _refresh_grant_subject(
+        user_id, preserve_sessions=bool(target.get("custom_access")) and not target.get("access_profile"),
+    )
     grant.pop("_id", None)
     return grant
 
@@ -166,5 +176,7 @@ async def delete_access_grant(
         raise HTTPException(status_code=404, detail="Access grant not found")
     await db.users.update_one({"id": user_id}, {"$set": {"custom_access": True, "delegation_grants": snapshot,
         "access_profile": None, "updated_at": utc_now_iso()}})
-    await _revoke_grant_subject(user_id)
+    await _refresh_grant_subject(
+        user_id, preserve_sessions=bool(target.get("custom_access")) and not target.get("access_profile"),
+    )
     return {"deleted": True, "id": grant_id}

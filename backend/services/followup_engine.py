@@ -2,15 +2,13 @@
 reconciliation engine.
 
 NOTHING here calls an LLM. Every score, bucket and recommendation is a plain
-explainable rule over real data already living in `quotations`, `payments`,
-`purchase_orders` and `customers`. Reuses the existing payment aggregation
-helpers from routes/payment_routes.py instead of re-deriving outstanding
-balances — per architecture rule, no duplicate business logic.
+explainable pre-order rule over quotations, selections, walk-ins and customers.
+Payment, purchasing, dispatch and delivery activity belongs in Orders.
 
 reconcile_followups() is the single write path for AUTOMATED rows. It is
 idempotent: re-running it never duplicates a card (dedupe key = source_key),
 refreshes the score/reason of still-valid cards, and auto-resolves cards whose
-trigger condition no longer holds (e.g. a payment got fully collected).
+trigger condition no longer holds (e.g. the customer placed an order).
 """
 from __future__ import annotations
 
@@ -25,6 +23,7 @@ from db import db
 from models import Followup, now_iso
 from services.activity_log import log_event
 from services.notifications import notify
+from services.lead_scope import POST_ORDER_CATEGORIES, POST_ORDER_RULES
 from services.customer_data_reset import customer_reset_maintenance
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -87,6 +86,8 @@ RULE_DEFINITIONS = [
     {"rule_type": "shortage_reorder", "label": "Awaiting reorder", "category": "purchase",
      "description": "A transfer left this customer's original order under-fulfilled — recommend a reorder PO."},
 ]
+RULE_DEFINITIONS = [rule for rule in RULE_DEFINITIONS if rule["rule_type"] not in POST_ORDER_RULES and rule["category"] not in POST_ORDER_CATEGORIES]
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -165,7 +166,7 @@ def _followup_sort_key(d: dict, current_user_id: Optional[str]) -> tuple:
     return (
         0 if d.get("bucket") == "overdue" else 1,
         0 if d.get("status") in ("open", "snoozed") else 1,
-        0 if current_user_id and d.get("assigned_to") == current_user_id else 1,
+        0 if current_user_id and (d.get("assigned_to") == current_user_id or any(a.get("user_id") == current_user_id and a.get("floor_id") == d.get("floor_id") for a in d.get("assignments", []))) else 1,
         -(d.get("priority_score") or 0),
         d.get("due_at") or "",
     )
@@ -311,6 +312,8 @@ async def _tiles_pipeline_producer(quotations: list[dict], customers: dict[str, 
         }
 
     for q in quotations:
+        if q.get("customer_outcome") in {"won", "lost"}:
+            continue
         cust = customers.get(q.get("customer_id"))
         if not cust or not q.get("items"):
             continue
@@ -338,7 +341,7 @@ async def _walkin_producer(customers: dict[str, dict], contact_map: dict) -> dic
         {"status": {"$in": WALKIN_OPEN_STATUSES}, "is_deleted": False}, {"_id": 0},
     ).to_list(5000)
     for w in walkins:
-        if w.get("showroom_followup_id"):
+        if w.get("scope_followup_id") or w.get("showroom_followup_id") or w.get("showroom_transferred_at"):
             continue
         cust = customers.get(w.get("customer_id")) or {"id": w.get("customer_id"), "tier": "retail"}
         visited_at = parse_iso(w.get("visited_at"))
@@ -375,67 +378,9 @@ async def _walkin_producer(customers: dict[str, dict], contact_map: dict) -> dic
 
 
 async def _operational_followup_producer(quotations: list[dict], customers: dict[str, dict]) -> dict[str, dict]:
-    """Order-confirmed → Operations handoff (2026-08 CRM-foundation spec).
+    """Orders continue through Operations; sales follow-ups stop at placement."""
+    return {}
 
-    Data-driven, same auto-close-for-free mechanism as every other producer
-    here: a confirmed order ("ordered" status) stays in `desired` (i.e. the
-    Follow-up card stays open) until the first Release Material action is
-    recorded against any Purchase Order that came out of it — the moment
-    that happens, this producer simply stops returning it, and the generic
-    persist loop below marks it auto_resolved. Message text is DB-configured
-    (services/workflow_transitions.py), never hardcoded, per spec — the
-    whole card is skipped if the "order_confirmed" transition is disabled.
-    """
-    from services.workflow_transitions import get_transition
-
-    transition = await get_transition("order_confirmed")
-    if not transition or not transition.get("is_active", True):
-        return {}
-
-    ordered = [q for q in quotations if q.get("status") == "ordered"]
-    if not ordered:
-        return {}
-    quotation_ids = [q["id"] for q in ordered]
-    pos = await db.purchase_orders.find(
-        {"quotation_id": {"$in": quotation_ids}}, {"_id": 0, "quotation_id": 1, "items": 1},
-    ).to_list(5000)
-    release_started: set[str] = {
-        po["quotation_id"] for po in pos
-        if any((item.get("boxes_ready") or 0) > 0 for item in po.get("items", []))
-    }
-
-    template = transition.get("message_template") or "{customer_name}'s order {quotation_number} has been confirmed."
-    priority = transition.get("priority", "medium")
-    out: dict[str, dict] = {}
-    for q in ordered:
-        if q["id"] in release_started:
-            continue  # Operations has visibly begun — auto-resolves for free.
-        cust = customers.get(q.get("customer_id"))
-        if not cust:
-            continue
-        message = template.format(
-            customer_name=cust.get("company") or cust.get("name") or "Customer",
-            quotation_number=q.get("number") or "",
-        )
-        out[f"order_confirmed_ops:{q['id']}"] = {
-            "rule_type": "order_confirmed_ops", "category": "operations",
-            "customer_id": cust["id"], "customer_name": cust.get("company") or cust.get("name"),
-            "customer_phone": cust.get("phone"), "customer_tier": cust.get("tier", "retail"),
-            "quotation_id": q["id"], "quotation_number": q.get("number"),
-            "purchase_id": None, "purchase_number": None, "project_name": q.get("project_name"),
-            "value": round(float(q.get("grand_total") or 0), 2),
-            "reason": message,
-            "reason_factors": ["Order confirmed — awaiting Operations handoff"],
-            "next_action": "Proceed with order processing",
-            "next_action_reason": transition.get("title", "Order Confirmed"),
-            "suggested_channel": "call",
-            "priority_score": {"critical": 85, "high": 65, "medium": 45, "low": 25}.get(priority, 45),
-            "priority_level": priority,
-            "tags": ["OPERATIONS"], "due_at": now_iso(),
-            "floor_id": _followup_floor_id(q, None),
-            "assigned_to": q.get("created_by"),
-        }
-    return out
 # from many routes (quotation/payment/PO/dispatch mutations, plus
 # move_to_quotation added this session). Without serialization, two overlapping
 # runs both read `existing` before either has written, both see a brand-new
@@ -477,6 +422,7 @@ async def _persist_desired_followups(
     without standing up the entire quotation/payment/purchase corpus the
     desired-state half needs. Behaviour is unchanged.
     """
+    desired = {key: fields for key, fields in desired.items() if fields.get("category") not in POST_ORDER_CATEGORIES and fields.get("rule_type") not in POST_ORDER_RULES and not fields.get("purchase_id")}
     quotation_created_by = quotation_created_by or {}
     existing = await db.followups.find(
         {"is_automated": True, "status": {"$in": ["open", "snoozed"]}}, {"_id": 0},
@@ -569,14 +515,10 @@ async def _persist_desired_followups(
 
 
 async def _reconcile_followups_locked() -> dict:
-    from routes.payment_routes import ORDER_STATUSES, _paid_by_quotation  # local import avoids cycle at module load
-
     now = datetime.now(timezone.utc)
 
     customers = {c["id"]: c async for c in db.customers.find({}, {"_id": 0})}
     quotations = await db.quotations.find({}, {"_id": 0}).to_list(10000)
-    quotation_ids = [q["id"] for q in quotations]
-    paid_map = await _paid_by_quotation(quotation_ids)
     contact_map = await last_contact_map(list(customers.keys()))
 
     desired: dict[str, dict] = {}
@@ -612,6 +554,8 @@ async def _reconcile_followups_locked() -> dict:
 
     # ---- Quotation-based rules ------------------------------------------------
     for q in quotations:
+        if q.get("customer_outcome") in {"won", "lost"}:
+            continue
         cust = customers.get(q.get("customer_id"))
         if not cust or not q.get("items"):
             continue
@@ -671,127 +615,22 @@ async def _reconcile_followups_locked() -> dict:
                         channel="whatsapp", tags=tags, days_since_contact=days_since_contact,
                     )
 
-        if status in ORDER_STATUSES:
-            paid = paid_map.get(q["id"], 0.0)
-            outstanding = max(0.0, value - paid)
-            if outstanding > 1e-6:
-                days_since_confirm = age_days(updated_at)
-                if days_since_confirm >= PAYMENT_OVERDUE_DAYS:
-                    days_overdue = days_since_confirm - PAYMENT_OVERDUE_DAYS
-                    channel = "call" if tier == "vip" else "whatsapp"
-                    upsert(
-                        f"payment_overdue:{q['id']}", "payment_overdue", "payment", cust,
-                        quotation=q, value=outstanding,
-                        due_at=((updated_at or now) + timedelta(days=PAYMENT_OVERDUE_DAYS)).isoformat(),
-                        urgency_bullet=f"Payment overdue by {max(days_overdue,1)}d", urgency_pts=20 + min(15, days_overdue * 2),
-                        reason=f"₹{money_short(outstanding)} overdue by {max(days_overdue,1)} day(s) on {q.get('number')}.",
-                        next_action="Call customer" if tier == "vip" else "Send WhatsApp reminder",
-                        next_action_reason=f"₹{money_short(outstanding)} outstanding for over {PAYMENT_OVERDUE_DAYS} days.",
-                        channel=channel, tags=tags, days_since_contact=days_since_contact,
-                    )
-                elif paid > 0:
-                    upsert(
-                        f"payment_partial:{q['id']}", "payment_partial", "payment", cust,
-                        quotation=q, value=outstanding, due_at=now_iso(),
-                        urgency_bullet=f"Partial payment — ₹{money_short(outstanding)} remaining", urgency_pts=14,
-                        reason=f"Partial payment received — ₹{money_short(outstanding)} balance remaining on {q.get('number')}.",
-                        next_action="Send WhatsApp reminder",
-                        next_action_reason="Gentle nudge for the remaining balance.",
-                        channel="whatsapp", tags=tags, days_since_contact=days_since_contact,
-                    )
-
     # ---- Tile Selections / Tile Quotations (Follow-ups 2.0 workspaces) --------
     desired.update(await _tiles_pipeline_producer(quotations, customers, contact_map))
 
     # ---- Walk-ins (Phase 4) -----------------------------------------------------
     desired.update(await _walkin_producer(customers, contact_map))
 
-    # ---- Order confirmed → Operations handoff (2026-08 CRM foundation) --------
-    desired.update(await _operational_followup_producer(quotations, customers))
-
-    # ---- Purchase-based rules ---------------------------------------------------
-    pos = await db.purchase_orders.find({"status": {"$ne": "cancelled"}}, {"_id": 0}).to_list(10000)
-    for po in pos:
-        cust = customers.get(po.get("customer_id"))
-        items = po.get("items") or []
-        if not cust or not items:
-            continue
-        tier = cust.get("tier", "retail")
-        last_contact = contact_map.get(cust["id"]) or parse_iso(po.get("updated_at"))
-        days_since_contact = age_days(last_contact)
-        tags = [tier.upper()]
-        value = float(po.get("grand_total") or 0)
-        from services.purchase_stages import active_quantity, normalized_stage
-        items = [i for i in items if not i.get("cancelled") and active_quantity(i) > 0]
-        dispatched = [i for i in items if normalized_stage(i, po) == "dispatched"]
-        delivered = dispatched
-
-        if dispatched and len(delivered) < len(items):
-            upsert(
-                f"purchase_dispatched:{po['id']}", "purchase_dispatched", "dispatch", cust,
-                purchase=po, value=value, due_at=now_iso(),
-                urgency_bullet="Order dispatched — inform customer", urgency_pts=16,
-                reason=f"{po.get('number')} is partially delivered — update the customer on remaining products.",
-                next_action="Send WhatsApp",
-                next_action_reason="Customers appreciate a heads-up the moment goods ship.",
-                channel="whatsapp", tags=tags, days_since_contact=days_since_contact,
-            )
-
-        if items and len(delivered) == len(items):
-            moved_ats = [parse_iso(i.get("last_moved_at")) or parse_iso(po.get("updated_at")) for i in delivered]
-            moved_ats = [m for m in moved_ats if m]
-            most_recent = max(moved_ats) if moved_ats else None
-            if most_recent and age_days(most_recent) <= DELIVERED_RECENCY_DAYS:
-                upsert(
-                    f"purchase_delivered:{po['id']}", "purchase_delivered", "delivery", cust,
-                    purchase=po, value=value, due_at=now_iso(),
-                    urgency_bullet="Delivered — great moment to reconnect", urgency_pts=12,
-                    reason=f"{po.get('number')} was delivered — confirm everything arrived well.",
-                    next_action="Call customer",
-                    next_action_reason="Delivery complete — the ideal moment to check satisfaction and ask for referrals.",
-                    channel="call", tags=tags, days_since_contact=days_since_contact,
-                )
-
-    # ---- Shortage-reorder rule (transfer left a customer under-fulfilled) ------
-    quotations_by_id = {q["id"]: q for q in quotations}
-    shortages = await db.purchase_shortages.find({"status": "awaiting_reorder"}, {"_id": 0}).to_list(2000)
-    for s in shortages:
-        cust = customers.get(s.get("customer_id"))
-        if not cust:
-            continue
-        tier = cust.get("tier", "retail")
-        sq = quotations_by_id.get(s.get("quotation_id"))
-        unit_price = 0.0
-        if sq:
-            line = next((l for l in sq.get("items", []) if l.get("id") == s.get("quotation_line_id")), None)
-            if line:
-                unit_price = float(line.get("unit_price") or 0)
-        value = round(unit_price * float(s.get("shortage_qty") or 0), 2)
-        last_contact = contact_map.get(cust["id"]) or parse_iso(s.get("updated_at"))
-        days_since_contact = age_days(last_contact)
-        shortage_qty = s.get("shortage_qty") or 0
-        upsert(
-            f"shortage_reorder:{s['id']}", "shortage_reorder", "purchase", cust,
-            quotation=sq, value=value, due_at=now_iso(),
-            urgency_bullet=f"{shortage_qty:g} unit(s) awaiting reorder", urgency_pts=22,
-            reason=(
-                f"{shortage_qty:g} × {s.get('name')} still owed after transferring stock to "
-                f"{s.get('transferred_to_customer_name') or 'another customer'} — reorder to fulfil "
-                f"{cust.get('company') or cust.get('name')}."
-            ),
-            next_action="Create purchase order",
-            next_action_reason="Stock was reallocated to another customer — this order is now short.",
-            channel="call", tags=[tier.upper(), "SHORTAGE"], days_since_contact=days_since_contact,
-        )
-
     # ---- Customer-inactivity rule -----------------------------------------------
     quotations_by_customer: dict[str, list[dict]] = {}
     for q in quotations:
+        if q.get("customer_outcome") in {"won", "lost"}:
+            continue
         quotations_by_customer.setdefault(q["customer_id"], []).append(q)
 
     for cid, cust in customers.items():
         cqs = quotations_by_customer.get(cid)
-        if not cqs:
+        if not cqs or any(q.get("status") == "ordered" for q in cqs):
             continue
         touches = [parse_iso(q.get("updated_at")) for q in cqs]
         touches = [t for t in touches if t]
@@ -812,6 +651,8 @@ async def _reconcile_followups_locked() -> dict:
                 channel="call", tags=[cust.get("tier", "retail").upper()], days_since_contact=days_silent,
             )
 
+    ordered_customers = {(q.get("floor_id"), q.get("customer_id")) for q in quotations if q.get("status") == "ordered"}
+    desired = {key: fields for key, fields in desired.items() if (fields.get("floor_id"), fields.get("customer_id")) not in ordered_customers}
     # ---- Persist: upsert desired, auto-resolve stale --------------------------
     quotation_created_by = {q["id"]: q.get("created_by") for q in quotations}
     return await _persist_desired_followups(desired, quotation_created_by)

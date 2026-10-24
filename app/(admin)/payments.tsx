@@ -9,8 +9,8 @@ import { Disclosure } from "@/src/design/Disclosure";
 import { useReducedMotion } from "@/src/hooks/use-reduced-motion";
 import Feather from "@expo/vector-icons/Feather";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { Linking, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -22,7 +22,7 @@ import { quotationDestination } from "@/src/utils/quotationNavigation";
 import { downloadApiFile } from "@/src/utils/downloadFile";
 import {
   Alert as UIAlert,
-  Badge, Button, Card, Dropdown, EmptyState, FilterBar, FormField, ErrorState,
+  Badge, Button, Card, Dropdown, EmptyState, FilterBar, FormField, ErrorState, MobileFilterSection,
   Panel, PageHeader, ProgressBar, SearchField, Sheet,
   Skeleton, StatTile, StatusBadge, HoverCard, ActivityRow, Tabs,
 } from "@/src/components/ds";
@@ -188,6 +188,20 @@ const paymentTone = (s: "paid" | "partial" | "due"): "success" | "warning" | "da
 // storage, so it always reconciles exactly with Collections.
 // ═══════════════════════════════════════════════════════════════════════════
 type TabKey = "collections" | "history";
+type CollectionScope = "outstanding" | "earned" | "received" | "refund";
+const COLLECTION_SCOPE_LABELS: Record<CollectionScope, string> = {
+  outstanding: "Customers with balances",
+  earned: "Customers with retained earnings",
+  received: "Customers with partial payments",
+  refund: "Customers with refunds due",
+};
+
+function PaymentSummaryTile({ onPress, ...props }: Omit<Parameters<typeof StatTile>[0], "onPress"> & { onPress: () => void }) {
+  return <Pressable accessibilityRole="button" accessibilityLabel={`View ${props.label.toLowerCase()}`} onPress={onPress}
+    style={{ flex: 1, minWidth: 150 }}>
+    <StatTile {...props} />
+  </Pressable>;
+}
 
 type HistoryRow = {
   id: string; customer_id: string; customer_name?: string | null;
@@ -212,7 +226,7 @@ const HISTORY_SORTS: { value: string; label: string }[] = [
 
 // ═══════════════════════════════════════════════════════════════════════════
 export default function PaymentsScreen() {
-  const { isDesktop, isTabletLandscape, isPhone, height } = useBp();
+  const { isDesktop, isTabletLandscape, isPhone, height, gutter } = useBp();
   const sideBySide = isDesktop || isTabletLandscape;
   const compactCostForm = isPhone || isTabletLandscape;
   const { selectedFloorId, selectFloor } = useFloorAccess();
@@ -236,10 +250,15 @@ export default function PaymentsScreen() {
   };
 
   const [tab, setTab] = useState<TabKey>("collections");
+  // Keep this preference in screen state: rotating a phone must not reopen
+  // the upper header or remount the payment form while staff are entering it.
+  const [pageDetailsOpen, setPageDetailsOpen] = useState(!isPhone);
+  const pageDetailsId = useId();
 
   const [stats, setStats] = useState<Stats | null>(null);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [q, setQ] = useState("");
+  const [collectionScope, setCollectionScope] = useState<CollectionScope>("outstanding");
   const [agingPeriod, setAgingPeriod] = useState("all");
   const [customMinDays, setCustomMinDays] = useState("");
   const [customMaxDays, setCustomMaxDays] = useState("");
@@ -312,6 +331,8 @@ export default function PaymentsScreen() {
     try {
       const params = new URLSearchParams();
       if (query) params.set("q", query);
+      if (collectionScope === "earned" || collectionScope === "refund") params.set("status_filter", "all");
+      if (collectionScope === "received") params.set("status_filter", "partial");
       const selectedAging = filterValues(agingPeriod).filter(value => value !== "custom" || customMinDays || customMaxDays);
       if (selectedAging.length) params.set("overdue_period", selectedAging.join(","));
       if (filterValues(agingPeriod).includes("custom")) {
@@ -319,7 +340,11 @@ export default function PaymentsScreen() {
         if (customMaxDays) params.set("custom_max_days", customMaxDays);
       }
       const url = `/payments/orders${params.toString() ? `?${params.toString()}` : ""}`;
-      const list = await api.get<OrderRow[]>(url);
+      const response = await api.get<OrderRow[]>(url);
+      const list = response.filter(order => collectionScope === "refund" ? (order.refund_due || 0) > 0
+        : collectionScope === "earned" ? Math.min(order.cash_received ?? order.paid, order.effective_order_total ?? order.grand_total) > 0
+        : collectionScope === "received" ? (order.cash_received ?? order.paid) > 0
+        : true);
       if (request !== orderRequest.current) return;
       setOrders(list);
       setSelectedId((current) => list.some((order) => order.id === current) ? current : (list.length ? list[0].id : null));
@@ -329,7 +354,7 @@ export default function PaymentsScreen() {
     } finally {
       if (request === orderRequest.current) setLoadingList(false);
     }
-  }, [q, agingPeriod, customMinDays, customMaxDays, selectedFloorId]);
+  }, [q, agingPeriod, customMinDays, customMaxDays, selectedFloorId, collectionScope]);
 
   const loadDetail = useCallback(async (id: string) => {
     if (!selectedFloorId || activeFloorRef.current !== selectedFloorId) return;
@@ -606,62 +631,83 @@ export default function PaymentsScreen() {
     }
   };
 
-  return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
-      <PageHeader
-        title="Payments"
-        subtitle={tab === "collections"
-          ? "Track outstanding balances, record payments, and send reminders."
-          : "Permanent reconciliation ledger — every collected payment, reconciled exactly with Collections."}
-        overline={tab === "collections" ? "COLLECTIONS" : "LEDGER"}
-        actions={tab === "collections" ? (
-          <Button label="Fully Paid Orders" icon="check-circle" variant="secondary"
-            onPress={() => router.push("/(admin)/payments-list" as any)} testID="fully-paid-orders-link" />
-        ) : (
-          <Dropdown
-            testID="history-export"
-            label="Export"
-            icon="download"
-            variant="secondary"
-            items={[
+  const openCollectionSummary = (scope: CollectionScope) => {
+    setQ(""); setAgingPeriod("all"); setCustomMinDays(""); setCustomMaxDays("");
+    setCollectionScope(scope); setShowMobileQueue(true); setTab("collections");
+    // The summary represents the entire queue, independent of a previous search.
+    collectionsScrollRef.current?.scrollTo({ y: bodyTopRef.current, animated: false });
+  };
+
+  const workspaceHeading = (
+    <View style={{ gap: spacing.sm, ...(!isPhone ? { paddingHorizontal: gutter, paddingTop: spacing.lg, paddingBottom: spacing.md } : {}) }}>
+      <View style={{ minHeight: 48, flexShrink: 0, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm }}>
+        <Text accessibilityRole="header" aria-level={1} style={[type.titleLg, { flex: 1, minWidth: 0 }]}>Payments</Text>
+        <Pressable
+          testID="payments-page-details-toggle"
+          accessibilityRole="button"
+          accessibilityLabel={pageDetailsOpen ? "Hide payment overview" : "Show payment overview"}
+          accessibilityState={{ expanded: pageDetailsOpen }}
+          aria-expanded={pageDetailsOpen}
+          aria-controls={pageDetailsId}
+          onPress={() => setPageDetailsOpen(open => !open)}
+          style={{ minHeight: 48, minWidth: 44, flexDirection: "row", alignItems: "center", gap: spacing.xs }}
+        >
+          <Text style={type.caption}>{pageDetailsOpen ? "Hide overview" : "Show overview"}</Text>
+          <Feather name={pageDetailsOpen ? "chevron-up" : "chevron-down"} size={iconSize.sm} color={colors.onSurfaceSecondary} />
+        </Pressable>
+      </View>
+      <View nativeID={pageDetailsId} testID="payments-page-details" style={{ display: pageDetailsOpen ? "flex" : "none" }}>
+        <PageHeader
+          title="Payments"
+          subtitle={tab === "collections"
+            ? "Track outstanding balances, record payments, and send reminders."
+            : "Permanent reconciliation ledger — every collected payment, reconciled exactly with Collections."}
+          overline={tab === "collections" ? "COLLECTIONS" : "LEDGER"}
+          embedded
+          actions={tab !== "history" ? (
+            <Button label="Fully Paid Orders" icon="check-circle" variant="secondary"
+              onPress={() => router.push("/(admin)/payments-list" as any)} testID="fully-paid-orders-link" />
+          ) : (
+            <Dropdown testID="history-export" label="Export" icon="download" variant="secondary" items={[
               { label: "Export as XLSX", icon: "file-text", onPress: () => exportHistory("xlsx") },
               { label: "Export as CSV", icon: "file", onPress: () => exportHistory("csv") },
-            ]}
-          />
-        )}
-      />
-
-      <View style={{ paddingHorizontal: isPhone ? spacing.lg : spacing.xl }}>
-        <Tabs
-          testID="payments-tabs"
-          value={tab}
-          onChange={setTab}
-          options={[
-            { value: "collections", label: "Collections" },
-            { value: "history", label: "Payment History", count: historyTotal || undefined },
-          ]}
+            ]} />
+          )}
         />
       </View>
+      <Tabs
+        testID="payments-tabs"
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: "collections", label: "Collections" },
+          { value: "history", label: "Payment History", count: historyTotal || undefined },
+        ]}
+      />
+    </View>
+  );
 
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
+      {!isPhone ? workspaceHeading : null}
       {tab === "collections" ? (
-      <ScrollView testID="payments-collections-scroll" ref={collectionsScrollRef} style={{ flex: 1, minHeight: 0 }} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, gap: spacing.lg, paddingBottom: isPhone ? 132 : spacing.xxxl }}>
-        <Disclosure title="Collections summary" summary="Unpaid orders, cash received and remaining balance" defaultOpen={!isPhone}>
+      <ScrollView testID="payments-collections-scroll" ref={collectionsScrollRef} style={{ flex: 1, minHeight: 0 }} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, gap: spacing.lg, paddingBottom: isPhone ? spacing.xl : spacing.xxxl }}>
+        {isPhone ? workspaceHeading : null}
+        <Disclosure title="Collections summary" defaultOpen={!isPhone}>
           {statsError ? <ErrorState title="Summary unavailable" onRetry={() => void loadStats()} /> : null}
         {/* Stats */}
         <View style={{ flexDirection: "row", gap: spacing.md, flexWrap: "wrap" }}>
-          <StatTile label="Earned" value={stats ? moneyShort(stats.earned_total) : "—"}
+          <PaymentSummaryTile onPress={() => openCollectionSummary("earned")} label="Earned" value={stats ? moneyShort(stats.earned_total) : "—"}
             icon="trending-up" tone="success" sub="Cash retained after adjustments" />
-          <StatTile label="Total due now" value={stats ? money(stats.total_outstanding) : "—"}
+          <PaymentSummaryTile onPress={() => openCollectionSummary("outstanding")} label="Total due now" value={stats ? money(stats.total_outstanding) : "—"}
             icon="alert-circle" tone="danger" sub="Remaining balance across unpaid orders" />
-          {(stats?.refund_due_total || 0) > 0 ? <StatTile label="Refund due" value={moneyShort(stats?.refund_due_total || 0)}
+          {(stats?.refund_due_total || 0) > 0 ? <PaymentSummaryTile onPress={() => openCollectionSummary("refund")} label="Refund due" value={moneyShort(stats?.refund_due_total || 0)}
             icon="rotate-ccw" tone="danger" sub="Review godown transfers" /> : null}
-          <StatTile label="Spending" value={stats ? moneyShort(stats.spending_total) : "—"}
-            icon="shopping-bag" tone="neutral" sub="Committed supplier purchases" />
         </View>
         <View style={{ flexDirection: "row", gap: spacing.md, flexWrap: "wrap" }}>
-          <StatTile dense label="Value of unpaid orders" value={stats ? money(stats.active_total) : "—"}
+          <PaymentSummaryTile onPress={() => openCollectionSummary("outstanding")} dense label="Value of unpaid orders" value={stats ? money(stats.active_total) : "—"}
             icon="file-text" tone="brand" sub={`${stats?.active_orders ?? "—"} orders · includes amounts already received`} />
-          <StatTile dense label="Received on active orders" value={stats ? money(stats.active_received) : "—"}
+          <PaymentSummaryTile onPress={() => openCollectionSummary("received")} dense label="Received on active orders" value={stats ? money(stats.active_received) : "—"}
             icon="check" tone="success" sub="Partial payments received" />
         </View>
         <Text testID="payments-summary-equation" style={type.caption}>Value of unpaid orders − received on those orders = total due now. Fully paid orders appear in Fully Paid Orders and Payment History. {stats?.fully_paid ?? "—"} fully paid orders · {stats ? money(stats.collected_this_month) : "—"} received this month.</Text>
@@ -684,7 +730,8 @@ export default function PaymentsScreen() {
           style={{ flexDirection: sideBySide ? "row" : "column", gap: spacing.lg, alignItems: "flex-start" }}>
           {/* Left rail */}
           {(!isPhone || showMobileQueue || !selectedId) && <View style={{ width: sideBySide ? 380 : "100%" }}>
-            <Panel title="Customers with balances" overline="COLLECTIONS" padding={spacing.md}>
+            <Panel title={COLLECTION_SCOPE_LABELS[collectionScope]} overline="COLLECTIONS" padding={spacing.md}>
+              {collectionScope !== "outstanding" ? <Button testID="payments-clear-summary" label="Show all outstanding" variant="ghost" size="sm" onPress={() => openCollectionSummary("outstanding")} /> : null}
               <View style={{ gap: spacing.md }}>
                 <SearchField
                   testID="payments-search"
@@ -693,6 +740,7 @@ export default function PaymentsScreen() {
                   placeholder="Search orders…"
                   onClear={() => setQ("")}
                 />
+                <MobileFilterSection testID="payments-filters" style={{ gap: spacing.md }}>
                 <Dropdown
                   testID="payments-aging-filter"
                   label={filterValues(agingPeriod).length ? AGING_OPTIONS.filter(option => filterValues(agingPeriod).includes(option.value)).map(option => option.label).join(", ") : "All outstanding"}
@@ -708,6 +756,7 @@ export default function PaymentsScreen() {
                       keyboardType="number-pad" placeholder="To days" placeholderTextColor={colors.onSurfaceMuted} style={[styles.dateInput, !isPhone && { flex: 1 }]} />
                   </View>
                 ) : null}
+                </MobileFilterSection>
                 {listError ? <ErrorState title="Could not load collections" subtitle={listError} onRetry={() => void loadOrders(q)} /> : loadingList ? (
                   <View style={{ gap: spacing.sm }}>
                     {Array.from({ length: 5 }).map((_, i) => (
@@ -724,14 +773,15 @@ export default function PaymentsScreen() {
                     ))}
                   </View>
                 ) : orders.length === 0 ? (
-                  <EmptyState icon="inbox" title={q || agingPeriod !== "all" ? "No orders match" : "No outstanding customers"}
-                    subtitle={q || agingPeriod !== "all" ? "Try another search or overdue period." : "Place an order from a quotation to start tracking payments here."} />
+                  <EmptyState icon="inbox" title={q || agingPeriod !== "all" || collectionScope !== "outstanding" ? "No orders match" : "No outstanding customers"}
+                    subtitle={q || agingPeriod !== "all" || collectionScope !== "outstanding" ? "Try another summary, search or overdue period." : "Place an order from a quotation to start tracking payments here."} />
                 ) : (
                   <View style={{ gap: spacing.sm }}>
                     {customerCollections.map((customer) => (
                       <CustomerCollectionCard
                         key={customer.id}
                         customer={customer}
+                        scope={collectionScope}
                         active={customer.id === selectedCustomer?.id}
                         onPress={() => selectCustomer(customer)}
                         onRemind={() => void sendWhatsAppReminderFor([...customer.orders].sort((a, b) => b.days_unpaid - a.days_unpaid)[0].id)}
@@ -790,7 +840,7 @@ export default function PaymentsScreen() {
                 </Panel>
 
                 {selectedCustomer && selectedCustomer.orders.length > 1 ? (
-                  <Panel title="Outstanding customer orders" overline="SELECT AN ORDER" padding={spacing.md}>
+                  <Panel title={collectionScope === "outstanding" || collectionScope === "received" ? "Outstanding customer orders" : "Matching customer orders"} overline="SELECT AN ORDER" padding={spacing.md}>
                     <Text testID="payment-customer-balance" style={[type.body, { marginBottom: spacing.md }]}>Customer total due: {money(selectedCustomer.outstanding)} across {selectedCustomer.orderCount} orders. Choose one quotation below to view, update or record its payment.</Text>
                     <View style={{ gap: spacing.sm }}>
                       {selectedCustomer.orders.map((order) => (
@@ -960,6 +1010,7 @@ export default function PaymentsScreen() {
       </ScrollView>
       ) : (
         <PaymentHistoryTab
+          workspaceHeading={isPhone ? workspaceHeading : null}
           rows={historyRows}
           total={historyTotal}
           loading={historyLoading}
@@ -996,12 +1047,7 @@ export default function PaymentsScreen() {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PaymentHistoryTab — banking-ledger view. Filters + a dense DataTable that
-// horizontally scrolls (with the customer name pinned) rather than clipping
-// on a phone — same table primitive as Tile Orders, so a 12-column ledger
-// behaves identically to every other dense operational table in the app.
-// ─────────────────────────────────────────────────────────────────────────────
+
 const PAY_MODE_FILTERS: { value: string; label: string }[] = [
   { value: "all", label: "All methods" },
   { value: "adjustment", label: "Additional costs" },
@@ -1043,6 +1089,7 @@ function DateInput({ value, onChange, placeholder, testID }: {
 }
 
 function PaymentHistoryTab(props: {
+  workspaceHeading: React.ReactNode | null;
   rows: HistoryRow[]; total: number; loading: boolean; error: string | null; onRetry: () => void;
   page: number; pageSize: number; onPageChange: (p: number) => void;
   q: string; onQChange: (v: string) => void;
@@ -1056,6 +1103,7 @@ function PaymentHistoryTab(props: {
 }) {
   const { isPhone } = useBp();
   const {
+    workspaceHeading,
     rows, total, loading, error, onRetry, page, pageSize, onPageChange,
     q, onQChange, unit, onUnitChange, floors,
     mode, onModeChange, dateFrom, onDateFromChange, dateTo, onDateToChange,
@@ -1119,7 +1167,8 @@ function PaymentHistoryTab(props: {
   ];
 
   return (
-    <ScrollView testID="payment-history-scroll" style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, gap: spacing.lg, paddingBottom: isPhone ? 132 : spacing.xxxl }}>
+    <ScrollView keyboardShouldPersistTaps="handled" testID="payment-history-scroll" style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, gap: spacing.lg, paddingBottom: isPhone ? spacing.xl : spacing.xxxl }}>
+      {workspaceHeading}
       <Card padding={spacing.md} style={{ gap: spacing.md }}>
         <SearchField
           testID="history-search"
@@ -1128,6 +1177,7 @@ function PaymentHistoryTab(props: {
           placeholder="Search customer, invoice number, or reference…"
           onClear={() => onQChange("")}
         />
+        <MobileFilterSection testID="history-filters" style={{ gap: spacing.md }}>
         <FilterBar multiSelect testID="history-unit-filter" label="BUSINESS UNIT" value={unit} onChange={onUnitChange} options={unitOptions} />
         <FilterBar multiSelect testID="history-mode-filter" label="PAYMENT METHOD" value={mode} onChange={onModeChange} options={PAY_MODE_FILTERS} />
         <View style={{ gap: spacing.sm }}>
@@ -1150,6 +1200,7 @@ function PaymentHistoryTab(props: {
             />
           </View>
         </View>
+        </MobileFilterSection>
       </Card>
 
       {loading && rows.length === 0 ? (
@@ -1198,7 +1249,11 @@ function PaymentHistoryTab(props: {
 // CustomerCollectionCard — a customer-first collection queue. Payment writes
 // remain safely scoped to the selected order in the detail panel.
 // ─────────────────────────────────────────────────────────────────────────────
-function CustomerCollectionCard({ customer, active, onPress, onRemind }: { customer: CustomerCollection; active: boolean; onPress: () => void; onRemind: () => void }) {
+function CustomerCollectionCard({ customer, scope, active, onPress, onRemind }: { customer: CustomerCollection; scope: CollectionScope; active: boolean; onPress: () => void; onRemind: () => void }) {
+  const value = scope === "earned" ? customer.orders.reduce((sum, order) => sum + Math.min(order.cash_received ?? order.paid, order.effective_order_total ?? order.grand_total), 0)
+    : scope === "refund" ? customer.orders.reduce((sum, order) => sum + (order.refund_due || 0), 0)
+    : scope === "received" ? customer.paid : customer.outstanding;
+  const valueLabel = scope === "earned" ? "earned" : scope === "refund" ? "refund due" : scope === "received" ? "received" : "due";
   const collectedPercent = customer.paid + customer.outstanding <= 0 ? 0
     : Math.round(customer.paid / (customer.paid + customer.outstanding) * 100);
   const longestPending = Math.max(...customer.orders.map((order) => order.days_unpaid || 0));
@@ -1215,10 +1270,10 @@ function CustomerCollectionCard({ customer, active, onPress, onRemind }: { custo
       <View style={{ gap: spacing.sm }}>
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm }}>
           <Text style={[type.titleSm, { flex: 1 }]} numberOfLines={1}>{customer.name}</Text>
-          <Badge label={`${moneyShort(customer.outstanding)} due`} tone="error" size="sm" />
+          <Badge label={`${moneyShort(value)} ${valueLabel}`} tone={scope === "earned" || scope === "received" ? "success" : "error"} size="sm" />
         </View>
         <Text style={type.caption} numberOfLines={1}>
-          {customer.orderCount} outstanding order{customer.orderCount === 1 ? "" : "s"}
+          {customer.orderCount} {scope === "outstanding" || scope === "received" ? "outstanding " : ""}order{customer.orderCount === 1 ? "" : "s"}
         </Text>
         {longestPending > 0 ? (
           <Text style={[type.caption, { color: colors.error }]}>
@@ -1226,10 +1281,10 @@ function CustomerCollectionCard({ customer, active, onPress, onRemind }: { custo
           </Text>
         ) : null}
         <ProgressBar percent={collectedPercent} tone={collectedPercent ? "warning" : "danger"} size="xs" />
-        <Text style={type.caption}>{collectedPercent}% collected across open orders</Text>
+        <Text style={type.caption}>{collectedPercent}% collected across {scope === "outstanding" || scope === "received" ? "open" : "matching"} orders</Text>
       </View>
     </HoverCard>
-    <Button label={`Remind client · ${moneyShort(customer.outstanding)} due`} icon="message-circle" variant="secondary" size="sm" onPress={onRemind} />
+    {customer.outstanding > 0 ? <Button label={`Remind client · ${moneyShort(customer.outstanding)} due`} icon="message-circle" variant="secondary" size="sm" onPress={onRemind} /> : null}
   </View>;
 }
 
@@ -1268,7 +1323,7 @@ function RecordPaymentSheet(props: {
         </>
       }
     >
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1, minHeight: 0 }}>
+      <View style={{ flex: 1, minHeight: 0 }}>
         <ScrollView testID="record-payment-scroll" keyboardShouldPersistTaps="handled" style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ padding: spacing.xl, gap: spacing.lg }}>
           {error ? <UIAlert tone="error" title="Payment not saved" description={error} /> : null}
           <FormField label="Amount Received (₹)" required>
@@ -1361,7 +1416,7 @@ function RecordPaymentSheet(props: {
             />
           </FormField>
         </ScrollView>
-      </KeyboardAvoidingView>
+      </View>
     </Sheet>
   );
 }

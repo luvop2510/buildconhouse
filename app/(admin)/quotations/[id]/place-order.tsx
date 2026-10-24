@@ -176,14 +176,13 @@ export default function PlaceOrderReview() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
-      <PageHeader title="Review order" subtitle={preview.quotation_number} back={() => router.back()} />
-
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 24}
       >
         <ScrollView contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, gap: spacing.lg, paddingBottom: spacing.xxxl + insets.bottom }} keyboardShouldPersistTaps="handled">
+        <PageHeader title="Review order" subtitle={preview.quotation_number} back={() => router.back()} embedded />
         {confirmError ? <Alert tone="error" title="Order not placed" description={confirmError} /> : null}
         {/* Header summary */}
         <View>

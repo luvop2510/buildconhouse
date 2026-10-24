@@ -136,16 +136,6 @@ async def handle_purchase_transferred(event: dict, session: Any) -> dict:
         payment["automation_key"] = f"{key}:payment"
         await db.payments.update_one({"automation_key": payment["automation_key"]}, {"$setOnInsert": payment}, upsert=True, session=session)
 
-    destination_customer = await db.customers.find_one({"id": transfer["destination_customer_id"]}, {"_id": 0}, session=session) or {}
-    followup = Followup(
-        source_key=f"{key}:followup", rule_type="manual", category="purchase", customer_id=transfer["destination_customer_id"], customer_name=transfer["destination_customer_name"], customer_phone=destination_customer.get("phone"), customer_tier=destination_customer.get("tier", "retail"),
-        quotation_id=transfer["destination_quotation_id"], quotation_number=transfer["destination_quotation_number"], purchase_id=transfer["destination_po_id"], purchase_number=transfer["destination_po_number"],
-        value=transfer_payment_amount, reason=f"Transferred {transfer['qty']:g} × {transfer['name']} received from {transfer['source_customer_name']}.", next_action="Confirm transfer and payment plan", next_action_reason="Transfer-specific operational follow-up.", suggested_channel="call", due_at=now_iso(), is_automated=False,
-        floor_id=floor_inherit(transfer),
-    ).dict()
-    followup["automation_key"] = f"{key}:followup"
-    await db.followups.update_one({"automation_key": followup["automation_key"]}, {"$setOnInsert": followup}, upsert=True, session=session)
-
     shared = {"transfer_id": transfer["id"], "qty": transfer["qty"], "sku": transfer["sku"], "reason": transfer.get("reason"), "source_remaining_qty": transfer["source_remaining_qty"]}
     await _upsert_activity(key=f"{key}:source-activity", event_type="purchase.transferred_out", entity_type="purchase", entity_id=transfer["source_po_id"], actor_id=event["actor_id"], actor_name=event["actor_name"], customer_id=transfer["source_customer_id"], quotation_id=source_quote_id, purchase_id=transfer["source_po_id"], summary=f"Transferred {transfer['qty']:g} × {transfer['name']} to {transfer['destination_customer_name']}", payload=shared, session=session)
     await _upsert_activity(key=f"{key}:destination-activity", event_type="purchase.transferred_in", entity_type="purchase", entity_id=transfer["destination_po_id"], actor_id=event["actor_id"], actor_name=event["actor_name"], customer_id=transfer["destination_customer_id"], quotation_id=transfer["destination_quotation_id"], purchase_id=transfer["destination_po_id"], summary=f"Received {transfer['qty']:g} × {transfer['name']} from {transfer['source_customer_name']}", payload=shared, session=session)

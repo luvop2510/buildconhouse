@@ -32,6 +32,7 @@ import {
 import { useBp } from "@/src/design/responsive";
 import { useReducedMotion } from "@/src/hooks/use-reduced-motion";
 import { filterValues, toggleFilterValue } from "@/src/utils/filters";
+export { MobileFilterSection } from "@/src/components/MobileFilterSection";
 
 // Re-export every existing primitive from ui.tsx.
 // Screens should import from "@/src/components/ds" going forward.
@@ -210,10 +211,13 @@ export function FilterBar<T extends string>({
 }) {
   const { isPhone } = useBp();
   return (
-    <View style={{ gap: spacing.sm }}>
+    <View style={{ gap: spacing.sm, minWidth: 0, maxWidth: "100%" }}>
       {label ? <Text style={type.overline}>{label}</Text> : null}
       <ScrollView
         horizontal
+        style={{ minWidth: 0, maxWidth: "100%" }}
+        nestedScrollEnabled
+        keyboardShouldPersistTaps="handled"
         // Filter choices may legitimately extend beyond a phone width. Keep
         // the native indicator visible so that clipped chips read as a
         // scrollable control, not missing options.

@@ -39,9 +39,16 @@ class _FakeCustomers:
         return {"matched_count": 1, "modified_count": 1}
 
 
+class _EmptyLeads:
+    async def find_one(self, *_args, **_kwargs):
+        return None
+
+
 class _FakeDb:
     def __init__(self, doc: dict):
         self.customers = _FakeCustomers(doc)
+        self.followups = _EmptyLeads()
+        self.walkins = _EmptyLeads()
 
 
 def test_get_customer_ignores_ambient_floor_mismatch(monkeypatch):

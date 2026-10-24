@@ -72,6 +72,7 @@ from services.floor_scope import ensure_floor_scope  # noqa: E402
 from services.customer_data_reset import customer_reset_maintenance, reset_customer_data, cleanup_reset_files  # noqa: E402
 from services.quotation_shares import ensure_quotation_share_indexes  # noqa: E402
 from routes.furniture_quotation_routes import router as furniture_quotation_router  # noqa: E402
+from routes.kitchen_routes import router as kitchen_router  # noqa: E402
 from routes.whatsapp_routes import router as whatsapp_router  # noqa: E402
 
 
@@ -183,8 +184,9 @@ async def _startup(app: FastAPI) -> None:
     await dispatch_pending()
     app.state.outbox_worker = asyncio.create_task(outbox_worker())
     snapshot = await catalog_service.refresh_catalog_snapshot()
+    logger.info("Catalog startup diagnostics: %s", json.dumps(catalog_service.catalog_diagnostics(), sort_keys=True))
     if getattr(snapshot, "database_backed", False):
-        logger.info("Catalog read model ready: bounded database paging (catalog exceeds warm-cache budget).")
+        logger.warning("Catalog read model ready: bounded database paging (catalog exceeds warm-cache budget); check catalog performance before promotion.")
     else:
         logger.info("Catalog read model ready: %d products.", len(snapshot.products))
     app.state.optional_startup_tasks = [
@@ -211,6 +213,7 @@ async def _shutdown_resources(app: FastAPI) -> None:
             await task
         except asyncio.CancelledError:
             pass
+    await catalog_service.stop_catalog_refresh()
     storage = get_media_storage()
     close_storage = getattr(storage, "close", None)
     if close_storage:
@@ -376,10 +379,16 @@ async def readiness():
         return JSONResponse(status_code=503, content={"status": "error", "detail": "pending migrations", "migrations": pending})
     try:
         await db.command("ping")
-        from media_storage.supabase_driver import supabase_ready
-        await supabase_ready()
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Readiness dependency unavailable: database (%s)", type(exc).__name__)
         return JSONResponse(status_code=503, content={"status": "error", "detail": "database unavailable"})
+    try:
+        from media_storage.factory import storage_ready
+        await storage_ready()
+    except Exception as exc:  # noqa: BLE001
+        # Provider exception text can contain credentials, URLs or bodies.
+        logger.warning("Readiness dependency unavailable: storage (%s)", type(exc).__name__)
+        return JSONResponse(status_code=503, content={"status": "error", "detail": "storage unavailable"})
     return {"status": "ok", "pdf_renderer_revision": PDF_RENDERER_REVISION}
 
 
@@ -392,6 +401,7 @@ api.include_router(customer_router)
 api.include_router(po_final_router)
 api.include_router(quotation_router)
 api.include_router(furniture_quotation_router)
+api.include_router(kitchen_router)
 api.include_router(whatsapp_router)
 api.include_router(misc_router)
 api.include_router(media_router)

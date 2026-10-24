@@ -141,3 +141,9 @@ def test_whatsapp_pdf_drafts_require_export_capability(method):
     assert action_for_api_request(method, "/api/quotations/q1/whatsapp-draft") == "export"
     # Exact command matching must not broaden unrelated routes.
     assert action_for_api_request("POST", "/api/quotations/q1/whatsapp-draft/other") == "create"
+
+
+def test_quotation_direct_pdf_delivery_requires_export_grant():
+    from services.access_grants import action_for_api_request
+    assert action_for_api_request("POST", "/api/quotations/q1/whatsapp-send") == "export"
+    assert action_for_api_request("POST", "/api/quotations/q1/whatsapp-send/other") == "create"

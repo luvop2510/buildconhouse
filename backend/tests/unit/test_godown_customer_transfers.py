@@ -78,7 +78,7 @@ def user():
 
 
 def lot():
-    return {"id": "stock-1", "floor_id": "first-floor", "product_id": "product-1", "sku": "ABC", "name": "Mixer", "available_qty": 5, "qty_received": 5, "loaned_out_qty": 0, "source_customer_id": "source-1", "source_customer_name": "Source"}
+    return {"id": "stock-1", "floor_id": "first-floor", "product_id": "product-1", "sku": "ABC", "name": "Mixer", "unit_price": 100, "mrp": 100, "available_qty": 5, "qty_received": 5, "loaned_out_qty": 0, "source_customer_id": "source-1", "source_customer_name": "Source"}
 
 
 def po():
@@ -381,3 +381,23 @@ def test_first_transfer_with_fractional_quantity_uses_shared_rounding(monkeypatc
     assert quote["subtotal"] == 15.02
     assert quote["discount_total"] == 1.50
     assert quote["grand_total"] == result["total"] == 13.51
+
+
+def test_transfer_requires_explicit_price_for_unpriced_stock(monkeypatch):
+    unpriced = lot(); unpriced["unit_price"] = None
+    monkeypatch.setattr(route, "db", SimpleNamespace(godown_stock=Collection([unpriced]), godown_customer_transfers=Collection([])))
+    monkeypatch.setattr(route, "client", Client())
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(route.transfer_stock_to_customer("stock-1", route.CustomerTransfer(qty=1, recipient_customer_id="recipient-1", idempotency_key="unpriced-stock-123"), user()))
+    assert exc.value.status_code == 422
+    assert "price" in exc.value.detail
+
+
+@pytest.mark.parametrize("flag", ["quantity_missing", "archived"])
+def test_transfer_rejects_unknown_quantity_or_archived_stock(monkeypatch, flag):
+    unavailable = {**lot(), flag: True}
+    monkeypatch.setattr(route, "db", SimpleNamespace(godown_stock=Collection([unavailable]), godown_customer_transfers=Collection([])))
+    monkeypatch.setattr(route, "client", Client())
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(route.transfer_stock_to_customer("stock-1", route.CustomerTransfer(qty=1, recipient_customer_id="recipient-1", unit_price=100, idempotency_key="unavailable-stock-123"), user()))
+    assert exc.value.status_code == 409

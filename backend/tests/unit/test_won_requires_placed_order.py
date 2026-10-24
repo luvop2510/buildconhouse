@@ -57,7 +57,7 @@ def test_call_won_does_not_update_an_unplaced_lead(monkeypatch, outcome):
     monkeypatch.setattr(followup_routes, "db", SimpleNamespace(followups=Followups(), quotations=Quotations()))
     user = UserPublic(email="sales@example.com", full_name="Sales", role="sales", floor_ids=["first-floor"], active_floor_id="first-floor")
     with pytest.raises(HTTPException) as error:
-        asyncio.run(followup_routes.log_call("f1", FollowupCallOutcomePayload(outcome=outcome, notes="Accepted proposal"), user=user))
+        asyncio.run(followup_routes.log_call("f1", FollowupCallOutcomePayload(outcome=outcome), user=user))
     assert error.value.status_code == 409
 
 
@@ -74,7 +74,7 @@ def test_call_confirmation_retains_already_placed_order(monkeypatch, outcome):
     monkeypatch.setattr(followup_routes, "db", SimpleNamespace(followups=Followups(), quotations=Quotations("ordered")))
     monkeypatch.setattr(followup_routes, "log_event", event)
     user = UserPublic(email="sales@example.com", full_name="Sales", role="sales", floor_ids=["first-floor"], active_floor_id="first-floor")
-    result = asyncio.run(followup_routes.log_call("f1", FollowupCallOutcomePayload(outcome=outcome, notes="Placed order confirmed"), user=user))
+    result = asyncio.run(followup_routes.log_call("f1", FollowupCallOutcomePayload(outcome=outcome), user=user))
     assert result["status"] == "done" and result["completed_outcome"] == outcome
 
 

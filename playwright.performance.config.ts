@@ -4,10 +4,12 @@ import { defineConfig, devices } from '@playwright/test';
 // model API latency; no account, business data or external host is contacted.
 export default defineConfig({
   testDir: './e2e',
-  testMatch: 'performance-startup.spec.ts',
+  testMatch: ['performance-startup.spec.ts', 'performance-kitchen.spec.ts'],
   timeout: 30_000,
   workers: 1,
   retries: 0,
+  forbidOnly: !!process.env.CI,
+  failOnFlakyTests: true,
   reporter: [['list'], ['json', { outputFile: process.env.PERFORMANCE_REPORT || 'output/playwright/performance-results.json' }]],
   outputDir: 'output/playwright/performance',
   use: {
@@ -17,9 +19,9 @@ export default defineConfig({
     serviceWorkers: 'block',
   },
   webServer: {
-    command: 'AUDIT_PORT=8098 node scripts/serve-audit.mjs',
+    command: 'node scripts/serve-performance.mjs',
     url: 'http://127.0.0.1:8098/login',
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
   },
   projects: [
     { name: 'android-chrome', use: { ...devices['Pixel 7'], browserName: 'chromium' } },

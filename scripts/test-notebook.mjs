@@ -50,12 +50,10 @@ const notebookRoot = await import("node:fs/promises").then(({ readFile }) => rea
 const quotationFollowUp = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("../app/(admin)/notebook/[floor]/quotation-follow-up.tsx", import.meta.url), "utf8"));
 const legacyView = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("../app/(admin)/notebook/[floor]/[view].tsx", import.meta.url), "utf8"));
 const notebookScreen = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("../src/components/notebook/NotebookScreen.tsx", import.meta.url), "utf8"));
-assert.match(notebookRoot, /NotebookScreen/);
-assert.match(notebookRoot, /useRequireFloorAccess/);
-assert.doesNotMatch(notebookRoot, /WalkInsScreen|walkins/);
-assert.match(quotationFollowUp, /NotebookScreen/);
-assert.match(quotationFollowUp, /useRequireFloorAccess/);
-assert.doesNotMatch(quotationFollowUp, /WalkInsScreen|walkins/);
+assert.match(notebookRoot, /Redirect href="\/\(admin\)\/walkins"/);
+assert.doesNotMatch(notebookRoot, /NotebookScreen|useRequireFloorAccess/);
+assert.match(quotationFollowUp, /Redirect href="\/\(admin\)\/followups"/);
+assert.doesNotMatch(quotationFollowUp, /NotebookScreen|useRequireFloorAccess/);
 assert.match(notebookScreen, /notebookApi\.list/);
 assert.match(notebookScreen, /notebookApi\.patch/);
 assert.match(notebookScreen, /notebookApi\.convert/);
@@ -71,6 +69,7 @@ assert.match(notebookScreen, /Move to quotation/);
 assert.match(notebookScreen, /BottomSheet/);
 // Showroom vocabulary changed; notebook APIs and floor guards above remain unchanged.
 assert.match(notebookScreen, /No walk-ins yet/);
-assert.match(legacyView, /quotation-follow-up/);
+assert.match(legacyView, /followups/);
+assert.match(legacyView, /walkins/);
 
 console.log("notebook model: canonical route assertions passed");

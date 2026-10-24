@@ -16,6 +16,7 @@ from db import db
 from models import UserPublic
 from services.furniture_quotations import FURNITURE_FLOOR_ID, FurnitureQuotationInput, build_pdf, prepare_document
 from services.quotation_shares import whatsapp_phone
+from services.lead_scope import referrer_fields
 
 router = APIRouter(prefix="/furniture-quotations", tags=["furniture-quotations"])
 
@@ -25,6 +26,17 @@ def scope(user: UserPublic) -> dict:
     if (allowed is not None and FURNITURE_FLOOR_ID not in allowed) or floor_for_write(user) != FURNITURE_FLOOR_ID:
         raise HTTPException(403, "Furniture quotations require access to the Furniture Floor")
     return {"floor_id": FURNITURE_FLOOR_ID}
+
+
+async def furniture_referrer_fields(referrer_id, user):
+    fields = await referrer_fields(db, referrer_id, FURNITURE_FLOOR_ID, user)
+    if referrer_id:
+        # The shared resolver has already checked this directory identity's access.
+        partner = await db.referrers.find_one({"id": fields["referrer_id"]}, {"_id": 0, "company": 1})
+        fields["referrer_company"] = (partner or {}).get("company")
+    else:
+        fields["referrer_company"] = None
+    return fields
 
 
 async def lookup(quotation_id: str, user: UserPublic) -> dict:
@@ -70,13 +82,20 @@ async def create_quotation(body: FurnitureQuotationInput, user: UserPublic = Dep
     now = datetime.now(timezone.utc).isoformat()
     doc = {**prepare_document(body, now), **floor, "id": str(uuid4()), "created_at": now,
            "created_by": user.id, "updated_by": user.id, "revision": 1}
+    if body.referrer_id:
+        doc.update(await furniture_referrer_fields(body.referrer_id, user))
     await db.furniture_quotations.insert_one(dict(doc))
     return doc
 
 
 @router.get("/{quotation_id}")
 async def get_quotation(quotation_id: str, user: UserPublic = Depends(get_current_user)):
-    return await lookup(quotation_id, user)
+    doc = await lookup(quotation_id, user)
+    if doc.get("referrer_id"):
+        from services.referrer_identity import acquired_counts
+        counts = await acquired_counts(db, [doc["referrer_id"]], [FURNITURE_FLOOR_ID])
+        doc = {**doc, "referrer_customers_acquired": counts.get(doc["referrer_id"], 0)}
+    return doc
 
 
 @router.put("/{quotation_id}")
@@ -93,6 +112,8 @@ async def update_quotation(quotation_id: str, body: FurnitureQuotationInput,
         raise HTTPException(422, "Enter a valid customer mobile number")
     now = datetime.now(timezone.utc).isoformat()
     fields = {**prepare_document(body, now, old), "updated_by": user.id, "revision": old["revision"] + 1}
+    if "referrer_id" in body.model_fields_set:
+        fields.update(await furniture_referrer_fields(body.referrer_id, user))
     result = await db.furniture_quotations.update_one(
         {**scope(user), "id": quotation_id, "updated_at": old["updated_at"], "revision": old["revision"]},
         {"$set": fields},

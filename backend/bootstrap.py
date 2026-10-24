@@ -83,6 +83,14 @@ REQUIRED_INDEXES: dict[str, list[tuple[tuple[str, Any], ...]]] = {
     "users": [(("email", 1),)],
     "quotations": [(("number", 1),)],
     "furniture_quotations": [(("id", 1),), (("floor_id", 1), ("updated_at", -1), ("id", -1))],
+    "kitchen_projects": [
+        (("id", 1),), (("reference", 1),),
+        (("floor_id", 1), ("stage", 1), ("updated_at", -1), ("id", 1)),
+        (("floor_id", 1), ("customer_id", 1), ("updated_at", -1), ("id", 1)),
+        (("floor_id", 1), ("assigned_to", 1), ("updated_at", -1), ("id", 1)),
+        (("floor_id", 1), ("status", 1), ("deadline", 1), ("id", 1)),
+        (("floor_id", 1), ("completion_date", 1), ("id", 1)),
+    ],
     "whatsapp_deliveries": [(("floor_id", 1), ("source_id", 1), ("idempotency_key", 1)), (("message_id", 1),)],
     "whatsapp_status_events": [(("message_id", 1),)],
     "purchase_orders": [(("number", 1),)],
@@ -105,6 +113,7 @@ REQUIRED_UNIQUE_INDEXES: dict[str, list[tuple[tuple[str, Any], ...]]] = {
     "users": [(("email", 1),)],
     "quotations": [(("number", 1),)],
     "furniture_quotations": [(("id", 1),)],
+    "kitchen_projects": [(("id", 1),), (("reference", 1),)],
     "whatsapp_deliveries": [(("floor_id", 1), ("source_id", 1), ("idempotency_key", 1)), (("message_id", 1),)],
     "whatsapp_status_events": [(("message_id", 1),)],
     "purchase_orders": [(("number", 1),)],
@@ -152,6 +161,7 @@ async def _check_demo_accounts(database: Any) -> list[str]:
     emails — never raises, never added to report.errors: a pre-existing
     credential problem must not crash startup and turn into an outage."""
     from seed import DEMO_STAFF  # local import: avoids a module-level seed<->bootstrap coupling
+    from starlette.concurrency import run_in_threadpool
 
     detected: list[str] = []
     emails = [email for email, _name, _role in DEMO_STAFF]
@@ -164,7 +174,7 @@ async def _check_demo_accounts(database: Any) -> list[str]:
         if not pw_hash:
             continue
         try:
-            if bcrypt.checkpw(legacy_bytes, pw_hash.encode("utf-8")):
+            if await run_in_threadpool(bcrypt.checkpw, legacy_bytes, pw_hash.encode("utf-8")):
                 detected.append(doc["email"])
         except (ValueError, TypeError):
             continue
@@ -255,6 +265,18 @@ async def _check_mongo(cfg: Settings, report: BootstrapReport) -> None:
 
 
 async def _check_supabase(cfg: Settings, report: BootstrapReport) -> None:
+    if cfg.media_storage_driver == "r2":
+        from media_storage.r2_driver import R2StorageDriver
+        storage = R2StorageDriver(cfg=cfg)
+        try:
+            await storage.ready()
+            report.checks["r2"] = {"connected": True}
+        except Exception as exc:
+            report.checks["r2"] = {"connected": False}
+            report.errors.append(f"R2 readiness failed ({type(exc).__name__})")
+        finally:
+            await storage.close()
+        return
     headers = {
         "apikey": cfg.supabase_service_role_key,
         "Authorization": f"Bearer {cfg.supabase_service_role_key}",

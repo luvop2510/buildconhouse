@@ -3,16 +3,17 @@ import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from auth import (
-    TILES_FLOOR_ID, floor_for_write, floor_inherit, floor_query, get_current_customer, get_current_user,
+    TILES_FLOOR_ID, accessible_floor_ids, floor_for_write, floor_inherit, floor_query, get_current_customer, get_current_user,
     get_floor_scoped_or_404, hash_password, invalidate_principal_cache, require_floor_access, require_min_role, revoke_all_sessions,
 )
 from db import db
 from models import (
     CustomerCreate, CustomerPublic, CustomerUpdatePayload, UserPublic, now_iso,
 )
-from services.customer_completion import completed_customer_ids, purchase_customer_ids
+from services.customer_completion import completed_customer_ids, confirmed_customer_ids
 from services.activity_log import log_event
 from services.invite_service import generate_temp_password, get_invite_service, temp_password_expiry_iso
 
@@ -57,20 +58,13 @@ async def list_customers(
     user: UserPublic = Depends(get_current_user),
 ):
     query = floor_query(user)
+    eligible_ids, complete_ids = await asyncio.gather(
+        confirmed_customer_ids(db, user) if confirmed_only else asyncio.sleep(0, result=None),
+        completed_customer_ids(db, user) if completion in ("active", "completed") else asyncio.sleep(0, result=None),
+    )
     if confirmed_only:
-        # Derive eligibility from actual confirmed orders, including legacy
-        # customers without lifecycle metadata. Draft quotations never qualify.
-        customer_ids = await db.quotations.distinct(
-            "customer_id", floor_query(user, {"status": {"$in": ["ordered", "won"]}}),
-        )
-        tile_customer_ids = await db.customer_orders.distinct(
-            "customer_id", floor_query(user, {"is_deleted": {"$ne": True}}),
-        )
-        purchase_ids = await purchase_customer_ids(db, user)
-        query = floor_query(user, {"id": {"$in": sorted(value for value in set(customer_ids + tile_customer_ids) | purchase_ids if isinstance(value, str) and value)}})
-    complete_ids = None
-    if completion in ("active", "completed"):
-        complete_ids = await completed_customer_ids(db, user)
+        query = floor_query(user, {"id": {"$in": sorted(eligible_ids)}})
+    if complete_ids is not None:
         query = {"$and": [query, {"id": {"$in" if completion == "completed" else "$nin": sorted(complete_ids)}}]}
     docs = await db.customers.find(
         query, {"_id": 0, "password_hash": 0},
@@ -100,7 +94,7 @@ async def create_customer(
     cust = CP(**data)
     to_store = cust.dict()
     if password:
-        to_store["password_hash"] = hash_password(password)
+        to_store["password_hash"] = await run_in_threadpool(hash_password, password)
     # customers_email_unique is sparse, but sparse only skips ABSENT fields —
     # an explicit null still gets indexed, so the second no-email customer
     # ever created crashed with a duplicate-key error on {email: null}.
@@ -230,6 +224,37 @@ async def get_customer(customer_id: str, with_completion: bool = False, user: Us
     doc = await get_floor_scoped_or_404(
         db.customers, customer_id, user, not_found="Customer not found", projection={"_id": 0, "password_hash": 0},
     )
+    from services.referrer_identity import acquired_counts, legacy_referrer_name
+    if not doc.get("referrer_name"):
+        doc = {**doc, "referrer_name": legacy_referrer_name(doc)}
+    if not doc.get("referrer_id") and not doc.get("referrer_name"):
+        # Notebook/walk-in legacy names were never part of CustomerPublic. Keep
+        # the original spelling and only inspect this customer's actual floor.
+        for collection in (db.followups, db.walkins):
+            legacy = await collection.find_one({
+                "customer_id": customer_id, "floor_id": doc["floor_id"], "is_deleted": {"$ne": True},
+                "$or": [{key: {"$exists": True, "$nin": [None, ""]}} for key in
+                        ("referrer_id", "referrer_name", "architect_name", "interior_designer_name", "architect_interior_designer", "architect")],
+            }, {"_id": 0}, sort=[("updated_at", -1)])
+            if legacy:
+                doc = {**doc, "referrer_id": legacy.get("referrer_id"),
+                       "referrer_name": legacy.get("referrer_name") or legacy_referrer_name(legacy),
+                       "referrer_type": legacy.get("referrer_type")}
+                break
+    if doc.get("referrer_id"):
+        # Attribution can originate on another interested floor. Restrict its
+        # directory lookup to the caller's permitted floors, not the ambient one.
+        selector = {"id": doc["referrer_id"]}
+        floors = accessible_floor_ids(user)
+        if floors is not None:
+            selector["floor_id"] = {"$in": floors}
+        partner = await db.referrers.find_one(selector, {"_id": 0})
+        if partner:
+            doc = {**doc, "referrer_name": partner.get("name") or doc.get("referrer_name"),
+                   "referrer_type": partner.get("type") or doc.get("referrer_type"),
+                   "referrer_company": partner.get("company")}
+        counts = await acquired_counts(db, [doc["referrer_id"]], [doc["floor_id"]])
+        doc["referrer_customers_acquired"] = counts.get(doc["referrer_id"], 0)
     if with_completion:
         completion_user = user.model_copy(update={"active_floor_id": doc["floor_id"]})
         complete_ids = await completed_customer_ids(db, completion_user, [customer_id])
@@ -349,42 +374,64 @@ async def delete_customer(
             ),
         )
 
-    legacy_results = await asyncio.gather(
-        db.walkins.update_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}, {"$unset": {"gender": ""}}),
-        db.followups.update_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}, {"$unset": {"gender": ""}}),
-        db.quotations.update_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}, {"$unset": {"gender": ""}}),
-    )
-    followups_result, walkins_result, pending_payments_result, quotations_result, activity_result = await asyncio.gather(
-        db.followups.delete_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}),
-        db.walkins.delete_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}),
-        db.payments.delete_many({
-            "floor_id": existing.get("floor_id"),
-            "$or": [
-                {"customer_id": customer_id, "status": {"$ne": "completed"}},
-                {"quotation_id": quotation_ref, "status": {"$ne": "completed"}},
-            ],
-        }),
-        db.quotations.delete_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}),
-        db.activity_events.delete_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}),
-    )
-    customer_result = await db.customers.delete_one({"id": customer_id, "floor_id": existing.get("floor_id")})
-    if customer_result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Customer not found")
-    return {
-        "ok": True,
-        "customer_id": customer_id,
-        "deleted": {
-            "customers": customer_result.deleted_count,
-            "quotations": quotations_result.deleted_count,
-            "followups": followups_result.deleted_count,
-            "walkins": walkins_result.deleted_count,
-            "pending_payments": pending_payments_result.deleted_count,
-            "activity_events": activity_result.deleted_count,
-            "legacy_gender_fields": sum(getattr(result, "modified_count", 0) for result in legacy_results),
-        },
-        "protected": {"purchase_orders": 0, "completed_payments": 0},
-        "customer_name": existing.get("name"),
-    }
+    delete_token = None
+    if existing.get("floor_id") == "second-floor":
+        from uuid import uuid4
+        delete_token = str(uuid4())
+        claimed = await db.customers.update_one(
+            {"id": customer_id, "floor_id": "second-floor",
+             "kitchen_reference_reserved": {"$ne": True}, "kitchen_delete_token": {"$exists": False}},
+            {"$set": {"kitchen_delete_token": delete_token}})
+        if not claimed.matched_count:
+            raise HTTPException(409, "Customer has a Kitchen project reservation or another deletion is running")
+        # Include pre-pin legacy aggregates. New creators cannot cross the
+        # tombstone while this authoritative reference check runs.
+        if await db.kitchen_projects.count_documents({"customer_id": customer_id, "floor_id": "second-floor"}):
+            await db.customers.update_one({"id": customer_id, "kitchen_delete_token": delete_token},
+                                          {"$unset": {"kitchen_delete_token": ""}})
+            raise HTTPException(409, "Kitchen projects reference this customer; preserve its canonical identity")
+    try:
+        legacy_results = await asyncio.gather(
+            db.walkins.update_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}, {"$unset": {"gender": ""}}),
+            db.followups.update_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}, {"$unset": {"gender": ""}}),
+            db.quotations.update_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}, {"$unset": {"gender": ""}}),
+        )
+        followups_result, walkins_result, pending_payments_result, quotations_result, activity_result = await asyncio.gather(
+            db.followups.delete_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}),
+            db.walkins.delete_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}),
+            db.payments.delete_many({
+                "floor_id": existing.get("floor_id"),
+                "$or": [
+                    {"customer_id": customer_id, "status": {"$ne": "completed"}},
+                    {"quotation_id": quotation_ref, "status": {"$ne": "completed"}},
+                ],
+            }),
+            db.quotations.delete_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}),
+            db.activity_events.delete_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}),
+        )
+        customer_result = await db.customers.delete_one({"id": customer_id, "floor_id": existing.get("floor_id")})
+        if customer_result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Customer not found")
+        return {
+            "ok": True,
+            "customer_id": customer_id,
+            "deleted": {
+                "customers": customer_result.deleted_count,
+                "quotations": quotations_result.deleted_count,
+                "followups": followups_result.deleted_count,
+                "walkins": walkins_result.deleted_count,
+                "pending_payments": pending_payments_result.deleted_count,
+                "activity_events": activity_result.deleted_count,
+                "legacy_gender_fields": sum(getattr(result, "modified_count", 0) for result in legacy_results),
+            },
+            "protected": {"purchase_orders": 0, "completed_payments": 0},
+            "customer_name": existing.get("name"),
+        }
+    finally:
+        if delete_token:
+            await db.customers.update_one({"id": customer_id, "kitchen_delete_token": delete_token},
+                                          {"$unset": {"kitchen_delete_token": ""}})
+
 
 
 async def _issue_temp_password(customer_id: str, *, kind: str, user: UserPublic):
@@ -404,7 +451,7 @@ async def _issue_temp_password(customer_id: str, *, kind: str, user: UserPublic)
     await db.customers.update_one(
         floor_query(user, {"id": customer_id}),
         {"$set": {
-            "password_hash": hash_password(temp_pw),
+            "password_hash": await run_in_threadpool(hash_password, temp_pw),
             "must_change_password": True,
             "temp_password_expires_at": expires_at,
             "updated_at": now_iso(),

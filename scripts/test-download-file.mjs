@@ -40,6 +40,7 @@ for (const navigator of [
   { userAgent: "Android Chrome", platform: "Linux", maxTouchPoints: 5, dialogUnsupported: true, fileUnsupported: true },
   { userAgent: "iPhone embedded", canShare() { throw new Error("Unsupported"); }, share: async () => {} },
   { userAgent: "iPhone Safari", canShare: () => true, share: async () => { throw Object.assign(new Error("Cancelled"), { name: "AbortError" }); } },
+  { userAgent: "iPhone Safari", canShare: () => true, share: async () => {}, shareSucceeds: true },
   { userAgent: "Macintosh Safari", platform: "MacIntel", maxTouchPoints: 5 },
 ]) {
   const module = { exports: {} };
@@ -48,9 +49,11 @@ for (const navigator of [
   const fetches = [];
   let fail = false;
   let clicks = 0;
+  let focused = null;
   const makeElement = tag => {
     const element = { tag, style: {}, children: [], setAttribute() {}, append(...items) { this.children.push(...items); },
-      appendChild(item) { this.children.push(item); }, remove() {}, close() {}, showModal() {}, focus() {}, click() { clicks++; } };
+      appendChild(item) { this.children.push(item); }, insertBefore(item, before) { this.children.splice(this.children.indexOf(before), 0, item); },
+      remove() {}, close() {}, showModal() {}, focus() { focused = this; }, click() { clicks++; } };
     if (navigator.dialogUnsupported) element.showModal = undefined;
     elements.push(element);
     return element;
@@ -74,11 +77,24 @@ for (const navigator of [
   assert.equal(fetches[0].options.headers["X-Floor-Id"], "ground-floor");
   assert.equal(fetches[0].url, `/api${document.path}`);
   assert.equal(fetches[0].options.credentials, "same-origin");
-  const share = elements.find(element => element.textContent === "Share or save");
-  if (share) {
-    share.onclick();
+  const saveOrShare = elements.find(element => element.textContent === "Save or share");
+  assert.match(elements.find(element => element.tag === "p")?.textContent, /Save to Files/);
+  if (saveOrShare) {
+    const actionContainer = elements.find(element => element.children.includes(saveOrShare));
+    assert.equal(actionContainer.children[0], saveOrShare, "put Save or share before the browser-download fallback");
+  }
+  if (saveOrShare) assert.equal(focused, saveOrShare, "prefer the destination picker on phones that support file sharing");
+  if (saveOrShare && !navigator.shareSucceeds) {
+    saveOrShare.onclick();
     await new Promise(resolve => setImmediate(resolve));
     assert.deepEqual(errors, [], "share cancellation keeps Download available without an error");
+  }
+  if (saveOrShare && navigator.shareSucceeds) {
+    saveOrShare.onclick();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(await saving, true, "the native save/share picker should complete the primary action");
+    assert.equal(clicks, 0, "the primary save/share action should not launch a new browser tab");
+    continue;
   }
   elements.find(element => element.textContent === "Download").onclick();
   assert.equal(await saving, true);
@@ -86,7 +102,7 @@ for (const navigator of [
   const anchor = elements.find(element => element.tag === "a");
   assert.equal(anchor.href, "blob:ready-pdf");
   assert.equal(anchor.download, document.filename);
-  assert.equal(anchor.target, "_blank");
+  assert.equal(anchor.target, undefined, "download should not force the file into a separate tab");
   const cancelled = module.exports.downloadApiFile(document.path, document.filename, document.label, "ground-floor");
   await new Promise(resolve => setImmediate(resolve));
   elements.filter(element => element.textContent === "Cancel").at(-1).onclick();

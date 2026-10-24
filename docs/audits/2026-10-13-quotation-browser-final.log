@@ -1,0 +1,2622 @@
+
+Running 64 tests using 2 workers
+
+  ✓   2 [desktop] › e2e/redesign-quotation-individual.spec.ts:38:5 › critical quotation has individual product editing without line multi-select or batch area assignment (1.4s)
+  ✓   1 [desktop] › e2e/redesign-quotation-reorder.spec.ts:47:5 › critical quotation drag rearranges categories, persists ordered items and keeps collapsed products on reload (4.6s)
+  ✓   3 [desktop] › e2e/redesign-quotation-individual.spec.ts:47:5 › critical saved quotation individual adds edits discounts autosave and reload preserve all lines and areas (4.2s)
+  -   5 [desktop] › e2e/redesign-quotation-tablet.spec.ts:15:5 › critical tablet quotation picker shows at least five complete products and an accessible PDF action
+  ✓   6 [desktop] › e2e/redesign-quotation-tablet.spec.ts:50:5 › critical iPad desktop browser downloads the quotation PDF with dimensions and its document floor (1.2s)
+  ✓   4 [desktop] › e2e/redesign-quotation-reorder.spec.ts:62:5 › critical quotation touch pointer reorder and Escape cancellation work without changing the total (3.3s)
+  ✓   7 [desktop] › e2e/redesign-quotation-tablet.spec.ts:83:7 › critical quotation pdf download remains usable across all release viewports (1.2s)
+  ✓   8 [desktop] › e2e/redesign-quotation-tablet.spec.ts:83:7 › critical quotation pptx download remains usable across all release viewports (995ms)
+  ✓   9 [tablet] › e2e/redesign-quotation-individual.spec.ts:38:5 › critical quotation has individual product editing without line multi-select or batch area assignment (1.2s)
+  ✓  10 [tablet] › e2e/redesign-quotation-reorder.spec.ts:47:5 › critical quotation drag rearranges categories, persists ordered items and keeps collapsed products on reload (4.6s)
+  ✓  11 [tablet] › e2e/redesign-quotation-individual.spec.ts:47:5 › critical saved quotation individual adds edits discounts autosave and reload preserve all lines and areas (4.5s)
+  ✓  13 [tablet] › e2e/redesign-quotation-tablet.spec.ts:15:5 › critical tablet quotation picker shows at least five complete products and an accessible PDF action (1.8s)
+  ✓  12 [tablet] › e2e/redesign-quotation-reorder.spec.ts:62:5 › critical quotation touch pointer reorder and Escape cancellation work without changing the total (3.5s)
+  ✓  14 [tablet] › e2e/redesign-quotation-tablet.spec.ts:50:5 › critical iPad desktop browser downloads the quotation PDF with dimensions and its document floor (1.6s)
+  ✓  15 [tablet] › e2e/redesign-quotation-tablet.spec.ts:83:7 › critical quotation pdf download remains usable across all release viewports (1.5s)
+  ✓  16 [phone] › e2e/redesign-quotation-individual.spec.ts:38:5 › critical quotation has individual product editing without line multi-select or batch area assignment (1.4s)
+  ✓  17 [tablet] › e2e/redesign-quotation-tablet.spec.ts:83:7 › critical quotation pptx download remains usable across all release viewports (1.2s)
+  ✓  18 [phone] › e2e/redesign-quotation-individual.spec.ts:47:5 › critical saved quotation individual adds edits discounts autosave and reload preserve all lines and areas (4.5s)
+  -  20 [phone] › e2e/redesign-quotation-tablet.spec.ts:15:5 › critical tablet quotation picker shows at least five complete products and an accessible PDF action
+  ✓  19 [phone] › e2e/redesign-quotation-reorder.spec.ts:47:5 › critical quotation drag rearranges categories, persists ordered items and keeps collapsed products on reload (4.4s)
+  ✓  21 [phone] › e2e/redesign-quotation-tablet.spec.ts:50:5 › critical iPad desktop browser downloads the quotation PDF with dimensions and its document floor (1.1s)
+  ✓  23 [phone] › e2e/redesign-quotation-tablet.spec.ts:83:7 › critical quotation pdf download remains usable across all release viewports (1.1s)
+  ✓  24 [phone] › e2e/redesign-quotation-tablet.spec.ts:83:7 › critical quotation pptx download remains usable across all release viewports (1.1s)
+  ✓  22 [phone] › e2e/redesign-quotation-reorder.spec.ts:62:5 › critical quotation touch pointer reorder and Escape cancellation work without changing the total (3.2s)
+  ✓  25 [small-phone] › e2e/redesign-quotation-individual.spec.ts:38:5 › critical quotation has individual product editing without line multi-select or batch area assignment (1.1s)
+  ✓  26 [small-phone] › e2e/redesign-quotation-reorder.spec.ts:47:5 › critical quotation drag rearranges categories, persists ordered items and keeps collapsed products on reload (4.2s)
+  ✓  27 [small-phone] › e2e/redesign-quotation-individual.spec.ts:47:5 › critical saved quotation individual adds edits discounts autosave and reload preserve all lines and areas (4.2s)
+  -  29 [small-phone] › e2e/redesign-quotation-tablet.spec.ts:15:5 › critical tablet quotation picker shows at least five complete products and an accessible PDF action
+  ✓  30 [small-phone] › e2e/redesign-quotation-tablet.spec.ts:50:5 › critical iPad desktop browser downloads the quotation PDF with dimensions and its document floor (1.1s)
+  ✓  31 [small-phone] › e2e/redesign-quotation-tablet.spec.ts:83:7 › critical quotation pdf download remains usable across all release viewports (1.1s)
+  ✓  28 [small-phone] › e2e/redesign-quotation-reorder.spec.ts:62:5 › critical quotation touch pointer reorder and Escape cancellation work without changing the total (3.6s)
+  ✓  32 [small-phone] › e2e/redesign-quotation-tablet.spec.ts:83:7 › critical quotation pptx download remains usable across all release viewports (1.1s)
+  ✓  33 [tablet-boundary] › e2e/redesign-quotation-individual.spec.ts:38:5 › critical quotation has individual product editing without line multi-select or batch area assignment (1.1s)
+  ✓  34 [tablet-boundary] › e2e/redesign-quotation-reorder.spec.ts:47:5 › critical quotation drag rearranges categories, persists ordered items and keeps collapsed products on reload (4.4s)
+  ✓  35 [tablet-boundary] › e2e/redesign-quotation-individual.spec.ts:47:5 › critical saved quotation individual adds edits discounts autosave and reload preserve all lines and areas (4.5s)
+  ✓  37 [tablet-boundary] › e2e/redesign-quotation-tablet.spec.ts:15:5 › critical tablet quotation picker shows at least five complete products and an accessible PDF action (1.3s)
+  ✓  36 [tablet-boundary] › e2e/redesign-quotation-reorder.spec.ts:62:5 › critical quotation touch pointer reorder and Escape cancellation work without changing the total (3.6s)
+  ✓  38 [tablet-boundary] › e2e/redesign-quotation-tablet.spec.ts:50:5 › critical iPad desktop browser downloads the quotation PDF with dimensions and its document floor (1.6s)
+  ✓  39 [tablet-boundary] › e2e/redesign-quotation-tablet.spec.ts:83:7 › critical quotation pdf download remains usable across all release viewports (1.3s)
+  ✓  40 [tablet-landscape] › e2e/redesign-quotation-individual.spec.ts:38:5 › critical quotation has individual product editing without line multi-select or batch area assignment (1.1s)
+  ✓  41 [tablet-boundary] › e2e/redesign-quotation-tablet.spec.ts:83:7 › critical quotation pptx download remains usable across all release viewports (1.1s)
+  ✓  42 [tablet-landscape] › e2e/redesign-quotation-individual.spec.ts:47:5 › critical saved quotation individual adds edits discounts autosave and reload preserve all lines and areas (4.3s)
+  ✓  43 [tablet-landscape] › e2e/redesign-quotation-reorder.spec.ts:47:5 › critical quotation drag rearranges categories, persists ordered items and keeps collapsed products on reload (4.2s)
+  ✓  44 [tablet-landscape] › e2e/redesign-quotation-tablet.spec.ts:15:5 › critical tablet quotation picker shows at least five complete products and an accessible PDF action (1.3s)
+  ✓  46 [tablet-landscape] › e2e/redesign-quotation-tablet.spec.ts:50:5 › critical iPad desktop browser downloads the quotation PDF with dimensions and its document floor (1.1s)
+  ✓  47 [tablet-landscape] › e2e/redesign-quotation-tablet.spec.ts:83:7 › critical quotation pdf download remains usable across all release viewports (1.1s)
+  ✓  45 [tablet-landscape] › e2e/redesign-quotation-reorder.spec.ts:62:5 › critical quotation touch pointer reorder and Escape cancellation work without changing the total (3.5s)
+  ✓  48 [tablet-landscape] › e2e/redesign-quotation-tablet.spec.ts:83:7 › critical quotation pptx download remains usable across all release viewports (1.1s)
+  ✓  49 [firefox] › e2e/redesign-quotation-individual.spec.ts:38:5 › critical quotation has individual product editing without line multi-select or batch area assignment (3.7s)
+  ✓  50 [firefox] › e2e/redesign-quotation-reorder.spec.ts:47:5 › critical quotation drag rearranges categories, persists ordered items and keeps collapsed products on reload (6.3s)
+  -  52 [firefox] › e2e/redesign-quotation-reorder.spec.ts:62:5 › critical quotation touch pointer reorder and Escape cancellation work without changing the total
+  -  53 [firefox] › e2e/redesign-quotation-tablet.spec.ts:15:5 › critical tablet quotation picker shows at least five complete products and an accessible PDF action
+  ✓  51 [firefox] › e2e/redesign-quotation-individual.spec.ts:47:5 › critical saved quotation individual adds edits discounts autosave and reload preserve all lines and areas (5.7s)
+  ✓  54 [firefox] › e2e/redesign-quotation-tablet.spec.ts:50:5 › critical iPad desktop browser downloads the quotation PDF with dimensions and its document floor (2.7s)
+  ✓  55 [firefox] › e2e/redesign-quotation-tablet.spec.ts:83:7 › critical quotation pdf download remains usable across all release viewports (2.7s)
+  ✓  56 [webkit] › e2e/redesign-quotation-individual.spec.ts:38:5 › critical quotation has individual product editing without line multi-select or batch area assignment (3.0s)
+  ✓  57 [firefox] › e2e/redesign-quotation-tablet.spec.ts:83:7 › critical quotation pptx download remains usable across all release viewports (3.1s)
+  ✓  58 [webkit] › e2e/redesign-quotation-individual.spec.ts:47:5 › critical saved quotation individual adds edits discounts autosave and reload preserve all lines and areas (7.3s)
+  -  60 [webkit] › e2e/redesign-quotation-tablet.spec.ts:15:5 › critical tablet quotation picker shows at least five complete products and an accessible PDF action
+  ✓  59 [webkit] › e2e/redesign-quotation-reorder.spec.ts:47:5 › critical quotation drag rearranges categories, persists ordered items and keeps collapsed products on reload (6.4s)
+  -  62 [webkit] › e2e/redesign-quotation-reorder.spec.ts:62:5 › critical quotation touch pointer reorder and Escape cancellation work without changing the total
+  ✓  61 [webkit] › e2e/redesign-quotation-tablet.spec.ts:50:5 › critical iPad desktop browser downloads the quotation PDF with dimensions and its document floor (1.5s)
+  ✓  63 [webkit] › e2e/redesign-quotation-tablet.spec.ts:83:7 › critical quotation pdf download remains usable across all release viewports (1.3s)
+  ✓  64 [webkit] › e2e/redesign-quotation-tablet.spec.ts:83:7 › critical quotation pptx download remains usable across all release viewports (1.3s)
+
+  7 skipped
+  57 passed (1.5m)
+{
+  "config": {
+    "argv": [
+      "/opt/homebrew/Cellar/node/26.5.1/bin/node",
+      "/Users/yashvardhansinhjhala/buildcon house/forge2.0/node_modules/.bin/playwright",
+      "test",
+      "--config",
+      "playwright.audit.config.ts",
+      "e2e/redesign-quotation-individual.spec.ts",
+      "e2e/redesign-quotation-reorder.spec.ts",
+      "e2e/redesign-quotation-tablet.spec.ts",
+      "--workers=2",
+      "--reporter=list,json"
+    ],
+    "configFile": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/playwright.audit.config.ts",
+    "rootDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 2
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/output/playwright/audit",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 2
+        },
+        "id": "desktop",
+        "name": "desktop",
+        "testDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "app-audit.spec.ts",
+          "release-journeys.spec.ts",
+          "redesign-*.spec.ts"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/output/playwright/audit",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 2
+        },
+        "id": "tablet",
+        "name": "tablet",
+        "testDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "app-audit.spec.ts",
+          "release-journeys.spec.ts",
+          "redesign-*.spec.ts"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/output/playwright/audit",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 2
+        },
+        "id": "phone",
+        "name": "phone",
+        "testDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "app-audit.spec.ts",
+          "release-journeys.spec.ts",
+          "redesign-*.spec.ts"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/output/playwright/audit",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 2
+        },
+        "id": "small-phone",
+        "name": "small-phone",
+        "testDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "app-audit.spec.ts",
+          "release-journeys.spec.ts",
+          "redesign-*.spec.ts"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/output/playwright/audit",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 2
+        },
+        "id": "tablet-boundary",
+        "name": "tablet-boundary",
+        "testDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "app-audit.spec.ts",
+          "release-journeys.spec.ts",
+          "redesign-*.spec.ts"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/output/playwright/audit",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 2
+        },
+        "id": "tablet-landscape",
+        "name": "tablet-landscape",
+        "testDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "app-audit.spec.ts",
+          "release-journeys.spec.ts",
+          "redesign-*.spec.ts"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/output/playwright/audit",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 2
+        },
+        "id": "firefox",
+        "name": "firefox",
+        "testDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "app-audit.spec.ts",
+          "release-journeys.spec.ts",
+          "redesign-*.spec.ts"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/output/playwright/audit",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 2
+        },
+        "id": "webkit",
+        "name": "webkit",
+        "testDir": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "app-audit.spec.ts",
+          "release-journeys.spec.ts",
+          "redesign-*.spec.ts"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.63.0",
+    "workers": 2,
+    "webServer": {
+      "command": "node scripts/serve-audit.mjs",
+      "url": "http://127.0.0.1:8090/login",
+      "reuseExistingServer": true
+    }
+  },
+  "suites": [
+    {
+      "title": "redesign-quotation-individual.spec.ts",
+      "file": "redesign-quotation-individual.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "critical quotation has individual product editing without line multi-select or batch area assignment",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1363,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:01:29.924Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c15d1df21844d0374e31-241f9121b5212e7f353d",
+          "file": "redesign-quotation-individual.spec.ts",
+          "line": 38,
+          "column": 5
+        },
+        {
+          "title": "critical saved quotation individual adds edits discounts autosave and reload preserve all lines and areas",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 4166,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:01:31.972Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c15d1df21844d0374e31-21d4a85177216ef0dc7d",
+          "file": "redesign-quotation-individual.spec.ts",
+          "line": 47,
+          "column": 5
+        },
+        {
+          "title": "critical quotation has individual product editing without line multi-select or batch area assignment",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet",
+              "projectName": "tablet",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 1151,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:01:39.091Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c15d1df21844d0374e31-69095449cc7dd4094f57",
+          "file": "redesign-quotation-individual.spec.ts",
+          "line": 38,
+          "column": 5
+        },
+        {
+          "title": "critical saved quotation individual adds edits discounts autosave and reload preserve all lines and areas",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet",
+              "projectName": "tablet",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 4469,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:01:40.414Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c15d1df21844d0374e31-586fb480d53419d5cd08",
+          "file": "redesign-quotation-individual.spec.ts",
+          "line": 47,
+          "column": 5
+        },
+        {
+          "title": "critical quotation has individual product editing without line multi-select or batch area assignment",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "phone",
+              "projectName": "phone",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1421,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:01:48.824Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c15d1df21844d0374e31-c5906d7884fc5a208fb8",
+          "file": "redesign-quotation-individual.spec.ts",
+          "line": 38,
+          "column": 5
+        },
+        {
+          "title": "critical saved quotation individual adds edits discounts autosave and reload preserve all lines and areas",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "phone",
+              "projectName": "phone",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 4461,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:01:50.614Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c15d1df21844d0374e31-84ead600ccac013f7b0c",
+          "file": "redesign-quotation-individual.spec.ts",
+          "line": 47,
+          "column": 5
+        },
+        {
+          "title": "critical quotation has individual product editing without line multi-select or batch area assignment",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "small-phone",
+              "projectName": "small-phone",
+              "results": [
+                {
+                  "workerIndex": 6,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1105,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:01:59.054Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c15d1df21844d0374e31-f40976e734f02363a35b",
+          "file": "redesign-quotation-individual.spec.ts",
+          "line": 38,
+          "column": 5
+        },
+        {
+          "title": "critical saved quotation individual adds edits discounts autosave and reload preserve all lines and areas",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "small-phone",
+              "projectName": "small-phone",
+              "results": [
+                {
+                  "workerIndex": 6,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 4242,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:00.276Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c15d1df21844d0374e31-ad27f40207f0d9590fc2",
+          "file": "redesign-quotation-individual.spec.ts",
+          "line": 47,
+          "column": 5
+        },
+        {
+          "title": "critical quotation has individual product editing without line multi-select or batch area assignment",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet-boundary",
+              "projectName": "tablet-boundary",
+              "results": [
+                {
+                  "workerIndex": 8,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 1125,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:07.670Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c15d1df21844d0374e31-edff588b544891a5b28a",
+          "file": "redesign-quotation-individual.spec.ts",
+          "line": 38,
+          "column": 5
+        },
+        {
+          "title": "critical saved quotation individual adds edits discounts autosave and reload preserve all lines and areas",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet-boundary",
+              "projectName": "tablet-boundary",
+              "results": [
+                {
+                  "workerIndex": 8,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 4485,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:08.912Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c15d1df21844d0374e31-a84b0396ed4f9bed91f0",
+          "file": "redesign-quotation-individual.spec.ts",
+          "line": 47,
+          "column": 5
+        },
+        {
+          "title": "critical quotation has individual product editing without line multi-select or batch area assignment",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet-landscape",
+              "projectName": "tablet-landscape",
+              "results": [
+                {
+                  "workerIndex": 10,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1134,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:16.995Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c15d1df21844d0374e31-3f865818839af3229bd9",
+          "file": "redesign-quotation-individual.spec.ts",
+          "line": 38,
+          "column": 5
+        },
+        {
+          "title": "critical saved quotation individual adds edits discounts autosave and reload preserve all lines and areas",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet-landscape",
+              "projectName": "tablet-landscape",
+              "results": [
+                {
+                  "workerIndex": 10,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 4265,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:18.482Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c15d1df21844d0374e31-d6e7838fe57771bef718",
+          "file": "redesign-quotation-individual.spec.ts",
+          "line": 47,
+          "column": 5
+        },
+        {
+          "title": "critical quotation has individual product editing without line multi-select or batch area assignment",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "firefox",
+              "projectName": "firefox",
+              "results": [
+                {
+                  "workerIndex": 12,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 3651,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:27.310Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c15d1df21844d0374e31-dff7d8338ca3c14a32f4",
+          "file": "redesign-quotation-individual.spec.ts",
+          "line": 38,
+          "column": 5
+        },
+        {
+          "title": "critical saved quotation individual adds edits discounts autosave and reload preserve all lines and areas",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "firefox",
+              "projectName": "firefox",
+              "results": [
+                {
+                  "workerIndex": 12,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 5738,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:33.286Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c15d1df21844d0374e31-30fd5320e702474ece2a",
+          "file": "redesign-quotation-individual.spec.ts",
+          "line": 47,
+          "column": 5
+        },
+        {
+          "title": "critical quotation has individual product editing without line multi-select or batch area assignment",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit",
+              "projectName": "webkit",
+              "results": [
+                {
+                  "workerIndex": 14,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 2958,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:39.974Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c15d1df21844d0374e31-7d217622f3676e8f1ca9",
+          "file": "redesign-quotation-individual.spec.ts",
+          "line": 38,
+          "column": 5
+        },
+        {
+          "title": "critical saved quotation individual adds edits discounts autosave and reload preserve all lines and areas",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit",
+              "projectName": "webkit",
+              "results": [
+                {
+                  "workerIndex": 14,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 7348,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:45.527Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c15d1df21844d0374e31-b4e0def339256b049252",
+          "file": "redesign-quotation-individual.spec.ts",
+          "line": 47,
+          "column": 5
+        }
+      ]
+    },
+    {
+      "title": "redesign-quotation-reorder.spec.ts",
+      "file": "redesign-quotation-reorder.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "critical quotation drag rearranges categories, persists ordered items and keeps collapsed products on reload",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 4593,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:01:29.917Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "ce99b93b9c1b81569aec-fc010534f2b682ec0e84",
+          "file": "redesign-quotation-reorder.spec.ts",
+          "line": 47,
+          "column": 5
+        },
+        {
+          "title": "critical quotation touch pointer reorder and Escape cancellation work without changing the total",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 3264,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:01:35.202Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "ce99b93b9c1b81569aec-af1a61712887a1673379",
+          "file": "redesign-quotation-reorder.spec.ts",
+          "line": 62,
+          "column": 5
+        },
+        {
+          "title": "critical quotation drag rearranges categories, persists ordered items and keeps collapsed products on reload",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet",
+              "projectName": "tablet",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 4561,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:01:39.862Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "ce99b93b9c1b81569aec-f65e4d84744af9bdde2b",
+          "file": "redesign-quotation-reorder.spec.ts",
+          "line": 47,
+          "column": 5
+        },
+        {
+          "title": "critical quotation touch pointer reorder and Escape cancellation work without changing the total",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet",
+              "projectName": "tablet",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 3520,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:01:44.528Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "ce99b93b9c1b81569aec-c5fe31e6bb5ebe642480",
+          "file": "redesign-quotation-reorder.spec.ts",
+          "line": 62,
+          "column": 5
+        },
+        {
+          "title": "critical quotation drag rearranges categories, persists ordered items and keeps collapsed products on reload",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "phone",
+              "projectName": "phone",
+              "results": [
+                {
+                  "workerIndex": 5,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 4429,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:01:51.416Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "ce99b93b9c1b81569aec-56a5cebc7b48a1cea51e",
+          "file": "redesign-quotation-reorder.spec.ts",
+          "line": 47,
+          "column": 5
+        },
+        {
+          "title": "critical quotation touch pointer reorder and Escape cancellation work without changing the total",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "phone",
+              "projectName": "phone",
+              "results": [
+                {
+                  "workerIndex": 5,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 3174,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:01:55.991Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "ce99b93b9c1b81569aec-d8da8374231d3a15eb63",
+          "file": "redesign-quotation-reorder.spec.ts",
+          "line": 62,
+          "column": 5
+        },
+        {
+          "title": "critical quotation drag rearranges categories, persists ordered items and keeps collapsed products on reload",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "small-phone",
+              "projectName": "small-phone",
+              "results": [
+                {
+                  "workerIndex": 7,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 4233,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:01:59.489Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "ce99b93b9c1b81569aec-cb4250da479ab8dac3f2",
+          "file": "redesign-quotation-reorder.spec.ts",
+          "line": 47,
+          "column": 5
+        },
+        {
+          "title": "critical quotation touch pointer reorder and Escape cancellation work without changing the total",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "small-phone",
+              "projectName": "small-phone",
+              "results": [
+                {
+                  "workerIndex": 7,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 3554,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:03.844Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "ce99b93b9c1b81569aec-928de0e74f841f973478",
+          "file": "redesign-quotation-reorder.spec.ts",
+          "line": 62,
+          "column": 5
+        },
+        {
+          "title": "critical quotation drag rearranges categories, persists ordered items and keeps collapsed products on reload",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet-boundary",
+              "projectName": "tablet-boundary",
+              "results": [
+                {
+                  "workerIndex": 9,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 4382,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:08.208Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "ce99b93b9c1b81569aec-f6eee098b0757bfd2706",
+          "file": "redesign-quotation-reorder.spec.ts",
+          "line": 47,
+          "column": 5
+        },
+        {
+          "title": "critical quotation touch pointer reorder and Escape cancellation work without changing the total",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet-boundary",
+              "projectName": "tablet-boundary",
+              "results": [
+                {
+                  "workerIndex": 9,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 3625,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:12.703Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "ce99b93b9c1b81569aec-0cf063ce2afaa6f306ed",
+          "file": "redesign-quotation-reorder.spec.ts",
+          "line": 62,
+          "column": 5
+        },
+        {
+          "title": "critical quotation drag rearranges categories, persists ordered items and keeps collapsed products on reload",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet-landscape",
+              "projectName": "tablet-landscape",
+              "results": [
+                {
+                  "workerIndex": 11,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 4240,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:19.121Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "ce99b93b9c1b81569aec-079a8348759febd7bafc",
+          "file": "redesign-quotation-reorder.spec.ts",
+          "line": 47,
+          "column": 5
+        },
+        {
+          "title": "critical quotation touch pointer reorder and Escape cancellation work without changing the total",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet-landscape",
+              "projectName": "tablet-landscape",
+              "results": [
+                {
+                  "workerIndex": 11,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 3475,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:23.512Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "ce99b93b9c1b81569aec-58396a4b63e85f5aeeb6",
+          "file": "redesign-quotation-reorder.spec.ts",
+          "line": 62,
+          "column": 5
+        },
+        {
+          "title": "critical quotation drag rearranges categories, persists ordered items and keeps collapsed products on reload",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "firefox",
+              "projectName": "firefox",
+              "results": [
+                {
+                  "workerIndex": 13,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 6305,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:27.651Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "ce99b93b9c1b81569aec-25df9f2840002c770e6b",
+          "file": "redesign-quotation-reorder.spec.ts",
+          "line": 47,
+          "column": 5
+        },
+        {
+          "title": "critical quotation touch pointer reorder and Escape cancellation work without changing the total",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [
+                {
+                  "type": "skip",
+                  "description": "Chromium CDP dispatches a real touch gesture; other engines cover mouse and keyboard ordering.",
+                  "location": {
+                    "file": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e/redesign-quotation-reorder.spec.ts",
+                    "line": 63,
+                    "column": 8
+                  }
+                }
+              ],
+              "expectedStatus": "skipped",
+              "projectId": "firefox",
+              "projectName": "firefox",
+              "results": [
+                {
+                  "workerIndex": 13,
+                  "parallelIndex": 0,
+                  "status": "skipped",
+                  "duration": 360,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:36.351Z",
+                  "annotations": [
+                    {
+                      "type": "skip",
+                      "description": "Chromium CDP dispatches a real touch gesture; other engines cover mouse and keyboard ordering.",
+                      "location": {
+                        "file": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e/redesign-quotation-reorder.spec.ts",
+                        "line": 63,
+                        "column": 8
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "ce99b93b9c1b81569aec-116d8e5d495eafb65af0",
+          "file": "redesign-quotation-reorder.spec.ts",
+          "line": 62,
+          "column": 5
+        },
+        {
+          "title": "critical quotation drag rearranges categories, persists ordered items and keeps collapsed products on reload",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit",
+              "projectName": "webkit",
+              "results": [
+                {
+                  "workerIndex": 15,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 6362,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:46.387Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "ce99b93b9c1b81569aec-834173015deb9f7ebd7e",
+          "file": "redesign-quotation-reorder.spec.ts",
+          "line": 47,
+          "column": 5
+        },
+        {
+          "title": "critical quotation touch pointer reorder and Escape cancellation work without changing the total",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [
+                {
+                  "type": "skip",
+                  "description": "Chromium CDP dispatches a real touch gesture; other engines cover mouse and keyboard ordering.",
+                  "location": {
+                    "file": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e/redesign-quotation-reorder.spec.ts",
+                    "line": 63,
+                    "column": 8
+                  }
+                }
+              ],
+              "expectedStatus": "skipped",
+              "projectId": "webkit",
+              "projectName": "webkit",
+              "results": [
+                {
+                  "workerIndex": 15,
+                  "parallelIndex": 0,
+                  "status": "skipped",
+                  "duration": 221,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:53.876Z",
+                  "annotations": [
+                    {
+                      "type": "skip",
+                      "description": "Chromium CDP dispatches a real touch gesture; other engines cover mouse and keyboard ordering.",
+                      "location": {
+                        "file": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e/redesign-quotation-reorder.spec.ts",
+                        "line": 63,
+                        "column": 8
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "ce99b93b9c1b81569aec-6fb6c011b9fd4e4ba735",
+          "file": "redesign-quotation-reorder.spec.ts",
+          "line": 62,
+          "column": 5
+        }
+      ]
+    },
+    {
+      "title": "redesign-quotation-tablet.spec.ts",
+      "file": "redesign-quotation-tablet.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "critical tablet quotation picker shows at least five complete products and an accessible PDF action",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [
+                {
+                  "type": "skip",
+                  "description": "Tablet portrait and landscape regression",
+                  "location": {
+                    "file": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e/redesign-quotation-tablet.spec.ts",
+                    "line": 17,
+                    "column": 8
+                  }
+                }
+              ],
+              "expectedStatus": "skipped",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "skipped",
+                  "duration": 89,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:01:36.153Z",
+                  "annotations": [
+                    {
+                      "type": "skip",
+                      "description": "Tablet portrait and landscape regression",
+                      "location": {
+                        "file": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e/redesign-quotation-tablet.spec.ts",
+                        "line": 17,
+                        "column": 8
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-ddbd4ac2a6af2980a3ad",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 15,
+          "column": 5
+        },
+        {
+          "title": "critical iPad desktop browser downloads the quotation PDF with dimensions and its document floor",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1151,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:01:36.249Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-85bab85a965e8f836611",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 50,
+          "column": 5
+        },
+        {
+          "title": "critical quotation pdf download remains usable across all release viewports",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1159,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:01:37.406Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-048d22feed1bdb6a0391",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 83,
+          "column": 7
+        },
+        {
+          "title": "critical quotation pptx download remains usable across all release viewports",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 995,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:01:38.572Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-ff5b0850127b561c2310",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 83,
+          "column": 7
+        },
+        {
+          "title": "critical tablet quotation picker shows at least five complete products and an accessible PDF action",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet",
+              "projectName": "tablet",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 1752,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:01:44.896Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-720158b24e9f812e981b",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 15,
+          "column": 5
+        },
+        {
+          "title": "critical iPad desktop browser downloads the quotation PDF with dimensions and its document floor",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet",
+              "projectName": "tablet",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 1612,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:01:46.659Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-3cea854f548821077e34",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 50,
+          "column": 5
+        },
+        {
+          "title": "critical quotation pdf download remains usable across all release viewports",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet",
+              "projectName": "tablet",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 1498,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:01:48.285Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-9439470702d1f8ed06b9",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 83,
+          "column": 7
+        },
+        {
+          "title": "critical quotation pptx download remains usable across all release viewports",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet",
+              "projectName": "tablet",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 1189,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:01:49.802Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-16a32c6fe6893abb75e7",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 83,
+          "column": 7
+        },
+        {
+          "title": "critical tablet quotation picker shows at least five complete products and an accessible PDF action",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [
+                {
+                  "type": "skip",
+                  "description": "Tablet portrait and landscape regression",
+                  "location": {
+                    "file": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e/redesign-quotation-tablet.spec.ts",
+                    "line": 17,
+                    "column": 8
+                  }
+                }
+              ],
+              "expectedStatus": "skipped",
+              "projectId": "phone",
+              "projectName": "phone",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "skipped",
+                  "duration": 78,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:01:55.091Z",
+                  "annotations": [
+                    {
+                      "type": "skip",
+                      "description": "Tablet portrait and landscape regression",
+                      "location": {
+                        "file": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e/redesign-quotation-tablet.spec.ts",
+                        "line": 17,
+                        "column": 8
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-dc15aa3d22e557796482",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 15,
+          "column": 5
+        },
+        {
+          "title": "critical iPad desktop browser downloads the quotation PDF with dimensions and its document floor",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "phone",
+              "projectName": "phone",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1121,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:01:55.175Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-102722ae1709602caf67",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 50,
+          "column": 5
+        },
+        {
+          "title": "critical quotation pdf download remains usable across all release viewports",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "phone",
+              "projectName": "phone",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1120,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:01:56.301Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-d28567cecaaa304e5fa3",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 83,
+          "column": 7
+        },
+        {
+          "title": "critical quotation pptx download remains usable across all release viewports",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "phone",
+              "projectName": "phone",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1068,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:01:57.427Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-b5a55be583fb3cb46426",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 83,
+          "column": 7
+        },
+        {
+          "title": "critical tablet quotation picker shows at least five complete products and an accessible PDF action",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [
+                {
+                  "type": "skip",
+                  "description": "Tablet portrait and landscape regression",
+                  "location": {
+                    "file": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e/redesign-quotation-tablet.spec.ts",
+                    "line": 17,
+                    "column": 8
+                  }
+                }
+              ],
+              "expectedStatus": "skipped",
+              "projectId": "small-phone",
+              "projectName": "small-phone",
+              "results": [
+                {
+                  "workerIndex": 6,
+                  "parallelIndex": 0,
+                  "status": "skipped",
+                  "duration": 60,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:04.529Z",
+                  "annotations": [
+                    {
+                      "type": "skip",
+                      "description": "Tablet portrait and landscape regression",
+                      "location": {
+                        "file": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e/redesign-quotation-tablet.spec.ts",
+                        "line": 17,
+                        "column": 8
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-b32ef3fab03b5e438c3c",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 15,
+          "column": 5
+        },
+        {
+          "title": "critical iPad desktop browser downloads the quotation PDF with dimensions and its document floor",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "small-phone",
+              "projectName": "small-phone",
+              "results": [
+                {
+                  "workerIndex": 6,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1102,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:04.594Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-5e00067b9e2fe104a507",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 50,
+          "column": 5
+        },
+        {
+          "title": "critical quotation pdf download remains usable across all release viewports",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "small-phone",
+              "projectName": "small-phone",
+              "results": [
+                {
+                  "workerIndex": 6,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1111,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:05.701Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-4e4beb0ce06fb88bccea",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 83,
+          "column": 7
+        },
+        {
+          "title": "critical quotation pptx download remains usable across all release viewports",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "small-phone",
+              "projectName": "small-phone",
+              "results": [
+                {
+                  "workerIndex": 6,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1076,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:06.817Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-2ca09ea46bb98ccb8422",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 83,
+          "column": 7
+        },
+        {
+          "title": "critical tablet quotation picker shows at least five complete products and an accessible PDF action",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet-boundary",
+              "projectName": "tablet-boundary",
+              "results": [
+                {
+                  "workerIndex": 8,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 1331,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:13.409Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-e6bc9c5fb6a4d3cd2e3a",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 15,
+          "column": 5
+        },
+        {
+          "title": "critical iPad desktop browser downloads the quotation PDF with dimensions and its document floor",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet-boundary",
+              "projectName": "tablet-boundary",
+              "results": [
+                {
+                  "workerIndex": 8,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 1595,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:14.747Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-0eb22f51cb8c26d83885",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 50,
+          "column": 5
+        },
+        {
+          "title": "critical quotation pdf download remains usable across all release viewports",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet-boundary",
+              "projectName": "tablet-boundary",
+              "results": [
+                {
+                  "workerIndex": 8,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 1318,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:16.356Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-6c07742db3a62e1b47bf",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 83,
+          "column": 7
+        },
+        {
+          "title": "critical quotation pptx download remains usable across all release viewports",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet-boundary",
+              "projectName": "tablet-boundary",
+              "results": [
+                {
+                  "workerIndex": 8,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 1110,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:17.682Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-ae2cd9c48ec37029d577",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 83,
+          "column": 7
+        },
+        {
+          "title": "critical tablet quotation picker shows at least five complete products and an accessible PDF action",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet-landscape",
+              "projectName": "tablet-landscape",
+              "results": [
+                {
+                  "workerIndex": 10,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1303,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:22.757Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-166cc71b56b9f7f73d32",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 15,
+          "column": 5
+        },
+        {
+          "title": "critical iPad desktop browser downloads the quotation PDF with dimensions and its document floor",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet-landscape",
+              "projectName": "tablet-landscape",
+              "results": [
+                {
+                  "workerIndex": 10,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1089,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:24.067Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-20f0ee5ed6cb2aacf1b5",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 50,
+          "column": 5
+        },
+        {
+          "title": "critical quotation pdf download remains usable across all release viewports",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet-landscape",
+              "projectName": "tablet-landscape",
+              "results": [
+                {
+                  "workerIndex": 10,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1120,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:25.161Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-4229f475378111623af0",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 83,
+          "column": 7
+        },
+        {
+          "title": "critical quotation pptx download remains usable across all release viewports",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "tablet-landscape",
+              "projectName": "tablet-landscape",
+              "results": [
+                {
+                  "workerIndex": 10,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1065,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:26.287Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-7ce9f55414287b6f04c2",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 83,
+          "column": 7
+        },
+        {
+          "title": "critical tablet quotation picker shows at least five complete products and an accessible PDF action",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [
+                {
+                  "type": "skip",
+                  "description": "Tablet portrait and landscape regression",
+                  "location": {
+                    "file": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e/redesign-quotation-tablet.spec.ts",
+                    "line": 17,
+                    "column": 8
+                  }
+                }
+              ],
+              "expectedStatus": "skipped",
+              "projectId": "firefox",
+              "projectName": "firefox",
+              "results": [
+                {
+                  "workerIndex": 13,
+                  "parallelIndex": 0,
+                  "status": "skipped",
+                  "duration": 294,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:36.750Z",
+                  "annotations": [
+                    {
+                      "type": "skip",
+                      "description": "Tablet portrait and landscape regression",
+                      "location": {
+                        "file": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e/redesign-quotation-tablet.spec.ts",
+                        "line": 17,
+                        "column": 8
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-e22d239ad6111886c6b9",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 15,
+          "column": 5
+        },
+        {
+          "title": "critical iPad desktop browser downloads the quotation PDF with dimensions and its document floor",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "firefox",
+              "projectName": "firefox",
+              "results": [
+                {
+                  "workerIndex": 13,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2666,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:37.052Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-386ec4c6585263811148",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 50,
+          "column": 5
+        },
+        {
+          "title": "critical quotation pdf download remains usable across all release viewports",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "firefox",
+              "projectName": "firefox",
+              "results": [
+                {
+                  "workerIndex": 13,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2663,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:39.726Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-567e07f47e639a61b146",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 83,
+          "column": 7
+        },
+        {
+          "title": "critical quotation pptx download remains usable across all release viewports",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "firefox",
+              "projectName": "firefox",
+              "results": [
+                {
+                  "workerIndex": 13,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 3062,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:42.442Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-fb68aedaab4da07eeb7a",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 83,
+          "column": 7
+        },
+        {
+          "title": "critical tablet quotation picker shows at least five complete products and an accessible PDF action",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [
+                {
+                  "type": "skip",
+                  "description": "Tablet portrait and landscape regression",
+                  "location": {
+                    "file": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e/redesign-quotation-tablet.spec.ts",
+                    "line": 17,
+                    "column": 8
+                  }
+                }
+              ],
+              "expectedStatus": "skipped",
+              "projectId": "webkit",
+              "projectName": "webkit",
+              "results": [
+                {
+                  "workerIndex": 14,
+                  "parallelIndex": 1,
+                  "status": "skipped",
+                  "duration": 882,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:52.904Z",
+                  "annotations": [
+                    {
+                      "type": "skip",
+                      "description": "Tablet portrait and landscape regression",
+                      "location": {
+                        "file": "/Users/yashvardhansinhjhala/buildcon house/forge2.0/e2e/redesign-quotation-tablet.spec.ts",
+                        "line": 17,
+                        "column": 8
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-ef0a79d8ef9b10c4bb5d",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 15,
+          "column": 5
+        },
+        {
+          "title": "critical iPad desktop browser downloads the quotation PDF with dimensions and its document floor",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit",
+              "projectName": "webkit",
+              "results": [
+                {
+                  "workerIndex": 14,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 1520,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:53.811Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-670623ab1bddfeb0a0d4",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 50,
+          "column": 5
+        },
+        {
+          "title": "critical quotation pdf download remains usable across all release viewports",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit",
+              "projectName": "webkit",
+              "results": [
+                {
+                  "workerIndex": 14,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 1266,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:55.347Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-49181da0cf413b2de52b",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 83,
+          "column": 7
+        },
+        {
+          "title": "critical quotation pptx download remains usable across all release viewports",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit",
+              "projectName": "webkit",
+              "results": [
+                {
+                  "workerIndex": 14,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 1277,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-12T22:02:56.619Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "52d9bf3e67285d32cc72-f9cfea190e5ca19caeb5",
+          "file": "redesign-quotation-tablet.spec.ts",
+          "line": 83,
+          "column": 7
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-12T22:01:29.453Z",
+    "duration": 88494.796,
+    "expected": 57,
+    "skipped": 7,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

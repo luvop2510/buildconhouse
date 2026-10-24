@@ -16,7 +16,7 @@ export function FloorDelegationEditor({ floors, catalog, value, onChange, disabl
     </View>
     {floors.map((floor) => {
       const enabled = value.floorIds.includes(floor.id);
-      const pages = catalog.resources.filter((resource) => resource.floor_ids.includes(floor.id));
+      const pages = catalog.resources.filter((resource) => resource.floor_ids.includes(floor.id) && (!resource.retired || value.grants.some((grant) => grant.floor_id === floor.id && grant.resource === resource.key)));
       const count = value.grants.filter((grant) => grant.floor_id === floor.id).length;
       return <View key={floor.id} style={styles.floor} testID={`delegation-floor-${floor.id}`}>
         <View style={styles.row}>
@@ -32,7 +32,7 @@ export function FloorDelegationEditor({ floors, catalog, value, onChange, disabl
             return <View key={resource.key} style={styles.page}>
               <View style={styles.row}>
                 <View style={styles.copy}>
-                  <Text style={type.bodyStrong}>{resource.label}</Text>
+                  <Text style={type.bodyStrong}>{resource.label}{resource.retired ? " · Legacy access" : ""}</Text>
                   {resource.description ? <Text style={type.caption}>{resource.description}</Text> : null}
                   <Text style={type.caption}>{grant ? `Can: ${grant.actions.map((action) => ACTION_LABELS[action]).join(", ")}` : "Off · no access to this page"}</Text>
                 </View>
@@ -44,7 +44,7 @@ export function FloorDelegationEditor({ floors, catalog, value, onChange, disabl
                     <Text style={type.label}>{ACTION_LABELS[action]}{action === "view" ? " · included" : ""}</Text>
                     <Text style={type.caption}>{catalog.action_descriptions[action]}</Text>
                   </View>
-                  <Switch testID={`action-toggle-${floor.id}-${resource.key}-${action}`} accessibilityLabel={`${ACTION_LABELS[action]} ${resource.label} on ${floor.name}`} value={grant.actions.includes(action)} disabled={disabled || action === "view"} onValueChange={(next) => onChange(toggleAction(value, floor.id, resource, action, next))} />
+                  <Switch testID={`action-toggle-${floor.id}-${resource.key}-${action}`} accessibilityLabel={`${ACTION_LABELS[action]} ${resource.label} on ${floor.name}`} value={grant.actions.includes(action)} disabled={disabled || resource.retired || action === "view"} onValueChange={(next) => onChange(toggleAction(value, floor.id, resource, action, next))} />
                 </View>)}
               </View> : null}
             </View>;

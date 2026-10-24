@@ -1,0 +1,870 @@
+"""Kitchen aggregate persistence. Every successful command is one CAS write."""
+from __future__ import annotations
+
+import copy
+import asyncio
+from contextlib import asynccontextmanager
+import hashlib
+import json
+import re
+from decimal import Decimal
+from datetime import date, datetime, timedelta, timezone
+from uuid import NAMESPACE_URL, uuid4, uuid5
+
+from bson import BSON
+from fastapi import HTTPException
+from pydantic import ValidationError
+from pymongo.errors import DuplicateKeyError
+
+from models_kitchen import (AdvancePayload, AssignmentPayload, CadFields, ConfigurePolicy,
+                            LeadFields, MetadataPayload, PolicyFields, STAGES, VisitFields)
+from services import kitchen_access as access
+from services import kitchen_workflow as workflow
+
+MAX_AGGREGATE_BYTES = 12 * 1024 * 1024
+POLICY_ID = "kitchen-policy"
+HISTORY_FIELDS = ("activity", "command_receipts", "design_versions", "quotation_versions", "orders",
+                  "revision_events", "site_visits", "approvals", "attachments", "work_history")
+
+
+DECISION_CONTRACT = "2026-10-20"
+
+
+def attention_expressions(policy, now=None):
+    """One server definition for dashboard metrics and their list drilldowns.
+
+    Dates are compared as instants, including historical explicit offsets. Bad
+    or missing deadlines never become overdue. No client page count is used.
+    """
+    now = now or datetime.now(timezone.utc)
+    today = now.astimezone(timezone(timedelta(hours=5, minutes=30))).date().isoformat()
+    active = {"$and": [{"$ne": ["$stage", "completed"]},
+        {"$not": [{"$in": [{"$ifNull": ["$status", None]}, ["Lost", "Cancelled", "On Hold"]]}]}]}
+    deadline = {"$convert": {"input": "$deadline", "to": "date", "onError": None, "onNull": None}}
+    pending = []
+    for scope, stage in (("production", "order"), ("closure", "installation")):
+        subject = {"$ifNull": [f"$approval_subjects.{scope}", None]}
+        decision = f"$approval_decisions.{scope}"
+        pending.append({"$and": [{"$eq": ["$stage", stage]}, {"$ne": [subject, None]},
+            {"$ne": [subject, ""]}, {"$or": [
+                {"$ne": [{"$ifNull": [decision + ".policy_version", None]}, policy["version"]]},
+                {"$ne": [{"$ifNull": [decision + ".subject_id", None]}, subject]},
+                {"$ne": [{"$ifNull": [decision + ".decision", None]}, "Approved"]}]}]})
+    last_versions = {name: {"$ifNull": [{"$arrayElemAt": [{"$ifNull": ["$" + field, []]}, -1]}, {}]}
+                     for name, field in (("order", "orders"), ("quote", "quotation_versions"), ("design", "design_versions"))}
+    valid_order = {"$let": {"vars": last_versions, "in": {"$and": [
+        active,
+        {"$not": [{"$ifNull": ["$commercial_basis_invalidated", False]}]},
+        {"$not": [{"$ifNull": ["$design_revision_pending", False]}]},
+        {"$not": [{"$ifNull": ["$$order.authorization_invalidated", False]}]},
+        {"$eq": ["$$order.confirmed", True]}, {"$eq": ["$$order.status", "Confirmed"]},
+        {"$eq": ["$$quote.response", "Approved"]},
+        {"$ne": [{"$ifNull": ["$$quote.shared_date", None]}, None]},
+        {"$ne": [{"$ifNull": ["$$quote.shared_date", ""]}, ""]},
+        {"$eq": ["$$design.response", "Approved"]},
+        {"$eq": ["$$order.quotation_version_id", "$$quote.id"]},
+        {"$eq": ["$$quote.design_version_id", "$$design.id"]},
+        {"$eq": [{"$ifNull": ["$$design.workflow_cycle", 1]}, {"$ifNull": ["$workflow_cycle", 1]}]},
+    ]}}}
+    return {"active": active, "on_hold": {"$eq": ["$status", "On Hold"]},
+        "pending_approval": {"$and": [active, {"$or": pending}]},
+        "next_action_overdue": {"$and": [active, {"$ne": [deadline, None]}, {"$lt": [deadline, now]}]},
+        "completion_overdue": {"$and": [active,
+            {"$ne": [{"$ifNull": ["$target_completion_date", None]}, None]},
+            {"$ne": [{"$ifNull": ["$target_completion_date", ""]}, ""]},
+            {"$lt": ["$target_completion_date", today]}]},
+        "active_order": valid_order}
+
+
+def resolved_policy(policy):
+    """Resolved business rules cannot be relaxed by a pre-decision policy.
+
+    Adoption remains explicit and audited; only adopted manager identities may
+    authorize department actions. Reading stale configuration never writes it.
+    """
+    from services.kitchen_attachments import FILE_EXTENSIONS, MAX_FILE_BYTES, MAX_TRANSFER_BYTES
+    result = copy.deepcopy(policy)
+    managers = result.get("department_manager_user_ids", []) if result.get("decision_contract") == DECISION_CONTRACT else []
+    result.update(identity_timing="creation", cad_require_received=True, cad_require_progress_100=True,
+        assignment_user_ids=managers, unassigned_visibility="owner",
+        department_manager_user_ids=managers,
+        production={"require_advance": True, "minimum_advance_amount": None, "minimum_advance_percent": None,
+                    "require_confirmation_document": False, "require_manager_approval": True, "manager_user_ids": managers},
+        closure={"require_manager_approval": True, "manager_user_ids": managers},
+        exceptions={"allow_hold": True, "allow_cancel": True, "allow_reopen": True,
+                    "allow_return_to_design": True, "manager_user_ids": []},
+        metrics={"hold_is_active": False, "overdue_date": "either", "confirmed_value_include_completed": False,
+                 "confirmed_value_include_cancelled": False},
+        required_fields=None, history_corrections=None,
+        files={"allowed_types": list(FILE_EXTENSIONS), "max_bytes": MAX_TRANSFER_BYTES, "single_request_max_bytes": MAX_FILE_BYTES, "chunk_bytes": 512 * 1024})
+    return result
+
+
+def duplicate_selector(customer_id, phone, name, exclude=None):
+    candidates = [{"customer_id": customer_id}]
+    if phone:
+        candidates.append({"customer_phone_normalized": phone})
+    if name:
+        candidates.append({"customer_name_normalized": name})
+    return {"floor_id": access.KITCHEN_FLOOR, "$or": candidates, "id": {"$ne": exclude}}
+
+
+def lead_error(project):
+    customer = project.get("customer", {})
+    if not str(customer.get("name") or "").strip() or not re.sub(r"\D", "", str(customer.get("phone") or "")) or not str(project.get("lead", {}).get("site_location") or "").strip():
+        return "Customer Name, Phone Number and Site Location are required"
+    return None
+
+def timestamp():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def fingerprint(payload):
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+
+
+def validate(model, payload):
+    try:
+        return model.model_validate(payload)
+    except ValidationError as exc:
+        raise HTTPException(422, exc.errors(include_context=False, include_url=False)) from exc
+
+
+def bounded(document):
+    if len(BSON.encode(document)) > MAX_AGGREGATE_BYTES:
+        raise HTTPException(413, "Kitchen project history reached its supported size; no changes were saved")
+
+
+def event(user, kind, payload):
+    return {"id": str(uuid4()), "type": kind, "actor_id": user.id, "actor_name": user.full_name,
+            "at": timestamp(), "payload": payload}
+
+
+def current_status(project):
+    stage = project["stage"]
+    if stage == "completed":
+        return "Completed"
+    if project.get("lifecycle_status") in {"On Hold", "Cancelled"}:
+        return project["lifecycle_status"]
+    if stage == "order":
+        if project.get("commercial_basis_invalidated") or (project.get("orders") and project["orders"][-1].get("authorization_invalidated")):
+            return "Pending"
+        return project["orders"][-1]["status"] if project["orders"] else "Pending"
+    if stage in {"design", "quotation"}:
+        designs = project.get("design_versions", [])
+        if (project.get("design_revision_pending") or not designs
+                or designs[-1].get("workflow_cycle", 1) != project.get("workflow_cycle", 1)):
+            return "Pending"
+        rows = project["design_versions" if stage == "design" else "quotation_versions"]
+        if stage == "quotation" and rows and rows[-1].get("design_version_id") != designs[-1]["id"]:
+            return "Pending"
+        return rows[-1]["response"] if rows else "Pending"
+    return project.get(stage, {}).get("status", "Pending")
+
+
+def required_fields_error(project, stage, policy):
+    """Configured fields apply to creation and leaving a stage, allowing drafts."""
+    fields = (policy.get("required_fields") or {}).get(stage, [])
+    source = project.get(stage, {})
+    key = {"design": "design_versions", "quotation": "quotation_versions", "order": "orders"}.get(stage)
+    if key:
+        source = project.get(key, [])[-1] if project.get(key) else {}
+    missing = []
+    for name in fields:
+        value = project.get("assignments", {}).get(stage) if name == "assigned_to" else source.get(name)
+        if value is None or isinstance(value, str) and not value.strip():
+            missing.append(name)
+    return "Configured required fields are missing: " + ", ".join(missing) if missing else None
+
+
+def transition_error(project, target, policy):
+    current = project["stage"]
+    if project.get("lifecycle_status") in {"On Hold", "Cancelled"}:
+        return "The owner must resume this held or cancelled project before moving stages"
+    required = required_fields_error(project, current, policy)
+    if required:
+        return required
+    if current == "completed" or STAGES.index(target) != STAGES.index(current) + 1:
+        return "Only the next lifecycle stage can be requested"
+    if current == "lead":
+        if lead_error(project):
+            return lead_error(project)
+        if project.get("duplicate_review", {}).get("status") == "pending":
+            return "Owner duplicate review is required before conversion"
+        if project["lead"]["status"] == "Lost":
+            return "A lost lead cannot be converted; owner review is required"
+        return None
+    if current == "visit":
+        visit = project["visit"]
+        if visit["status"] != "Visited":
+            return "Mark the showroom visit as Visited first"
+        if not (visit.get("requirements") or "").strip():
+            return "Record the customer's initial requirements first"
+        if visit.get("interested") is not True:
+            return "Record that the customer is interested in proceeding first"
+        return None
+    if current == "cad":
+        cad = project["cad"]
+        if not cad["received"]:
+            return "CAD file receipt is required before Design"
+        if cad["progress"] != 100 or cad["status"] != "Completed":
+            return "Design Status must be Completed and Design Progress must be 100%"
+        return None
+    return workflow.transition(project, target, policy)
+
+
+class KitchenProjectService:
+    def __init__(self, database):
+        self.db = database
+
+    async def policy(self):
+        found = await self.db.kitchen_configuration.find_one({"_id": POLICY_ID})
+        if found:
+            return resolved_policy({key: value for key, value in found.items() if key not in {"_id", "active_command_count", "command_admissions", "active_create_token"}})
+        return resolved_policy({"id": POLICY_ID, "version": 1, **PolicyFields().model_dump(), "activity": []})
+
+    @asynccontextmanager
+    async def admission(self, user, action):
+        """Pin one policy revision while an admitted command can commit.
+
+        Configuration and admission write the same document atomically. No
+        lease expiry can release a live writer. A crashed process leaves a
+        conservative configuration block for maintenance reconciliation.
+        """
+        await access.require_capability(self.db, user, action)
+        policy = await self.policy()
+        baseline = {"_id": POLICY_ID, **policy, "active_command_count": 0, "command_admissions": {}}
+        try:
+            await self.db.kitchen_configuration.insert_one(baseline)
+        except DuplicateKeyError:
+            pass
+        token = str(uuid4())
+        field = "command_admissions." + token
+        selector = {"_id": POLICY_ID, "version": policy["version"], "$or": [
+            {"active_command_count": {"$exists": False}}, {"active_command_count": {"$lt": 64}}]}
+        updates = {"$inc": {"active_command_count": 1}, "$set": {field: timestamp()}}
+        if action == "create":
+            selector["active_create_token"] = {"$exists": False}
+            updates["$set"]["active_create_token"] = token
+        admitted = await self.db.kitchen_configuration.update_one(selector, updates)
+        if not admitted.matched_count:
+            raise HTTPException(409, "Kitchen policy changed or command capacity is occupied; refresh and retry")
+        try:
+            yield policy
+        finally:
+            # Finish exact-token release even if the request is cancelled.
+            release = {"$inc": {"active_command_count": -1}, "$unset": {field: ""}}
+            if action == "create":
+                release["$unset"]["active_create_token"] = ""
+            cleanup = asyncio.ensure_future(self.db.kitchen_configuration.update_one(
+                {"_id": POLICY_ID, field: {"$exists": True}}, release))
+            try:
+                await asyncio.shield(cleanup)
+            except asyncio.CancelledError:
+                await cleanup
+                raise
+
+    async def public_policy(self, user):
+        await access.require_capability(self.db, user, "view")
+        policy = await self.policy()
+        return {**policy, "unconfigured": (["decision_contract"] if policy.get("decision_contract") != DECISION_CONTRACT else []) +
+                ([] if policy.get("department_manager_user_ids") else ["department_manager_user_ids"])}
+
+    async def configure(self, user, body: ConfigurePolicy):
+        from models import UserPublic
+
+        await access.require_capability(self.db, user, "update")
+        if not access.owner(user):
+            raise HTTPException(403, "Only the owner can configure Kitchen policy")
+        policy = await self.policy()
+        if policy["version"] != body.expected_version:
+            raise HTTPException(409, "Kitchen policy changed; refresh before saving")
+        patch = body.model_dump(exclude_unset=True, exclude={"expected_version"})
+        merged_fields = {**{k: policy.get(k) for k in PolicyFields.model_fields}, **patch}
+        if merged_fields.get("decision_contract") != DECISION_CONTRACT:
+            raise HTTPException(422, "Explicitly adopt the resolved 2026-10-20 decisions")
+        # Validate only declared fields before applying immutable resolved rules.
+        # Existing nested v2 settings are never reused as authority.
+        merged_fields.update(production=None, closure=None, exceptions=None)
+        merged = resolved_policy(validate(PolicyFields, merged_fields).model_dump())
+        if len(set(merged["department_manager_user_ids"])) != len(merged["department_manager_user_ids"]):
+            raise HTTPException(422, "Department manager selection must not contain duplicates")
+        for authority in merged["department_manager_user_ids"]:
+            staff = await self.db.users.find_one({"id": authority, "active": True}, {"_id": 0})
+            if not staff or staff.get("is_deleted") or staff.get("deleted_at"):
+                raise HTTPException(422, "Department managers must be active existing staff")
+            principal = UserPublic(**{**staff, "active_floor_id": None})
+            if not await access.capability(self.db, principal, "view") or not await access.capability(self.db, principal, "update"):
+                raise HTTPException(422, "Department managers need current Kitchen view/update access")
+        updated = {"_id": POLICY_ID, "id": POLICY_ID, "version": policy["version"] + 1,
+                   **merged, "updated_at": timestamp(), "updated_by": user.id,
+                   "activity": [*policy.get("activity", []), event(user, "configuration.updated", {"fields": sorted(patch)})]}
+        bounded(updated)
+        existing = await self.db.kitchen_configuration.find_one({"_id": POLICY_ID}, {"_id": 1})
+        if existing:
+            result = await self.db.kitchen_configuration.replace_one({"_id": POLICY_ID, "version": body.expected_version,
+                "$or": [{"active_command_count": 0}, {"active_command_count": {"$exists": False}}]}, updated)
+            if not result.matched_count:
+                raise HTTPException(409, "Kitchen policy changed or an active command is using it; retry after commands finish")
+        else:
+            try:
+                await self.db.kitchen_configuration.insert_one(updated)
+            except DuplicateKeyError as exc:
+                raise HTTPException(409, "Kitchen policy changed; refresh before saving") from exc
+        return {k: v for k, v in updated.items() if k != "_id"}
+
+    async def public(self, project, user, policy, *, summary=False, replayed=False):
+        result = {k: copy.deepcopy(v) for k, v in project.items() if k not in {"_id", "command_receipts", "creation_fingerprint", "customer_phone_normalized", "customer_name_normalized"}}
+        if summary:
+            version_fields = {"id", "number", "response", "shared_date", "handoff_date", "presentation_date", "received_date",
+                              "amount", "design_version_id", "workflow_cycle", "attachment_id", "url"}
+            order_fields = {"id", "confirmed", "status", "order_date", "final_amount", "original_amount", "quotation_version_id",
+                            "confirmation_document_id", "authorization_invalidated", "advance"}
+            for source, target, fields in (("design_versions", "current_design", version_fields),
+                                           ("quotation_versions", "current_quotation", version_fields),
+                                           ("orders", "current_order", order_fields)):
+                latest = project.get(source, [])
+                result[target] = {key: copy.deepcopy(value) for key, value in latest[-1].items() if key in fields} if latest else None
+            for key in HISTORY_FIELDS:
+                result.pop(key, None)
+        result["project_reference"] = project.get("project_reference") or project["reference"]
+        for total, events in (("design_revision_count", "known_design_revision_count"), ("site_visit_count", "known_site_visit_count")):
+            result[events] = project.get(events, 0 if project.get("is_legacy") else project.get(total, 0))
+            if project.get("is_legacy") and project.get(total) is None:
+                result[total] = None
+        if not access.owner(user):
+            # Candidate identities may also occur in review audit snapshots.
+            # Remove them recursively, not only from the current review card.
+            def redact_candidates(value):
+                if isinstance(value, dict):
+                    return {k: redact_candidates(v) for k, v in value.items() if k != "candidate_ids"}
+                if isinstance(value, list):
+                    return [redact_candidates(v) for v in value]
+                return value
+            result = redact_candidates(result)
+        assigned = project.get("assignments", {}).get(project["stage"])
+        result["assigned_to"] = assigned
+        result["assigned_to_name"] = project.get("assignment_names", {}).get(project["stage"])
+        result.pop("assignment_names", None)
+        if "attachments" in result:
+            result["attachments"] = [{k: v for k, v in attachment.items() if k not in {"storage_key", "bucket"}}
+                                     for attachment in result["attachments"]]
+        result["permissions"] = {"can_update": await access.capability(self.db, user, "update") and access.current_task_assigned(project, user, policy),
+                                 "can_assign": access.can_assign(user, policy) and await access.capability(self.db, user, "update"), "can_configure": access.owner(user)}
+        result["permissions"]["can_review_duplicate"] = access.owner(user)
+        for scope in ("production", "closure"):
+            result["permissions"][f"can_approve_{scope}"] = access.department_manager(user, policy) and await access.capability(self.db, user, "update")
+        result["permissions"]["can_approve_exceptions"] = access.owner(user)
+        index = STAGES.index(project["stage"])
+        blocked = []
+        if not summary and index < len(STAGES) - 1:
+            target = STAGES[index + 1]
+            reason = transition_error(project, target, policy)
+            if reason:
+                blocked.append({"target_stage": target, "reason": reason})
+        result["blocked_transitions"] = blocked
+        if replayed:
+            result["replayed"] = True
+        return result
+
+    async def get(self, user, project_id):
+        policy = await self.policy()
+        project = await self.db.kitchen_projects.find_one({"id": project_id, "floor_id": access.KITCHEN_FLOOR})
+        await access.require_project(self.db, user, project, policy)
+        result = await self.public(project, user, policy)
+        result["duplicate_candidates"] = await self.duplicates(user, project["customer_id"], exclude=project_id)
+        return result
+
+    async def duplicates(self, user, customer_id, *, exclude=None):
+        await access.require_capability(self.db, user, "view")
+        policy = await self.policy()
+        customer = await self.db.customers.find_one({"id": customer_id, "floor_id": access.KITCHEN_FLOOR},
+                                                   {"_id": 0, "name": 1, "phone": 1})
+        if not customer:
+            raise HTTPException(404, "Kitchen customer not found")
+        candidates = [{"customer_id": customer_id}]
+        phone = re.sub(r"\D", "", customer.get("phone") or "")[-10:]
+        name = " ".join((customer.get("name") or "").casefold().split())
+        if phone:
+            candidates.append({"customer_phone_normalized": phone})
+        if name:
+            candidates.append({"customer_name_normalized": name})
+        selector = {"$and": [access.scope_query(user, policy), {"$or": candidates}, {"id": {"$ne": exclude}}]}
+        return await self.db.kitchen_projects.find(selector, {"_id": 0, "id": 1, "reference": 1, "stage": 1}).limit(10).to_list(10)
+
+    async def attach(self, user, project_id, **kwargs):
+        async with self.admission(user, "update"):
+            return await self._attach(user, project_id, **kwargs)
+
+    async def _attach(self, user, project_id, *, expected_version, key, filename, content_type, data, storage, bucket, max_file_bytes=768 * 1024):
+        from services.kitchen_attachments import prepare_private_upload, validate_file
+        policy = await self.policy()
+        project = await self.db.kitchen_projects.find_one({"id": project_id, "floor_id": access.KITCHEN_FLOOR})
+        await access.require_project(self.db, user, project, policy, "update")
+        digest = hashlib.sha256(data).hexdigest()
+        signature = fingerprint({"command": "attachment", "sha256": digest, "filename": filename, "content_type": content_type})
+        def prior(row):
+            return next((r for r in row["command_receipts"] if r["actor_id"] == user.id and r["key"] == key), None)
+        replay = prior(project)
+        if replay:
+            if replay["fingerprint"] != signature:
+                raise HTTPException(409, "This command key was already used with different fields")
+            return await self.public(project, user, policy, replayed=True)
+        await access.require_current_task(self.db, user, project, policy)
+        if project["version"] != expected_version:
+            raise HTTPException(409, "Kitchen project changed; reload before uploading")
+        if project["stage"] == "cad":
+            raise HTTPException(422, "CAD File records receipt and design progress only; no files are uploaded in this stage")
+        await asyncio.to_thread(validate_file, data, content_type, filename, policy, max_file_bytes)
+        if project["stage"] == "completed" or project.get("lifecycle_status") in {"On Hold", "Cancelled"}:
+            raise HTTPException(422, "The owner must resume or reopen the project before adding files")
+        metadata = await prepare_private_upload(self.db, storage, user=user, project=project, policy=policy,
+            data=data, content_type=content_type, filename=filename, bucket=bucket, max_file_bytes=max_file_bytes)
+        updated = copy.deepcopy(project)
+        if not any(a["id"] == metadata["id"] for a in updated["attachments"]):
+            metadata["uploaded_at"] = timestamp()
+            updated["attachments"].append(metadata)
+        updated["version"] += 1
+        updated["updated_at"], updated["updated_by"] = timestamp(), user.id
+        updated["activity"].append(event(user, "attachment.added", {"attachment_id": metadata["id"], "filename": filename}))
+        updated["command_receipts"].append({"actor_id": user.id, "key": key, "fingerprint": signature,
+                                           "version": updated["version"], "command": "attachment"})
+        bounded(updated)
+        # Re-read the task after provider I/O; the employee may still be allowed
+        # to read history while a new stage/assignment belongs to someone else.
+        # Orphan bytes on a CAS loss remain private and unreferenced.
+        latest_task = await self.db.kitchen_projects.find_one({"id": project_id, "floor_id": access.KITCHEN_FLOOR})
+        await access.require_project(self.db, user, latest_task, policy, "update")
+        saved_upload = prior(latest_task)
+        if saved_upload:
+            if saved_upload["fingerprint"] != signature:
+                raise HTTPException(409, "This command key was already used with different fields")
+            return await self.public(latest_task, user, policy, replayed=True)
+        await access.require_current_task(self.db, user, latest_task, policy)
+        result = await self.db.kitchen_projects.replace_one(
+            {"id": project_id, "floor_id": access.KITCHEN_FLOOR, "version": expected_version}, updated)
+        if not result.matched_count:
+            latest = await self.db.kitchen_projects.find_one({"id": project_id, "floor_id": access.KITCHEN_FLOOR})
+            await access.require_project(self.db, user, latest, policy, "update")
+            replay = prior(latest)
+            if replay and replay["fingerprint"] == signature:
+                return await self.public(latest, user, policy, replayed=True)
+            await access.require_current_task(self.db, user, latest, policy)
+            raise HTTPException(409, "Kitchen project changed; reload before uploading")
+        return await self.public(updated, user, policy)
+
+    async def attachment(self, user, project_id, attachment_id, storage):
+        policy = await self.policy()
+        project = await self.db.kitchen_projects.find_one({"id": project_id, "floor_id": access.KITCHEN_FLOOR})
+        await access.require_project(self.db, user, project, policy)
+        metadata = next((a for a in project["attachments"] if a["id"] == attachment_id), None)
+        if not metadata:
+            raise HTTPException(404, "Kitchen attachment not found")
+        await storage.require_private_bucket(metadata["bucket"])
+        data = await storage.download(bucket=metadata["bucket"], key=metadata["storage_key"])
+        if hashlib.sha256(data).hexdigest() != metadata["sha256"]:
+            raise HTTPException(409, "Attachment content failed integrity verification")
+        return data, metadata
+
+    async def create(self, user, body):
+        async with self.admission(user, "create"):
+            return await self._create(user, body)
+
+    async def lead_customer(self, details):
+        """Resolve inline intake once without overwriting an existing contact.
+
+        Creation admission serializes Kitchen intake. The deterministic Mongo
+        identity also makes retry after a failed project write reuse the contact.
+        Older contacts may contain spacing or an Indian country-code prefix.
+        Ambiguous matches require explicit selection instead of guessing.
+        """
+        from models import CustomerPublic
+        digits = re.sub(r"\D", "", details.phone)
+        normalized = digits[2:] if len(digits) == 12 and digits.startswith("91") else digits
+        prefix = r"(?:9\D*1\D*)?" if len(normalized) == 10 else ""
+        pattern = r"^\D*" + prefix + r"\D*".join(normalized) + r"\D*$"
+        query = {"floor_id": access.KITCHEN_FLOOR, "kitchen_delete_token": {"$exists": False},
+                 "phone": {"$regex": pattern}}
+        projection = {"_id": 0, "id": 1, "name": 1, "phone": 1, "address": 1}
+        matches = await self.db.customers.find(query, projection).limit(2).to_list(2)
+        if len(matches) > 1:
+            raise HTTPException(409, "Several existing customers use this phone number; select the correct customer")
+        if matches:
+            return {key: value for key, value in matches[0].items() if key in projection and key != "_id"}
+        customer_id = str(uuid5(NAMESPACE_URL, f"kitchen-customer:{access.KITCHEN_FLOOR}:{normalized}"))
+        contact = CustomerPublic(id=customer_id, floor_id=access.KITCHEN_FLOOR, **details.model_dump()).model_dump()
+        contact.pop("email", None)  # The sparse unique email index excludes absent fields.
+        contact.update(_id=customer_id, created_by_source="kitchen_lead")
+        try:
+            await self.db.customers.insert_one(contact)
+        except DuplicateKeyError:
+            existing = await self.db.customers.find_one({"id": customer_id, **query}, projection)
+            if not existing:
+                raise HTTPException(409, "Customer details changed during intake; select the existing customer and retry")
+            contact = existing
+        return {key: value for key, value in contact.items() if key in projection and key != "_id"}
+
+    async def _create(self, user, body):
+        await access.require_capability(self.db, user, "create")
+        policy = await self.policy()
+        project_id = str(uuid5(NAMESPACE_URL, f"kitchen:{user.id}:{access.KITCHEN_FLOOR}:{body.idempotency_key}"))
+        request_fields = body.model_dump(exclude={"idempotency_key"})
+        if body.customer is None:
+            request_fields.pop("customer")  # Preserve receipts created before inline intake existed.
+        digest = fingerprint(request_fields)
+        previous = await self.db.kitchen_projects.find_one({"id": project_id, "floor_id": access.KITCHEN_FLOOR})
+        if previous:
+            await access.require_project(self.db, user, previous, policy, "create")
+            if previous.get("creation_fingerprint") != digest:
+                raise HTTPException(409, "This creation key was already used with different fields")
+            return await self.public(previous, user, policy, replayed=True)
+        assigned = None
+        if body.assigned_to:
+            if not access.can_assign(user, policy):
+                raise HTTPException(403, "Only the owner or an explicitly selected department manager can assign project staff")
+            assigned = await access.validate_assignee(self.db, body.assigned_to)
+        if not access.can_assign(user, policy) and not assigned:
+            raise HTTPException(422, "Ask the owner or selected department manager to assign this project")
+        lead = body.lead.model_dump()
+        if lead["status"] == "Lost" and not lead.get("lost_reason"):
+            raise HTTPException(422, "A lost reason is required")
+        if not str(lead.get("site_location") or "").strip():
+            raise HTTPException(422, "Customer Name, Phone Number and Site Location are required")
+        customer = (await self.lead_customer(body.customer) if body.customer is not None else
+                    await self.db.customers.find_one({"id": body.customer_id, "floor_id": access.KITCHEN_FLOOR},
+                                                    {"_id": 0, "id": 1, "name": 1, "phone": 1, "address": 1}))
+        if not customer:
+            raise HTTPException(404, "Kitchen customer not found; select an existing customer")
+        customer_id = customer["id"]
+        now = timestamp()
+        reference = "KIT-" + project_id.replace("-", "").upper()[:16]
+        project = {"_id": project_id, "id": project_id, "reference": reference,
+                   "project_reference": reference,
+                   "floor_id": access.KITCHEN_FLOOR, "customer_id": customer_id, "customer": customer,
+                   "customer_phone_normalized": re.sub(r"\D", "", customer.get("phone") or "")[-10:],
+                   "customer_name_normalized": " ".join((customer.get("name") or "").casefold().split()),
+                   "version": 1, "stage": "lead", "status": lead["status"], "lead": lead,
+                   "visit": VisitFields().model_dump(), "cad": CadFields().model_dump(),
+                   "assignments": {"lead": assigned["id"]} if assigned else {},
+                   "assignment_names": {"lead": assigned["full_name"]} if assigned else {},
+                   "assigned_to": assigned["id"] if assigned else None,
+                   "assigned_to_name": assigned["full_name"] if assigned else None,
+                   "next_action": None, "deadline": None, "target_completion_date": None,
+                   "design_revision_count": 0, "site_visit_count": 0, "known_design_revision_count": 0, "known_site_visit_count": 0, "order_amount": None,
+                   "workflow_cycle": 1, "commercial_basis_invalidated": False, "work_history": [],
+                   "created_at": now, "updated_at": now, "created_by": user.id, "updated_by": user.id,
+                   "creation_fingerprint": digest,
+                   **{key: [] for key in HISTORY_FIELDS}}
+        if lead_error(project):
+            raise HTTPException(422, lead_error(project))
+        selector = duplicate_selector(customer_id, project["customer_phone_normalized"], project["customer_name_normalized"], project_id)
+        candidates = await self.db.kitchen_projects.find(selector, {"_id": 0, "id": 1}).limit(100).to_list(100)
+        project["duplicate_review"] = {"status": "pending" if candidates else "cleared", "candidate_ids": [row["id"] for row in candidates]}
+        project["activity"] = [event(user, "project.created", {"customer_id": customer_id})]
+        project["command_receipts"] = [{"actor_id": user.id, "key": body.idempotency_key,
+                                         "fingerprint": digest, "version": 1, "command": "create"}]
+        required = required_fields_error(project, "lead", policy)
+        if required:
+            raise HTTPException(422, required)
+        bounded(project)
+        # This permanent, idempotent pin and customer deletion's tombstone
+        # compete on the SAME Mongo document. Whichever wins excludes the
+        # other before an aggregate can commit; a prior lookup alone cannot.
+        # Never clear a pin after an uncertain insert: another retry may have
+        # committed. An interrupted create can retry its deterministic ID;
+        # an unused pin needs explicit isolated reconciliation to release.
+        reservation = await self.db.customers.update_one(
+            {"id": customer_id, "floor_id": access.KITCHEN_FLOOR,
+             "kitchen_delete_token": {"$exists": False}},
+            {"$set": {"kitchen_reference_reserved": True}})
+        if not reservation.matched_count:
+            raise HTTPException(409, "Customer is being removed; select an existing customer again")
+        try:
+            await self.db.kitchen_projects.insert_one(project)
+        except DuplicateKeyError:
+            previous = await self.db.kitchen_projects.find_one({"id": project_id, "floor_id": access.KITCHEN_FLOOR})
+            if not previous:
+                raise HTTPException(409, "Project reference collision; retry with another creation key")
+            await access.require_project(self.db, user, previous, policy, "create")
+            if previous.get("creation_fingerprint") != digest:
+                raise HTTPException(409, "This creation key was already used with different fields")
+            return await self.public(previous, user, policy, replayed=True)
+        result = await self.public(project, user, policy)
+        candidates = [{"customer_id": customer_id}]
+        if project["customer_phone_normalized"]:
+            candidates.append({"customer_phone_normalized": project["customer_phone_normalized"]})
+        if project["customer_name_normalized"]:
+            candidates.append({"customer_name_normalized": project["customer_name_normalized"]})
+        duplicate_query = {"$and": [access.scope_query(user, policy), {"$or": candidates}, {"id": {"$ne": project_id}}]}
+        result["duplicate_candidates"] = await self.db.kitchen_projects.find(duplicate_query, {"_id": 0, "id": 1, "reference": 1, "stage": 1}).limit(10).to_list(10)
+        return result
+
+    async def command(self, user, project_id, body):
+        async with self.admission(user, "update"):
+            return await self._command(user, project_id, body)
+
+    async def _command(self, user, project_id, body):
+        policy = await self.policy()
+        project = await self.db.kitchen_projects.find_one({"id": project_id, "floor_id": access.KITCHEN_FLOOR})
+        await access.require_project(self.db, user, project, policy, "update")
+        if body.command == "assign" and not access.can_assign(user, policy):
+            raise HTTPException(403, "Only the owner or an explicitly selected department manager can assign project staff")
+        digest = fingerprint({"command": body.command, "payload": body.payload})
+        receipt = next((r for r in project["command_receipts"] if r["actor_id"] == user.id and r["key"] == body.idempotency_key), None)
+        if receipt:
+            if receipt["fingerprint"] != digest:
+                raise HTTPException(409, "This command key was already used with different fields")
+            return await self.public(project, user, policy, replayed=True)
+        # Replays above are read-only acknowledgments of committed work. New
+        # routine writes must respect an owner hold/cancellation in every stage,
+        # including early-stage/plan commands outside workflow.apply. Assignment
+        # and duplicate review retain their explicit authority checks below.
+        if project.get("lifecycle_status") in {"On Hold", "Cancelled"} and body.command not in {"order_status", "exception", "assign", "review_duplicate"}:
+            raise HTTPException(422, "The owner must resume this held or cancelled project before routine changes")
+        await access.require_current_task(self.db, user, project, policy)
+        if body.expected_version != project["version"]:
+            raise HTTPException(409, {"message": "Kitchen project changed; reload before saving", "current_version": project["version"]})
+        updated = copy.deepcopy(project)
+        payload = body.payload
+        command = body.command
+        if command in {"edit_lead", "save_visit", "save_cad"}:
+            stage, model = {"edit_lead": ("lead", LeadFields), "save_visit": ("visit", VisitFields), "save_cad": ("cad", CadFields)}[command]
+            if project["stage"] != stage:
+                raise HTTPException(422, f"This command is available only in the {stage} stage")
+            updated[stage] = validate(model, {**project[stage], **payload}).model_dump()
+            if stage == "cad":
+                updated["cad"]["ready"] = updated["cad"]["received"] and updated["cad"]["progress"] == 100 and updated["cad"]["status"] == "Completed"
+            if stage == "lead" and lead_error(updated):
+                raise HTTPException(422, lead_error(updated))
+            if stage == "visit" and "next_action" in payload:
+                updated["next_action"] = updated["visit"]["next_action"]
+            if stage == "lead" and project[stage]["status"] == "Lost" and updated[stage]["status"] != "Lost":
+                raise HTTPException(422, "Lost leads cannot be reopened through ordinary editing")
+            if stage == "lead" and updated[stage]["status"] == "Lost" and not updated[stage].get("lost_reason"):
+                raise HTTPException(422, "A lost reason is required")
+        elif command in {"convert", "advance_stage"}:
+            if command == "convert":
+                if payload:
+                    raise HTTPException(422, "Convert accepts no fields")
+                if project["stage"] != "lead":
+                    raise HTTPException(422, "Only a lead can be converted")
+                target = "visit"
+            else:
+                target = validate(AdvancePayload, payload).target_stage
+            error = transition_error(project, target, policy)
+            if error:
+                raise HTTPException(422, error)
+            updated["stage"] = target
+        elif command == "review_duplicate":
+            from models_kitchen import DuplicateReview
+            if not access.owner(user):
+                raise HTTPException(403, "Only the owner can review possible duplicates")
+            if project["stage"] != "lead":
+                raise HTTPException(422, "Duplicate review is available only before conversion")
+            review = validate(DuplicateReview, payload)
+            updated["duplicate_review"] = {**project.get("duplicate_review", {}),
+                "status": "cleared" if review.decision == "distinct_project" else "duplicate",
+                "reason": review.reason, "reviewed_by": user.id, "reviewed_at": timestamp()}
+            if review.decision == "duplicate":
+                updated["lead"].update(status="Lost", lost_reason=review.reason)
+        elif command == "assign":
+            assignment = validate(AssignmentPayload, payload)
+            chosen = await access.validate_assignee(self.db, assignment.user_id)
+            if chosen:
+                updated["assignments"][assignment.stage] = chosen["id"]
+                updated["assignment_names"][assignment.stage] = chosen["full_name"]
+            else:
+                updated["assignments"].pop(assignment.stage, None)
+                updated["assignment_names"].pop(assignment.stage, None)
+        elif command == "metadata":
+            updated.update(validate(MetadataPayload, payload).model_dump(exclude_unset=True))
+            if project["stage"] == "visit" and "next_action" in payload:
+                updated["visit"]["next_action"] = updated["next_action"]
+        elif command in workflow.COMMANDS:
+            if command == "design_revision" and project.get("design_versions") and project["design_versions"][-1].get("response") == "Approved" and not access.owner(user):
+                raise HTTPException(403, "Only the owner can authorize changing an approved design")
+            if command == "approval":
+                from models_kitchen import InternalApproval
+                validate(InternalApproval, payload)
+                if not access.department_manager(user, policy):
+                    raise HTTPException(403, "Only an explicitly selected department manager can approve")
+                staff = await self.db.users.find_one({"id": user.id, "active": True}, {"_id": 0, "id": 1, "is_deleted": 1, "deleted_at": 1})
+                if not staff or staff.get("is_deleted") or staff.get("deleted_at"):
+                    raise HTTPException(403, "The selected department manager is no longer active")
+            if command in {"order_status", "exception", "order_amend"} and not access.owner(user):
+                raise HTTPException(403, "Only the owner can authorize exceptions or restricted changes")
+            workflow.apply(updated, command, payload, policy, user, timestamp(), validate)
+        else:
+            raise HTTPException(422, "Unsupported Kitchen command")
+        if project["stage"] == "completed" and command != "exception":
+            raise HTTPException(422, "The owner must explicitly reopen a completed project before editing it")
+        if updated["stage"] != project["stage"] and command != "exception":
+            required = required_fields_error(updated, project["stage"], policy)
+            if required:
+                raise HTTPException(422, required)
+        updated["version"] += 1
+        updated["updated_at"], updated["updated_by"] = timestamp(), user.id
+        updated["status"] = current_status(updated)
+        updated["order_amount_paise"] = int(Decimal(updated.get("order_amount") or "0") * 100)
+        updated["approval_subjects"] = {scope: workflow.subject(updated, scope) for scope in ("production", "closure") if updated.get("orders")}
+        updated["approval_decisions"] = {scope: next((a for a in reversed(updated["approvals"]) if a["scope"] == scope), None)
+                                         for scope in ("production", "closure")}
+        updated["assigned_to"] = updated["assignments"].get(updated["stage"])
+        updated["assigned_to_name"] = updated["assignment_names"].get(updated["stage"])
+        record = {"fields": sorted(payload), "from_stage": project["stage"], "to_stage": updated["stage"], "changes": {}}
+        for field in ("lead", "visit", "cad", "production", "installation", "assignments", "next_action", "deadline", "target_completion_date", "duplicate_review", "lifecycle_status", "workflow_cycle", "commercial_basis_invalidated"):
+            if project.get(field) != updated.get(field):
+                record["changes"][field] = {"before": project.get(field), "after": updated.get(field)}
+        if command in workflow.COMMANDS:
+            record["subject_id"] = payload.get("version_id") or payload.get("quotation_version_id") or payload.get("design_version_id")
+            for key in ("design_versions", "quotation_versions", "orders", "revision_events", "site_visits", "approvals"):
+                old_rows, new_rows = project.get(key, []), updated.get(key, [])
+                if len(new_rows) > len(old_rows):
+                    record.setdefault("created_subjects", {})[key] = [row["id"] for row in new_rows[len(old_rows):]]
+            for key in ("status", "order_amount", "design_revision_count", "site_visit_count", "completion_date"):
+                if project.get(key) != updated.get(key):
+                    record["changes"][key] = {"before": project.get(key), "after": updated.get(key)}
+            if command == "order_document":
+                record["changes"]["confirmation_document_id"] = {
+                    "before": project["orders"][-1].get("confirmation_document_id"),
+                    "after": updated["orders"][-1].get("confirmation_document_id")}
+            if command == "order_advance":
+                record["changes"]["advance"] = {
+                    "before": project["orders"][-1].get("advance"),
+                    "after": updated["orders"][-1].get("advance")}
+        updated["activity"].append(event(user, command, record))
+        updated["command_receipts"].append({"actor_id": user.id, "key": body.idempotency_key, "fingerprint": digest,
+                                              "version": updated["version"], "command": command})
+        bounded(updated)
+        result = await self.db.kitchen_projects.replace_one(
+            {"id": project_id, "floor_id": access.KITCHEN_FLOOR, "version": body.expected_version}, updated)
+        if not result.matched_count:
+            latest = await self.db.kitchen_projects.find_one({"id": project_id, "floor_id": access.KITCHEN_FLOOR})
+            await access.require_project(self.db, user, latest, policy, "update")
+            saved = next((r for r in latest["command_receipts"] if r["actor_id"] == user.id and r["key"] == body.idempotency_key), None)
+            if saved and saved["fingerprint"] == digest:
+                return await self.public(latest, user, policy, replayed=True)
+            await access.require_current_task(self.db, user, latest, policy)
+            raise HTTPException(409, "Kitchen project changed; reload before saving")
+        return await self.public(updated, user, policy)
+
+    async def customers(self, user, *, search="", page=1, limit=50):
+        await access.require_capability(self.db, user, "create")
+        query = {"floor_id": access.KITCHEN_FLOOR, "kitchen_delete_token": {"$exists": False}}
+        if search.strip():
+            term = {"$regex": re.escape(search.strip()), "$options": "i"}
+            query["$or"] = [{field: term} for field in ("name", "phone", "address")]
+        total = await self.db.customers.count_documents(query)
+        rows = await self.db.customers.find(query, {"_id": 0, "id": 1, "name": 1, "phone": 1, "address": 1}).sort([("name", 1), ("id", 1)]).skip((page - 1) * limit).limit(limit).to_list(limit)
+        return {"rows": rows, "total": total, "page": page, "limit": limit}
+
+    async def assignees(self, user):
+        await access.require_capability(self.db, user, "view")
+        policy = await self.policy()
+        if not access.can_assign(user, policy):
+            return {"rows": [{"id": user.id, "full_name": user.full_name, "role": user.role}]}
+        return {"rows": await access.eligible_staff(self.db)}
+
+    async def dashboard(self, user):
+        await access.require_capability(self.db, user, "view")
+        policy = await self.policy()
+        query = access.scope_query(user, policy)
+        expressions = attention_expressions(policy)
+        fields = {"_id": 0, "stage": 1, "assigned_to": 1, "assigned_to_name": 1,
+                  "orders": {"$slice": [{"$ifNull": ["$orders", []]}, -1]},
+                  "attention": expressions}
+        totals = {key: 0 for key in expressions}
+        stages = {stage: 0 for stage in STAGES}
+        workload = {}
+        either_overdue = value_paise = 0
+        # Mongo evaluates exactly the same expressions as list attention filters.
+        # Only the bounded current order and assignment metadata cross the wire.
+        async for row in self.db.kitchen_projects.aggregate([{"$match": query}, {"$project": fields}]):
+            flags = row["attention"]
+            for key in totals:
+                totals[key] += bool(flags.get(key))
+            stages[row["stage"]] += 1
+            either_overdue += bool(flags.get("next_action_overdue") or flags.get("completion_overdue"))
+            if flags.get("active_order"):
+                value_paise += int(Decimal(row["orders"][-1]["final_amount"]) * 100)
+            if flags.get("active"):
+                assignee_id = row.get("assigned_to")
+                if assignee_id not in workload:
+                    workload[assignee_id] = {"assignee_id": assignee_id,
+                        "assignee_name": row.get("assigned_to_name") if assignee_id else None, "project_count": 0}
+                workload[assignee_id]["project_count"] += 1
+        amount = format(Decimal(value_paise) / 100, ".2f")
+        return {"configured": True, "active_projects": totals["active"], "on_hold_projects": totals["on_hold"],
+                "next_action_overdue_projects": totals["next_action_overdue"],
+                "completion_overdue_projects": totals["completion_overdue"],
+                "active_order_value": amount, "overdue_projects": either_overdue,
+                "confirmed_order_value": amount, "pending_approvals": totals["pending_approval"],
+                "stage_counts": stages,
+                "workload": sorted(workload.values(), key=lambda item: (item["assignee_name"] or "", item["assignee_id"] or "")),
+                "definitions": policy["metrics"]}
+
+    async def export_completed(self, user, **filters):
+        await access.require_capability(self.db, user, "export")
+        # The full selected scope is exported page by page. Explicitly fail if
+        # it exceeds this download bound; never silently export the first page.
+        rows, page = [], 1
+        while True:
+            result = await self.list(user, **filters, completed=True, page=page, limit=100)
+            if result["total"] > 10000:
+                raise HTTPException(413, "Export exceeds 10,000 projects; narrow the selected filters")
+            rows.extend(result["rows"])
+            if len(rows) >= result["total"] or not result["rows"]:
+                break
+            page += 1
+        from services.export import rows_to_csv
+        return rows_to_csv([{"reference": row["reference"], "customer": row["customer"]["name"],
+                             "order_amount": row.get("order_amount"), "completion_date": row.get("completion_date"),
+                             "design_revisions": row["design_revision_count"] if row["design_revision_count"] is not None else "Historical count unavailable", "site_visits": row["site_visit_count"] if row["site_visit_count"] is not None else "Historical count unavailable"}
+                            for row in rows], [("reference", "Project ID"), ("customer", "Customer"),
+                            ("order_amount", "Order amount INR"), ("completion_date", "Completion date"),
+                            ("design_revisions", "Design revisions"), ("site_visits", "Actual site visits")])
+
+    async def list(self, user, *, search="", stage=None, status=None, assignee=None, date_from=None,
+                   date_to=None, date_field="created_at", sort="updated_at", direction="desc", page=1, limit=50, completed=None, duplicate_review=None, attention=None):
+        await access.require_capability(self.db, user, "view")
+        policy = await self.policy()
+        query = access.scope_query(user, policy)
+        filters = [query]
+        if attention:
+            expressions = attention_expressions(policy)
+            if attention not in expressions:
+                raise HTTPException(422, "Unsupported Kitchen attention filter")
+            filters.append({"$expr": expressions[attention]})
+        if duplicate_review:
+            filters.append({"duplicate_review.status": duplicate_review})
+        if stage:
+            filters.append({"stage": stage})
+        if completed is not None:
+            filters.append({"stage": "completed" if completed else {"$ne": "completed"}})
+        if status:
+            filters.append({"status": status})
+        if assignee:
+            filters.append({"assigned_to": None if assignee == "unassigned" else assignee})
+        if search.strip():
+            term = {"$regex": re.escape(search.strip()), "$options": "i"}
+            filters.append({"$or": [{field: term} for field in ("reference", "project_reference", "customer.name", "customer.phone", "lead.site_location")]})
+        if date_from or date_to:
+            bounds = {}
+            if date_from:
+                bounds["$gte"] = date_from if date_field.endswith("_date") else datetime.combine(date.fromisoformat(date_from), datetime.min.time(), tzinfo=timezone(timedelta(hours=5, minutes=30))).astimezone(timezone.utc).isoformat()
+            if date_to:
+                end = date.fromisoformat(date_to) + timedelta(days=1)
+                bounds["$lt"] = end.isoformat() if date_field.endswith("_date") else datetime.combine(end, datetime.min.time(), tzinfo=timezone(timedelta(hours=5, minutes=30))).astimezone(timezone.utc).isoformat()
+            filters.append({date_field: bounds})
+        compiled = {"$and": filters}
+        # Current-stage assignment is persisted as a query projection field.
+        total = await self.db.kitchen_projects.count_documents(compiled)
+        sort_field = {"customer": "customer.name", "assignee": "assigned_to_name", "order_amount": "order_amount_paise"}.get(sort, sort)
+        projection = {key: 0 for key in HISTORY_FIELDS}
+        # Stage tables need the current commercial fields, never the full
+        # version ledger. Mongo returns only the latest version; public() then
+        # whitelists its bounded display fields and removes embedded history.
+        projection.update({key: {"$slice": -1} for key in ("design_versions", "quotation_versions", "orders")})
+        rows = await self.db.kitchen_projects.find(compiled, projection).sort([(sort_field, 1 if direction == "asc" else -1), ("id", 1)]).skip((page - 1) * limit).limit(limit).to_list(limit)
+        return {"rows": [await self.public(row, user, policy, summary=True) for row in rows], "total": total, "page": page, "limit": limit}
+

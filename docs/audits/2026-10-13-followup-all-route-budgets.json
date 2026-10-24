@@ -1,0 +1,1105 @@
+{
+  "checkedAt": "2026-10-12T23:45:16.432847+00:00",
+  "scope": "Every generated HTML route initial JavaScript payload; static bundle audit, excludes HTTP and API latency",
+  "routes": [
+    {
+      "route": "followups.html",
+      "assets": 8,
+      "gzipKiB": 449,
+      "rawKiB": 1671,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/followups.html",
+      "assets": 8,
+      "gzipKiB": 449,
+      "rawKiB": 1671,
+      "within576KiB": true
+    },
+    {
+      "route": "customers/[id].html",
+      "assets": 8,
+      "gzipKiB": 444,
+      "rawKiB": 1648,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/customers/[id].html",
+      "assets": 8,
+      "gzipKiB": 444,
+      "rawKiB": 1648,
+      "within576KiB": true
+    },
+    {
+      "route": "payments.html",
+      "assets": 8,
+      "gzipKiB": 443,
+      "rawKiB": 1641,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/payments.html",
+      "assets": 8,
+      "gzipKiB": 443,
+      "rawKiB": 1641,
+      "within576KiB": true
+    },
+    {
+      "route": "godown-stock.html",
+      "assets": 8,
+      "gzipKiB": 441,
+      "rawKiB": 1637,
+      "within576KiB": true
+    },
+    {
+      "route": "purchase-orders/[id].html",
+      "assets": 8,
+      "gzipKiB": 441,
+      "rawKiB": 1643,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/godown-stock.html",
+      "assets": 8,
+      "gzipKiB": 441,
+      "rawKiB": 1637,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/purchase-orders/[id].html",
+      "assets": 8,
+      "gzipKiB": 441,
+      "rawKiB": 1643,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/tiles/orders/index.html",
+      "assets": 8,
+      "gzipKiB": 441,
+      "rawKiB": 1639,
+      "within576KiB": true
+    },
+    {
+      "route": "tiles/orders/index.html",
+      "assets": 8,
+      "gzipKiB": 441,
+      "rawKiB": 1639,
+      "within576KiB": true
+    },
+    {
+      "route": "team.html",
+      "assets": 8,
+      "gzipKiB": 439,
+      "rawKiB": 1626,
+      "within576KiB": true
+    },
+    {
+      "route": "catalog/index.html",
+      "assets": 8,
+      "gzipKiB": 439,
+      "rawKiB": 1631,
+      "within576KiB": true
+    },
+    {
+      "route": "catalog/[id].html",
+      "assets": 8,
+      "gzipKiB": 439,
+      "rawKiB": 1630,
+      "within576KiB": true
+    },
+    {
+      "route": "sales-data/index.html",
+      "assets": 9,
+      "gzipKiB": 439,
+      "rawKiB": 1629,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/team.html",
+      "assets": 8,
+      "gzipKiB": 439,
+      "rawKiB": 1626,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/catalog/index.html",
+      "assets": 8,
+      "gzipKiB": 439,
+      "rawKiB": 1631,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/catalog/[id].html",
+      "assets": 8,
+      "gzipKiB": 439,
+      "rawKiB": 1630,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/sales-data/index.html",
+      "assets": 9,
+      "gzipKiB": 439,
+      "rawKiB": 1629,
+      "within576KiB": true
+    },
+    {
+      "route": "catalog/import.html",
+      "assets": 8,
+      "gzipKiB": 438,
+      "rawKiB": 1625,
+      "within576KiB": true
+    },
+    {
+      "route": "sales-data/executive.html",
+      "assets": 9,
+      "gzipKiB": 438,
+      "rawKiB": 1625,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/catalog/import.html",
+      "assets": 8,
+      "gzipKiB": 438,
+      "rawKiB": 1625,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/sales-data/executive.html",
+      "assets": 9,
+      "gzipKiB": 438,
+      "rawKiB": 1625,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/sales-data/referrer/[id].html",
+      "assets": 9,
+      "gzipKiB": 438,
+      "rawKiB": 1620,
+      "within576KiB": true
+    },
+    {
+      "route": "sales-data/referrer/[id].html",
+      "assets": 9,
+      "gzipKiB": 438,
+      "rawKiB": 1620,
+      "within576KiB": true
+    },
+    {
+      "route": "quotations/[id].html",
+      "assets": 8,
+      "gzipKiB": 437,
+      "rawKiB": 1621,
+      "within576KiB": true
+    },
+    {
+      "route": "notebook/furniture-quotations.html",
+      "assets": 8,
+      "gzipKiB": 437,
+      "rawKiB": 1620,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/quotations/[id].html",
+      "assets": 8,
+      "gzipKiB": 437,
+      "rawKiB": 1621,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/notebook/furniture-quotations.html",
+      "assets": 8,
+      "gzipKiB": 437,
+      "rawKiB": 1620,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/tiles/orders/[id].html",
+      "assets": 8,
+      "gzipKiB": 437,
+      "rawKiB": 1620,
+      "within576KiB": true
+    },
+    {
+      "route": "tiles/orders/[id].html",
+      "assets": 8,
+      "gzipKiB": 437,
+      "rawKiB": 1620,
+      "within576KiB": true
+    },
+    {
+      "route": "dashboard.html",
+      "assets": 8,
+      "gzipKiB": 436,
+      "rawKiB": 1616,
+      "within576KiB": true
+    },
+    {
+      "route": "walkins/index.html",
+      "assets": 8,
+      "gzipKiB": 436,
+      "rawKiB": 1615,
+      "within576KiB": true
+    },
+    {
+      "route": "walkins/new.html",
+      "assets": 8,
+      "gzipKiB": 436,
+      "rawKiB": 1614,
+      "within576KiB": true
+    },
+    {
+      "route": "sales-data/today.html",
+      "assets": 9,
+      "gzipKiB": 436,
+      "rawKiB": 1614,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/dashboard.html",
+      "assets": 8,
+      "gzipKiB": 436,
+      "rawKiB": 1616,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/walkins/index.html",
+      "assets": 8,
+      "gzipKiB": 436,
+      "rawKiB": 1615,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/walkins/new.html",
+      "assets": 8,
+      "gzipKiB": 436,
+      "rawKiB": 1614,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/sales-data/today.html",
+      "assets": 9,
+      "gzipKiB": 436,
+      "rawKiB": 1614,
+      "within576KiB": true
+    },
+    {
+      "route": "settings.html",
+      "assets": 8,
+      "gzipKiB": 435,
+      "rawKiB": 1613,
+      "within576KiB": true
+    },
+    {
+      "route": "customers/index.html",
+      "assets": 8,
+      "gzipKiB": 435,
+      "rawKiB": 1611,
+      "within576KiB": true
+    },
+    {
+      "route": "quotations/index.html",
+      "assets": 8,
+      "gzipKiB": 435,
+      "rawKiB": 1611,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/settings.html",
+      "assets": 8,
+      "gzipKiB": 435,
+      "rawKiB": 1613,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/customers/index.html",
+      "assets": 8,
+      "gzipKiB": 435,
+      "rawKiB": 1611,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/quotations/index.html",
+      "assets": 8,
+      "gzipKiB": 435,
+      "rawKiB": 1611,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/sales-data/brands/[id].html",
+      "assets": 9,
+      "gzipKiB": 435,
+      "rawKiB": 1613,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/sales-data/people/[kind]/[id].html",
+      "assets": 9,
+      "gzipKiB": 435,
+      "rawKiB": 1612,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/tiles/orders/po/[poId].html",
+      "assets": 8,
+      "gzipKiB": 435,
+      "rawKiB": 1612,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/customers/[id]/edit.html",
+      "assets": 8,
+      "gzipKiB": 435,
+      "rawKiB": 1610,
+      "within576KiB": true
+    },
+    {
+      "route": "sales-data/brands/[id].html",
+      "assets": 9,
+      "gzipKiB": 435,
+      "rawKiB": 1613,
+      "within576KiB": true
+    },
+    {
+      "route": "sales-data/people/[kind]/[id].html",
+      "assets": 9,
+      "gzipKiB": 435,
+      "rawKiB": 1612,
+      "within576KiB": true
+    },
+    {
+      "route": "tiles/orders/po/[poId].html",
+      "assets": 8,
+      "gzipKiB": 435,
+      "rawKiB": 1612,
+      "within576KiB": true
+    },
+    {
+      "route": "customers/[id]/edit.html",
+      "assets": 8,
+      "gzipKiB": 435,
+      "rawKiB": 1610,
+      "within576KiB": true
+    },
+    {
+      "route": "payments-list.html",
+      "assets": 8,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "purchases-completed.html",
+      "assets": 8,
+      "gzipKiB": 434,
+      "rawKiB": 1607,
+      "within576KiB": true
+    },
+    {
+      "route": "walkins/[id].html",
+      "assets": 8,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "tiles/index.html",
+      "assets": 8,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "sales-data/operations.html",
+      "assets": 9,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "sales-data/suppliers.html",
+      "assets": 9,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "sales-data/brands.html",
+      "assets": 9,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "sales-data/products.html",
+      "assets": 9,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "sales-data/relationships.html",
+      "assets": 9,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "sales-data/sales.html",
+      "assets": 9,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "sales-data/customers.html",
+      "assets": 9,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "sales-data/collections.html",
+      "assets": 9,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "sales-data/forecasting.html",
+      "assets": 9,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/payments-list.html",
+      "assets": 8,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/purchases-completed.html",
+      "assets": 8,
+      "gzipKiB": 434,
+      "rawKiB": 1607,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/walkins/[id].html",
+      "assets": 8,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/tiles/index.html",
+      "assets": 8,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/sales-data/operations.html",
+      "assets": 9,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/sales-data/suppliers.html",
+      "assets": 9,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/sales-data/brands.html",
+      "assets": 9,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/sales-data/products.html",
+      "assets": 9,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/sales-data/relationships.html",
+      "assets": 9,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/sales-data/sales.html",
+      "assets": 9,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/sales-data/customers.html",
+      "assets": 9,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/sales-data/collections.html",
+      "assets": 9,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/sales-data/forecasting.html",
+      "assets": 9,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/sales-data/referrals/architects.html",
+      "assets": 9,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/sales-data/referrals/interior-designers.html",
+      "assets": 9,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/sales-data/brand/[id].html",
+      "assets": 9,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "sales-data/referrals/architects.html",
+      "assets": 9,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "sales-data/referrals/interior-designers.html",
+      "assets": 9,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "sales-data/brand/[id].html",
+      "assets": 9,
+      "gzipKiB": 434,
+      "rawKiB": 1609,
+      "within576KiB": true
+    },
+    {
+      "route": "settings-notifications.html",
+      "assets": 8,
+      "gzipKiB": 433,
+      "rawKiB": 1606,
+      "within576KiB": true
+    },
+    {
+      "route": "settings-password.html",
+      "assets": 8,
+      "gzipKiB": 433,
+      "rawKiB": 1605,
+      "within576KiB": true
+    },
+    {
+      "route": "settings-mfa.html",
+      "assets": 8,
+      "gzipKiB": 433,
+      "rawKiB": 1607,
+      "within576KiB": true
+    },
+    {
+      "route": "settings-catalog.html",
+      "assets": 8,
+      "gzipKiB": 433,
+      "rawKiB": 1605,
+      "within576KiB": true
+    },
+    {
+      "route": "notifications.html",
+      "assets": 8,
+      "gzipKiB": 433,
+      "rawKiB": 1606,
+      "within576KiB": true
+    },
+    {
+      "route": "settings-system.html",
+      "assets": 8,
+      "gzipKiB": 433,
+      "rawKiB": 1607,
+      "within576KiB": true
+    },
+    {
+      "route": "settings-walkins.html",
+      "assets": 8,
+      "gzipKiB": 433,
+      "rawKiB": 1606,
+      "within576KiB": true
+    },
+    {
+      "route": "settings-pdf.html",
+      "assets": 8,
+      "gzipKiB": 433,
+      "rawKiB": 1607,
+      "within576KiB": true
+    },
+    {
+      "route": "settings-company.html",
+      "assets": 8,
+      "gzipKiB": 433,
+      "rawKiB": 1607,
+      "within576KiB": true
+    },
+    {
+      "route": "customers/new.html",
+      "assets": 8,
+      "gzipKiB": 433,
+      "rawKiB": 1607,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/settings-notifications.html",
+      "assets": 8,
+      "gzipKiB": 433,
+      "rawKiB": 1606,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/settings-password.html",
+      "assets": 8,
+      "gzipKiB": 433,
+      "rawKiB": 1605,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/settings-mfa.html",
+      "assets": 8,
+      "gzipKiB": 433,
+      "rawKiB": 1607,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/settings-catalog.html",
+      "assets": 8,
+      "gzipKiB": 433,
+      "rawKiB": 1605,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/notifications.html",
+      "assets": 8,
+      "gzipKiB": 433,
+      "rawKiB": 1606,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/settings-system.html",
+      "assets": 8,
+      "gzipKiB": 433,
+      "rawKiB": 1607,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/settings-walkins.html",
+      "assets": 8,
+      "gzipKiB": 433,
+      "rawKiB": 1606,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/settings-pdf.html",
+      "assets": 8,
+      "gzipKiB": 433,
+      "rawKiB": 1607,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/settings-company.html",
+      "assets": 8,
+      "gzipKiB": 433,
+      "rawKiB": 1607,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/customers/new.html",
+      "assets": 8,
+      "gzipKiB": 433,
+      "rawKiB": 1607,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/tiles/orders/brands/[brandId].html",
+      "assets": 8,
+      "gzipKiB": 433,
+      "rawKiB": 1607,
+      "within576KiB": true
+    },
+    {
+      "route": "tiles/orders/brands/[brandId].html",
+      "assets": 8,
+      "gzipKiB": 433,
+      "rawKiB": 1607,
+      "within576KiB": true
+    },
+    {
+      "route": "settings-terms.html",
+      "assets": 8,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "access.html",
+      "assets": 8,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "purchases.html",
+      "assets": 7,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "settings-access-grants.html",
+      "assets": 8,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "settings-privacy.html",
+      "assets": 8,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "followup-assignments.html",
+      "assets": 7,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "settings-permissions.html",
+      "assets": 8,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "reports.html",
+      "assets": 8,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "purchase-orders/index.html",
+      "assets": 8,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "tiles/quotation.html",
+      "assets": 8,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "tiles/selection.html",
+      "assets": 8,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "quotations/new.html",
+      "assets": 8,
+      "gzipKiB": 432,
+      "rawKiB": 1604,
+      "within576KiB": true
+    },
+    {
+      "route": "notebook/[floor].html",
+      "assets": 8,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/settings-terms.html",
+      "assets": 8,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/access.html",
+      "assets": 8,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/purchases.html",
+      "assets": 7,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/settings-access-grants.html",
+      "assets": 8,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/settings-privacy.html",
+      "assets": 8,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/followup-assignments.html",
+      "assets": 7,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/settings-permissions.html",
+      "assets": 8,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/reports.html",
+      "assets": 8,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/purchase-orders/index.html",
+      "assets": 8,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/tiles/quotation.html",
+      "assets": 8,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/tiles/selection.html",
+      "assets": 8,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/quotations/new.html",
+      "assets": 8,
+      "gzipKiB": 432,
+      "rawKiB": 1604,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/notebook/[floor].html",
+      "assets": 8,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/notebook/[floor]/[view].html",
+      "assets": 8,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/notebook/[floor]/quotation-follow-up.html",
+      "assets": 8,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/quotations/[id]/place-order.html",
+      "assets": 7,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "(admin)/tiles/place-order/[id].html",
+      "assets": 8,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "notebook/[floor]/[view].html",
+      "assets": 8,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "notebook/[floor]/quotation-follow-up.html",
+      "assets": 8,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "quotations/[id]/place-order.html",
+      "assets": 7,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "tiles/place-order/[id].html",
+      "assets": 8,
+      "gzipKiB": 432,
+      "rawKiB": 1603,
+      "within576KiB": true
+    },
+    {
+      "route": "quotes/[id].html",
+      "assets": 8,
+      "gzipKiB": 425,
+      "rawKiB": 1576,
+      "within576KiB": true
+    },
+    {
+      "route": "(customer)/quotes/[id].html",
+      "assets": 8,
+      "gzipKiB": 425,
+      "rawKiB": 1576,
+      "within576KiB": true
+    },
+    {
+      "route": "home.html",
+      "assets": 8,
+      "gzipKiB": 424,
+      "rawKiB": 1574,
+      "within576KiB": true
+    },
+    {
+      "route": "login.html",
+      "assets": 8,
+      "gzipKiB": 424,
+      "rawKiB": 1574,
+      "within576KiB": true
+    },
+    {
+      "route": "set-new-password.html",
+      "assets": 8,
+      "gzipKiB": 424,
+      "rawKiB": 1571,
+      "within576KiB": true
+    },
+    {
+      "route": "quotes/index.html",
+      "assets": 8,
+      "gzipKiB": 424,
+      "rawKiB": 1573,
+      "within576KiB": true
+    },
+    {
+      "route": "(customer)/home.html",
+      "assets": 8,
+      "gzipKiB": 424,
+      "rawKiB": 1574,
+      "within576KiB": true
+    },
+    {
+      "route": "(auth)/login.html",
+      "assets": 8,
+      "gzipKiB": 424,
+      "rawKiB": 1574,
+      "within576KiB": true
+    },
+    {
+      "route": "(auth)/set-new-password.html",
+      "assets": 8,
+      "gzipKiB": 424,
+      "rawKiB": 1571,
+      "within576KiB": true
+    },
+    {
+      "route": "(customer)/quotes/index.html",
+      "assets": 8,
+      "gzipKiB": 424,
+      "rawKiB": 1573,
+      "within576KiB": true
+    },
+    {
+      "route": "terms.html",
+      "assets": 7,
+      "gzipKiB": 423,
+      "rawKiB": 1570,
+      "within576KiB": true
+    },
+    {
+      "route": "privacy.html",
+      "assets": 7,
+      "gzipKiB": 423,
+      "rawKiB": 1570,
+      "within576KiB": true
+    },
+    {
+      "route": "_sitemap.html",
+      "assets": 6,
+      "gzipKiB": 422,
+      "rawKiB": 1568,
+      "within576KiB": true
+    },
+    {
+      "route": "index.html",
+      "assets": 7,
+      "gzipKiB": 422,
+      "rawKiB": 1569,
+      "within576KiB": true
+    },
+    {
+      "route": "+not-found.html",
+      "assets": 6,
+      "gzipKiB": 422,
+      "rawKiB": 1568,
+      "within576KiB": true
+    }
+  ]
+}

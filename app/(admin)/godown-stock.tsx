@@ -1,11 +1,14 @@
+import { MobileFilterSection } from "@/src/components/MobileFilterSection";
 import { filterValues, matchesFilter, toggleFilterValue } from "@/src/utils/filters";
+import * as ImagePicker from "expo-image-picker";
+import type { UploadImage } from "@/src/utils/appendImageUpload";
 import Feather from "@expo/vector-icons/Feather";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View, type DimensionValue } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 
-import { addDirectGodownStock, getGodownStock, getPoFinalMatches, getSkuSuggestions, updateGodownPricing, type GodownLot, type GodownStockResponse, type PoFinalMatch, type SkuSuggestion } from "@/src/api/godownStock";
+import { addDirectGodownStock, getGodownStock, getPoFinalMatches, getSkuSuggestions, updateGodownDetails, uploadGodownImage, type GodownLot, type GodownStockResponse, type PoFinalMatch, type SkuSuggestion } from "@/src/api/godownStock";
 import { CustomerTransferSheet } from "@/src/components/godown/CustomerTransferSheet";
 import { Sheet } from "@/src/design/components";
 import { ProductImage } from "@/src/components/ProductImage";
@@ -36,6 +39,8 @@ export default function GodownStockScreen() {
   const [newLot, setNewLot] = useState<GodownLot | null>(null);
   const [poFinalMatches, setPoFinalMatches] = useState<PoFinalMatch[]>([]);
   const [transferLot, setTransferLot] = useState<GodownLot | null>(null);
+  const [visibleCount, setVisibleCount] = useState(60);
+  useEffect(() => { setVisibleCount(60); }, [q, brand, selectedFloorId]);
   const [transferMatch, setTransferMatch] = useState<PoFinalMatch | null>(null);
   const stockRequest = useRef(0);
   const dataFloor = useRef<string | null>(null);
@@ -101,11 +106,11 @@ export default function GodownStockScreen() {
       } catch (matchError: any) { if (isCurrentFloor()) toast.error(matchError?.detail || "Stock added, but PO Final matches could not be checked"); }
     } catch (e: any) { if (isCurrentFloor()) toast.error(e?.detail || "Could not add stock"); } finally { if (isCurrentFloor()) setSaving(false); }
   };
-  const lots = useMemo(() => (data?.lots || []).filter(lot => matchesFilter(lot.brand_id || lot.brand_name, brand) && `${lot.name} ${lot.sku} ${lot.brand_name || ""}`.toLowerCase().includes(q.trim().toLowerCase())), [data, brand, q]);
+  const lots = useMemo(() => (data?.lots || []).filter(lot => matchesFilter(lot.brand_id || lot.brand_name, brand) && !lot.archived && `${lot.name} ${lot.sku} ${lot.brand_name || ""}`.toLowerCase().includes(q.trim().toLowerCase())), [data, brand, q]);
   const exportStock = async (section: "inventory" | "movements") => {
     try {
       const rows = section === "inventory"
-        ? [["SKU", "Product", "Brand", "Received", "Available", "Transferable", "Unit price (INR)", "Stock value (INR)"], ...lots.map(lot => [lot.sku, lot.name, lot.brand_name, lot.qty_received, lot.available_qty, lot.transferable_qty ?? lot.available_qty, lot.unit_price, lot.stock_value])]
+        ? [["SKU", "Product", "Brand", "Received", "Available", "Transferable", "Unit price (INR)", "Stock value (INR)"], ...lots.map(lot => [lot.sku, lot.name, lot.brand_name, lot.quantity_missing ? "Not recorded" : lot.qty_received, lot.quantity_missing ? "Not recorded" : lot.available_qty, lot.quantity_missing ? "Not recorded" : lot.transferable_qty ?? lot.available_qty, lot.unit_price, lot.stock_value])]
         : [["SKU", "Product", "Event", "Customer / quotation", "Quantity", "Date"], ...lots.flatMap(lot => [
           ...(lot.allocations || []).map(row => [lot.sku, lot.name, "Allocated", row.customer_name || row.quotation_number || row.quotation_id, row.qty, row.allocated_at]),
           ...(lot.customer_transfers || []).map(row => [lot.sku, lot.name, "Transferred", row.recipient_customer_name, row.qty, row.created_at]),
@@ -134,10 +139,13 @@ export default function GodownStockScreen() {
       <Pressable accessibilityRole="button" disabled={saving} onPress={() => void save()} style={[styles.add, saving && { opacity: .5 }]}><Text style={styles.addText}>{saving ? "Adding…" : "Add to godown stock"}</Text></Pressable>
     </View> : null}
     <TextInput accessibilityLabel="Search godown stock" value={q} onChangeText={setQ} placeholder="Search brand, SKU or product" style={styles.search} />
+    <MobileFilterSection testID="godown-stock-filters">
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips} accessibilityRole="tablist"><Chip label="All brands" selected={!brand} onPress={() => setBrand(null)} />{data?.brands.map(row => <Chip key={row.id || row.name} label={`${row.name} · ${row.available_qty}`} selected={filterValues(brand).includes(row.id || row.name)} onPress={() => setBrand(current => toggleFilterValue(current, row.id || row.name, ""))} />)}</ScrollView>
-    <Text accessibilityLiveRegion="polite" style={styles.result}>{lots.filter(lot => lot.available_qty > 0).length} available · {lots.filter(lot => lot.available_qty <= 0).length} zero-stock lots</Text>
+    </MobileFilterSection>
+    <Text testID="godown-results" accessibilityLiveRegion="polite" style={styles.result}>{lots.filter(lot => !lot.quantity_missing && lot.available_qty > 0).length} available · {lots.filter(lot => !lot.quantity_missing && lot.available_qty <= 0).length} zero-stock lots · {lots.filter(lot => lot.quantity_missing).length} quantities not recorded · showing {Math.min(visibleCount, lots.length)} of {lots.length}</Text>
     <View style={styles.exportActions}><Pressable accessibilityRole="button" accessibilityLabel="Export filtered godown inventory to Excel" testID="godown-export-inventory" disabled={!lots.length} onPress={() => void exportStock("inventory")} style={[styles.exportButton, !lots.length && { opacity: .45 }]}><Feather name="download" size={15} color={colors.brand} /><Text style={styles.detailsText}>Inventory .xlsx</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Export godown stock movements to Excel" testID="godown-export-movements" disabled={!lots.some(lot => (lot.allocations?.length || 0) + (lot.customer_transfers?.length || 0) > 0)} onPress={() => void exportStock("movements")} style={[styles.exportButton, !lots.some(lot => (lot.allocations?.length || 0) + (lot.customer_transfers?.length || 0) > 0) && { opacity: .45 }]}><Feather name="download" size={15} color={colors.brand} /><Text style={styles.detailsText}>Movements .xlsx</Text></Pressable></View>
-    <View style={[styles.grid, !isPhone && styles.gridWide]}>{lots.map(lot => <LotCard key={lot.id} lot={lot} compact={isPhone} width={isPhone ? "100%" : isDesktop ? "31.9%" : "48.8%"} canEditPricing={canEditPricing} onUpdated={() => void load()} onViewDetails={() => { if (lot.product_id) router.push(`/(admin)/catalog/${encodeURIComponent(lot.product_id)}` as any); }} onAdd={(variantIndex) => router.push(`/(admin)/quotations/new?godownStockId=${encodeURIComponent(lot.id)}${variantIndex === null ? "" : `&godownVariant=${variantIndex}`}` as any)} onTransfer={() => { setTransferMatch(null); setTransferLot(lot); }} />)}</View>
+    <View style={[styles.grid, !isPhone && styles.gridWide]}>{lots.slice(0, visibleCount).map(lot => <LotCard key={`${selectedFloorId}:${lot.id}`} floorId={selectedFloorId || undefined} lot={lot} compact={isPhone} width={isPhone ? "100%" : isDesktop ? "31.9%" : "48.8%"} canEditPricing={canEditPricing} onUpdated={updated => { if (!isCurrentFloor()) return; setData(current => { if (!current) return current; const rows = current.lots.map(row => row.id === updated.id ? { ...row, ...updated } : row); return { ...current, lots: rows, total_stock_value: rows.reduce((sum, row) => sum + (row.stock_value || 0), 0), unpriced_lot_count: rows.filter(row => row.unit_price == null && (row.available_qty > 0 || row.quantity_missing)).length }; }); }} onViewDetails={() => { if (lot.product_id) router.push(`/(admin)/catalog/${encodeURIComponent(lot.product_id)}` as any); }} onAdd={(variantIndex) => router.push(`/(admin)/quotations/new?godownStockId=${encodeURIComponent(lot.id)}${variantIndex === null ? "" : `&godownVariant=${variantIndex}`}` as any)} onTransfer={() => { setTransferMatch(null); setTransferLot(lot); }} />)}</View>
+    {visibleCount < lots.length ? <Pressable accessibilityRole="button" accessibilityLabel="Load more godown stock" testID="godown-load-more" onPress={() => setVisibleCount(count => count + 60)} style={styles.details}><Text style={styles.detailsText}>Load more ({lots.length - visibleCount} remaining)</Text></Pressable> : null}
     {!lots.length ? <View style={styles.empty}><Feather name="archive" size={28} color={colors.onSurfaceMuted} /><Text style={type.titleMd}>No matching stock</Text><Text style={type.bodyMuted}>Try another brand or search term.</Text></View> : null}
     <Sheet open={!!newLot && poFinalMatches.length > 0} onClose={() => { setNewLot(null); setPoFinalMatches([]); }} title="Matching orders in PO Final" width={560}>
       <View style={{ gap: spacing.md, paddingBottom: spacing.md }}>
@@ -154,53 +162,91 @@ export default function GodownStockScreen() {
   </ScrollView>;
 }
 function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) { return <Pressable accessibilityRole="tab" accessibilityState={{ selected }} onPress={onPress} style={[styles.chip, selected && styles.chipSelected]}><Text style={[styles.chipText, selected && styles.chipTextSelected]}>{label}</Text></Pressable>; }
-function LotCard({ lot, width, compact, canEditPricing, onUpdated, onViewDetails, onAdd, onTransfer }: { lot: GodownLot; width: DimensionValue; compact: boolean; canEditPricing: boolean; onUpdated: () => void; onViewDetails: () => void; onAdd: (variantIndex: number | null) => void; onTransfer: () => void }) {
+function LotCard({ lot, floorId, width, compact, canEditPricing, onUpdated, onViewDetails, onAdd, onTransfer }: { lot: GodownLot; floorId?: string; width: DimensionValue; compact: boolean; canEditPricing: boolean; onUpdated: (updated: GodownLot) => void; onViewDetails: () => void; onAdd: (variantIndex: number | null) => void; onTransfer: () => void }) {
   const [variantIndex, setVariantIndex] = useState<number | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [editingPrice, setEditingPrice] = useState(false);
   const [draftPrice, setDraftPrice] = useState("");
   const [draftVariants, setDraftVariants] = useState<{ label: string; price: string }[]>([]);
   const [savingPrice, setSavingPrice] = useState(false);
+  const [draftImage, setDraftImage] = useState("");
+  const [photo, setPhoto] = useState<UploadImage | null>(null);
+  const [pickingPhoto, setPickingPhoto] = useState(false);
+  const lifecycle = useRef<AbortController | null>(null);
+  const committing = useRef(false);
+  useEffect(() => { const controller = new AbortController(); lifecycle.current = controller; return () => { controller.abort(); }; }, [lot.id, floorId]);
   const variants = lot.price_variants || [];
-  const selectedPrice = variantIndex === null ? (lot.unit_price || 0) : variants[variantIndex]?.price || 0;
+  const selectedPrice = variantIndex === null ? lot.unit_price : variants[variantIndex]?.price;
+  const canTransfer = !lot.quantity_missing && !lot.archived && (lot.transferable_qty ?? lot.available_qty) > 0;
+  const canQuote = canTransfer && selectedPrice != null;
+  const pickPhoto = async () => {
+    const controller = lifecycle.current;
+    if (pickingPhoto || savingPrice) return;
+    setPickingPhoto(true);
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 1, allowsEditing: false });
+      if (controller?.signal.aborted || result.canceled || !result.assets?.[0]) return;
+      // Retain the picker asset's original File for CSP-safe web multipart.
+      setPhoto(result.assets[0]);
+    } catch (error: any) { if (!controller?.signal.aborted) toast.error(error?.message || "Could not choose the stock photo"); }
+    finally { if (!controller?.signal.aborted) setPickingPhoto(false); }
+  };
   const isCatalogProduct = Boolean(lot.product_id && !lot.product_id.startsWith("godown:"));
   const savePricing = async () => {
-    const amount = Number(draftPrice);
-    if (!draftPrice.trim() || !Number.isFinite(amount) || amount < 0 || draftVariants.some(row => !row.label.trim() || !row.price.trim() || !Number.isFinite(Number(row.price)) || Number(row.price) < 0)) { toast.error("Enter a valid unit price and variant prices"); return; }
+    if (committing.current) return;
+    const amount = draftPrice.trim() ? Number(draftPrice) : null;
+    if ((amount !== null && (!Number.isFinite(amount) || amount < 0)) || draftVariants.some(row => !row.label.trim() || !row.price.trim() || !Number.isFinite(Number(row.price)) || Number(row.price) < 0)) { toast.error("Enter a valid price or leave it blank, and valid variant prices"); return; }
+    const url = draftImage.trim();
+    if (!photo && url) { try { const parsed = new URL(url); if (parsed.protocol !== "https:" || parsed.username || parsed.password) throw new Error(); } catch { toast.error("Use a public HTTPS image URL"); return; } }
+    const controller = lifecycle.current;
+    if (!controller || controller.signal.aborted) return;
+    committing.current = true;
     setSavingPrice(true);
+    let photoSaved = false;
     try {
-      await updateGodownPricing(lot.id, { unit_price: amount, price_variants: draftVariants.map(row => ({ label: row.label.trim(), price: Number(row.price) })) });
-      toast.success("Stock pricing updated"); setEditingPrice(false); onUpdated();
-    } catch (error: any) { toast.error(error?.detail || "Could not update stock pricing"); }
-    finally { setSavingPrice(false); }
+      // Save the photo first; a failed upload leaves the price draft intact.
+      if (photo) {
+        const uploaded = await uploadGodownImage(lot.id, photo, controller.signal, floorId);
+        if (controller.signal.aborted) return;
+        photoSaved = true; setPhoto(null); setDraftImage(uploaded.image || ""); onUpdated(uploaded);
+      }
+      const updated = await updateGodownDetails(lot.id, { unit_price: amount, price_variants: draftVariants.map(row => ({ label: row.label.trim(), price: Number(row.price) })), ...(!photo && url !== (lot.image || "") ? { image: url || null } : {}) }, controller.signal, floorId);
+      if (controller.signal.aborted) return;
+      setVariantIndex(null); toast.success("Stock price and image updated"); setEditingPrice(false); onUpdated(updated);
+    } catch (error: any) { if (!controller.signal.aborted) toast.error(error?.detail || error?.message || (photoSaved ? "Photo saved; price could not be updated. Try saving again." : "Could not update stock details")); }
+    finally { committing.current = false; if (!controller.signal.aborted) setSavingPrice(false); }
   };
-  return <View style={[styles.card, { width }]}>
+  return <View testID={`godown-lot-${lot.id}`} style={[styles.card, { width }]}>
     <View style={styles.cardHead}><ProductImage source={lot.image || null} style={styles.image} fallbackLabel={lot.sku} accessibilityLabel={`${lot.name} product image`} /><View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={styles.brand}>{lot.brand_name || "Unbranded"}</Text><Text style={type.titleMd} numberOfLines={2}>{lot.name}</Text><Text style={type.caption}>{lot.sku}{lot.finish ? ` · ${lot.finish}` : ""}{lot.size ? ` · ${lot.size}` : ""}</Text></View></View>
-    <View style={styles.availability}><Feather name={lot.available_qty > 0 ? "check-circle" : "archive"} size={15} color={lot.available_qty > 0 ? colors.success : colors.onSurfaceMuted} /><Text style={styles.available}>{lot.available_qty > 0 ? `${lot.available_qty} in stock` : "Out of stock · 0 units"} · {lot.stock_value == null ? "Value not recorded" : `${money(lot.stock_value)} stock value`}</Text></View>
-    <Text style={type.caption}>{lot.transferable_qty ?? lot.available_qty} available to transfer</Text>
+    <View style={styles.availability}><Feather name={lot.available_qty > 0 ? "check-circle" : "archive"} size={15} color={lot.available_qty > 0 ? colors.success : colors.onSurfaceMuted} /><Text style={styles.available}>{lot.quantity_missing ? "Quantity not recorded" : lot.available_qty > 0 ? `${lot.available_qty} in stock` : "Out of stock · 0 units"} · {lot.stock_value == null ? "Value not recorded" : `${money(lot.stock_value)} stock value`}</Text></View>
+    <Text style={type.caption}>{lot.quantity_missing ? "Record quantity before using this stock" : `${lot.transferable_qty ?? lot.available_qty} available to transfer`}</Text>
     <Text style={type.body}>Unit price: {lot.unit_price == null ? "Not recorded" : money(lot.unit_price)}</Text>
-    {canEditPricing ? <Pressable accessibilityRole="button" accessibilityLabel={`Edit pricing for ${lot.name}`} onPress={() => { setDraftPrice(lot.unit_price == null ? "" : String(lot.unit_price)); setDraftVariants((lot.price_variants || []).map(row => ({ label: row.label, price: String(row.price) }))); setEditingPrice(!editingPrice); }}><Text style={styles.detailsText}>{editingPrice ? "Cancel price edit" : "Edit pricing"}</Text></Pressable> : null}
+    {canEditPricing ? <Pressable accessibilityRole="button" testID={`godown-edit-${lot.id}`} disabled={savingPrice} accessibilityLabel={`Edit price and image for ${lot.name}`} onPress={() => { setDraftImage(lot.image || ""); setPhoto(null); setDraftPrice(lot.unit_price == null ? "" : String(lot.unit_price)); setDraftVariants((lot.price_variants || []).map(row => ({ label: row.label, price: String(row.price) }))); setEditingPrice(!editingPrice); }}><Text style={styles.detailsText}>{editingPrice ? "Cancel edit" : "Edit price & image"}</Text></Pressable> : null}
     {editingPrice ? <View style={styles.manualFields}>
-      <TextInput accessibilityLabel={`Unit price for ${lot.name}`} value={draftPrice} onChangeText={setDraftPrice} keyboardType="decimal-pad" placeholder="Unit price (₹)" style={styles.search} />
-      {draftVariants.map((row, index) => <View key={index} style={styles.actions}><TextInput accessibilityLabel={`Price variant ${index + 1} label`} value={row.label} onChangeText={label => setDraftVariants(rows => rows.map((item, i) => i === index ? { ...item, label } : item))} placeholder="Variant name" style={[styles.search, { flex: 1 }]} /><TextInput accessibilityLabel={`Price variant ${index + 1} price`} value={row.price} onChangeText={variantPrice => setDraftVariants(rows => rows.map((item, i) => i === index ? { ...item, price: variantPrice } : item))} keyboardType="decimal-pad" placeholder="Price (₹)" style={[styles.search, { flex: 1 }]} /><Pressable accessibilityRole="button" accessibilityLabel={`Remove price variant ${index + 1}`} onPress={() => setDraftVariants(rows => rows.filter((_, i) => i !== index))} style={styles.details}><Feather name="x" size={16} color={colors.brand} /></Pressable></View>)}
-      <View style={styles.actions}><Pressable accessibilityRole="button" disabled={draftVariants.length >= 20} onPress={() => setDraftVariants(rows => [...rows, { label: "", price: "" }])} style={styles.details}><Text style={styles.detailsText}>Add variant</Text></Pressable><Pressable accessibilityRole="button" disabled={savingPrice} onPress={() => void savePricing()} style={styles.add}><Text style={styles.addText}>{savingPrice ? "Saving…" : "Save pricing"}</Text></Pressable></View>
+      <TextInput testID={`godown-price-${lot.id}`} accessibilityLabel={`Unit price for ${lot.name}`} editable={!savingPrice} value={draftPrice} onChangeText={setDraftPrice} keyboardType="decimal-pad" placeholder="Unit price (₹)" style={styles.search} />
+      <Text style={type.caption}>Leave the price blank if it is not recorded.</Text>
+      <TextInput testID={`godown-image-url-${lot.id}`} accessibilityLabel={`Image URL for ${lot.name}`} editable={!savingPrice} value={draftImage} onChangeText={value => { setDraftImage(value); setPhoto(null); }} placeholder="Public HTTPS image URL" autoCapitalize="none" style={styles.search} />
+      <View style={styles.actions}><Pressable testID={`godown-upload-${lot.id}`} accessibilityRole="button" accessibilityLabel={`Upload image for ${lot.name}`} disabled={savingPrice || pickingPhoto} onPress={() => void pickPhoto()} style={styles.details}><Text style={styles.detailsText}>{pickingPhoto ? "Choosing…" : photo ? "Choose another photo" : "Upload photo"}</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel={`Remove image for ${lot.name}`} disabled={savingPrice} onPress={() => { setPhoto(null); setDraftImage(""); }} style={styles.details}><Text style={styles.detailsText}>Remove image</Text></Pressable></View>
+      {photo ? <View style={styles.actions}><ProductImage source={photo.uri} style={styles.image} fallbackLabel="Selected photo" /><Text style={type.caption}>{photo.fileName || "Selected photo"} · ready to upload</Text></View> : null}
+      {draftVariants.map((row, index) => <View key={index} style={styles.actions}><TextInput accessibilityLabel={`Price variant ${index + 1} label`} editable={!savingPrice} value={row.label} onChangeText={label => setDraftVariants(rows => rows.map((item, i) => i === index ? { ...item, label } : item))} placeholder="Variant name" style={[styles.search, { flex: 1 }]} /><TextInput accessibilityLabel={`Price variant ${index + 1} price`} editable={!savingPrice} value={row.price} onChangeText={variantPrice => setDraftVariants(rows => rows.map((item, i) => i === index ? { ...item, price: variantPrice } : item))} keyboardType="decimal-pad" placeholder="Price (₹)" style={[styles.search, { flex: 1 }]} /><Pressable accessibilityRole="button" accessibilityLabel={`Remove price variant ${index + 1}`} disabled={savingPrice} onPress={() => setDraftVariants(rows => rows.filter((_, i) => i !== index))} style={styles.details}><Feather name="x" size={16} color={colors.brand} /></Pressable></View>)}
+      <View style={styles.actions}><Pressable accessibilityRole="button" disabled={savingPrice || draftVariants.length >= 20} onPress={() => setDraftVariants(rows => [...rows, { label: "", price: "" }])} style={styles.details}><Text style={styles.detailsText}>Add variant</Text></Pressable><Pressable accessibilityRole="button" testID={`godown-save-${lot.id}`} disabled={savingPrice || pickingPhoto} onPress={() => void savePricing()} style={styles.add}><Text style={styles.addText}>{savingPrice ? "Saving…" : "Save price & image"}</Text></Pressable></View>
     </View> : null}
-    {variants.length ? <View style={styles.chips}><Chip label={`Base · ${money(lot.unit_price || 0)}`} selected={variantIndex === null} onPress={() => setVariantIndex(null)} />{variants.map((variant, index) => <Chip key={`${variant.label}-${index}`} label={`${variant.label} · ${money(variant.price)}`} selected={variantIndex === index} onPress={() => setVariantIndex(index)} />)}</View> : null}
+    {variants.length ? <View style={styles.chips}><Chip label={`Base · ${lot.unit_price == null ? "Not recorded" : money(lot.unit_price)}`} selected={variantIndex === null} onPress={() => setVariantIndex(null)} />{variants.map((variant, index) => <Chip key={`${variant.label}-${index}`} label={`${variant.label} · ${money(variant.price)}`} selected={variantIndex === index} onPress={() => setVariantIndex(index)} />)}</View> : null}
     <Text style={type.caption}>Arrival: {fmt(lot.transferred_at || lot.created_at)}</Text>
     <Pressable accessibilityRole="button" accessibilityLabel={`${showHistory ? "Hide" : "Show"} stock history for ${lot.name}`} onPress={() => setShowHistory(!showHistory)}><Text style={styles.detailsText}>{showHistory ? "Hide" : "Show"} stock history</Text></Pressable>
     {showHistory ? <View style={styles.provenance}>
-      <Text style={styles.provenanceTitle}>Source</Text><Text style={type.bodyMuted}>{lot.source_customer_name ? `Original purchase for ${lot.source_customer_name}` : lot.source_type === "manual" ? "Added as a product outside the catalog" : "Added directly from the catalog"}</Text>
+      <Text style={styles.provenanceTitle}>Source</Text><Text style={type.bodyMuted}>{lot.source_customer_name ? `Original purchase for ${lot.source_customer_name}` : lot.source_type === "warehouse_import" ? "Imported from the godown stock workbook" : lot.source_type === "manual" ? "Added as a product outside the catalog" : "Added directly from the catalog"}</Text>
       {lot.source_purchased_at ? <Text style={type.caption}>Purchased: {fmt(lot.source_purchased_at)}</Text> : null}
       {lot.source_purchase_order_id ? <Text style={type.caption}>Purchase order: {lot.source_purchase_order_id}</Text> : null}
       {lot.source_quotation_id ? <Text style={type.caption}>Source quotation: {lot.source_quotation_id}</Text> : null}
       <Text style={[styles.provenanceTitle, { marginTop: 8 }]}>Arrival in godown</Text><Text style={type.caption}>{fmt(lot.transferred_at)} · {lot.reason || "Stock intake"}</Text>
       {lot.transferred_by_name ? <Text style={type.caption}>Recorded by {lot.transferred_by_name}</Text> : null}
-      <Text style={[styles.provenanceTitle, { marginTop: 8 }]}>Stock cycle</Text><Text style={type.caption}>Received {lot.qty_received} · Allocated {lot.qty_received - lot.available_qty} · Available {lot.available_qty}</Text>
+      <Text style={[styles.provenanceTitle, { marginTop: 8 }]}>Stock cycle</Text><Text style={type.caption}>{lot.quantity_missing ? "Quantity not recorded" : `Received ${lot.qty_received} · Allocated ${lot.qty_received - lot.available_qty} · Available ${lot.available_qty}`}</Text>
       {(lot.allocations || []).map(allocation => <Text key={allocation.id} style={type.caption}>{fmt(allocation.allocated_at)} · {allocation.qty} to {allocation.quotation_number || allocation.quotation_id || "quotation"}{allocation.customer_name ? ` for ${allocation.customer_name}` : ""}{allocation.allocated_by_name ? ` · ${allocation.allocated_by_name}` : ""}</Text>)}
       {(lot.customer_transfers || []).map((transfer) => <Text key={transfer.id} style={type.caption}>{fmt(transfer.created_at)} · {transfer.qty} transferred to {transfer.recipient_customer_name}{transfer.recipient_purchase_item_id ? " · PO Final moved to In Box" : ""}{transfer.discount_pct ? ` · ${transfer.discount_pct}% discount` : ""}</Text>)}
     </View> : null}
-    <Pressable accessibilityRole="button" accessibilityLabel={`Transfer ${lot.name} to a customer`} disabled={(lot.transferable_qty ?? lot.available_qty) <= 0} onPress={onTransfer} style={[styles.details, (lot.transferable_qty ?? lot.available_qty) <= 0 && { opacity: .45 }]}><Feather name="repeat" size={16} color={colors.brand} /><Text style={styles.detailsText}>Transfer to customer</Text></Pressable>
-    <View style={[styles.actions, compact && { flexDirection: "column" }]}><Pressable accessibilityRole="button" accessibilityLabel={`View catalog details for ${lot.name}`} disabled={!isCatalogProduct} onPress={onViewDetails} style={[styles.details, !isCatalogProduct && { opacity: .45 }]}><Feather name="external-link" size={16} color={colors.brand} /><Text style={styles.detailsText}>View details</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel={`Add ${lot.name} at ${money(selectedPrice)} to a new quotation`} disabled={(lot.transferable_qty ?? lot.available_qty) <= 0} onPress={() => onAdd(variantIndex)} style={[styles.add, (lot.transferable_qty ?? lot.available_qty) <= 0 && { opacity: .45 }]}><Feather name="plus" size={17} color={colors.onBrand} /><Text style={styles.addText}>Add to quotation</Text></Pressable></View>
+    <Pressable accessibilityRole="button" accessibilityLabel={`Transfer ${lot.name} to a customer`} disabled={!canTransfer} onPress={onTransfer} style={[styles.details, !canTransfer && { opacity: .45 }]}><Feather name="repeat" size={16} color={colors.brand} /><Text style={styles.detailsText}>Transfer to customer</Text></Pressable>
+    <View style={[styles.actions, compact && { flexDirection: "column" }]}><Pressable accessibilityRole="button" accessibilityLabel={`View catalog details for ${lot.name}`} disabled={!isCatalogProduct} onPress={onViewDetails} style={[styles.details, !isCatalogProduct && { opacity: .45 }]}><Feather name="external-link" size={16} color={colors.brand} /><Text style={styles.detailsText}>View details</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel={`Add ${lot.name}${selectedPrice == null ? "" : ` at ${money(selectedPrice)}`} to a new quotation`} disabled={!canQuote} onPress={() => onAdd(variantIndex)} style={[styles.add, !canQuote && { opacity: .45 }]}><Feather name="plus" size={17} color={colors.onBrand} /><Text style={styles.addText}>Add to quotation</Text></Pressable></View>
   </View>;
 }
 const styles = StyleSheet.create({ matchRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, padding: spacing.md, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary }, form: { padding: spacing.lg, gap: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary }, manualFields: { gap: spacing.sm }, suggestion: { padding: spacing.sm, borderBottomWidth: 1, borderColor: colors.border }, page: { padding: spacing.xl, gap: spacing.lg, maxWidth: 1320, width: "100%", alignSelf: "center" }, pagePhone: { padding: spacing.md }, totalsPhone: { flexWrap: "wrap" }, totalPhone: { minWidth: 0, flexGrow: 1, flexBasis: 125, padding: spacing.md }, exportActions: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }, exportButton: { minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingHorizontal: spacing.md, borderWidth: 1, borderColor: colors.brandBorder, borderRadius: radius.md, backgroundColor: colors.brandTint }, center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 }, hero: { flexDirection: "row", gap: spacing.xl, padding: spacing.xl, borderRadius: radius.lg, backgroundColor: colors.surfaceSecondary, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border }, heroPhone: { flexDirection: "column" }, total: { minWidth: 128, padding: spacing.lg, borderRadius: radius.md, backgroundColor: colors.brandTint, justifyContent: "center" }, totalNumber: { fontSize: 30, fontWeight: "800", color: colors.brand }, totalLabel: { fontSize: 12, color: colors.onSurfaceSecondary }, search: { minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: 14, backgroundColor: colors.surfaceSecondary, color: colors.onSurface }, chips: { gap: 8, paddingRight: 16 }, chip: { minHeight: 44, justifyContent: "center", paddingHorizontal: 14, borderRadius: 999, backgroundColor: colors.surfaceTertiary }, chipSelected: { backgroundColor: colors.brand }, chipText: { fontWeight: "600", color: colors.onSurfaceSecondary }, chipTextSelected: { color: colors.onBrand }, result: { ...type.caption, color: colors.onSurfaceMuted }, grid: { gap: spacing.md }, gridWide: { flexDirection: "row", flexWrap: "wrap", alignItems: "stretch" }, card: { maxWidth: 420, minWidth: 0, padding: spacing.lg, gap: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border }, cardHead: { flexDirection: "row", gap: 12 }, image: { width: 74, height: 74, borderRadius: radius.sm, backgroundColor: colors.surfaceTertiary }, brand: { ...type.overline, color: colors.brand }, availability: { flexDirection: "row", alignItems: "center", gap: 6 }, available: { fontWeight: "700", color: colors.success }, provenance: { paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border }, provenanceTitle: { fontSize: 11, fontWeight: "700", color: colors.onSurfaceSecondary, textTransform: "uppercase", letterSpacing: .5 }, actions: { flexDirection: "row", gap: spacing.sm }, details: { minHeight: 48, paddingHorizontal: 12, borderRadius: radius.md, borderWidth: 1, borderColor: colors.brandBorder, backgroundColor: colors.brandTint, flexDirection: "row", gap: 6, alignItems: "center", justifyContent: "center", flex: 1 }, detailsText: { fontWeight: "700", color: colors.brand }, add: { minHeight: 48, borderRadius: radius.md, backgroundColor: colors.brand, flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center", flex: 1.25 }, addText: { fontWeight: "700", color: colors.onBrand }, empty: { alignItems: "center", padding: 48, gap: 8 } });

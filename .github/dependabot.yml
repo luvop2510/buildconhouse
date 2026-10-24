@@ -7,7 +7,8 @@ updates:
     open-pull-requests-limit: 5
 
   - package-ecosystem: "npm"
-    directory: "/frontend"
+    # Expo builds and CI install the root manifests; frontend is legacy.
+    directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5

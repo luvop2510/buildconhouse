@@ -31,6 +31,17 @@ assert.equal(intoClosed.lines.find(line => line.id === 'b').room, 'Closed');
 assert.equal(intoClosed.lines.length, state.lines.length);
 assert.equal(intoClosed.lines.find(line => line.id === 'hidden'), hidden);
 
+// Web sections move as a group while native single-header gestures retain data.
+const sectionRows = moveQuotationRows(rows, 'hdr-Kitchen', 0);
+assert.deepEqual(sectionRows.map(row => row.id), ['hdr-Kitchen', 'c', 'hdr-Bath', 'a', 'part', 'b', 'hdr-Closed']);
+assert.deepEqual(applyQuotationRowOrder(state, sectionRows).lines.map(line => line.id), ['c', 'a', 'part', 'b', 'hidden']);
+const closedFirst = moveQuotationRows(rows, 'hdr-Closed', 0);
+assert.deepEqual(applyQuotationRowOrder(state, closedFirst).lines.map(line => line.id), ['hidden', 'a', 'part', 'b', 'c']);
+const sectionLast = moveQuotationRows(rows, 'hdr-Bath', rows.length);
+assert.deepEqual(sectionLast.map(row => row.id), ['hdr-Kitchen', 'c', 'hdr-Closed', 'hdr-Bath', 'a', 'part', 'b']);
+const bounded = moveQuotationRows(rows, 'hdr-Closed', 2);
+assert.deepEqual(bounded.map(row => row.id), ['hdr-Bath', 'a', 'part', 'b', 'hdr-Closed', 'hdr-Kitchen', 'c']);
+
 // Native header drag now persists section order and collapsed lines as well.
 const sections = applyQuotationRowOrder(state, [header('Closed'), header('Kitchen'), row(c), header('Bath'), row(a), row(part), row(b)]);
 assert.deepEqual(sections.rooms, ['Closed', 'Kitchen', 'Bath']);

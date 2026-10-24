@@ -81,16 +81,31 @@ export async function fetchCatalogPage<T>(
   return cachedGet<CatalogPage<T>>(`${endpoint}?${params.toString()}`, PAGE_TTL_MS, options);
 }
 
-export function mergeCatalogPage<T extends { id?: string; family_key?: string | null; listing_id?: string | null; sample_product_id?: string }>(
+type CatalogIdentity = {
+  id?: string; family_key?: string | null; listing_id?: string | null;
+  sample_product_id?: string; floor_id?: string | null;
+  brand_id?: string | null; category_id?: string | null;
+};
+
+export function catalogItemKey(item: CatalogIdentity): string {
+  if (item.listing_id) return JSON.stringify(['listing', item.listing_id]);
+  if (item.id) return JSON.stringify(['product', item.id]);
+  // Match the backend family card contract: supplier keys are only unique
+  // within a floor, brand and category. A sample product may change on refresh.
+  return JSON.stringify(['family', item.floor_id || '', item.brand_id || '',
+    item.category_id || '', item.family_key ? ['key', item.family_key] : ['solo', item.sample_product_id || '']]);
+}
+
+export function mergeCatalogPage<T extends CatalogIdentity>(
   current: T[],
   incoming: T[],
 ): T[] {
-  const identity = (item: T) => item.listing_id || item.id || item.family_key || item.sample_product_id;
-  const seen = new Set(current.map(identity).filter(Boolean));
+  const seen = new Set(current.map(catalogItemKey));
   const next = [...current];
   for (const item of incoming) {
-    const key = identity(item);
-    if (!key || seen.has(key)) continue;
+    if (!item.listing_id && !item.id && !item.family_key && !item.sample_product_id) continue;
+    const key = catalogItemKey(item);
+    if (seen.has(key)) continue;
     seen.add(key);
     next.push(item);
   }
@@ -104,8 +119,20 @@ export const catalogReferences = {
     REFERENCE_TTL_MS,
     options,
   ),
+  facets: <T>(options?: CatalogRequestOptions) => cachedGet<T>("/catalog/facets", REFERENCE_TTL_MS, options),
   hierarchy: <T>(options?: CatalogRequestOptions) => cachedGet<T>("/catalog/hierarchy", REFERENCE_TTL_MS, options),
 };
+
+/** FlatList's multi-column list virtualizes rows, so budgets must count rows. */
+export function catalogGridRows(columns: number, cardBudget: number): number {
+  return Math.max(1, Math.ceil(cardBudget / Math.max(1, columns)));
+}
+
+/** Advance by server rows consumed, including rows deduplicated or not displayable. */
+export function catalogPageProgress(skip: number, received: number, total: number) {
+  const nextSkip = skip + received;
+  return { nextSkip, hasMore: received > 0 && nextSkip < total };
+}
 
 export function clearCatalogCache(): void {
   clearApiResponseCache();

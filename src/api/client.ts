@@ -28,6 +28,22 @@ const TOKEN_KIND_KEY = "forge.jwt.kind"; // "staff" | "customer"
 const REQUEST_TIMEOUT_MS = 30_000;
 const inflightGets = new Map<string, Promise<unknown>>();
 const responseCache = new Map<string, { expiresAt: number; value: unknown }>();
+const MAX_RESPONSE_CACHE_ENTRIES = 64;
+
+function cacheResponse(key: string, value: unknown, ttlMs: number) {
+  const now = Date.now();
+  // Distinct searches/pages must not retain expired catalog payloads for the
+  // whole session. The bounded scan also keeps cleanup independent of URL reuse.
+  for (const [cachedKey, entry] of responseCache) {
+    if (entry.expiresAt <= now) responseCache.delete(cachedKey);
+  }
+  responseCache.delete(key);
+  while (responseCache.size >= MAX_RESPONSE_CACHE_ENTRIES) {
+    responseCache.delete(responseCache.keys().next().value!);
+  }
+  responseCache.set(key, { expiresAt: now + ttlMs, value });
+}
+
 const activeRequests = new Map<AbortController, boolean>();
 let tokenCache: string | null | undefined;
 let tokenKindCache: TokenKind | null | undefined;
@@ -138,9 +154,11 @@ async function request<T>(method: string, path: string, body?: any, opts?: Reque
   const controller = new AbortController();
   activeRequests.set(controller, identityRead);
   const token = await getToken();
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const multipart = typeof FormData !== "undefined" && body instanceof FormData;
+  const headers: Record<string, string> = multipart ? {} : { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
-  const floorId = opts?.floorId ?? (await getRequestFloorId());
+  // Account restoration must not inherit a stale or newly revoked workspace.
+  const floorId = identityRead ? "" : opts?.floorId ?? await getRequestFloorId();
   if (floorId) headers["X-Floor-Id"] = floorId;
 
   if (identityRead ? identityVersion !== identityContextVersion : contextVersion !== requestContextVersion) {
@@ -162,7 +180,7 @@ async function request<T>(method: string, path: string, body?: any, opts?: Reque
     const res = await fetch(`${BASE}/api${path}`, {
       method,
       headers,
-      body: body ? JSON.stringify(body) : undefined,
+      body: multipart ? body as FormData : body ? JSON.stringify(body) : undefined,
       signal: controller.signal,
     });
 
@@ -220,7 +238,12 @@ export const api = {
     const key = `${opts?.floorId ?? floorCache ?? "auto"}:${p}`;
     const cacheVersion = readCacheVersion;
     const cached = responseCache.get(key);
-    if (opts?.cacheMs !== 0 && cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.value as T);
+    if (opts?.cacheMs !== 0 && cached && cached.expiresAt > Date.now()) {
+      // Touch the entry so recently visited categories survive eviction.
+      responseCache.delete(key);
+      responseCache.set(key, cached);
+      return Promise.resolve(cached.value as T);
+    }
     if (cached) responseCache.delete(key);
     const existing = inflightGets.get(key);
     if (existing) return abortForConsumer(existing as Promise<T>, opts?.signal);
@@ -228,7 +251,7 @@ export const api = {
     // unmount cancels every component waiting for this resource.
     const pending = request<T>("GET", p, undefined, { ...opts, signal: undefined })
       .then((value) => {
-        if (cacheVersion === readCacheVersion && opts?.cacheMs && opts.cacheMs > 0) responseCache.set(key, { expiresAt: Date.now() + opts.cacheMs, value });
+        if (cacheVersion === readCacheVersion && opts?.cacheMs && opts.cacheMs > 0) cacheResponse(key, value, opts.cacheMs);
         return value;
       })
       .finally(() => { if (inflightGets.get(key) === pending) inflightGets.delete(key); });
@@ -239,6 +262,7 @@ export const api = {
   put: <T>(p: string, b?: any, opts?: RequestOptions) => { return mutate<T>("PUT", p, b, opts); },
   patch: <T>(p: string, b?: any, opts?: RequestOptions) => { return mutate<T>("PATCH", p, b, opts); },
   delete: <T>(p: string, opts?: RequestOptions) => { return mutate<T>("DELETE", p, undefined, opts); },
+  upload: <T>(p: string, form: FormData, opts?: RequestOptions) => mutate<T>("POST", p, form, opts),
   // Build a URL for a browser-download endpoint (PDF/xlsx). Browser
   // navigations can't send an Authorization header, so this mints a
   // short-lived single-use download token via a normal authenticated call

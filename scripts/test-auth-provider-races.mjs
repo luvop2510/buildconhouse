@@ -24,6 +24,11 @@ const loginResponse = kind => kind === 'staff'
 
 function provider(platform, options = {}) {
   const hooks = [], effects = [], gets = [], posts = [], writes = [];
+  const timers = new Map();
+  const listeners = new Map();
+  const events = { addEventListener: (name, listener) => listeners.set(name, listener), removeEventListener: name => listeners.delete(name) };
+  const document = { ...events, visibilityState: 'visible' };
+  let timerId = 0;
   let index = 0, dirty = false, state, draftClears = 0, tokenClears = 0, stateWrites = 0, floorReads = 0, mounted = true;
   let token = 'fixture-old-credential', storedToken = token, kind = options.initialKind || 'staff';
   const same = (a, b) => a && b && a.length === b.length && a.every((value, i) => Object.is(value, b[i]));
@@ -61,7 +66,7 @@ function provider(platform, options = {}) {
   const modules = {
     react,
     'react/jsx-runtime': { jsx: (_type, props) => ({ props }) },
-    'react-native': { Platform: { OS: platform } },
+    'react-native': { Platform: { OS: platform }, AppState: { addEventListener: (name, listener) => { listeners.set(name, listener); return { remove() { listeners.delete(name); } }; } } },
     '@/src/components/quotation/helpers/draftStorage': {
       clearBuilderDrafts: async () => { draftClears++; await options.draftCleanup?.promise; },
       ensureBuilderDraftReset: async () => { await options.startupDraftReset?.promise; },
@@ -90,7 +95,7 @@ function provider(platform, options = {}) {
     },
   };
   const exports = {};
-  vm.runInNewContext(compiled, { exports, require: name => {
+  vm.runInNewContext(compiled, { exports, Error, window: events, document, setTimeout: (callback) => { timers.set(++timerId, callback); return timerId; }, clearTimeout: id => timers.delete(id), require: name => {
     assert.ok(modules[name], `Unexpected provider dependency: ${name}`);
     return modules[name];
   } });
@@ -102,6 +107,9 @@ function provider(platform, options = {}) {
   };
   const fixture = {
     gets, posts, writes,
+    get pendingRetries() { return timers.size; },
+    foreground() { if (platform === 'web') listeners.get('online')?.(); else listeners.get('change')?.('active'); },
+    retryAutomatically() { const entry = timers.entries().next().value; assert.ok(entry); timers.delete(entry[0]); entry[1](); },
     get state() { return state; },
     get draftClears() { return draftClears; },
     get tokenClears() { return tokenClears; },
@@ -241,12 +249,66 @@ for (const platform of ['web', 'ios', 'android']) {
   test(`${platform}: authoritative forbidden hydration still revokes credentials`, async () => {
     const fixture = provider(platform);
     await fixture.settle();
-    fixture.gets[0].reject(Object.assign(new Error('Fixture forbidden session'), { status: 403 }));
+    fixture.gets[0].reject(Object.assign(new Error('Not a staff token'), { status: 403 }));
     await fixture.settle();
     assert.equal(fixture.tokenClears, 1);
     assert.equal(fixture.draftClears, 1);
     assert.equal(fixture.state.kind, null);
     assert.equal(fixture.state.loading, false);
+  });
+
+  test(`${platform}: floor/grant forbidden response preserves credentials for recovery`, async () => {
+    const fixture = provider(platform);
+    await fixture.settle();
+    fixture.gets[0].reject(Object.assign(new Error('You do not have access to this floor'), { status: 403 }));
+    await fixture.settle();
+    assert.equal(fixture.tokenClears, 0);
+    assert.equal(fixture.draftClears, 0);
+    assert.ok(fixture.state.sessionError);
+    assert.equal(fixture.state.kind, null);
+    const retry = fixture.state.retrySession();
+    await fixture.settle();
+    assert.ok(fixture.state.sessionError, 'recovery gate stays closed during retry');
+    fixture.gets[1].resolve(staff('restored'));
+    await retry; await fixture.settle();
+    assert.equal(fixture.state.staff.id, 'restored');
+    assert.equal(fixture.state.sessionError, null);
+    assert.equal(fixture.pendingRetries, 0);
+  });
+
+  test(`${platform}: deploy outage retries twice then waits for explicit recovery without clearing credentials`, async () => {
+    const fixture = provider(platform);
+    await fixture.settle();
+    for (let attempt = 0; attempt < 3; attempt++) {
+      fixture.gets[attempt].reject(Object.assign(new Error('Deploy unavailable'), { status: 503 }));
+      await fixture.settle();
+      assert.ok(fixture.state.sessionError);
+      assert.equal(fixture.tokenClears, 0);
+      if (attempt < 2) { fixture.retryAutomatically(); await fixture.settle(); }
+    }
+    assert.equal(fixture.pendingRetries, 0, 'background retries are bounded');
+    const retry = fixture.state.retrySession();
+    await fixture.settle();
+    fixture.gets[3].resolve(staff('restored'));
+    await retry; await fixture.settle();
+    assert.equal(fixture.state.staff.id, 'restored');
+    assert.equal(fixture.state.sessionError, null);
+    assert.equal(fixture.draftClears, 0);
+  });
+
+  test(`${platform}: online or native foreground automatically recovers a retained session`, async () => {
+    const fixture = provider(platform);
+    await fixture.settle();
+    fixture.gets[0].reject(new TypeError('Offline'));
+    await fixture.settle();
+    fixture.foreground();
+    await fixture.settle();
+    fixture.gets[1].resolve(staff('foreground-restored'));
+    await fixture.settle();
+    assert.equal(fixture.state.staff.id, 'foreground-restored');
+    assert.equal(fixture.state.sessionError, null);
+    assert.equal(fixture.tokenClears, 0);
+    assert.equal(fixture.pendingRetries, 0);
   });
 
   test(`${platform}: startup draft reset gates identity hydration and newer login`, async () => {

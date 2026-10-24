@@ -1,7 +1,7 @@
 export type GrantAction = "view" | "create" | "update" | "delete" | "export";
 export type DelegationFloor = { id: string; name: string };
 export type DelegationResource = {
-  key: string; label: string; actions: GrantAction[]; floor_ids: string[]; description?: string;
+  key: string; label: string; actions: GrantAction[]; floor_ids: string[]; description?: string; retired?: boolean;
 };
 export type DelegationGrant = { resource: string; actions: GrantAction[]; floor_id: string };
 export type DelegationState = { floorIds: string[]; grants: DelegationGrant[] };
@@ -44,13 +44,14 @@ export function toggleFloor(state: DelegationState, floorId: string, enabled: bo
 
 export function togglePage(state: DelegationState, floorId: string, resource: DelegationResource, enabled: boolean): DelegationState {
   if (!state.floorIds.includes(floorId) || !resource.floor_ids.includes(floorId)) return state;
+  if (resource.retired && enabled) return state;
   if (enabled && state.grants.some((grant) => grant.floor_id === floorId && grant.resource === resource.key)) return state;
   const grants = state.grants.filter((grant) => grant.floor_id !== floorId || grant.resource !== resource.key);
   return { ...state, grants: enabled ? [...grants, { floor_id: floorId, resource: resource.key, actions: ["view"] }] : grants };
 }
 
 export function toggleAction(state: DelegationState, floorId: string, resource: DelegationResource, action: GrantAction, enabled: boolean): DelegationState {
-  if (action === "view" || !resource.actions.includes(action) || !state.floorIds.includes(floorId) || !resource.floor_ids.includes(floorId)) return state;
+  if (resource.retired || action === "view" || !resource.actions.includes(action) || !state.floorIds.includes(floorId) || !resource.floor_ids.includes(floorId)) return state;
   return { ...state, grants: state.grants.map((grant) => {
     if (grant.floor_id !== floorId || grant.resource !== resource.key) return grant;
     const selected = enabled ? [...new Set([...grant.actions, "view" as const, action])] : grant.actions.filter((value) => value !== action);
@@ -94,6 +95,12 @@ export function isPersonalAccountRoute(segments: string[]): boolean {
   return pages.length === 1 && ["access", "settings", "settings-password", "settings-mfa", "settings-privacy", "settings-terms"].includes(pages[0]);
 }
 
+/** Kitchen keeps its stage navigation while opening the linked customer's editor. */
+export function isCustomerEditorRoute(segments: string[]): boolean {
+  const pages = segments.filter((part) => !part.startsWith("("));
+  return pages.length === 3 && pages[0] === "customers" && pages[1] !== "new" && pages[2] === "edit";
+}
+
 export function personalAccountPath(pathname: string | undefined): string | null {
   if (!pathname) return null;
   const segments = pathname.split("/").filter(Boolean);
@@ -104,10 +111,11 @@ export function moduleForRoute(segments: string[]): string | null {
   if (isPersonalAccountRoute(segments)) return null;
   if (segments.includes("notebook")) {
     if (segments.includes("furniture-quotations")) return "furniture-quotations";
-    if (segments.includes("quotation-follow-up") || segments.includes("quotation")) return "quotation-follow-up";
-    if (segments.includes("kitchen")) return "kitchen";
-    if (segments.includes("furniture")) return "furniture";
+    if (segments.includes("quotation-follow-up") || segments.includes("quotation")) return "followups";
+    if (segments.includes("kitchen")) return "walkins";
+    if (segments.includes("furniture")) return "walkins";
   }
+  if (segments.includes("kitchen") && !segments.includes("notebook")) return "kitchen-projects";
   if (segments.includes("tiles")) return segments.includes("orders") ? "orders" : "tiles";
   for (const module of ["payments", "payments-list", "quotations", "catalog", "customers", "purchases", "godown-stock", "followups", "notifications", "walkins", "dashboard", "sales-data"]) {
     if (segments.includes(module)) return module;

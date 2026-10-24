@@ -1,0 +1,34 @@
+[
+  {
+    "suite": "audit",
+    "command": "npm run test:e2e:audit -- --workers=2",
+    "exitCode": 0,
+    "seconds": 1423.75
+  },
+  {
+    "suite": "responsive",
+    "command": "npx playwright test --config playwright.responsive.config.ts responsive-",
+    "exitCode": 0,
+    "seconds": 308.54
+  },
+  {
+    "suite": "devices",
+    "command": "npx playwright test --config playwright.devices.config.ts",
+    "exitCode": 0,
+    "seconds": 409.27
+  },
+  {
+    "suite": "performance",
+    "command": "PERFORMANCE_REPORT=output/playwright/goal-final-performance.json npm run test:e2e:performance",
+    "exitCode": 1,
+    "seconds": 88.68
+  },
+  {
+    "suite": "performance-final",
+    "command": "caffeinate -i env PERFORMANCE_REPORT=output/playwright/goal-final-performance.json npm run test:e2e:performance",
+    "exitCode": 0,
+    "seconds": 84.715667,
+    "firstFailurePreserved": true,
+    "assertionDeadlineRetryChanges": false
+  }
+]

@@ -24,6 +24,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -33,7 +35,7 @@ jobs:
         env:
           LATENCY_THRESHOLD: ${{ inputs.latency_threshold_ms }}
         run: |
-          node scripts/check-service-health.mjs https://buildcon-house-nine.vercel.app output/operations/vercel.json github-hosted-unverified-region "$LATENCY_THRESHOLD"
+          node scripts/check-service-health.mjs https://buildconhouse.in output/operations/vercel.json github-hosted-unverified-region "$LATENCY_THRESHOLD"
       - name: Railway availability, readiness and access boundary
         if: always()
         env:
@@ -61,6 +63,8 @@ jobs:
         working-directory: backend
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -70,8 +74,17 @@ jobs:
           MONGO_URL: ${{ secrets.MONGO_URL }}
           DB_NAME: ${{ secrets.DB_NAME }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          MEDIA_STORAGE_DRIVER: ${{ vars.MEDIA_STORAGE_DRIVER }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          SUPABASE_PUBLIC_BUCKET: forge-products
+          SUPABASE_PRIVATE_BUCKET: forge-private
           EXPECTED_SOURCE_FINGERPRINT: ${{ inputs.expected_source_fingerprint }}
-        run: python scripts/verify_backup_source.py
+        run: |
+          case "$MEDIA_STORAGE_DRIVER" in
+            supabase|r2) ;;
+            *) echo "::error::Set production MEDIA_STORAGE_DRIVER to supabase or r2."; exit 1 ;;
+          esac
+          python scripts/verify_backup_source.py
       - name: Export and verify private remote backup
         env:
           MONGO_URL: ${{ secrets.MONGO_URL }}
@@ -81,7 +94,12 @@ jobs:
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           SUPABASE_PUBLIC_BUCKET: forge-products
           SUPABASE_PRIVATE_BUCKET: forge-private
-          MEDIA_STORAGE_DRIVER: supabase
+          MEDIA_STORAGE_DRIVER: ${{ vars.MEDIA_STORAGE_DRIVER }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_API_TOKEN: ${{ secrets.R2_API_TOKEN }}
+          R2_PUBLIC_URL: ${{ vars.R2_PUBLIC_URL }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           ENVIRONMENT: production
         run: |

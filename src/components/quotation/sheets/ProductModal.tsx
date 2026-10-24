@@ -93,7 +93,6 @@ export function ProductModal() {
   const [qty, setQty] = useState(1);
   const [priceOverride, setPriceOverride] = useState<string>("");
   const [excludeDimension, setExcludeDimension] = useState(false);
-  const [notes, setNotes] = useState<string>("");
   const [alternates, setAlternates] = useState<Product[]>([]);
   const [completeSet, setCompleteSet] = useState<Product[]>([]);
   const [zoomOpen, setZoomOpen] = useState(false);
@@ -189,7 +188,6 @@ export function ProductModal() {
     setQty(1);
     setPriceOverride("");
     setExcludeDimension(false);
-    setNotes("");
     setAlternates([]);
     setCompleteSet([]);
     setActiveImageIdx(0);
@@ -305,7 +303,7 @@ export function ProductModal() {
         price_unknown: manualCatalogPrice(priceOverride) !== null ? false : catalogPriceUnknown(product, selectedVariant),
         exclude_dimension: excludeDimension, concealed_part: savedPart,
       };
-      b.addFromProduct(product, custom, qtyAdded, notes);
+      b.addFromProduct(product, custom, qtyAdded);
       toast.success(qtyAdded > 1 ? `${qtyAdded} × ${selectedProduct.name} added` : `${selectedProduct.name} added to quotation`);
       if (closeAfter) b.closeProductModal();
     } catch (e: any) {
@@ -579,7 +577,7 @@ export function ProductModal() {
                   </Pressable>
                 </View> : null}
 
-                {/* Quantity + notes */}
+                {/* Quantity */}
                 <View style={styles.qtyRow}>
                   <Text style={styles.sectionLabel}>Quantity</Text>
                   <View style={styles.qtyStepper}>
@@ -598,14 +596,7 @@ export function ProductModal() {
                   </View>
                 </View>
 
-                <TextInput
-                  value={notes}
-                  onChangeText={setNotes}
-                  placeholder="Notes (optional)"
-                  placeholderTextColor={colors.onSurfaceMuted}
-                  style={styles.notesInput}
-                  multiline
-                />
+
               </View>
             </View>
 

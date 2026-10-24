@@ -17,6 +17,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from bson import json_util
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 FORMAT = "forge-storage-snapshot-v1"
@@ -77,15 +79,41 @@ def references(snapshot: Path | None) -> list[dict]:
         return []
     safe_directory(snapshot)
     manifest = json.loads(read_regular(snapshot / "manifest.json"))
-    record = manifest.get("collections", {}).get("product_media")
-    if manifest.get("format") != 1 or not isinstance(record, dict):
+    collections = manifest.get("collections", {})
+    if manifest.get("format") != 1 or not isinstance(collections, dict) or not any(
+            name in collections for name in ("product_media", "kitchen_projects")):
         raise ValueError("Missing logical snapshot media references")
-    data = read_regular(snapshot / "product_media.jsonl")
-    rows = [json.loads(line) for line in data.splitlines()]
-    if hashlib.sha256(data).hexdigest() != record.get("sha256") or len(rows) != record.get("count"):
-        raise ValueError("Logical snapshot reference checksum mismatch")
-    return [{"bucket": row.get("bucket"), "key": row.get("storage_key"), "sha1": row.get("sha1")}
-            for row in rows]
+    result = []
+    for name in ("product_media", "kitchen_projects"):
+        if name not in collections:
+            continue
+        record = collections[name]
+        if not isinstance(record, dict):
+            raise ValueError("Invalid logical snapshot reference manifest")
+        data = read_regular(snapshot / f"{name}.jsonl")
+        rows = [json_util.loads(line) for line in data.splitlines()]
+        if hashlib.sha256(data).hexdigest() != record.get("sha256") or len(rows) != record.get("count"):
+            raise ValueError("Logical snapshot reference checksum mismatch")
+        for row in rows:
+            if not isinstance(row, dict):
+                raise ValueError("Invalid logical snapshot record")
+            if name == "product_media":
+                result.append({"bucket": row.get("bucket"), "key": row.get("storage_key"), "sha1": row.get("sha1")})
+                continue
+            attachments = row.get("attachments", [])
+            if not isinstance(attachments, list):
+                raise ValueError("Invalid Kitchen attachment references")
+            for attachment in attachments:
+                if not isinstance(attachment, dict):
+                    raise ValueError("Invalid Kitchen attachment reference")
+                digest, size = attachment.get("sha256"), attachment.get("size_bytes")
+                if not isinstance(digest, str) or not HEX.fullmatch(digest) or type(size) is not int or not 0 <= size <= MAX_OBJECT_BYTES:
+                    raise ValueError("Invalid Kitchen attachment checksum or size")
+                result.append({"bucket": attachment.get("bucket"), "key": attachment.get("storage_key"),
+                               "sha256": digest, "size_bytes": size})
+    for reference in result:
+        identity(reference)
+    return result
 
 
 async def inventory(storage, buckets: list[str], private_bucket: str) -> list[dict]:
@@ -148,13 +176,22 @@ async def backup(storage, directory: Path, *, buckets: list[str], private_bucket
     directory.mkdir(mode=0o700, parents=False, exist_ok=False)
     safe_directory(directory)
     started = datetime.now(timezone.utc).isoformat()
-    expected = {}
+    expected, expected_sha256, expected_size = {}, {}, {}
     for row in refs:
         pair = identity(row)
         sha1 = row.get("sha1")
         if sha1 is not None and (not isinstance(sha1, str) or not re.fullmatch(r"[a-f0-9]{40}", sha1)):
             raise ValueError("Invalid media reference checksum")
         expected.setdefault(pair, set()).add(sha1)
+        digest, size = row.get("sha256"), row.get("size_bytes")
+        if digest is not None:
+            if not isinstance(digest, str) or not HEX.fullmatch(digest):
+                raise ValueError("Invalid reference SHA256 checksum")
+            expected_sha256.setdefault(pair, set()).add(digest)
+        if size is not None:
+            if type(size) is not int or not 0 <= size <= MAX_OBJECT_BYTES:
+                raise ValueError("Invalid reference size")
+            expected_size.setdefault(pair, set()).add(size)
     available = {identity(row) for row in rows}
     missing = [{"bucket": b, "key": k} for b, k in sorted(set(expected) - available)]
     write_json(directory / "inventory.json", {"format": FORMAT, "started_at": started, "objects": rows,
@@ -169,9 +206,13 @@ async def backup(storage, directory: Path, *, buckets: list[str], private_bucket
             sha1 = hashlib.sha1(data).hexdigest()
             if any(value is not None and value != sha1 for value in expected.get(identity(row), set())):
                 raise ValueError("Source object disagrees with media reference checksum")
+            digest = hashlib.sha256(data).hexdigest()
+            if any(value != digest for value in expected_sha256.get(identity(row), set())) or any(
+                    value != len(data) for value in expected_size.get(identity(row), set())):
+                raise ValueError("Source object disagrees with Kitchen reference checksum or size")
             name = filename(row)
             write_private(directory / name, data)
-            saved.append({**row, "file": name, "sha256": hashlib.sha256(data).hexdigest()})
+            saved.append({**row, "file": name, "sha256": digest})
             if progress and (len(saved) % 250 == 0 or len(saved) == len(rows)):
                 progress(len(saved), len(rows))
 

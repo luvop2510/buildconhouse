@@ -1,3 +1,6 @@
+import { sessionCookies } from './session-cookies.cjs';
+export { sessionCookies };
+
 // Production browser authentication boundary, shared by Sites and Pages builds.
 const SECURITY_HEADERS = {
   'Content-Security-Policy': "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://*.ingest.sentry.io; form-action 'self'",
@@ -14,6 +17,12 @@ function secure(response, api = false) {
 function cookie(request, name) {
   return request.headers.get('Cookie')?.split(';').map(p=>p.trim()).find(p=>p.startsWith(name+'='))?.slice(name.length+1);
 }
+
+function persistSession(response, token, csrf) {
+  const headers = new Headers(response.headers);
+  for (const value of sessionCookies(token, csrf)) headers.append('Set-Cookie', value);
+  return new Response(response.body, { status: response.status, headers });
+}
 function clearSession(response) {
   const headers=new Headers(response.headers);
   headers.append('Set-Cookie','forge_session=; Path=/api; Max-Age=0; Secure; HttpOnly; SameSite=Strict');
@@ -27,8 +36,7 @@ async function loginSession(response) {
   const headers=new Headers(response.headers);
   headers.delete('Content-Length'); headers.delete('Content-Encoding');
   if (token) {
-    headers.append('Set-Cookie','forge_session='+encodeURIComponent(token)+'; Path=/api; Secure; HttpOnly; SameSite=Strict');
-    headers.append('Set-Cookie','forge_csrf='+encodeURIComponent(crypto.randomUUID()+crypto.randomUUID())+'; Path=/; Secure; SameSite=Strict');
+    for (const value of sessionCookies(token)) headers.append('Set-Cookie', value);
     payload.access_token='';
   }
   return new Response(JSON.stringify(payload),{status:response.status,headers});
@@ -72,7 +80,12 @@ export function createWorker(backendUrl, fetchImpl = fetch, timeoutMs = 28000) {
           redirect:'manual',signal:controller.signal,...(request.body?{duplex:'half'}:{}),
         }));
         if(response.ok && ['/api/auth/login','/api/auth/customer/login'].includes(url.pathname)) response=await loginSession(response);
-        if(url.pathname==='/api/auth/logout' || response.status===401) response=clearSession(response);
+        if(response.ok && session && request.method==='GET' && ['/api/auth/me','/api/auth/customer/me'].includes(url.pathname)) {
+          response=persistSession(response, decodeURIComponent(session), csrf);
+        }
+        // A rejected password/current-password proof does not revoke an
+        // otherwise valid browser session. Identity checks alone decide that.
+        if(url.pathname==='/api/auth/logout' || (response.status===401 && request.method==='GET' && ['/api/auth/me','/api/auth/customer/me'].includes(url.pathname))) response=clearSession(response);
         return secure(response,true);
       } catch {
         const response=failure(controller.signal.aborted?504:502,controller.signal.aborted?'The upstream API timed out.':'The upstream API is unavailable.');

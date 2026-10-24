@@ -5,10 +5,13 @@ Tiles, `second-floor` is Kitchen, and `third-floor` is Furniture. Never rename
 the persisted IDs. Staff access, active-floor headers and backend floor guards
 apply to each module and mutation.
 
-Kitchen and Furniture share Catalog/imports, Customers, Purchases (including
-the completed customer workspace), Payments and Fully paid orders. Each
-request uses the selected business floor. Their existing Walk-ins and
-Quotation Follow-up registers continue to use the shared notebook component.
+Kitchen and Furniture share Customers, Payments, Fully paid orders, Walk-ins
+and the sales Follow-ups inbox. Each request uses the selected business floor.
+Catalog is available on Ground and Sanitary only; Purchases and its completed
+customer workspace are Sanitary-only, including direct API/document access.
+Legacy department notebook bookmarks redirect to shared Walk-ins or Follow-ups
+without switching the selected floor. Follow-up detail and actions cannot open
+another floor's records, including for an owner assigned to every floor.
 Kitchen's quotation/payment document design has not been supplied; the RMB
 ledger and its export/send flow are restricted to Furniture.
 
@@ -37,5 +40,9 @@ Historical stage events and dates remain available after stage normalization.
 Direct WhatsApp delivery setup and receipt semantics are documented in
 [whatsapp-document-delivery.md](whatsapp-document-delivery.md). Apply migrations
 0027–0029 before promoting this release; the new startup constraints require
-the furniture, receipt and catalog indexes. Migrations add indexes and preserve
-historical records; they do not import any new supplier data or invent images.
+the furniture, receipt and catalog indexes. Migration 0035 preserves shared
+Follow-ups access for existing custom staff with both same-floor notebook-stage
+permissions and existing Customers access, deriving only supported capabilities.
+Single-stage grants remain narrow; retired pages cannot be newly assigned and
+accounts with no current page receive the account access screen. Historical
+records and legacy grants remain intact.

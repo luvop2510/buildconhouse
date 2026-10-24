@@ -2,10 +2,14 @@
 
 from services.export import spreadsheet_cell
 import asyncio
+import hashlib
+import json
 from datetime import datetime, timezone
 from typing import Optional
+from uuid import NAMESPACE_URL, uuid5
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pymongo.errors import DuplicateKeyError
 
 from auth import floor_for_write, floor_inherit, floor_query, floor_scope_ids, get_current_user, get_floor_scoped_or_404, require_min_role
 from db import db, strip_ids
@@ -231,7 +235,8 @@ async def catalog_hierarchy(user: UserPublic = Depends(get_current_user)):
         brand = brands.get(bid, {"id": bid, "name": "Unknown"})
         category = cats.get(cid, {"id": cid, "name": "Uncategorised"})
         b = tree.setdefault(bid, {"brand": brand, "categories": {}})
-        c = b["categories"].setdefault(cid, {"category": category, "subcategories": {}})
+        c = b["categories"].setdefault(cid, {"category": category, "subcategories": {},
+                                           "product_count": r.get("category_product_count")})
         s = c["subcategories"].setdefault(subcat, {"name": subcat, "series": {}})
         se = s["series"].setdefault(series, {"name": series, "families": {}})
         fam = se["families"].setdefault(family_key, {
@@ -274,7 +279,7 @@ async def catalog_hierarchy(user: UserPublic = Depends(get_current_user)):
                 cats_out.append({
                     "category": c["category"],
                     "subcategory_count": len(subs_out),
-                    "product_count": sum(sub["product_count"] for sub in subs_out),
+                    "product_count": c["product_count"] if c["product_count"] is not None else sum(sub["product_count"] for sub in subs_out),
                     "subcategories": subs_out,
                 })
             cats_out.sort(key=lambda x: catalog_service._category_sort_key(x["category"]))
@@ -450,14 +455,21 @@ async def resolve_product_size_variant(
 @router.get("/products/{product_id}")
 async def get_product(product_id: str, user: UserPublic = Depends(get_current_user),
                       catalog_entry_id: Optional[str] = None):
-    await get_floor_scoped_or_404(db.products, product_id, user, not_found="Product not found", projection={"_id": 0, "id": 1, "floor_id": 1})
+    source = await get_floor_scoped_or_404(db.products, product_id, user, not_found="Product not found", projection={"_id": 0})
     if catalog_entry_id:
         doc = await catalog_service.product_by_id(product_id, floor_ids=None, catalog_entry_id=catalog_entry_id)
     else:
         doc = await catalog_service.product_by_id(product_id, floor_ids=None)
     if not doc:
-        raise HTTPException(status_code=404, detail="Product not found")
-    return doc
+        if not source.get("is_custom") or catalog_entry_id:
+            raise HTTPException(status_code=404, detail="Product not found")
+        doc = Product(**source).model_dump()
+    # Exact detail reads reflect a just-saved/replaced/deleted photo before
+    # the background snapshot refresh completes. Catalog list reads retain
+    # their bounded, batch-hydrated warm snapshot path.
+    doc["images"] = source.get("images") or []
+    doc["floor_id"] = source["floor_id"]
+    return await media_service.hydrate_product_media(doc)
 
 
 @router.get("/products/{product_id}/alternates")
@@ -512,8 +524,39 @@ async def create_custom_product(
     auto-suffix). If False, we behave like /products with duplicate-SKU
     rejection.
     """
+    prod = await _create_custom_record(body, user, keep_in_catalog=body.keep_in_catalog)
+    catalog_service.schedule_catalog_refresh()
+    return Product(**prod)
+
+
+async def _create_custom_record(body: ProductCreate, user: UserPublic, *, keep_in_catalog: bool = True,
+                                pending_media: bool = False, image_sha1: str | None = None) -> dict:
+    """Bind a retryable addition to its creator, exact floor, and full content.
+
+    Incomplete uploads and quotation-only items are inactive, so neither can
+    appear as an ordinary catalog product. Mongo's built-in unique _id protects
+    simultaneous retries without requiring a production index migration.
+    """
     floor_id = floor_for_write(user)
-    await _require_product_relations_on_floor(body.brand_id, body.category_id, floor_id)
+    if keep_in_catalog or (body.brand_id and body.category_id):
+        await _require_product_relations_on_floor(body.brand_id, body.category_id, floor_id)
+    else:
+        for collection, relation_id in ((db.brands, body.brand_id), (db.categories, body.category_id)):
+            if relation_id and not await collection.find_one({"id": relation_id, "floor_id": floor_id}, {"_id": 0, "id": 1}):
+                raise HTTPException(status_code=400, detail="Custom product references must belong to the selected floor")
+    payload = body.model_dump()
+    request_id = payload.pop("request_id", None)
+    payload.pop("keep_in_catalog", None)
+    fingerprint = hashlib.sha256(json.dumps({"product": payload, "keep_in_catalog": keep_in_catalog,
+                                            "image_sha1": image_sha1}, sort_keys=True).encode()).hexdigest()
+    product_id = str(uuid5(NAMESPACE_URL, f"forge-custom:{user.id}:{floor_id}:{request_id}")) if request_id else None
+    lookup = {"id": product_id, "floor_id": floor_id, "custom_created_by": user.id} if product_id else None
+    if lookup:
+        existing = await db.products.find_one(lookup, {"_id": 0})
+        if existing:
+            if not existing.get("is_custom") or existing.get("custom_request_fingerprint") != fingerprint:
+                raise HTTPException(status_code=409, detail="This addition has changed. Start a new custom product.")
+            return existing
     sku = body.sku or f"CUSTOM-{datetime.now(timezone.utc).strftime('%y%m%d%H%M%S')}"
     if body.is_custom:
         # Auto-uniquify — never fail because the user typed the same SKU twice.
@@ -525,14 +568,26 @@ async def create_custom_product(
     elif await db.products.find_one({"sku": sku, "floor_id": floor_id, "brand_id": body.brand_id}):
         raise HTTPException(status_code=409, detail="SKU already exists")
 
-    payload = body.model_dump()
     payload["sku"] = sku
     payload["tags"] = list(set([*(payload.get("tags") or []), "custom"]))
     payload["floor_id"] = floor_id
+    payload["active"] = keep_in_catalog and not pending_media
+    if product_id:
+        payload["id"] = product_id
     prod = Product(**payload)
-    await db.products.insert_one(prod.model_dump())
-    catalog_service.schedule_catalog_refresh()
-    return prod
+    record = {**prod.model_dump(), "custom_created_by": user.id,
+              "custom_request_fingerprint": fingerprint, "custom_keep_in_catalog": keep_in_catalog}
+    if product_id:
+        record["_id"] = f"custom:{product_id}"
+    try:
+        await db.products.insert_one(record)
+    except DuplicateKeyError:
+        existing = await db.products.find_one(lookup, {"_id": 0}) if lookup else None
+        if not existing or not existing.get("is_custom") or existing.get("custom_request_fingerprint") != fingerprint:
+            raise HTTPException(status_code=409, detail="Custom product already exists. Please try again.") from None
+        return existing
+    record.pop("_id", None)
+    return record
 
 
 @router.post("/products", response_model=Product)
@@ -671,6 +726,13 @@ async def _apply_product_updates(product_id: str, body: ProductPatch, user: User
     )
 
     updated = await catalog_service.product_by_id(product_id, floor_ids=floor_scope_ids(user))
+    if updated is None:
+        # Quotation-only custom products are deliberately absent from the
+        # active catalog snapshot, but their exact editor still saves normally.
+        updated = await db.products.find_one(floor_query(user, {"id": product_id}), {"_id": 0})
+        if updated is None:
+            raise HTTPException(status_code=404, detail="Product not found")
+        updated = await media_service.hydrate_product_media(updated)
     return Product(**{k: v for k, v in updated.items() if k in Product.model_fields})
 
 

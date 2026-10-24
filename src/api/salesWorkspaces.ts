@@ -9,7 +9,7 @@ export type WorkspaceData = {
   products: { product_id: string; name: string; revenue: number; quantity: number; orders: number; customers: number; brand_name: string | null }[];
   customers: { customer_id: string; name: string; revenue: number; orders: number; aov: number; last_order_at: string | null }[];
   floors: { floor_id: string; revenue: number; orders: number }[];
-  relationships?: { id: string; name: string; type: string; revenue: number; orders: number; customers: number; last_order_at: string | null }[];
+  relationships?: { id: string; name: string; company?: string | null; type: string; revenue: number; orders: number; customers: number; customers_acquired?: number; last_order_at: string | null }[];
   forecast?: { months_used: number; history_state: string; monthly_history: number[]; forecast: number | null };
 };
 

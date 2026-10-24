@@ -32,6 +32,7 @@ import { catalogProductDetailPath } from "@/src/components/quotation/helpers/cat
 import { ProductEditor } from "@/src/components/catalog/ProductEditor";
 import { toast } from "@/src/components/Toast";
 import { api } from "@/src/api/client";
+import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { useAuth } from "@/src/state/auth";
 import { useActionAccess } from "@/src/hooks/use-permissions";
 import { useBreakpoint } from "@/src/hooks/use-breakpoint";
@@ -110,6 +111,11 @@ function associatedConsoleInfo(product: Product): string | null {
 }
 
 export default function ProductDetail() {
+  const { selectedFloorId } = useFloorAccess();
+  return <ProductDetailWorkspace key={selectedFloorId} floorId={selectedFloorId} />;
+}
+
+function ProductDetailWorkspace({ floorId }: { floorId: string }) {
   const { id, catalogEntryId } = useLocalSearchParams<{ id: string; catalogEntryId?: string }>();
   const router = useRouter();
   const { isPhone, isWide, pad } = useBreakpoint();
@@ -169,8 +175,9 @@ export default function ProductDetail() {
   });
 
   const loadPipeline = async (productId: string, requestId?: number) => {
+    if (floorId !== "first-floor") { setPipeline([]); return; }
     try {
-      const r = await api.get<{ items: PipelineItem[] }>(`/purchases/items?product_id=${productId}&limit=50`);
+      const r = await api.get<{ items: PipelineItem[] }>(`/purchases/items?product_id=${productId}&limit=50`, { floorId });
       if (requestId !== undefined && requestId !== loadRequestRef.current) return;
       setPipeline((r.items || []).filter((it) => it.stage !== "delivered"));
     } catch {

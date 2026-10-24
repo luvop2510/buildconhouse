@@ -1,5 +1,6 @@
-import { MultiSelectFilterBar } from "@/src/components/ds";
+import { MobileFilterSection, MultiSelectFilterBar } from "@/src/components/ds";
 import { filterValues, toggleFilterValue } from "@/src/utils/filters";
+import { WALKIN_SUMMARY_LABELS, walkinSummaryFilters, type WalkinSummary } from "@/src/utils/walkinSummary";
 import { Disclosure } from "@/src/design/Disclosure";
 // Walk-ins — Phase 4 (2026-07-30). Company-wide CRM entry point:
 // Walk-in -> Customer -> Selection -> Quotation -> Order -> Dispatch -> Payment.
@@ -53,6 +54,7 @@ export default function WalkInsScreen({
   const [dashboard, setDashboard] = useState<WalkInsDashboard | null>(null);
   const [items, setItems] = useState<WalkIn[]>([]);
   const [status, setStatus] = useState("");
+  const [summaryView, setSummaryView] = useState<WalkinSummary | null>(null);
   const [sources, setSources] = useState<string[]>([]);
   const [sourceFilter, setSourceFilter] = useState("");
   const [search, setSearch] = useState("");
@@ -88,7 +90,7 @@ export default function WalkInsScreen({
     try {
       const [dash, list] = await Promise.allSettled([
         walkinsApi.dashboard(fixedFloorId ? { floorId: fixedFloorId } : undefined, filterFloorIds),
-        walkinsApi.list({ status: quotationFollowup ? "converted" : status || undefined, floor_ids: filterFloorIds, source: sourceFilter || undefined, search: search || undefined }, fixedFloorId ? { floorId: fixedFloorId } : undefined),
+        walkinsApi.list({ status: summaryView ? undefined : quotationFollowup ? "converted" : status || undefined, ...walkinSummaryFilters(summaryView), floor_ids: filterFloorIds, source: sourceFilter || undefined, search: search || undefined }, fixedFloorId ? { floorId: fixedFloorId } : undefined),
       ]);
       if (request !== requestId.current) return;
       setSummaryError(dash.status === 'rejected');
@@ -100,11 +102,18 @@ export default function WalkInsScreen({
     } finally {
       if (request === requestId.current) setLoading(false);
     }
-  }, [fixedFloorId, quotationFollowup, status, filterFloorIds, sourceFilter, search]);
+  }, [fixedFloorId, quotationFollowup, status, summaryView, filterFloorIds, sourceFilter, search]);
 
   useEffect(() => { walkinsApi.listSources().then(result => setSources(result.sources)).catch(() => {}); }, []);
   useEffect(() => { load(); return () => { requestId.current += 1; }; }, [load]);
-  useEffect(() => { setVisibleCount(WALKIN_RENDER_BATCH); }, [status, search, floorId, quotationFollowup]);
+  useEffect(() => { setVisibleCount(WALKIN_RENDER_BATCH); }, [status, summaryView, search, floorId, sourceFilter, quotationFollowup]);
+
+  const openSummary = (view: WalkinSummary) => {
+    setSummaryView(view);
+    setStatus("");
+    setSourceFilter("");
+    setSearch("");
+  };
 
   const callCustomer = (w: WalkIn) => {
     if (!w.customer_phone) { toast.error("No phone number on file"); return; }
@@ -131,7 +140,7 @@ export default function WalkInsScreen({
   const visitShowroom = async (w: WalkIn) => {
     try {
       await walkinsApi.visitShowroom(w.id, { floorId: w.floor_id });
-      setItems(current => current.map(item => item.id === w.id ? { ...item, showroom_followup_id: `showroom:${w.id}` } : item));
+      setItems(current => current.filter(item => item.id !== w.id));
       toast.success("Transferred to Visit Showroom follow-ups");
       // Navigate before the new floor selection triggers the shell's floor
       // routing effect. The follow-ups inbox is shared and filtered by the
@@ -160,37 +169,42 @@ export default function WalkInsScreen({
       toast.error(e?.detail || "Could not transfer customer");
     }
   };
+  const pageHeader = <PageHeader
+    title={title} overline={quotationFollowup ? "QUOTATION FOLLOW-UP" : "CRM"}
+    subtitle="Every customer journey starts here"
+    actions={canCreate ? <Button label="Log Walk-in" icon="user-plus" onPress={() => router.push((fixedFloorId ? `/(admin)/walkins/new?floor_id=${fixedFloorId}` : "/(admin)/walkins/new") as any)} testID="walkin-new-btn" /> : undefined}
+    embedded={isPhone}
+  />;
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={isPhone ? [] : ["top"]}>
-      <PageHeader
-        title={title} overline={quotationFollowup ? "QUOTATION FOLLOW-UP" : "CRM"}
-        subtitle="Every customer journey starts here"
-        actions={canCreate ? <Button label="Log Walk-in" icon="user-plus" onPress={() => router.push((fixedFloorId ? `/(admin)/walkins/new?floor_id=${fixedFloorId}` : "/(admin)/walkins/new") as any)} testID="walkin-new-btn" /> : undefined}
-      />
-      <ScrollView contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, paddingBottom: isPhone ? 132 : spacing.xxxl }}>
+      {!isPhone ? pageHeader : null}
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, paddingBottom: isPhone ? spacing.xl : spacing.xxxl }}>
+        {isPhone ? pageHeader : null}
         <Disclosure title="Walk-in summary">
         {summaryError ? <Text role="status" style={[type.bodyMuted, { marginBottom: spacing.sm }]}>Summary unavailable. Your walk-in register is still available below.</Text> : null}
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginBottom: spacing.lg }}>
-          <StatTile label="Today" value={dashboard?.today_walkins ?? "—"} icon="user-plus" tone="brand" style={{ minWidth: isPhone ? 120 : 140, flex: 1 }} />
-          <StatTile label="This Week" value={dashboard?.this_week ?? "—"} icon="calendar" style={{ minWidth: isPhone ? 120 : 140, flex: 1 }} />
-          <StatTile label="Pending Follow-ups" value={dashboard?.pending_followups ?? "—"} icon="clock" tone="warning" style={{ minWidth: isPhone ? 120 : 140, flex: 1 }} />
-          <StatTile label="Selections Scheduled" value={dashboard?.selections_scheduled ?? "—"} icon="calendar" style={{ minWidth: isPhone ? 120 : 140, flex: 1 }} />
-          <StatTile label="Converted" value={dashboard?.converted ?? "—"} icon="check-circle" tone="success" style={{ minWidth: isPhone ? 120 : 140, flex: 1 }} />
-          <StatTile label="Lost" value={dashboard?.lost ?? "—"} icon="x-circle" tone="danger" style={{ minWidth: isPhone ? 120 : 140, flex: 1 }} />
-          <StatTile label="Conversion Rate" value={dashboard ? `${dashboard.conversion_rate}%` : "—"} icon="trending-up" tone="brand" style={{ minWidth: isPhone ? 120 : 140, flex: 1 }} />
-          <StatTile label="Avg. Conversion" value={dashboard ? `${dashboard.avg_conversion_days}d` : "—"} icon="activity" style={{ minWidth: isPhone ? 120 : 140, flex: 1 }} />
+          <StatTile onPress={() => openSummary("today")} label="Today" value={dashboard?.today_walkins ?? "—"} icon="user-plus" tone="brand" style={{ minWidth: isPhone ? 120 : 140, flex: 1 }} />
+          <StatTile onPress={() => openSummary("week")} label="This Week" value={dashboard?.this_week ?? "—"} icon="calendar" style={{ minWidth: isPhone ? 120 : 140, flex: 1 }} />
+          <StatTile onPress={() => openSummary("pending")} label="Pending Follow-ups" value={dashboard?.pending_followups ?? "—"} icon="clock" tone="warning" style={{ minWidth: isPhone ? 120 : 140, flex: 1 }} />
+          <StatTile onPress={() => openSummary("scheduled")} label="Selections Scheduled" value={dashboard?.selections_scheduled ?? "—"} icon="calendar" style={{ minWidth: isPhone ? 120 : 140, flex: 1 }} />
+          <StatTile onPress={() => openSummary("converted")} label="Converted" value={dashboard?.converted ?? "—"} icon="check-circle" tone="success" style={{ minWidth: isPhone ? 120 : 140, flex: 1 }} />
+          <StatTile onPress={() => openSummary("lost")} label="Lost" value={dashboard?.lost ?? "—"} icon="x-circle" tone="danger" style={{ minWidth: isPhone ? 120 : 140, flex: 1 }} />
+          <StatTile onPress={() => openSummary("conversion")} label="Conversion Rate" value={dashboard ? `${dashboard.conversion_rate}%` : "—"} icon="trending-up" tone="brand" style={{ minWidth: isPhone ? 120 : 140, flex: 1 }} />
+          <StatTile onPress={() => openSummary("average")} label="Avg. Conversion" value={dashboard ? `${dashboard.avg_conversion_days}d` : "—"} icon="activity" style={{ minWidth: isPhone ? 120 : 140, flex: 1 }} />
         </View>
 
         </Disclosure>
+        {summaryView ? <Chip label={`${WALKIN_SUMMARY_LABELS[summaryView]} · Clear`} active onPress={() => setSummaryView(null)} /> : null}
         <SearchField
           placeholder="Search customer, phone, salesperson, source, notes…"
           value={search} onChangeText={setSearch} onClear={() => setSearch("")}
           style={{ marginBottom: spacing.md }}
         />
+        <MobileFilterSection testID="walkins-filters">
         <View style={{ flexDirection: "row", gap: spacing.xs, flexWrap: "wrap", marginBottom: spacing.sm }}>
           {!quotationFollowup && STATUS_FILTERS.map((s) => (
-            <Chip key={s.value} label={s.label} active={s.value ? filterValues(status, "").includes(s.value) : !status} onPress={() => setStatus(current => toggleFilterValue(current, s.value, ""))} />
+            <Chip key={s.value} label={s.label} active={s.value ? filterValues(status, "").includes(s.value) : !status} onPress={() => { setSummaryView(null); setStatus(current => toggleFilterValue(current, s.value, "")); }} />
           ))}
         </View>
         {floors.length > 1 && !fixedFloorId ? (
@@ -203,6 +217,7 @@ export default function WalkInsScreen({
         ) : null}
 
         <MultiSelectFilterBar label="LEAD SOURCE" values={filterValues(sourceFilter, "")} onChange={next => setSourceFilter(next.join(","))} options={[{ value: "all", label: "All sources" }, ...sources.map(source => ({ value: source, label: source }))]} testID="walkins-source-filters" />
+        </MobileFilterSection>
 
         {loadError ? <ErrorState title="Could not load walk-ins" subtitle={loadError} onRetry={() => void load()} /> : loading ? <LoadingState label="Loading walk-ins…" /> : items.length === 0 ? (
           <EmptyState icon="user-plus" title="No walk-ins yet" subtitle="Log your first walk-in to start the pipeline." />

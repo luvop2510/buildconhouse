@@ -1,5 +1,9 @@
 # Dependency security review
 
+Latest full audit: **16 October 2026 — 27 package findings (22 high, five
+moderate), three distinct advisories; security gate remains failing.** See the
+dated review below. Earlier counts and SDK experiments are historical.
+
 Initial review 2026-10-05 against the committed npm manifests, a clean installation, the current npm registry, and the GitHub advisory database.
 
 ## Remediation and verification
@@ -148,3 +152,107 @@ manifest/lockfile changes were repeated. The managed
 `2026-10-08-supported-remediation-check.json` report retains the official
 package, advisory and SDK compatibility evidence for the release ledger.
 No supported dependency change that clears these blockers is available.
+
+## Full dependency remediation review — 16 October 2026
+
+Reviewed checkout `4710f545ccf677513721ca2b5241e93d729622d7` on
+`codex/stability-review-2026-10-12`. The initial tree had only an unrelated,
+untracked `backend/node_modules` symlink; it was preserved. The active root
+application remains Expo **55.0.31**, React Native **0.83.10**, React **19.2.0**.
+The historical `frontend/` manifests are a separate inactive checkout.
+
+Fresh full `npm audit --json` before and after clean `npm ci` reported exactly
+**27 findings: 22 high, five moderate, zero critical/low**. All 27 package/path
+records are unchanged; none were resolved, reduced, or introduced. These are
+package and parent dependency findings, not 27 distinct advisories. This matches
+the October 12–15 baseline and supersedes the October 7 full audit's eight
+moderates; the existing URI decoder remediation predates this review.
+
+### Minimal local change
+
+Corrected the root `packageManager` declaration from Yarn to `npm@11.17.0`,
+matching the active npm lockfile, README and every frontend installation in CI.
+That npm release supports Node 22.9+; CI selects Node 22. Local validation used
+Node 26.5.1/npm 11.17.0. Existing resolutions, scoped overrides, postinstall
+repairs and all gates were retained. No dependency versions changed, and the
+root lockfile remained byte-identical through `npm ci`. This declaration repair
+is **not a vulnerability fix**.
+
+### Residual advisories and recommended action
+
+Primary GitHub advisory records, npm metadata, maintainer discussions/releases
+and official framework guidance were checked on **16 October 2026 IST**.
+
+| Advisory | Severity / installed version | Complete representative dependency path | Current patched status and action |
+| --- | --- | --- | --- |
+| [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) | High; braces 3.0.3 | expo → @expo/metro → metro-file-map → micromatch → braces; also React Native's Metro/Jest branches | Affects <=3.0.3; npm latest 3.0.3, no published patch. [Maintainer issue 84](https://github.com/micromatch/braces/issues/84) disputes the finding. Keep visible; await an upstream release or advisory correction and re-audit. |
+| [GHSA-86w9-cpqp-85rv](https://github.com/advisories/GHSA-86w9-cpqp-85rv) | High; node-forge 1.4.0 | expo → @expo/cli → node-forge; expo → @expo/cli → @expo/code-signing-certificates → node-forge | Affects <=1.4.0; npm latest 1.4.0, no published patch. [Upstream PR 1152](https://github.com/digitalbazaar/forge/pull/1152) remains unmerged. Await a maintained release; do not represent proposed 1.4.1 as published. |
+| [GHSA-hp3w-g68c-fv3c](https://github.com/advisories/GHSA-hp3w-g68c-fv3c) | Moderate; sprintf-js 1.0.3 | react-native → babel-jest → babel-plugin-istanbul → @istanbuljs/load-nyc-config → js-yaml → argparse → sprintf-js; another branch passes through @jest/transform | GitHub/npm still list <=1.1.3 with no patch; latest 1.1.3 remains in range and exceeds argparse's ~1.0.2. The [official CVE record](https://cveawg.mitre.org/api/cve/CVE-2026-97058) was rejected October 12, but GitHub has not withdrawn its advisory. Await propagation or a supported upstream fix; preserve the finding. |
+
+All three are transitive tooling dependencies beneath runtime-declared framework
+packages. No direct app/API import was found. This is exposure context, not a
+finding waiver or exhaustive proof of absence from every native bundle.
+
+The sampled Metro watcher uses `micromatch.some`, which delegates to picomatch;
+the affected braces parser is invoked by other micromatch APIs such as `parse`
+and `braceExpand`. Other Jest/tooling paths remain. Avoid feeding untrusted glob
+patterns or repositories into privileged builds. Expo CLI concretely reaches
+forge certificate parsing and signing helpers; exploitation of the reported
+signature issue additionally requires attacker-controlled verification inputs
+and applicable RSA keys. Ordinary business API inputs were not found reaching
+that path. Restrict signing inputs and build-worker privileges; these measures
+do not patch forge. The sprintf path is in js-yaml's CLI help/argument formatter;
+ordinary Istanbul YAML library loading does not import argparse. Keep format
+strings controlled and handle invalid input where that CLI is used.
+
+The older [node-forge GHSA-2328-f5f3-gj25](https://github.com/advisories/GHSA-2328-f5f3-gj25)
+affects <=1.3.3 and **is patched by installed 1.4.0**. It is distinct from the
+remaining September signature advisory. All 16 current node-forge advisory
+ranges were checked individually; the older patched records do not clear the
+newer finding.
+
+### Compatibility decision
+
+Registry metadata still places SDK 55 at Expo 55.0.31/CLI 55.0.36/Router
+55.0.18; the installed official `bundledNativeModules.json` pins RN 0.83.10.
+[Expo's SDK 55 guidance](https://docs.expo.dev/versions/v55.0.0/) requires its
+matching React Native family. Latest stable Expo 57.0.30 bundles RN 0.86.3 and
+React 19.2.3, but CLI 57.0.31 still requires forge and its Metro graph still
+requires micromatch/braces. React Native 0.88.0 and Expo/Router 58's `next`
+channel are not supported patch updates for this app. A framework migration
+requires the [official upgrade process](https://docs.expo.dev/workflow/upgrading-expo-sdk-walkthrough/)
+and new native builds; it cannot currently clear these high-severity roots.
+
+Latest `@istanbuljs/load-nyc-config` 1.1.0 still requires js-yaml 3, and the
+current supported js-yaml 3/argparse 1 ranges retain sprintf. No compatible
+patch/minor parent update or unnecessary direct dependency removal resolves
+these roots. No new overrides, forks, local security patches, suppressions,
+exceptions or gate changes were added. The safest current action is to keep
+the findings visible and revisit upstream status, with any parent replacement
+or framework migration treated as separately validated work.
+
+### Verification
+
+Clean npm install, full before/after audits and `npm ls --all --json` completed.
+TypeScript, zero-warning lint, `expo install --check`, Expo Doctor **20/20**,
+all **45** frontend/API/security/audit-runner contract commands, current-source
+production web build and bundle budgets for **159** exported routes passed.
+The largest initial route was **450 KiB gzip** against the unchanged **576 KiB**
+budget. The existing security gate still exits **1** on the 22 high findings.
+
+The complete `npm run test:performance:audit` exited **0**: **26** focused
+hermetic backend tests, **564** stability cases covering all **77** discovered
+routes on four devices, and **52** performance browser cases passed. Browser
+acceptance had zero skips, retries, flakes or failures. Detailed command/path
+inventory and measured evidence are retained in the local report. Native exports/signing,
+physical devices, remote CI and production acceptance are not certified by this
+review. No native/framework versions changed. Validation disabled dotenv loading
+and used an inert HTTPS backend build URL plus hermetic browser/API fixtures;
+no production service, data or credentials were used. No commit, push,
+deployment or publication was performed.
+
+Machine-readable before/after reports, dependency inventories, source evidence,
+primary-source snapshots and command logs are stored outside committed source
+under the dated Codex Security artifact collection and the local
+`/tmp/forge-dependency-remediation-2026-10-16` workspace. **The dependency audit
+is not clean and release remains blocked by the unchanged security gate.**

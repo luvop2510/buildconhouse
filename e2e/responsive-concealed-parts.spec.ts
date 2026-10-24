@@ -66,6 +66,9 @@ async function concealedFixture(page: Page, customActions?: ("view" | "create" |
 }
 
 async function openPicker(page: Page) {
+  await expect(page.getByTestId("quotation-workspace")).toBeVisible();
+  const exit = page.getByTestId("expand-quotation-workspace");
+  if (await exit.isVisible()) await exit.click();
   await expect(page.getByTestId('quotation-details-toggle')).toBeVisible();
   const open = page.getByTestId('mobile-add-first');
   if (await open.isVisible()) await open.click();
@@ -76,11 +79,14 @@ async function openPicker(page: Page) {
 }
 
 async function reviewQuotation(page: Page) {
-  await expect(page.getByTestId('quotation-details-toggle')).toBeVisible();
+  await expect(page.getByTestId('quotation-workspace')).toBeVisible();
   const back = page.getByTestId('picker-view-quotation');
   if (await back.isVisible()) await back.click();
+  const review = page.getByTestId('mobile-review-quotation');
+  if (await review.isVisible()) await review.click();
   const quotationTab = page.getByRole('tab', { name: /Quotation/ });
   if (await quotationTab.isVisible()) await quotationTab.click();
+  await expect(page.getByTestId('quotation-details-toggle')).toBeVisible();
 }
 
 test('critical concealed choice persists and every later addition includes its quantity-linked part', async ({ page }) => {
@@ -171,6 +177,7 @@ test('critical quotation create-only access recovers locally and submits once wi
   await expect(page.getByTestId('draft-recovery')).toBeVisible();
   await page.getByRole('button', { name: 'Restore draft', exact: true }).click();
   await expect(page.getByTestId('draft-recovery')).not.toBeVisible();
+  await reviewQuotation(page);
   await expect(page.locator('[data-testid^="qty-trim-"]')).toHaveValue('1');
   await page.getByTestId('quotation-details-toggle').click();
   await expect(page.getByTestId('compact-hdr-customer')).toContainText('Fixture customer');

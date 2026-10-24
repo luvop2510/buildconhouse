@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { retiredNotebookRedirect } from './retired-notebook-fixtures';
 import { mockSession, floors } from './audit-fixtures';
 
 const walkin = {
@@ -48,19 +49,9 @@ test('critical fully paid orders distinguish service failure from an empty ledge
   await expect(page.getByRole('button', { name: 'Previous', exact: true })).toBeDisabled();
 });
 
-test('critical notebook retry retains its department and recovers to an honest empty register', async ({ page }) => {
-  await mockSession(page, '/notebook/kitchen');
-  await page.goto('/notebook/kitchen');
-  await expect(page.getByText('Register unavailable', { exact: true })).toBeVisible();
-  await expect(page.getByText('No walk-ins yet', { exact: true })).toHaveCount(0);
-  const requestedFloors: string[] = [];
-  await page.route('**/api/followups/notebook/second-floor?**', route => {
-    requestedFloors.push(new URL(route.request().url()).pathname);
-    return route.fulfill({ json: { rows: [], next_cursor: null } });
-  });
-  await page.getByRole('button', { name: 'Try again', exact: true }).click();
-  await expect(page.getByText('No walk-ins yet', { exact: true })).toBeVisible();
-  expect(requestedFloors).toEqual(['/api/followups/notebook/second-floor']);
+test('critical retired kitchen bookmark retains the current department in shared Walk-ins', async ({ page }) => {
+  await retiredNotebookRedirect(page, '/notebook/kitchen', 'walkins', 'second-floor');
+  await expect(page.getByTestId('floor-switcher').filter({ visible: true }).first()).toContainText('Kitchen');
 });
 
 test('critical order preview shows progressive loading, recovers and retains the original items', async ({ page }) => {
@@ -87,13 +78,11 @@ test('critical order preview shows progressive loading, recovers and retains the
 });
 
 test('critical shared dialog contains keyboard focus, closes on Escape and restores its trigger', async ({ page }) => {
-  await mockSession(page, '/notebook/kitchen');
-  await page.route('**/api/followups/notebook/second-floor?**', route => route.fulfill({ json: { rows: [], next_cursor: null } }));
-  await page.goto('/notebook/kitchen');
-  const trigger = page.getByRole('button', { name: 'New walk-in', exact: true }).first();
+  await retiredNotebookRedirect(page, '/notebook/furniture/quotation-follow-up', 'followups', 'third-floor');
+  const trigger = page.getByTestId('new-followup-btn');
   await trigger.focus();
   await trigger.click();
-  const dialog = page.getByRole('dialog', { name: 'New walk-in', exact: true });
+  const dialog = page.getByRole('dialog', { name: 'New Follow-up', exact: true });
   await expect(dialog).toBeVisible();
   await expect(page.getByRole('main')).toHaveCount(0);
   await expect.poll(() => dialog.evaluate(element => element.contains(document.activeElement))).toBe(true);
