@@ -20,7 +20,7 @@ import {
   Avatar, Badge, Button, Card, Chip, EmptyState, FormField, PageHeader,
  Sheet, StatTile, StatusBadge, TextField,
 } from "@/src/components/ui";
-import { ConfirmDialog, MobileFilterSection } from "@/src/components/ds";
+import { MobileFilterSection } from "@/src/components/ds";
 import { api } from "@/src/api/client";
 import { returnPurchaseLoan } from "@/src/api/purchases";
 import { getCustomerStockTransfers, returnCustomerStockTransfer, type CustomerStockTransfer } from "@/src/api/godownStock";
@@ -32,7 +32,6 @@ import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { toast } from "@/src/components/Toast";
 import { useAuth } from "@/src/state/auth";
 import { useActionAccess } from "@/src/hooks/use-permissions";
-import { canManageDestructiveData } from "@/src/constants/roles";
 import { colors, icon as iconSize, money, moneyShort, PRODUCT_IMAGE_ASPECT_RATIO, radius, spacing, type } from "@/src/theme/tokens";
 import { downloadSectionExcel } from "@/src/utils/sectionExcel";
 import {
@@ -146,7 +145,7 @@ export default function CustomerDetail() {
   }>();
   const router = useRouter();
   const { staff } = useAuth();
-  const canDeleteCustomers = useActionAccess("customers", "delete", canManageDestructiveData(staff?.role));
+  const canDeleteCustomers = useActionAccess("customers", "delete", staff?.role === "owner") && staff?.role === "owner";
   const { isDesktop, isPhone } = useBp();
   const { selectedFloorId } = useFloorAccess();
   const isTilesFloor = selectedFloorId === TILES_FLOOR_ID;
@@ -182,8 +181,6 @@ export default function CustomerDetail() {
   const [transferItem, setTransferItem] = useState<WorkspaceProduct | null>(null);
   const [historyItemId, setHistoryItemId] = useState<string | null>(null);
   const [walkInSheet, setWalkInSheet] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   const workspaceRequestIdRef = useRef(0);
   const scheduledWorkspaceRequestIdRef = useRef<number | null>(null);
   const coreRequestRef = useRef(0);
@@ -366,19 +363,6 @@ export default function CustomerDetail() {
     }
   }, []);
 
-  const deleteCustomer = useCallback(async () => {
-    if (!id) return;
-    setDeleting(true);
-    try {
-      await api.delete(`/customers/${id}`);
-      toast.success("Customer deleted");
-      router.replace("/(admin)/customers" as any);
-    } catch (e: any) {
-      toast.error(e?.detail || "Could not delete customer");
-    } finally {
-      setDeleting(false);
-    }
-  }, [id, router]);
 
   const toMovable = useCallback((p: WorkspaceProduct): MovableItem => ({
     item_id: p.item_id, sku: p.sku, name: p.name, image: p.image, qty: p.qty, loaned_qty: p.loaned_qty,
@@ -533,11 +517,11 @@ export default function CustomerDetail() {
             />
             {canDeleteCustomers ? (
               <Button
-                icon="trash-2"
-                label="Delete"
-                variant="danger"
+                icon="settings"
+                label="Manage customer data"
+                variant="secondary"
                 size="md"
-                onPress={() => setDeleteOpen(true)}
+                onPress={() => router.push("/(admin)/customers" as any)}
                 testID="delete-customer-detail"
               />
             ) : null}
@@ -1139,17 +1123,7 @@ export default function CustomerDetail() {
         customer={customer}
         onCreate={createWalkInFollowup}
       />
-      <ConfirmDialog
-        visible={deleteOpen}
-        onClose={() => { if (!deleting) setDeleteOpen(false); }}
-        onConfirm={deleteCustomer}
-        title="Delete customer?"
-        description="This removes the customer and disposable sales-workflow records. Purchase orders and completed payments protect the customer from deletion."
-        confirmLabel="Delete"
-        tone="danger"
-        loading={deleting}
-        testID="confirm-delete-customer-detail"
-      />
+
     </SafeAreaView>
   );
 }

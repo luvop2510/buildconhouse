@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 
 import { api, setRequestFloorId } from "@/src/api/client";
 import { toast } from "@/src/components/Toast";
+import { ensureBackendReady } from "@/src/lib/backend-startup";
 import { browserStorage } from "@/src/utils/storage/browser.web";
 
 export type Floor = { id: string; name: string; slug: string };
@@ -21,7 +22,10 @@ async function loadAccess() {
   if (cache) return cache;
   if (!inflight) {
     const generation = accessGeneration;
-    inflight = api.get<FloorAccess>("/settings/floor-access", { floorId: "" }).then((value) => {
+    inflight = ensureBackendReady().then(() => {
+      if (generation !== accessGeneration) throw Object.assign(new Error("Workspace request cancelled."), { name: "AbortError" });
+      return api.get<FloorAccess>("/settings/floor-access", { floorId: "" });
+    }).then((value) => {
       // Do not let a request made under the previous staff session restore
       // that session's assignments after logout/login.
       if (generation === accessGeneration) {
@@ -76,7 +80,7 @@ export function setSelectedFloorId(id: string) {
   return selectedFloorPersistence;
 }
 
-export function useFloorAccess() {
+export function useFloorAccess(enabled = true) {
   const [access, setAccess] = useState<FloorAccess | null>(cache);
   const [selectedFloorId, setSelectedFloorIdState] = useState(selectedFloorCache || "");
   const [error, setError] = useState<string | null>(null);
@@ -85,6 +89,7 @@ export function useFloorAccess() {
     inflight = null;
     setError(null);
     try {
+      await ensureBackendReady({ retry: true });
       const [value, saved] = await Promise.all([loadAccess(), getSelectedFloorId()]);
       setAccess(value);
       const current = selectedFloorCache ?? saved;
@@ -97,6 +102,7 @@ export function useFloorAccess() {
     }
   }, []);
   useEffect(() => {
+    if (!enabled) return;
     let alive = true;
     const onSelectedFloorChange = (floorId: string) => { if (alive) setSelectedFloorIdState(floorId); };
     selectedFloorListeners.add(onSelectedFloorChange);
@@ -116,7 +122,7 @@ export function useFloorAccess() {
       setError(cause?.detail || "We couldn't load your workspace access.");
     });
     return () => { alive = false; selectedFloorListeners.delete(onSelectedFloorChange); };
-  }, []);
+  }, [enabled]);
   const selectFloor = useCallback((id: string) => {
     const canSelect = Boolean(access && access.floors.some((floor) => floor.id === id) &&
       (access.all_floors || access.floor_ids.includes(id)));

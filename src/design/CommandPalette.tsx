@@ -73,7 +73,8 @@ export function PaletteProvider({ children }: { children: React.ReactNode }) {
 }
 
 function PaletteHost(props: { open: boolean; onClose: () => void; returnFocusRef: React.RefObject<View | null> }) {
-  const { selectedFloorId } = useFloorAccess();
+  const { staff } = useAuth();
+  const { selectedFloorId } = useFloorAccess(!!staff);
   return <PaletteSession key={selectedFloorId} {...props} selectedFloorId={selectedFloorId} />;
 }
 

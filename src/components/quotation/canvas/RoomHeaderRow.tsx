@@ -1,4 +1,5 @@
 // Room header row — draggable, inline-renameable, with room actions.
+import { useState } from "react";
 import Feather from "@expo/vector-icons/Feather";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
@@ -23,6 +24,8 @@ export function RoomHeaderRow({
 }) {
   const b = useBuilder();
   const { isPhone } = useBp();
+  const [rowWidth, setRowWidth] = useState(0);
+  const compactActions = rowWidth ? rowWidth < 640 : isPhone;
   const isActiveRoom = b.s.activeRoom === roomName;
   const isRenaming = b.inlineRenameRoom === roomName;
   const roomIndex = b.s.rooms.indexOf(roomName);
@@ -41,7 +44,7 @@ export function RoomHeaderRow({
 
   const actions = (
     <>
-      <View style={styles.orderActions}>
+      {b.s.rooms.length > 1 ? <View style={styles.orderActions}>
         <Pressable accessibilityRole="button" accessibilityLabel={`Move ${roomName} to top`} accessibilityState={{ disabled: first }} disabled={first} testID={`room-top-${roomName}`} onPress={moveToTop} style={[styles.orderButton, first && styles.orderButtonDisabled]}>
           <Feather name="chevrons-up" size={14} color={colors.onSurfaceMuted} />
         </Pressable>
@@ -51,7 +54,7 @@ export function RoomHeaderRow({
         <Pressable accessibilityRole="button" accessibilityLabel={`Move ${roomName} down`} accessibilityState={{ disabled: last }} disabled={last} testID={`room-down-${roomName}`} onPress={() => b.moveRoom(roomName, 1)} style={[styles.orderButton, last && styles.orderButtonDisabled]}>
           <Feather name="arrow-down" size={14} color={colors.onSurfaceMuted} />
         </Pressable>
-      </View>
+      </View> : null}
       <Pressable
         testID={`room-rename-${roomName}`}
         accessibilityRole="button"
@@ -90,7 +93,7 @@ export function RoomHeaderRow({
   );
 
   return (
-    <View style={[styles.wrap, isActiveRoom && styles.wrapActive, isActive && { opacity: 0.7 }]} testID={`room-header-${roomName}`}>
+    <View style={[styles.wrap, isActiveRoom && styles.wrapActive, isActive && { opacity: 0.7 }]} testID={`room-header-${roomName}`} onLayout={event => setRowWidth(Math.round(event.nativeEvent.layout.width))}>
       <View style={styles.mainRow}>
         <Pressable
           onLongPress={drag}
@@ -103,7 +106,7 @@ export function RoomHeaderRow({
         >
           <Feather name="menu" size={13} color={colors.onSurfaceMuted} />
         </Pressable>
-        <Pressable onPress={() => b.toggleCollapse(roomName)} testID={`room-toggle-${roomName}`} hitSlop={6} style={styles.collapseButton}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`${collapsed ? "Expand" : "Collapse"} ${roomName}`} accessibilityState={{ expanded: !collapsed }} onPress={() => b.toggleCollapse(roomName)} testID={`room-toggle-${roomName}`} hitSlop={6} style={styles.collapseButton}>
           <Feather name={collapsed ? "chevron-right" : "chevron-down"} size={16} color={colors.onSurface} />
         </Pressable>
         {isRenaming ? (
@@ -120,14 +123,14 @@ export function RoomHeaderRow({
             selectTextOnFocus
           />
         ) : (
-          <Pressable onPress={() => b.setActiveRoom(roomName)} style={{ flex: 1, minWidth: 0 }}>
+          <Pressable accessibilityRole="button" accessibilityLabel={`Add products to ${roomName}`} testID={`room-name-${roomName}`} onPress={() => b.setActiveRoom(roomName)} style={{ flex: 1, minWidth: 0, minHeight: 44, justifyContent: "center" }}>
             <Text style={styles.roomName} numberOfLines={1}>{roomName}</Text>
             <Text style={type.caption} numberOfLines={1}>{itemCount} items · {money(subtotal)}</Text>
           </Pressable>
         )}
-        {!isPhone ? actions : null}
+        {!compactActions ? actions : null}
       </View>
-      {isPhone ? <View style={styles.phoneActions}>{actions}</View> : null}
+      {compactActions ? <View style={styles.phoneActions}>{actions}</View> : null}
     </View>
   );
 }
@@ -145,11 +148,11 @@ const styles = StyleSheet.create({
     width: 20, alignItems: "center", justifyContent: "center", alignSelf: "stretch",
     marginRight: -2, marginLeft: -4,
   },
-  collapseButton: { minWidth: 28, minHeight: 32, alignItems: "center", justifyContent: "center" },
+  collapseButton: { minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" },
   orderActions: { flexDirection: "row", alignItems: "center", gap: 2 },
-  orderButton: { width: 26, height: 30, alignItems: "center", justifyContent: "center" },
+  orderButton: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   orderButtonDisabled: { opacity: 0.35 },
-  iconAction: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
+  iconAction: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   roomName: { fontSize: 13, fontFamily: font.semibold, fontWeight: "600", color: colors.onSurface, letterSpacing: -0.1 },
   inlineInput: {
     flex: 1, fontSize: 14, fontFamily: font.semibold, fontWeight: "600", color: colors.onSurface,
@@ -157,7 +160,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: ds.brassLine,
   },
   discountChip: {
-    flexDirection: "row", alignItems: "center", gap: 3, paddingHorizontal: 6, paddingVertical: 4,
+    minWidth: 44, minHeight: 44, justifyContent: "center", flexDirection: "row", alignItems: "center", gap: 3, paddingHorizontal: 6, paddingVertical: 4,
     borderRadius: 6, backgroundColor: colors.surfaceSecondary,
   },
   discountChipActive: { backgroundColor: ds.brassTint },

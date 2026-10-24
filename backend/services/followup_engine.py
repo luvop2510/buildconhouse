@@ -404,12 +404,18 @@ async def followup_worker() -> None:
     logger = logging.getLogger("forge.followups")
     while True:
         try:
-            await reconcile_followups()
+            await reconcile_followups_admitted()
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.exception("Follow-up reconciliation failed; retrying next cycle")
         await asyncio.sleep(300)
+
+
+async def reconcile_followups_admitted() -> dict:
+    from services.mutation_admission import admission
+    async with admission(db):
+        return await reconcile_followups()
 
 
 async def reconcile_followups() -> dict:
@@ -506,14 +512,14 @@ async def _persist_desired_followups(
             # existed only as a one-time demo seed.
             if fields.get("priority_level") in ("critical", "high"):
                 recipient = quotation_created_by.get(fields.get("quotation_id"))
-                asyncio.create_task(notify(
+                await notify(
                     recipient,
                     f"Follow-up needed · {fields.get('customer_name')}",
                     body=fields.get("reason"),
                     kind="warning" if fields.get("priority_level") == "critical" else "info",
                     link=f"/customers/{fields.get('customer_id')}",
                     floor_id=fields.get("floor_id"),
-                ))
+                )
 
     for _key, ex in existing_by_key.items():
         await db.followups.update_one({"id": ex["id"]}, {"$set": {

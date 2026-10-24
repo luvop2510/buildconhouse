@@ -2,6 +2,34 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
+## Backend wake recovery — 2026-10-24
+
+Web startup uses one shared anonymous readiness attempt, up to 60 seconds total,
+with four-second browser probes and 3.5-second proxy attempts. Continue as soon
+as ready; never turn that budget into a fixed delay or extend every API request.
+Ordinary request limits and write semantics stay intact. Preserve initial-route
+storage, identity/floor generation guards and the root navigator; the startup
+leaf screen layouts hold initial effects while their navigators remain mounted,
+and never remove already-open forms. Metadata reads wait for restored identity.
+Render-specific waiting/awake copy must reflect readiness, not elapsed time.
+Native startup retains its existing transport and account-check wording.
+See docs/audits/2026-10-24-backend-startup.md for the release evidence. Frontend-only
+publication may use scripts/promote-verified-frontend.mjs with an unchanged,
+verified running backend and current review/performance/hosted evidence; backend,
+data, storage and Kitchen workflow releases retain their stronger existing gate.
+
+## Web bundle consistency — 2026-10-24
+
+The reported “app could not start” failure was reproduced in the existing browser:
+stale layout chunks and Metro module IDs failed before account startup. A hard
+refresh restored the signed-in workspace. Every export now gives all Expo web
+JavaScript files one graph-wide filename suffix and rewrites HTML/preload/lazy
+references together. Preserve this physical namespace; per-file URLs alone must
+not mix cached module graphs. Keep missing chunks as explicit failures and never
+auto-reload mounted forms. The recovery bootstrap observes the web root mount
+signal; a slow, unmounted bootstrap gets a waiting status rather than a false
+release-failure claim. Font errors retain their existing deadline and retry.
+
 ## PDF sharing, assigned follow-ups and references — 2026-10-17
 
 Quotation/selection sharing creates no public PDF capability. Share actual PDF
@@ -581,3 +609,16 @@ Both were flagged during code review of Task 17/19 as real gaps of the same shap
 - **Migration idempotency:** `backend/migrations/` migrations must be forward-only and safe to run twice, but MongoDB's `create_index` throws `OperationFailure` code 85 (`IndexOptionsConflict`) if a same-key index already exists under a different name — this has happened twice already (see `migrations/0002` and `0003`'s docstrings). Always wrap `create_index` calls the way `migrations/0003`'s `_create_index_tolerant` helper does.
 - **Catalog is an in-memory snapshot, not per-request Mongo queries:** `backend/services/catalog_service.py` loads the whole product catalog into memory at startup (Atlas is ~228ms round-trip away; the full catalog is a few MB) and refreshes on writes. Don't add per-request Mongo queries to catalog read paths — thread new filters through the existing `_matches_filters`/snapshot functions instead.
 - **Floor `first-floor`'s display name is "The Sanitary Bathroom"** in the live `db.floors` collection, but its `id`/`slug` is still literally `"first-floor"` — don't rename the slug, only ever the `name` field, or every `floor_id` reference throughout the codebase breaks.
+
+## Customer graph deletion and recovery — 2026-10-24
+
+Customer-wide removal is owner-only from Customers, with exact preview/HMAC and
+transactional graph cleanup. Ordinary quotation deletion remains document-scoped.
+Preserve shared PO chalan evidence and actual dispatched quantities: raw legacy
+stage labels cannot establish a stock return. Old unlinked Furniture matches
+require explicit owner selection; new ledgers may bind a real floor-scoped ID.
+
+The mutation-admission middleware and background follow-up/outbox admission prevent
+in-flight child writes after graph deletion. Never expire writer tokens or clear
+an exclusive token while old writers may still execute. See the operational
+recovery procedure in docs/audits/2026-10-24-workspace-repair.md. No new migration.

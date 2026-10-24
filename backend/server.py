@@ -15,6 +15,7 @@ from starlette.middleware.gzip import GZipMiddleware
 
 from middleware import SecurityHeadersMiddleware
 from services.request_limits import RequestBodyLimitMiddleware
+from services.runtime_identity import source_revision
 
 from bootstrap import LEGACY_DEMO_PASSWORD, _check_demo_accounts, run_bootstrap
 from settings import settings
@@ -360,7 +361,7 @@ async def health():
     if demo_accounts:
         logger.critical("Production demo credentials detected for %d account(s)", len(demo_accounts))
         return JSONResponse(status_code=503, content={"status": "degraded", "reasons": ["unsafe demo credentials detected"]})
-    return {"status": "ok", "pdf_renderer_revision": PDF_RENDERER_REVISION}
+    return {"status": "ok", "pdf_renderer_revision": PDF_RENDERER_REVISION, **({"source_revision": source_revision()} if source_revision() else {})}
 
 
 @api.get("/health/ready", include_in_schema=False)
@@ -389,7 +390,7 @@ async def readiness():
         # Provider exception text can contain credentials, URLs or bodies.
         logger.warning("Readiness dependency unavailable: storage (%s)", type(exc).__name__)
         return JSONResponse(status_code=503, content={"status": "error", "detail": "storage unavailable"})
-    return {"status": "ok", "pdf_renderer_revision": PDF_RENDERER_REVISION}
+    return {"status": "ok", "pdf_renderer_revision": PDF_RENDERER_REVISION, **({"source_revision": source_revision()} if source_revision() else {})}
 
 
 # Feature routers
@@ -449,6 +450,8 @@ async def trigger_error():
 # Security headers (defense-in-depth, no behavior change for existing
 # clients) — registered before CORSMiddleware so CORS stays the outermost
 # middleware, unchanged from its current behavior.
+from services.mutation_admission import MutationAdmissionMiddleware
+app.add_middleware(MutationAdmissionMiddleware)
 app.add_middleware(RequestBodyLimitMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 # Mobile clients and the hosted web app receive several JSON-heavy responses.

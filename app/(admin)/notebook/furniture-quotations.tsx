@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Platform, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Text } from "@/src/components/AppText";
+import { CustomerLinkField } from "@/src/components/customer/CustomerLinkField";
 import { ReferrerField } from "@/src/components/customer/ReferrerField";
 import { referrerLabel } from "@/src/utils/referrer";
 import { Alert, Button, Chip, EmptyState, PageHeader, TextField } from "@/src/components/ui";
@@ -20,7 +21,7 @@ const newDraft = (): FurnitureDraft => ({ customer_name: "", customer_phone: "",
   { description: "TOTAL PURCHASE", amount_rmb: "" }, { description: "CHARGE", amount_rmb: "" },
 ], deposits: [] });
 const date = (value?: string) => value ? new Date(value).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) : "On save";
-const formFrom = (doc: FurnitureQuotation): FurnitureDraft => ({ customer_name: doc.customer_name, customer_phone: doc.customer_phone,
+const formFrom = (doc: FurnitureQuotation): FurnitureDraft => ({ customer_id: doc.customer_id, customer_name: doc.customer_name, customer_phone: doc.customer_phone,
   status: doc.status, charges: doc.charges, deposits: doc.deposits,
   referrer_id: doc.referrer_id ?? null, referrer_name: doc.referrer_name ?? null,
   referrer_type: doc.referrer_type ?? null, referrer_company: doc.referrer_company ?? null });
@@ -138,6 +139,9 @@ export default function FurnitureQuotations() {
         <View style={styles.actions}><Button label="Quotation list" variant="secondary" disabled={Boolean(busy)} onPress={() => { setDraft(null); setSaved(null); setError(null); void load(); }} />
           {saved ? <Button label="Reload saved quotation" variant="ghost" disabled={Boolean(busy)} onPress={() => void open(saved.id)} /> : null}</View>
         <View style={styles.card}>
+          {editable && !locked && !busy ? <CustomerLinkField value={draft.customer_id} floorId={FURNITURE_FLOOR_ID}
+            onChange={customer => setDraft({ ...draft, customer_id: customer?.id ?? null,
+              ...(customer ? { customer_name: customer.name, customer_phone: customer.phone || "" } : {}) })} /> : null}
           <TextField label="Customer name / quotation heading (RDCL)" value={draft.customer_name} editable={editable && !locked && !busy} onChangeText={(customer_name) => setDraft({ ...draft, customer_name })} />
           <TextField label="Customer WhatsApp mobile" keyboardType="phone-pad" value={draft.customer_phone} editable={editable && !locked && !busy} onChangeText={(customer_phone) => setDraft({ ...draft, customer_phone })} />
           {editable && !locked && !busy ? <ReferrerField floorId={FURNITURE_FLOOR_ID}

@@ -8,7 +8,7 @@ import { PRIMARY, SECONDARY, TILES_ITEMS, type NavItem } from "@/src/design/navi
 import Feather from "@expo/vector-icons/Feather";
 import { Slot, useRouter, useSegments, useLocalSearchParams, usePathname } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -17,6 +17,8 @@ import {
 } from "@/src/design/components";
 import { PaletteProvider } from "@/src/design/CommandPalette";
 import { useBp } from "@/src/design/responsive";
+import { StartupScreen } from "@/src/components/StartupScreen";
+import { BackendServerStatus } from "@/src/components/BackendServerStatus";
 import { color, font, layout, radius, space } from "@/src/design/tokens";
 import { NavigationLink } from "@/src/design/NavigationLink";
 import { BuildConLogo } from "@/src/design/BrandLogo";
@@ -142,8 +144,8 @@ function SearchTrigger() {
 }
 
 function FloorSwitcher({ compact = false }: { compact?: boolean }) {
-  const { access, floors, selectedFloorId, selectFloor } = useFloorAccess();
   const { staff } = useAuth();
+  const { access, floors, selectedFloorId, selectFloor } = useFloorAccess(!!staff);
   const router = useRouter();
   const segments = useResolvedFloorSegments();
   const selected = floors.find((floor) => floor.id === selectedFloorId);
@@ -229,7 +231,7 @@ function useTilesNav() {
   const router = useRouter();
   const { staff } = useAuth();
   const hasAccess = useModuleAccess();
-  const { access, selectedFloorId, selectFloor } = useFloorAccess();
+  const { access, selectedFloorId, selectFloor } = useFloorAccess(!!staff);
   const groundAccessible = Boolean(access && (access.all_floors || access.floor_ids.includes(TILES_FLOOR_ID)));
   // Ground Floor's Tiles module is not merely *reachable* from Ground
   // Floor — it must be invisible from every other business unit. Showing
@@ -260,7 +262,7 @@ function useTilesNav() {
 function useVisibleNav() {
   const hasAccess = useModuleAccess();
   const { staff } = useAuth();
-  const { access, selectedFloorId } = useFloorAccess();
+  const { access, selectedFloorId } = useFloorAccess(!!staff);
   return (items: NavItem[]) => items.filter((item) => {
     if (selectedFloorId === KITCHEN_FLOOR_ID && !item.match.startsWith("kitchen-")) return false;
     const permission = item.match.startsWith("kitchen-") ? "kitchen-projects" : item.match;
@@ -369,7 +371,7 @@ function PhoneBar() {
   const visible = useVisibleNav();
   const palette = usePalette();
   const tilesNav = useTilesNav();
-  const { access, selectedFloorId, loading: floorLoading } = useFloorAccess();
+  const { access, selectedFloorId, loading: floorLoading } = useFloorAccess(!!staff);
   const { loading: permissionsLoading } = usePermissionMatrix();
   const [moreOpen, setMoreOpen] = useState(false);
   // Owners and delegated members derive visibility from their identity/grants,
@@ -450,8 +452,8 @@ function PhoneBarSkeleton() {
 
 // ── Layout root ─────────────────────────────────────────────────────────────
 function FloorAccessGate({ children }: { children: React.ReactNode }) {
-  const { access, floors, selectedFloorId, loading, error, retry } = useFloorAccess();
   const { staff, loading: authLoading, logout } = useAuth();
+  const { access, floors, selectedFloorId, loading, error, retry } = useFloorAccess(!authLoading && !!staff);
   const segments = useResolvedFloorSegments();
   const router = useRouter();
 
@@ -501,11 +503,12 @@ function FloorAccessGate({ children }: { children: React.ReactNode }) {
   // is known. Besides making loading/error states explicit, this closes the
   // brief window where an inherited local-storage selection could be sent as
   // an X-Floor-Id for a different staff account.
+  // AuthGate owns the initial web waiting/retry message. This subtree stays
+  // mounted behind it, but has no account whose floor access can load yet.
+  if (Platform.OS === "web" && loading && !staff) return null;
   if (loading) {
     return <View testID="floor-access-loading" accessibilityLiveRegion="polite" style={styles.floorAccessState}>
-      <ActivityIndicator color={color.brass} />
-      <Text style={styles.floorAccessTitle}>Loading your workspace…</Text>
-      <Text style={styles.floorAccessCopy}>Checking the floors assigned to your account.</Text>
+      <BackendServerStatus detail="Checking the floors assigned to your account." />
     </View>;
   }
   if (error) {
@@ -537,7 +540,7 @@ function CustomAccessRouteGate({ children }: { children: React.ReactNode }) {
   const hasAccess = useModuleAccess();
   const segments = useResolvedFloorSegments();
   const router = useRouter();
-  const { selectedFloorId } = useFloorAccess();
+  const { selectedFloorId } = useFloorAccess(!!staff);
   const destinationReady = hasRouteDestination(segments);
   const module = moduleForRoute(segments);
 
@@ -558,7 +561,7 @@ function CustomAccessRouteGate({ children }: { children: React.ReactNode }) {
 // removes the active route and lets Expo redirect to the default child.
 // Slot forwards this React Navigation option to useNavigationBuilder; Expo's
 // narrower Slot type currently omits it.
-const pageScreenLayout = ({ children }: { children: React.ReactNode }) => <WorkspacePageBoundary>{children}</WorkspacePageBoundary>;
+const pageScreenLayout = ({ children }: { children: React.ReactNode }) => <StartupScreen><WorkspacePageBoundary>{children}</WorkspacePageBoundary></StartupScreen>;
 
 export default function AdminLayout() {
   const { isPhone } = useBp();

@@ -130,6 +130,27 @@ jobs:
       # require deployed services and must never join this job by a broad glob.
       - name: Verify Kitchen persistence and shared showroom transfers
         run: python -m pytest tests/integration/test_kitchen_projects_mongo.py tests/integration/test_shared_followup_showroom_mongo.py -v
+      - name: Start isolated customer deletion replica
+        run: |
+          docker run -d --name customer-deletion-mongo --network host mongo:7.0 \
+            --port 28124 --replSet deletion_qa --bind_ip 127.0.0.1
+          for attempt in {1..30}; do
+            if docker exec customer-deletion-mongo mongosh --quiet --port 28124 --eval 'db.adminCommand({ping:1}).ok'; then break; fi
+            sleep 1
+          done
+          docker exec customer-deletion-mongo mongosh --quiet --port 28124 --eval 'rs.initiate({_id:"deletion_qa",members:[{_id:0,host:"127.0.0.1:28124"}]})'
+          for attempt in {1..30}; do
+            if docker exec customer-deletion-mongo mongosh --quiet --port 28124 --eval 'quit(db.hello().isWritablePrimary ? 0 : 1)'; then break; fi
+            sleep 1
+          done
+          docker exec customer-deletion-mongo mongosh --quiet --port 28124 --eval 'quit(db.hello().isWritablePrimary ? 0 : 1)'
+      - name: Verify real customer deletion routes and concurrent writes
+        env:
+          DELETION_TEST_MONGO_URL: mongodb://127.0.0.1:28124
+        run: python -m pytest tests/integration/test_customer_deletion_mongo.py -v
+      - name: Remove run-owned customer deletion replica
+        if: always()
+        run: docker rm -f customer-deletion-mongo || true
       - uses: actions/setup-node@v4
         with:
           node-version: "22"

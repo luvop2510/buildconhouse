@@ -19,12 +19,13 @@ test('critical static sign-in waits for hydration before accepting credentials',
     await page.goto('/login', { waitUntil: 'commit' });
     const username = page.getByTestId('login-email');
     const password = page.getByTestId('login-password');
-    await expect(username).toBeVisible();
-    // React Native Web implements editable=false with the HTML readonly
-    // attribute. Assert the user cannot enter text before handlers attach.
-    await expect(username).not.toBeEditable();
-    await expect(password).not.toBeEditable();
-    await expect(page.getByTestId('login-submit')).toBeDisabled();
+    // The current export deliberately paints its static readiness indicator;
+    // it must not expose a form before fonts and handlers have initialized.
+    await expect(page.getByTestId('app-font-loading')).toBeVisible();
+    await expect(page.getByTestId('backend-server-status')).toContainText('Waiting for backend server');
+    await expect(username).toHaveCount(0);
+    await expect(password).toHaveCount(0);
+    await expect(page.getByTestId('login-submit')).toHaveCount(0);
     release();
     await username.fill('JK PATEL');
     await password.fill('OwnerAssigned!2026');

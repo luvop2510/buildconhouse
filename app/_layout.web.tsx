@@ -1,11 +1,12 @@
 import { Stack } from "expo-router";
 import { useEffect } from "react";
-import { ActivityIndicator, Pressable, View } from "react-native";
+import { Pressable, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 
 import { InitialAccountRouteProvider } from "@/src/state/initial-account-route";
 import { AuthProvider } from "@/src/state/auth";
 import { AuthGate } from "@/src/components/AuthGate";
+import { BackendServerStatus } from "@/src/components/BackendServerStatus";
 import { colors } from "@/src/theme/tokens";
 import { ToastHost } from "@/src/components/Toast";
 import { initPerformanceSignals, initSentry } from "@/src/lib/monitoring";
@@ -26,7 +27,15 @@ import { useKeyboardViewport } from "@/src/hooks/use-keyboard-viewport";
 export default function RootLayout() {
   useKeyboardViewport();
   const [loaded, error] = useAppFonts();
-  useEffect(() => { initSentry(); initPerformanceSignals(); }, []);
+  useEffect(() => {
+    // Let the pre-Expo recovery bootstrap know client startup succeeded. The
+    // hydrated tree can still match the server's static loading snapshot while
+    // fonts or the backend are finishing, so DOM changes alone are insufficient.
+    (window as Window & { __FORGE_APP_MOUNTED__?: boolean }).__FORGE_APP_MOUNTED__ = true;
+    window.dispatchEvent(new Event("forge:app-mounted"));
+    initSentry();
+    initPerformanceSignals();
+  }, []);
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <InitialAccountRouteProvider>
@@ -38,7 +47,7 @@ export default function RootLayout() {
               <Text style={{ color: colors.onBrand, fontWeight: "600" }}>Try again</Text>
             </Pressable>
           </View> : !loaded ? <View testID="app-font-loading" style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-            <ActivityIndicator accessibilityLabel="Loading workspace" color={colors.brand} size="large" />
+            <BackendServerStatus detail="Preparing the sign-in screen." />
           </View> : <>
             <AuthGate>
               <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }} />

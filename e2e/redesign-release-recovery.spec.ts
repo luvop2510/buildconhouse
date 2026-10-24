@@ -22,6 +22,23 @@ test('critical startup paints and hydrates without requesting the legacy head bo
   } finally { release(); releaseFonts(); }
 });
 
+test('critical mounted app avoids the release watchdog but reports the font readiness timeout', async ({ page }) => {
+  await page.clock.install();
+  let releaseFonts!: () => void;
+  const fontsHeld = new Promise<void>(resolve => { releaseFonts = resolve; });
+  await page.route(/\.(?:woff2|ttf)(?:\?|$)/, async route => { await fontsHeld; await route.continue(); });
+  try {
+    await page.goto('/login', { waitUntil: 'commit' });
+    await expect(page.getByTestId('app-font-loading')).toBeVisible();
+    await expect.poll(() => page.evaluate(() => (globalThis as any).__FORGE_APP_MOUNTED__)).toBe(true);
+    await page.clock.fastForward(20_000);
+    await expect(page.locator('#release-startup-recovery')).toHaveCount(0);
+    await expect(page.getByTestId('app-font-error')).toBeVisible();
+  } finally { releaseFonts(); }
+  await expect(page.getByTestId('app-font-error')).toBeVisible();
+  expect(await page.evaluate(() => (globalThis as any).__FORGE_APP_MOUNTED__)).toBe(true);
+});
+
 test('critical startup paints its static loading indicator while recovery is pending then hydrates', async ({ page }) => {
   let release!: () => void;
   const held = new Promise<void>(resolve => { release = resolve; });

@@ -8,6 +8,7 @@ There are NO taxes anywhere in Forge — the quotation's grand_total is the
 final price the customer pays, and payments accumulate against it directly.
 """
 from __future__ import annotations
+from services.followup_engine import reconcile_followups_admitted
 import re
 from services.multi_filters import filter_values, filter_condition
 import asyncio
@@ -772,8 +773,8 @@ async def create_payment(
         logger.exception("cache bump failed for payments after payment %s", payment.id)
     # A payment landing is exactly when payment_overdue/payment_partial
     # reminders should refresh or auto-close — event-triggered, not a cron job.
-    asyncio.create_task(reconcile_followups())
-    asyncio.create_task(notify(
+    asyncio.create_task(reconcile_followups_admitted())
+    await notify(
         quot.get("created_by"),
         f"Payment received · {quot.get('number')}",
         body=f"₹{payment.amount:,.0f} ({MODE_LABELS.get(body.mode, body.mode).title()}) from {quot.get('customer_name')}"
@@ -781,7 +782,7 @@ async def create_payment(
         kind="success",
         link=f"/quotations/{body.quotation_id}",
         floor_id=floor_inherit(quot),
-    ))
+    )
     return payment
 
 

@@ -1,3 +1,4 @@
+from services.followup_engine import reconcile_followups_admitted
 """Sanitary godown stock — returned/declined material that can be reused.
 
 Lots are intentionally separate from tile logistics.  Each lot preserves its
@@ -340,6 +341,7 @@ async def list_stock(
     lots = await db.godown_stock.find(query, {"_id": 0, "source_provenance": 0, "catalog_provenance": 0, "image_local": 0}).sort("transferred_at", -1).to_list(2001)
     if len(lots) > 2000:
         raise HTTPException(status_code=409, detail="More than 2,000 stock lots match. Select a brand or search to narrow the list.")
+    await _hydrate_missing_stock_catalog_images(lots)
     transfer_map: dict[str, list[dict]] = {}
     if include_history and lots:
         transfers = await db.godown_customer_transfers.find(
@@ -387,6 +389,50 @@ async def _catalog_images(products: list[dict]) -> dict[str, str | None]:
         if owner and photo.get("floor_id") == owner["floor_id"] and photo.get("brand_id") == owner.get("brand_id") and photo.get("public_url"):
             images[owner["id"]] = images.get(owner["id"]) or photo["public_url"]
     return images
+
+
+async def _hydrate_missing_stock_catalog_images(lots: list[dict]) -> None:
+    """Fill absent lot images from the exact floor-scoped catalog product.
+
+    A stock lot's own image is an intentional, lot-specific override, so it
+    remains authoritative. Catalog-only product identity (never SKU/name
+    similarity) is used for this read-time fallback; no stock rows are mutated.
+    """
+    linked = {
+        (lot.get("floor_id"), lot.get("product_id"))
+        for lot in lots
+        if not lot.get("image")
+        and lot.get("floor_id")
+        and lot.get("product_id")
+        and not str(lot["product_id"]).startswith("godown:")
+    }
+    if not linked:
+        return
+
+    products = await db.products.find(
+        {"$or": [{"floor_id": floor_id, "id": product_id} for floor_id, product_id in linked]},
+        {"_id": 0, "id": 1, "floor_id": 1, "brand_id": 1, "hero_image_url": 1, "images": 1},
+    ).to_list(len(linked))
+    by_identity: dict[tuple[str, str], dict] = {}
+    for product in products:
+        identity = (product.get("floor_id"), product.get("id"))
+        by_identity[identity] = product
+
+    images: dict[tuple[str, str], str | None] = {}
+    # _catalog_images bounds its media fallback query to 600 rows. Chunking
+    # keeps large stock inventories within that bound without losing matches.
+    product_rows = list(by_identity.values())
+    for offset in range(0, len(product_rows), 500):
+        batch = product_rows[offset:offset + 500]
+        resolved = await _catalog_images(batch)
+        for product in batch:
+            key = (product["floor_id"], product["id"])
+            images[key] = resolved.get(product["id"])
+
+    for lot in lots:
+        key = (lot.get("floor_id"), lot.get("product_id"))
+        if not lot.get("image") and key in images and images[key]:
+            lot["image"] = images[key]
 
 
 @router.get("/customer-transfers")
@@ -959,7 +1005,7 @@ async def intake_stock(body: Intake, user: UserPublic = Depends(require_min_role
     if payment:
         # Outstanding-balance follow-ups are derived from the same ledger.
         # Run reconciliation after the transaction commits, never inside it.
-        asyncio.create_task(reconcile_followups())
+        asyncio.create_task(reconcile_followups_admitted())
     return _stock_view(lot)
 
 

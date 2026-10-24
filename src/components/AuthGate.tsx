@@ -5,9 +5,11 @@ import { Text } from "@/src/components/AppText";
 import { useAuth } from "@/src/state/auth";
 import { staffLandingPath } from "@/src/access-profiles";
 import { colors } from "@/src/theme/tokens";
+import { BackendServerStatus, useBackendStartup } from "@/src/components/BackendServerStatus";
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const { loading, sessionError, retrySession, kind, staff, customer } = useAuth();
+  const backend = useBackendStartup();
   const segments = useSegments() as string[];
   const router = useRouter();
   const navigationState = useRootNavigationState();
@@ -62,12 +64,18 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   }, [kind, loading, sessionError, isNavigationReady, segments, router, staff, customer]);
 
   const publicRoute = segments[0] === "privacy" || segments[0] === "terms";
+  // A reachable login must still accept fresh credentials while an older
+  // session's identity response is pending on an already-awake server.
+  const starting = loading && !kind && backend.phase !== "idle" && (segments[0] !== "(auth)" || backend.phase !== "ready");
+  const recovering = (starting || !!sessionError) && !publicRoute;
   return <>
-    <View accessibilityElementsHidden={!!sessionError && !publicRoute} importantForAccessibility={sessionError && !publicRoute ? "no-hide-descendants" : "auto"} style={{ flex: 1, display: sessionError && !publicRoute ? "none" : "flex" }}>{children}</View>
-    {sessionError && !publicRoute ? <View testID="session-recovery" style={{ position: "absolute", inset: 0, backgroundColor: colors.surface, padding: 24, alignItems: "center", justifyContent: "center", gap: 16 }}>
-      <Text accessibilityRole="header" style={{ color: colors.onSurface, fontSize: 22, fontWeight: "600" }}>Reconnecting your session</Text>
-      <Text style={{ color: colors.onSurfaceSecondary, maxWidth: 420, textAlign: "center" }}>{sessionError}</Text>
-      {loading ? <ActivityIndicator color={colors.brand} accessibilityLabel="Restoring your session" /> : <Pressable testID="session-retry" accessibilityRole="button" onPress={() => void retrySession()} style={{ backgroundColor: colors.brand, paddingHorizontal: 24, paddingVertical: 14, borderRadius: 8 }}>
+    <View accessibilityElementsHidden={recovering} importantForAccessibility={recovering ? "no-hide-descendants" : "auto"} style={{ flex: 1, display: recovering ? "none" : "flex" }}>{children}</View>
+    {recovering ? <View testID={sessionError ? "session-recovery" : "backend-startup"} style={{ position: "absolute", inset: 0, backgroundColor: colors.surface, padding: 24, alignItems: "center", justifyContent: "center", gap: 16 }}>
+      {starting || backend.phase === "unavailable" ? <BackendServerStatus /> : <>
+        <Text accessibilityRole="header" style={{ color: colors.onSurface, fontSize: 22, fontWeight: "600" }}>Reconnecting your session</Text>
+        <Text style={{ color: colors.onSurfaceSecondary, maxWidth: 420, textAlign: "center" }}>{sessionError}</Text>
+      </>}
+      {loading ? (!starting ? <ActivityIndicator color={colors.brand} accessibilityLabel="Restoring your session" /> : null) : <Pressable testID="session-retry" accessibilityRole="button" onPress={() => void retrySession()} style={{ backgroundColor: colors.brand, paddingHorizontal: 24, paddingVertical: 14, borderRadius: 8 }}>
         <Text style={{ color: colors.onBrand, fontWeight: "600" }}>Try again</Text>
       </Pressable>}
     </View> : null}

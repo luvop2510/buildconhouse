@@ -70,7 +70,6 @@ export function Button({
           opacity: dim ? 0.45 : 1,
           alignSelf: full ? "stretch" : "flex-start",
         },
-        variant === "primary" && !dim ? { shadowColor: color.action, shadowOpacity: 0.16, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 2 } : null,
         face(!!pressed, !!hovered),
         webCursor,
         style,

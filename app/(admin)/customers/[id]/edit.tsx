@@ -14,14 +14,12 @@ import { api } from "@/src/api/client";
 import {
   Button, Card, PageHeader, TextField, ErrorState,
 } from "@/src/components/ui";
-import { ConfirmDialog } from "@/src/components/ds";
 import { TempPasswordDialog, TempPasswordResult } from "@/src/components/TempPasswordDialog";
 import { toast } from "@/src/components/Toast";
 import { ReferrerField } from "@/src/components/customer/ReferrerField";
 import { useBp } from "@/src/design/responsive";
 import { useAuth } from "@/src/state/auth";
 import { useActionAccess } from "@/src/hooks/use-permissions";
-import { canManageDestructiveData } from "@/src/constants/roles";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
 
 type Tier = "retail" | "trade" | "vip";
@@ -39,7 +37,7 @@ export default function EditCustomer() {
   const router = useRouter();
   const { isPhone, gutter } = useBp();
   const { staff } = useAuth();
-  const canDeleteCustomers = useActionAccess("customers", "delete", canManageDestructiveData(staff?.role));
+  const canDeleteCustomers = useActionAccess("customers", "delete", staff?.role === "owner") && staff?.role === "owner";
 
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -62,8 +60,6 @@ export default function EditCustomer() {
   const [resetting, setResetting] = useState(false);
   const [tempResult, setTempResult] = useState<TempPasswordResult | null>(null);
   const [tempDialogOpen, setTempDialogOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     setLoadError(false);
@@ -88,19 +84,6 @@ export default function EditCustomer() {
   }, [id]);
   useEffect(() => { load(); }, [load]);
 
-  const deleteCustomer = useCallback(async () => {
-    if (!id) return;
-    setDeleting(true);
-    try {
-      await api.delete(`/customers/${id}`);
-      toast.success("Customer deleted");
-      router.replace("/(admin)/customers" as any);
-    } catch (e: any) {
-      toast.error(e?.detail || "Could not delete customer");
-    } finally {
-      setDeleting(false);
-    }
-  }, [id, router]);
 
   const canUsePortalActions = portalEnabled && !!email.trim();
 
@@ -187,11 +170,11 @@ export default function EditCustomer() {
         back={() => router.back()}
         actions={canDeleteCustomers ? (
           <Button
-            label="Delete"
-            icon="trash-2"
-            variant="danger"
+            label="Manage customer data"
+            icon="settings"
+            variant="secondary"
             size="sm"
-            onPress={() => setDeleteOpen(true)}
+            onPress={() => router.push("/(admin)/customers" as any)}
             testID="delete-customer-edit"
           />
         ) : undefined}
@@ -278,17 +261,7 @@ export default function EditCustomer() {
         title="Customer Portal credential"
         result={tempResult}
       />
-      <ConfirmDialog
-        visible={deleteOpen}
-        onClose={() => { if (!deleting) setDeleteOpen(false); }}
-        onConfirm={deleteCustomer}
-        title="Delete customer?"
-        description="This removes the customer and disposable sales-workflow records. Purchase orders and completed payments protect the customer from deletion."
-        confirmLabel="Delete"
-        tone="danger"
-        loading={deleting}
-        testID="confirm-delete-customer-edit"
-      />
+
     </SafeAreaView>
   );
 }

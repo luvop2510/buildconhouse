@@ -8,6 +8,7 @@ Reuses existing collections/helpers everywhere possible:
 No new business logic is duplicated — this module is orchestration + reads.
 """
 from __future__ import annotations
+from services.followup_engine import reconcile_followups_admitted
 
 from services.export import spreadsheet_cell
 from services.multi_filters import predicate, values
@@ -200,7 +201,7 @@ async def put_automation_rule(category: str, body: AutomationRuleUpdate, user: U
         raise HTTPException(422, "Follow-ups cover only activities before an order is placed")
     patch = body.model_dump(exclude_unset=True)
     updated = await automation_rules.update_rule(category, patch, user_id=user.id, user_name=user.full_name)
-    asyncio.create_task(reconcile_followups())
+    asyncio.create_task(reconcile_followups_admitted())
     return updated
 
 
@@ -233,7 +234,7 @@ async def put_workflow_transition(key: str, body: WorkflowTransitionUpdate, user
         raise HTTPException(422, "Order activity belongs in Orders")
     patch = body.model_dump(exclude_unset=True)
     updated = await workflow_transitions.update_transition(key, patch, user_id=user.id, user_name=user.full_name)
-    asyncio.create_task(reconcile_followups())
+    asyncio.create_task(reconcile_followups_admitted())
     return updated
 
 
