@@ -60,8 +60,8 @@ function validatePerformanceArtifacts(manifestPath, performance, read) {
   }
   const values = Object.fromEntries(Object.entries(artifacts).map(([name, descriptor]) => [name,
     readPerformanceEvidence(manifestPath, descriptor, read)]));
-  assert.equal(verifyBrowserEvidence(values.stability_report, 'stability'), 672,
-    'All 672 current stability scenarios must be present');
+  assert.equal(verifyBrowserEvidence(values.stability_report, 'stability'), 676,
+    'All 676 current stability scenarios must be present');
   assert.equal(verifyBrowserEvidence(values.performance_report, 'timing'), 60,
     'All 60 current timing scenarios must be present');
   const pages = values.bundle_budget.pages;
@@ -77,7 +77,7 @@ function validatePerformanceArtifacts(manifestPath, performance, read) {
   assert.equal(values.performance_summary.stats?.skipped, 0);
   assert.equal(values.performance_summary.bundlePages, pages.length);
   assert.equal(values.performance_summary.largestInitialJsKb, Math.max(...pages.map(page => page.gzipKb)));
-  assert.equal(values.stability_summary.passed, 672);
+  assert.equal(values.stability_summary.passed, 676);
   assert.equal(values.stability_summary.failures, 0);
   assert.equal(values.stability_summary.flaky, 0);
   assert.equal(values.stability_summary.skipped, 0);
@@ -136,6 +136,9 @@ function validateChangedPaths({ frontendSha, backendSha, run }) {
     path === 'playwright.stability.config.ts' ||
     path === 'scripts/stability-routes.ts' ||
     path === 'scripts/web-worker.mjs' ||
+    path === 'scripts/sites-build.mjs' ||
+    path === 'scripts/isolate-web-module-graph.mjs' ||
+    path === 'scripts/release-recovery.js' ||
     path === 'scripts/verify-authenticated-release.mjs' ||
     path === 'scripts/promote-verified-frontend.mjs' ||
     path === 'scripts/test-frontend-promotion.mjs' ||
@@ -193,6 +196,11 @@ export function loadFrontendPromotionPackage({ manifestPath, candidate, frontend
   assert.equal(authorization?.candidate_deployment_id, plan.candidate_deployment_id);
   assert.equal(authorization?.rollback_deployment_id, plan.rollback_deployment_id);
   assert.notEqual(plan.rollback_deployment_id, plan.candidate_deployment_id);
+  assert.equal(plan.canonical_alias?.schema, 'vercel-canonical-alias/v1');
+  assert.equal(plan.canonical_alias?.alias, FRONTEND_CANONICAL_DOMAIN);
+  assert.equal(plan.canonical_alias?.project_id, FRONTEND_PROJECT_ID);
+  assert.equal(plan.canonical_alias?.deployment_id, plan.rollback_deployment_id);
+  assert.ok(Number.isFinite(plan.canonical_alias?.updated_at), 'Canonical alias update timestamp must be pinned');
   assert.match(authorization?.reference || '', /\S/);
   assert.ok(Date.parse(authorization?.expires_at) > now, 'Owner authorization is expired');
 
@@ -219,6 +227,27 @@ function parseJsonResult(result, label) {
 function deploymentMetadata(run, target) {
   const endpoint = `/v13/deployments/${encodeURIComponent(target)}?teamId=${FRONTEND_TEAM_ID}`;
   return parseJsonResult(run(process.env.FORGE_VERCEL_CLI || 'vercel', ['api', endpoint, '--method', 'GET'], { encoding: 'utf8' }), `Vercel ${target} metadata read`);
+}
+
+function canonicalAliasMetadata(run) {
+  const endpoint = `/v4/aliases/${encodeURIComponent(FRONTEND_CANONICAL_DOMAIN)}?teamId=${FRONTEND_TEAM_ID}`;
+  const alias = parseJsonResult(run(process.env.FORGE_VERCEL_CLI || 'vercel', ['api', endpoint, '--method', 'GET'], { encoding: 'utf8' }), 'Vercel canonical alias read');
+  assert.equal(alias.alias, FRONTEND_CANONICAL_DOMAIN, 'Vercel returned another alias');
+  assert.equal(alias.deletedAt, null, 'Canonical alias has been deleted');
+  assert.equal(alias.projectId, FRONTEND_PROJECT_ID, 'Canonical alias belongs to another Vercel project');
+  assert.match(alias.deploymentId || '', /\S/, 'Canonical alias has no deployment identity');
+  assert.equal(alias.deployment?.id, alias.deploymentId, 'Canonical alias deployment identity is inconsistent');
+  assert.match(alias.deployment?.url || '', /\.vercel\.app$/, 'Canonical alias has no immutable deployment URL');
+  assert.ok(Number.isFinite(alias.updatedAt), 'Canonical alias update timestamp is missing');
+  const deployment = deploymentMetadata(run, alias.deploymentId);
+  assert.equal(deployment.id, alias.deploymentId, 'Vercel alias resolved to another deployment');
+  assert.equal(deployment.projectId, FRONTEND_PROJECT_ID, 'Canonical deployment belongs to another Vercel project');
+  assert.equal(deployment.ownerId, FRONTEND_TEAM_ID, 'Canonical deployment belongs to another Vercel team');
+  assert.equal(alias.deployment.url, deployment.url, 'Canonical alias URL does not match its deployment metadata');
+  return { ...deployment, canonicalAlias: {
+    alias: alias.alias, projectId: alias.projectId, deploymentId: alias.deploymentId,
+    deploymentUrl: alias.deployment.url, updatedAt: alias.updatedAt,
+  } };
 }
 
 function productionBackendUrlEnvironment(run) {
@@ -292,11 +321,11 @@ export async function promoteVerifiedFrontend({
   assert.equal(candidateDeployment.meta?.releaseSha, frontendSha, 'Candidate source differs from reviewed source');
   assert.ok(Number.isFinite(candidateDeployment.createdAt), 'Candidate creation time is missing');
 
-  const canonicalBefore = deploymentMetadata(run, FRONTEND_CANONICAL_DOMAIN);
-  assert.equal(canonicalBefore.projectId, FRONTEND_PROJECT_ID, 'Canonical domain maps outside the expected Vercel project');
+  const canonicalBefore = canonicalAliasMetadata(run);
   assert.equal(canonicalBefore.readyState, 'READY', 'Current canonical rollback target is not ready');
   assert.equal(canonicalBefore.target, 'production', 'Current canonical rollback target is not production');
   assert.equal(canonicalBefore.id, prepared.plan.rollback_deployment_id, 'Canonical domain rollback target changed after review');
+  assert.equal(canonicalBefore.canonicalAlias.updatedAt, prepared.plan.canonical_alias.updated_at, 'Canonical alias changed after rollback review');
   assert.notEqual(canonicalBefore.id, candidateDeployment.id, 'Candidate is already promoted');
 
   const environment = productionBackendUrlEnvironment(run);
@@ -334,7 +363,7 @@ export async function promoteVerifiedFrontend({
 
   let canonicalBackendAfter;
   try {
-    const canonicalAfter = deploymentMetadata(run, FRONTEND_CANONICAL_DOMAIN);
+    const canonicalAfter = canonicalAliasMetadata(run);
     assert.equal(canonicalAfter.projectId, FRONTEND_PROJECT_ID);
     assert.equal(canonicalAfter.readyState, 'READY');
     assert.equal(canonicalAfter.target, 'production');
@@ -345,7 +374,7 @@ export async function promoteVerifiedFrontend({
   } catch {
     const rollback = run(promoter, ['promote', canonicalBefore.id, '--yes', '--scope', FRONTEND_TEAM_ID], { stdio: 'inherit' });
     assert.equal(rollback.status, 0, 'Post-promotion qualification failed and the prior frontend could not be restored');
-    const restored = deploymentMetadata(run, FRONTEND_CANONICAL_DOMAIN);
+    const restored = canonicalAliasMetadata(run);
     assert.equal(restored.id, canonicalBefore.id, 'Post-promotion qualification failed and rollback target is not live');
     throw new Error('Canonical post-promotion qualification failed; the previous frontend deployment was restored.');
   }
@@ -356,6 +385,7 @@ export async function promoteVerifiedFrontend({
     team_id: FRONTEND_TEAM_ID, project_id: FRONTEND_PROJECT_ID, domain: FRONTEND_CANONICAL_DOMAIN,
     deployment_id: candidateDeployment.id, frontend_source_sha: frontendSha, backend_source_sha: backendSha,
     previous_deployment_id: canonicalBefore.id,
+    previous_alias_updated_at: canonicalBefore.canonicalAlias.updatedAt,
     changed_paths_sha256: hash(prepared.changedPaths.join('\n')),
     performance_evidence_sha256: prepared.plan.performance.sha256,
     authenticated_report_sha256: hash(authenticatedReportBytes),

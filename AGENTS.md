@@ -18,6 +18,18 @@ publication may use scripts/promote-verified-frontend.mjs with an unchanged,
 verified running backend and current review/performance/hosted evidence; backend,
 data, storage and Kitchen workflow releases retain their stronger existing gate.
 
+## Web bundle consistency — 2026-10-24
+
+The reported “app could not start” failure was reproduced in the existing browser:
+stale layout chunks and Metro module IDs failed before account startup. A hard
+refresh restored the signed-in workspace. Every export now gives all Expo web
+JavaScript files one graph-wide filename suffix and rewrites HTML/preload/lazy
+references together. Preserve this physical namespace; per-file URLs alone must
+not mix cached module graphs. Keep missing chunks as explicit failures and never
+auto-reload mounted forms. The recovery bootstrap observes the web root mount
+signal; a slow, unmounted bootstrap gets a waiting status rather than a false
+release-failure claim. Font errors retain their existing deadline and retry.
+
 ## PDF sharing, assigned follow-ups and references — 2026-10-17
 
 Quotation/selection sharing creates no public PDF capability. Share actual PDF

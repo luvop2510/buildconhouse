@@ -27,7 +27,15 @@ import { useKeyboardViewport } from "@/src/hooks/use-keyboard-viewport";
 export default function RootLayout() {
   useKeyboardViewport();
   const [loaded, error] = useAppFonts();
-  useEffect(() => { initSentry(); initPerformanceSignals(); }, []);
+  useEffect(() => {
+    // Let the pre-Expo recovery bootstrap know client startup succeeded. The
+    // hydrated tree can still match the server's static loading snapshot while
+    // fonts or the backend are finishing, so DOM changes alone are insufficient.
+    (window as Window & { __FORGE_APP_MOUNTED__?: boolean }).__FORGE_APP_MOUNTED__ = true;
+    window.dispatchEvent(new Event("forge:app-mounted"));
+    initSentry();
+    initPerformanceSignals();
+  }, []);
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <InitialAccountRouteProvider>

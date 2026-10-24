@@ -62,3 +62,33 @@ cases pass on Android Chrome, iPhone Safari, iPad Safari and desktop Chrome.
 Eight unit cases include a response body that stalls after successful headers;
 it is aborted within the same four-second probe budget. TypeScript, focused
 ESLint and authentication race cases pass. Full publication acceptance follows.
+
+## Existing-browser startup failure
+
+The affected signed-in Brave tab showed `Cannot read properties of undefined`
+in an old layout bundle and `Requiring unknown module "951"`. Those two layout
+URLs returned 404 and were absent from fresh HTML and its current module map.
+Fresh anonymous and authenticated browser contexts loaded the current site. A
+hard refresh in the actual affected tab cleared the errors and restored Kitchen
+Lead with the existing session. This establishes a cached module-graph mismatch,
+separate from Render readiness.
+
+The build now stamps every emitted Expo JavaScript filename with one digest of
+the complete unmodified JavaScript graph and updates HTML, preloads and lazy
+module paths together. A dependency/module-ID change gives all graph files fresh
+physical URLs. Unresolved local references fail the build before files are
+renamed. Foreign URLs, API calls and non-JavaScript assets retain their paths.
+An unrouted Chromium fixture with immutable HTTP caching loads release A, switches
+the server to B and verifies that entry and lazy modules use B's new filenames;
+server request counts prove that A was genuinely cached.
+
+The bootstrap receives an explicit client-mount signal, so a mounted app waiting
+on fonts or the backend cannot be covered by the release watchdog. A genuinely
+unmounted slow bootstrap reports that it is still starting; actual script/chunk
+failures keep their bounded recovery. Existing font deadlines and mounted-form
+protection remain enforced.
+
+The first complete corrected-source audit reported 646 passes and 26 failures
+while the local host repeatedly slept: paired cases acquired 8–10-minute wall
+clock durations despite their unchanged 30-second deadlines. Its failed evidence
+is retained and does not qualify publication. A fresh complete audit is required.

@@ -11,6 +11,7 @@ const reviewer = { reviewer: 'independent-agent', reference: 'review-of-exact-di
 const candidateUrl = 'https://immutable-candidate.vercel.app';
 const candidateId = 'dpl_frontend_fixture', previousId = 'dpl_previous_fixture';
 const currentTime = Date.now();
+const canonicalAliasUpdatedAt = currentTime - 4_000;
 const changedPaths = ['app/_layout.web.tsx', 'e2e/frontend-recovery.spec.ts', 'scripts/web-worker.mjs'].sort();
 const envValue = 'encrypted-test-value-not-a-secret';
 const environment = { schema: 'vercel-backend-url-binding/v1', project_id: FRONTEND_PROJECT_ID, key: 'BACKEND_URL', target: ['preview', 'production'],
@@ -35,13 +36,13 @@ function fixture({ mutatePlan = () => {}, mutateReview = () => {}, mutatePerform
     }))), suites: [] }],
     stats: { expected: each * profiles.length, unexpected: 0, flaky: 0, skipped: 0 },
   });
-  const stabilityReport = browserReport('stability', 168), performanceReport = browserReport('timing', 15);
+  const stabilityReport = browserReport('stability', 169), performanceReport = browserReport('timing', 15);
   const bundleBudget = { budgetBytes: 576 * 1024, pages: [{ gzipKb: 440 }, { gzipKb: 510 }] };
   const artifacts = {
     stability_report: attach('stability-results.json', stabilityReport),
     performance_report: attach('performance-results.json', performanceReport),
     bundle_budget: attach('bundle-budget.json', bundleBudget),
-    stability_summary: attach('stability-summary.json', { passed: 672, failures: 0, flaky: 0, skipped: 0 }),
+    stability_summary: attach('stability-summary.json', { passed: 676, failures: 0, flaky: 0, skipped: 0 }),
     performance_summary: attach('performance-summary.json', { stats: performanceReport.stats, bundlePages: 2, largestInitialJsKb: 510 }),
   };
   const performanceFile = { schema: 'frontend-performance-evidence/v1', source_sha: frontendSha, command: 'npm run test:performance:audit',
@@ -52,6 +53,8 @@ function fixture({ mutatePlan = () => {}, mutateReview = () => {}, mutatePerform
     project_name: 'buildcon-house', target_domain: FRONTEND_CANONICAL_DOMAIN, candidate_url: candidateUrl,
     candidate_deployment_id: candidateId, frontend_source_sha: frontendSha, expected_backend_source_sha: backendSha,
     rollback_deployment_id: previousId, backend_url_environment: environment,
+    canonical_alias: { schema: 'vercel-canonical-alias/v1', alias: FRONTEND_CANONICAL_DOMAIN,
+      project_id: FRONTEND_PROJECT_ID, deployment_id: previousId, updated_at: canonicalAliasUpdatedAt },
     independent_review: attach('review.json', reviewFile), performance: attach('performance.json', performanceFile),
     authorization: { owner_authorized: true, action: 'promote-frontend-only-existing-site', source_sha: frontendSha, backend_source_sha: backendSha,
       candidate_deployment_id: candidateId, rollback_deployment_id: previousId, reference: 'current-user-authorization', expires_at: new Date(currentTime + 3600_000).toISOString() } };
@@ -82,7 +85,7 @@ function metadata(id, url, sourceSha, createdAt = currentTime - 60_000) {
 async function exercise(options = {}) {
   const { candidate = candidateUrl, failPublic = false, failAuthenticated = false, backendRevision = backendSha, backendRevisions, changed = changedPaths, fixtureOptions = {}, candidateReleaseSha = frontendSha, candidateReady = 'READY', envValueOverride = envValue, packageChange = 'allowed' } = options;
   const input = fixture({ ...fixtureOptions, paths: changed }), calls = [], promotions = [];
-  let canonicalId = previousId;
+  let canonicalId = previousId, aliasUpdatedAt = canonicalAliasUpdatedAt;
   const run = (command, args) => {
     calls.push({ command, args });
     if (command === 'git' && args[0] === 'merge-base') return { status: 0, stdout: '' };
@@ -98,22 +101,44 @@ async function exercise(options = {}) {
     }
     if (command === 'git' && args[0] === 'diff' && args.includes('--quiet')) return { status: 0, stdout: '' };
     if (command === 'vercel' && args[0] === 'api') {
+      if (args[1].startsWith('/v4/aliases/')) {
+        const domain = decodeURIComponent(args[1].split('?')[0].split('/').at(-1));
+        const id = options.canonicalAliasDeploymentId || canonicalId;
+        const name = options.canonicalAliasName || domain;
+        const value = { alias: name, projectId: options.canonicalAliasProjectId || FRONTEND_PROJECT_ID,
+          deletedAt: options.canonicalAliasDeletedAt ?? null, deploymentId: id,
+          deployment: { id, url: id === candidateId ? 'immutable-candidate.vercel.app' : 'previous.vercel.app' },
+          updatedAt: options.canonicalAliasUpdatedAt ?? aliasUpdatedAt };
+        return { status: 0, stdout: JSON.stringify(value) };
+      }
       if (args[1].startsWith('/v10/projects/')) return { status: 0, stdout: JSON.stringify({ envs: [
         { id: environment.environment_id, key: 'BACKEND_URL', target: environment.target, updatedAt: environment.updated_at, value: envValueOverride },
       ] }) };
-      if (args[1].includes(encodeURIComponent('immutable-candidate.vercel.app'))) {
+      const deploymentTarget = decodeURIComponent(args[1].split('?')[0].split('/').at(-1));
+      if (deploymentTarget === 'buildconhouse.in') {
+        // Vercel's deployment-by-domain lookup can return the newest project
+        // deployment even while the domain alias still points at previousId.
+        return { status: 0, stdout: JSON.stringify(metadata(candidateId, 'immutable-candidate.vercel.app', frontendSha)) };
+      }
+      if (deploymentTarget === 'immutable-candidate.vercel.app' || deploymentTarget === candidateId) {
         const value = metadata(candidateId, 'immutable-candidate.vercel.app', candidateReleaseSha);
         value.readyState = candidateReady;
         return { status: 0, stdout: JSON.stringify(value) };
       }
-      if (args[1].includes(encodeURIComponent(FRONTEND_CANONICAL_DOMAIN))) {
-        const id = canonicalId;
+      if (deploymentTarget === previousId || deploymentTarget === canonicalId) {
+        const id = deploymentTarget;
+        if (id === candidateId) {
+          const value = metadata(id, 'immutable-candidate.vercel.app', frontendSha);
+          return { status: 0, stdout: JSON.stringify(value) };
+        }
         return { status: 0, stdout: JSON.stringify(metadata(id, id === candidateId ? 'immutable-candidate.vercel.app' : 'previous.vercel.app', id === candidateId ? frontendSha : previousSha)) };
       }
     }
     if (command.endsWith('node') && args.some(value => String(value).endsWith('verify-production-release.mjs'))) return { status: failPublic ? 1 : 0, stdout: '' };
     if (command.endsWith('node') && args.some(value => String(value).endsWith('verify-authenticated-release.mjs'))) return { status: failAuthenticated ? 1 : 0, stdout: '' };
-    if (command === 'vercel' && args[0] === 'promote') { promotions.push(args[1]); canonicalId = args[1]; return { status: 0, stdout: '' }; }
+    if (command === 'vercel' && args[0] === 'promote') {
+      promotions.push(args[1]); canonicalId = args[1]; aliasUpdatedAt = currentTime; return { status: 0, stdout: '' };
+    }
     return { status: 0, stdout: '' };
   };
   let fetchCount = 0;
@@ -148,11 +173,21 @@ assert.equal(promoted.result.backend_source_before, backendSha);
 assert.equal(promoted.result.backend_source_candidate, backendSha);
 assert.equal(promoted.result.backend_source_after, backendSha);
 assert.deepEqual(promoted.result.authenticated_profiles, ['desktop-chrome', 'tablet-chrome', 'ipad-safari', 'iphone-safari']);
+assert.ok(promoted.calls.some(call => call.command === 'vercel' && call.args[1]?.startsWith('/v4/aliases/')),
+  'Canonical routing must be resolved through the Vercel alias API');
+assert.ok(promoted.calls.some(call => call.command === 'vercel' && call.args[1]?.includes(encodeURIComponent(previousId))),
+  'Rollback metadata must be fetched by the alias deployment id');
+assert.equal(promoted.calls.some(call => call.command === 'vercel' && call.args[1]?.startsWith('/v13/deployments/') &&
+  call.args[1].includes(encodeURIComponent(FRONTEND_CANONICAL_DOMAIN))), false,
+  'Canonical domains must never be resolved through deployment-by-domain metadata');
 
 for (const options of [
   { candidate: 'https://other.vercel.app' },
   { candidateReleaseSha: 'd'.repeat(40) },
   { candidateReady: 'BUILDING' },
+  { canonicalAliasName: 'wrong.example' },
+  { canonicalAliasDeploymentId: candidateId },
+  { canonicalAliasUpdatedAt: canonicalAliasUpdatedAt - 1 },
   { envValueOverride: 'changed-encrypted-value' },
   { headSha: 'f'.repeat(40) },
   { dirty: true },
@@ -182,6 +217,22 @@ for (const options of [
 const packageScriptsOnly = await exercise({ changed: [...changedPaths, 'package.json'] });
 assert.equal(packageScriptsOnly.error, undefined, 'Test-only package script metadata may accompany a frontend release');
 assert.deepEqual(packageScriptsOnly.promotions, [candidateId]);
+
+for (const path of [
+  'scripts/sites-build.mjs',
+  'scripts/isolate-web-module-graph.mjs',
+  'scripts/release-recovery.js',
+]) {
+  const result = await exercise({ changed: [...changedPaths, path] });
+  assert.equal(result.error, undefined, `${path} is required for the frontend-only repair`);
+  assert.deepEqual(result.promotions, [candidateId], `${path} should remain promotable with complete evidence`);
+}
+
+for (const path of ['scripts/unrelated-build.mjs', 'scripts/build-release-config.mjs']) {
+  const result = await exercise({ changed: [...changedPaths, path] });
+  assert.ok(result.error, `${path} must remain outside the frontend-only allowlist`);
+  assert.deepEqual(result.promotions, [], `${path} must fail before any promotion`);
+}
 
 assert.throws(() => loadFrontendPromotionPackage({ manifestPath: '/tmp/frontend-promotion/manifest.json', candidate: candidateUrl,
   frontendSha: '', backendSha, read: loaded.read, run: () => { throw new Error('Diff must not run without source SHA'); }, now: currentTime }));
