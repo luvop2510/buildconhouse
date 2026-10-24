@@ -507,13 +507,18 @@ async def update_team_member(
     except DuplicateKeyError as exc:
         raise HTTPException(status_code=409, detail="A team member with this email or username already exists") from exc
     security_fields = ("role", "floor_ids", "access_profile", "custom_access", "delegation_grants", "active")
-    security_changed = any(field in patch and patch[field] != before.get(field) for field in security_fields)
-    if security_changed:
+    changed_security_fields = {
+        field for field in security_fields if field in patch and patch[field] != before.get(field)
+    }
+    if changed_security_fields:
         invalidate_principal_cache("staff", user_id)
-        # Roles/floors/profiles are authorization claims. Revoke every device
-        # before returning the updated account so stale tokens cannot retain
-        # the old scope for their remaining JWT lifetime.
-        await revoke_all_sessions("staff", user_id)
+        # Page grants for an already-delegated account are loaded from the
+        # database on each request. Refresh them without signing the member
+        # out, but keep revocation when a change alters role, floor scope,
+        # profile, access mode or account status; those claims can be cached
+        # by another backend worker until its short cache expires.
+        if changed_security_fields - {"delegation_grants"}:
+            await revoke_all_sessions("staff", user_id)
     else:
         # Refresh display/contact data without revoking valid sessions.
         invalidate_principal_cache("staff", user_id)

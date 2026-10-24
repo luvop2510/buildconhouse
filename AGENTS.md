@@ -2,6 +2,22 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
+## Delegated page and floor access continuity — 2026-10-24
+
+Editing page grants for a member who is already in custom delegated access
+invalidates that member's local cached identity but preserves active sessions:
+the middleware loads page grants from the current user record on each request.
+Changing the system role, floor assignment, profile or access mode still revokes
+sessions because those principal fields can remain cached on another backend
+worker. Account deactivation, deletion and credential resets also revoke
+sessions. Keep each delegation resource key stable when its screen or route
+changes, so existing floor/page grants continue to refer to the same work. When
+adding a page, update the backend resource registry and API path mapping,
+frontend route/module/action mapping, supported floors and team delegation
+catalog together. Add route and grant coverage for every floor that supports
+the page. `team_role` is a display label; authorization is represented by the
+system role and explicit floor/page grants.
+
 ## PDF sharing, assigned follow-ups and references — 2026-10-17
 
 Quotation/selection sharing creates no public PDF capability. Share actual PDF

@@ -458,8 +458,8 @@ def require_roles(*allowed: Role):
         # a request's resource, HTTP action, and floor, do not reintroduce a
         # broad role gate here: doing so would make an apparently granted
         # action unusable for a worker whose base role is intentionally low.
-        # Sessions are revoked whenever a grant changes, so this cannot leave
-        # an old custom allocation active.
+        # Custom grants are loaded from the current user record on each
+        # request, so an existing session never carries an old allocation.
         if user.custom_access:
             return user
         if user.role not in allowed:

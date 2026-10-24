@@ -10,7 +10,7 @@ from starlette.requests import Request
 import auth
 from models import TeamCreatePayload, TeamUpdatePayload, UserPublic
 from routes import access_grants_routes as routes, misc_routes
-from services.access_grants import build_delegation_snapshot, grants_for_user, request_resource
+from services.access_grants import build_delegation_snapshot, grants_for_user, request_resource, resource_for_api_path
 
 
 FLOORS = ["ground-floor", "first-floor", "second-floor", "third-floor"]
@@ -62,11 +62,11 @@ def owner():
 ])
 async def test_replace_saves_floors_and_all_pages_in_one_atomic_user_write(monkeypatch, floors, grants):
     db = database()
+    refreshed = []
     revoked = []
-    async def revoke(user_id):
-        revoked.append(user_id)
     monkeypatch.setattr(routes, "db", db)
-    monkeypatch.setattr(routes, "_revoke_grant_subject", revoke)
+    monkeypatch.setattr(routes, "invalidate_principal_cache", lambda kind, user_id: refreshed.append((kind, user_id)))
+    monkeypatch.setattr(routes, "revoke_all_sessions", lambda kind, user_id: _record_revocation(revoked, kind, user_id))
     result = await routes.replace_access_grants("staff", routes.DelegationInput(floor_ids=floors, grants=grants), owner())
     assert len(db.users.updates) == 1
     saved = db.users.updates[0]["$set"]
@@ -74,7 +74,12 @@ async def test_replace_saves_floors_and_all_pages_in_one_atomic_user_write(monke
     assert saved["delegation_grants"] == result["grants"]
     assert saved["custom_access"] is True and saved["access_profile"] is None
     assert await grants_for_user(db, "staff") == result["grants"]
-    assert revoked == ["staff"]
+    assert refreshed == [("staff", "staff")]
+    assert revoked == [("staff", "staff")]
+
+
+async def _record_revocation(rows, kind, user_id):
+    rows.append((kind, user_id))
 
 
 @pytest.mark.asyncio
@@ -104,14 +109,15 @@ async def test_deleting_final_grant_keeps_default_deny_and_ignores_legacy_rows(m
     db = database()
     snapshot = await build_delegation_snapshot(db, user_id="staff", floor_ids=["ground-floor"], grants=[allocation()], actor_id="owner", actor_name="Owner")
     db.users.doc.update(custom_access=True, floor_ids=["ground-floor"], delegation_grants=snapshot)
-    async def revoke(_user_id):
-        pass
     monkeypatch.setattr(routes, "db", db)
-    monkeypatch.setattr(routes, "_revoke_grant_subject", revoke)
+    revoked = []
+    monkeypatch.setattr(routes, "invalidate_principal_cache", lambda *_args: None)
+    monkeypatch.setattr(routes, "revoke_all_sessions", lambda kind, user_id: _record_revocation(revoked, kind, user_id))
     await routes.delete_access_grant("staff", snapshot[0]["id"], owner())
     assert db.users.doc["custom_access"] is True
     assert db.users.doc["delegation_grants"] == []
     assert await grants_for_user(db, "staff") == []
+    assert revoked == []
 
 
 def test_custom_manager_floor_shell_never_inherits_unassigned_floors():
@@ -148,22 +154,104 @@ async def test_custom_team_create_can_have_no_enabled_floors_without_role_fallba
 
 
 @pytest.mark.asyncio
-async def test_team_patch_atomically_replaces_floors_and_grants_and_revokes_sessions(monkeypatch):
+async def test_team_patch_atomically_replaces_floors_and_grants_revoking_stale_scope(monkeypatch):
     db = database()
     revoked = []
+    refreshed = []
     async def revoke(_kind, user_id):
         revoked.append(user_id)
     async def log(**_kwargs):
         pass
     monkeypatch.setattr(misc_routes, "db", db)
     monkeypatch.setattr(misc_routes, "revoke_all_sessions", revoke)
+    monkeypatch.setattr(misc_routes, "invalidate_principal_cache", lambda kind, user_id: refreshed.append((kind, user_id)))
     monkeypatch.setattr(misc_routes, "log_event", log)
     result = await misc_routes.update_team_member("staff", TeamUpdatePayload(custom_access=True, floor_ids=["ground-floor", "third-floor"], access_grants=[allocation(), allocation("furniture_quotations", "third-floor")], team_role="Delivery lead"), owner())
     assert len(db.users.updates) == 1
     assert result["floor_ids"] == ["ground-floor", "third-floor"]
     assert result["team_role"] == "Delivery lead"
     assert len(result["delegation_grants"]) == 2
-    assert result["access_profile"] is None and revoked == ["staff"]
+    assert result["access_profile"] is None
+    assert revoked == ["staff"] and refreshed == [("staff", "staff")]
+
+
+@pytest.mark.asyncio
+async def test_team_page_grant_edit_keeps_existing_delegated_session(monkeypatch):
+    db = database()
+    prior = await build_delegation_snapshot(db, user_id="staff", floor_ids=["first-floor"],
+        grants=[allocation("quotations", "first-floor")], actor_id="owner", actor_name="Owner")
+    db.users.doc.update(custom_access=True, floor_ids=["first-floor"], delegation_grants=prior)
+    revoked = []
+    refreshed = []
+    async def revoke(kind, user_id):
+        revoked.append((kind, user_id))
+    async def log(**_kwargs):
+        pass
+    monkeypatch.setattr(misc_routes, "db", db)
+    monkeypatch.setattr(misc_routes, "revoke_all_sessions", revoke)
+    monkeypatch.setattr(misc_routes, "invalidate_principal_cache", lambda kind, user_id: refreshed.append((kind, user_id)))
+    monkeypatch.setattr(misc_routes, "log_event", log)
+    result = await misc_routes.update_team_member("staff", TeamUpdatePayload(
+        custom_access=True, floor_ids=["first-floor"], access_grants=[
+            allocation("quotations", "first-floor"), allocation("catalog", "first-floor", ["view", "create"]),
+        ], team_role="Sanitary and catalog lead"), owner())
+    assert len(result["delegation_grants"]) == 2
+    assert revoked == [] and refreshed == [("staff", "staff")]
+
+
+@pytest.mark.asyncio
+async def test_team_role_label_change_does_not_revoke_session_or_change_grants(monkeypatch):
+    db = database()
+    grant = await build_delegation_snapshot(db, user_id="staff", floor_ids=["first-floor"],
+        grants=[allocation("quotations", "first-floor")], actor_id="owner", actor_name="Owner")
+    db.users.doc.update(custom_access=True, floor_ids=["first-floor"], delegation_grants=grant)
+    revoked = []
+    refreshed = []
+    async def revoke(*args):
+        revoked.append(args)
+    async def log(**_kwargs):
+        pass
+    monkeypatch.setattr(misc_routes, "db", db)
+    monkeypatch.setattr(misc_routes, "revoke_all_sessions", revoke)
+    monkeypatch.setattr(misc_routes, "invalidate_principal_cache", lambda kind, user_id: refreshed.append((kind, user_id)))
+    monkeypatch.setattr(misc_routes, "log_event", log)
+    result = await misc_routes.update_team_member("staff", TeamUpdatePayload(team_role="Kitchen floor lead"), owner())
+    assert result["team_role"] == "Kitchen floor lead"
+    assert await grants_for_user(db, "staff") == grant
+    assert revoked == [] and refreshed == [("staff", "staff")]
+
+
+@pytest.mark.asyncio
+async def test_new_kitchen_page_can_be_delegated_and_all_nested_pages_keep_the_same_resource():
+    grants = await build_delegation_snapshot(
+        database(), user_id="staff", floor_ids=["second-floor"],
+        grants=[allocation("kitchen_projects", "second-floor", ["view", "create", "update", "export"])],
+        actor_id="owner", actor_name="Owner",
+    )
+    assert grants[0]["resource"] == "kitchen_projects"
+    assert grants[0]["floor_id"] == "second-floor"
+    for path in [
+        "/api/kitchen-projects", "/api/kitchen-projects/project-1",
+        "/api/kitchen-projects/project-1/commands", "/api/kitchen-projects/project-1/attachments",
+    ]:
+        assert resource_for_api_path(path) == grants[0]["resource"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("floor,resource", [
+    ("ground-floor", "tiles"),
+    ("first-floor", "quotations"),
+    ("second-floor", "kitchen_projects"),
+    ("third-floor", "furniture_quotations"),
+])
+async def test_floor_page_grants_keep_stable_resource_identity(floor, resource):
+    grants = await build_delegation_snapshot(
+        database(), user_id="staff", floor_ids=[floor],
+        grants=[allocation(resource, floor)], actor_id="owner", actor_name="Owner",
+    )
+    assert [(grant["floor_id"], grant["resource"], grant["actions"]) for grant in grants] == [
+        (floor, resource, ["view"]),
+    ]
 
 
 @pytest.mark.asyncio
