@@ -64,7 +64,9 @@ export function useOverlayFocus(open: boolean, onClose: () => void, dismissable 
         panels.set(portal, panel);
         syncIsolation();
       }
-      (focusables()[0] || panel)?.focus();
+      // A user or autoFocus child may already be editing before this deferred
+      // setup runs. Keep that focus instead of moving it to the Close button.
+      if (!panel?.contains(document.activeElement)) (focusables()[0] || panel)?.focus();
     }, 0);
     const handleKey = (event: KeyboardEvent) => {
       // Only the topmost modal should receive keyboard events.

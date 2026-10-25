@@ -1022,6 +1022,7 @@ test('Kitchen lead references create a directory entry and retain complete custo
   await page.getByTestId('kitchen-create-lead-site_location').fill('Synthetic site');
   await page.getByRole('button', { name: 'Reference · architect / interior designer', exact: true }).click();
   const name = `Kitchen architect ${info.project.name} ${Date.now()}`;
+  await page.getByLabel('Designer / architect name', { exact: true }).click();
   await page.getByLabel('Designer / architect name', { exact: true }).pressSequentially(name);
   await expect(page.getByRole('button', { name: 'Add and select', exact: true })).toBeEnabled();
   await page.getByTestId('lead-interior-company').fill('Synthetic studio');
