@@ -17,7 +17,7 @@ from pydantic import ValidationError
 from pymongo.errors import DuplicateKeyError
 
 from models_kitchen import (AdvancePayload, CadFields, ConfigurePolicy,
-                            LeadCustomer, LeadFields, MetadataPayload, PolicyFields, STAGES, VisitFields)
+                            LeadCustomer, LeadFields, MetadataPayload, PolicyFields, STAGES, VisitFields, AssignmentPayload)
 from services import kitchen_access as access
 from services import kitchen_workflow as workflow
 from services.referrer_identity import referrer_query
@@ -350,7 +350,7 @@ class KitchenProjectService:
             result["attachments"] = [{k: v for k, v in attachment.items() if k not in {"storage_key", "bucket"}}
                                      for attachment in result["attachments"]]
         result["permissions"] = {"can_update": await access.capability(self.db, user, "update"),
-                                 "can_assign": False, "can_configure": access.owner(user)}
+                                 "can_assign": access.owner(user), "can_configure": access.owner(user)}
         result["permissions"]["can_review_duplicate"] = access.owner(user)
         for scope in ("production", "closure"):
             result["permissions"][f"can_approve_{scope}"] = access.department_manager(user, policy) and await access.capability(self.db, user, "update")
@@ -468,6 +468,16 @@ class KitchenProjectService:
         async with self.admission(user, "create"):
             return await self._create(user, body)
 
+    async def resolve_assignee(self, user, user_id):
+        if not access.owner(user):
+            raise HTTPException(403, "Only the owner can select Kitchen assignments")
+        if not user_id:
+            return None
+        employee = next((row for row in await access.eligible_staff(self.db) if row["id"] == user_id), None)
+        if not employee:
+            raise HTTPException(422, "Select an active employee with Kitchen access")
+        return employee
+
     async def referrer_fields(self, referrer_id):
         if not referrer_id:
             return {"referrer_id": None, "referrer_name": None, "referrer_type": None, "referrer_company": None}
@@ -526,6 +536,8 @@ class KitchenProjectService:
                     request_fields["customer"].pop(field, None)
         if body.customer is None:
             request_fields.pop("customer")  # Preserve receipts created before inline intake existed.
+        if body.assigned_to is None:
+            request_fields.pop("assigned_to", None)
         digest = fingerprint(request_fields)
         previous = await self.db.kitchen_projects.find_one({"id": project_id, "floor_id": access.KITCHEN_FLOOR})
         if previous:
@@ -533,6 +545,7 @@ class KitchenProjectService:
             if previous.get("creation_fingerprint") != digest:
                 raise HTTPException(409, "This creation key was already used with different fields")
             return await self.public(previous, user, policy, replayed=True)
+        assignee = await self.resolve_assignee(user, body.assigned_to) if body.assigned_to else None
         lead = body.lead.model_dump()
         if lead["status"] == "Lost" and not lead.get("lost_reason"):
             raise HTTPException(422, "A lost reason is required")
@@ -558,10 +571,10 @@ class KitchenProjectService:
                    "version": 1, "stage": "lead", "status": lead["status"], "lead": lead,
                    **reference_fields,
                    "visit": VisitFields().model_dump(), "cad": CadFields().model_dump(),
-                   "assignments": {},
-                   "assignment_names": {},
-                   "assigned_to": None,
-                   "assigned_to_name": None,
+                   "assignments": {"lead": assignee["id"]} if assignee else {},
+                   "assignment_names": {"lead": assignee["full_name"]} if assignee else {},
+                   "assigned_to": assignee["id"] if assignee else None,
+                   "assigned_to_name": assignee["full_name"] if assignee else None,
                    "next_action": None, "deadline": None, "target_completion_date": None,
                    "design_revision_count": 0, "site_visit_count": 0, "known_design_revision_count": 0, "known_site_visit_count": 0, "order_amount": None,
                    "workflow_cycle": 1, "commercial_basis_invalidated": False, "work_history": [],
@@ -620,8 +633,6 @@ class KitchenProjectService:
         policy = await self.policy()
         project = await self.db.kitchen_projects.find_one({"id": project_id, "floor_id": access.KITCHEN_FLOOR})
         await access.require_project(self.db, user, project, policy, "update")
-        if body.command == "assign":
-            raise HTTPException(422, "Kitchen stage assignments have been removed")
         digest = fingerprint({"command": body.command, "payload": body.payload})
         receipt = next((r for r in project["command_receipts"] if r["actor_id"] == user.id and r["key"] == body.idempotency_key), None)
         if receipt:
@@ -640,7 +651,12 @@ class KitchenProjectService:
         updated = copy.deepcopy(project)
         payload = body.payload
         command = body.command
-        if command in {"edit_lead", "save_visit", "save_cad"}:
+        if command == "assign":
+            assignment = validate(AssignmentPayload, payload)
+            employee = await self.resolve_assignee(user, assignment.user_id)
+            updated["assignments"][assignment.stage] = employee["id"] if employee else None
+            updated["assignment_names"][assignment.stage] = employee["full_name"] if employee else None
+        elif command in {"edit_lead", "save_visit", "save_cad"}:
             stage, model = {"edit_lead": ("lead", LeadFields), "save_visit": ("visit", VisitFields), "save_cad": ("cad", CadFields)}[command]
             if project["stage"] != stage:
                 raise HTTPException(422, f"This command is available only in the {stage} stage")

@@ -71,12 +71,12 @@ export type KitchenProject = {
 export type KitchenPage<T> = { rows: T[]; total: number; page: number; limit: number };
 export type KitchenQuery = {
   attention?: "active" | "on_hold" | "pending_approval" | "completion_overdue" | "active_order";
-  search?: string; stage?: string; status?: string; date_from?: string; date_to?: string;
+  search?: string; stage?: string; status?: string; assignee?: string; date_from?: string; date_to?: string;
   date_field?: string; sort?: string; direction?: "asc" | "desc"; page?: number; limit?: number; completed?: string; duplicate_review?: "pending";
 };
 export type KitchenFileTransfer = { transfer_id: string; size_bytes: number; chunk_bytes: number; part_count: number; state: "open" | "finishing" | "completed"; expires_at: string };
-export type KitchenCreate = { customer_id?: string; customer?: Omit<KitchenCustomer, "id"> & { phone: string }; idempotency_key: string; lead: KitchenLead };
-export type KitchenCommand = "move_stage" | "review_duplicate" | "edit_lead" | "convert" | "save_visit" | "save_cad" | "advance_stage" | "metadata" | "design_present" | "design_update" | "design_share" | "design_response" | "design_revision" | "design_handoff" | "quotation_receive" | "quotation_share" | "quotation_response" | "order_confirm" | "order_update" | "order_document" | "order_advance" | "order_amend" | "order_status" | "exception" | "production_update" | "installation_update" | "site_visit" | "approval";
+export type KitchenCreate = { assigned_to?: string | null; customer_id?: string; customer?: Omit<KitchenCustomer, "id"> & { phone: string }; idempotency_key: string; lead: KitchenLead };
+export type KitchenCommand = "assign" | "move_stage" | "review_duplicate" | "edit_lead" | "convert" | "save_visit" | "save_cad" | "advance_stage" | "metadata" | "design_present" | "design_update" | "design_share" | "design_response" | "design_revision" | "design_handoff" | "quotation_receive" | "quotation_share" | "quotation_response" | "order_confirm" | "order_update" | "order_document" | "order_advance" | "order_amend" | "order_status" | "exception" | "production_update" | "installation_update" | "site_visit" | "approval";
 const options = { floorId: KITCHEN_FLOOR_ID, cacheMs: 0 };
 const query = (values: Record<string, string | number | undefined>) => {
   const entries = Object.entries(values).filter(([, value]) => value !== undefined && value !== "");
@@ -97,7 +97,7 @@ export const kitchenProjectsApi = {
   cancelTransfer: (id: string, transfer: string) => api.delete<{ discarded: boolean }>(`/kitchen-projects/${encodeURIComponent(id)}/file-transfers/${encodeURIComponent(transfer)}`, options),
   downloadPart: (id: string, attachment: string, index: number) => api.get<{ index: number; data_base64: string; sha256: string; file_sha256: string; size_bytes: number }>(`/kitchen-projects/${encodeURIComponent(id)}/attachments/${encodeURIComponent(attachment)}/parts/${index}`, options),
   attachmentPath: (id: string, attachmentId: string) => `/kitchen-projects/${encodeURIComponent(id)}/attachments/${encodeURIComponent(attachmentId)}`,
-  exportPath: (values: Pick<KitchenQuery, "search" | "date_from" | "date_to">) => `/kitchen-projects/export${query(values)}`,
+  exportPath: (values: Pick<KitchenQuery, "search" | "assignee" | "date_from" | "date_to">) => `/kitchen-projects/export${query(values)}`,
   duplicates: (customerId: string, signal?: AbortSignal) => api.get<{ rows: { id: string; reference: string; stage: KitchenStage }[] }>(`/kitchen-projects/duplicate-candidates?customer_id=${encodeURIComponent(customerId)}`, { ...options, signal }),
   list: (values: KitchenQuery, signal?: AbortSignal) => api.get<KitchenPage<KitchenProject>>(`/kitchen-projects${query(values)}`, { ...options, signal }),
   get: (id: string, signal?: AbortSignal) => api.get<KitchenProject>(`/kitchen-projects/${encodeURIComponent(id)}`, { ...options, signal }),

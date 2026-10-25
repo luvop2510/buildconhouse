@@ -157,3 +157,18 @@ def test_changed_initial_order_amount_keeps_quotation_and_requires_customer_appr
         assert project['orders'][-1]['final_amount'] == project['order_amount'] == '120.00'
         assert project['orders'][-1]['amendments'][0]['customer_approved'] is True
         assert project['quotation_versions'][0]['amount'] == '125.10'
+
+
+@pytest.mark.asyncio
+async def test_pdf_assignment_persists_with_owner_authority(setup):
+    _, service, owner = setup
+    project = await service.create(owner, create_request(customer_id='customer-a', assigned_to='staff-a', idempotency_key='pdf-complete-fields'))
+    assert project['assigned_to'] == 'staff-a' and project['assigned_to_name'] == 'Staff A'
+    project = await service.command(owner, project['id'], cmd(project['version'], 'move_stage', {'target_stage': 'visit'}))
+    assert project['assigned_to'] is None  # No automatic assignment of later stages.
+    project = await service.command(owner, project['id'], cmd(project['version'], 'assign', {'stage': 'visit', 'user_id': 'staff-a'}))
+    assert project['assignments'] == {'lead':'staff-a', 'visit':'staff-a'}
+    assert project['activity'][-1]['type'] == 'assign'
+    with pytest.raises(HTTPException) as invalid:
+        await service.command(owner, project['id'], cmd(project['version'], 'assign', {'stage':'visit','user_id':'foreign-worker'}))
+    assert invalid.value.status_code == 422

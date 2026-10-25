@@ -296,7 +296,7 @@ def test_stage_list_carries_latest_commercial_fields_without_exposing_history():
     asyncio.run(run())
 
 
-def test_q01_q03_q11_customer_reuse_conversion_and_retired_assignment():
+def test_q01_q03_q11_customer_reuse_conversion_and_owner_assignment():
     async def run():
         async with environment() as env:
             project, body = await create_project(env)
@@ -306,8 +306,8 @@ def test_q01_q03_q11_customer_reuse_conversion_and_retired_assignment():
             assert await env["db"].customers.count_documents({"id": env["ids"]["customer"]}) == 1
             different, _ = await create_project(env)
             assert different["id"] != project["id"] and different["customer_id"] == project["customer_id"]
-            retired = await command(env, project, "assign", {"stage": "visit", "user_id": env["ids"]["worker"]})
-            assert retired.status_code == 422, retired.text
+            project = await accepted(env, project, "assign", {"stage": "visit", "user_id": env["ids"]["worker"]})
+            assert project["assignments"] == {"visit": env["ids"]["worker"]}
             project = await accepted(env, project, "review_duplicate", {"decision": "distinct_project", "reason": "Owner verified separate site"})
             conversion_key = str(uuid4())
             converted = await command(env, project, "convert", key=conversion_key)
@@ -323,7 +323,7 @@ def test_q01_q03_q11_customer_reuse_conversion_and_retired_assignment():
             assert saved["project_reference"] == project["project_reference"]
             stored = await env["db"].kitchen_projects.find_one({"id": saved["id"]})
             assert stored["version"] == saved["version"] and stored["stage"] == "visit"
-            assert stored["assignments"] == {}
+            assert stored["assignments"] == {"visit": env["ids"]["worker"]}
             assert saved["lead"]["budget"] == "250000.01" and saved["lead"]["notes"] == "Acceptance lead note"
             assert saved["lead"]["lead_date"] == "2026-10-19"
             assert await env["db"].kitchen_projects.count_documents({}) == 2
@@ -434,7 +434,7 @@ def test_q10_grant_scope_without_assignment_and_session_revocation():
             page = await env["api"].get("/api/kitchen-projects", headers=headers(env, "worker"))
             assert page.status_code == 200 and page.json()["total"] == 2
             retired = await command(env, project, "assign", {"stage": "visit", "user_id": env["ids"]["worker"]}, actor="worker")
-            assert retired.status_code == 422
+            assert retired.status_code == 403
             edited = await command(env, unrelated, "edit_lead", {"notes": "Delegated without assignment"}, actor="worker")
             assert edited.status_code == 200
             denied = await command(env, unrelated, "edit_lead", {"notes": "No grant"}, actor="denied")
@@ -2065,7 +2065,7 @@ def test_retired_kitchen_writes_reject_before_persistence_but_delegated_intake_w
                     "lead": {"site_location": "Delegated site"}}
             retired_create = await env["api"].post("/api/kitchen-projects", headers=headers(env, "worker"),
                 json={**body, "assigned_to": env["ids"]["worker"]})
-            assert retired_create.status_code == 422
+            assert retired_create.status_code == 403
             assert await env["db"].kitchen_projects.count_documents({}) == 0
             created = await env["api"].post("/api/kitchen-projects", headers=headers(env, "worker"), json=body)
             assert created.status_code == 200, created.text

@@ -8,6 +8,7 @@ import { useActionAccess } from "@/src/hooks/use-permissions";
 import { NavigationLink } from "@/src/design/NavigationLink";
 import { KITCHEN_STAGES, STAGE_LABELS, kitchenProjectsApi, type KitchenAssignee, type KitchenCustomer, type KitchenLead, type KitchenPage, type KitchenProject, type KitchenQuery, type KitchenStage, type KitchenPolicy } from "@/src/api/kitchenProjects";
 import { displayDate, ErrorNotice, errorText, KitchenFloor, KitchenPage as KitchenPageFrame, KitchenPanel, historicalCount, rupees, useKitchenSubmission } from "./shared";
+import { AssigneeChoice } from "./KitchenAssignment";
 import { LeadFields } from "./KitchenLeadFields";
 import { radius, spacing } from "@/src/theme/tokens";
 import { KitchenButton as Button, KitchenTextField as TextField, kitchenColors as colors, kitchenType as type } from "./KitchenPrimitives";
@@ -25,7 +26,7 @@ const LIMIT = 25;
 export type KitchenWorkspacePage = "overview" | "projects" | "workflow" | "stage" | "completed" | "review" | "settings" | "new";
 type WorkspaceProps = { page?: KitchenWorkspacePage; stage?: KitchenStage };
 const stageDescriptions: Record<KitchenStage, string> = { lead: "Record the enquiry, then convert it to a showroom visit.", visit: "Record the showroom visit and preferred display model.", cad: "Record CAD receipt and prepare the design for presentation.", design: "Present the design, record revisions and obtain customer approval.", quotation: "Receive the company quotation and record the customer's response.", order: "Confirm the approved quotation and record the advance payment.", production: "Record when production starts and finishes.", installation: "Record installation progress and actual site visits.", completed: "Finished installations, with their complete project history." };
-const filterKeys = ["stage", "status", "date_from", "date_to", "date_field", "sort", "direction", "attention", "duplicate_review"] as const;
+const filterKeys = ["assignee", "stage", "status", "date_from", "date_to", "date_field", "sort", "direction", "attention", "duplicate_review"] as const;
 const one = (value: string | string[] | undefined) => Array.isArray(value) ? value[0] || "" : value || "";
 const url = (path: string, values: Record<string, string | number | undefined>) => { const query = Object.entries(values).filter(([, value]) => value !== "" && value !== undefined).map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`).join("&"); return `${path}${query ? `?${query}` : ""}`; };
 export function KitchenWorkspace(props: WorkspaceProps) { return <KitchenFloor><Workspace {...props} /></KitchenFloor>; }
@@ -101,7 +102,7 @@ function ProjectList({ page, stage, values, setValues, returnTo, search, setSear
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const currentPage = /^\d+$/.test(values.page) ? Math.max(1, Number(values.page)) : 1;
-  const query: KitchenQuery = { search: values.search, stage: page === "completed" ? "completed" : page === "review" ? "lead" : page === "stage" ? stage : values.stage, status: values.status, attention: values.attention as KitchenQuery["attention"], duplicate_review: page === "review" ? "pending" : values.duplicate_review === "pending" ? "pending" : undefined, date_from: values.date_from, date_to: values.date_to, date_field: page === "completed" ? "completion_date" : values.date_field || "target_completion_date", sort: values.sort || "updated_at", direction: values.direction === "asc" ? "asc" : "desc", page: currentPage, limit: LIMIT };
+  const query: KitchenQuery = { search: values.search, stage: page === "completed" ? "completed" : page === "review" ? "lead" : page === "stage" ? stage : values.stage, status: values.status, assignee: values.assignee || undefined, attention: values.attention as KitchenQuery["attention"], duplicate_review: page === "review" ? "pending" : values.duplicate_review === "pending" ? "pending" : undefined, date_from: values.date_from, date_to: values.date_to, date_field: page === "completed" ? "completion_date" : values.date_field || "target_completion_date", sort: values.sort || "updated_at", direction: values.direction === "asc" ? "asc" : "desc", page: currentPage, limit: LIMIT };
   const queryKey = JSON.stringify(query);
   useEffect(() => { const controller = new AbortController(); setLoading(true); setFailure(null); setResult(null); kitchenProjectsApi.list(JSON.parse(queryKey), controller.signal).then(value => { if (!controller.signal.aborted) setResult(value); }).catch(error => { if (!controller.signal.aborted) setFailure(errorText(error)); }).finally(() => { if (!controller.signal.aborted) setLoading(false); }); return () => controller.abort(); }, [queryKey, retry]);
   const activeFilters = filterKeys.filter(key => values[key] && !["sort", "direction", "date_field"].includes(key)).length;
@@ -113,7 +114,7 @@ function ProjectList({ page, stage, values, setValues, returnTo, search, setSear
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12, alignItems: "center", paddingBottom: 20, borderBottomWidth: 1, borderColor: colors.divider }}>
       <View style={{ flex: 1, minWidth: Math.min(220, contentWidth || 220) }}><SearchField placeholder={page === "completed" ? "Search completed projects" : "Search project or customer"} accessibilityLabel="Search Kitchen projects" value={search} onChangeText={setSearch} onClear={() => setSearch("")} testID="kitchen-search" /></View>
       <Button label={`Filters${activeFilters ? ` (${activeFilters})` : ""}`} icon="sliders" variant="secondary" onPress={() => setFiltersOpen(true)} testID="kitchen-filters-open" />
-      {page === "completed" && canExport ? <Button label="Export" icon="download" variant="secondary" loading={exporting} onPress={() => { setExporting(true); setExportError(null); void downloadApiFile(kitchenProjectsApi.exportPath({ search: values.search, date_from: values.date_from, date_to: values.date_to }), "kitchen-completed.csv", "completed projects CSV", KITCHEN_FLOOR_ID).catch(error => setExportError(errorText(error))).finally(() => setExporting(false)); }} testID="kitchen-completed-export" /> : null}
+      {page === "completed" && canExport ? <Button label="Export" icon="download" variant="secondary" loading={exporting} onPress={() => { setExporting(true); setExportError(null); void downloadApiFile(kitchenProjectsApi.exportPath({ search: values.search, assignee: values.assignee, date_from: values.date_from, date_to: values.date_to }), "kitchen-completed.csv", "completed projects CSV", KITCHEN_FLOOR_ID).catch(error => setExportError(errorText(error))).finally(() => setExporting(false)); }} testID="kitchen-completed-export" /> : null}
     </View>
     {exportError ? <Alert tone="error" title="Export unavailable" description={`${exportError} Try Export again.`} /> : null}
     {activeFilters || values.search ? <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm }}><Text style={[type.bodyMuted, { flex: 1 }]}>{[KITCHEN_ATTENTION_LABELS[values.attention] || "", page === "projects" && values.stage ? STAGE_LABELS[values.stage as KitchenStage] || values.stage : "", values.status, (values.date_from || values.date_to) ? `${page === "completed" ? "Completion date" : ({ created_at: "Lead creation", target_completion_date: "Target completion" } as Record<string, string>)[values.date_field || "target_completion_date"] || "Date"} · India time` : "", values.date_from ? `From ${values.date_from}` : "", values.date_to ? `To ${values.date_to}` : ""].filter(Boolean).join(" · ") || "Search results"}</Text><Button label="Clear" variant="ghost" onPress={clear} /></View> : null}
@@ -126,6 +127,7 @@ function ProjectList({ page, stage, values, setValues, returnTo, search, setSear
   </View>;
 }
 function ProjectFilters({ visible, onClose, page, stage, values, onApply }: { visible: boolean; onClose: () => void; page: KitchenWorkspacePage; stage?: KitchenStage; values: Record<string, string>; onApply: (value: Record<string, string>) => void }) {
+  const { staff } = useAuth();
   const [draft, setDraft] = useState(values);
   const change = (key: string, value: string) => setDraft(current => ({ ...current, [key]: value, ...(key === "stage" ? { status: "" } : {}) }));
   const selectedStage = page === "stage" ? stage : draft.stage as KitchenStage;
@@ -135,6 +137,7 @@ function ProjectFilters({ visible, onClose, page, stage, values, onApply }: { vi
     {page === "projects" ? <SelectFilter label="Stage" value={draft.stage} options={[{ value: "", label: "All stages" }, ...KITCHEN_STAGES.map(value => ({ value, label: STAGE_LABELS[value] }))]} onChange={value => change("stage", value)} testID="kitchen-stage-filter" /> : null}
     {page !== "completed" && page !== "review" ? <SelectFilter label={selectedStage ? `${STAGE_LABELS[selectedStage]} status` : "Status across stages"} value={draft.status} options={[{ value: "", label: "Any status" }, ...statuses.map(value => ({ value, label: value }))]} onChange={value => change("status", value)} testID="kitchen-status-filter" /> : null}
     {page !== "completed" && page !== "review" ? <SelectFilter label="Needs attention" value={draft.attention} options={[{ value: "", label: "All projects" }, ...Object.entries(KITCHEN_ATTENTION_LABELS).map(([value, label]) => ({ value, label }))]} onChange={value => change("attention", value)} testID="kitchen-attention-filter" /> : null}
+    {staff?.role === "owner" ? <AssigneeChoice filter value={draft.assignee || ""} onChange={value => change("assignee", value)} testID="kitchen-filter-assignee" /> : null}
     {page !== "completed" ? <SelectFilter label="Date to filter" value={draft.date_field || "target_completion_date"} options={[{ value: "created_at", label: "Lead creation" }, { value: "target_completion_date", label: "Target completion" }]} onChange={value => change("date_field", value)} /> : null}
     <KitchenDateField label={page === "completed" ? "Completion date from" : "Date from"} value={draft.date_from} onChange={value => change("date_from", value)} max={draft.date_to || undefined} testID="kitchen-date-from" />
     <KitchenDateField label={page === "completed" ? "Completion date to" : "Date to"} value={draft.date_to} onChange={value => change("date_to", value)} min={draft.date_from || undefined} testID="kitchen-date-to" />
@@ -158,6 +161,7 @@ function ProjectCard({ project, href }: { project: KitchenProject; href: string 
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.lg, borderTopWidth: 1, borderColor: colors.border, paddingTop: spacing.md }}>
       {stageColumns(project.stage).map(column => <View key={column.label} style={{ flexGrow: 1, flexBasis: 150, minWidth: 0, gap: spacing.xs }}><Text style={type.caption}>{column.label}</Text><Text style={type.body}>{column.value(project)}</Text></View>)}
     </View>
+    {project.assigned_to_name ? <Text style={type.caption}>Assigned to · {project.assigned_to_name}</Text> : null}
     {project.stage !== "completed" && project.target_completion_date ? <Text style={type.caption}>Target completion · {displayDate(project.target_completion_date)}</Text> : null}
   </NavigationLink>;
 }
@@ -183,6 +187,8 @@ function stageColumns(stage?: KitchenStage): StageColumn[] {
 }
 const customerDetailFields: [keyof KitchenCustomer, string][] = [["address", "Address"], ["property_name", "Property / site name"], ["city", "City"], ["state", "State"], ["pincode", "PIN code"], ["email", "Email"], ["alternate_phone", "Alternate phone"], ["company", "Company"], ["gstin", "GSTIN"], ["notes", "Customer notes"]];
 function CreateLead({ onClose, onRegisterClose, onCreated }: { onClose: () => void; onRegisterClose: (handler: () => void) => void; onCreated: (project: KitchenProject) => void }) {
+  const { staff } = useAuth();
+  const [assignee, setAssignee] = useState("");
   const [customer, setCustomer] = useState<KitchenCustomer | null>(null);
   const [existingMode, setExistingMode] = useState(false);
   const [customerName, setCustomerName] = useState("");
@@ -199,9 +205,9 @@ function CreateLead({ onClose, onRegisterClose, onCreated }: { onClose: () => vo
   const [retry, setRetry] = useState(0);
   const [lead, setLead] = useState<KitchenLead>(() => ({ status: "New", lead_date: kitchenToday() }));
   const submission = useKitchenSubmission();
-  const dirty = Boolean(customer || customerName || customerPhone || Object.values(customerDetails).some(Boolean) || query || Object.entries(lead).some(([key, value]) => key === "status" ? value !== "New" : key === "lead_date" ? value !== initialLeadDate : Boolean(value)));
+  const dirty = Boolean(assignee || customer || customerName || customerPhone || Object.values(customerDetails).some(Boolean) || query || Object.entries(lead).some(([key, value]) => key === "status" ? value !== "New" : key === "lead_date" ? value !== initialLeadDate : Boolean(value)));
   const { allowLeave } = useKitchenExitGuard({ dirty, scope: "/kitchen/stages/lead" });
-  const reset = () => { setCustomer(null); setCustomerName(""); setCustomerPhone(""); setCustomerDetails({}); setInitialLeadDate(kitchenToday()); setLead({ status: "New", lead_date: kitchenToday() }); setQuery(""); setExistingMode(false); };
+  const reset = () => { setAssignee(""); setCustomer(null); setCustomerName(""); setCustomerPhone(""); setCustomerDetails({}); setInitialLeadDate(kitchenToday()); setLead({ status: "New", lead_date: kitchenToday() }); setQuery(""); setExistingMode(false); };
   const close = () => {
     if (submission.busy) return;
     const discard = () => { reset(); allowLeave(); onClose(); };
@@ -234,7 +240,7 @@ function CreateLead({ onClose, onRegisterClose, onCreated }: { onClose: () => vo
     if (existingMode && !customer) { submission.setError("Select an existing customer or choose New customer."); return; }
     if (!name.trim() || !phone.trim()) { submission.setError("Customer name and phone are required."); return; }
     if (!lead.site_location?.trim()) { submission.setError("Enter the site location before creating the lead."); return; }
-    const body = { ...(customer ? { customer_id: customer.id } : { customer: { ...customerDetails, name: name.trim(), phone: phone.trim() } }), lead };
+    const body = { ...(assignee ? { assigned_to: assignee } : {}), ...(customer ? { customer_id: customer.id } : { customer: { ...customerDetails, name: name.trim(), phone: phone.trim() } }), lead };
     void submission.submit(body, key => kitchenProjectsApi.create({ ...body, idempotency_key: key }), project => { allowLeave(); reset(); onCreated(project); });
   };
   return <View testID="kitchen-create-page" style={{ width: "100%", maxWidth: 760 }}>
@@ -254,6 +260,7 @@ function CreateLead({ onClose, onRegisterClose, onCreated }: { onClose: () => vo
       {customer && (!customer.name.trim() || !customer.phone?.trim()) ? <Alert tone="warning" title="Customer name and phone required" description="Update the existing customer in the customer directory, then select it again. This form does not overwrite shared customer details." /> : null}
       <>
       <View style={{ paddingTop: 24, borderTopWidth: 1, borderColor: colors.divider, gap: 6 }}><Text style={type.titleMd}>Project enquiry</Text><Text style={type.caption}>Record the site and the customer’s kitchen requirements.</Text></View>
+      {staff?.role === "owner" ? <AssigneeChoice value={assignee} onChange={setAssignee} disabled={submission.busy} testID="kitchen-create-assignee" /> : null}
       <LeadFields value={lead} onChange={setLead} disabled={submission.busy} prefix="kitchen-create-lead" />
       <ErrorNotice error={submission.error} />
       <Button label="Create lead" onPress={save} loading={submission.busy} disabled={!name.trim() || !phone.trim() || (existingMode && !customer) || !lead.site_location?.trim() || submission.busy} testID="kitchen-create-submit" />

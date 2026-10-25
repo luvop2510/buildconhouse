@@ -11,7 +11,10 @@ recovery, initial destinations and the mounted navigator. Hosted acceptance now
 observes the actual identity request, with unchanged root/identity/content bounds.
 Never restore a health/wake loop before login, account hydration or floor access.
 
-Kitchen queues use compact lists only. CAD status is derived from percentage
+Kitchen queues use compact lists only. The user explicitly keeps unrestricted
+Next/Previous and excludes Next Action, Budget Discussion and Visit Requirements
+from Visit. Owner-selected Assigned To is optional at intake and per stage; never
+auto-assign an employee or make assignment grant access. CAD status is derived from percentage
 on server and form; never allow a contradictory independent status. Revision
 counts only increase from customer revision requests. Quotation entry uses private
 uploaded files and no HTTPS input. Order corrections retain before/after history,

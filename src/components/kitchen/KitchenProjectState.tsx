@@ -103,7 +103,7 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
       setRetainedDraft(false);
       const cycle = `commercial.cycle.${current.workflow_cycle ?? 1}`;
       const prefixes: Partial<Record<KitchenCommand, string[]>> = {
-        edit_lead: ["lead."], save_visit: ["visit."], save_cad: ["cad."], metadata: ["plan."],
+        assign: [], edit_lead: ["lead."], save_visit: ["visit."], save_cad: ["cad."], metadata: ["plan."],
         review_duplicate: ["duplicate."],
         design_present: [`${cycle}.design.file`, `${cycle}.design.date`, `${cycle}.design.requirements`, `${cycle}.design.budget`, `${cycle}.design.notes`],
         design_update: [`${cycle}.design.${String(payload.version_id)}.edit`],

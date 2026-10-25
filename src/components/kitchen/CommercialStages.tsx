@@ -125,7 +125,7 @@ export function CommercialStages({ project, stage, disabled, command, mode = "ta
           <Choice label="Advance received" value={advanceReceived} values={["Not recorded", "Yes", "No"]} onChange={setAdvanceReceived} disabled={locked} testID="kitchen-advance-received" />
           <TextField label="Advance amount (INR)" value={advanceAmount} onChangeText={setAdvanceAmount} editable={!locked} keyboardType="decimal-pad" testID="kitchen-advance-amount" />
           {dateField("Advance receipt date", advanceDate, setAdvanceDate, "kitchen-advance-date")}
-          <Button label="Record advance payment" disabled={locked || advanceReceived === "Not recorded"} onPress={() => command("order_advance", { received: advanceReceived === "Yes", amount: advanceReceived === "No" ? "0.00" : advanceAmount, date: advanceReceived === "No" ? null : advanceDate || null })} testID="kitchen-advance-save" />
+          <Button label="Record advance payment" disabled={locked || !order || advanceReceived === "Not recorded"} onPress={() => command("order_advance", { received: advanceReceived === "Yes", amount: advanceReceived === "No" ? "0.00" : advanceAmount, date: advanceReceived === "No" ? null : advanceDate || null })} testID="kitchen-advance-save" />
   </View>;
 
   if (mode === "amendment" && !project.permissions?.can_approve_exceptions) return <Alert tone="info" title="Owner authorization required" description="Only the owner can record restricted changes to approved commercial terms." />;
@@ -196,7 +196,7 @@ export function CommercialStages({ project, stage, disabled, command, mode = "ta
         {active && order ? <OrderEditor project={project} order={order} disabled={locked} command={command} /> : null}
       </KitchenPanel>
       {active && order && project.permissions?.can_approve_exceptions ? <CommercialStages project={project} stage={stage} disabled={disabled} command={command} mode="amendment" /> : null}
-      {preview ? <KitchenPanel title="Advance payment">{advanceForm}</KitchenPanel> : null}
+      {preview || active && !order ? <KitchenPanel title="Advance payment"><Text style={type.caption}>Confirm the customer order before recording its advance payment.</Text>{advanceForm}</KitchenPanel> : null}
       {preview ? approval("production") : null}
       {order ? <>
         <KitchenPanel title="Advance payment"><Text style={type.body}>Saved: {order.advance.received ? `${rupees(order.advance.amount)} received ${displayDate(order.advance.date)}` : "Not received"}</Text>

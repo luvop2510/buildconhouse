@@ -15,6 +15,7 @@ import { kitchenToday } from "./KitchenDates";
 import { LeadFields } from "./KitchenLeadFields";
 import { spacing } from "@/src/theme/tokens";
 import { KitchenButton as Button, KitchenTextField as TextField, kitchenColors as colors, kitchenType as type } from "./KitchenPrimitives";
+import { KitchenAssignment } from "./KitchenAssignment";
 import { CommercialStages } from "./CommercialStages";
 import { KitchenDocuments } from "./KitchenDocuments";
 import { kitchenProjectPath, kitchenStage, useKitchenDraft, useKitchenProject } from "./KitchenProjectState";
@@ -66,6 +67,7 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
         {!canUpdate ? <View testID="kitchen-read-only-notice"><Alert tone="info" title="View only" description="Changes and uploads require permission for this project's current stage." /></View> : null}
         {project.commercial_basis_invalidated ? <Alert tone="warning" title="Fresh commercial approvals required" description="Present and approve a new design, then renew the quotation and order approvals. Earlier records remain in History." /> : null}
         {selected === "lead" ? <DuplicateReview project={project} disabled={disabled || Boolean(held)} /> : null}
+        <KitchenAssignment project={project} stage={selected} disabled={disabled || Boolean(held) || selected !== project.stage} />
         <EarlyStage project={project} stage={selected} disabled={disabled || Boolean(held)} />
         {future ? <StagePreview stage={selected} /> : null}
         <CommercialStages project={project} stage={selected} disabled={disabled || Boolean(held)} command={command} />
@@ -181,7 +183,7 @@ function EarlyStage({ project, stage, disabled }: { project: KitchenProject; sta
   return <>
     <KitchenPanel title={stage === "lead" ? "Lead details" : stage === "visit" ? "Showroom visit" : "CAD progress"}>
       {stage === "lead" ? <><LeadFields value={lead} onChange={setLead} disabled={locked} />{active && project.permissions?.can_update ? <Button label="Save lead" disabled={locked} loading={submission.busy} onPress={() => command("edit_lead", lead)} testID="kitchen-lead-save" /> : null}</> : stage === "visit" ? <>
-        <Text style={type.bodyMuted}>Record the showroom visit and preferred display model. Requirements and budget discussion are recorded in Design. The date starts at today in India and can be changed.</Text>
+        <Text style={type.bodyMuted}>Record the showroom visit and preferred display model. The date starts at today in India and can be changed.</Text>
         <KitchenDateField label="Visit date" value={visit.visit_date || ""} onChange={visit_date => setVisit({ ...visit, visit_date: visit_date || null })} disabled={locked} testID="kitchen-visit-date" />
         <Choice label="Showroom visit status" value={visit.status} values={["Scheduled", "Visited", "Follow-up Required"]} onChange={status => setVisit({ ...visit, status })} disabled={locked} testID="kitchen-visit-status" />
         <Choice label="Display / model interested in" value={visit.display_model || ""} values={["GI", "SS", "Other", "Wardrobe"]} onChange={display_model => setVisit({ ...visit, display_model })} disabled={locked} testID="kitchen-visit-display" />

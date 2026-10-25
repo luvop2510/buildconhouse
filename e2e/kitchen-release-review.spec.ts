@@ -31,7 +31,7 @@ test('Retired Kitchen filters cannot hide a project and controls stay removed', 
   const read = await response;
   expect(read.ok(), await read.text()).toBe(true);
   const query = new URL(read.url()).searchParams;
-  expect(query.has('assignee')).toBe(false);
+  expect(query.get('assignee')).toBe('unassigned');
   expect(query.get('attention')).not.toBe('next_action_overdue');
   expect(query.get('sort')).not.toBe('next_action');
   expect(query.get('date_field')).not.toBe('deadline');

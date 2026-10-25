@@ -116,6 +116,7 @@ class LeadCustomer(StrictModel):
 
 
 class CreateProject(StrictModel):
+    assigned_to: Identifier | None = None
     customer_id: Identifier | None = None
     customer: LeadCustomer | None = None
     idempotency_key: CommandKey
@@ -140,6 +141,11 @@ class ProjectCommand(StrictModel):
 
 class AdvancePayload(StrictModel):
     target_stage: Stage
+
+
+class AssignmentPayload(StrictModel):
+    stage: Stage
+    user_id: Identifier | None = None
 
 
 class MetadataPayload(StrictModel):

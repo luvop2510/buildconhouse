@@ -131,11 +131,11 @@ test('Q01 Q02 Q03 Q12 Q13: real lead/visit persistence, automatic editable dates
   await expect(page.getByTestId('kitchen-visit-save')).toBeVisible();
   const indiaToday = new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
   await expect(page.getByTestId('kitchen-visit-date')).toHaveValue(indiaToday);
-  await expect(page.getByTestId('kitchen-project-detail')).not.toContainText('Assigned to');
+  await expect(page.getByTestId('kitchen-assignee')).toBeVisible();
   await expect(page.getByTestId('kitchen-visit-next-action')).toHaveCount(0);
   await openProjectPage(page, 'assignments');
   await expect(page.getByTestId('kitchen-assign-save')).toHaveCount(0);
-  await expect(page.getByTestId('kitchen-next-action')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-meta-next-action')).toHaveCount(0);
   await expect(page.getByTestId('kitchen-target-date')).toBeVisible();
   await openProjectPage(page, 'stage');
   await page.getByTestId('kitchen-visit-notes').fill('Showroom cabinets and worktop');
@@ -1112,4 +1112,53 @@ test('Kitchen moves forward and backward through all nine stages without task pr
   expect(final.installation?.completion_date ?? null).toBeNull();
   expect(final.activity.filter((event: any) => event.type === 'move_stage')).toHaveLength(16);
   await health.assertHealthy();
+});
+
+
+test('Kitchen owner selects PDF assignments without adding the excluded Visit fields', async ({ page, context, baseURL }) => {
+  const health = captureRuntimeHealth(page);
+  await seedBrowser(page);
+  await page.goto('/kitchen/stages/lead');
+  await page.getByTestId('kitchen-create').click();
+  await page.getByTestId('kitchen-existing-customer').click();
+  await page.getByTestId('kitchen-customer').fill('Kitchen acceptance customer');
+  await page.getByTestId(`kitchen-customer-${process.env.KITCHEN_E2E_CUSTOMER_ID}`).click();
+  await page.getByTestId('kitchen-create-lead-site_location').fill('Owner-selected assignment test site');
+  const worker = process.env.KITCHEN_E2E_WORKER_ID!;
+  await page.getByTestId('kitchen-create-assignee').click();
+  await page.getByTestId(`kitchen-create-assignee-${worker}`).click();
+  const creation = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/kitchen-projects');
+  await page.getByTestId('kitchen-create-submit').click();
+  const savedResponse = await creation;
+  expect(savedResponse.ok(), await savedResponse.text()).toBe(true);
+  const saved = await savedResponse.json();
+  expect(saved.assignments.lead).toBe(worker);
+  await expect(page.getByTestId('kitchen-assignee')).toContainText('Kitchen acceptance worker');
+  const moved = page.waitForResponse(response => response.url().endsWith('/commands') && response.request().postDataJSON()?.command === 'move_stage');
+  await page.getByTestId('kitchen-convert').click();
+  expect((await moved).ok()).toBe(true);
+  await expect(page.getByTestId('kitchen-visit-save')).toBeVisible();
+  await expect(page.getByTestId('kitchen-assignee')).toContainText('Unassigned');
+  await expect(page.getByTestId('kitchen-visit-requirements')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-visit-budget')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-visit-next-action')).toHaveCount(0);
+  await page.getByTestId('kitchen-assignee').click();
+  const assigned = page.waitForResponse(response => response.url().endsWith('/commands') && response.request().postDataJSON()?.command === 'assign');
+  await page.getByTestId(`kitchen-assignee-${worker}`).click();
+  expect((await assigned).ok()).toBe(true);
+  await page.reload();
+  await expect(page.getByTestId('kitchen-assignee')).toContainText('Kitchen acceptance worker');
+  const fetched = await context.request.get(`${baseURL}/api/kitchen-projects/${saved.id}`, { headers: { 'X-Floor-Id': 'second-floor' } });
+  expect((await fetched.json()).assignments).toMatchObject({ lead: worker, visit: worker });
+  await health.assertHealthy();
+});
+
+
+test('Completed export retains the selected PDF employee filter', async ({ page }) => {
+  await seedBrowser(page);
+  await page.goto('/kitchen/stages/completed?assignee=unassigned');
+  await expect(page.getByTestId('kitchen-completed-export')).toBeVisible();
+  const exported = page.waitForRequest(request => new URL(request.url()).pathname === '/api/kitchen-projects/export');
+  await page.getByTestId('kitchen-completed-export').click();
+  expect(new URL((await exported).url()).searchParams.get('assignee')).toBe('unassigned');
 });
