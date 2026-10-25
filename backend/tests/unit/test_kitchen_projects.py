@@ -159,7 +159,7 @@ async def test_inline_lead_intake_creates_one_customer_and_preserves_identity_th
     contact = next(row for row in database.customers.rows if row["id"] == first["customer_id"])
     assert contact["floor_id"] == "second-floor" and "email" not in contact
     assert contact["kitchen_reference_reserved"] is True
-    assert first["customer"] == {"id": contact["id"], "name": "New kitchen enquiry", "phone": "+91 98888 00123", "address": "New site"}
+    assert {key: first["customer"][key] for key in ("id", "name", "phone", "address")} == {"id": contact["id"], "name": "New kitchen enquiry", "phone": "+91 98888 00123", "address": "New site"}
     converted = await service.command(owner, first["id"], cmd(1, "convert"))
     assert converted["customer_id"] == first["customer_id"] and converted["customer"] == first["customer"]
     assert len(database.customers.rows) == 2

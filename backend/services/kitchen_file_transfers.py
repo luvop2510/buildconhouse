@@ -81,10 +81,8 @@ class KitchenFileTransfers:
         project = await self.db.kitchen_projects.find_one({"id": project_id, "floor_id": access.KITCHEN_FLOOR})
         await access.require_project(self.db, user, project, policy, "update")
         await access.require_current_task(self.db, user, project, policy)
-        if project["stage"] == "cad":
-            raise HTTPException(422, "CAD File records receipt and design progress only; no files are uploaded in this stage")
-        if project["stage"] == "completed" or project.get("lifecycle_status") in {"On Hold", "Cancelled"}:
-            raise HTTPException(422, "Resume or reopen the project before uploading")
+        if project.get("lifecycle_status") in {"On Hold", "Cancelled"}:
+            raise HTTPException(422, "Resume the project before uploading")
         return project, policy
 
     async def session(self, user, project_id, transfer_id):

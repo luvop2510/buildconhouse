@@ -25,7 +25,7 @@ def test_acquisition_identity_lookup_is_floor_scoped_and_not_top_100():
     result = asyncio.run(acquired_counts({'customers': Collection()}, ['outside-top-100', 'second'], ['ground-floor']))
     assert result == {'outside-top-100': 2}
     matches = [seen[0]['$match']] + [stage['$unionWith']['pipeline'][0]['$match'] for stage in seen if '$unionWith' in stage]
-    assert len(matches) == 5
+    assert len(matches) == 6
     for match in matches:
         assert match['floor_id'] == {'$in': ['ground-floor']}
         assert match['referrer_id'] == {'$in': ['outside-top-100', 'second']}

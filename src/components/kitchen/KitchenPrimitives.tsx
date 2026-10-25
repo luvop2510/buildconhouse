@@ -4,6 +4,7 @@ import Feather from "@expo/vector-icons/Feather";
 import { Text, TextInput } from "@/src/components/AppText";
 import { Button, TextField } from "@/src/components/ui";
 import { colors as appColors, type as appType } from "@/src/theme/tokens";
+import { useBp } from "@/src/design/responsive";
 
 /** Kitchen owns its visual language; other floor workspaces retain their theme. */
 export const kitchenColors = {
@@ -45,5 +46,6 @@ export function KitchenTextField({ label, error, helper, containerStyle, style, 
 }
 
 export function KitchenFieldRow({ children }: { children: ReactNode }) {
-  return <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 20 }}>{children}</View>;
+  const { isPhone } = useBp();
+  return <View style={{ width: "100%", minWidth: 0, flexDirection: isPhone ? "column" : "row", flexWrap: "wrap", gap: isPhone ? 16 : 20 }}>{children}</View>;
 }

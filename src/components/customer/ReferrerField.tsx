@@ -11,7 +11,7 @@ import { useBp } from "@/src/design/responsive";
 type Referrer = { customers_acquired?: number | null; id: string; name: string; company?: string | null; type: "architect" | "interior_designer" };
 type ReferrerValue = Pick<Referrer, "id" | "name" | "type" | "company"> | null;
 
-export function ReferrerField({ value, onChange, floorId, label = "Referred By", allowCreate = true }: { value: ReferrerValue; onChange: (value: ReferrerValue) => void; floorId?: string; label?: string; allowCreate?: boolean }) {
+export function ReferrerField({ value, onChange, floorId, label = "Referred By", allowCreate = true, disabled = false }: { value: ReferrerValue; onChange: (value: ReferrerValue) => void; floorId?: string; label?: string; allowCreate?: boolean; disabled?: boolean }) {
   const { isPhone } = useBp();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<Referrer[]>([]);
@@ -44,9 +44,9 @@ export function ReferrerField({ value, onChange, floorId, label = "Referred By",
     setAdding(false);
     setOpen(false);
   };
-  const choose = (item: Referrer | null) => { onChange(item); close(); };
+  const choose = (item: Referrer | null) => { if (!disabled) onChange(item); close(); };
   const add = async () => {
-    if (!allowCreate || adding || !name.trim()) return;
+    if (disabled || !allowCreate || adding || !name.trim()) return;
     const version = lifecycle.current;
     setAdding(true); setError(null);
     try {
@@ -61,7 +61,7 @@ export function ReferrerField({ value, onChange, floorId, label = "Referred By",
 
   return <View style={{ gap: 6 }}>
     <Text style={type.label}>{label}</Text>
-    <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ expanded: open }} aria-haspopup="dialog" onPress={() => setOpen(true)} style={{ minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md, justifyContent: "center" }}>
+    <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} accessibilityState={{ expanded: open, disabled }} aria-haspopup="dialog" onPress={() => setOpen(true)} style={{ minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md, justifyContent: "center" }}>
       <Text style={type.body}>{value ? [value.name, value.company, referrerCode(value.id, value.type)].filter(Boolean).join(" · ") : "Select architect or interior designer"}</Text>
     </Pressable>
     <Sheet visible={open} onClose={close} title="Referred By" variant="bottom" testID="customer-referrer-sheet">

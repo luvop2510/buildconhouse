@@ -10,10 +10,10 @@ from uuid import uuid4
 from fastapi import HTTPException
 
 from models_kitchen import (AdvancePayment, CustomerResponse, DesignPresentation,
-    DesignRevision, InternalApproval, OrderAmendment, OrderConfirmation,
+    DesignRevision, DesignUpdate, InternalApproval, OrderAmendment, OrderConfirmation,
     QuotationReceived, SiteVisit, VersionDate, WorkProgress, OrderStatusChange, ExceptionCommand, OrderDocument)
 
-COMMANDS = {"design_present", "design_share", "design_response", "design_revision", "design_handoff",
+COMMANDS = {"design_present", "design_update", "design_share", "design_response", "design_revision", "design_handoff",
             "quotation_receive", "quotation_share", "quotation_response", "order_confirm", "order_advance",
             "order_amend", "order_status", "order_document", "exception", "production_update", "installation_update", "site_visit", "approval"}
 
@@ -127,9 +127,28 @@ def apply(project, command, payload, policy, user, now, validate):
         body = validate(DesignPresentation, payload)
         if project.get("design_versions") and project["design_versions"][-1].get("response") == "Approved" and not project.get("design_revision_pending"):
             reject("Record an owner-authorized design change with its reason before replacing an approved design")
-        project["design_versions"].append(record({**body.model_dump(), **document(project, body), "workflow_cycle": project.get("workflow_cycle", 1),
+        project["design_versions"].append(record({**body.model_dump(), **(document(project, body) if body.attachment_id or body.url else {}), "workflow_cycle": project.get("workflow_cycle", 1),
             "number": len(project["design_versions"]) + 1, "response": "Pending", "shared_date": None, "handoff_date": None}))
         project["design_revision_pending"] = False
+    elif command == "design_update":
+        require_stage("design")
+        body = validate(DesignUpdate, payload)
+        row = current(project, "design_versions", body.version_id)
+        if project.get("design_revision_pending") or row.get("workflow_cycle", 1) != project.get("workflow_cycle", 1):
+            reject("Present the revised design before editing its details")
+        if body.shared_date and body.shared_date < body.presentation_date:
+            reject("Sharing date cannot precede presentation")
+        if body.response != "Pending" and not body.shared_date:
+            reject("Record the sharing date before the customer response")
+        if body.handoff_date and (body.response != "Approved" or not body.shared_date or body.handoff_date < body.shared_date):
+            reject("Company handoff requires approval and cannot precede customer sharing")
+        row.update(body.model_dump(exclude={"version_id", "reason", "revision_count"}))
+        row["corrected_by"], row["corrected_at"] = user.id, now
+        if body.revision_count is not None:
+            project["design_revision_count"] = body.revision_count
+            project["known_design_revision_count"] = body.revision_count
+        project["approvals"].append(record({"scope": "customer_design", "subject_id": row["id"],
+            "decision": body.response, "notes": body.response_notes, "reason": body.reason}))
     elif command in {"design_share", "design_handoff", "quotation_share"}:
         is_design = command.startswith("design")
         require_stage("design" if is_design else "quotation")

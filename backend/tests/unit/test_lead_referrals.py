@@ -17,7 +17,7 @@ def test_preorder_interior_appears_and_existing_sales_keep_their_revenue():
 def test_every_source_is_floor_date_and_referrer_scoped_before_grouping():
     _, pipeline = acquisition_pipeline(AnalyticsFilter(floor_id="ground-floor", referrer_id="interior-a"), ["ground-floor"], ("start", "end"), "interior_designer")
     matches = [pipeline[0]["$match"]] + [stage["$unionWith"]["pipeline"][0]["$match"] for stage in pipeline if "$unionWith" in stage]
-    assert len(matches) == 5
+    assert len(matches) == 6
     for match in matches:
         assert match["floor_id"] == {"$in": ["ground-floor"]}
         assert match["created_at"] == {"$gte": "start", "$lt": "end"}

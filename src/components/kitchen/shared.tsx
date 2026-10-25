@@ -47,7 +47,8 @@ export function KitchenFloor({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 export function KitchenPanel({ title, children }: { title?: string; children: ReactNode }) {
-  return <View style={{ gap: 20, minWidth: 0, backgroundColor: colors.surfaceSecondary, padding: 24, borderRadius: 8, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border }}>
+  const { isPhone } = useBp();
+  return <View style={{ width: "100%", maxWidth: "100%", gap: isPhone ? 16 : 20, minWidth: 0, backgroundColor: colors.surfaceSecondary, padding: isPhone ? 16 : 24, borderRadius: 8, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border }}>
     {title ? <Text accessibilityRole="header" aria-level={2} style={type.titleMd}>{title}</Text> : null}{children}
   </View>;
 }

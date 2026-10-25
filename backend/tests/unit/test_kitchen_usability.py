@@ -1,0 +1,95 @@
+"""Kitchen usability changes retain document security and workflow history."""
+import copy
+import hashlib
+
+import pytest
+from fastapi import HTTPException
+
+from models import UserPublic
+from models_kitchen import STAGES
+from services.kitchen_projects import resolved_policy, transition_error, validate
+from services import kitchen_workflow
+from services.kitchen_attachments import canonical_type, validate_file
+from tests.unit.test_kitchen_projects import setup, cmd, create_request
+
+
+@pytest.mark.parametrize('mime', ['', 'application/octet-stream', 'application/pdf', 'Application/PDF; charset=binary'])
+def test_pdf_picker_metadata_is_normalized_but_bytes_are_verified(mime):
+    data = b'%PDF-1.4 synthetic document'
+    assert canonical_type(mime, 'Drawing.PDF') == 'application/pdf'
+    assert validate_file(data, mime, 'Drawing.PDF', resolved_policy({})) == hashlib.sha256(data).hexdigest()
+    with pytest.raises(HTTPException) as invalid:
+        validate_file(b'not a PDF', mime, 'Drawing.PDF', resolved_policy({}))
+    assert invalid.value.status_code == 415
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('stage', STAGES)
+async def test_pdf_can_be_appended_at_every_stage_without_changing_workflow(setup, stage):
+    database, service, owner = setup
+    saved = await service.create(owner, create_request(customer_id='customer-a', idempotency_key='all-stage-doc'))
+    project = database.kitchen_projects.rows[0]
+    project['stage'] = stage
+    project['status'] = 'Completed' if stage == 'completed' else project['status']
+    original = copy.deepcopy(project)
+    class Storage:
+        objects = {}
+        async def require_private_bucket(self, bucket):
+            assert bucket == 'forge-private'
+        async def exists(self, *, key, **kwargs):
+            return key in self.objects
+        async def upload(self, *, key, data, **kwargs):
+            self.objects[key] = data
+        async def download(self, *, key, **kwargs):
+            return self.objects[key]
+    storage = Storage()
+    kwargs = dict(expected_version=saved['version'], key='upload-all-stages', filename='Drawing.pdf',
+                  content_type='application/octet-stream', data=b'%PDF-1.4 synthetic', storage=storage, bucket='forge-private')
+    result = await service.attach(owner, saved['id'], **kwargs)
+    replay = await service.attach(owner, saved['id'], **kwargs)
+    assert replay['replayed'] and len(replay['attachments']) == 1
+    assert result['attachments'][0]['content_type'] == 'application/pdf'
+    assert 'storage_key' not in result['attachments'][0]
+    for field in ('stage', 'status', 'orders', 'approvals', 'design_versions', 'quotation_versions'):
+        assert result[field] == original[field]
+    assert result['version'] == original['version'] + 1
+    data, _ = await service.attachment(owner, saved['id'], result['attachments'][0]['id'], storage)
+    assert data == kwargs['data']
+
+
+@pytest.mark.asyncio
+async def test_design_without_document_and_editable_details_have_audited_progression(setup):
+    database, service, owner = setup
+    project = await service.create(owner, create_request(customer_id='customer-a', idempotency_key='design-edit-test'))
+    project = await service.command(owner, project['id'], cmd(project['version'], 'convert'))
+    project = await service.command(owner, project['id'], cmd(project['version'], 'save_visit', {'status': 'Visited', 'display_model': 'Wardrobe'}))
+    project = await service.command(owner, project['id'], cmd(project['version'], 'advance_stage', {'target_stage': 'cad'}))
+    project = await service.command(owner, project['id'], cmd(project['version'], 'save_cad', {'received': True, 'progress': 100, 'status': 'Completed'}))
+    project = await service.command(owner, project['id'], cmd(project['version'], 'advance_stage', {'target_stage': 'design'}))
+    project = await service.command(owner, project['id'], cmd(project['version'], 'design_present', {'presentation_date': '2026-10-25', 'requirements': 'Tall cabinets', 'budget_discussion': 'Discuss options'}))
+    version = project['design_versions'][-1]
+    assert version['attachment_id'] is None and version['url'] is None
+    payload = {'version_id': version['id'], 'presentation_date': '2026-10-24', 'shared_date': '2026-10-25',
+               'handoff_date': '2026-10-25', 'response': 'Approved', 'revision_count': 2,
+               'requirements': 'Tall cabinets and drawers', 'budget_discussion': 'Within agreed budget', 'reason': 'Correct showroom record'}
+    project = await service.command(owner, project['id'], cmd(project['version'], 'design_update', payload))
+    assert project['design_revision_count'] == 2
+    assert project['design_versions'][-1]['requirements'] == payload['requirements']
+    correction = project['activity'][-1]['payload']
+    assert correction['reason'] == payload['reason']
+    assert correction['changes']['design']['before']['response'] == 'Pending'
+    assert correction['changes']['design']['after']['response'] == 'Approved'
+    staff = UserPublic(id='staff-a', full_name='Staff A', role='sales', active_floor_id='second-floor', floor_ids=['second-floor'])
+    with pytest.raises(HTTPException) as denied:
+        await service.command(staff, project['id'], cmd(project['version'], 'design_update', payload))
+    assert denied.value.status_code == 403
+    with pytest.raises(HTTPException) as stale:
+        await service.command(owner, project['id'], cmd(project['version'] - 1, 'design_update', payload, 'stale-design-edit'))
+    assert stale.value.status_code == 409
+    project = await service.command(owner, project['id'], cmd(project['version'], 'advance_stage', {'target_stage': 'quotation'}))
+    assert project['stage'] == 'quotation'
+
+
+def test_legacy_policy_cannot_require_removed_controls():
+    project = {'stage': 'visit', 'visit': {'status': 'Visited'}, 'duplicate_review': {'status': 'cleared'}}
+    assert transition_error(project, 'cad', {'required_fields': {'visit': ['requirements', 'interested', 'budget_discussion']}}) is None

@@ -2,12 +2,12 @@ import { useEffect, useId, useRef, type ReactNode } from "react";
 import { Linking, Pressable, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 import { Alert } from "@/src/components/ds";
-import { STAGE_LABELS, type KitchenCommand, type KitchenProject, type KitchenStage, type KitchenWork } from "@/src/api/kitchenProjects";
+import { KITCHEN_STAGES, STAGE_LABELS, type KitchenCommand, type KitchenProject, type KitchenStage, type KitchenWork, type KitchenVersion } from "@/src/api/kitchenProjects";
 import { Choice, displayDate, KitchenPanel, historicalCount, rupees } from "./shared";
 import { KitchenDateField } from "./KitchenFilters";
 import { kitchenToday } from "./KitchenDates";
 import { DocumentChoice } from "./KitchenDocuments";
-import { useKitchenDraft } from "./KitchenProjectState";
+import { useKitchenDraft, useKitchenProject } from "./KitchenProjectState";
 import { radius, spacing } from "@/src/theme/tokens";
 import { KitchenButton as Button, KitchenTextField as TextField, KitchenFieldRow, kitchenColors as colors, kitchenType as type } from "./KitchenPrimitives";
 
@@ -21,33 +21,33 @@ export function CommercialStages({ project, stage, disabled, command, hasUnsaved
   const order = !project.commercial_basis_invalidated && latestOrder?.quotation_version_id === quote?.id ? latestOrder : undefined;
   const draftCycle = `commercial.cycle.${project.workflow_cycle ?? 1}`;
   const responseScope = stage === "design" ? `design.${design?.id || "new"}` : `quotation.${quote?.id || "new"}`;
-  const [presentationDate, setPresentationDate] = useKitchenDraft(`${draftCycle}.design.date`, "");
-  const [designFile, setDesignFile] = useKitchenDraft(`${draftCycle}.design.file`, "");
-  const [designUrl, setDesignUrl] = useKitchenDraft(`${draftCycle}.design.url`, "");
+  const today = kitchenToday();
+  const [presentationDate, setPresentationDate] = useKitchenDraft(`${draftCycle}.design.date`, today);
+  const [requirements, setRequirements] = useKitchenDraft(`${draftCycle}.design.requirements`, design?.requirements ?? project.visit.requirements ?? "");
+  const [budgetDiscussion, setBudgetDiscussion] = useKitchenDraft(`${draftCycle}.design.budget`, design?.budget_discussion ?? project.visit.budget_discussion ?? "");
   const [designNotes, setDesignNotes] = useKitchenDraft(`${draftCycle}.design.notes`, "");
-  const [shareDate, setShareDate] = useKitchenDraft(`${draftCycle}.${responseScope}.shareDate`, "");
-  const [handoffDate, setHandoffDate] = useKitchenDraft(`${draftCycle}.design.${design?.id || "new"}.handoffDate`, "");
+  const [shareDate, setShareDate] = useKitchenDraft(`${draftCycle}.${responseScope}.shareDate`, today);
+  const [handoffDate, setHandoffDate] = useKitchenDraft(`${draftCycle}.design.${design?.id || "new"}.handoffDate`, today);
   const [response, setResponse] = useKitchenDraft(`${draftCycle}.${responseScope}.response`, "Pending");
   const [responseNotes, setResponseNotes] = useKitchenDraft(`${draftCycle}.${responseScope}.responseNotes`, "");
   const [revisionReason, setRevisionReason] = useKitchenDraft(`${draftCycle}.design.${design?.id || "new"}.revisionReason`, "");
-  const [quoteDate, setQuoteDate] = useKitchenDraft(`${draftCycle}.quotation.date`, "");
+  const [quoteDate, setQuoteDate] = useKitchenDraft(`${draftCycle}.quotation.date`, today);
   const [quoteAmount, setQuoteAmount] = useKitchenDraft(`${draftCycle}.quotation.amount`, "");
   const [quoteFile, setQuoteFile] = useKitchenDraft(`${draftCycle}.quotation.file`, "");
   const [quoteUrl, setQuoteUrl] = useKitchenDraft(`${draftCycle}.quotation.url`, "");
   const [quoteNotes, setQuoteNotes] = useKitchenDraft(`${draftCycle}.quotation.notes`, "");
-  const [orderDate, setOrderDate] = useKitchenDraft(`${draftCycle}.order.date`, "");
+  const [orderDate, setOrderDate] = useKitchenDraft(`${draftCycle}.order.date`, today);
   const [orderFile, setOrderFile] = useKitchenDraft(`${draftCycle}.order.file`, "");
   const [orderNotes, setOrderNotes] = useKitchenDraft(`${draftCycle}.order.notes`, "");
   const [advanceReceived, setAdvanceReceived] = useKitchenDraft(`${draftCycle}.order.advanceReceived`, "Not recorded");
   const [advanceAmount, setAdvanceAmount] = useKitchenDraft(`${draftCycle}.order.advanceAmount`, "");
-  const [advanceDate, setAdvanceDate] = useKitchenDraft(`${draftCycle}.order.advanceDate`, "");
+  const [advanceDate, setAdvanceDate] = useKitchenDraft(`${draftCycle}.order.advanceDate`, today);
   const [amendAmount, setAmendAmount] = useKitchenDraft(`${draftCycle}.order.amendAmount`, "");
-  const [amendDate, setAmendDate] = useKitchenDraft(`${draftCycle}.order.amendDate`, "");
+  const [amendDate, setAmendDate] = useKitchenDraft(`${draftCycle}.order.amendDate`, today);
   const [amendReason, setAmendReason] = useKitchenDraft(`${draftCycle}.order.amendReason`, "");
   const [amendApproved, setAmendApproved] = useKitchenDraft(`${draftCycle}.order.amendApproved`, "Not recorded");
   const [production, setProduction] = useKitchenDraft<KitchenWork>(`${draftCycle}.production`, project.production || { status: "Not Started" });
   const [installation, setInstallation] = useKitchenDraft<KitchenWork>(`${draftCycle}.installation`, project.installation || { status: "Not Started" });
-  const today = kitchenToday();
   const [siteDate, setSiteDate] = useKitchenDraft(`${draftCycle}.site.date`, today);
   const [siteActual, setSiteActual] = useKitchenDraft(`${draftCycle}.site.actual`, "Not recorded");
   const [siteNotes, setSiteNotes] = useKitchenDraft(`${draftCycle}.site.notes`, "");
@@ -59,6 +59,7 @@ export function CommercialStages({ project, stage, disabled, command, hasUnsaved
     savedInstallationStatus.current = project.installation?.status;
   }, [project.installation, setInstallation]);
   const active = project.stage === stage;
+  const preview = KITCHEN_STAGES.indexOf(stage) > KITCHEN_STAGES.indexOf(project.stage);
   const locked = disabled || !active;
   const next: Partial<Record<KitchenStage, KitchenStage>> = { design: "quotation", quotation: "order", order: "production", production: "installation", installation: "completed" };
   const target = next[stage];
@@ -66,6 +67,10 @@ export function CommercialStages({ project, stage, disabled, command, hasUnsaved
   const dateField = (label: string, value: string, onChange: (value: string) => void, id: string) => <KitchenDateField label={label} value={value} onChange={onChange} disabled={locked} testID={id} />;
   const responseForm = (isDesign: boolean) => {
     const version = isDesign ? design : quote;
+    if (preview) return <KitchenPanel title="Customer sharing and approval">
+      {dateField("Date shared with customer", shareDate, setShareDate, "kitchen-version-share-date")}
+      <Choice label="Customer response" value={response} values={isDesign ? ["Pending", "Approved", "Changes Required"] : ["Pending", "Approved", "Changes Required", "Rejected"]} onChange={setResponse} disabled />
+    </KitchenPanel>;
     if (!active || !version || (isDesign && project.design_revision_pending)) return null;
     return !version.shared_date ? <KitchenPanel title="Share with the customer">
       <Text style={type.bodyMuted}>Record when you actually shared version {version.number}. This does not send a message.</Text>
@@ -94,10 +99,10 @@ export function CommercialStages({ project, stage, disabled, command, hasUnsaved
 
   const designForm = <View style={{ gap: spacing.md }}>
         {dateField("Presentation date", presentationDate, setPresentationDate, "kitchen-design-date")}
-        <DocumentChoice project={project} value={designFile} onChange={setDesignFile} disabled={locked} label="Design presentation document" />
-        <TextField label="Design presentation HTTPS link" value={designUrl} onChangeText={setDesignUrl} editable={!locked} autoCapitalize="none" testID="kitchen-design-url" />
+        <TextField label="Customer requirements" value={requirements} onChangeText={setRequirements} editable={!locked} multiline testID="kitchen-design-requirements" />
+        <TextField label="Budget discussion" value={budgetDiscussion} onChangeText={setBudgetDiscussion} editable={!locked} multiline testID="kitchen-design-budget" />
         <TextField label="Design notes" value={designNotes} onChangeText={setDesignNotes} editable={!locked} multiline />
-        <Button label={design ? "Present new design version / internal correction" : project.design_versions?.length ? "Present revised design" : "Present first design"} disabled={locked || (!designFile && !designUrl.trim()) || (design?.response === "Approved" && !project.design_revision_pending)} onPress={() => command("design_present", { presentation_date: presentationDate, attachment_id: designFile || null, url: designUrl || null, notes: designNotes || null })} testID="kitchen-design-present" />
+        <Button label={design ? "Present new design version / internal correction" : project.design_versions?.length ? "Present revised design" : "Present first design"} disabled={locked || !presentationDate || (design?.response === "Approved" && !project.design_revision_pending)} onPress={() => command("design_present", { presentation_date: presentationDate, requirements: requirements || null, budget_discussion: budgetDiscussion || null, notes: designNotes || null })} testID="kitchen-design-present" />
         <Text style={type.caption}>A presentation or internal correction does not increase the customer revision count.</Text>
 
   </View>;
@@ -133,21 +138,24 @@ export function CommercialStages({ project, stage, disabled, command, hasUnsaved
         </KitchenPanel> : <KitchenPanel title="Approved order amendment"><Text style={type.bodyMuted}>No current order to amend. Confirm an order against the current approved quotation first.</Text></KitchenPanel>;
 
   return <View style={{ gap: spacing.lg, display: ["lead", "visit", "cad"].includes(stage) ? "none" : "flex" }}>
-    {!active && stage !== "completed" ? <Alert tone="info" title="Stage record" description="Review the saved stage record here. Use the current stage for ongoing work; previous versions are in History." /> : null}
+    {!active && !preview && stage !== "completed" ? <Alert tone="info" title="Stage record" description="Review the saved stage record here. Use the current stage for ongoing work; previous versions are in History." /> : null}
     {stage === "design" ? <>
       <KitchenPanel title="Design presentation"><Text style={type.bodyStrong}>{design ? `Current design · Version ${design.number}` : "No current design recorded"}</Text><Text style={type.body}>Customer-requested revisions: {historicalCount(project.design_revision_count, project.known_design_revision_count)}</Text>
         <Text style={type.body}>Customer approval: {design?.response || "Pending"} · Shared: {displayDate(design?.shared_date)}</Text>
         <Text style={type.body}>Presented: {displayDate(design?.presentation_date)}</Text>
         {design?.attachment_id ? <Text style={type.bodyMuted}>Document: {project.attachments?.find(file => file.id === design.attachment_id)?.filename || "Saved project attachment"}</Text> : null}
+        {design?.requirements ? <Text style={type.body}>Requirements: {design.requirements}</Text> : null}
+        {design?.budget_discussion ? <Text style={type.body}>Budget discussion: {design.budget_discussion}</Text> : null}
         {design?.notes ? <Text style={type.bodyMuted}>{design.notes}</Text> : null}
         {design?.response_notes ? <Text style={type.bodyMuted}>Customer response notes: {design.response_notes}</Text> : null}
         {design?.url ? <Button label="Open current design reference" variant="secondary" onPress={() => void Linking.openURL(design.url!)} /> : null}
         <Text style={type.body}>Company handoff: {design?.handoff_date ? displayDate(design.handoff_date) : "Not recorded"}</Text>
+        {active && design && !project.design_revision_pending ? <DesignEditor key={design.id} project={project} design={design} disabled={locked} command={command} /> : null}
         {project.design_revision_pending ? <Alert tone="warning" title="Revised design required" description="Present a new version before recording customer approval." /> : null}
-        {active && (!design || project.design_revision_pending) ? designForm : active && design?.response !== "Approved" ? <Disclosure draftKey={`${draftCycle}.design.newVersion`} label="Present a new version or correction" testID="kitchen-disclose-design-version">{designForm}</Disclosure> : null}
+        {(active || preview) && (!design || project.design_revision_pending) ? designForm : active && design?.response !== "Approved" ? <Disclosure draftKey={`${draftCycle}.design.newVersion`} label="Present a new version or correction" testID="kitchen-disclose-design-version">{designForm}</Disclosure> : null}
       </KitchenPanel>
       {responseForm(true)}
-      {active && design?.response === "Approved" && !project.design_revision_pending && !design.handoff_date ? <KitchenPanel title="Send the approved design to the company">
+      {preview || active && design?.response === "Approved" && !project.design_revision_pending && !design.handoff_date ? <KitchenPanel title="Send the approved design to the company">
         {dateField("Date sent to company", handoffDate, setHandoffDate, "kitchen-design-handoff-date")}
         <Button label="Mark approved design sent to company" disabled={locked || !design || design.response !== "Approved" || Boolean(project.design_revision_pending) || Boolean(design.handoff_date)} onPress={() => command("design_handoff", { version_id: design!.id, date: handoffDate })} testID="kitchen-design-handoff" />
       </KitchenPanel> : null}
@@ -165,14 +173,14 @@ export function CommercialStages({ project, stage, disabled, command, hasUnsaved
         {quote?.url ? <Button label="Open current quotation reference" variant="secondary" onPress={() => void Linking.openURL(quote.url!)} /> : null}
         <Text style={type.body}>Quotation received: {quote ? "Yes" : "No"} · Quotation sent to customer: {quote?.shared_date ? "Yes" : "No"}</Text>
         <Text style={type.body}>Date sent to customer: {displayDate(quote?.shared_date)} · Customer response: {quote?.response || "Pending"}</Text>
-        {active ? !quote ? quoteForm : <Disclosure draftKey={`${draftCycle}.quotation.newVersion`} label="Record a revised company quotation" testID="kitchen-disclose-quotation-version">{quoteForm}</Disclosure> : null}
+        {active || preview ? !quote ? quoteForm : <Disclosure draftKey={`${draftCycle}.quotation.newVersion`} label="Record a revised company quotation" testID="kitchen-disclose-quotation-version">{quoteForm}</Disclosure> : null}
       </KitchenPanel>
       {responseForm(false)}
     </> : stage === "order" ? <>
       <KitchenPanel title="Order confirmation">
         <Text style={type.body}>Customer order confirmation: {order?.confirmed ? "Yes" : "No"} · Order status: {order?.status || "Pending"}</Text>
         <Text style={type.body}>Current approved quotation: {quote ? `Version ${quote.number} · ${rupees(quote.amount)}` : "None"}</Text>
-        {order ? <><Text style={type.bodyStrong}>{order.status} · {displayDate(order.order_date)}</Text><Text style={type.body}>Original amount {rupees(order.original_amount)} · Approved final amount {rupees(order.final_amount)}</Text><Text style={type.body}>{order.notes}</Text></> : active ? <>
+        {order ? <><Text style={type.bodyStrong}>{order.status} · {displayDate(order.order_date)}</Text><Text style={type.body}>Original amount {rupees(order.original_amount)} · Approved final amount {rupees(order.final_amount)}</Text><Text style={type.body}>{order.notes}</Text></> : active || preview ? <>
           {dateField("Order date", orderDate, setOrderDate, "kitchen-order-date")}
           <DocumentChoice project={project} value={orderFile} onChange={setOrderFile} disabled={locked} label="Order confirmation document" />
           <TextField label="Order notes" value={orderNotes} onChangeText={setOrderNotes} editable={!locked} multiline />
@@ -180,6 +188,8 @@ export function CommercialStages({ project, stage, disabled, command, hasUnsaved
         </> : <Text style={type.bodyMuted}>No current order recorded.</Text>}
         {active && order && !order.confirmation_document_id ? <Disclosure draftKey={`${draftCycle}.order.document`} label="Add an order confirmation document (optional)" testID="kitchen-disclose-order-document"><DocumentChoice project={project} value={orderFile} onChange={setOrderFile} disabled={locked} label="Order confirmation document" /><Button label="Attach missing order confirmation" disabled={locked || !orderFile} onPress={() => command("order_document", { attachment_id: orderFile })} testID="kitchen-order-document" /></Disclosure> : order?.confirmation_document_id ? <Text style={type.body}>Confirmation document: {project.attachments?.find(file => file.id === order.confirmation_document_id)?.filename || "Saved project attachment"}</Text> : null}
       </KitchenPanel>
+      {preview ? <KitchenPanel title="Advance payment">{advanceForm}</KitchenPanel> : null}
+      {preview ? approval("production") : null}
       {order ? <>
         <KitchenPanel title="Advance payment"><Text style={type.body}>Saved: {order.advance.received ? `${rupees(order.advance.amount)} received ${displayDate(order.advance.date)}` : "Not received"}</Text>
         {active ? order.advance.received ? <Disclosure draftKey={`${draftCycle}.order.advanceEdit`} label="Update the advance payment record" testID="kitchen-disclose-advance">{advanceForm}</Disclosure> : advanceForm : null}
@@ -191,7 +201,7 @@ export function CommercialStages({ project, stage, disabled, command, hasUnsaved
         <Text style={type.body}>Saved status: {(stage === "production" ? project.production : project.installation)?.status || "Not Started"}</Text>
         <Text style={type.body}>Saved start: {displayDate((stage === "production" ? project.production : project.installation)?.start_date)} · Saved completion: {displayDate((stage === "production" ? project.production : project.installation)?.completion_date)}</Text>
         {(stage === "production" ? project.production : project.installation)?.notes ? <Text style={type.body}>{(stage === "production" ? project.production : project.installation)?.notes}</Text> : null}
-        {active && (stage === "production" ? project.production : project.installation)?.status !== "Completed" ? <View style={{ gap: spacing.md }}>        <WorkForm value={stage === "production" ? production : installation} onChange={stage === "production" ? setProduction : setInstallation} production={stage === "production"} disabled={locked} />
+        {(active || preview) && (stage === "production" ? project.production : project.installation)?.status !== "Completed" ? <View style={{ gap: spacing.md }}>        <WorkForm value={stage === "production" ? production : installation} onChange={stage === "production" ? setProduction : setInstallation} production={stage === "production"} disabled={locked} />
         <Button label={`Save ${stage}`} disabled={locked || (stage === "production" ? project.production : project.installation)?.status === "Completed"} onPress={() => {
           const work = stage === "production" ? production : installation;
           return command(stage === "production" ? "production_update" : "installation_update", {
@@ -201,13 +211,13 @@ export function CommercialStages({ project, stage, disabled, command, hasUnsaved
         }} testID={`kitchen-${stage}-save`} /></View> : null}
       </KitchenPanel>
       {stage === "installation" ? <><KitchenPanel title="Installation site visits"><Text style={type.bodyStrong}>Actual site visits: {historicalCount(project.site_visit_count, project.known_site_visit_count)}</Text>
-        {active ? <Disclosure draftKey={`${draftCycle}.site.newVisit`} label="Record a site visit" testID="kitchen-disclose-site-visit">        {dateField("Site visit date", siteDate, setSiteDate, "kitchen-site-date")}
+        {active || preview ? <Disclosure draftKey={`${draftCycle}.site.newVisit`} label="Record a site visit" testID="kitchen-disclose-site-visit">        {dateField("Site visit date", siteDate, setSiteDate, "kitchen-site-date")}
         <Choice label="Visit actually took place" value={siteActual} values={["Not recorded", "Yes — actual visit", "No — scheduled only"]} onChange={setSiteActual} disabled={locked} testID="kitchen-site-actual" />
         <TextField label="Site visit notes" value={siteNotes} onChangeText={setSiteNotes} editable={!locked} multiline />
         <Button label="Record site visit" disabled={locked || siteActual === "Not recorded" || !siteDate} onPress={() => { void command("site_visit", { date: siteDate, actual: siteActual === "Yes — actual visit", notes: siteNotes || null }).then(saved => { if (saved) { setSiteDate(kitchenToday()); setSiteActual("Not recorded"); setSiteNotes(""); } }); }} testID="kitchen-site-save" />
         <Text style={type.caption}>Scheduled visits do not increase the actual counter. Record each distinct real visit once.</Text>
 </Disclosure> : null}
-      </KitchenPanel>{active && project.installation?.status === "Completed" ? approval("closure") : null}</> : null}
+      </KitchenPanel>{preview || active && project.installation?.status === "Completed" ? approval("closure") : null}</> : null}
     </> : stage === "completed" ? <KitchenPanel title="Completed project"><Text style={type.body}>Installation completion: {displayDate(project.completion_date)}</Text><Text style={type.body}>Final order amount: {rupees(project.order_amount)}</Text><Text style={type.body}>Total design revisions: {historicalCount(project.design_revision_count, project.known_design_revision_count)}</Text><Text style={type.body}>Actual site visits: {historicalCount(project.site_visit_count, project.known_site_visit_count)}</Text><Text style={type.caption}>Review previous versions, orders and approvals in History.</Text></KitchenPanel> : null}
     {active && target ? <View style={{ gap: spacing.md }}>
       {hasUnsavedChanges ? <Text accessibilityLiveRegion="polite" style={type.bodyMuted} testID="kitchen-advance-unsaved">Save or clear your unsaved task changes before continuing. The next stage uses saved, approved records.</Text> : null}
@@ -216,6 +226,40 @@ export function CommercialStages({ project, stage, disabled, command, hasUnsaved
     </View> : null}
   </View>;
 }
+function DesignEditor({ project, design, disabled, command }: { project: KitchenProject; design: KitchenVersion; disabled: boolean; command: StageCommand }) {
+  const prefix = `commercial.cycle.${project.workflow_cycle ?? 1}.design.${design.id}.edit`;
+  const { resetDraftValue } = useKitchenProject();
+  const currentSource = JSON.stringify([design, project.design_revision_count]);
+  const initial = {
+    source: currentSource, presentation_date: design.presentation_date || kitchenToday(), shared_date: design.shared_date || "",
+    handoff_date: design.handoff_date || "", response: design.response, response_notes: design.response_notes || "",
+    requirements: design.requirements ?? project.visit.requirements ?? "", budget_discussion: design.budget_discussion ?? project.visit.budget_discussion ?? "",
+    notes: design.notes || "", revision_count: project.design_revision_count == null ? "" : String(project.design_revision_count), reason: "",
+  };
+  const [draft, setDraft] = useKitchenDraft(prefix, initial);
+  const stale = draft.source !== currentSource;
+  const locked = disabled || design.response === "Approved" && !project.permissions?.can_approve_exceptions;
+  const update = (key: keyof typeof draft, value: string) => setDraft(previous => ({ ...previous, [key]: value }));
+  return <Disclosure draftKey={prefix} label="Edit design details" testID="kitchen-disclose-design-edit">
+    {stale ? <View style={{ gap: spacing.sm }}><Text style={type.bodyMuted}>This design changed after you started editing. Review the latest saved details before making a correction. Your draft is retained until you choose to replace it.</Text><Button label="Replace draft with latest design details" variant="secondary" onPress={() => resetDraftValue(prefix)} testID="kitchen-design-edit-reload" /></View> : null}
+    {locked && !disabled ? <Text style={type.bodyMuted}>Only the owner can correct an approved design.</Text> : null}
+    <KitchenDateField label="Presentation date" value={draft.presentation_date} onChange={value => update("presentation_date", value)} disabled={locked} testID="kitchen-design-edit-date" />
+    <TextField label="Customer requirements" value={draft.requirements} onChangeText={value => update("requirements", value)} editable={!locked} multiline testID="kitchen-design-edit-requirements" />
+    <TextField label="Budget discussion" value={draft.budget_discussion} onChangeText={value => update("budget_discussion", value)} editable={!locked} multiline testID="kitchen-design-edit-budget" />
+    <TextField label="Customer-requested revisions" value={draft.revision_count} onChangeText={value => update("revision_count", value)} editable={!locked} keyboardType="number-pad" testID="kitchen-design-edit-revisions" />
+    <Choice label="Shared with customer" value={draft.shared_date ? "Yes" : "No"} values={["No", "Yes"]} onChange={value => update("shared_date", value === "Yes" ? kitchenToday() : "")} disabled={locked} />
+    {draft.shared_date ? <KitchenDateField label="Date shared with customer" value={draft.shared_date} onChange={value => update("shared_date", value)} disabled={locked} testID="kitchen-design-edit-shared" /> : null}
+    <Choice label="Customer approval" value={draft.response} values={["Pending", "Approved", "Changes Required"]} onChange={value => update("response", value)} disabled={locked} testID="kitchen-design-edit-response" />
+    <Choice label="Sent to company" value={draft.handoff_date ? "Yes" : "No"} values={["No", "Yes"]} onChange={value => update("handoff_date", value === "Yes" ? kitchenToday() : "")} disabled={locked} />
+    {draft.handoff_date ? <KitchenDateField label="Date sent to company" value={draft.handoff_date} onChange={value => update("handoff_date", value)} disabled={locked} testID="kitchen-design-edit-handoff" /> : null}
+    <TextField label="Customer response notes" value={draft.response_notes} onChangeText={value => update("response_notes", value)} editable={!locked} multiline />
+    <TextField label="Design notes" value={draft.notes} onChangeText={value => update("notes", value)} editable={!locked} multiline />
+    <TextField label="Reason for correction" value={draft.reason} onChangeText={value => update("reason", value)} editable={!locked} multiline testID="kitchen-design-edit-reason" />
+    <Text style={type.caption}>The previous values and your correction remain in History. A new design version is recorded separately.</Text>
+    <Button label="Save design details" disabled={locked || stale || !draft.reason.trim() || !draft.presentation_date || !!draft.revision_count && !/^\d+$/.test(draft.revision_count)} onPress={() => { const { source: _source, ...fields } = draft; return command("design_update", { ...fields, version_id: design.id, shared_date: draft.shared_date || null, handoff_date: draft.handoff_date || null, revision_count: draft.revision_count === "" ? null : Number(draft.revision_count) }); }} testID="kitchen-design-edit-save" />
+  </Disclosure>;
+}
+
 /** Controlled disclosure keeps optional task drafts and expansion through sibling navigation. */
 function Disclosure({ draftKey, label, testID, children }: { draftKey: string; label: string; testID: string; children: ReactNode }) {
   const [expanded, setExpanded] = useKitchenDraft(`${draftKey}.expanded`, false);
@@ -235,7 +279,10 @@ function Disclosure({ draftKey, label, testID, children }: { draftKey: string; l
 }
 function WorkForm({ value, onChange, production, disabled }: { value: KitchenWork; onChange: (value: KitchenWork) => void; production: boolean; disabled: boolean }) {
   return <View style={{ gap: spacing.md }}>
-    <Choice label={production ? "Production status" : "Installation status"} value={value.status} values={production ? ["Not Started", "In Production", "Completed"] : ["Not Started", "In Progress", "Completed"]} onChange={status => onChange({ ...value, status })} disabled={disabled} testID={`kitchen-${production ? "production" : "installation"}-status`} />
+    <Choice label={production ? "Production status" : "Installation status"} value={value.status} values={production ? ["Not Started", "In Production", "Completed"] : ["Not Started", "In Progress", "Completed"]} onChange={status => onChange({ ...value, status,
+      start_date: status === "Not Started" ? null : value.start_date || kitchenToday(),
+      completion_date: status === "Completed" ? value.completion_date || kitchenToday() : null,
+    })} disabled={disabled} testID={`kitchen-${production ? "production" : "installation"}-status`} />
     <KitchenFieldRow><View style={{ flex: 1, minWidth: 180 }}><KitchenDateField label="Start date" value={value.start_date || ""} onChange={start_date => onChange({ ...value, start_date: start_date || null })} disabled={disabled} testID={`kitchen-${production ? "production" : "installation"}-start`} /></View>
     <View style={{ flex: 1, minWidth: 180 }}><KitchenDateField label="Completion date" value={value.completion_date || ""} onChange={completion_date => onChange({ ...value, completion_date: completion_date || null })} min={value.start_date || undefined} disabled={disabled} testID={`kitchen-${production ? "production" : "installation"}-complete`} /></View></KitchenFieldRow>
     <TextField label={production ? "Production notes" : "Installation notes"} value={value.notes || ""} onChangeText={notes => onChange({ ...value, notes })} editable={!disabled} multiline />

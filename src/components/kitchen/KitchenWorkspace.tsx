@@ -15,6 +15,8 @@ import { radius, spacing } from "@/src/theme/tokens";
 import { KitchenButton as Button, KitchenTextField as TextField, kitchenColors as colors, kitchenType as type } from "./KitchenPrimitives";
 import { useAuth } from "@/src/state/auth";
 import { KitchenDateField, KitchenSelect as SelectFilter, KitchenOption, KITCHEN_STAGE_STATUSES, KITCHEN_ATTENTION_LABELS } from "./KitchenFilters";
+import { kitchenToday } from "./KitchenDates";
+import { referrerLabel } from "@/src/utils/referrer";
 import { useKitchenExitGuard } from "./KitchenExitGuard";
 import { KitchenPolicyEditor } from "./KitchenPolicy";
 import { downloadApiFile } from "@/src/utils/downloadFile";
@@ -24,7 +26,7 @@ export { LeadFields } from "./KitchenLeadFields";
 const LIMIT = 25;
 export type KitchenWorkspacePage = "overview" | "projects" | "workflow" | "stage" | "completed" | "review" | "settings" | "new";
 type WorkspaceProps = { page?: KitchenWorkspacePage; stage?: KitchenStage };
-const stageDescriptions: Record<KitchenStage, string> = { lead: "Record the enquiry, then convert it to a showroom visit.", visit: "Record the showroom visit and the customer's requirements.", cad: "Record CAD receipt and prepare the design for presentation.", design: "Present the design, record revisions and obtain customer approval.", quotation: "Receive the company quotation and record the customer's response.", order: "Confirm the approved quotation and record the advance payment.", production: "Record when production starts and finishes.", installation: "Record installation progress and actual site visits.", completed: "Finished installations, with their complete project history." };
+const stageDescriptions: Record<KitchenStage, string> = { lead: "Record the enquiry, then convert it to a showroom visit.", visit: "Record the showroom visit and preferred display model.", cad: "Record CAD receipt and prepare the design for presentation.", design: "Present the design, record revisions and obtain customer approval.", quotation: "Receive the company quotation and record the customer's response.", order: "Confirm the approved quotation and record the advance payment.", production: "Record when production starts and finishes.", installation: "Record installation progress and actual site visits.", completed: "Finished installations, with their complete project history." };
 const filterKeys = ["stage", "status", "date_from", "date_to", "date_field", "sort", "direction", "attention", "duplicate_review"] as const;
 const one = (value: string | string[] | undefined) => Array.isArray(value) ? value[0] || "" : value || "";
 const url = (path: string, values: Record<string, string | number | undefined>) => { const query = Object.entries(values).filter(([, value]) => value !== "" && value !== undefined).map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`).join("&"); return `${path}${query ? `?${query}` : ""}`; };
@@ -178,10 +180,10 @@ function stageColumns(stage?: KitchenStage): StageColumn[] {
   const date = (value?: string | null) => displayDate(value);
   const yes = (value?: boolean | null) => value == null ? "Not recorded" : value ? "Yes" : "No";
   switch (stage) {
-    case "lead": return [{ label: "Phone", value: p => p.customer.phone || "—" }, { label: "Site location", value: p => p.lead.site_location || "—" }, { label: "Lead source", value: p => p.lead.lead_source || "—" }, { label: "Kitchen type", value: p => p.lead.kitchen_type || "—" }, { label: "Budget", value: p => rupees(p.lead.budget) }, { label: "Lead date", value: p => date(p.lead.lead_date) }];
-    case "visit": return [{ label: "Visit date", value: p => date(p.visit.visit_date) }, { label: "Display / model", value: p => p.visit.display_model || "—" }, { label: "Requirements", value: p => p.visit.requirements || "—" }, { label: "Budget discussion", value: p => p.visit.budget_discussion || "—" }];
+    case "lead": return [{ label: "Phone", value: p => p.customer.phone || "—" }, { label: "Site location", value: p => p.lead.site_location || "—" }, { label: "Lead source", value: p => p.lead.lead_source || "—" }, { label: "Reference", value: p => referrerLabel(p.lead) || "—" }, { label: "Kitchen type", value: p => p.lead.kitchen_type || "—" }, { label: "Budget", value: p => rupees(p.lead.budget) }, { label: "Lead date", value: p => date(p.lead.lead_date) }];
+    case "visit": return [{ label: "Visit date", value: p => date(p.visit.visit_date) }, { label: "Display / model", value: p => p.visit.display_model || "—" }];
     case "cad": return [{ label: "CAD file received", value: p => yes(p.cad.received) }, { label: "Design progress", value: p => `${p.cad.progress}%` }, { label: "Design status", value: p => p.cad.status }];
-    case "design": return [{ label: "Customer approval", value: p => currentDesign(p)?.response || "Pending" }, { label: "Design revisions", value: p => historicalCount(p.design_revision_count, p.known_design_revision_count) }, { label: "Sent to company", value: p => yes(Boolean(currentDesign(p)?.handoff_date)) }, { label: "Date sent", value: p => date(currentDesign(p)?.handoff_date) }];
+    case "design": return [{ label: "Requirements", value: p => currentDesign(p)?.requirements ?? p.visit.requirements ?? "—" }, { label: "Budget discussion", value: p => currentDesign(p)?.budget_discussion ?? p.visit.budget_discussion ?? "—" }, { label: "Customer approval", value: p => currentDesign(p)?.response || "Pending" }, { label: "Design revisions", value: p => historicalCount(p.design_revision_count, p.known_design_revision_count) }, { label: "Sent to company", value: p => yes(Boolean(currentDesign(p)?.handoff_date)) }, { label: "Date sent", value: p => date(currentDesign(p)?.handoff_date) }];
     case "quotation": return [{ label: "Quotation received", value: p => yes(Boolean(currentQuotation(p))) }, { label: "Quotation amount", value: p => rupees(currentQuotation(p)?.amount) }, { label: "Sent to customer", value: p => yes(Boolean(currentQuotation(p)?.shared_date)) }, { label: "Date sent", value: p => date(currentQuotation(p)?.shared_date) }, { label: "Customer response", value: p => currentQuotation(p)?.response || "Pending" }];
     case "order": return [{ label: "Order confirmed", value: p => yes(currentOrder(p)?.confirmed) }, { label: "Order date", value: p => date(currentOrder(p)?.order_date) }, { label: "Final order amount", value: p => rupees(p.order_amount) }, { label: "Advance received", value: p => yes(currentOrder(p)?.advance.received) }, { label: "Advance amount", value: p => rupees(currentOrder(p)?.advance.amount) }];
     case "production": return [{ label: "Production status", value: p => p.production?.status || "Not Started" }, { label: "Start date", value: p => date(p.production?.start_date) }, { label: "Completion date", value: p => date(p.production?.completion_date) }];
@@ -204,11 +206,14 @@ function ProjectTable({ rows, projectHref, compact, stage }: { rows: KitchenProj
       </TableRow>)}
   </Table>;
 }
+const customerDetailFields: [keyof KitchenCustomer, string][] = [["address", "Address"], ["property_name", "Property / site name"], ["city", "City"], ["state", "State"], ["pincode", "PIN code"], ["email", "Email"], ["alternate_phone", "Alternate phone"], ["company", "Company"], ["gstin", "GSTIN"], ["notes", "Customer notes"]];
 function CreateLead({ onClose, onRegisterClose, onCreated }: { onClose: () => void; onRegisterClose: (handler: () => void) => void; onCreated: (project: KitchenProject) => void }) {
   const [customer, setCustomer] = useState<KitchenCustomer | null>(null);
   const [existingMode, setExistingMode] = useState(false);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
+  const [customerDetails, setCustomerDetails] = useState<Partial<KitchenCustomer>>({});
+  const [initialLeadDate, setInitialLeadDate] = useState(kitchenToday);
   const [duplicates, setDuplicates] = useState<{ reference: string }[]>([]);
   const [duplicateError, setDuplicateError] = useState(false);
   const [query, setQuery] = useState("");
@@ -217,11 +222,11 @@ function CreateLead({ onClose, onRegisterClose, onCreated }: { onClose: () => vo
   const [loading, setLoading] = useState(false);
   const [customerError, setCustomerError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
-  const [lead, setLead] = useState<KitchenLead>({ status: "New" });
+  const [lead, setLead] = useState<KitchenLead>(() => ({ status: "New", lead_date: kitchenToday() }));
   const submission = useKitchenSubmission();
-  const dirty = Boolean(customer || customerName || customerPhone || query || Object.entries(lead).some(([key, value]) => key === "status" ? value !== "New" : Boolean(value)));
+  const dirty = Boolean(customer || customerName || customerPhone || Object.values(customerDetails).some(Boolean) || query || Object.entries(lead).some(([key, value]) => key === "status" ? value !== "New" : key === "lead_date" ? value !== initialLeadDate : Boolean(value)));
   const { allowLeave } = useKitchenExitGuard({ dirty, scope: "/kitchen/stages/lead" });
-  const reset = () => { setCustomer(null); setCustomerName(""); setCustomerPhone(""); setLead({ status: "New" }); setQuery(""); setExistingMode(false); };
+  const reset = () => { setCustomer(null); setCustomerName(""); setCustomerPhone(""); setCustomerDetails({}); setInitialLeadDate(kitchenToday()); setLead({ status: "New", lead_date: kitchenToday() }); setQuery(""); setExistingMode(false); };
   const close = () => {
     if (submission.busy) return;
     const discard = () => { reset(); allowLeave(); onClose(); };
@@ -254,15 +259,15 @@ function CreateLead({ onClose, onRegisterClose, onCreated }: { onClose: () => vo
     if (existingMode && !customer) { submission.setError("Select an existing customer or choose New customer."); return; }
     if (!name.trim() || !phone.trim()) { submission.setError("Customer name and phone are required."); return; }
     if (!lead.site_location?.trim()) { submission.setError("Enter the site location before creating the lead."); return; }
-    const body = { ...(customer ? { customer_id: customer.id } : { customer: { name: name.trim(), phone: phone.trim() } }), lead };
+    const body = { ...(customer ? { customer_id: customer.id } : { customer: { ...customerDetails, name: name.trim(), phone: phone.trim() } }), lead };
     void submission.submit(body, key => kitchenProjectsApi.create({ ...body, idempotency_key: key }), project => { allowLeave(); reset(); onCreated(project); });
   };
   return <View testID="kitchen-create-page" style={{ width: "100%", maxWidth: 760 }}>
     <View style={{ gap: 24 }}>
       <Text style={type.bodyMuted}>Enter the customer once. Their details follow this project through all nine stages.</Text>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}><KitchenOption label="New customer" active={!existingMode} disabled={submission.busy} onPress={() => { setExistingMode(false); setCustomer(null); }} testID="kitchen-new-customer" /><KitchenOption label="Existing customer" active={existingMode} disabled={submission.busy} onPress={() => setExistingMode(true)} testID="kitchen-existing-customer" /></View>
-      {!existingMode ? <><TextField label="Customer name (required)" value={customerName} onChangeText={setCustomerName} editable={!submission.busy} testID="kitchen-customer-name" /><TextField label="Phone number (required)" value={customerPhone} onChangeText={setCustomerPhone} keyboardType="phone-pad" editable={!submission.busy} testID="kitchen-customer-phone" /><Text style={type.caption}>An existing Kitchen customer with the same phone is reused automatically.</Text></> : null}
-      {existingMode ? customer ? <KitchenPanel title={customer.name}><Text style={type.body}>{customer.phone || "No phone recorded"}</Text><Text style={type.body}>{customer.address || "No address recorded"}</Text><Button label="Choose another customer" variant="secondary" disabled={submission.busy} onPress={() => setCustomer(null)} /></KitchenPanel> : <>
+      {!existingMode ? <><TextField label="Customer name (required)" value={customerName} onChangeText={setCustomerName} editable={!submission.busy} testID="kitchen-customer-name" /><TextField label="Phone number (required)" value={customerPhone} onChangeText={setCustomerPhone} keyboardType="phone-pad" editable={!submission.busy} testID="kitchen-customer-phone" />{customerDetailFields.map(([key, label]) => <TextField key={key} label={label} value={String(customerDetails[key] || "")} onChangeText={value => setCustomerDetails(current => ({ ...current, [key]: value || null }))} editable={!submission.busy} multiline={key === "address" || key === "notes"} keyboardType={key === "email" ? "email-address" : key === "alternate_phone" ? "phone-pad" : "default"} autoCapitalize={key === "email" ? "none" : "sentences"} testID={`kitchen-customer-${key}`} />)}<Text style={type.caption}>An existing Kitchen customer with the same phone is reused automatically; saved contact details are preserved.</Text></> : null}
+      {existingMode ? customer ? <KitchenPanel title={customer.name}><Text style={type.body}>{customer.phone || "No phone recorded"}</Text>{customerDetailFields.map(([key, label]) => customer[key] ? <Text key={key} style={type.body}>{label}: {customer[key]}</Text> : null)}{!customer.address ? <Text style={type.bodyMuted}>No address recorded</Text> : null}{customer.referrer_id ? <Text style={type.body}>Reference: {referrerLabel(customer)}</Text> : null}<Button label="Choose another customer" variant="secondary" disabled={submission.busy} onPress={() => setCustomer(null)} /></KitchenPanel> : <>
         <SearchField placeholder="Search customer name or phone" accessibilityLabel="Choose customer" value={query} onChangeText={value => { setQuery(value); setCustomerPage(1); }} testID="kitchen-customer" />
         {loading ? <LoadingState label="Loading customers…" /> : customerError ? <ErrorState title="Customer directory unavailable" subtitle={customerError} onRetry={() => setRetry(value => value + 1)} /> : !customers?.rows.length ? <Text style={type.bodyMuted}>No customers match. Choose New customer to record this enquiry here.</Text> : <>
           {customers.rows.map(value => <Button key={value.id} label={`${value.name}${value.phone ? ` · ${value.phone}` : ""}`} variant="secondary" testID={`kitchen-customer-${value.id}`} onPress={() => setCustomer(value)} />)}

@@ -237,6 +237,7 @@ class _FakeDbWithReferrer:
     def __init__(self, quotation_docs, referrer_doc):
         self.quotations = _Collection(quotation_docs)
         self.referrers = _CollectionWithFindOne([], referrer_doc)
+        self.kitchen_projects = type("EmptyKitchen", (), {"aggregate": lambda self, pipeline: _Cursor([])})()
 
 
 def test_referrer_detail_returns_trend_and_quotations(monkeypatch):

@@ -1,3 +1,6 @@
+import { NavigationLink } from "@/src/design/NavigationLink";
+import { STAGE_LABELS, type KitchenStage } from "@/src/api/kitchenProjects";
+import { referrerCode } from "@/src/utils/referrer";
 import { MobileFilterSection } from "@/src/components/MobileFilterSection";
 import { useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -21,6 +24,7 @@ import {
 
 type ReferrerDetailResponse = {
   referrer: { id: string; name: string; type: string; phone?: string | null; company?: string | null };
+  kitchen_projects?: { id: string; number: string; customer_name: string; kitchen_stage: KitchenStage; status: string; grand_total: number }[];
   total_revenue: number;
   trend: { bucket: string; revenue: number }[];
   quotations: { id: string; number: string; customer_name: string; grand_total: number; updated_at: string | null }[];
@@ -76,6 +80,8 @@ export default function ReferrerDetail() {
       {!error && !data ? <LoadingState label="Loading…" /> : null}
       {data ? (
         <View style={{ gap: spacing.lg }}>
+          <Text style={type.body}>{[data.referrer.company, referrerCode(data.referrer.id, data.referrer.type)].filter(Boolean).join(" · ")}</Text>
+          {data.kitchen_projects?.length ? <View style={{ gap: spacing.md }}><Text style={type.titleSm}>Kitchen leads and projects</Text>{data.kitchen_projects.map(project => <NavigationLink key={project.id} href={`/kitchen/${project.id}/stages/${project.kitchen_stage}` as any} accessibilityLabel={`Open ${project.number}`} style={{ minHeight: 56, padding: spacing.md, borderWidth: 1, borderColor: colors.border, borderRadius: 8 }}><Text style={type.bodyStrong}>{project.customer_name} · {project.number}</Text><Text style={type.body}>{STAGE_LABELS[project.kitchen_stage]}{project.status === "ordered" ? ` · Confirmed sale ₹${fmtMoney(project.grand_total)}` : ""}</Text></NavigationLink>)}</View> : null}
           {data.trend.length ? <Button testID="referrer-detail-trend-export-xlsx" label="Export revenue trend" icon="download" variant="secondary" onPress={() => exportData("Revenue trend", [["Period", "Revenue"], ...data.trend.map(point => [point.bucket, point.revenue])])} /> : null}
           <TrendChart points={data.trend} />
           {data.quotations.length === 0 ? (

@@ -57,8 +57,8 @@ ExportFormat = Literal["csv", "xlsx"]
 # pending_payments). The detail endpoint additionally resolves the Referrer
 # doc itself and the products/brands catalog for preference rows.
 CACHED_SURFACES: dict[str, list[str]] = {
-    "referrers": ["customers", "quotations", "payments", "referrers"],
-    "referrer_detail": ["customers", "quotations", "payments", "referrers", "products", "brands"],
+    "referrers": ["customers", "quotations", "kitchen_projects", "payments", "referrers"],
+    "referrer_detail": ["customers", "quotations", "kitchen_projects", "payments", "referrers", "products", "brands"],
 }
 
 # The 14-card summary fields (ReferrerSummary), in the order the task brief's

@@ -17,12 +17,13 @@ from pydantic import ValidationError
 from pymongo.errors import DuplicateKeyError
 
 from models_kitchen import (AdvancePayload, CadFields, ConfigurePolicy,
-                            LeadFields, MetadataPayload, PolicyFields, STAGES, VisitFields)
+                            LeadCustomer, LeadFields, MetadataPayload, PolicyFields, STAGES, VisitFields)
 from services import kitchen_access as access
 from services import kitchen_workflow as workflow
 
 MAX_AGGREGATE_BYTES = 12 * 1024 * 1024
 POLICY_ID = "kitchen-policy"
+CUSTOMER_PROJECTION = {"_id": 0, **{field: 1 for field in ("id", "name", "phone", "address", "email", "company", "property_name", "city", "state", "pincode", "gstin", "alternate_phone", "notes", "referrer_id", "referrer_name", "referrer_type", "referrer_company")}}
 HISTORY_FIELDS = ("activity", "command_receipts", "design_versions", "quotation_versions", "orders",
                   "revision_events", "site_visits", "approvals", "attachments", "work_history")
 
@@ -164,6 +165,9 @@ def current_status(project):
 def required_fields_error(project, stage, policy):
     """Configured fields apply to creation and leaving a stage, allowing drafts."""
     fields = (policy.get("required_fields") or {}).get(stage, [])
+    # Retired visit/design controls must not keep legacy policies blocking progress.
+    retired = {"visit": {"requirements", "budget_discussion", "interested"}, "design": {"attachment_id", "url"}}
+    fields = [name for name in fields if name not in retired.get(stage, set())]
     source = project.get(stage, {})
     key = {"design": "design_versions", "quotation": "quotation_versions", "order": "orders"}.get(stage)
     if key:
@@ -197,10 +201,6 @@ def transition_error(project, target, policy):
         visit = project["visit"]
         if visit["status"] != "Visited":
             return "Mark the showroom visit as Visited first"
-        if not (visit.get("requirements") or "").strip():
-            return "Record the customer's initial requirements first"
-        if visit.get("interested") is not True:
-            return "Record that the customer is interested in proceeding first"
         return None
     if current == "cad":
         cad = project["cad"]
@@ -316,7 +316,7 @@ class KitchenProjectService:
         result = {k: copy.deepcopy(v) for k, v in project.items() if k not in {"_id", "command_receipts", "creation_fingerprint", "customer_phone_normalized", "customer_name_normalized"}}
         if summary:
             version_fields = {"id", "number", "response", "shared_date", "handoff_date", "presentation_date", "received_date",
-                              "amount", "design_version_id", "workflow_cycle", "attachment_id", "url"}
+                              "amount", "design_version_id", "workflow_cycle", "attachment_id", "url", "requirements", "budget_discussion"}
             order_fields = {"id", "confirmed", "status", "order_date", "final_amount", "original_amount", "quotation_version_id",
                             "confirmation_document_id", "authorization_invalidated", "advance"}
             for source, target, fields in (("design_versions", "current_design", version_fields),
@@ -396,10 +396,11 @@ class KitchenProjectService:
             return await self._attach(user, project_id, **kwargs)
 
     async def _attach(self, user, project_id, *, expected_version, key, filename, content_type, data, storage, bucket, max_file_bytes=768 * 1024):
-        from services.kitchen_attachments import prepare_private_upload, validate_file
+        from services.kitchen_attachments import canonical_type, prepare_private_upload, validate_file
         policy = await self.policy()
         project = await self.db.kitchen_projects.find_one({"id": project_id, "floor_id": access.KITCHEN_FLOOR})
         await access.require_project(self.db, user, project, policy, "update")
+        content_type = canonical_type(content_type, filename)
         digest = hashlib.sha256(data).hexdigest()
         signature = fingerprint({"command": "attachment", "sha256": digest, "filename": filename, "content_type": content_type})
         def prior(row):
@@ -412,11 +413,9 @@ class KitchenProjectService:
         await access.require_current_task(self.db, user, project, policy)
         if project["version"] != expected_version:
             raise HTTPException(409, "Kitchen project changed; reload before uploading")
-        if project["stage"] == "cad":
-            raise HTTPException(422, "CAD File records receipt and design progress only; no files are uploaded in this stage")
         await asyncio.to_thread(validate_file, data, content_type, filename, policy, max_file_bytes)
-        if project["stage"] == "completed" or project.get("lifecycle_status") in {"On Hold", "Cancelled"}:
-            raise HTTPException(422, "The owner must resume or reopen the project before adding files")
+        if project.get("lifecycle_status") in {"On Hold", "Cancelled"}:
+            raise HTTPException(422, "The owner must resume the project before adding files")
         metadata = await prepare_private_upload(self.db, storage, user=user, project=project, policy=policy,
             data=data, content_type=content_type, filename=filename, bucket=bucket, max_file_bytes=max_file_bytes)
         updated = copy.deepcopy(project)
@@ -468,6 +467,14 @@ class KitchenProjectService:
         async with self.admission(user, "create"):
             return await self._create(user, body)
 
+    async def referrer_fields(self, referrer_id):
+        if not referrer_id:
+            return {"referrer_id": None, "referrer_name": None, "referrer_type": None, "referrer_company": None}
+        referrer = await self.db.referrers.find_one({"id": referrer_id, "floor_id": access.KITCHEN_FLOOR, "active": {"$ne": False}}, {"_id": 0})
+        if not referrer or referrer.get("type") not in {"architect", "interior_designer"}:
+            raise HTTPException(422, "Select an active Kitchen architect or interior designer")
+        return {"referrer_id": referrer["id"], "referrer_name": referrer["name"], "referrer_type": referrer["type"], "referrer_company": referrer.get("company")}
+
     async def lead_customer(self, details):
         """Resolve inline intake once without overwriting an existing contact.
 
@@ -483,7 +490,7 @@ class KitchenProjectService:
         pattern = r"^\D*" + prefix + r"\D*".join(normalized) + r"\D*$"
         query = {"floor_id": access.KITCHEN_FLOOR, "kitchen_delete_token": {"$exists": False},
                  "phone": {"$regex": pattern}}
-        projection = {"_id": 0, "id": 1, "name": 1, "phone": 1, "address": 1}
+        projection = CUSTOMER_PROJECTION
         matches = await self.db.customers.find(query, projection).limit(2).to_list(2)
         if len(matches) > 1:
             raise HTTPException(409, "Several existing customers use this phone number; select the correct customer")
@@ -491,7 +498,8 @@ class KitchenProjectService:
             return {key: value for key, value in matches[0].items() if key in projection and key != "_id"}
         customer_id = str(uuid5(NAMESPACE_URL, f"kitchen-customer:{access.KITCHEN_FLOOR}:{normalized}"))
         contact = CustomerPublic(id=customer_id, floor_id=access.KITCHEN_FLOOR, **details.model_dump()).model_dump()
-        contact.pop("email", None)  # The sparse unique email index excludes absent fields.
+        if not contact.get("email"):
+            contact.pop("email", None)  # The sparse unique email index excludes absent fields.
         contact.update(_id=customer_id, created_by_source="kitchen_lead")
         try:
             await self.db.customers.insert_one(contact)
@@ -507,6 +515,14 @@ class KitchenProjectService:
         policy = await self.policy()
         project_id = str(uuid5(NAMESPACE_URL, f"kitchen:{user.id}:{access.KITCHEN_FLOOR}:{body.idempotency_key}"))
         request_fields = body.model_dump(exclude={"idempotency_key"})
+        # Optional additions must not change receipts for pre-existing requests.
+        for field in ("referrer_id", "referrer_name", "referrer_type", "referrer_company"):
+            if request_fields["lead"].get(field) is None:
+                request_fields["lead"].pop(field, None)
+        if request_fields.get("customer"):
+            for field in set(LeadCustomer.model_fields) - {"name", "phone", "address"}:
+                if request_fields["customer"].get(field) is None:
+                    request_fields["customer"].pop(field, None)
         if body.customer is None:
             request_fields.pop("customer")  # Preserve receipts created before inline intake existed.
         digest = fingerprint(request_fields)
@@ -521,12 +537,16 @@ class KitchenProjectService:
             raise HTTPException(422, "A lost reason is required")
         if not str(lead.get("site_location") or "").strip():
             raise HTTPException(422, "Customer Name, Phone Number and Site Location are required")
+        reference_fields = await self.referrer_fields(lead.get("referrer_id"))
         customer = (await self.lead_customer(body.customer) if body.customer is not None else
                     await self.db.customers.find_one({"id": body.customer_id, "floor_id": access.KITCHEN_FLOOR},
-                                                    {"_id": 0, "id": 1, "name": 1, "phone": 1, "address": 1}))
+                                                    CUSTOMER_PROJECTION))
         if not customer:
             raise HTTPException(404, "Kitchen customer not found; select an existing customer")
         customer_id = customer["id"]
+        lead.update(reference_fields)
+        if not lead.get("lead_date"):
+            lead["lead_date"] = datetime.now(timezone(timedelta(hours=5, minutes=30))).date().isoformat()
         now = timestamp()
         reference = "KIT-" + project_id.replace("-", "").upper()[:16]
         project = {"_id": project_id, "id": project_id, "reference": reference,
@@ -535,6 +555,7 @@ class KitchenProjectService:
                    "customer_phone_normalized": re.sub(r"\D", "", customer.get("phone") or "")[-10:],
                    "customer_name_normalized": " ".join((customer.get("name") or "").casefold().split()),
                    "version": 1, "stage": "lead", "status": lead["status"], "lead": lead,
+                   **reference_fields,
                    "visit": VisitFields().model_dump(), "cad": CadFields().model_dump(),
                    "assignments": {},
                    "assignment_names": {},
@@ -624,6 +645,13 @@ class KitchenProjectService:
                 raise HTTPException(422, f"This command is available only in the {stage} stage")
             saved_fields = {key: value for key, value in project[stage].items() if key != "next_action"}
             updated[stage] = {**project[stage], **validate(model, {**saved_fields, **payload}).model_dump()}
+            if stage == "lead":
+                if updated[stage].get("referrer_id") == project[stage].get("referrer_id"):
+                    reference_fields = {field: project[stage].get(field) for field in ("referrer_id", "referrer_name", "referrer_type", "referrer_company")}
+                else:
+                    reference_fields = await self.referrer_fields(updated[stage].get("referrer_id"))
+                updated[stage].update(reference_fields)
+                updated.update(reference_fields)
             if stage == "cad":
                 updated["cad"]["ready"] = updated["cad"]["received"] and updated["cad"]["progress"] == 100 and updated["cad"]["status"] == "Completed"
             if stage == "lead" and lead_error(updated):
@@ -660,7 +688,7 @@ class KitchenProjectService:
         elif command == "metadata":
             updated.update(validate(MetadataPayload, payload).model_dump(exclude_unset=True))
         elif command in workflow.COMMANDS:
-            if command == "design_revision" and project.get("design_versions") and project["design_versions"][-1].get("response") == "Approved" and not access.owner(user):
+            if command in {"design_revision", "design_update"} and project.get("design_versions") and project["design_versions"][-1].get("response") == "Approved" and not access.owner(user):
                 raise HTTPException(403, "Only the owner can authorize changing an approved design")
             if command == "approval":
                 from models_kitchen import InternalApproval
@@ -703,6 +731,9 @@ class KitchenProjectService:
             for key in ("status", "order_amount", "design_revision_count", "site_visit_count", "completion_date"):
                 if project.get(key) != updated.get(key):
                     record["changes"][key] = {"before": project.get(key), "after": updated.get(key)}
+            if command == "design_update":
+                record["reason"] = payload["reason"]
+                record["changes"]["design"] = {"before": project["design_versions"][-1], "after": updated["design_versions"][-1]}
             if command == "order_document":
                 record["changes"]["confirmation_document_id"] = {
                     "before": project["orders"][-1].get("confirmation_document_id"),
@@ -734,7 +765,7 @@ class KitchenProjectService:
             term = {"$regex": re.escape(search.strip()), "$options": "i"}
             query["$or"] = [{field: term} for field in ("name", "phone", "address")]
         total = await self.db.customers.count_documents(query)
-        rows = await self.db.customers.find(query, {"_id": 0, "id": 1, "name": 1, "phone": 1, "address": 1}).sort([("name", 1), ("id", 1)]).skip((page - 1) * limit).limit(limit).to_list(limit)
+        rows = await self.db.customers.find(query, CUSTOMER_PROJECTION).sort([("name", 1), ("id", 1)]).skip((page - 1) * limit).limit(limit).to_list(limit)
         return {"rows": rows, "total": total, "page": page, "limit": limit}
 
     async def assignees(self, user):
