@@ -763,14 +763,25 @@ class Referrer(TimestampedModel):
     active: bool = True
     phone: Optional[str] = None
     company: Optional[str] = None
+    shared_across_floors: bool = False
+    updated_by: Optional[str] = None
+    email: Optional[str] = None
+    address: Optional[str] = None
     created_by: str
 
 
 class ReferrerCreate(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=200)
     type: ReferrerType
-    phone: Optional[str] = None
-    company: Optional[str] = None
+    phone: Optional[str] = Field(None, max_length=100)
+    company: Optional[str] = Field(None, max_length=250)
+    email: Optional[EmailStr] = None
+    address: Optional[str] = Field(None, max_length=1000)
+
+
+class ReferrerUpdate(ReferrerCreate):
+    shared_across_floors: bool = True
+    updated_at: str
 
 
 class Quotation(TimestampedModel):

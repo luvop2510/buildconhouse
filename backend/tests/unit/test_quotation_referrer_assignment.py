@@ -47,6 +47,9 @@ def test_builder_referrer_assignment_resolves_and_persists_directory_fields(monk
         return {"id": "r1", "name": "Aster Architects", "type": "architect", "active": True, "floor_id": "third-floor"}
 
     monkeypatch.setattr(quotation_routes, "get_floor_scoped_or_404", scoped)
+    async def partner(_database, record_id, _user):
+        return await scoped(None, record_id)
+    monkeypatch.setattr(quotation_routes, "resolve_referrer", partner)
 
     result = asyncio.run(quotation_routes.update_quotation("q1", QuotationUpdate(referrer_id="r1", silent=True), user=_user()))
 

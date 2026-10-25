@@ -41,7 +41,8 @@ def _directory_match(
     new architect or interior designer should appear with zeroes until their
     first attributed quotation is created.
     """
-    return build_match(
+    from services.referrer_identity import referrer_query
+    query = build_match(
         AnalyticsFilter(
             floor_id=f.floor_id,
             status="any",
@@ -50,6 +51,9 @@ def _directory_match(
         accessible_floors,
         (None, None),
     ) | ({"id": f.referrer_id} if f.referrer_id else {})
+    if "referrer_type" in query:
+        query["type"] = query.pop("referrer_type")
+    return referrer_query(query)
 
 
 def _zero_referrer_row(referrer: dict) -> dict:

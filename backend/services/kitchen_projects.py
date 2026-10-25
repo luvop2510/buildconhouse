@@ -20,6 +20,7 @@ from models_kitchen import (AdvancePayload, CadFields, ConfigurePolicy,
                             LeadCustomer, LeadFields, MetadataPayload, PolicyFields, STAGES, VisitFields)
 from services import kitchen_access as access
 from services import kitchen_workflow as workflow
+from services.referrer_identity import referrer_query
 
 MAX_AGGREGATE_BYTES = 12 * 1024 * 1024
 POLICY_ID = "kitchen-policy"
@@ -470,7 +471,7 @@ class KitchenProjectService:
     async def referrer_fields(self, referrer_id):
         if not referrer_id:
             return {"referrer_id": None, "referrer_name": None, "referrer_type": None, "referrer_company": None}
-        referrer = await self.db.referrers.find_one({"id": referrer_id, "floor_id": access.KITCHEN_FLOOR, "active": {"$ne": False}}, {"_id": 0})
+        referrer = await self.db.referrers.find_one(referrer_query({"floor_id": access.KITCHEN_FLOOR}, {"id": referrer_id, "active": {"$ne": False}}), {"_id": 0})
         if not referrer or referrer.get("type") not in {"architect", "interior_designer"}:
             raise HTTPException(422, "Select an active Kitchen architect or interior designer")
         return {"referrer_id": referrer["id"], "referrer_name": referrer["name"], "referrer_type": referrer["type"], "referrer_company": referrer.get("company")}
@@ -709,6 +710,12 @@ class KitchenProjectService:
                 staff = await self.db.users.find_one({"id": user.id, "active": True}, {"_id": 0, "id": 1, "is_deleted": 1, "deleted_at": 1})
                 if not staff or staff.get("is_deleted") or staff.get("deleted_at"):
                     raise HTTPException(403, "The selected department manager is no longer active")
+            if command == "order_confirm" and payload.get("final_amount") is not None:
+                from models_kitchen import OrderConfirmation
+                confirmation = validate(OrderConfirmation, payload)
+                current_quote = project.get("quotation_versions", [{}])[-1] if project.get("quotation_versions") else {}
+                if current_quote.get("amount") is not None and Decimal(confirmation.final_amount) != Decimal(current_quote["amount"]) and not access.owner(user):
+                    raise HTTPException(403, "Only the owner can authorize changed order terms")
             if command in {"order_status", "exception", "order_amend"} and not access.owner(user):
                 raise HTTPException(403, "Only the owner can authorize exceptions or restricted changes")
             workflow.apply(updated, command, payload, policy, user, timestamp(), validate)
@@ -745,6 +752,8 @@ class KitchenProjectService:
             if command == "design_update":
                 record["reason"] = payload["reason"]
                 record["changes"]["design"] = {"before": project["design_versions"][-1], "after": updated["design_versions"][-1]}
+            if command == "order_update":
+                record["changes"]["order"] = {"before": project["orders"][-1], "after": updated["orders"][-1]}
             if command == "order_document":
                 record["changes"]["confirmation_document_id"] = {
                     "before": project["orders"][-1].get("confirmation_document_id"),

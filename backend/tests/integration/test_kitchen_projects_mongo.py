@@ -1083,12 +1083,11 @@ def test_resolved_d05_cad_readiness_is_derived_and_all_three_prerequisites_are_m
             await configure(env)
             project = await reach_stage(env, "cad")
             for fields in ({"received": False, "progress": 100, "status": "Completed", "ready": True},
-                           {"received": True, "progress": 99, "status": "Completed", "ready": True},
-                           {"received": True, "progress": 100, "status": "In Progress", "ready": True}):
+                           {"received": True, "progress": 99, "status": "Completed", "ready": True}):
                 project = await accepted(env, project, "save_cad", fields)
                 assert project["cad"]["ready"] is False
                 assert (await command(env, project, "advance_stage", {"target_stage": "design"})).status_code == 422
-            project = await accepted(env, project, "save_cad", {"received": True, "progress": 100, "status": "Completed", "ready": False})
+            project = await accepted(env, project, "save_cad", {"received": True, "progress": 100, "status": "In Progress", "ready": False})
             assert project["cad"]["ready"] is True  # No contradictory extra readiness gate.
             project = await accepted(env, project, "advance_stage", {"target_stage": "design"})
             assert project["stage"] == "design"

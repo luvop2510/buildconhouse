@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { Buffer } from 'node:buffer';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { chromium, webkit, devices, expect } from '@playwright/test';
@@ -18,59 +19,46 @@ assert.ok(expiry > Date.now() / 1000 + 600, 'QA session expires too soon to veri
 const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
 const deploymentHeaders = bypass ? { 'x-vercel-protection-bypass': bypass } : {};
 
-// The deadlines follow the browser's real startup requests. A sleeping backend
-// may take a full minute to answer its readiness probes; identity and rendered
-// content keep their own bounded budgets after the app starts waking.
-function createStartupDeadlineObserver({ origin, now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout, rootTimeoutMs = 25000, wakeTimeoutMs = 60000, identityTimeoutMs = 20000 }) {
-  let readyAt = null, healthStartedAt = null, identityStartedAt = null, disposed = false, contentDone = false, identitySucceeded = false;
-  let rootTimer, wakeTimer, identityTimer, contentTimer, failure;
-  let resolveReady, rejectReady, resolveIdentity, rejectIdentity, rejectFailure;
-  const readyPromise = new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
+// Observe the actual identity request. Root mounting, identity restoration and
+// visible content retain separate bounds without an anonymous readiness phase.
+function createStartupDeadlineObserver({ origin, now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout, rootTimeoutMs = 25000, identityTimeoutMs = 20000 }) {
+  let identityStartedAt = null, disposed = false, contentDone = false, identitySucceeded = false;
+  let rootTimer, identityTimer, contentTimer, failure;
+  let resolveStarted, rejectStarted, resolveIdentity, rejectIdentity, rejectFailure;
+  const startedPromise = new Promise((resolve, reject) => { resolveStarted = resolve; rejectStarted = reject; });
   const identityPromise = new Promise((resolve, reject) => { resolveIdentity = resolve; rejectIdentity = reject; });
   const failurePromise = new Promise((_, reject) => { rejectFailure = reject; });
-  // Attach rejection handlers immediately. Callers may be waiting on readiness
-  // while the identity deadline expires first.
-  readyPromise.catch(() => {});
+  startedPromise.catch(() => {});
   identityPromise.catch(() => {});
   failurePromise.catch(() => {});
-  const healthUrl = origin + '/api/health/ready';
   const identityUrl = origin + '/api/auth/me';
   const clear = timer => { if (timer !== undefined && timer !== null) clearTimer(timer); };
   const fail = message => {
     if (failure || disposed) return;
     failure = new Error(message);
-    clear(rootTimer); clear(wakeTimer); clear(identityTimer); clear(contentTimer);
-    rejectReady(failure); rejectIdentity(failure);
+    clear(rootTimer); clear(identityTimer); clear(contentTimer);
+    rejectStarted(failure); rejectIdentity(failure);
     rejectFailure(failure);
   };
   rootTimer = setTimer(() => {
-    if (healthStartedAt === null) fail('App startup did not request backend readiness before the root mount deadline');
+    if (identityStartedAt === null) fail('App startup did not request authenticated identity before the root mount deadline');
   }, rootTimeoutMs);
 
   return {
     request(url) {
       if (failure || disposed) return;
-      if (url === healthUrl && healthStartedAt === null) {
-        healthStartedAt = now();
-        clear(rootTimer);
-        wakeTimer = setTimer(() => fail('Backend readiness exceeded its 60 second wake window'), wakeTimeoutMs);
-      }
       if (url === identityUrl && identityStartedAt === null) {
         identityStartedAt = now();
+        clear(rootTimer);
         identityTimer = setTimer(() => fail('Authenticated identity exceeded its 20 second deadline'), identityTimeoutMs);
+        resolveStarted(identityStartedAt);
       }
     },
-    response(url, status, body) {
+    response(url, status) {
       if (failure || disposed) return;
-      if (url === healthUrl && readyAt === null && status === 200 && body?.status === 'ok') {
-        readyAt = now();
-        clear(wakeTimer);
-        resolveReady(readyAt);
-      }
       if (url === identityUrl && identityStartedAt !== null) {
         if (identitySucceeded) return;
         if (status !== 200) return fail(`Authenticated identity returned HTTP ${status}`);
-        if (!identityTimer) return;
         clear(identityTimer); identityTimer = null;
         identitySucceeded = true;
         resolveIdentity(now());
@@ -81,28 +69,33 @@ function createStartupDeadlineObserver({ origin, now = Date.now, setTimer = setT
       if (url === identityUrl && identityStartedAt !== null && !identitySucceeded) fail('Authenticated identity request failed before returning HTTP 200');
     },
     terminal(message) { fail(message); },
-    waitReady() { return readyPromise; },
+    waitStarted() { return startedPromise; },
     waitIdentity() { return identityPromise; },
     waitFailure() { return failurePromise; },
     async waitForContent(waitFor, maxMs) {
-      await readyPromise;
-      const remaining = readyAt + maxMs - now();
-      if (remaining <= 0) return fail(`Rendered content exceeded its ${maxMs} millisecond readiness deadline`);
-      contentTimer = setTimer(() => fail(`Rendered content exceeded its ${maxMs} millisecond readiness deadline`), remaining);
+      await startedPromise;
+      if (disposed) return;
+      if (failure) throw failure;
+      const remaining = identityStartedAt + maxMs - now();
+      if (remaining <= 0) {
+        fail(`Rendered content exceeded its ${maxMs} millisecond identity-start deadline`);
+        throw failure;
+      }
+      contentTimer = setTimer(() => fail(`Rendered content exceeded its ${maxMs} millisecond identity-start deadline`), remaining);
       await Promise.race([waitFor(remaining), failurePromise]);
       contentDone = true;
       if (identitySucceeded) { clear(contentTimer); contentTimer = null; }
     },
     remainingContentMs(maxMs) {
       if (failure) throw failure;
-      if (readyAt === null) throw new Error('Cannot check content deadline before backend readiness');
-      const remaining = readyAt + maxMs - now();
-      if (remaining <= 0) throw new Error(`Rendered content exceeded its ${maxMs} millisecond readiness deadline`);
+      if (identityStartedAt === null) throw new Error('Cannot check content deadline before the identity request');
+      const remaining = identityStartedAt + maxMs - now();
+      if (remaining <= 0) throw new Error(`Rendered content exceeded its ${maxMs} millisecond identity-start deadline`);
       return remaining;
     },
     dispose() {
       disposed = true;
-      clear(rootTimer); clear(wakeTimer); clear(identityTimer); clear(contentTimer);
+      clear(rootTimer); clear(identityTimer); clear(contentTimer);
     },
   };
 }
@@ -191,9 +184,6 @@ for (const [profile, engine, options] of [
             void window.__forgeReleaseStartupTerminal?.('Application font readiness failed');
             return;
           }
-          if (document.body?.innerText.includes('Backend server is unavailable')) {
-            void window.__forgeReleaseStartupTerminal?.('Backend startup reached its unavailable state');
-          }
         };
         new MutationObserver(check).observe(document, { subtree: true, childList: true, characterData: true });
         check();
@@ -204,27 +194,23 @@ for (const [profile, engine, options] of [
         let identityResponse = null;
         const onRequest = request => startup.request(request.url());
         const onFailed = request => startup.requestFailed(request.url());
-        const onResponse = async response => {
+        const onResponse = response => {
           const url = response.url();
-          if (url !== origin + '/api/health/ready' && url !== origin + '/api/auth/me') return;
-          let body = null;
-          if (url === origin + '/api/health/ready' && response.status() === 200) {
-            try { body = await response.json(); } catch {}
-          }
-          startup.response(url, response.status(), body);
-          if (url === origin + '/api/auth/me' && response.status() === 200) identityResponse = response;
+          if (url !== origin + '/api/auth/me') return;
+          startup.response(url, response.status());
+          if (response.status() === 200) identityResponse = response;
         };
         page.on('request', onRequest);
         page.on('requestfailed', onFailed);
         page.on('response', onResponse);
-        const ready = startup.waitReady();
+        const started = startup.waitStarted();
         const identity = startup.waitIdentity();
         const content = startup.waitForContent(
           timeout => contentLocator.waitFor({ state: 'visible', timeout }),
           contentTimeoutMs,
         );
         try {
-          await Promise.race([Promise.all([navigate(), ready, identity, content]), startup.waitFailure()]);
+          await Promise.race([Promise.all([navigate(), started, identity, content]), startup.waitFailure()]);
           return { identityResponse };
         } finally {
           page.off('request', onRequest);

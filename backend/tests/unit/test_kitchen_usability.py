@@ -70,10 +70,10 @@ async def test_design_without_document_and_editable_details_have_audited_progres
     version = project['design_versions'][-1]
     assert version['attachment_id'] is None and version['url'] is None
     payload = {'version_id': version['id'], 'presentation_date': '2026-10-24', 'shared_date': '2026-10-25',
-               'handoff_date': '2026-10-25', 'response': 'Approved', 'revision_count': 2,
+               'handoff_date': '2026-10-25', 'response': 'Approved',
                'requirements': 'Tall cabinets and drawers', 'budget_discussion': 'Within agreed budget', 'reason': 'Correct showroom record'}
     project = await service.command(owner, project['id'], cmd(project['version'], 'design_update', payload))
-    assert project['design_revision_count'] == 2
+    assert project['design_revision_count'] == 0
     assert project['design_versions'][-1]['requirements'] == payload['requirements']
     correction = project['activity'][-1]['payload']
     assert correction['reason'] == payload['reason']
@@ -93,3 +93,67 @@ async def test_design_without_document_and_editable_details_have_audited_progres
 def test_legacy_policy_cannot_require_removed_controls():
     project = {'stage': 'visit', 'visit': {'status': 'Visited'}, 'duplicate_review': {'status': 'cleared'}}
     assert transition_error(project, 'cad', {'required_fields': {'visit': ['requirements', 'interested', 'budget_discussion']}}) is None
+
+
+@pytest.mark.parametrize('progress,status', [(0, 'Not Started'), (1, 'In Progress'), (50, 'In Progress'), (99, 'In Progress'), (100, 'Completed')])
+def test_cad_status_is_derived_even_for_stale_client_status(progress, status):
+    from models_kitchen import CadFields
+    fields = CadFields(received=True, progress=progress, status='Not Started', ready=True)
+    assert fields.status == status
+    assert fields.ready is (progress == 100)
+
+
+def test_order_document_replacement_preserves_previous_file_and_commercial_terms(setup):
+    _, _, owner = setup
+    project = {'stage': 'order', 'orders': [{'id': 'order', 'confirmed': True, 'status': 'Confirmed', 'final_amount': '125.10', 'confirmation_document_id': 'original'}],
+               'attachments': [{'id': 'original'}, {'id': 'replacement'}]}
+    kitchen_workflow.apply(project, 'order_document', {'attachment_id': 'replacement'}, {}, owner, 'now', validate)
+    order = project['orders'][0]
+    assert order['confirmation_document_id'] == 'replacement'
+    assert order['document_history'][-1]['previous_attachment_id'] == 'original'
+    assert order['final_amount'] == '125.10'
+    assert project['attachments'] == [{'id': 'original'}, {'id': 'replacement'}]
+    with pytest.raises(HTTPException):
+        kitchen_workflow.apply(project, 'order_document', {'attachment_id': 'foreign'}, {}, owner, 'now', validate)
+
+
+def test_order_date_notes_are_editable_with_chronology_and_history(setup):
+    _, _, owner = setup
+    project = {'stage': 'order', 'orders': [{'id': 'order', 'quotation_version_id': 'quote', 'order_date': '2026-10-21', 'notes': 'Old note', 'final_amount': '100.00', 'advance': {'date': '2026-10-23'}}],
+               'quotation_versions': [{'id': 'quote', 'shared_date': '2026-10-20'}]}
+    kitchen_workflow.apply(project, 'order_update', {'order_date': '2026-10-22', 'notes': 'Corrected'}, {}, owner, 'now', validate)
+    order = project['orders'][0]
+    assert order['order_date'] == '2026-10-22' and order['notes'] == 'Corrected'
+    assert order['corrections'][0]['before']['notes'] == 'Old note'
+    assert order['final_amount'] == '100.00'
+    order['amendments'] = [{'date': '2026-10-22'}]
+    for date in ('2026-10-19', '2026-10-23', '2026-10-24'):
+        with pytest.raises(HTTPException):
+            kitchen_workflow.apply(project, 'order_update', {'order_date': date}, {}, owner, 'now', validate)
+
+
+def test_design_correction_cannot_manually_replace_customer_revision_total(setup):
+    _, _, owner = setup
+    project = {'stage': 'design', 'design_versions': [{'id': 'design', 'response': 'Pending', 'workflow_cycle': 1}], 'design_revision_count': 1}
+    with pytest.raises(HTTPException) as denied:
+        kitchen_workflow.apply(project, 'design_update', {'version_id': 'design', 'presentation_date': '2026-10-22', 'response': 'Pending', 'revision_count': 10, 'reason': 'Manual override'}, {}, owner, 'now', validate)
+    assert denied.value.status_code == 422
+    assert project['design_revision_count'] == 1
+
+
+@pytest.mark.parametrize('approved', [False, True])
+def test_changed_initial_order_amount_keeps_quotation_and_requires_customer_approval(setup, approved):
+    _, _, owner = setup
+    project = {'stage': 'order', 'orders': [], 'attachments': [], 'design_versions': [{'id': 'design', 'response': 'Approved'}],
+               'quotation_versions': [{'id': 'quote', 'design_version_id': 'design', 'amount': '125.10', 'response': 'Approved', 'shared_date': '2026-10-21'}]}
+    fields = {'quotation_version_id': 'quote', 'order_date': '2026-10-22', 'final_amount': '120.00', 'amount_customer_approved': approved}
+    if not approved:
+        with pytest.raises(HTTPException):
+            kitchen_workflow.apply(project, 'order_confirm', fields, {}, owner, 'now', validate)
+        assert not project['orders']
+    else:
+        kitchen_workflow.apply(project, 'order_confirm', fields, {}, owner, 'now', validate)
+        assert project['orders'][-1]['original_amount'] == '125.10'
+        assert project['orders'][-1]['final_amount'] == project['order_amount'] == '120.00'
+        assert project['orders'][-1]['amendments'][0]['customer_approved'] is True
+        assert project['quotation_versions'][0]['amount'] == '125.10'

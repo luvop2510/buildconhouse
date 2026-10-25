@@ -143,7 +143,7 @@ const STAGE_PREVIEW: Record<KitchenStage, string> = {
   visit: "Visit date, showroom visit status, display model (GI, SS, Other or Wardrobe), and visit notes.",
   cad: "CAD received, design progress and completion status. Record these details whenever they are available.",
   design: "Customer requirements, budget discussion, presentation date, revision count, customer sharing and approval, and company handoff. Project PDFs are available under Documents.",
-  quotation: "Company quotation amount, received date, PDF or HTTPS reference, customer sharing date and approval. Record approval when it is available.",
+  quotation: "Company quotation amount, received date, uploaded quotation document, customer sharing date and approval. Record approval when it is available.",
   order: "Order confirmation and date, optional confirmation document, advance amount and receipt date, and any manager approval records.",
   production: "Production status, start date, completion date and notes. Move to Installation whenever needed.",
   installation: "Installation status and dates, site visits and notes, and any manager closure approval.",
@@ -175,6 +175,7 @@ function EarlyStage({ project, stage, disabled }: { project: KitchenProject; sta
   const [cad, setCad] = useKitchenDraft<KitchenCad>("cad.value", project.cad);
   const [progress, setProgress] = useKitchenDraft("cad.progress", String(project.cad.progress));
   const active = stage === project.stage;
+  const cadStatus = Number(progress) === 0 ? "Not Started" : Number(progress) === 100 ? "Completed" : "In Progress";
   const locked = disabled || !active;
   if (!["lead", "visit", "cad"].includes(stage)) return null;
   return <>
@@ -190,10 +191,10 @@ function EarlyStage({ project, stage, disabled }: { project: KitchenProject; sta
       </> : <>
         <Choice label="CAD file received" value={cad.received ? "Yes" : "No"} values={["Yes", "No"]} onChange={value => setCad({ ...cad, received: value === "Yes" })} disabled={locked} testID="kitchen-cad-received" />
         <TextField label="Design progress (%)" value={progress} onChangeText={setProgress} editable={!locked} keyboardType="numeric" testID="kitchen-cad-progress" />
-        <Choice label="Design status" value={cad.status} values={["Not Started", "In Progress", "Completed"]} onChange={status => setCad({ ...cad, status })} disabled={locked} testID="kitchen-cad-status" />
-        <Text style={type.bodyMuted} testID="kitchen-cad-readiness">Ready for presentation: {cad.received && Number(progress) === 100 && cad.status === "Completed" ? "Yes" : "No"}</Text>
+        <Text style={type.body} testID="kitchen-cad-status">Design status: {cadStatus}</Text>
+        <Text style={type.bodyMuted} testID="kitchen-cad-readiness">Ready for presentation: {cad.received && Number(progress) === 100 ? "Yes" : "No"}</Text>
         <TextField label="CAD notes" value={cad.notes || ""} onChangeText={notes => setCad({ ...cad, notes })} editable={!locked} multiline testID="kitchen-cad-notes" />
-        {active && project.permissions?.can_update ? <Button label="Save CAD progress" disabled={locked} loading={submission.busy} testID="kitchen-cad-save" onPress={() => { if (!/^\d{1,3}$/.test(progress) || Number(progress) > 100) { submission.setError("Design progress must be a whole number from 0 to 100."); return; } void command("save_cad", { ...cad, progress: Number(progress) }); }} /> : null}
+        {active && project.permissions?.can_update ? <Button label="Save CAD progress" disabled={locked} loading={submission.busy} testID="kitchen-cad-save" onPress={() => { if (!/^\d{1,3}$/.test(progress) || Number(progress) > 100) { submission.setError("Design progress must be a whole number from 0 to 100."); return; } void command("save_cad", { ...cad, progress: Number(progress), status: cadStatus }); }} /> : null}
       </>}
     </KitchenPanel>
 

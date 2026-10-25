@@ -5,247 +5,49 @@ import test from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
 
-const controllerSource = readFileSync(new URL('../src/lib/backend-startup-controller.ts', import.meta.url), 'utf8');
-const controllerCode = ts.transpileModule(controllerSource, {
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-}).outputText;
-
-function loadController() {
-  const exports = {};
-  vm.runInNewContext(controllerCode, { exports, Date, setTimeout });
-  return exports.createBackendStartup;
-}
-
-test('warm backend returns immediately without imposing a wake delay', async () => {
-  let clock = 10_000;
-  let probes = 0;
-  const startup = loadController()({
-    now: () => clock,
-    probe: async () => { probes++; return true; },
-    wait: async ms => { clock += ms; },
-  });
-
-  const started = clock;
-  await startup.ensureReady();
-  assert.equal(startup.getSnapshot().phase, 'ready');
-  assert.equal(probes, 1);
-  assert.equal(clock, started, 'a successful readiness probe must not sleep for the full window');
-  await startup.ensureReady();
-  assert.equal(probes, 1, 'the ready result is shared for its TTL');
-});
-
-test('overlapping callers share one pending wake attempt', async () => {
-  let finishProbe;
-  let probes = 0;
-  const startup = loadController()({
-    probe: () => { probes++; return new Promise(resolve => { finishProbe = resolve; }); },
-  });
-
-  const first = startup.ensureReady();
-  const second = startup.ensureReady();
-  assert.equal(first, second);
-  assert.equal(probes, 1);
-  finishProbe(true);
-  await Promise.all([first, second]);
-  assert.equal(startup.getSnapshot().phase, 'ready');
-});
-
-test('a backend that wakes around 50 seconds resolves on the first ready probe', async () => {
-  let clock = 0;
-  const probeTimes = [];
-  const startup = loadController()({
-    now: () => clock,
-    probe: async timeoutMs => {
-      probeTimes.push({ at: clock, timeoutMs });
-      return clock >= 50_000;
-    },
-    wait: async ms => { clock += ms; },
-  });
-
-  await startup.ensureReady();
-  assert.equal(startup.getSnapshot().phase, 'ready');
-  assert.equal(probeTimes.at(-1).at, 50_000);
-  assert.ok(probeTimes.length > 40 && probeTimes.length <= 51);
-  assert.ok(probeTimes.every(probe => probe.timeoutMs > 0 && probe.timeoutMs <= 4_000));
-  assert.equal(clock, 50_000, 'readiness must continue immediately instead of sleeping to the deadline');
-});
-
-test('probe attempts are at most four seconds and the whole wake loop ends by 60 seconds', async () => {
-  let clock = 0;
-  const timeouts = [];
-  const startup = loadController()({
-    now: () => clock,
-    probe: async timeoutMs => {
-      timeouts.push(timeoutMs);
-      clock += timeoutMs; // A timed-out HTTP probe consumes no more than its supplied budget.
-      return false;
-    },
-    wait: async ms => { clock += ms; },
-  });
-
-  await assert.rejects(startup.ensureReady(), /has not responded yet/);
-  assert.equal(startup.getSnapshot().phase, 'unavailable');
-  assert.ok(clock <= 60_000, `deadline exceeded: ${clock}ms`);
-  assert.ok(timeouts.length > 0);
-  assert.ok(timeouts.every(timeoutMs => timeoutMs > 0 && timeoutMs <= 4_000));
-});
-
-test('terminal failure does not restart automatically; an explicit retry can recover', async () => {
-  let clock = 0;
-  let probes = 0;
-  let ready = false;
-  const startup = loadController()({
-    now: () => clock,
-    probe: async timeoutMs => { probes++; clock += timeoutMs; return ready; },
-    wait: async ms => { clock += ms; },
-  });
-
-  await assert.rejects(startup.ensureReady(), /has not responded yet/);
-  assert.equal(startup.getSnapshot().phase, 'unavailable');
-  const afterFailure = probes;
-  await assert.rejects(startup.ensureReady(), /has not responded yet/);
-  assert.equal(probes, afterFailure, 'a later automatic call must not launch another minute-long loop');
-
-  ready = true;
-  await startup.ensureReady({ retry: true });
-  assert.equal(startup.getSnapshot().phase, 'ready');
-  assert.equal(probes, afterFailure + 1);
-});
-
-test('web health probe is anonymous, uncached, abortable, and bounded to four seconds', async () => {
-  const startupSource = readFileSync(new URL('../src/lib/backend-startup.web.ts', import.meta.url), 'utf8');
-  const compiled = ts.transpileModule(startupSource, {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-  }).outputText;
-  const runtime = { time: 0, probeTimeouts: [], signals: [], requests: [] };
-  const exports = {};
-  const fakeSetTimeout = (callback, ms) => {
-    if (ms <= 4_000) {
-      runtime.probeTimeouts.push(ms);
-      runtime.time += ms;
-      callback();
-    } else {
-      runtime.time += ms;
-      callback();
-    }
-    return 1;
-  };
-  const fakeClearTimeout = () => {};
-  const fetch = (url, options) => {
-    runtime.requests.push({ url, options });
-    runtime.signals.push(options.signal);
-    return new Promise((_resolve, reject) => {
-      if (options.signal.aborted) reject(new DOMException('Aborted', 'AbortError'));
-      else options.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
-    });
-  };
-  const controllerCompiled = ts.transpileModule(startupSource, {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-  }).outputText;
-  const controllerExports = {};
-  vm.runInNewContext(controllerCode, { exports: controllerExports, Date: { now: () => runtime.time }, setTimeout: fakeSetTimeout });
-  vm.runInNewContext(controllerCompiled, {
-    exports, AbortController, DOMException, fetch, setTimeout: fakeSetTimeout, clearTimeout: fakeClearTimeout,
-    __DEV__: false, process: { env: { EXPO_PUBLIC_BACKEND_URL: 'https://dev-api.example.test/' } },
-    require: name => {
-      assert.equal(name, './backend-startup-controller');
-      return controllerExports;
-    },
-  });
-
-  await assert.rejects(exports.ensureBackendReady(), /has not responded yet/);
-  assert.ok(runtime.requests.length > 0);
-  assert.ok(runtime.probeTimeouts.every(timeoutMs => timeoutMs > 0 && timeoutMs <= 4_000));
-  assert.ok(runtime.time <= 60_000, `probe loop exceeded its deadline: ${runtime.time}ms`);
-  assert.ok(runtime.requests.every(({ url, options }) => {
-    return url === '/api/health/ready' && options.credentials === 'omit' && options.cache === 'no-store';
-  }));
-  assert.ok(runtime.signals.every(signal => signal.aborted), 'each timed-out request must be aborted');
-
-  const developmentExports = {};
-  const developmentRequests = [];
-  vm.runInNewContext(controllerCompiled, {
-    exports: developmentExports, AbortController, DOMException,
-    fetch: async (url, options) => {
-      developmentRequests.push({ url, options });
-      return { ok: true, json: async () => ({ status: 'ok' }) };
-    },
-    setTimeout, clearTimeout, __DEV__: true,
-    process: { env: { EXPO_PUBLIC_BACKEND_URL: 'https://dev-api.example.test///' } },
-    require: name => {
-      assert.equal(name, './backend-startup-controller');
-      return controllerExports;
-    },
-  });
-  await developmentExports.ensureBackendReady();
-  assert.equal(developmentRequests.length, 1);
-  assert.equal(developmentRequests[0].url, 'https://dev-api.example.test/api/health/ready', 'development uses configured HTTPS and removes trailing slashes');
-  assert.equal(developmentRequests[0].options.credentials, 'omit');
-  assert.equal(developmentRequests[0].options.cache, 'no-store');
-});
-
-test('web health probe aborts a stalled response body and continues before the full wake window', async () => {
-  const startupSource = readFileSync(new URL('../src/lib/backend-startup.web.ts', import.meta.url), 'utf8');
-  const compiled = ts.transpileModule(startupSource, {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-  }).outputText;
-  const runtime = { time: 0, timeoutMs: 0, timeoutCallback: undefined, requests: 0, bodyReads: 0, bodyAborts: 0 };
-  const moduleExports = {};
-  const fetch = async (_url, options) => {
-    runtime.requests++;
-    if (runtime.requests > 1) return { ok: true, json: async () => ({ status: 'ok' }) };
-
-    // Headers arrive immediately, but the body stream never completes until
-    // the probe's own abort signal fires.
-    return {
-      ok: true,
-      json: () => {
-        runtime.bodyReads++;
-        return new Promise((_resolve, reject) => {
-          options.signal.addEventListener('abort', () => {
-            runtime.bodyAborts++;
-            reject(new DOMException('Body read aborted', 'AbortError'));
-          }, { once: true });
-          queueMicrotask(() => {
-            runtime.time += runtime.timeoutMs;
-            runtime.timeoutCallback();
-          });
-        });
+for (const name of ['use-floor-access.ts', 'use-floor-access.web.ts']) {
+  test(`${name} starts the real access read directly and rejects stale cache publication`, async () => {
+    const source = readFileSync(new URL(`../src/hooks/${name}`, import.meta.url), 'utf8');
+    const compiled = ts.transpileModule(source, {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    }).outputText;
+    const requests = [];
+    const exports = {};
+    const modules = {
+      react: {}, 'expo-router': {}, '@/src/components/Toast': {},
+      '@/src/utils/storage': {}, '@/src/utils/storage/browser.web': {},
+      '@/src/api/client': {
+        setRequestFloorId() {},
+        api: { get(path, options) {
+          const call = { path, options };
+          call.promise = new Promise(resolve => { call.resolve = resolve; });
+          requests.push(call);
+          return call.promise;
+        } },
       },
     };
-  };
-  const probeSetTimeout = (callback, ms) => {
-    runtime.timeoutCallback = callback;
-    runtime.timeoutMs = ms;
-    return 1;
-  };
-  const controllerExports = {};
-  vm.runInNewContext(controllerCode, {
-    exports: controllerExports,
-    Date: { now: () => runtime.time },
-    setTimeout: (callback, ms) => {
-      runtime.time += ms;
-      queueMicrotask(callback);
-      return 2;
-    },
+    vm.runInNewContext(compiled, { exports, Promise, Error, require: dependency => {
+      assert.ok(dependency in modules, `Unexpected floor dependency ${dependency}; access must not wait for anonymous health`);
+      return modules[dependency];
+    } });
+    const first = exports.getFloorAccess();
+    assert.equal(requests.length, 1, 'the authoritative request starts synchronously without a health prerequisite');
+    assert.equal(requests[0].path, '/settings/floor-access');
+    assert.equal(requests[0].options.floorId, '', 'account access must omit stale business floor');
+    const second = exports.getFloorAccess();
+    assert.equal(requests.length, 1, 'overlapping callers share the actual access request');
+    exports.resetFloorAccess();
+    const current = exports.getFloorAccess();
+    assert.equal(requests.length, 2);
+    const newAccess = { floors: [{ id: 'new-floor' }], floor_ids: ['new-floor'] };
+    requests[1].resolve(newAccess);
+    assert.equal(await current, newAccess);
+    requests[0].resolve({ floors: [{ id: 'old-floor' }], floor_ids: ['old-floor'] });
+    await Promise.all([first, second]);
+    assert.equal(await exports.getFloorAccess(), newAccess, 'a previous identity cannot restore its floor cache');
+    assert.equal(requests.length, 2);
   });
-  vm.runInNewContext(compiled, {
-    exports: moduleExports, AbortController, DOMException, fetch,
-    setTimeout: probeSetTimeout, clearTimeout: () => {}, __DEV__: false,
-    process: { env: {} },
-    require: name => {
-      assert.equal(name, './backend-startup-controller');
-      return controllerExports;
-    },
-  });
-
-  await moduleExports.ensureBackendReady();
-  assert.equal(runtime.bodyReads, 1, 'the first response body should stall after headers arrive');
-  assert.equal(runtime.bodyAborts, 1, 'the stalled body must be aborted by the probe timeout');
-  assert.equal(runtime.timeoutMs, 4_000);
-  assert.equal(runtime.requests, 2, 'a new probe should run after the stalled body is aborted');
-  assert.ok(runtime.time < 60_000, `a later ready probe should recover before the wake deadline: ${runtime.time}ms`);
-});
+}
 
 test('Vercel proxy and standalone worker bound readiness to 3.5s while normal API calls retain 28s', async () => {
   process.env.BACKEND_URL = 'https://api.example.test';

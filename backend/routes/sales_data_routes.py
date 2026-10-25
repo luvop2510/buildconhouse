@@ -176,7 +176,8 @@ async def referrer_detail(
     referrer_query = {"id": referrer_id}
     if floor_ids is not None:
         referrer_query["floor_id"] = {"$in": floor_ids}
-    referrer = await db.referrers.find_one(referrer_query, {"_id": 0})
+    from services.referrer_identity import referrer_query as directory_query
+    referrer = await db.referrers.find_one(directory_query(referrer_query), {"_id": 0})
     if not referrer:
         if not quotations:
             raise HTTPException(status_code=404, detail="Referrer not found")

@@ -126,23 +126,17 @@ test('Furniture seven-column ledger contains long descriptions and scrolls insid
   await page.screenshot({ path: info.outputPath('furniture-table.png') });
 });
 
-test('Kitchen stage table bounds every column with long customer and site values', async ({ page }, info) => {
+test('Kitchen compact list fits long customer and site values from retired table bookmarks', async ({ page }, info) => {
   const health = captureRuntimeHealth(page);
   await mockSession(page, '/kitchen/stages/lead', false); await floor(page, 'second-floor');
   const project = { id: 'layout-kitchen', reference: 'KIT-2026-0101', customer_id: 'layout-customer', customer: { id: 'layout-customer', name: longName, phone: '9000000000' },
     stage: 'lead', status: 'New', version: 1, lead: { status: 'New', site_location: longToken, budget: '123456789.00' }, assignments: {}, design_revision_count: 0, site_visit_count: 0, target_completion_date: '2026-12-31' };
   await page.route('**/api/kitchen-projects**', route => { const path = new URL(route.request().url()).pathname; return route.fulfill({ json: path.endsWith('/configuration') ? { version: 1, department_manager_user_ids: [] } : { rows: [project], total: 1, page: 1, limit: 25 } }); });
   await page.goto('/kitchen/stages/lead?view=table');
-  const table = page.getByTestId('kitchen-table'); await expect(table).toContainText(longName);
-  if (await table.getByRole('cell').count()) {
-    const result = await assertCellGeometry(table); expect(result.cells).toBeGreaterThan(4);
-    await keyboardScroll(page, table);
-    const header = table.getByRole('columnheader'), cells = table.getByRole('cell');
-    const headerBoxes = await header.evaluateAll(elements => elements.map(element => ({ x: element.getBoundingClientRect().x, width: element.getBoundingClientRect().width })));
-    const bodyBoxes = await cells.evaluateAll(elements => elements.map(element => ({ x: element.getBoundingClientRect().x, width: element.getBoundingClientRect().width })));
-    expect(bodyBoxes.slice(0, headerBoxes.length)).toEqual(headerBoxes);
-    await table.evaluate(element => { element.scrollLeft = 0; });
-  }
+  const list = page.getByTestId('kitchen-compact-list');
+  await expect(list).toContainText(longName);
+  await expect(list).toContainText(longToken);
+  await expect(page.getByTestId('kitchen-table')).toHaveCount(0);
   await fitsPage(page); await health.assertHealthy();
-  await page.screenshot({ path: info.outputPath('kitchen-table.png') });
+  await page.screenshot({ path: info.outputPath('kitchen-compact-list.png') });
 });

@@ -1,13 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Alert as NativeAlert, Platform, ScrollView, View } from "react-native";
+import { Alert as NativeAlert, Platform, View } from "react-native";
 import Feather from "@expo/vector-icons/Feather";
 import { Text } from "@/src/components/AppText";
-import { Alert, EmptyState, ErrorState, LoadingState, SearchField, Sheet, Table, TableCell, TableHeader, TableRow } from "@/src/components/ds";
+import { Alert, EmptyState, ErrorState, LoadingState, SearchField, Sheet } from "@/src/components/ds";
 import { useActionAccess } from "@/src/hooks/use-permissions";
-import { useBp } from "@/src/design/responsive";
 import { NavigationLink } from "@/src/design/NavigationLink";
-import { Menu } from "@/src/design/navigationControls";
 import { KITCHEN_STAGES, STAGE_LABELS, kitchenProjectsApi, type KitchenAssignee, type KitchenCustomer, type KitchenLead, type KitchenPage, type KitchenProject, type KitchenQuery, type KitchenStage, type KitchenPolicy } from "@/src/api/kitchenProjects";
 import { displayDate, ErrorNotice, errorText, KitchenFloor, KitchenPage as KitchenPageFrame, KitchenPanel, historicalCount, rupees, useKitchenSubmission } from "./shared";
 import { LeadFields } from "./KitchenLeadFields";
@@ -35,7 +33,6 @@ export function KitchenWorkspace(props: WorkspaceProps) { return <KitchenFloor><
 function Workspace({ stage = "lead" }: WorkspaceProps) {
   const router = useRouter();
   const params = useLocalSearchParams<Record<string, string | string[]>>();
-  const { isPhone } = useBp();
   const { staff } = useAuth();
   const createAccess = useActionAccess("kitchen_projects", "create", true);
   const canExport = useActionAccess("kitchen_projects", "export", true);
@@ -49,7 +46,7 @@ function Workspace({ stage = "lead" }: WorkspaceProps) {
   const canCreate = createAccess;
   const page = stage === "completed" ? "completed" : "stage";
   const path = `/kitchen/stages/${stage}`;
-  const values = Object.fromEntries(["search", ...filterKeys, "page", "view", "board_stage"].map(key => [key, one(params[key])])) as Record<string, string>;
+  const values = Object.fromEntries(["search", ...filterKeys, "page"].map(key => [key, one(params[key])])) as Record<string, string>;
   // Retired filter bookmarks must not hide projects after workflow controls are removed.
   if (["assignee", "next_action", "deadline"].includes(values.sort)) values.sort = "";
   if (values.date_field === "deadline") values.date_field = "";
@@ -84,7 +81,7 @@ function Workspace({ stage = "lead" }: WorkspaceProps) {
     right={<View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>{owner ? <Button label="Department settings" icon="settings" variant="ghost" onPress={() => setSettingsOpen(true)} testID="kitchen-settings-open" /> : null}{stage === "lead" && canCreate ? <Button label="Add lead" icon="plus" onPress={() => setCreateOpen(true)} testID="kitchen-create" /> : null}</View>}>
     <View style={{ width: "100%", minWidth: 0, gap: 28 }}>
       <View style={{ maxWidth: 380 }}><SelectFilter label="Kitchen stage" value={stage} options={KITCHEN_STAGES.map((value, index) => ({ value, label: `${index + 1}. ${STAGE_LABELS[value]}` }))} onChange={value => router.push(`/kitchen/stages/${value}` as any)} testID="kitchen-stage-navigation" /></View>
-      <ProjectList key={stage} page={page} stage={stage} values={values} setValues={setValues} returnTo={returnTo} search={search} setSearch={setSearch} retry={retry} onRetry={() => setRetry(value => value + 1)} canExport={canExport} isPhone={isPhone} />
+      <ProjectList key={stage} page={page} stage={stage} values={values} setValues={setValues} returnTo={returnTo} search={search} setSearch={setSearch} retry={retry} onRetry={() => setRetry(value => value + 1)} canExport={canExport} />
     </View>
     <Sheet scroll visible={createOpen && stage === "lead"} onClose={() => requestCreateClose.current ? requestCreateClose.current() : closeCreate()} title="Add lead" testID="kitchen-create-sheet">
         {!createAccess ? <ErrorState title="Lead creation access required" /> : policyError ? <ErrorState title="Kitchen setup unavailable" subtitle={policyError} onRetry={() => setRetry(value => value + 1)} /> : !policy ? <LoadingState label="Checking Kitchen setup…" /> : <CreateLead onRegisterClose={handler => { requestCreateClose.current = handler; }} onClose={closeCreate} onCreated={project => { closeCreate(); router.push(url(`/kitchen/${project.id}/stages/lead`, { returnTo: path }) as any); }} />}
@@ -95,7 +92,7 @@ function Workspace({ stage = "lead" }: WorkspaceProps) {
   </KitchenPageFrame>;
 }
 
-function ProjectList({ page, stage, values, setValues, returnTo, search, setSearch, retry, onRetry, canExport, isPhone }: { page: KitchenWorkspacePage; stage?: KitchenStage; values: Record<string, string>; setValues: (patch: Record<string, string>) => void; returnTo: string; search: string; setSearch: (value: string) => void; retry: number; onRetry: () => void; canExport: boolean; isPhone: boolean }) {
+function ProjectList({ page, stage, values, setValues, returnTo, search, setSearch, retry, onRetry, canExport }: { page: KitchenWorkspacePage; stage?: KitchenStage; values: Record<string, string>; setValues: (patch: Record<string, string>) => void; returnTo: string; search: string; setSearch: (value: string) => void; retry: number; onRetry: () => void; canExport: boolean }) {
   const [contentWidth, setContentWidth] = useState(0);
   const [result, setResult] = useState<KitchenPage<KitchenProject> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -104,8 +101,7 @@ function ProjectList({ page, stage, values, setValues, returnTo, search, setSear
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const currentPage = /^\d+$/.test(values.page) ? Math.max(1, Number(values.page)) : 1;
-  const view = ["board", "table", "list"].includes(values.view) && !(page === "completed" && values.view === "board") ? values.view : isPhone ? "list" : "table";
-  const query: KitchenQuery = { search: values.search, stage: page === "completed" ? "completed" : page === "review" ? "lead" : page === "stage" ? view === "board" ? undefined : stage : values.stage, status: values.status, attention: values.attention as KitchenQuery["attention"], duplicate_review: page === "review" ? "pending" : values.duplicate_review === "pending" ? "pending" : undefined, date_from: values.date_from, date_to: values.date_to, date_field: page === "completed" ? "completion_date" : values.date_field || "target_completion_date", sort: values.sort || "updated_at", direction: values.direction === "asc" ? "asc" : "desc", page: currentPage, limit: LIMIT };
+  const query: KitchenQuery = { search: values.search, stage: page === "completed" ? "completed" : page === "review" ? "lead" : page === "stage" ? stage : values.stage, status: values.status, attention: values.attention as KitchenQuery["attention"], duplicate_review: page === "review" ? "pending" : values.duplicate_review === "pending" ? "pending" : undefined, date_from: values.date_from, date_to: values.date_to, date_field: page === "completed" ? "completion_date" : values.date_field || "target_completion_date", sort: values.sort || "updated_at", direction: values.direction === "asc" ? "asc" : "desc", page: currentPage, limit: LIMIT };
   const queryKey = JSON.stringify(query);
   useEffect(() => { const controller = new AbortController(); setLoading(true); setFailure(null); setResult(null); kitchenProjectsApi.list(JSON.parse(queryKey), controller.signal).then(value => { if (!controller.signal.aborted) setResult(value); }).catch(error => { if (!controller.signal.aborted) setFailure(errorText(error)); }).finally(() => { if (!controller.signal.aborted) setLoading(false); }); return () => controller.abort(); }, [queryKey, retry]);
   const activeFilters = filterKeys.filter(key => values[key] && !["sort", "direction", "date_field"].includes(key)).length;
@@ -117,14 +113,13 @@ function ProjectList({ page, stage, values, setValues, returnTo, search, setSear
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12, alignItems: "center", paddingBottom: 20, borderBottomWidth: 1, borderColor: colors.divider }}>
       <View style={{ flex: 1, minWidth: Math.min(220, contentWidth || 220) }}><SearchField placeholder={page === "completed" ? "Search completed projects" : "Search project or customer"} accessibilityLabel="Search Kitchen projects" value={search} onChangeText={setSearch} onClear={() => setSearch("")} testID="kitchen-search" /></View>
       <Button label={`Filters${activeFilters ? ` (${activeFilters})` : ""}`} icon="sliders" variant="secondary" onPress={() => setFiltersOpen(true)} testID="kitchen-filters-open" />
-      {page !== "review" ? <Menu triggerLabel="Project view" triggerTestID="kitchen-view-menu" items={[{ label: "Compact list", onPress: () => setValues({ view: "list" }) }, ...(page === "completed" ? [] : [{ label: "Workflow board", onPress: () => setValues({ view: "board" }) }]), { label: "Table", onPress: () => setValues({ view: "table" }) }]}><View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.md }}><Text style={type.label}>{view === "list" ? "List" : view === "board" ? "Workflow board" : "Table"}</Text><Feather name="chevron-down" size={16} color={colors.onSurfaceMuted} /></View></Menu> : null}
       {page === "completed" && canExport ? <Button label="Export" icon="download" variant="secondary" loading={exporting} onPress={() => { setExporting(true); setExportError(null); void downloadApiFile(kitchenProjectsApi.exportPath({ search: values.search, date_from: values.date_from, date_to: values.date_to }), "kitchen-completed.csv", "completed projects CSV", KITCHEN_FLOOR_ID).catch(error => setExportError(errorText(error))).finally(() => setExporting(false)); }} testID="kitchen-completed-export" /> : null}
     </View>
     {exportError ? <Alert tone="error" title="Export unavailable" description={`${exportError} Try Export again.`} /> : null}
     {activeFilters || values.search ? <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm }}><Text style={[type.bodyMuted, { flex: 1 }]}>{[KITCHEN_ATTENTION_LABELS[values.attention] || "", page === "projects" && values.stage ? STAGE_LABELS[values.stage as KitchenStage] || values.stage : "", values.status, (values.date_from || values.date_to) ? `${page === "completed" ? "Completion date" : ({ created_at: "Lead creation", target_completion_date: "Target completion" } as Record<string, string>)[values.date_field || "target_completion_date"] || "Date"} · India time` : "", values.date_from ? `From ${values.date_from}` : "", values.date_to ? `To ${values.date_to}` : ""].filter(Boolean).join(" · ") || "Search results"}</Text><Button label="Clear" variant="ghost" onPress={clear} /></View> : null}
     {loading ? <LoadingState label="Loading Kitchen projects…" /> : failure ? <ErrorState title="Projects unavailable" subtitle={failure} onRetry={onRetry} /> : result ? <>
       <Text accessibilityLiveRegion="polite" style={type.caption}>{result.total} {result.total === 1 ? "project" : "projects"}{result.total > LIMIT ? ` · Page ${result.page} of ${Math.ceil(result.total / LIMIT)}` : ""}</Text>
-      {!rows.length && view !== "board" ? <EmptyState title={page === "review" ? "No duplicate reviews waiting" : page === "completed" ? "No completed projects match" : activeFilters || values.search ? "No matching projects" : "No projects in this queue"} subtitle={activeFilters || values.search ? "Try changing the search or filters." : page === "completed" ? "Projects appear after installation is completed and the manager approves closure." : page === "review" ? "Possible matching leads appear here before conversion." : "Projects appear here when they reach this stage."} action={activeFilters || values.search ? <Button label="Clear filters" variant="secondary" onPress={clear} /> : undefined} /> : view === "table" ? <ProjectTable stage={stage} rows={rows} projectHref={projectHref} compact={contentWidth > 0 && contentWidth < 740} /> : view === "board" ? <ProjectBoard rows={rows} projectHref={projectHref} compact={contentWidth > 0 ? contentWidth < 740 : isPhone} selectedStage={values.board_stage || stage || ""} onStageChange={board_stage => setValues({ board_stage })} /> : <View style={{ gap: 16 }}>{rows.map(project => <ProjectCard key={project.id} project={project} href={projectHref(project)} />)}</View>}
+      {!rows.length ? <EmptyState title={page === "review" ? "No duplicate reviews waiting" : page === "completed" ? "No completed projects match" : activeFilters || values.search ? "No matching projects" : "No projects in this queue"} subtitle={activeFilters || values.search ? "Try changing the search or filters." : page === "completed" ? "Projects appear after installation is completed and the manager approves closure." : page === "review" ? "Possible matching leads appear here before conversion." : "Projects appear here when they reach this stage."} action={activeFilters || values.search ? <Button label="Clear filters" variant="secondary" onPress={clear} /> : undefined} /> : <View testID="kitchen-compact-list" style={{ gap: 16 }}>{rows.map(project => <ProjectCard key={project.id} project={project} href={projectHref(project)} />)}</View>}
       {result.total > LIMIT ? <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}><Button label="Previous page" variant="secondary" disabled={currentPage <= 1} onPress={() => setValues({ page: String(currentPage - 1) })} /><Button label="Next page" variant="secondary" disabled={currentPage * LIMIT >= result.total} onPress={() => setValues({ page: String(currentPage + 1) })} /></View> : null}
     </> : null}
     {filtersOpen ? <ProjectFilters key={queryKey} visible onClose={() => setFiltersOpen(false)} page={page} stage={stage} values={values} onApply={patch => { setValues({ ...patch, page: "1" }); setFiltersOpen(false); }} /> : null}
@@ -166,12 +161,6 @@ function ProjectCard({ project, href }: { project: KitchenProject; href: string 
     {project.stage !== "completed" && project.target_completion_date ? <Text style={type.caption}>Target completion · {displayDate(project.target_completion_date)}</Text> : null}
   </NavigationLink>;
 }
-function ProjectBoard({ rows, projectHref, compact, selectedStage, onStageChange }: { rows: KitchenProject[]; projectHref: (project: KitchenProject) => string; compact: boolean; selectedStage: string; onStageChange: (stage: string) => void }) {
-  const selected = compact && KITCHEN_STAGES.includes(selectedStage as KitchenStage) ? selectedStage as KitchenStage : "";
-  const stages = selected ? [selected] : KITCHEN_STAGES;
-  const column = (stage: KitchenStage) => <View key={stage} testID={`kitchen-board-group-${stage}`} style={{ ...(compact ? {} : { width: 290 }), gap: spacing.md }}><Text accessibilityRole="header" style={type.bodyStrong}>{STAGE_LABELS[stage]} · {rows.filter(project => project.stage === stage).length}</Text>{rows.filter(project => project.stage === stage).map(project => <ProjectCard key={project.id} project={project} href={projectHref(project)} />)}{!rows.some(project => project.stage === stage) ? <Text style={type.caption}>No cards on this page</Text> : null}</View>;
-  return <View testID="kitchen-board" style={{ gap: spacing.lg }}><Text accessibilityRole="header" style={type.titleMd}>Workflow board · all stages</Text><Text style={type.caption}>{compact ? "Compact board, grouped by stage. " : ""}Cards and column counts show this page of results across the nine stages. Stage changes are available inside each project after its checks pass.</Text>{compact ? <><SelectFilter label="Board stage" value={selected || "all"} options={[{ value: "all", label: "All stages, grouped" }, ...KITCHEN_STAGES.map(stage => ({ value: stage, label: STAGE_LABELS[stage] }))]} onChange={onStageChange} testID="kitchen-board-stage" /><View testID="kitchen-board-compact" style={{ gap: spacing.xl }}>{stages.map(column)}</View></> : <ScrollView horizontal showsHorizontalScrollIndicator keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: spacing.md }} testID="kitchen-board-columns">{stages.map(column)}</ScrollView>}</View>;
-}
 function currentDesign(project: KitchenProject) { if (project.design_revision_pending) return undefined; const value = project.current_design || project.design_versions?.at(-1); return (value?.workflow_cycle ?? 1) === (project.workflow_cycle ?? 1) ? value : undefined; }
 function currentQuotation(project: KitchenProject) { const value = project.current_quotation || project.quotation_versions?.at(-1); return value?.design_version_id === currentDesign(project)?.id ? value : undefined; }
 function currentOrder(project: KitchenProject) { const value = project.current_order || project.orders?.at(-1); return !project.commercial_basis_invalidated && value?.quotation_version_id === currentQuotation(project)?.id ? value : undefined; }
@@ -191,20 +180,6 @@ function stageColumns(stage?: KitchenStage): StageColumn[] {
     case "completed": return [{ label: "Order amount", value: p => rupees(p.order_amount) }, { label: "Completion date", value: p => date(p.completion_date) }, { label: "Total design revisions", value: p => historicalCount(p.design_revision_count, p.known_design_revision_count) }, { label: "Total site visits", value: p => historicalCount(p.site_visit_count, p.known_site_visit_count) }];
     default: return [];
   }
-}
-function ProjectTable({ rows, projectHref, compact, stage }: { rows: KitchenProject[]; projectHref: (project: KitchenProject) => string; compact: boolean; stage?: KitchenStage }) {
-  const columns: StageColumn[] = [{ label: "Status", value: p => projectStatus(p) }, ...stageColumns(stage), ...(stage === "completed" ? [] : [{ label: "Target completion", value: (p: KitchenProject) => displayDate(p.target_completion_date) }])];
-  if (compact) return <View testID="kitchen-table" style={{ gap: spacing.md }}>{rows.map(project => <View key={project.id} role="row" style={{ gap: spacing.sm, padding: spacing.lg, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary }}><NavigationLink href={projectHref(project) as any} testID={`kitchen-project-${project.id}`} accessibilityLabel={`Open ${project.reference}, ${project.customer.name}`} style={{ minHeight: 44, justifyContent: "center" }}><Text style={[type.bodyStrong, { color: colors.brand }]}>{project.customer.name} · {project.project_reference || project.reference}</Text></NavigationLink>{columns.map(column => <Text key={column.label} style={type.body}>{column.label}: {column.value(project)}</Text>)}</View>)}</View>;
-  const widths = [220, 240, ...columns.map(column => column.width || 180)];
-  const cellText = { ...type.body, flexShrink: 1, maxWidth: "100%" as const };
-  return <Table testID="kitchen-table" accessibilityLabel="Kitchen projects">
-      <TableHeader columns={[{ label: "Project ID", width: widths[0] }, { label: "Customer", width: widths[1] }, ...columns.map((column, index) => ({ label: column.label, width: widths[index + 2] }))]} />
-      {rows.map(project => <TableRow key={project.id}>
-        <TableCell width={widths[0]}><NavigationLink href={projectHref(project) as any} testID={`kitchen-project-${project.id}`} accessibilityLabel={`Open ${project.reference}, ${project.customer.name}`} style={{ minHeight: 44, minWidth: 0, maxWidth: "100%", flexShrink: 1, justifyContent: "center" }}><Text style={[cellText, { color: colors.brand }]}>{project.project_reference || project.reference}</Text></NavigationLink></TableCell>
-        <TableCell width={widths[1]}><Text style={cellText}>{project.customer.name}</Text></TableCell>
-        {columns.map((column, index) => <TableCell key={column.label} width={widths[index + 2]}><Text style={cellText}>{column.value(project)}</Text></TableCell>)}
-      </TableRow>)}
-  </Table>;
 }
 const customerDetailFields: [keyof KitchenCustomer, string][] = [["address", "Address"], ["property_name", "Property / site name"], ["city", "City"], ["state", "State"], ["pincode", "PIN code"], ["email", "Email"], ["alternate_phone", "Alternate phone"], ["company", "Company"], ["gstin", "GSTIN"], ["notes", "Customer notes"]];
 function CreateLead({ onClose, onRegisterClose, onCreated }: { onClose: () => void; onRegisterClose: (handler: () => void) => void; onCreated: (project: KitchenProject) => void }) {

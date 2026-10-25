@@ -17,6 +17,8 @@ import { colors, layout, spacing, type } from "@/src/theme/tokens";
 import { downloadSectionExcel } from "@/src/utils/sectionExcel";
 import { toast } from "@/src/components/Toast";
 
+import { ReferrerDirectory } from "./ReferrerDirectory";
+
 const LABELS: Record<WorkspaceName, { title: string; subtitle: string; rows: "brands" | "products" | "customers" | "relationships" | "floors" }> = {
   revenue: { title: "Revenue", subtitle: "Confirmed sales, dated by order confirmation", rows: "brands" },
   collections: { title: "Collections", subtitle: "What has been collected and what remains due", rows: "customers" },
@@ -51,6 +53,7 @@ export function OwnerWorkspace({ workspace }: { workspace: WorkspaceName }) {
   if (staff && !canViewSales) return <Redirect href="/(admin)/sales-data" />;
   const meta = LABELS[workspace]; const cardStyle = isPhone ? { width: "100%" as const } : isTablet ? { width: "48%" as const } : { flex: 1, minWidth: 180 };
   return <AdminPage title={meta.title} subtitle={data ? `${meta.subtitle} · ${data.period}` : meta.subtitle}>
+    {workspace === "architects" || workspace === "interior-designers" ? <ReferrerDirectory kind={workspace === "architects" ? "architect" : "interior_designer"} /> : null}
     {period ? <SalesFilters floors={floors} floorId={floorId} onFloorChange={setFloorId} period={period} onPeriodChange={choose} /> : null}
     {error ? <ErrorState subtitle={error} onRetry={load} /> : null}
     {!error && !data ? <LoadingState label={`Loading ${meta.title.toLowerCase()}…`} /> : null}

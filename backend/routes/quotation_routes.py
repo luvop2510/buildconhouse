@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pymongo import ReturnDocument
 from starlette.concurrency import run_in_threadpool
 
+from services.referrer_identity import resolve_referrer
 from auth import (
     TILES_FLOOR_ID, accessible_floor_ids, floor_for_write, floor_inherit, floor_query,
     get_current_customer,
@@ -886,9 +887,7 @@ async def update_quotation(
         if not body.referrer_id:
             update.update({"referrer_id": None, "referrer_name": None, "referrer_type": None})
         else:
-            referrer = await get_floor_scoped_or_404(
-                db.referrers, body.referrer_id, user, not_found="Referrer not found", projection={"_id": 0},
-            )
+            referrer = await resolve_referrer(db, body.referrer_id, user)
             if referrer.get("active") is False:
                 raise HTTPException(status_code=400, detail="This referrer is archived")
             update.update({

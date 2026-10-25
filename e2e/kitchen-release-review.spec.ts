@@ -66,8 +66,15 @@ test('Kitchen lead intake retains entries, fits its panel and creates without as
   expect(contrast(fieldColors.border, fieldColors.background)).toBeGreaterThanOrEqual(3);
   expect(contrast(fieldColors.text, fieldColors.background)).toBeGreaterThanOrEqual(4.5);
   expect(restingInput!.height).toBeGreaterThanOrEqual(44);
-  await page.getByTestId('kitchen-customer-name').fill(customer);
-  const focusedInput = await page.getByTestId('kitchen-customer-name').boundingBox();
+  const nameInput = page.getByTestId('kitchen-customer-name');
+  await nameInput.fill(customer);
+  const beforeEnter = await nameInput.boundingBox();
+  await nameInput.press('Enter');
+  await expect(nameInput).toBeFocused();
+  await expect(nameInput).toHaveValue(customer);
+  const afterEnter = await nameInput.boundingBox();
+  expect(Math.abs(afterEnter!.y - beforeEnter!.y)).toBeLessThan(2);
+  const focusedInput = await nameInput.boundingBox();
   expect(focusedInput!.width).toBeCloseTo(restingInput!.width, 0);
   expect(focusedInput!.height).toBeCloseTo(restingInput!.height, 0);
   await page.getByTestId('kitchen-customer-phone').fill(phone);

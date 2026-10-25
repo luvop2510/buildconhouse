@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
+from services.referrer_identity import resolve_referrer, referrer_query
 from auth import (
     TILES_FLOOR_ID, accessible_floor_ids, floor_for_write, floor_inherit, floor_query, get_current_customer, get_current_user,
     get_floor_scoped_or_404, hash_password, invalidate_principal_cache, require_floor_access, require_min_role, revoke_all_sessions,
@@ -24,9 +25,7 @@ async def _referrer_fields(referrer_id: str | None, user: UserPublic) -> dict:
     """Resolve referral attribution server-side; never trust a display name."""
     if not referrer_id:
         return {"referrer_id": None, "referrer_name": None, "referrer_type": None}
-    referrer = await get_floor_scoped_or_404(
-        db.referrers, referrer_id, user, not_found="Referrer not found", projection={"_id": 0},
-    )
+    referrer = await resolve_referrer(db, referrer_id, user)
     if referrer.get("active") is False:
         raise HTTPException(status_code=400, detail="This referrer is archived")
     return {
@@ -248,7 +247,7 @@ async def get_customer(customer_id: str, with_completion: bool = False, user: Us
         floors = accessible_floor_ids(user)
         if floors is not None:
             selector["floor_id"] = {"$in": floors}
-        partner = await db.referrers.find_one(selector, {"_id": 0})
+        partner = await db.referrers.find_one(referrer_query(selector), {"_id": 0})
         if partner:
             doc = {**doc, "referrer_name": partner.get("name") or doc.get("referrer_name"),
                    "referrer_type": partner.get("type") or doc.get("referrer_type"),

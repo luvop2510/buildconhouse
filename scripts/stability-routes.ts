@@ -92,8 +92,8 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
     'critical removed customer history resolves a transfer without recreating the customer',
   ],
   'redesign-backend-startup.spec.ts': [
-    'critical backend wake retains destination and waits before authenticated reads',
-    'critical backend startup shows failure after the full minute and explicit retry restores the saved route',
+    'critical startup restores identity and destination without an anonymous health prerequisite',
+    'critical startup identity retry restores the saved route without a minute-long health loop',
   ],
   'redesign-session-recovery.spec.ts': [
     'critical session restoration recovers from 503 without a password or losing its destination',

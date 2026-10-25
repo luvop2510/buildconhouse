@@ -3,7 +3,6 @@ import { useRouter } from "expo-router";
 
 import { api, setRequestFloorId } from "@/src/api/client";
 import { toast } from "@/src/components/Toast";
-import { ensureBackendReady } from "@/src/lib/backend-startup";
 import { browserStorage } from "@/src/utils/storage/browser.web";
 
 export type Floor = { id: string; name: string; slug: string };
@@ -22,10 +21,7 @@ async function loadAccess() {
   if (cache) return cache;
   if (!inflight) {
     const generation = accessGeneration;
-    inflight = ensureBackendReady().then(() => {
-      if (generation !== accessGeneration) throw Object.assign(new Error("Workspace request cancelled."), { name: "AbortError" });
-      return api.get<FloorAccess>("/settings/floor-access", { floorId: "" });
-    }).then((value) => {
+    inflight = api.get<FloorAccess>("/settings/floor-access", { floorId: "" }).then((value) => {
       // Do not let a request made under the previous staff session restore
       // that session's assignments after logout/login.
       if (generation === accessGeneration) {
@@ -89,7 +85,6 @@ export function useFloorAccess(enabled = true) {
     inflight = null;
     setError(null);
     try {
-      await ensureBackendReady({ retry: true });
       const [value, saved] = await Promise.all([loadAccess(), getSelectedFloorId()]);
       setAccess(value);
       const current = selectedFloorCache ?? saved;

@@ -70,3 +70,34 @@ def test_all_pdf_formats_include_reference_name_and_stable_identity():
         text = ''.join(page.extract_text() or '' for page in PdfReader(BytesIO(data)).pages).replace('\n', '')
         assert 'NTS' in text
         assert 'ARC-4D2A6042-78A7-453B-A7BE-97D60ED4571D' in ''.join(text.split())
+
+
+def test_addressed_reference_preserves_accessible_floor_scope_and_shared_reuse():
+    import pytest
+    from fastapi import HTTPException
+    from services.referrer_identity import resolve_referrer
+    class Directory:
+        async def find_one(self, query, projection):
+            assert query == {'id': 'reference'}
+            return self.document
+    directory = Directory()
+    database = SimpleNamespace(referrers=directory)
+    directory.document = {'id': 'reference', 'floor_id': 'first-floor', 'name': 'Architect'}
+    owner = UserPublic(id='owner', full_name='Owner', role='owner', active_floor_id='ground-floor')
+    assert asyncio.run(resolve_referrer(database, 'reference', owner))['name'] == 'Architect'
+    worker = UserPublic(id='worker', full_name='Worker', role='sales', floor_ids=['first-floor', 'ground-floor'], active_floor_id='ground-floor')
+    assert asyncio.run(resolve_referrer(database, 'reference', worker))['floor_id'] == 'first-floor'
+    worker.floor_ids = ['ground-floor']
+    with pytest.raises(HTTPException) as hidden:
+        asyncio.run(resolve_referrer(database, 'reference', worker))
+    assert hidden.value.status_code == 404
+    directory.document['shared_across_floors'] = True
+    assert asyncio.run(resolve_referrer(database, 'reference', worker))['id'] == 'reference'
+    worker.floor_ids = []
+    with pytest.raises(HTTPException) as no_access:
+        asyncio.run(resolve_referrer(database, 'reference', worker))
+    assert no_access.value.status_code == 404
+    directory.document.pop('floor_id')
+    with pytest.raises(HTTPException) as no_floor:
+        asyncio.run(resolve_referrer(database, 'reference', owner))
+    assert no_floor.value.status_code == 404

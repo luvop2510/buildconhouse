@@ -22,7 +22,7 @@ test('critical static sign-in waits for hydration before accepting credentials',
     // The current export deliberately paints its static readiness indicator;
     // it must not expose a form before fonts and handlers have initialized.
     await expect(page.getByTestId('app-font-loading')).toBeVisible();
-    await expect(page.getByTestId('backend-server-status')).toContainText('Waiting for backend server');
+    await expect(page.getByTestId('backend-server-status')).toContainText('Preparing the sign-in screen.');
     await expect(username).toHaveCount(0);
     await expect(password).toHaveCount(0);
     await expect(page.getByTestId('login-submit')).toHaveCount(0);

@@ -14,8 +14,7 @@ import { spacing, type } from "@/src/theme/tokens";
 export function DocumentChoice({ project, value, onChange, disabled, label = "Project document" }: { project: KitchenProject; value: string; onChange: (value: string) => void; disabled?: boolean; label?: string }) {
   const [open, setOpen] = useState(false);
   return <View style={{ gap: spacing.sm }}><Text style={type.label}>{label}</Text>
-    <Button label={project.attachments?.find(file => file.id === value)?.filename || "Choose a document"} variant="secondary" disabled={disabled || !project.attachments?.length} onPress={() => setOpen(true)} />
-    {!project.attachments?.length ? <Text style={type.caption}>Add files in Documents, then select one here.</Text> : null}
+    {project.attachments?.length ? <Button label={project.attachments.find(file => file.id === value)?.filename || "Choose a document"} variant="secondary" disabled={disabled} onPress={() => setOpen(true)} /> : <Text style={type.caption}>Open Documents above, choose and upload a file, then select it here.</Text>}
     <Sheet scroll visible={open} onClose={() => setOpen(false)} title={label}>
       <Button label="No attachment" variant="ghost" onPress={() => { onChange(""); setOpen(false); }} />
       {(project.attachments || []).map(file => <Button key={file.id} label={file.filename} variant="secondary" onPress={() => { onChange(file.id); setOpen(false); }} />)}

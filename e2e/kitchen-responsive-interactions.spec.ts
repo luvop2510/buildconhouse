@@ -105,36 +105,28 @@ test('Lead records a new customer inline, carries identity forward and reuses th
   await health.assertHealthy();
 });
 
-test('responsive board and table retain their truthful representations through width changes', async ({ page, context }, testInfo) => {
+test('retired view bookmarks use the compact list through width changes', async ({ page, context }, testInfo) => {
   const created = await context.request.post('/api/kitchen-projects', { headers, data: { customer_id: process.env.KITCHEN_E2E_CUSTOMER_ID, idempotency_key: `responsive-board-${Date.now()}-${Math.random()}`, lead: { site_location: 'Independent responsive board site' } } });
   expect(created.ok(), await created.text()).toBe(true);
   const health = captureRuntimeHealth(page);
   await seedBrowser(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/kitchen/stages/lead?view=board');
-  await expect(page.getByTestId('kitchen-board-compact')).toBeVisible();
-  await expect(page.getByTestId('kitchen-board')).toContainText('Cards and column counts show this page');
-  await expect(page.getByTestId('kitchen-board-group-lead')).toBeVisible();
-  await expect(page.getByTestId('kitchen-board-group-completed')).toHaveCount(0);
-  for (const [width, height] of [[768, 1024], [820, 1180], [844, 390], [320, 720]]) {
+  await expect(page.getByTestId('kitchen-compact-list')).toBeVisible();
+  await expect(page.getByTestId('kitchen-view-menu')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-board')).toHaveCount(0);
+  for (const [width, height] of [[1280, 900], [768, 1024], [820, 1180], [844, 390], [320, 720]]) {
     await page.setViewportSize({ width, height });
-    await expect(page.getByTestId('kitchen-board-compact')).toBeVisible();
-    await expect(page.getByTestId('kitchen-board-group-lead')).toBeVisible();
+    await expect(page.getByTestId('kitchen-compact-list')).toBeVisible();
     const geometry = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }));
     expect(geometry.document, `${width}×${height} root fits`).toBeLessThanOrEqual(geometry.viewport + 1);
-    await page.screenshot({ path: testInfo.outputPath(`compact-board-${width}x${height}.png`) });
+    await page.screenshot({ path: testInfo.outputPath(`compact-list-${width}x${height}.png`) });
   }
-  await page.getByTestId('kitchen-view-menu').click();
-  await page.getByRole('menuitem', { name: 'Table', exact: true }).click();
-  await expect(page.getByTestId('kitchen-table')).toBeVisible();
-  const row = page.getByRole('row').first();
-  await expect(row).toContainText('Status:');
-  await expect(row).toContainText('Phone:');
-  await expect(row).toContainText('Site location:');
-  await expect(row).toContainText('Budget:');
-  await expect(row).toContainText('Target completion:');
-  await expect(row).not.toContainText('Next action:');
-  await expect(row).not.toContainText('Assigned to:');
+  await page.goto('/kitchen/stages/lead?view=table');
+  const list = page.getByTestId('kitchen-compact-list');
+  await expect(list).toBeVisible();
+  await expect(page.getByTestId('kitchen-table')).toHaveCount(0);
+  for (const label of ['Phone', 'Site location', 'Budget']) await expect(list).toContainText(label);
   await health.assertHealthy();
 });
 

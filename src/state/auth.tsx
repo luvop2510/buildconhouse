@@ -7,7 +7,6 @@ import { clearBuilderDrafts, ensureBuilderDraftReset } from "@/src/components/qu
 import { api, clearToken, getToken, getTokenKind, setToken, TokenKind } from "@/src/api/client";
 import { getFloorAccess, getSelectedFloorId, resetFloorAccess, setSelectedFloorId } from "@/src/hooks/use-floor-access";
 import type { AccessProfile, PersonalGrant } from "@/src/access-profiles";
-import { ensureBackendReady } from "@/src/lib/backend-startup";
 
 export type StaffUser = {
   id: string;
@@ -83,7 +82,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return pending;
   }, []);
 
-  const hydrate = useCallback(async (retryBackend = false) => {
+  const hydrate = useCallback(async () => {
     const operation = ++operationGeneration.current;
     const isCurrent = () => operationGeneration.current === operation;
     setLoading(true);
@@ -100,8 +99,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setStaff(null); setCustomer(null); setKind(null);
         return;
       }
-      await ensureBackendReady({ retry: retryBackend });
-      if (!isCurrent()) return;
       if (k === "staff") {
         const me = normalizeStaffIdentity(await api.get<StaffUser>("/auth/me"));
         if (!isCurrent()) return;
@@ -147,8 +144,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [updateCredentials]);
 
   useEffect(() => {
-    // Wake in parallel with fonts/storage; public pages and login stay usable.
-    void ensureBackendReady().catch(() => {});
     hydrate();
     return () => { operationGeneration.current += 1; };
   }, [hydrate]);
@@ -160,7 +155,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const timer = automaticRetries.current < 2
       ? setTimeout(() => { automaticRetries.current += 1; void hydrate(); }, automaticRetries.current === 0 ? 1000 : 3000)
       : undefined;
-    const retry = () => { void hydrate(true); };
+    const retry = () => { void hydrate(); };
     const visible = () => { if (document.visibilityState === "visible") retry(); };
     const native = Platform.OS !== "web" ? AppState.addEventListener("change", state => { if (state === "active") retry(); }) : null;
     if (Platform.OS === "web" && typeof window !== "undefined") {
@@ -187,8 +182,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     automaticRetries.current = 0;
     try {
       await ensureBuilderDraftReset();
-      if (!isCurrent()) return;
-      await ensureBackendReady({ retry: true });
       if (!isCurrent()) return;
       const res = await api.post<{ access_token: string; user: StaffUser }>("/auth/login", { email, password, ...factor });
       if (!isCurrent()) return;
@@ -238,8 +231,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await ensureBuilderDraftReset();
       if (!isCurrent()) return;
-      await ensureBackendReady({ retry: true });
-      if (!isCurrent()) return;
       const res = await api.post<{ access_token: string; customer: CustomerUser }>("/auth/customer/login", { email, password });
       if (!isCurrent()) return;
       await updateCredentials(operation, () => setToken(res.access_token, "customer"));
@@ -280,7 +271,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo(
     () => ({
-      loading, sessionError, retrySession: () => hydrate(true), kind, staff, customer, loginStaff, loginCustomer, logout, markPasswordChanged,
+      loading, sessionError, retrySession: hydrate, kind, staff, customer, loginStaff, loginCustomer, logout, markPasswordChanged,
     }),
     [loading, sessionError, hydrate, kind, staff, customer, loginStaff, loginCustomer, logout, markPasswordChanged],
   );

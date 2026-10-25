@@ -105,7 +105,7 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
       const prefixes: Partial<Record<KitchenCommand, string[]>> = {
         edit_lead: ["lead."], save_visit: ["visit."], save_cad: ["cad."], metadata: ["plan."],
         review_duplicate: ["duplicate."],
-        design_present: [`${cycle}.design.date`, `${cycle}.design.requirements`, `${cycle}.design.budget`, `${cycle}.design.notes`],
+        design_present: [`${cycle}.design.file`, `${cycle}.design.date`, `${cycle}.design.requirements`, `${cycle}.design.budget`, `${cycle}.design.notes`],
         design_update: [`${cycle}.design.${String(payload.version_id)}.edit`],
         design_share: [`${cycle}.design.${String(payload.version_id)}.shareDate`],
         design_response: [`${cycle}.design.${String(payload.version_id)}.response`],
@@ -114,7 +114,8 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
         quotation_receive: [`${cycle}.quotation.date`, `${cycle}.quotation.amount`, `${cycle}.quotation.file`, `${cycle}.quotation.url`, `${cycle}.quotation.notes`],
         quotation_share: [`${cycle}.quotation.${String(payload.version_id)}.shareDate`],
         quotation_response: [`${cycle}.quotation.${String(payload.version_id)}.response`],
-        order_confirm: [`${cycle}.order.date`, `${cycle}.order.file`, `${cycle}.order.notes`],
+        order_confirm: [`${cycle}.order.finalAmount.`, `${cycle}.order.amountApproved`, `${cycle}.order.confirmed`, `${cycle}.order.date`, `${cycle}.order.file`, `${cycle}.order.notes`],
+        order_update: [`${cycle}.order.${current.orders?.at(-1)?.id}.edit`],
         order_document: [`${cycle}.order.file`], order_advance: [`${cycle}.order.advance`], order_amend: [`${cycle}.order.amend`],
         production_update: [`${cycle}.production`], installation_update: [`${cycle}.installation`], site_visit: [`${cycle}.site.`],
         approval: [`${cycle}.${current.stage}.approvalReason`], exception: ["exception."], order_status: ["exception."],
@@ -130,6 +131,11 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
           ? { [`commercial.cycle.${value.workflow_cycle ?? 1}.installation`]: value.installation }
           : {}),
         };
+        const orderEditorKey = `${cycle}.order.${current.orders?.at(-1)?.id}.edit`;
+        if (name === "order_update" || JSON.stringify(updated[orderEditorKey]) === JSON.stringify(baselines.current[orderEditorKey]) && name === "order_confirm") {
+          delete updated[orderEditorKey];
+          delete baselines.current[orderEditorKey];
+        }
         const editorKey = `${cycle}.design.${String(payload.version_id)}.edit`;
         if (name === "design_update" || ["design_share", "design_response", "design_handoff"].includes(name)
           && JSON.stringify(updated[editorKey]) === JSON.stringify(baselines.current[editorKey])) {

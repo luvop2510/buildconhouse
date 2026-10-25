@@ -9,6 +9,7 @@ from uuid import uuid5, NAMESPACE_URL
 
 from fastapi import HTTPException
 
+from services.referrer_identity import referrer_query
 from auth import accessible_floor_ids, profile_floor_ids, require_floor_access
 from models import Followup, now_iso
 from services.access_grants import grant_allows, grants_for_user
@@ -122,9 +123,9 @@ async def referrer_fields(database, referrer_id, floor, user):
     permitted = accessible_floor_ids(user)
     if permitted is not None:
         query['floor_id'] = {'$in': permitted}
-    ref = await database.referrers.find_one(query, {'_id': 0, 'id': 1, 'name': 1, 'type': 1})
-    if not ref:
-        raise HTTPException(422, 'Referrer not found in your permitted floors')
+    ref = await database.referrers.find_one(referrer_query(query), {'_id': 0, 'id': 1, 'name': 1, 'type': 1, 'active': 1})
+    if not ref or ref.get('active') is False:
+        raise HTTPException(422, 'Active referrer not found in your permitted floors')
     return {'referrer_id': ref['id'], 'referrer_name': ref['name'], 'referrer_type': ref['type']}
 
 

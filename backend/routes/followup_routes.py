@@ -35,6 +35,7 @@ from openpyxl.utils import get_column_letter
 from pydantic import BaseModel
 from pymongo.errors import DuplicateKeyError
 
+from services.referrer_identity import referrer_query
 from auth import floor_for_write, floor_inherit, floor_query, floor_scope_ids, get_current_user, get_floor_scoped_or_404, require_floor_access, require_min_role, require_roles, accessible_floor_ids
 from db import db
 from models import (
@@ -163,7 +164,7 @@ async def _notebook_referrer_fields(referrer_id: str | None, floor_id: str) -> d
     """
     if not referrer_id:
         return {"referrer_id": None, "referrer_name": None, "referrer_type": None}
-    referrer = await db.referrers.find_one({"id": referrer_id, "floor_id": floor_id}, {"_id": 0})
+    referrer = await db.referrers.find_one(referrer_query({"floor_id": floor_id}, {"id": referrer_id}), {"_id": 0})
     if not referrer:
         raise HTTPException(status_code=404, detail="Referrer not found")
     if referrer.get("active") is False:
@@ -597,7 +598,7 @@ async def _enrich_followup_references(rows, user, customers=None):
         if permitted is not None:
             selector["floor_id"] = {"$in": permitted}
         partners, counts = await asyncio.gather(
-            db.referrers.find(selector, {"_id": 0, "id": 1, "name": 1, "type": 1, "company": 1}).to_list(len(ids)),
+            db.referrers.find(referrer_query(selector), {"_id": 0, "id": 1, "name": 1, "type": 1, "company": 1}).to_list(len(ids)),
             acquired_counts(db, ids, [floor]),
         )
         directory = {partner["id"]: partner for partner in partners}

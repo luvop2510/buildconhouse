@@ -84,6 +84,12 @@ class CadFields(StrictModel):
     notes: Text | None = None
     ready: StrictBool = False
 
+    @model_validator(mode="after")
+    def derive_progress(self):
+        self.status = "Not Started" if self.progress == 0 else "Completed" if self.progress == 100 else "In Progress"
+        self.ready = self.received and self.progress == 100
+        return self
+
 
 class LeadCustomer(StrictModel):
     company: ShortText | None = None
@@ -127,7 +133,7 @@ class ProjectCommand(StrictModel):
     idempotency_key: CommandKey
     command: Literal["edit_lead", "convert", "save_visit", "save_cad", "advance_stage", "move_stage", "assign", "metadata",
                      "design_present", "design_update", "design_share", "design_response", "design_revision", "design_handoff",
-                     "quotation_receive", "quotation_share", "quotation_response", "order_confirm", "order_advance",
+                     "quotation_receive", "quotation_share", "quotation_response", "order_confirm", "order_update", "order_advance",
                      "order_amend", "order_status", "order_document", "exception", "production_update", "installation_update", "site_visit", "approval", "review_duplicate"]
     payload: dict[str, Any] = Field(default_factory=dict)
 
@@ -300,9 +306,18 @@ class QuotationReceived(DocumentPayload):
 
 
 class OrderConfirmation(StrictModel):
+    final_amount: str | None = None
+    amount_customer_approved: StrictBool = False
+    _amount = field_validator("final_amount", mode="before")(money_text)
     quotation_version_id: Identifier
     order_date: str
     confirmation_document_id: Identifier | None = None
+    notes: Text | None = None
+    _date = field_validator("order_date", mode="before")(date_only)
+
+
+class OrderUpdate(StrictModel):
+    order_date: str
     notes: Text | None = None
     _date = field_validator("order_date", mode="before")(date_only)
 

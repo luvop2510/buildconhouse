@@ -2,21 +2,34 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
-## Backend wake recovery — 2026-10-24
+## Always-on Railway startup and Kitchen PDF usability — 2026-10-26
 
-Web startup uses one shared anonymous readiness attempt, up to 60 seconds total,
-with four-second browser probes and 3.5-second proxy attempts. Continue as soon
-as ready; never turn that budget into a fixed delay or extend every API request.
-Ordinary request limits and write semantics stay intact. Preserve initial-route
-storage, identity/floor generation guards and the root navigator; the startup
-leaf screen layouts hold initial effects while their navigators remain mounted,
-and never remove already-open forms. Metadata reads wait for restored identity.
-Render-specific waiting/awake copy must reflect readiness, not elapsed time.
-Native startup retains its existing transport and account-check wording.
-See docs/audits/2026-10-24-backend-startup.md for the release evidence. Frontend-only
-publication may use scripts/promote-verified-frontend.mjs with an unchanged,
-verified running backend and current review/performance/hosted evidence; backend,
-data, storage and Kitchen workflow releases retain their stronger existing gate.
+The user explicitly removed the one-minute backend-wake buffer after moving to
+Railway. Identity and floor reads start directly without an anonymous health
+prerequisite. Preserve bounded ordinary requests, session/floor generations,
+recovery, initial destinations and the mounted navigator. Hosted acceptance now
+observes the actual identity request, with unchanged root/identity/content bounds.
+Never restore a health/wake loop before login, account hydration or floor access.
+
+Kitchen queues use compact lists only. CAD status is derived from percentage
+on server and form; never allow a contradictory independent status. Revision
+counts only increase from customer revision requests. Quotation entry uses private
+uploaded files and no HTTPS input. Order corrections retain before/after history,
+chronology, stale drafts and prior documents. Changed final amounts require owner
+authority and explicit customer approval, preserving the original quotation.
+Shared text fields keep focus on Enter unless the caller supplies explicit
+submission/blur behavior, avoiding keyboard/chrome layout changes during editing.
+
+Sales Data owns a reference directory. Only explicitly shared references cross
+floors; customer/sales/acquisition aggregates remain scoped. Preserve historical
+IDs and private entries. Existing ID authorization uses accessible floors rather
+than the ambient selected floor. Owner edits use optimistic concurrency.
+
+See docs/audits/2026-10-26-kitchen-pdf-usability-release.md for scope/evidence.
+Frontend-only publication may use scripts/promote-verified-frontend.mjs with an
+unchanged verified backend and current review/performance/hosted evidence.
+Backend, data, storage and Kitchen workflow releases retain the existing stronger
+gate; preserve security checks and protected-main requirements.
 
 ## Web bundle consistency — 2026-10-24
 

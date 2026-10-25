@@ -11,10 +11,10 @@ from fastapi import HTTPException
 
 from models_kitchen import (AdvancePayment, CustomerResponse, DesignPresentation,
     DesignRevision, DesignUpdate, InternalApproval, OrderAmendment, OrderConfirmation,
-    QuotationReceived, SiteVisit, VersionDate, WorkProgress, OrderStatusChange, ExceptionCommand, OrderDocument)
+    QuotationReceived, SiteVisit, VersionDate, WorkProgress, OrderStatusChange, ExceptionCommand, OrderDocument, OrderUpdate)
 
 COMMANDS = {"design_present", "design_update", "design_share", "design_response", "design_revision", "design_handoff",
-            "quotation_receive", "quotation_share", "quotation_response", "order_confirm", "order_advance",
+            "quotation_receive", "quotation_share", "quotation_response", "order_confirm", "order_update", "order_advance",
             "order_amend", "order_status", "order_document", "exception", "production_update", "installation_update", "site_visit", "approval"}
 
 
@@ -144,11 +144,10 @@ def apply(project, command, payload, policy, user, now, validate):
             reject("Record the sharing date before the customer response")
         if body.handoff_date and (body.response != "Approved" or not body.shared_date or body.handoff_date < body.shared_date):
             reject("Company handoff requires approval and cannot precede customer sharing")
+        if body.revision_count is not None and body.revision_count != project.get("design_revision_count"):
+            reject("Design revisions are counted from customer revision requests; record a revision request instead")
         row.update(body.model_dump(exclude={"version_id", "reason", "revision_count"}))
         row["corrected_by"], row["corrected_at"] = user.id, now
-        if body.revision_count is not None:
-            project["design_revision_count"] = body.revision_count
-            project["known_design_revision_count"] = body.revision_count
         project["approvals"].append(record({"scope": "customer_design", "subject_id": row["id"],
             "decision": body.response, "notes": body.response_notes, "reason": body.reason}))
     elif command in {"design_share", "design_handoff", "quotation_share"}:
@@ -225,11 +224,17 @@ def apply(project, command, payload, policy, user, now, validate):
             reject("Order date cannot precede quotation sharing")
         if body.confirmation_document_id and not any(a["id"] == body.confirmation_document_id for a in project["attachments"]):
             reject("Confirmation document must belong to this project")
+        final_amount = body.final_amount if body.final_amount is not None else quote["amount"]
+        changed_amount = Decimal(final_amount) != Decimal(quote["amount"])
+        if changed_amount and not body.amount_customer_approved:
+            reject("Changed final order amount requires explicit customer approval")
+        amendments = [record({"amount": final_amount, "date": body.order_date, "customer_approved": True,
+                              "reason": "Customer approved changed final amount at order confirmation"})] if changed_amount else []
         project["orders"].append(record({**body.model_dump(), "confirmed": True, "status": "Confirmed",
             "workflow_cycle": project.get("workflow_cycle", 1), "approval_identity": str(uuid4()),
-            "original_amount": quote["amount"], "final_amount": quote["amount"], "amendments": [],
+            "original_amount": quote["amount"], "final_amount": final_amount, "amendments": amendments,
             "advance": {"received": False, "amount": "0.00", "date": None}}))
-        project["order_amount"] = quote["amount"]
+        project["order_amount"] = final_amount
         project["commercial_basis_invalidated"] = False
     elif command == "order_document":
         require_stage("order")
@@ -237,12 +242,27 @@ def apply(project, command, payload, policy, user, now, validate):
         row = current(project, "orders")
         if project.get("commercial_basis_invalidated") or row.get("authorization_invalidated"):
             reject("Confirm a new order for the current approved quotation before changing its documents")
-        if row.get("confirmation_document_id"):
-            reject("Confirmation document is already recorded; replacement requires a correction policy")
+        if row.get("confirmation_document_id") == body.attachment_id:
+            reject("This confirmation document is already selected")
         if not any(a["id"] == body.attachment_id for a in project["attachments"]):
             reject("Confirmation document must belong to this project")
+        previous = row.get("confirmation_document_id")
         row["confirmation_document_id"] = body.attachment_id
-        row.setdefault("document_history", []).append(record(body.model_dump()))
+        row.setdefault("document_history", []).append(record({**body.model_dump(), "previous_attachment_id": previous}))
+    elif command == "order_update":
+        require_stage("order")
+        body = validate(OrderUpdate, payload)
+        row = current(project, "orders")
+        if project.get("commercial_basis_invalidated") or row.get("authorization_invalidated"):
+            reject("Confirm a new order for the current approved quotation first")
+        quote = current(project, "quotation_versions", row["quotation_version_id"])
+        if body.order_date < quote["shared_date"]:
+            reject("Order date cannot precede quotation sharing")
+        following = [row.get("advance", {}).get("date"), project.get("production", {}).get("start_date"), *(amendment.get("date") for amendment in row.get("amendments", []))]
+        if any(value and value < body.order_date for value in following):
+            reject("Order date cannot follow an approved amendment, advance or production start")
+        row.setdefault("corrections", []).append(record({"before": {key: row.get(key) for key in ("order_date", "notes")}, "after": body.model_dump()}))
+        row.update(body.model_dump())
     elif command == "order_advance":
         require_stage("order")
         body = validate(AdvancePayment, payload)
