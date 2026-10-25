@@ -2166,3 +2166,25 @@ def test_kitchen_references_customer_details_and_sales_metrics_use_current_autho
                 assert inactive[0]['pending_count'] == 0
                 assert inactive[0]['revenue'] == 0
     asyncio.run(scenario())
+
+
+def test_manual_stage_navigation_http_preserves_incomplete_project_and_history():
+    async def scenario():
+        async with environment() as env:
+            project, _ = await create_project(env)
+            original = {key: project.get(key) for key in ('lead','visit','cad','orders','approvals','design_versions','quotation_versions','installation','production')}
+            stages = ['lead','visit','cad','design','quotation','order','production','installation','completed']
+            for target in [*stages[1:], *reversed(stages[:-1])]:
+                before = project['stage']
+                project = await accepted(env, project, 'move_stage', {'target_stage': target})
+                assert project['stage'] == target
+                assert project['activity'][-1]['payload']['from_stage'] == before
+                assert project['activity'][-1]['payload']['to_stage'] == target
+                assert all(project.get(key) == value for key,value in original.items())
+            response = await command(env, project, 'move_stage', {'target_stage':'visit'}, expected=project['version']-1)
+            assert response.status_code == 409
+            response = await command(env, project, 'move_stage', {'target_stage':'visit'}, actor='denied')
+            assert response.status_code == 403
+            assert project['completion_date']
+            assert not (project.get('installation') or {}).get('completion_date')
+    asyncio.run(scenario())

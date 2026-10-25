@@ -95,7 +95,7 @@ test('Lead records a new customer inline, carries identity forward and reuses th
   expect(project.stage).toBe('lead');
   await expect(page).toHaveURL(current => current.pathname === `/kitchen/${project.id}/stages/lead`);
   await expect(page.getByTestId('kitchen-project-detail')).toContainText(name);
-  const converted = page.waitForResponse(response => response.request().postDataJSON()?.command === 'convert');
+  const converted = page.waitForResponse(response => response.request().postDataJSON()?.command === 'move_stage');
   await page.getByTestId('kitchen-convert').click();
   const visit = await (await converted).json();
   expect(visit).toMatchObject({ id: project.id, customer_id: project.customer_id, stage: 'visit' });

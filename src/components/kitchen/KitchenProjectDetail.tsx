@@ -54,6 +54,7 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
         <Button label="Completion date" icon="calendar" variant="secondary" onPress={() => setPanel("assignments")} testID="kitchen-project-nav-assignments" />
         <Menu triggerLabel="Project actions" triggerTestID="kitchen-project-actions" items={[{ label: "Reload saved project", icon: "refresh-cw", onPress: reload }, ...(project.permissions?.can_approve_exceptions ? [{ label: "Hold, cancel or revise project", icon: "settings" as const, onPress: () => setPanel("exceptions") }] : [])]}><View style={{ padding: spacing.sm }}><Feather name="more-horizontal" size={20} color={colors.onSurfaceSecondary} /></View></Menu>
       </View>
+      {selected === project.stage && canUpdate ? <StageNavigation project={project} disabled={disabled} /> : null}
       {loading ? <Text style={type.caption}>Refreshing saved project…</Text> : null}
       <Text accessibilityLiveRegion="polite" style={[type.caption, { minHeight: 19 }]} testID={state.dirty ? "kitchen-unsaved-notice" : undefined}>{state.dirty ? "Unsaved changes · save before leaving this project." : " "}</Text>
       {retainedDraft ? <Alert tone="info" title="Drafts retained" description="The latest saved record is loaded. Your unsaved entries are kept for review." /> : null}
@@ -61,13 +62,13 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
       {held ? <Alert tone="warning" title={`Project ${project.lifecycle_status}`} description="The owner must resume the project before routine work can continue." /> : null}
       <View testID="kitchen-current-task-region" style={{ gap: spacing.lg, width: "100%", minWidth: 0 }}>
         <Text style={type.caption}>{selected === project.stage ? "CURRENT WORK" : "SAVED STAGE RECORD"}</Text>
-        {selected !== project.stage ? <Alert tone="info" title="Stage records" description={future ? `Preview of ${STAGE_LABELS[selected]}. Complete ${STAGE_LABELS[project.stage]} before entering this stage.` : `This project is now in ${STAGE_LABELS[project.stage]}. Earlier records are read only.`} action={<Button label={actionLabel} variant="secondary" onPress={() => router.replace(path(`/stages/${project.stage}`) as any)} testID="kitchen-open-current-stage" />} /> : null}
+        {selected !== project.stage ? <Alert tone="info" title="Stage records" description={future ? `Preview of ${STAGE_LABELS[selected]}. Use Next stage or Previous stage from the current stage to move this project.` : `This project is now in ${STAGE_LABELS[project.stage]}. Earlier records are read only.`} action={<Button label={actionLabel} variant="secondary" onPress={() => router.replace(path(`/stages/${project.stage}`) as any)} testID="kitchen-open-current-stage" />} /> : null}
         {!canUpdate ? <View testID="kitchen-read-only-notice"><Alert tone="info" title="View only" description="Changes and uploads require permission for this project's current stage." /></View> : null}
         {project.commercial_basis_invalidated ? <Alert tone="warning" title="Fresh commercial approvals required" description="Present and approve a new design, then renew the quotation and order approvals. Earlier records remain in History." /> : null}
         {selected === "lead" ? <DuplicateReview project={project} disabled={disabled || Boolean(held)} /> : null}
         <EarlyStage project={project} stage={selected} disabled={disabled || Boolean(held)} />
         {future ? <StagePreview stage={selected} /> : null}
-        <CommercialStages project={project} stage={selected} disabled={disabled || Boolean(held)} command={command} hasUnsavedChanges={state.currentTaskDirty} />
+        <CommercialStages project={project} stage={selected} disabled={disabled || Boolean(held)} command={command} />
       </View>
       <Sheet scroll visible={panel === "documents"} onClose={() => setPanel(null)} title="Project documents" testID="kitchen-documents-sheet">{policyError ? <Alert tone="warning" title="Upload settings unavailable" action={<Button label="Reload" variant="secondary" onPress={reload} />} /> : null}<KitchenDocuments project={project} policy={policy} disabled={disabled || Boolean(held)} onUpdated={updateProject} onReload={reload} /></Sheet>
       <Sheet scroll visible={panel === "history"} onClose={() => setPanel(null)} title="Project history" testID="kitchen-history-sheet"><ProjectHistory project={project} /></Sheet>
@@ -76,6 +77,20 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
       <Sheet scroll visible={panel === "workflow"} onClose={() => setPanel(null)} title="Project stages" testID="kitchen-workflow-sheet"><WorkflowRows project={project} path={path} onNavigate={() => setPanel(null)} /></Sheet>
     </View> : null}
   </KitchenPage></KitchenFloor>;
+}
+
+function StageNavigation({ project, disabled }: { project: KitchenProject; disabled: boolean }) {
+  const { command } = useKitchenProject();
+  const index = KITCHEN_STAGES.indexOf(project.stage);
+  const previous = KITCHEN_STAGES[index - 1];
+  const next = KITCHEN_STAGES[index + 1];
+  return <KitchenPanel title="Move project stage">
+    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.md }}>
+      {previous ? <Button label={`Previous stage: ${STAGE_LABELS[previous]}`} icon="arrow-left" variant="secondary" disabled={disabled} onPress={() => command("move_stage", { target_stage: previous })} testID="kitchen-previous-stage" /> : null}
+      {next ? <Button label={`Next stage: ${STAGE_LABELS[next]}`} iconRight="arrow-right" disabled={disabled} onPress={() => command("move_stage", { target_stage: next })} testID={project.stage === "lead" ? "kitchen-convert" : `kitchen-advance-${next}`} /> : null}
+    </View>
+    <Text style={type.caption}>Move forward or back whenever needed. You can return to complete details later; entries stay with the project.</Text>
+  </KitchenPanel>;
 }
 
 function ProjectSummary({ project, selected }: { project: KitchenProject; selected: KitchenStage }) {
@@ -126,12 +141,12 @@ function WorkflowRows({ project, path, onNavigate }: { project: KitchenProject; 
 const STAGE_PREVIEW: Record<KitchenStage, string> = {
   lead: "Customer details, reference, site address and lead date.",
   visit: "Visit date, showroom visit status, display model (GI, SS, Other or Wardrobe), and visit notes.",
-  cad: "CAD received, design progress and completion status. CAD must be received and design progress completed before Design.",
+  cad: "CAD received, design progress and completion status. Record these details whenever they are available.",
   design: "Customer requirements, budget discussion, presentation date, revision count, customer sharing and approval, and company handoff. Project PDFs are available under Documents.",
-  quotation: "Company quotation amount, received date, PDF or HTTPS reference, customer sharing date and approval. Customer approval enables Order.",
-  order: "Order confirmation and date, optional confirmation document, advance amount and receipt date, then selected department manager approval for Production.",
-  production: "Production status, start date, completion date and notes. Completing production enables Installation.",
-  installation: "Installation status and dates, site visits and notes, then selected department manager approval to complete the project.",
+  quotation: "Company quotation amount, received date, PDF or HTTPS reference, customer sharing date and approval. Record approval when it is available.",
+  order: "Order confirmation and date, optional confirmation document, advance amount and receipt date, and any manager approval records.",
+  production: "Production status, start date, completion date and notes. Move to Installation whenever needed.",
+  installation: "Installation status and dates, site visits and notes, and any manager closure approval.",
   completed: "Installation completion date, final order value, design revision and site visit totals, with documents and history retained.",
 };
 function StagePreview({ stage }: { stage: KitchenStage }) {
@@ -161,9 +176,6 @@ function EarlyStage({ project, stage, disabled }: { project: KitchenProject; sta
   const [progress, setProgress] = useKitchenDraft("cad.progress", String(project.cad.progress));
   const active = stage === project.stage;
   const locked = disabled || !active;
-  const dirty = stage === "lead" ? JSON.stringify(lead) !== JSON.stringify(project.lead) : stage === "visit" ? JSON.stringify(visit) !== JSON.stringify(project.visit) : JSON.stringify(cad) !== JSON.stringify(project.cad) || progress !== String(project.cad.progress);
-  const target = stage === "visit" ? "cad" : stage === "cad" ? "design" : undefined;
-  const reason = project.blocked_transitions?.find(item => item.target_stage === target)?.reason;
   if (!["lead", "visit", "cad"].includes(stage)) return null;
   return <>
     <KitchenPanel title={stage === "lead" ? "Lead details" : stage === "visit" ? "Showroom visit" : "CAD progress"}>
@@ -184,11 +196,7 @@ function EarlyStage({ project, stage, disabled }: { project: KitchenProject; sta
         {active && project.permissions?.can_update ? <Button label="Save CAD progress" disabled={locked} loading={submission.busy} testID="kitchen-cad-save" onPress={() => { if (!/^\d{1,3}$/.test(progress) || Number(progress) > 100) { submission.setError("Design progress must be a whole number from 0 to 100."); return; } void command("save_cad", { ...cad, progress: Number(progress) }); }} /> : null}
       </>}
     </KitchenPanel>
-    {active && project.permissions?.can_update ? <View style={{ gap: spacing.md }}>
-      {dirty ? <Text style={type.caption}>Save changes before continuing.</Text> : null}
-      {reason ? <Text style={type.bodyMuted}>{reason}</Text> : null}
-      <Button label={stage === "lead" ? "Convert to project" : `Continue to ${STAGE_LABELS[target!]}`} disabled={locked || dirty || Boolean(reason) || (stage === "lead" && project.duplicate_review?.status === "pending")} onPress={() => command(stage === "lead" ? "convert" : "advance_stage", stage === "lead" ? {} : { target_stage: target })} testID={stage === "lead" ? "kitchen-convert" : `kitchen-advance-${target}`} />
-    </View> : null}
+
   </>;
 }
 

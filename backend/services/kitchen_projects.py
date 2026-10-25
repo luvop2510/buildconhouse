@@ -142,10 +142,10 @@ def event(user, kind, payload):
 
 def current_status(project):
     stage = project["stage"]
-    if stage == "completed":
-        return "Completed"
     if project.get("lifecycle_status") in {"On Hold", "Cancelled"}:
         return project["lifecycle_status"]
+    if stage == "completed":
+        return "Completed"
     if stage == "order":
         if project.get("commercial_basis_invalidated") or (project.get("orders") and project["orders"][-1].get("authorization_invalidated")):
             return "Pending"
@@ -631,7 +631,7 @@ class KitchenProjectService:
         # routine writes must respect an owner hold/cancellation in every stage,
         # including early-stage/plan commands outside workflow.apply. Duplicate
         # review retains its explicit authority checks below.
-        if project.get("lifecycle_status") in {"On Hold", "Cancelled"} and body.command not in {"order_status", "exception", "review_duplicate"}:
+        if project.get("lifecycle_status") in {"On Hold", "Cancelled"} and body.command not in {"order_status", "exception", "review_duplicate", "move_stage"}:
             raise HTTPException(422, "The owner must resume this held or cancelled project before routine changes")
         await access.require_current_task(self.db, user, project, policy)
         if body.expected_version != project["version"]:
@@ -660,6 +660,17 @@ class KitchenProjectService:
                 raise HTTPException(422, "Lost leads cannot be reopened through ordinary editing")
             if stage == "lead" and updated[stage]["status"] == "Lost" and not updated[stage].get("lost_reason"):
                 raise HTTPException(422, "A lost reason is required")
+        elif command == "move_stage":
+            target = validate(AdvancePayload, payload).target_stage
+            if abs(STAGES.index(target) - STAGES.index(project["stage"])) != 1:
+                raise HTTPException(422, "Choose the previous or next Kitchen stage")
+            # Navigation records the user's position without inventing business
+            # evidence or changing saved approvals, work, or held status.
+            updated["stage"] = target
+            updated["manual_stage_navigation"] = True
+            updated["closure_pending_reason"] = None
+            if target == "completed" and not updated.get("completion_date"):
+                updated["completion_date"] = datetime.now(timezone(timedelta(hours=5, minutes=30))).date().isoformat()
         elif command in {"convert", "advance_stage"}:
             if command == "convert":
                 if payload:
@@ -703,9 +714,9 @@ class KitchenProjectService:
             workflow.apply(updated, command, payload, policy, user, timestamp(), validate)
         else:
             raise HTTPException(422, "Unsupported Kitchen command")
-        if project["stage"] == "completed" and command != "exception":
+        if project["stage"] == "completed" and command not in {"exception", "move_stage"}:
             raise HTTPException(422, "The owner must explicitly reopen a completed project before editing it")
-        if updated["stage"] != project["stage"] and command != "exception":
+        if updated["stage"] != project["stage"] and command not in {"exception", "move_stage"}:
             required = required_fields_error(updated, project["stage"], policy)
             if required:
                 raise HTTPException(422, required)
@@ -719,7 +730,7 @@ class KitchenProjectService:
         updated["assigned_to"] = updated["assignments"].get(updated["stage"])
         updated["assigned_to_name"] = updated["assignment_names"].get(updated["stage"])
         record = {"fields": sorted(payload), "from_stage": project["stage"], "to_stage": updated["stage"], "changes": {}}
-        for field in ("lead", "visit", "cad", "production", "installation", "assignments", "next_action", "deadline", "target_completion_date", "duplicate_review", "lifecycle_status", "workflow_cycle", "commercial_basis_invalidated"):
+        for field in ("lead", "visit", "cad", "production", "installation", "assignments", "next_action", "deadline", "target_completion_date", "duplicate_review", "lifecycle_status", "workflow_cycle", "commercial_basis_invalidated", "manual_stage_navigation", "completion_date", "closure_pending_reason"):
             if project.get(field) != updated.get(field):
                 record["changes"][field] = {"before": project.get(field), "after": updated.get(field)}
         if command in workflow.COMMANDS:

@@ -125,7 +125,7 @@ class CreateProject(StrictModel):
 class ProjectCommand(StrictModel):
     expected_version: Annotated[StrictInt, Field(ge=1)]
     idempotency_key: CommandKey
-    command: Literal["edit_lead", "convert", "save_visit", "save_cad", "advance_stage", "assign", "metadata",
+    command: Literal["edit_lead", "convert", "save_visit", "save_cad", "advance_stage", "move_stage", "assign", "metadata",
                      "design_present", "design_update", "design_share", "design_response", "design_revision", "design_handoff",
                      "quotation_receive", "quotation_share", "quotation_response", "order_confirm", "order_advance",
                      "order_amend", "order_status", "order_document", "exception", "production_update", "installation_update", "site_visit", "approval", "review_duplicate"]

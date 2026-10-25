@@ -105,6 +105,8 @@ def transition(project, target, policy):
 
 
 def recompute_completion(project, policy):
+    if project.get("manual_stage_navigation"):
+        return
     if project["stage"] == "installation" and project.get("installation", {}).get("status") == "Completed":
         error = transition(project, "completed", policy)
         project["closure_pending_reason"] = error

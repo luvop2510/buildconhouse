@@ -12,7 +12,7 @@ import { radius, spacing } from "@/src/theme/tokens";
 import { KitchenButton as Button, KitchenTextField as TextField, KitchenFieldRow, kitchenColors as colors, kitchenType as type } from "./KitchenPrimitives";
 
 export type StageCommand = (command: KitchenCommand, payload: Record<string, unknown>) => Promise<boolean>;
-export function CommercialStages({ project, stage, disabled, command, hasUnsavedChanges = false, mode = "task" }: { project: KitchenProject; stage: KitchenStage; disabled: boolean; command: StageCommand; hasUnsavedChanges?: boolean; mode?: "task" | "amendment" }) {
+export function CommercialStages({ project, stage, disabled, command, mode = "task" }: { project: KitchenProject; stage: KitchenStage; disabled: boolean; command: StageCommand; mode?: "task" | "amendment" }) {
   const latestDesign = project.design_versions?.at(-1);
   const design = (latestDesign?.workflow_cycle ?? 1) === (project.workflow_cycle ?? 1) ? latestDesign : undefined;
   const latestQuote = project.quotation_versions?.at(-1);
@@ -218,12 +218,8 @@ export function CommercialStages({ project, stage, disabled, command, hasUnsaved
         <Text style={type.caption}>Scheduled visits do not increase the actual counter. Record each distinct real visit once.</Text>
 </Disclosure> : null}
       </KitchenPanel>{preview || active && project.installation?.status === "Completed" ? approval("closure") : null}</> : null}
-    </> : stage === "completed" ? <KitchenPanel title="Completed project"><Text style={type.body}>Installation completion: {displayDate(project.completion_date)}</Text><Text style={type.body}>Final order amount: {rupees(project.order_amount)}</Text><Text style={type.body}>Total design revisions: {historicalCount(project.design_revision_count, project.known_design_revision_count)}</Text><Text style={type.body}>Actual site visits: {historicalCount(project.site_visit_count, project.known_site_visit_count)}</Text><Text style={type.caption}>Review previous versions, orders and approvals in History.</Text></KitchenPanel> : null}
-    {active && target ? <View style={{ gap: spacing.md }}>
-      {hasUnsavedChanges ? <Text accessibilityLiveRegion="polite" style={type.bodyMuted} testID="kitchen-advance-unsaved">Save or clear your unsaved task changes before continuing. The next stage uses saved, approved records.</Text> : null}
-      {reason || project.closure_pending_reason ? <Alert tone="info" title="Prerequisites" description={reason || project.closure_pending_reason || undefined} /> : null}
-      <Button label={`Continue to ${STAGE_LABELS[target]}`} disabled={disabled || hasUnsavedChanges || Boolean(reason)} onPress={() => command("advance_stage", { target_stage: target })} testID={`kitchen-advance-${target}`} />
-    </View> : null}
+    </> : stage === "completed" ? <KitchenPanel title="Completed project"><Text style={type.body}>Project completion: {displayDate(project.completion_date)}</Text><Text style={type.body}>Final order amount: {rupees(project.order_amount)}</Text><Text style={type.body}>Total design revisions: {historicalCount(project.design_revision_count, project.known_design_revision_count)}</Text><Text style={type.body}>Actual site visits: {historicalCount(project.site_visit_count, project.known_site_visit_count)}</Text><Text style={type.caption}>Review previous versions, orders and approvals in History.</Text></KitchenPanel> : null}
+
   </View>;
 }
 function DesignEditor({ project, design, disabled, command }: { project: KitchenProject; design: KitchenVersion; disabled: boolean; command: StageCommand }) {

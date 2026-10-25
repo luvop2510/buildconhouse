@@ -22,3 +22,11 @@ Kitchen panels/rows have responsive gutters. The shared keyboard viewport handle
 ## Publication boundary
 
 Source, preview and production deployment identities and hosted acceptance must be recorded separately. A branch push is not production publication. The fresh npm security scan reports six high advisories through Expo tooling, node-forge and Zod; no suppression or protected-main bypass is included. At this report's creation the Kitchen changes have not been promoted live. Physical-device keyboard acceptance is not certified by browser emulation.
+
+## Manual stage navigation — explicit user correction
+
+The user requested that stage movement have no task-completion prerequisites and that every later stage offer a way back. Project pages now expose Next stage and Previous stage near the top. Both use a dedicated audited `move_stage` command, independent of visit/CAD progress, design/quotation approval, order/payment/manager actions, duplicate review and unsaved form drafts. The command accepts an adjacent stage in either direction, preserves the project's records and held/cancelled label, and retains floor/capability, version and replay checks. Drafts remain in the mounted project when moving between stages. The historical convert/advance API remains compatible for older integrations; the current interface uses manual navigation.
+
+Moving to Completed records a project completion date when absent, without inventing installation work or commercial approvals. Returning to Installation keeps prior evidence and is not immediately undone by automatic completion. Subsequent work on a project using manual navigation leaves completion to the explicit Next stage control.
+
+Acceptance adds real-API movement through every stage and back with incomplete business details, retained drafts, no fabricated orders/approvals, history, stale-write/replay/floor rejection and held-label preservation. Browser coverage runs on desktop Chrome, Android Chrome, iPhone Safari and iPad Safari. This update requires a new source commit, audit and preview; earlier deployment identities do not include manual navigation.
