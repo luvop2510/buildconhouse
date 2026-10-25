@@ -92,7 +92,7 @@ export function CommercialStages({ project, stage, disabled, command, mode = "ta
     </View>;
     return <KitchenPanel title={`${scope === "production" ? "Production entry" : "Closure"} manager approval`}>
       <Text style={type.body}>{lastDecision ? `Last recorded decision: ${lastDecision.decision} · ${displayDate(lastDecision.at)}` : "Awaiting the selected department manager."}</Text>
-      <Text style={type.bodyMuted}>The next-stage check verifies approval against the current work and policy. Customer approval is recorded separately.</Text>
+      <Text style={type.bodyMuted}>Approval records are separate from stage navigation. You can move stages whenever needed.</Text>
       {canApprove ? lastDecision && !reason?.toLowerCase().includes("manager") ? <Disclosure draftKey={`${draftCycle}.${scope}.decision`} label="Record another manager decision" testID={`kitchen-disclose-${scope}-decision`}>{decisionForm}</Disclosure> : decisionForm : <Text style={type.bodyMuted}>Only a manager explicitly selected in the current policy can record this decision.</Text>}
     </KitchenPanel>;
   };
@@ -173,7 +173,7 @@ export function CommercialStages({ project, stage, disabled, command, mode = "ta
         {quote?.url ? <Button label="Open current quotation reference" variant="secondary" onPress={() => void Linking.openURL(quote.url!)} /> : null}
         <Text style={type.body}>Quotation received: {quote ? "Yes" : "No"} · Quotation sent to customer: {quote?.shared_date ? "Yes" : "No"}</Text>
         <Text style={type.body}>Date sent to customer: {displayDate(quote?.shared_date)} · Customer response: {quote?.response || "Pending"}</Text>
-        {active || preview ? !quote ? quoteForm : <Disclosure draftKey={`${draftCycle}.quotation.newVersion`} label="Record a revised company quotation" testID="kitchen-disclose-quotation-version">{quoteForm}</Disclosure> : null}
+        {active && project.orders?.length && !project.commercial_basis_invalidated ? <Text style={type.bodyMuted}>This quotation belongs to a confirmed order. Record changed order terms through an approved amendment, or start a revised design cycle from Project actions. Stage navigation remains available.</Text> : active || preview ? !quote ? quoteForm : <Disclosure draftKey={`${draftCycle}.quotation.newVersion`} label="Record a revised company quotation" testID="kitchen-disclose-quotation-version">{quoteForm}</Disclosure> : null}
       </KitchenPanel>
       {responseForm(false)}
     </> : stage === "order" ? <>

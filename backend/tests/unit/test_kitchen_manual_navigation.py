@@ -63,3 +63,26 @@ def test_manual_back_to_installation_is_not_automatically_undone():
     project = {'stage':'installation', 'manual_stage_navigation':True, 'installation':{'status':'Completed','completion_date':'2026-10-20'}}
     kitchen_workflow.recompute_completion(project, {})
     assert project['stage'] == 'installation'
+
+
+@pytest.mark.asyncio
+async def test_production_details_can_be_recorded_after_manual_navigation_without_order(setup):
+    _, service, owner = setup
+    project = await service.create(owner, create_request(customer_id='customer-a', idempotency_key='manual-production-details'))
+    for target in STAGES[1:7]:
+        project = await service.command(owner, project['id'], cmd(project['version'], 'move_stage', {'target_stage':target}))
+    project = await service.command(owner, project['id'], cmd(project['version'], 'production_update', {'status':'In Production', 'start_date':'2026-10-26', 'notes':'Record actual work without creating a financial order'}))
+    assert project['production']['notes']
+    assert project['orders'] == []
+
+
+@pytest.mark.asyncio
+async def test_manually_completed_project_can_reopen_without_prior_installation_record(setup):
+    _, service, owner = setup
+    project = await service.create(owner, create_request(customer_id='customer-a', idempotency_key='manual-reopen-project'))
+    for target in STAGES[1:]:
+        project = await service.command(owner, project['id'], cmd(project['version'], 'move_stage', {'target_stage':target}))
+    project = await service.command(owner, project['id'], cmd(project['version'], 'exception', {'action':'reopen','reason':'Record the installation details later'}))
+    assert project['stage'] == 'installation'
+    assert project['installation']['status'] == 'In Progress'
+    assert project['completion_date'] is None

@@ -201,6 +201,8 @@ def apply(project, command, payload, policy, user, now, validate):
     elif command == "quotation_receive":
         require_stage("quotation")
         body = validate(QuotationReceived, payload)
+        if project.get("orders") and not project.get("commercial_basis_invalidated"):
+            reject("This project already has a confirmed order. Record changed terms with an approved order amendment or a revised design cycle.")
         design = approved_design(project)
         if body.design_version_id != design["id"] or not design.get("handoff_date"):
             reject("Quotation must reference the current approved design sent to the company")
@@ -313,7 +315,7 @@ def apply(project, command, payload, policy, user, now, validate):
                 "from_stage": stage, "reason": body.reason, "installation": copy.deepcopy(project.get("installation")),
                 "completion_date": project.get("completion_date")}))
             project["stage"] = "installation"
-            project["installation"] = {**project["installation"], "status": "In Progress", "completion_date": None, "completion_identity": None}
+            project["installation"] = {**(project.get("installation") or {}), "status": "In Progress", "completion_date": None, "completion_identity": None}
             project["completion_date"] = None
             project["closure_pending_reason"] = None
         project.setdefault("exceptions", []).append(record(body.model_dump()))
@@ -330,8 +332,12 @@ def apply(project, command, payload, policy, user, now, validate):
             reject("Record the start date")
         if body.status == "Not Started" and (body.start_date or body.completion_date):
             reject("Not Started work cannot have actual start or completion dates")
-        earliest = (current(project, "orders")["order_date"] if expected == "production"
-                    else project.get("production", {}).get("completion_date"))
+        if expected == "production":
+            if not project.get("orders") and not project.get("manual_stage_navigation"):
+                current(project, "orders")
+            earliest = project["orders"][-1]["order_date"] if project.get("orders") else None
+        else:
+            earliest = project.get("production", {}).get("completion_date")
         if body.start_date and earliest and body.start_date < earliest:
             reject("Work cannot start before the preceding stage's completion/confirmation")
         if body.status == "Completed" and not body.completion_date:

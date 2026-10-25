@@ -2188,3 +2188,19 @@ def test_manual_stage_navigation_http_preserves_incomplete_project_and_history()
             assert project['completion_date']
             assert not (project.get('installation') or {}).get('completion_date')
     asyncio.run(scenario())
+
+
+def test_returning_to_quotation_keeps_confirmed_order_terms_and_navigation_available():
+    async def scenario():
+        async with environment() as env:
+            await configure(env)
+            project = await reach_stage(env, 'production')
+            original = project['orders']
+            project = await accepted(env, project, 'move_stage', {'target_stage':'order'})
+            project = await accepted(env, project, 'move_stage', {'target_stage':'quotation'})
+            rejected = await command(env, project, 'quotation_receive', {'design_version_id':project['design_versions'][-1]['id'], 'received_date':'2026-10-26', 'amount':'1200.00', 'url':'https://example.com/revised.pdf'})
+            assert rejected.status_code == 422
+            assert 'amendment' in rejected.text
+            project = await accepted(env, project, 'move_stage', {'target_stage':'order'})
+            assert project['orders'] == original
+    asyncio.run(scenario())
