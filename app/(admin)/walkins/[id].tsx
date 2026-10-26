@@ -45,6 +45,8 @@ export default function WalkInDetail() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [w, setW] = useState<WalkIn | null>(null);
   const [timeline, setTimeline] = useState<Record<string, any>[]>([]);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [timelineError, setTimelineError] = useState(false);
   const [notes, setNotes] = useState("");
   const [lostOpen, setLostOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -56,14 +58,21 @@ export default function WalkInDetail() {
   const load = useCallback(async () => {
     const request = ++requestId.current;
     setLoadError(null);
+    setTimeline([]); setTimelineLoading(true); setTimelineError(false);
+    // History is optional; it must not hold the customer record behind its request.
+    const history = walkinsApi.timeline(id, floor_id ? { floorId: floor_id } : undefined)
+      .then(value => { if (request === requestId.current) setTimeline(value); })
+      .catch(() => { if (request === requestId.current) setTimelineError(true); })
+      .finally(() => { if (request === requestId.current) setTimelineLoading(false); });
     try {
-      const [detail, tl] = await Promise.all([walkinsApi.get(id, floor_id ? { floorId: floor_id } : undefined), walkinsApi.timeline(id, floor_id ? { floorId: floor_id } : undefined)]);
+      const detail = await walkinsApi.get(id, floor_id ? { floorId: floor_id } : undefined);
       if (request !== requestId.current) return;
-      setW(detail); setTimeline(tl);
+      setW(detail);
     } catch (e: any) {
       if (request !== requestId.current) return;
       setLoadError(e?.detail || "Could not load walk-in. Please retry.");
     }
+    await history;
   }, [id, floor_id]);
 
   useEffect(() => { setW(null); void load(); return () => { requestId.current += 1; }; }, [load]);
@@ -144,7 +153,7 @@ export default function WalkInDetail() {
     <SafeAreaView style={{ flex: 1 }} edges={isPhone ? [] : ["top"]}>
       <ScrollView contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, paddingBottom: isPhone ? 132 : spacing.xxl, gap: spacing.md }}>
         <PageHeader title={w.customer_name} overline={w.number} back={() => router.back()} embedded />
-        <Card variant="outlined" style={{ gap: 4 }}>
+        <Card variant="outlined" padding={spacing.lg} style={{ gap: spacing.sm }}>
           <Text style={type.bodyStrong}>{w.customer_phone} {w.alternate_phone ? `· Alt: ${w.alternate_phone}` : ""}</Text>
           {canUpdate ? <Button label="Interested floors · Assign team" icon="layers" variant="secondary" onPress={() => setScopeOpen(true)} testID="walkin-edit-interests" /> : null}
           {w.referrer_name ? <Text style={type.bodySm}>Interior / architect: {w.referrer_name}</Text> : null}
@@ -186,11 +195,11 @@ export default function WalkInDetail() {
         {w.notes ? <Card variant="outlined"><Text style={type.label}>{w.status === "lost" ? "Lost reason" : "Previous note"}</Text><Text style={type.bodySm}>{w.notes}</Text></Card> : null}
 
         <Text style={type.bodyStrong}>Customer Timeline</Text>
-        {timeline.length === 0 ? (
+        {timelineLoading ? <Text style={type.bodyMuted}>Loading activity…</Text> : timelineError ? <ErrorState title="Activity unavailable" subtitle="The walk-in remains available. Retry to load its history." onRetry={() => void load()} /> : timeline.length === 0 ? (
           <Text style={type.bodyMuted}>No activity yet.</Text>
         ) : (
           timeline.map((ev, i) => (
-            <Card key={ev.id || i} variant="outlined" style={{ gap: 2 }}>
+            <Card key={ev.id || i} variant="outlined" style={{ gap: spacing.sm }}>
               <Text style={type.bodySm}>{ev.summary || ev.event_type}</Text>
               <Text style={type.caption}>{(ev.created_at || "").toString().slice(0, 16).replace("T", " ")}</Text>
             </Card>

@@ -646,3 +646,33 @@ async def test_approval_manager_choices_remain_available_to_owner_only(setup):
     assert (await service.assignees(staff))["rows"] == []
     policy = await service.public_policy(owner)
     assert policy["production"]["require_manager_approval"] and policy["closure"]["require_manager_approval"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('operation', ['create', 'command'])
+async def test_committed_route_does_not_fail_when_analytics_invalidation_is_unavailable(setup, monkeypatch, operation):
+    from routes import kitchen_routes
+
+    database, service, owner = setup
+    monkeypatch.setattr(kitchen_routes, 'db', database)
+    calls = []
+
+    async def unavailable(collection):
+        calls.append(collection)
+        raise ConnectionError('cache unavailable')
+
+    body = create_request(customer_id='customer-a', idempotency_key='cache-failure-create')
+    if operation == 'command':
+        first = await service.create(owner, body)
+    monkeypatch.setattr(kitchen_routes.cache, 'bump', unavailable)
+    if operation == 'create':
+        result = await kitchen_routes.create_project(body, user=owner)
+        replay = await kitchen_routes.create_project(body, user=owner)
+    else:
+        change = cmd(1, 'edit_lead', {'site_location': 'Changed site'}, key='cache-failure-command')
+        result = await kitchen_routes.project_command(first['id'], change, user=owner)
+        replay = await kitchen_routes.project_command(first['id'], change, user=owner)
+    assert result['id'] == replay['id'] and replay['replayed']
+    assert len(database.kitchen_projects.rows) == 1
+    assert database.kitchen_projects.rows[0]['version'] == result['version'] == (1 if operation == 'create' else 2)
+    assert calls == ['kitchen_projects', 'kitchen_projects']

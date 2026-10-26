@@ -47,13 +47,41 @@ test('critical Walk-in summary opens every matching metric and hidden filters re
   }
   await page.getByTestId('walkins-source-filters-Reference').click();
   await expect.poll(() => queries.at(-1)?.get('source')).toBe('Reference');
-  if ((page.viewportSize()?.width || 1440) < 700) {
-    await page.getByTestId('walkins-filters-toggle').click();
-    await expect(page.getByTestId('walkins-source-filters-Reference')).toBeHidden();
-    await page.getByTestId('walkins-filters-toggle').click();
-    await expect(page.getByTestId('walkins-source-filters-Reference')).toHaveAttribute('aria-checked', 'true');
-    expect(queries.at(-1)?.get('source')).toBe('Reference');
-  }
+  await page.getByTestId('walkins-search').fill('Summary');
+  await page.getByTestId('walkins-search').blur();
+  await expect.poll(() => queries.at(-1)?.get('search')).toBe('Summary');
+  const beforeHide = queries.length;
+  await page.getByTestId('walkins-filters-toggle').click();
+  await expect(page.getByTestId('walkins-filters-toggle')).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByTestId('walkins-source-filters-Reference')).toBeHidden();
+  await expect(page.getByTestId('walkins-search')).toBeHidden();
+  await page.getByTestId('walkins-filters-toggle').click();
+  await expect(page.getByTestId('walkins-source-filters-Reference')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByTestId('walkins-search')).toHaveValue('Summary');
+  expect(queries.at(-1)?.get('source')).toBe('Reference');
+  expect(queries.length).toBe(beforeHide);
+});
+
+test('critical Walk-in register renders without waiting for the optional summary', async ({ page }) => {
+  await mockSession(page, '/walkins');
+  let releaseSummary!: () => void;
+  const held = new Promise<void>(resolve => { releaseSummary = resolve; });
+  await page.route('**/api/walkins/dashboard**', async route => {
+    await held;
+    await route.fulfill({ status: 503, json: { detail: 'Summary temporarily unavailable' } });
+  });
+  await page.route('**/api/walkins?**', route => route.fulfill({ json: [
+    { ...baseWalkin, id: 'primary-register', status: 'new', customer_name: 'Available walk-in' },
+  ] }));
+  await page.goto('/walkins');
+  try {
+    await expect(page.getByTestId('walkin-card-primary-register')).toBeVisible();
+    await expect(page.getByText('Loading walk-ins…', { exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Walk-in summary', exact: true }).click();
+    releaseSummary();
+    await expect(page.getByText('Summary unavailable. Your walk-in register is still available below.', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('walkin-card-primary-register')).toBeVisible();
+  } finally { releaseSummary(); }
 });
 
 for (const metric of ['expiring'] as const) {

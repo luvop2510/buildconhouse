@@ -40,7 +40,7 @@ test('critical sanitary follow-ups keeps draft source and salesperson without su
   await expect(card).toContainText('Salesperson: Assigned salesperson');
   await expect(card).toContainText('Today');
   await expect(page.getByTestId('followups-salesperson-all')).toBeVisible();
-  await expect(page.getByTestId('followups-filters')).toHaveCount(0);
+  await expect(page.getByTestId('followups-filters-toggle')).toHaveAttribute('aria-expanded', 'true');
   await expect(page.getByTestId('followups-owner')).toHaveCount(0);
   await expect(page.getByText(/^(PRIORITY|TYPE|OWNER|Critical|High|Medium|Low)$/)).toHaveCount(0);
   await expect(page.getByText(/^(Today’s Mission|Today's Mission|Today's Tasks|Overdue Tasks|Expiring Soon|Waiting For Customer|Summary)$/)).toHaveCount(0);
@@ -48,6 +48,13 @@ test('critical sanitary follow-ups keeps draft source and salesperson without su
   await expect(card.getByText('85', { exact: true })).toHaveCount(0);
   await page.getByTestId('followups-salesperson-sanitary-worker').click();
   await expect.poll(() => filters.at(-1)?.get('assigned_to')).toBe('sanitary-worker');
+  const readsBeforeHiding = filters.length;
+  await page.getByTestId('followups-filters-toggle').click();
+  await expect(page.getByTestId('followups-salesperson-sanitary-worker')).toBeHidden();
+  await expect(page.getByTestId('followups-search')).toBeHidden();
+  await page.getByTestId('followups-filters-toggle').click();
+  await expect(page.getByTestId('followups-salesperson-sanitary-worker')).toHaveAttribute('aria-checked', 'true');
+  expect(filters.length).toBe(readsBeforeHiding);
   expect(summaryReads).toEqual([]);
   expect(errors).toEqual([]);
   await page.screenshot({ path: info.outputPath('sanitary-followups.png'), fullPage: true });

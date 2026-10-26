@@ -7,6 +7,7 @@ from pdf_tiles import build_tiles_quotation_pdf
 
 def _final_quotation(data: dict, quotation: dict, payments: list[dict]) -> dict:
     """Keep quotation artwork and product metadata, replacing commercial values."""
+    sanitary = (quotation.get("doc_type") or "standard") == "standard"
     current = {str(item.get("id")): item for item in data.get("items") or []}
     items = []
     for original in quotation.get("items") or []:
@@ -22,19 +23,21 @@ def _final_quotation(data: dict, quotation: dict, payments: list[dict]) -> dict:
             **original,
             "qty": qty,
             "unit_price": rate,
+            "mrp": float(original.get("mrp") or original_unit or rate) if sanitary else original.get("mrp"),
             "discount_pct": 0,
             "net_amount": total,
-            "offer_rate": float(original.get("offer_rate") or original.get("rate_sqft") or rate) * ratio,
+            "offer_rate": rate if sanitary else float(original.get("offer_rate") or original.get("rate_sqft") or rate) * ratio,
             "rate_sqft": float(original.get("rate_sqft") or 0) * ratio if original.get("rate_sqft") is not None else None,
             "rate_box": rate,
         })
+    listed_total = sum(item["qty"] * item["mrp"] for item in items) if sanitary else float(data.get("items_total") or 0)
     return {
         **quotation,
         "items": items,
         "rooms": list(dict.fromkeys(item.get("room") or "General" for item in items)),
-        "subtotal": float(data.get("items_total") or 0),
+        "subtotal": listed_total,
         "grand_total": float(data.get("total") or 0),
-        "discount_total": 0,
+        "discount_total": max(0, listed_total - float(data.get("items_total") or 0)) if sanitary else 0,
         "transportation_fee": float(data.get("transportation_fee") or 0),
         "_po_final": {
             "payments": payments,

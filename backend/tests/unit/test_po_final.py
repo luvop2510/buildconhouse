@@ -98,7 +98,7 @@ def test_loan_linking_uses_exact_replenishment_item():
     assert _linked_loan_items(source, selected) == {"loan-a": "selected-line"}
 
 
-def test_po_final_pdf_uses_quotation_product_pages_and_only_commercial_cover():
+def test_po_final_pdf_matches_quotation_cover_and_keeps_commercial_ledger():
     from io import BytesIO
     from pypdf import PdfReader
 
@@ -115,15 +115,21 @@ def test_po_final_pdf_uses_quotation_product_pages_and_only_commercial_cover():
     payments = [{"status": "completed", "entry_type": "payment", "amount": 20, "mode": "upi"},
                 {"status": "completed", "entry_type": "godown_stock_credit", "amount": 10, "mode": "bank"},
                 {"status": "pending", "entry_type": "payment", "amount": 30, "mode": "cash"}]
-    text = " ".join(page.extract_text() or "" for page in PdfReader(BytesIO(
-        build_po_final_pdf(data, quotation=quotation, payments=payments)
-    )).pages)
+    pages = PdfReader(BytesIO(build_po_final_pdf(data, quotation=quotation, payments=payments))).pages
+    cover = pages[0].extract_text() or ""
+    text = " ".join(page.extract_text() or "" for page in pages)
+    for label in ("CUSTOMER NAME", "CONTACT NO.", "REFERENCE", "ATTENDED BY", "PRICE SUMMARY",
+                  "OUR BRAND PARTNERS", "TERMS & CONDITIONS", "CUSTOMER SIGNATURE"):
+        assert label in cover
+    assert "PRICE & PAYMENT SUMMARY" not in cover
+    assert "MRP" in text and "OFFER" in text
+    assert "90.00" in text and "81.00" not in text
+    assert len(pages) == 3
     assert "PRICE & PAYMENT SUMMARY" in text
     assert "PRODUCT" in text and "IMAGE" in text and "B-7" in text
     assert "Handling" in text and "80.00" in text
     assert "GoDown stock credits (included in total)" in text
     assert "Internal stock transfer audit" not in text
-    assert "TERMS & CONDITIONS" not in text
     assert "Cash" not in text
 
 

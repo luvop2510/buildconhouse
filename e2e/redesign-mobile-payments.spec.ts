@@ -99,29 +99,31 @@ test('critical mobile payment history and collection filters hide without cleari
     return route.fulfill({ json: { total: 0, items: [] } });
   });
   await page.goto('/payments');
-  if ((page.viewportSize()?.width || 0) < 768) {
-    await page.getByTestId('payments-mobile-customer-switch').click();
-    await page.getByTestId('payments-aging-filter').click();
-    await page.getByRole('menuitem', { name: '1+ week', exact: true }).click();
-    await page.getByTestId('payments-filters-toggle').click();
-    await expect(page.getByTestId('payments-aging-filter')).toBeHidden();
-    await expect(page.getByTestId('payments-search')).toBeVisible();
-    await page.getByTestId('payments-filters-toggle').click();
-    await expect(page.getByTestId('payments-aging-filter')).toContainText('1+ week');
-  }
+  if ((page.viewportSize()?.width || 0) < 768) await page.getByTestId('payments-mobile-customer-switch').click();
+  await page.getByTestId('payments-search').fill('client');
+  await page.getByTestId('payments-search').blur();
+  await page.getByTestId('payments-aging-filter').click();
+  await page.getByRole('menuitem', { name: '1+ week', exact: true }).click();
+  await page.getByTestId('payments-filters-toggle').click();
+  await expect(page.getByTestId('payments-aging-filter')).toBeHidden();
+  await expect(page.getByTestId('payments-search')).toBeHidden();
+  await page.getByTestId('payments-filters-toggle').click();
+  await expect(page.getByTestId('payments-search')).toHaveValue('client');
+  await expect(page.getByTestId('payments-aging-filter')).toContainText('1+ week');
   await page.getByTestId('payments-tabs-history').click();
   await page.getByTestId('history-unit-filter-first-floor').click();
   await page.getByTestId('history-mode-filter-cash').click();
   await page.getByTestId('history-date-from').fill('2026-09-01');
   await expect.poll(() => requests.at(-1)?.searchParams.get('date_from')).toBe('2026-09-01');
-  if ((page.viewportSize()?.width || 0) < 768) {
-    await page.getByTestId('history-filters-toggle').click();
-    await expect(page.getByTestId('history-unit-filter')).toBeHidden();
-    await expect(page.getByTestId('history-mode-filter')).toBeHidden();
-    await expect(page.getByTestId('history-date-from')).toBeHidden();
-    await expect(page.getByTestId('history-search')).toBeVisible();
-    await page.getByTestId('history-filters-toggle').click();
-  }
+  await page.getByTestId('history-search').fill('client');
+  await page.getByTestId('history-search').blur();
+  await page.getByTestId('history-filters-toggle').click();
+  await expect(page.getByTestId('history-unit-filter')).toBeHidden();
+  await expect(page.getByTestId('history-mode-filter')).toBeHidden();
+  await expect(page.getByTestId('history-date-from')).toBeHidden();
+  await expect(page.getByTestId('history-search')).toBeHidden();
+  await page.getByTestId('history-filters-toggle').click();
+  await expect(page.getByTestId('history-search')).toHaveValue('client');
   await expect(page.getByTestId('history-date-from')).toHaveValue('2026-09-01');
   expect(requests.at(-1)?.searchParams.get('business_unit')).toBe('first-floor');
   expect(requests.at(-1)?.searchParams.get('mode')).toBe('cash');
@@ -140,11 +142,12 @@ test('critical fully paid filters hide and retain their business unit', async ({
   await page.getByRole('button', { name: 'All business units', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Tiles', exact: true }).click();
   await expect.poll(() => requests.at(-1)?.searchParams.get('business_unit')).toBe('ground-floor');
-  if ((page.viewportSize()?.width || 0) < 768) {
-    await page.getByTestId('payment-list-filters-toggle').click();
-    await expect(page.getByRole('button', { name: 'Tiles', exact: true })).toBeHidden();
-    await expect(page.getByTestId('payment-list-search')).toBeVisible();
-    await page.getByTestId('payment-list-filters-toggle').click();
-  }
+  await page.getByTestId('payment-list-search').fill('Paid');
+  await page.getByTestId('payment-list-search').blur();
+  await page.getByTestId('payment-list-filters-toggle').click();
+  await expect(page.getByRole('button', { name: 'Tiles', exact: true })).toBeHidden();
+  await expect(page.getByTestId('payment-list-search')).toBeHidden();
+  await page.getByTestId('payment-list-filters-toggle').click();
+  await expect(page.getByTestId('payment-list-search')).toHaveValue('Paid');
   await expect(page.getByRole('button', { name: 'Tiles', exact: true })).toBeVisible();
 });

@@ -1076,7 +1076,7 @@ function FollowupsWorkspace() {
       </View> : null}
 
       <Panel padding={spacing.md}>
-        <View style={{ gap: spacing.md }}>
+        <MobileFilterSection testID="followups-filters">
           <View style={{ flexDirection: "row", gap: spacing.sm, alignItems: "center", flexWrap: isPhone ? "wrap" : "nowrap" }}>
             <View style={{ flex: 1, minWidth: isPhone ? "100%" : 0 }}>
               <SearchField testID="followups-search" value={q} onChangeText={setQ} onClear={() => setQ("")} placeholder="Search customer, phone, quotation #, project…" />
@@ -1089,7 +1089,6 @@ function FollowupsWorkspace() {
             { label: "All salespeople", value: "all" }, { label: "Mine", value: "mine" },
             ...assignees.map(a => ({ label: a.full_name, value: a.id })),
           ]} /> : <>
-          <MobileFilterSection testID="followups-filters">
           <FilterBar multiSelect label="PRIORITY" value={priorityFilter} onChange={setPriorityFilter as any} options={[
             { value: "all", label: "All priorities" }, { value: "critical", label: "Critical", count: priorityCounts.critical || undefined },
             { value: "high", label: "High", count: priorityCounts.high || undefined }, { value: "medium", label: "Medium", count: priorityCounts.medium || undefined },
@@ -1102,11 +1101,10 @@ function FollowupsWorkspace() {
                 ...assignees.map(a => ({ label: a.full_name, value: a.id })),
               ]} />
             </View>
-          </MobileFilterSection>
           </>}
 
           {kpiFilter !== "all" || activeFilterCount > 0 ? <Chip label="Clear filters ✕" active onPress={() => { setKpiFilter("all"); setFollowupView("active"); setPriorityFilter("all"); setCategoryFilter("all"); setOwnerFilter("all"); }} /> : null}
-        </View>
+        </MobileFilterSection>
       </Panel>
 
       {selectedIds.size > 0 && !isPhone ? <BulkActionBar busy={bulkSaving} count={selectedIds.size} assignees={assignees} onClear={clearSelection} onSnooze={bulkSnooze} onComplete={bulkComplete} onAssign={bulkAssign} /> : null}

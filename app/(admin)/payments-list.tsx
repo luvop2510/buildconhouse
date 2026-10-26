@@ -113,13 +113,13 @@ export default function PaymentListScreen() {
       {!isPhone ? pageHeader : null}
       <ScrollView style={{ flex: 1, minHeight: 0 }} contentContainerStyle={[styles.content, isPhone && styles.contentPhone]}>
         {isPhone ? pageHeader : null}
-        <View style={styles.filters}>
+        <MobileFilterSection testID="payment-list-filters" style={{ gap: spacing.sm, width: "100%" }}>
+          <View style={styles.filters}>
           <View style={[styles.search, isPhone && styles.searchPhone]}><SearchField testID="payment-list-search" value={query} onChangeText={setQuery} onClear={() => setQuery("")} placeholder="Search client, invoice or reference…" /></View>
-          <MobileFilterSection testID="payment-list-filters" style={styles.filters}>
           <Dropdown label={floor === "all" ? "All business units" : floors.filter(item => filterValues(floor).includes(item.id)).map(item => item.name).join(", ") || floor} items={[{ label: "All business units", onPress: () => setFloor("all") }, ...floors.map((item) => ({ label: `${filterValues(floor).includes(item.id) ? "✓ " : ""}${item.name}`, onPress: () => setFloor(current => toggleFilterValue(current, item.id)) }))]} />
           <Dropdown label={SORT_OPTIONS.find((item) => item.value === sort)?.label || "Sort"} items={SORT_OPTIONS.map((item) => ({ label: item.label, onPress: () => setSort(item.value) }))} />
-          </MobileFilterSection>
-        </View>
+          </View>
+        </MobileFilterSection>
 
         {loadError ? <ErrorState title="Could not load fully paid orders" subtitle={loadError} onRetry={() => void load()} /> : loading ? (
           <View style={{ gap: spacing.sm }}>{Array.from({ length: 6 }).map((_, index) => <Skeleton key={index} w="100%" h={54} />)}</View>

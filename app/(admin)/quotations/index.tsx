@@ -161,6 +161,7 @@ export default function QuotationsList() {
                 <Text style={styles.lifecycleText}>{value === "lost" ? "Lost Customer" : "Won Customer"}</Text>
               </Pressable>)}
             </ScrollView>
+            <MobileFilterSection testID="quotation-filters">
             <SearchField
               testID="quotations-search"
               value={q}
@@ -168,7 +169,6 @@ export default function QuotationsList() {
               placeholder="Search by number or customer…"
               onClear={() => setQ("")}
             />
-            <MobileFilterSection testID="quotation-filters">
             <ScrollView horizontal showsHorizontalScrollIndicator={isPhone} contentContainerStyle={{ gap: 8, paddingRight: spacing.lg }}>
               {filters.map((f) => (
                 <Chip key={f.key} testID={`filter-${f.key}`} label={f.label} active={f.key === "all" ? !filterValues(statusFilter).length : filterValues(statusFilter).includes(f.key)} onPress={() => setStatusFilter(current => toggleFilterValue(current, f.key))} count={counts[f.key]} />

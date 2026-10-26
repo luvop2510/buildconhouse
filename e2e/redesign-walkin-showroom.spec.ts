@@ -105,6 +105,16 @@ test('critical Visit Showroom retries a failed transfer and opens only showroom-
   expect(attempts).toBe(2);
 });
 
+test('critical sanitary walk-in cards never offer Ground Floor selection scheduling', async ({ page }) => {
+  await mockSession(page, '/walkins');
+  await walkinReads(page);
+  await page.route('**/api/walkins?**', route => route.fulfill({ json: [walkin] }));
+  await page.goto('/walkins');
+  await expect(page.getByTestId('walkin-card-walkin-showroom')).toBeVisible();
+  await expect(page.getByTestId('walkin-schedule-walkin-showroom')).toHaveCount(0);
+  await expect(page.getByTestId('walkin-visit-showroom-walkin-showroom')).toBeVisible();
+});
+
 test('critical multi-floor walk-in actions use the selected records floor', async ({ page }) => {
   await mockSession(page, '/walkins');
   await walkinReads(page);

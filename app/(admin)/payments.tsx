@@ -434,7 +434,8 @@ export default function PaymentsScreen() {
   const refreshCollections = async (orderId: string) => {
     // Refresh the queue first: a settled order can disappear and select the next
     // customer. Never race that selection with a detail request for the old order.
-    const [, list] = await Promise.all([loadStats(), loadOrders(q)]);
+    void loadStats();
+    const list = await loadOrders(q);
     if (activeFloorRef.current === selectedFloorId && selectedOrderRef.current === orderId && (!list || list.some((order) => order.id === orderId))) await loadDetail(orderId);
   };
   const refreshOnFocus = useRef(() => {});
@@ -733,6 +734,7 @@ export default function PaymentsScreen() {
             <Panel title={COLLECTION_SCOPE_LABELS[collectionScope]} overline="COLLECTIONS" padding={spacing.md}>
               {collectionScope !== "outstanding" ? <Button testID="payments-clear-summary" label="Show all outstanding" variant="ghost" size="sm" onPress={() => openCollectionSummary("outstanding")} /> : null}
               <View style={{ gap: spacing.md }}>
+                <MobileFilterSection testID="payments-filters" style={{ gap: spacing.md }}>
                 <SearchField
                   testID="payments-search"
                   value={q}
@@ -740,7 +742,6 @@ export default function PaymentsScreen() {
                   placeholder="Search orders…"
                   onClear={() => setQ("")}
                 />
-                <MobileFilterSection testID="payments-filters" style={{ gap: spacing.md }}>
                 <Dropdown
                   testID="payments-aging-filter"
                   label={filterValues(agingPeriod).length ? AGING_OPTIONS.filter(option => filterValues(agingPeriod).includes(option.value)).map(option => option.label).join(", ") : "All outstanding"}
@@ -1166,6 +1167,7 @@ function PaymentHistoryTab(props: {
     <ScrollView keyboardShouldPersistTaps="handled" testID="payment-history-scroll" style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, gap: spacing.lg, paddingBottom: isPhone ? spacing.xl : spacing.xxxl }}>
       {workspaceHeading}
       <Card padding={spacing.md} style={{ gap: spacing.md }}>
+        <MobileFilterSection testID="history-filters" style={{ gap: spacing.md }}>
         <SearchField
           testID="history-search"
           value={q}
@@ -1173,7 +1175,6 @@ function PaymentHistoryTab(props: {
           placeholder="Search customer, invoice number, or reference…"
           onClear={() => onQChange("")}
         />
-        <MobileFilterSection testID="history-filters" style={{ gap: spacing.md }}>
         <FilterBar multiSelect testID="history-unit-filter" label="BUSINESS UNIT" value={unit} onChange={onUnitChange} options={unitOptions} />
         <FilterBar multiSelect testID="history-mode-filter" label="PAYMENT METHOD" value={mode} onChange={onModeChange} options={PAY_MODE_FILTERS} />
         <View style={{ gap: spacing.sm }}>

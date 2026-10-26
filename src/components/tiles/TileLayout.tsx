@@ -207,8 +207,7 @@ export function TabBar<K extends string>({
 }
 
 /**
- * Toolbar above a table: search on the left, filters and the create action on
- * the right, wrapping as coherent groups instead of a ragged button soup.
+ * Search and filters share one disclosure; create actions stay available.
  */
 export function Toolbar({ search, filters, actions }: { search?: ReactNode; filters?: ReactNode; actions?: ReactNode }) {
   const { isPhone, bp } = useBreakpoint();
@@ -216,15 +215,17 @@ export function Toolbar({ search, filters, actions }: { search?: ReactNode; filt
   const compact = isPhone || (availableWidth > 0 ? availableWidth < 900 : bp === "tabletPortrait");
   return (
     <View onLayout={(event) => setAvailableWidth(event.nativeEvent.layout.width)} style={[styles.toolbar, compact ? styles.toolbarPhone : null]}>
-      {search ? <View style={[styles.toolbarSearch, compact ? styles.toolbarSearchCompact : null]}>{search}</View> : null}
-      <View style={[styles.toolbarTrailing, compact ? styles.toolbarTrailingPhone : null]}>
-        {filters ? <MobileFilterSection testID="tile-table-filters" style={compact ? { width: "100%" } : undefined}>{compact ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.toolbarFilterScroller} contentContainerStyle={[styles.toolbarFilters, styles.toolbarFiltersCompact]}>
-            {filters}
-          </ScrollView>
-        ) : <View style={styles.toolbarFilters}>{filters}</View>}</MobileFilterSection> : null}
-        {actions ? <View style={styles.toolbarActions}>{actions}</View> : null}
-      </View>
+      {search || filters ? <MobileFilterSection testID="tile-table-filters" style={{ flex: 1, minWidth: 0, width: compact ? "100%" : undefined }}>
+        <View style={[styles.toolbarTrailing, compact ? styles.toolbarTrailingPhone : null]}>
+          {search ? <View style={[styles.toolbarSearch, compact ? styles.toolbarSearchCompact : null]}>{search}</View> : null}
+          {filters ? compact ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.toolbarFilterScroller} contentContainerStyle={[styles.toolbarFilters, styles.toolbarFiltersCompact]}>
+              {filters}
+            </ScrollView>
+          ) : <View style={styles.toolbarFilters}>{filters}</View> : null}
+        </View>
+      </MobileFilterSection> : null}
+      {actions ? <View style={styles.toolbarActions}>{actions}</View> : null}
     </View>
   );
 }

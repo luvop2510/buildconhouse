@@ -59,9 +59,9 @@ export function WalkInCard({
   };
   return (
     <Pressable onPress={onPress} testID={`walkin-card-${w.id}`}>
-      <Card variant="outlined" style={{ marginBottom: spacing.sm, gap: spacing.xs }}>
-        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <View style={{ flex: 1 }}>
+      <Card variant="outlined" padding={spacing.lg} style={{ marginBottom: spacing.md, gap: spacing.md }}>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: spacing.sm }}>
+          <View style={{ flex: 1, gap: spacing.xs, minWidth: 0 }}>
             <Text style={type.bodyStrong}>{w.customer_name}</Text>
             <Text style={type.bodyMuted}>{w.customer_phone || "No phone"} · {w.number}</Text>
           </View>
@@ -72,7 +72,7 @@ export function WalkInCard({
         <Text style={type.bodySm}>
           {w.source} · {(w.interested_products || []).join(", ") || "No products noted"}
         </Text>
-        <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", flexWrap: "wrap", gap: spacing.sm }}>
           <Text style={type.caption}>{w.salesperson_name || "Unassigned"} · Waiting {days}d</Text>
           {w.budget ? <Text style={type.captionStrong}>Budget ₹{w.budget.toLocaleString("en-IN")}</Text> : null}
         </View>
@@ -91,8 +91,8 @@ export function WalkInCard({
           </View>
         ) : null}
         <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.xs, flexWrap: "wrap" }}>
-          <IconButton icon="phone" onPress={onCall} size={34} tone="brandLight" accessibilityLabel="Call" testID={`walkin-call-${w.id}`} />
-          {onWhatsApp ? <IconButton icon="message-circle" onPress={onWhatsApp} size={34} tone="surface" accessibilityLabel="WhatsApp" testID={`walkin-wa-${w.id}`} /> : null}
+          <IconButton icon="phone" onPress={onCall} size={44} tone="brandLight" accessibilityLabel="Call" testID={`walkin-call-${w.id}`} />
+          {onWhatsApp ? <IconButton icon="message-circle" onPress={onWhatsApp} size={44} tone="surface" accessibilityLabel="WhatsApp" testID={`walkin-wa-${w.id}`} /> : null}
           {onVisitShowroom && !w.showroom_followup_id && !w.showroom_transferred_at && w.status !== "lost" ? (
             <Button label={w.showroom_followup_id ? "View Visit Showroom" : "Visit Showroom"} icon="home" size="sm" loading={transferring} onPress={() => {
               if (transferring) return;
@@ -100,7 +100,7 @@ export function WalkInCard({
               void onVisitShowroom().finally(() => setTransferring(false));
             }} testID={`walkin-visit-showroom-${w.id}`} />
           ) : null}
-          {onScheduleSelection && w.status !== "lost" && w.status !== "converted" && w.status !== "quotation_created" ? (
+          {w.floor_id === "ground-floor" && onScheduleSelection && w.status !== "lost" && w.status !== "converted" && w.status !== "quotation_created" ? (
             <Button label="Schedule Selection" icon="calendar" variant="secondary" size="sm" onPress={onScheduleSelection} testID={`walkin-schedule-${w.id}`} />
           ) : null}
           {onTransferToQuotation && w.status !== "lost" && w.status !== "converted" ? (
