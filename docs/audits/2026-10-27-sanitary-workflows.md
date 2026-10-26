@@ -33,6 +33,10 @@ Browser regression cases cover worker intake, simplified quotation tabs, sanitar
 
 Additional focused UI acceptance: six presentation cases pass across desktop Chrome, phone Chrome and phone WebKit. Transfer buttons remain exactly 48 px tall on cards with different content heights. The customer Purchases screen shows ₹7.82 L for both Order Value and Outstanding on an unpaid order even when material cost is ₹7.43 L; recording ₹39,000 changes Outstanding to ₹7.43 L and preserves Order Value at ₹7.82 L. See `output/sanitary-workflow/presentation-browser-final.json`.
 
+Final full performance audit passed: **708 stability checks** across Android Chrome, iPhone Safari, iPad Safari and desktop Chrome; **60 performance cases**; zero failures, skips or flakes. The verifier confirms all 91 discovered routes and every mandatory scenario. All **187 exported pages** pass the JavaScript budget; the largest is **491 KiB gzip**, below the unchanged 576 KiB limit. Evidence: `output/playwright/stability-summary.json`, `performance-results.json`, `performance-summary.json`, `bundle-budget.json`, and `output/sanitary-workflow/performance-audit.log`.
+
+The implementation is saved in local commit `ba49926f`. The initial audit was intentionally interrupted after subsequent stock request-scope corrections and replaced by this complete audit of the final source. Earlier logs are explicitly marked superseded. No retry or budget relaxation was used to obtain this acceptance.
+
 ## Publication boundary
 
 This is a local implementation and verification record. It does not certify a production release or physical-device behavior. No business-data repair, migration, customer communication, stock reset or production publication has been performed. The release must include both frontend and backend changes so the new return action and corrected balance field agree.
