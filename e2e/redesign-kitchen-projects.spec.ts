@@ -831,6 +831,8 @@ test('Q18: dirty scope guards global navigation, programmatic Back and browser u
   await page.getByTestId(`kitchen-project-${project.id}`).click();
   await openCurrentTask(page);
   const notes = page.getByTestId('kitchen-lead-notes');
+  // Keep a consequential status decision pending; ordinary notes now autosave.
+  await page.getByTestId('kitchen-lead-status-contacted').click();
   await notes.fill('Unsaved guard draft');
   await expect(page.getByTestId('kitchen-unsaved-notice')).toBeVisible();
   const dialogs: string[] = [];

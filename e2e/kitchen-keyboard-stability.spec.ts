@@ -99,7 +99,7 @@ for (const width of [360, 390, 768, 1024, 1440]) {
 
 const stages = ['lead', 'visit', 'cad', 'design', 'quotation', 'order', 'production', 'installation'] as const;
 for (const stage of stages.slice(1)) {
-  test(`Kitchen ${stage} keyboard editing keeps the shared field mounted and adjacent content scrollable`, async ({ page, context }) => {
+  test(`Kitchen ${stage} keyboard editing keeps the shared field mounted and adjacent content scrollable`, async ({ page, context }, info) => {
     const headers = { 'X-Floor-Id': 'second-floor' };
     const created = await context.request.post('/api/kitchen-projects', { headers, data: {
       customer_id: process.env.KITCHEN_E2E_CUSTOMER_ID, idempotency_key: randomUUID(), lead: { site_location: `${stage} keyboard acceptance` },
@@ -133,9 +133,14 @@ for (const stage of stages.slice(1)) {
     await insideScrollViewport(notes);
     expect(await original!.evaluate(element => element === document.activeElement)).toBe(true);
     if (stage === 'quotation') {
-      // Scroll with the user's wheel while focus remains in the editor; no helper reveals validation.
-      await page.mouse.move(10, 200);
-      await page.mouse.wheel(0, 100);
+      // Mobile WebKit has no wheel API. Move the actual scroll container by the
+      // same bounded distance; do not reveal the validation node with a locator helper.
+      if (info.project.use.browserName === 'webkit' && info.project.use.isMobile) {
+        await page.getByTestId('kitchen-page-scroll').evaluate(element => { element.scrollTop += 100; });
+      } else {
+        await page.mouse.move(10, 200);
+        await page.mouse.wheel(0, 100);
+      }
       await expect(page.getByText('Enter a valid amount, or leave it blank.', { exact: true })).toBeInViewport();
       await expect(notes).toBeFocused();
     }
