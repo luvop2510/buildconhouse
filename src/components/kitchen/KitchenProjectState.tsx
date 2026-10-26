@@ -114,7 +114,7 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
         design_revision: [`${cycle}.design.${String(payload.version_id)}.revisionReason`],
         design_handoff: [`${cycle}.design.${String(payload.version_id)}.handoffDate`],
         quotation_update: [`${cycle}.quotation.${String(payload.version_id)}.edit`],
-        quotation_receive: [`${cycle}.quotation.new.${String(payload.design_version_id)}.edit`, `${cycle}.quotation.date`, `${cycle}.quotation.amount`, `${cycle}.quotation.file`, `${cycle}.quotation.url`, `${cycle}.quotation.notes`],
+        quotation_receive: [`${cycle}.quotation.new.edit`, `${cycle}.quotation.new.${String(payload.design_version_id)}.edit`, `${cycle}.quotation.date`, `${cycle}.quotation.amount`, `${cycle}.quotation.file`, `${cycle}.quotation.url`, `${cycle}.quotation.notes`],
         quotation_share: [`${cycle}.quotation.${String(payload.version_id)}.shareDate`],
         quotation_response: [`${cycle}.quotation.${String(payload.version_id)}.response`],
         order_confirmation: [`${cycle}.order.confirmed`],

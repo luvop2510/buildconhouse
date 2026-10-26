@@ -7,6 +7,7 @@ import type { StageCommand } from "./CommercialStages";
 import { Choice, KitchenPanel, KitchenDetails, displayDate } from "./shared";
 import { KitchenSelect, KitchenDateField } from "./KitchenFilters";
 import { useKitchenDraft, useKitchenProject } from "./KitchenProjectState";
+import { kitchenToday } from "./KitchenDates";
 import { DocumentChoice } from "./KitchenDocuments";
 import { kitchenDesignApproval, kitchenApprovalDate, kitchenProductionStarted } from "./KitchenVersions";
 import { KitchenButton as Button, KitchenTextField as TextField, kitchenType as type } from "./KitchenPrimitives";
@@ -33,7 +34,7 @@ export function DesignStage({ project, disabled, command }: { project: KitchenPr
     {historical ? <Text style={type.bodyMuted}>This design belongs to an earlier work cycle. Its details are preserved.</Text> : null}
     <DesignForm key={design?.id || "new"} project={project} design={design} number={design?.number || nextNumber} disabled={locked} command={command} onCreated={() => { setSelected(undefined); setCreating(false); }} />
     <Text testID="kitchen-design-edit-revisions" style={type.caption}>Customer-requested revisions: {project.design_revision_count ?? project.known_design_revision_count ?? "Unknown"} · counted from revision requests</Text>
-    <Text style={type.caption}>Related quotation revisions: {(project.quotation_versions || []).filter(row => row.design_version_id === design?.id).map(row => `r${row.number} · ${row.response}`).join("; ") || "None"}</Text>
+    <Text style={type.caption}>Linked quotations: {(project.quotation_versions || []).filter(row => row.design_version_id === design?.id).map(row => `Quotation ${row.number} · ${row.response}`).join("; ") || "None"}</Text>
     {design?.attachment_id ? <KitchenDetails items={[{ label: "Design document", value: project.attachments?.find(row => row.id === design.attachment_id)?.filename || "Saved project attachment" }]} /> : null}
     {design?.response_notes ? <KitchenDetails items={[{ label: "Historical internal response notes", value: design.response_notes }]} /> : null}
   </KitchenPanel>;
@@ -42,7 +43,7 @@ function DesignForm({ project, design, number, disabled, command, onCreated }: {
   const prefix = `commercial.cycle.${project.workflow_cycle ?? 1}.design.${design?.id || "new"}.edit`;
   const { resetDraftValue } = useKitchenProject();
   const source = JSON.stringify(design || null);
-  const initial = { source, file: "", requirements: design ? design.requirements ?? "" : project.visit.requirements ?? "", budget_discussion: design ? design.budget_discussion ?? "" : project.visit.budget_discussion ?? "", shared_date: design?.shared_date || "", response: design?.response || "Pending", approval_date: design?.approval_date || "", handoff_date: design?.handoff_date || "", notes: design?.notes || "" };
+  const initial = { source, file: "", requirements: design ? design.requirements ?? "" : project.visit.requirements ?? "", budget_discussion: design ? design.budget_discussion ?? "" : project.visit.budget_discussion ?? "", shared_date: design ? design.shared_date || "" : kitchenToday(), response: design?.response || "Pending", approval_date: design?.approval_date || "", handoff_status: design?.handoff_status || (design?.handoff_date ? "Yes" : "Not recorded"), handoff_date: design?.handoff_date || "", notes: design?.notes || "" };
   const [draft, setDraft] = useKitchenDraft(prefix, initial);
   const update = (key: keyof typeof initial, value: string) => setDraft(previous => ({ ...previous, [key]: value }));
   const stale = draft.source !== source;
@@ -55,11 +56,12 @@ function DesignForm({ project, design, number, disabled, command, onCreated }: {
     <TextField label="Customer requirements" value={draft.requirements} onChangeText={value => update("requirements", value)} editable={!locked} multiline testID="kitchen-design-edit-requirements" />
     <TextField label="Budget discussion" value={draft.budget_discussion} onChangeText={value => update("budget_discussion", value)} editable={!locked} multiline testID="kitchen-design-edit-budget" />
     {!design ? <DocumentChoice project={project} value={draft.file} onChange={value => update("file", value)} disabled={locked} label="Design document (optional)" /> : null}
-    <KitchenDateField label="Date shared with customer" value={draft.shared_date} onChange={value => update("shared_date", value)} disabled={locked} testID="kitchen-design-edit-shared" />
-    <Choice label="Customer approval" value={draft.response} values={["Pending", "Approved", "Changes Required"]} onChange={value => update("response", value)} disabled={locked} testID="kitchen-design-edit-response" />
-    <KitchenDateField label="Customer approval date" value={draft.approval_date} onChange={value => update("approval_date", value)} min={draft.shared_date || undefined} disabled={locked} testID="kitchen-design-edit-approval-date" />
+    <KitchenDateField defaultToTodayOnFocus label="Date shared with customer" value={draft.shared_date} onChange={value => update("shared_date", value)} disabled={locked} testID="kitchen-design-edit-shared" />
+    <Choice label="Customer approval" value={draft.response} values={["Pending", "Approved", "Changes Required"]} onChange={value => setDraft(previous => ({ ...previous, response: value, approval_date: value === "Approved" ? previous.approval_date || kitchenToday() : "" }))} disabled={locked} testID="kitchen-design-edit-response" />
+    {draft.response === "Approved" ? <KitchenDateField defaultToTodayOnFocus label="Customer approval date" value={draft.approval_date} onChange={value => update("approval_date", value)} min={draft.shared_date || undefined} disabled={locked} testID="kitchen-design-edit-approval-date" /> : null}
     {design?.response === "Approved" && !design.approval_date ? <Text style={type.caption}>Actual approval date not entered. {recorded ? `Approval was recorded on ${displayDate(recorded)}.` : "Historical approval date is unknown."} Existing dates are preserved.</Text> : null}
-    <KitchenDateField label="Date sent to company" value={draft.handoff_date} onChange={value => update("handoff_date", value)} min={approval} disabled={locked} testID="kitchen-design-edit-handoff" />
+    <Choice label="Sent to company" value={draft.handoff_status} values={["Not recorded", "Yes", "No"]} onChange={value => setDraft(previous => ({ ...previous, handoff_status: value, handoff_date: value === "Yes" ? previous.handoff_date || kitchenToday() : "" }))} disabled={locked} testID="kitchen-design-sent" />
+    {draft.handoff_status === "Yes" ? <KitchenDateField defaultToTodayOnFocus label="Date sent to company" value={draft.handoff_date} onChange={value => update("handoff_date", value)} min={approval} disabled={locked} testID="kitchen-design-edit-handoff" /> : null}
     <TextField label="Internal notes" value={draft.notes} onChangeText={value => update("notes", value)} editable={!locked} multiline testID="kitchen-design-edit-notes" />
     {problem ? <Text accessibilityRole="alert" style={type.bodyMuted}>{problem}</Text> : null}
     {project.stage === "design" ? <Button label={design ? "Save design details" : `Save Design v${number}`} disabled={locked || stale || Boolean(problem)} onPress={async () => { const { source: _source, file, ...fields } = draft; const saved = await command(design ? "design_update" : "design_present", { ...fields, requirements: draft.requirements || null, budget_discussion: draft.budget_discussion || null, notes: draft.notes || null, shared_date: draft.shared_date || null, approval_date: draft.approval_date || null, handoff_date: draft.handoff_date || null, ...(design ? { version_id: design.id } : { attachment_id: file || null }), reason: draft.notes.trim() || (design ? "Updated design details" : "Created new design version") }); if (saved && !design) onCreated(); }} testID={design ? "kitchen-design-edit-save" : "kitchen-design-present"} /> : null}

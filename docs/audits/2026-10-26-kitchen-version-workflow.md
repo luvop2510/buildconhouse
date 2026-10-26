@@ -148,3 +148,32 @@ operations and **5 → 3** serial rounds. This excludes HTTP/auth, live MongoDB,
 rendering and hosted latency. A read-only warm hosted startup diagnostic on the
 previous candidate measured 5.959 s to the Kitchen queue; it does not certify the
 new source or claim that hosted performance is solved.
+
+## Final date and quotation-link clarification
+
+The user then clarified that Design dates should default to today and remain
+editable. New Date shared with customer defaults to India today. Explicitly
+choosing Approved defaults an unentered approval date to today, and choosing Sent
+to company Yes defaults its date to today; both remain editable. Previously saved
+unknown dates stay unknown on load. Focusing a blank Design calendar starts it at
+today, without changing untouched historical fields. No Presentation Date returns.
+Sent to company now persists Not recorded / Yes / No compatibly; a legacy client
+that echoes an unchanged null date while saving notes preserves an explicit No.
+
+Quotation has an always-visible New quotation action, a Saved quotation selector
+across all saved quotations, and a separate Related design field. It is a field
+for the shown quotation, not a filter that silently changes which quotation is
+being edited. Display labels use Quotation 1, Quotation 2, etc., retaining existing
+stored numbers and IDs. Each quotation references one design version; a design
+can have multiple quotations. Browser acceptance creates Quotations 1 and 2 for
+Design v1 and Quotation 3 for Design v2, then verifies the older Quotation 1 / Design
+v1 order basis through Production and Installation. Order terms and history show
+that same relationship without the R-prefix notation.
+
+A new quotation after Return to Design uses the current work cycle and does not
+get trapped by a viewed historical quotation. Saved versions retain their own
+edit drafts; the single pending new quotation draft is retained while viewing
+history. A bound-order design change is explicit in Order. If an earlier unsaved
+quotation-design draft conflicts with a newly bound order, the form shows the
+actual saved design and offers explicit draft replacement rather than saving an
+unrelated association or trapping the user.

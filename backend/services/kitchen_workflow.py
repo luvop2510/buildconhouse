@@ -83,6 +83,15 @@ def design_approval_day(project, row):
     return day
 
 
+def validate_handoff_status(status, handoff_date):
+    value = status or ("Yes" if handoff_date else "Not recorded")
+    if value == "Yes" and not handoff_date:
+        reject("Sent to company Yes requires its handoff date")
+    if value != "Yes" and handoff_date:
+        reject("A company handoff date requires Sent to company Yes")
+    return value
+
+
 def validate_design_dates(project, row, *, presentation_date, shared_date, response, approval_date, handoff_date, approving=False, now=None):
     if shared_date and presentation_date and shared_date < presentation_date:
         reject("Sharing date cannot precede presentation")
@@ -198,6 +207,7 @@ def apply(project, command, payload, policy, user, now, validate):
         version = record({**body.model_dump(exclude={"reason"}),
             **(document(project, body) if body.attachment_id or body.url else {}),
             "workflow_cycle": project.get("workflow_cycle", 1), "number": max((row.get("number") or 0 for row in project["design_versions"]), default=0) + 1})
+        version["handoff_status"] = validate_handoff_status(body.handoff_status, body.handoff_date)
         validate_design_dates(project, version, presentation_date=body.presentation_date, shared_date=body.shared_date,
             response=body.response, approval_date=body.approval_date, handoff_date=body.handoff_date,
             approving=body.response == "Approved", now=now)
@@ -222,6 +232,8 @@ def apply(project, command, payload, policy, user, now, validate):
         approval_date = body.approval_date if "approval_date" in body.model_fields_set else row.get("approval_date")
         shared_date = body.shared_date if "shared_date" in body.model_fields_set else row.get("shared_date")
         handoff_date = body.handoff_date if "handoff_date" in body.model_fields_set else row.get("handoff_date")
+        handoff_status = body.handoff_status if "handoff_status" in body.model_fields_set else (None if "handoff_date" in body.model_fields_set and body.handoff_date != row.get("handoff_date") else row.get("handoff_status"))
+        handoff_status = validate_handoff_status(handoff_status, handoff_date)
         presentation_date = body.presentation_date if "presentation_date" in body.model_fields_set else row.get("presentation_date")
         validate_design_dates(project, row, presentation_date=presentation_date, shared_date=shared_date,
             response=body.response, approval_date=approval_date, handoff_date=handoff_date,
@@ -235,6 +247,8 @@ def apply(project, command, payload, policy, user, now, validate):
         if handoff_date and not row.get("handoff_date"):
             row["handoff_by"] = user.id
         row.update(body.model_dump(exclude_unset=True, exclude={"version_id", "reason", "revision_count", "approval_date", "response_notes"}))
+        if "handoff_status" in body.model_fields_set or "handoff_date" in body.model_fields_set:
+            row["handoff_status"] = handoff_status
         if "approval_date" in body.model_fields_set:
             row["approval_date"] = body.approval_date
         if "response_notes" in body.model_fields_set:
@@ -261,6 +275,7 @@ def apply(project, command, payload, policy, user, now, validate):
             if row.get("handoff_date"):
                 reject("This approved design handoff is already recorded")
             row["handoff_date"] = body.date
+            row["handoff_status"] = "Yes"
             row["handoff_by"] = user.id
         else:
             if row.get("shared_date"):

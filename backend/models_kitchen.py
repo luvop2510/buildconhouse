@@ -272,6 +272,7 @@ class DesignPresentation(DocumentPayload):
     response: Literal["Pending", "Approved", "Changes Required"] = "Pending"
     approval_date: str | None = None
     handoff_date: str | None = None
+    handoff_status: Literal["Not recorded", "Yes", "No"] | None = None
     reason: Text | None = None
     _dates = field_validator("presentation_date", "shared_date", "approval_date", "handoff_date", mode="before")(date_only)
 
@@ -281,6 +282,7 @@ class DesignUpdate(StrictModel):
     presentation_date: str | None = None
     shared_date: str | None = None
     handoff_date: str | None = None
+    handoff_status: Literal["Not recorded", "Yes", "No"] | None = None
     approval_date: str | None = None
     response: Literal["Pending", "Approved", "Changes Required"]
     response_notes: Text | None = None

@@ -53,6 +53,7 @@ test('Kitchen stages retain bordered details and directly accessible Design and 
       const id = stage === 'design' ? 'kitchen-design-edit-requirements' : 'kitchen-quotation-amount';
       await expect(page.getByTestId(id)).toBeVisible();
       await expect(page.getByTestId(id)).toHaveJSProperty('readOnly', true);
+      if (stage === 'quotation') await expect(page.getByTestId('kitchen-quotation-design-version')).toHaveCount(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
       continue;
     }

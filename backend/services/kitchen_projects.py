@@ -332,7 +332,7 @@ class KitchenProjectService:
     async def public(self, project, user, policy, *, summary=False, replayed=False):
         result = {k: copy.deepcopy(v) for k, v in project.items() if k not in {"_id", "command_receipts", "creation_fingerprint", "customer_phone_normalized", "customer_name_normalized"}}
         if summary:
-            version_fields = {"id", "number", "response", "approval_date", "shared_date", "handoff_date", "presentation_date", "received_date",
+            version_fields = {"id", "number", "response", "approval_date", "shared_date", "handoff_date", "handoff_status", "presentation_date", "received_date",
                               "received_status", "sent_status", "amount", "design_version_id", "workflow_cycle", "attachment_id", "url", "requirements", "budget_discussion"}
             order_fields = {"id", "confirmed", "status", "order_date", "final_amount", "original_amount", "quotation_version_id",
                             "confirmation_document_id", "authorization_invalidated", "advance"}

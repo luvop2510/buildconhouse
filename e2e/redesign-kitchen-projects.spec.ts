@@ -289,6 +289,7 @@ test('Q04 to Q09: all nine stages preserve versions, exact counters and late man
   expect(revised.design_revision_count).toBe(0);
   await shareApprove(true);
   await blocked('kitchen-advance-quotation');
+  await page.getByTestId('kitchen-design-sent-yes').click();
   await page.getByTestId('kitchen-design-edit-handoff').fill('2026-10-19');
   await click('kitchen-design-edit-save', 'design_update');
   await click('kitchen-advance-quotation', 'advance_stage');
@@ -569,6 +570,7 @@ test('D06: owner reasoned return to Design preserves prior approved commerce and
   await page.getByTestId('kitchen-design-edit-shared').fill('2026-10-19');
   await page.getByTestId('kitchen-design-edit-response-approved').click();
   await page.getByTestId('kitchen-design-edit-approval-date').fill('2026-10-19');
+  await page.getByTestId('kitchen-design-sent-yes').click();
   await page.getByTestId('kitchen-design-edit-handoff').fill('2026-10-19');
   await saveNewCycle('kitchen-design-edit-save', 'design_update');
   await expect(page.getByTestId('kitchen-advance-quotation')).toBeEnabled();
@@ -585,7 +587,7 @@ test('D06: owner reasoned return to Design preserves prior approved commerce and
   await page.getByRole('menuitem', { name: 'Orders', exact: true }).click();
   await expect(page.getByText('Historical order · Confirmed', { exact: true })).toBeVisible();
   await expect(page.getByText(/Original ₹999\.99.*Final ₹999\.99/)).toBeVisible();
-  await expect(page.getByText('Quotation revision 1', { exact: true })).toBeVisible();
+  await expect(page.getByText('Quotation 1', { exact: true })).toBeVisible();
   await expect(page.getByText('Confirmation document: Not attached', { exact: true })).toBeVisible();
   await page.getByTestId('kitchen-history-category').click();
   await page.getByRole('menuitem', { name: 'Design versions', exact: true }).click();
@@ -1007,6 +1009,7 @@ test('Kitchen named stages preview without writes and design details can be corr
   await page.getByTestId('kitchen-design-edit-shared').fill('2026-10-20');
   await page.getByTestId('kitchen-design-edit-response-approved').click();
   await page.getByTestId('kitchen-design-edit-approval-date').fill('2026-10-20');
+  await page.getByTestId('kitchen-design-sent-yes').click();
   await page.getByTestId('kitchen-design-edit-handoff').fill('2026-10-20');
   await page.getByTestId('kitchen-design-edit-notes').fill('Correct the recorded presentation details');
   const update = page.waitForResponse(response => response.url().endsWith('/commands') && response.request().postDataJSON()?.command === 'design_update');

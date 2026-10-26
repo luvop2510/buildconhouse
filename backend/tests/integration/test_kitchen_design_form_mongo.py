@@ -89,3 +89,29 @@ def test_design_form_dates_record_actors_on_explicit_first_save():
             assert design['shared_by'] == design['handoff_by'] == env['ids']['owner']
             assert design['presentation_date'] is None
     asyncio.run(run())
+
+
+def test_design_handoff_status_round_trips_and_preserves_history():
+    async def run():
+        async with environment() as env:
+            await configure(env)
+            project = await reach_stage(env, 'design')
+            project = await accepted(env, project, 'design_present', {'shared_date': '2026-10-24',
+                'response': 'Approved', 'approval_date': '2026-10-25', 'handoff_status': 'No', 'handoff_date': None})
+            version = project['design_versions'][-1]
+            invalid = await command(env, project, 'design_update', {'version_id': version['id'], 'response': 'Approved',
+                'reason': 'Explicit handoff', 'handoff_status': 'Yes', 'handoff_date': None})
+            assert invalid.status_code == 422
+            project = await accepted(env, project, 'design_update', {'version_id': version['id'], 'response': 'Approved',
+                'reason': 'Explicit handoff', 'handoff_status': 'Yes', 'handoff_date': '2026-10-26'})
+            project = await accepted(env, project, 'design_update', {'version_id': version['id'], 'response': 'Approved',
+                'reason': 'Internal note only', 'notes': 'Keep handoff unchanged'})
+            loaded = await env['api'].get(f"/api/kitchen-projects/{project['id']}", headers=headers(env))
+            assert loaded.status_code == 200
+            saved = loaded.json()['design_versions'][-1]
+            assert saved['handoff_status'] == 'Yes' and saved['handoff_date'] == '2026-10-26'
+            changes = project['activity'][-2]['payload']['changes']['design']
+            assert changes['before']['handoff_status'] == 'No'
+            assert changes['after']['handoff_status'] == 'Yes'
+            assert version['handoff_status'] == 'No' and version['handoff_date'] is None
+    asyncio.run(run())

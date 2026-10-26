@@ -355,3 +355,58 @@ def test_quotation_without_receipt_date_cannot_be_shared_before_design_handoff(s
         fields["version_id"] = "q1"
     with pytest.raises(HTTPException, match="design handoff"):
         apply(project, command, fields, owner)
+
+
+@pytest.mark.parametrize('status,date', [('Yes', '2026-10-25'), ('No', None), ('Not recorded', None)])
+def test_design_handoff_status_is_explicit_and_matches_date(setup, status, date):
+    _, _, owner = setup
+    project = aggregate('design')
+    apply(project, 'design_present', {'shared_date': '2026-10-23', 'response': 'Approved',
+        'approval_date': '2026-10-24', 'handoff_status': status, 'handoff_date': date}, owner)
+    saved = project['design_versions'][-1]
+    assert saved['handoff_status'] == status and saved['handoff_date'] == date
+    apply(project, 'design_update', {'version_id': saved['id'], 'response': 'Approved', 'reason': 'Internal note', 'notes': 'Keep state'}, owner)
+    assert saved['handoff_status'] == status and saved['handoff_date'] == date
+
+
+@pytest.mark.parametrize('command,status,date', [
+    ('design_present', 'Yes', None), ('design_present', 'No', '2026-10-25'),
+    ('design_present', 'Not recorded', '2026-10-25'), ('design_update', 'Yes', None),
+    ('design_update', 'No', '2026-10-25'), ('design_update', 'Not recorded', '2026-10-25'),
+])
+def test_design_handoff_status_rejects_contradictory_date_before_mutation(setup, command, status, date):
+    _, _, owner = setup
+    project = aggregate('design')
+    fields = {'response': 'Approved', 'shared_date': '2026-10-23', 'approval_date': '2026-10-24',
+        'handoff_status': status, 'handoff_date': date}
+    if command == 'design_update':
+        fields.update(version_id='d1', reason='Status correction')
+    before = copy.deepcopy(project)
+    with pytest.raises(HTTPException, match='company|handoff'):
+        apply(project, command, fields, owner)
+    assert project == before
+
+
+def test_legacy_design_handoff_derives_only_from_explicit_date_and_command(setup):
+    _, _, owner = setup
+    project = aggregate('design')
+    apply(project, 'design_present', {'notes': 'No handoff'}, owner)
+    design = project['design_versions'][-1]
+    assert design['handoff_status'] == 'Not recorded' and design['handoff_date'] is None
+    apply(project, 'design_update', {'version_id': design['id'], 'response': 'Approved', 'shared_date': '2026-10-23',
+        'approval_date': '2026-10-24', 'handoff_date': '2026-10-25', 'reason': 'Legacy date client'}, owner)
+    assert design['handoff_status'] == 'Yes'
+    design['handoff_date'] = None
+    design['handoff_status'] = 'No'
+    apply(project, 'design_handoff', {'version_id': design['id'], 'date': '2026-10-26'}, owner)
+    assert design['handoff_status'] == 'Yes' and design['handoff_date'] == '2026-10-26'
+
+
+def test_legacy_date_echo_does_not_replace_explicit_no_handoff_status(setup):
+    _, _, owner = setup
+    project = aggregate("design")
+    row = project["design_versions"][0]
+    row.update(response="Pending", approval_date=None, handoff_date=None, handoff_status="No")
+    apply(project, "design_update", {"version_id": row["id"], "response": "Pending", "handoff_date": None,
+        "notes": "Legacy client note edit", "reason": "Internal clarification"}, owner)
+    assert row["handoff_status"] == "No" and row["handoff_date"] is None
