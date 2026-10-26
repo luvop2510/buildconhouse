@@ -1,5 +1,5 @@
 import React from "react";
-import { StyleProp, View, ViewStyle } from "react-native";
+import { Platform, StyleProp, View, ViewStyle } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { color, layout } from "@/src/design/tokens";
@@ -12,12 +12,14 @@ import { color, layout } from "@/src/design/tokens";
 export function AppScaffold({
   children,
   bottomNavigation,
+  bottomNavigationHidden = false,
   style,
   testID,
   phoneSafeArea = true,
 }: {
   children: React.ReactNode;
   bottomNavigation: React.ReactNode;
+  bottomNavigationHidden?: boolean;
   style?: StyleProp<ViewStyle>;
   testID?: string;
   phoneSafeArea?: boolean;
@@ -31,7 +33,12 @@ export function AppScaffold({
       <View role="main" accessibilityLabel="Workspace content" style={{ flex: 1, minWidth: 0, minHeight: 0 }}>{children}</View>
       {bottomNavigation ? <SafeAreaView
         edges={["bottom"]}
-        style={{ backgroundColor: color.canvas, borderTopWidth: layout.hairline, borderTopColor: color.line }}
+        pointerEvents={bottomNavigationHidden ? "none" : "auto"}
+        accessibilityElementsHidden={bottomNavigationHidden}
+        importantForAccessibility={bottomNavigationHidden ? "no-hide-descendants" : "auto"}
+        aria-hidden={bottomNavigationHidden}
+        // Retain its space while editing so blur never moves the form or its tap target.
+        style={[{ backgroundColor: color.canvas, borderTopWidth: layout.hairline, borderTopColor: color.line }, bottomNavigationHidden ? { opacity: 0, ...(Platform.OS === "web" ? { visibility: "hidden" } : {}) } as ViewStyle : null]}
       >
         {bottomNavigation}
       </SafeAreaView> : null}

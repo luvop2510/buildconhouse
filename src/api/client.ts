@@ -207,6 +207,9 @@ async function request<T>(method: string, path: string, body?: any, opts?: Reque
     if (timedOut) {
       throw new ApiError(408, "Request timed out. Please try again.");
     }
+    if (controller.signal.aborted) {
+      throw new DOMException("Request cancelled because the signed-in account, workspace or screen changed.", "AbortError");
+    }
     // Fetch reports a transport failure as an unhelpful TypeError. Surface a
     // useful, actionable message instead of leaving floor screens looking as
     // though their buttons did nothing when the configured API is offline.

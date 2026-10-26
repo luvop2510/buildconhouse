@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { captureRuntimeHealth } from './runtime-health';
 
@@ -16,6 +16,92 @@ async function seed(page: Page) {
     localStorage.setItem('forge.active-floor', JSON.stringify('second-floor'));
   });
 }
+
+async function projectAt(context: APIRequestContext, stage: string) {
+  const created = await context.post('/api/kitchen-projects', { headers, data: {
+    customer_id: process.env.KITCHEN_E2E_CUSTOMER_ID, idempotency_key: randomUUID(), lead: { site_location: 'Commercial recovery acceptance' },
+  } });
+  expect(created.ok(), await created.text()).toBe(true);
+  let project = await created.json();
+  for (const target of ['visit', 'cad', 'design', 'quotation', 'order', 'production', 'installation']) {
+    const moved = await context.post(`/api/kitchen-projects/${project.id}/commands`, { headers, data: {
+      expected_version: project.version, idempotency_key: randomUUID(), command: 'move_stage', payload: { target_stage: target },
+    } });
+    expect(moved.ok(), await moved.text()).toBe(true);
+    project = await moved.json();
+    if (target === stage) return project;
+  }
+  throw new Error(`Unsupported acceptance stage ${stage}`);
+}
+
+async function clickCommand(page: Page, id: string, command: string) {
+  const pending = page.waitForResponse(response => response.url().endsWith('/commands') && response.request().postDataJSON()?.command === command);
+  await page.getByTestId(id).click();
+  const response = await pending;
+  expect(response.ok(), await response.text()).toBe(true);
+  return response.json();
+}
+
+test('Kitchen missing quotation and order prerequisites offer working return actions and retain entry', async ({ page, context }, info) => {
+  const project = await projectAt(context.request, 'quotation');
+  const health = captureRuntimeHealth(page);
+  await seed(page);
+  await page.goto(`/kitchen/${project.id}/stages/quotation`);
+  await expect(page.getByTestId('kitchen-quotation-receive')).toBeDisabled();
+  await expect(page.getByText('Record a design presentation in Design first.', { exact: true })).toBeVisible();
+  await page.getByTestId('kitchen-quotation-amount').fill('1250.50');
+  await page.getByTestId('kitchen-quotation-receive').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: info.outputPath('quotation-prerequisites.png') });
+  const design = await clickCommand(page, 'kitchen-complete-design', 'move_stage');
+  expect(design.stage).toBe('design');
+  await expect(page).toHaveURL(new RegExp(`/stages/design(?:\\?.*)?$`));
+  await clickCommand(page, 'kitchen-advance-quotation', 'move_stage');
+  await expect(page.getByTestId('kitchen-quotation-amount')).toHaveValue('1250.50');
+  await clickCommand(page, 'kitchen-advance-order', 'move_stage');
+  await expect(page.getByTestId('kitchen-order-confirm')).toBeDisabled();
+  await expect(page.getByText('Order status: Pending confirmation', { exact: true })).toBeVisible();
+  await page.getByTestId('kitchen-order-confirm').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: info.outputPath('order-pending-confirmation.png') });
+  const quotation = await clickCommand(page, 'kitchen-complete-quotation', 'move_stage');
+  expect(quotation.stage).toBe('quotation');
+  await expect(page.getByTestId('kitchen-quotation-amount')).toHaveValue('1250.50');
+  await page.getByTestId('kitchen-quotation-upload').click();
+  await expect(page.getByTestId('kitchen-document-pick')).toBeEnabled();
+  await health.assertHealthy();
+});
+
+test('Kitchen save and next persists production, actual site visit and installation in one journey', async ({ page, context }, info) => {
+  const project = await projectAt(context.request, 'production');
+  const health = captureRuntimeHealth(page);
+  await seed(page);
+  await page.goto(`/kitchen/${project.id}/stages/production`);
+  await page.getByTestId('kitchen-production-status-completed').click();
+  await page.getByTestId('kitchen-production-start').fill('2026-10-25');
+  await page.getByTestId('kitchen-production-complete').fill('2026-10-26');
+  await clickCommand(page, 'kitchen-production-save-next', 'move_stage');
+  await expect(page).toHaveURL(new RegExp(`/stages/installation(?:\\?.*)?$`));
+  const afterProduction = await context.request.get(`/api/kitchen-projects/${project.id}`, { headers });
+  expect(await afterProduction.json()).toMatchObject({ stage: 'installation', production: { status: 'Completed', start_date: '2026-10-25', completion_date: '2026-10-26' } });
+  await page.reload();
+  await page.getByTestId('kitchen-disclose-site-visit').click();
+  await expect(page.getByTestId('kitchen-site-save')).toBeDisabled();
+  await expect(page.getByText('Choose whether this visit actually took place to enable recording.', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Visit actually took place: Yes — actual visit', exact: true }).click();
+  await page.getByTestId('kitchen-site-date').fill('2026-10-26');
+  const visit = await clickCommand(page, 'kitchen-site-save', 'site_visit');
+  expect(visit.site_visit_count).toBe(1);
+  await page.getByTestId('kitchen-installation-status-completed').click();
+  await page.getByTestId('kitchen-installation-start').fill('2026-10-26');
+  await page.getByTestId('kitchen-installation-complete').fill('2026-10-26');
+  await clickCommand(page, 'kitchen-installation-save-next', 'move_stage');
+  await expect(page).toHaveURL(new RegExp(`/stages/completed(?:\\?.*)?$`));
+  await page.reload();
+  await expect(page.getByText('Actual site visits: 1', { exact: true })).toBeVisible();
+  const completed = await context.request.get(`/api/kitchen-projects/${project.id}`, { headers });
+  expect(await completed.json()).toMatchObject({ stage: 'completed', site_visit_count: 1, installation: { status: 'Completed', start_date: '2026-10-26', completion_date: '2026-10-26' } });
+  await page.screenshot({ path: info.outputPath('saved-work-and-site-visit.png') });
+  await health.assertHealthy();
+});
 
 test('Retired Kitchen filters cannot hide a project and controls stay removed', async ({ page, context }, info) => {
   const created = await context.request.post('/api/kitchen-projects', { headers, data: {

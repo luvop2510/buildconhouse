@@ -261,6 +261,41 @@ for (const path of ['../src/api/client.ts', '../src/api/client.web.ts']) {
 }
 console.log('Native/web stalled transports time out, evict shared reads, and recover while unrelated reads remain usable.');
 
+// Some fetch implementations reject an aborted request with TypeError. Context
+// cancellation must stay cancellation rather than claim the backend is offline.
+for (const path of ['../src/api/client.ts', '../src/api/client.web.ts']) {
+  for (const cancel of [true, false]) {
+    const module = { exports: {} };
+    const storage = { secureGet: async () => null, getItem: async () => 'second-floor' };
+    let rejectTransport;
+    vm.runInNewContext(ts.transpileModule(read(path), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    }).outputText, {
+      module, exports: module.exports, require: () => ({ storage, browserStorage: storage }),
+      __DEV__: true, process: { env: {} }, document: { cookie: '' },
+      AbortController, DOMException, TypeError, setTimeout, clearTimeout,
+      fetch: (_url, options) => new Promise((_resolve, reject) => {
+        rejectTransport = () => reject(new TypeError('Load failed'));
+        options.signal.addEventListener('abort', rejectTransport, { once: true });
+      }),
+    });
+    const client = module.exports;
+    client.setRequestFloorId('second-floor');
+    const result = client.api.post('/kitchen-projects/p1/commands', { command: 'move_stage' })
+      .then(value => ({ value }), error => ({ error }));
+    await new Promise(resolve => setImmediate(resolve));
+    if (cancel) client.setRequestFloorId('first-floor');
+    else rejectTransport();
+    const { error } = await result;
+    if (cancel) assert.equal(error.name, 'AbortError', `${path}: cancelled mutation is not an outage`);
+    else {
+      assert.equal(error.status, 503);
+      assert.match(error.message, /Cannot reach the backend/);
+    }
+  }
+}
+console.log('Native/web TypeError aborts remain cancellation; real transport failures remain explicit.');
+
 // Exercise real multipart transports: preserve auth/floor/CSRF, invalidate reads,
 // reject stale workspace results, and recover from timeouts on both clients.
 for (const path of ['../src/api/client.ts', '../src/api/client.web.ts']) {

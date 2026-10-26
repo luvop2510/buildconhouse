@@ -4,6 +4,16 @@ Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work 
 
 ## Always-on Railway startup and Kitchen PDF usability — 2026-10-26
 
+Kitchen mobile save repair: reserve the phone header/footer's geometry while
+hiding their controls during editing. Unmounting them shifts the form by 119px
+and can move a blur-triggering tap target. Keep the short save-feedback line
+stable. TypeError from an aborted fetch is cancellation, not backend downtime;
+timeouts and genuine transport failures retain distinct errors. Production and
+Installation have explicit Save and go actions; save successfully before manual
+movement, using the latest version and coalescing repeated taps. Preserve
+unrestricted Next/Previous and prerequisite guidance for commercial actions.
+See docs/audits/2026-10-26-kitchen-save-mobile-repair.md.
+
 The user explicitly removed the one-minute backend-wake buffer after moving to
 Railway. Identity and floor reads start directly without an anonymous health
 prerequisite. Preserve bounded ordinary requests, session/floor generations,

@@ -39,6 +39,10 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
   const back = () => { if (router.canGoBack()) router.back(); else router.replace(returnTo as any); };
   const actionLabel = project ? currentTaskLabel(project) : "Open current task";
   const disabled = !canUpdate || submission.busy || loading || Boolean(failure);
+  const savedAt = project?.updated_at ? new Date(project.updated_at) : null;
+  const savedLabel = savedAt && Number.isFinite(savedAt.getTime())
+    ? `Saved · ${savedAt.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })} IST`
+    : "Saved";
   if (parameter && !kitchenStage(parameter)) return <KitchenFloor><KitchenPage title="Kitchen" back={back}><ErrorState title="Stage unavailable" subtitle="Choose one of the nine Kitchen stages." /></KitchenPage></KitchenFloor>;
   return <KitchenFloor><KitchenPage title={STAGE_LABELS[selected]} overline={project ? project.project_reference || project.reference : "Kitchen"} back={back}
     right={project ? <Button label="Stage history" icon="list" variant="secondary" onPress={() => setPanel("workflow")} testID="kitchen-open-workflow" /> : undefined}
@@ -57,7 +61,7 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
       </View>
       {selected === project.stage && canUpdate ? <StageNavigation project={project} disabled={disabled} /> : null}
       {loading ? <Text style={type.caption}>Refreshing saved project…</Text> : null}
-      <Text accessibilityLiveRegion="polite" style={[type.caption, { minHeight: 19 }]} testID={state.dirty ? "kitchen-unsaved-notice" : undefined}>{state.dirty ? "Unsaved changes · save before leaving this project." : " "}</Text>
+      <Text accessibilityLiveRegion="polite" style={[type.caption, { minHeight: 19 }]} testID={state.dirty ? "kitchen-unsaved-notice" : undefined}>{submission.busy ? "Saving…" : submission.error ? "Not saved · entries kept." : state.dirty ? "Unsaved changes · save details." : savedLabel}</Text>
       {retainedDraft ? <Alert tone="info" title="Drafts retained" description="The latest saved record is loaded. Your unsaved entries are kept for review." /> : null}
       <ErrorNotice error={submission.error} stale={submission.stale} onReload={reload} />
       {held ? <Alert tone="warning" title={`Project ${project.lifecycle_status}`} description="The owner must resume the project before routine work can continue." /> : null}
@@ -91,7 +95,7 @@ function StageNavigation({ project, disabled }: { project: KitchenProject; disab
       {previous ? <Button label={`Previous stage: ${STAGE_LABELS[previous]}`} icon="arrow-left" variant="secondary" disabled={disabled} onPress={() => command("move_stage", { target_stage: previous })} testID="kitchen-previous-stage" /> : null}
       {next ? <Button label={`Next stage: ${STAGE_LABELS[next]}`} iconRight="arrow-right" disabled={disabled} onPress={() => command("move_stage", { target_stage: next })} testID={project.stage === "lead" ? "kitchen-convert" : `kitchen-advance-${next}`} /> : null}
     </View>
-    <Text style={type.caption}>Move forward or back whenever needed. You can return to complete details later; entries stay with the project.</Text>
+    <Text style={type.caption}>Next and Previous save the stage change only. Save entered details before moving; unsaved drafts stay with this project for later.</Text>
   </KitchenPanel>;
 }
 

@@ -617,7 +617,8 @@ test('D09: legacy completed records show unavailable counts and blank historical
   await openStageRecord(page, 'lead');
   await expect(page.getByTestId('kitchen-lead-date')).toHaveValue('');
   await openStageRecord(page, 'installation');
-  await expect(page.getByText('Saved start: — · Saved completion: —', { exact: true })).toBeVisible();
+  await expect(page.getByText('Start date: —', { exact: true })).toBeVisible();
+  await expect(page.getByText('Completion date: —', { exact: true })).toBeVisible();
   const legacyRecord = await context.request.get(`${baseURL}/api/kitchen-projects/${projectId}`, { headers: { 'X-Floor-Id': 'second-floor' } });
   const legacy = await legacyRecord.json();
   expect(legacy.installation.start_date).toBeNull();

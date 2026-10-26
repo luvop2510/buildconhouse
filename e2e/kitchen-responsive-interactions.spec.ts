@@ -301,3 +301,56 @@ test('a delayed reload cannot replace a newer committed Kitchen save', async ({ 
     await health.assertHealthy();
   } finally { allowSave(); releaseRead(); await page.unroute(commands); await page.unroute(detail); }
 });
+
+
+test('Kitchen mobile input and blur taps preserve the form viewport and select the first time', async ({ page, context }, info) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const created = await context.request.post('/api/kitchen-projects', { headers, data: {
+    customer_id: process.env.KITCHEN_E2E_CUSTOMER_ID,
+    idempotency_key: `mobile-blur-geometry-${Date.now()}-${Math.random()}`,
+    lead: { site_location: 'Mobile form position check' },
+  } });
+  expect(created.ok(), await created.text()).toBe(true);
+  const project = await created.json();
+  await seedBrowser(page);
+  await page.goto(`/kitchen/${project.id}/stages/lead`);
+  await expect(page.getByTestId('kitchen-project-ready')).toHaveCount(1);
+  const field = page.getByTestId('kitchen-lead-site_location');
+  await field.scrollIntoViewIfNeeded();
+  const scroll = page.getByTestId('kitchen-page-scroll');
+  const before = await scroll.boundingBox();
+  const restingField = await field.boundingBox();
+  await field.fill('Entered value remains in place');
+  await expect(page.getByTestId('mobile-workspace-header')).toBeHidden();
+  await expect(page.getByRole('navigation', { name: 'Primary', exact: true })).toBeHidden();
+  expect(await scroll.boundingBox(), 'Focusing an input must not resize or move its scroll viewport').toEqual(before);
+  const inputBeforeBlur = await field.boundingBox();
+  expect(Math.abs(inputBeforeBlur!.y - restingField!.y), 'Typing the first dirty value must not move the field').toBeLessThan(2);
+  await page.getByText('Site location (required)', { exact: true }).click();
+  await expect(page.getByTestId('mobile-workspace-header')).toBeVisible();
+  expect(await scroll.boundingBox(), 'Restoring navigation must not resize or move the form').toEqual(before);
+  expect(Math.abs((await field.boundingBox())!.y - inputBeforeBlur!.y), 'A tap outside the input keeps its vertical position').toBeLessThan(2);
+  await expect(field).toHaveValue('Entered value remains in place');
+  // Model the reduced usable browser height while a phone keyboard is open.
+  await page.setViewportSize({ width: 390, height: 550 });
+  await field.focus();
+  await field.scrollIntoViewIfNeeded();
+  await expect(page.getByTestId('mobile-workspace-header')).toBeHidden();
+  expect((await scroll.boundingBox())!.height, 'The keyboard viewport retains a usable form area').toBeGreaterThan(300);
+  await page.screenshot({ path: info.outputPath('mobile-form-short-editing-viewport.png') });
+  await field.blur();
+  await expect(page.getByTestId('mobile-workspace-header')).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  const status = page.getByTestId('kitchen-lead-status-contacted');
+  await status.scrollIntoViewIfNeeded();
+  await field.fill('Value immediately before the status tap');
+  await status.click();
+  await expect(status).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('mobile-workspace-header')).toBeVisible();
+  await page.screenshot({ path: info.outputPath('mobile-form-stable-after-blur.png') });
+  const saved = page.waitForResponse(response => response.url().endsWith('/commands') && response.request().postDataJSON()?.command === 'edit_lead');
+  await page.getByTestId('kitchen-lead-save').click();
+  const response = await saved;
+  expect(response.ok(), await response.text()).toBe(true);
+  expect((await response.json()).lead).toMatchObject({ site_location: 'Value immediately before the status tap', status: 'Contacted' });
+});

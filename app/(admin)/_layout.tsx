@@ -8,7 +8,7 @@ import { PRIMARY, SECONDARY, TILES_ITEMS, type NavItem } from "@/src/design/navi
 import Feather from "@expo/vector-icons/Feather";
 import { Slot, useRouter, useSegments, useLocalSearchParams, usePathname } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Platform, Pressable, ScrollView, StyleSheet, View, type ViewStyle } from "react-native";
 import { Text } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -602,9 +602,23 @@ export default function AdminLayout() {
           testID={isPhone ? "admin-mobile-shell" : "admin-desktop-shell"}
           phoneSafeArea={isPhone}
           style={{ backgroundColor: color.canvas, minHeight: 0 }}
-          bottomNavigation={isPhone && !focusedQuotation && !inputActive ? <PhoneBar /> : null}
+          bottomNavigation={isPhone && !focusedQuotation ? <PhoneBar /> : null}
+          bottomNavigationHidden={inputActive}
         >
-          <ConnectionStatus /><FloorAccessGate><CustomAccessRouteGate>{isPhone && !focusedQuotation && !inputActive ? <View testID="mobile-workspace-header" style={{ flexShrink: 0, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 }}><FloorSwitcher /></View> : null}<Slot {...({ screenLayout: pageScreenLayout } as React.ComponentProps<typeof Slot>)} /></CustomAccessRouteGate></FloorAccessGate>
+          <ConnectionStatus />
+          <FloorAccessGate><CustomAccessRouteGate>
+            {isPhone && !focusedQuotation ? <View
+              testID="mobile-workspace-header"
+              pointerEvents={inputActive ? "none" : "auto"}
+              accessibilityElementsHidden={inputActive}
+              importantForAccessibility={inputActive ? "no-hide-descendants" : "auto"}
+              aria-hidden={inputActive}
+              style={{ flexShrink: 0, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4,
+                ...(inputActive ? { opacity: 0, ...(Platform.OS === "web" ? { visibility: "hidden" } : {}) } : {}),
+              } as ViewStyle}
+            ><FloorSwitcher /></View> : null}
+            <Slot {...({ screenLayout: pageScreenLayout } as React.ComponentProps<typeof Slot>)} />
+          </CustomAccessRouteGate></FloorAccessGate>
         </AppScaffold>
       </View>
     </PaletteProvider>

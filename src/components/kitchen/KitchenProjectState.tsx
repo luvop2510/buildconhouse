@@ -98,6 +98,8 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
   const command = (name: KitchenCommand, payload: Record<string, unknown>) => {
     const current = saved.current;
     if (!current || loading || failure) return Promise.resolve(false);
+    // Completing legacy installation may already advance the saved project.
+    if (name === "move_stage" && current.stage === payload.target_stage) return Promise.resolve(true);
     return submission.submit({ id, command: name, payload }, key => kitchenProjectsApi.command(id, current.version, key, name, payload), value => {
       if (!acceptProject(value)) return;
       setRetainedDraft(false);
