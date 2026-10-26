@@ -10,11 +10,11 @@ from uuid import uuid4
 from fastapi import HTTPException
 
 from models_kitchen import (AdvancePayment, CustomerResponse, DesignPresentation,
-    DesignRevision, InternalApproval, OrderAmendment, OrderConfirmation,
-    QuotationReceived, SiteVisit, VersionDate, WorkProgress, OrderStatusChange, ExceptionCommand, OrderDocument)
+    DesignRevision, DesignUpdate, InternalApproval, OrderAmendment, OrderConfirmation,
+    QuotationReceived, SiteVisit, VersionDate, WorkProgress, OrderStatusChange, ExceptionCommand, OrderDocument, OrderUpdate)
 
-COMMANDS = {"design_present", "design_share", "design_response", "design_revision", "design_handoff",
-            "quotation_receive", "quotation_share", "quotation_response", "order_confirm", "order_advance",
+COMMANDS = {"design_present", "design_update", "design_share", "design_response", "design_revision", "design_handoff",
+            "quotation_receive", "quotation_share", "quotation_response", "order_confirm", "order_update", "order_advance",
             "order_amend", "order_status", "order_document", "exception", "production_update", "installation_update", "site_visit", "approval"}
 
 
@@ -105,6 +105,8 @@ def transition(project, target, policy):
 
 
 def recompute_completion(project, policy):
+    if project.get("manual_stage_navigation"):
+        return
     if project["stage"] == "installation" and project.get("installation", {}).get("status") == "Completed":
         error = transition(project, "completed", policy)
         project["closure_pending_reason"] = error
@@ -127,9 +129,27 @@ def apply(project, command, payload, policy, user, now, validate):
         body = validate(DesignPresentation, payload)
         if project.get("design_versions") and project["design_versions"][-1].get("response") == "Approved" and not project.get("design_revision_pending"):
             reject("Record an owner-authorized design change with its reason before replacing an approved design")
-        project["design_versions"].append(record({**body.model_dump(), **document(project, body), "workflow_cycle": project.get("workflow_cycle", 1),
+        project["design_versions"].append(record({**body.model_dump(), **(document(project, body) if body.attachment_id or body.url else {}), "workflow_cycle": project.get("workflow_cycle", 1),
             "number": len(project["design_versions"]) + 1, "response": "Pending", "shared_date": None, "handoff_date": None}))
         project["design_revision_pending"] = False
+    elif command == "design_update":
+        require_stage("design")
+        body = validate(DesignUpdate, payload)
+        row = current(project, "design_versions", body.version_id)
+        if project.get("design_revision_pending") or row.get("workflow_cycle", 1) != project.get("workflow_cycle", 1):
+            reject("Present the revised design before editing its details")
+        if body.shared_date and body.shared_date < body.presentation_date:
+            reject("Sharing date cannot precede presentation")
+        if body.response != "Pending" and not body.shared_date:
+            reject("Record the sharing date before the customer response")
+        if body.handoff_date and (body.response != "Approved" or not body.shared_date or body.handoff_date < body.shared_date):
+            reject("Company handoff requires approval and cannot precede customer sharing")
+        if body.revision_count is not None and body.revision_count != project.get("design_revision_count"):
+            reject("Design revisions are counted from customer revision requests; record a revision request instead")
+        row.update(body.model_dump(exclude={"version_id", "reason", "revision_count"}))
+        row["corrected_by"], row["corrected_at"] = user.id, now
+        project["approvals"].append(record({"scope": "customer_design", "subject_id": row["id"],
+            "decision": body.response, "notes": body.response_notes, "reason": body.reason}))
     elif command in {"design_share", "design_handoff", "quotation_share"}:
         is_design = command.startswith("design")
         require_stage("design" if is_design else "quotation")
@@ -180,6 +200,8 @@ def apply(project, command, payload, policy, user, now, validate):
     elif command == "quotation_receive":
         require_stage("quotation")
         body = validate(QuotationReceived, payload)
+        if project.get("orders") and not project.get("commercial_basis_invalidated"):
+            reject("This project already has a confirmed order. Record changed terms with an approved order amendment or a revised design cycle.")
         design = approved_design(project)
         if body.design_version_id != design["id"] or not design.get("handoff_date"):
             reject("Quotation must reference the current approved design sent to the company")
@@ -202,11 +224,17 @@ def apply(project, command, payload, policy, user, now, validate):
             reject("Order date cannot precede quotation sharing")
         if body.confirmation_document_id and not any(a["id"] == body.confirmation_document_id for a in project["attachments"]):
             reject("Confirmation document must belong to this project")
+        final_amount = body.final_amount if body.final_amount is not None else quote["amount"]
+        changed_amount = Decimal(final_amount) != Decimal(quote["amount"])
+        if changed_amount and not body.amount_customer_approved:
+            reject("Changed final order amount requires explicit customer approval")
+        amendments = [record({"amount": final_amount, "date": body.order_date, "customer_approved": True,
+                              "reason": "Customer approved changed final amount at order confirmation"})] if changed_amount else []
         project["orders"].append(record({**body.model_dump(), "confirmed": True, "status": "Confirmed",
             "workflow_cycle": project.get("workflow_cycle", 1), "approval_identity": str(uuid4()),
-            "original_amount": quote["amount"], "final_amount": quote["amount"], "amendments": [],
+            "original_amount": quote["amount"], "final_amount": final_amount, "amendments": amendments,
             "advance": {"received": False, "amount": "0.00", "date": None}}))
-        project["order_amount"] = quote["amount"]
+        project["order_amount"] = final_amount
         project["commercial_basis_invalidated"] = False
     elif command == "order_document":
         require_stage("order")
@@ -214,12 +242,27 @@ def apply(project, command, payload, policy, user, now, validate):
         row = current(project, "orders")
         if project.get("commercial_basis_invalidated") or row.get("authorization_invalidated"):
             reject("Confirm a new order for the current approved quotation before changing its documents")
-        if row.get("confirmation_document_id"):
-            reject("Confirmation document is already recorded; replacement requires a correction policy")
+        if row.get("confirmation_document_id") == body.attachment_id:
+            reject("This confirmation document is already selected")
         if not any(a["id"] == body.attachment_id for a in project["attachments"]):
             reject("Confirmation document must belong to this project")
+        previous = row.get("confirmation_document_id")
         row["confirmation_document_id"] = body.attachment_id
-        row.setdefault("document_history", []).append(record(body.model_dump()))
+        row.setdefault("document_history", []).append(record({**body.model_dump(), "previous_attachment_id": previous}))
+    elif command == "order_update":
+        require_stage("order")
+        body = validate(OrderUpdate, payload)
+        row = current(project, "orders")
+        if project.get("commercial_basis_invalidated") or row.get("authorization_invalidated"):
+            reject("Confirm a new order for the current approved quotation first")
+        quote = current(project, "quotation_versions", row["quotation_version_id"])
+        if body.order_date < quote["shared_date"]:
+            reject("Order date cannot precede quotation sharing")
+        following = [row.get("advance", {}).get("date"), project.get("production", {}).get("start_date"), *(amendment.get("date") for amendment in row.get("amendments", []))]
+        if any(value and value < body.order_date for value in following):
+            reject("Order date cannot follow an approved amendment, advance or production start")
+        row.setdefault("corrections", []).append(record({"before": {key: row.get(key) for key in ("order_date", "notes")}, "after": body.model_dump()}))
+        row.update(body.model_dump())
     elif command == "order_advance":
         require_stage("order")
         body = validate(AdvancePayment, payload)
@@ -292,7 +335,7 @@ def apply(project, command, payload, policy, user, now, validate):
                 "from_stage": stage, "reason": body.reason, "installation": copy.deepcopy(project.get("installation")),
                 "completion_date": project.get("completion_date")}))
             project["stage"] = "installation"
-            project["installation"] = {**project["installation"], "status": "In Progress", "completion_date": None, "completion_identity": None}
+            project["installation"] = {**(project.get("installation") or {}), "status": "In Progress", "completion_date": None, "completion_identity": None}
             project["completion_date"] = None
             project["closure_pending_reason"] = None
         project.setdefault("exceptions", []).append(record(body.model_dump()))
@@ -309,8 +352,12 @@ def apply(project, command, payload, policy, user, now, validate):
             reject("Record the start date")
         if body.status == "Not Started" and (body.start_date or body.completion_date):
             reject("Not Started work cannot have actual start or completion dates")
-        earliest = (current(project, "orders")["order_date"] if expected == "production"
-                    else project.get("production", {}).get("completion_date"))
+        if expected == "production":
+            if not project.get("orders") and not project.get("manual_stage_navigation"):
+                current(project, "orders")
+            earliest = project["orders"][-1]["order_date"] if project.get("orders") else None
+        else:
+            earliest = project.get("production", {}).get("completion_date")
         if body.start_date and earliest and body.start_date < earliest:
             reject("Work cannot start before the preceding stage's completion/confirmation")
         if body.status == "Completed" and not body.completion_date:

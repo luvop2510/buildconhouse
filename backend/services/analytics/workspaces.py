@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from services.analytics.metrics import outstanding_pipeline
+from services.analytics.kitchen_referrals import kitchen_referral_pipeline
 
 ORDER_FIELDS = {
     "_id": 0, "id": 1, "number": 1, "customer_id": 1, "customer_name": 1,
@@ -9,7 +10,7 @@ ORDER_FIELDS = {
 }
 
 
-def workspace_pipeline(match: dict, relationship_kind: str | None = None) -> list[dict]:
+def workspace_pipeline(match: dict, relationship_kind: str | None = None, *, include_kitchen=False) -> list[dict]:
     # Share the canonical completed-payment lookup. Clamp each order separately:
     # an overpayment on A must never cancel the outstanding balance on B.
     payment_stages = outstanding_pipeline(match)[1:3]
@@ -18,10 +19,12 @@ def workspace_pipeline(match: dict, relationship_kind: str | None = None) -> lis
         relationships["referrer_type"] = relationship_kind
     return [
         {"$match": match},
-        {"$project": {**ORDER_FIELDS, "referrer_id": 1, "referrer_name": 1, "referrer_type": 1}},
+        *([{"$unionWith": {"coll": "kitchen_projects", "pipeline": kitchen_referral_pipeline(match)}}] if include_kitchen else []),
+        {"$project": {**ORDER_FIELDS, "referrer_id": 1, "referrer_name": 1, "referrer_type": 1, "_kitchen_paid": 1}},
         {"$facet": {
             "totals": [
                 *payment_stages,
+                *([{ "$set": {"paid": {"$ifNull": ["$_kitchen_paid", "$paid"]}}}] if include_kitchen else []),
                 {"$group": {
                     "_id": None, "revenue": {"$sum": "$grand_total"}, "orders": {"$sum": 1},
                     "outstanding": {"$sum": {"$max": [0, {"$subtract": [{"$ifNull": ["$grand_total", 0]}, "$paid"]}]}},
@@ -61,8 +64,8 @@ def workspace_pipeline(match: dict, relationship_kind: str | None = None) -> lis
     ]
 
 
-async def gather_workspace(db, match: dict, relationship_kind: str | None = None) -> dict:
-    rows = await db.quotations.aggregate(workspace_pipeline(match, relationship_kind)).to_list(1)
+async def gather_workspace(db, match: dict, relationship_kind: str | None = None, *, include_kitchen=False) -> dict:
+    rows = await db.quotations.aggregate(workspace_pipeline(match, relationship_kind, include_kitchen=include_kitchen)).to_list(1)
     data = rows[0] if rows else {}
     totals = (data.get("totals") or [{}])[0]
     data["kpis"] = {

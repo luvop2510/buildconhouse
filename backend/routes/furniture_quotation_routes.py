@@ -28,6 +28,13 @@ def scope(user: UserPublic) -> dict:
     return {"floor_id": FURNITURE_FLOOR_ID}
 
 
+async def validate_customer_link(customer_id, user):
+    if customer_id:
+        customer = await get_floor_scoped_or_404(db.customers, customer_id, user, not_found="Customer not found")
+        if customer.get("floor_id") != FURNITURE_FLOOR_ID:
+            raise HTTPException(404, "Customer not found on Furniture Floor")
+
+
 async def furniture_referrer_fields(referrer_id, user):
     fields = await referrer_fields(db, referrer_id, FURNITURE_FLOOR_ID, user)
     if referrer_id:
@@ -75,6 +82,7 @@ async def list_quotations(cursor: str | None = None, limit: int = Query(50, ge=1
 @router.post("", status_code=201)
 async def create_quotation(body: FurnitureQuotationInput, user: UserPublic = Depends(require_min_role("sales"))):
     floor = scope(user)
+    await validate_customer_link(body.customer_id, user)
     if any(entry.id for entry in [*body.charges, *body.deposits]):
         raise HTTPException(422, "New quotation entries cannot contain existing IDs")
     if not whatsapp_phone(body.customer_phone):
@@ -110,6 +118,8 @@ async def update_quotation(quotation_id: str, body: FurnitureQuotationInput,
         raise HTTPException(409, "This quotation changed. Reload it before saving.")
     if not whatsapp_phone(body.customer_phone):
         raise HTTPException(422, "Enter a valid customer mobile number")
+    if "customer_id" in body.model_fields_set:
+        await validate_customer_link(body.customer_id, user)
     now = datetime.now(timezone.utc).isoformat()
     fields = {**prepare_document(body, now, old), "updated_by": user.id, "revision": old["revision"] + 1}
     if "referrer_id" in body.model_fields_set:

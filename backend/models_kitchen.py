@@ -5,7 +5,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, StrictBool, StrictInt, field_validator, model_validator
 
 Stage = Literal["lead", "visit", "cad", "design", "quotation", "order", "production", "installation", "completed"]
 STAGES = ("lead", "visit", "cad", "design", "quotation", "order", "production", "installation", "completed")
@@ -48,6 +48,10 @@ class StrictModel(BaseModel):
 
 
 class LeadFields(StrictModel):
+    referrer_id: Identifier | None = None
+    referrer_name: ShortText | None = None
+    referrer_type: Literal["architect", "interior_designer"] | None = None
+    referrer_company: ShortText | None = None
     site_location: Text | None = None
     lead_source: ShortText | None = None
     kitchen_type: Literal["New kitchen", "Renovation", "Other"] | None = None
@@ -80,8 +84,23 @@ class CadFields(StrictModel):
     notes: Text | None = None
     ready: StrictBool = False
 
+    @model_validator(mode="after")
+    def derive_progress(self):
+        self.status = "Not Started" if self.progress == 0 else "Completed" if self.progress == 100 else "In Progress"
+        self.ready = self.received and self.progress == 100
+        return self
+
 
 class LeadCustomer(StrictModel):
+    company: ShortText | None = None
+    email: EmailStr | None = None
+    property_name: ShortText | None = None
+    city: ShortText | None = None
+    state: ShortText | None = None
+    pincode: Annotated[str, Field(max_length=20)] | None = None
+    gstin: Annotated[str, Field(max_length=30)] | None = None
+    alternate_phone: Annotated[str, Field(max_length=80)] | None = None
+    notes: Text | None = None
     name: Annotated[str, Field(min_length=1, max_length=250)]
     phone: Annotated[str, Field(min_length=1, max_length=80)]
     address: Text | None = None
@@ -97,6 +116,7 @@ class LeadCustomer(StrictModel):
 
 
 class CreateProject(StrictModel):
+    assigned_to: Identifier | None = None
     customer_id: Identifier | None = None
     customer: LeadCustomer | None = None
     idempotency_key: CommandKey
@@ -112,15 +132,20 @@ class CreateProject(StrictModel):
 class ProjectCommand(StrictModel):
     expected_version: Annotated[StrictInt, Field(ge=1)]
     idempotency_key: CommandKey
-    command: Literal["edit_lead", "convert", "save_visit", "save_cad", "advance_stage", "assign", "metadata",
-                     "design_present", "design_share", "design_response", "design_revision", "design_handoff",
-                     "quotation_receive", "quotation_share", "quotation_response", "order_confirm", "order_advance",
+    command: Literal["edit_lead", "convert", "save_visit", "save_cad", "advance_stage", "move_stage", "assign", "metadata",
+                     "design_present", "design_update", "design_share", "design_response", "design_revision", "design_handoff",
+                     "quotation_receive", "quotation_share", "quotation_response", "order_confirm", "order_update", "order_advance",
                      "order_amend", "order_status", "order_document", "exception", "production_update", "installation_update", "site_visit", "approval", "review_duplicate"]
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
 class AdvancePayload(StrictModel):
     target_stage: Stage
+
+
+class AssignmentPayload(StrictModel):
+    stage: Stage
+    user_id: Identifier | None = None
 
 
 class MetadataPayload(StrictModel):
@@ -182,9 +207,9 @@ class FilePolicy(StrictModel):
 
 REQUIRED_FIELDS = {
     "lead": {"site_location", "lead_source", "kitchen_type", "budget", "notes", "lead_date"},
-    "visit": {"visit_date", "display_model", "requirements", "budget_discussion", "notes", "interested"},
+    "visit": {"visit_date", "display_model", "notes"},
     "cad": {"received", "progress", "status", "notes", "ready"},
-    "design": {"presentation_date", "attachment_id", "url", "notes"},
+    "design": {"presentation_date", "requirements", "budget_discussion", "notes"},
     "quotation": {"received_date", "amount", "attachment_id", "url", "notes"},
     "order": {"order_date", "confirmation_document_id", "notes"},
     "production": {"start_date", "completion_date", "notes"},
@@ -240,8 +265,25 @@ class DocumentPayload(StrictModel):
 
 
 class DesignPresentation(DocumentPayload):
+    requirements: Text | None = None
+    budget_discussion: Text | None = None
     presentation_date: str
     _date = field_validator("presentation_date", mode="before")(date_only)
+
+
+class DesignUpdate(StrictModel):
+    version_id: Identifier
+    presentation_date: str
+    shared_date: str | None = None
+    handoff_date: str | None = None
+    response: Literal["Pending", "Approved", "Changes Required"]
+    response_notes: Text | None = None
+    notes: Text | None = None
+    requirements: Text | None = None
+    budget_discussion: Text | None = None
+    revision_count: Annotated[StrictInt, Field(ge=0, le=100000)] | None = None
+    reason: Annotated[str, Field(min_length=1, max_length=4000)]
+    _dates = field_validator("presentation_date", "shared_date", "handoff_date", mode="before")(date_only)
 
 
 class VersionDate(StrictModel):
@@ -270,9 +312,18 @@ class QuotationReceived(DocumentPayload):
 
 
 class OrderConfirmation(StrictModel):
+    final_amount: str | None = None
+    amount_customer_approved: StrictBool = False
+    _amount = field_validator("final_amount", mode="before")(money_text)
     quotation_version_id: Identifier
     order_date: str
     confirmation_document_id: Identifier | None = None
+    notes: Text | None = None
+    _date = field_validator("order_date", mode="before")(date_only)
+
+
+class OrderUpdate(StrictModel):
+    order_date: str
     notes: Text | None = None
     _date = field_validator("order_date", mode="before")(date_only)
 

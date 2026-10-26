@@ -706,10 +706,15 @@ async def outbox_worker() -> None:
     next_share_cleanup = 0.0
     while True:
         try:
-            await dispatch_pending()
+            from services.mutation_admission import admission
+            async with admission(db):
+                await dispatch_pending()
             now = datetime.now(timezone.utc).timestamp()
             if not customer_reset_maintenance() and now >= next_share_cleanup:
                 await cleanup_expired_shares()
+                from services.customer_deletion import cleanup_deleted_customer_files
+                from media_storage import get_media_storage
+                await cleanup_deleted_customer_files(db, get_media_storage())
                 next_share_cleanup = now + 3600
         except asyncio.CancelledError:
             raise

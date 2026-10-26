@@ -1,6 +1,7 @@
 import { StyleSheet, Switch, View } from "react-native";
 import { Text } from "@/src/components/AppText";
-import { ACTION_LABELS, ACTION_ORDER, DelegationCatalog, DelegationFloor, DelegationState, toggleAction, toggleFloor, togglePage } from "@/src/team-delegation";
+import { ACTION_LABELS, ACTION_ORDER, DelegationCatalog, DelegationFloor, DelegationState, toggleAction, toggleFloor, togglePage, delegationPagesForFloor, isResourceAssignable, delegationPageLabels } from "@/src/team-delegation";
+import { NAVIGATION } from "@/src/design/navigation";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
 
 export function FloorDelegationEditor({ floors, catalog, value, onChange, disabled = false }: {
@@ -16,7 +17,7 @@ export function FloorDelegationEditor({ floors, catalog, value, onChange, disabl
     </View>
     {floors.map((floor) => {
       const enabled = value.floorIds.includes(floor.id);
-      const pages = catalog.resources.filter((resource) => resource.floor_ids.includes(floor.id) && (!resource.retired || value.grants.some((grant) => grant.floor_id === floor.id && grant.resource === resource.key)));
+      const pages = delegationPagesForFloor(catalog.resources, value.grants, floor.id);
       const count = value.grants.filter((grant) => grant.floor_id === floor.id).length;
       return <View key={floor.id} style={styles.floor} testID={`delegation-floor-${floor.id}`}>
         <View style={styles.row}>
@@ -29,14 +30,22 @@ export function FloorDelegationEditor({ floors, catalog, value, onChange, disabl
         {enabled ? <View style={styles.pages} testID={`floor-pages-${floor.id}`}>
           {pages.length === 0 ? <Text style={type.caption}>No assignable pages are available for this floor.</Text> : pages.map((resource) => {
             const grant = value.grants.find((item) => item.floor_id === floor.id && item.resource === resource.key);
+            const currentPageLabels = delegationPageLabels(resource.key, floor.id, NAVIGATION);
+            const legacy = !isResourceAssignable(resource, floor.id);
             return <View key={resource.key} style={styles.page}>
               <View style={styles.row}>
                 <View style={styles.copy}>
-                  <Text style={type.bodyStrong}>{resource.label}{resource.retired ? " · Legacy access" : ""}</Text>
+                  <Text style={type.bodyStrong}>{resource.key === "kitchen_projects" ? "Kitchen workspace" : resource.label}{legacy ? " · Legacy access" : ""}</Text>
+                  {resource.key === "kitchen_projects" ? <>
+                    <Text style={type.caption}>Includes {currentPageLabels.join(" · ")}</Text>
+                    <Text style={type.caption}>These pages share workspace access. Updated workflow pages keep the selected permissions.</Text>
+                  </> : null}
+                  {resource.key !== "kitchen_projects" && currentPageLabels.length ? <Text style={type.caption}>Pages: {currentPageLabels.join(" · ")}</Text> : null}
+                  {legacy ? <Text style={type.caption}>Existing access is preserved. This page is no longer available for new delegation on this floor; turn it off to revoke it.</Text> : null}
                   {resource.description ? <Text style={type.caption}>{resource.description}</Text> : null}
                   <Text style={type.caption}>{grant ? `Can: ${grant.actions.map((action) => ACTION_LABELS[action]).join(", ")}` : "Off · no access to this page"}</Text>
                 </View>
-                <Switch testID={`page-toggle-${floor.id}-${resource.key}`} accessibilityLabel={`Allow ${resource.label} on ${floor.name}`} value={!!grant} disabled={disabled} onValueChange={(next) => onChange(togglePage(value, floor.id, resource, next))} />
+                <Switch testID={`page-toggle-${floor.id}-${resource.key}`} accessibilityLabel={`Allow ${resource.label} on ${floor.name}`} value={!!grant} disabled={disabled || (legacy && !grant)} onValueChange={(next) => onChange(togglePage(value, floor.id, resource, next))} />
               </View>
               {grant ? <View style={styles.actions}>
                 {ACTION_ORDER.filter((action) => resource.actions.includes(action)).map((action) => <View key={action} style={styles.row}>
@@ -44,7 +53,7 @@ export function FloorDelegationEditor({ floors, catalog, value, onChange, disabl
                     <Text style={type.label}>{ACTION_LABELS[action]}{action === "view" ? " · included" : ""}</Text>
                     <Text style={type.caption}>{catalog.action_descriptions[action]}</Text>
                   </View>
-                  <Switch testID={`action-toggle-${floor.id}-${resource.key}-${action}`} accessibilityLabel={`${ACTION_LABELS[action]} ${resource.label} on ${floor.name}`} value={grant.actions.includes(action)} disabled={disabled || resource.retired || action === "view"} onValueChange={(next) => onChange(toggleAction(value, floor.id, resource, action, next))} />
+                  <Switch testID={`action-toggle-${floor.id}-${resource.key}-${action}`} accessibilityLabel={`${ACTION_LABELS[action]} ${resource.label} on ${floor.name}`} value={grant.actions.includes(action)} disabled={disabled || legacy || action === "view"} onValueChange={(next) => onChange(toggleAction(value, floor.id, resource, action, next))} />
                 </View>)}
               </View> : null}
             </View>;

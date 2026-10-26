@@ -18,7 +18,7 @@ assert.match(monitoring, /"cls"/);
 assert.match(monitoring, /"inp_ms"/);
 assert.match(monitoring, /"long_task_ms"/);
 assert.doesNotMatch(monitoring, /tracesSampleRate: 0,/);
-assert.match(webLayout, /initSentry\(\); initPerformanceSignals\(\);/);
+assert.match(webLayout, /initSentry\(\);\s*initPerformanceSignals\(\);/);
 assert.match(privacyPolicy, /sampled technical performance/);
 assert.match(privacyPolicy, /request\n\s*bodies, query strings/);
 

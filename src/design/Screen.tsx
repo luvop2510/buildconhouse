@@ -50,6 +50,7 @@ export function Screen({
     <ScrollView
       style={{ flex: 1, backgroundColor: color.canvas }}
       contentContainerStyle={{ paddingBottom: space.x16, flexGrow: 1 }}
+      keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
     >
       {inner}

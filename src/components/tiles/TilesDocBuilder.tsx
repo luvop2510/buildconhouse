@@ -1,4 +1,5 @@
 import { referrerLabel } from "@/src/utils/referrer";
+import { ReferrerField, type ReferrerValue } from "@/src/components/customer/ReferrerField";
 // TilesDocBuilder — Ground Floor → Tiles → Selection / Quotation.
 // -----------------------------------------------------------------------------
 // Each page renders as an editable on-screen replica of its official printed
@@ -250,7 +251,10 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   const customerIdRef = useRef<string | null>(null);
   const [customerSnapshot, setCustomerSnapshot] = useState<{ name: string; phone: string }>({ name: "", phone: "" });
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [partnerLabel, setPartnerLabel] = useState("");
+  const [partner, setPartner] = useState<ReferrerValue>(null);
+  const [legacyPartnerLabel, setLegacyPartnerLabel] = useState("");
+  const [partnerEditVersion, setPartnerEditVersion] = useState(0);
+  const partnerSavedVersion = useRef(0);
   const [header, setHeader] = useState<TilesHeader>({
     customerName: "", phone: "", reference: "", docDate: defaultDocDate(docType),
     attendedBy: "", preparedBy: "", address: "", docNumber: "", transportationFee: "0",
@@ -294,7 +298,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     setLoading(true);
     setSaveState("idle");
     setRestoreError(null);
-    setPartnerLabel("");
+    setPartner(null); setLegacyPartnerLabel(""); setPartnerEditVersion(0); partnerSavedVersion.current = 0;
     (async () => {
       try {
         const doc = await api.get<any>(`/quotations/${routeId}?with_completion=true`, { floorId: TILES_FLOOR_ID, signal: controller.signal });
@@ -318,7 +322,8 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         setCustomerId(doc.customer_id || null);
         customerIdRef.current = doc.customer_id || null;
         setCustomerSnapshot({ name: doc.customer_name || "", phone: doc.phone_snapshot || "" });
-        setPartnerLabel(referrerLabel(doc));
+        setLegacyPartnerLabel(referrerLabel(doc));
+        setPartner(doc.referrer_id && doc.referrer_type ? { id: doc.referrer_id, type: doc.referrer_type, name: doc.referrer_name || "", company: doc.referrer_company } : null);
         setHeader({
           customerName: doc.customer_name || "",
           phone: doc.phone_snapshot || "",
@@ -631,6 +636,8 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         doc_number: header.docNumber.trim() || null,
         transportation_fee: docType === "tiles_quotation" ? num(header.transportationFee) : 0,
       };
+      const referenceEdited = partnerEditVersion > partnerSavedVersion.current;
+      if (referenceEdited) { payload.referrer_id = partner?.id || ""; payload.referrer_type = partner?.type || null; }
       if (!current()) return null;
       if (!id) {
         const created = await api.post<{ id: string; number: string }>("/quotations", { ...payload, doc_type: docType }, { floorId: TILES_FLOOR_ID });
@@ -643,7 +650,13 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         if (docType === "tiles_quotation" && !header.docNumber.trim()) {
           setHeader((cur) => ({ ...cur, docNumber: created.number }));
         }
-        router.setParams({ id: created.id });
+        // Creation inherits the customer reference. Apply an explicit choice
+        // before declaring this new document saved; retain its id on failure
+        // so retry updates the same document rather than creating a duplicate.
+        if (referenceEdited) {
+          await api.patch(`/quotations/${id}`, { referrer_id: payload.referrer_id, referrer_type: payload.referrer_type, silent: true }, { floorId: TILES_FLOOR_ID });
+          if (!current()) return null;
+        }
       } else {
         const fresh = await api.patch<any>(`/quotations/${id}`, { ...payload, silent, reason: silent ? undefined : "Saved from tiles builder" }, { floorId: TILES_FLOOR_ID });
         if (!current()) return null;
@@ -653,6 +666,8 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
           transportation: Number(fresh.transportation_fee || 0),
         });
       }
+      if (referenceEdited) partnerSavedVersion.current = partnerEditVersion;
+      if (!routeId && createdDocumentRef.current?.id === id) router.setParams({ id });
       if (editRevisionRef.current === savingRevision) dirtyRef.current = false;
       setSaveState("saved");
       return id;
@@ -664,7 +679,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       }
     };
     return enqueueQuotationPersist(persistQueue, run);
-  }, [header, customerId, customerSnapshot, docId, docType, buildItems, router, rows, loading, restoreError, documentScope, documentGeneration, routeId]);
+  }, [header, partner, partnerEditVersion, customerId, customerSnapshot, docId, docType, buildItems, router, rows, loading, restoreError, documentScope, documentGeneration, routeId]);
   persistRef.current = () => persist({ silent: true });
 
   // Autosave: create the document on the first meaningful edit, then silently
@@ -675,7 +690,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     if (loading || restoreError || (routeId && docId !== routeId) || !dirtyRef.current || !header.customerName.trim()) return;
     const timer = setTimeout(() => { void persistRef.current(); }, 900);
     return () => clearTimeout(timer);
-  }, [header, rows, docId, loading, restoreError, routeId]);
+  }, [header, partner, partnerEditVersion, rows, docId, loading, restoreError, routeId]);
 
   const generatePdf = useCallback(async () => {
     if (rows.some((row) => row.productId && !row.image?.trim())) {
@@ -789,7 +804,8 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     setCustomerId(customer.id);
     customerIdRef.current = customer.id;
     setCustomerSnapshot({ name: customer.name, phone: customer.phone || "" });
-    setPartnerLabel(referrerLabel(customer));
+    setLegacyPartnerLabel(referrerLabel(customer));
+    setPartner(customer.referrer_id && customer.referrer_type ? { id: customer.referrer_id, type: customer.referrer_type, name: customer.referrer_name || "", company: customer.referrer_company } : null);
     setHeader((cur) => ({ ...cur, customerName: customer.name, phone: customer.phone || cur.phone }));
     markDirty();
   }, [markDirty]);
@@ -797,7 +813,8 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   return {
     docId, docNumberServer, loading, restoreError, retryRestore: () => setRestoreAttempt((value) => value + 1), header, setHeaderField, rows,
     updateRow, addRow, removeRow, applyProduct, selectRowSize, loadRowSizes,
-    customers, customerId, pickCustomer, setCustomerId, partnerLabel,
+    customers, customerId, pickCustomer, setCustomerId, partner, legacyPartnerLabel, referenceScope: documentScope,
+    pickPartner: (value: ReferrerValue) => { setPartner(value); setLegacyPartnerLabel(""); setPartnerEditVersion(version => version + 1); markDirty(); },
     saveState, retrySave: () => persist({ silent: true }), busy, generatePdf, print, placeOrder, serverTotals, previewTotals,
     whatsappDraft, closeWhatsApp: () => setWhatsappDraft(null), prepareWhatsApp,
     customerCompleted: Boolean(!loading && completionSnapshot?.completed && completionSnapshot.id === docId && completionSnapshot.customerId === customerId),
@@ -1139,7 +1156,8 @@ function MetaGrid({ doc }: { doc: ReturnType<typeof useTilesDoc> }) {
   ];
   return (
     <View style={metaStyles.grid}>
-      {doc.partnerLabel ? <Text style={type.caption}>Architect / interior designer: {doc.partnerLabel}</Text> : null}
+      {!doc.partner && doc.legacyPartnerLabel ? <Text style={type.caption}>Recorded reference: {doc.legacyPartnerLabel}</Text> : null}
+      <ReferrerField key={doc.referenceScope} label="Architect / interior designer" floorId={TILES_FLOOR_ID} value={doc.partner} onChange={doc.pickPartner} />
       <View style={metaStyles.row}>
         <View style={metaStyles.cell}>
           <Text style={metaStyles.label}>CUSTOMER NAME</Text>
@@ -1837,7 +1855,8 @@ function MobileTilesEditor({
                   <TextField label={isSelection ? "Selection no." : "Quotation no."} value={doc.header.docNumber} onChangeText={(t: string) => doc.setHeaderField("docNumber", t)} testID="mobile-doc-number" />
                 </View>
                 <View style={mobileStyles.fieldFull}>
-                  {doc.partnerLabel ? <Text style={type.caption}>Architect / interior designer: {doc.partnerLabel}</Text> : null}
+                  {!doc.partner && doc.legacyPartnerLabel ? <Text style={type.caption}>Recorded reference: {doc.legacyPartnerLabel}</Text> : null}
+      <ReferrerField key={doc.referenceScope} label="Architect / interior designer" floorId={TILES_FLOOR_ID} value={doc.partner} onChange={doc.pickPartner} />
                   <TextField label="Reference" value={doc.header.reference} onChangeText={(t: string) => doc.setHeaderField("reference", t)} testID="mobile-reference" />
                 </View>
                 <View style={mobileStyles.fieldFull}>

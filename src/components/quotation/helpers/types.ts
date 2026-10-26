@@ -83,7 +83,7 @@ export type Category = { id: string; name: string; product_count?: number };
 
 export type Customer = {
   id: string; name: string; company?: string | null; email?: string | null; phone?: string | null; address?: string | null;
-  referrer_id?: string | null; referrer_name?: string | null;
+  referrer_id?: string | null; referrer_name?: string | null; referrer_company?: string | null;
   referrer_type?: "architect" | "interior_designer" | null;
 };
 

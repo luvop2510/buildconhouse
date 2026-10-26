@@ -12,6 +12,9 @@ export function useKeyboardViewport() {
     const style = document.documentElement.style;
     let frame = 0;
     let revealFrame = 0;
+    let revealPending = false;
+    let lastHeight = -1;
+    let lastTop = -1;
     const reveal = () => {
       revealFrame = 0;
       const input = document.activeElement;
@@ -27,23 +30,32 @@ export function useKeyboardViewport() {
       frame = 0;
       // Pinch zoom must retain ordinary browser panning; it is not a keyboard.
       if (Math.abs(viewport.scale - 1) > .01) return;
-      style.setProperty('--forge-visible-height', `${viewport.height}px`);
-      style.setProperty('--forge-visible-top', `${viewport.offsetTop}px`);
-      cancelAnimationFrame(revealFrame);
-      revealFrame = requestAnimationFrame(reveal);
+      const resized = viewport.height !== lastHeight;
+      if (resized) style.setProperty('--forge-visible-height', `${viewport.height}px`);
+      if (viewport.offsetTop !== lastTop) style.setProperty('--forge-visible-top', `${viewport.offsetTop}px`);
+      lastHeight = viewport.height;
+      lastTop = viewport.offsetTop;
+      if (revealPending || resized) {
+        cancelAnimationFrame(revealFrame);
+        revealFrame = requestAnimationFrame(reveal);
+      }
+      revealPending = false;
     };
     const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
+    // Browser focus scrolling also emits viewport scroll events. Correcting
+    // focus on those events fights the user's scroll and can bounce the form.
+    const onFocus = () => { revealPending = true; schedule(); };
     schedule();
     viewport.addEventListener('resize', schedule);
     viewport.addEventListener('scroll', schedule);
     window.addEventListener('resize', schedule);
-    document.addEventListener('focusin', schedule);
+    document.addEventListener('focusin', onFocus);
     return () => {
       cancelAnimationFrame(frame); cancelAnimationFrame(revealFrame);
       viewport.removeEventListener('resize', schedule);
       viewport.removeEventListener('scroll', schedule);
       window.removeEventListener('resize', schedule);
-      document.removeEventListener('focusin', schedule);
+      document.removeEventListener('focusin', onFocus);
       style.removeProperty('--forge-visible-height'); style.removeProperty('--forge-visible-top');
     };
   }, []);

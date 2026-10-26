@@ -1,6 +1,7 @@
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { standaloneWorkerSource } from './build-web-worker.mjs';
+import { isolateWebModuleGraph } from './isolate-web-module-graph.mjs';
 
 // Sites packages the Expo web export as a Cloudflare-compatible worker.
 
@@ -58,6 +59,7 @@ expo.on('exit', async (code, signal) => {
     }
   };
   await injectRecovery('dist/client');
+  await isolateWebModuleGraph('dist/client');
 
   await mkdir('dist', { recursive: true });
   await mkdir('dist/server', { recursive: true });

@@ -159,7 +159,7 @@ async def test_inline_lead_intake_creates_one_customer_and_preserves_identity_th
     contact = next(row for row in database.customers.rows if row["id"] == first["customer_id"])
     assert contact["floor_id"] == "second-floor" and "email" not in contact
     assert contact["kitchen_reference_reserved"] is True
-    assert first["customer"] == {"id": contact["id"], "name": "New kitchen enquiry", "phone": "+91 98888 00123", "address": "New site"}
+    assert {key: first["customer"][key] for key in ("id", "name", "phone", "address")} == {"id": contact["id"], "name": "New kitchen enquiry", "phone": "+91 98888 00123", "address": "New site"}
     converted = await service.command(owner, first["id"], cmd(1, "convert"))
     assert converted["customer_id"] == first["customer_id"] and converted["customer"] == first["customer"]
     assert len(database.customers.rows) == 2
@@ -259,11 +259,13 @@ async def test_permission_scope_customer_floor_and_assignment(setup):
     first = await service.create(owner, create_request(customer_id="customer-a", idempotency_key="creation-a"))
     staff = UserPublic(id="staff-a", full_name="Staff A", role="sales", floor_ids=["second-floor"], active_floor_id="second-floor")
     assert (await service.get(staff, first["id"]))["id"] == first["id"]
-    assert first["permissions"]["can_assign"] is False
-    with pytest.raises(HTTPException) as retired:
-        await service.command(owner, first["id"], cmd(1, "assign", {"stage": "lead", "user_id": "staff-a"}))
-    assert retired.value.status_code == 422
-    saved = await service.command(staff, first["id"], cmd(1, "edit_lead", {"notes": "No assignment needed"}))
+    assert first["permissions"]["can_assign"] is True
+    first = await service.command(owner, first["id"], cmd(1, "assign", {"stage": "lead", "user_id": "staff-a"}))
+    assert first["assigned_to"] == "staff-a"
+    with pytest.raises(HTTPException) as denied_assignment:
+        await service.command(staff, first["id"], cmd(first["version"], "assign", {"stage": "lead", "user_id": None}))
+    assert denied_assignment.value.status_code == 403
+    saved = await service.command(staff, first["id"], cmd(first["version"], "edit_lead", {"notes": "No assignment needed"}))
     assert saved["lead"]["notes"] == "No assignment needed"
     own = await service.create(staff, create_request(customer_id="customer-a", idempotency_key="staff-create"))
     assert own["assignments"] == {} and own["permissions"]["can_update"]
@@ -305,11 +307,11 @@ def test_strict_dates_money_and_command_fields():
     with pytest.raises(ValidationError):
         create_request(customer_id="customer-a", idempotency_key="creation-a", site_visit_count=9)
     assert MetadataPayload(target_completion_date="2026-10-19").target_completion_date == "2026-10-19"
-    for payload in ({"next_action": "Retired"}, {"deadline": "2026-10-19T04:00:00+00:00"}):
-        with pytest.raises(ValidationError):
-            MetadataPayload(**payload)
     with pytest.raises(ValidationError):
-        create_request(customer_id="customer-a", idempotency_key="creation-a", assigned_to="staff-a")
+        MetadataPayload(next_action="Call customer")
+    with pytest.raises(ValidationError):
+        MetadataPayload(deadline="2026-10-19T04:00:00+00:00")
+    assert create_request(customer_id="customer-a", idempotency_key="creation-a", assigned_to="staff-a").assigned_to == "staff-a"
 
 
 @pytest.mark.asyncio

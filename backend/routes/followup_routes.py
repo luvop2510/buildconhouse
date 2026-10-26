@@ -8,6 +8,7 @@ Reuses existing collections/helpers everywhere possible:
 No new business logic is duplicated — this module is orchestration + reads.
 """
 from __future__ import annotations
+from services.followup_engine import reconcile_followups_admitted
 
 from services.export import spreadsheet_cell
 from services.multi_filters import predicate, values
@@ -34,6 +35,7 @@ from openpyxl.utils import get_column_letter
 from pydantic import BaseModel
 from pymongo.errors import DuplicateKeyError
 
+from services.referrer_identity import referrer_query
 from auth import floor_for_write, floor_inherit, floor_query, floor_scope_ids, get_current_user, get_floor_scoped_or_404, require_floor_access, require_min_role, require_roles, accessible_floor_ids
 from db import db
 from models import (
@@ -162,7 +164,7 @@ async def _notebook_referrer_fields(referrer_id: str | None, floor_id: str) -> d
     """
     if not referrer_id:
         return {"referrer_id": None, "referrer_name": None, "referrer_type": None}
-    referrer = await db.referrers.find_one({"id": referrer_id, "floor_id": floor_id}, {"_id": 0})
+    referrer = await db.referrers.find_one(referrer_query({"floor_id": floor_id}, {"id": referrer_id}), {"_id": 0})
     if not referrer:
         raise HTTPException(status_code=404, detail="Referrer not found")
     if referrer.get("active") is False:
@@ -200,7 +202,7 @@ async def put_automation_rule(category: str, body: AutomationRuleUpdate, user: U
         raise HTTPException(422, "Follow-ups cover only activities before an order is placed")
     patch = body.model_dump(exclude_unset=True)
     updated = await automation_rules.update_rule(category, patch, user_id=user.id, user_name=user.full_name)
-    asyncio.create_task(reconcile_followups())
+    asyncio.create_task(reconcile_followups_admitted())
     return updated
 
 
@@ -233,7 +235,7 @@ async def put_workflow_transition(key: str, body: WorkflowTransitionUpdate, user
         raise HTTPException(422, "Order activity belongs in Orders")
     patch = body.model_dump(exclude_unset=True)
     updated = await workflow_transitions.update_transition(key, patch, user_id=user.id, user_name=user.full_name)
-    asyncio.create_task(reconcile_followups())
+    asyncio.create_task(reconcile_followups_admitted())
     return updated
 
 
@@ -596,7 +598,7 @@ async def _enrich_followup_references(rows, user, customers=None):
         if permitted is not None:
             selector["floor_id"] = {"$in": permitted}
         partners, counts = await asyncio.gather(
-            db.referrers.find(selector, {"_id": 0, "id": 1, "name": 1, "type": 1, "company": 1}).to_list(len(ids)),
+            db.referrers.find(referrer_query(selector), {"_id": 0, "id": 1, "name": 1, "type": 1, "company": 1}).to_list(len(ids)),
             acquired_counts(db, ids, [floor]),
         )
         directory = {partner["id"]: partner for partner in partners}

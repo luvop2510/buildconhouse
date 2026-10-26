@@ -23,6 +23,7 @@ type ProjectState = {
   setDrafts: Dispatch<SetStateAction<Record<string, unknown>>>;
   dirty: boolean;
   currentTaskDirty: boolean;
+  resetDraftValue: (key: string) => void;
   setDraftValue: (key: string, initial: unknown, next: SetStateAction<any>) => void;
 };
 const Context = createContext<ProjectState | null>(null);
@@ -64,6 +65,10 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
       return { ...previous, [key]: typeof next === "function" ? next(current) : next };
     });
   }, []);
+  const resetDraftValue = useCallback((key: string) => {
+    delete baselines.current[key];
+    setDrafts(previous => { const next = { ...previous }; delete next[key]; return next; });
+  }, []);
   const origin = useRef(kitchenReturnPath(returnTo));
   const live = useRef(true);
   const saved = useRef(project);
@@ -93,14 +98,17 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
   const command = (name: KitchenCommand, payload: Record<string, unknown>) => {
     const current = saved.current;
     if (!current || loading || failure) return Promise.resolve(false);
+    // Completing legacy installation may already advance the saved project.
+    if (name === "move_stage" && current.stage === payload.target_stage) return Promise.resolve(true);
     return submission.submit({ id, command: name, payload }, key => kitchenProjectsApi.command(id, current.version, key, name, payload), value => {
       if (!acceptProject(value)) return;
       setRetainedDraft(false);
       const cycle = `commercial.cycle.${current.workflow_cycle ?? 1}`;
       const prefixes: Partial<Record<KitchenCommand, string[]>> = {
-        edit_lead: ["lead."], save_visit: ["visit."], save_cad: ["cad."], metadata: ["plan."],
+        assign: [], edit_lead: ["lead."], save_visit: ["visit."], save_cad: ["cad."], metadata: ["plan."],
         review_duplicate: ["duplicate."],
-        design_present: [`${cycle}.design.date`, `${cycle}.design.file`, `${cycle}.design.url`, `${cycle}.design.notes`],
+        design_present: [`${cycle}.design.file`, `${cycle}.design.date`, `${cycle}.design.requirements`, `${cycle}.design.budget`, `${cycle}.design.notes`],
+        design_update: [`${cycle}.design.${String(payload.version_id)}.edit`],
         design_share: [`${cycle}.design.${String(payload.version_id)}.shareDate`],
         design_response: [`${cycle}.design.${String(payload.version_id)}.response`],
         design_revision: [`${cycle}.design.${String(payload.version_id)}.revisionReason`],
@@ -108,7 +116,8 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
         quotation_receive: [`${cycle}.quotation.date`, `${cycle}.quotation.amount`, `${cycle}.quotation.file`, `${cycle}.quotation.url`, `${cycle}.quotation.notes`],
         quotation_share: [`${cycle}.quotation.${String(payload.version_id)}.shareDate`],
         quotation_response: [`${cycle}.quotation.${String(payload.version_id)}.response`],
-        order_confirm: [`${cycle}.order.date`, `${cycle}.order.file`, `${cycle}.order.notes`],
+        order_confirm: [`${cycle}.order.finalAmount.`, `${cycle}.order.amountApproved`, `${cycle}.order.confirmed`, `${cycle}.order.date`, `${cycle}.order.file`, `${cycle}.order.notes`],
+        order_update: [`${cycle}.order.${current.orders?.at(-1)?.id}.edit`],
         order_document: [`${cycle}.order.file`], order_advance: [`${cycle}.order.advance`], order_amend: [`${cycle}.order.amend`],
         production_update: [`${cycle}.production`], installation_update: [`${cycle}.installation`], site_visit: [`${cycle}.site.`],
         approval: [`${cycle}.${current.stage}.approvalReason`], exception: ["exception."], order_status: ["exception."],
@@ -124,7 +133,23 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
           ? { [`commercial.cycle.${value.workflow_cycle ?? 1}.installation`]: value.installation }
           : {}),
         };
+        const orderEditorKey = `${cycle}.order.${current.orders?.at(-1)?.id}.edit`;
+        if (name === "order_update" || JSON.stringify(updated[orderEditorKey]) === JSON.stringify(baselines.current[orderEditorKey]) && name === "order_confirm") {
+          delete updated[orderEditorKey];
+          delete baselines.current[orderEditorKey];
+        }
+        const editorKey = `${cycle}.design.${String(payload.version_id)}.edit`;
+        if (name === "design_update" || ["design_share", "design_response", "design_handoff"].includes(name)
+          && JSON.stringify(updated[editorKey]) === JSON.stringify(baselines.current[editorKey])) {
+          delete updated[editorKey];
+          delete baselines.current[editorKey];
+        }
         for (const key of Object.keys(updated)) {
+          if ((name === "design_present" || name === "quotation_receive") && prefixes[name]?.includes(key)) {
+            delete updated[key];
+            delete baselines.current[key];
+            continue;
+          }
           if (prefixes[name]?.some(prefix => key.startsWith(prefix))) baselines.current[key] = updated[key];
           if ((name === "exception" || name === "order_status") && key === "exception.reason") baselines.current[key] = "";
           if (name === "design_revision" && key.endsWith(".revisionReason")) baselines.current[key] = "";
@@ -137,7 +162,7 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
   };
   return <Context.Provider value={{ id, project, loading, failure, policy, policyError,
     returnTo: origin.current, retainedDraft, reload: () => { setRetainedDraft(true); setRetry(value => value + 1); },
-    updateProject, command, submission, documentSubmission, drafts, setDrafts, dirty, currentTaskDirty, setDraftValue,
+    updateProject, command, submission, documentSubmission, drafts, setDrafts, dirty, currentTaskDirty, setDraftValue, resetDraftValue,
   }}>{children}</Context.Provider>;
 }
 

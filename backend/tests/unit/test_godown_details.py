@@ -87,6 +87,45 @@ def test_complete_stock_read_over_500_and_explicit_cap(monkeypatch):
     assert exc.value.status_code == 409
 
 
+def test_catalog_image_hydration_uses_exact_floor_product_and_preserves_lot_images(monkeypatch):
+    catalog_rows = [
+        {"id": "shared-product", "floor_id": "first-floor", "brand_id": "brand-a",
+         "hero_image_url": "https://catalog.example/first-floor.jpg"},
+        # An identical product ID on another floor must not supply this lot's image.
+        {"id": "other-floor-product", "floor_id": "ground-floor", "brand_id": "brand-a",
+         "hero_image_url": "https://catalog.example/ground-floor.jpg"},
+    ]
+    captured = {}
+
+    class Products:
+        def find(self, query, *_args):
+            captured["query"] = query
+            wanted = {(row["floor_id"], row["id"]) for row in query["$or"]}
+            rows = [row for row in catalog_rows if (row["floor_id"], row["id"]) in wanted]
+            return Cursor(rows)
+
+    lots = [
+        {"id": "catalog-lot", "floor_id": "first-floor", "product_id": "shared-product", "image": None},
+        {"id": "manual-override", "floor_id": "first-floor", "product_id": "shared-product",
+         "image": "https://stock.example/override.jpg"},
+        {"id": "wrong-floor", "floor_id": "first-floor", "product_id": "other-floor-product", "image": None},
+        {"id": "warehouse-only", "floor_id": "first-floor", "product_id": "godown:warehouse-only", "image": None},
+        {"id": "deleted-product", "floor_id": "first-floor", "product_id": "deleted-from-catalog", "image": None},
+    ]
+    monkeypatch.setattr(routes, "db", SimpleNamespace(products=Products()))
+
+    asyncio.run(routes._hydrate_missing_stock_catalog_images(lots))
+
+    assert lots[0]["image"] == "https://catalog.example/first-floor.jpg"
+    assert lots[1]["image"] == "https://stock.example/override.jpg"
+    assert lots[2]["image"] is None
+    assert lots[3]["image"] is None
+    assert lots[4]["image"] is None
+    assert {tuple((row["floor_id"], row["id"])) for row in captured["query"]["$or"]} == {
+        ("first-floor", "shared-product"),
+        ("first-floor", "other-floor-product"),
+        ("first-floor", "deleted-from-catalog"),
+    }
 def test_unknown_quantity_not_zero_or_usable_and_archived_excluded_with_history(monkeypatch):
     stock = Collection([{"id": "lot", "floor_id": "first-floor", "brand_name": "DuraVit", "quantity_missing": True,
                          "available_qty": 0, "unit_price": None}])
@@ -159,6 +198,8 @@ def test_stock_photo_upload_requires_update_grant_for_exact_route():
     from services.access_grants import action_for_api_request, resource_for_api_path
     assert resource_for_api_path("/api/godown-stock/lot/image") == "godown_stock"
     assert action_for_api_request("POST", "/api/godown-stock/lot/image") == "update"
+    assert action_for_api_request("POST", "/api/godown-stock/lot/quantity-count") == "update"
+    assert action_for_api_request("POST", "/api/godown-stock/lot/quantity-count/unrelated") == "create"
     assert action_for_api_request("PATCH", "/api/godown-stock/lot/details") == "update"
     assert action_for_api_request("POST", "/api/godown-stock/lot/image/unrelated") == "create"
 

@@ -76,7 +76,7 @@ export function setSelectedFloorId(id: string) {
   return selectedFloorPersistence;
 }
 
-export function useFloorAccess() {
+export function useFloorAccess(enabled = true) {
   const [access, setAccess] = useState<FloorAccess | null>(cache);
   const [selectedFloorId, setSelectedFloorIdState] = useState(selectedFloorCache || "");
   const [error, setError] = useState<string | null>(null);
@@ -97,6 +97,7 @@ export function useFloorAccess() {
     }
   }, []);
   useEffect(() => {
+    if (!enabled) return;
     let alive = true;
     const onSelectedFloorChange = (floorId: string) => { if (alive) setSelectedFloorIdState(floorId); };
     selectedFloorListeners.add(onSelectedFloorChange);
@@ -116,7 +117,7 @@ export function useFloorAccess() {
       setError(cause?.detail || "We couldn't load your workspace access.");
     });
     return () => { alive = false; selectedFloorListeners.delete(onSelectedFloorChange); };
-  }, []);
+  }, [enabled]);
   const selectFloor = useCallback((id: string) => {
     const canSelect = Boolean(access && access.floors.some((floor) => floor.id === id) &&
       (access.all_floors || access.floor_ids.includes(id)));

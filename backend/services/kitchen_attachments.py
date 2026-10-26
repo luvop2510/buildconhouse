@@ -23,8 +23,14 @@ FILE_EXTENSIONS = {"application/pdf": {".pdf"}, "image/jpeg": {".jpg", ".jpeg"},
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {".xlsx"}}
 
 
-def canonical_type(content_type):
-    return content_type
+def canonical_type(content_type, filename=""):
+    kind = (content_type or "").split(";", 1)[0].strip().lower()
+    # Some device pickers omit the MIME type. Content validation still verifies
+    # the bytes before anything is published to the private project record.
+    if kind in {"", "application/octet-stream"}:
+        extension = PurePath(filename).suffix.lower()
+        return next((mime for mime, extensions in FILE_EXTENSIONS.items() if extension in extensions), kind)
+    return kind
 
 
 def validate_printer_settings(data):
@@ -123,7 +129,7 @@ def validate_file_metadata(content_type, filename, policy):
     if not filename or len(filename) > 200 or PurePath(filename).name != filename or any(ord(c) < 32 for c in filename) or "\\" in filename or ":" in filename:
         raise HTTPException(422, "Invalid attachment filename")
     extension = PurePath(filename).suffix.lower()
-    kind = canonical_type(content_type)
+    kind = canonical_type(content_type, filename)
     if kind not in FILE_EXTENSIONS or kind not in files["allowed_types"] or extension not in FILE_EXTENSIONS[kind]:
         raise HTTPException(415, "Attachment extension and declared type must match an approved format")
     return kind
@@ -149,7 +155,7 @@ async def prepare_private_upload(database, storage, *, user, project, policy, da
     await access.require_project(database, user, project, policy, "update")
     await access.require_current_task(database, user, project, policy)
     digest = await asyncio.to_thread(validate_file, data, content_type, filename, policy, max_file_bytes)
-    content_type = canonical_type(content_type)
+    content_type = canonical_type(content_type, filename)
     await storage.require_private_bucket(bucket)
     key = f"kitchen/{access.KITCHEN_FLOOR}/{project['id']}/{digest}"
     if await storage.exists(bucket=bucket, key=key):

@@ -1,3 +1,4 @@
+from services.followup_engine import reconcile_followups_admitted
 """Quotation Builder API — v2 with multi-level discounts, autosave, duplicate."""
 import asyncio
 import logging
@@ -12,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pymongo import ReturnDocument
 from starlette.concurrency import run_in_threadpool
 
+from services.referrer_identity import resolve_referrer
 from auth import (
     TILES_FLOOR_ID, accessible_floor_ids, floor_for_write, floor_inherit, floor_query,
     get_current_customer,
@@ -599,7 +601,7 @@ async def create_quotation(
     # creation time. Tile Selections additionally update the walk-in lifecycle
     # above. Reconcile now without waiting for another status change; the
     # configured age threshold still determines when a reminder becomes due.
-    asyncio.create_task(reconcile_followups())
+    asyncio.create_task(reconcile_followups_admitted())
     return quot
 
 
@@ -786,9 +788,11 @@ async def update_quotation(
         )
         if body.customer_id != doc.get("customer_id"):
             customer_changed_from = doc.get("customer_name")
+            # Refreshing the same contact must preserve the document's chosen
+            # or historical referral; explicit reference edits are handled below.
+            update.update(_customer_referrer_fields(new_customer))
         update["customer_id"] = new_customer["id"]
         update["customer_name"] = new_customer.get("company") or new_customer["name"]
-        update.update(_customer_referrer_fields(new_customer))
         # Refresh the frozen phone snapshot to the new customer's phone unless
         # this same request is also explicitly setting one.
         if body.phone_snapshot is None:
@@ -885,9 +889,7 @@ async def update_quotation(
         if not body.referrer_id:
             update.update({"referrer_id": None, "referrer_name": None, "referrer_type": None})
         else:
-            referrer = await get_floor_scoped_or_404(
-                db.referrers, body.referrer_id, user, not_found="Referrer not found", projection={"_id": 0},
-            )
+            referrer = await resolve_referrer(db, body.referrer_id, user)
             if referrer.get("active") is False:
                 raise HTTPException(status_code=400, detail="This referrer is archived")
             update.update({
@@ -1038,7 +1040,7 @@ async def update_quotation(
     if "status" in update:
         # Event-triggered (not cron) reconciliation — a status change is
         # exactly the moment quotation-stage follow-ups should refresh/close.
-        asyncio.create_task(reconcile_followups())
+        asyncio.create_task(reconcile_followups_admitted())
     return Quotation(**fresh)
 
 
@@ -1180,64 +1182,35 @@ async def delete_quotation(
     quotation_id: str,
     user: UserPublic = Depends(require_min_role("manager")),
 ):
-    # Resolve by the document's own floor rather than the ambient floor header.
-    # This is important for tile selections/quotations, which always belong to
-    # Ground Floor even when a manager is currently viewing another unit.
+    # A quotation deletion never removes the customer or another quotation.
     existing = await get_floor_scoped_or_404(
         db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0},
     )
-    if not existing:
-        raise HTTPException(status_code=404, detail="Quotation not found")
-    # BACKEND_AUDIT_2026-07-17.md Medium #20: deleting a quotation that
-    # already has purchase orders and/or payments recorded against it
-    # orphaned those documents — they still reference a quotation_id that no
-    # longer resolves to anything, silently breaking every screen that joins
-    # back to the quotation (order detail, payment history, PO lineage).
-    # A draft/pending quotation with nothing built on it yet is still safe
-    # to delete outright.
-    po_count, completed_payment_count = await asyncio.gather(
-        db.purchase_orders.count_documents({"quotation_id": quotation_id}),
-        db.payments.count_documents({"quotation_id": quotation_id, "status": "completed"}),
-    )
-    if po_count or completed_payment_count:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f"Cannot delete — {po_count} purchase order(s) and {completed_payment_count} completed payment(s) "
-                "reference this quotation. Cancel/void the order instead of deleting it."
-            ),
-        )
-    customer_id = existing.get("customer_id")
-    followups_result, pending_payments_result = await asyncio.gather(
-        db.followups.delete_many({"quotation_id": quotation_id}),
-        db.payments.delete_many({"quotation_id": quotation_id, "status": {"$ne": "completed"}}),
-    )
-    # Gender was never part of the current schema, but removing the legacy key
-    # here keeps old imported records from retaining data the product no longer
-    # collects. The updates are intentionally limited to this customer's data.
-    gender_cleanup = 0
-    if customer_id:
-        cleanup_results = await asyncio.gather(
-            db.customers.update_one({"id": customer_id}, {"$unset": {"gender": ""}}),
-            db.walkins.update_many({"customer_id": customer_id}, {"$unset": {"gender": ""}}),
-            db.followups.update_many({"customer_id": customer_id}, {"$unset": {"gender": ""}}),
-            db.quotations.update_many({"customer_id": customer_id}, {"$unset": {"gender": ""}}),
-        )
-        gender_cleanup = sum(getattr(result, "modified_count", 0) for result in cleanup_results)
-    res = await db.quotations.delete_one({"id": quotation_id})
-    if res.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Quotation not found")
-    return {
-        "ok": True,
-        "quotation_id": quotation_id,
-        "doc_type": existing.get("doc_type", "standard"),
-        "deleted": {
-            "quotations": res.deleted_count,
-            "followups": followups_result.deleted_count,
-            "pending_payments": pending_payments_result.deleted_count,
-            "legacy_gender_fields": gender_cleanup,
-        },
-    }
+    from db import client
+    from services.customer_deletion import plan_deletion, apply_plan
+    from pymongo.read_concern import ReadConcern
+    from pymongo.write_concern import WriteConcern
+
+    async def operation(session):
+        current = await db.quotations.find_one({"id": quotation_id, "floor_id": existing["floor_id"]}, session=session)
+        if not current:
+            raise HTTPException(404, "Quotation not found")
+        po_count = await db.purchase_orders.count_documents({"quotation_id": quotation_id, "floor_id": current["floor_id"]}, session=session)
+        paid_count = await db.payments.count_documents({"quotation_id": quotation_id, "floor_id": current["floor_id"], "status": "completed"}, session=session)
+        if po_count or paid_count or current.get("status") in {"ordered", "won"}:
+            raise HTTPException(409, "This quotation has an order or completed payment. To remove all of this customer's data, the owner can use Delete customer data on the Customers page.")
+        plan = await plan_deletion(db, quotation=current, session=session)
+        # Retain private object keys after commit until storage cleanup succeeds.
+        if plan["files"]:
+            await db.settings.insert_one({"id": "quotation-deletion:" + quotation_id,
+                "kind": "customer_deletion_receipt", "completed_at": now_iso(),
+                "pending_private_files": plan["files"]}, session=session)
+        deleted = await apply_plan(db, plan, session)
+        return {"ok": True, "quotation_id": quotation_id, "doc_type": current.get("doc_type", "standard"),
+                "deleted": {**deleted, "pending_payments": deleted.get("payments", 0)}}
+
+    async with await client.start_session() as session:
+        return await session.with_transaction(operation, read_concern=ReadConcern("snapshot"), write_concern=WriteConcern("majority"))
 
 
 @router.post("/{quotation_id}/duplicate", response_model=Quotation)
@@ -1317,7 +1290,7 @@ async def move_to_quotation(
     )
     from services.walkin_service import on_moved_to_quotation
     await on_moved_to_quotation(quotation_id, doc.get("number"))
-    asyncio.create_task(reconcile_followups())
+    asyncio.create_task(reconcile_followups_admitted())
     fresh = await db.quotations.find_one({"id": quotation_id}, {"_id": 0})
     return fresh
 
@@ -1874,7 +1847,7 @@ async def place_order_confirm(quotation_id: str, body: PlaceOrderConfirmPayload,
         # `toast.error(e?.detail || ...)` can read — i.e. no visible message
         # at all, not even the "Could not place order" fallback.
         raise HTTPException(status_code=500, detail=f"Order was placed but automation failed: {exc}") from exc
-    asyncio.create_task(reconcile_followups())
+    asyncio.create_task(reconcile_followups_admitted())
     return {"quotation_id": quotation_id, "idempotent": event.get("status") == "completed", **result}
 
 

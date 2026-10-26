@@ -68,7 +68,7 @@ async def environment():
     url = local_mongo_url()
     import auth
     import db as connection
-    from routes import customer_routes, kitchen_routes
+    from routes import customer_routes, kitchen_routes, referrer_routes, sales_data_routes
     from services.access_grants import build_grant
     from services import activity_log
 
@@ -76,7 +76,8 @@ async def environment():
     database = client[f"forge_kitchen_acceptance_{uuid4().hex}"]
     patches = [(auth, "db", auth.db), (connection, "db", connection.db),
                (kitchen_routes, "db", kitchen_routes.db), (customer_routes, "db", customer_routes.db),
-               (activity_log, "db", activity_log.db)]
+               (activity_log, "db", activity_log.db), (referrer_routes, "db", referrer_routes.db),
+               (sales_data_routes, "db", sales_data_routes.db)]
     for module, name, _ in patches:
         setattr(module, name, database)
     ids = {key: str(uuid4()) for key in ("owner", "worker", "manager", "denied", "customer", "other_customer")}
@@ -116,8 +117,15 @@ async def environment():
              "floor_id": "first-floor", "tier": "retail"},
         ])
         app = FastAPI()
+        @app.get("/api/health/ready")
+        async def ready():
+            await database.command("ping")
+            return {"status": "ok"}
+
         app.include_router(kitchen_routes.router, prefix="/api")
         app.include_router(customer_routes.router, prefix="/api")
+        app.include_router(referrer_routes.router, prefix="/api")
+        app.include_router(sales_data_routes.router, prefix="/api")
 
         @app.get("/api/auth/me")
         async def identity(user=Depends(auth.get_current_user)):
@@ -288,7 +296,7 @@ def test_stage_list_carries_latest_commercial_fields_without_exposing_history():
     asyncio.run(run())
 
 
-def test_q01_q03_q11_customer_reuse_conversion_and_retired_assignment():
+def test_q01_q03_q11_customer_reuse_conversion_and_owner_assignment():
     async def run():
         async with environment() as env:
             project, body = await create_project(env)
@@ -298,8 +306,8 @@ def test_q01_q03_q11_customer_reuse_conversion_and_retired_assignment():
             assert await env["db"].customers.count_documents({"id": env["ids"]["customer"]}) == 1
             different, _ = await create_project(env)
             assert different["id"] != project["id"] and different["customer_id"] == project["customer_id"]
-            retired = await command(env, project, "assign", {"stage": "visit", "user_id": env["ids"]["worker"]})
-            assert retired.status_code == 422, retired.text
+            project = await accepted(env, project, "assign", {"stage": "visit", "user_id": env["ids"]["worker"]})
+            assert project["assignments"] == {"visit": env["ids"]["worker"]}
             project = await accepted(env, project, "review_duplicate", {"decision": "distinct_project", "reason": "Owner verified separate site"})
             conversion_key = str(uuid4())
             converted = await command(env, project, "convert", key=conversion_key)
@@ -315,21 +323,21 @@ def test_q01_q03_q11_customer_reuse_conversion_and_retired_assignment():
             assert saved["project_reference"] == project["project_reference"]
             stored = await env["db"].kitchen_projects.find_one({"id": saved["id"]})
             assert stored["version"] == saved["version"] and stored["stage"] == "visit"
-            assert stored["assignments"] == {}
+            assert stored["assignments"] == {"visit": env["ids"]["worker"]}
             assert saved["lead"]["budget"] == "250000.01" and saved["lead"]["notes"] == "Acceptance lead note"
             assert saved["lead"]["lead_date"] == "2026-10-19"
             assert await env["db"].kitchen_projects.count_documents({}) == 2
     asyncio.run(run())
 
 
-def test_q12_q13_showroom_transition_requires_actual_visit_requirements_and_interest():
+def test_q12_q13_showroom_transition_requires_actual_visit_without_retired_fields():
     async def run():
         async with environment() as env:
             project, _ = await create_project(env)
             converted = await command(env, project, "convert")
             assert converted.status_code == 200, converted.text
             project = converted.json()
-            for missing in ({}, {"status": "Visited"}, {"status": "Visited", "requirements": "New kitchen"}):
+            for missing in ({}, {"status": "Scheduled"}, {"status": "Follow-up Required"}):
                 if missing:
                     result = await command(env, project, "save_visit", missing)
                     assert result.status_code == 200, result.text
@@ -338,8 +346,8 @@ def test_q12_q13_showroom_transition_requires_actual_visit_requirements_and_inte
                 blocked = await command(env, project, "advance_stage", {"target_stage": "cad"})
                 assert blocked.status_code in {409, 422}, blocked.text
                 assert await env["db"].kitchen_projects.find_one({"id": project["id"]}) == before
-            visited = await command(env, project, "save_visit", {"status": "Visited", "requirements": "New kitchen",
-                "interested": True, "visit_date": "2026-10-19", "notes": "Showroom, not installation"})
+            visited = await command(env, project, "save_visit", {"status": "Visited", "display_model": "GI",
+                "visit_date": "2026-10-19", "notes": "Showroom, not installation"})
             assert visited.status_code == 200, visited.text
             advanced = await command(env, visited.json(), "advance_stage", {"target_stage": "cad"})
             assert advanced.status_code == 200, advanced.text
@@ -426,7 +434,7 @@ def test_q10_grant_scope_without_assignment_and_session_revocation():
             page = await env["api"].get("/api/kitchen-projects", headers=headers(env, "worker"))
             assert page.status_code == 200 and page.json()["total"] == 2
             retired = await command(env, project, "assign", {"stage": "visit", "user_id": env["ids"]["worker"]}, actor="worker")
-            assert retired.status_code == 422
+            assert retired.status_code == 403
             edited = await command(env, unrelated, "edit_lead", {"notes": "Delegated without assignment"}, actor="worker")
             assert edited.status_code == 200
             denied = await command(env, unrelated, "edit_lead", {"notes": "No grant"}, actor="denied")
@@ -747,7 +755,7 @@ def test_independent_q13_all_eight_transition_prerequisites_and_skips():
                 else: current[key] = value
             cases = [
                 ("lead", "visit", [("lead.status", "Lost")]),
-                ("visit", "cad", [("visit.status", "Scheduled"), ("visit.requirements", ""), ("visit.interested", False)]),
+                ("visit", "cad", [("visit.status", "Scheduled")]),
                 ("cad", "design", [("cad.status", "In Progress"), ("cad.received", False), ("cad.progress", 99)]),
                 ("design", "quotation", [("design_versions.0.response", "Pending"), ("design_versions.0.handoff_date", None), ("design_revision_pending", True)]),
                 ("quotation", "order", [("quotation_versions.0.response", "Pending"), ("quotation_versions.0.shared_date", None), ("quotation_versions.0.design_version_id", "historical-design"), ("design_versions.0.response", "Pending")]),
@@ -1075,12 +1083,11 @@ def test_resolved_d05_cad_readiness_is_derived_and_all_three_prerequisites_are_m
             await configure(env)
             project = await reach_stage(env, "cad")
             for fields in ({"received": False, "progress": 100, "status": "Completed", "ready": True},
-                           {"received": True, "progress": 99, "status": "Completed", "ready": True},
-                           {"received": True, "progress": 100, "status": "In Progress", "ready": True}):
+                           {"received": True, "progress": 99, "status": "Completed", "ready": True}):
                 project = await accepted(env, project, "save_cad", fields)
                 assert project["cad"]["ready"] is False
                 assert (await command(env, project, "advance_stage", {"target_stage": "design"})).status_code == 422
-            project = await accepted(env, project, "save_cad", {"received": True, "progress": 100, "status": "Completed", "ready": False})
+            project = await accepted(env, project, "save_cad", {"received": True, "progress": 100, "status": "In Progress", "ready": False})
             assert project["cad"]["ready"] is True  # No contradictory extra readiness gate.
             project = await accepted(env, project, "advance_stage", {"target_stage": "design"})
             assert project["stage"] == "design"
@@ -1180,18 +1187,21 @@ def test_resolved_d09_legacy_unknown_counts_remain_null_after_new_events_and_exp
     asyncio.run(run())
 
 
-def test_cad_uploads_rejected_for_both_transports_and_cad_stage_preserves_history(monkeypatch):
+def test_cad_formats_rejected_but_pdf_uploads_allowed_with_history_preserved(monkeypatch):
     import hashlib
     from media_storage import factory
     class HistoryStorage:
         calls = 0
         async def require_private_bucket(self, bucket):
             assert bucket == "forge-private"
+        objects = {}
         async def download(self, **kwargs):
-            return b"AC1032 historical drawing bytes"
+            return self.objects.get(kwargs["key"], b"AC1032 historical drawing bytes")
         async def exists(self, **kwargs):
             self.calls += 1
-            raise AssertionError("Rejected CAD upload reached object storage")
+            return kwargs["key"] in self.objects
+        async def upload(self, *, key, data, **kwargs):
+            self.objects[key] = data
     storage = HistoryStorage()
     monkeypatch.setattr(factory, "get_media_storage", lambda: storage)
     async def run():
@@ -1241,10 +1251,16 @@ def test_cad_uploads_rejected_for_both_transports_and_cad_stage_preserves_histor
             chunked = await env["api"].post(route + "/file-transfers", headers=headers(env),
                 json={"expected_version": project["version"], "idempotency_key": str(uuid4()),
                       "filename": "new.pdf", "content_type": "application/pdf", "size_bytes": 100})
-            assert ordinary.status_code == chunked.status_code == 422
-            assert "receipt and design progress only" in ordinary.text
-            assert storage.calls == 0
-            assert await env["db"].kitchen_file_transfers.count_documents({}) == 0
+            assert ordinary.status_code == 200, ordinary.text
+            assert ordinary.json()["stage"] == "cad"
+            assert ordinary.json()["attachments"][0]["filename"] == "earlier.dwg"
+            # A stale begin remains rejected after the successful append.
+            assert chunked.status_code == 409
+            chunked = await env["api"].post(route + "/file-transfers", headers=headers(env),
+                json={"expected_version": ordinary.json()["version"], "idempotency_key": str(uuid4()),
+                      "filename": "new.pdf", "content_type": "application/octet-stream", "size_bytes": 100})
+            assert chunked.status_code == 200, chunked.text
+            assert storage.calls == 1
     asyncio.run(run())
 
 
@@ -1472,7 +1488,7 @@ def test_delegated_stage_updates_and_upload_cas_survive_assignment_retirement(mo
     asyncio.run(run())
 
 
-def test_design_and_quotation_reject_missing_document_without_mutating_history():
+def test_design_document_optional_but_quotation_document_required():
     async def run():
         async with environment() as env:
             for stage, name, payload in (("design", "design_present", {"presentation_date": "2026-10-21"}),
@@ -1482,8 +1498,13 @@ def test_design_and_quotation_reject_missing_document_without_mutating_history()
                     payload["design_version_id"] = project["design_versions"][-1]["id"]
                 before = await env["db"].kitchen_projects.find_one({"id": project["id"]})
                 rejected = await command(env, project, name, payload)
-                assert rejected.status_code == 422 and "HTTPS document link" in rejected.text
-                assert await env["db"].kitchen_projects.find_one({"id": project["id"]}) == before
+                if stage == "design":
+                    assert rejected.status_code == 200, rejected.text
+                    project = rejected.json()
+                    assert project["design_versions"][-1]["url"] is None
+                else:
+                    assert rejected.status_code == 422 and "HTTPS document link" in rejected.text
+                    assert await env["db"].kitchen_projects.find_one({"id": project["id"]}) == before
                 accepted_project = await accepted(env, project, name, {**payload, "url": "https://example.test/synthetic.pdf"})
                 assert accepted_project["version"] == project["version"] + 1
                 # Legacy/document-less history remains readable; validation only
@@ -2044,7 +2065,7 @@ def test_retired_kitchen_writes_reject_before_persistence_but_delegated_intake_w
                     "lead": {"site_location": "Delegated site"}}
             retired_create = await env["api"].post("/api/kitchen-projects", headers=headers(env, "worker"),
                 json={**body, "assigned_to": env["ids"]["worker"]})
-            assert retired_create.status_code == 422
+            assert retired_create.status_code == 403
             assert await env["db"].kitchen_projects.count_documents({}) == 0
             created = await env["api"].post("/api/kitchen-projects", headers=headers(env, "worker"), json=body)
             assert created.status_code == 200, created.text
@@ -2086,3 +2107,99 @@ def test_kitchen_assignment_retirement_preserves_view_only_grant_and_floor_limit
             exported = await env["api"].get("/api/kitchen-projects/export", headers=headers(env, "worker"))
             assert exported.status_code == 403
     asyncio.run(run())
+
+
+def test_kitchen_references_customer_details_and_sales_metrics_use_current_authorized_records():
+    async def scenario():
+        from services.analytics.filters import AnalyticsFilter, build_match
+        from services.analytics.gather_referrals import gather_referrer_raw
+        from services.analytics.kitchen_referrals import kitchen_referral_records
+        from services.analytics.lead_referrals import gather_acquired_customers
+        from services.analytics.workspaces import gather_workspace
+        async with environment() as env:
+            rid = str(uuid4())
+            await env['db'].referrers.insert_one({'id': rid, 'name': 'Synthetic architect', 'company': 'Synthetic studio', 'type': 'architect', 'floor_id': 'second-floor', 'active': True})
+            await env['db'].customers.update_one({'id': env['ids']['customer']}, {'$set': {'email': 'customer@example.test', 'city': 'Ahmedabad', 'state': 'Gujarat', 'pincode': '380001', 'property_name': 'Synthetic apartment'}})
+            project, _ = await create_project(env, lead={'site_location': 'Synthetic referred site', 'referrer_id': rid, 'referrer_name': 'Forged name'})
+            assert project['lead']['referrer_name'] == 'Synthetic architect'
+            assert project['referrer_company'] == 'Synthetic studio'
+            assert project['customer']['city'] == 'Ahmedabad'
+            assert project['customer']['address'] == 'Synthetic kitchen site'
+            assert project['lead']['lead_date']
+            await env['db'].referrers.update_one({'id': rid}, {'$set': {'active': False}})
+            project = await accepted(env, project, 'edit_lead', {'notes': 'Unrelated correction after archive', 'referrer_name': 'Forged replacement'})
+            assert project['lead']['referrer_name'] == 'Synthetic architect'
+            assert project['lead']['notes'] == 'Unrelated correction after archive'
+            await env['db'].referrers.update_one({'id': rid}, {'$set': {'active': True}})
+            f = AnalyticsFilter(floor_id='second-floor', referrer_id=rid)
+            rows = await gather_referrer_raw(env['db'], f, ['second-floor'], (None, None), 'architect')
+            assert rows[0]['customers_referred'] == 1
+            assert rows[0]['quotations_total'] == 0
+            assert rows[0]['revenue'] == 0
+            acquisitions = await gather_acquired_customers(env['db'], f, ['second-floor'], (None, None), 'architect')
+            assert acquisitions[0]['customers_acquired'] == 1
+            await configure(env)
+            order_project = await reach_stage(env, 'production')
+            await env['db'].kitchen_projects.update_one({'id': order_project['id']}, {'$set': {'referrer_id': rid, 'referrer_name': 'Synthetic architect', 'referrer_type': 'architect'}})
+            match = build_match(f, ['second-floor'], (None, None))
+            metrics = await gather_workspace(env['db'], match, 'architect', include_kitchen=True)
+            assert metrics['kpis'] == {'revenue': 1000.01, 'orders': 1, 'outstanding': 1000.0}
+            rows = await gather_referrer_raw(env['db'], f, ['second-floor'], (None, None), 'architect')
+            assert rows[0]['revenue'] == 1000.01
+            assert rows[0]['pending_payments'] == 1000.0
+            records = await kitchen_referral_records(env['db'], {'floor_id': 'second-floor', 'referrer_id': rid})
+            assert len(records) == 2
+            assert sorted(row['status'] for row in records) == ['lead', 'ordered']
+            excluded = await gather_workspace(env['db'], {'floor_id': 'first-floor', 'status': 'ordered'}, include_kitchen=True)
+            assert excluded['kpis']['orders'] == 0
+            await env['db'].kitchen_projects.update_one({'id': order_project['id']}, {'$set': {'commercial_basis_invalidated': True}})
+            invalidated = await gather_workspace(env['db'], match, include_kitchen=True)
+            assert invalidated['kpis']['revenue'] == 0
+            inactive = await gather_referrer_raw(env['db'], f, ['second-floor'], (None, None), 'architect')
+            assert inactive[0]['pending_count'] == 0
+            assert inactive[0]['pending_value'] == 0
+            assert inactive[0]['pending_payments'] == 0
+            for lifecycle in ['Cancelled', 'On Hold']:
+                await env['db'].kitchen_projects.update_one({'id': order_project['id']}, {'$set': {'commercial_basis_invalidated': False, 'lifecycle_status': lifecycle}})
+                inactive = await gather_referrer_raw(env['db'], f, ['second-floor'], (None, None), 'architect')
+                assert inactive[0]['pending_count'] == 0
+                assert inactive[0]['revenue'] == 0
+    asyncio.run(scenario())
+
+
+def test_manual_stage_navigation_http_preserves_incomplete_project_and_history():
+    async def scenario():
+        async with environment() as env:
+            project, _ = await create_project(env)
+            original = {key: project.get(key) for key in ('lead','visit','cad','orders','approvals','design_versions','quotation_versions','installation','production')}
+            stages = ['lead','visit','cad','design','quotation','order','production','installation','completed']
+            for target in [*stages[1:], *reversed(stages[:-1])]:
+                before = project['stage']
+                project = await accepted(env, project, 'move_stage', {'target_stage': target})
+                assert project['stage'] == target
+                assert project['activity'][-1]['payload']['from_stage'] == before
+                assert project['activity'][-1]['payload']['to_stage'] == target
+                assert all(project.get(key) == value for key,value in original.items())
+            response = await command(env, project, 'move_stage', {'target_stage':'visit'}, expected=project['version']-1)
+            assert response.status_code == 409
+            response = await command(env, project, 'move_stage', {'target_stage':'visit'}, actor='denied')
+            assert response.status_code == 403
+            assert project['completion_date']
+            assert not (project.get('installation') or {}).get('completion_date')
+    asyncio.run(scenario())
+
+
+def test_returning_to_quotation_keeps_confirmed_order_terms_and_navigation_available():
+    async def scenario():
+        async with environment() as env:
+            await configure(env)
+            project = await reach_stage(env, 'production')
+            original = project['orders']
+            project = await accepted(env, project, 'move_stage', {'target_stage':'order'})
+            project = await accepted(env, project, 'move_stage', {'target_stage':'quotation'})
+            rejected = await command(env, project, 'quotation_receive', {'design_version_id':project['design_versions'][-1]['id'], 'received_date':'2026-10-26', 'amount':'1200.00', 'url':'https://example.com/revised.pdf'})
+            assert rejected.status_code == 422
+            assert 'amendment' in rejected.text
+            project = await accepted(env, project, 'move_stage', {'target_stage':'order'})
+            assert project['orders'] == original
+    asyncio.run(scenario())

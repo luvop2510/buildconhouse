@@ -64,9 +64,8 @@ test('Kitchen bounded project page loads and searches within existing budgets', 
   await expect(page.getByTestId('kitchen-project-kitchen-performance-49')).toBeVisible();
   const searchMs = performance.now() - searchStart;
   expect(searchMs).toBeLessThan(1500);
-  await page.getByTestId('kitchen-view-menu').click();
-  await page.getByRole('menuitem', { name: 'Table', exact: true }).click();
-  await expect(page.getByTestId('kitchen-table')).toBeVisible();
+  await expect(page.getByTestId('kitchen-compact-list')).toBeVisible();
+  await expect(page.getByTestId('kitchen-view-menu')).toHaveCount(0);
   await expect(page.getByTestId('kitchen-project-kitchen-performance-49')).toBeVisible();
   expect(unexpected).toEqual([]);
   await runtime.assertHealthy();

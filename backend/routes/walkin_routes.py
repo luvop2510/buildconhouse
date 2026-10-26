@@ -13,6 +13,7 @@ Reuses (no duplicate logic):
   - services/sequence.py           — next_number()
 """
 from __future__ import annotations
+from services.followup_engine import reconcile_followups_admitted
 import re
 
 import asyncio
@@ -249,7 +250,7 @@ async def create_walkin(body: WalkInCreate, user: UserPublic = Depends(require_m
         customer_id=customer["id"], actor=user,
         summary=f"{walkin.number} · {customer.get('name')} · {body.source}",
     )
-    asyncio.create_task(reconcile_followups())
+    asyncio.create_task(reconcile_followups_admitted())
     return walkin
 
 
@@ -496,7 +497,7 @@ async def update_walkin(walkin_id: str, body: WalkInUpdate, user: UserPublic = D
             customer_id=doc["customer_id"], actor=user,
             summary=f"Walk-in {doc.get('number')} → {patch['status']}",
         )
-        asyncio.create_task(reconcile_followups())
+        asyncio.create_task(reconcile_followups_admitted())
     fresh = await db.walkins.find_one({"id": walkin_id}, {"_id": 0})
     return WalkIn(**fresh)
 

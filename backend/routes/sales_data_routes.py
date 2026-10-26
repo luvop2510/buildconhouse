@@ -19,6 +19,7 @@ from auth import accessible_floor_ids, require_roles
 from db import db
 from models import ReferrerType, UserPublic
 from services.pricing import per_line_net_amounts
+from services.analytics.kitchen_referrals import kitchen_referral_records
 
 router = APIRouter(prefix="/sales-data", tags=["sales-data"])
 
@@ -166,11 +167,17 @@ async def referrer_detail(
     floor_ids = _resolve_floor_ids(user, floor_id)
     quotations = await _confirmed_quotations(floor_ids, date_from, date_to)
     quotations = [q for q in quotations if q.get("referrer_id") == referrer_id]
+    kitchen_scope = {"referrer_id": referrer_id, **({"floor_id": {"$in": floor_ids}} if floor_ids is not None else {})}
+    bounds = {key: value for key, value in (("$gte", date_from), ("$lte", date_to)) if value}
+    kitchen_projects = await kitchen_referral_records(db, {**kitchen_scope, **({"created_at": bounds} if bounds else {})})
+    kitchen_orders = await kitchen_referral_records(db, {**kitchen_scope, "status": "ordered", **({"ordered_at": bounds} if bounds else {})})
+    quotations.extend(kitchen_orders)
 
     referrer_query = {"id": referrer_id}
-    if user.custom_access:
-        referrer_query["floor_id"] = {"$in": floor_ids or []}
-    referrer = await db.referrers.find_one(referrer_query, {"_id": 0})
+    if floor_ids is not None:
+        referrer_query["floor_id"] = {"$in": floor_ids}
+    from services.referrer_identity import referrer_query as directory_query
+    referrer = await db.referrers.find_one(directory_query(referrer_query), {"_id": 0})
     if not referrer:
         if not quotations:
             raise HTTPException(status_code=404, detail="Referrer not found")
@@ -207,6 +214,7 @@ async def referrer_detail(
         "total_revenue": round(sum(q.get("grand_total", 0) for q in quotations), 2),
         "trend": trend,
         "quotations": quotes,
+        "kitchen_projects": kitchen_projects,
     }
 
 

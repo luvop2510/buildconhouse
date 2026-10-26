@@ -15,6 +15,7 @@ from db import db
 from models import UserPublic
 from models_kitchen import ConfigurePolicy, CreateProject, ProjectCommand, Stage, date_only, CommandKey
 from services.kitchen_projects import KitchenProjectService
+from services.analytics import cache
 from services.kitchen_file_transfers import KitchenFileTransfers, TransferStart, TransferChunk, TransferFinish
 
 # Delegated accounts are already checked for the exact floor/page/action by
@@ -101,7 +102,9 @@ async def export_completed(search: str = Query("", max_length=250),
 
 @router.post("")
 async def create_project(body: CreateProject, user: UserPublic = Depends(get_current_user)):
-    return await KitchenProjectService(db).create(user, body)
+    result = await KitchenProjectService(db).create(user, body)
+    await cache.bump("kitchen_projects")
+    return result
 
 
 @router.get("/{project_id}")
@@ -113,7 +116,9 @@ async def project_detail(project_id: str, user: UserPublic = Depends(get_current
 async def project_command(project_id: str, body: ProjectCommand, user: UserPublic = Depends(get_current_user)):
     if floor_for_write(user) != "second-floor":
         raise HTTPException(403, "Select the Kitchen Floor for this command")
-    return await KitchenProjectService(db).command(user, project_id, body)
+    result = await KitchenProjectService(db).command(user, project_id, body)
+    await cache.bump("kitchen_projects")
+    return result
 
 
 @router.post("/{project_id}/attachments")

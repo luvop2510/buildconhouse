@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { Buffer } from 'node:buffer';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { chromium, webkit, devices, expect } from '@playwright/test';
@@ -17,6 +18,88 @@ const expiry = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString
 assert.ok(expiry > Date.now() / 1000 + 600, 'QA session expires too soon to verify a release');
 const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
 const deploymentHeaders = bypass ? { 'x-vercel-protection-bypass': bypass } : {};
+
+// Observe the actual identity request. Root mounting, identity restoration and
+// visible content retain separate bounds without an anonymous readiness phase.
+function createStartupDeadlineObserver({ origin, now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout, rootTimeoutMs = 25000, identityTimeoutMs = 20000 }) {
+  let identityStartedAt = null, disposed = false, contentDone = false, identitySucceeded = false;
+  let rootTimer, identityTimer, contentTimer, failure;
+  let resolveStarted, rejectStarted, resolveIdentity, rejectIdentity, rejectFailure;
+  const startedPromise = new Promise((resolve, reject) => { resolveStarted = resolve; rejectStarted = reject; });
+  const identityPromise = new Promise((resolve, reject) => { resolveIdentity = resolve; rejectIdentity = reject; });
+  const failurePromise = new Promise((_, reject) => { rejectFailure = reject; });
+  startedPromise.catch(() => {});
+  identityPromise.catch(() => {});
+  failurePromise.catch(() => {});
+  const identityUrl = origin + '/api/auth/me';
+  const clear = timer => { if (timer !== undefined && timer !== null) clearTimer(timer); };
+  const fail = message => {
+    if (failure || disposed) return;
+    failure = new Error(message);
+    clear(rootTimer); clear(identityTimer); clear(contentTimer);
+    rejectStarted(failure); rejectIdentity(failure);
+    rejectFailure(failure);
+  };
+  rootTimer = setTimer(() => {
+    if (identityStartedAt === null) fail('App startup did not request authenticated identity before the root mount deadline');
+  }, rootTimeoutMs);
+
+  return {
+    request(url) {
+      if (failure || disposed) return;
+      if (url === identityUrl && identityStartedAt === null) {
+        identityStartedAt = now();
+        clear(rootTimer);
+        identityTimer = setTimer(() => fail('Authenticated identity exceeded its 20 second deadline'), identityTimeoutMs);
+        resolveStarted(identityStartedAt);
+      }
+    },
+    response(url, status) {
+      if (failure || disposed) return;
+      if (url === identityUrl && identityStartedAt !== null) {
+        if (identitySucceeded) return;
+        if (status !== 200) return fail(`Authenticated identity returned HTTP ${status}`);
+        clear(identityTimer); identityTimer = null;
+        identitySucceeded = true;
+        resolveIdentity(now());
+        if (contentDone) { clear(contentTimer); contentTimer = null; }
+      }
+    },
+    requestFailed(url) {
+      if (url === identityUrl && identityStartedAt !== null && !identitySucceeded) fail('Authenticated identity request failed before returning HTTP 200');
+    },
+    terminal(message) { fail(message); },
+    waitStarted() { return startedPromise; },
+    waitIdentity() { return identityPromise; },
+    waitFailure() { return failurePromise; },
+    async waitForContent(waitFor, maxMs) {
+      await startedPromise;
+      if (disposed) return;
+      if (failure) throw failure;
+      const remaining = identityStartedAt + maxMs - now();
+      if (remaining <= 0) {
+        fail(`Rendered content exceeded its ${maxMs} millisecond identity-start deadline`);
+        throw failure;
+      }
+      contentTimer = setTimer(() => fail(`Rendered content exceeded its ${maxMs} millisecond identity-start deadline`), remaining);
+      await Promise.race([waitFor(remaining), failurePromise]);
+      contentDone = true;
+      if (identitySucceeded) { clear(contentTimer); contentTimer = null; }
+    },
+    remainingContentMs(maxMs) {
+      if (failure) throw failure;
+      if (identityStartedAt === null) throw new Error('Cannot check content deadline before the identity request');
+      const remaining = identityStartedAt + maxMs - now();
+      if (remaining <= 0) throw new Error(`Rendered content exceeded its ${maxMs} millisecond identity-start deadline`);
+      return remaining;
+    },
+    dispose() {
+      disposed = true;
+      clear(rootTimer); clear(identityTimer); clear(contentTimer);
+    },
+  };
+}
+
 async function get(path) {
   const response = await fetch(origin + '/api' + path, {
     headers: { ...deploymentHeaders, Authorization: `Bearer ${token}`, 'X-Floor-Id': 'first-floor' },
@@ -36,6 +119,8 @@ for (const outcome of ['won', 'lost']) {
 const checks = [];
 for (const [profile, engine, options] of [
   ['desktop-chrome', chromium, { viewport: { width: 1440, height: 1000 } }],
+  ['tablet-chrome', chromium, { viewport: { width: 834, height: 1112 } }],
+  ['ipad-safari', webkit, devices['iPad Pro 11']],
   ['iphone-safari', webkit, devices['iPhone 13']],
 ]) {
   const browser = await engine.launch();
@@ -64,12 +149,22 @@ for (const [profile, engine, options] of [
       { timeout: 20000, message: 'Probe API reads must settle before navigation' }).toBe(true);
     context.setDefaultTimeout(20000);
     context.setDefaultNavigationTimeout(30000);
-    const blockWrites = async current => current.route('**/*', route => {
-      const request = route.request(), url = new URL(request.url());
-      if (url.origin === origin && /^\/api(?:\/|$)/.test(url.pathname) && !['GET', 'HEAD', 'OPTIONS'].includes(request.method())) return route.abort('blockedbyclient');
-      // Never send a provider bypass secret to product-image/storage hosts.
-      return route.continue(url.origin === origin ? { headers: { ...request.headers(), ...deploymentHeaders } } : {});
-    });
+    const blockWrites = async current => {
+      const handler = route => {
+        const request = route.request(), url = new URL(request.url());
+        if (url.origin === origin && /^\/api(?:\/|$)/.test(url.pathname) && !['GET', 'HEAD', 'OPTIONS'].includes(request.method())) return route.abort('blockedbyclient');
+        // Never send a provider bypass secret to product-image/storage hosts.
+        return bypass && url.origin === origin
+          ? route.continue({ headers: { ...request.headers(), ...deploymentHeaders } })
+          : route.continue();
+      };
+      if (bypass) return current.route('**/*', handler);
+      await Promise.all([
+        current.route(`${origin}/api`, handler),
+        current.route(`${origin}/api?**`, handler),
+        current.route(`${origin}/api/**`, handler),
+      ]);
+    };
     await blockWrites(context);
     await context.addCookies([
       { name: 'forge_session', value: token, domain: new URL(origin).hostname, path: '/api', httpOnly: true, secure: true, sameSite: 'Strict' },
@@ -80,6 +175,53 @@ for (const [profile, engine, options] of [
       if (!localStorage.getItem('forge.active-floor')) localStorage.setItem('forge.active-floor', JSON.stringify('first-floor'));
     });
     let page = await context.newPage(), health = captureRuntimeHealth(page);
+    const installDocumentStartupWatch = async () => {
+      let activeObserver = null;
+      await context.exposeBinding('__forgeReleaseStartupTerminal', (_source, message) => activeObserver?.terminal(message));
+      await context.addInitScript(() => {
+        const check = () => {
+          if (document.querySelector('[data-testid="app-font-error"]')) {
+            void window.__forgeReleaseStartupTerminal?.('Application font readiness failed');
+            return;
+          }
+        };
+        new MutationObserver(check).observe(document, { subtree: true, childList: true, characterData: true });
+        check();
+      });
+      return async (navigate, contentLocator, contentTimeoutMs = 25000) => {
+        const startup = createStartupDeadlineObserver({ origin });
+        activeObserver = startup;
+        let identityResponse = null;
+        const onRequest = request => startup.request(request.url());
+        const onFailed = request => startup.requestFailed(request.url());
+        const onResponse = response => {
+          const url = response.url();
+          if (url !== origin + '/api/auth/me') return;
+          startup.response(url, response.status());
+          if (response.status() === 200) identityResponse = response;
+        };
+        page.on('request', onRequest);
+        page.on('requestfailed', onFailed);
+        page.on('response', onResponse);
+        const started = startup.waitStarted();
+        const identity = startup.waitIdentity();
+        const content = startup.waitForContent(
+          timeout => contentLocator.waitFor({ state: 'visible', timeout }),
+          contentTimeoutMs,
+        );
+        try {
+          await Promise.race([Promise.all([navigate(), started, identity, content]), startup.waitFailure()]);
+          return { identityResponse };
+        } finally {
+          page.off('request', onRequest);
+          page.off('requestfailed', onFailed);
+          page.off('response', onResponse);
+          activeObserver = null;
+          startup.dispose();
+        }
+      };
+    };
+    let observeDocumentNavigation = await installDocumentStartupWatch();
     const healthy = async name => {
       await expect(page.getByTestId('login-submit')).toHaveCount(0);
       await settleApi();
@@ -95,17 +237,25 @@ for (const [profile, engine, options] of [
       if (!await link.isVisible()) await page.getByRole('button', { name: 'More', exact: true }).click();
       await link.click();
     };
-    const identity = page.waitForResponse(response => response.url() === origin + '/api/auth/me' && response.status() === 200);
-    await page.goto(origin + '/dashboard', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByTestId(profile === 'iphone-safari' ? 'bottom-nav-quotations' : 'nav-quotations')).toBeVisible({ timeout: 25000 });
+    const initialNavigation = await observeDocumentNavigation(
+      () => page.goto(origin + '/dashboard', { waitUntil: 'domcontentloaded' }),
+      page.getByTestId(profile === 'iphone-safari' ? 'bottom-nav-quotations' : 'nav-quotations'),
+      25000,
+    );
+    assert.ok(initialNavigation.identityResponse, 'Initial signed-in document did not complete its authenticated identity request');
     await navigate('Quotations');
     await expect(page.getByTestId('new-quotation-btn')).toBeVisible({ timeout: 25000 });
     await healthy('signed-in SPA quotation list');
-    const issuedHeaders = await (await identity).headerValues('set-cookie');
+    const issuedHeaders = await initialNavigation.identityResponse.headerValues('set-cookie');
     for (const outcome of ['won', 'lost']) {
       for (let index = 0; index < imports[outcome].length; index++) {
         const doc = imports[outcome][index];
         await page.getByTestId(`quotations-${outcome}-toggle`).click();
+        await expect(page.getByText(`${outcome === 'won' ? 'Won' : 'Lost'} Customer · Quotations`, { exact: true })).toBeVisible();
+        // The quotation ledger virtualizes long customer lists. Use its real
+        // search control to select each bounded acceptance record, including
+        // records outside the initial rendered window.
+        await page.getByTestId('quotations-search').fill(doc.number);
         await page.getByTestId(`quotation-${doc.id}`).click();
         await expect(page.getByTestId('quotation-customer-outcome')).toContainText(`${outcome === 'won' ? 'Won' : 'Lost'} Customer recorded`, { timeout: 20000 });
         await healthy(`${outcome} imported customer ${index + 1} opens by click`);
@@ -121,16 +271,20 @@ for (const [profile, engine, options] of [
         // A full document navigation also checks that direct links retain the
         // same cookie. List/detail/editor transitions above must remain clicks.
         await settleApi();
-        await page.goto(origin + '/quotations', { waitUntil: 'domcontentloaded' });
-        await expect(page.getByTestId('new-quotation-btn')).toBeVisible({ timeout: 20000 });
+        await observeDocumentNavigation(
+          () => page.goto(origin + '/quotations', { waitUntil: 'domcontentloaded' }),
+          page.getByTestId('new-quotation-btn'), 20000,
+        );
       }
     }
     await page.getByTestId('new-quotation-btn').click();
     await expect(page.getByTestId('quotation-workspace')).toBeVisible({ timeout: 25000 });
     await healthy('new quotation opens by click');
     await settleApi();
-    await page.goto(origin + '/quotations', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByTestId('new-quotation-btn')).toBeVisible({ timeout: 20000 });
+    await observeDocumentNavigation(
+      () => page.goto(origin + '/quotations', { waitUntil: 'domcontentloaded' }),
+      page.getByTestId('new-quotation-btn'), 20000,
+    );
     await navigate('Godown stock');
     const search = page.getByRole('textbox', { name: 'Search godown stock', exact: true });
     await expect(search).toBeVisible({ timeout: 25000 });
@@ -162,11 +316,13 @@ for (const [profile, engine, options] of [
     context.setDefaultNavigationTimeout(30000);
     await blockWrites(context);
     page = await context.newPage(); health = captureRuntimeHealth(page);
-    await page.goto(origin + '/quotations', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByTestId('new-quotation-btn')).toBeVisible({ timeout: 25000 });
+    observeDocumentNavigation = await installDocumentStartupWatch();
+    await observeDocumentNavigation(
+      () => page.goto(origin + '/quotations', { waitUntil: 'domcontentloaded' }),
+      page.getByTestId('new-quotation-btn'),
+    );
     await settleApi();
-    await page.reload({ waitUntil: 'domcontentloaded' });
-    await expect(page.getByTestId('new-quotation-btn')).toBeVisible({ timeout: 20000 });
+    await observeDocumentNavigation(() => page.reload({ waitUntil: 'domcontentloaded' }), page.getByTestId('new-quotation-btn'), 20000);
     await healthy('persistent signed-in browser restart and refresh');
   } finally { await browser.close(); }
 }

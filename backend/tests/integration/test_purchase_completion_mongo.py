@@ -390,3 +390,92 @@ def test_record_floor_completion_and_tile_list_ignore_owner_ambient_workspace(mo
         finally:
             client.close()
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("qty", [3, 10])
+def test_movement_command_commits_once_under_concurrent_and_later_replay(mongo_url, monkeypatch, qty):
+    from unittest.mock import AsyncMock
+    from fastapi import HTTPException
+    async def run():
+        client = AsyncIOMotorClient(mongo_url)
+        database = client.movement_commands
+        monkeypatch.setattr(tracker, "db", database)
+        monkeypatch.setattr(tracker, "log_event", AsyncMock())
+        monkeypatch.setattr(tracker, "_sync_po_status_with_stages", AsyncMock(return_value=None))
+        monkeypatch.setattr(tracker, "mark_loans_due_for_replenishment", AsyncMock(return_value={"return_due_transfer_ids": []}))
+        try:
+            await database.purchase_orders.insert_one(po("command-po", items=[item(stage="order_in_company", qty=10)]))
+            actor = user().model_copy(update={"id": "operator"})
+            async def move(amount=qty):
+                return await tracker.move_item("i", tracker.MoveBody(stage="in_box", note="$literal note", qty=amount, idempotency_key="move-command-one"), actor)
+            first, second = await asyncio.gather(move(), move())
+            saved = await database.purchase_orders.find_one({"id": "command-po"})
+            assert len(saved["items"]) == (2 if qty == 3 else 1)
+            assert sum(row["qty"] for row in saved["items"]) == 10
+            assert len(saved["movement_receipts"]) == 1
+            assert first.get("new_item_id") == second.get("new_item_id")
+            assert sum(result.get("idempotent", False) for result in [first, second]) == 1
+            assert len(saved["items"][0]["stage_history"]) == 1
+            third = await move()
+            assert third["idempotent"] is True
+            assert (await database.purchase_orders.find_one({"id": "command-po"}))["items"] == saved["items"]
+            with pytest.raises(HTTPException) as error:
+                await move(2)
+            assert error.value.status_code == 409
+            foreign = actor.model_copy(update={"active_floor_id": "ground-floor"})
+            with pytest.raises(HTTPException) as error:
+                await tracker._apply_stage_change("i", "in_box", foreign, "$literal note", qty, idempotency_key="move-command-one")
+            assert error.value.status_code == 404
+        finally:
+            client.close()
+    asyncio.run(run())
+
+
+def test_committed_movement_recovers_after_status_sync_failure(mongo_url, monkeypatch):
+    from unittest.mock import AsyncMock
+    async def run():
+        client = AsyncIOMotorClient(mongo_url)
+        database = client.movement_recovery
+        monkeypatch.setattr(tracker, "db", database)
+        monkeypatch.setattr(tracker, "log_event", AsyncMock())
+        sync = AsyncMock(side_effect=[RuntimeError("post-write status read failed"), None])
+        monkeypatch.setattr(tracker, "_sync_po_status_with_stages", sync)
+        monkeypatch.setattr(tracker, "mark_loans_due_for_replenishment", AsyncMock(return_value={"return_due_transfer_ids": []}))
+        try:
+            await database.purchase_orders.insert_one(po("lost-response", items=[item(stage="order_in_company", qty=10)]))
+            actor = user()
+            async def move():
+                return await tracker._apply_stage_change("i", "in_box", actor, None, 3, idempotency_key="lost-response-key")
+            with pytest.raises(RuntimeError): await move()
+            recovered = await move()
+            assert recovered["idempotent"] is True
+            assert recovered["qty_remaining"] == 7
+            saved = await database.purchase_orders.find_one({"id": "lost-response"})
+            assert sorted(row["qty"] for row in saved["items"]) == [3, 7]
+            assert sync.await_count == 2
+        finally:
+            client.close()
+    asyncio.run(run())
+
+
+def test_no_change_receipt_does_not_move_a_later_changed_item_back(mongo_url, monkeypatch):
+    from unittest.mock import AsyncMock
+    async def run():
+        client = AsyncIOMotorClient(mongo_url)
+        database = client.movement_no_change
+        monkeypatch.setattr(tracker, "db", database)
+        monkeypatch.setattr(tracker, "log_event", AsyncMock())
+        monkeypatch.setattr(tracker, "_sync_po_status_with_stages", AsyncMock(return_value=None))
+        monkeypatch.setattr(tracker, "mark_loans_due_for_replenishment", AsyncMock(return_value={"return_due_transfer_ids": []}))
+        try:
+            await database.purchase_orders.insert_one(po("same-stage", items=[item(stage="in_box", qty=10)]))
+            actor = user()
+            first = await tracker._apply_stage_change("i", "in_box", actor, None, 10, idempotency_key="no-change-command")
+            assert first["no_change"] is True
+            await database.purchase_orders.update_one({"id": "same-stage"}, {"$set": {"items.0.stage": "dispatched"}})
+            replay = await tracker._apply_stage_change("i", "in_box", actor, None, 10, idempotency_key="no-change-command")
+            assert replay["no_change"] is True and replay["idempotent"] is True
+            assert (await database.purchase_orders.find_one({"id": "same-stage"}))["items"][0]["stage"] == "dispatched"
+        finally:
+            client.close()
+    asyncio.run(run())

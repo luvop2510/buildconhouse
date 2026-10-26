@@ -14,6 +14,10 @@ def acquisition_pipeline(f: AnalyticsFilter, floors, window, kind=None, order_ma
         match = build_match(replace(f, status="any", referrer_type=kind), floors, window)
         if collection == "customers" and "customer_id" in match:
             match["id"] = match.pop("customer_id")
+        if collection == "kitchen_projects":
+            phone_field = "$customer_phone_normalized"
+        else:
+            phone_field = "$phone_normalized"
         if collection == "walkins" and "created_by" in match:
             match["salesperson_id"] = match.pop("created_by")
         match.update({"referrer_id": match.get("referrer_id", {"$nin": [None, ""]}), "is_deleted": {"$ne": True}})
@@ -23,7 +27,7 @@ def acquisition_pipeline(f: AnalyticsFilter, floors, window, kind=None, order_ma
             match = {**(order_match or {}), **{"referrer_id": match["referrer_id"], "is_deleted": {"$ne": True}}}
             if kind:
                 match["referrer_type"] = kind
-        phone = {"$ifNull": ["$phone_normalized", {"$ifNull": ["$customer_phone", {"$ifNull": ["$phone", ""]}]}]}
+        phone = {"$ifNull": [phone_field, {"$ifNull": ["$customer_phone", {"$ifNull": ["$phone", ""]}]}]}
         for character in ("+", " ", "-", "(", ")", "."):
             phone = {"$replaceAll": {"input": phone, "find": character, "replacement": ""}}
         stages = [{"$match": match}]
@@ -47,7 +51,7 @@ def acquisition_pipeline(f: AnalyticsFilter, floors, window, kind=None, order_ma
     first = "quotations" if f.brand_id else "customers"
     pipeline = source(first)
     if not f.brand_id:
-        for collection in ("walkins", "followups", "quotations", "furniture_quotations"):
+        for collection in ("walkins", "followups", "quotations", "furniture_quotations", "kitchen_projects"):
             pipeline.append({"$unionWith": {"coll": collection, "pipeline": source(collection)}})
     pipeline.extend([
         {"$group": {"_id": {"referrer": "$referrer_id", "person": "$person"},

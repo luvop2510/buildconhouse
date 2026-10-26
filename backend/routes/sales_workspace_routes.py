@@ -118,7 +118,7 @@ async def workspace(
     kind = "architect" if workspace == "architects" else "interior_designer" if workspace == "interior-designers" else None
     try:
         match = await _ordered_match(db, f, floors, (period.start, period.end))
-        reads = [gather_workspace(db, match, kind), gather_product_line_revenue(db, f, floors, (period.start, period.end), limit=None)]
+        reads = [gather_workspace(db, match, kind, include_kitchen=workspace in ("architects", "interior-designers", "relationships")), gather_product_line_revenue(db, f, floors, (period.start, period.end), limit=None)]
         if workspace in ("architects", "interior-designers", "relationships"):
             reads.append(gather_acquired_customers(db, f, floors, (period.start, period.end), kind, match))
         results = await asyncio.gather(*reads)

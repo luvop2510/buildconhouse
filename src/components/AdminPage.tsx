@@ -22,6 +22,7 @@ export function AdminPage({
   children,
   scroll = true,
   contentStyle,
+  header = true,
 }: {
   title: string;
   subtitle?: string | null;
@@ -31,6 +32,8 @@ export function AdminPage({
   children: React.ReactNode;
   scroll?: boolean;
   contentStyle?: ViewStyle;
+  /** Virtualized pages can place the phone header inside their own list. */
+  header?: boolean;
   /** @deprecated — header now always uses a subtle divider */
   headerBorder?: boolean;
 }) {
@@ -40,7 +43,7 @@ export function AdminPage({
 
   return (
     <View style={{ flex: 1, minHeight: 0, backgroundColor: color.canvas }}>
-      {!isPhone ? <PageHeader
+      {header && !isPhone ? <PageHeader
         title={title}
         subtitle={subtitle || undefined}
         overline={overline}
@@ -73,7 +76,7 @@ export function AdminPage({
               ],
             })}
       >
-        {isPhone ? <PageHeader
+        {header && isPhone ? <PageHeader
           title={title}
           subtitle={subtitle || undefined}
           overline={overline}

@@ -2,6 +2,68 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
+## Always-on Railway startup and Kitchen PDF usability — 2026-10-26
+
+Kitchen saved details use separate bordered label/value cells on every stage; keep
+confirmation, workflow status and approved quotation distinct. Existing reference
+pickers default to both types and support name/studio/code search plus retry. Tiles
+reference changes are explicit; same-customer quotation snapshot refresh must preserve
+document attribution. Preserve untouched archived/legacy references and created-ID
+retry when the first explicit reference patch fails. See
+docs/audits/2026-10-26-kitchen-details-existing-references.md.
+
+Kitchen mobile save repair: reserve the phone header/footer's geometry while
+hiding their controls during editing. Unmounting them shifts the form by 119px
+and can move a blur-triggering tap target. Keep the short save-feedback line
+stable. TypeError from an aborted fetch is cancellation, not backend downtime;
+timeouts and genuine transport failures retain distinct errors. Production and
+Installation have explicit Save and go actions; save successfully before manual
+movement, using the latest version and coalescing repeated taps. Preserve
+unrestricted Next/Previous and prerequisite guidance for commercial actions.
+See docs/audits/2026-10-26-kitchen-save-mobile-repair.md.
+
+The user explicitly removed the one-minute backend-wake buffer after moving to
+Railway. Identity and floor reads start directly without an anonymous health
+prerequisite. Preserve bounded ordinary requests, session/floor generations,
+recovery, initial destinations and the mounted navigator. Hosted acceptance now
+observes the actual identity request, with unchanged root/identity/content bounds.
+Never restore a health/wake loop before login, account hydration or floor access.
+
+Kitchen queues use compact lists only. The user explicitly keeps unrestricted
+Next/Previous and excludes Next Action, Budget Discussion and Visit Requirements
+from Visit. Owner-selected Assigned To is optional at intake and per stage; never
+auto-assign an employee or make assignment grant access. CAD status is derived from percentage
+on server and form; never allow a contradictory independent status. Revision
+counts only increase from customer revision requests. Quotation entry uses private
+uploaded files and no HTTPS input. Order corrections retain before/after history,
+chronology, stale drafts and prior documents. Changed final amounts require owner
+authority and explicit customer approval, preserving the original quotation.
+Shared text fields keep focus on Enter unless the caller supplies explicit
+submission/blur behavior, avoiding keyboard/chrome layout changes during editing.
+
+Sales Data owns a reference directory. Only explicitly shared references cross
+floors; customer/sales/acquisition aggregates remain scoped. Preserve historical
+IDs and private entries. Existing ID authorization uses accessible floors rather
+than the ambient selected floor. Owner edits use optimistic concurrency.
+
+See docs/audits/2026-10-26-kitchen-pdf-usability-release.md for scope/evidence.
+Frontend-only publication may use scripts/promote-verified-frontend.mjs with an
+unchanged verified backend and current review/performance/hosted evidence.
+Backend, data, storage and Kitchen workflow releases retain the existing stronger
+gate; preserve security checks and protected-main requirements.
+
+## Web bundle consistency — 2026-10-24
+
+The reported “app could not start” failure was reproduced in the existing browser:
+stale layout chunks and Metro module IDs failed before account startup. A hard
+refresh restored the signed-in workspace. Every export now gives all Expo web
+JavaScript files one graph-wide filename suffix and rewrites HTML/preload/lazy
+references together. Preserve this physical namespace; per-file URLs alone must
+not mix cached module graphs. Keep missing chunks as explicit failures and never
+auto-reload mounted forms. The recovery bootstrap observes the web root mount
+signal; a slow, unmounted bootstrap gets a waiting status rather than a false
+release-failure claim. Font errors retain their existing deadline and retry.
+
 ## PDF sharing, assigned follow-ups and references — 2026-10-17
 
 Quotation/selection sharing creates no public PDF capability. Share actual PDF
@@ -581,3 +643,71 @@ Both were flagged during code review of Task 17/19 as real gaps of the same shap
 - **Migration idempotency:** `backend/migrations/` migrations must be forward-only and safe to run twice, but MongoDB's `create_index` throws `OperationFailure` code 85 (`IndexOptionsConflict`) if a same-key index already exists under a different name — this has happened twice already (see `migrations/0002` and `0003`'s docstrings). Always wrap `create_index` calls the way `migrations/0003`'s `_create_index_tolerant` helper does.
 - **Catalog is an in-memory snapshot, not per-request Mongo queries:** `backend/services/catalog_service.py` loads the whole product catalog into memory at startup (Atlas is ~228ms round-trip away; the full catalog is a few MB) and refreshes on writes. Don't add per-request Mongo queries to catalog read paths — thread new filters through the existing `_matches_filters`/snapshot functions instead.
 - **Floor `first-floor`'s display name is "The Sanitary Bathroom"** in the live `db.floors` collection, but its `id`/`slug` is still literally `"first-floor"` — don't rename the slug, only ever the `name` field, or every `floor_id` reference throughout the codebase breaks.
+
+## Customer graph deletion and recovery — 2026-10-24
+
+Customer-wide removal is owner-only from Customers, with exact preview/HMAC and
+transactional graph cleanup. Ordinary quotation deletion remains document-scoped.
+Preserve shared PO chalan evidence and actual dispatched quantities: raw legacy
+stage labels cannot establish a stock return. Old unlinked Furniture matches
+require explicit owner selection; new ledgers may bind a real floor-scoped ID.
+
+The mutation-admission middleware and background follow-up/outbox admission prevent
+in-flight child writes after graph deletion. Never expire writer tokens or clear
+an exclusive token while old writers may still execute. See the operational
+recovery procedure in docs/audits/2026-10-24-workspace-repair.md. No new migration.
+
+## Local uncounted-stock workflow — 2026-10-24
+
+Unpublished quantity-count work adds an exact stock-update POST route for
+previously uncounted lots. Preserve its missing/zero distinction, explicit
+date/source, original provenance, atomic count/receipt write, version/history
+guards and floor admission. A confirmed opening count is not a supplier receipt.
+Never overwrite an already-counted/moved lot through this endpoint. Count replay
+must return the current balance without restoring later-consumed stock. Internal
+command metadata stays outside public count history. Direct intake now requires
+an entered quantity rather than defaulting to one. See
+docs/audits/2026-10-24-godown-quantity-counts.md for local acceptance and limits;
+no production quantity replacement or publication is claimed.
+
+## Local stock pagination — 2026-10-24
+
+The unpublished stock screen uses server-side 60-lot pages and literal search.
+Keep whole-floor totals independent of filtered result counts and update totals
+with per-lot deltas, never sums of the loaded page. Initial pages exclude movement
+arrays; exact-floor history loads independently on demand. Same-query refresh
+retains the opened window and card drafts; obsolete floor/query responses cannot
+publish. Complete exports explicitly use the compatible no-limit endpoint and
+must fail rather than truncate above its lot/movement ceilings. This supersedes
+the older complete-payload client search description for the local implementation.
+Detail and mutation responses retain the same exact-product catalog image
+fallback as list reads. See docs/audits/2026-10-24-godown-paging.md for acceptance
+and unresolved performance failures. This is not production publication evidence.
+
+## Stock photo delivery investigation — 2026-10-25
+
+The live stock URL audit found 119 lots without URLs and 266 lots whose legacy
+Supabase URLs returned HTTP 402. Do not treat a nonempty URL as photo coverage or
+blindly replace its hostname: all 266 same-key R2 targets initially failed too.
+The supplied workbooks yield exact SHA256/SKU/brand recovery matches for 248
+stock-media records. Their bound plan, rollback journal and per-object full-byte
+receipts are private in the parent workspace review outputs. Final verification
+confirms 248 live lot-image links and matching media links restored, with every
+other field and all current stock quantities preserved. Eighteen legacy URLs and
+119 missing URLs remain. Never run the old
+stock-replacement import to recover photos; quantities and provenance must stay
+intact. Preserve the optional missing/loading/failed photo copy on stock cards.
+See docs/audits/2026-10-25-godown-image-delivery.md for current scope and limits.
+
+## Local stock customer-transfer recovery — 2026-10-25
+
+The unpublished transfer sheet binds metadata/writes to its actor/floor/lot,
+coalesces synchronous submissions, retains an uncertain body/key across mounted
+close/reopen and keeps metadata retry separate from draft initialization. New
+receipts bind the full body/actor in the existing transaction; public views strip
+that internal hash. Preserve sanitized committed-conflict review and explicit
+acknowledgement before clearing a key for a new intent. Confirmed transfers close
+before list refresh completes. Full unmount/reload persistence is still open;
+do not claim durable recovery from the mounted map. The stock hook script and
+four-device stability registry require these scenarios. See
+docs/audits/2026-10-25-godown-transfer-recovery.md for evidence and remaining gates.

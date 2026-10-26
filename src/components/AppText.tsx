@@ -24,6 +24,8 @@ export const TextInput = forwardRef<TextInput, TextInputProps>(function AppTextI
     return () => { if (Platform.OS !== "web") reportInputFocus(id, false); };
   }, []);
   return <NativeTextInput {...props} ref={ref}
+    // Plain editing fields must not dismiss the keyboard and restore chrome on Enter.
+    blurOnSubmit={props.blurOnSubmit ?? (props.submitBehavior || props.onSubmitEditing ? undefined : false)}
     onFocus={event => { if (Platform.OS !== "web") reportInputFocus(focusId.current, true); onFocus?.(event); }}
     onBlur={event => { if (Platform.OS !== "web") reportInputFocus(focusId.current, false); onBlur?.(event); }}
     style={[{ fontFamily: appTextFamily(StyleSheet.flatten(style)) }, style]} />;

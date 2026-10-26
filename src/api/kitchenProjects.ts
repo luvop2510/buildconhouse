@@ -1,15 +1,15 @@
 import { api } from "@/src/api/client";
 import { KITCHEN_FLOOR_ID } from "@/src/constants/floors";
 
-export const KITCHEN_STAGES = ["lead", "visit", "cad", "design", "quotation", "order", "production", "installation", "completed"] as const;
-export type KitchenStage = typeof KITCHEN_STAGES[number];
-export const STAGE_LABELS: Record<KitchenStage, string> = {
-  lead: "Lead", visit: "Visit", cad: "CAD File", design: "Design", quotation: "Quotation",
-  order: "Order", production: "Production", installation: "Installation", completed: "Completed",
-};
-export type KitchenCustomer = { id: string; name: string; phone?: string | null; address?: string | null };
+import { KITCHEN_WORKSPACE_PAGES } from "@/src/kitchen-workspace-pages";
+
+export type KitchenStage = typeof KITCHEN_WORKSPACE_PAGES[number]["stage"];
+export const KITCHEN_STAGES: readonly KitchenStage[] = KITCHEN_WORKSPACE_PAGES.map(page => page.stage);
+export const STAGE_LABELS = Object.fromEntries(KITCHEN_WORKSPACE_PAGES.map(page => [page.stage, page.label])) as Record<KitchenStage, string>;
+export type KitchenCustomer = { id: string; name: string; phone?: string | null; address?: string | null; email?: string | null; company?: string | null; property_name?: string | null; city?: string | null; state?: string | null; pincode?: string | null; gstin?: string | null; alternate_phone?: string | null; notes?: string | null; referrer_id?: string | null; referrer_name?: string | null; referrer_type?: "architect" | "interior_designer" | null; referrer_company?: string | null };
 export type KitchenAssignee = { id: string; full_name: string; role: string };
 export type KitchenLead = {
+  referrer_id?: string | null; referrer_name?: string | null; referrer_type?: "architect" | "interior_designer" | null; referrer_company?: string | null;
   status: "New" | "Contacted" | "Qualified" | "Lost";
   site_location?: string | null; lead_source?: string | null;
   kitchen_type?: "New kitchen" | "Renovation" | "Other" | null;
@@ -26,7 +26,7 @@ export type KitchenCad = {
   notes?: string | null; ready: boolean;
 };
 export type KitchenActivity = { id: string; type: string; actor_name?: string; actor_id?: string; at: string; payload?: Record<string, unknown> };
-export type KitchenVersion = { id: string; actor_id?: string; at?: string; shared_by?: string; handoff_by?: string; workflow_cycle?: number; number: number; attachment_id?: string | null; url?: string | null; notes?: string | null; presentation_date?: string; received_date?: string; amount?: string; design_version_id?: string; response: "Pending" | "Approved" | "Changes Required" | "Rejected"; shared_date?: string | null; handoff_date?: string | null; response_notes?: string | null };
+export type KitchenVersion = { requirements?: string | null; budget_discussion?: string | null; id: string; actor_id?: string; at?: string; shared_by?: string; handoff_by?: string; workflow_cycle?: number; number: number; attachment_id?: string | null; url?: string | null; notes?: string | null; presentation_date?: string; received_date?: string; amount?: string; design_version_id?: string; response: "Pending" | "Approved" | "Changes Required" | "Rejected"; shared_date?: string | null; handoff_date?: string | null; response_notes?: string | null };
 export type KitchenWork = { status: "Not Started" | "In Production" | "In Progress" | "Completed"; start_date?: string | null; completion_date?: string | null; notes?: string | null };
 export type KitchenOrder = { id: string; approval_identity?: string; authorization_invalidated?: boolean; confirmed: boolean; status: "Confirmed" | "On Hold" | "Cancelled"; order_date: string; original_amount: string; final_amount: string; confirmation_document_id?: string | null; notes?: string | null; quotation_version_id: string; advance: { received: boolean; amount: string; date?: string | null }; amendments: { id: string; amount: string; reason: string; date: string; customer_approved: boolean }[] };
 export type KitchenAttachment = { id: string; filename: string; size_bytes: number; content_type: string; sha256?: string };
@@ -46,7 +46,7 @@ export type KitchenDashboard = { stage_counts?: Record<KitchenStage, number>; wo
 export type KitchenProject = {
   id: string; reference: string; project_reference?: string | null; customer_id: string; customer: KitchenCustomer;
   version: number; stage: KitchenStage; lead: KitchenLead; visit: KitchenVisit; cad: KitchenCad;
-  current_design?: Pick<KitchenVersion, "id" | "number" | "response" | "shared_date" | "handoff_date" | "presentation_date" | "received_date" | "amount" | "design_version_id" | "workflow_cycle"> | null;
+  current_design?: Pick<KitchenVersion, "requirements" | "budget_discussion" | "id" | "number" | "response" | "shared_date" | "handoff_date" | "presentation_date" | "received_date" | "amount" | "design_version_id" | "workflow_cycle"> | null;
   current_quotation?: Pick<KitchenVersion, "id" | "number" | "response" | "shared_date" | "handoff_date" | "presentation_date" | "received_date" | "amount" | "design_version_id" | "workflow_cycle"> | null;
   current_order?: Omit<KitchenOrder, "amendments" | "notes"> | null;
   assignments: Partial<Record<KitchenStage, string | null>>; assigned_to?: string | null; assigned_to_name?: string | null;
@@ -71,12 +71,12 @@ export type KitchenProject = {
 export type KitchenPage<T> = { rows: T[]; total: number; page: number; limit: number };
 export type KitchenQuery = {
   attention?: "active" | "on_hold" | "pending_approval" | "completion_overdue" | "active_order";
-  search?: string; stage?: string; status?: string; date_from?: string; date_to?: string;
+  search?: string; stage?: string; status?: string; assignee?: string; date_from?: string; date_to?: string;
   date_field?: string; sort?: string; direction?: "asc" | "desc"; page?: number; limit?: number; completed?: string; duplicate_review?: "pending";
 };
 export type KitchenFileTransfer = { transfer_id: string; size_bytes: number; chunk_bytes: number; part_count: number; state: "open" | "finishing" | "completed"; expires_at: string };
-export type KitchenCreate = { customer_id?: string; customer?: { name: string; phone: string; address?: string }; idempotency_key: string; lead: KitchenLead };
-export type KitchenCommand = "review_duplicate" | "edit_lead" | "convert" | "save_visit" | "save_cad" | "advance_stage" | "metadata" | "design_present" | "design_share" | "design_response" | "design_revision" | "design_handoff" | "quotation_receive" | "quotation_share" | "quotation_response" | "order_confirm" | "order_document" | "order_advance" | "order_amend" | "order_status" | "exception" | "production_update" | "installation_update" | "site_visit" | "approval";
+export type KitchenCreate = { assigned_to?: string | null; customer_id?: string; customer?: Omit<KitchenCustomer, "id"> & { phone: string }; idempotency_key: string; lead: KitchenLead };
+export type KitchenCommand = "assign" | "move_stage" | "review_duplicate" | "edit_lead" | "convert" | "save_visit" | "save_cad" | "advance_stage" | "metadata" | "design_present" | "design_update" | "design_share" | "design_response" | "design_revision" | "design_handoff" | "quotation_receive" | "quotation_share" | "quotation_response" | "order_confirm" | "order_update" | "order_document" | "order_advance" | "order_amend" | "order_status" | "exception" | "production_update" | "installation_update" | "site_visit" | "approval";
 const options = { floorId: KITCHEN_FLOOR_ID, cacheMs: 0 };
 const query = (values: Record<string, string | number | undefined>) => {
   const entries = Object.entries(values).filter(([, value]) => value !== undefined && value !== "");
@@ -97,7 +97,7 @@ export const kitchenProjectsApi = {
   cancelTransfer: (id: string, transfer: string) => api.delete<{ discarded: boolean }>(`/kitchen-projects/${encodeURIComponent(id)}/file-transfers/${encodeURIComponent(transfer)}`, options),
   downloadPart: (id: string, attachment: string, index: number) => api.get<{ index: number; data_base64: string; sha256: string; file_sha256: string; size_bytes: number }>(`/kitchen-projects/${encodeURIComponent(id)}/attachments/${encodeURIComponent(attachment)}/parts/${index}`, options),
   attachmentPath: (id: string, attachmentId: string) => `/kitchen-projects/${encodeURIComponent(id)}/attachments/${encodeURIComponent(attachmentId)}`,
-  exportPath: (values: Pick<KitchenQuery, "search" | "date_from" | "date_to">) => `/kitchen-projects/export${query(values)}`,
+  exportPath: (values: Pick<KitchenQuery, "search" | "assignee" | "date_from" | "date_to">) => `/kitchen-projects/export${query(values)}`,
   duplicates: (customerId: string, signal?: AbortSignal) => api.get<{ rows: { id: string; reference: string; stage: KitchenStage }[] }>(`/kitchen-projects/duplicate-candidates?customer_id=${encodeURIComponent(customerId)}`, { ...options, signal }),
   list: (values: KitchenQuery, signal?: AbortSignal) => api.get<KitchenPage<KitchenProject>>(`/kitchen-projects${query(values)}`, { ...options, signal }),
   get: (id: string, signal?: AbortSignal) => api.get<KitchenProject>(`/kitchen-projects/${encodeURIComponent(id)}`, { ...options, signal }),

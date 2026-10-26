@@ -193,6 +193,7 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: R
     return data as T;
   } catch (error) {
     if (timedOut) throw new ApiError(408, "Request timed out. Please try again.");
+    if (controller.signal.aborted) throw new DOMException("Request cancelled because the signed-in account, workspace or screen changed.", "AbortError");
     if (error instanceof TypeError) throw new ApiError(503, "Cannot reach the backend. Check the configured secure backend URL and try again.");
     throw error;
   } finally {

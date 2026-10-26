@@ -19,7 +19,7 @@ def test_elapsed_time_reminders_refresh_without_a_mutation_and_recover_from_erro
             if len(intervals) == 3:
                 raise asyncio.CancelledError()
 
-        monkeypatch.setattr(engine, "reconcile_followups", reconcile)
+        monkeypatch.setattr(engine, "reconcile_followups_admitted", reconcile)
         monkeypatch.setattr(engine.asyncio, "sleep", sleep)
         with pytest.raises(asyncio.CancelledError):
             await engine.followup_worker()

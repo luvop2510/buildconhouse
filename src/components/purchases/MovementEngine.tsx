@@ -10,7 +10,8 @@
 // -----------------------------------------------------------------------------
 import Feather from "@expo/vector-icons/Feather";
 import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { randomUUID } from "expo-crypto";
 import { ActivityIndicator, Platform, Pressable, ScrollView, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 
@@ -119,30 +120,53 @@ export function MoveStageSheet({
   const [qty, setQty] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [moveError, setMoveError] = useState("");
+  const moveCommand = useRef<{ fingerprint: string; key: string; pending: boolean } | null>(null);
+  const openingItem = useRef(item);
+  openingItem.current = item;
+  const itemId = item?.item_id;
 
   useEffect(() => {
-    if (!visible || !item) return;
+    const initialItem = openingItem.current;
+    if (!visible || !initialItem) return;
+    moveCommand.current = null;
+    setBusy(false);
+    setMoveError("");
     setTarget(null);
-    setQty(String(item.qty));
+    setQty(String(initialItem.qty));
     setNote("");
-    fetchStages().then(setStages).catch(() => {});
-  }, [visible, item]);
+    let live = true;
+    fetchStages().then(rows => { if (live) setStages(rows); }).catch(() => {});
+    return () => { live = false; moveCommand.current = null; };
+  // Same-row refreshes retain the draft and its retry identity.
+  }, [visible, itemId]);
 
   if (!item) return null;
 
   const n = Number(qty || "0");
   const isPartial = n > 0 && n < item.qty - 1e-6;
   const returnObligation = !!item.loan_replenishment_for_customer_name;
-  const valid = !!target && n > 0 && n <= item.qty + 1e-6
-    && (!returnObligation || (!isPartial && ["po_final", "order_in_company", "company_billing", "in_box"].includes(target)));
+  const body = { stage: target, qty: n, note: note || undefined };
+  const fingerprint = JSON.stringify([item.item_id, body]);
+  const replaying = moveCommand.current?.fingerprint === fingerprint;
+  // A refresh may show the reduced source quantity after a response was lost.
+  // Let its original command resolve; the server checks the receipt first.
+  const valid = !!target && Number.isFinite(n) && n > 0 && (replaying || (n <= item.qty + 1e-6
+    && (!returnObligation || (!isPartial && ["po_final", "order_in_company", "company_billing", "in_box"].includes(target)))));
 
   const submit = async () => {
-    if (!valid || !target) return;
+    if (!valid || !target || moveCommand.current?.pending) return;
+    if (moveCommand.current?.fingerprint !== fingerprint) moveCommand.current = { fingerprint, key: randomUUID(), pending: false };
+    const command = moveCommand.current;
+    command.pending = true;
+    setMoveError("");
     setBusy(true);
     try {
       const r = await api.post<any>(`/purchases/items/${item.item_id}/move`, {
-        stage: target, qty: n, note: note || undefined,
+        ...body, idempotency_key: command.key,
       });
+      if (moveCommand.current !== command) return;
+      moveCommand.current = null;
       const label = stages.find((s) => s.key === target)?.label || target;
       toast.success(r?.split ? `Moved ${r.qty_moved} of ${item.qty} to ${label}` : `Moved to ${label}`);
       onClose();
@@ -152,8 +176,8 @@ export function MoveStageSheet({
         toast.error("Stage moved, but the list could not refresh");
       }
     } catch (e: any) {
-      toast.error(e instanceof ApiError ? e.detail || e.message : "Move failed");
-    } finally { setBusy(false); }
+      if (moveCommand.current === command) setMoveError(e instanceof ApiError ? e.detail || e.message : "Move could not be confirmed. Retry the unchanged form to check the same movement.");
+    } finally { command.pending = false; if (moveCommand.current === command || moveCommand.current === null) setBusy(false); }
   };
 
   const moveToGodown = async () => {
@@ -185,10 +209,10 @@ export function MoveStageSheet({
   };
 
   return (
-    <Sheet open={visible} onClose={onClose} title={returnObligation ? "Replacement for customer loan" : "Move stage"} width={440}
+    <Sheet open={visible} onClose={() => { if (!busy) onClose(); }} title={returnObligation ? "Replacement for customer loan" : "Move stage"} width={440}
       footer={
         <View style={{ flexDirection: "row", gap: 8, justifyContent: "flex-end" }}>
-          <Button label="Cancel" variant="ghost" onPress={onClose} />
+          <Button label="Cancel" variant="ghost" onPress={onClose} disabled={busy} />
           <Button
             label={isPartial ? `Move ${n || 0} of ${item.qty}` : "Move"}
             icon="arrow-right" onPress={submit} loading={busy} disabled={!valid}
@@ -198,6 +222,7 @@ export function MoveStageSheet({
       }
     >
       <View style={{ gap: space.x5 }}>
+        {moveError ? <Text accessibilityRole="alert" testID="movement-move-error" style={{ color: ds.ink, fontSize: 14, lineHeight: 21 }}>{moveError}</Text> : null}
         <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
           <Thumb image={item.image} />
           <View style={{ flex: 1, minWidth: 0 }}>

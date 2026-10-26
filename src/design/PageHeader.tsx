@@ -25,11 +25,11 @@ export function PageHeader({ title, subtitle, actions, back, overline, testID, d
           <Feather name="arrow-left" size={20} color={color.ink} />
         </Pressable> : null}
         <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-          {overline ? <Text style={{ fontFamily: font.semibold, fontSize: 11, lineHeight: 16, letterSpacing: 1.15, textTransform: "uppercase", color: color.inkSoft }}>{overline}</Text> : null}
+          {overline ? <Text style={{ fontFamily: font.medium, fontSize: 13, lineHeight: 20, color: color.inkMid }}>{overline}</Text> : null}
           <Text accessibilityRole="header" aria-level={1} style={{ fontFamily: font.semibold, fontWeight: '600',
-            fontSize: dense ? 20 : isPhone ? 24 : 30, lineHeight: dense ? 28 : isPhone ? 30 : 38,
+            fontSize: dense ? 20 : 24, lineHeight: dense ? 28 : 32,
             letterSpacing: isPhone ? -0.5 : -0.9, color: color.ink }}>{title}</Text>
-          {subtitle ? <Text style={{ fontFamily: font.regular, fontSize: isPhone ? 14 : 15,
+          {subtitle ? <Text style={{ fontFamily: font.regular, fontSize: isPhone ? 16 : 15,
             lineHeight: 22, color: color.inkMid, maxWidth: 680 }}>{subtitle}</Text> : null}
         </View>
       </View>

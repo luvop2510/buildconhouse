@@ -26,6 +26,9 @@ export function stabilityRouteTitle(path: string): string {
 export const stabilityProjects = ['android-chrome', 'iphone-safari', 'ipad-safari', 'desktop-chrome'];
 
 export const requiredStabilityScenarios: Record<string, string[]> = {
+  'redesign-quotation-workspace.spec.ts': [
+    'critical quotation workspace keeps title and actions in the padded scrolling frame',
+  ],
   'redesign-mobile-startup.spec.ts': [
     'critical owner navigation works after login while unrelated role permissions are pending',
     'critical delegated navigation works after login while unrelated role permissions are pending',
@@ -78,6 +81,19 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
     'critical page render failure preserves the shell and signed-in retry recovery',
     'critical page render failure preserves the shell and signed-in navigate recovery',
     'critical a failed quotation module offers reload and retains the signed-in destination',
+    'critical opening home after a failed module clears the rejected import before returning',
+  ],
+  'redesign-godown-transfer-retry.spec.ts': [
+    'critical uncertain stock transfer retains its original command through close and reopen',
+    'critical retrying transfer recipients retains the entered customer and quantity',
+    'critical a rejected transfer retry can be corrected without changing its command key',
+    'critical pending stock transfer cannot be dismissed or submitted twice',
+    'critical a committed transfer conflict is reviewed before starting another transfer',
+    'critical removed customer history resolves a transfer without recreating the customer',
+  ],
+  'redesign-backend-startup.spec.ts': [
+    'critical startup restores identity and destination without an anonymous health prerequisite',
+    'critical startup identity retry restores the saved route without a minute-long health loop',
   ],
   'redesign-session-recovery.spec.ts': [
     'critical session restoration recovers from 503 without a password or losing its destination',
