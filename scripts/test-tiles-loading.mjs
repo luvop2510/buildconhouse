@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import './test-builder-deletion-refresh.mjs';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
@@ -12,11 +13,11 @@ vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../src/utils/referre
 const source = readFileSync(new URL('../app/(admin)/tiles/index.tsx', import.meta.url), 'utf8');
 const marker = '  return (\n    <SafeAreaView';
 assert.ok(source.includes(marker));
-const compiled = ts.transpileModule(source.replace(marker, '  return { documents, loading, selectedLoading, loadErrors, load, setDocumentType };\n' + marker), {
+const compiled = ts.transpileModule(source.replace(marker, '  return { documents, loading, selectedLoading, loadErrors, load, setDocumentType, setDeleteTarget, deleteDocument, deleteError, deleting };\n' + marker), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
 }).outputText;
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
-function screen() {
+function screen({ canDelete = true } = {}) {
   const hooks = [], effects = [], requests = [];
   let index = 0, dirty = false, state, ready = false, completed = false;
   const same = (a, b) => a && b && a.length === b.length && a.every((value, i) => Object.is(value, b[i]));
@@ -30,11 +31,14 @@ function screen() {
     react, 'react/jsx-runtime': { jsx: () => null },
     'react-native': { StyleSheet: { create: value => value } },
     'expo-router': { useRouter: () => ({}), useLocalSearchParams: () => ({ view: completed ? 'completed' : 'pending' }), useFocusEffect: focus },
+    '@/src/state/auth': { useAuth: () => ({ staff: { role: 'owner' } }) },
+    '@/src/hooks/use-permissions': { useActionAccess: () => canDelete },
+    '@/src/constants/roles': { canManageDestructiveData: () => true },
     '@/src/hooks/use-floor-access': { useRequireFloorAccessState: () => ({ ready }) },
     '@/src/design/responsive': { useBp: () => ({}) },
     '@/src/theme/tokens': { colors: {}, radius: {}, spacing: {}, type: {} },
     '@/src/utils/filters': { filterValues: value => value === 'all' ? [] : [value] },
-    '@/src/api/client': { api: { get: (url, options) => { const pending = deferred(); requests.push({ ...pending, url, options }); return pending.promise; } } },
+    '@/src/api/client': { api: { get: (url, options) => { const pending = deferred(); requests.push({ ...pending, method: 'GET', url, options }); return pending.promise; }, delete: (url, options) => { const pending = deferred(); requests.push({ ...pending, method: 'DELETE', url, options }); return pending.promise; } } },
   };
   const exports = {};
   vm.runInNewContext(compiled, { exports, require: id => modules[id] || {} });
@@ -309,4 +313,48 @@ test('clearing a legacy name-only reference schedules autosave without any other
   assert.ok(patch); assert.equal(patch.payload.referrer_id, ''); assert.equal(patch.payload.referrer_type, null);
   patch.resolve({}); await fixture.settle();
   assert.equal(fixture.state.legacyPartnerLabel, '');
+});
+
+for (const docType of ['tiles_selection', 'tiles_quotation']) {
+  test(`Ground Floor deletes only the confirmed ${docType} and coalesces repeated clicks`, async () => {
+    const f = screen(); f.render(); f.ready(true);
+    const target = { id: 'remove', doc_type: docType };
+    f.requests[0].resolve(docType === 'tiles_selection' ? [target, { id: 'other-selection' }] : [{ id: 'other-selection' }]);
+    f.requests[1].resolve(docType === 'tiles_quotation' ? [target, { id: 'other-quotation' }] : [{ id: 'other-quotation' }]);
+    await f.settle();
+    f.state.setDeleteTarget(target); await f.settle();
+    const deletion = f.state.deleteDocument();
+    void f.state.deleteDocument();
+    assert.equal(f.requests.filter(r => r.method === 'DELETE').length, 1);
+    const request = f.requests.at(-1);
+    assert.equal(request.url, '/quotations/remove');
+    assert.equal(request.options.floorId, 'ground-floor');
+    request.resolve({ ok: true }); await deletion; await f.settle();
+    assert.deepEqual(Array.from(f.state.documents[docType], d => d.id), [docType === 'tiles_selection' ? 'other-selection' : 'other-quotation']);
+  });
+}
+
+test('failed tile deletion retains its document and explains the server protection', async () => {
+  const f = screen(); f.render(); f.ready(true);
+  const target = { id: 'ordered', doc_type: 'tiles_quotation' };
+  f.requests[0].resolve([]); f.requests[1].resolve([target]); await f.settle();
+  f.state.setDeleteTarget(target); await f.settle();
+  const deletion = f.state.deleteDocument();
+  f.requests.at(-1).reject({ detail: 'This quotation has an order' }); await deletion; await f.settle();
+  assert.equal(f.state.documents.tiles_quotation[0].id, 'ordered');
+  assert.equal(f.state.deleteError, 'This quotation has an order');
+  assert.equal(f.state.deleting, false);
+});
+
+test('tile deletion cannot begin without delete access or publish across a changed floor', async () => {
+  const denied = screen({ canDelete: false }); denied.render(); denied.ready(true);
+  denied.state.setDeleteTarget({ id: 'remove', doc_type: 'tiles_selection' }); await denied.settle();
+  await denied.state.deleteDocument();
+  assert.equal(denied.requests.filter(r => r.method === 'DELETE').length, 0);
+  const f = screen(); f.render(); f.ready(true);
+  f.requests[0].resolve([]); f.requests[1].resolve([]); await f.settle();
+  f.state.setDeleteTarget({ id: 'remove', doc_type: 'tiles_selection' }); await f.settle();
+  const deletion = f.state.deleteDocument(); f.ready(false);
+  f.requests.at(-1).resolve({ ok: true }); await deletion; await f.settle();
+  assert.equal(f.state, null);
 });

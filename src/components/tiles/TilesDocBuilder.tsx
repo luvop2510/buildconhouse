@@ -1,3 +1,6 @@
+import { useAuth } from "@/src/state/auth";
+import { useActionAccess } from "@/src/hooks/use-permissions";
+import { canManageDestructiveData } from "@/src/constants/roles";
 import { referrerLabel } from "@/src/utils/referrer";
 import { ReferrerField, type ReferrerValue } from "@/src/components/customer/ReferrerField";
 // TilesDocBuilder — Ground Floor → Tiles → Selection / Quotation.
@@ -39,7 +42,7 @@ import { ReferrerField, type ReferrerValue } from "@/src/components/customer/Ref
 import Feather from "@expo/vector-icons/Feather";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert as RNAlert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View, type ViewStyle } from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View, type ViewStyle } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -51,7 +54,7 @@ import { productImageList } from "@/src/components/quotation/helpers/media";
 import { enqueueQuotationPersist } from "@/src/components/quotation/helpers/autosave";
 import { computeQuotationTotals } from "@/src/components/quotation/helpers/totals";
 import type { Customer, Product } from "@/src/components/quotation/helpers/types";
-import { Button, Card, Dropdown, TextField } from "@/src/components/ds";
+import { Button, Card, ConfirmDialog, Dropdown, TextField } from "@/src/components/ds";
 import { Disclosure } from "@/src/design/Disclosure";
 import { BuildConLogo } from "@/src/design/BrandLogo";
 import { useBp } from "@/src/design/responsive";
@@ -789,16 +792,18 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   }, [busy, docType, status, persist, router]);
 
   const deleteDocument = useCallback(async () => {
-    if (!docId) return;
+    if (!docId || busy) return false;
     setBusy("delete");
     try {
       await api.delete(`/quotations/${docId}`, { floorId: TILES_FLOOR_ID });
-      toast.success("Quotation deleted");
+      toast.success(docType === "tiles_selection" ? "Selection deleted" : "Quotation deleted");
       router.replace("/(admin)/tiles" as any);
+      return true;
     } catch (e: any) {
-      toast.error(e?.detail || "Quotation could not be deleted");
+      toast.error(e?.detail || "Document could not be deleted");
+      return false;
     } finally { setBusy(null); }
-  }, [docId, router]);
+  }, [docId, docType, busy, router]);
 
   const pickCustomer = useCallback((customer: Customer) => {
     setCustomerId(customer.id);
@@ -1758,8 +1763,8 @@ function MobileRowCard({
 }
 
 function MobileTilesEditor({
-  docType, doc, router, onDelete, workspaceWidth,
-}: { docType: TilesDocType; doc: ReturnType<typeof useTilesDoc>; router: ReturnType<typeof useRouter>; onDelete: () => void; workspaceWidth: number }) {
+  docType, doc, router, onDelete, canDelete, workspaceWidth,
+}: { docType: TilesDocType; doc: ReturnType<typeof useTilesDoc>; router: ReturnType<typeof useRouter>; onDelete: () => void; canDelete: boolean; workspaceWidth: number }) {
   const { isPhone } = useBp();
   // The sidebar can consume tablet space. Reflow the usable editor rather
   // than stretching phone images and stacking every field at tablet widths.
@@ -1823,7 +1828,7 @@ function MobileTilesEditor({
             ...(!isSelection && !doc.workflowAction && primaryAction?.label !== "Place Order"
               ? [{ label: "Place Order", icon: "shopping-cart" as const, onPress: doc.placeOrder }]
               : []),
-            ...(doc.docId ? [{ label: "Delete quotation", icon: "trash-2" as const, onPress: onDelete }] : []),
+            ...(doc.docId && canDelete ? [{ label: isSelection ? "Delete selection" : "Delete quotation", icon: "trash-2" as const, onPress: onDelete }] : []),
           ]}
         />
       </View>
@@ -2048,14 +2053,10 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
   const [workspaceWidth, setWorkspaceWidth] = useState(0);
   const isSelection = docType === "tiles_selection";
   const title = isSelection ? "Tiles Selection" : "Tiles Quotation";
-  const confirmDelete = () => {
-    if (!doc.docId) return;
-    RNAlert.alert(
-      "Delete this quotation?",
-      "Linked follow-ups and unpaid payment records will be removed. Completed payments and purchase orders are protected.",
-      [{ text: "Cancel", style: "cancel" }, { text: "Delete", style: "destructive", onPress: doc.deleteDocument }],
-    );
-  };
+  const { staff } = useAuth();
+  const canDelete = useActionAccess("tiles", "delete", canManageDestructiveData(staff?.role));
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const confirmDelete = () => { if (doc.docId && canDelete && !doc.busy) setDeleteOpen(true); };
 
   // Device width is not the usable document width: the admin sidebar/rail
   // occupies part of the viewport. Do not mount an 820px paper unless the
@@ -2070,6 +2071,11 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
   // at width zero, permanently selecting its one-column phone geometry.
   return (
     <View style={{ flex: 1 }} onLayout={(event) => setWorkspaceWidth(event.nativeEvent.layout.width)}>
+      <ConfirmDialog visible={deleteOpen} onClose={() => { if (doc.busy !== "delete") setDeleteOpen(false); }}
+        onConfirm={() => { void doc.deleteDocument().then(deleted => { if (deleted) setDeleteOpen(false); }); }}
+        title={`Delete this ${isSelection ? "selection" : "quotation"}?`}
+        description="Linked follow-ups and unpaid payment records will be removed. Completed payments and purchase orders are protected."
+        confirmLabel="Delete" tone="danger" loading={doc.busy === "delete"} testID="confirm-delete-tiles-document" />
       {doc.loading ? (
         <View accessibilityLabel="Loading tile document" style={{ flex: 1, alignItems: "center", justifyContent: "center" }}><ActivityIndicator color={colors.brand} /></View>
       ) : doc.restoreError ? (
@@ -2084,7 +2090,7 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
         </View>
       ) : <>
       <WhatsAppQuotationSheet draft={doc.whatsappDraft} onClose={doc.closeWhatsApp} />
-      {useResponsiveEditor ? <MobileTilesEditor docType={docType} doc={doc} router={router} onDelete={confirmDelete} workspaceWidth={workspaceWidth} /> : (
+      {useResponsiveEditor ? <MobileTilesEditor docType={docType} doc={doc} router={router} onDelete={confirmDelete} canDelete={canDelete} workspaceWidth={workspaceWidth} /> : (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surfaceSecondary }} edges={["top"]}>
       <View style={shellStyles.topbar}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
@@ -2123,7 +2129,7 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
           ) : (
             <ActionBtn label="Place Order" icon="shopping-cart" onPress={doc.placeOrder} loading={doc.busy === "order"} testID="tiles-place-order" />
           )}
-          {doc.docId ? <ActionBtn label="Delete" icon="trash-2" onPress={confirmDelete} loading={doc.busy === "delete"} testID="tiles-delete" /> : null}
+          {doc.docId && canDelete ? <ActionBtn label="Delete" icon="trash-2" onPress={confirmDelete} loading={doc.busy === "delete"} testID="tiles-delete" /> : null}
         </View>
       </View>
 

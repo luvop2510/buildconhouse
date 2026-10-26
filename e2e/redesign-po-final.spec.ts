@@ -31,6 +31,9 @@ test('critical customer shows commercial order value and PO Final on desktop and
       description: 'Borrowed product received from another customer' }],
     total: 251128, payment_extra_amount: 0, payable_total: 251128,
   } }));
+  await page.route('**/api/customers/c1/po-final/xlsx?quotation_id=q1', route => route.fulfill({
+    contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', body: 'PK-test-final-workbook',
+  }));
   await page.goto('/customers/c1');
   await page.getByTestId('customer-tab-purchases').click();
   await expect(page.getByText('Order Value')).toBeVisible();
@@ -46,6 +49,11 @@ test('critical customer shows commercial order value and PO Final on desktop and
   await expect(page.getByTestId('customer-po-final')).toContainText('VitrA basin');
   await expect(page.getByTestId('customer-po-final')).toContainText('Borrowed product received');
   await expect(page.getByTestId('po-final-download')).toBeVisible();
+  await expect(page.getByTestId('po-final-download-excel')).toBeVisible();
+  const downloaded = page.waitForEvent('download');
+  await page.getByTestId('po-final-download-excel').click();
+  if (await page.getByTestId('mobile-file-save').count()) await page.getByTestId('mobile-file-download').click();
+  expect((await downloaded).suggestedFilename()).toBe('1 Vitra PO Final Q-1.xlsx');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   await page.screenshot({ path: info.outputPath('po-final.png'), fullPage: true });
 });
