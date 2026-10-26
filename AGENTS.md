@@ -2,6 +2,20 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
+## Kitchen explicit versions and internal notes — 2026-10-26
+
+Design/quotation selectors are views; mutations name selected IDs. Orders and
+Production/Installation resolve order → quotation → design, including older valid
+versions. Never infer an order's basis from the latest design. Production-start
+history locks version changes even after manual backward navigation; use the
+owner-authorized Return to Design cycle. Confirmation is persisted tri-state,
+separate from creating financial order terms. Missing quotation amount stays null;
+final order amount must be explicit if unknown. Quotation/order document inputs
+are retired; old private files remain. Notes are internal only and multiline
+fields grow from one line. Approval date and handoff date are distinct; preserve
+and flag unknown/inconsistent history. Command admission reuses its pinned policy.
+See docs/audits/2026-10-26-kitchen-version-workflow.md for contracts and evidence.
+
 ## Always-on Railway startup and Kitchen PDF usability — 2026-10-26
 
 Kitchen saved details use separate bordered label/value cells on every stage; keep

@@ -577,7 +577,13 @@ def test_independent_q11_q14_current_approvals_and_concurrent_revision_and_visit
                 project = await accepted(env, project, "design_present", {"url": "https://example.test/synthetic-design.pdf", "presentation_date": "2026-10-19"})
             assert project["design_versions"][-1]["response"] == "Pending"
             stale_approval = await command(env, project, "design_response", {"version_id": version_id, "response": "Approved"})
-            assert stale_approval.status_code == 422
+            if project["design_versions"][0].get("workflow_cycle", 1) == project.get("workflow_cycle", 1) and project["design_versions"][0]["response"] != "Approved":
+                assert stale_approval.status_code == 200, stale_approval.text
+                project = stale_approval.json()
+                assert project["design_versions"][0]["response"] == "Approved"
+                assert project["design_versions"][-1]["response"] == "Pending"
+            else:
+                assert stale_approval.status_code == 422
             current_id = project["design_versions"][-1]["id"]
             revision_key = str(uuid4())
             results = await asyncio.gather(*[command(env, project, "design_revision", {"version_id": current_id, "reason": "One customer request"}, key=revision_key) for _ in range(2)])

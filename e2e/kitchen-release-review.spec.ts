@@ -65,9 +65,9 @@ test('Kitchen every stage separates its saved details into bordered label and va
     const status = page.getByTestId('kitchen-save-status');
     expect(await status.evaluate(element => getComputedStyle(element).borderTopWidth)).toBe('1px');
     if (stage === 'order') {
-      await expect(details.getByText('Customer order confirmation: No', { exact: true })).toBeVisible();
-      await expect(details.getByText('Order status: Pending', { exact: true })).toBeVisible();
-      await expect(details.getByText('Current approved quotation: None', { exact: true })).toBeVisible();
+      await expect(details.getByText('Customer order confirmation: Not recorded', { exact: true })).toBeVisible();
+      await expect(details.getByText('Order status: Pending confirmation', { exact: true })).toBeVisible();
+      await expect(details.getByText('Order quotation: Not yet recorded', { exact: true })).toBeVisible();
       await details.scrollIntoViewIfNeeded();
       await page.screenshot({ path: info.outputPath('order-separate-details.png') });
     }
@@ -92,7 +92,7 @@ test('Kitchen missing quotation and order prerequisites offer working return act
   await expect(page.getByTestId('kitchen-quotation-amount')).toHaveValue('1250.50');
   await clickCommand(page, 'kitchen-advance-order', 'move_stage');
   await expect(page.getByTestId('kitchen-order-confirm')).toBeDisabled();
-  await expect(page.getByText('Order status: Pending', { exact: true })).toBeVisible();
+  await expect(page.getByText('Order status: Pending confirmation', { exact: true })).toBeVisible();
   await page.getByTestId('kitchen-order-confirm').scrollIntoViewIfNeeded();
   await page.screenshot({ path: info.outputPath('order-pending-confirmation.png') });
   const quotation = await clickCommand(page, 'kitchen-complete-quotation', 'move_stage');
