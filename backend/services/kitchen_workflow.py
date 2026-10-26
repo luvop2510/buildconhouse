@@ -330,6 +330,8 @@ def apply(project, command, payload, policy, user, now, validate):
                 reject("A quotation date requires its corresponding status to be Yes; edit the date or status explicitly")
         if proposed.get("received_date") and proposed["received_date"] < design["handoff_date"]:
             reject("Quotation receipt cannot precede design handoff")
+        if proposed.get("shared_date") and proposed["shared_date"] < design["handoff_date"]:
+            reject("Quotation sharing cannot precede design handoff")
         if proposed.get("shared_date") and any(proposed["shared_date"] > order["order_date"] for order in bound_orders):
             reject("Quotation sharing cannot follow an order linked to this quotation")
         if proposed.get("shared_date") and proposed.get("received_date") and proposed["shared_date"] < proposed["received_date"]:

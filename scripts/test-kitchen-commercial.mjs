@@ -128,6 +128,13 @@ assert.equal(view.control('kitchen-design-edit-save').props.disabled, false);
 await view.control('kitchen-design-edit-save').props.onPress();
 assert.equal(calls.at(-1)[1].presentation_date, undefined, 'Historical presentation date is omitted and preserved');
 calls.length = 0;
+view = render('design', { visit: { requirements: 'Different Visit requirements', budget_discussion: 'Different Visit budget' }, design_versions: [{ ...design, requirements: null, budget_discussion: null }] });
+assert.equal(view.control('kitchen-design-edit-requirements').props.value, '', 'Saved versions never inherit missing data from Visit');
+assert.equal(view.control('kitchen-design-edit-budget').props.value, '');
+await view.control('kitchen-design-edit-save').props.onPress();
+assert.equal(calls.at(-1)[1].requirements, null);
+assert.equal(calls.at(-1)[1].budget_discussion, null);
+calls.length = 0;
 view = render('design', { design_versions: [design, design2], quotation_versions: [quotation, quote2] });
 assert.equal(view.control('kitchen-design-edit-requirements').props.value, 'Version two requirements');
 view.control('kitchen-design-version').props.onChange(design.id);
@@ -259,10 +266,10 @@ async function checkProvider(source) {
         requests.push({ id, version, command, payload });
         assert.equal(version, record.version, 'Each write uses the latest accepted version');
         if (command === 'installation_update') record = { ...record, version: version + 1, stage: 'completed', installation: payload };
-        else {
+        else if (command === 'move_stage') {
           assert.notEqual(payload.target_stage, record.stage, 'The real backend rejects a redundant same-stage move');
           record = { ...record, version: version + 1, stage: payload.target_stage };
-        }
+        } else record = { ...record, version: version + 1 };
         return record;
       },
     } },
@@ -289,6 +296,16 @@ async function checkProvider(source) {
   assert.equal(await captured('move_stage', { target_stage: 'installation' }), true);
   assert.deepEqual(requests.map(({ version, command }) => [version, command]), [[7, 'installation_update'], [8, 'move_stage']]);
   assert.equal(routes.length, 2, 'Real stage changes each update the current route');
+  renderProvider();
+  const firstDraft = 'commercial.cycle.1.quotation.new.d1.edit';
+  const otherDraft = 'commercial.cycle.1.quotation.new.d2.edit';
+  state.setDraftValue(firstDraft, { amount: '' }, { amount: '100' });
+  state.setDraftValue(otherDraft, { amount: '' }, { amount: '200' });
+  renderProvider();
+  await state.command('quotation_receive', { design_version_id: 'd1' });
+  renderProvider();
+  assert.equal(state.drafts[firstDraft], undefined, 'A saved quotation clears its own new-version draft');
+  assert.deepEqual(state.drafts[otherDraft], { amount: '200' }, 'Saving one design quotation keeps another design’s unsaved draft');
 }
 await checkProvider(providerSource);
 await assert.rejects(checkProvider(providerSource.replace('if (name === "move_stage" && current.stage === payload.target_stage) return Promise.resolve(true);', '')), /redundant same-stage move/, 'Negative control reproduces the rejected legacy second move without the fix');

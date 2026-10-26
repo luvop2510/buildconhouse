@@ -341,3 +341,17 @@ def test_advance_status_is_explicit_and_independent_of_confirmation(setup, statu
         "amount": "10.00" if status == "Yes" else "0.00", "date": "2026-10-26" if status == "Yes" else None}, owner)
     assert project["orders"][-1]["advance"]["status"] == status
     assert project["customer_order_confirmation"] == "Yes"
+
+
+@pytest.mark.parametrize("command", ["quotation_receive", "quotation_update"])
+def test_quotation_without_receipt_date_cannot_be_shared_before_design_handoff(setup, command):
+    _, _, owner = setup
+    project = aggregate()
+    fields = {"received_date": None, "received_status": "Not recorded", "sent_status": "Yes",
+        "shared_date": "2026-10-22", "response": "Approved"}
+    if command == "quotation_receive":
+        fields["design_version_id"] = "d1"
+    else:
+        fields["version_id"] = "q1"
+    with pytest.raises(HTTPException, match="design handoff"):
+        apply(project, command, fields, owner)
