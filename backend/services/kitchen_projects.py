@@ -333,7 +333,7 @@ class KitchenProjectService:
         result = {k: copy.deepcopy(v) for k, v in project.items() if k not in {"_id", "command_receipts", "creation_fingerprint", "customer_phone_normalized", "customer_name_normalized"}}
         if summary:
             version_fields = {"id", "number", "response", "approval_date", "shared_date", "handoff_date", "presentation_date", "received_date",
-                              "amount", "design_version_id", "workflow_cycle", "attachment_id", "url", "requirements", "budget_discussion"}
+                              "received_status", "sent_status", "amount", "design_version_id", "workflow_cycle", "attachment_id", "url", "requirements", "budget_discussion"}
             order_fields = {"id", "confirmed", "status", "order_date", "final_amount", "original_amount", "quotation_version_id",
                             "confirmation_document_id", "authorization_invalidated", "advance"}
             order = project.get("orders", [])[-1] if project.get("orders") else None
@@ -377,7 +377,7 @@ class KitchenProjectService:
                                  "can_assign": access.owner(user), "can_configure": access.owner(user)}
         result["permissions"]["can_review_duplicate"] = access.owner(user)
         for scope in ("production", "closure"):
-            result["permissions"][f"can_approve_{scope}"] = access.department_manager(user, policy) and await access.capability(self.db, user, "update")
+            result["permissions"][f"can_approve_{scope}"] = access.department_manager(user, policy) and result["permissions"]["can_update"]
         result["permissions"]["can_approve_exceptions"] = access.owner(user)
         index = STAGES.index(project["stage"])
         blocked = []
@@ -392,16 +392,20 @@ class KitchenProjectService:
         return result
 
     async def get(self, user, project_id):
-        policy = await self.policy()
-        project = await self.db.kitchen_projects.find_one({"id": project_id, "floor_id": access.KITCHEN_FLOOR})
+        policy, project = await asyncio.gather(self.policy(),
+            self.db.kitchen_projects.find_one({"id": project_id, "floor_id": access.KITCHEN_FLOOR}))
         await access.require_project(self.db, user, project, policy)
-        result = await self.public(project, user, policy)
-        result["duplicate_candidates"] = await self.duplicates(user, project["customer_id"], exclude=project_id)
+        result, duplicates = await asyncio.gather(self.public(project, user, policy),
+            self._duplicates(user, project["customer_id"], policy, exclude=project_id))
+        result["duplicate_candidates"] = duplicates
         return result
 
     async def duplicates(self, user, customer_id, *, exclude=None):
         await access.require_capability(self.db, user, "view")
         policy = await self.policy()
+        return await self._duplicates(user, customer_id, policy, exclude=exclude)
+
+    async def _duplicates(self, user, customer_id, policy, *, exclude=None):
         customer = await self.db.customers.find_one({"id": customer_id, "floor_id": access.KITCHEN_FLOOR},
                                                    {"_id": 0, "name": 1, "phone": 1})
         if not customer:
@@ -798,6 +802,10 @@ class KitchenProjectService:
                 record["reason"] = payload["reason"]
                 record["changes"]["design"] = {"before": selected_design,
                     "after": next(row for row in updated["design_versions"] if row["id"] == payload["version_id"])}
+            if command == "quotation_update":
+                record["changes"]["quotation"] = {
+                    "before": next(row for row in project["quotation_versions"] if row["id"] == payload["version_id"]),
+                    "after": next(row for row in updated["quotation_versions"] if row["id"] == payload["version_id"])}
             if command in {"order_update", "order_confirmation"} and project.get("orders"):
                 record["changes"]["order"] = {"before": project["orders"][-1], "after": updated["orders"][-1]}
             if command == "order_document":

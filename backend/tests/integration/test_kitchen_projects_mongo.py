@@ -503,7 +503,7 @@ def test_q04_to_q09_versions_revisions_production_visits_and_late_closure(tmp_pa
             await blocked("advance_stage", {"target_stage": "production"})
             await ok("order_advance", {"received": True, "amount": "150.00", "date": "2026-10-19"})
             advance_audit = project["activity"][-1]["payload"]["changes"]["advance"]
-            assert advance_audit["before"] == {"received": False, "amount": "0.00", "date": None}
+            assert advance_audit["before"] == {"status": "Not recorded", "received": False, "amount": "0.00", "date": None}
             assert advance_audit["after"]["amount"] == "150.00"
             await ok("approval", {"scope": "production", "decision": "Approved"})
             await ok("order_amend", {"amount": "1200.01", "customer_approved": True, "reason": "Agreed extra work", "date": "2026-10-19"})
@@ -2199,9 +2199,10 @@ def test_returning_to_quotation_keeps_confirmed_order_terms_and_navigation_avail
             original = project['orders']
             project = await accepted(env, project, 'move_stage', {'target_stage':'order'})
             project = await accepted(env, project, 'move_stage', {'target_stage':'quotation'})
-            rejected = await command(env, project, 'quotation_receive', {'design_version_id':project['design_versions'][-1]['id'], 'received_date':'2026-10-26', 'amount':'1200.00', 'url':'https://example.com/revised.pdf'})
-            assert rejected.status_code == 422
-            assert 'amendment' in rejected.text
+            project = await accepted(env, project, 'quotation_receive', {'design_version_id':project['design_versions'][-1]['id'], 'received_date':'2026-10-26', 'amount':'1200.00', 'url':'https://example.com/revised.pdf'})
+            assert project['quotation_versions'][-1]['amount'] == '1200.00'
+            assert project['orders'] == original
+            assert project['orders'][-1]['quotation_version_id'] != project['quotation_versions'][-1]['id']
             project = await accepted(env, project, 'move_stage', {'target_stage':'order'})
             assert project['orders'] == original
     asyncio.run(scenario())

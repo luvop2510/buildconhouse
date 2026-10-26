@@ -43,12 +43,19 @@ async function clickCommand(page: Page, id: string, command: string) {
   return response.json();
 }
 
-test('Kitchen every stage separates its saved details into bordered label and value fields', async ({ page, context }, info) => {
+test('Kitchen stages retain bordered details and directly accessible Design and Quotation forms', async ({ page, context }, info) => {
   const project = await projectAt(context.request, 'lead');
   await seed(page);
   await page.goto(`/kitchen/${project.id}/stages/lead`);
   for (const stage of ['lead', 'visit', 'cad', 'design', 'quotation', 'order', 'production', 'installation', 'completed']) {
     await page.getByTestId(`kitchen-progress-${stage}`).click();
+    if (stage === 'design' || stage === 'quotation') {
+      const id = stage === 'design' ? 'kitchen-design-edit-requirements' : 'kitchen-quotation-amount';
+      await expect(page.getByTestId(id)).toBeVisible();
+      await expect(page.getByTestId(id)).toHaveJSProperty('readOnly', true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+      continue;
+    }
     const details = page.getByTestId(`kitchen-${stage}-details`);
     await expect(details).toBeVisible();
     const fields = await details.evaluate(element => Array.from(element.children).map(field => ({
@@ -81,7 +88,7 @@ test('Kitchen missing quotation and order prerequisites offer working return act
   await seed(page);
   await page.goto(`/kitchen/${project.id}/stages/quotation`);
   await expect(page.getByTestId('kitchen-quotation-receive')).toBeDisabled();
-  await expect(page.getByText('Record a design presentation in Design first.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Save a design in Design first.', { exact: true })).toBeVisible();
   await page.getByTestId('kitchen-quotation-amount').fill('1250.50');
   await page.getByTestId('kitchen-quotation-receive').scrollIntoViewIfNeeded();
   await page.screenshot({ path: info.outputPath('quotation-prerequisites.png') });

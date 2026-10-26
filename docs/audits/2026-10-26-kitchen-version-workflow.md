@@ -20,7 +20,7 @@ Design and quotation views expose compact selectors. Design version numbers and
 quotation revision numbers are distinct; every quotation retains its explicit
 `design_version_id`. Viewing a selector changes local view state only. Design edits,
 sharing, responses and handoff name the selected record ID; project membership,
-workflow cycle, permissions, optimistic concurrency and approval immutability
+workflow cycle, permissions, optimistic concurrency and approved-record authority
 remain enforced. Corrections retain before/after audit history. The price-rejected
 v3 → revised v4 journey preserves the v3 quotation.
 
@@ -28,8 +28,8 @@ Design’s separate response-notes, correction-reason and customer-changes input
 are consolidated into Internal notes below the company-handoff controls. Existing
 response notes remain visible as historical internal content, with corrections and
 revision reasons available in History. Requirements and Budget discussion use the
-same compact multiline control. A revision request uses the internal note as its
-reason and clears only the saved note’s dirty baseline, preserving other edits.
+same compact multiline control. Historical customer revision requests retain their internal reasons. Creating a
+new version is separate from the counted customer revision-request command.
 
 `design_response` and `design_update` accept optional `approval_date`. Handoff must
 follow customer approval and its date may be later. Historical approval-event dates
@@ -100,3 +100,51 @@ The existing GitHub main branch requires independent review and backend, fronten
 frontend-security and performance checks. No protection, deadline or advisory
 suppression was changed. A read-only check of current production passed 18
 route/asset/API/security checks; that checks the existing deployment, not this code.
+
+## Simplified editable forms requested during preview review
+
+The preview exposed a frontend/API version mismatch: the candidate sent
+`approval_date` while the older live Railway model rejected extra fields. The
+release must update the compatible API before promoting the frontend.
+
+Design now has one open form. Presentation Date and the separate customer-sharing,
+response and handoff action cards are removed. Date shared with customer, actual
+approval date and company handoff date are entered directly. First save creates
+Design v1; Create Design v2 starts a separate draft; the version selector opens
+saved versions without writing. New versions do not imply customer revision
+requests. Documents remain optional and earlier uploaded references remain readable.
+`design_present` accepts the atomic form with an unknown/null presentation date;
+`design_update` omits that field and preserves historical values. Approval and
+handoff dates must remain consistent, with no invented date corrections. Existing
+owner-only approved-record corrections and production locks remain.
+
+Quotation also has one open form with independent received/sent controls, received
+and sent dates, optional numeric amount, customer response and Internal notes.
+The user confirmed Not recorded / Yes / No for received and sent; customer response
+uses Pending / Approved / Changes Required. Historical Rejected values remain
+readable and unchanged until explicitly edited. `quotation_update` patches the
+selected record; omitted fields and old files remain intact. New clients explicitly
+send statuses. Amount or note entry does not mark received/sent; date entry does
+not change another field. Legacy clients retain their existing date-based behavior.
+Contradictory date/status or approval combinations fail validation without altering
+other entries. Corrections have before/after audit snapshots. New quotations before
+production can be recorded without changing the saved order basis. Changing a
+bound quotation's design requires selecting another quotation explicitly in Order.
+
+Order status and saved-order edits are open controls. Customer confirmation and
+advance received expose three states; advances persist their explicit status.
+Order amounts and new order/advance dates require entry. Changing Production or
+Installation status no longer fills or clears dates. The order amendment component
+is independent, avoiding a recursive mount of all unrelated stage draft hooks.
+Financial/hold/cancel authority, explicit customer approval of changed terms and
+Return to Design after production remain enforced.
+
+Project detail reads now reuse the same configuration for duplicate inspection,
+read independent configuration/project records concurrently, and overlap authorized
+response formatting with duplicate discovery. Capability checks still precede
+returning data. Ten synthetic owner detail reads with 20 ms injected per database
+operation measured median **105.880 ms → 64.445 ms** (39.13%), with **5 → 4** total
+operations and **5 → 3** serial rounds. This excludes HTTP/auth, live MongoDB,
+rendering and hosted latency. A read-only warm hosted startup diagnostic on the
+previous candidate measured 5.959 s to the Kitchen queue; it does not certify the
+new source or claim that hosted performance is solved.

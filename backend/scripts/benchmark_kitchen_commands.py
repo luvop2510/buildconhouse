@@ -22,6 +22,20 @@ class DelayedCollection:
 
     def __getattr__(self, name):
         method = getattr(self.collection, name)
+        if name == "find":
+            def find(*args, **kwargs):
+                cursor = method(*args, **kwargs)
+                class Cursor:
+                    def limit(self, value):
+                        cursor.limit(value)
+                        return self
+                    async def to_list(self, value):
+                        self_calls.append(f"{collection_name}.find.to_list")
+                        await asyncio.sleep(0.02)
+                        return await cursor.to_list(value)
+                self_calls, collection_name = self.calls, self.name
+                return Cursor()
+            return find
         async def delayed(*args, **kwargs):
             self.calls.append(f"{self.name}.{name}")
             await asyncio.sleep(0.02)
@@ -38,17 +52,20 @@ async def main():
         service = baseline.KitchenProjectService(database)
     project = await service.create(owner, create_request(customer_id="customer-a", idempotency_key="benchmark-create"))
     calls = []
-    for name in ("kitchen_configuration", "kitchen_projects"):
+    for name in ("kitchen_configuration", "kitchen_projects", "customers"):
         setattr(database, name, DelayedCollection(getattr(database, name), name, calls))
     samples = []
     counts = []
     for index in range(10):
         calls.clear()
         start = perf_counter()
-        project = await service.command(owner, project["id"], cmd(project["version"], "move_stage", {"target_stage": "visit" if index % 2 == 0 else "lead"}))
+        if "--detail" in sys.argv:
+            project = await service.get(owner, project["id"])
+        else:
+            project = await service.command(owner, project["id"], cmd(project["version"], "move_stage", {"target_stage": "visit" if index % 2 == 0 else "lead"}))
         samples.append(round((perf_counter() - start) * 1000, 2))
         counts.append(len(calls))
-    print(json.dumps({"scope": "Synthetic in-memory command with 20 ms latency per persistence operation; owner; ten adjacent stage moves; excludes HTTP/auth/live Mongo/browser", "samples_ms": samples, "median_ms": statistics.median(samples), "database_calls_per_move": counts, "last_move_calls": calls}, indent=2))
+    print(json.dumps({"scope": "Synthetic in-memory persistence with 20 ms per operation; owner; ten project detail reads" if "--detail" in sys.argv else "Synthetic in-memory command with 20 ms latency per persistence operation; owner; ten adjacent stage moves; excludes HTTP/auth/live Mongo/browser", "samples_ms": samples, "median_ms": statistics.median(samples), "database_calls_per_move": counts, "last_move_calls": calls}, indent=2))
 
 
 if __name__ == "__main__":

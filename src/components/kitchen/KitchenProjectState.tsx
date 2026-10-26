@@ -107,13 +107,14 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
       const prefixes: Partial<Record<KitchenCommand, string[]>> = {
         assign: [], edit_lead: ["lead."], save_visit: ["visit."], save_cad: ["cad."], metadata: ["plan."],
         review_duplicate: ["duplicate."],
-        design_present: [`${cycle}.design.file`, `${cycle}.design.date`, `${cycle}.design.requirements`, `${cycle}.design.budget`, `${cycle}.design.notes`],
+        design_present: [`${cycle}.design.new.edit`, `${cycle}.design.file`, `${cycle}.design.date`, `${cycle}.design.requirements`, `${cycle}.design.budget`, `${cycle}.design.notes`],
         design_update: [`${cycle}.design.${String(payload.version_id)}.edit`],
         design_share: [`${cycle}.design.${String(payload.version_id)}.shareDate`],
         design_response: [`${cycle}.design.${String(payload.version_id)}.response`, `${cycle}.design.${String(payload.version_id)}.approvalDate`],
         design_revision: [`${cycle}.design.${String(payload.version_id)}.revisionReason`],
         design_handoff: [`${cycle}.design.${String(payload.version_id)}.handoffDate`],
-        quotation_receive: [`${cycle}.quotation.date`, `${cycle}.quotation.amount`, `${cycle}.quotation.file`, `${cycle}.quotation.url`, `${cycle}.quotation.notes`],
+        quotation_update: [`${cycle}.quotation.${String(payload.version_id)}.edit`],
+        quotation_receive: [`${cycle}.quotation.new.`, `${cycle}.quotation.date`, `${cycle}.quotation.amount`, `${cycle}.quotation.file`, `${cycle}.quotation.url`, `${cycle}.quotation.notes`],
         quotation_share: [`${cycle}.quotation.${String(payload.version_id)}.shareDate`],
         quotation_response: [`${cycle}.quotation.${String(payload.version_id)}.response`],
         order_confirmation: [`${cycle}.order.confirmed`],
@@ -144,13 +145,17 @@ export function KitchenProjectProvider({ id, returnTo, children }: { id: string;
           // The revision saves its reason, while other unsaved corrections stay dirty.
           baselines.current[editorKey] = { ...(baselines.current[editorKey] as object), notes: (updated[editorKey] as { notes: string }).notes };
         }
+        if (name === "quotation_update") {
+          const quotationEditorKey = `${cycle}.quotation.${String(payload.version_id)}.edit`;
+          delete updated[quotationEditorKey]; delete baselines.current[quotationEditorKey];
+        }
         if (name === "design_update" || ["design_share", "design_response", "design_handoff"].includes(name)
           && JSON.stringify(updated[editorKey]) === JSON.stringify(baselines.current[editorKey])) {
           delete updated[editorKey];
           delete baselines.current[editorKey];
         }
         for (const key of Object.keys(updated)) {
-          if ((name === "design_present" || name === "quotation_receive") && prefixes[name]?.includes(key)) {
+          if ((name === "design_present" || name === "quotation_receive") && prefixes[name]?.some(prefix => key.startsWith(prefix))) {
             delete updated[key];
             delete baselines.current[key];
             continue;

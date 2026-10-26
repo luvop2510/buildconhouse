@@ -72,7 +72,7 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
         <Text style={type.caption}>{selected === project.stage ? "CURRENT WORK" : "SAVED STAGE RECORD"}</Text>
         {selected !== project.stage ? <Alert tone="info" title="Stage records" description={future ? `Preview of ${STAGE_LABELS[selected]}. Use Next stage or Previous stage from the current stage to move this project.` : `This project is now in ${STAGE_LABELS[project.stage]}. Earlier records are read only.`} action={<Button label={actionLabel} variant="secondary" onPress={() => router.replace(path(`/stages/${project.stage}`) as any)} testID="kitchen-open-current-stage" />} /> : null}
         {!canUpdate ? <View testID="kitchen-read-only-notice"><Alert tone="info" title="View only" description="Changes and uploads require permission for this project's current stage." /></View> : null}
-        {project.commercial_basis_invalidated ? <Alert tone="warning" title="Fresh commercial approvals required" description="Present and approve a new design, then renew the quotation and order approvals. Earlier records remain in History." /> : null}
+        {project.commercial_basis_invalidated ? <Alert tone="warning" title="Fresh commercial approvals required" description="Create and approve a new design version, then renew the quotation and order approvals. Earlier records remain in History." /> : null}
         {selected === "lead" ? <DuplicateReview project={project} disabled={disabled || Boolean(held)} /> : null}
         <KitchenAssignment project={project} stage={selected} disabled={disabled || Boolean(held) || selected !== project.stage} />
         <EarlyStage project={project} stage={selected} disabled={disabled || Boolean(held)} />
@@ -274,11 +274,12 @@ function ProjectHistory({ project }: { project: KitchenProject }) {
   if (category === "designs" || category === "quotations") entries = [...(category === "designs" ? project.design_versions || [] : project.quotation_versions || [])].reverse().map(version => ({ id: version.id, title: `${category === "designs" ? "Design v" : "Quotation r"}${version.number} · ${version.response}`, lines: [
     `${displayDate(version.presentation_date || version.received_date)}${version.amount ? ` · ${rupees(version.amount)}` : ""}`,
     `Recorded by ${actor(version.actor_id)}`,
+    ...(category === "quotations" ? [`Quotation received: ${version.received_status || (version.received_date ? "Yes" : "Not recorded")}`, `Sent to customer: ${version.sent_status || (version.shared_date ? "Yes" : "Not recorded")}`] : []),
     `Shared ${displayDate(version.shared_date)}${version.shared_by ? ` · ${actor(version.shared_by)}` : ""}`,
     ...(category === "designs" ? [`Sent to company ${displayDate(version.handoff_date)}${version.handoff_by ? ` · ${actor(version.handoff_by)}` : ""}`] : version.design_version_id ? [`Based on ${versionName(version.design_version_id) || "recorded design"}`] : []),
     ...(category === "designs" && version.requirements ? [`Requirements: ${version.requirements}`] : []), ...(category === "designs" && version.budget_discussion ? [`Budget discussion: ${version.budget_discussion}`] : []),
     ...(version.approval_date ? [`Customer approval date: ${displayDate(version.approval_date)}`] : []),
-    ...(version.attachment_id ? [`Document: ${documentName(version.attachment_id)}`] : []), ...(version.notes ? [version.notes] : []), ...(version.response_notes ? [`Customer response: ${version.response_notes}`] : []),
+    ...(version.attachment_id ? [`Document: ${documentName(version.attachment_id)}`] : []), ...(version.notes ? [version.notes] : []), ...(version.response_notes ? [`Historical internal response notes: ${version.response_notes}`] : []),
   ], url: version.url || undefined }));
   if (category === "revisions") entries = [...(project.revision_events || [])].reverse().map(event => ({ id: event.id, title: "Customer revision request", lines: [event.reason, `Design version ${project.design_versions?.find(version => version.id === event.version_id)?.number || "not recorded"}`] }));
   if (category === "visits") entries = [...(project.site_visits || [])].reverse().map(event => ({ id: event.id, title: event.actual ? "Actual site visit" : "Scheduled site visit", lines: [displayDate(event.date), ...(event.notes ? [event.notes] : [])] }));

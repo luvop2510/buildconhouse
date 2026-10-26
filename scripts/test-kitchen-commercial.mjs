@@ -32,6 +32,12 @@ const versionExports = {};
 const versionSource = await readFile(new URL('../src/components/kitchen/KitchenVersions.ts', import.meta.url), 'utf8');
 new Function('exports', ts.transpileModule(versionSource, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText)(versionExports);
 mocks['./KitchenVersions'] = versionExports;
+for (const component of ['DesignStage', 'QuotationStage']) {
+  const content = await readFile(new URL(`../src/components/kitchen/${component}.tsx`, import.meta.url), 'utf8');
+  const output = {};
+  new Function('require', 'exports', ts.transpileModule(content, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText)(name => mocks[name] || require(name), output);
+  mocks[`./${component}`] = output;
+}
 const source = await readFile(new URL('../src/components/kitchen/CommercialStages.tsx', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
 const exports = {};
@@ -60,23 +66,27 @@ function render(stage, fields = {}, values = {}, command = async (...args) => { 
   return refresh();
 }
 let view = render('quotation', { design_versions: [] });
-assert.match(view.text, /Record a design presentation in Design first/);
 assert.equal(view.control('kitchen-quotation-receive').props.disabled, true);
 await view.control('kitchen-complete-design').props.onPress();
 assert.deepEqual(calls.pop(), ['move_stage', { target_stage: 'design' }]);
-assert.equal(view.control('kitchen-quotation-upload'), undefined);
-assert.equal(view.nodes.some(node => node.type === 'document'), false, 'Quotation creation no longer requests a document');
-view = render('quotation', {}, { 'quotation.file': 'file', 'quotation.amount': '1200.25' });
-assert.equal(view.control('kitchen-quotation-receive').props.disabled, false);
-await view.control('kitchen-quotation-receive').props.onPress();
-assert.deepEqual(calls.pop(), ['quotation_receive', { design_version_id: 'design', amount: '1200.25', received_date: '2026-10-26', notes: null }]);
-for (const amount of ['-1', '1.111', 'NaN', '1000000000000.01']) {
-  view = render('quotation', {}, { 'quotation.file': 'file', 'quotation.amount': amount });
-  assert.equal(view.control('kitchen-quotation-receive').props.disabled, true, amount);
+assert.equal(view.nodes.some(node => node.type === 'document'), false);
+for (const amount of ['', '1200.25', '0.00', '-1', '1.111', 'NaN', '1000000000000.01']) {
+  view = render('quotation');
+  view.control('kitchen-quotation-amount').props.onChangeText(amount);
+  view = view.refresh();
+  assert.equal(view.control('kitchen-quotation-receive').props.disabled, ['-1', '1.111', 'NaN', '1000000000000.01'].includes(amount));
+  if (!view.control('kitchen-quotation-receive').props.disabled) {
+    await view.control('kitchen-quotation-receive').props.onPress();
+    const [command, body] = calls.pop();
+    assert.equal(command, 'quotation_receive');
+    assert.equal(body.amount, amount || null);
+    assert.equal(body.received_status, 'Not recorded');
+    assert.equal(body.sent_status, 'Not recorded');
+    assert.equal(body.received_date, null);
+    assert.equal(body.shared_date, null);
+  }
 }
-view = render('quotation', {}, { 'quotation.file': 'file', 'quotation.amount': '0.00' });
-assert.equal(view.control('kitchen-quotation-receive').props.disabled, false, 'Zero quotation amounts remain compatible with the API');
-view = render('order', { quotation_versions: [quotation] }, { 'order.confirmed': 'Yes' });
+view = render('order', { quotation_versions: [quotation] }, { 'order.confirmed': 'Yes', 'order.date': '2026-10-26', 'order.finalAmount.quotation': '1000.00', 'order.finalAmount.quotation-two': '1000.00' });
 assert.match(view.text, /Pending confirmation/);
 assert.equal(view.control('kitchen-order-confirm').props.disabled, false, 'A pending order can be confirmed against its approved quotation');
 await view.control('kitchen-order-confirm').props.onPress();
@@ -90,14 +100,8 @@ view = render('order', { quotation_versions: [quotation], design_revision_pendin
 assert.equal(view.control('kitchen-order-confirm').props.disabled, true, 'An approved old quotation cannot confirm a pending design revision');
 assert.match(view.text, /selected design needs approval/);
 assert.ok(view.control('kitchen-complete-quotation'), 'Recovery returns through the adjacent Quotation stage');
-for (const amount of ['', '   ']) {
-  view = render('quotation', {}, { 'quotation.amount': amount });
-  assert.equal(view.control('kitchen-quotation-receive').props.disabled, false, 'A quotation saves without an amount or document');
-  await view.control('kitchen-quotation-receive').props.onPress();
-  assert.equal(calls.pop()[1].amount, null, 'Blank amount is missing rather than zero');
-}
 for (const value of ['Not recorded', 'Yes', 'No']) {
-  view = render('order', { quotation_versions: [quotation], customer_order_confirmation: value });
+  view = render('order', { quotation_versions: [quotation], customer_order_confirmation: value }, { 'order.date': '2026-10-26', 'order.finalAmount.quotation': '1000.00' });
   assert.match(view.text, new RegExp(`Customer order confirmation: ${value}`));
   assert.deepEqual(view.control('kitchen-order-confirmed').props.values, ['Not recorded', 'Yes', 'No']);
   await view.control('kitchen-order-confirmation-save').props.onPress();
@@ -111,19 +115,24 @@ assert.deepEqual(calls.pop(), ['order_status', { status: 'On Hold', reason: 'Awa
 assert.equal(view.nodes.some(node => node.type === 'document'), false, 'Order confirmation never requests a new document');
 const design2 = { ...design, id: 'design-two', number: 2, requirements: 'Version two requirements', notes: 'Version two internal notes' };
 const quote2 = { ...quotation, id: 'quotation-two', number: 7, design_version_id: design2.id, notes: 'Revision seven notes' };
-view = render('design', { design_versions: [{ ...design, approval_date: '2026-10-20' }] }, { 'design.design.edit.expanded': true });
+view = render('design', { design_versions: [{ ...design, approval_date: '2026-10-20' }] });
+assert.equal(view.control('kitchen-design-edit-date'), undefined, 'Presentation date is removed');
 view.control('kitchen-design-edit-response').props.onChange('Pending');
 view = view.refresh();
-assert.equal(view.control('kitchen-design-edit-handoff'), undefined, 'Changing approval clears the current handoff');
-assert.equal(view.control('kitchen-design-edit-save').props.disabled, false, 'A pending approval does not trap the form');
+assert.equal(view.control('kitchen-design-edit-handoff').props.value, design.handoff_date, 'Changing response does not silently rewrite entered dates');
+assert.equal(view.control('kitchen-design-edit-save').props.disabled, true);
+view.control('kitchen-design-edit-approval-date').props.onChange('');
+view.control('kitchen-design-edit-handoff').props.onChange('');
+view = view.refresh();
+assert.equal(view.control('kitchen-design-edit-save').props.disabled, false);
 await view.control('kitchen-design-edit-save').props.onPress();
-assert.deepEqual([calls.at(-1)[1].approval_date, calls.at(-1)[1].handoff_date], [null, null]);
+assert.equal(calls.at(-1)[1].presentation_date, undefined, 'Historical presentation date is omitted and preserved');
 calls.length = 0;
 view = render('design', { design_versions: [design, design2], quotation_versions: [quotation, quote2] });
-assert.match(view.text, /Version two requirements/);
+assert.equal(view.control('kitchen-design-edit-requirements').props.value, 'Version two requirements');
 view.control('kitchen-design-version').props.onChange(design.id);
 view = view.refresh();
-assert.match(view.text, /Version one requirements/);
+assert.equal(view.control('kitchen-design-edit-requirements').props.value, 'Version one requirements');
 assert.doesNotMatch(view.text, /Version two requirements/);
 assert.match(view.text, /Related quotation revisions: r1/);
 assert.equal(calls.length, 0, 'Viewing a design does not write');
@@ -147,9 +156,9 @@ assert.match(view.text, /Quotation r7 · Design v2/);
 view.control('kitchen-quotation-design-version').props.onChange(design.id);
 view = view.refresh();
 assert.match(view.text, /Quotation r1 · Design v1/);
-await view.control('kitchen-quotation-receive').props.onPress();
+await view.control('kitchen-quotation-edit-save').props.onPress();
 assert.equal(calls.pop()[1].design_version_id, design.id, 'A revised quote retains the explicitly selected design ID');
-view = render('order', { design_versions: [design, design2], quotation_versions: [quotation, quote2] }, { 'order.confirmed': 'Yes' });
+view = render('order', { design_versions: [design, design2], quotation_versions: [quotation, quote2] }, { 'order.confirmed': 'Yes', 'order.date': '2026-10-26', 'order.finalAmount.quotation': '1000.00', 'order.finalAmount.quotation-two': '1000.00' });
 view.control('kitchen-order-quotation-revision').props.onChange(quotation.id);
 view = view.refresh();
 await view.control('kitchen-order-confirm').props.onPress();
@@ -164,17 +173,17 @@ for (const stage of ['production', 'installation']) {
   view = render(stage, { design_versions: [design, design2], quotation_versions: [quotation, quote2], orders: [order] });
   assert.match(view.text, /Quotation r1 · Design v1/, 'Downstream context follows the saved order IDs, not the latest design');
 }
-view = render('order', { quotation_versions: [quotation], orders: [order] }, { 'order.advanceReceived': 'Yes', 'order.advanceAmount': '100.00' });
+view = render('order', { quotation_versions: [quotation], orders: [order] }, { 'order.advanceReceived': 'Yes', 'order.advanceAmount': '100.00', 'order.advanceDate': '2026-10-26' });
 assert.equal(view.control('kitchen-advance-save').props.disabled, false);
 await view.control('kitchen-advance-save').props.onPress();
-assert.deepEqual(calls.pop(), ['order_advance', { received: true, amount: '100.00', date: '2026-10-26' }]);
+assert.deepEqual(calls.pop(), ['order_advance', { status: 'Yes', received: true, amount: '100.00', date: '2026-10-26' }]);
 view = render('order', { quotation_versions: [quotation], orders: [order] }, { 'order.advanceReceived': 'Yes', 'order.advanceAmount': '0.00' });
 assert.equal(view.control('kitchen-advance-save').props.disabled, true, 'Received advances require a positive amount');
 view = render('order', { quotation_versions: [quotation], orders: [order] }, { 'order.advanceReceived': 'No' });
 assert.equal(view.control('kitchen-advance-save').props.disabled, false);
-assert.equal(view.control('kitchen-advance-amount'), undefined);
+assert.equal(view.control('kitchen-advance-amount').props.value, '');
 await view.control('kitchen-advance-save').props.onPress();
-assert.deepEqual(calls.pop(), ['order_advance', { received: false, amount: '0.00', date: null }]);
+assert.deepEqual(calls.pop(), ['order_advance', { status: 'No', received: false, amount: '0.00', date: null }]);
 view = render('order', { quotation_versions: [quotation], orders: [order], permissions: {} }, { 'order.finalAmount.quotation': '1500.00', 'order.amountApproved': 'Yes' });
 assert.equal(view.control('kitchen-order-confirm'), undefined, 'An existing order cannot be overwritten');
 view = render('order', { quotation_versions: [quotation], permissions: {} }, { 'order.finalAmount.quotation': '1500.00', 'order.amountApproved': 'Yes' });
