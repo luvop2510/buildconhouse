@@ -15,6 +15,12 @@ server-version conflicts require recovery review rather than overwriting newer
 records. Stable actor/floor-bound creation keys prevent duplicate first saves
 following a lost HTTP response, retaining receipts after deletion.
 
+A lost first customer-create response now also re-applies any corrected name
+or phone before the quotation snapshots that customer. The created customer ID
+is retained if the corrective update fails, allowing the next save to retry
+without another contact. Its regression failed before the repair; all 33
+editor/list recovery cases pass afterward.
+
 Tile selection and quotation workflows required separate submission/approval
 steps. The only selection progression is Move to Quotation; quotation ordering
 remains an explicit Place Order. Retired approval mutations reject attempts and
@@ -56,7 +62,7 @@ the shared simple actions/assignment flow, retaining Schedule Selection.
 Focused verification: 65 quotation/tile/PDF/floor tests pass, plus seven
 real loopback Mongo/admission checks. The Mongo test uses real transactions and
 verifies concurrent first-create replay, CAS conflicts, delete protections and
-cancellation before late creation. Thirty-two editor/list recovery regressions,
+cancellation before late creation. Thirty-three editor/list recovery regressions,
 four durable storage cases, five reset cases, nine picker cases and five order
 review cases pass. TypeScript, changed-file zero-warning lint and production web
 export pass. All 21 focused browser cases passed across desktop, phone Chrome

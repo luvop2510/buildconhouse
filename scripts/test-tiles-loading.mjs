@@ -503,3 +503,25 @@ test('a deletion waiting on document A save cannot delete newly opened document 
   remove.resolve({ ok: true }); await deleting; await fixture.settle();
   assert.equal(fixture.state.docId, 'B'); assert.equal(fixture.state.header.customerName, 'Customer B');
 });
+
+test('lost customer-create response preserves corrected customer fields before creating the quotation', async () => {
+  const fixture = builder(); fixture.render(); await fixture.settle();
+  fixture.state.setHeaderField('customerName', 'Original name'); await fixture.settle();
+  fixture.fireAutosave(); await fixture.settle();
+  assert.equal(fixture.requests[0].url, '/customers');
+  fixture.requests[0].reject({ detail: 'Response interrupted' }); await fixture.settle();
+  fixture.state.setHeaderField('customerName', 'Corrected name');
+  fixture.state.setHeaderField('phone', '9000000001'); await fixture.settle();
+  fixture.fireAutosave(); await fixture.settle();
+  assert.equal(fixture.requests[1].url, '/customers');
+  assert.equal(fixture.requests[1].payload.client_draft_id, fixture.requests[0].payload.client_draft_id);
+  fixture.requests[1].resolve({ id: 'created-customer', name: 'Original name', phone: '' }); await fixture.settle();
+  const correction = fixture.requests[2];
+  assert.equal(correction.method, 'PATCH');
+  assert.equal(correction.url, '/customers/created-customer');
+  assert.equal(correction.payload.name, 'Corrected name');
+  assert.equal(correction.payload.phone, '9000000001');
+  correction.resolve({}); await fixture.settle();
+  assert.equal(fixture.requests[3].url, '/quotations');
+  assert.equal(fixture.requests[3].payload.customer_id, 'created-customer');
+});

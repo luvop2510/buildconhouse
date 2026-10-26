@@ -695,8 +695,15 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         cid = created.id;
         customerIdRef.current = created.id;
         setCustomerId(created.id);
+        // A lost first response can replay the original contact after the
+        // user corrected its name/phone. Save those corrections before the
+        // quotation takes its customer snapshot; retain the ID on failure.
+        if (created.name !== name || (created.phone || "") !== header.phone.trim()) {
+          await api.patch(`/customers/${cid}`, { name, phone: header.phone.trim() || null }, { floorId: TILES_FLOOR_ID });
+          if (!current()) return null;
+        }
         setCustomerSnapshot({ name, phone: header.phone.trim() });
-        setCustomers((cur) => [created, ...cur]);
+        setCustomers((cur) => [{ ...created, name, phone: header.phone.trim() }, ...cur]);
       } else if (name !== customerSnapshot.name || header.phone.trim() !== customerSnapshot.phone) {
         // Header edits correct the customer record (typo fixes stay in sync).
         await api.patch(`/customers/${cid}`, { name, phone: header.phone.trim() || null }, { floorId: TILES_FLOOR_ID });
