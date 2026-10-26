@@ -18,7 +18,7 @@ const mocks = {
   '@/src/components/AppText': { Text: host('text') },
   '@/src/components/ds': { Alert: ({ title, description, action }) => React.createElement('alert', {}, title, description, action) },
   '@/src/api/kitchenProjects': { KITCHEN_STAGES: stages, STAGE_LABELS: labels },
-  './shared': { Choice: host('choice'), KitchenPanel: host('panel'), displayDate: value => value || 'Not recorded', historicalCount: value => value || 0, rupees: value => value || '0.00' },
+  './shared': { Choice: host('choice'), KitchenPanel: host('panel'), KitchenDetails: ({ items, testID }) => React.createElement('details', {testID}, items.map(item => `${item.label}: ${item.value}`).join(' ')), displayDate: value => value || 'Not recorded', historicalCount: value => value || 0, rupees: value => value || '0.00' },
   './KitchenFilters': { KitchenDateField: host('date') },
   './KitchenDates': { kitchenToday: () => '2026-10-26' },
   './KitchenDocuments': { DocumentChoice: host('document') },
@@ -65,7 +65,7 @@ for (const amount of ['', '-1', '1.111', 'NaN', '1000000000000.01']) {
 view = render('quotation', {}, { 'quotation.file': 'file', 'quotation.amount': '0.00' });
 assert.equal(view.control('kitchen-quotation-receive').props.disabled, false, 'Zero quotation amounts remain compatible with the API');
 view = render('order', { quotation_versions: [quotation] });
-assert.match(view.text, /Pending confirmation/);
+assert.match(view.text, /Order status: Pending/);
 assert.equal(view.control('kitchen-order-confirm').props.disabled, false, 'A pending order can be confirmed against its approved quotation');
 await view.control('kitchen-order-confirm').props.onPress();
 assert.equal(calls.pop()[0], 'order_confirm');

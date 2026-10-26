@@ -788,9 +788,11 @@ async def update_quotation(
         )
         if body.customer_id != doc.get("customer_id"):
             customer_changed_from = doc.get("customer_name")
+            # Refreshing the same contact must preserve the document's chosen
+            # or historical referral; explicit reference edits are handled below.
+            update.update(_customer_referrer_fields(new_customer))
         update["customer_id"] = new_customer["id"]
         update["customer_name"] = new_customer.get("company") or new_customer["name"]
-        update.update(_customer_referrer_fields(new_customer))
         # Refresh the frozen phone snapshot to the new customer's phone unless
         # this same request is also explicitly setting one.
         if body.phone_snapshot is None:

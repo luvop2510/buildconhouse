@@ -174,3 +174,139 @@ test('returning A after B does not revive A’s older in-flight save', async () 
   assert.equal(fixture.requests.length, 4);
   assert.equal(fixture.state.header.customerName, 'Customer A');
 });
+
+for (const kind of ['architect', 'interior_designer']) {
+  test(`tile partner selection autosaves actual ${kind} identity and restores its saved display fields`, async () => {
+    const fixture = builder(); fixture.render(); fixture.navigate('partner-doc');
+    fixture.requests[0].resolve(restoredDoc('partner-doc')); await fixture.settle();
+    const partner = { id: `existing-${kind}`, type: kind, name: `Saved ${kind}`, company: 'Existing studio' };
+    fixture.state.pickPartner(partner); await fixture.settle();
+    fixture.fireAutosave(); await fixture.settle();
+    const saved = fixture.requests.find(request => request.method === 'PATCH');
+    assert.equal(saved.url, '/quotations/partner-doc');
+    assert.equal(saved.payload.referrer_id, partner.id);
+    assert.equal(saved.payload.referrer_type, kind);
+    assert.equal(saved.options.floorId, 'ground-floor');
+    assert.equal(fixture.requests.filter(request => request.method === 'POST').length, 0, 'Selecting an existing contact must not create a referrer or customer');
+    saved.resolve({ subtotal: 0, grand_total: 0 }); await fixture.settle();
+    const restored = builder(); restored.render(); restored.navigate('partner-doc');
+    restored.requests[0].resolve({ ...restoredDoc('partner-doc'), referrer_id: partner.id, referrer_type: kind, referrer_name: partner.name, referrer_company: partner.company });
+    await restored.settle();
+    assert.equal(restored.state.partner.id, partner.id);
+    assert.equal(restored.state.partner.type, kind);
+    assert.equal(restored.state.partner.name, partner.name);
+    assert.equal(restored.state.partner.company, partner.company);
+    restored.state.pickPartner(null); await restored.settle();
+    restored.fireAutosave(); await restored.settle();
+    const cleared = restored.requests.find(request => request.method === 'PATCH');
+    assert.equal(cleared.payload.referrer_id, '', 'Explicit removal must send an empty ID rather than omit the update');
+    assert.equal(cleared.payload.referrer_type, null);
+    cleared.resolve({ subtotal: 0, grand_total: 0 }); await restored.settle();
+  });
+}
+
+test('first tile creation persists an explicitly chosen partner with a follow-up patch', async () => {
+  const fixture = builder(); fixture.render();
+  fixture.state.pickCustomer({ id: 'customer', name: 'Original customer', phone: '123' });
+  fixture.state.setHeaderField('address', 'Tile partner create address');
+  fixture.state.pickPartner({ id: 'explicit-interior', type: 'interior_designer', name: 'Chosen existing interior' });
+  await fixture.settle(); fixture.fireAutosave(); await fixture.settle();
+  const create = fixture.requests.find(request => request.method === 'POST');
+  assert.equal(create.url, '/quotations');
+  create.resolve({ id: 'created-partner-doc', number: 'TQ-PARTNER' }); await fixture.settle();
+  const patch = fixture.requests.find(request => request.method === 'PATCH');
+  assert.ok(patch, 'Quotation creation infers customer referral; an explicit document choice requires a follow-up PATCH');
+  assert.equal(patch.url, '/quotations/created-partner-doc');
+  assert.equal(patch.payload.referrer_id, 'explicit-interior');
+  assert.equal(patch.payload.referrer_type, 'interior_designer');
+  patch.resolve({ subtotal: 0, grand_total: 0 }); await fixture.settle();
+  assert.equal(fixture.state.partner.id, 'explicit-interior');
+  assert.equal(fixture.state.partner.type, 'interior_designer');
+  const reloaded = builder(); reloaded.render(); reloaded.navigate('created-partner-doc');
+  reloaded.requests[0].resolve({ ...restoredDoc('created-partner-doc'), referrer_id: patch.payload.referrer_id,
+    referrer_type: patch.payload.referrer_type, referrer_name: 'Chosen existing interior', referrer_company: 'Saved interior studio' });
+  await reloaded.settle();
+  assert.equal(reloaded.state.partner.id, 'explicit-interior');
+  assert.equal(reloaded.state.partner.type, 'interior_designer');
+  assert.equal(reloaded.state.partner.company, 'Saved interior studio');
+});
+
+for (const fields of [
+  { referrer_id: 'archived-reference', referrer_type: 'architect', referrer_name: 'Archived architect', referrer_company: 'Historical studio' },
+  { referrer_id: null, referrer_type: null, referrer_name: 'Legacy free text architect', referrer_company: 'Legacy company' },
+]) {
+  test(`unrelated tile autosave preserves untouched ${fields.referrer_id ? 'archived' : 'legacy free text'} referral`, async () => {
+    const fixture = builder(); fixture.render(); fixture.navigate('historical-partner');
+    fixture.requests[0].resolve({ ...restoredDoc('historical-partner'), ...fields }); await fixture.settle();
+    fixture.state.setHeaderField('address', 'Corrected address only'); await fixture.settle();
+    fixture.fireAutosave(); await fixture.settle();
+    const patch = fixture.requests.find(request => request.method === 'PATCH');
+    assert.equal(patch.url, '/quotations/historical-partner');
+    assert.equal(Object.hasOwn(patch.payload, 'referrer_id'), false, 'Unchanged referral must be omitted so archived identities are not revalidated or legacy text cleared');
+    assert.equal(Object.hasOwn(patch.payload, 'referrer_type'), false);
+    patch.resolve({ subtotal: 0, grand_total: 0 }); await fixture.settle();
+    assert.equal(fixture.state.partner?.name || fixture.state.legacyPartnerLabel, fields.referrer_name, 'Unrelated edits retain the historical display label without inventing an identity');
+  });
+}
+
+
+test('failed first-create partner patch retries the retained document without another creation', async () => {
+  const fixture = builder(); fixture.render();
+  fixture.state.pickCustomer({ id: 'customer', name: 'Original customer', phone: '123' });
+  fixture.state.setHeaderField('address', 'Partner retry address');
+  fixture.state.pickPartner({ id: 'retry-architect', type: 'architect', name: 'Retry architect' });
+  await fixture.settle(); fixture.fireAutosave(); await fixture.settle();
+  const create = fixture.requests.find(request => request.method === 'POST');
+  create.resolve({ id: 'retained-partner-doc', number: 'TQ-RETRY' }); await fixture.settle();
+  const failed = fixture.requests.find(request => request.method === 'PATCH');
+  assert.ok(failed);
+  failed.reject({ detail: 'Synthetic interrupted partner patch' }); await fixture.settle();
+  assert.equal(fixture.state.docId, 'retained-partner-doc');
+  assert.equal(fixture.state.saveState, 'error');
+  assert.equal(fixture.state.partner.id, 'retry-architect');
+  const retry = fixture.state.retrySave(); await fixture.settle();
+  const patches = fixture.requests.filter(request => request.method === 'PATCH');
+  assert.equal(patches.length, 2);
+  assert.equal(patches[1].url, '/quotations/retained-partner-doc');
+  assert.equal(patches[1].payload.referrer_id, 'retry-architect');
+  assert.equal(patches[1].payload.referrer_type, 'architect');
+  assert.equal(fixture.requests.filter(request => request.method === 'POST').length, 1, 'A persisted document ID must survive the secondary write failure');
+  patches[1].resolve({ subtotal: 0, grand_total: 0 }); await retry; await fixture.settle();
+  assert.equal(fixture.state.saveState, 'saved');
+  assert.equal(fixture.parameterUpdates.at(-1).id, 'retained-partner-doc');
+});
+
+test('a newer partner selection during first creation remains dirty and replaces the earlier saved choice', async () => {
+  const fixture = builder(); fixture.render();
+  fixture.state.pickCustomer({ id: 'customer', name: 'Original customer', phone: '123' });
+  fixture.state.setHeaderField('address', 'Partner race address');
+  fixture.state.pickPartner({ id: 'old-architect', type: 'architect', name: 'Earlier architect' });
+  await fixture.settle(); fixture.fireAutosave(); await fixture.settle();
+  const create = fixture.requests.find(request => request.method === 'POST');
+  fixture.state.pickPartner({ id: 'new-interior', type: 'interior_designer', name: 'Newer interior' });
+  await fixture.settle();
+  create.resolve({ id: 'partner-race-doc', number: 'TQ-RACE' }); await fixture.settle();
+  const firstPatch = fixture.requests.find(request => request.method === 'PATCH');
+  assert.equal(firstPatch.payload.referrer_id, 'old-architect');
+  firstPatch.resolve({ subtotal: 0, grand_total: 0 }); await fixture.settle();
+  assert.equal(fixture.state.partner.id, 'new-interior', 'Completion must not replace edits typed during the request');
+  fixture.fireAutosave(); await fixture.settle();
+  const patches = fixture.requests.filter(request => request.method === 'PATCH');
+  assert.equal(patches.length, 2, 'The newer partner must schedule another autosave');
+  assert.equal(patches[1].url, '/quotations/partner-race-doc');
+  assert.equal(patches[1].payload.referrer_id, 'new-interior');
+  assert.equal(patches[1].payload.referrer_type, 'interior_designer');
+  assert.equal(fixture.requests.filter(request => request.method === 'POST').length, 1);
+  patches[1].resolve({ subtotal: 0, grand_total: 0 }); await fixture.settle();
+});
+
+
+test('clearing a legacy name-only reference schedules autosave without any other edit', async () => {
+  const fixture = builder(); fixture.render(); fixture.navigate('legacy-clear');
+  fixture.requests[0].resolve({ ...restoredDoc('legacy-clear'), referrer_name: 'Legacy architect' }); await fixture.settle();
+  fixture.state.pickPartner(null); await fixture.settle(); fixture.fireAutosave(); await fixture.settle();
+  const patch = fixture.requests.find(request => request.method === 'PATCH');
+  assert.ok(patch); assert.equal(patch.payload.referrer_id, ''); assert.equal(patch.payload.referrer_type, null);
+  patch.resolve({}); await fixture.settle();
+  assert.equal(fixture.state.legacyPartnerLabel, '');
+});

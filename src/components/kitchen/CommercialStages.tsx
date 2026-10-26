@@ -4,7 +4,7 @@ import { useRouter } from "expo-router";
 import { Text } from "@/src/components/AppText";
 import { Alert } from "@/src/components/ds";
 import { KITCHEN_STAGES, STAGE_LABELS, type KitchenCommand, type KitchenProject, type KitchenStage, type KitchenWork, type KitchenVersion } from "@/src/api/kitchenProjects";
-import { Choice, displayDate, KitchenPanel, historicalCount, rupees } from "./shared";
+import { Choice, displayDate, KitchenPanel, KitchenDetails, historicalCount, rupees } from "./shared";
 import { KitchenDateField } from "./KitchenFilters";
 import { kitchenToday } from "./KitchenDates";
 import { DocumentChoice } from "./KitchenDocuments";
@@ -118,7 +118,10 @@ export function CommercialStages({ project, stage, disabled, command, mode = "ta
       <Button label="Reject as selected manager" variant="danger" disabled={locked} onPress={() => command("approval", { scope, decision: "Rejected", reason: approvalReason || null })} />
     </View>;
     return <KitchenPanel title={`${scope === "production" ? "Production entry" : "Closure"} manager approval`}>
-      <Text style={type.body}>{lastDecision ? `Last recorded decision: ${lastDecision.decision} · ${displayDate(lastDecision.at)}` : "Awaiting the selected department manager."}</Text>
+      <KitchenDetails items={[
+        { label: "Last recorded decision", value: lastDecision?.decision || "Awaiting selected manager" },
+        { label: "Decision date", value: displayDate(lastDecision?.at) },
+      ]} />
       <Text style={type.bodyMuted}>Approval records are separate from stage navigation. You can move stages whenever needed.</Text>
       {canApprove ? lastDecision && !reason?.toLowerCase().includes("manager") ? <Disclosure draftKey={`${draftCycle}.${scope}.decision`} label="Record another manager decision" testID={`kitchen-disclose-${scope}-decision`}>{decisionForm}</Disclosure> : decisionForm : <Text style={type.bodyMuted}>Only a manager explicitly selected in the current policy can record this decision.</Text>}
     </KitchenPanel>;
@@ -157,7 +160,10 @@ export function CommercialStages({ project, stage, disabled, command, mode = "ta
 
   if (mode === "amendment" && !project.permissions?.can_approve_exceptions) return <Alert tone="info" title="Owner authorization required" description="Only the owner can record restricted changes to approved commercial terms." />;
   if (mode === "amendment" && project.stage !== "order") return <KitchenPanel title="Preserved order terms">
-    <Text style={type.bodyStrong}>{latestOrder ? `Original ${rupees(latestOrder.original_amount)} · Final approved ${rupees(latestOrder.final_amount)}` : "No order recorded"}</Text>
+    <KitchenDetails items={[
+      { label: "Original amount", value: rupees(latestOrder?.original_amount) },
+      { label: "Final approved amount", value: rupees(latestOrder?.final_amount) },
+    ]} />
     <Text style={type.bodyMuted}>Commercial amendments are available during Order. To change the approved design or commercial basis at this stage, use Return to Design above with a reason. Earlier orders, work and approvals stay in History.</Text>
   </KitchenPanel>;
   if (mode === "amendment") return order ? <KitchenPanel title="Approved order amendment"><Text style={type.caption}>The original order remains preserved. Changed commercial terms require explicit customer approval.</Text>
@@ -171,16 +177,21 @@ export function CommercialStages({ project, stage, disabled, command, mode = "ta
   return <View style={{ gap: spacing.lg, display: ["lead", "visit", "cad"].includes(stage) ? "none" : "flex" }}>
     {!active && !preview && stage !== "completed" ? <Alert tone="info" title="Stage record" description="Review the saved stage record here. Use the current stage for ongoing work; previous versions are in History." /> : null}
     {stage === "design" ? <>
-      <KitchenPanel title="Design presentation"><Text style={type.bodyStrong}>{design ? `Current design · Version ${design.number}` : "No current design recorded"}</Text><Text style={type.body}>Customer-requested revisions: {historicalCount(project.design_revision_count, project.known_design_revision_count)}</Text>
-        <Text style={type.body}>Customer approval: {design?.response || "Pending"} · Shared: {displayDate(design?.shared_date)}</Text>
-        <Text style={type.body}>Presented: {displayDate(design?.presentation_date)}</Text>
-        {design?.attachment_id ? <Text style={type.bodyMuted}>Document: {project.attachments?.find(file => file.id === design.attachment_id)?.filename || "Saved project attachment"}</Text> : null}
-        {design?.requirements ? <Text style={type.body}>Requirements: {design.requirements}</Text> : null}
-        {design?.budget_discussion ? <Text style={type.body}>Budget discussion: {design.budget_discussion}</Text> : null}
-        {design?.notes ? <Text style={type.bodyMuted}>{design.notes}</Text> : null}
-        {design?.response_notes ? <Text style={type.bodyMuted}>Customer response notes: {design.response_notes}</Text> : null}
+      <KitchenPanel title="Design presentation">
+        <KitchenDetails testID="kitchen-design-details" items={[
+          { label: "Current design", value: design ? `Version ${design.number}` : "None" },
+          { label: "Customer-requested revisions", value: historicalCount(project.design_revision_count, project.known_design_revision_count) },
+          { label: "Customer approval", value: design?.response || "Pending" },
+          { label: "Shared with customer", value: displayDate(design?.shared_date) },
+          { label: "Presented", value: displayDate(design?.presentation_date) },
+          { label: "Company handoff", value: design?.handoff_date ? displayDate(design.handoff_date) : "Not recorded" },
+          ...(design?.attachment_id ? [{ label: "Document", value: project.attachments?.find(file => file.id === design.attachment_id)?.filename || "Saved project attachment" }] : []),
+          ...(design?.requirements ? [{ label: "Requirements", value: design.requirements }] : []),
+          ...(design?.budget_discussion ? [{ label: "Budget discussion", value: design.budget_discussion }] : []),
+          ...(design?.notes ? [{ label: "Design notes", value: design.notes }] : []),
+          ...(design?.response_notes ? [{ label: "Customer response notes", value: design.response_notes }] : []),
+        ]} />
         {design?.url ? <Button label="Open current design reference" variant="secondary" onPress={() => void Linking.openURL(design.url!)} /> : null}
-        <Text style={type.body}>Company handoff: {design?.handoff_date ? displayDate(design.handoff_date) : "Not recorded"}</Text>
         {active && design && !project.design_revision_pending ? <DesignEditor key={design.id} project={project} design={design} disabled={locked} command={command} /> : null}
         {project.design_revision_pending ? <Alert tone="warning" title="Revised design required" description="Present a new version before recording customer approval." /> : null}
         {(active || preview) && (!design || project.design_revision_pending) ? designForm : active && design?.response !== "Approved" ? <Disclosure draftKey={`${draftCycle}.design.newVersion`} label="Present a new version or correction" testID="kitchen-disclose-design-version">{designForm}</Disclosure> : null}
@@ -196,26 +207,39 @@ export function CommercialStages({ project, stage, disabled, command, mode = "ta
         <Button label="Record customer revision request (+1)" disabled={locked || !design || Boolean(project.design_revision_pending) || (design?.response === "Approved" && !project.permissions?.can_approve_exceptions) || !revisionReason.trim()} onPress={() => { void command("design_revision", { version_id: design!.id, reason: revisionReason }).then(saved => { if (saved) setRevisionReason(""); }); }} testID="kitchen-design-revision" />
       </Disclosure></KitchenPanel> : null}
     </> : stage === "quotation" ? <>
-      <KitchenPanel title="Company quotation"><Text style={type.bodyStrong}>{quote ? `Current quotation · Version ${quote.number} · ${rupees(quote.amount)}` : "No current quotation recorded"}</Text><Text style={type.bodyMuted}>Based on current approved design {design ? `version ${design.number}` : "—"}. Each new quotation requires its own sharing and customer approval.</Text>
-        <Text style={type.body}>Received: {displayDate(quote?.received_date)}</Text>
-        {quote?.attachment_id ? <Text style={type.bodyMuted}>Document: {project.attachments?.find(file => file.id === quote.attachment_id)?.filename || "Saved project attachment"}</Text> : null}
-        {quote?.notes ? <Text style={type.bodyMuted}>{quote.notes}</Text> : null}
-        {quote?.response_notes ? <Text style={type.bodyMuted}>Customer response notes: {quote.response_notes}</Text> : null}
-        <Text style={type.body}>Quotation received: {quote ? "Yes" : "Awaiting company quotation"}</Text>
-        <Text style={type.body}>Quotation sent to customer: {quote?.shared_date ? "Yes" : "Not yet recorded"}</Text>
-        <Text style={type.body}>Date sent to customer: {displayDate(quote?.shared_date)}</Text>
-        <Text style={type.body}>Customer response: {quote?.response || "Pending"}</Text>
+      <KitchenPanel title="Company quotation">
+        <KitchenDetails testID="kitchen-quotation-details" items={[
+          { label: "Current quotation", value: quote ? `Version ${quote.number}` : "None" },
+          { label: "Quotation received", value: quote ? "Yes" : "No" },
+          { label: "Quotation amount", value: rupees(quote?.amount) },
+          { label: "Received", value: displayDate(quote?.received_date) },
+          { label: "Quotation sent to customer", value: quote?.shared_date ? "Yes" : "No" },
+          { label: "Date sent to customer", value: displayDate(quote?.shared_date) },
+          { label: "Customer response", value: quote?.response || "Pending" },
+          ...(quote?.attachment_id ? [{ label: "Document", value: project.attachments?.find(file => file.id === quote.attachment_id)?.filename || "Saved project attachment" }] : []),
+          ...(quote?.notes ? [{ label: "Quotation notes", value: quote.notes }] : []),
+          ...(quote?.response_notes ? [{ label: "Customer response notes", value: quote.response_notes }] : []),
+        ]} />
+        <Text style={type.bodyMuted}>Based on current approved design {design ? `version ${design.number}` : "—"}. Each new quotation requires its own sharing and customer approval.</Text>
         {active && project.orders?.length && !project.commercial_basis_invalidated ? <Text style={type.bodyMuted}>This quotation belongs to a confirmed order. Record changed order terms through an approved amendment, or start a revised design cycle from Project actions. Stage navigation remains available.</Text> : active || preview ? !quote ? quoteForm : <Disclosure draftKey={`${draftCycle}.quotation.newVersion`} label="Record a revised company quotation" testID="kitchen-disclose-quotation-version">{quoteForm}</Disclosure> : null}
       </KitchenPanel>
       {responseForm(false)}
     </> : stage === "order" ? <>
       <KitchenPanel title="Order confirmation">
-        <Text style={type.bodyStrong}>Order status: {order?.status || "Pending confirmation"}</Text>
-        <Text style={type.body}>Customer order confirmation: {order?.confirmed ? "Yes" : "Not yet recorded"}</Text>
-        <Text style={type.body}>Current quotation: {quote ? `Version ${quote.number} · ${rupees(quote.amount)} · ${quote.response}` : "Not yet recorded"}</Text>
-        {order ? <><Text style={type.bodyStrong}>{order.status} · {displayDate(order.order_date)}</Text><Text style={type.body}>Original amount {rupees(order.original_amount)} · Approved final amount {rupees(order.final_amount)}</Text><Text style={type.body}>{order.notes}</Text></> : active || preview ? <>
+        <KitchenDetails testID="kitchen-order-details" items={[
+          { label: "Customer order confirmation", value: order?.confirmed ? "Yes" : "No" },
+          { label: "Order status", value: order?.status || "Pending" },
+          { label: "Current approved quotation", value: quote?.response === "Approved" && !quotationRequirement ? `Version ${quote.number} · ${rupees(quote.amount)}` : "None" },
+          { label: "Order date", value: displayDate(order?.order_date) },
+          { label: "Original amount", value: rupees(order?.original_amount) },
+          { label: "Approved final amount", value: rupees(order?.final_amount) },
+          { label: "Confirmation document", value: order?.confirmation_document_id ? project.attachments?.find(file => file.id === order.confirmation_document_id)?.filename || "Saved project attachment" : "Not attached" },
+          ...(order?.notes ? [{ label: "Order notes", value: order.notes }] : []),
+        ]} />
+        {!order && (active || preview) ? <View style={{ gap: spacing.md, paddingTop: 16, borderTopWidth: 1, borderTopColor: colors.divider }}>
+          <Text accessibilityRole="header" style={type.titleMd}>Record customer confirmation</Text>
           {orderRequirement ? stageHelp(orderRequirement, "quotation") : <Text style={type.caption}>The quotation is approved. Record the confirmation date and confirm the customer order below.</Text>}
-          <Choice label="Customer order confirmation" value={orderConfirmed} values={["Yes", "No"]} onChange={setOrderConfirmed} disabled={locked} testID="kitchen-order-confirmed" />
+          <Choice label="Customer has confirmed this order" value={orderConfirmed} values={["Yes", "No"]} onChange={setOrderConfirmed} disabled={locked} testID="kitchen-order-confirmed" />
           {dateField("Order date", orderDate, setOrderDate, "kitchen-order-date")}
           <TextField label="Final order amount (INR)" value={finalAmount} onChangeText={setFinalAmount} keyboardType="decimal-pad" editable={!locked && Boolean(project.permissions?.can_approve_exceptions)} testID="kitchen-order-amount" />
           {changedAmount ? <Choice label="Customer approved changed final amount" value={amountApproved} values={["No", "Yes"]} onChange={setAmountApproved} disabled={locked} testID="kitchen-order-amount-approved" /> : null}
@@ -225,31 +249,37 @@ export function CommercialStages({ project, stage, disabled, command, mode = "ta
           {orderConfirmed !== "Yes" ? <Text style={type.caption}>Select Yes once the customer has confirmed the order.</Text> : null}
           {changedAmount ? <Text style={type.caption}>A changed amount requires owner authorization and the customer’s explicit approval.</Text> : null}
           <Button label="Confirm customer order" disabled={locked || !validAmount(finalAmount) || !orderDate || changedAmount && (!project.permissions?.can_approve_exceptions || amountApproved !== "Yes") || orderConfirmed !== "Yes" || Boolean(orderRequirement)} onPress={() => command("order_confirm", { final_amount: finalAmount, amount_customer_approved: amountApproved === "Yes", quotation_version_id: quote!.id, order_date: orderDate, confirmation_document_id: orderFile || null, notes: orderNotes || null })} testID="kitchen-order-confirm" />
-        </> : <Text style={type.bodyMuted}>No current order recorded.</Text>}
-        {active && order ? <Disclosure draftKey={`${draftCycle}.order.document`} label="Edit order confirmation document (optional)" testID="kitchen-disclose-order-document"><DocumentChoice project={project} value={orderFile} onChange={setOrderFile} disabled={locked} label="Order confirmation document" /><Button label="Save order confirmation document" disabled={locked || !orderFile} onPress={() => command("order_document", { attachment_id: orderFile })} testID="kitchen-order-document" /></Disclosure> : order?.confirmation_document_id ? <Text style={type.body}>Confirmation document: {project.attachments?.find(file => file.id === order.confirmation_document_id)?.filename || "Saved project attachment"}</Text> : null}
+        </View> : null}
+        {active && order ? <Disclosure draftKey={`${draftCycle}.order.document`} label="Edit order confirmation document (optional)" testID="kitchen-disclose-order-document"><DocumentChoice project={project} value={orderFile} onChange={setOrderFile} disabled={locked} label="Order confirmation document" /><Button label="Save order confirmation document" disabled={locked || !orderFile} onPress={() => command("order_document", { attachment_id: orderFile })} testID="kitchen-order-document" /></Disclosure> : null}
         {active && order ? <OrderEditor project={project} order={order} disabled={locked} command={command} /> : null}
       </KitchenPanel>
       {active && order && project.permissions?.can_approve_exceptions ? <CommercialStages project={project} stage={stage} disabled={disabled} command={command} mode="amendment" /> : null}
       {preview || active && !order ? <KitchenPanel title="Advance payment">{advanceForm}</KitchenPanel> : null}
       {preview ? approval("production") : null}
       {order ? <>
-        <KitchenPanel title="Advance payment"><Text style={type.body}>Advance payment received: {order.advance.received ? `${rupees(order.advance.amount)} on ${displayDate(order.advance.date)}` : "No"}</Text>
+        <KitchenPanel title="Advance payment"><KitchenDetails testID="kitchen-advance-details" items={[
+          { label: "Advance payment received", value: order.advance.received ? "Yes" : "No" },
+          { label: "Advance amount", value: order.advance.received ? rupees(order.advance.amount) : "—" },
+          { label: "Advance date", value: displayDate(order.advance.date) },
+        ]} />
         {active ? order.advance.received ? <Disclosure draftKey={`${draftCycle}.order.advanceEdit`} label="Update the advance payment record" testID="kitchen-disclose-advance">{advanceForm}</Disclosure> : advanceForm : null}
         </KitchenPanel>
 {active && order.advance.received ? approval("production") : null}
       </> : null}
     </> : stage === "production" || stage === "installation" ? <>
       <KitchenPanel title={STAGE_LABELS[stage]}>
-        <Text style={type.bodyStrong}>Current status: {(stage === "production" ? project.production : project.installation)?.status || "Not Started"}</Text>
-        <Text style={type.body}>Start date: {displayDate((stage === "production" ? project.production : project.installation)?.start_date)}</Text>
-        <Text style={type.body}>Completion date: {displayDate((stage === "production" ? project.production : project.installation)?.completion_date)}</Text>
-        {(stage === "production" ? project.production : project.installation)?.notes ? <Text style={type.body}>{(stage === "production" ? project.production : project.installation)?.notes}</Text> : null}
+        <KitchenDetails testID={`kitchen-${stage}-details`} items={[
+          { label: "Current status", value: (stage === "production" ? project.production : project.installation)?.status || "Not Started" },
+          { label: "Start date", value: displayDate((stage === "production" ? project.production : project.installation)?.start_date) },
+          { label: "Completion date", value: displayDate((stage === "production" ? project.production : project.installation)?.completion_date) },
+          ...((stage === "production" ? project.production : project.installation)?.notes ? [{ label: "Notes", value: (stage === "production" ? project.production : project.installation)!.notes! }] : []),
+        ]} />
         {(active || preview) && (stage === "production" ? project.production : project.installation)?.status !== "Completed" ? <View style={{ gap: spacing.md }}>        <WorkForm value={stage === "production" ? production : installation} onChange={stage === "production" ? setProduction : setInstallation} production={stage === "production"} disabled={locked} />
         <Text style={type.caption}>Save these details here, or save and move to the next stage in one action.</Text>
         <Button label={`Save ${stage} details`} disabled={locked} onPress={() => saveWork()} testID={`kitchen-${stage}-save`} />
         <Button label={`Save and go to ${STAGE_LABELS[target!]}`} variant="secondary" disabled={locked} onPress={() => saveWork(true)} testID={`kitchen-${stage}-save-next`} /></View> : null}
       </KitchenPanel>
-      {stage === "installation" ? <><KitchenPanel title="Installation site visits"><Text style={type.bodyStrong}>Actual site visits: {historicalCount(project.site_visit_count, project.known_site_visit_count)}</Text>
+      {stage === "installation" ? <><KitchenPanel title="Installation site visits"><KitchenDetails items={[{ label: "Actual site visits", value: historicalCount(project.site_visit_count, project.known_site_visit_count) }]} />
         {active || preview ? <Disclosure draftKey={`${draftCycle}.site.newVisit`} label="Record a site visit" testID="kitchen-disclose-site-visit">        {dateField("Site visit date", siteDate, setSiteDate, "kitchen-site-date")}
         <Choice label="Visit actually took place" value={siteActual} values={["Not recorded", "Yes — actual visit", "No — scheduled only"]} onChange={setSiteActual} disabled={locked} testID="kitchen-site-actual" />
         <TextField label="Site visit notes" value={siteNotes} onChangeText={setSiteNotes} editable={!locked} multiline />
@@ -258,7 +288,12 @@ export function CommercialStages({ project, stage, disabled, command, mode = "ta
         <Text style={type.caption}>Scheduled visits do not increase the actual counter. Record each distinct real visit once.</Text>
 </Disclosure> : null}
       </KitchenPanel>{preview || active && project.installation?.status === "Completed" ? approval("closure") : null}</> : null}
-    </> : stage === "completed" ? <KitchenPanel title="Completed project"><Text style={type.body}>Project completion: {displayDate(project.completion_date)}</Text><Text style={type.body}>Final order amount: {rupees(project.order_amount)}</Text><Text style={type.body}>Total design revisions: {historicalCount(project.design_revision_count, project.known_design_revision_count)}</Text><Text style={type.body}>Actual site visits: {historicalCount(project.site_visit_count, project.known_site_visit_count)}</Text><Text style={type.caption}>Review previous versions, orders and approvals in History.</Text></KitchenPanel> : null}
+    </> : stage === "completed" ? <KitchenPanel title="Completed project"><KitchenDetails testID="kitchen-completed-details" items={[
+      { label: "Project completion", value: displayDate(project.completion_date) },
+      { label: "Final order amount", value: rupees(project.order_amount) },
+      { label: "Total design revisions", value: historicalCount(project.design_revision_count, project.known_design_revision_count) },
+      { label: "Actual site visits", value: historicalCount(project.site_visit_count, project.known_site_visit_count) },
+    ]} /><Text style={type.caption}>Review previous versions, orders and approvals in History.</Text></KitchenPanel> : null}
 
   </View>;
 }

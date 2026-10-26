@@ -9,7 +9,7 @@ import { NavigationLink } from "@/src/design/NavigationLink";
 import { useBp } from "@/src/design/responsive";
 import { useActionAccess } from "@/src/hooks/use-permissions";
 import { KITCHEN_STAGES, STAGE_LABELS, type KitchenCad, type KitchenLead, type KitchenProject, type KitchenStage, type KitchenVisit } from "@/src/api/kitchenProjects";
-import { Choice, displayDate, ErrorNotice, KitchenFloor, KitchenPage, KitchenPanel, rupees } from "./shared";
+import { Choice, displayDate, ErrorNotice, KitchenFloor, KitchenPage, KitchenPanel, KitchenDetails, rupees } from "./shared";
 import { KitchenDateField } from "./KitchenFilters";
 import { kitchenToday } from "./KitchenDates";
 import { LeadFields } from "./KitchenLeadFields";
@@ -61,7 +61,10 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
       </View>
       {selected === project.stage && canUpdate ? <StageNavigation project={project} disabled={disabled} /> : null}
       {loading ? <Text style={type.caption}>Refreshing saved project…</Text> : null}
-      <Text accessibilityLiveRegion="polite" style={[type.caption, { minHeight: 19 }]} testID={state.dirty ? "kitchen-unsaved-notice" : undefined}>{submission.busy ? "Saving…" : submission.error ? "Action needs attention." : state.dirty ? "Unsaved changes · save details." : savedLabel}</Text>
+      <View testID="kitchen-save-status" style={{ minHeight: 70, padding: 12, borderWidth: 1, borderColor: colors.controlBorder, borderRadius: 6, backgroundColor: colors.surfaceSecondary }}>
+        <Text style={type.label}>Save status</Text>
+        <Text accessibilityLiveRegion="polite" numberOfLines={1} style={[type.caption, { minHeight: 19, marginTop: 4 }]} testID={state.dirty ? "kitchen-unsaved-notice" : undefined}>{submission.busy ? "Saving…" : submission.error ? "Action needs attention." : state.dirty ? "Unsaved changes · save details." : savedLabel}</Text>
+      </View>
       {retainedDraft ? <Alert tone="info" title="Drafts retained" description="The latest saved record is loaded. Your unsaved entries are kept for review." /> : null}
       <ErrorNotice error={submission.error} stale={submission.stale} onReload={reload} />
       {held ? <Alert tone="warning" title={`Project ${project.lifecycle_status}`} description="The owner must resume the project before routine work can continue." /> : null}
@@ -108,8 +111,10 @@ function ProjectSummary({ project, selected }: { project: KitchenProject; select
       <View style={{ flexDirection: isPhone ? "column" : "row", flexWrap: "wrap", alignItems: "flex-start", justifyContent: "space-between", gap: spacing.md }}>
         <View style={{ flex: isPhone ? undefined : 1, minWidth: 0, maxWidth: "100%", gap: spacing.sm }}>
           <Text accessibilityRole="header" style={[type.titleLg, isPhone ? { fontSize: 22, lineHeight: 30 } : null]}>{project.customer.name}</Text>
-          <Text style={type.bodyMuted}>{project.customer.phone || "Phone not recorded"}</Text>
-          <Text style={type.bodyMuted}>{project.lead.site_location || project.customer.address || "Site not recorded"}</Text>
+          <KitchenDetails items={[
+            { label: "Phone", value: project.customer.phone || "Not recorded" },
+            { label: "Site location", value: project.lead.site_location || project.customer.address || "Not recorded" },
+          ]} />
         </View>
         <View style={{ flexDirection: isPhone ? "row" : "column", flexWrap: "wrap", alignItems: isPhone ? "center" : "flex-start", gap: spacing.sm }}><Text style={type.bodyStrong}>{project.lifecycle_status || project.status || STAGE_LABELS[project.stage]}</Text><Text style={type.caption}>Stage {current + 1} of {KITCHEN_STAGES.length} · {STAGE_LABELS[project.stage]}</Text>{project.target_completion_date ? <Text style={type.caption}>Target {displayDate(project.target_completion_date)}</Text> : null}</View>
       </View>
@@ -186,6 +191,20 @@ function EarlyStage({ project, stage, disabled }: { project: KitchenProject; sta
   if (!["lead", "visit", "cad"].includes(stage)) return null;
   return <>
     <KitchenPanel title={stage === "lead" ? "Lead details" : stage === "visit" ? "Showroom visit" : "CAD progress"}>
+      <KitchenDetails testID={`kitchen-${stage}-details`} items={stage === "lead" ? [
+        { label: "Lead status", value: project.lead.status },
+        { label: "Lead date", value: displayDate(project.lead.lead_date) },
+        { label: "Site location", value: project.lead.site_location || "Not recorded" },
+      ] : stage === "visit" ? [
+        { label: "Showroom visit status", value: project.visit.status },
+        { label: "Visit date", value: displayDate(project.visit.visit_date) },
+        { label: "Display / model", value: project.visit.display_model || "Not recorded" },
+      ] : [
+        { label: "CAD file received", value: project.cad.received ? "Yes" : "No" },
+        { label: "Design progress", value: `${project.cad.progress}%` },
+        { label: "Design status", value: project.cad.status },
+      ]} />
+      <View style={{ borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 16 }}><Text style={type.label}>{active ? "Update details" : "Recorded fields"}</Text></View>
       {stage === "lead" ? <><LeadFields value={lead} onChange={setLead} disabled={locked} />{active && project.permissions?.can_update ? <Button label="Save lead" disabled={locked} loading={submission.busy} onPress={() => command("edit_lead", lead)} testID="kitchen-lead-save" /> : null}</> : stage === "visit" ? <>
         <Text style={type.bodyMuted}>Record the showroom visit and preferred display model. The date starts at today in India and can be changed.</Text>
         <KitchenDateField label="Visit date" value={visit.visit_date || ""} onChange={visit_date => setVisit({ ...visit, visit_date: visit_date || null })} disabled={locked} testID="kitchen-visit-date" />

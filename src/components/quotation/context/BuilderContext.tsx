@@ -121,6 +121,9 @@ export type BuilderApi = {
   // Reference data
   customers: Customer[];
   referrers: Referrer[];
+  referrersLoading: boolean;
+  referrersError: string | null;
+  retryReferrers: () => void;
   categories: Category[];
   categoryById: Record<string, string>;
   referenceLoading: boolean;
@@ -224,7 +227,7 @@ export type BuilderApi = {
   customerSwitcherOpen: boolean; setCustomerSwitcherOpen: (v: boolean) => void;
   setReferrer: (type: "architect" | "interior_designer", id: string, name: string) => void;
   clearReferrer: () => void;
-  createReferrer: (data: { name: string; type: "architect" | "interior_designer" }) => Promise<string | null>;
+  createReferrer: (data: { name: string; type: "architect" | "interior_designer"; company?: string }) => Promise<string | null>;
   referrerSwitcherOpen: boolean; setReferrerSwitcherOpen: (v: boolean) => void;
   addFromProduct: (p: Product, variant?: ProductVariant, quantity?: number, notes?: string) => void;
   updateLine: (id: string, patch: Partial<Line>, coalesceKey?: string) => void;
@@ -427,6 +430,11 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
 
   // Referrer reference data + switcher sheet
   const [referrers, setReferrers] = useState<Referrer[]>([]);
+  const [referrersLoading, setReferrersLoading] = useState(false);
+  const [referrersError, setReferrersError] = useState<string | null>(null);
+  const [referrersRetry, setReferrersRetry] = useState(0);
+  const retryReferrers = useCallback(() => setReferrersRetry(value => value + 1), []);
+  const referrerCreatePending = useRef(false);
   const [referrerSwitcherOpen, setReferrerSwitcherOpen] = useState(false);
   const [referenceLoading, setReferenceLoading] = useState(true);
   const [referenceError, setReferenceError] = useState<string | null>(null);
@@ -528,13 +536,14 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     if (!referrerSwitcherOpen) return;
     const controller = new AbortController();
     if (!activeFloorId) return;
-    api.get<Referrer[]>("/referrers?include_counts=true", { floorId: activeFloorId, signal: controller.signal, cacheMs: 5 * 60_000 })
-      .then(setReferrers)
+    setReferrers([]); setReferrersLoading(true); setReferrersError(null);
+    api.get<Referrer[]>("/referrers?include_counts=true", { floorId: activeFloorId, signal: controller.signal })
+      .then(result => { if (!controller.signal.aborted) setReferrers(result); })
       .catch((error: any) => {
-        if (error?.name !== "AbortError") console.warn("Failed to load referrers", error);
-      });
+        if (!controller.signal.aborted) setReferrersError(typeof error?.detail === "string" ? error.detail : "Could not load references. Retry to choose an existing contact.");
+      }).finally(() => { if (!controller.signal.aborted) setReferrersLoading(false); });
     return () => controller.abort();
-  }, [referrerSwitcherOpen, activeFloorId]);
+  }, [referrerSwitcherOpen, activeFloorId, referrersRetry]);
 
   // A brand is a single navigation scope. Clear its previous category before
   // loading the next one so a category from another supplier cannot hide items.
@@ -1112,17 +1121,21 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     }
   }, [history, quotationId, activeFloorId]);
 
-  const createReferrer = useCallback(async (data: { name: string; type: "architect" | "interior_designer" }) => {
+  const createReferrer = useCallback(async (data: { name: string; type: "architect" | "interior_designer"; company?: string }) => {
+    if (referrerCreatePending.current) return null;
+    referrerCreatePending.current = true;
+    const generation = documentGeneration.current;
     try {
       const created = await api.post<Referrer>("/referrers", data, { floorId: activeFloorId });
-      setReferrers((cur) => [...cur, created].sort((a, b) => a.name.localeCompare(b.name)));
+      if (generation !== documentGeneration.current) return null;
+      setReferrers((cur) => [...cur.filter(item => item.id !== created.id), created].sort((a, b) => a.name.localeCompare(b.name)));
       setReferrer(created.type, created.id, created.name);
       toast.success(`${created.name} added`);
       return created.id;
     } catch (e: any) {
       toast.error(e?.detail || "Could not create referrer");
       return null;
-    }
+    } finally { referrerCreatePending.current = false; }
   }, [setReferrer, activeFloorId]);
 
   const applyHistory = history.apply;
@@ -1608,7 +1621,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   const customerCompleted = Boolean(completionSnapshot?.completed && completionSnapshot.id === quotationId && completionSnapshot.customerId === s.customerId && completionSnapshot.floorId === activeFloorId);
   const value: BuilderApi = useMemo(() => ({
     history, s,
-    customers, referrers, categories, categoryById, referenceLoading, referenceError, retryReferenceData,
+    customers, referrers, referrersLoading, referrersError, retryReferrers, categories, categoryById, referenceLoading, referenceError, retryReferenceData,
     q, setQ, pickerTab, setPickerTab, pickerList, products, productTotal, productLoading, productError, retryProducts,
     productHasMore, productLoadingMore, loadMoreProducts, recent, frequent, searchRef,
     selectedBrandIds, selectedCategoryIds, selectedSizes, setSelectedSizes,
@@ -1637,7 +1650,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     assistantFocus, setAssistantFocus, assistantOpenMobile, setAssistantOpenMobile,
   }), [
     history, s,
-    customers, referrers, categories, categoryById, referenceLoading, referenceError, retryReferenceData,
+    customers, referrers, referrersLoading, referrersError, retryReferrers, categories, categoryById, referenceLoading, referenceError, retryReferenceData,
     q, setQ, pickerTab, setPickerTab, pickerList, products, productTotal, productLoading, productError, retryProducts,
     productHasMore, productLoadingMore, loadMoreProducts, recent, frequent, searchRef,
     selectedBrandIds, selectedCategoryIds, selectedSizes, setSelectedSizes,

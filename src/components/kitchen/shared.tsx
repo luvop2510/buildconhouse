@@ -48,8 +48,16 @@ export function KitchenFloor({ children }: { children: ReactNode }) {
 }
 export function KitchenPanel({ title, children }: { title?: string; children: ReactNode }) {
   const { isPhone } = useBp();
-  return <View style={{ width: "100%", maxWidth: "100%", gap: isPhone ? 16 : 20, minWidth: 0, backgroundColor: colors.surfaceSecondary, padding: isPhone ? 16 : 24, borderRadius: 8, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border }}>
-    {title ? <Text accessibilityRole="header" aria-level={2} style={type.titleMd}>{title}</Text> : null}{children}
+  return <View style={{ width: "100%", maxWidth: "100%", gap: isPhone ? 16 : 20, minWidth: 0, backgroundColor: colors.surfaceSecondary, padding: isPhone ? 16 : 24, borderRadius: 8, borderWidth: 1, borderColor: colors.border }}>
+    {title ? <View style={{ paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: colors.divider }}><Text accessibilityRole="header" aria-level={2} style={type.titleMd}>{title}</Text></View> : null}{children}
+  </View>;
+}
+export function KitchenDetails({ items, testID }: { items: { label: string; value: string }[]; testID?: string }) {
+  const { isPhone } = useBp();
+  return <View testID={testID} style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+    {items.map(({ label, value }) => <View key={label} style={{ flexBasis: isPhone ? "100%" : "30%", flexGrow: 1, minWidth: 0, padding: 12, borderWidth: 1, borderColor: colors.controlBorder, borderRadius: 6, backgroundColor: colors.surface }}>
+      <Text style={type.body}><Text style={type.caption}>{label}:</Text>{"\n"}<Text style={type.bodyStrong}>{value}</Text></Text>
+    </View>)}
   </View>;
 }
 export function Choice<T extends string>({ label, value, values, onChange, disabled, testID }: {

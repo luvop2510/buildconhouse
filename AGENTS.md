@@ -4,6 +4,14 @@ Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work 
 
 ## Always-on Railway startup and Kitchen PDF usability — 2026-10-26
 
+Kitchen saved details use separate bordered label/value cells on every stage; keep
+confirmation, workflow status and approved quotation distinct. Existing reference
+pickers default to both types and support name/studio/code search plus retry. Tiles
+reference changes are explicit; same-customer quotation snapshot refresh must preserve
+document attribution. Preserve untouched archived/legacy references and created-ID
+retry when the first explicit reference patch fails. See
+docs/audits/2026-10-26-kitchen-details-existing-references.md.
+
 Kitchen mobile save repair: reserve the phone header/footer's geometry while
 hiding their controls during editing. Unmounting them shifts the form by 119px
 and can move a blur-triggering tap target. Keep the short save-feedback line

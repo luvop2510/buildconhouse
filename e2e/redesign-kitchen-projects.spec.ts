@@ -612,8 +612,8 @@ test('D09: legacy completed records show unavailable counts and blank historical
   await card.click();
   await expect(page.getByText('Legacy project', { exact: false })).toBeVisible();
   await openCurrentTask(page);
-  await expect(page.getByText(/^Total design revisions: Historical count unavailable(?: · Newly recorded: 0)?$/)).toBeVisible();
-  await expect(page.getByText(/^Actual site visits: Historical count unavailable(?: · Newly recorded: 0)?$/)).toBeVisible();
+  await expect(page.getByText(/^Total design revisions:\s+Historical count unavailable(?: · Newly recorded: 0)?$/)).toBeVisible();
+  await expect(page.getByText(/^Actual site visits:\s+Historical count unavailable(?: · Newly recorded: 0)?$/)).toBeVisible();
   await openStageRecord(page, 'lead');
   await expect(page.getByTestId('kitchen-lead-date')).toHaveValue('');
   await openStageRecord(page, 'installation');
@@ -1049,6 +1049,7 @@ test('Kitchen lead references create a directory entry and retain complete custo
   await page.getByTestId('kitchen-create-lead-site_location').fill('Synthetic site');
   await page.getByRole('button', { name: 'Reference · architect / interior designer', exact: true }).click();
   const name = `Kitchen architect ${info.project.name} ${Date.now()}`;
+  await page.getByTestId('customer-referrer-sheet').getByRole('button', { name: 'Architect', exact: true }).click();
   await page.getByLabel('Designer / architect name', { exact: true }).click();
   await page.getByLabel('Designer / architect name', { exact: true }).pressSequentially(name);
   await expect(page.getByRole('button', { name: 'Add and select', exact: true })).toBeEnabled();
@@ -1069,6 +1070,63 @@ test('Kitchen lead references create a directory entry and retain complete custo
   expect(details.ok(), await details.text()).toBeTruthy();
   expect((await details.json()).kitchen_projects).toEqual(expect.arrayContaining([expect.objectContaining({ id: project.id, status: 'lead' })]));
 });
+
+for (const referenceType of ['architect', 'interior_designer'] as const) {
+  test(`Kitchen intake selects an existing ${referenceType} from all references and preserves its directory identity`, async ({ page, context }, info) => {
+    const headers = { 'X-Floor-Id': 'second-floor' };
+    const suffix = `${info.project.name}-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+    const references = [];
+    for (const type of ['architect', 'interior_designer'] as const) {
+      const response = await context.request.post('/api/referrers', { headers, data: {
+        name: `Existing Kitchen ${type} ${suffix}`, type, company: `Kitchen studio ${type} ${suffix}`,
+      } });
+      expect(response.ok(), await response.text()).toBeTruthy();
+      references.push(await response.json());
+    }
+    const reference = references.find(row => row.type === referenceType)!;
+    const health = captureRuntimeHealth(page);
+    await seedBrowser(page);
+    await page.goto('/kitchen');
+    await page.getByTestId('kitchen-create').click();
+    const customerName = `Existing reference customer ${suffix}`;
+    const phone = `9${String(Date.now() + Math.floor(Math.random() * 1_000_000)).slice(-9)}`;
+    await page.getByTestId('kitchen-customer-name').fill(customerName);
+    await page.getByTestId('kitchen-customer-phone').fill(phone);
+    await page.getByTestId('kitchen-customer-address').fill('Synthetic reference selection address');
+    await page.getByTestId('kitchen-customer-city').fill('Ahmedabad');
+    await page.getByTestId('kitchen-create-lead-site_location').fill(`Existing ${referenceType} selection site`);
+    const directoryRead = page.waitForResponse(response => new URL(response.url()).pathname === '/api/referrers' && response.request().method() === 'GET');
+    await page.getByRole('button', { name: 'Reference · architect / interior designer', exact: true }).click();
+    const loaded = await directoryRead;
+    expect(loaded.ok(), await loaded.text()).toBeTruthy();
+    expect(new URL(loaded.url()).searchParams.has('type'), 'The directory loads both reference kinds').toBe(false);
+    const sheet = page.getByTestId('customer-referrer-sheet');
+    await expect(sheet.getByRole('button', { name: 'All references', exact: true })).toBeVisible();
+    const search = sheet.getByLabel('Search references', { exact: true });
+    // Company search narrows a populated directory without selecting a category.
+    await search.fill(reference.company);
+    await expect(sheet.getByRole('button', { name: reference.name, exact: true })).toBeVisible();
+    const code = `${referenceType === 'architect' ? 'ARC' : 'INT'}-${reference.id.toUpperCase()}`;
+    await search.fill(code);
+    await expect(sheet.getByRole('button', { name: reference.name, exact: true })).toBeVisible();
+    await sheet.getByRole('button', { name: reference.name, exact: true }).click();
+    await expect(sheet).toBeHidden();
+    await expect(page.getByRole('button', { name: 'Reference · architect / interior designer', exact: true })).toContainText(reference.name);
+    const created = page.waitForResponse(response => new URL(response.url()).pathname === '/api/kitchen-projects' && response.request().method() === 'POST');
+    await page.getByTestId('kitchen-create-submit').click();
+    const response = await created;
+    expect(response.ok(), await response.text()).toBeTruthy();
+    const project = await response.json();
+    const identity = { referrer_id: reference.id, referrer_type: referenceType, referrer_name: reference.name, referrer_company: reference.company };
+    expect(project).toMatchObject(identity);
+    expect(project.lead).toMatchObject(identity);
+    expect(project.customer).toMatchObject({ name: customerName, phone, address: 'Synthetic reference selection address', city: 'Ahmedabad' });
+    const persisted = await context.request.get(`/api/kitchen-projects/${project.id}`, { headers });
+    expect(persisted.ok(), await persisted.text()).toBeTruthy();
+    expect(await persisted.json()).toMatchObject({ ...identity, lead: identity, customer_id: project.customer.id });
+    await health.assertHealthy();
+  });
+}
 
 test('Kitchen moves forward and backward through all nine stages without task prerequisites', async ({ page, context }) => {
   await seedBrowser(page);

@@ -23,6 +23,7 @@ async function projectAt(context: APIRequestContext, stage: string) {
   } });
   expect(created.ok(), await created.text()).toBe(true);
   let project = await created.json();
+  if (stage === 'lead') return project;
   for (const target of ['visit', 'cad', 'design', 'quotation', 'order', 'production', 'installation']) {
     const moved = await context.post(`/api/kitchen-projects/${project.id}/commands`, { headers, data: {
       expected_version: project.version, idempotency_key: randomUUID(), command: 'move_stage', payload: { target_stage: target },
@@ -42,6 +43,38 @@ async function clickCommand(page: Page, id: string, command: string) {
   return response.json();
 }
 
+test('Kitchen every stage separates its saved details into bordered label and value fields', async ({ page, context }, info) => {
+  const project = await projectAt(context.request, 'lead');
+  await seed(page);
+  await page.goto(`/kitchen/${project.id}/stages/lead`);
+  for (const stage of ['lead', 'visit', 'cad', 'design', 'quotation', 'order', 'production', 'installation', 'completed']) {
+    await page.getByTestId(`kitchen-progress-${stage}`).click();
+    const details = page.getByTestId(`kitchen-${stage}-details`);
+    await expect(details).toBeVisible();
+    const fields = await details.evaluate(element => Array.from(element.children).map(field => ({
+      border: getComputedStyle(field).borderTopWidth, text: field.textContent,
+      width: field.getBoundingClientRect().width, height: field.getBoundingClientRect().height,
+    })));
+    expect(fields.length).toBeGreaterThanOrEqual(3);
+    for (const field of fields) {
+      expect(field.border, `${stage}: each detail has its own outline`).toBe('1px');
+      expect(field.text).toContain(':');
+      expect(field.width).toBeGreaterThan(80);
+      expect(field.height).toBeGreaterThan(40);
+    }
+    const status = page.getByTestId('kitchen-save-status');
+    expect(await status.evaluate(element => getComputedStyle(element).borderTopWidth)).toBe('1px');
+    if (stage === 'order') {
+      await expect(details.getByText('Customer order confirmation: No', { exact: true })).toBeVisible();
+      await expect(details.getByText('Order status: Pending', { exact: true })).toBeVisible();
+      await expect(details.getByText('Current approved quotation: None', { exact: true })).toBeVisible();
+      await details.scrollIntoViewIfNeeded();
+      await page.screenshot({ path: info.outputPath('order-separate-details.png') });
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  }
+});
+
 test('Kitchen missing quotation and order prerequisites offer working return actions and retain entry', async ({ page, context }, info) => {
   const project = await projectAt(context.request, 'quotation');
   const health = captureRuntimeHealth(page);
@@ -59,7 +92,7 @@ test('Kitchen missing quotation and order prerequisites offer working return act
   await expect(page.getByTestId('kitchen-quotation-amount')).toHaveValue('1250.50');
   await clickCommand(page, 'kitchen-advance-order', 'move_stage');
   await expect(page.getByTestId('kitchen-order-confirm')).toBeDisabled();
-  await expect(page.getByText('Order status: Pending confirmation', { exact: true })).toBeVisible();
+  await expect(page.getByText('Order status: Pending', { exact: true })).toBeVisible();
   await page.getByTestId('kitchen-order-confirm').scrollIntoViewIfNeeded();
   await page.screenshot({ path: info.outputPath('order-pending-confirmation.png') });
   const quotation = await clickCommand(page, 'kitchen-complete-quotation', 'move_stage');
