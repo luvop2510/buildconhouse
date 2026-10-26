@@ -22,6 +22,7 @@ import { catalogGridRows, catalogPageProgress, fetchCatalogPage, mergeCatalogPag
 import { isNearScrollEnd } from "@/src/utils/scrollEnd";
 
 import { TILE_IMAGE_ASPECT_RATIO, tilesPickerColumns } from "./tilePresentation";
+import { tilePickerHistory } from "./tilePickerHistory";
 
 const PAGE_SIZE = 24;
 
@@ -59,9 +60,17 @@ export function TilesProductPicker({
   const openedRef = useRef(false);
   const nextOffset = useRef(0);
   const pendingPage = useRef<number | null>(null);
-  const queryContext = useRef({ query, open });
-  queryContext.current = { query, open };
+  const queryContext = useRef({ query, open, customerId });
+  queryContext.current = { query, open, customerId };
+  const selection = useRef<AbortController | null>(null);
+  const [choosing, setChoosing] = useState(false);
   const mounted = useRef(true);
+  useEffect(() => {
+    selection.current?.abort();
+    selection.current = null;
+    setChoosing(false);
+    return () => { selection.current?.abort(); selection.current = null; };
+  }, [open, customerId]);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; requestId.current += 1; }; }, []);
 
   const search = useCallback(async (q: string, skip = 0) => {
@@ -113,27 +122,41 @@ export function TilesProductPicker({
     return () => { clearTimeout(debounce); requestId.current += 1; pendingPage.current = null; };
   }, [query, open, search]);
 
-  const pick = useCallback(async (product: Product, useCustomerHistory = true) => {
-    Haptics.selectionAsync();
-    if (customerId && useCustomerHistory) {
-      try {
-        const history = await api.get<{ found: boolean } & Partial<ProductHistory>>(
-          `/quotations/tiles/product-history?customer_id=${customerId}&product_id=${product.id}`,
-          { floorId: "ground-floor" },
-        );
-        if (history.found) {
-          onPick(product, {
-            size: history.size ?? null, rate_sqft: history.rate_sqft ?? null,
-            rate_box: history.rate_box ?? null, pcs_per_box: history.pcs_per_box ?? null,
-            box_sqft: history.box_sqft ?? null,
-          });
-          onClose();
-          return;
-        }
-      } catch { /* History is optional; add the selected product normally. */ }
+  const pick = useCallback(async (product: Product, size?: string) => {
+    if (selection.current || !mounted.current || !queryContext.current.open) return;
+    const controller = new AbortController();
+    selection.current = controller;
+    setChoosing(true);
+    const current = () => mounted.current && queryContext.current.open && queryContext.current.customerId === customerId && !controller.signal.aborted && selection.current === controller;
+    void Haptics.selectionAsync().catch(() => {});
+    try {
+      let selected = product;
+      if (size) {
+        const resolution = await api.get<{ product: Product }>(`/products/${product.id}/size-variants?size=${encodeURIComponent(size)}`, { floorId: "ground-floor", signal: controller.signal });
+        selected = resolution.product;
+      }
+      if (!current()) return;
+      const history = customerId && !size
+        ? await tilePickerHistory(signal => api.get<{ found: boolean } & Partial<ProductHistory>>(
+          `/quotations/tiles/product-history?customer_id=${encodeURIComponent(customerId)}&product_id=${encodeURIComponent(selected.id)}`,
+          { floorId: "ground-floor", signal },
+        ), controller.signal)
+        : undefined;
+      if (!current()) return;
+      onPick(selected, history?.found ? {
+        size: history.size ?? null, rate_sqft: history.rate_sqft ?? null,
+        rate_box: history.rate_box ?? null, pcs_per_box: history.pcs_per_box ?? null,
+        box_sqft: history.box_sqft ?? null,
+      } : undefined);
+      onClose();
+    } catch (error: any) {
+      if (current()) toast.error(error?.detail || "That tile size could not be loaded. Please try again.");
+    } finally {
+      if (selection.current === controller) {
+        selection.current = null;
+        if (mounted.current) setChoosing(false);
+      }
     }
-    onPick(product);
-    onClose();
   }, [customerId, onClose, onPick]);
 
   const loadMore = useCallback(() => {
@@ -165,7 +188,7 @@ export function TilesProductPicker({
             testID="tiles-picker-search"
           />
           {query ? <Pressable onPress={() => setQuery("")} hitSlop={10} accessibilityLabel="Clear search"><Feather name="x-circle" size={17} color={colors.onSurfaceMuted} /></Pressable> : null}
-          {loading ? <ActivityIndicator size="small" color={colors.brand} /> : null}
+          {loading || choosing ? <ActivityIndicator size="small" color={colors.brand} /> : null}
         </View>
         <FlatList
           key={`tiles-picker-${columns}`}
@@ -181,16 +204,7 @@ export function TilesProductPicker({
               compact={isPhonePicker}
               cardWidth={cardWidth}
               onPress={() => void pick(item)}
-              onPickSize={(size) => void (async () => {
-                try {
-                  // Resolve by size server-side. The response is the complete
-                  // sibling product, so adding it updates all tile attributes.
-                  const resolution = await api.get<{ product: Product }>(`/products/${item.id}/size-variants?size=${encodeURIComponent(size)}`, { floorId: "ground-floor" });
-                  await pick(resolution.product, false);
-                } catch (error: any) {
-                  toast.error(error?.detail || "That tile size could not be loaded. Please try again.");
-                }
-              })()}
+              onPickSize={(size) => void pick(item, size)}
             />
           )}
           initialNumToRender={catalogGridRows(columns, 8)}

@@ -1,5 +1,7 @@
 """Customer CRUD (admin) + customer-portal self-serve endpoints."""
 import asyncio
+from uuid import UUID, NAMESPACE_URL, uuid5
+from pymongo.errors import DuplicateKeyError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
@@ -72,16 +74,39 @@ async def list_customers(
     return [CustomerPublic(**{**d, **({"purchase_completion_status": "completed" if d["id"] in complete_ids else "active"} if complete_ids is not None else {})}) for d in docs[:limit]]
 
 
+async def _replay_tile_customer(receipt_id: str) -> CustomerPublic | None:
+    receipt = await db.settings.find_one({"_id": receipt_id}, {"_id": 0})
+    if not receipt:
+        return None
+    existing = await db.customers.find_one({"id": receipt["customer_id"], "floor_id": TILES_FLOOR_ID},
+                                            {"_id": 0, "password_hash": 0})
+    if not existing:
+        raise HTTPException(status_code=410, detail="This draft customer was deleted. Start a new quotation or selection.")
+    return CustomerPublic(**existing)
+
+
 @router.post("/customers", response_model=CustomerPublic)
 async def create_customer(
     body: CustomerCreate,
     user: UserPublic = Depends(require_min_role("sales")),
 ):
+    draft_receipt_id = None
+    if body.client_draft_id:
+        if floor_for_write(user) != TILES_FLOOR_ID:
+            raise HTTPException(status_code=422, detail="Tile draft recovery requires Ground Floor")
+        try:
+            draft_key = str(UUID(body.client_draft_id))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Invalid tile draft recovery key") from exc
+        draft_receipt_id = "tile-customer-draft:" + str(uuid5(NAMESPACE_URL, f"{user.id}:{TILES_FLOOR_ID}:{draft_key}"))
+        replay = await _replay_tile_customer(draft_receipt_id)
+        if replay:
+            return replay
     if body.email and await db.customers.find_one({"email": body.email.lower()}):
         raise HTTPException(status_code=409, detail="Customer email already exists")
     if not body.name or not body.name.strip():
         raise HTTPException(status_code=400, detail="Customer name is required")
-    data = body.dict()
+    data = body.model_dump(exclude={"client_draft_id"})
     data["floor_id"] = floor_for_write(user)
     data.update(await _referrer_fields(body.referrer_id, user))
     if data.get("email"):
@@ -91,7 +116,9 @@ async def create_customer(
     password = data.pop("password", None)
     from models import CustomerPublic as CP
     cust = CP(**data)
-    to_store = cust.dict()
+    if draft_receipt_id:
+        cust.id = str(uuid5(NAMESPACE_URL, draft_receipt_id))
+    to_store = cust.model_dump()
     if password:
         to_store["password_hash"] = await run_in_threadpool(hash_password, password)
     # customers_email_unique is sparse, but sparse only skips ABSENT fields —
@@ -100,7 +127,24 @@ async def create_customer(
     # Store no key at all when there is no email.
     if to_store.get("email") is None:
         to_store.pop("email", None)
-    await db.customers.insert_one(to_store)
+    if draft_receipt_id:
+        from db import client
+        async def insert_draft_customer(session):
+            await db.settings.insert_one({"_id": draft_receipt_id, "id": draft_receipt_id,
+                "kind": "tile_customer_draft_receipt", "customer_id": cust.id,
+                "floor_id": TILES_FLOOR_ID, "created_by": user.id}, session=session)
+            # Use a fresh mapping if the transaction callback is retried.
+            await db.customers.insert_one(dict(to_store), session=session)
+        try:
+            async with await client.start_session() as session:
+                await session.with_transaction(insert_draft_customer)
+        except DuplicateKeyError:
+            replay = await _replay_tile_customer(draft_receipt_id)
+            if replay:
+                return replay
+            raise
+    else:
+        await db.customers.insert_one(to_store)
     await log_event(
         event_type="customer.created", entity_type="customer", entity_id=cust.id,
         customer_id=cust.id, actor=user, summary="Customer Created",

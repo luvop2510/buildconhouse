@@ -47,7 +47,9 @@ class MutationAdmissionMiddleware:
             return await self.app(scope, receive, send)
         from db import db
         from starlette.responses import JSONResponse
-        exclusive = scope["method"] == "DELETE" and bool(re.fullmatch(r"/api/(customers|quotations)/[^/]+", scope["path"]))
+        exclusive = scope["method"] == "DELETE" and bool(re.fullmatch(
+            r"/api/(?:customers/[^/]+|quotations/(?:[^/]+|client-draft/[^/]+))", scope["path"],
+        ))
         try:
             async with admission(db, exclusive=exclusive):
                 await self.app(scope, receive, send)

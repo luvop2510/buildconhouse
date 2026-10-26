@@ -258,7 +258,7 @@ def _meta_grid(quotation: dict, customer: dict, styles: dict) -> Table:
         [Paragraph(label, styles["metaLabel"]) for label in row2_labels],
         [Paragraph(_escape(value) or "&nbsp;", styles["metaValue"]) for value in row2_values],
     ]
-    table = Table(data, colWidths=[PAGE_W_MM / 4 * mm] * 4, rowHeights=[5 * mm, 7 * mm, 5 * mm, None if referrer_label(quotation) else 7 * mm])
+    table = Table(data, colWidths=[PAGE_W_MM / 4 * mm] * 4, minRowHeights=[5 * mm, 7 * mm, 5 * mm, 7 * mm])
     table.setStyle(TableStyle([
         # A single explicit grid avoids the disconnected, partial form rules
         # seen in printed selections. ReportLab draws continuous straight

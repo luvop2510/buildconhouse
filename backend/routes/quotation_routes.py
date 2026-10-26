@@ -5,12 +5,13 @@ import logging
 from typing import Literal
 from datetime import datetime, timezone
 from urllib.parse import quote
-from uuid import uuid4
+from uuid import UUID, NAMESPACE_URL, uuid4, uuid5
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
 from starlette.concurrency import run_in_threadpool
 
 from services.referrer_identity import resolve_referrer
@@ -450,12 +451,103 @@ async def _manual_stock_line(item: QuotationLineItem, user: UserPublic, *, floor
     return await db.godown_stock.find_one(floor_query(user, query), {"_id": 0, "floor_id": 1, "category_id": 1})
 
 
+async def _quotation_catalog_products(items: list[QuotationLineItem], user: UserPublic, *, floor_id: str | None = None) -> list:
+    # Bound Atlas concurrency for large quotations; never exhaust the shared
+    # pool by launching hundreds of line reads at once.
+    slots = asyncio.Semaphore(12)
+    async def product(item):
+        async with slots:
+            query = {"id": item.product_id}
+            if floor_id:
+                query["floor_id"] = floor_id
+            return await db.products.find_one(floor_query(user, query),
+                {"_id": 0, "category_id": 1, "floor_id": 1, "specs": 1, "price": 1, "mrp": 1, "catalog_version": 1})
+    return await asyncio.gather(*(product(item) for item in items))
+
+
+async def _replay_tile_draft(receipt_id: str, user: UserPublic) -> Quotation | None:
+    receipt = await db.settings.find_one({"_id": receipt_id}, {"_id": 0})
+    if not receipt:
+        return None
+    if receipt.get("cancelled"):
+        raise HTTPException(status_code=410, detail="This draft was discarded. Start a new quotation or selection.")
+    # Receipts contain identity only and survive document/customer deletion.
+    # A lost create response must recover its original record, never recreate
+    # a record the user subsequently deleted.
+    doc = await db.quotations.find_one({"id": receipt["quotation_id"], "floor_id": TILES_FLOOR_ID,
+                                        "created_by": user.id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=410, detail="This draft was deleted. Start a new quotation or selection.")
+    return Quotation(**doc).model_copy(update={"create_replayed": True,
+        "create_original_updated_at": receipt.get("source_updated_at")})
+
+
+def _tile_draft_receipt_id(client_draft_id: str, doc_type: str, user: UserPublic) -> str:
+    require_floor_access(TILES_FLOOR_ID, user)
+    if doc_type not in TILES_DOC_TYPES:
+        raise HTTPException(status_code=422, detail="Draft recovery keys are supported for tile documents only")
+    try:
+        draft_key = str(UUID(client_draft_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid tile draft recovery key") from exc
+    return "tile-draft:" + str(uuid5(NAMESPACE_URL, f"{user.id}:{TILES_FLOOR_ID}:{doc_type}:{draft_key}"))
+
+
+@router.get("/client-draft/{client_draft_id}", response_model=Quotation)
+async def get_client_tile_draft(client_draft_id: str, doc_type: Literal["tiles_selection", "tiles_quotation"],
+                                user: UserPublic = Depends(require_min_role("sales"))):
+    replay = await _replay_tile_draft(_tile_draft_receipt_id(client_draft_id, doc_type, user), user)
+    if not replay:
+        raise HTTPException(status_code=404, detail="No saved quotation exists for this draft")
+    return replay
+
+
+@router.delete("/client-draft/{client_draft_id}")
+async def cancel_client_tile_draft(client_draft_id: str, doc_type: Literal["tiles_selection", "tiles_quotation"],
+                                   user: UserPublic = Depends(require_min_role("manager"))):
+    receipt_id = _tile_draft_receipt_id(client_draft_id, doc_type, user)
+    async def discard_saved():
+        receipt = await db.settings.find_one({"_id": receipt_id}, {"_id": 0})
+        if receipt.get("cancelled"):
+            return {"ok": True, "quotation_id": None, "cancelled": True}
+        try:
+            # Reuse order/payment, floor and transactional graph-deletion guards.
+            return await delete_quotation(receipt["quotation_id"], user=user)
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                raise
+            return {"ok": True, "quotation_id": receipt["quotation_id"], "cancelled": True}
+    if await db.settings.find_one({"_id": receipt_id}, {"_id": 0}):
+        return await discard_saved()
+    from db import client
+    async def cancel(session):
+        await db.settings.insert_one({"_id": receipt_id, "id": receipt_id, "kind": "tile_draft_receipt",
+            "cancelled": True, "floor_id": TILES_FLOOR_ID, "created_by": user.id,
+            "source_doc_type": doc_type}, session=session)
+    try:
+        async with await client.start_session() as session:
+            await session.with_transaction(cancel)
+    except DuplicateKeyError:
+        # A concurrent create won the same receipt: remove that actual saved
+        # document, preserving its ordinary order/payment protections.
+        return await discard_saved()
+    return {"ok": True, "quotation_id": None, "cancelled": True}
+
+
 @router.post("", response_model=Quotation)
 async def create_quotation(
     body: QuotationCreate,
     user: UserPublic = Depends(require_min_role("sales")),
 ):
-    _require_tiles_quotation_address(body.doc_type, body.address_snapshot)
+    # Incomplete details are valid drafts. Address validation belongs to PDF/order actions.
+    draft_receipt_id = None
+    if body.client_draft_id:
+        draft_receipt_id = _tile_draft_receipt_id(body.client_draft_id, body.doc_type, user)
+        replay = await _replay_tile_draft(draft_receipt_id, user)
+        if replay:
+            return replay
+        if any(line.godown_stock_id for line in body.items or []):
+            raise HTTPException(status_code=422, detail="Create the tile draft before reserving godown stock")
     customer = await get_floor_scoped_or_404(
         db.customers, body.customer_id, user, not_found="Customer not found", projection={"_id": 0},
     )
@@ -467,11 +559,11 @@ async def create_quotation(
     # current canonical media URL so newly-created quotations cannot capture a
     # stale/portrait snapshot.
     item_floor_ids: set[str] = set()
-    for it in items:
-        p = await db.products.find_one(
-            floor_query(user, {"id": it.product_id}),
-            {"_id": 0, "category_id": 1, "floor_id": 1, "specs": 1, "price": 1, "mrp": 1, "catalog_version": 1},
-        )
+    # Creation used one serial Atlas round trip per line, so a large first
+    # draft could exceed the API deadline before it was ever inserted. Match
+    # the concurrent resolution used by subsequent autosaves.
+    products = await _quotation_catalog_products(items, user)
+    for it, p in zip(items, products, strict=True):
         if not p:
             p = await _manual_stock_line(it, user)
         if not p:
@@ -564,7 +656,27 @@ async def create_quotation(
         line.godown_source_purchased_at = lot.get("source_purchased_at")
         line.godown_transferred_at = lot.get("transferred_at")
         line.godown_allocated_at = allocation_at
-    await db.quotations.insert_one(quot.model_dump())
+    if draft_receipt_id:
+        from db import client
+        # No new index/migration: Mongo's immutable _id makes the receipt
+        # unique. Commit the receipt and quotation together so interruption
+        # cannot strand a key or resurrect a deleted quotation on replay.
+        quot.id = str(uuid5(NAMESPACE_URL, draft_receipt_id))
+        async def insert_draft(session):
+            await db.settings.insert_one({"_id": draft_receipt_id, "id": draft_receipt_id, "kind": "tile_draft_receipt",
+                "quotation_id": quot.id, "floor_id": TILES_FLOOR_ID, "created_by": user.id,
+                "source_doc_type": body.doc_type, "source_updated_at": quot.updated_at}, session=session)
+            await db.quotations.insert_one(quot.model_dump(exclude={"create_replayed", "create_original_updated_at"}), session=session)
+        try:
+            async with await client.start_session() as session:
+                await session.with_transaction(insert_draft)
+        except DuplicateKeyError:
+            replay = await _replay_tile_draft(draft_receipt_id, user)
+            if replay:
+                return replay
+            raise
+    else:
+        await db.quotations.insert_one(quot.model_dump(exclude={"create_replayed", "create_original_updated_at"}))
     for line in quot.items:
         if line.godown_allocation_id:
             await log_event(
@@ -772,12 +884,9 @@ async def update_quotation(
     user: UserPublic = Depends(require_min_role("sales")),
 ):
     doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0})
-    _require_tiles_quotation_address(
-        doc.get("doc_type", "standard"),
-        body.address_snapshot if body.address_snapshot is not None else doc.get("address_snapshot"),
-        historical_source=bool((doc.get("quotation_import") or {}).get("source_type") == "provided_pdf"),
-    )
 
+    if body.expected_updated_at is not None and body.expected_updated_at != doc.get("updated_at"):
+        raise HTTPException(status_code=409, detail="This quotation changed elsewhere. Reopen the saved quotation before applying your draft.")
     update: dict = {}
     customer_changed_from: str | None = None
     if body.customer_id is not None:
@@ -814,13 +923,7 @@ async def update_quotation(
         # longer than the request proxy timeout. Resolve the independent
         # catalog rows concurrently, while keeping the validation and item
         # order exactly the same.
-        products = await asyncio.gather(*[
-            db.products.find_one(
-                floor_query(user, {"id": it.product_id, "floor_id": doc.get("floor_id")}),
-                {"_id": 0, "category_id": 1, "specs": 1, "price": 1, "mrp": 1, "catalog_version": 1},
-            )
-            for it in items_typed
-        ])
+        products = await _quotation_catalog_products(items_typed, user, floor_id=doc.get("floor_id"))
         for it, p in zip(items_typed, products, strict=True):
             if not p:
                 p = await _manual_stock_line(it, user, floor_id=doc.get("floor_id"))
@@ -860,18 +963,8 @@ async def update_quotation(
         current_status = doc.get("status", "draft")
         if requested_status in {"won", "ordered"} and requested_status != current_status:
             raise HTTPException(status_code=409, detail="Use Place Order to confirm this sale; Won is recorded only after an order is placed")
-        if doc_type in {"tiles_selection", "tiles_quotation"}:
-            # Older deployments used the generic quotation status names. Map
-            # them into the tile workflow before validating the transition so
-            # those documents never strand the mobile CTA on Place Order.
-            current_status = {"sent": "pending_approval", "won": "approved"}.get(current_status, current_status)
-            requested_status = {"sent": "pending_approval", "won": "approved"}.get(requested_status, requested_status)
-            allowed = {
-                "tiles_selection": {"draft": {"pending_approval"}, "pending_approval": {"approved"}},
-                "tiles_quotation": {"draft": {"pending_approval"}, "pending_approval": {"approved"}},
-            }[doc_type]
-            if requested_status not in allowed.get(current_status, set()):
-                raise HTTPException(status_code=409, detail=f"Invalid tile quotation transition: {current_status} → {requested_status}")
+        if doc_type in TILES_DOC_TYPES and requested_status != current_status:
+            raise HTTPException(status_code=409, detail="Tile approvals are no longer used. Move the selection to a quotation or use Place Order.")
         update["status"] = requested_status
         if requested_status == "approved":
             update["approved_by"] = user.id
@@ -966,7 +1059,12 @@ async def update_quotation(
         update["revisions"] = revisions + [rev.model_dump()]
 
     update["updated_at"] = datetime.now(timezone.utc).isoformat()
-    await db.quotations.update_one({"id": quotation_id}, {"$set": update})
+    selector = {"id": quotation_id}
+    if body.expected_updated_at is not None:
+        selector["updated_at"] = body.expected_updated_at
+    result = await db.quotations.update_one(selector, {"$set": update})
+    if body.expected_updated_at is not None and result.matched_count != 1:
+        raise HTTPException(status_code=409, detail="This quotation changed elsewhere. Reopen the saved quotation before applying your draft.")
 
     fresh = await db.quotations.find_one({"id": quotation_id}, {"_id": 0})
     # Editing a quotation is intentionally document-local, including after
@@ -1267,8 +1365,7 @@ async def move_to_quotation(
     quotation_id: str,
     user: UserPublic = Depends(require_min_role("sales")),
 ):
-    """Promote an approved Tiles Selection into the Quotation stage — see
-    docs/superpowers/specs/2026-07-27-quotation-tiles-workflow-design.md.
+    """Move a saved Tiles Selection directly into the Quotation stage.
     Metadata-only: doc_type flips, status resets to draft for a fresh
     pricing pass. `items` (products/area/size/rate_sqft already entered) is
     left completely untouched so everything already filled in at Selection
@@ -1283,7 +1380,7 @@ async def move_to_quotation(
     if not can_move_to_quotation(doc.get("doc_type", ""), doc.get("status", "")):
         raise HTTPException(
             status_code=400,
-            detail="Only an approved Tiles Selection can be moved to the Quotation stage",
+            detail="Only an editable Tiles Selection can be moved to the Quotation stage",
         )
     await db.quotations.update_one(
         {"id": quotation_id},
@@ -1806,9 +1903,10 @@ async def place_order_preview(quotation_id: str, user: UserPublic = Depends(requ
     doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0})
     _require_active_sales_quotation(doc)
     if not can_place_order(doc.get("doc_type", "standard"), doc.get("status", "draft")):
-        raise HTTPException(status_code=400, detail="Confirm the quotation before placing the order")
+        raise HTTPException(status_code=400, detail="Move the selection to a quotation before placing the order")
     if not doc.get("items"):
         raise HTTPException(status_code=400, detail="Cannot place order — quotation has no items")
+    _require_tiles_quotation_address(doc.get("doc_type", "standard"), doc.get("address_snapshot"))
     return {**await _brand_grouped_preview(doc), "price_review": await price_review(doc, db.products)}
 
 
@@ -1831,9 +1929,10 @@ async def place_order_confirm(quotation_id: str, body: PlaceOrderConfirmPayload,
                     )
                     _require_active_sales_quotation(doc)
                     if not can_place_order(doc.get("doc_type", "standard"), doc.get("status", "draft")):
-                        raise HTTPException(status_code=400, detail="Confirm the quotation before placing the order")
+                        raise HTTPException(status_code=400, detail="Move the selection to a quotation before placing the order")
                     if not doc.get("items"):
                         raise HTTPException(status_code=400, detail="Cannot place order — quotation has no items")
+                    _require_tiles_quotation_address(doc.get("doc_type", "standard"), doc.get("address_snapshot"))
                     review = await price_review(doc, db.products, session=session)
                     items = apply_price_choice(doc, review, body.catalog_price_choice, body.catalog_price_token)
                     price_patch = {}

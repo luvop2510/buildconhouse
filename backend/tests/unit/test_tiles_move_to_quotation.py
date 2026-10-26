@@ -51,6 +51,7 @@ class _Recorder:
 class _FakeDb:
     def __init__(self, doc: dict | None):
         self.quotations = _Recorder(doc)
+        self.products = object()
         # services/walkin_service.on_moved_to_quotation touches these.
         self.walkins = _Recorder(None)
         self.activity_events = _Recorder(None)
@@ -68,14 +69,15 @@ def _selection_doc(status: str = "approved") -> dict:
     }
 
 
-def test_move_to_quotation_flips_doc_type_and_resets_status(monkeypatch):
-    fake_db = _FakeDb(_selection_doc("approved"))
+@pytest.mark.parametrize("status", ["draft", "pending_approval", "approved", "sent", "won"])
+def test_move_to_quotation_flips_doc_type_and_resets_status(monkeypatch, status):
+    fake_db = _FakeDb(_selection_doc(status))
     monkeypatch.setattr(quotation_routes, "db", fake_db)
     # walkin_service holds its own module-level `db`, so the success path
     # reached the real motor client (bound to an already-closed loop under
     # `asyncio.run`). Same gotcha as services/sequence.py elsewhere.
     monkeypatch.setattr(walkin_service, "db", fake_db)
-    monkeypatch.setattr(quotation_routes, "reconcile_followups", _noop_reconcile)
+    monkeypatch.setattr(quotation_routes, "reconcile_followups_admitted", _noop_reconcile)
 
     result = asyncio.run(quotation_routes.move_to_quotation("q-1", user=_user()))
 
@@ -96,8 +98,8 @@ def test_move_to_quotation_rejects_when_not_a_selection(monkeypatch):
     assert exc.value.status_code == 400
 
 
-def test_move_to_quotation_rejects_when_not_approved(monkeypatch):
-    fake_db = _FakeDb(_selection_doc("draft"))
+def test_move_to_quotation_rejects_closed_selection(monkeypatch):
+    fake_db = _FakeDb(_selection_doc("ordered"))
     monkeypatch.setattr(quotation_routes, "db", fake_db)
 
     with pytest.raises(HTTPException) as exc:
@@ -105,19 +107,19 @@ def test_move_to_quotation_rejects_when_not_approved(monkeypatch):
     assert exc.value.status_code == 400
 
 
-def test_place_order_preview_rejects_unconfirmed_tiles_quotation(monkeypatch):
-    doc = {
-        "id": "q-2", "number": "FQ-2026-0101", "doc_type": "tiles_quotation",
-        "status": "draft", "floor_id": "ground-floor", "customer_id": "cust-1",
-        "items": [{"id": "line-1", "product_id": "prod-1", "sku": "SKU-1", "name": "Tile A", "qty": 1, "unit_price": 100}],
-    }
+@pytest.mark.parametrize("status", ["draft", "pending_approval", "approved", "sent", "won"])
+def test_place_order_preview_allows_editable_tiles_quotation(monkeypatch, status):
+    doc = {**_selection_doc(status), "doc_type": "tiles_quotation", "address_snapshot": "12 Site Road"}
     fake_db = _FakeDb(doc)
     monkeypatch.setattr(quotation_routes, "db", fake_db)
-
-    with pytest.raises(HTTPException) as exc:
-        asyncio.run(quotation_routes.place_order_preview("q-2", user=_user()))
-    assert exc.value.status_code == 400
-    assert "confirm" in exc.value.detail.lower()
+    async def preview(document):
+        return {"quotation_id": document["id"], "brands": []}
+    async def prices(*args, **kwargs):
+        return {"changes": []}
+    monkeypatch.setattr(quotation_routes, "_brand_grouped_preview", preview)
+    monkeypatch.setattr(quotation_routes, "price_review", prices)
+    result = asyncio.run(quotation_routes.place_order_preview("q-1", user=_user()))
+    assert result["quotation_id"] == "q-1"
 
 
 def test_place_order_preview_allows_confirmed_tiles_quotation(monkeypatch):
