@@ -22,7 +22,11 @@ async function projectAt(context: APIRequestContext, stage: 'production' | 'inst
 }
 async function height(field: Locator) { return field.evaluate(element => element.getBoundingClientRect().height); }
 async function readable(field: Locator) {
-  await expect.poll(() => field.evaluate(element => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(1);
+  const geometry = await field.evaluate(element => ({ height: element.clientHeight, scroll: element.scrollHeight,
+    overflow: getComputedStyle(element).overflowY, max: parseFloat(getComputedStyle(element).maxHeight) }));
+  expect(geometry.height).toBeGreaterThanOrEqual(44);
+  expect(geometry.height).toBeLessThanOrEqual(321);
+  if (geometry.scroll > geometry.height + 1) expect(geometry.overflow).toBe('auto');
 }
 async function save(page: Page, stage: string) {
   const response = page.waitForResponse(row => row.url().endsWith('/commands') && row.request().postDataJSON()?.command === `${stage}_update`);
@@ -61,10 +65,12 @@ for (const stage of ['production', 'installation'] as const) {
     const wrapped = 'Check cabinet alignment, hinge positions and worktop clearance before the internal inspection. '.repeat(7).trim();
     await field.fill(wrapped);
     await page.setViewportSize({ width: 320, height: 740 });
+    await expect.poll(() => height(field)).toBeGreaterThan(250);
     await readable(field);
     const narrow = await height(field);
     await page.setViewportSize({ width: 1440, height: 1000 });
     await expect.poll(() => height(field)).toBeLessThan(narrow);
+    expect(await height(field)).toBeLessThanOrEqual(321);
     await readable(field);
     await field.fill('');
     await expect.poll(() => height(field)).toBeLessThanOrEqual(52);

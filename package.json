@@ -65,6 +65,7 @@
     "test:e2e:stability": "node scripts/test-release-network-routing.mjs && playwright test --config playwright.stability.config.ts && node --experimental-strip-types --no-warnings scripts/verify-release-stability.mjs",
     "test:kitchen-dates": "node scripts/test-kitchen-dates.mjs",
     "test:kitchen-commercial": "node scripts/test-kitchen-commercial.mjs && node scripts/test-kitchen-note-fields.mjs",
+    "test:kitchen-autosave": "node scripts/test-kitchen-draft-reconciliation.mjs && node scripts/test-kitchen-autosave.mjs",
     "test:table-layout": "node scripts/test-table-layout.mjs",
     "test:e2e:tables": "playwright test --config playwright.tables.config.ts"
   },

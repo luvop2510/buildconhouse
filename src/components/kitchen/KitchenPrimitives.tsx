@@ -48,9 +48,11 @@ export function KitchenTextField({ label, error, helper, containerStyle, style, 
     if (Platform.OS !== "web" || !props.multiline || !input.current) return;
     const textarea = input.current as unknown as HTMLTextAreaElement;
     // Reset before measuring so deleting text or widening the field also shrinks it.
+    const scrollTop = textarea.scrollTop;
     textarea.style.height = "0px";
     const height = Math.max(46, textarea.scrollHeight);
     textarea.style.height = `${height}px`;
+    textarea.scrollTop = scrollTop;
     setContentHeight(height);
   }, [props.multiline]);
   useLayoutEffect(resizeWeb, [resizeWeb, props.value, props.defaultValue]);
@@ -58,7 +60,7 @@ export function KitchenTextField({ label, error, helper, containerStyle, style, 
     {label ? <Text nativeID={`${id}-label`} style={kitchenType.label}>{label}</Text> : null}
     <View style={{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, borderWidth: 1, borderColor: error ? kitchenColors.error : focused ? kitchenColors.focusRing : kitchenColors.controlBorder, borderRadius: 8, backgroundColor: props.editable === false ? kitchenColors.surface : kitchenColors.surfaceSecondary }}>
       {leftIcon ? <Feather accessible={false} name={leftIcon} size={18} color={kitchenColors.onSurfaceMuted} /> : null}
-      <TextInput {...props} ref={input} numberOfLines={props.multiline ? 1 : props.numberOfLines} scrollEnabled={props.multiline ? false : props.scrollEnabled}
+      <TextInput {...props} ref={input} numberOfLines={props.multiline ? 1 : props.numberOfLines} scrollEnabled={props.multiline ? true : props.scrollEnabled}
         accessibilityLabel={props.accessibilityLabel || label || props.placeholder} aria-labelledby={label ? `${id}-label` : undefined}
         aria-describedby={error || helper ? `${id}-description` : undefined} aria-invalid={Boolean(error)} accessibilityHint={props.accessibilityHint || error || helper}
         onFocus={event => { setFocused(true); onFocus?.(event); }} onBlur={event => { setFocused(false); onBlur?.(event); }}
@@ -69,8 +71,11 @@ export function KitchenTextField({ label, error, helper, containerStyle, style, 
         }}
         placeholderTextColor={kitchenColors.onSurfaceSubtle}
         style={[{ flex: 1, minWidth: 0, minHeight: 46, paddingVertical: props.multiline ? 11 : 12, ...kitchenType.body,
-          textAlignVertical: props.multiline ? "top" : "center", ...(props.multiline ? { height: contentHeight } : {}),
-          ...(Platform.OS === "web" ? { outlineStyle: "none", ...(props.multiline ? { overflow: "hidden" } : {}) } : {}),
+          textAlignVertical: props.multiline ? "top" : "center", ...(props.multiline ? { height: contentHeight, maxHeight: 320 } : {}),
+          ...(Platform.OS === "web" ? { outlineStyle: "none", ...(props.multiline ? {
+            // Grow short notes; long notes keep the browser's native caret scrolling above the keyboard.
+            maxHeight: "max(46px, min(320px, calc(var(--forge-visible-height, 100dvh) - 190px)))", overflowY: "auto", overflowX: "hidden",
+          } : {}) } : {}),
         } as any, style]} />
       {rightIcon ? <Pressable accessibilityRole="button" accessibilityLabel={rightIcon.replaceAll("-", " ")} onPress={onRightPress} style={{ minHeight: 44, minWidth: 44, justifyContent: "center", alignItems: "center" }}><Feather name={rightIcon} size={18} color={kitchenColors.onSurfaceSecondary} /></Pressable> : null}
     </View>

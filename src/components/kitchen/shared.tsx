@@ -1,5 +1,6 @@
 import { useRef, useState, type ReactNode } from "react";
-import { ScrollView, View, type ViewStyle } from "react-native";
+import { Pressable, ScrollView, View, type ViewStyle } from "react-native";
+import Feather from "@expo/vector-icons/Feather";
 import { Text } from "@/src/components/AppText";
 import { Alert, ErrorState, LoadingState } from "@/src/components/ds";
 import { useBp } from "@/src/design/responsive";
@@ -14,15 +15,19 @@ import { KITCHEN_OWNER_ONLY } from "@/src/design/navigation";
 import { hasGrantAccess } from "@/src/team-delegation";
 
 /** The header and content share one scroll owner on every viewport. */
-export function KitchenPage({ title, subtitle, overline, right, back, children, contentStyle }: {
+export function KitchenPage({ title, subtitle, overline, right, back, children, contentStyle, compactHeader = false }: {
   title: string; subtitle?: string | null; overline?: string; right?: ReactNode; back?: () => void;
-  children: ReactNode; scroll?: boolean; contentStyle?: ViewStyle; headerBorder?: boolean;
+  children: ReactNode; scroll?: boolean; contentStyle?: ViewStyle; headerBorder?: boolean; compactHeader?: boolean;
 }) {
   const { isPhone } = useBp();
   return <View style={{ flex: 1, minHeight: 0, backgroundColor: colors.surface }}>
-    <ScrollView testID="kitchen-page-scroll" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator contentContainerStyle={{ flexGrow: 1, paddingHorizontal: isPhone ? 16 : 32, paddingTop: isPhone ? 20 : 32, paddingBottom: isPhone ? 32 : 48 }}>
-      <View style={[{ width: "100%", maxWidth: 1560, alignSelf: "center", gap: isPhone ? 24 : 32 }, contentStyle]}>
-        <View style={{ gap: 16, borderBottomWidth: 1, borderBottomColor: colors.divider, paddingBottom: 24 }}>
+    <ScrollView testID="kitchen-page-scroll" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator contentContainerStyle={{ flexGrow: 1, paddingHorizontal: isPhone ? 16 : 32, paddingTop: compactHeader ? 8 : isPhone ? 20 : 32, paddingBottom: isPhone ? 32 : 48 }}>
+      <View style={[{ width: "100%", maxWidth: 1560, alignSelf: "center", gap: compactHeader ? 12 : isPhone ? 24 : 32 }, contentStyle]}>
+        {compactHeader ? <View testID="kitchen-compact-header" style={{ flexDirection: "row", alignItems: "center", gap: 8, minHeight: 44 }}>
+          {back ? <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={back} testID="kitchen-page-back" style={{ minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center" }}><Feather name="arrow-left" size={20} color={colors.onSurface} /></Pressable> : null}
+          <Text accessibilityRole="header" aria-level={1} style={[type.titleMd, { flex: 1, minWidth: 0 }]}>{title}</Text>
+          {right}
+        </View> : <View style={{ gap: 16, borderBottomWidth: 1, borderBottomColor: colors.divider, paddingBottom: 24 }}>
           {back ? <Button label="Back" icon="arrow-left" variant="ghost" onPress={back} testID="kitchen-page-back" /> : null}
           <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 20 }}>
             <View style={{ flexBasis: 400, flexGrow: 1, flexShrink: 1, minWidth: 0, maxWidth: "100%", gap: 6 }}>
@@ -32,7 +37,7 @@ export function KitchenPage({ title, subtitle, overline, right, back, children, 
             </View>
             {right ? <View style={{ maxWidth: "100%", flexShrink: 1 }}>{right}</View> : null}
           </View>
-        </View>
+        </View>}
         {children}
       </View>
     </ScrollView>

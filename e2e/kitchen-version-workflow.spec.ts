@@ -1,3 +1,4 @@
+import { projectControl } from './kitchen-controls';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { captureRuntimeHealth } from './runtime-health';
@@ -12,14 +13,14 @@ async function command(api: APIRequestContext, project: any, name: string, paylo
 }
 async function clickCommand(page: Page, id: string, name: string, expectedPayload?: Record<string, unknown>) {
   const response = page.waitForResponse(row => row.url().endsWith('/commands') && row.request().postDataJSON()?.command === name);
-  await page.getByTestId(id).click();
+  await (await projectControl(page, id)).click();
   const saved = await response;
   expect(saved.ok(), await saved.text()).toBe(true);
   if (expectedPayload) expect(saved.request().postDataJSON().payload).toMatchObject(expectedPayload);
   return saved.json();
 }
 async function select(page: Page, id: string, label: string) {
-  await page.getByTestId(id).click();
+  await (await projectControl(page, id)).click();
   await page.getByRole('menuitem', { name: label, exact: true }).click();
 }
 async function seed(api: APIRequestContext) {
@@ -112,9 +113,9 @@ test('Design and quotation selectors preserve version history, blank price and o
   await select(page, 'kitchen-order-quotation-revision', 'Quotation 1 · Design v1 · Approved');
   await page.getByTestId('kitchen-order-confirmed-yes').click();
   await clickCommand(page, 'kitchen-order-confirmation-save', 'order_confirmation');
-  await expect(page.getByText('Customer order confirmation: Yes', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('kitchen-order-confirmed-yes')).toHaveAttribute('aria-pressed', 'true');
   await page.reload();
-  await expect(page.getByText('Customer order confirmation: Yes', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('kitchen-order-confirmed-yes')).toHaveAttribute('aria-pressed', 'true');
   await select(page, 'kitchen-order-quotation-revision', 'Quotation 1 · Design v1 · Approved');
   await page.getByTestId('kitchen-order-date').fill('2026-10-26');
   await page.getByTestId('kitchen-order-amount').fill('1500');
@@ -122,29 +123,33 @@ test('Design and quotation selectors preserve version history, blank price and o
   project = await clickCommand(page, 'kitchen-order-confirm', 'order_confirm', { quotation_version_id: quotation1.id });
   expect(project.orders.at(-1)).toMatchObject({ confirmed: true, quotation_version_id: quotation1.id, original_amount: null, final_amount: '1500.00' });
   await page.reload();
-  await expect(page.getByText('Customer order confirmation: Yes', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('kitchen-disclose-order-confirmation')).toContainText('Customer confirmation: Yes');
+  await page.getByTestId('kitchen-disclose-order-confirmation').click();
   await page.getByTestId('kitchen-order-confirmed-no').click();
   await clickCommand(page, 'kitchen-order-confirmation-save', 'order_confirmation');
   await page.reload();
-  await expect(page.getByText('Customer order confirmation: No', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('kitchen-disclose-order-confirmation')).toContainText('Customer confirmation: No');
+  await page.getByTestId('kitchen-disclose-order-confirmation').click();
   await page.getByTestId('kitchen-order-confirmed-yes').click();
   await clickCommand(page, 'kitchen-order-confirmation-save', 'order_confirmation');
+  await page.getByTestId('kitchen-disclose-order-status').click();
   await page.getByTestId('kitchen-order-status-on-hold').click();
   await page.getByTestId('kitchen-order-status-notes').fill('Internal scheduling hold');
   await clickCommand(page, 'kitchen-order-status-save', 'order_status');
-  await expect(page.getByText('Order status: On Hold', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('kitchen-disclose-order-status')).toContainText('Status: On Hold');
   await page.getByTestId('kitchen-order-status-confirmed').click();
   await page.getByTestId('kitchen-order-status-notes').fill('Internal scheduling resumed');
   await clickCommand(page, 'kitchen-order-status-save', 'order_status');
-  await expect(page.getByText('Order status: Confirmed', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('kitchen-disclose-order-status')).toContainText('Status: Confirmed');
   const beforeView = writes.length;
+  await page.getByTestId('kitchen-disclose-order-details').click();
   await select(page, 'kitchen-order-quotation-revision', 'Quotation 3 · Design v2 · Pending');
   await expect(page.getByText('Order quotation: Quotation 1 · Design v1', { exact: true })).toBeVisible();
   expect(writes).toHaveLength(beforeView);
   await clickCommand(page, 'kitchen-advance-production', 'move_stage');
   await expect(page.getByText('Quotation 1 · Design v1', { exact: true })).toBeVisible();
   await page.getByTestId('kitchen-production-status-in-production').click();
-  await expect(page.getByTestId('kitchen-production-start')).toHaveValue('');
+  await expect(page.getByTestId('kitchen-production-start')).toHaveValue(new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10));
   await page.getByTestId('kitchen-production-start').fill('2026-10-26');
   project = await clickCommand(page, 'kitchen-production-save', 'production_update');
   await page.reload();
@@ -231,7 +236,7 @@ test('New Design dates default to today while saved dates remain editable and hi
   expect(project.design_versions.at(-1)).toMatchObject({ id: createdId, handoff_date: yesterday });
   project = await command(context.request, project, 'design_present', { notes: 'Known missing historical dates' });
   await page.reload();
-  await expect(page.getByTestId('kitchen-design-edit-shared')).toHaveValue('');
+  await expect(page.getByTestId('kitchen-design-edit-shared')).toHaveValue(today);
   await page.getByTestId('kitchen-design-edit-shared').click();
   await expect(page.getByTestId('kitchen-design-edit-shared')).toHaveValue(today);
   await page.getByTestId('kitchen-design-edit-shared').fill('');

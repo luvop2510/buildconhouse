@@ -238,6 +238,7 @@ jobs:
           npm run test:mobile-ux
           npm run test:kitchen-dates
           npm run test:kitchen-commercial
+          npm run test:kitchen-autosave
           npm run test:table-layout
           npm run test:api-client
           npm run test:auth-provider-races

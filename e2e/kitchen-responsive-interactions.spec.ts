@@ -1,3 +1,4 @@
+import { projectControl, expandProjectDetails } from './kitchen-controls';
 import { expect, test, type Page } from '@playwright/test';
 import { captureRuntimeHealth } from './runtime-health';
 
@@ -43,7 +44,8 @@ test('Kitchen panels keep padded fields and every stage reachable in a short vie
   expect(created.ok()).toBe(true);
   const project = await created.json();
   await page.goto(`/kitchen/${project.id}/stages/lead`);
-  await page.getByTestId('kitchen-open-workflow').click();
+  await (await projectControl(page, 'kitchen-project-actions')).click();
+  await page.getByRole('menuitem', { name: 'Stage history', exact: true }).click();
   await page.getByTestId('kitchen-stage-completed').scrollIntoViewIfNeeded();
   const workflow = await page.getByTestId('kitchen-workflow-sheet').boundingBox();
   const completed = await page.getByTestId('kitchen-stage-completed').boundingBox();
@@ -59,7 +61,8 @@ test('Kitchen customer details remain editable and persist after reopening the f
   const project = await created.json();
   await seedBrowser(page);
   await page.goto(`/kitchen/${project.id}/stages/lead`);
-  await page.getByTestId('kitchen-edit-customer').click();
+  await (await projectControl(page, 'kitchen-project-actions')).click();
+  await page.getByRole('menuitem', { name: 'Edit customer', exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/customers/${project.customer_id}/edit$`));
   await expect(page.getByTestId('edit-customer-name')).toHaveValue('Kitchen editable customer');
   await page.getByTestId('edit-customer-name').fill('Kitchen updated customer');
@@ -94,9 +97,10 @@ test('Lead records a new customer inline, carries identity forward and reuses th
   expect(project.customer).toMatchObject({ name, phone });
   expect(project.stage).toBe('lead');
   await expect(page).toHaveURL(current => current.pathname === `/kitchen/${project.id}/stages/lead`);
-  await expect(page.getByTestId('kitchen-project-detail')).toContainText(name);
+  await expandProjectDetails(page);
+  await expect(page.getByText(`${name} · ${phone}`, { exact: true })).toBeVisible();
   const converted = page.waitForResponse(response => response.request().postDataJSON()?.command === 'move_stage');
-  await page.getByTestId('kitchen-convert').click();
+  await (await projectControl(page, 'kitchen-convert')).click();
   const visit = await (await converted).json();
   expect(visit).toMatchObject({ id: project.id, customer_id: project.customer_id, stage: 'visit' });
   const reused = await context.request.post('/api/kitchen-projects', { headers, data: { customer: { name: 'Do not overwrite this existing customer', phone: `+91 ${phone}` }, idempotency_key: `inline-reuse-${Date.now()}-${Math.random()}`, lead: { site_location: 'Second synthetic location' } } });
@@ -281,7 +285,7 @@ test('a delayed reload cannot replace a newer committed Kitchen save', async ({ 
   try {
     await page.getByTestId('kitchen-lead-save').click();
     await saveSeen;
-    await page.getByTestId('kitchen-project-actions').click();
+    await (await projectControl(page, 'kitchen-project-actions')).click();
     await page.getByRole('menuitem', { name: 'Reload saved project', exact: true }).click();
     await readSeen;
     const committed = page.waitForResponse(response => response.url().endsWith('/commands') && response.request().postDataJSON()?.command === 'edit_lead');
