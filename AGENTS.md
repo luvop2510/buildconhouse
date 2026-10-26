@@ -14,6 +14,17 @@ final order amount must be explicit if unknown. Quotation/order document inputs
 are retired; old private files remain. Notes are internal only and multiline
 fields grow from one line. Approval date and handoff date are distinct; preserve
 and flag unknown/inconsistent history. Command admission reuses its pinned policy.
+Design uses one open form with no Presentation Date or separate share section;
+Create Design vN explicitly starts a new version. New Design dates default to
+India today and stay editable; historical blanks remain untouched until the user
+focuses a date or explicitly chooses approval/handoff. Sent to company persists
+three states. Quotation labels are Quotation N, with an always-visible New quotation
+action, Saved quotation selector and separate Related design field. Each quotation
+belongs to one design; a design can have several quotations. Quotation received/sent and
+advance statuses persist Not recorded / Yes / No independently. Use quotation_update
+for selected-ID corrections; never infer receipt from amount/notes or a draft's
+existence. New order/work dates require entry; status changes do not fill dates.
+Project detail reads reuse policy and overlap authorized independent reads.
 See docs/audits/2026-10-26-kitchen-version-workflow.md for contracts and evidence.
 
 ## Always-on Railway startup and Kitchen PDF usability — 2026-10-26

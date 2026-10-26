@@ -1,4 +1,7 @@
-import { FilterBar, MobileFilterSection } from "@/src/components/ds";
+import { ConfirmDialog, FilterBar, MobileFilterSection } from "@/src/components/ds";
+import { useAuth } from "@/src/state/auth";
+import { useActionAccess } from "@/src/hooks/use-permissions";
+import { canManageDestructiveData } from "@/src/constants/roles";
 import { filterValues } from "@/src/utils/filters";
 // Quotation Tiles — single tab listing every Ground Floor tiles Selection
 // and Quotation, any stage, with two entry points to start a new one. See
@@ -10,7 +13,7 @@ import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from "react-
 import { Text } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { Button, EmptyState, ErrorState, PageHeader, SearchField } from "@/src/components/ui";
+import { Button, EmptyState, ErrorState, PageHeader, SearchField, IconButton } from "@/src/components/ui";
 import { api } from "@/src/api/client";
 import { useRequireFloorAccessState } from "@/src/hooks/use-floor-access";
 import { useBp } from "@/src/design/responsive";
@@ -27,6 +30,12 @@ type TilesDoc = {
 export default function QuotationTilesList() {
   const floor = useRequireFloorAccessState("ground-floor");
   const router = useRouter();
+  const { staff } = useAuth();
+  const canDelete = useActionAccess("tiles", "delete", canManageDestructiveData(staff?.role));
+  const [deleteTarget, setDeleteTarget] = useState<TilesDoc | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const deleteInFlight = useRef(false);
   const { view } = useLocalSearchParams<{ view?: string }>();
   const completed = view === "completed" || view === "fulfilled";
   const [documents, setDocuments] = useState<Partial<Record<TilesDoc["doc_type"], TilesDoc[]>> | null>(null);
@@ -67,11 +76,33 @@ export default function QuotationTilesList() {
   }, [completed, floor.ready, scope]);
 
   useFocusEffect(useCallback(() => {
+    setDeleteTarget(null);
+    setDeleteError(null);
     setDocuments(null);
     setLoadErrors({});
     if (floor.ready) void load();
     return () => { requestIdRef.current += 1; };
   }, [floor.ready, load]));
+
+  const deleteDocument = async () => {
+    if (!deleteTarget || deleteInFlight.current || !canDelete || !floor.ready) return;
+    const target = deleteTarget;
+    const deletionScope = scope;
+    deleteInFlight.current = true;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await api.delete(`/quotations/${encodeURIComponent(target.id)}`, { floorId: "ground-floor" });
+      if (scopeRef.current !== deletionScope) return;
+      setDocuments(current => current ? { ...current, [target.doc_type]: (current[target.doc_type] || []).filter(doc => doc.id !== target.id) } : current);
+      setDeleteTarget(null);
+    } catch (error: any) {
+      if (scopeRef.current === deletionScope) setDeleteError(error?.detail || "Document could not be deleted. Try again.");
+    } finally {
+      deleteInFlight.current = false;
+      setDeleting(false);
+    }
+  };
 
   const openDoc = (doc: TilesDoc) => {
     const route = doc.doc_type === "tiles_selection" ? "selection" : "quotation";
@@ -95,6 +126,7 @@ export default function QuotationTilesList() {
         contentContainerStyle={{ padding: spacing.lg, gap: 8 }}
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={<View style={{ gap: spacing.md }}>
+          {deleteError ? <View accessibilityRole="alert"><Text style={{ color: colors.error }}>{deleteError}</Text></View> : null}
           {loadError ? <ErrorState title="Some tile documents couldn’t load" subtitle={loadError} onRetry={() => void load()} /> : null}
       <PageHeader title={completed ? "Approved & ordered tile documents" : "Tile quotations"} overline="Ground Floor · Tiles" embedded actions={
         <View style={[styles.headerActions, compact && styles.headerActionsCompact]}>
@@ -153,8 +185,9 @@ export default function QuotationTilesList() {
         <EmptyState icon="layers" title={search ? "No matching documents" : `No ${completed ? "approved or ordered " : ""}${label} yet`} subtitle={search ? "Try a different customer or document number." : completed ? "Approved and order-placed selections or quotations will appear here." : `Create a new ${label.slice(0, -1)} to get started.`} />
       ) : null}
         renderItem={({ item }) => (
+            <View style={styles.row}>
             <Pressable
-              style={styles.row}
+              style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 10 }}
               onPress={() => openDoc(item)}
               testID={`tiles-doc-${item.id}`}
               accessibilityRole="button"
@@ -170,8 +203,18 @@ export default function QuotationTilesList() {
               <Text style={[type.mono, { fontSize: 13, fontWeight: "600" }]}>{money(item.grand_total || 0)}</Text>
               <Feather name="chevron-right" size={16} color={colors.onSurfaceMuted} />
             </Pressable>
+            {canDelete ? <IconButton icon="trash-2" tone="danger" size={44}
+              onPress={() => { setDeleteError(null); setDeleteTarget(item); }}
+              accessibilityLabel={`Delete ${item.doc_type === "tiles_selection" ? "selection" : "quotation"} ${displayNumber(item)}`}
+              testID={`tiles-delete-${item.id}`} /> : null}
+            </View>
           )}
       />
+      <ConfirmDialog visible={!!deleteTarget} onClose={() => { if (!deleting) setDeleteTarget(null); }}
+        onConfirm={() => { void deleteDocument(); }}
+        title={`Delete this ${deleteTarget?.doc_type === "tiles_selection" ? "selection" : "quotation"}?`}
+        description={deleteError || (deleteTarget ? `${displayNumber(deleteTarget)} will be removed. Linked orders and completed payments are protected.` : undefined)}
+        confirmLabel="Delete" tone="danger" loading={deleting} testID="confirm-delete-tiles-list" />
     </SafeAreaView>
   );
 }

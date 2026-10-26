@@ -690,7 +690,7 @@ export default function CustomerDetail() {
             </Card>
           )
         ) : tab === "po_final" ? (
-          <PoFinal customerId={id} />
+          <PoFinal key={`${selectedFloorId}:${id}`} customerId={id} />
         ) : tab === "purchases" ? (
           <View style={{ gap: spacing.lg }}>
             {isTilesFloor ? (

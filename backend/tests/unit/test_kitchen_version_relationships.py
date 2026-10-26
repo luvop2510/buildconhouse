@@ -217,3 +217,196 @@ def test_owner_clears_current_approval_and_handoff_without_rewriting_history(set
     assert project["design_versions"][0]["handoff_date"] is None
     assert project["approvals"][0]["decision"] == "Approved"
     assert project["design_versions"][1]["response"] == "Approved"
+
+
+def test_new_design_form_creates_atomic_approved_handed_off_version_without_presentation_date(setup):
+    _, _, owner = setup
+    project = aggregate('design')
+    before = copy.deepcopy(project)
+    apply(project, 'design_present', {'response': 'Approved', 'shared_date': '2026-10-23',
+        'approval_date': '2026-10-24', 'handoff_date': '2026-10-25', 'notes': 'Internal only',
+        'requirements': 'New requirements', 'reason': 'Created Design v3'}, owner)
+    version = project['design_versions'][-1]
+    assert version['number'] == 3 and version['presentation_date'] is None
+    assert version['shared_date'] == '2026-10-23' and version['shared_by'] == owner.id
+    assert version['handoff_date'] == '2026-10-25' and version['handoff_by'] == owner.id
+    assert version['approval_date'] == '2026-10-24' and version['response'] == 'Approved'
+    assert project['approvals'][-1]['subject_id'] == version['id']
+    assert project['approvals'][-1]['approval_date'] == '2026-10-24'
+    assert project['design_versions'][:2] == before['design_versions']
+    assert project['quotation_versions'] == before['quotation_versions']
+    assert project.get('design_revision_count') == before.get('design_revision_count')
+
+
+def test_design_form_update_preserves_omitted_original_presentation_date(setup):
+    _, _, owner = setup
+    project = aggregate('design')
+    apply(project, 'design_update', {'version_id': 'd1', 'response': 'Approved',
+        'notes': 'Internal clarification', 'reason': 'Updated internal note'}, owner)
+    assert project['design_versions'][0]['presentation_date'] == '2026-10-20'
+    project['design_versions'][0]['presentation_date'] = None
+    apply(project, 'design_update', {'version_id': 'd1', 'response': 'Approved',
+        'notes': 'Second clarification', 'reason': 'Updated internal note'}, owner)
+    assert project['design_versions'][0]['presentation_date'] is None
+
+
+@pytest.mark.parametrize('fields', [
+    {'shared_date': '2026-10-23', 'response': 'Approved', 'approval_date': '2026-10-22'},
+    {'shared_date': '2026-10-23', 'response': 'Approved', 'approval_date': '2026-10-24', 'handoff_date': '2026-10-23'},
+    {'response': 'Pending', 'handoff_date': '2026-10-25'},
+    {'response': 'Changes Required'},
+])
+def test_new_design_form_validates_chronology_before_appending(setup, fields):
+    _, _, owner = setup
+    project = aggregate('design')
+    before = copy.deepcopy(project)
+    with pytest.raises(HTTPException):
+        apply(project, 'design_present', fields, owner)
+    assert project == before
+
+
+def test_new_version_after_approval_keeps_active_order_chain_and_requires_return_after_production(setup):
+    _, _, owner = setup
+    project = aggregate('order')
+    apply(project, 'order_confirm', {'quotation_version_id': 'q1', 'order_date': '2026-10-25'}, owner)
+    order = copy.deepcopy(project['orders'][0])
+    project['stage'] = 'design'
+    apply(project, 'design_present', {}, owner)
+    assert project['design_versions'][-1]['response'] == 'Pending'
+    assert project['design_versions'][-1]['presentation_date'] is None
+    assert project['orders'][0] == order
+    project['production'] = {'status': 'In Production', 'start_date': '2026-10-25'}
+    with pytest.raises(HTTPException, match='Return to Design'):
+        apply(project, 'design_present', {}, owner)
+
+
+def test_explicit_quotation_fields_save_without_inferred_statuses(setup):
+    _, _, owner = setup
+    project = aggregate()
+    apply(project, "quotation_receive", {"design_version_id": "d1", "amount": "200.00", "notes": "Internal draft",
+        "received_status": "Not recorded", "sent_status": "No", "received_date": None, "shared_date": None, "response": "Pending"}, owner)
+    quote = project["quotation_versions"][-1]
+    assert quote["received_status"] == "Not recorded" and quote["sent_status"] == "No"
+    assert quote["received_date"] is None and quote["shared_date"] is None
+    previous = copy.deepcopy(project["quotation_versions"][:2])
+    apply(project, "quotation_update", {"version_id": quote["id"], "received_status": "Yes", "received_date": "2026-10-24",
+        "sent_status": "Yes", "shared_date": "2026-10-25", "response": "Approved", "amount": None}, owner)
+    assert quote["response"] == "Approved" and quote["amount"] is None
+    assert project["quotation_versions"][:2] == previous
+    apply(project, "quotation_update", {"version_id": quote["id"], "notes": "Notes only"}, owner)
+    assert quote["response"] == "Approved" and quote["shared_date"] == "2026-10-25"
+    assert project["approvals"][-1]["subject_id"] == quote["id"]
+
+
+@pytest.mark.parametrize("fields", [
+    {"received_status": "No", "received_date": "2026-10-24"},
+    {"sent_status": "No", "shared_date": "2026-10-25"},
+    {"response": "Approved", "sent_status": "Not recorded"},
+    {"received_date": "2026-10-22"},
+    {"received_date": "2026-10-25", "shared_date": "2026-10-24"},
+])
+def test_editable_quotation_keeps_date_and_approval_validation(setup, fields):
+    _, _, owner = setup
+    project = aggregate()
+    with pytest.raises(HTTPException):
+        apply(project, "quotation_receive", {"design_version_id": "d1", **fields}, owner)
+
+
+def test_quotation_update_targets_selected_id_and_preserves_old_document_and_order_basis(setup):
+    _, _, owner = setup
+    project = aggregate("order")
+    apply(project, "order_confirm", {"quotation_version_id": "q1", "order_date": "2026-10-25"}, owner)
+    order = copy.deepcopy(project["orders"][0])
+    project["stage"] = "quotation"
+    project["quotation_versions"][0]["attachment_id"] = "old-file"
+    before_other = copy.deepcopy(project["quotation_versions"][1])
+    apply(project, "quotation_update", {"version_id": "q1", "notes": "Internal correction", "amount": "200.00"}, owner)
+    assert project["quotation_versions"][0]["attachment_id"] == "old-file"
+    assert project["quotation_versions"][1] == before_other
+    assert project["orders"][0] == order
+    with pytest.raises(HTTPException, match="linked to an order"):
+        apply(project, "quotation_update", {"version_id": "q1", "design_version_id": "d2"}, owner)
+    project["production"] = {"status": "In Production"}
+    with pytest.raises(HTTPException, match="Production has started"):
+        apply(project, "quotation_update", {"version_id": "q1", "notes": "Locked"}, owner)
+
+
+@pytest.mark.parametrize("status", ["Not recorded", "Yes", "No"])
+def test_advance_status_is_explicit_and_independent_of_confirmation(setup, status):
+    _, _, owner = setup
+    project = aggregate("order")
+    apply(project, "order_confirm", {"quotation_version_id": "q1", "order_date": "2026-10-25"}, owner)
+    assert project["orders"][-1]["advance"]["status"] == "Not recorded"
+    apply(project, "order_advance", {"status": status, "received": status == "Yes",
+        "amount": "10.00" if status == "Yes" else "0.00", "date": "2026-10-26" if status == "Yes" else None}, owner)
+    assert project["orders"][-1]["advance"]["status"] == status
+    assert project["customer_order_confirmation"] == "Yes"
+
+
+@pytest.mark.parametrize("command", ["quotation_receive", "quotation_update"])
+def test_quotation_without_receipt_date_cannot_be_shared_before_design_handoff(setup, command):
+    _, _, owner = setup
+    project = aggregate()
+    fields = {"received_date": None, "received_status": "Not recorded", "sent_status": "Yes",
+        "shared_date": "2026-10-22", "response": "Approved"}
+    if command == "quotation_receive":
+        fields["design_version_id"] = "d1"
+    else:
+        fields["version_id"] = "q1"
+    with pytest.raises(HTTPException, match="design handoff"):
+        apply(project, command, fields, owner)
+
+
+@pytest.mark.parametrize('status,date', [('Yes', '2026-10-25'), ('No', None), ('Not recorded', None)])
+def test_design_handoff_status_is_explicit_and_matches_date(setup, status, date):
+    _, _, owner = setup
+    project = aggregate('design')
+    apply(project, 'design_present', {'shared_date': '2026-10-23', 'response': 'Approved',
+        'approval_date': '2026-10-24', 'handoff_status': status, 'handoff_date': date}, owner)
+    saved = project['design_versions'][-1]
+    assert saved['handoff_status'] == status and saved['handoff_date'] == date
+    apply(project, 'design_update', {'version_id': saved['id'], 'response': 'Approved', 'reason': 'Internal note', 'notes': 'Keep state'}, owner)
+    assert saved['handoff_status'] == status and saved['handoff_date'] == date
+
+
+@pytest.mark.parametrize('command,status,date', [
+    ('design_present', 'Yes', None), ('design_present', 'No', '2026-10-25'),
+    ('design_present', 'Not recorded', '2026-10-25'), ('design_update', 'Yes', None),
+    ('design_update', 'No', '2026-10-25'), ('design_update', 'Not recorded', '2026-10-25'),
+])
+def test_design_handoff_status_rejects_contradictory_date_before_mutation(setup, command, status, date):
+    _, _, owner = setup
+    project = aggregate('design')
+    fields = {'response': 'Approved', 'shared_date': '2026-10-23', 'approval_date': '2026-10-24',
+        'handoff_status': status, 'handoff_date': date}
+    if command == 'design_update':
+        fields.update(version_id='d1', reason='Status correction')
+    before = copy.deepcopy(project)
+    with pytest.raises(HTTPException, match='company|handoff'):
+        apply(project, command, fields, owner)
+    assert project == before
+
+
+def test_legacy_design_handoff_derives_only_from_explicit_date_and_command(setup):
+    _, _, owner = setup
+    project = aggregate('design')
+    apply(project, 'design_present', {'notes': 'No handoff'}, owner)
+    design = project['design_versions'][-1]
+    assert design['handoff_status'] == 'Not recorded' and design['handoff_date'] is None
+    apply(project, 'design_update', {'version_id': design['id'], 'response': 'Approved', 'shared_date': '2026-10-23',
+        'approval_date': '2026-10-24', 'handoff_date': '2026-10-25', 'reason': 'Legacy date client'}, owner)
+    assert design['handoff_status'] == 'Yes'
+    design['handoff_date'] = None
+    design['handoff_status'] = 'No'
+    apply(project, 'design_handoff', {'version_id': design['id'], 'date': '2026-10-26'}, owner)
+    assert design['handoff_status'] == 'Yes' and design['handoff_date'] == '2026-10-26'
+
+
+def test_legacy_date_echo_does_not_replace_explicit_no_handoff_status(setup):
+    _, _, owner = setup
+    project = aggregate("design")
+    row = project["design_versions"][0]
+    row.update(response="Pending", approval_date=None, handoff_date=None, handoff_status="No")
+    apply(project, "design_update", {"version_id": row["id"], "response": "Pending", "handoff_date": None,
+        "notes": "Legacy client note edit", "reason": "Internal clarification"}, owner)
+    assert row["handoff_status"] == "No" and row["handoff_date"] is None

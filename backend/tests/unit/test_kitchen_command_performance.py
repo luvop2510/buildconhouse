@@ -41,3 +41,24 @@ async def test_changed_policy_between_read_and_admission_still_rejects(setup, mo
     assert rejected.value.status_code == 409
     assert database.kitchen_projects.rows[0]["stage"] == "lead"
     assert database.kitchen_configuration.rows[0]["active_command_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_project_detail_reuses_policy_and_preserves_duplicate_scope(setup, monkeypatch):
+    database, service, owner = setup
+    first = await service.create(owner, create_request(customer_id="customer-a", idempotency_key="detail-first"))
+    other = await service.create(owner, create_request(customer_id="customer-a", idempotency_key="detail-other"))
+    reads = []
+    original = database.kitchen_configuration.find_one
+    async def find_policy(*args, **kwargs):
+        reads.append(args[0])
+        return await original(*args, **kwargs)
+    monkeypatch.setattr(database.kitchen_configuration, "find_one", find_policy)
+    result = await service.get(owner, first["id"])
+    assert reads == [{"_id": POLICY_ID}]
+    assert result["permissions"]["can_update"]
+    assert {row["id"] for row in result["duplicate_candidates"]} == {other["id"]}
+    owner.active = False
+    with pytest.raises(HTTPException) as rejected:
+        await service.get(owner, first["id"])
+    assert rejected.value.status_code == 403

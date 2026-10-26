@@ -41,7 +41,7 @@ def _customer_for_quotation(method: str, path: str) -> bool:
     if path == "/api/customers":
         return method in {"GET", "POST"}
     return bool((fullmatch(r"/api/customers/[^/]+", path) and method in {"GET", "PATCH"})
-                or (method == "GET" and fullmatch(r"/api/customers/[^/]+/po-final(?:/pdf)?", path)))
+                or (method == "GET" and fullmatch(r"/api/customers/[^/]+/po-final(?:/pdf|/xlsx)?", path)))
 
 
 def _dispatch_surface(method: str, path: str) -> bool:

@@ -133,6 +133,12 @@ export function BuilderTopbar({
           <Feather name="file-text" size={14} color={colors.onSurface} />
           {isPhone ? null : <Text style={styles.workflowText}>PDF</Text>}
         </Pressable> : null}
+        {!isPhone ? <Pressable accessibilityRole="button" accessibilityLabel="Download quotation Excel"
+          testID="generate-quotation-excel" onPress={b.generateQuotationExcel}
+          disabled={b.workflowBusy || b.s.lines.length === 0}
+          style={({ pressed }) => [styles.workflowBtn, styles.quotationBtn, { opacity: b.workflowBusy || !b.s.lines.length ? 0.45 : pressed ? 0.76 : 1 }]}>
+          <Feather name="grid" size={14} color={colors.onSurface} /><Text style={styles.workflowText}>Excel</Text>
+        </Pressable> : null}
         {!isPhone ? <Pressable
           accessibilityRole="button" accessibilityLabel="Download product PPT"
           testID="generate-product-ppt"
@@ -209,6 +215,7 @@ export function BuilderTopbar({
             { label: "Redo change", icon: "corner-up-right" as const, action: b.history.redo, disabled: !b.history.canRedo },
             { label: "Preview quotation", icon: "eye" as const, action: () => setPreviewOpen(true), disabled: !b.s.lines.length },
             { label: "Download quotation PDF", icon: "download" as const, action: () => setPdfOptionsOpen(true), disabled: b.workflowBusy || !b.s.lines.length },
+            { label: "Download quotation Excel", icon: "grid" as const, action: b.generateQuotationExcel, disabled: b.workflowBusy || !b.s.lines.length },
             { label: "Download product PPT", icon: "image" as const, action: b.generateProductPpt, disabled: b.workflowBusy || !b.s.lines.length },
             ...(!b.customerOutcome ? [{ label: "Place order", icon: "shopping-cart" as const, action: b.placeOrder, disabled: b.workflowBusy || !b.s.lines.length }] : []),
             { label: "Recent quotations", icon: "clock" as const, action: () => setRecentOpen(true), disabled: false },

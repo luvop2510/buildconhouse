@@ -12,6 +12,7 @@ from db import db
 from models import UserPublic
 from services.po_final import build_po_final
 from services.po_final_pdf import build_po_final_pdf
+from services.po_final_pdf import _final_quotation
 
 router = APIRouter(prefix="/customers", tags=["customers"])
 
@@ -127,7 +128,7 @@ async def get_po_final_pdf(customer_id: str, quotation_id: str | None = Query(No
     quotation = await get_floor_scoped_or_404(
         db.quotations, data["quotation_id"], user, not_found="Quotation not found", projection={"_id": 0},
     )
-    items = await _canonicalize_item_images(quotation.get("items") or [])
+    items = await _canonicalize_item_images(quotation.get("items") or [], quotation.get("floor_id"))
     if data.get("doc_type") not in {"tiles_selection", "tiles_quotation"}:
         items = await _diagram_items(items, quotation.get("floor_id"))
     quotation = {**quotation, "items": items}
@@ -138,4 +139,27 @@ async def get_po_final_pdf(customer_id: str, quotation_id: str | None = Query(No
     pdf = await run_in_threadpool(build_po_final_pdf, data, await _pdf_branding(), quotation, payments)
     filename = f"PO-Final-{data['quotation_number'] or customer_id}.pdf"
     return StreamingResponse(iter([pdf]), media_type="application/pdf",
-                             headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
+                             headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}", "Cache-Control": "private, no-store"})
+
+
+@router.get("/{customer_id}/po-final/xlsx")
+async def get_po_final_xlsx(customer_id: str, quotation_id: str | None = Query(None),
+                            user: UserPublic = Depends(get_current_user)):
+    data = await _po_final(customer_id, quotation_id, user)
+    if not data["quotation_id"]:
+        raise HTTPException(status_code=404, detail="No quotation exists for this customer")
+    from routes.quotation_routes import _build_quotation_excel_file
+
+    quotation = await get_floor_scoped_or_404(
+        db.quotations, data["quotation_id"], user, not_found="Quotation not found", projection={"_id": 0},
+    )
+    if quotation.get("doc_type") in {"tiles_selection", "tiles_quotation"}:
+        raise HTTPException(status_code=400, detail="Quotation Excel is available for Sanitary Bathroom quotations")
+    document = _final_quotation(data, quotation, [])
+    # Final item rates already include every discount and stock credit.
+    document.update(project_discount_pct=0, category_discounts={}, room_discounts={})
+    content, _ = await _build_quotation_excel_file(document, data["customer"])
+    filename = f"PO-Final-{data['quotation_number'] or customer_id}.xlsx"
+    return StreamingResponse(iter([content]),
+                             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}", "Cache-Control": "private, no-store"})

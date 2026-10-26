@@ -164,7 +164,7 @@ def action_for_api_request(method: str, path: str, query=None) -> str | None:
     if method == "POST" and any(fullmatch(pattern, path) for pattern in POST_UPDATE_ROUTE_PATTERNS):
         return "update"
     if method in {"GET", "HEAD"}:
-        if path.endswith(("/pdf", "/pptx", "/export", "/export.xlsx")):
+        if path.endswith(("/pdf", "/pptx", "/xlsx", "/export", "/export.xlsx")):
             return "export"
         if path.startswith("/api/analytics/") and query and query.get("format") in {"csv", "xlsx"}:
             return "export"

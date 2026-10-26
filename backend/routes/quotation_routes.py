@@ -30,6 +30,7 @@ from pdf_generator import build_quotation_pdf, quotation_pdf_filename
 from pdf_tiles import build_tiles_quotation_pdf, build_tiles_selection_pdf, tiles_pdf_filename
 from services.quotation_catalog_prices import price_review, apply_price_choice, line_catalog_snapshot
 from services.quotation_ppt import build_product_ppt, presentation_filename
+from services.quotation_excel import build_quotation_excel, quotation_excel_filename
 from services import catalog_service
 from services.customer_completion import completed_customer_ids
 from services.activity_log import log_event
@@ -1498,6 +1499,38 @@ async def _build_quotation_file(doc: dict, customer: dict, include_dimensions: b
         pdf_bytes = await _render_pdf(build_quotation_pdf, pdf_doc, customer, branding)
         filename = quotation_pdf_filename(doc.get("customer_name") or customer.get("name"))
     return pdf_bytes, filename
+
+
+async def _build_quotation_excel_file(doc: dict, customer: dict) -> tuple[bytes, str]:
+    """Share the template renderer between builder and customer PO Final."""
+    if (doc.get("doc_type") or "standard") != "standard":
+        raise HTTPException(status_code=400, detail="Quotation Excel is available for sanitary quotations")
+    document = {**doc, "items": await _canonicalize_item_images(doc.get("items", []), floor_inherit(doc))}
+    try:
+        data = await run_in_threadpool(build_quotation_excel, document, customer)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return data, quotation_excel_filename(doc.get("customer_name") or customer.get("name"))
+
+
+def _excel_response(data: bytes, filename: str) -> StreamingResponse:
+    return StreamingResponse(iter([data]), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}", "Cache-Control": "private, no-store"})
+
+
+@router.get("/{quotation_id}/xlsx")
+async def quotation_xlsx(quotation_id: str, user: UserPublic = Depends(get_current_user)):
+    doc = await get_floor_scoped_or_404(db.quotations, quotation_id, user, not_found="Quotation not found", projection={"_id": 0})
+    customer = await db.customers.find_one({"id": doc["customer_id"], "floor_id": floor_inherit(doc)}, {"_id": 0, "password_hash": 0}) or {}
+    return _excel_response(*await _build_quotation_excel_file(doc, customer))
+
+
+@router.get("/{quotation_id}/portal-xlsx")
+async def portal_xlsx(quotation_id: str, cust: CustomerPublic = Depends(get_current_customer)):
+    doc = await db.quotations.find_one({"id": quotation_id, "customer_id": cust.id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Quotation not found")
+    return _excel_response(*await _build_quotation_excel_file(doc, cust.model_dump()))
 
 
 @router.get("/{quotation_id}/pdf")

@@ -19,6 +19,7 @@ import {
 import { colors, money, spacing, type } from "@/src/theme/tokens";
 import { useBp } from "@/src/design/responsive";
 import { openPortalPdf } from "@/src/utils/portalPdf";
+import { downloadApiFile } from "@/src/utils/downloadFile";
 
 type Item = { id: string; name: string; sku: string; qty: number; unit_price: number; room?: string };
 type Revision = { revision_no: number; created_at: string; reason?: string };
@@ -34,6 +35,7 @@ type Detail = {
   project_name?: string;
   revisions: Revision[];
   brands: BrandGroup[];
+  doc_type?: string;
 };
 
 export default function CustomerQuotationDetail() {
@@ -76,7 +78,9 @@ export default function CustomerQuotationDetail() {
     setDownloading(key);
     setDownloadError(false);
     try {
-      await openPortalPdf(path, filename);
+      if (filename.endsWith(".xlsx")) {
+        if (!await downloadApiFile(path, filename, "quotation Excel")) throw new Error("Download failed");
+      } else await openPortalPdf(path, filename);
     } catch {
       setDownloadError(true);
     } finally {
@@ -108,7 +112,7 @@ export default function CustomerQuotationDetail() {
           {downloadError ? (
             <Card style={styles.downloadError}>
               <Feather name="alert-circle" size={16} color={colors.error} />
-              <Text role="alert" aria-live="assertive" style={[type.bodyMuted, styles.downloadErrorCopy]}>The PDF could not be downloaded. Please try again.</Text>
+              <Text role="alert" aria-live="assertive" style={[type.bodyMuted, styles.downloadErrorCopy]}>The file could not be downloaded. Please try again.</Text>
             </Card>
           ) : null}
 
@@ -132,6 +136,11 @@ export default function CustomerQuotationDetail() {
               loading={downloading === "latest"}
               onPress={() => void download("latest", `/quotations/${doc.id}/portal-pdf`, `${doc.number}.pdf`)}
             />
+            {doc.doc_type !== "tiles_selection" && doc.doc_type !== "tiles_quotation" ? <Button
+              testID="download-quotation-excel" label="Download quotation Excel" icon="grid"
+              variant="secondary" fullWidth loading={downloading === "excel"}
+              onPress={() => void download("excel", `/quotations/${doc.id}/portal-xlsx`, `${doc.number}.xlsx`)}
+            /> : null}
           </Card>
 
           <CustomerSectionHeading title="Items" count={doc.items.length} />

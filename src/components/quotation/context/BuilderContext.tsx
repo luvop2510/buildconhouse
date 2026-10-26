@@ -13,6 +13,7 @@
 // Presentation components remain stateless and pluggable.
 // -----------------------------------------------------------------------------
 import * as Haptics from "expo-haptics";
+import { useFocusEffect } from "expo-router";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Platform } from "react-native";
 import { TextInput } from "@/src/components/AppText";
@@ -217,6 +218,7 @@ export type BuilderApi = {
   finalize: () => Promise<void>;
   workflowBusy: boolean;
   generateOfficialQuotation: (includeDimensions?: boolean) => Promise<void>;
+  generateQuotationExcel: () => Promise<void>;
   generateProductPpt: () => Promise<void>;
   placeOrder: () => Promise<void>;
 
@@ -441,8 +443,9 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   const [referenceRetry, setReferenceRetry] = useState(0);
   const retryReferenceData = useCallback(() => setReferenceRetry((value) => value + 1), []);
 
+// Refresh customers after returning from customer/quotation deletion.
 // ---------- Load reference data ----------
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     const controller = new AbortController();
     let current = true;
     setReferenceLoading(true);
@@ -455,7 +458,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
         // Everything else is fetched only when its corresponding panel is used,
         // keeping the first mobile screen from competing with seven requests.
         const [cs, cats, brs] = await Promise.all([
-          api.get<Customer[]>("/customers", request),
+          api.get<Customer[]>("/customers", { ...request, cacheMs: 0 }),
           catalogReferences.categories<Category[]>(null, request),
           catalogReferences.brands<Brand[]>(request),
         ]);
@@ -494,7 +497,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     // history is intentionally not a dependency: reference retries must not
     // restart just because the undoable quotation document changed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [referenceRetry, activeFloorId]);
+  }, [referenceRetry, activeFloorId]));
 
   // Product shortcuts are useful but non-essential. Fetch them on first use
   // rather than making every builder launch pay for both endpoints.
@@ -517,18 +520,19 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   // The recent-quotation rail is intentionally deferred until the first frame
   // has painted. It remains available immediately afterwards, without
   // delaying the builder's primary controls on a slow mobile connection.
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     const controller = new AbortController();
+    setRecentQuotations([]);
     const timer = setTimeout(() => {
       if (!activeFloorId) return;
       api.get<RecentQuotation[]>("/quotations/recent?limit=10", {
-        floorId: activeFloorId, signal: controller.signal, cacheMs: 30_000,
+        floorId: activeFloorId, signal: controller.signal, cacheMs: 0,
       }).then(setRecentQuotations).catch((error: any) => {
         if (error?.name !== "AbortError") console.warn("Failed to load recent quotations", error);
       });
     }, 250);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [referenceRetry, activeFloorId]);
+  }, [activeFloorId]));
 
   // Referrers are only needed when their sheet opens, so defer their list
   // until that user intent instead of including it in builder bootstrap.
@@ -1530,6 +1534,19 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     }
   }, [persist, customers, s.customerId, activeFloorId]);
 
+  const generateQuotationExcel = useCallback(async () => {
+    setWorkflowBusy(true);
+    try {
+      const persistedId = await persist();
+      if (!persistedId) return;
+      const customer = customers.find((item) => item.id === s.customerId);
+      const name = (customer?.name || "Customer").replace(/[\\/:*?"<>|]/g, "").trim() || "Customer";
+      await downloadApiFile(`/quotations/${persistedId}/xlsx`, `${name} Quotation.xlsx`, "quotation Excel", activeFloorId);
+    } catch (error: any) {
+      toast.error(error?.detail || "Could not download quotation Excel");
+    } finally { setWorkflowBusy(false); }
+  }, [persist, customers, s.customerId, activeFloorId]);
+
   const generateProductPpt = useCallback(async () => {
     setWorkflowBusy(true);
     try {
@@ -1633,7 +1650,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     recentQuotations, refreshRecentQuotations, restoreQuotation, deleteQuotation, startNewQuotation,
     totals, usedCategoryIds, flatRows, lineBreakdownById, recoveryDraft, recoveryBusy, recoveryError, restoreLocalDraft, dismissRecovery,
     quotationId, quotationNumber, customerCompleted, customerOutcome, saveState, savedAt, saveLabel, persist, finalize,
-    workflowBusy, generateOfficialQuotation, generateProductPpt, placeOrder,
+    workflowBusy, generateOfficialQuotation, generateQuotationExcel, generateProductPpt, placeOrder,
     setCustomer, createCustomer, importCustomerFromGround, customerSwitcherOpen, setCustomerSwitcherOpen,
     setReferrer, clearReferrer, createReferrer, referrerSwitcherOpen, setReferrerSwitcherOpen,
     addFromProduct, updateLine, removeLine, cancelLine, duplicateLine, moveLineToNextRoom, moveLine, moveRoom,
@@ -1662,7 +1679,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     recentQuotations, refreshRecentQuotations, restoreQuotation, deleteQuotation, startNewQuotation,
     totals, usedCategoryIds, flatRows, lineBreakdownById, recoveryDraft, recoveryBusy, recoveryError, restoreLocalDraft, dismissRecovery,
     quotationId, quotationNumber, customerCompleted, customerOutcome, saveState, savedAt, saveLabel, persist, finalize,
-    workflowBusy, generateOfficialQuotation, generateProductPpt, placeOrder,
+    workflowBusy, generateOfficialQuotation, generateQuotationExcel, generateProductPpt, placeOrder,
     setCustomer, createCustomer, importCustomerFromGround, customerSwitcherOpen, setCustomerSwitcherOpen,
     setReferrer, clearReferrer, createReferrer, referrerSwitcherOpen, setReferrerSwitcherOpen,
     addFromProduct, updateLine, removeLine, cancelLine, duplicateLine, moveLineToNextRoom, moveLine, moveRoom,

@@ -17,7 +17,9 @@ from routes.misc_routes import DownloadTokenRequest, _download_target_path
 @pytest.mark.parametrize("target", [
     "/api/quotations/quote-1/pdf?include_dimensions=true",
     "/api/quotations/quote-1/pptx",
+    "/api/quotations/quote-1/xlsx",
     "/api/customers/customer-1/po-final/pdf?quotation_id=quote-1",
+    "/api/customers/customer-1/po-final/xlsx?quotation_id=quote-1",
     "/api/analytics/revenue-trend?format=xlsx&granularity=month",
     "/api/analytics/referrers?type=architect&format=xlsx",
     "/api/catalog/export.xlsx",
@@ -34,6 +36,7 @@ def test_download_token_targets_are_limited_to_known_get_file_routes(target):
 
 @pytest.mark.parametrize("target", [
     "/api/quotations/quote-1/portal-pdf",
+    "/api/quotations/quote-1/portal-xlsx",
     "/api/quotations/quote-1/portal-pdf/revision/2",
     "/api/quotations/quote-1/portal-pdf/brand/brand-1",
 ])
