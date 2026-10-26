@@ -29,6 +29,7 @@ test('critical quotation Excel persists the current quotation and downloads on d
   });
   await page.goto('/quotations/new?quotationId=excel-quote');
   await expect(page.getByTestId('quotation-workspace')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Download Excel file', exact: true })).toBeVisible();
   const expand = page.getByTestId('expand-quotation-workspace');
   if (await expand.isVisible()) await expand.click();
   const quotationTab = page.getByTestId('builder-tab-quotation');
@@ -36,14 +37,14 @@ test('critical quotation Excel persists the current quotation and downloads on d
   await page.getByTestId('qty-line').fill('2');
   await page.getByTestId('qty-line').blur();
   const download = page.waitForEvent('download');
-  if (await page.getByTestId('builder-actions').isVisible()) {
-    await page.getByTestId('builder-actions').click();
-    await page.getByRole('button', { name: 'Download quotation Excel', exact: true }).click();
-  } else await page.getByTestId('generate-quotation-excel').click();
+  await page.getByRole('button', { name: 'Download Excel file', exact: true }).click();
   await expect.poll(() => exported).toBe(true);
   const mobileSave = page.getByTestId('mobile-file-download');
-  if (await mobileSave.count()) await mobileSave.click();
+  if (await page.evaluate(() => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent))) {
+    await expect(mobileSave).toBeVisible(); await mobileSave.click();
+  }
   expect((await download).suggestedFilename()).toBe('Excel buyer Quotation.xlsx');
   expect(document.items[0].qty).toBe(2);
+  expect(await page.evaluate(() => globalThis.document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   await health.assertHealthy();
 });

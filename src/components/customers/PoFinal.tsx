@@ -118,7 +118,7 @@ export function PoFinal({ customerId }: { customerId: string }) {
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
           <Button label="Refresh" icon="refresh-cw" variant="secondary" size="sm" onPress={() => void load()} loading={loading} testID="po-final-refresh" />
           <Button label="Download PDF" icon="download" size="sm" onPress={() => void download("pdf")} disabled={!data.quotation_id || !currentSelection || loading || !!downloading} loading={downloading === "pdf"} testID="po-final-download" />
-          {data.doc_type !== "tiles_selection" && data.doc_type !== "tiles_quotation" ? <Button label="Download Excel" icon="grid" size="sm" variant="secondary" onPress={() => void download("xlsx")} disabled={!data.quotation_id || !currentSelection || loading || !!downloading} loading={downloading === "xlsx"} testID="po-final-download-excel" /> : null}
+          {data.doc_type !== "tiles_selection" && data.doc_type !== "tiles_quotation" ? <Button label="Download Excel file" icon="grid" size="md" onPress={() => void download("xlsx")} disabled={!data.quotation_id || !currentSelection || loading || !!downloading} loading={downloading === "xlsx"} testID="po-final-download-excel" /> : null}
         </View>
       </View>
       {error ? <Text accessibilityRole="alert" style={[type.caption, { color: colors.error, marginTop: spacing.sm }]}>{error}</Text> : null}

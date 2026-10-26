@@ -67,13 +67,9 @@ export function BuilderTopbar({
   const status = b.recentQuotations.find((q) => q.id === b.quotationId)?.status || "draft";
   const meta = statusMeta[status] || statusMeta.draft;
 
-  // Product-focus mode owns its lightweight restore control in
-  // QuotationPane. Removing this bar is what returns the phone viewport to
-  // the catalog instead of leaving a decorative title above every product.
-  if (hidden) return null;
-
   return (
-    <View style={styles.bar}>
+    <View>
+    <View style={[styles.bar, hidden && { display: "none" }]}>
       <Pressable testID="builder-back" accessibilityRole="button" accessibilityLabel="Back to quotations" onPress={onBack} style={styles.back} hitSlop={6}>
         <Feather name="chevron-left" size={18} color={colors.onSurface} />
         {!isPhone ? <Text style={styles.backLabel}>Back</Text> : null}
@@ -105,11 +101,6 @@ export function BuilderTopbar({
         </Text>
       </View>
 
-      {isPhone ? <Pressable accessibilityRole="button" accessibilityLabel="Download quotation PDF" testID="generate-quotation"
-        onPress={() => setPdfOptionsOpen(true)} disabled={b.workflowBusy || !b.s.lines.length}
-        style={[styles.iconBtn, (b.workflowBusy || !b.s.lines.length) && { opacity: 0.4 }]}>
-        <Feather name="download" size={20} color={colors.onSurface} />
-      </Pressable> : null}
       <Pressable accessibilityRole="button" accessibilityLabel="Share quotation PDF" testID="quotation-whatsapp-draft"
         onPress={() => void prepareWhatsApp()} disabled={preparingWhatsApp || b.workflowBusy || !b.s.lines.length}
         style={[styles.iconBtn, (preparingWhatsApp || b.workflowBusy || !b.s.lines.length) && { opacity: 0.4 }]}>
@@ -123,22 +114,6 @@ export function BuilderTopbar({
             footer owns draft completion; suppressing secondary actions avoids
             squeezing six touch targets into one row. */}
         {!isPhone ? <Pressable accessibilityRole="button" accessibilityLabel="Preview quotation" onPress={() => setPreviewOpen(true)} disabled={!b.s.lines.length} style={({ pressed }) => [styles.iconBtn, { opacity: !b.s.lines.length ? .35 : pressed ? .7 : 1 }]}><Feather name="eye" size={16} color={colors.onSurface} /></Pressable> : null}
-        {!isPhone ? <Pressable
-          accessibilityRole="button" accessibilityLabel="Download quotation PDF"
-          testID="generate-quotation"
-          onPress={() => setPdfOptionsOpen(true)}
-          disabled={b.workflowBusy || b.s.lines.length === 0}
-          style={({ pressed }) => [styles.workflowBtn, styles.quotationBtn, { opacity: b.workflowBusy || b.s.lines.length === 0 ? 0.45 : pressed ? 0.76 : 1 }]}
-        >
-          <Feather name="file-text" size={14} color={colors.onSurface} />
-          {isPhone ? null : <Text style={styles.workflowText}>PDF</Text>}
-        </Pressable> : null}
-        {!isPhone ? <Pressable accessibilityRole="button" accessibilityLabel="Download quotation Excel"
-          testID="generate-quotation-excel" onPress={b.generateQuotationExcel}
-          disabled={b.workflowBusy || b.s.lines.length === 0}
-          style={({ pressed }) => [styles.workflowBtn, styles.quotationBtn, { opacity: b.workflowBusy || !b.s.lines.length ? 0.45 : pressed ? 0.76 : 1 }]}>
-          <Feather name="grid" size={14} color={colors.onSurface} /><Text style={styles.workflowText}>Excel</Text>
-        </Pressable> : null}
         {!isPhone ? <Pressable
           accessibilityRole="button" accessibilityLabel="Download product PPT"
           testID="generate-product-ppt"
@@ -203,6 +178,19 @@ export function BuilderTopbar({
         ) : null}
         {!isDesktop ? <Pressable accessibilityRole="button" accessibilityLabel="Recent quotations" style={styles.iconBtn} onPress={() => setRecentOpen(true)}><Feather name="clock" size={16} color={colors.onSurface} /></Pressable> : null}
       </View> : null}
+    </View>
+    <View style={styles.downloads} testID="quotation-downloads">
+      <Pressable accessibilityRole="button" accessibilityLabel="Download quotation PDF" testID="generate-quotation"
+        onPress={() => setPdfOptionsOpen(true)} disabled={b.workflowBusy || !b.s.lines.length}
+        style={({ pressed }) => [styles.downloadButton, styles.quotationBtn, { opacity: b.workflowBusy || !b.s.lines.length ? 0.45 : pressed ? 0.76 : 1 }]}>
+        <Feather name="file-text" size={18} color={colors.onSurface} /><Text style={styles.downloadLabel}>Download PDF</Text>
+      </Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Download Excel file" testID="generate-quotation-excel"
+        onPress={b.generateQuotationExcel} disabled={b.workflowBusy || !b.s.lines.length}
+        style={({ pressed }) => [styles.downloadButton, styles.orderBtn, { opacity: b.workflowBusy || !b.s.lines.length ? 0.45 : pressed ? 0.76 : 1 }]}>
+        <Feather name="grid" size={18} color={colors.onBrand} /><Text style={[styles.downloadLabel, { color: colors.onBrand }]}>Download Excel file</Text>
+      </Pressable>
+    </View>
       <BottomSheet visible={!!whatsappError} onClose={() => setWhatsappError(null)} title="PDF sharing unavailable" testID="quotation-whatsapp-error">
         <Text style={type.bodyMuted}>{whatsappError}</Text>
       </BottomSheet>
@@ -279,6 +267,9 @@ export function BuilderTopbar({
 }
 
 const styles = StyleSheet.create({
+  downloads: { flexDirection: "row", flexWrap: "wrap", gap: 8, padding: 10, backgroundColor: colors.surfaceSecondary, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
+  downloadButton: { flex: 1, minWidth: 140, minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 10, paddingVertical: 10, borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth },
+  downloadLabel: { fontSize: 13, fontWeight: "700", color: colors.onSurface, flexShrink: 1, textAlign: "center" },
   actionRow: { minHeight: 48, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 12 },
   actionLabel: { fontSize: 15, fontWeight: "600", color: colors.onSurface },
   previewRow: { minHeight: 48, flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border },

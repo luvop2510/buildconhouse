@@ -68,7 +68,10 @@ test('critical customer shows commercial order value and PO Final on desktop and
   await expect(page.getByTestId('po-final-download-excel')).toBeVisible();
   const downloaded = page.waitForEvent('download');
   await page.getByTestId('po-final-download-excel').click();
-  if (await page.getByTestId('mobile-file-save').count()) await page.getByTestId('mobile-file-download').click();
+  if (await page.evaluate(() => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent))) {
+    await expect(page.getByTestId('mobile-file-save')).toBeVisible();
+    await page.getByTestId('mobile-file-download').click();
+  }
   expect((await downloaded).suggestedFilename()).toBe('1 Vitra PO Final Q-1.xlsx');
   await page.getByTestId('po-final-quotation-q2').click();
   await expect.poll(() => requestedOlder).toBe(true);
