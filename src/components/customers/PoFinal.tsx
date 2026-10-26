@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 
@@ -7,6 +7,7 @@ import { api } from "@/src/api/client";
 import { Button, Card, EmptyState } from "@/src/components/ui";
 import { toast } from "@/src/components/Toast";
 import { useBp } from "@/src/design/responsive";
+import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { colors, money, spacing, type } from "@/src/theme/tokens";
 import { downloadApiFile } from "@/src/utils/downloadFile";
 
@@ -51,29 +52,36 @@ function dateLabel(value?: string | null) {
 export function PoFinal({ customerId }: { customerId: string }) {
   const router = useRouter();
   const { isPhone } = useBp();
+  const { selectedFloorId } = useFloorAccess();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [data, setData] = useState<PoFinalData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<"pdf" | "xlsx" | null>(null);
+  const request = useRef<AbortController | null>(null);
+  const currentSelection = data?.customer.id === customerId && (!selectedId || data.quotation_id === selectedId);
 
   const load = useCallback(async () => {
+    request.current?.abort();
+    const controller = new AbortController();
+    request.current = controller;
     setLoading(true);
     setError(null);
     try {
       const query = selectedId ? `?quotation_id=${encodeURIComponent(selectedId)}` : "";
-      setData(await api.get<PoFinalData>(`/customers/${encodeURIComponent(customerId)}/po-final${query}`));
+      const result = await api.get<PoFinalData>(`/customers/${encodeURIComponent(customerId)}/po-final${query}`, { floorId: selectedFloorId, signal: controller.signal, cacheMs: 0 });
+      if (!controller.signal.aborted) setData(result);
     } catch (e: any) {
-      setError(e?.detail || "Could not load PO Final. Please try again.");
+      if (!controller.signal.aborted) setError(e?.detail || "Could not load PO Final. Please try again.");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
-  }, [customerId, selectedId]);
+  }, [customerId, selectedId, selectedFloorId]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(); return () => request.current?.abort(); }, [load]);
 
   const download = async (format: "pdf" | "xlsx") => {
-    if (!data?.quotation_id) return;
+    if (!data?.quotation_id || !currentSelection || loading || downloading) return;
     setDownloading(format);
     const label = format === "pdf" ? "PDF" : "Excel";
     try {
@@ -83,6 +91,7 @@ export function PoFinal({ customerId }: { customerId: string }) {
         `/customers/${encodeURIComponent(customerId)}/po-final/${format}${query}`,
         `${name} PO Final ${data.quotation_number || "quotation"}.${format}`,
         `PO Final ${label}`,
+        selectedFloorId,
       );
       if (ok) toast.success(`PO Final ${label} ready`);
     } catch (e: any) {
@@ -108,8 +117,8 @@ export function PoFinal({ customerId }: { customerId: string }) {
         </View>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
           <Button label="Refresh" icon="refresh-cw" variant="secondary" size="sm" onPress={() => void load()} loading={loading} testID="po-final-refresh" />
-          <Button label="Download PDF" icon="download" size="sm" onPress={() => void download("pdf")} disabled={!data.quotation_id || loading || !!downloading} loading={downloading === "pdf"} testID="po-final-download" />
-          {data.doc_type !== "tiles_selection" && data.doc_type !== "tiles_quotation" ? <Button label="Download Excel" icon="grid" size="sm" variant="secondary" onPress={() => void download("xlsx")} disabled={!data.quotation_id || loading || !!downloading} loading={downloading === "xlsx"} testID="po-final-download-excel" /> : null}
+          <Button label="Download PDF" icon="download" size="sm" onPress={() => void download("pdf")} disabled={!data.quotation_id || !currentSelection || loading || !!downloading} loading={downloading === "pdf"} testID="po-final-download" />
+          {data.doc_type !== "tiles_selection" && data.doc_type !== "tiles_quotation" ? <Button label="Download Excel" icon="grid" size="sm" variant="secondary" onPress={() => void download("xlsx")} disabled={!data.quotation_id || !currentSelection || loading || !!downloading} loading={downloading === "xlsx"} testID="po-final-download-excel" /> : null}
         </View>
       </View>
       {error ? <Text accessibilityRole="alert" style={[type.caption, { color: colors.error, marginTop: spacing.sm }]}>{error}</Text> : null}

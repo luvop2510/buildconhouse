@@ -34,6 +34,12 @@ def test_template_static_parts_and_layout_are_preserved():
         assert not any(value in all_xml for value in (b"sanjaybhai", b"parthbhai", b"9924440943", b"krinaben", b"parshantbhai"))
 
 
+@pytest.mark.parametrize("snapshot,expected", [("9876543210", "9876543210"), ("", ""), (None, "1234567890")])
+def test_excel_uses_saved_phone_snapshot_including_explicit_empty(snapshot, expected):
+    book = load_workbook(BytesIO(_book({"items": [_line()], "phone_snapshot": snapshot})), data_only=True)
+    assert book["Sheet1 (3)"]["D9"].value == expected
+
+
 def test_prices_use_mrp_and_full_precision_discount_cascade():
     doc = {"items": [_line(), _line(id="l2", room="Guest", qty=3, unit_price=150, mrp=250)],
         "project_discount_pct": 10, "room_discounts": {"Master": {"type": "amount", "value": 123.45}}}
@@ -49,7 +55,7 @@ def test_prices_use_mrp_and_full_precision_discount_cascade():
     assert formulas["BATHROOM 1"]["I3"].value == "=E3*H3/100"
     assert formulas["BATHROOM 1"]["J3"].value == "=E3-I3"
     assert formulas["BATHROOM 1"]["K3"].value == "=F3*J3"
-    assert formulas["BATHROOM 1"]["F24"].value == "=SUM(F3:F23)"
+    assert formulas["BATHROOM 1"]["F24"].value == "=SUM(F3:F18)"
     assert values["BATHROOM 1"]["B3"].value == "000123"
 
 
@@ -128,3 +134,25 @@ def test_zero_mrp_uses_selling_base_so_formulas_still_recalculate():
     row = book["BATHROOM 1"]
     assert row["E3"].value == 800
     assert row["E3"].value * (1-row["H3"].value/100) * row["F3"].value == row["K3"].value
+
+
+@pytest.mark.parametrize("line_total,expected_adjustment", [(.34, "-0.01"), (.33, "+0.01")])
+def test_final_aggregate_rounding_reconciles_both_directions(line_total, expected_adjustment):
+    document = {"items": [_line(id=f"l{i}", qty=1, unit_price=line_total, mrp=1, room=f"Room {i}") for i in range(2)],
+        "_po_final": {"total": .67, "payable_total": .67}}
+    content = _book(document)
+    formulas = load_workbook(BytesIO(content))
+    values = load_workbook(BytesIO(content), data_only=True)
+    assert values["Sheet1 (3)"]["K22"].value == .67
+    assert formulas["Sheet1 (3)"]["K22"].value == "=ROUND(SUM(P13:P20),2)" + expected_adjustment
+
+
+def test_final_large_total_discrepancy_is_rejected():
+    with pytest.raises(ValueError, match="do not reconcile"):
+        _book({"items": [_line()], "_po_final": {"total": 2000, "payable_total": 2000}})
+
+
+def test_xml_invalid_unicode_cannot_corrupt_workbook():
+    book = load_workbook(BytesIO(_book({"customer_name": "Client\ud800", "items": [_line(room="Room\uffff")]})))
+    assert book["Sheet1 (3)"]["D7"].value == "Client"
+    assert book["BATHROOM 1"]["A1"].value == "Room"

@@ -76,6 +76,8 @@ export default function QuotationTilesList() {
   }, [completed, floor.ready, scope]);
 
   useFocusEffect(useCallback(() => {
+    setDeleteTarget(null);
+    setDeleteError(null);
     setDocuments(null);
     setLoadErrors({});
     if (floor.ready) void load();
@@ -211,7 +213,7 @@ export default function QuotationTilesList() {
       <ConfirmDialog visible={!!deleteTarget} onClose={() => { if (!deleting) setDeleteTarget(null); }}
         onConfirm={() => { void deleteDocument(); }}
         title={`Delete this ${deleteTarget?.doc_type === "tiles_selection" ? "selection" : "quotation"}?`}
-        description={deleteTarget ? `${displayNumber(deleteTarget)} will be removed. Linked orders and completed payments are protected.` : undefined}
+        description={deleteError || (deleteTarget ? `${displayNumber(deleteTarget)} will be removed. Linked orders and completed payments are protected.` : undefined)}
         confirmLabel="Delete" tone="danger" loading={deleting} testID="confirm-delete-tiles-list" />
     </SafeAreaView>
   );

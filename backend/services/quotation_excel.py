@@ -80,12 +80,13 @@ def _set(root: ET.Element, reference: str, value=None, formula: str | None = Non
     if formula is not None:
         ET.SubElement(cell, f"{{{S}}}f").text = formula
     if isinstance(value, str):
+        value = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]", "", value)
         cell.set("t", "str" if formula else "inlineStr")
         if formula:
             ET.SubElement(cell, f"{{{S}}}v").text = value
         else:
             text = ET.SubElement(ET.SubElement(cell, f"{{{S}}}is"), f"{{{S}}}t", {"{http://www.w3.org/XML/1998/namespace}space": "preserve"})
-            text.text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", value)
+            text.text = value
     elif value is not None:
         if not math.isfinite(float(value)):
             raise ValueError("Quotation contains a non-finite amount")
@@ -201,7 +202,8 @@ def build_quotation_excel(doc: dict, customer: dict) -> bytes:
     if date.tzinfo:
         date = date.astimezone(ZoneInfo("Asia/Kolkata"))
     _set(summary, "D8", (date.date() - datetime(1899, 12, 30).date()).days)
-    _set(summary, "D9", str(doc.get("customer_phone") or customer.get("phone") or ""))
+    phone = doc.get("phone_snapshot") if doc.get("phone_snapshot") is not None else customer.get("phone")
+    _set(summary, "D9", str(phone or ""))
     _set(summary, "D10", str(doc.get("referrer_name") or customer.get("referrer_name") or ""))
     brands = list(dict.fromkeys(str(raw.get("brand_name")) for raw in raw_items if raw.get("brand_name")))
     _set(summary, "A11", ", ".join(brands) or "Quotation")
@@ -265,7 +267,8 @@ def build_quotation_excel(doc: dict, customer: dict) -> bytes:
                 except (OSError, ValueError, SyntaxError, Image.DecompressionBombError):
                     logger.warning("Quotation Excel omitted an unreadable product photo")
         for column, cached in (("F", quantity), ("G", room_gross), ("K", room_net)):
-            _set(root, f"{column}{total_row}", cached, f"SUM({column}3:{column}{total_row-1})")
+            last_row = 18 if column == "F" and len(room_items) <= 16 else total_row-1
+            _set(root, f"{column}{total_row}", cached, f"SUM({column}3:{column}{last_row})")
         row_number = 13 + i
         summary_row = summary_data.find(f"{{{S}}}row[@r='{row_number}']")
         if i < len(room_entries):
@@ -302,7 +305,18 @@ def build_quotation_excel(doc: dict, customer: dict) -> bytes:
             ET.SubElement(relationships, f"{{{P}}}Relationship", {"Id": rel_id, "Type": f"{R}/worksheet", "Target": f"worksheets/sheet{sheet_number}.xml"})
             ET.SubElement(types, f"{{{C}}}Override", {"PartName": f"/{part}", "ContentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"})
     _set(summary, f"K{total_summary_row}", gross_total, f"SUM(K13:M{total_summary_row-1})")
-    _set(summary, f"K{total_summary_row+1}", round(net_total, 2), f"ROUND(SUM(P13:P{total_summary_row-1}),2)")
+    offer_total = round(net_total, 2)
+    offer_formula = f"ROUND(SUM(P13:P{total_summary_row-1}),2)"
+    if final:
+        payable = float(final.get("payable_total") or 0)
+        rounding = round(payable - offer_total, 2)
+        if not math.isfinite(payable) or abs(rounding) > .005 * (len(raw_items) + 1) + 1e-8:
+            raise ValueError("PO Final product amounts do not reconcile with its payable total")
+        # Final rows are individually rounded; the aggregate remains authoritative.
+        if rounding:
+            offer_formula += f"{rounding:+.2f}"
+        offer_total = round(payable, 2)
+    _set(summary, f"K{total_summary_row+1}", offer_total, offer_formula)
     # R11:R12 are reference worksheet scratch labels, not customer data.
     _set(summary, "R11", None)
     _set(summary, "R12", None)

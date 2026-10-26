@@ -24,7 +24,9 @@ test('critical customer shows commercial order value and PO Final on desktop and
   } }));
   await page.route('**/api/customers/c1/po-final**', route => route.fulfill({ json: {
     customer: { id: 'c1', name: '1 Vitra' }, quotation_id: 'q1', quotation_number: 'Q-1', status: 'ordered',
-    quotations: [{ id: 'q1', number: 'Q-1', status: 'ordered', grand_total: 251128 }],
+    quotations: [{ id: 'q1', number: 'Q-1', status: 'ordered', grand_total: 251128 },
+      { id: 'q2', number: 'Q-2', status: 'ordered', grand_total: 2 },
+      { id: 'q3', number: 'Q-3', status: 'ordered', grand_total: 3 }],
     items: [{ id: 'l1', name: 'VitrA basin', sku: 'V-1', qty: 1, unit_price: 251128,
       total: 251128, source: 'purchase', stage: 'delivered' }],
     changes: [{ id: 'e1', at: '2026-09-02T10:00:00Z', type: 'purchase.borrowed_in',
@@ -34,6 +36,20 @@ test('critical customer shows commercial order value and PO Final on desktop and
   await page.route('**/api/customers/c1/po-final/xlsx?quotation_id=q1', route => route.fulfill({
     contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', body: 'PK-test-final-workbook',
   }));
+  let releaseOlder!: () => void;
+  const older = new Promise<void>(resolve => { releaseOlder = resolve; });
+  let requestedOlder = false;
+  await page.route('**/api/customers/c1/po-final?quotation_id=q2', async route => {
+    requestedOlder = true;
+    await older;
+    await route.fulfill({ json: { customer: { id: 'c1', name: '1 Vitra' }, quotation_id: 'q2', quotation_number: 'Q-2',
+      quotations: [], items: [], changes: [], total: 2, payable_total: 2, payment_extra_amount: 0 } });
+  });
+  await page.route('**/api/customers/c1/po-final?quotation_id=q3', route => route.fulfill({ json: {
+    customer: { id: 'c1', name: '1 Vitra' }, quotation_id: 'q3', quotation_number: 'Q-3',
+    quotations: [], items: [{ id: 'l3', name: 'Latest selected product', qty: 1, unit_price: 3, total: 3 }],
+    changes: [], total: 3, payable_total: 3, payment_extra_amount: 0,
+  } }));
   await page.goto('/customers/c1');
   await page.getByTestId('customer-tab-purchases').click();
   await expect(page.getByText('Order Value')).toBeVisible();
@@ -54,6 +70,13 @@ test('critical customer shows commercial order value and PO Final on desktop and
   await page.getByTestId('po-final-download-excel').click();
   if (await page.getByTestId('mobile-file-save').count()) await page.getByTestId('mobile-file-download').click();
   expect((await downloaded).suggestedFilename()).toBe('1 Vitra PO Final Q-1.xlsx');
+  await page.getByTestId('po-final-quotation-q2').click();
+  await expect.poll(() => requestedOlder).toBe(true);
+  await page.getByTestId('po-final-quotation-q3').click();
+  await expect(page.getByTestId('customer-po-final')).toContainText('Latest selected product');
+  releaseOlder();
+  await expect(page.getByTestId('customer-po-final')).toContainText('Final amount · Q-3');
+  await expect(page.getByTestId('po-final-download-excel')).toBeEnabled();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   await page.screenshot({ path: info.outputPath('po-final.png'), fullPage: true });
 });

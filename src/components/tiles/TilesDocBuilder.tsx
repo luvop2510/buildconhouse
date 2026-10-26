@@ -2055,8 +2055,8 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
   const title = isSelection ? "Tiles Selection" : "Tiles Quotation";
   const { staff } = useAuth();
   const canDelete = useActionAccess("tiles", "delete", canManageDestructiveData(staff?.role));
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const confirmDelete = () => { if (doc.docId && canDelete && !doc.busy) setDeleteOpen(true); };
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const confirmDelete = () => { if (doc.docId && canDelete && !doc.busy) setDeleteTargetId(doc.docId); };
 
   // Device width is not the usable document width: the admin sidebar/rail
   // occupies part of the viewport. Do not mount an 820px paper unless the
@@ -2071,8 +2071,8 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
   // at width zero, permanently selecting its one-column phone geometry.
   return (
     <View style={{ flex: 1 }} onLayout={(event) => setWorkspaceWidth(event.nativeEvent.layout.width)}>
-      <ConfirmDialog visible={deleteOpen} onClose={() => { if (doc.busy !== "delete") setDeleteOpen(false); }}
-        onConfirm={() => { void doc.deleteDocument().then(deleted => { if (deleted) setDeleteOpen(false); }); }}
+      <ConfirmDialog visible={!!deleteTargetId && deleteTargetId === doc.docId} onClose={() => { if (doc.busy !== "delete") setDeleteTargetId(null); }}
+        onConfirm={() => { if (deleteTargetId === doc.docId && canDelete) void doc.deleteDocument().then(deleted => { if (deleted) setDeleteTargetId(null); }); }}
         title={`Delete this ${isSelection ? "selection" : "quotation"}?`}
         description="Linked follow-ups and unpaid payment records will be removed. Completed payments and purchase orders are protected."
         confirmLabel="Delete" tone="danger" loading={doc.busy === "delete"} testID="confirm-delete-tiles-document" />
