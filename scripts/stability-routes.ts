@@ -54,6 +54,7 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
   ],
   'redesign-mobile-summary.spec.ts': [
     'critical Walk-in summary opens every matching metric and hidden filters retain selections',
+    'critical Walk-in register renders without waiting for the optional summary',
     'critical Ground Follow-up expiring summary clears unrelated filters and opens its exact records',
   ],
 

@@ -554,7 +554,8 @@ async def update_ground_floor_manual_extra(
              "$set": {"payment_extra_name": name, "updated_at": now}},
             session=session,
         )
-        await db.payments.insert_one(ledger_entry, session=session)
+        # Mongo mutates the inserted mapping with an ObjectId; keep it out of the response.
+        await db.payments.insert_one(dict(ledger_entry), session=session)
         return result_for(current, entry, ledger_entry, added=True)
 
     # Keep the quotation audit trail and ledger debit atomic on Atlas.  Local

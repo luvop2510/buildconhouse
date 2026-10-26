@@ -2,6 +2,25 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
+## First-response reliability and unified filters — 2026-10-27
+
+Payment additional-cost writes must not return the same mapping passed to Mongo
+insert_one: the driver injects an ObjectId that breaks the first HTTP response
+after commit. Keep inserted data separate from response data and test the actual
+FastAPI serialization boundary with Mongo-faithful mocks and idempotent replay.
+Kitchen analytics invalidation is secondary to a committed project command;
+log its failure without turning a durable save into a failed business response.
+Do not weaken authorization or transaction failures.
+
+Walk-in list/detail publish independently of optional summary/history reads;
+payment balance refresh does not wait for statistics. Preserve request/floor
+generations and explicit retry for optional errors. Schedule Selection belongs
+only to Ground Floor cards. Shared filter disclosures work at every width and
+contain search and related filters, retaining mounted selections/drafts when
+hidden. Keep page actions outside. Sanitary PO Final reuses the quotation cover
+and product layout, retaining final rates and supplementary payment history.
+See docs/audits/2026-10-27-shared-flow-reliability.md for evidence and limits.
+
 ## Sanitary quantities, assignment and follow-ups — 2026-10-27
 
 Sanitary walk-ins use explicit floor-worker assignments as their salesperson;

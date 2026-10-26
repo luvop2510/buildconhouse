@@ -13,6 +13,7 @@ vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../src/services/cata
 }).outputText, { exports: catalogExports, require: () => ({}), URLSearchParams });
 
 const specs = {
+  walkin: ['../app/(admin)/walkins/[id].tsx', '  const updateStatus =', 'w, timeline, timelineLoading, timelineError, loadError, load'],
   tiles: ['../src/components/tiles/TilesProductPicker.tsx', '  return (\n    <Overlay', 'query, setQuery, results, total, loading, loadingMore, hasMore, loadMore'],
   customer: ['../app/(admin)/customers/[id].tsx', '  const createWalkInFollowup =', 'customer, quotations, purchases, timeline, loadError, relatedErrors, relatedLoading, loadCore'],
   quotation: ['../app/(admin)/quotations/[id]/index.tsx', '  const openPdf =', 'q, breakdown, timeline, linkedPos, loading, loadError, relatedError, relatedLoading, breakdownLoading, load'],
@@ -79,9 +80,10 @@ function screen(kind, width = 'desktop') {
     './tilePresentation': { tilesPickerColumns: () => 1 },
     'expo-router': { useRouter: () => ({}), useLocalSearchParams: () => ({ id: routeId }) },
     '@/src/api/client': { api: { get } },
+    '@/src/api/walkins': { walkinsApi: { get: (id, options) => get(`/walkins/${id}`, options), timeline: (id, options) => get(`/walkins/${id}/timeline`, options), listAssignees: async () => [] } },
     '@/src/api/godownStock': { getCustomerStockTransfers: async () => ({ transfers: [] }) },
     '@/src/hooks/use-floor-access': { useFloorAccess: () => ({ selectedFloorId: floor }), useRequireFloorAccess: () => ready },
-    '@/src/hooks/use-permissions': { useActionAccess: () => true },
+    '@/src/hooks/use-permissions': { useActionAccess: () => true, useModuleAccess: () => () => true },
     '@/src/state/auth': { useAuth: () => ({ staff: { role: 'owner' } }) },
     '@/src/constants/roles': { canManageDestructiveData: () => true },
     '@/src/design/responsive': { useBp: () => bp },
@@ -360,4 +362,34 @@ test('catalog response between a changed render and passive effects cannot publi
   const current = fixture.requests.at(-1);
   current.resolve({ total: 1, items: [{ family_key: 'current' }] }); await fixture.settle();
   assert.equal(fixture.state.families[0].family_key, 'current');
+});
+
+
+test('walk-in profile renders while optional timeline is held and recovers from timeline failure', async () => {
+  const fixture = screen('walkin'); fixture.render(); await fixture.settle();
+  fixture.requests.find(request => request.path === '/walkins/fixture').resolve({ id: 'fixture', customer_name: 'Primary walk-in' });
+  await fixture.settle();
+  assert.equal(fixture.state.w.customer_name, 'Primary walk-in');
+  assert.equal(fixture.state.timelineLoading, true);
+  fixture.requests.find(request => request.path.endsWith('/timeline')).reject({ detail: 'History unavailable' });
+  await fixture.settle();
+  assert.equal(fixture.state.w.customer_name, 'Primary walk-in');
+  assert.equal(fixture.state.loadError, null);
+  assert.equal(fixture.state.timelineError, true);
+  assert.equal(fixture.state.timelineLoading, false);
+});
+
+test('walk-in timeline and primary responses cannot overwrite another route', async () => {
+  const fixture = screen('walkin'); fixture.render(); await fixture.settle();
+  const old = [...fixture.requests];
+  fixture.changeRoute('current'); await fixture.settle();
+  fixture.requests.find(request => request.path === '/walkins/current').resolve({ id: 'current' });
+  fixture.requests.find(request => request.path === '/walkins/current/timeline').resolve([{ id: 'current-event' }]);
+  await fixture.settle();
+  old.find(request => request.path.endsWith('/timeline')).resolve([{ id: 'old-event' }]);
+  old.find(request => !request.path.endsWith('/timeline')).reject({ detail: 'Old error' });
+  await fixture.settle();
+  assert.equal(fixture.state.w.id, 'current');
+  assert.equal(fixture.state.timeline[0].id, 'current-event');
+  assert.equal(fixture.state.loadError, null);
 });

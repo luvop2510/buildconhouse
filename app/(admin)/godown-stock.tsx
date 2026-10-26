@@ -231,8 +231,8 @@ export default function GodownStockScreen() {
       <TextInput accessibilityLabel="Quantity to add" value={qty} onChangeText={setQty} keyboardType="decimal-pad" placeholder="Quantity" style={styles.search} />
       <Pressable accessibilityRole="button" disabled={saving} onPress={() => void save()} style={[styles.add, saving && { opacity: .5 }]}><Text style={styles.addText}>{saving ? "Adding…" : "Add to godown stock"}</Text></Pressable>
     </View> : null}
-    <TextInput accessibilityLabel="Search godown stock" value={q} onChangeText={setQ} placeholder="Search brand, SKU or product" style={styles.search} />
     <MobileFilterSection testID="godown-stock-filters">
+    <TextInput accessibilityLabel="Search godown stock" value={q} onChangeText={setQ} placeholder="Search brand, SKU or product" style={styles.search} />
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips} accessibilityRole="tablist"><Chip label="All brands" selected={!brand} onPress={() => setBrand(null)} />{data?.brands.map(row => <Chip key={row.id || row.name} label={`${row.name} · ${row.available_qty}`} selected={filterValues(brand).includes(row.id || row.name)} onPress={() => setBrand(current => toggleFilterValue(current, row.id || row.name, ""))} />)}</ScrollView>
     </MobileFilterSection>
     <Text testID="godown-results" accessibilityLiveRegion="polite" style={styles.result}>{!currentQuery ? "Searching stock…" : `${data?.available_lot_count ?? lots.filter(lot => !lot.quantity_missing && lot.available_qty > 0).length} available · ${data?.zero_lot_count ?? lots.filter(lot => !lot.quantity_missing && lot.available_qty <= 0).length} zero-stock lots · ${data?.unknown_quantity_count ?? lots.filter(lot => lot.quantity_missing).length} quantities not recorded · showing ${Math.min(visibleCount, lots.length)} of ${data?.total_lots ?? lots.length}`}</Text>

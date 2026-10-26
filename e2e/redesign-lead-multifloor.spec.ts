@@ -220,7 +220,11 @@ test('critical sanitary salesperson filter stays within the panel and scrolls to
   const owners = Array.from({ length: 30 }, (_, index) => ({ id: `owner-filter-${index}`, full_name: `Employee ${index + 1}`, role: 'worker' }));
   await page.route('**/api/followups/config/assignees', r => r.fulfill({ json: owners }));
   await page.goto('/followups');
-  await expect(page.getByTestId('followups-filters-toggle')).toHaveCount(0);
+  const filterToggle = page.getByTestId('followups-filters-toggle');
+  await expect(filterToggle).toHaveAttribute('aria-expanded', 'true');
+  await filterToggle.click();
+  await expect(page.getByTestId('followups-salesperson-all')).toBeHidden();
+  await filterToggle.click();
   const first = page.getByTestId('followups-salesperson-all');
   await expect(first).toBeVisible();
   const scroller = first.locator('..').locator('..');

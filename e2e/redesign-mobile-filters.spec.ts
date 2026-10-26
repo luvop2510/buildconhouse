@@ -21,8 +21,7 @@ test('critical mobile sales filters retain selected business units and unfinishe
   await page.goto('/sales-data/sales');
   const filters = page.getByTestId('sales-data-filters');
   const toggle = page.getByTestId('sales-data-filters-toggle');
-  if (phone) await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-  else await expect(toggle).toHaveCount(0);
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
   await page.getByTestId('sales-data-floor-all').click();
   await page.getByTestId('sales-data-floor-ground-floor').click();
   await expect.poll(() => latest.get('floor_id')).toBe('ground-floor');
@@ -30,14 +29,12 @@ test('critical mobile sales filters retain selected business units and unfinishe
   else await page.getByTestId('sales-data-preset-custom').click();
   await filters.getByLabel('From', { exact: true }).fill('2026-09-03');
   await filters.getByLabel('To', { exact: true }).fill('2026-09-17');
-  if (phone) {
-    await toggle.click();
-    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    await expect(page.getByTestId('sales-data-filters-content')).toBeHidden();
-  } else await expect(page.getByTestId('sales-data-filters-content')).toBeVisible();
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByTestId('sales-data-filters-content')).toBeHidden();
   await expect(page.getByText('No confirmed sales in this period', { exact: true })).toBeVisible();
   const beforeRestore = requests;
-  if (phone) await toggle.click();
+  await toggle.click();
   await expect(filters.getByLabel('From', { exact: true })).toHaveValue('2026-09-03');
   await expect(filters.getByLabel('To', { exact: true })).toHaveValue('2026-09-17');
   await expect(page.getByTestId('sales-data-floor-ground-floor')).toHaveAttribute('aria-checked', 'true');
@@ -47,7 +44,7 @@ test('critical mobile sales filters retain selected business units and unfinishe
   expect(latest.get('date_from')).toBe('2026-09-03T00:00:00+00:00');
   expect(latest.get('date_to')).toBe('2026-09-18T00:00:00+00:00');
   if (phone) await page.setViewportSize({ width: 1440, height: 1000 });
-  await expect(toggle).toHaveCount(0);
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
   await expect(page.getByTestId('sales-data-filters-content')).toBeVisible();
 });
 

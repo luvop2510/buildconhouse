@@ -22,7 +22,7 @@ for (const type of ['tiles_selection', 'tiles_quotation'] as const) {
     });
     await page.goto('/tiles');
     const filters = page.getByTestId('tiles-filters-toggle');
-    if (await filters.isVisible()) await filters.click();
+    if (await filters.getAttribute('aria-expanded') === 'false') await filters.click();
     await page.getByTestId('tiles-document-filter-all').click();
     await expect(page.getByTestId('tiles-doc-delete-ground-document')).toBeVisible();
     await page.getByTestId('tiles-delete-delete-ground-document').click();

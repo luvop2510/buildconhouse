@@ -87,16 +87,19 @@ export default function WalkInsScreen({
     const request = ++requestId.current;
     setLoadError(null);
     setLoading(true);
-    try {
-      const [dash, list] = await Promise.allSettled([
-        walkinsApi.dashboard(fixedFloorId ? { floorId: fixedFloorId } : undefined, filterFloorIds),
-        walkinsApi.list({ status: summaryView ? undefined : quotationFollowup ? "converted" : status || undefined, ...walkinSummaryFilters(summaryView), floor_ids: filterFloorIds, source: sourceFilter || undefined, search: search || undefined }, fixedFloorId ? { floorId: fixedFloorId } : undefined),
-      ]);
+    setSummaryError(false);
+    void walkinsApi.dashboard(fixedFloorId ? { floorId: fixedFloorId } : undefined, filterFloorIds).then(dash => {
       if (request !== requestId.current) return;
-      setSummaryError(dash.status === 'rejected');
-      setDashboard(dash.status === 'fulfilled' ? dash.value : null);
-      if (list.status === 'fulfilled') setItems(list.value);
-      else throw list.reason;
+      setDashboard(dash);
+    }).catch(() => {
+      if (request !== requestId.current) return;
+      setSummaryError(true);
+      setDashboard(null);
+    });
+    try {
+      const list = await walkinsApi.list({ status: summaryView ? undefined : quotationFollowup ? "converted" : status || undefined, ...walkinSummaryFilters(summaryView), floor_ids: filterFloorIds, source: sourceFilter || undefined, search: search || undefined }, fixedFloorId ? { floorId: fixedFloorId } : undefined);
+      if (request !== requestId.current) return;
+      setItems(list);
     } catch (e: any) {
       if (request === requestId.current) setLoadError(e?.detail || "Could not load walk-ins");
     } finally {
@@ -129,6 +132,7 @@ export default function WalkInsScreen({
     }
   };
   const scheduleSelection = async (w: WalkIn) => {
+    if (w.floor_id !== "ground-floor") return;
     try {
       await walkinsApi.update(w.id, { status: "selection_scheduled" }, { floorId: w.floor_id });
       toast.success("Marked as Selection Scheduled");
@@ -179,7 +183,7 @@ export default function WalkInsScreen({
   return (
     <SafeAreaView style={{ flex: 1 }} edges={isPhone ? [] : ["top"]}>
       {!isPhone ? pageHeader : null}
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, paddingBottom: isPhone ? spacing.xl : spacing.xxxl }}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, paddingBottom: isPhone ? spacing.xl : spacing.xxxl, gap: spacing.lg }}>
         {isPhone ? pageHeader : null}
         <Disclosure title="Walk-in summary">
         {summaryError ? <Text role="status" style={[type.bodyMuted, { marginBottom: spacing.sm }]}>Summary unavailable. Your walk-in register is still available below.</Text> : null}
@@ -195,24 +199,30 @@ export default function WalkInsScreen({
         </View>
 
         </Disclosure>
+        <MobileFilterSection testID="walkins-filters" style={{ gap: spacing.sm }}>
         {summaryView ? <Chip label={`${WALKIN_SUMMARY_LABELS[summaryView]} · Clear`} active onPress={() => setSummaryView(null)} /> : null}
         <SearchField
           placeholder="Search customer, phone, salesperson, source, notes…"
           value={search} onChangeText={setSearch} onClear={() => setSearch("")}
-          style={{ marginBottom: spacing.md }}
+          testID="walkins-search"
         />
-        <MobileFilterSection testID="walkins-filters">
-        <View style={{ flexDirection: "row", gap: spacing.xs, flexWrap: "wrap", marginBottom: spacing.sm }}>
-          {!quotationFollowup && STATUS_FILTERS.map((s) => (
+        {!quotationFollowup ? <View style={{ gap: spacing.sm }}>
+          <Text style={type.captionStrong}>STATUS</Text>
+          <View style={{ flexDirection: "row", gap: spacing.sm, flexWrap: "wrap" }}>
+          {STATUS_FILTERS.map((s) => (
             <Chip key={s.value} label={s.label} active={s.value ? filterValues(status, "").includes(s.value) : !status} onPress={() => { setSummaryView(null); setStatus(current => toggleFilterValue(current, s.value, "")); }} />
           ))}
-        </View>
+          </View>
+        </View> : null}
         {floors.length > 1 && !fixedFloorId ? (
-          <View style={{ flexDirection: "row", gap: spacing.xs, flexWrap: "wrap", marginBottom: spacing.lg }}>
+          <View style={{ gap: spacing.sm }}>
+            <Text style={type.captionStrong}>DEPARTMENT</Text>
+            <View style={{ flexDirection: "row", gap: spacing.sm, flexWrap: "wrap" }}>
             <Chip label="All departments" active={!floorId} onPress={() => setFloorId("")} />
             {floors.map((f) => (
               <Chip key={f.id} testID={`walkins-floor-${f.id}`} label={f.name} active={filterValues(floorId, "").includes(f.id)} onPress={() => setFloorId(current => toggleFilterValue(current, f.id, ""))} />
             ))}
+            </View>
           </View>
         ) : null}
 
@@ -229,7 +239,7 @@ export default function WalkInsScreen({
               onPress={() => router.push(`/(admin)/walkins/${w.id}?floor_id=${w.floor_id}` as any)}
               onCall={() => callCustomer(w)}
               onWhatsApp={canUpdate(w) ? () => { void whatsAppCustomer(w); } : undefined}
-              onScheduleSelection={canUpdate(w) ? () => scheduleSelection(w) : undefined}
+              onScheduleSelection={canUpdate(w) && w.floor_id === "ground-floor" ? () => scheduleSelection(w) : undefined}
               onVisitShowroom={!quotationFollowup && canUpdate(w) ? () => visitShowroom(w) : undefined}
               quotationFollowup={quotationFollowup}
               onSaveQuotationPrice={quotationFollowup ? (price) => saveQuotationPrice(w, price) : undefined}

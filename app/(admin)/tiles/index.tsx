@@ -160,6 +160,7 @@ export default function QuotationTilesList() {
       } />
 
       <MobileFilterSection testID="tiles-filters">
+      <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}><SearchField value={search} onChangeText={setSearch} onClear={() => setSearch("")} placeholder="Search customer or document number" /></View>
       <View style={styles.filterBar}>
         <FilterBar multiSelect
           value={documentType}
@@ -174,7 +175,6 @@ export default function QuotationTilesList() {
       </View>
       </MobileFilterSection>
 
-      <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}><SearchField value={search} onChangeText={setSearch} onClear={() => setSearch("")} placeholder="Search customer or document number" /></View>
         </View>}
         ListEmptyComponent={selectedLoading && !docs?.length ? (
         <View style={styles.loading} accessibilityLiveRegion="polite">

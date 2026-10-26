@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 
 from typing import Literal
@@ -27,6 +28,14 @@ async def require_kitchen_launch_access(user: UserPublic = Depends(get_current_u
 
 router = APIRouter(prefix="/kitchen-projects", tags=["kitchen-projects"],
                    dependencies=[Depends(require_kitchen_launch_access)])
+
+
+async def _invalidate_projects():
+    try:
+        await cache.bump("kitchen_projects")
+    except Exception:
+        # The project is already durable; cache entries retain their bounded TTL.
+        logging.getLogger("forge.kitchen").exception("Analytics invalidation failed after committed Kitchen save")
 
 
 @router.get("/customers")
@@ -103,7 +112,7 @@ async def export_completed(search: str = Query("", max_length=250),
 @router.post("")
 async def create_project(body: CreateProject, user: UserPublic = Depends(get_current_user)):
     result = await KitchenProjectService(db).create(user, body)
-    await cache.bump("kitchen_projects")
+    await _invalidate_projects()
     return result
 
 
@@ -117,7 +126,7 @@ async def project_command(project_id: str, body: ProjectCommand, user: UserPubli
     if floor_for_write(user) != "second-floor":
         raise HTTPException(403, "Select the Kitchen Floor for this command")
     result = await KitchenProjectService(db).command(user, project_id, body)
-    await cache.bump("kitchen_projects")
+    await _invalidate_projects()
     return result
 
 

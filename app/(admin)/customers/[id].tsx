@@ -700,6 +700,7 @@ export default function CustomerDetail() {
             <Card>
               <View style={{ gap: spacing.md }}>
                 <Text style={type.overline}>Purchase filters</Text>
+                <MobileFilterSection testID="customer-purchase-filters">
                 <TextField
                   value={productSearch}
                   onChangeText={setProductSearchFilter}
@@ -711,7 +712,6 @@ export default function CustomerDetail() {
                   autoCorrect={false}
                   testID="customer-workspace-search"
                 />
-                <MobileFilterSection testID="customer-purchase-filters">
                 <View style={{ gap: spacing.sm }}>
                   <Text style={type.caption}>Brands</Text>
                   <View style={styles.serverFilterWrap}>

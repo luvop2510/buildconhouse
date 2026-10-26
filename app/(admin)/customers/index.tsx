@@ -123,6 +123,7 @@ export default function Customers() {
 
         {/* Toolbar */}
         <View style={{ gap: spacing.md }}>
+          <MobileFilterSection testID="customers-filters">
           <SearchField
             value={q}
             onChangeText={setQ}
@@ -130,7 +131,6 @@ export default function Customers() {
             placeholder="Search customers, cities, companies…"
             testID="customers-search"
           />
-          <MobileFilterSection testID="customers-filters">
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
             <Chip label="Active customers" active={!completed} testID="customers-active-tab" onPress={() => router.push("/(admin)/customers" as any)} />
             <Chip label="100% Customers" active={completed} testID="customers-completed-tab" onPress={() => router.push("/(admin)/customers?view=completed" as any)} />

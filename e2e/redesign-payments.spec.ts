@@ -256,10 +256,18 @@ test('critical returning from the canonical quotation refreshes the selected bal
   await expect(page).toHaveURL(/\/quotations\/payment-order$/);
   await expect(page.getByTestId('edit-quotation')).toBeVisible();
   revised = true;
-  await page.goBack();
-  await page.getByTestId('open-record-payment').scrollIntoViewIfNeeded();
-  await page.getByTestId('open-record-payment').click();
-  await expect(page.getByTestId('pay-amount')).toHaveValue('2500.00');
+  let releaseStats!: () => void;
+  const heldStats = new Promise<void>(resolve => { releaseStats = resolve; });
+  await page.route('**/api/payments/stats', async route => {
+    await heldStats;
+    return route.fulfill({ json: { total_outstanding: row().outstanding } });
+  });
+  try {
+    await page.goBack();
+    await page.getByTestId('open-record-payment').scrollIntoViewIfNeeded();
+    await page.getByTestId('open-record-payment').click();
+    await expect(page.getByTestId('pay-amount')).toHaveValue('2500.00');
+  } finally { releaseStats(); }
 });
 
 
