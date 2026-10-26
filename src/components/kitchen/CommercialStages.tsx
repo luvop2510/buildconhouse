@@ -15,7 +15,7 @@ import { KitchenButton as Button, KitchenTextField as TextField, KitchenFieldRow
 export type StageCommand = (command: KitchenCommand, payload: Record<string, unknown>) => Promise<boolean>;
 export function CommercialStages({ project, stage, disabled, command, mode = "task" }: { project: KitchenProject; stage: KitchenStage; disabled: boolean; command: StageCommand; mode?: "task" | "amendment" }) {
   const router = useRouter();
-  const { returnTo } = useKitchenProject();
+  const { returnTo, submission } = useKitchenProject();
   const savingWorkAndStage = useRef(false);
   const latestDesign = project.design_versions?.at(-1);
   const design = (latestDesign?.workflow_cycle ?? 1) === (project.workflow_cycle ?? 1) ? latestDesign : undefined;
@@ -85,7 +85,10 @@ export function CommercialStages({ project, stage, disabled, command, mode = "ta
         status: work.status, start_date: work.start_date ?? null,
         completion_date: work.completion_date ?? null, notes: work.notes ?? null,
       });
-      return saved && move && target ? await command("move_stage", { target_stage: target }) : saved;
+      if (!saved || !move || !target) return saved;
+      const moved = await command("move_stage", { target_stage: target });
+      if (!moved) submission.setError(previous => `${STAGE_LABELS[stage]} details were saved. The stage change could not be confirmed; use Next stage to retry. ${previous || ""}`.trim());
+      return moved;
     } finally { savingWorkAndStage.current = false; }
   };
   const dateField = (label: string, value: string, onChange: (value: string) => void, id: string) => <KitchenDateField label={label} value={value} onChange={onChange} disabled={locked} testID={id} />;

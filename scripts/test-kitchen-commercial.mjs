@@ -7,6 +7,7 @@ import ts from 'typescript';
 const require = createRequire(import.meta.url);
 const React = require('react');
 let drafts = {};
+let feedback = null;
 const host = type => function TestHost(props) { return React.createElement(type, props, props.children); };
 const stages = ['lead', 'visit', 'cad', 'design', 'quotation', 'order', 'production', 'installation', 'completed'];
 const labels = Object.fromEntries(stages.map(stage => [stage, stage[0].toUpperCase() + stage.slice(1)]));
@@ -21,7 +22,7 @@ const mocks = {
   './KitchenFilters': { KitchenDateField: host('date') },
   './KitchenDates': { kitchenToday: () => '2026-10-26' },
   './KitchenDocuments': { DocumentChoice: host('document') },
-  './KitchenProjectState': { kitchenProjectPath: (id, suffix) => `/kitchen/${id}${suffix}`, useKitchenDraft: (key, initial) => [drafts[key] ?? initial, () => {}], useKitchenProject: () => ({ resetDraftValue: () => {}, returnTo: '/kitchen/stages/lead' }) },
+  './KitchenProjectState': { kitchenProjectPath: (id, suffix) => `/kitchen/${id}${suffix}`, useKitchenDraft: (key, initial) => [drafts[key] ?? initial, () => {}], useKitchenProject: () => ({ resetDraftValue: () => {}, returnTo: '/kitchen/stages/lead', submission: { setError: update => { feedback = typeof update === 'function' ? update(feedback) : update; } } }) },
   '@/src/theme/tokens': { radius: {}, spacing: {} },
   './KitchenPrimitives': { KitchenButton: host('button'), KitchenTextField: host('input'), KitchenFieldRow: host('row'), kitchenColors: {}, kitchenType: {} },
 };
@@ -119,9 +120,13 @@ for (const stage of ['production', 'installation']) {
   assert.equal(await view.control(`kitchen-${stage}-save-next`).props.onPress(), false);
   assert.equal(commands.length, 1, 'Failed work saves never move stages');
   commands.length = 0;
+  feedback = 'Request timed out. Please try again.';
   view = render(stage, {}, { [stage]: work }, async (...args) => { commands.push(args); return commands.length === 1; });
   assert.equal(await view.control(`kitchen-${stage}-save-next`).props.onPress(), false);
   assert.deepEqual(commands[0], [`${stage}_update`, work], 'A failed stage move does not undo the successful work save');
+  assert.match(feedback, /details were saved/);
+  assert.match(feedback, /use Next stage to retry/);
+  assert.match(feedback, /Request timed out/, 'Preserve the underlying failure for review');
 }
 console.log('Kitchen commercial forms: prerequisite recovery, pending-order confirmation, payment validation and site visit actions passed');
 

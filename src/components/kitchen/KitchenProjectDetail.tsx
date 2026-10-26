@@ -61,7 +61,7 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
       </View>
       {selected === project.stage && canUpdate ? <StageNavigation project={project} disabled={disabled} /> : null}
       {loading ? <Text style={type.caption}>Refreshing saved project…</Text> : null}
-      <Text accessibilityLiveRegion="polite" style={[type.caption, { minHeight: 19 }]} testID={state.dirty ? "kitchen-unsaved-notice" : undefined}>{submission.busy ? "Saving…" : submission.error ? "Not saved · entries kept." : state.dirty ? "Unsaved changes · save details." : savedLabel}</Text>
+      <Text accessibilityLiveRegion="polite" style={[type.caption, { minHeight: 19 }]} testID={state.dirty ? "kitchen-unsaved-notice" : undefined}>{submission.busy ? "Saving…" : submission.error ? "Action needs attention." : state.dirty ? "Unsaved changes · save details." : savedLabel}</Text>
       {retainedDraft ? <Alert tone="info" title="Drafts retained" description="The latest saved record is loaded. Your unsaved entries are kept for review." /> : null}
       <ErrorNotice error={submission.error} stale={submission.stale} onReload={reload} />
       {held ? <Alert tone="warning" title={`Project ${project.lifecycle_status}`} description="The owner must resume the project before routine work can continue." /> : null}
