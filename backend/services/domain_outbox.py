@@ -592,31 +592,37 @@ async def dispatch_event(event_id: str, *, claim_id: str | None = None) -> dict:
                 return current.get("result") or {"already_processed": True}
             return {"already_processing": True}
         claim_id = event.get("claim_id")
-    result: dict
-    notification: dict | None = None
+    async def apply_claimed_event(session):
+        # Mongo labels first-prefix counter seeding and concurrent writes as
+        # transient transaction conflicts. Retry the whole transactional unit,
+        # preserving this exact claim and sending notifications only on commit.
+        current = await db.event_outbox.find_one({"id": event_id, "status": "processing", "claim_id": claim_id}, {"_id": 0}, session=session)
+        if not current or current.get("status") == "completed":
+            return (current or {}).get("result") or {"already_processed": True}, None, None
+        if current["event_type"] == EVENT_QUOTATION_GENERATED:
+            result = await _handle_quotation_generated(current, session)
+        elif current["event_type"] == EVENT_ORDER_PLACED:
+            result = await _handle_order_placed(current, session)
+        elif current["event_type"] == EVENT_PURCHASE_TRANSFERRED:
+            from services.transfer_workflow import handle_purchase_transferred
+            result = await handle_purchase_transferred(current, session)
+        elif current["event_type"] == EVENT_PURCHASE_CHALAN_LIFECYCLE:
+            result = await _handle_purchase_chalan_lifecycle(current, session)
+        else:
+            raise RuntimeError(f"Unsupported outbox event type {current['event_type']}")
+        notification = result.pop("post_commit_notification", None)
+        await db.event_outbox.update_one({"id": event_id, "claim_id": claim_id}, {"$set": {"status": "completed", "result": result, "processed_at": now_iso(), "updated_at": now_iso()}, "$inc": {"attempts": 1}}, session=session)
+        return result, notification, current["event_type"]
+
     async with await client.start_session() as session:
-        async with session.start_transaction():
-            current = await db.event_outbox.find_one({"id": event_id, "status": "processing", "claim_id": claim_id}, {"_id": 0}, session=session)
-            if not current or current.get("status") == "completed":
-                return (current or {}).get("result") or {"already_processed": True}
-            if current["event_type"] == EVENT_QUOTATION_GENERATED:
-                result = await _handle_quotation_generated(current, session)
-            elif current["event_type"] == EVENT_ORDER_PLACED:
-                result = await _handle_order_placed(current, session)
-            elif current["event_type"] == EVENT_PURCHASE_TRANSFERRED:
-                from services.transfer_workflow import handle_purchase_transferred
-                result = await handle_purchase_transferred(current, session)
-            elif current["event_type"] == EVENT_PURCHASE_CHALAN_LIFECYCLE:
-                result = await _handle_purchase_chalan_lifecycle(current, session)
-            else:
-                raise RuntimeError(f"Unsupported outbox event type {current['event_type']}")
-            notification = result.pop("post_commit_notification", None)
-            await db.event_outbox.update_one({"id": event_id, "claim_id": claim_id}, {"$set": {"status": "completed", "result": result, "processed_at": now_iso(), "updated_at": now_iso()}, "$inc": {"attempts": 1}}, session=session)
+        result, notification, event_type = await session.with_transaction(apply_claimed_event)
+    if event_type is None:
+        return result
     # Analytics cache invalidation, after the commit for the same reason the
     # notification is: the surfaces must never be able to read a version bump
     # for a write that then rolled back. Bumping a version invalidates every
     # cached metric declaring that collection — there is no delete to forget.
-    await _bump_analytics_versions(current["event_type"])
+    await _bump_analytics_versions(event_type)
 
     if notification and notification.get("user_id"):
         try:

@@ -19,6 +19,10 @@ route change clears document identity, while its own first-created ID preserves
 newer typing. Optional prior-price reads may not block product selection past
 500 ms. Preserve selection cancellation and duplicate-tap guards.
 
+Outbox dispatch uses the driver transaction callback to retry labelled transient
+Mongo conflicts, including first-prefix counter seeding. Keep its exact claim
+checks and all notifications/cache effects after the successful commit.
+
 See docs/audits/2026-10-27-ground-floor-final.md for causes and evidence.
 
 ## First-response reliability and unified filters — 2026-10-27

@@ -34,6 +34,14 @@ close, customer-change and late-size responses are guarded. Catalog reads remain
 bounded and floor-scoped. Initial quotation product validation no longer performs
 serial network round trips for every line.
 
+A full disposable-Mongo order journey also reproduced a first-order failure:
+number-counter seeding outside an active snapshot produces a labelled transient
+write conflict, and outbox dispatch used a non-retrying transaction. Dispatch now
+uses the driver transaction callback, preserving the exact claim and running
+notifications/cache invalidation after commit only. The unchanged real order
+journey now creates one quotation, purchase order, tile customer order and payment;
+repeating confirmation creates none twice. Permanent failures still propagate.
+
 Tile PDFs use fixed landscape A4 pages (297 × 210 mm), including multi-page
 selections. Metadata rows grow with wrapped customer/reference text. The editor
 also gives the architect/interior reference its own spaced section.
@@ -59,7 +67,8 @@ all pages are landscape A4.
 
 Independent review found three interruption risks: replay over a newer server
 record, saved-to-new identity reuse and uncertain-create discard. Each now has
-a targeted passing regression. Key-based discard also receives the same
+a targeted passing regression. Fourteen transaction/outbox/real-Mongo regression cases pass after that fix.
+Key-based discard also receives the same
 exclusive mutation admission as ordinary document deletion.
 
 Publication identities and the required full audit are recorded after push. Synthetic browser fixtures intercept business writes. Live
