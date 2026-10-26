@@ -7,7 +7,7 @@ import ts from 'typescript';
 const require = createRequire(import.meta.url);
 const React = require('react');
 let drafts = {};
-const host = type => props => React.createElement(type, props, props.children);
+const host = type => function TestHost(props) { return React.createElement(type, props, props.children); };
 const stages = ['lead', 'visit', 'cad', 'design', 'quotation', 'order', 'production', 'installation', 'completed'];
 const labels = Object.fromEntries(stages.map(stage => [stage, stage[0].toUpperCase() + stage.slice(1)]));
 const mocks = {
