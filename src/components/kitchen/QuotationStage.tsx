@@ -5,6 +5,7 @@ import type { KitchenProject, KitchenVersion } from "@/src/api/kitchenProjects";
 import type { StageCommand } from "./CommercialStages";
 import { Choice, KitchenPanel, KitchenDetails } from "./shared";
 import { KitchenSelect, KitchenDateField } from "./KitchenFilters";
+import { kitchenToday } from "./KitchenDates";
 import { useKitchenDraft, useKitchenProject } from "./KitchenProjectState";
 import { kitchenProductionStarted } from "./KitchenVersions";
 import { KitchenButton as Button, KitchenTextField as TextField, kitchenType as type } from "./KitchenPrimitives";
@@ -21,7 +22,7 @@ export function QuotationStage({ project, disabled, command }: { project: Kitche
   const currentDesigns = (project.design_versions || []).filter(row => (row.workflow_cycle ?? 1) === (project.workflow_cycle ?? 1));
   const sourceDesign = currentDesigns.find(row => row.id === quote?.design_version_id) || currentDesigns.at(-1);
   const newDesign = newDesignId || sourceDesign?.id;
-  return <KitchenPanel title="Quotation">
+  return <KitchenPanel>
     {versions.length ? <KitchenSelect label="Saved quotation" value={quote?.id || ""} options={[...(creating ? [{ value: "", label: `New quotation ${next} · Unsaved` }] : []), ...versions.map(row => ({ value: row.id, label: `Quotation ${row.number} · ${row.response}` }))]} onChange={value => { setSelectedId(value); setCreating(!value); }} testID="kitchen-quotation-revision" /> : null}
     <Text style={type.bodyStrong}>{quote ? `Quotation ${quote.number}` : `New quotation ${next} · Unsaved`}</Text>
     <Text style={type.caption}>Each quotation belongs to one design version. A design can have multiple quotations.</Text>
@@ -36,19 +37,24 @@ function QuotationForm({ project, quote, initialDesignId, disabled, command, onC
   const prefix = `commercial.cycle.${project.workflow_cycle ?? 1}.quotation.${quote?.id || "new"}.edit`;
   const { resetDraftValue } = useKitchenProject();
   const source = JSON.stringify(quote || null);
-  const [draft, setDraft] = useKitchenDraft(prefix, { source, design_version_id: quote?.design_version_id || initialDesignId || "", amount: quote?.amount || "", received_status: quote?.received_status || (quote?.received_date ? "Yes" : "Not recorded"), received_date: quote?.received_date || "", sent_status: quote?.sent_status || (quote?.shared_date ? "Yes" : "Not recorded"), shared_date: quote?.shared_date || "", response: quote?.response || "Pending", notes: quote?.notes || "" });
+  const savedDesign = project.design_versions?.find(row => row.id === quote?.design_version_id);
+  const savedHistorical = Boolean(savedDesign && (savedDesign.workflow_cycle ?? 1) !== (project.workflow_cycle ?? 1));
+  const locked = disabled || Boolean(quote && savedHistorical) || quote?.response === "Approved" && !project.permissions?.can_approve_exceptions;
+  const defaultDate = locked ? "" : kitchenToday();
+  const [draft, setDraft] = useKitchenDraft(prefix, { source, design_version_id: quote?.design_version_id || initialDesignId || "", amount: quote?.amount || "", received_status: quote?.received_status || (quote?.received_date ? "Yes" : "Not recorded"), received_date: quote?.received_date || defaultDate, sent_status: quote?.sent_status || (quote?.shared_date ? "Yes" : "Not recorded"), shared_date: quote?.shared_date || defaultDate, response: quote?.response || "Pending", notes: quote?.notes || "" });
   const update = (key: keyof typeof draft, value: string) => setDraft(previous => ({ ...previous, [key]: value }));
   const design = project.design_versions?.find(row => row.id === draft.design_version_id);
   const historical = Boolean(design && (design.workflow_cycle ?? 1) !== (project.workflow_cycle ?? 1));
   const requirement = !design ? "Save a design in Design first." : historical || project.design_revision_pending ? "Choose an approved design from the current work cycle." : design.response !== "Approved" || !design.handoff_date ? "Record customer approval and company handoff in Design first." : null;
-  const savedDesign = project.design_versions?.find(row => row.id === quote?.design_version_id);
-  const savedHistorical = Boolean(savedDesign && (savedDesign.workflow_cycle ?? 1) !== (project.workflow_cycle ?? 1));
-  const locked = disabled || Boolean(quote && savedHistorical) || quote?.response === "Approved" && !project.permissions?.can_approve_exceptions;
+
   const boundOrder = Boolean(quote && project.orders?.some(row => row.quotation_version_id === quote.id && !row.authorization_invalidated) && !project.commercial_basis_invalidated);
   const stale = draft.source !== source || Boolean(boundOrder && draft.design_version_id !== quote?.design_version_id);
   const displayedDesign = boundOrder ? project.design_versions?.find(row => row.id === quote?.design_version_id) : design;
   const validAmount = !draft.amount.trim() || /^\d+(?:\.\d{1,2})?$/.test(draft.amount.trim()) && draft.amount.trim().length <= 32 && Number(draft.amount) <= 1_000_000_000_000;
-  const problem = !validAmount ? "Enter a valid amount, or leave it blank." : draft.received_date && draft.received_status !== "Yes" ? "The received date requires Quotation received to be Yes. Edit either field." : draft.shared_date && draft.sent_status !== "Yes" ? "The sent date requires Quotation sent to customer to be Yes. Edit either field." : draft.response !== "Pending" && (draft.sent_status !== "Yes" || !draft.shared_date) ? "Record sent to customer and its date before a customer response." : draft.received_date && design?.handoff_date && draft.received_date < design.handoff_date ? "The received date cannot precede design company handoff." : draft.shared_date && design?.handoff_date && draft.shared_date < design.handoff_date ? "The sent date cannot precede design company handoff." : draft.shared_date && draft.received_date && draft.shared_date < draft.received_date ? "The sent date cannot precede the received date." : null;
+  // Calendar defaults are proposed dates. Only explicit Yes records receipt/sharing.
+  const receivedDate = draft.received_status === "Yes" ? draft.received_date : "";
+  const sharedDate = draft.sent_status === "Yes" ? draft.shared_date : "";
+  const problem = !validAmount ? "Enter a valid amount, or leave it blank." : draft.response !== "Pending" && (draft.sent_status !== "Yes" || !sharedDate) ? "Record sent to customer and its date before a customer response." : receivedDate && design?.handoff_date && receivedDate < design.handoff_date ? "The received date cannot precede design company handoff." : sharedDate && design?.handoff_date && sharedDate < design.handoff_date ? "The sent date cannot precede design company handoff." : sharedDate && receivedDate && sharedDate < receivedDate ? "The sent date cannot precede the received date." : null;
   return <View style={{ gap: spacing.md }}>
     {!locked && !boundOrder ? <KitchenSelect label="Related design" value={draft.design_version_id} options={[{ value: "", label: "Choose a design version" }, ...(project.design_versions || []).map(row => ({ value: row.id, label: `Design v${row.number} · ${row.response}` }))]} onChange={value => update("design_version_id", value)} testID="kitchen-quotation-design-version" /> : <KitchenDetails items={[{ label: "Related design", value: displayedDesign ? `Design v${displayedDesign.number}` : "Not recorded" }]} />}
     {boundOrder ? <Text style={type.caption}>This quotation is used by an order. To change its design, select a different quotation in Order.</Text> : null}
@@ -64,6 +70,6 @@ function QuotationForm({ project, quote, initialDesignId, disabled, command, onC
     <TextField label="Internal notes" value={draft.notes} onChangeText={value => update("notes", value)} editable={!locked} multiline testID="kitchen-quotation-notes" />
     {problem ? <Text accessibilityRole="alert" style={type.bodyMuted}>{problem}</Text> : null}
     {quote?.response === "Approved" && !project.permissions?.can_approve_exceptions ? <Text style={type.caption}>Only the owner can correct an approved quotation.</Text> : null}
-    {project.stage === "quotation" ? <Button label={quote ? "Save quotation details" : "Save new quotation"} disabled={locked || stale || Boolean(requirement) || Boolean(problem)} onPress={async () => { const { source: _source, ...fields } = draft; const saved = await command(quote ? "quotation_update" : "quotation_receive", { ...fields, ...(quote ? { version_id: quote.id } : {}), amount: draft.amount.trim() || null, received_date: draft.received_date || null, shared_date: draft.shared_date || null, notes: draft.notes || null }); if (saved && !quote) onCreated(); }} testID={quote ? "kitchen-quotation-edit-save" : "kitchen-quotation-receive"} /> : null}
+    {project.stage === "quotation" ? <Button label={quote ? "Save quotation details" : "Save new quotation"} disabled={locked || stale || Boolean(requirement) || Boolean(problem)} onPress={async () => { const { source: _source, ...fields } = draft; const saved = await command(quote ? "quotation_update" : "quotation_receive", { ...fields, ...(quote ? { version_id: quote.id } : {}), amount: draft.amount.trim() || null, received_date: receivedDate || null, shared_date: sharedDate || null, notes: draft.notes || null }); if (saved && !quote) onCreated(); }} testID={quote ? "kitchen-quotation-edit-save" : "kitchen-quotation-receive"} /> : null}
   </View>;
 }

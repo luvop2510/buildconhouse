@@ -1,3 +1,4 @@
+import { projectControl, openProjectTool } from './kitchen-controls';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { captureRuntimeHealth } from './runtime-health';
@@ -37,47 +38,101 @@ async function projectAt(context: APIRequestContext, stage: string) {
 
 async function clickCommand(page: Page, id: string, command: string) {
   const pending = page.waitForResponse(response => response.url().endsWith('/commands') && response.request().postDataJSON()?.command === command);
-  await page.getByTestId(id).click();
+  await (await projectControl(page, id)).click();
   const response = await pending;
   expect(response.ok(), await response.text()).toBe(true);
   return response.json();
 }
 
-test('Kitchen stages retain bordered details and directly accessible Design and Quotation forms', async ({ page, context }, info) => {
+test('All nine stages open with a compact header and the task visible before expandable project details', async ({ page, context }, info) => {
+  let project = await projectAt(context.request, 'lead');
+  await seed(page);
+  for (const stage of ['lead', 'visit', 'cad', 'design', 'quotation', 'order', 'production', 'installation', 'completed']) {
+    if (stage !== 'lead') {
+      const moved = await context.request.post(`/api/kitchen-projects/${project.id}/commands`, { headers, data: {
+        expected_version: project.version, idempotency_key: randomUUID(), command: 'move_stage', payload: { target_stage: stage },
+      } });
+      expect(moved.ok(), await moved.text()).toBe(true);
+      project = await moved.json();
+    }
+    await page.goto(`/kitchen/${project.id}/stages/${stage}`);
+    await expect(page.getByTestId('kitchen-project-ready')).toBeAttached();
+    const details = page.getByTestId('kitchen-project-details-toggle');
+    await expect(details).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByTestId('kitchen-project-details')).toHaveCount(0);
+    await expect(page.getByTestId('kitchen-stage-navigation')).toHaveCount(0);
+    await expect(page.getByTestId('kitchen-project-actions')).toHaveCount(0);
+    const header = await page.getByTestId('kitchen-compact-header').boundingBox();
+    expect(header!.height).toBeLessThanOrEqual(52);
+    const task = await page.getByTestId('kitchen-current-task-region').boundingBox();
+    expect(task!.y, `${stage}: work begins within the first 200px`).toBeLessThan(200);
+    await page.screenshot({ path: info.outputPath(`compact-${stage}.png`) });
+    await details.click();
+    await expect(page.getByTestId('kitchen-project-details')).toContainText(project.customer.name);
+    await expect(page.getByTestId('kitchen-project-details')).toContainText(project.reference);
+    await expect(page.getByTestId('kitchen-project-actions')).toBeVisible();
+    if (stage !== 'completed') await expect(page.getByTestId('kitchen-stage-navigation')).toBeVisible();
+    await details.click();
+    await expect(page.getByTestId('kitchen-project-details')).toHaveCount(0);
+  }
+});
+
+test('Kitchen stages use one editable or saved source without repeated summary boxes', async ({ page, context }, info) => {
   const project = await projectAt(context.request, 'lead');
   await seed(page);
   await page.goto(`/kitchen/${project.id}/stages/lead`);
   for (const stage of ['lead', 'visit', 'cad', 'design', 'quotation', 'order', 'production', 'installation', 'completed']) {
-    await page.getByTestId(`kitchen-progress-${stage}`).click();
-    if (stage === 'design' || stage === 'quotation') {
+    await (await projectControl(page, 'kitchen-project-actions')).click();
+    await page.getByRole('menuitem', { name: 'Stage history', exact: true }).click();
+    await page.getByTestId('kitchen-workflow-sheet').getByTestId(`kitchen-stage-${stage}`).click();
+    await expect(page.getByTestId('kitchen-save-status')).toHaveCount(1);
+    await expect(page.getByTestId('kitchen-save-status').locator('[aria-live]')).toHaveCount(1);
+    expect(await page.getByTestId('kitchen-save-status').evaluate(element => getComputedStyle(element).borderTopWidth)).toBe('0px');
+    const task = page.getByTestId('kitchen-current-task-region');
+    await expect(page.getByTestId(`kitchen-progress-${stage}`)).toHaveCount(0);
+    await expect(task.getByTestId('kitchen-assignee')).toHaveCount(0);
+    await expect(task.getByText(project.customer.name, { exact: true })).toHaveCount(0);
+    const repeatedTitle = ({ lead: 'Lead details', visit: 'Showroom visit', cad: 'CAD progress', design: 'Design', quotation: 'Quotation', order: 'Order', production: 'Production', installation: 'Installation', completed: 'Completed project' } as Record<string, string>)[stage];
+    await expect(task.getByRole('heading', { name: repeatedTitle, exact: true })).toHaveCount(0);
+    if (stage === 'lead') {
+      await expect(page.getByTestId('kitchen-lead-site_location')).toBeVisible();
+      await expect(page.getByTestId('kitchen-lead-details')).toHaveCount(0);
+    } else if (stage === 'design' || stage === 'quotation') {
       const id = stage === 'design' ? 'kitchen-design-edit-requirements' : 'kitchen-quotation-amount';
       await expect(page.getByTestId(id)).toBeVisible();
       await expect(page.getByTestId(id)).toHaveJSProperty('readOnly', true);
+      await expect(page.getByTestId(`kitchen-${stage}-details`)).toHaveCount(0);
       if (stage === 'quotation') await expect(page.getByTestId('kitchen-quotation-design-version')).toHaveCount(0);
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-      continue;
-    }
-    const details = page.getByTestId(`kitchen-${stage}-details`);
-    await expect(details).toBeVisible();
-    const fields = await details.evaluate(element => Array.from(element.children).map(field => ({
-      border: getComputedStyle(field).borderTopWidth, text: field.textContent,
-      width: field.getBoundingClientRect().width, height: field.getBoundingClientRect().height,
-    })));
-    expect(fields.length).toBeGreaterThanOrEqual(3);
-    for (const field of fields) {
-      expect(field.border, `${stage}: each detail has its own outline`).toBe('1px');
-      expect(field.text).toContain(':');
-      expect(field.width).toBeGreaterThan(80);
-      expect(field.height).toBeGreaterThan(40);
-    }
-    const status = page.getByTestId('kitchen-save-status');
-    expect(await status.evaluate(element => getComputedStyle(element).borderTopWidth)).toBe('1px');
-    if (stage === 'order') {
-      await expect(details.getByText('Customer order confirmation: Not recorded', { exact: true })).toBeVisible();
-      await expect(details.getByText('Order status: Pending confirmation', { exact: true })).toBeVisible();
-      await expect(details.getByText('Order quotation: Not yet recorded', { exact: true })).toBeVisible();
-      await details.scrollIntoViewIfNeeded();
-      await page.screenshot({ path: info.outputPath('order-separate-details.png') });
+    } else if (stage === 'order') {
+      await expect(page.getByTestId('kitchen-order-details')).toHaveCount(0);
+      await expect(page.getByTestId('kitchen-order-pending')).toHaveText('Status: Pending confirmation');
+      await expect(page.getByTestId('kitchen-order-confirmed')).toHaveCount(1);
+      await expect(page.getByTestId('kitchen-order-amount')).toHaveCount(1);
+      await page.getByTestId('kitchen-order-pending').scrollIntoViewIfNeeded();
+      await page.screenshot({ path: info.outputPath('order-single-source.png') });
+    } else if (stage === 'production' || stage === 'installation') {
+      await expect(page.getByTestId(`kitchen-${stage}-details`)).toHaveCount(0);
+      await expect(page.getByTestId(`kitchen-${stage}-notes`)).toHaveCount(1);
+      await expect(page.getByTestId(`kitchen-${stage}-notes`)).toHaveJSProperty('readOnly', true);
+      await expect(page.getByTestId(`kitchen-${stage}-start`)).toHaveCount(1);
+      await expect(page.getByTestId(`kitchen-${stage}-complete`)).toHaveCount(1);
+    } else if (stage === 'visit' || stage === 'cad') {
+      await expect(page.getByTestId(`kitchen-${stage}-details`)).toHaveCount(0);
+      await expect(page.getByTestId(`kitchen-${stage}-notes`)).toHaveCount(1);
+      await expect(page.getByTestId(`kitchen-${stage}-notes`)).toHaveJSProperty('readOnly', true);
+    } else {
+      const details = page.getByTestId(`kitchen-${stage}-details`);
+      await expect(details).toBeVisible();
+      const fields = await details.evaluate(element => Array.from(element.children).map(field => ({
+        border: getComputedStyle(field).borderTopWidth, text: field.textContent,
+      })));
+      expect(fields.length).toBeGreaterThanOrEqual(3);
+      for (const field of fields) {
+        expect(field.border, `${stage}: read-only records keep clear labels`).toBe('1px');
+        expect(field.text).toContain(':');
+      }
+      if (stage === 'visit') await expect(page.getByTestId('kitchen-visit-notes')).toHaveCount(0);
+      if (stage === 'cad') await expect(page.getByTestId('kitchen-cad-notes')).toHaveCount(0);
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   }
@@ -100,14 +155,15 @@ test('Kitchen missing quotation and order prerequisites offer working return act
   await expect(page.getByTestId('kitchen-quotation-amount')).toHaveValue('1250.50');
   await clickCommand(page, 'kitchen-advance-order', 'move_stage');
   await expect(page.getByTestId('kitchen-order-confirm')).toBeDisabled();
-  await expect(page.getByText('Order status: Pending confirmation', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('kitchen-order-pending')).toHaveText('Status: Pending confirmation');
   await page.getByTestId('kitchen-order-confirm').scrollIntoViewIfNeeded();
   await page.screenshot({ path: info.outputPath('order-pending-confirmation.png') });
   const quotation = await clickCommand(page, 'kitchen-complete-quotation', 'move_stage');
   expect(quotation.stage).toBe('quotation');
   await expect(page.getByTestId('kitchen-quotation-amount')).toHaveValue('1250.50');
   await expect(page.getByTestId('kitchen-quotation-upload')).toHaveCount(0);
-  await page.getByTestId('kitchen-project-nav-documents').click();
+  await (await projectControl(page, 'kitchen-project-actions')).click();
+  await page.getByRole('menuitem', { name: 'Documents', exact: true }).click();
   await expect(page.getByTestId('kitchen-document-pick')).toBeEnabled();
   await health.assertHealthy();
 });
@@ -125,13 +181,15 @@ test('Kitchen save and next persists production, actual site visit and installat
   const afterProduction = await context.request.get(`/api/kitchen-projects/${project.id}`, { headers });
   expect(await afterProduction.json()).toMatchObject({ stage: 'installation', production: { status: 'Completed', start_date: '2026-10-25', completion_date: '2026-10-26' } });
   await page.reload();
-  await page.getByTestId('kitchen-disclose-site-visit').click();
+  await expect(page.getByTestId('kitchen-disclose-site-visit')).toHaveCount(0);
+  await openProjectTool(page, 'site-visit');
   await expect(page.getByTestId('kitchen-site-save')).toBeDisabled();
   await expect(page.getByText('Choose whether this visit actually took place to enable recording.', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Visit actually took place: Yes — actual visit', exact: true }).click();
   await page.getByTestId('kitchen-site-date').fill('2026-10-26');
   const visit = await clickCommand(page, 'kitchen-site-save', 'site_visit');
   expect(visit.site_visit_count).toBe(1);
+  await page.getByTestId('kitchen-site-visits-sheet').getByRole('button', { name: 'Close', exact: true }).click();
   await page.getByTestId('kitchen-installation-status-completed').click();
   await page.getByTestId('kitchen-installation-start').fill('2026-10-26');
   await page.getByTestId('kitchen-installation-complete').fill('2026-10-26');
@@ -171,6 +229,10 @@ test('Retired Kitchen filters cannot hide a project and controls stay removed', 
   await page.getByTestId('kitchen-filters-open').click();
   await expect(page.getByText('Assigned person', { exact: true })).toHaveCount(0);
   await expect(page.getByText('Next action deadline', { exact: true })).toHaveCount(0);
+  // Date calendars now default to today. This case checks retired filters,
+  // so deliberately remove the independent date restriction for its undated fixture.
+  await page.getByTestId('kitchen-date-from').fill('');
+  await page.getByTestId('kitchen-date-to').fill('');
   await page.getByTestId('kitchen-filters-apply').click();
   await page.getByTestId(`kitchen-project-${project.id}`).click();
   await expect(page.getByTestId('kitchen-current-task-region')).toBeVisible();

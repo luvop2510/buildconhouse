@@ -8,6 +8,8 @@ const require = createRequire(import.meta.url);
 const React = require('react');
 let drafts = {};
 let feedback = null;
+let autosaveOptions;
+let autosaveStatus = 'saved';
 let componentState = [];
 let hookIndex = 0;
 const host = type => function TestHost(props) { return React.createElement(type, props, props.children); };
@@ -23,6 +25,7 @@ const mocks = {
   './shared': { Choice: host('choice'), KitchenPanel: host('panel'), KitchenDetails: ({ items, testID }) => React.createElement('details', { testID }, items.map(item => `${item.label}: ${item.value}`).join(' ')), displayDate: value => value || 'Not recorded', historicalCount: value => value || 0, rupees: value => value || '0.00' },
   './KitchenFilters': { KitchenDateField: host('date'), KitchenSelect: host('select') },
   './KitchenDates': { kitchenToday: () => '2026-10-26' },
+  './KitchenAutosave': { useKitchenAutosave: options => { autosaveOptions = options; return { status: autosaveStatus, retry: () => {} }; } },
   './KitchenDocuments': { DocumentChoice: host('document') },
   './KitchenProjectState': { kitchenProjectPath: (id, suffix) => `/kitchen/${id}${suffix}`, useKitchenDraft: (key, initial) => [drafts[key] ?? initial, value => { drafts[key] = typeof value === 'function' ? value(drafts[key] ?? initial) : value; }], useKitchenProject: () => ({ resetDraftValue: () => {}, returnTo: '/kitchen/stages/lead', submission: { setError: update => { feedback = typeof update === 'function' ? update(feedback) : update; } } }) },
   '@/src/theme/tokens': { radius: {}, spacing: {} },
@@ -54,10 +57,10 @@ const design = { id: 'design', number: 1, workflow_cycle: 1, response: 'Approved
 const quotation = { id: 'quotation', number: 1, design_version_id: 'design', response: 'Approved', amount: '1000.00', shared_date: '2026-10-21' };
 const order = { id: 'order', quotation_version_id: 'quotation', confirmed: true, status: 'Confirmed', order_date: '2026-10-22', original_amount: '1000.00', final_amount: '1000.00', advance: { received: false } };
 const base = { id: 'project', workflow_cycle: 1, visit: {}, design_versions: [design], quotation_versions: [], orders: [], permissions: { can_approve_exceptions: true }, attachments: [{ id: 'file', filename: 'quotation.pdf' }] };
-function render(stage, fields = {}, values = {}, command = async (...args) => { calls.push(args); return true; }) {
+function render(stage, fields = {}, values = {}, command = async (...args) => { calls.push(args); return true; }, mode = 'task') {
   drafts = Object.fromEntries(Object.entries(values).map(([key, value]) => [`commercial.cycle.1.${key}`, value]));
   componentState = [];
-  const props = { project: { ...base, stage, ...fields }, stage, disabled: false, command };
+  const props = { project: { ...base, stage, ...fields }, stage, disabled: false, command, mode };
   function refresh() {
     hookIndex = 0;
     const nodes = flatten(exports.CommercialStages(props));
@@ -102,7 +105,7 @@ assert.match(view.text, /selected design needs approval/);
 assert.ok(view.control('kitchen-complete-quotation'), 'Recovery returns through the adjacent Quotation stage');
 for (const value of ['Not recorded', 'Yes', 'No']) {
   view = render('order', { quotation_versions: [quotation], customer_order_confirmation: value }, { 'order.date': '2026-10-26', 'order.finalAmount.quotation': '1000.00' });
-  assert.match(view.text, new RegExp(`Customer order confirmation: ${value}`));
+  assert.equal(view.control('kitchen-order-confirmed').props.value, value);
   assert.deepEqual(view.control('kitchen-order-confirmed').props.values, ['Not recorded', 'Yes', 'No']);
   await view.control('kitchen-order-confirmation-save').props.onPress();
   assert.deepEqual(calls.pop(), ['order_confirmation', { value }]);
@@ -213,7 +216,7 @@ view.control('kitchen-order-quotation-revision').props.onChange(quotation.id);
 view = view.refresh();
 await view.control('kitchen-order-confirm').props.onPress();
 assert.equal(calls.pop()[1].quotation_version_id, quotation.id, 'An older valid quotation can be explicitly selected for the order');
-view = render('order', { design_versions: [design, design2], quotation_versions: [quotation, quote2], orders: [order] });
+view = render('order', { design_versions: [design, design2], quotation_versions: [quotation, quote2], orders: [order] }, { 'order.details.expanded': true });
 view.control('kitchen-order-quotation-revision').props.onChange(quote2.id);
 view = view.refresh();
 assert.match(view.text, /Order quotation: Quotation 1 · Design v1/);
@@ -222,14 +225,15 @@ assert.equal(calls.length, 0, 'Historical quote viewing never changes the saved 
 for (const stage of ['production', 'installation']) {
   view = render(stage, { design_versions: [design, design2], quotation_versions: [quotation, quote2], orders: [order] });
   assert.match(view.text, /Quotation 1 · Design v1/, 'Downstream context follows the saved order IDs, not the latest design');
+  assert.equal(view.control(`kitchen-${stage}-details`), undefined, 'Active work forms are the single source for status, dates and notes');
 }
-view = render('order', { quotation_versions: [quotation], orders: [order] }, { 'order.advanceReceived': 'Yes', 'order.advanceAmount': '100.00', 'order.advanceDate': '2026-10-26' });
+view = render('order', { quotation_versions: [quotation], orders: [order] }, { 'order.advanceEdit.expanded': true, 'order.advanceReceived': 'Yes', 'order.advanceAmount': '100.00', 'order.advanceDate': '2026-10-26' }, undefined, 'advance');
 assert.equal(view.control('kitchen-advance-save').props.disabled, false);
 await view.control('kitchen-advance-save').props.onPress();
 assert.deepEqual(calls.pop(), ['order_advance', { status: 'Yes', received: true, amount: '100.00', date: '2026-10-26' }]);
-view = render('order', { quotation_versions: [quotation], orders: [order] }, { 'order.advanceReceived': 'Yes', 'order.advanceAmount': '0.00' });
+view = render('order', { quotation_versions: [quotation], orders: [order] }, { 'order.advanceEdit.expanded': true, 'order.advanceReceived': 'Yes', 'order.advanceAmount': '0.00' }, undefined, 'advance');
 assert.equal(view.control('kitchen-advance-save').props.disabled, true, 'Received advances require a positive amount');
-view = render('order', { quotation_versions: [quotation], orders: [order] }, { 'order.advanceReceived': 'No' });
+view = render('order', { quotation_versions: [quotation], orders: [order] }, { 'order.advanceEdit.expanded': true, 'order.advanceReceived': 'No' }, undefined, 'advance');
 assert.equal(view.control('kitchen-advance-save').props.disabled, false);
 assert.equal(view.control('kitchen-advance-amount').props.value, '');
 await view.control('kitchen-advance-save').props.onPress();
@@ -238,13 +242,40 @@ view = render('order', { quotation_versions: [quotation], orders: [order], permi
 assert.equal(view.control('kitchen-order-confirm'), undefined, 'An existing order cannot be overwritten');
 view = render('order', { quotation_versions: [quotation], permissions: {} }, { 'order.finalAmount.quotation': '1500.00', 'order.amountApproved': 'Yes' });
 assert.equal(view.control('kitchen-order-confirm').props.disabled, true, 'Only an owner can confirm changed commercial terms');
-view = render('installation', {}, { 'site.newVisit.expanded': true });
+view = render('installation', {}, {}, undefined, 'visits');
 assert.match(view.text, /Choose whether this visit actually took place/);
 assert.equal(view.control('kitchen-site-save').props.disabled, true);
-view = render('installation', {}, { 'site.newVisit.expanded': true, 'site.actual': 'Yes — actual visit' });
+view = render('installation', {}, { 'site.actual': 'Yes — actual visit' }, undefined, 'visits');
 assert.equal(view.control('kitchen-site-save').props.disabled, false);
 view.control('kitchen-site-save').props.onPress();
 assert.deepEqual(calls.pop(), ['site_visit', { date: '2026-10-26', actual: true, notes: null }]);
+
+view = render('order', { quotation_versions: [quotation], orders: [order] });
+assert.ok(view.control('kitchen-order-edit-date'), 'Routine order date stays open');
+assert.ok(view.control('kitchen-order-edit-notes'), 'Routine order notes stay open');
+for (const id of ['kitchen-amend-save', 'kitchen-advance-save', 'kitchen-order-status-save', 'kitchen-order-confirmation-save', 'kitchen-order-edit-save']) assert.equal(view.control(id), undefined, `${id} stays behind its explicit disclosure`);
+assert.equal(view.nodes.filter(node => node.type === 'panel').length, 1, 'Order uses one form panel');
+assert.equal(view.nodes.filter(node => node.type === 'panel' && node.props.title).length, 0, 'The page header names Order once');
+assert.equal(view.nodes.some(node => node.type === 'panel' && ['Approved order amendment', 'Advance payment'].includes(node.props.title)), false, 'Amendment and advance retain their actions without duplicate boxes');
+assert.equal(view.control('kitchen-order-details'), undefined, 'Order does not repeat its editable values in summary boxes');
+assert.equal(view.text.match(/Approved final amount:/g)?.length, 1, 'The approved amount has one location');
+view.control('kitchen-order-edit-notes').props.onChangeText('Internal autosaved note');
+view = view.refresh();
+assert.equal(calls.length, 0, 'Typing never submits a consequential command');
+assert.equal(autosaveOptions.enabled, true);
+await autosaveOptions.save();
+assert.deepEqual(calls.pop(), ['order_update', { order_date: order.order_date, notes: 'Internal autosaved note' }, true]);
+view.control('kitchen-disclose-order-quotation').props.onPress();
+view = view.refresh();
+view.control('kitchen-order-edit-quotation').props.onChange('different-quotation');
+view = view.refresh();
+assert.equal(autosaveOptions.enabled, false, 'A changed quotation basis cannot autosave');
+assert.ok(view.control('kitchen-order-edit-save'), 'A quotation change keeps explicit confirmation');
+autosaveStatus = 'failed';
+view = render('order', { quotation_versions: [quotation], orders: [order] });
+assert.ok(view.control('kitchen-order-autosave-retry'), 'Failed ordinary writes expose retry');
+autosaveStatus = 'saved';
+
 for (const stage of ['production', 'installation']) {
   const work = { status: 'Completed', start_date: '2026-10-23', completion_date: '2026-10-26', notes: 'Preserve work' };
   const commands = [];
@@ -318,6 +349,7 @@ async function checkProvider(source) {
     } },
     './shared': { errorText: String, useKitchenSubmission: () => ({ submit: async (_fingerprint, work, accepted) => { const value = await work('provider-fixture'); accepted(value); return true; } }) },
     './KitchenDates': { kitchenToday: () => '2026-10-26' },
+  './KitchenAutosave': { useKitchenAutosave: options => { autosaveOptions = options; return { status: autosaveStatus, retry: () => {} }; } },
     './KitchenExitGuard': { useKitchenExitGuard: () => {} },
   };
   const providerExports = {};
@@ -353,3 +385,20 @@ async function checkProvider(source) {
 await checkProvider(providerSource);
 await assert.rejects(checkProvider(providerSource.replace('if (name === "move_stage" && current.stage === payload.target_stage) return Promise.resolve(true);', '')), /redundant same-stage move/, 'Negative control reproduces the rejected legacy second move without the fix');
 console.log('Kitchen actual provider: legacy completion skips duplicate move; captured callbacks use the latest saved version (negative control fails as expected)');
+
+for (const stage of ['order','installation']) {
+  const task=render(stage,{quotation_versions:[quotation],orders:[order]});
+  for(const id of ['kitchen-disclose-advance','kitchen-disclose-amendment','kitchen-disclose-site-visit','kitchen-site-save','kitchen-advance-save','kitchen-amend-save'])assert.equal(task.control(id),undefined,`${stage}: ${id} must be absent from the main task, including collapsed buttons`);
+  assert.doesNotMatch(task.text,/Advance payment received|Amend approved amount|Installation site visits/);
+}
+
+for(const stage of ['production','installation']) {
+  for(const status of ['Not Started',stage==='production'?'In Production':'In Progress','Completed']) {
+    const commands=[];
+    const task=render(stage,{}, { [stage]: {status} }, async (...args)=>{commands.push(args);return true;});
+    assert.equal(task.control(`kitchen-${stage}-start`).props.value,'2026-10-26');
+    assert.equal(task.control(`kitchen-${stage}-complete`).props.value,'2026-10-26');
+    await task.control(`kitchen-${stage}-save`).props.onPress();
+    assert.deepEqual(commands,[[`${stage}_update`,{status,start_date:status==='Not Started'?null:'2026-10-26',completion_date:status==='Completed'?'2026-10-26':null,notes:null}]],'Proposed dates never change the selected status or violate the work API');
+  }
+}

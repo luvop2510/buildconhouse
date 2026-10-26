@@ -1,3 +1,4 @@
+import { projectControl, expandProjectDetails, openProjectTool } from './kitchen-controls';
 import { expect, test, type Page, type APIRequestContext } from '@playwright/test';
 import { captureRuntimeHealth } from './runtime-health';
 
@@ -24,12 +25,13 @@ async function openProjectPage(page: Page, section: 'overview' | 'stage' | 'docu
     if (await page.getByTestId('kitchen-open-current-stage').isVisible()) await page.getByTestId('kitchen-open-current-stage').click();
     await expect(page.getByTestId('kitchen-current-task-region')).toBeVisible();
   } else if (section === 'exceptions') {
-    await page.getByTestId('kitchen-project-actions').click();
+    await (await projectControl(page, 'kitchen-project-actions')).click();
     await page.getByRole('menuitem', { name: 'Hold, cancel or revise project', exact: true }).click();
     await expect(page.getByTestId('kitchen-exceptions-sheet')).toBeVisible();
   } else {
     const before = page.url();
-    await page.getByTestId(`kitchen-project-nav-${section}`).click();
+    await (await projectControl(page, 'kitchen-project-actions')).click();
+    await page.getByRole('menuitem', { name: section === 'assignments' ? 'Completion date' : section === 'documents' ? 'Documents' : 'History', exact: true }).click();
     await expect(page.getByTestId(`kitchen-${section === 'assignments' ? 'assignment' : section}-sheet`)).toBeVisible();
     await expect(page).toHaveURL(before);
   }
@@ -37,14 +39,23 @@ async function openProjectPage(page: Page, section: 'overview' | 'stage' | 'docu
 }
 async function openCurrentTask(page: Page) { await openProjectPage(page, 'stage'); }
 
+async function openStageAssignment(page: Page) {
+  await closeProjectPanel(page);
+  await (await projectControl(page, 'kitchen-project-actions')).click();
+  await page.getByRole('menuitem', { name: 'Assigned to', exact: true }).click();
+  await expect(page.getByTestId('kitchen-assignee-sheet')).toBeVisible();
+}
+
 async function openDisclosure(page: Page, id: string) {
+  if (['advance','amendment','site-visit'].includes(id)) { await openProjectTool(page, id as 'advance' | 'amendment' | 'site-visit'); return; }
   if (id === 'design-edit' || id === 'order-edit') return;
   if (id === 'quotation-version') { await page.getByTestId('kitchen-quotation-new-version').click(); return; }
   const disclosure = page.getByTestId(`kitchen-disclose-${id}`);
   if (await disclosure.isVisible() && await disclosure.getAttribute('aria-expanded') !== 'true') await disclosure.click();
 }
 async function openStageRecord(page: Page, stage: string) {
-  await page.getByTestId('kitchen-open-workflow').click();
+  await (await projectControl(page, 'kitchen-project-actions')).click();
+  await page.getByRole('menuitem', { name: 'Stage history', exact: true }).click();
   await page.getByTestId('kitchen-workflow-sheet').getByTestId(`kitchen-stage-${stage}`).click();
   await expect(page).toHaveURL(new RegExp(`/stages/${stage}(?:\\?.*)?$`));
 }
@@ -56,7 +67,7 @@ async function reviewDistinctIfNeeded(page: Page) {
   await projectReady(page);
   await expect(page.getByTestId('kitchen-lead-site_location')).toBeVisible();
   if (!await page.getByTestId('kitchen-duplicate-distinct').isVisible()) return;
-  await expect(page.getByTestId('kitchen-convert')).toBeEnabled();
+  await expect((await projectControl(page, 'kitchen-convert'))).toBeEnabled();
   await page.getByTestId('kitchen-duplicate-reason').fill('Owner verified a separate synthetic site');
   const reviewed = page.waitForResponse(response => response.url().endsWith('/commands') && response.request().postDataJSON()?.command === 'review_duplicate');
   await page.getByTestId('kitchen-duplicate-distinct').click();
@@ -129,10 +140,12 @@ test('Q01 Q02 Q03 Q12 Q13: real lead/visit persistence, automatic editable dates
   expect((await detail.json()).customer_id).toBe(customerId);
 
   await reviewDistinctIfNeeded(page);
-  await page.getByTestId('kitchen-convert').click();
+  await (await projectControl(page, 'kitchen-convert')).click();
   await expect(page.getByTestId('kitchen-visit-save')).toBeVisible();
   const indiaToday = new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
   await expect(page.getByTestId('kitchen-visit-date')).toHaveValue(indiaToday);
+  await expect(page.getByTestId('kitchen-current-task-region').getByTestId('kitchen-assignee')).toHaveCount(0);
+  await openStageAssignment(page);
   await expect(page.getByTestId('kitchen-assignee')).toBeVisible();
   await expect(page.getByTestId('kitchen-visit-next-action')).toHaveCount(0);
   await openProjectPage(page, 'assignments');
@@ -143,7 +156,7 @@ test('Q01 Q02 Q03 Q12 Q13: real lead/visit persistence, automatic editable dates
   await page.getByTestId('kitchen-visit-notes').fill('Showroom cabinets and worktop');
   await page.getByTestId('kitchen-visit-save').click();
   // Stage navigation stays available before recording an actual visit.
-  await expect(page.getByTestId('kitchen-advance-cad')).toBeEnabled();
+  await expect((await projectControl(page, 'kitchen-advance-cad'))).toBeEnabled();
   await expect(page.getByTestId('kitchen-visit-notes')).toHaveValue('Showroom cabinets and worktop');
   await page.reload();
   await expect(page.getByTestId('kitchen-visit-notes')).toHaveValue('Showroom cabinets and worktop');
@@ -201,14 +214,14 @@ test('Q04 to Q09: all nine stages preserve versions, exact counters and late man
   async function click(id: string, command: string) {
     const actualCommand = command === 'convert' || command === 'advance_stage' ? 'move_stage' : command;
     const pending = page.waitForResponse(response => response.url().endsWith(`/api/kitchen-projects/${project.id}/commands`) && response.request().postDataJSON()?.command === actualCommand);
-    await page.getByTestId(id).click();
+    await (await projectControl(page, id)).click();
     const response = await pending;
     expect(response.ok(), `${command}: ${await response.text()}`).toBeTruthy();
     return response.json();
   }
   async function blocked(id: string) {
     // Navigation remains available regardless of incomplete business details.
-    await expect(page.getByTestId(id)).toBeEnabled();
+    await expect(await projectControl(page, id)).toBeEnabled();
   }
   async function approveAsManager(scope: 'production' | 'closure') {
     const manager = await browser.newContext({ viewport: page.viewportSize() || undefined });
@@ -229,7 +242,7 @@ test('Q04 to Q09: all nine stages preserve versions, exact counters and late man
       // Refresh the mounted owner provider so its completed installation draft
       // survives closure and the subsequent sibling route to Owner actions.
       const refreshed = page.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === `/api/kitchen-projects/${project.id}`);
-      await page.getByTestId('kitchen-project-actions').click();
+      await (await projectControl(page, 'kitchen-project-actions')).click();
       await page.getByRole('menuitem', { name: 'Reload saved project', exact: true }).click();
       expect((await (await refreshed).json()).stage).toBe('installation');
       await projectReady(page);
@@ -323,10 +336,10 @@ test('Q04 to Q09: all nine stages preserve versions, exact counters and late man
   const revisedAmount = page.getByTestId('kitchen-quotation-amount');
   const savedDraftAmount = await revisedAmount.inputValue();
   await revisedAmount.fill('1200.01');
-  await expect(page.getByTestId('kitchen-advance-order')).toBeEnabled();
+  await expect((await projectControl(page, 'kitchen-advance-order'))).toBeEnabled();
   await expect(page.getByTestId('kitchen-unsaved-notice')).toContainText('Unsaved changes');
   await revisedAmount.fill(savedDraftAmount);
-  await expect(page.getByTestId('kitchen-advance-order')).toBeEnabled();
+  await expect((await projectControl(page, 'kitchen-advance-order'))).toBeEnabled();
   await click('kitchen-advance-order', 'advance_stage');
   await blocked('kitchen-advance-production');
   await page.getByTestId('kitchen-order-date').fill('2026-10-19');
@@ -335,16 +348,19 @@ test('Q04 to Q09: all nine stages preserve versions, exact counters and late man
   await page.getByTestId('kitchen-order-confirmed-yes').click();
   await click('kitchen-order-confirm', 'order_confirm');
   await openDisclosure(page, 'order-edit');
+  const orderAutosave = page.waitForResponse(response => response.url().endsWith('/commands') && response.request().postDataJSON()?.command === 'order_update');
   await page.getByTestId('kitchen-order-edit-notes').fill('Corrected customer order notes');
-  await click('kitchen-order-edit-save', 'order_update');
+  expect((await orderAutosave).ok()).toBe(true);
   await expect(page.getByTestId('kitchen-order-edit-notes')).toHaveValue('Corrected customer order notes');
   await expect(page.getByTestId('kitchen-unsaved-notice')).toHaveCount(0);
   await expect(page.getByTestId('kitchen-disclose-order-document')).toHaveCount(0);
   await blocked('kitchen-advance-production');
+  await openDisclosure(page, 'advance');
   await page.getByTestId('kitchen-advance-received-yes').click();
   await page.getByTestId('kitchen-advance-amount').fill('0.01');
   await page.getByTestId('kitchen-advance-date').fill('2026-10-19');
   await click('kitchen-advance-save', 'order_advance');
+  await closeProjectPanel(page);
   await blocked('kitchen-advance-production');
   await expect(page.getByTestId('kitchen-approve-production')).toHaveCount(0);
   await approveAsManager('production');
@@ -369,6 +385,7 @@ test('Q04 to Q09: all nine stages preserve versions, exact counters and late man
     const actual = await click('kitchen-site-save', 'site_visit');
     expect(actual.site_visit_count).toBe(visit);
   }
+  await closeProjectPanel(page);
   await page.getByTestId('kitchen-installation-status-completed').click();
   await page.getByTestId('kitchen-installation-start').fill('2026-10-20');
   await page.getByTestId('kitchen-installation-complete').fill('2026-10-21');
@@ -386,7 +403,7 @@ test('Q04 to Q09: all nine stages preserve versions, exact counters and late man
   expect(completed.order_amount).toBe('1100.01');
   // Reopening must replace the retained Completed draft with the returned
   // persisted Installation state, without remounting the project provider.
-  await page.getByTestId('kitchen-project-actions').click();
+  await (await projectControl(page, 'kitchen-project-actions')).click();
   await page.getByRole('menuitem', { name: 'Hold, cancel or revise project', exact: true }).click();
   await expect(page.getByTestId('kitchen-exceptions-sheet')).toBeVisible();
   await page.getByTestId('kitchen-exception-reason').fill('Owner reopens the completed installation for a final adjustment');
@@ -396,12 +413,13 @@ test('Q04 to Q09: all nine stages preserve versions, exact counters and late man
   expect(reopened.installation.completion_date).toBeNull();
   await expect(page).toHaveURL(new RegExp(`/kitchen/${project.id}/stages/installation(?:\\?.*)?$`));
   await expect(page.getByTestId('kitchen-installation-status-in-progress')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByTestId('kitchen-installation-complete')).toHaveValue('');
+  await expect(page.getByTestId('kitchen-installation-complete')).toHaveValue(new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10));
   await expect(page.getByTestId('kitchen-installation-start')).toHaveValue('2026-10-20');
   await openProjectPage(page, 'history');
   await openProjectPage(page, 'stage');
   await expect(page.getByTestId('kitchen-installation-status-in-progress')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByTestId('kitchen-installation-complete')).toHaveValue('');
+  await expect(page.getByTestId('kitchen-installation-complete')).toHaveValue(new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10));
+  await closeProjectPanel(page);
   await page.getByTestId('kitchen-installation-status-completed').click();
   await page.getByTestId('kitchen-installation-complete').fill('2026-10-21');
   const completedAgain = await click('kitchen-installation-save', 'installation_update');
@@ -476,14 +494,14 @@ test('Q13: a lost lead can move forward without changing its saved outcome', asy
   await seedBrowser(page);
   await page.goto(`/kitchen/${project.id}`);
   await reviewDistinctIfNeeded(page);
-  await expect(page.getByTestId('kitchen-convert')).toBeVisible();
+  await expect((await projectControl(page, 'kitchen-convert'))).toBeVisible();
   const rejected = page.waitForResponse(response => response.url().endsWith(`/api/kitchen-projects/${project.id}/commands`) && response.request().postDataJSON()?.command === 'move_stage');
-  await page.getByTestId('kitchen-convert').click();
+  await (await projectControl(page, 'kitchen-convert')).click();
   const moved = await rejected;
   expect(moved.ok(), await moved.text()).toBeTruthy();
   expect((await moved.json()).lead.status).toBe('Lost');
-  await expect(page.getByTestId('kitchen-previous-stage')).toBeEnabled();
-  await expect(page.getByTestId('kitchen-advance-order')).toHaveCount(0);
+  await expect((await projectControl(page, 'kitchen-previous-stage'))).toBeEnabled();
+  await expect((await projectControl(page, 'kitchen-advance-order'))).toHaveCount(0);
   await health.assertHealthy();
 });
 
@@ -531,7 +549,7 @@ test('D06: owner reasoned return to Design preserves prior approved commerce and
   await page.goto(`/kitchen/${project.id}/stages/production`);
   await expect(page.getByTestId('kitchen-project-detail')).toBeVisible();
   await expect(page.getByTestId('kitchen-return-design')).toHaveCount(0);
-  await page.getByTestId('kitchen-project-actions').click();
+  await (await projectControl(page, 'kitchen-project-actions')).click();
   await expect(page.getByRole('menuitem', { name: 'Hold, cancel or revise project', exact: true })).toHaveCount(0);
   await page.keyboard.press('Escape');
   await context.addCookies([{ name: 'kitchen_acceptance_session', value: 'owner', url: baseURL! }]);
@@ -539,7 +557,7 @@ test('D06: owner reasoned return to Design preserves prior approved commerce and
   await page.getByTestId('kitchen-production-notes').fill('Unsaved earlier-cycle production draft');
   await expect(page.getByTestId('kitchen-unsaved-notice')).toBeVisible();
   await expect(page.getByTestId('kitchen-return-design')).toHaveCount(0);
-  await page.getByTestId('kitchen-project-actions').click();
+  await (await projectControl(page, 'kitchen-project-actions')).click();
   await page.getByRole('menuitem', { name: 'Hold, cancel or revise project', exact: true }).click();
   await expect(page.getByTestId('kitchen-exceptions-sheet')).toBeVisible();
   await expect(page.getByTestId('kitchen-return-design')).toBeDisabled();
@@ -555,7 +573,7 @@ test('D06: owner reasoned return to Design preserves prior approved commerce and
   expect(revised.orders[0].authorization_invalidated).toBe(true);
   expect(revised.design_versions[0].response).toBe('Approved');
   expect(revised.quotation_versions[0].response).toBe('Approved');
-  await expect(page.getByTestId('kitchen-advance-quotation')).toBeEnabled();
+  await expect((await projectControl(page, 'kitchen-advance-quotation'))).toBeEnabled();
   await page.getByTestId('kitchen-design-new-version').click();
   await page.getByTestId('kitchen-design-edit-notes').fill('Revised design for the new approval cycle');
   await expect(page.getByTestId('kitchen-design-present')).toBeEnabled();
@@ -573,7 +591,7 @@ test('D06: owner reasoned return to Design preserves prior approved commerce and
   await page.getByTestId('kitchen-design-sent-yes').click();
   await page.getByTestId('kitchen-design-edit-handoff').fill('2026-10-19');
   await saveNewCycle('kitchen-design-edit-save', 'design_update');
-  await expect(page.getByTestId('kitchen-advance-quotation')).toBeEnabled();
+  await expect((await projectControl(page, 'kitchen-advance-quotation'))).toBeEnabled();
   await expect(page.getByTestId('kitchen-advance-unsaved')).toHaveCount(0);
   // Earlier-cycle drafts are retained for exit protection, never used by this handoff.
   await expect(page.getByTestId('kitchen-unsaved-notice')).toBeVisible();
@@ -600,7 +618,7 @@ test('D06: owner reasoned return to Design preserves prior approved commerce and
   await expect(page.getByText('Owner authorizes post-approval cabinet changes', { exact: false })).toBeVisible();
   await openProjectPage(page, 'stage');
   await page.reload();
-  await expect(page.getByTestId('kitchen-advance-quotation')).toBeEnabled();
+  await expect((await projectControl(page, 'kitchen-advance-quotation'))).toBeEnabled();
   await page.screenshot({ path: testInfo.outputPath('late-design-return.png') });
   await health.assertHealthy();
 });
@@ -617,6 +635,7 @@ test('D09: legacy completed records show unavailable counts and blank historical
   await expect(card).not.toContainText('Design revisions 0');
   await expect(card).not.toContainText('Actual site visits 0');
   await card.click();
+  await expandProjectDetails(page);
   await expect(page.getByText('Legacy project', { exact: false })).toBeVisible();
   await openCurrentTask(page);
   await expect(page.getByText(/^Total design revisions:\s+Historical count unavailable(?: · Newly recorded: 0)?$/)).toBeVisible();
@@ -695,7 +714,7 @@ test('Q18 v4: project pages separate work from files and history while preservin
   await openCurrentTask(page);
   const notes = page.getByTestId('kitchen-lead-notes');
   await notes.fill('Unsaved enquiry retained across project tools');
-  await expect(page.getByTestId('kitchen-project-nav-documents')).toBeVisible();
+  await expect((await projectControl(page, 'kitchen-project-actions'))).toBeVisible();
   await openProjectPage(page, 'history');
   await expect(page.getByTestId('kitchen-history-sheet')).toBeVisible();
   await expect(page.getByTestId('kitchen-history-category')).toBeVisible();
@@ -812,6 +831,8 @@ test('Q18: dirty scope guards global navigation, programmatic Back and browser u
   await page.getByTestId(`kitchen-project-${project.id}`).click();
   await openCurrentTask(page);
   const notes = page.getByTestId('kitchen-lead-notes');
+  // Keep a consequential status decision pending; ordinary notes now autosave.
+  await page.getByTestId('kitchen-lead-status-contacted').click();
   await notes.fill('Unsaved guard draft');
   await expect(page.getByTestId('kitchen-unsaved-notice')).toBeVisible();
   const dialogs: string[] = [];
@@ -961,15 +982,18 @@ test('Kitchen named stages preview without writes and design details can be corr
   await page.goto(`/kitchen/${project.id}/stages/lead`);
   await projectReady(page);
   const stageNames = { lead: 'Lead', visit: 'Visit', cad: 'CAD', design: 'Design', quotation: 'Quotation', order: 'Order', production: 'Production', installation: 'Installation', completed: 'Completed' };
+  await (await projectControl(page, 'kitchen-project-actions')).click();
+  await page.getByRole('menuitem', { name: 'Stage history', exact: true }).click();
   for (const [stage, label] of Object.entries(stageNames)) {
-    await expect(page.getByTestId(`kitchen-progress-${stage}`)).toContainText(label);
+    await expect(page.getByTestId('kitchen-workflow-sheet').getByTestId(`kitchen-stage-${stage}`)).toContainText(label);
   }
+  await closeProjectPanel(page);
   const mutations: string[] = [];
   page.on('request', request => { if (new URL(request.url()).pathname.startsWith('/api/kitchen-projects') && !['GET', 'HEAD', 'OPTIONS'].includes(request.method())) mutations.push(request.method()); });
   for (const stage of ['quotation', 'order', 'production', 'installation', 'completed']) {
-    await page.getByTestId(`kitchen-progress-${stage}`).click();
+    await openStageRecord(page, stage);
     await expect(page).toHaveURL(new RegExp(`/stages/${stage}(?:\\?.*)?$`));
-    await expect(page.getByText('Viewing this stage does not move the project or create records.', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('kitchen-open-current-stage')).toBeVisible();
     const editable = page.getByTestId('kitchen-current-task-region').locator('input:not([disabled]):not([readonly]), textarea:not([disabled]):not([readonly])');
     await expect(editable).toHaveCount(0);
   }
@@ -1019,13 +1043,13 @@ test('Kitchen named stages preview without writes and design details can be corr
   const corrected = await saved.json();
   expect(corrected.design_versions.at(-1)).toMatchObject({ presentation_date: '2026-10-19', shared_date: '2026-10-20', handoff_date: '2026-10-20', response: 'Approved', requirements: 'Corrected cabinet layout', budget_discussion: 'Agreed budget discussion' });
   expect(corrected.design_revision_count).toBe(0);
-  await expect(page.getByTestId('kitchen-advance-quotation')).toBeEnabled();
+  await expect((await projectControl(page, 'kitchen-advance-quotation'))).toBeEnabled();
   await page.reload();
   await expect(page.getByTestId('kitchen-design-edit-save')).toBeVisible();
   await openDisclosure(page, 'design-edit');
   await expect(page.getByTestId('kitchen-design-edit-requirements')).toHaveValue('Corrected cabinet layout');
   await expect(page.getByTestId('kitchen-design-edit-revisions')).toContainText('0');
-  await expect(page.getByTestId('kitchen-advance-quotation')).toBeEnabled();
+  await expect((await projectControl(page, 'kitchen-advance-quotation'))).toBeEnabled();
   await page.getByTestId('kitchen-design-edit-requirements').fill('Retained unsaved correction');
   const current = await (await context.request.get(`/api/kitchen-projects/${project.id}`, { headers: { 'X-Floor-Id': 'second-floor' } })).json();
   const changed = await context.request.post(`/api/kitchen-projects/${project.id}/commands`, { headers: { 'X-Floor-Id': 'second-floor' }, data: {
@@ -1033,14 +1057,14 @@ test('Kitchen named stages preview without writes and design details can be corr
     payload: { version_id: current.design_versions.at(-1).id, presentation_date: '2026-10-20', shared_date: '2026-10-20', handoff_date: '2026-10-20', response: 'Approved', requirements: 'Latest server requirements', reason: 'Another owner correction' },
   } });
   expect(changed.ok(), await changed.text()).toBeTruthy();
-  await page.getByTestId('kitchen-project-actions').click();
+  await (await projectControl(page, 'kitchen-project-actions')).click();
   await page.getByRole('menuitem', { name: 'Reload saved project', exact: true }).click();
   await expect(page.getByTestId('kitchen-design-edit-reload')).toBeVisible();
   await expect(page.getByTestId('kitchen-design-edit-requirements')).toHaveValue('Retained unsaved correction');
   await expect(page.getByTestId('kitchen-design-edit-save')).toBeDisabled();
   await page.getByTestId('kitchen-design-edit-reload').click();
   await expect(page.getByTestId('kitchen-design-edit-requirements')).toHaveValue('Latest server requirements');
-  await expect(page.getByTestId('kitchen-advance-quotation')).toBeEnabled();
+  await expect((await projectControl(page, 'kitchen-advance-quotation'))).toBeEnabled();
 });
 
 test('Kitchen lead references create a directory entry and retain complete customer details', async ({ page, context }, info) => {
@@ -1147,7 +1171,7 @@ test('Kitchen moves forward and backward through all nine stages without task pr
   const health = captureRuntimeHealth(page);
   for (let index = 1; index < stages.length; index++) {
     const target = stages[index];
-    const button = page.getByTestId(index === 1 ? 'kitchen-convert' : `kitchen-advance-${target}`);
+    const button = await projectControl(page, index === 1 ? 'kitchen-convert' : `kitchen-advance-${target}`);
     await expect(button).toBeEnabled();
     const saved = page.waitForResponse(value => value.url().endsWith('/commands') && value.request().postDataJSON()?.command === 'move_stage');
     await button.click();
@@ -1161,9 +1185,9 @@ test('Kitchen moves forward and backward through all nine stages without task pr
     await projectReady(page);
   }
   for (let index = stages.length - 2; index >= 0; index--) {
-    await expect(page.getByTestId('kitchen-previous-stage')).toBeEnabled();
+    await expect((await projectControl(page, 'kitchen-previous-stage'))).toBeEnabled();
     const saved = page.waitForResponse(value => value.url().endsWith('/commands') && value.request().postDataJSON()?.command === 'move_stage');
-    await page.getByTestId('kitchen-previous-stage').click();
+    await (await projectControl(page, 'kitchen-previous-stage')).click();
     const moved = await saved;
     expect(moved.ok(), await moved.text()).toBeTruthy();
     expect((await moved.json()).stage).toBe(stages[index]);
@@ -1171,7 +1195,7 @@ test('Kitchen moves forward and backward through all nine stages without task pr
     await projectReady(page);
   }
   await expect(page.getByTestId('kitchen-lead-site_location')).toHaveValue('Unsaved draft remains available');
-  await expect(page.getByTestId('kitchen-previous-stage')).toHaveCount(0);
+  await expect((await projectControl(page, 'kitchen-previous-stage'))).toHaveCount(0);
   const final = await (await context.request.get(`/api/kitchen-projects/${project.id}`, { headers })).json();
   expect(final.lead.site_location).toBe('Manual movement synthetic site');
   expect(final.installation?.completion_date ?? null).toBeNull();
@@ -1198,11 +1222,14 @@ test('Kitchen owner selects PDF assignments without adding the excluded Visit fi
   expect(savedResponse.ok(), await savedResponse.text()).toBe(true);
   const saved = await savedResponse.json();
   expect(saved.assignments.lead).toBe(worker);
+  await openStageAssignment(page);
   await expect(page.getByTestId('kitchen-assignee')).toContainText('Kitchen acceptance worker');
+  await closeProjectPanel(page);
   const moved = page.waitForResponse(response => response.url().endsWith('/commands') && response.request().postDataJSON()?.command === 'move_stage');
-  await page.getByTestId('kitchen-convert').click();
+  await (await projectControl(page, 'kitchen-convert')).click();
   expect((await moved).ok()).toBe(true);
   await expect(page.getByTestId('kitchen-visit-save')).toBeVisible();
+  await openStageAssignment(page);
   await expect(page.getByTestId('kitchen-assignee')).toContainText('Unassigned');
   await expect(page.getByTestId('kitchen-visit-requirements')).toHaveCount(0);
   await expect(page.getByTestId('kitchen-visit-budget')).toHaveCount(0);
@@ -1211,7 +1238,9 @@ test('Kitchen owner selects PDF assignments without adding the excluded Visit fi
   const assigned = page.waitForResponse(response => response.url().endsWith('/commands') && response.request().postDataJSON()?.command === 'assign');
   await page.getByTestId(`kitchen-assignee-${worker}`).click();
   expect((await assigned).ok()).toBe(true);
+  await closeProjectPanel(page);
   await page.reload();
+  await openStageAssignment(page);
   await expect(page.getByTestId('kitchen-assignee')).toContainText('Kitchen acceptance worker');
   const fetched = await context.request.get(`${baseURL}/api/kitchen-projects/${saved.id}`, { headers: { 'X-Floor-Id': 'second-floor' } });
   expect((await fetched.json()).assignments).toMatchObject({ lead: worker, visit: worker });

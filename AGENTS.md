@@ -23,6 +23,36 @@ Money uses Indian grouping/lakh/crore. Quotation Excel cover logos use portable
 PNG pixels and fixed aspect-preserving anchors; retain Indian currency formats.
 See docs/audits/2026-10-27-sanitary-workflows.md for evidence and release limits.
 
+## Kitchen compact stages, draft saves and dates — 2026-10-26
+
+The user removed repeated top summary boxes across all nine stages. Keep customer
+identity in expandable Details once, secondary project tools in its Actions menu, and one
+editable form or historical saved record per stage. This supersedes the earlier
+instruction to duplicate saved cells above editable forms. Confirmation/status
+retain compact disclosures. Advance and amendment controls
+are absent from the Order task; access them only through Details → Actions. Site
+visits are absent from the Installation task and accessible only through Actions.
+Never autosubmit payments, approval, work status or stage movement.
+
+Routine lead/visit/CAD notes, order date/notes and target date use supported
+debounced commands. Acknowledgements apply to request snapshots only; preserve
+newer typing, rebase the acknowledged source, and stop on a newer external source
+until reviewed. Saved means displayed values match the saved record. Preserve
+failure/retry and unsaved exit guards; memory drafts do not survive forced close.
+
+Keyboard reveal intersects the visual viewport with clipping ancestors. Keep
+phone chrome geometry reserved; cap oversized notes with internal caret scrolling
+while short notes grow/shrink. Do not remount forms or change pinch zoom. All
+Kitchen date-only controls select India today automatically on mount for an
+editable blank, including BOTH start and completion dates in Production and
+Installation. No focus/click is required. Clearing remains editable; reopening a
+blank can choose today again. Functional updates must preserve both sibling dates.
+Work dates are proposed defaults: submit no actual dates for Not Started and no
+completion date until Completed. Preserve explicit status selection. Existing and
+disabled historical dates remain unchanged. Date entry alone never submits a
+financial or approval operation. See
+docs/audits/2026-10-26-kitchen-workflow-stability.md for evidence and device checks.
+
 ## Kitchen explicit versions and internal notes — 2026-10-26
 
 Design/quotation selectors are views; mutations name selected IDs. Orders and

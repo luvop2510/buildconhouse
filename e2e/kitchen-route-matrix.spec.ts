@@ -53,10 +53,11 @@ test('30 meaningful URLs: every current stage, persisted pages and scoped queues
     if (marker === 'kitchen-project-ready') await expect(page.getByTestId(marker)).toHaveCount(1);
     else await expect(page.getByTestId(marker)).toBeVisible();
     const geometry = await page.evaluate(() => ({ viewport: innerWidth, root: document.documentElement.scrollWidth,
-      projectNavigation: Array.from(document.querySelectorAll('[data-testid^="kitchen-project-nav-"]')).filter(e => (e as HTMLElement).offsetWidth > 0).map(e => {
+      projectNavigation: Array.from(document.querySelectorAll('[data-testid="kitchen-project-details-toggle"]')).filter(e => (e as HTMLElement).offsetWidth > 0).map(e => {
         const box = e.getBoundingClientRect(); return { left: box.left, right: box.right };
       }) }));
     expect(geometry.root, `${path}: root width`).toBeLessThanOrEqual(geometry.viewport + 1);
+    if (path.startsWith(`/kitchen/${project.id}`)) expect(geometry.projectNavigation).toHaveLength(1);
     expect(geometry.projectNavigation.every(box => box.left >= -1 && box.right <= geometry.viewport + 1), `${path}: navigation fit`).toBe(true);
     await health.assertHealthy();
     visits.push({ route: path.replace(project.id, ':project'), role: 'owner', state: project.stage, apiStatus: loaded.status(), geometry });
