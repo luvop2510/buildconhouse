@@ -457,7 +457,7 @@ test('Ground Floor cold navigation starts both document reads in parallel', asyn
   await page.addInitScript(() => localStorage.setItem('forge.active-floor', JSON.stringify('ground-floor')));
   const started = performance.now();
   await page.goto('/tiles', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByText('No quotations yet', { exact: true })).toBeVisible();
+  await expect(page.getByText('No documents yet', { exact: true })).toBeVisible();
   const readyMs = performance.now() - started;
   expect(readyMs).toBeLessThan(2500);
   const documentReads = data.reads.filter(read => read.path === '/api/quotations');
