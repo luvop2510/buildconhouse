@@ -70,7 +70,7 @@ async def test_design_without_document_and_editable_details_have_audited_progres
     version = project['design_versions'][-1]
     assert version['attachment_id'] is None and version['url'] is None
     payload = {'version_id': version['id'], 'presentation_date': '2026-10-24', 'shared_date': '2026-10-25',
-               'handoff_date': '2026-10-25', 'response': 'Approved',
+               'handoff_date': '2026-10-25', 'approval_date': '2026-10-25', 'response': 'Approved',
                'requirements': 'Tall cabinets and drawers', 'budget_discussion': 'Within agreed budget', 'reason': 'Correct showroom record'}
     project = await service.command(owner, project['id'], cmd(project['version'], 'design_update', payload))
     assert project['design_revision_count'] == 0
@@ -144,7 +144,7 @@ def test_design_correction_cannot_manually_replace_customer_revision_total(setup
 @pytest.mark.parametrize('approved', [False, True])
 def test_changed_initial_order_amount_keeps_quotation_and_requires_customer_approval(setup, approved):
     _, _, owner = setup
-    project = {'stage': 'order', 'orders': [], 'attachments': [], 'design_versions': [{'id': 'design', 'response': 'Approved'}],
+    project = {'stage': 'order', 'orders': [], 'attachments': [], 'design_versions': [{'id': 'design', 'response': 'Approved', 'handoff_date': '2026-10-20'}],
                'quotation_versions': [{'id': 'quote', 'design_version_id': 'design', 'amount': '125.10', 'response': 'Approved', 'shared_date': '2026-10-21'}]}
     fields = {'quotation_version_id': 'quote', 'order_date': '2026-10-22', 'final_amount': '120.00', 'amount_customer_approved': approved}
     if not approved:

@@ -81,7 +81,7 @@ test('30 meaningful URLs: every current stage, persisted pages and scoped queues
         project = await command(context, project, 'design_present', { presentation_date: '2026-10-19', url: 'https://example.test/synthetic-design.pdf' });
         const version_id = project.design_versions.at(-1).id;
         project = await command(context, project, 'design_share', { version_id, date: '2026-10-19' });
-        project = await command(context, project, 'design_response', { version_id, response: 'Approved' });
+        project = await command(context, project, 'design_response', { version_id, response: 'Approved', approval_date: '2026-10-19' });
         project = await command(context, project, 'design_handoff', { version_id, date: '2026-10-19' });
         project = await command(context, project, 'advance_stage', { target_stage: 'quotation' });
       }

@@ -154,8 +154,8 @@ const STAGE_PREVIEW: Record<KitchenStage, string> = {
   visit: "Visit date, showroom visit status, display model (GI, SS, Other or Wardrobe), and visit notes.",
   cad: "CAD received, design progress and completion status. Record these details whenever they are available.",
   design: "Customer requirements, budget discussion, presentation date, revision count, customer sharing and approval, and company handoff. Project PDFs are available under Documents.",
-  quotation: "Company quotation amount, received date, uploaded quotation document, customer sharing date and approval. Record approval when it is available.",
-  order: "Order confirmation and date, optional confirmation document, advance amount and receipt date, and any manager approval records.",
+  quotation: "Company quotation amount, received date, customer sharing date and approval. Record approval when it is available.",
+  order: "Order confirmation and date, advance amount and receipt date, and any manager approval records.",
   production: "Production status, start date, completion date and notes. Move to Installation whenever needed.",
   installation: "Installation status and dates, site visits and notes, and any manager closure approval.",
   completed: "Installation completion date, final order value, design revision and site visit totals, with documents and history retained.",
@@ -262,7 +262,7 @@ function ProjectHistory({ project }: { project: KitchenProject }) {
   const [limit, setLimit] = useState(30);
   const actor = (id?: string) => !id ? "Not recorded" : [...(project.activity || [])].reverse().find(event => event.actor_id === id && event.actor_name)?.actor_name || `Staff member ${id}`;
   const documentName = (id?: string | null) => id ? project.attachments?.find(file => file.id === id)?.filename || "Saved project attachment" : "Not attached";
-  const versionName = (id: string) => { const design = project.design_versions?.find(row => row.id === id); const quote = project.quotation_versions?.find(row => row.id === id); return design ? `Design version ${design.number}` : quote ? `Quotation version ${quote.number}` : null; };
+  const versionName = (id: string) => { const design = project.design_versions?.find(row => row.id === id); const quote = project.quotation_versions?.find(row => row.id === id); return design ? `Design version ${design.number}` : quote ? `Quotation revision ${quote.number}` : null; };
   let entries: { id: string; title: string; lines: string[]; url?: string }[] = [];
   if (category === "activity") entries = [...(project.activity || [])].reverse().map(event => {
     const payload = event.payload || {};
@@ -271,11 +271,13 @@ function ProjectHistory({ project }: { project: KitchenProject }) {
     return { id: event.id, title: event.type.replaceAll("_", " "), lines: [`${event.actor_name || actor(event.actor_id)} · ${displayDate(event.at)}${event.at ? ` · ${new Date(event.at).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })}` : ""}`,
       ...(payload.from_stage && payload.to_stage && payload.from_stage !== payload.to_stage ? [`${stageNames(payload.from_stage)} → ${stageNames(payload.to_stage)}`] : []), ...(subject ? [subject] : []), ...(typeof payload.reason === "string" ? [payload.reason] : []), ...auditChangeLines(payload.changes, actor)] };
   });
-  if (category === "designs" || category === "quotations") entries = [...(category === "designs" ? project.design_versions || [] : project.quotation_versions || [])].reverse().map(version => ({ id: version.id, title: `Version ${version.number} · ${version.response}`, lines: [
+  if (category === "designs" || category === "quotations") entries = [...(category === "designs" ? project.design_versions || [] : project.quotation_versions || [])].reverse().map(version => ({ id: version.id, title: `${category === "designs" ? "Design v" : "Quotation r"}${version.number} · ${version.response}`, lines: [
     `${displayDate(version.presentation_date || version.received_date)}${version.amount ? ` · ${rupees(version.amount)}` : ""}`,
     `Recorded by ${actor(version.actor_id)}`,
     `Shared ${displayDate(version.shared_date)}${version.shared_by ? ` · ${actor(version.shared_by)}` : ""}`,
     ...(category === "designs" ? [`Sent to company ${displayDate(version.handoff_date)}${version.handoff_by ? ` · ${actor(version.handoff_by)}` : ""}`] : version.design_version_id ? [`Based on ${versionName(version.design_version_id) || "recorded design"}`] : []),
+    ...(category === "designs" && version.requirements ? [`Requirements: ${version.requirements}`] : []), ...(category === "designs" && version.budget_discussion ? [`Budget discussion: ${version.budget_discussion}`] : []),
+    ...(version.approval_date ? [`Customer approval date: ${displayDate(version.approval_date)}`] : []),
     ...(version.attachment_id ? [`Document: ${documentName(version.attachment_id)}`] : []), ...(version.notes ? [version.notes] : []), ...(version.response_notes ? [`Customer response: ${version.response_notes}`] : []),
   ], url: version.url || undefined }));
   if (category === "revisions") entries = [...(project.revision_events || [])].reverse().map(event => ({ id: event.id, title: "Customer revision request", lines: [event.reason, `Design version ${project.design_versions?.find(version => version.id === event.version_id)?.number || "not recorded"}`] }));

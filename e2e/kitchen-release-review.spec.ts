@@ -98,7 +98,8 @@ test('Kitchen missing quotation and order prerequisites offer working return act
   const quotation = await clickCommand(page, 'kitchen-complete-quotation', 'move_stage');
   expect(quotation.stage).toBe('quotation');
   await expect(page.getByTestId('kitchen-quotation-amount')).toHaveValue('1250.50');
-  await page.getByTestId('kitchen-quotation-upload').click();
+  await expect(page.getByTestId('kitchen-quotation-upload')).toHaveCount(0);
+  await page.getByTestId('kitchen-project-nav-documents').click();
   await expect(page.getByTestId('kitchen-document-pick')).toBeEnabled();
   await health.assertHealthy();
 });

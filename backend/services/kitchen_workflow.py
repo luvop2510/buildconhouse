@@ -5,16 +5,17 @@ configured internal approvers before invoking these strict domain operations.
 """
 import copy
 from decimal import Decimal
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from fastapi import HTTPException
 
 from models_kitchen import (AdvancePayment, CustomerResponse, DesignPresentation,
     DesignRevision, DesignUpdate, InternalApproval, OrderAmendment, OrderConfirmation,
-    QuotationReceived, SiteVisit, VersionDate, WorkProgress, OrderStatusChange, ExceptionCommand, OrderDocument, OrderUpdate)
+    QuotationReceived, SiteVisit, VersionDate, WorkProgress, OrderStatusChange, ExceptionCommand, OrderDocument, OrderUpdate, OrderConfirmationValue)
 
 COMMANDS = {"design_present", "design_update", "design_share", "design_response", "design_revision", "design_handoff",
-            "quotation_receive", "quotation_share", "quotation_response", "order_confirm", "order_update", "order_advance",
+            "quotation_receive", "quotation_share", "quotation_response", "order_confirm", "order_confirmation", "order_update", "order_advance",
             "order_amend", "order_status", "order_document", "exception", "production_update", "installation_update", "site_visit", "approval"}
 
 
@@ -37,8 +38,72 @@ def document(project, body):
     return {"attachment_id": body.attachment_id, "url": body.url}
 
 
-def approved_design(project):
-    row = current(project, "design_versions")
+def selected(project, key, version_id):
+    row = next((row for row in project.get(key, []) if row["id"] == version_id), None)
+    if row is None:
+        reject("Select a version belonging to this project")
+    return row
+
+
+def production_has_started(project):
+    def started(work):
+        return bool(work and (work.get("start_date") or work.get("completion_date") or work.get("status", "Not Started") != "Not Started"))
+    if started(project.get("production")) or any(row.get("production_started") for row in project.get("orders", []) if not row.get("authorization_invalidated")):
+        return True
+    cycle = project.get("workflow_cycle", 1)
+    if any(row.get("workflow_cycle", 1) == cycle and started(row.get("production")) for row in project.get("work_history", [])):
+        return True
+    for event in reversed(project.get("activity", [])):
+        changes = event.get("payload", {}).get("changes", {})
+        if "workflow_cycle" in changes:
+            break
+        if started(changes.get("production", {}).get("after")):
+            return True
+    return False
+
+
+def recorded_day(value):
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone(timedelta(hours=5, minutes=30))).date().isoformat()
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def design_approval_day(project, row):
+    if row.get("approval_date"):
+        return row["approval_date"]
+    day = None
+    for event in reversed(project.get("approvals", [])):
+        if event.get("scope") != "customer_design" or event.get("subject_id") != row["id"]:
+            continue
+        if event.get("decision") != "Approved":
+            break
+        # Repeated corrections to approved details do not create a later customer approval.
+        day = recorded_day(event.get("at")) or day
+    return day
+
+
+def validate_design_dates(project, row, *, presentation_date, shared_date, response, approval_date, handoff_date, approving=False, now=None):
+    if shared_date and shared_date < presentation_date:
+        reject("Sharing date cannot precede presentation")
+    if response != "Pending" and not shared_date:
+        reject("Record the sharing date before the customer response")
+    known_approval = approval_date or design_approval_day(project, row) or (recorded_day(now) if approving else None)
+    if approval_date and response != "Approved":
+        reject("An approval date requires customer approval")
+    if known_approval and shared_date and known_approval < shared_date:
+        reject("Customer approval cannot precede customer sharing")
+    if handoff_date:
+        if response != "Approved" or not shared_date:
+            reject("Company handoff requires customer approval")
+        if not known_approval:
+            reject("The historical approval date is unknown; record the actual approval date before company handoff")
+        if handoff_date < known_approval:
+            reject("Company handoff cannot precede customer approval")
+
+
+def approved_design(project, version_id=False):
+    row = current(project, "design_versions") if version_id is False else selected(project, "design_versions", version_id)
     if row["response"] != "Approved" or project.get("design_revision_pending") or row.get("workflow_cycle", 1) != project.get("workflow_cycle", 1):
         reject("The current design needs customer approval")
     return row
@@ -71,17 +136,15 @@ def transition(project, target, policy):
             quote = current(project, "quotation_versions")
             if quote["response"] != "Approved" or not quote.get("shared_date"):
                 reject("The current quotation must be shared and approved by the customer")
-            design = approved_design(project)
-            if quote["design_version_id"] != design["id"]:
-                reject("Quotation must be based on the current approved design")
+            approved_design(project, quote["design_version_id"])
         elif stage == "order":
             rules = policy.get("production")
             if rules is None:
                 reject("Department manager selection requires owner policy adoption")
             order = current(project, "orders")
-            quote = current(project, "quotation_versions")
-            design = approved_design(project)
-            if project.get("commercial_basis_invalidated") or order.get("authorization_invalidated") or quote.get("design_version_id") != design["id"] or not quote.get("shared_date") or order["status"] != "Confirmed" or not order["confirmed"] or quote["response"] != "Approved" or order["quotation_version_id"] != quote["id"]:
+            quote = selected(project, "quotation_versions", order["quotation_version_id"])
+            approved_design(project, quote["design_version_id"])
+            if project.get("commercial_basis_invalidated") or order.get("authorization_invalidated") or not quote.get("shared_date") or order["status"] != "Confirmed" or not order["confirmed"] or quote["response"] != "Approved":
                 reject("Confirm the order against the current approved quotation first")
             advance = order.get("advance", {})
             if not advance.get("received") or Decimal(advance.get("amount") or "0") <= 0 or not advance.get("date"):
@@ -135,18 +198,26 @@ def apply(project, command, payload, policy, user, now, validate):
     elif command == "design_update":
         require_stage("design")
         body = validate(DesignUpdate, payload)
-        row = current(project, "design_versions", body.version_id)
+        row = selected(project, "design_versions", body.version_id)
+        if production_has_started(project) and any(q.get("design_version_id") == row["id"] and any(o.get("quotation_version_id") == q["id"] and not o.get("authorization_invalidated") for o in project.get("orders", [])) for q in project.get("quotation_versions", [])):
+            reject("Production has started; use the owner-authorized Return to Design workflow")
         if project.get("design_revision_pending") or row.get("workflow_cycle", 1) != project.get("workflow_cycle", 1):
             reject("Present the revised design before editing its details")
-        if body.shared_date and body.shared_date < body.presentation_date:
-            reject("Sharing date cannot precede presentation")
-        if body.response != "Pending" and not body.shared_date:
-            reject("Record the sharing date before the customer response")
-        if body.handoff_date and (body.response != "Approved" or not body.shared_date or body.handoff_date < body.shared_date):
-            reject("Company handoff requires approval and cannot precede customer sharing")
+        approval_date = body.approval_date if "approval_date" in body.model_fields_set else row.get("approval_date")
+        shared_date = body.shared_date if "shared_date" in body.model_fields_set else row.get("shared_date")
+        handoff_date = body.handoff_date if "handoff_date" in body.model_fields_set else row.get("handoff_date")
+        validate_design_dates(project, row, presentation_date=body.presentation_date, shared_date=shared_date,
+            response=body.response, approval_date=approval_date, handoff_date=handoff_date,
+            approving=body.response == "Approved" and row.get("response") != "Approved", now=now)
+        if handoff_date and any(q.get("design_version_id") == row["id"] and q.get("received_date") and q["received_date"] < handoff_date for q in project.get("quotation_versions", [])):
+            reject("Company handoff cannot follow a related quotation receipt")
         if body.revision_count is not None and body.revision_count != project.get("design_revision_count"):
             reject("Design revisions are counted from customer revision requests; record a revision request instead")
-        row.update(body.model_dump(exclude={"version_id", "reason", "revision_count"}))
+        row.update(body.model_dump(exclude_unset=True, exclude={"version_id", "reason", "revision_count", "approval_date", "response_notes"}))
+        if "approval_date" in body.model_fields_set:
+            row["approval_date"] = body.approval_date
+        if "response_notes" in body.model_fields_set:
+            row["response_notes"] = body.response_notes
         row["corrected_by"], row["corrected_at"] = user.id, now
         project["approvals"].append(record({"scope": "customer_design", "subject_id": row["id"],
             "decision": body.response, "notes": body.response_notes, "reason": body.reason}))
@@ -154,14 +225,18 @@ def apply(project, command, payload, policy, user, now, validate):
         is_design = command.startswith("design")
         require_stage("design" if is_design else "quotation")
         body = validate(VersionDate, payload)
-        row = current(project, "design_versions" if is_design else "quotation_versions", body.version_id)
+        row = selected(project, "design_versions" if is_design else "quotation_versions", body.version_id)
+        if not is_design:
+            approved_design(project, row.get("design_version_id"))
         if is_design and row.get("workflow_cycle", 1) != project.get("workflow_cycle", 1):
             reject("Present the revised design before sharing or handoff")
         earliest = row.get("presentation_date") or row.get("received_date")
-        if body.date < earliest:
+        if earliest and body.date < earliest:
             reject("Sharing/handoff date cannot precede presentation/receipt")
         if command == "design_handoff":
-            approved_design(project)
+            approved_design(project, row["id"])
+            validate_design_dates(project, row, presentation_date=row["presentation_date"], shared_date=row.get("shared_date"),
+                response=row["response"], approval_date=row.get("approval_date"), handoff_date=body.date)
             if row.get("handoff_date"):
                 reject("This approved design handoff is already recorded")
             row["handoff_date"] = body.date
@@ -177,15 +252,26 @@ def apply(project, command, payload, policy, user, now, validate):
         body = validate(CustomerResponse, payload)
         if is_design and body.response == "Rejected":
             reject("Design response must be Pending, Approved or Changes Required")
-        row = current(project, "design_versions" if is_design else "quotation_versions", body.version_id)
+        row = selected(project, "design_versions" if is_design else "quotation_versions", body.version_id)
+        if not is_design:
+            approved_design(project, row.get("design_version_id"))
         if not row.get("shared_date"):
             reject("Record sharing this version with the customer first")
+        if is_design:
+            validate_design_dates(project, row, presentation_date=row["presentation_date"], shared_date=row["shared_date"],
+                response=body.response, approval_date=body.approval_date, handoff_date=row.get("handoff_date"),
+                approving=body.response == "Approved", now=now)
+        elif body.approval_date:
+            reject("Approval dates belong to design approvals")
         if row["response"] == "Approved":
             reject("An approved response is immutable; record a revision or a new version")
         if is_design and (project.get("design_revision_pending") or row.get("workflow_cycle", 1) != project.get("workflow_cycle", 1)):
             reject("Present the revised design before recording its approval")
         row["response"] = body.response
-        row["response_notes"] = body.notes
+        if "notes" in body.model_fields_set:
+            row["response_notes"] = body.notes
+        if is_design and body.approval_date:
+            row["approval_date"] = body.approval_date
         project["approvals"].append(record({"scope": "customer_design" if is_design else "customer_quotation",
             "subject_id": row["id"], "decision": body.response, "notes": body.notes}))
     elif command == "design_revision":
@@ -202,40 +288,63 @@ def apply(project, command, payload, policy, user, now, validate):
         body = validate(QuotationReceived, payload)
         if project.get("orders") and not project.get("commercial_basis_invalidated"):
             reject("This project already has a confirmed order. Record changed terms with an approved order amendment or a revised design cycle.")
-        design = approved_design(project)
-        if body.design_version_id != design["id"] or not design.get("handoff_date"):
+        design = approved_design(project, body.design_version_id)
+        if not design.get("handoff_date"):
             reject("Quotation must reference the current approved design sent to the company")
         if body.received_date < design["handoff_date"]:
             reject("Quotation receipt cannot precede design handoff")
-        project["quotation_versions"].append(record({**body.model_dump(), **document(project, body),
+        project["quotation_versions"].append(record({**body.model_dump(), **(document(project, body) if body.attachment_id or body.url else {}),
             "number": len(project["quotation_versions"]) + 1, "response": "Pending", "shared_date": None}))
     elif command == "order_confirm":
         require_stage("order")
         body = validate(OrderConfirmation, payload)
-        quote = current(project, "quotation_versions", body.quotation_version_id)
+        if production_has_started(project):
+            reject("Production has started; use the owner-authorized Return to Design workflow")
+        quote = selected(project, "quotation_versions", body.quotation_version_id)
         if project["orders"] and not project.get("commercial_basis_invalidated"):
             reject("Order is already confirmed; changed terms require an owner amendment")
-        design = approved_design(project)
-        if quote.get("design_version_id") != design["id"]:
-            reject("The current quotation must match the newly approved design")
+        design = approved_design(project, quote.get("design_version_id"))
+        if not design.get("handoff_date"):
+            reject("The selected design must have company handoff recorded")
         if quote["response"] != "Approved" or not quote["shared_date"]:
             reject("The current quotation needs sharing and customer approval")
         if body.order_date < quote["shared_date"]:
             reject("Order date cannot precede quotation sharing")
         if body.confirmation_document_id and not any(a["id"] == body.confirmation_document_id for a in project["attachments"]):
             reject("Confirmation document must belong to this project")
-        final_amount = body.final_amount if body.final_amount is not None else quote["amount"]
-        changed_amount = Decimal(final_amount) != Decimal(quote["amount"])
+        final_amount = body.final_amount if body.final_amount is not None else quote.get("amount")
+        if final_amount is None:
+            reject("Record the final order amount before confirming the order; the quotation amount can remain unspecified")
+        changed_amount = quote.get("amount") is not None and Decimal(final_amount) != Decimal(quote["amount"])
         if changed_amount and not body.amount_customer_approved:
             reject("Changed final order amount requires explicit customer approval")
         amendments = [record({"amount": final_amount, "date": body.order_date, "customer_approved": True,
                               "reason": "Customer approved changed final amount at order confirmation"})] if changed_amount else []
         project["orders"].append(record({**body.model_dump(), "confirmed": True, "status": "Confirmed",
             "workflow_cycle": project.get("workflow_cycle", 1), "approval_identity": str(uuid4()),
-            "original_amount": quote["amount"], "final_amount": final_amount, "amendments": amendments,
+            "original_amount": quote.get("amount"), "final_amount": final_amount, "amendments": amendments,
             "advance": {"received": False, "amount": "0.00", "date": None}}))
         project["order_amount"] = final_amount
+        project["customer_order_confirmation"] = "Yes"
         project["commercial_basis_invalidated"] = False
+    elif command == "order_confirmation":
+        require_stage("order")
+        body = validate(OrderConfirmationValue, payload)
+        if production_has_started(project):
+            reject("Production has started; use the owner-authorized Return to Design workflow")
+        if project.get("orders") and not project.get("commercial_basis_invalidated"):
+            row = current(project, "orders")
+            if row.get("authorization_invalidated"):
+                reject("Confirm a new order for the current approved quotation first")
+            if body.value == "Yes":
+                quote = selected(project, "quotation_versions", row.get("quotation_version_id"))
+                design = approved_design(project, quote.get("design_version_id"))
+                if quote.get("response") != "Approved" or not quote.get("shared_date") or not design.get("handoff_date"):
+                    reject("The selected quotation and design must be approved before confirming this order")
+            row.setdefault("confirmation_history", []).append(record({"before": row.get("confirmed"), "value": body.value}))
+            row["confirmed"] = body.value == "Yes"
+            row["approval_identity"] = str(uuid4())
+        project["customer_order_confirmation"] = body.value
     elif command == "order_document":
         require_stage("order")
         body = validate(OrderDocument, payload)
@@ -255,21 +364,35 @@ def apply(project, command, payload, policy, user, now, validate):
         row = current(project, "orders")
         if project.get("commercial_basis_invalidated") or row.get("authorization_invalidated"):
             reject("Confirm a new order for the current approved quotation first")
-        quote = current(project, "quotation_versions", row["quotation_version_id"])
-        if body.order_date < quote["shared_date"]:
+        quote_id = body.quotation_version_id or row["quotation_version_id"]
+        changed_quote = quote_id != row["quotation_version_id"]
+        quote = selected(project, "quotation_versions", quote_id)
+        if changed_quote:
+            if production_has_started(project):
+                reject("Production has started; use the owner-authorized Return to Design workflow")
+            design = approved_design(project, quote.get("design_version_id"))
+            if not design.get("handoff_date") or quote.get("response") != "Approved" or not quote.get("shared_date"):
+                reject("Select a shared, approved quotation for an approved design sent to company")
+            if quote.get("amount") is not None and Decimal(quote["amount"]) != Decimal(row["final_amount"]) and not body.amount_customer_approved:
+                reject("Changing the quotation while retaining different final terms requires explicit customer approval")
+        if not quote.get("shared_date") or body.order_date < quote["shared_date"]:
             reject("Order date cannot precede quotation sharing")
         following = [row.get("advance", {}).get("date"), project.get("production", {}).get("start_date"), *(amendment.get("date") for amendment in row.get("amendments", []))]
         if any(value and value < body.order_date for value in following):
             reject("Order date cannot follow an approved amendment, advance or production start")
-        row.setdefault("corrections", []).append(record({"before": {key: row.get(key) for key in ("order_date", "notes")}, "after": body.model_dump()}))
-        row.update(body.model_dump())
+        fields = {"order_date": body.order_date, "notes": body.notes}
+        if changed_quote:
+            fields["quotation_version_id"] = quote_id
+            row["approval_identity"] = str(uuid4())
+        row.setdefault("corrections", []).append(record({"before": {key: row.get(key) for key in fields}, "after": fields}))
+        row.update(fields)
     elif command == "order_advance":
         require_stage("order")
         body = validate(AdvancePayment, payload)
         row = current(project, "orders")
         if project.get("commercial_basis_invalidated") or row.get("authorization_invalidated"):
             reject("Confirm a new order for the current approved quotation first")
-        if row["status"] != "Confirmed":
+        if row["status"] != "Confirmed" or not row.get("confirmed", True):
             reject("Only confirmed orders can record an advance")
         if body.date and body.date < row["order_date"]:
             reject("Advance receipt cannot precede order confirmation")
@@ -321,6 +444,7 @@ def apply(project, command, payload, policy, user, now, validate):
             project["design_revision_pending"] = True
             project["commercial_basis_invalidated"] = True
             project["order_amount"] = None
+            project["customer_order_confirmation"] = "Not recorded"
             if project.get("orders"):
                 project["orders"][-1]["authorization_invalidated"] = True
             project["production"] = {"status": "Not Started", "start_date": None, "completion_date": None, "notes": None}
@@ -364,6 +488,8 @@ def apply(project, command, payload, policy, user, now, validate):
             reject("Record the completion date")
         if body.completion_date and (body.status != "Completed" or not body.start_date or body.completion_date < body.start_date):
             reject("Completion must follow start and have Completed status")
+        if expected == "production" and body.status != "Not Started" and project.get("orders"):
+            project["orders"][-1]["production_started"] = True
         project[expected] = body.model_dump()
         if body.status == "Completed":
             project[expected]["completion_identity"] = str(uuid4())

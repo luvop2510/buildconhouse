@@ -242,6 +242,7 @@ test('Q04 to Q09: all nine stages preserve versions, exact counters and late man
     await page.getByTestId('kitchen-version-share-date').fill('2026-10-19');
     await click('kitchen-version-share', isDesign ? 'design_share' : 'quotation_share');
     await page.getByTestId('kitchen-version-response-approved').click();
+    if (isDesign) await page.getByTestId('kitchen-design-approval-date').fill('2026-10-19');
     await click('kitchen-version-response-save', isDesign ? 'design_response' : 'quotation_response');
   }
   await reviewDistinctIfNeeded(page);
@@ -271,8 +272,8 @@ test('Q04 to Q09: all nine stages preserve versions, exact counters and late man
   await page.getByTestId('kitchen-design-budget').fill('Within the agreed project budget');
   const firstDesign = await click('kitchen-design-present', 'design_present');
   expect(firstDesign.design_revision_count).toBe(0);
-  await openDisclosure(page, 'design-revision');
-  await page.getByTestId('kitchen-design-revision-reason').fill('Customer requests one additional cabinet');
+  await openDisclosure(page, 'design-edit');
+  await page.getByTestId('kitchen-design-edit-notes').fill('Customer requests one additional cabinet');
   const requested = await click('kitchen-design-revision', 'design_revision');
   expect(requested.design_revision_count).toBe(1);
   await page.getByTestId('kitchen-design-date').fill('2026-10-19');
@@ -294,16 +295,12 @@ test('Q04 to Q09: all nine stages preserve versions, exact counters and late man
   await page.getByTestId('kitchen-document-upload').click();
   expect((await quotationUpload).ok()).toBeTruthy();
   await openProjectPage(page, 'stage');
-  await page.getByRole('button', { name: 'Choose a document', exact: true }).click();
-  await page.getByRole('button', { name: 'company-quotation.pdf', exact: true }).click();
   await page.getByTestId('kitchen-quotation-amount').fill('1000.01');
   await click('kitchen-quotation-receive', 'quotation_receive');
   await shareApprove(false);
   await openDisclosure(page, 'quotation-version');
   await page.getByTestId('kitchen-quotation-date').fill('2026-10-19');
   await expect(page.getByTestId('kitchen-quotation-url')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Choose a document', exact: true }).click();
-  await page.getByRole('button', { name: 'company-quotation.pdf', exact: true }).click();
   await page.getByTestId('kitchen-quotation-amount').fill('1100.01');
   const replacement = await click('kitchen-quotation-receive', 'quotation_receive');
   expect(replacement.quotation_versions[0].amount).toBe('1000.01');
@@ -323,17 +320,14 @@ test('Q04 to Q09: all nine stages preserve versions, exact counters and late man
   await blocked('kitchen-advance-production');
   await page.getByTestId('kitchen-order-date').fill('2026-10-19');
   await expect(page.getByTestId('kitchen-order-amount')).toHaveValue('1100.01');
+  await page.getByTestId('kitchen-order-confirmed-yes').click();
   await click('kitchen-order-confirm', 'order_confirm');
   await openDisclosure(page, 'order-edit');
   await page.getByTestId('kitchen-order-edit-notes').fill('Corrected customer order notes');
   await click('kitchen-order-edit-save', 'order_update');
   await expect(page.getByTestId('kitchen-order-edit-notes')).toHaveValue('Corrected customer order notes');
   await expect(page.getByTestId('kitchen-unsaved-notice')).toHaveCount(0);
-  await openDisclosure(page, 'order-document');
-  await page.getByRole('button', { name: 'Choose a document', exact: true }).click();
-  await page.getByRole('button', { name: 'company-quotation.pdf', exact: true }).click();
-  const documentedOrder = await click('kitchen-order-document', 'order_document');
-  expect(documentedOrder.orders.at(-1).confirmation_document_id).toBeTruthy();
+  await expect(page.getByTestId('kitchen-disclose-order-document')).toHaveCount(0);
   await blocked('kitchen-advance-production');
   await page.getByTestId('kitchen-advance-received-yes').click();
   await page.getByTestId('kitchen-advance-amount').fill('0.01');
@@ -508,7 +502,7 @@ test('D06: owner reasoned return to Design preserves prior approved commerce and
   await command('design_present', { presentation_date: '2026-10-19', url: 'https://example.test/synthetic-design.pdf' });
   const designId = project.design_versions.at(-1).id;
   await command('design_share', { version_id: designId, date: '2026-10-19' });
-  await command('design_response', { version_id: designId, response: 'Approved' });
+  await command('design_response', { version_id: designId, response: 'Approved', approval_date: '2026-10-19' });
   await command('design_handoff', { version_id: designId, date: '2026-10-19' });
   await command('advance_stage', { target_stage: 'quotation' });
   await command('quotation_receive', { design_version_id: designId, received_date: '2026-10-19', amount: '999.99', url: 'https://example.test/synthetic-quotation.pdf' });
@@ -530,7 +524,7 @@ test('D06: owner reasoned return to Design preserves prior approved commerce and
   await page.keyboard.press('Escape');
   await context.addCookies([{ name: 'kitchen_acceptance_session', value: 'owner', url: baseURL! }]);
   await page.goto(`/kitchen/${project.id}/stages/production`);
-  await page.getByLabel('Production notes', { exact: true }).fill('Unsaved earlier-cycle production draft');
+  await page.getByTestId('kitchen-production-notes').fill('Unsaved earlier-cycle production draft');
   await expect(page.getByTestId('kitchen-unsaved-notice')).toBeVisible();
   await expect(page.getByTestId('kitchen-return-design')).toHaveCount(0);
   await page.getByTestId('kitchen-project-actions').click();
@@ -550,7 +544,7 @@ test('D06: owner reasoned return to Design preserves prior approved commerce and
   expect(revised.design_versions[0].response).toBe('Approved');
   expect(revised.quotation_versions[0].response).toBe('Approved');
   await expect(page.getByTestId('kitchen-advance-quotation')).toBeEnabled();
-  await page.getByRole('textbox', { name: 'Design notes', exact: true }).fill('Revised design for the new approval cycle');
+  await page.getByTestId('kitchen-design-new-notes').fill('Revised design for the new approval cycle');
   await expect(page.getByTestId('kitchen-design-present')).toBeEnabled();
   async function saveNewCycle(testId: string, name: string) {
     const saved = page.waitForResponse(value => value.url().endsWith('/commands') && value.request().postDataJSON()?.command === name);
@@ -563,6 +557,7 @@ test('D06: owner reasoned return to Design preserves prior approved commerce and
   await page.getByTestId('kitchen-version-share-date').fill('2026-10-19');
   await saveNewCycle('kitchen-version-share', 'design_share');
   await page.getByTestId('kitchen-version-response-approved').click();
+  await page.getByTestId('kitchen-design-approval-date').fill('2026-10-19');
   await saveNewCycle('kitchen-version-response-save', 'design_response');
   await page.getByTestId('kitchen-design-handoff-date').fill('2026-10-19');
   await saveNewCycle('kitchen-design-handoff', 'design_handoff');
@@ -580,7 +575,7 @@ test('D06: owner reasoned return to Design preserves prior approved commerce and
   await page.getByRole('menuitem', { name: 'Orders', exact: true }).click();
   await expect(page.getByText('Historical order · Confirmed', { exact: true })).toBeVisible();
   await expect(page.getByText(/Original ₹999\.99.*Final ₹999\.99/)).toBeVisible();
-  await expect(page.getByText('Quotation version 1', { exact: true })).toBeVisible();
+  await expect(page.getByText('Quotation revision 1', { exact: true })).toBeVisible();
   await expect(page.getByText('Confirmation document: Not attached', { exact: true })).toBeVisible();
   await page.getByTestId('kitchen-history-category').click();
   await page.getByRole('menuitem', { name: 'Design versions', exact: true }).click();
@@ -717,7 +712,7 @@ test('Q18 v4: project pages separate work from files and history while preservin
   await page.goto(`/kitchen/${project.id}/stages/design`);
   await page.getByTestId('kitchen-design-date').fill('2026-10-20');
   await page.getByTestId('kitchen-design-requirements').fill('Requirements retained across navigation');
-  await page.getByRole('textbox', { name: 'Design notes', exact: true }).fill('Unsaved design presentation survives navigation');
+  await page.getByTestId('kitchen-design-new-notes').fill('Unsaved design presentation survives navigation');
   await openProjectPage(page, 'documents');
   await openProjectPage(page, 'history');
   await openProjectPage(page, 'assignments');
@@ -727,7 +722,7 @@ test('Q18 v4: project pages separate work from files and history while preservin
   await openProjectPage(page, 'stage');
   await expect(page.getByTestId('kitchen-design-date')).toHaveValue('2026-10-20');
   await expect(page.getByTestId('kitchen-design-requirements')).toHaveValue('Requirements retained across navigation');
-  await expect(page.getByRole('textbox', { name: 'Design notes', exact: true })).toHaveValue('Unsaved design presentation survives navigation');
+  await expect(page.getByTestId('kitchen-design-new-notes')).toHaveValue('Unsaved design presentation survives navigation');
   await expect(page.getByTestId('kitchen-document-pick')).toHaveCount(0);
   await expect(page.getByTestId('kitchen-history-category')).toHaveCount(0);
   await expect(page.getByTestId('kitchen-exception-reason')).toHaveCount(0);
@@ -987,7 +982,7 @@ test('Kitchen named stages preview without writes and design details can be corr
   await expect(page.getByTestId('kitchen-disclose-design-edit')).toBeVisible();
   await openDisclosure(page, 'design-edit');
   await page.getByTestId('kitchen-design-edit-requirements').fill('First saved correction');
-  await page.getByTestId('kitchen-design-edit-reason').fill('Correct requirements before sharing');
+  await page.getByTestId('kitchen-design-edit-notes').fill('Correct requirements before sharing');
   const firstCorrection = page.waitForResponse(response => response.url().endsWith('/commands') && response.request().postDataJSON()?.command === 'design_update');
   await page.getByTestId('kitchen-design-edit-save').click();
   expect((await firstCorrection).ok()).toBeTruthy();
@@ -1003,9 +998,10 @@ test('Kitchen named stages preview without writes and design details can be corr
   await page.getByRole('button', { name: 'Shared with customer: Yes', exact: true }).click();
   await page.getByTestId('kitchen-design-edit-shared').fill('2026-10-20');
   await page.getByTestId('kitchen-design-edit-response-approved').click();
+  await page.getByTestId('kitchen-design-edit-approval-date').fill('2026-10-20');
   await page.getByRole('button', { name: 'Sent to company: Yes', exact: true }).click();
   await page.getByTestId('kitchen-design-edit-handoff').fill('2026-10-20');
-  await page.getByTestId('kitchen-design-edit-reason').fill('Correct the recorded presentation details');
+  await page.getByTestId('kitchen-design-edit-notes').fill('Correct the recorded presentation details');
   const update = page.waitForResponse(response => response.url().endsWith('/commands') && response.request().postDataJSON()?.command === 'design_update');
   await page.getByTestId('kitchen-design-edit-save').click();
   const saved = await update;

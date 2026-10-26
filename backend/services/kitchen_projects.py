@@ -32,6 +32,22 @@ HISTORY_FIELDS = ("activity", "command_receipts", "design_versions", "quotation_
 DECISION_CONTRACT = "2026-10-20"
 
 
+def order_basis_expression(expression, *, fallback_quotation=False):
+    """Resolve the latest order's explicit references without loading history."""
+    def referenced(field, reference):
+        return {"$ifNull": [{"$arrayElemAt": [{"$filter": {"input": {"$ifNull": ["$" + field, []]},
+            "as": "version", "cond": {"$eq": ["$$version.id", reference]}}}, 0]}, {}]}
+    quotation = referenced("quotation_versions", "$$order.quotation_version_id")
+    if fallback_quotation:
+        quotation = {"$cond": [{"$and": [{"$ne": ["$$order", {}]},
+            {"$not": [{"$ifNull": ["$commercial_basis_invalidated", False]}]},
+            {"$not": [{"$ifNull": ["$$order.authorization_invalidated", False]}]}]}, quotation,
+            {"$ifNull": [{"$arrayElemAt": [{"$ifNull": ["$quotation_versions", []]}, -1]}, {}]}]}
+    return {"$let": {"vars": {"order": {"$ifNull": [{"$arrayElemAt": [{"$ifNull": ["$orders", []]}, -1]}, {}]}},
+        "in": {"$let": {"vars": {"quote": quotation},
+        "in": {"$let": {"vars": {"design": referenced("design_versions", "$$quote.design_version_id")}, "in": expression}}}}}}
+
+
 def attention_expressions(policy, now=None):
     """One server definition for dashboard metrics and their list drilldowns.
 
@@ -51,9 +67,7 @@ def attention_expressions(policy, now=None):
                 {"$ne": [{"$ifNull": [decision + ".policy_version", None]}, policy["version"]]},
                 {"$ne": [{"$ifNull": [decision + ".subject_id", None]}, subject]},
                 {"$ne": [{"$ifNull": [decision + ".decision", None]}, "Approved"]}]}]})
-    last_versions = {name: {"$ifNull": [{"$arrayElemAt": [{"$ifNull": ["$" + field, []]}, -1]}, {}]}
-                     for name, field in (("order", "orders"), ("quote", "quotation_versions"), ("design", "design_versions"))}
-    valid_order = {"$let": {"vars": last_versions, "in": {"$and": [
+    valid_order = order_basis_expression({"$and": [
         active,
         {"$not": [{"$ifNull": ["$commercial_basis_invalidated", False]}]},
         {"$not": [{"$ifNull": ["$design_revision_pending", False]}]},
@@ -66,7 +80,7 @@ def attention_expressions(policy, now=None):
         {"$eq": ["$$order.quotation_version_id", "$$quote.id"]},
         {"$eq": ["$$quote.design_version_id", "$$design.id"]},
         {"$eq": [{"$ifNull": ["$$design.workflow_cycle", 1]}, {"$ifNull": ["$workflow_cycle", 1]}]},
-    ]}}}
+    ]})
     return {"active": active, "on_hold": {"$eq": ["$status", "On Hold"]},
         "pending_approval": {"$and": [active, {"$or": pending}]},
         "next_action_overdue": {"$literal": False},
@@ -150,14 +164,14 @@ def current_status(project):
     if stage == "order":
         if project.get("commercial_basis_invalidated") or (project.get("orders") and project["orders"][-1].get("authorization_invalidated")):
             return "Pending"
+        if project.get("orders") and not project["orders"][-1].get("confirmed"):
+            return "Pending"
         return project["orders"][-1]["status"] if project["orders"] else "Pending"
     if stage in {"design", "quotation"}:
         designs = project.get("design_versions", [])
-        if (project.get("design_revision_pending") or not designs
-                or designs[-1].get("workflow_cycle", 1) != project.get("workflow_cycle", 1)):
-            return "Pending"
         rows = project["design_versions" if stage == "design" else "quotation_versions"]
-        if stage == "quotation" and rows and rows[-1].get("design_version_id") != designs[-1]["id"]:
+        design = next((row for row in designs if rows and row["id"] == rows[-1].get("design_version_id")), None) if stage == "quotation" else designs[-1] if designs else None
+        if project.get("design_revision_pending") or not design or design.get("workflow_cycle", 1) != project.get("workflow_cycle", 1):
             return "Pending"
         return rows[-1]["response"] if rows else "Pending"
     return project.get(stage, {}).get("status", "Pending")
@@ -217,11 +231,18 @@ class KitchenProjectService:
     def __init__(self, database):
         self.db = database
 
-    async def policy(self):
+    async def policy(self, *, ensure=False):
         found = await self.db.kitchen_configuration.find_one({"_id": POLICY_ID})
         if found:
             return resolved_policy({key: value for key, value in found.items() if key not in {"_id", "active_command_count", "command_admissions", "active_create_token"}})
-        return resolved_policy({"id": POLICY_ID, "version": 1, **PolicyFields().model_dump(), "activity": []})
+        policy = resolved_policy({"id": POLICY_ID, "version": 1, **PolicyFields().model_dump(), "activity": []})
+        if ensure:
+            try:
+                await self.db.kitchen_configuration.insert_one({"_id": POLICY_ID, **policy,
+                    "active_command_count": 0, "command_admissions": {}})
+            except DuplicateKeyError:
+                pass
+        return policy
 
     @asynccontextmanager
     async def admission(self, user, action):
@@ -232,12 +253,7 @@ class KitchenProjectService:
         conservative configuration block for maintenance reconciliation.
         """
         await access.require_capability(self.db, user, action)
-        policy = await self.policy()
-        baseline = {"_id": POLICY_ID, **policy, "active_command_count": 0, "command_admissions": {}}
-        try:
-            await self.db.kitchen_configuration.insert_one(baseline)
-        except DuplicateKeyError:
-            pass
+        policy = await self.policy(ensure=True)
         token = str(uuid4())
         field = "command_admissions." + token
         selector = {"_id": POLICY_ID, "version": policy["version"], "$or": [
@@ -316,15 +332,23 @@ class KitchenProjectService:
     async def public(self, project, user, policy, *, summary=False, replayed=False):
         result = {k: copy.deepcopy(v) for k, v in project.items() if k not in {"_id", "command_receipts", "creation_fingerprint", "customer_phone_normalized", "customer_name_normalized"}}
         if summary:
-            version_fields = {"id", "number", "response", "shared_date", "handoff_date", "presentation_date", "received_date",
+            version_fields = {"id", "number", "response", "approval_date", "shared_date", "handoff_date", "presentation_date", "received_date",
                               "amount", "design_version_id", "workflow_cycle", "attachment_id", "url", "requirements", "budget_discussion"}
             order_fields = {"id", "confirmed", "status", "order_date", "final_amount", "original_amount", "quotation_version_id",
                             "confirmation_document_id", "authorization_invalidated", "advance"}
+            order = project.get("orders", [])[-1] if project.get("orders") else None
+            bound_order = order if order and not project.get("commercial_basis_invalidated") and not order.get("authorization_invalidated") else None
+            quote = next((row for row in project.get("quotation_versions", []) if bound_order and row["id"] == bound_order["quotation_version_id"]), None)
+            if not bound_order and project.get("quotation_versions"):
+                quote = project["quotation_versions"][-1]
+            quotation_context = bool(quote and (bound_order or project["stage"] in {"quotation", "order"}))
+            design = next((row for row in project.get("design_versions", []) if quote and row["id"] == quote["design_version_id"]), None)
             for source, target, fields in (("design_versions", "current_design", version_fields),
                                            ("quotation_versions", "current_quotation", version_fields),
                                            ("orders", "current_order", order_fields)):
-                latest = project.get(source, [])
-                result[target] = {key: copy.deepcopy(value) for key, value in latest[-1].items() if key in fields} if latest else None
+                rows = project.get(source, [])
+                selected = (design if source == "design_versions" else quote if source == "quotation_versions" else order) if bound_order or quotation_context and source == "design_versions" else rows[-1] if rows else None
+                result[target] = {key: copy.deepcopy(value) for key, value in selected.items() if key in fields} if selected else None
             for key in HISTORY_FIELDS:
                 result.pop(key, None)
         result["project_reference"] = project.get("project_reference") or project["reference"]
@@ -626,11 +650,10 @@ class KitchenProjectService:
         return result
 
     async def command(self, user, project_id, body):
-        async with self.admission(user, "update"):
-            return await self._command(user, project_id, body)
+        async with self.admission(user, "update") as policy:
+            return await self._command(user, project_id, body, policy)
 
-    async def _command(self, user, project_id, body):
-        policy = await self.policy()
+    async def _command(self, user, project_id, body, policy):
         project = await self.db.kitchen_projects.find_one({"id": project_id, "floor_id": access.KITCHEN_FLOOR})
         await access.require_project(self.db, user, project, policy, "update")
         digest = fingerprint({"command": body.command, "payload": body.payload})
@@ -716,7 +739,8 @@ class KitchenProjectService:
         elif command == "metadata":
             updated.update(validate(MetadataPayload, payload).model_dump(exclude_unset=True))
         elif command in workflow.COMMANDS:
-            if command in {"design_revision", "design_update"} and project.get("design_versions") and project["design_versions"][-1].get("response") == "Approved" and not access.owner(user):
+            selected_design = next((row for row in project.get("design_versions", []) if row["id"] == payload.get("version_id")), {})
+            if command in {"design_revision", "design_update"} and selected_design.get("response") == "Approved" and not access.owner(user):
                 raise HTTPException(403, "Only the owner can authorize changing an approved design")
             if command == "approval":
                 from models_kitchen import InternalApproval
@@ -729,8 +753,13 @@ class KitchenProjectService:
             if command == "order_confirm" and payload.get("final_amount") is not None:
                 from models_kitchen import OrderConfirmation
                 confirmation = validate(OrderConfirmation, payload)
-                current_quote = project.get("quotation_versions", [{}])[-1] if project.get("quotation_versions") else {}
+                current_quote = next((row for row in project.get("quotation_versions", []) if row["id"] == confirmation.quotation_version_id), {})
                 if current_quote.get("amount") is not None and Decimal(confirmation.final_amount) != Decimal(current_quote["amount"]) and not access.owner(user):
+                    raise HTTPException(403, "Only the owner can authorize changed order terms")
+            if command == "order_update" and payload.get("quotation_version_id") and project.get("orders"):
+                quote = next((row for row in project.get("quotation_versions", []) if row["id"] == payload["quotation_version_id"]), {})
+                order = project["orders"][-1]
+                if payload["quotation_version_id"] != order["quotation_version_id"] and quote.get("amount") is not None and Decimal(order["final_amount"]) != Decimal(quote["amount"]) and not access.owner(user):
                     raise HTTPException(403, "Only the owner can authorize changed order terms")
             if command in {"order_status", "exception", "order_amend"} and not access.owner(user):
                 raise HTTPException(403, "Only the owner can authorize exceptions or restricted changes")
@@ -753,7 +782,7 @@ class KitchenProjectService:
         updated["assigned_to"] = updated["assignments"].get(updated["stage"])
         updated["assigned_to_name"] = updated["assignment_names"].get(updated["stage"])
         record = {"fields": sorted(payload), "from_stage": project["stage"], "to_stage": updated["stage"], "changes": {}}
-        for field in ("lead", "visit", "cad", "production", "installation", "assignments", "next_action", "deadline", "target_completion_date", "duplicate_review", "lifecycle_status", "workflow_cycle", "commercial_basis_invalidated", "manual_stage_navigation", "completion_date", "closure_pending_reason"):
+        for field in ("lead", "visit", "cad", "production", "installation", "assignments", "next_action", "deadline", "target_completion_date", "duplicate_review", "lifecycle_status", "workflow_cycle", "commercial_basis_invalidated", "manual_stage_navigation", "completion_date", "closure_pending_reason", "customer_order_confirmation"):
             if project.get(field) != updated.get(field):
                 record["changes"][field] = {"before": project.get(field), "after": updated.get(field)}
         if command in workflow.COMMANDS:
@@ -767,8 +796,9 @@ class KitchenProjectService:
                     record["changes"][key] = {"before": project.get(key), "after": updated.get(key)}
             if command == "design_update":
                 record["reason"] = payload["reason"]
-                record["changes"]["design"] = {"before": project["design_versions"][-1], "after": updated["design_versions"][-1]}
-            if command == "order_update":
+                record["changes"]["design"] = {"before": selected_design,
+                    "after": next(row for row in updated["design_versions"] if row["id"] == payload["version_id"])}
+            if command in {"order_update", "order_confirmation"} and project.get("orders"):
                 record["changes"]["order"] = {"before": project["orders"][-1], "after": updated["orders"][-1]}
             if command == "order_document":
                 record["changes"]["confirmation_document_id"] = {
@@ -904,11 +934,23 @@ class KitchenProjectService:
         # Current-stage assignment is persisted as a query projection field.
         total = await self.db.kitchen_projects.count_documents(compiled)
         sort_field = {"customer": "customer.name", "assignee": "assigned_to_name", "order_amount": "order_amount_paise"}.get(sort, sort)
-        projection = {key: 0 for key in HISTORY_FIELDS}
+        projection = {key: 0 for key in HISTORY_FIELDS if key not in {"design_versions", "quotation_versions", "orders"}}
+        versions = {}
         # Stage tables need the current commercial fields, never the full
-        # version ledger. Mongo returns only the latest version; public() then
-        # whitelists its bounded display fields and removes embedded history.
-        projection.update({key: {"$slice": -1} for key in ("design_versions", "quotation_versions", "orders")})
-        rows = await self.db.kitchen_projects.find(compiled, projection).sort([(sort_field, 1 if direction == "asc" else -1), ("id", 1)]).skip((page - 1) * limit).limit(limit).to_list(limit)
+        # version ledger. Keep the explicit order basis even when it references
+        # an older design/quotation, returning at most one row per ledger.
+        for key, variable in (("design_versions", "design"), ("quotation_versions", "quote")):
+            versions[key] = order_basis_expression({"$cond": [{"$or": [
+                {"$and": [
+                {"$ne": ["$$order", {}]}, {"$not": [{"$ifNull": ["$commercial_basis_invalidated", False]}]},
+                {"$not": [{"$ifNull": ["$$order.authorization_invalidated", False]}]}]},
+                {"$in": ["$stage", ["quotation", "order"]]}]},
+                {"$cond": [{"$ne": ["$$" + variable, {}]}, ["$$" + variable], []]},
+                {"$slice": [{"$ifNull": ["$" + key, []]}, -1]}]}, fallback_quotation=True)
+        versions["orders"] = {"$slice": [{"$ifNull": ["$orders", []]}, -1]}
+        rows = await self.db.kitchen_projects.aggregate([{"$match": compiled},
+            {"$sort": {sort_field: 1 if direction == "asc" else -1, "id": 1}},
+            {"$skip": (page - 1) * limit}, {"$limit": limit},
+            {"$set": versions}, {"$project": projection}]).to_list(limit)
         return {"rows": [await self.public(row, user, policy, summary=True) for row in rows], "total": total, "page": page, "limit": limit}
 

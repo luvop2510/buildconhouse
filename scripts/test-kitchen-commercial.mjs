@@ -8,24 +8,30 @@ const require = createRequire(import.meta.url);
 const React = require('react');
 let drafts = {};
 let feedback = null;
+let componentState = [];
+let hookIndex = 0;
 const host = type => function TestHost(props) { return React.createElement(type, props, props.children); };
 const stages = ['lead', 'visit', 'cad', 'design', 'quotation', 'order', 'production', 'installation', 'completed'];
 const labels = Object.fromEntries(stages.map(stage => [stage, stage[0].toUpperCase() + stage.slice(1)]));
 const mocks = {
-  react: { ...React, useRef: value => ({ current: value }), useEffect: () => {}, useId: () => 'disclosure' },
+  react: { ...React, useState: initial => { const index = hookIndex++; if (!(index in componentState)) componentState[index] = initial; return [componentState[index], value => { componentState[index] = typeof value === 'function' ? value(componentState[index]) : value; }]; }, useRef: value => ({ current: value }), useEffect: () => {}, useId: () => 'disclosure' },
   'expo-router': { useRouter: () => ({ push: path => calls.push(['navigate', path]) }) },
   'react-native': { View: host('view'), Pressable: host('button'), Linking: { openURL: () => {} } },
   '@/src/components/AppText': { Text: host('text') },
   '@/src/components/ds': { Alert: ({ title, description, action }) => React.createElement('alert', {}, title, description, action) },
   '@/src/api/kitchenProjects': { KITCHEN_STAGES: stages, STAGE_LABELS: labels },
-  './shared': { Choice: host('choice'), KitchenPanel: host('panel'), KitchenDetails: ({ items, testID }) => React.createElement('details', {testID}, items.map(item => `${item.label}: ${item.value}`).join(' ')), displayDate: value => value || 'Not recorded', historicalCount: value => value || 0, rupees: value => value || '0.00' },
-  './KitchenFilters': { KitchenDateField: host('date') },
+  './shared': { Choice: host('choice'), KitchenPanel: host('panel'), KitchenDetails: ({ items, testID }) => React.createElement('details', { testID }, items.map(item => `${item.label}: ${item.value}`).join(' ')), displayDate: value => value || 'Not recorded', historicalCount: value => value || 0, rupees: value => value || '0.00' },
+  './KitchenFilters': { KitchenDateField: host('date'), KitchenSelect: host('select') },
   './KitchenDates': { kitchenToday: () => '2026-10-26' },
   './KitchenDocuments': { DocumentChoice: host('document') },
-  './KitchenProjectState': { kitchenProjectPath: (id, suffix) => `/kitchen/${id}${suffix}`, useKitchenDraft: (key, initial) => [drafts[key] ?? initial, () => {}], useKitchenProject: () => ({ resetDraftValue: () => {}, returnTo: '/kitchen/stages/lead', submission: { setError: update => { feedback = typeof update === 'function' ? update(feedback) : update; } } }) },
+  './KitchenProjectState': { kitchenProjectPath: (id, suffix) => `/kitchen/${id}${suffix}`, useKitchenDraft: (key, initial) => [drafts[key] ?? initial, value => { drafts[key] = typeof value === 'function' ? value(drafts[key] ?? initial) : value; }], useKitchenProject: () => ({ resetDraftValue: () => {}, returnTo: '/kitchen/stages/lead', submission: { setError: update => { feedback = typeof update === 'function' ? update(feedback) : update; } } }) },
   '@/src/theme/tokens': { radius: {}, spacing: {} },
   './KitchenPrimitives': { KitchenButton: host('button'), KitchenTextField: host('input'), KitchenFieldRow: host('row'), kitchenColors: {}, kitchenType: {} },
 };
+const versionExports = {};
+const versionSource = await readFile(new URL('../src/components/kitchen/KitchenVersions.ts', import.meta.url), 'utf8');
+new Function('exports', ts.transpileModule(versionSource, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText)(versionExports);
+mocks['./KitchenVersions'] = versionExports;
 const source = await readFile(new URL('../src/components/kitchen/CommercialStages.tsx', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
 const exports = {};
@@ -38,34 +44,40 @@ function flatten(node) {
   return [node, ...flatten(node.props.children)];
 }
 const calls = [];
-const design = { id: 'design', number: 1, workflow_cycle: 1, response: 'Approved', handoff_date: '2026-10-20' };
+const design = { id: 'design', number: 1, workflow_cycle: 1, response: 'Approved', approval_date: '2026-10-19', shared_date: '2026-10-18', handoff_date: '2026-10-20', requirements: 'Version one requirements', notes: 'Version one internal notes' };
 const quotation = { id: 'quotation', number: 1, design_version_id: 'design', response: 'Approved', amount: '1000.00', shared_date: '2026-10-21' };
 const order = { id: 'order', quotation_version_id: 'quotation', confirmed: true, status: 'Confirmed', order_date: '2026-10-22', original_amount: '1000.00', final_amount: '1000.00', advance: { received: false } };
 const base = { id: 'project', workflow_cycle: 1, visit: {}, design_versions: [design], quotation_versions: [], orders: [], permissions: { can_approve_exceptions: true }, attachments: [{ id: 'file', filename: 'quotation.pdf' }] };
 function render(stage, fields = {}, values = {}, command = async (...args) => { calls.push(args); return true; }) {
   drafts = Object.fromEntries(Object.entries(values).map(([key, value]) => [`commercial.cycle.1.${key}`, value]));
-  const nodes = flatten(exports.CommercialStages({ project: { ...base, stage, ...fields }, stage, disabled: false, command }));
-  return { nodes, text: nodes.filter(node => typeof node === 'string').join(' '), control: id => nodes.find(node => node.props?.testID === id) };
+  componentState = [];
+  const props = { project: { ...base, stage, ...fields }, stage, disabled: false, command };
+  function refresh() {
+    hookIndex = 0;
+    const nodes = flatten(exports.CommercialStages(props));
+    return { nodes, text: nodes.filter(node => typeof node === 'string').join(' ').replace(/\s+/g, ' '), control: id => nodes.find(node => node.props?.testID === id), refresh };
+  }
+  return refresh();
 }
 let view = render('quotation', { design_versions: [] });
 assert.match(view.text, /Record a design presentation in Design first/);
 assert.equal(view.control('kitchen-quotation-receive').props.disabled, true);
 await view.control('kitchen-complete-design').props.onPress();
 assert.deepEqual(calls.pop(), ['move_stage', { target_stage: 'design' }]);
-await view.control('kitchen-quotation-upload').props.onPress();
-assert.deepEqual(calls.pop(), ['navigate', '/kitchen/project/documents']);
+assert.equal(view.control('kitchen-quotation-upload'), undefined);
+assert.equal(view.nodes.some(node => node.type === 'document'), false, 'Quotation creation no longer requests a document');
 view = render('quotation', {}, { 'quotation.file': 'file', 'quotation.amount': '1200.25' });
 assert.equal(view.control('kitchen-quotation-receive').props.disabled, false);
 await view.control('kitchen-quotation-receive').props.onPress();
-assert.equal(calls.pop()[1].attachment_id, 'file');
-for (const amount of ['', '-1', '1.111', 'NaN', '1000000000000.01']) {
+assert.deepEqual(calls.pop(), ['quotation_receive', { design_version_id: 'design', amount: '1200.25', received_date: '2026-10-26', notes: null }]);
+for (const amount of ['-1', '1.111', 'NaN', '1000000000000.01']) {
   view = render('quotation', {}, { 'quotation.file': 'file', 'quotation.amount': amount });
   assert.equal(view.control('kitchen-quotation-receive').props.disabled, true, amount);
 }
 view = render('quotation', {}, { 'quotation.file': 'file', 'quotation.amount': '0.00' });
 assert.equal(view.control('kitchen-quotation-receive').props.disabled, false, 'Zero quotation amounts remain compatible with the API');
-view = render('order', { quotation_versions: [quotation] });
-assert.match(view.text, /Order status: Pending/);
+view = render('order', { quotation_versions: [quotation] }, { 'order.confirmed': 'Yes' });
+assert.match(view.text, /Pending confirmation/);
 assert.equal(view.control('kitchen-order-confirm').props.disabled, false, 'A pending order can be confirmed against its approved quotation');
 await view.control('kitchen-order-confirm').props.onPress();
 assert.equal(calls.pop()[0], 'order_confirm');
@@ -76,8 +88,74 @@ await view.control('kitchen-complete-quotation').props.onPress();
 assert.deepEqual(calls.pop(), ['move_stage', { target_stage: 'quotation' }]);
 view = render('order', { quotation_versions: [quotation], design_revision_pending: true });
 assert.equal(view.control('kitchen-order-confirm').props.disabled, true, 'An approved old quotation cannot confirm a pending design revision');
-assert.match(view.text, /current design needs approval/);
+assert.match(view.text, /selected design needs approval/);
 assert.ok(view.control('kitchen-complete-quotation'), 'Recovery returns through the adjacent Quotation stage');
+for (const amount of ['', '   ']) {
+  view = render('quotation', {}, { 'quotation.amount': amount });
+  assert.equal(view.control('kitchen-quotation-receive').props.disabled, false, 'A quotation saves without an amount or document');
+  await view.control('kitchen-quotation-receive').props.onPress();
+  assert.equal(calls.pop()[1].amount, null, 'Blank amount is missing rather than zero');
+}
+for (const value of ['Not recorded', 'Yes', 'No']) {
+  view = render('order', { quotation_versions: [quotation], customer_order_confirmation: value });
+  assert.match(view.text, new RegExp(`Customer order confirmation: ${value}`));
+  assert.deepEqual(view.control('kitchen-order-confirmed').props.values, ['Not recorded', 'Yes', 'No']);
+  await view.control('kitchen-order-confirmation-save').props.onPress();
+  assert.deepEqual(calls.pop(), ['order_confirmation', { value }]);
+  assert.equal(view.control('kitchen-order-confirm').props.disabled, value !== 'Yes');
+}
+view = render('order', { quotation_versions: [quotation], orders: [order] }, { 'order.statusEdit.expanded': true, 'order.status': 'On Hold', 'order.statusReason': 'Awaiting internal review' });
+assert.deepEqual(view.control('kitchen-order-status').props.values, ['Confirmed', 'On Hold', 'Cancelled']);
+await view.control('kitchen-order-status-save').props.onPress();
+assert.deepEqual(calls.pop(), ['order_status', { status: 'On Hold', reason: 'Awaiting internal review' }]);
+assert.equal(view.nodes.some(node => node.type === 'document'), false, 'Order confirmation never requests a new document');
+const design2 = { ...design, id: 'design-two', number: 2, requirements: 'Version two requirements', notes: 'Version two internal notes' };
+const quote2 = { ...quotation, id: 'quotation-two', number: 7, design_version_id: design2.id, notes: 'Revision seven notes' };
+view = render('design', { design_versions: [design, design2], quotation_versions: [quotation, quote2] });
+assert.match(view.text, /Version two requirements/);
+view.control('kitchen-design-version').props.onChange(design.id);
+view = view.refresh();
+assert.match(view.text, /Version one requirements/);
+assert.doesNotMatch(view.text, /Version two requirements/);
+assert.match(view.text, /Related quotation revisions: r1/);
+assert.equal(calls.length, 0, 'Viewing a design does not write');
+view = render('design', { design_versions: [design, design2], quotation_versions: [quotation, quote2] }, { 'design.design.edit.expanded': true });
+view.control('kitchen-design-version').props.onChange(design.id);
+view = view.refresh();
+assert.equal(view.control('kitchen-design-edit-notes').props.value, design.notes);
+view.control('kitchen-design-edit-notes').props.onChangeText('Correct version one internal details');
+view = view.refresh();
+assert.equal(view.control('kitchen-design-edit-save').props.disabled, false);
+await view.control('kitchen-design-edit-save').props.onPress();
+assert.equal(calls.pop()[1].version_id, design.id, 'Edits send the selected design version ID');
+view.control('kitchen-design-edit-handoff').props.onChange('2026-10-18');
+view = view.refresh();
+assert.equal(view.control('kitchen-design-edit-save').props.disabled, true, 'Handoff before approval cannot be saved');
+view.control('kitchen-design-edit-handoff').props.onChange('2026-10-21');
+view = view.refresh();
+assert.equal(view.control('kitchen-design-edit-save').props.disabled, false, 'A handoff after approval may occur on a later day');
+view = render('quotation', { design_versions: [design, design2], quotation_versions: [quotation, quote2] }, { 'quotation.newVersion.expanded': true });
+assert.match(view.text, /Quotation r7 · Design v2/);
+view.control('kitchen-quotation-design-version').props.onChange(design.id);
+view = view.refresh();
+assert.match(view.text, /Quotation r1 · Design v1/);
+await view.control('kitchen-quotation-receive').props.onPress();
+assert.equal(calls.pop()[1].design_version_id, design.id, 'A revised quote retains the explicitly selected design ID');
+view = render('order', { design_versions: [design, design2], quotation_versions: [quotation, quote2] }, { 'order.confirmed': 'Yes' });
+view.control('kitchen-order-quotation-revision').props.onChange(quotation.id);
+view = view.refresh();
+await view.control('kitchen-order-confirm').props.onPress();
+assert.equal(calls.pop()[1].quotation_version_id, quotation.id, 'An older valid quotation can be explicitly selected for the order');
+view = render('order', { design_versions: [design, design2], quotation_versions: [quotation, quote2], orders: [order] });
+view.control('kitchen-order-quotation-revision').props.onChange(quote2.id);
+view = view.refresh();
+assert.match(view.text, /Order quotation: Quotation r1 · Design v1/);
+assert.match(view.text, /Selected quotation: Quotation r7 · Design v2/);
+assert.equal(calls.length, 0, 'Historical quote viewing never changes the saved order');
+for (const stage of ['production', 'installation']) {
+  view = render(stage, { design_versions: [design, design2], quotation_versions: [quotation, quote2], orders: [order] });
+  assert.match(view.text, /Quotation r1 · Design v1/, 'Downstream context follows the saved order IDs, not the latest design');
+}
 view = render('order', { quotation_versions: [quotation], orders: [order] }, { 'order.advanceReceived': 'Yes', 'order.advanceAmount': '100.00' });
 assert.equal(view.control('kitchen-advance-save').props.disabled, false);
 await view.control('kitchen-advance-save').props.onPress();
@@ -128,7 +206,7 @@ for (const stage of ['production', 'installation']) {
   assert.match(feedback, /use Next stage to retry/);
   assert.match(feedback, /Request timed out/, 'Preserve the underlying failure for review');
 }
-console.log('Kitchen commercial forms: prerequisite recovery, pending-order confirmation, payment validation and site visit actions passed');
+console.log('Kitchen commercial forms: optional quotation fields, selected version relationships, confirmation states, handoff dates, payment and work actions passed');
 
 // The real provider must use its saved ref between awaits, before a rerender.
 const providerSource = await readFile(new URL('../src/components/kitchen/KitchenProjectState.tsx', import.meta.url), 'utf8');

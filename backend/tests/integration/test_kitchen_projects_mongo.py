@@ -215,7 +215,7 @@ async def reach_stage(env, target):
     design_id = project["design_versions"][-1]["id"]
     for name, payload in [
         ("design_share", {"version_id": design_id, "date": "2026-10-19"}),
-        ("design_response", {"version_id": design_id, "response": "Approved"}),
+        ("design_response", {"version_id": design_id, "response": "Approved", "approval_date": "2026-10-19"}),
         ("design_handoff", {"version_id": design_id, "date": "2026-10-19"}),
         ("advance_stage", {"target_stage": "quotation"}),
         ("quotation_receive", {"url": "https://example.test/synthetic-quotation.pdf", "design_version_id": design_id, "received_date": "2026-10-19", "amount": "1000.01"}),
@@ -481,7 +481,7 @@ def test_q04_to_q09_versions_revisions_production_visits_and_late_closure(tmp_pa
             v2 = project["design_versions"][-1]["id"]
             await blocked("design_response", {"version_id": v1, "response": "Approved"})
             await ok("design_share", {"version_id": v2, "date": "2026-10-19"})
-            await ok("design_response", {"version_id": v2, "response": "Approved"})
+            await ok("design_response", {"version_id": v2, "response": "Approved", "approval_date": "2026-10-19"})
             await ok("design_handoff", {"version_id": v2, "date": "2026-10-19"})
             await ok("advance_stage", {"target_stage": "quotation"})
             await ok("quotation_receive", {"url": "https://example.test/synthetic-quotation.pdf", "design_version_id": v2, "received_date": "2026-10-19", "amount": "1000.01"})
@@ -498,7 +498,7 @@ def test_q04_to_q09_versions_revisions_production_visits_and_late_closure(tmp_pa
             await ok("quotation_share", {"version_id": q2, "date": "2026-10-19"})
             await ok("quotation_response", {"version_id": q2, "response": "Approved"})
             await ok("advance_stage", {"target_stage": "order"})
-            await blocked("order_confirm", {"quotation_version_id": q1, "order_date": "2026-10-19"})
+            await blocked("order_confirm", {"quotation_version_id": "unrelated-quotation", "order_date": "2026-10-19"})
             await ok("order_confirm", {"quotation_version_id": q2, "order_date": "2026-10-19"})
             await blocked("advance_stage", {"target_stage": "production"})
             await ok("order_advance", {"received": True, "amount": "150.00", "date": "2026-10-19"})
@@ -1129,7 +1129,7 @@ def test_resolved_d06_late_design_return_requires_owner_reason_and_renews_full_c
             project = await accepted(env, project, "design_present", {"url": "https://example.test/synthetic-design.pdf", "presentation_date": "2026-10-21"})
             design = project["design_versions"][-1]["id"]
             project = await accepted(env, project, "design_share", {"version_id": design, "date": "2026-10-21"})
-            project = await accepted(env, project, "design_response", {"version_id": design, "response": "Approved"})
+            project = await accepted(env, project, "design_response", {"version_id": design, "response": "Approved", "approval_date": "2026-10-21"})
             project = await accepted(env, project, "design_handoff", {"version_id": design, "date": "2026-10-21"})
             project = await accepted(env, project, "advance_stage", {"target_stage": "quotation"})
             assert project["status"] == "Pending"
@@ -1488,28 +1488,24 @@ def test_delegated_stage_updates_and_upload_cas_survive_assignment_retirement(mo
     asyncio.run(run())
 
 
-def test_design_document_optional_but_quotation_document_required():
+def test_design_and_quotation_documents_and_quotation_amount_are_optional():
     async def run():
         async with environment() as env:
             for stage, name, payload in (("design", "design_present", {"presentation_date": "2026-10-21"}),
-                    ("quotation", "quotation_receive", {"received_date": "2026-10-21", "amount": "10.01"})):
+                    ("quotation", "quotation_receive", {"received_date": "2026-10-21"})):
                 project = await reach_stage(env, stage)
                 if stage == "quotation":
                     payload["design_version_id"] = project["design_versions"][-1]["id"]
-                before = await env["db"].kitchen_projects.find_one({"id": project["id"]})
-                rejected = await command(env, project, name, payload)
-                if stage == "design":
-                    assert rejected.status_code == 200, rejected.text
-                    project = rejected.json()
-                    assert project["design_versions"][-1]["url"] is None
-                else:
-                    assert rejected.status_code == 422 and "HTTPS document link" in rejected.text
-                    assert await env["db"].kitchen_projects.find_one({"id": project["id"]}) == before
+                saved = await command(env, project, name, payload)
+                assert saved.status_code == 200, saved.text
+                project = saved.json()
+                field = "design_versions" if stage == "design" else "quotation_versions"
+                assert project[field][-1]["url"] is None and project[field][-1]["attachment_id"] is None
+                if stage == "quotation":
+                    assert project[field][-1]["amount"] is None
                 accepted_project = await accepted(env, project, name, {**payload, "url": "https://example.test/synthetic.pdf"})
                 assert accepted_project["version"] == project["version"] + 1
-                # Legacy/document-less history remains readable; validation only
-                # applies to new commands and never fabricates old references.
-                field = "design_versions" if stage == "design" else "quotation_versions"
+                # Existing links remain supported without fabricating references.
                 await env["db"].kitchen_projects.update_one({"id": project["id"]}, {"$set": {f"{field}.0.url": None}})
                 assert (await env["api"].get(f"/api/kitchen-projects/{project['id']}", headers=headers(env))).status_code == 200
     asyncio.run(run())

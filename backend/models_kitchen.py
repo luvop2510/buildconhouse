@@ -134,7 +134,7 @@ class ProjectCommand(StrictModel):
     idempotency_key: CommandKey
     command: Literal["edit_lead", "convert", "save_visit", "save_cad", "advance_stage", "move_stage", "assign", "metadata",
                      "design_present", "design_update", "design_share", "design_response", "design_revision", "design_handoff",
-                     "quotation_receive", "quotation_share", "quotation_response", "order_confirm", "order_update", "order_advance",
+                     "quotation_receive", "quotation_share", "quotation_response", "order_confirm", "order_confirmation", "order_update", "order_advance",
                      "order_amend", "order_status", "order_document", "exception", "production_update", "installation_update", "site_visit", "approval", "review_duplicate"]
     payload: dict[str, Any] = Field(default_factory=dict)
 
@@ -276,6 +276,7 @@ class DesignUpdate(StrictModel):
     presentation_date: str
     shared_date: str | None = None
     handoff_date: str | None = None
+    approval_date: str | None = None
     response: Literal["Pending", "Approved", "Changes Required"]
     response_notes: Text | None = None
     notes: Text | None = None
@@ -283,7 +284,7 @@ class DesignUpdate(StrictModel):
     budget_discussion: Text | None = None
     revision_count: Annotated[StrictInt, Field(ge=0, le=100000)] | None = None
     reason: Annotated[str, Field(min_length=1, max_length=4000)]
-    _dates = field_validator("presentation_date", "shared_date", "handoff_date", mode="before")(date_only)
+    _dates = field_validator("presentation_date", "shared_date", "handoff_date", "approval_date", mode="before")(date_only)
 
 
 class VersionDate(StrictModel):
@@ -293,6 +294,8 @@ class VersionDate(StrictModel):
 
 
 class CustomerResponse(StrictModel):
+    approval_date: str | None = None
+    _approval_date = field_validator("approval_date", mode="before")(date_only)
     version_id: Identifier
     response: Literal["Pending", "Approved", "Changes Required", "Rejected"]
     notes: Text | None = None
@@ -305,9 +308,9 @@ class DesignRevision(StrictModel):
 
 class QuotationReceived(DocumentPayload):
     design_version_id: Identifier
-    amount: str
+    amount: str | None = None
     received_date: str
-    _amount = field_validator("amount", mode="before")(money_text)
+    _amount = field_validator("amount", mode="before")(lambda value: money_text(None if isinstance(value, str) and not value.strip() else value))
     _date = field_validator("received_date", mode="before")(date_only)
 
 
@@ -322,7 +325,13 @@ class OrderConfirmation(StrictModel):
     _date = field_validator("order_date", mode="before")(date_only)
 
 
+class OrderConfirmationValue(StrictModel):
+    value: Literal["Not recorded", "Yes", "No"]
+
+
 class OrderUpdate(StrictModel):
+    quotation_version_id: Identifier | None = None
+    amount_customer_approved: StrictBool = False
     order_date: str
     notes: Text | None = None
     _date = field_validator("order_date", mode="before")(date_only)

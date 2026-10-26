@@ -1,28 +1,39 @@
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Linking, Pressable, View } from "react-native";
-import { useRouter } from "expo-router";
 import { Text } from "@/src/components/AppText";
 import { Alert } from "@/src/components/ds";
 import { KITCHEN_STAGES, STAGE_LABELS, type KitchenCommand, type KitchenProject, type KitchenStage, type KitchenWork, type KitchenVersion } from "@/src/api/kitchenProjects";
 import { Choice, displayDate, KitchenPanel, KitchenDetails, historicalCount, rupees } from "./shared";
-import { KitchenDateField } from "./KitchenFilters";
+import { KitchenSelect, KitchenDateField } from "./KitchenFilters";
 import { kitchenToday } from "./KitchenDates";
+import { kitchenOrderContext, kitchenDesignApproval, kitchenApprovalDate, kitchenProductionStarted, kitchenOrderQuotations } from "./KitchenVersions";
 import { DocumentChoice } from "./KitchenDocuments";
-import { kitchenProjectPath, useKitchenDraft, useKitchenProject } from "./KitchenProjectState";
+import { useKitchenDraft, useKitchenProject } from "./KitchenProjectState";
 import { radius, spacing } from "@/src/theme/tokens";
 import { KitchenButton as Button, KitchenTextField as TextField, KitchenFieldRow, kitchenColors as colors, kitchenType as type } from "./KitchenPrimitives";
 
 export type StageCommand = (command: KitchenCommand, payload: Record<string, unknown>) => Promise<boolean>;
 export function CommercialStages({ project, stage, disabled, command, mode = "task" }: { project: KitchenProject; stage: KitchenStage; disabled: boolean; command: StageCommand; mode?: "task" | "amendment" }) {
-  const router = useRouter();
-  const { returnTo, submission } = useKitchenProject();
+  const { submission, loading, failure } = useKitchenProject();
   const savingWorkAndStage = useRef(false);
+  const [designView, setDesignView] = useState<string>();
+  const [quoteView, setQuoteView] = useState<string>();
+  const savedContext = kitchenOrderContext(project);
   const latestDesign = project.design_versions?.at(-1);
-  const design = (latestDesign?.workflow_cycle ?? 1) === (project.workflow_cycle ?? 1) ? latestDesign : undefined;
-  const latestQuote = project.quotation_versions?.at(-1);
-  const quote = latestQuote?.design_version_id === design?.id ? latestQuote : undefined;
+  const currentDesign = (latestDesign?.workflow_cycle ?? 1) === (project.workflow_cycle ?? 1) ? latestDesign : undefined;
   const latestOrder = project.orders?.at(-1);
-  const order = !project.commercial_basis_invalidated && latestOrder?.quotation_version_id === quote?.id ? latestOrder : undefined;
+  const order = savedContext.order;
+  const productionStarted = kitchenProductionStarted(project);
+  const design = project.design_versions?.find(row => row.id === designView) || (stage === "order" && order ? savedContext.design : currentDesign);
+  const validOrderQuotes = kitchenOrderQuotations(project);
+  const designQuotes = project.quotation_versions?.filter(row => row.design_version_id === design?.id) || [];
+  const quote = project.quotation_versions?.find(row => row.id === quoteView && (stage === "order" || row.design_version_id === design?.id)) || (stage === "order" && order ? savedContext.quotation : stage === "order" ? validOrderQuotes.at(-1) || designQuotes.at(-1) : designQuotes.at(-1));
+  const quoteDesign = project.design_versions?.find(row => row.id === quote?.design_version_id);
+  const approvalRecord = kitchenDesignApproval(project, design);
+  const recordedApprovalDate = kitchenApprovalDate(approvalRecord?.at);
+  const approvalDate = design?.approval_date || recordedApprovalDate;
+  const historyCycle = Boolean(design && (design.workflow_cycle ?? 1) !== (project.workflow_cycle ?? 1));
+  const chooseDesign = (id: string) => { setDesignView(id); setQuoteView(undefined); };
   const draftCycle = `commercial.cycle.${project.workflow_cycle ?? 1}`;
   const responseScope = stage === "design" ? `design.${design?.id || "new"}` : `quotation.${quote?.id || "new"}`;
   const today = kitchenToday();
@@ -35,18 +46,19 @@ export function CommercialStages({ project, stage, disabled, command, mode = "ta
   const [handoffDate, setHandoffDate] = useKitchenDraft(`${draftCycle}.design.${design?.id || "new"}.handoffDate`, today);
   const [response, setResponse] = useKitchenDraft(`${draftCycle}.${responseScope}.response`, "Pending");
   const [responseNotes, setResponseNotes] = useKitchenDraft(`${draftCycle}.${responseScope}.responseNotes`, "");
-  const [revisionReason, setRevisionReason] = useKitchenDraft(`${draftCycle}.design.${design?.id || "new"}.revisionReason`, "");
   const [quoteDate, setQuoteDate] = useKitchenDraft(`${draftCycle}.quotation.date`, today);
   const [quoteAmount, setQuoteAmount] = useKitchenDraft(`${draftCycle}.quotation.amount`, "");
-  const [quoteFile, setQuoteFile] = useKitchenDraft(`${draftCycle}.quotation.file`, "");
   const [quoteNotes, setQuoteNotes] = useKitchenDraft(`${draftCycle}.quotation.notes`, "");
   const [orderDate, setOrderDate] = useKitchenDraft(`${draftCycle}.order.date`, order?.order_date || today);
-  const [orderFile, setOrderFile] = useKitchenDraft(`${draftCycle}.order.file`, "");
   const [orderNotes, setOrderNotes] = useKitchenDraft(`${draftCycle}.order.notes`, order?.notes || "");
   const [finalAmount, setFinalAmount] = useKitchenDraft(`${draftCycle}.order.finalAmount.${quote?.id || "new"}`, quote?.amount || "");
   const [amountApproved, setAmountApproved] = useKitchenDraft(`${draftCycle}.order.amountApproved`, "No");
-  const changedAmount = Boolean(quote && Number(finalAmount) !== Number(quote.amount));
-  const [orderConfirmed, setOrderConfirmed] = useKitchenDraft(`${draftCycle}.order.confirmed`, "Yes");
+  const changedAmount = Boolean(quote?.amount != null && Number(finalAmount) !== Number(quote.amount));
+  const savedConfirmation = project.customer_order_confirmation || (order?.confirmed ? "Yes" : order ? "No" : "Not recorded");
+  const [orderConfirmed, setOrderConfirmed] = useKitchenDraft(`${draftCycle}.order.confirmed`, savedConfirmation);
+  const [orderStatus, setOrderStatus] = useKitchenDraft(`${draftCycle}.order.status`, order?.status || "Confirmed");
+  const [orderStatusReason, setOrderStatusReason] = useKitchenDraft(`${draftCycle}.order.statusReason`, "");
+  const [customerApprovalDate, setCustomerApprovalDate] = useKitchenDraft(`${draftCycle}.design.${design?.id || "new"}.approvalDate`, design?.approval_date || today);
   const [advanceReceived, setAdvanceReceived] = useKitchenDraft(`${draftCycle}.order.advanceReceived`, "Not recorded");
   const [advanceAmount, setAdvanceAmount] = useKitchenDraft(`${draftCycle}.order.advanceAmount`, "");
   const [advanceDate, setAdvanceDate] = useKitchenDraft(`${draftCycle}.order.advanceDate`, today);
@@ -68,13 +80,14 @@ export function CommercialStages({ project, stage, disabled, command, mode = "ta
   }, [project.installation, setInstallation]);
   const active = project.stage === stage;
   const preview = KITCHEN_STAGES.indexOf(stage) > KITCHEN_STAGES.indexOf(project.stage);
-  const locked = disabled || !active;
+  const statusLocked = !project.permissions?.can_update || submission.busy || loading || Boolean(failure) || !active;
+  const locked = disabled || !active || ((stage === "design" || stage === "quotation") && historyCycle);
   const next: Partial<Record<KitchenStage, KitchenStage>> = { design: "quotation", quotation: "order", order: "production", production: "installation", installation: "completed" };
   const target = next[stage];
   const reason = project.blocked_transitions?.find(row => row.target_stage === target)?.reason;
   const validAmount = (value: string, positive = false) => /^\d+(?:\.\d{1,2})?$/.test(value.trim()) && value.trim().length <= 32 && Number(value) <= 1_000_000_000_000 && (positive ? Number(value) > 0 : Number(value) >= 0);
-  const quotationRequirement = !design ? "Record a design presentation in Design first." : project.design_revision_pending ? "Present the customer’s revised design and record its approval in Design first." : design.response !== "Approved" ? "Record the customer’s design approval in Design first." : !design.handoff_date ? "Record the approved design as sent to the company in Design first." : null;
-  const orderRequirement = quotationRequirement ? "The current design needs approval and company handoff before confirming an order. Go to Quotation, then return to Design to complete that record." : !quote ? "Record the received company quotation in Quotation first." : !quote.shared_date ? "Record the quotation as shared with the customer in Quotation first." : quote.response !== "Approved" ? "Record the customer’s quotation approval in Quotation first." : null;
+  const quotationRequirement = historyCycle ? "Choose an approved design from the current work cycle to create a quotation." : !design ? "Record a design presentation in Design first." : project.design_revision_pending ? "Present the customer’s revised design and record its approval in Design first." : design.response !== "Approved" ? "Record the customer’s design approval in Design first." : !design.handoff_date ? "Record the approved design as sent to the company in Design first." : null;
+  const orderRequirement = !quote ? "Record the received company quotation in Quotation first." : !quoteDesign || quoteDesign.response !== "Approved" || !quoteDesign.handoff_date || project.design_revision_pending || (quoteDesign.workflow_cycle ?? 1) !== (project.workflow_cycle ?? 1) ? "The selected design needs approval and company handoff before confirming an order. Go to Quotation, then return to Design to complete that record." : !quote.shared_date ? "Record the quotation as shared with the customer in Quotation first." : quote.response !== "Approved" ? "Record the customer’s quotation approval in Quotation first." : null;
   const stageHelp = (description: string, destination: KitchenStage) => <Alert tone="info" title="Complete the earlier record" description={description} action={active ? <Button label={`Go to ${STAGE_LABELS[destination]}`} variant="secondary" disabled={disabled} onPress={() => command("move_stage", { target_stage: destination })} testID={`kitchen-complete-${destination}`} /> : undefined} />;
   const saveWork = async (move = false) => {
     if (savingWorkAndStage.current || stage !== "production" && stage !== "installation") return false;
@@ -100,13 +113,14 @@ export function CommercialStages({ project, stage, disabled, command, mode = "ta
     </KitchenPanel>;
     if (!active || !version || (isDesign && project.design_revision_pending)) return null;
     return !version.shared_date ? <KitchenPanel title="Share with the customer">
-      <Text style={type.bodyMuted}>Record when you actually shared version {version.number}. This does not send a message.</Text>
+      <Text style={type.bodyMuted}>Record when you actually shared {isDesign ? `Design v${version.number}` : `Quotation r${version.number}`}. This does not send a message.</Text>
       {dateField("Date shared with customer", shareDate, setShareDate, "kitchen-version-share-date")}
       <Button label="Record shared with customer" disabled={locked || !shareDate} onPress={() => command(isDesign ? "design_share" : "quotation_share", { version_id: version.id, date: shareDate })} testID="kitchen-version-share" />
     </KitchenPanel> : version.response !== "Approved" ? <KitchenPanel title="Record the customer’s response">
       <Choice label="Customer response" value={response} values={isDesign ? ["Pending", "Approved", "Changes Required"] : ["Pending", "Approved", "Changes Required", "Rejected"]} onChange={setResponse} disabled={locked} testID="kitchen-version-response" />
-      <TextField label="Customer response notes" value={responseNotes} onChangeText={setResponseNotes} editable={!locked} multiline />
-      <Button label="Record customer response" disabled={locked} onPress={() => command(isDesign ? "design_response" : "quotation_response", { version_id: version.id, response, notes: responseNotes || null })} testID="kitchen-version-response-save" />
+      {isDesign && response === "Approved" ? dateField("Customer approval date", customerApprovalDate, setCustomerApprovalDate, "kitchen-design-approval-date") : null}
+      {!isDesign ? <TextField label="Internal notes" value={responseNotes} onChangeText={setResponseNotes} editable={!locked} multiline /> : null}
+      <Button label="Record customer response" disabled={locked} onPress={() => command(isDesign ? "design_response" : "quotation_response", { version_id: version.id, response, notes: (isDesign ? design?.notes : responseNotes) || null, ...(isDesign && response === "Approved" ? { approval_date: customerApprovalDate } : {}) })} testID="kitchen-version-response-save" />
     </KitchenPanel> : null;
   };
   const approval = (scope: "production" | "closure") => {
@@ -132,8 +146,9 @@ export function CommercialStages({ project, stage, disabled, command, mode = "ta
         <TextField label="Customer requirements" value={requirements} onChangeText={setRequirements} editable={!locked} multiline testID="kitchen-design-requirements" />
         <TextField label="Budget discussion" value={budgetDiscussion} onChangeText={setBudgetDiscussion} editable={!locked} multiline testID="kitchen-design-budget" />
         <DocumentChoice project={project} value={designFile} onChange={setDesignFile} disabled={locked} label="Design presentation document (optional)" />
-        <TextField label="Design notes" value={designNotes} onChangeText={setDesignNotes} editable={!locked} multiline />
-        <Button label={design ? "Present new design version / internal correction" : project.design_versions?.length ? "Present revised design" : "Present first design"} disabled={locked || !presentationDate || (design?.response === "Approved" && !project.design_revision_pending)} onPress={() => command("design_present", { attachment_id: designFile || null, presentation_date: presentationDate, requirements: requirements || null, budget_discussion: budgetDiscussion || null, notes: designNotes || null })} testID="kitchen-design-present" />
+        <Text style={type.caption}>Company handoff is recorded after customer approval.</Text>
+        <TextField label="Internal notes" value={designNotes} onChangeText={setDesignNotes} editable={!locked} multiline testID="kitchen-design-new-notes" />
+        <Button label={design ? "Present new design version / internal correction" : project.design_versions?.length ? "Present revised design" : "Present first design"} disabled={locked || !presentationDate || (design?.response === "Approved" && !project.design_revision_pending)} onPress={() => { void command("design_present", { attachment_id: designFile || null, presentation_date: presentationDate, requirements: requirements || null, budget_discussion: budgetDiscussion || null, notes: designNotes || null }).then(saved => { if (saved) chooseDesign(""); }); }} testID="kitchen-design-present" />
         <Text style={type.caption}>A presentation or internal correction does not increase the customer revision count.</Text>
 
   </View>;
@@ -141,12 +156,10 @@ export function CommercialStages({ project, stage, disabled, command, mode = "ta
   const quoteForm = <View style={{ gap: spacing.md }}>
         {quotationRequirement ? stageHelp(quotationRequirement, "design") : null}
         {dateField("Quotation received date", quoteDate, setQuoteDate, "kitchen-quotation-date")}
-        <TextField label="Quotation amount (INR)" value={quoteAmount} onChangeText={setQuoteAmount} keyboardType="decimal-pad" editable={!locked} testID="kitchen-quotation-amount" />
-        <DocumentChoice project={project} value={quoteFile} onChange={setQuoteFile} disabled={locked} label="Quotation document" />
-        <TextField label="Quotation notes" value={quoteNotes} onChangeText={setQuoteNotes} editable={!locked} multiline />
-        {!quoteFile ? <><Text style={type.caption}>Select the uploaded quotation document. Upload a file in Documents and return here; your entered details are kept.</Text><Button label="Upload quotation document" variant="secondary" disabled={locked} onPress={() => router.push(kitchenProjectPath(project.id, "/documents", returnTo) as any)} testID="kitchen-quotation-upload" /></> : null}
-        {!validAmount(quoteAmount) ? <Text style={type.caption}>Enter the quotation amount in INR, with up to two decimal places.</Text> : null}
-        <Button label="Record received quotation version" disabled={locked || !quoteFile || !quoteDate || !validAmount(quoteAmount) || Boolean(quotationRequirement)} onPress={() => command("quotation_receive", { design_version_id: design!.id, amount: quoteAmount, received_date: quoteDate, attachment_id: quoteFile || null, notes: quoteNotes || null })} testID="kitchen-quotation-receive" />
+        <TextField label="Quotation amount (INR, optional)" value={quoteAmount} onChangeText={setQuoteAmount} keyboardType="decimal-pad" editable={!locked} testID="kitchen-quotation-amount" />
+        <TextField label="Internal notes" value={quoteNotes} onChangeText={setQuoteNotes} editable={!locked} multiline testID="kitchen-quotation-notes" />
+        {quoteAmount.trim() && !validAmount(quoteAmount) ? <Text style={type.caption}>Enter the quotation amount in INR, with up to two decimal places.</Text> : null}
+        <Button label="Record received quotation version" disabled={locked || !quoteDate || Boolean(quoteAmount.trim() && !validAmount(quoteAmount)) || Boolean(quotationRequirement)} onPress={() => { void command("quotation_receive", { design_version_id: design!.id, amount: quoteAmount.trim() || null, received_date: quoteDate, notes: quoteNotes || null }).then(saved => { if (saved) setQuoteView(undefined); }); }} testID="kitchen-quotation-receive" />
 
   </View>;
 
@@ -178,19 +191,23 @@ export function CommercialStages({ project, stage, disabled, command, mode = "ta
     {!active && !preview && stage !== "completed" ? <Alert tone="info" title="Stage record" description="Review the saved stage record here. Use the current stage for ongoing work; previous versions are in History." /> : null}
     {stage === "design" ? <>
       <KitchenPanel title="Design presentation">
+        {project.design_versions?.length ? <KitchenSelect label="Design version" value={design?.id || ""} options={project.design_versions.map(row => ({ value: row.id, label: `Design v${row.number} · ${row.response}` }))} onChange={chooseDesign} testID="kitchen-design-version" /> : null}
         <KitchenDetails testID="kitchen-design-details" items={[
-          { label: "Current design", value: design ? `Version ${design.number}` : "None" },
+          { label: "Selected design", value: design ? `Design v${design.number}` : "None" },
           { label: "Customer-requested revisions", value: historicalCount(project.design_revision_count, project.known_design_revision_count) },
           { label: "Customer approval", value: design?.response || "Pending" },
+          { label: design?.approval_date ? "Customer approval date" : "Approval recorded", value: displayDate(approvalDate) },
           { label: "Shared with customer", value: displayDate(design?.shared_date) },
           { label: "Presented", value: displayDate(design?.presentation_date) },
-          { label: "Company handoff", value: design?.handoff_date ? displayDate(design.handoff_date) : "Not recorded" },
+          { label: "Company handoff", value: displayDate(design?.handoff_date) },
           ...(design?.attachment_id ? [{ label: "Document", value: project.attachments?.find(file => file.id === design.attachment_id)?.filename || "Saved project attachment" }] : []),
           ...(design?.requirements ? [{ label: "Requirements", value: design.requirements }] : []),
           ...(design?.budget_discussion ? [{ label: "Budget discussion", value: design.budget_discussion }] : []),
-          ...(design?.notes ? [{ label: "Design notes", value: design.notes }] : []),
-          ...(design?.response_notes ? [{ label: "Customer response notes", value: design.response_notes }] : []),
+          ...(design?.notes ? [{ label: "Internal notes", value: design.notes }] : []),
+          ...(design?.response_notes ? [{ label: "Historical internal response notes", value: design.response_notes }] : []),
         ]} />
+        {design?.handoff_date && (!approvalDate || design.handoff_date < approvalDate) ? <Alert tone="warning" title="Review historical handoff dates" description={!approvalDate ? "The approval date is unavailable. Existing dates are preserved." : "The saved handoff precedes the approval date. Existing dates are preserved; review before making a correction."} /> : null}
+        <Text style={type.caption}>Related quotation revisions: {designQuotes.length ? designQuotes.map(row => `r${row.number} · ${row.response}`).join("; ") : "None"}</Text>
         {design?.url ? <Button label="Open current design reference" variant="secondary" onPress={() => void Linking.openURL(design.url!)} /> : null}
         {active && design && !project.design_revision_pending ? <DesignEditor key={design.id} project={project} design={design} disabled={locked} command={command} /> : null}
         {project.design_revision_pending ? <Alert tone="warning" title="Revised design required" description="Present a new version before recording customer approval." /> : null}
@@ -198,18 +215,16 @@ export function CommercialStages({ project, stage, disabled, command, mode = "ta
       </KitchenPanel>
       {responseForm(true)}
       {preview || active && design?.response === "Approved" && !project.design_revision_pending && !design.handoff_date ? <KitchenPanel title="Send the approved design to the company">
-        {dateField("Date sent to company", handoffDate, setHandoffDate, "kitchen-design-handoff-date")}
-        <Button label="Mark approved design sent to company" disabled={locked || !design || design.response !== "Approved" || Boolean(project.design_revision_pending) || Boolean(design.handoff_date)} onPress={() => command("design_handoff", { version_id: design!.id, date: handoffDate })} testID="kitchen-design-handoff" />
+        <KitchenDateField label="Date sent to company" value={handoffDate} onChange={setHandoffDate} min={approvalDate} disabled={locked} testID="kitchen-design-handoff-date" />
+        <Button label="Mark approved design sent to company" disabled={locked || !design || design.response !== "Approved" || Boolean(project.design_revision_pending) || Boolean(design.handoff_date) || !approvalDate || handoffDate < approvalDate} onPress={() => command("design_handoff", { version_id: design!.id, date: handoffDate })} testID="kitchen-design-handoff" />
       </KitchenPanel> : null}
-      {active && design && !project.design_revision_pending ? <KitchenPanel title="Customer changes"><Disclosure draftKey={`${draftCycle}.design.${design.id}.revision`} label="Record a customer revision request" testID="kitchen-disclose-design-revision">
-        {design.response === "Approved" ? <Text style={type.bodyMuted}>Only the owner can authorize a change to an approved design. Its previous approval remains in History.</Text> : null}
-        <TextField label="Customer-requested revision reason" value={revisionReason} onChangeText={setRevisionReason} editable={!locked} multiline testID="kitchen-design-revision-reason" />
-        <Button label="Record customer revision request (+1)" disabled={locked || !design || Boolean(project.design_revision_pending) || (design?.response === "Approved" && !project.permissions?.can_approve_exceptions) || !revisionReason.trim()} onPress={() => { void command("design_revision", { version_id: design!.id, reason: revisionReason }).then(saved => { if (saved) setRevisionReason(""); }); }} testID="kitchen-design-revision" />
-      </Disclosure></KitchenPanel> : null}
     </> : stage === "quotation" ? <>
-      <KitchenPanel title="Company quotation">
+      <KitchenPanel title="Company quotation">{project.design_versions?.length ? <KitchenSelect label="Design version" value={design?.id || ""} options={project.design_versions.map(row => ({ value: row.id, label: `Design v${row.number} · ${row.response}` }))} onChange={chooseDesign} testID="kitchen-quotation-design-version" /> : null}
+        {designQuotes.length ? <KitchenSelect label="Quotation revision" value={quote?.id || ""} options={designQuotes.map(row => ({ value: row.id, label: `Quotation r${row.number} · ${row.response}` }))} onChange={setQuoteView} testID="kitchen-quotation-revision" /> : null}
+        <Text style={type.bodyStrong}>{quote ? `Quotation r${quote.number} · Design v${quoteDesign?.number ?? "unavailable"} · ${rupees(quote.amount)}` : "No quotation recorded for this design"}</Text><Text style={type.bodyMuted}>New quotations use the selected design version. Each quotation revision requires its own sharing and customer approval.</Text>
         <KitchenDetails testID="kitchen-quotation-details" items={[
-          { label: "Current quotation", value: quote ? `Version ${quote.number}` : "None" },
+          { label: "Selected quotation", value: quote ? `Quotation r${quote.number}` : "None" },
+          { label: "Design version", value: quoteDesign ? `Design v${quoteDesign.number}` : "Not recorded" },
           { label: "Quotation received", value: quote ? "Yes" : "No" },
           { label: "Quotation amount", value: rupees(quote?.amount) },
           { label: "Received", value: displayDate(quote?.received_date) },
@@ -217,40 +232,46 @@ export function CommercialStages({ project, stage, disabled, command, mode = "ta
           { label: "Date sent to customer", value: displayDate(quote?.shared_date) },
           { label: "Customer response", value: quote?.response || "Pending" },
           ...(quote?.attachment_id ? [{ label: "Document", value: project.attachments?.find(file => file.id === quote.attachment_id)?.filename || "Saved project attachment" }] : []),
-          ...(quote?.notes ? [{ label: "Quotation notes", value: quote.notes }] : []),
-          ...(quote?.response_notes ? [{ label: "Customer response notes", value: quote.response_notes }] : []),
+          ...(quote?.notes ? [{ label: "Internal notes", value: quote.notes }] : []),
+          ...(quote?.response_notes ? [{ label: "Historical internal response notes", value: quote.response_notes }] : []),
         ]} />
-        <Text style={type.bodyMuted}>Based on current approved design {design ? `version ${design.number}` : "—"}. Each new quotation requires its own sharing and customer approval.</Text>
         {active && project.orders?.length && !project.commercial_basis_invalidated ? <Text style={type.bodyMuted}>This quotation belongs to a confirmed order. Record changed order terms through an approved amendment, or start a revised design cycle from Project actions. Stage navigation remains available.</Text> : active || preview ? !quote ? quoteForm : <Disclosure draftKey={`${draftCycle}.quotation.newVersion`} label="Record a revised company quotation" testID="kitchen-disclose-quotation-version">{quoteForm}</Disclosure> : null}
       </KitchenPanel>
       {responseForm(false)}
     </> : stage === "order" ? <>
       <KitchenPanel title="Order confirmation">
         <KitchenDetails testID="kitchen-order-details" items={[
-          { label: "Customer order confirmation", value: order?.confirmed ? "Yes" : "No" },
-          { label: "Order status", value: order?.status || "Pending" },
-          { label: "Current approved quotation", value: quote?.response === "Approved" && !quotationRequirement ? `Version ${quote.number} · ${rupees(quote.amount)}` : "None" },
+          { label: "Customer order confirmation", value: savedConfirmation },
+          { label: "Order status", value: order?.status || "Pending confirmation" },
+          { label: "Order quotation", value: savedContext.quotation ? `Quotation r${savedContext.quotation.number} · Design v${savedContext.design?.number ?? "unavailable"}` : "Not yet recorded" },
           { label: "Order date", value: displayDate(order?.order_date) },
           { label: "Original amount", value: rupees(order?.original_amount) },
           { label: "Approved final amount", value: rupees(order?.final_amount) },
           { label: "Confirmation document", value: order?.confirmation_document_id ? project.attachments?.find(file => file.id === order.confirmation_document_id)?.filename || "Saved project attachment" : "Not attached" },
-          ...(order?.notes ? [{ label: "Order notes", value: order.notes }] : []),
+          ...(order?.notes ? [{ label: "Internal notes", value: order.notes }] : []),
         ]} />
+        <Choice label="Customer order confirmation" value={orderConfirmed} values={["Not recorded", "Yes", "No"]} onChange={setOrderConfirmed} disabled={locked || productionStarted} testID="kitchen-order-confirmed" />
+        {active ? <Button label="Save customer confirmation" disabled={locked || productionStarted} onPress={() => command("order_confirmation", { value: orderConfirmed })} testID="kitchen-order-confirmation-save" /> : null}
+        {productionStarted ? <Text style={type.caption}>Production has started. The owner must use Return to Design to change the confirmed basis.</Text> : null}
+        {project.quotation_versions?.length ? <KitchenSelect label={order ? "View quotation revision" : "Quotation revision for order"} value={order || validOrderQuotes.some(row => row.id === quote?.id) ? quote?.id || "" : ""} options={(order ? project.quotation_versions : validOrderQuotes.length ? validOrderQuotes : [{ id: "", number: 0, design_version_id: "", response: "Pending" }]).map(row => ({ value: row.id, label: row.id ? `Quotation r${row.number} · Design v${project.design_versions?.find(design => design.id === row.design_version_id)?.number ?? "unavailable"} · ${row.response}` : "No approved quotation available" }))} onChange={setQuoteView} testID="kitchen-order-quotation-revision" /> : null}
+        <Text style={type.body}>Selected quotation: {quote ? `Quotation r${quote.number} · Design v${quoteDesign?.number ?? "unavailable"} · ${rupees(quote.amount)} · ${quote.response}` : "Not yet recorded"}</Text>
         {!order && (active || preview) ? <View style={{ gap: spacing.md, paddingTop: 16, borderTopWidth: 1, borderTopColor: colors.divider }}>
           <Text accessibilityRole="header" style={type.titleMd}>Record customer confirmation</Text>
           {orderRequirement ? stageHelp(orderRequirement, "quotation") : <Text style={type.caption}>The quotation is approved. Record the confirmation date and confirm the customer order below.</Text>}
-          <Choice label="Customer has confirmed this order" value={orderConfirmed} values={["Yes", "No"]} onChange={setOrderConfirmed} disabled={locked} testID="kitchen-order-confirmed" />
           {dateField("Order date", orderDate, setOrderDate, "kitchen-order-date")}
-          <TextField label="Final order amount (INR)" value={finalAmount} onChangeText={setFinalAmount} keyboardType="decimal-pad" editable={!locked && Boolean(project.permissions?.can_approve_exceptions)} testID="kitchen-order-amount" />
+          <TextField label="Final order amount (INR)" value={finalAmount} onChangeText={setFinalAmount} keyboardType="decimal-pad" editable={!locked && (quote?.amount == null || Boolean(project.permissions?.can_approve_exceptions))} testID="kitchen-order-amount" />
           {changedAmount ? <Choice label="Customer approved changed final amount" value={amountApproved} values={["No", "Yes"]} onChange={setAmountApproved} disabled={locked} testID="kitchen-order-amount-approved" /> : null}
-          <DocumentChoice project={project} value={orderFile} onChange={setOrderFile} disabled={locked} label="Order confirmation document" />
-          <TextField label="Order notes" value={orderNotes} onChangeText={setOrderNotes} editable={!locked} multiline />
+          <TextField label="Internal notes" value={orderNotes} onChangeText={setOrderNotes} editable={!locked} multiline testID="kitchen-order-notes" />
           {!validAmount(finalAmount) && !orderRequirement ? <Text style={type.caption}>Enter the final order amount in INR, with up to two decimal places.</Text> : null}
           {orderConfirmed !== "Yes" ? <Text style={type.caption}>Select Yes once the customer has confirmed the order.</Text> : null}
           {changedAmount ? <Text style={type.caption}>A changed amount requires owner authorization and the customer’s explicit approval.</Text> : null}
-          <Button label="Confirm customer order" disabled={locked || !validAmount(finalAmount) || !orderDate || changedAmount && (!project.permissions?.can_approve_exceptions || amountApproved !== "Yes") || orderConfirmed !== "Yes" || Boolean(orderRequirement)} onPress={() => command("order_confirm", { final_amount: finalAmount, amount_customer_approved: amountApproved === "Yes", quotation_version_id: quote!.id, order_date: orderDate, confirmation_document_id: orderFile || null, notes: orderNotes || null })} testID="kitchen-order-confirm" />
+          <Button label="Confirm customer order" disabled={locked || !validAmount(finalAmount) || !orderDate || changedAmount && (!project.permissions?.can_approve_exceptions || amountApproved !== "Yes") || orderConfirmed !== "Yes" || Boolean(orderRequirement)} onPress={() => command("order_confirm", { final_amount: finalAmount, amount_customer_approved: amountApproved === "Yes", quotation_version_id: quote!.id, order_date: orderDate, notes: orderNotes || null })} testID="kitchen-order-confirm" />
         </View> : null}
-        {active && order ? <Disclosure draftKey={`${draftCycle}.order.document`} label="Edit order confirmation document (optional)" testID="kitchen-disclose-order-document"><DocumentChoice project={project} value={orderFile} onChange={setOrderFile} disabled={locked} label="Order confirmation document" /><Button label="Save order confirmation document" disabled={locked || !orderFile} onPress={() => command("order_document", { attachment_id: orderFile })} testID="kitchen-order-document" /></Disclosure> : null}
+        {active && order && project.permissions?.can_approve_exceptions ? <Disclosure draftKey={`${draftCycle}.order.statusEdit`} label="Edit order status" testID="kitchen-disclose-order-status">
+          <Choice label="Order status" value={orderStatus} values={["Confirmed", "On Hold", "Cancelled"]} onChange={setOrderStatus} disabled={statusLocked} testID="kitchen-order-status" />
+          <TextField label="Internal notes" value={orderStatusReason} onChangeText={setOrderStatusReason} multiline editable={!statusLocked} helper="Explain the status change for the internal history." testID="kitchen-order-status-notes" />
+          <Button label="Save order status" disabled={statusLocked || !orderStatusReason.trim()} onPress={() => command("order_status", { status: orderStatus, reason: orderStatusReason })} testID="kitchen-order-status-save" />
+        </Disclosure> : null}
         {active && order ? <OrderEditor project={project} order={order} disabled={locked} command={command} /> : null}
       </KitchenPanel>
       {active && order && project.permissions?.can_approve_exceptions ? <CommercialStages project={project} stage={stage} disabled={disabled} command={command} mode="amendment" /> : null}
@@ -267,6 +288,10 @@ export function CommercialStages({ project, stage, disabled, command, mode = "ta
 {active && order.advance.received ? approval("production") : null}
       </> : null}
     </> : stage === "production" || stage === "installation" ? <>
+      <KitchenPanel title="Order versions">
+        <Text style={type.bodyStrong}>{savedContext.order ? `Quotation r${savedContext.quotation?.number ?? "unavailable"} · Design v${savedContext.design?.number ?? "unavailable"}` : "No active order version recorded"}</Text>
+        <Text style={type.caption}>These are the saved order versions used for work. Review history in Design or Quotation. A change after production starts requires owner-authorized Return to Design.</Text>
+      </KitchenPanel>
       <KitchenPanel title={STAGE_LABELS[stage]}>
         <KitchenDetails testID={`kitchen-${stage}-details`} items={[
           { label: "Current status", value: (stage === "production" ? project.production : project.installation)?.status || "Not Started" },
@@ -282,7 +307,7 @@ export function CommercialStages({ project, stage, disabled, command, mode = "ta
       {stage === "installation" ? <><KitchenPanel title="Installation site visits"><KitchenDetails items={[{ label: "Actual site visits", value: historicalCount(project.site_visit_count, project.known_site_visit_count) }]} />
         {active || preview ? <Disclosure draftKey={`${draftCycle}.site.newVisit`} label="Record a site visit" testID="kitchen-disclose-site-visit">        {dateField("Site visit date", siteDate, setSiteDate, "kitchen-site-date")}
         <Choice label="Visit actually took place" value={siteActual} values={["Not recorded", "Yes — actual visit", "No — scheduled only"]} onChange={setSiteActual} disabled={locked} testID="kitchen-site-actual" />
-        <TextField label="Site visit notes" value={siteNotes} onChangeText={setSiteNotes} editable={!locked} multiline />
+        <TextField label="Internal notes" value={siteNotes} onChangeText={setSiteNotes} editable={!locked} multiline />
         {siteActual === "Not recorded" ? <Text style={type.caption}>Choose whether this visit actually took place to enable recording.</Text> : null}
         <Button label="Record site visit" disabled={locked || siteActual === "Not recorded" || !siteDate} onPress={() => { void command("site_visit", { date: siteDate, actual: siteActual === "Yes — actual visit", notes: siteNotes || null }).then(saved => { if (saved) { setSiteDate(kitchenToday()); setSiteActual("Not recorded"); setSiteNotes(""); } }); }} testID="kitchen-site-save" />
         <Text style={type.caption}>Scheduled visits do not increase the actual counter. Record each distinct real visit once.</Text>
@@ -300,14 +325,18 @@ export function CommercialStages({ project, stage, disabled, command, mode = "ta
 function OrderEditor({ project, order, disabled, command }: { project: KitchenProject; order: NonNullable<KitchenProject["orders"]>[number]; disabled: boolean; command: StageCommand }) {
   const prefix = `commercial.cycle.${project.workflow_cycle ?? 1}.order.${order.id}.edit`;
   const { resetDraftValue } = useKitchenProject();
-  const source = JSON.stringify([order.order_date, order.notes]);
-  const [draft, setDraft] = useKitchenDraft(prefix, { source, order_date: order.order_date, notes: order.notes || "" });
+  const source = JSON.stringify([order.order_date, order.notes, order.quotation_version_id]);
+  const productionStarted = kitchenProductionStarted(project);
+  const validQuotes = kitchenOrderQuotations(project);
+  const [draft, setDraft] = useKitchenDraft(prefix, { source, order_date: order.order_date, notes: order.notes || "", quotation_version_id: order.quotation_version_id, amount_customer_approved: false });
   const stale = draft.source !== source;
   return <Disclosure draftKey={prefix} label="Edit order date and notes" testID="kitchen-disclose-order-edit">
     {stale ? <><Text style={type.bodyMuted}>These order details changed after you started editing. Your draft is kept until you replace it with the latest saved values.</Text><Button label="Replace draft with latest order details" variant="secondary" onPress={() => resetDraftValue(prefix)} testID="kitchen-order-edit-reload" /></> : null}
     <KitchenDateField label="Order date" value={draft.order_date} onChange={order_date => setDraft(previous => ({ ...previous, order_date }))} disabled={disabled} testID="kitchen-order-edit-date" />
-    <TextField label="Order notes" value={draft.notes} onChangeText={notes => setDraft(previous => ({ ...previous, notes }))} editable={!disabled} multiline testID="kitchen-order-edit-notes" />
-    <Button label="Save order details" disabled={disabled || stale || !draft.order_date} onPress={() => command("order_update", { order_date: draft.order_date, notes: draft.notes || null })} testID="kitchen-order-edit-save" />
+    {!productionStarted && !disabled ? <KitchenSelect label="Quotation revision used for order" value={draft.quotation_version_id} options={validQuotes.map(quote => ({ value: quote.id, label: `Quotation r${quote.number} · Design v${project.design_versions?.find(design => design.id === quote.design_version_id)?.number ?? "unavailable"}` }))} onChange={quotation_version_id => setDraft(previous => ({ ...previous, quotation_version_id }))} testID="kitchen-order-edit-quotation" /> : <Text style={type.caption}>Order versions are fixed after production starts. The owner can use Return to Design for changes.</Text>}
+    {draft.quotation_version_id !== order.quotation_version_id ? <Choice label="Customer approved retained final amount" value={draft.amount_customer_approved ? "Yes" : "No"} values={["No", "Yes"]} onChange={value => setDraft(previous => ({ ...previous, amount_customer_approved: value === "Yes" }))} disabled={disabled} /> : null}
+    <TextField label="Internal notes" value={draft.notes} onChangeText={notes => setDraft(previous => ({ ...previous, notes }))} editable={!disabled} multiline testID="kitchen-order-edit-notes" />
+    <Button label="Save order details" disabled={disabled || stale || !draft.order_date} onPress={() => command("order_update", { order_date: draft.order_date, notes: draft.notes || null, ...(draft.quotation_version_id !== order.quotation_version_id ? { quotation_version_id: draft.quotation_version_id, amount_customer_approved: draft.amount_customer_approved } : {}) })} testID="kitchen-order-edit-save" />
   </Disclosure>;
 }
 
@@ -318,13 +347,17 @@ function DesignEditor({ project, design, disabled, command }: { project: Kitchen
   const initial = {
     source: currentSource, presentation_date: design.presentation_date || kitchenToday(), shared_date: design.shared_date || "",
     handoff_date: design.handoff_date || "", response: design.response, response_notes: design.response_notes || "",
-    requirements: design.requirements ?? project.visit.requirements ?? "", budget_discussion: design.budget_discussion ?? project.visit.budget_discussion ?? "",
+    approval_date: design.approval_date || "",
+    requirements: design.requirements ?? "", budget_discussion: design.budget_discussion ?? "",
     notes: design.notes || "", revision_count: project.design_revision_count == null ? "" : String(project.design_revision_count), reason: "",
   };
   const [draft, setDraft] = useKitchenDraft(prefix, initial);
   const stale = draft.source !== currentSource;
   const locked = disabled || design.response === "Approved" && !project.permissions?.can_approve_exceptions;
   const update = (key: keyof typeof draft, value: string) => setDraft(previous => ({ ...previous, [key]: value }));
+  const recordedApprovalDate = kitchenApprovalDate(kitchenDesignApproval(project, design)?.at);
+  const effectiveApprovalDate = draft.approval_date || recordedApprovalDate;
+  const invalidHandoff = Boolean(draft.handoff_date && (draft.response !== "Approved" || !effectiveApprovalDate || draft.handoff_date < effectiveApprovalDate));
   return <Disclosure draftKey={prefix} label="Edit design details" testID="kitchen-disclose-design-edit">
     {stale ? <View style={{ gap: spacing.sm }}><Text style={type.bodyMuted}>This design changed after you started editing. Review the latest saved details before making a correction. Your draft is retained until you choose to replace it.</Text><Button label="Replace draft with latest design details" variant="secondary" onPress={() => resetDraftValue(prefix)} testID="kitchen-design-edit-reload" /></View> : null}
     {locked && !disabled ? <Text style={type.bodyMuted}>Only the owner can correct an approved design.</Text> : null}
@@ -335,13 +368,15 @@ function DesignEditor({ project, design, disabled, command }: { project: Kitchen
     <Choice label="Shared with customer" value={draft.shared_date ? "Yes" : "No"} values={["No", "Yes"]} onChange={value => update("shared_date", value === "Yes" ? kitchenToday() : "")} disabled={locked} />
     {draft.shared_date ? <KitchenDateField label="Date shared with customer" value={draft.shared_date} onChange={value => update("shared_date", value)} disabled={locked} testID="kitchen-design-edit-shared" /> : null}
     <Choice label="Customer approval" value={draft.response} values={["Pending", "Approved", "Changes Required"]} onChange={value => update("response", value)} disabled={locked} testID="kitchen-design-edit-response" />
-    <Choice label="Sent to company" value={draft.handoff_date ? "Yes" : "No"} values={["No", "Yes"]} onChange={value => update("handoff_date", value === "Yes" ? kitchenToday() : "")} disabled={locked} />
-    {draft.handoff_date ? <KitchenDateField label="Date sent to company" value={draft.handoff_date} onChange={value => update("handoff_date", value)} disabled={locked} testID="kitchen-design-edit-handoff" /> : null}
-    <TextField label="Customer response notes" value={draft.response_notes} onChangeText={value => update("response_notes", value)} editable={!locked} multiline />
-    <TextField label="Design notes" value={draft.notes} onChangeText={value => update("notes", value)} editable={!locked} multiline />
-    <TextField label="Reason for correction" value={draft.reason} onChangeText={value => update("reason", value)} editable={!locked} multiline testID="kitchen-design-edit-reason" />
+    {draft.response === "Approved" ? <KitchenDateField label="Customer approval date" value={draft.approval_date} onChange={value => update("approval_date", value)} min={draft.shared_date || undefined} disabled={locked} testID="kitchen-design-edit-approval-date" /> : null}
+    {!design.approval_date && recordedApprovalDate ? <Text style={type.caption}>Approval was recorded on {displayDate(recordedApprovalDate)}. The actual customer approval date has not been entered.</Text> : null}
+    <Choice label="Sent to company" value={draft.handoff_date ? "Yes" : "No"} values={["No", "Yes"]} onChange={value => update("handoff_date", value === "Yes" ? kitchenToday() : "")} disabled={locked || draft.response !== "Approved" || !effectiveApprovalDate} />
+    {draft.handoff_date ? <KitchenDateField label="Date sent to company" value={draft.handoff_date} onChange={value => update("handoff_date", value)} min={effectiveApprovalDate} disabled={locked} testID="kitchen-design-edit-handoff" /> : null}
+    <TextField label="Internal notes" value={draft.notes} onChangeText={value => update("notes", value)} editable={!locked} multiline testID="kitchen-design-edit-notes" helper="Internal use only. Also records the reason when correcting details or requesting a revision." />
+    {invalidHandoff ? <Text accessibilityRole="alert" style={type.bodyMuted}>Company handoff must follow customer approval and cannot precede its date.</Text> : null}
     <Text style={type.caption}>The previous values and your correction remain in History. A new design version is recorded separately.</Text>
-    <Button label="Save design details" disabled={locked || stale || !draft.reason.trim() || !draft.presentation_date || !!draft.revision_count && !/^\d+$/.test(draft.revision_count)} onPress={() => { const { source: _source, revision_count: _revisionCount, ...fields } = draft; return command("design_update", { ...fields, version_id: design.id, shared_date: draft.shared_date || null, handoff_date: draft.handoff_date || null }); }} testID="kitchen-design-edit-save" />
+    <Button label="Save design details" disabled={locked || stale || invalidHandoff || !draft.presentation_date || !!draft.revision_count && !/^\d+$/.test(draft.revision_count)} onPress={() => { const { source: _source, revision_count: _revisionCount, ...fields } = draft; return command("design_update", { ...fields, version_id: design.id, shared_date: draft.shared_date || null, handoff_date: draft.handoff_date || null, approval_date: draft.approval_date || null, reason: draft.notes.trim() || "Updated design details" }); }} testID="kitchen-design-edit-save" />
+    <Button label="Request revised design (+1)" variant="secondary" disabled={disabled || stale || project.design_revision_pending || !draft.notes.trim() || design.id !== project.design_versions?.at(-1)?.id || design.response === "Approved" && !project.permissions?.can_approve_exceptions} onPress={() => command("design_revision", { version_id: design.id, reason: draft.notes.trim() })} testID="kitchen-design-revision" />
   </Disclosure>;
 }
 
@@ -370,6 +405,6 @@ function WorkForm({ value, onChange, production, disabled }: { value: KitchenWor
     })} disabled={disabled} testID={`kitchen-${production ? "production" : "installation"}-status`} />
     <KitchenFieldRow><View style={{ flex: 1, minWidth: 180 }}><KitchenDateField label="Start date" value={value.start_date || ""} onChange={start_date => onChange({ ...value, start_date: start_date || null })} disabled={disabled} testID={`kitchen-${production ? "production" : "installation"}-start`} /></View>
     <View style={{ flex: 1, minWidth: 180 }}><KitchenDateField label="Completion date" value={value.completion_date || ""} onChange={completion_date => onChange({ ...value, completion_date: completion_date || null })} min={value.start_date || undefined} disabled={disabled} testID={`kitchen-${production ? "production" : "installation"}-complete`} /></View></KitchenFieldRow>
-    <TextField label={production ? "Production notes" : "Installation notes"} value={value.notes || ""} onChangeText={notes => onChange({ ...value, notes })} editable={!disabled} multiline />
+    <TextField label="Internal notes" testID={`kitchen-${production ? "production" : "installation"}-notes`} value={value.notes || ""} onChangeText={notes => onChange({ ...value, notes })} editable={!disabled} multiline />
   </View>;
 }

@@ -1,4 +1,4 @@
-import { useId, useState, type ComponentProps, type ReactNode } from "react";
+import { useCallback, useId, useLayoutEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { ActivityIndicator, Platform, Pressable, View, type ViewStyle } from "react-native";
 import Feather from "@expo/vector-icons/Feather";
 import { Text, TextInput } from "@/src/components/AppText";
@@ -39,10 +39,43 @@ export function KitchenButton({ label, onPress, variant = "primary", size = "md"
   return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: unavailable, busy: Boolean(loading) }} disabled={unavailable} onPress={onPress} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} testID={testID} style={({ hovered, pressed }) => [{ minHeight: size === "lg" ? 52 : 44, minWidth: 44, maxWidth: "100%", alignSelf: fullWidth ? "stretch" : "flex-start", paddingVertical: 10, paddingHorizontal: size === "sm" ? 12 : 16, borderRadius: 8, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderWidth: 1, borderColor: focused ? kitchenColors.focusRing : primary ? "transparent" : variant === "ghost" ? "transparent" : kitchenColors.controlBorder, backgroundColor: variant === "danger" ? kitchenColors.error : variant === "primary" ? hovered || pressed ? kitchenColors.brandHover : kitchenColors.brand : variant === "brandLight" ? kitchenColors.brandTint : hovered || pressed ? kitchenColors.surfaceTertiary : variant === "ghost" ? "transparent" : kitchenColors.surfaceSecondary, opacity: unavailable ? 0.5 : 1, ...(Platform.OS === "web" ? { cursor: unavailable ? "default" : "pointer", outlineStyle: focused ? "solid" : "none", outlineWidth: 2, outlineOffset: 2, outlineColor: kitchenColors.focusRing } : {}) } as ViewStyle, style]}>{loading ? <ActivityIndicator color={fg} size="small" /> : icon ? <Feather accessible={false} name={icon} size={16} color={fg} /> : null}<Text style={{ ...kitchenType.bodyStrong, color: fg, fontSize: 14, lineHeight: 21, flexShrink: 1, textAlign: "center" }}>{label}</Text>{iconRight && !loading ? <Feather accessible={false} name={iconRight} size={16} color={fg} /> : null}</Pressable>;
 }
 
-export function KitchenTextField({ label, error, helper, containerStyle, style, onFocus, onBlur, leftIcon, rightIcon, onRightPress, ...props }: ComponentProps<typeof TextField>) {
+export function KitchenTextField({ label, error, helper, containerStyle, style, onFocus, onBlur, onLayout, onContentSizeChange, leftIcon, rightIcon, onRightPress, ...props }: ComponentProps<typeof TextField>) {
   const id = useId();
   const [focused, setFocused] = useState(false);
-  return <View style={[{ gap: 8, minWidth: 0 }, containerStyle]}>{label ? <Text nativeID={`${id}-label`} style={kitchenType.label}>{label}</Text> : null}<View style={{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, borderWidth: 1, borderColor: error ? kitchenColors.error : focused ? kitchenColors.focusRing : kitchenColors.controlBorder, borderRadius: 8, backgroundColor: props.editable === false ? kitchenColors.surface : kitchenColors.surfaceSecondary }}>{leftIcon ? <Feather accessible={false} name={leftIcon} size={18} color={kitchenColors.onSurfaceMuted} /> : null}<TextInput {...props} accessibilityLabel={props.accessibilityLabel || label || props.placeholder} aria-labelledby={label ? `${id}-label` : undefined} aria-describedby={error || helper ? `${id}-description` : undefined} aria-invalid={Boolean(error)} accessibilityHint={props.accessibilityHint || error || helper} onFocus={event => { setFocused(true); onFocus?.(event); }} onBlur={event => { setFocused(false); onBlur?.(event); }} placeholderTextColor={kitchenColors.onSurfaceSubtle} style={[{ flex: 1, minWidth: 0, minHeight: props.multiline ? 104 : 46, paddingVertical: 12, ...kitchenType.body, textAlignVertical: props.multiline ? "top" : "center", ...(Platform.OS === "web" ? { outlineStyle: "none" } : {}) } as any, style]} />{rightIcon ? <Pressable accessibilityRole="button" accessibilityLabel={rightIcon.replaceAll("-", " ")} onPress={onRightPress} style={{ minHeight: 44, minWidth: 44, justifyContent: "center", alignItems: "center" }}><Feather name={rightIcon} size={18} color={kitchenColors.onSurfaceSecondary} /></Pressable> : null}</View>{error || helper ? <Text nativeID={`${id}-description`} accessibilityRole={error ? "alert" : undefined} style={[kitchenType.caption, error ? { color: kitchenColors.error } : null]}>{error || helper}</Text> : null}</View>;
+  const [contentHeight, setContentHeight] = useState(46);
+  const input = useRef<TextInput>(null);
+  const resizeWeb = useCallback(() => {
+    if (Platform.OS !== "web" || !props.multiline || !input.current) return;
+    const textarea = input.current as unknown as HTMLTextAreaElement;
+    // Reset before measuring so deleting text or widening the field also shrinks it.
+    textarea.style.height = "0px";
+    const height = Math.max(46, textarea.scrollHeight);
+    textarea.style.height = `${height}px`;
+    setContentHeight(height);
+  }, [props.multiline]);
+  useLayoutEffect(resizeWeb, [resizeWeb, props.value, props.defaultValue]);
+  return <View style={[{ gap: 8, minWidth: 0 }, containerStyle]}>
+    {label ? <Text nativeID={`${id}-label`} style={kitchenType.label}>{label}</Text> : null}
+    <View style={{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, borderWidth: 1, borderColor: error ? kitchenColors.error : focused ? kitchenColors.focusRing : kitchenColors.controlBorder, borderRadius: 8, backgroundColor: props.editable === false ? kitchenColors.surface : kitchenColors.surfaceSecondary }}>
+      {leftIcon ? <Feather accessible={false} name={leftIcon} size={18} color={kitchenColors.onSurfaceMuted} /> : null}
+      <TextInput {...props} ref={input} numberOfLines={props.multiline ? 1 : props.numberOfLines} scrollEnabled={props.multiline ? false : props.scrollEnabled}
+        accessibilityLabel={props.accessibilityLabel || label || props.placeholder} aria-labelledby={label ? `${id}-label` : undefined}
+        aria-describedby={error || helper ? `${id}-description` : undefined} aria-invalid={Boolean(error)} accessibilityHint={props.accessibilityHint || error || helper}
+        onFocus={event => { setFocused(true); onFocus?.(event); }} onBlur={event => { setFocused(false); onBlur?.(event); }}
+        onLayout={event => { resizeWeb(); onLayout?.(event); }}
+        onContentSizeChange={event => {
+          if (Platform.OS !== "web" && props.multiline) setContentHeight(Math.max(46, Math.ceil(event.nativeEvent.contentSize.height)));
+          onContentSizeChange?.(event);
+        }}
+        placeholderTextColor={kitchenColors.onSurfaceSubtle}
+        style={[{ flex: 1, minWidth: 0, minHeight: 46, paddingVertical: props.multiline ? 11 : 12, ...kitchenType.body,
+          textAlignVertical: props.multiline ? "top" : "center", ...(props.multiline ? { height: contentHeight } : {}),
+          ...(Platform.OS === "web" ? { outlineStyle: "none", ...(props.multiline ? { overflow: "hidden" } : {}) } : {}),
+        } as any, style]} />
+      {rightIcon ? <Pressable accessibilityRole="button" accessibilityLabel={rightIcon.replaceAll("-", " ")} onPress={onRightPress} style={{ minHeight: 44, minWidth: 44, justifyContent: "center", alignItems: "center" }}><Feather name={rightIcon} size={18} color={kitchenColors.onSurfaceSecondary} /></Pressable> : null}
+    </View>
+    {error || helper ? <Text nativeID={`${id}-description`} accessibilityRole={error ? "alert" : undefined} style={[kitchenType.caption, error ? { color: kitchenColors.error } : null]}>{error || helper}</Text> : null}
+  </View>;
 }
 
 export function KitchenFieldRow({ children }: { children: ReactNode }) {
