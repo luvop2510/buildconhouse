@@ -232,7 +232,7 @@ test('New Design dates default to today while saved dates remain editable and hi
   project = await command(context.request, project, 'design_present', { notes: 'Known missing historical dates' });
   await page.reload();
   await expect(page.getByTestId('kitchen-design-edit-shared')).toHaveValue('');
-  await page.getByTestId('kitchen-design-edit-shared').focus();
+  await page.getByTestId('kitchen-design-edit-shared').click();
   await expect(page.getByTestId('kitchen-design-edit-shared')).toHaveValue(today);
   await page.getByTestId('kitchen-design-edit-shared').fill('');
   await expect(page.getByTestId('kitchen-design-sent-not-recorded')).toHaveAttribute('aria-pressed', 'true');
