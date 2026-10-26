@@ -390,11 +390,14 @@ async def change_status(
             status_code=400,
             detail=f"Cannot move from '{cur}' to '{body.to_status}'",
         )
-    if body.to_status in {"packed", "ready_for_dispatch"} and any(
-        float(item.get("loan_replenishment_promised_qty") or 0) > 0
-        for item in doc.get("items", []) if not item.get("cancelled")
-    ):
-        raise HTTPException(status_code=409, detail="A replacement in this order must return to the lending customer")
+    active = [item for item in doc.get("items", []) if not item.get("cancelled")]
+    promised = lambda item: max(0.0, float(item.get("loan_replenishment_promised_qty") or 0)
+                                - float(item.get("loan_replenishment_returned_qty") or 0))
+    if (body.to_status in {"packed", "ready_for_dispatch"} and any(promised(item) > 0 for item in active)
+            and not any(float(item.get("qty") or 0) - float(item.get("godown_transferred_qty") or 0)
+                        - float(item.get("loan_replenishment_returned_qty") or 0)
+                        - float(item.get("loaned_qty") or 0) - promised(item) > 1e-6 for item in active)):
+        raise HTTPException(status_code=409, detail="These replacement units must return to the lending customer")
     patch = await _apply_status_change(doc, body.to_status, user, body.note)
     await db.purchase_orders.update_one(floor_query(user, {"id": po_id}), {"$set": patch})
     fresh = await db.purchase_orders.find_one(floor_query(user, {"id": po_id}), {"_id": 0})

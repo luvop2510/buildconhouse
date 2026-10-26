@@ -521,3 +521,17 @@ def test_workspace_large_history_avoids_per_item_queries(monkeypatch):
     assert purchase_orders.last_pipeline[2] == {"$match": {"items.cancelled": {"$ne": True}}}
     assert "$expr" in purchase_orders.last_pipeline[3]["$match"]
     assert purchase_orders.last_pipeline[4]["$project"]["items"] == 1
+
+
+@pytest.mark.parametrize('received', [0, 39000])
+def test_unpaid_order_balance_uses_the_same_commercial_value_as_order_tile(monkeypatch, received):
+    calls = {}
+    rows = [{**row, 'qty': 1, 'unit_cost': 743000} for row in _workspace_rows()[:1]]
+    _set_common_patches(monkeypatch, rows, calls)
+    tracker.db.quotations = _Collection([{'id': 'quote-vitra', 'grand_total': 782000}], calls, 'quotations')
+    monkeypatch.setattr(payment_routes, '_paid_by_quotation', lambda ids, **kwargs: asyncio.sleep(
+        0, result={quote_id: received for quote_id in ids}))
+    workspace = asyncio.run(tracker.customer_workspace('cust-1', user=_user()))
+    assert workspace['summary']['order_value'] == 782000
+    assert workspace['summary']['outstanding_balance'] == 782000 - received
+    assert workspace['summary']['outstanding_value'] == 743000  # physical goods, not money due

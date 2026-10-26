@@ -4,7 +4,7 @@ from services.referrer_identity import referrer_label
 
 from collections import defaultdict
 from datetime import datetime
-from decimal import Decimal, InvalidOperation
+from services.money import format_indian_money
 import functools
 from io import BytesIO
 import logging
@@ -178,23 +178,6 @@ def _item_row_height_mm(item_count: int) -> float:
         return COMPACT_SPARSE_ITEM_ROW_MM
     return max(ITEM_ROW_MM, usable / item_count)
 
-
-def format_indian_money(value: object) -> str:
-    """Format a numeric value using Indian digit grouping, without currency."""
-    try:
-        amount = Decimal(str(value if value is not None else 0)).quantize(Decimal("0.01"))
-    except (InvalidOperation, TypeError, ValueError):
-        amount = Decimal("0.00")
-    sign = "-" if amount < 0 else ""
-    whole, fraction = f"{abs(amount):.2f}".split(".")
-    if len(whole) > 3:
-        tail, head = whole[-3:], whole[:-3]
-        groups: list[str] = []
-        while head:
-            groups.append(head[-2:])
-            head = head[:-2]
-        whole = ",".join(reversed(groups)) + "," + tail
-    return f"{sign}{whole}.{fraction}"
 
 
 def _currency_symbol() -> str:

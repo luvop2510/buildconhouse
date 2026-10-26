@@ -2,6 +2,27 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
+## Sanitary quantities, assignment and follow-ups — 2026-10-27
+
+Sanitary walk-ins use explicit floor-worker assignments as their salesperson;
+never substitute the owner creator. Legacy owner-only records display Unassigned.
+Keep only Call, Visit Showroom, WhatsApp and Mark Lost on sanitary details.
+Pre-order Pending/Sent quotations display under Draft without rewriting history.
+
+Customer lending requires matching PO Final quantity. Keep reserved replacement
+units separate from normal stock; only those units return to the lender's In Box
+through the explicit, idempotent return action. Preserve free stock dispatch,
+legacy journals, floor grants and transaction guards. Customer Outstanding is the
+unpaid financial balance, not the value of undelivered material.
+
+Sanitary draft follow-ups are due seven days after creation, including drafts
+with customer details but no items. Retire them on ordering. The sanitary inbox
+keeps contact timing and Salesperson attribution/filtering, with no mission,
+summary, priority or type controls. Other floors retain their existing summaries.
+Money uses Indian grouping/lakh/crore. Quotation Excel cover logos use portable
+PNG pixels and fixed aspect-preserving anchors; retain Indian currency formats.
+See docs/audits/2026-10-27-sanitary-workflows.md for evidence and release limits.
+
 ## Kitchen explicit versions and internal notes — 2026-10-26
 
 Design/quotation selectors are views; mutations name selected IDs. Orders and

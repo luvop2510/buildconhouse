@@ -43,7 +43,7 @@ class PurchaseOrders:
         self.destination = {'id': 'po-recipient', 'floor_id': 'first-floor',
                             'customer_id': 'recipient', 'status': 'ordered',
                             'items': [{'id': 'recipient-order-item', 'product_id': 'product-1',
-                                       'stage': 'company_billing', 'qty': 2}]}
+                                       'stage': 'po_final', 'qty': 2}]}
         self.inserted = []
         self.reservation_query = None
 
@@ -51,6 +51,8 @@ class PurchaseOrders:
         terms = base(query)
         if terms.get('customer_id') == self.destination['customer_id']:
             matched = any(i['product_id'] == terms['items']['$elemMatch']['product_id']
+                          and i['stage'] == terms['items']['$elemMatch']['stage']
+                          and not i.get('loan_replenishment_for_customer_name')
                           for i in self.destination['items'])
             return deepcopy(self.destination) if matched and allowed_floor(query, 'first-floor') else None
         wanted = terms.get('items.id')
@@ -60,15 +62,12 @@ class PurchaseOrders:
 
     async def update_one(self, query, update, **_kwargs):
         terms = base(query)
-        condition = terms['items']['$elemMatch']
         if terms['id'] == self.destination['id']:
-            row = self.destination['items'][0]
-            promised = row.get('loan_replenishment_promised_qty', 0)
-            if promised > row['qty'] - update['$inc']['items.$.loan_replenishment_promised_qty']:
+            if self.destination['items'] != terms['items']:
                 return SimpleNamespace(modified_count=0)
-            row['loan_replenishment_promised_qty'] = promised + update['$inc']['items.$.loan_replenishment_promised_qty']
-            row['loan_replenishment_for_customer_name'] = update['$set']['items.$.loan_replenishment_for_customer_name']
+            self.destination['items'] = deepcopy(update['$set']['items'])
             return SimpleNamespace(modified_count=1)
+        condition = terms['items']['$elemMatch']
         self.reservation_query = query
         item = self.source['items'][0]
         limit = condition['$and'][0]['$or'][1]['loaned_qty']['$lte']
@@ -362,8 +361,8 @@ def test_settle_return_releases_reservation_and_keeps_purchase_lines(monkeypatch
                 source['loaned_qty'] += update['$inc']['items.$[source].loaned_qty']
                 source['customer_loan_history'][0]['status'] = 'returned'
             elif po_id == 'po-dest':
-                dest['loan_return_status'] = update['$set']['items.$.loan_return_status']
-                dest['loan_return_due'] = update['$set']['items.$.loan_return_due']
+                dest['loan_return_status'] = update['$set']['items.$[borrowed].loan_return_status']
+                dest['loan_return_due'] = update['$set']['items.$[borrowed].loan_return_due']
             else:
                 return SimpleNamespace(modified_count=0)
             return SimpleNamespace(modified_count=1)
@@ -390,14 +389,16 @@ def test_replenished_order_returns_matching_loan_on_in_box(monkeypatch, arrival_
     db, user = setup(monkeypatch)
     ordered_po = {
         'id': 'ordered-po', 'floor_id': 'first-floor', 'customer_id': 'recipient',
-        'items': [{'id': 'ordered-item', 'product_id': 'product-1', 'qty': 3,
-                   'stage': arrival_stage, 'loan_replenishment_reserved_qty': 0}],
+        'items': [{'id': 'ordered-item', 'product_id': 'product-1', 'qty': 2,
+                   'stage': arrival_stage, 'loan_replenishment_reserved_qty': 0,
+                   'loan_replenishment_promised_qty': 2, 'loan_replenishment_for_customer_name': 'Source'}],
     }
     loan = {
         'id': 'loan-1', 'type': 'loan', 'status': 'awaiting_return',
         'floor_id': 'first-floor', 'destination_customer_id': 'recipient',
         'destination_po_id': 'po-dest', 'destination_item_id': 'item-dest',
         'product_id': 'product-1', 'qty': 2,
+        'replenishment_item_id': 'ordered-item',
     }
     borrowed_status = {'value': 'awaiting_return', 'due': False}
 
@@ -406,7 +407,7 @@ def test_replenished_order_returns_matching_loan_on_in_box(monkeypatch, arrival_
             return self
 
         async def to_list(self, *_args):
-            return [deepcopy(loan)] if loan['status'] == 'awaiting_return' else []
+            return [deepcopy(loan)] if loan['status'] in {'awaiting_return', 'return_due'} else []
 
     class TransferCollection:
         def find(self, *_args):
@@ -450,13 +451,13 @@ def test_replenished_order_returns_matching_loan_on_in_box(monkeypatch, arrival_
         return
     assert result['return_due_transfer_ids'] == ['loan-1']
     assert ordered_po['items'][0]['loan_replenishment_reserved_qty'] == 2
-    assert loan['status'] == 'returned'
+    assert loan['status'] == 'return_due'
     assert borrowed_status['value'] == 'return_due'
     assert borrowed_status['due'] is True
-    assert settled == ['loan-1']
+    assert settled == []
     repeat = asyncio.run(workflow.mark_loans_due_for_replenishment(
         item_id='ordered-item', user=user))
-    assert repeat['return_due_transfer_ids'] == []
+    assert repeat['return_due_transfer_ids'] == ['loan-1']
     assert ordered_po['items'][0]['loan_replenishment_reserved_qty'] == 2
 
 
@@ -473,6 +474,9 @@ def test_repeated_idempotency_key_reuses_existing_transfer(monkeypatch):
         return {'transfer_id': 'existing-loan', 'payment_amount': 0}
 
     monkeypatch.setattr(workflow, 'db', SimpleNamespace(event_outbox=Outbox()))
+    async def validate(*_args, **_kwargs):
+        pass
+    monkeypatch.setattr(workflow, '_validate_transfer_replay', validate)
     monkeypatch.setattr(domain_outbox, 'dispatch_event', dispatch)
     user = UserPublic(email='warehouse@forge.app', full_name='Warehouse', role='warehouse')
     response = asyncio.run(workflow.execute_transfer(
@@ -481,3 +485,157 @@ def test_repeated_idempotency_key_reuses_existing_transfer(monkeypatch):
     ))
     assert response == {'idempotent': True, 'transfer_id': 'existing-loan',
                         'payment_amount': 0}
+
+
+@pytest.mark.parametrize('stage', ['order_in_company', 'company_billing', 'in_box', 'dispatched'])
+def test_recipient_product_must_be_in_po_final(monkeypatch, stage):
+    db, run = create(monkeypatch)
+    db.purchase_orders.destination['items'][0]['stage'] = stage
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(run())
+    assert exc.value.status_code == 409
+    assert db.purchase_orders.inserted == []
+
+
+def test_only_four_of_eighty_four_recipient_units_are_reserved(monkeypatch):
+    db, run = create(monkeypatch, qty=4)
+    db.purchase_orders.destination['items'][0]['qty'] = 84
+    asyncio.run(run())
+    normal, reserved = db.purchase_orders.destination['items']
+    assert normal['qty'] == 80
+    assert not normal.get('loan_replenishment_for_customer_name')
+    assert reserved['qty'] == reserved['loan_replenishment_promised_qty'] == 4
+    assert reserved['loan_replenishment_for_customer_name'] == 'Source'
+    loan = db.purchase_transfers.inserted[0]
+    assert loan['replenishment_item_id'] == reserved['id']
+    assert loan['replenishment_po_id'] == db.purchase_orders.destination['id']
+    assert sum(row['qty'] for row in db.purchase_orders.destination['items']) == 84
+
+
+def test_legacy_replacement_separates_only_four_reserved_units_on_arrival(monkeypatch):
+    from unittest.mock import AsyncMock
+    item = {'id': 'legacy', 'qty': 84, 'qty_received': 84, 'stage': 'in_box',
+            'loan_replenishment_promised_qty': 4, 'loan_replenishment_for_customer_name': 'Lender',
+            'loan_replenishment_reserved_qty': 4}
+    po = {'id': 'legacy-po', 'floor_id': 'first-floor', 'items': [deepcopy(item)]}
+    orders = SimpleNamespace(update_one=AsyncMock(return_value=SimpleNamespace(modified_count=1)))
+    monkeypatch.setattr(workflow, 'db', SimpleNamespace(purchase_orders=orders))
+    user = UserPublic(email='warehouse@forge.app', full_name='Warehouse', role='warehouse', floor_ids=['first-floor'])
+    repaired, reserved = asyncio.run(workflow._separate_legacy_replacement(po, item, user))
+    assert reserved['id'] == 'legacy'  # existing loan journal stays bound
+    assert reserved['qty'] == reserved['qty_received'] == 4
+    normal = repaired['items'][1]
+    assert normal['qty'] == normal['qty_received'] == 80
+    assert not normal['loan_replenishment_for_customer_name']
+    assert normal['loan_replenishment_promised_qty'] == 0
+    query = base(orders.update_one.await_args.args[0])
+    assert query['items'] == po['items']  # do not replace concurrent edits
+
+
+def test_normal_eighty_units_cannot_be_claimed_by_unbound_legacy_loan(monkeypatch):
+    from unittest.mock import AsyncMock, Mock
+    normal = {'id': 'normal-80', 'product_id': 'product-1', 'qty': 80, 'stage': 'in_box',
+              'loan_replenishment_promised_qty': 0, 'loan_replenishment_for_customer_name': None}
+    orders = SimpleNamespace(find_one=AsyncMock(return_value={'id': 'recipient-po', 'items': [normal]}))
+    transfers = SimpleNamespace(find=Mock())
+    monkeypatch.setattr(workflow, 'db', SimpleNamespace(purchase_orders=orders, purchase_transfers=transfers))
+    user = UserPublic(email='warehouse@forge.app', full_name='Warehouse', role='warehouse', floor_ids=['first-floor'])
+    result = asyncio.run(workflow.mark_loans_due_for_replenishment(item_id='normal-80', user=user))
+    assert result['return_due_transfer_ids'] == []
+    transfers.find.assert_not_called()
+
+
+@pytest.mark.parametrize('consumed', ['returned', 'dispatched'])
+def test_consumed_source_units_cannot_be_lent_again(monkeypatch, consumed):
+    db, run = create(monkeypatch, qty=2)
+    source = db.purchase_orders.source['items'][0]
+    if consumed == 'returned':
+        source['loan_replenishment_returned_qty'] = 4
+    else:
+        db.purchase_orders.source['chalans'] = [{'stage': 'dispatched', 'items': [{'po_item_id': source['id'], 'qty': 4}]}]
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(run())
+    assert error.value.status_code == 400
+    assert 'Only 1 available' in error.value.detail
+    assert db.purchase_orders.inserted == []
+
+
+@pytest.mark.parametrize('changed', ['qty', 'customer', 'actor', 'item'])
+def test_transfer_retry_rejects_changed_body_or_actor(monkeypatch, changed):
+    from unittest.mock import AsyncMock
+    user = UserPublic(email='warehouse@forge.app', full_name='Warehouse', role='warehouse', floor_ids=['first-floor'])
+    transfer = {'actor_id': user.id, 'source_item_id': 'item', 'destination_customer_id': 'recipient', 'qty': 4, 'reason': None}
+    if changed == 'actor': transfer['actor_id'] = 'other-user'
+    if changed == 'qty': transfer['qty'] = 2
+    if changed == 'customer': transfer['destination_customer_id'] = 'other-customer'
+    if changed == 'item': transfer['source_item_id'] = 'other-item'
+    monkeypatch.setattr(workflow, 'db', SimpleNamespace(purchase_transfers=SimpleNamespace(find_one=AsyncMock(return_value=transfer))))
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(workflow._validate_transfer_replay({'payload': {'transfer_id': 't'}}, item_id='item', destination_customer_id='recipient', new_customer=None, qty=4, reason=None, user=user))
+    assert error.value.status_code == 409
+
+
+@pytest.mark.parametrize('received', [81, 84])
+def test_received_po_final_units_cannot_back_future_replacement(monkeypatch, received):
+    db, run = create(monkeypatch, qty=4)
+    row = db.purchase_orders.destination['items'][0]
+    row['qty'] = 84
+    row['qty_received'] = received
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(run())
+    assert error.value.status_code == 409
+    assert db.purchase_orders.inserted == []
+
+
+@pytest.mark.parametrize('normal_qty,returned,allowed', [(80, 0, True), (80, 4, True), (0, 0, False)])
+def test_po_dispatch_status_does_not_hold_free_units_behind_return_reservation(monkeypatch, normal_qty, returned, allowed):
+    from unittest.mock import AsyncMock
+    from routes import purchase_routes
+    from models import PurchaseStatusPayload
+    reserved = {'id': 'reserved', 'product_id': 'basin', 'sku': 'BASIN', 'name': 'Basin',
+                'qty': 4, 'unit_cost': 100, 'stage': 'in_box',
+                'loan_replenishment_promised_qty': 4, 'loan_replenishment_returned_qty': returned}
+    items = [reserved]
+    if normal_qty:
+        items.append({**reserved, 'id': 'normal', 'qty': normal_qty, 'loan_replenishment_promised_qty': 0,
+                      'loan_replenishment_returned_qty': 0})
+    po = {'id': 'po', 'number': 'FPO-1', 'floor_id': 'first-floor', 'customer_id': 'buyer', 'customer_name': 'Buyer',
+          'status': 'fully_received', 'items': items, 'created_by': 'staff', 'created_by_name': 'Staff'}
+    orders = SimpleNamespace(find_one=AsyncMock(return_value=po), update_one=AsyncMock())
+    monkeypatch.setattr(purchase_routes, 'db', SimpleNamespace(purchase_orders=orders))
+    monkeypatch.setattr(purchase_routes, '_apply_status_change', AsyncMock(return_value={'status': 'packed'}))
+    user = UserPublic(email='warehouse@forge.app', full_name='Warehouse', role='warehouse', floor_ids=['first-floor'])
+    call = purchase_routes.change_status('po', PurchaseStatusPayload(to_status='packed'), user)
+    if allowed:
+        asyncio.run(call)
+        orders.update_one.assert_awaited_once()
+    else:
+        with pytest.raises(HTTPException) as error:
+            asyncio.run(call)
+        assert error.value.status_code == 409
+        orders.update_one.assert_not_awaited()
+
+
+def test_transfer_replay_stays_in_its_concrete_floor(monkeypatch):
+    transfer = {'id': 'transfer', 'floor_id': 'first-floor', 'source_item_id': 'item',
+                'destination_customer_id': 'recipient', 'qty': 4, 'reason': None}
+    user = UserPublic(email='warehouse@forge.app', full_name='Warehouse', role='warehouse',
+                      floor_ids=['first-floor', 'ground-floor'], active_floor_id='ground-floor')
+    transfer['actor_id'] = user.id
+    class Collection:
+        async def find_one(self, query, *_args):
+            return transfer if allowed_floor(query, transfer['floor_id']) else None
+    monkeypatch.setattr(workflow, 'db', SimpleNamespace(purchase_transfers=Collection()))
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(workflow._validate_transfer_replay({'payload': {'transfer_id': 'transfer'}},
+            item_id='item', destination_customer_id='recipient', new_customer=None, qty=4, reason=None, user=user))
+    assert error.value.status_code == 409
+
+
+def test_identical_transfer_replay_is_allowed(monkeypatch):
+    from unittest.mock import AsyncMock
+    user = UserPublic(email='warehouse@forge.app', full_name='Warehouse', role='warehouse', floor_ids=['first-floor'])
+    transfer = {'actor_id': user.id, 'source_item_id': 'item', 'destination_customer_id': 'recipient', 'qty': 4, 'reason': 'Agreed'}
+    monkeypatch.setattr(workflow, 'db', SimpleNamespace(purchase_transfers=SimpleNamespace(find_one=AsyncMock(return_value=transfer))))
+    asyncio.run(workflow._validate_transfer_replay({'payload': {'transfer_id': 't'}},
+        item_id='item', destination_customer_id='recipient', new_customer=None, qty=4, reason='Agreed', user=user))

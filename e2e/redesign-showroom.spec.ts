@@ -63,6 +63,7 @@ test('critical walk-in duplicate resolution preserves the selected customer on r
   await mockSession(page, '/walkins/new');
   await page.route('**/api/walkins/config/sources', r => r.fulfill({ json: { sources: ['Walk-in'] } }));
   await page.route('**/api/walkins/config/assignees', r => r.fulfill({ json: [{ id: 'audit-owner', full_name: 'Audit Owner', role: 'owner' }] }));
+  await page.route('**/api/followups/assignees?**', r => r.fulfill({ json: [{ id: 'sanitary-worker', full_name: 'Sanitary Worker', role: 'worker', floor_ids: ['first-floor'] }] }));
   await page.route('**/api/walkins/check-duplicate?**', r => r.fulfill({ json: { high: [], medium: [{ id: 'existing-customer', name: 'Showroom customer', phone: '9000000000' }], low: [] } }));
   const writes: any[] = [];
   let fail = true;
@@ -73,6 +74,7 @@ test('critical walk-in duplicate resolution preserves the selected customer on r
   await page.goto('/walkins/new');
   await page.getByTestId('walkin-name').fill('Showroom customer');
   await page.getByTestId('walkin-phone').fill('9000000000');
+  await page.getByTestId('lead-assign-first-floor-sanitary-worker').click();
   await page.getByTestId('walkin-review-matches').click();
   await page.getByTestId('walkin-use-existing-existing-customer').click();
   await page.getByTestId('walkin-save-btn').click();
@@ -82,7 +84,7 @@ test('critical walk-in duplicate resolution preserves the selected customer on r
   await page.getByTestId('walkin-save-btn').click();
   await expect(page).toHaveURL(/\/walkins\/saved-walkin/);
   expect(writes).toHaveLength(2);
-  expect(writes[1]).toMatchObject({ use_existing_customer_id: 'existing-customer', floor_id: 'first-floor', salesperson_id: 'audit-owner' });
+  expect(writes[1]).toMatchObject({ use_existing_customer_id: 'existing-customer', floor_id: 'first-floor', salesperson_id: 'sanitary-worker' });
 });
 
 test('critical customer intake retains optional details after a failed save', async ({ page }) => {

@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { mockSession } from './audit-fixtures';
 
-test('critical follow-up queue remains available when the optional summary fails', async ({ page }) => {
+test('critical Ground follow-up queue remains available when the optional summary fails', async ({ page }) => {
   await mockSession(page, '/followups');
+  await page.addInitScript(() => localStorage.setItem('forge.active-floor', JSON.stringify('ground-floor')));
   let summaryRequests = 0;
   await page.route('**/api/followups/page?**', r => r.fulfill({ json: { items: [], page: 1, page_size: 100, has_more: false } }));
   await page.route('**/api/followups/stats', route => {

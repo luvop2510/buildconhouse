@@ -1,3 +1,4 @@
+from services.money import format_indian_money
 from services.followup_engine import reconcile_followups_admitted
 """Sanitary godown stock — returned/declined material that can be reused.
 
@@ -281,9 +282,11 @@ async def _persist_intake(
                 "id": po["id"], "floor_id": po["floor_id"],
                 "items": {"$elemMatch": {
                     "id": item["id"],
+                    "loan_replenishment_promised_qty": item.get("loan_replenishment_promised_qty"),
+                    "loaned_qty": item.get("loaned_qty"),
                     "$and": [
                         {"$or": [
-                            {"godown_transferred_qty": {"$lte": received_qty - float(item.get("loan_replenishment_returned_qty") or 0) - float(item.get("loaned_qty") or 0) - qty}},
+                            {"godown_transferred_qty": {"$lte": received_qty - float(item.get("loan_replenishment_returned_qty") or 0) - float(item.get("loaned_qty") or 0) - max(0.0, float(item.get("loan_replenishment_promised_qty") or 0) - float(item.get("loan_replenishment_returned_qty") or 0)) - qty}},
                             {"godown_transferred_qty": {"$exists": False}},
                         ]},
                         ({"loan_replenishment_returned_qty": float(item["loan_replenishment_returned_qty"])}
@@ -330,7 +333,7 @@ async def _persist_intake(
                         godown_stock_id=lot["id"],
                         reference=f"Godown stock {lot['id']}",
                         note=(
-                            f"₹{credit_amount:,.2f} balance credit — {qty:g} × {item.get('name')} "
+                            f"₹{format_indian_money(credit_amount)} balance credit — {qty:g} × {item.get('name')} "
                             "moved to godown stock."
                         ),
                         paid_at=at, recorded_by=user.id, recorded_by_name=user.full_name,
@@ -1176,7 +1179,8 @@ async def intake_stock(body: Intake, user: UserPublic = Depends(require_min_role
     if item.get("cancelled"):
         raise HTTPException(status_code=409, detail="A cancelled purchase item cannot be transferred to godown stock")
     received_qty = float(item["qty_received"] if item.get("qty_received") is not None else item.get("qty") or 0)
-    transferable = received_qty - float(item.get("godown_transferred_qty") or 0) - float(item.get("loan_replenishment_returned_qty") or 0) - float(item.get("loaned_qty") or 0)
+    promised = max(0.0, float(item.get("loan_replenishment_promised_qty") or 0) - float(item.get("loan_replenishment_returned_qty") or 0))
+    transferable = received_qty - float(item.get("godown_transferred_qty") or 0) - float(item.get("loan_replenishment_returned_qty") or 0) - float(item.get("loaned_qty") or 0) - promised
     if body.qty > transferable:
         raise HTTPException(status_code=409, detail=f"Only {transferable:g} units are available to transfer")
     product = await db.products.find_one(floor_query(user, {"id": item["product_id"]}), {"_id": 0, "brand_id": 1, "floor_id": 1, "mrp": 1}) or {}
@@ -1214,7 +1218,7 @@ async def intake_stock(body: Intake, user: UserPublic = Depends(require_min_role
         )
     credit_amount = float((payment or {}).get("amount") or 0)
     await log_event(event_type="godown_stock.intaken", entity_type="purchase", entity_id=po["id"], actor=user, floor_id=po["floor_id"], customer_id=po.get("customer_id"), purchase_id=po["id"], summary=f"Moved {body.qty:g} × {item.get('name')} to godown stock", payload={"stock_id": lot["id"], "reason": lot["reason"], "source_purchased_at": lot["source_purchased_at"], "payment_credit_amount": credit_amount, "payment_id": (payment or {}).get("id")})
-    await notify(user.id, "Godown stock added", body=(f"{body.qty:g} × {item.get('name')} from {po.get('customer_name')} is available to reuse." + (f" Customer balance reduced by ₹{credit_amount:,.2f}." if credit_amount else "")), kind="success", link="/(admin)/godown-stock", floor_id=po["floor_id"])
+    await notify(user.id, "Godown stock added", body=(f"{body.qty:g} × {item.get('name')} from {po.get('customer_name')} is available to reuse." + (f" Customer balance reduced by ₹{format_indian_money(credit_amount)}." if credit_amount else "")), kind="success", link="/(admin)/godown-stock", floor_id=po["floor_id"])
     try:
         await cache.bump("payments")
     except Exception:

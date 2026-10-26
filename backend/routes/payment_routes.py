@@ -8,6 +8,7 @@ There are NO taxes anywhere in Forge — the quotation's grand_total is the
 final price the customer pays, and payments accumulate against it directly.
 """
 from __future__ import annotations
+from services.money import format_indian_money
 from services.followup_engine import reconcile_followups_admitted
 import re
 from services.multi_filters import filter_values, filter_condition
@@ -188,9 +189,7 @@ def _short_amount(amount: float) -> str:
         return f"₹{amount / 1_00_00_000:.1f}Cr"
     if amount >= 1_00_000:
         return f"₹{amount / 1_00_000:.1f}L"
-    if amount >= 1_000:
-        return f"₹{amount / 1_000:.1f}k"
-    return f"₹{int(amount)}"
+    return f"₹{format_indian_money(amount, decimals=0)}"
 
 
 def _iso_month(iso_ts: str) -> str:
@@ -684,8 +683,8 @@ async def create_payment(
         outstanding_before = round(grand - already_paid, 2)
         if payment.amount > outstanding_before + 1e-6:
             raise HTTPException(status_code=400, detail=(
-                f"Payment of ₹{body.amount:,.2f} exceeds the outstanding balance of "
-                f"₹{max(outstanding_before, 0):,.2f} on {quot.get('number')}"
+                f"Payment of ₹{format_indian_money(body.amount)} exceeds the outstanding balance of "
+                f"₹{format_indian_money(max(outstanding_before, 0))} on {quot.get('number')}"
             ))
         payment_doc = payment.model_dump()
         if not idempotency_key:
@@ -756,7 +755,7 @@ async def create_payment(
             quotation_id=body.quotation_id,
             summary=(
                 f"{MODE_LABELS.get(body.mode, body.mode).title()} · "
-                f"₹{payment.amount:,.0f} received on {quot.get('number')}"
+                f"₹{format_indian_money(payment.amount, decimals=0)} received on {quot.get('number')}"
             ),
             payload={
                 "amount": payment.amount,
@@ -777,8 +776,8 @@ async def create_payment(
     await notify(
         quot.get("created_by"),
         f"Payment received · {quot.get('number')}",
-        body=f"₹{payment.amount:,.0f} ({MODE_LABELS.get(body.mode, body.mode).title()}) from {quot.get('customer_name')}"
-        + (" — fully paid" if fully_paid else f" — ₹{max(grand - total_paid, 0):,.0f} outstanding"),
+        body=f"₹{format_indian_money(payment.amount, decimals=0)} ({MODE_LABELS.get(body.mode, body.mode).title()}) from {quot.get('customer_name')}"
+        + (" — fully paid" if fully_paid else f" — ₹{format_indian_money(max(grand - total_paid, 0), decimals=0)} outstanding"),
         kind="success",
         link=f"/quotations/{body.quotation_id}",
         floor_id=floor_inherit(quot),
@@ -1098,17 +1097,7 @@ async def export_payment_history(
 # ---------------------------------------------------------------------------
 def _format_amount(v: float) -> str:
     """Indian-style comma formatting: 12,34,567."""
-    s = f"{int(round(v))}"
-    if len(s) <= 3:
-        return s
-    last3, rest = s[-3:], s[:-3]
-    parts = []
-    while len(rest) > 2:
-        parts.append(rest[-2:])
-        rest = rest[:-2]
-    if rest:
-        parts.append(rest)
-    return ",".join(reversed(parts)) + "," + last3
+    return format_indian_money(v, decimals=0)
 
 
 def _clean_phone(phone: Optional[str]) -> Optional[str]:

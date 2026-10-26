@@ -11,6 +11,7 @@ refreshes the score/reason of still-valid cards, and auto-resolves cards whose
 trigger condition no longer holds (e.g. the customer placed an order).
 """
 from __future__ import annotations
+from services.money import format_indian_money
 
 import asyncio
 import logging
@@ -115,11 +116,11 @@ def age_days(dt: Optional[datetime]) -> int:
 
 def money_short(v: float) -> str:
     v = float(v or 0)
-    if v >= 100000:
-        return f"{v / 100000:.1f}L"
-    if v >= 1000:
-        return f"{v / 1000:.0f}K"
-    return f"{int(v)}"
+    if abs(v) >= 10000000:
+        return f"{v / 10000000:.1f} Cr"
+    if abs(v) >= 100000:
+        return f"{v / 100000:.1f} L"
+    return format_indian_money(v, decimals=0)
 
 
 def ist_day_bounds_utc(offset_days: int = 0) -> tuple[datetime, datetime]:
@@ -581,7 +582,7 @@ async def _reconcile_followups_locked() -> dict:
         if q.get("customer_outcome") in {"won", "lost"}:
             continue
         cust = customers.get(q.get("customer_id"))
-        if not cust or not q.get("items"):
+        if not cust or (not q.get("items") and _followup_floor_id(q, None) != "first-floor"):
             continue
         tier = cust.get("tier", "retail")
         value = float(q.get("grand_total") or 0)
@@ -592,23 +593,23 @@ async def _reconcile_followups_locked() -> dict:
         days_since_contact = age_days(last_contact)
         tags = [tier.upper()] + ([q["reference_source"]] if q.get("reference_source") else [])
 
-        if status in ("draft", "sent", "pending_approval") and created_at and q.get("doc_type") not in ("tiles_selection", "tiles_quotation"):
+        if (status in ("draft", "sent", "pending_approval") or (status == "approved" and _followup_floor_id(q, None) == "first-floor")) and created_at and q.get("doc_type") not in ("tiles_selection", "tiles_quotation"):
             q_floor_id = _followup_floor_id(q, None)
             due = quotation_followup_due_at(created_at, q_floor_id)
             if due:
-                is_selection = q.get("doc_type") == "tiles_selection"
+                source_label = "Quotation draft" if status == "draft" else "Quotation"
                 age_created = age_days(created_at)
                 upsert(
                     f"quotation_followup:{q['id']}", "quotation_followup", "quotation", cust,
                     quotation=q, value=value, due_at=due.isoformat(),
                     urgency_bullet=f"No follow-up since it was created {age_created} days ago", urgency_pts=20,
                     reason=(
-                        f"{'Selection' if is_selection else 'Quotation'} created {age_created} day(s) ago — "
+                        f"{source_label} created {age_created} day(s) ago; no order placed — "
                         f"₹{money_short(value)}. Time to follow up."
                     ),
                     next_action="Call customer",
                     next_action_reason=f"{quotation_followup_delay_days(q_floor_id)}-day follow-up window has passed.",
-                    channel="call", tags=tags, days_since_contact=days_since_contact,
+                    channel="call", tags=tags + (["Quotation draft"] if status == "draft" else []), days_since_contact=days_since_contact,
                 )
 
         if status in ("sent", "pending_approval", "approved") and q.get("valid_until"):

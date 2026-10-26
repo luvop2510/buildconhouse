@@ -22,7 +22,6 @@ import {
 } from "@/src/components/ui";
 import { MobileFilterSection } from "@/src/components/ds";
 import { api } from "@/src/api/client";
-import { returnPurchaseLoan } from "@/src/api/purchases";
 import { getCustomerStockTransfers, returnCustomerStockTransfer, type CustomerStockTransfer } from "@/src/api/godownStock";
 import { ProductImage } from "@/src/components/ProductImage";
 import { PoFinal } from "@/src/components/customers/PoFinal";
@@ -53,6 +52,8 @@ type WorkspaceProduct = {
   item_id: string; po_id: string; po_number: string; sku: string; name: string; image?: string | null;
   brand_name?: string | null; supplier_name?: string | null; stage: string; stage_label: string;
   qty: number; unit_cost: number; blocked: boolean; age_days: number; customer_id: string; customer_name: string;
+  loan_replenishment_for_customer_name?: string | null; loan_replenishment_status?: string | null;
+  loan_replenishment_promised_qty?: number; loan_replenishment_returned_qty?: number;
   loaned_qty?: number; loan_transfer_id?: string | null; lent_to_customer_name?: string | null;
   customer_loan_history?: { transfer_id: string; qty: number; destination_customer_id?: string | null; destination_customer_name?: string | null; created_at?: string | null; status?: string | null }[];
   borrowed_from_customer_id?: string | null; borrowed_from_customer_name?: string | null;
@@ -66,7 +67,7 @@ type WorkspaceShortage = {
 type Workspace = {
   customer: Customer;
   summary: {
-    total_items: number; total_value: number; order_value?: number; outstanding_value: number; outstanding_count: number;
+    total_items: number; total_value: number; order_value?: number; outstanding_balance?: number; outstanding_value: number; outstanding_count: number;
     open_pos: number; blocked_count: number; delivered_count: number; shortage_count: number; refund_due?: number;
   };
   shortages: WorkspaceShortage[];
@@ -163,7 +164,6 @@ export default function CustomerDetail() {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [stockTransfers, setStockTransfers] = useState<CustomerStockTransfer[]>([]);
   const [returningTransferId, setReturningTransferId] = useState<string | null>(null);
-  const [returningPurchaseLoanId, setReturningPurchaseLoanId] = useState<string | null>(null);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [relatedErrors, setRelatedErrors] = useState(false);
   const [relatedLoading, setRelatedLoading] = useState(true);
@@ -320,16 +320,6 @@ export default function CustomerDetail() {
     }
   }, [id, invalidateWorkspace, isSanitaryFloor]);
 
-  const markPurchaseLoanReturned = useCallback(async (transferId: string) => {
-    setReturningPurchaseLoanId(transferId);
-    try {
-      await returnPurchaseLoan(transferId);
-      toast.success("Borrowed product marked returned");
-      await loadWorkspace(workspaceFilters);
-    } catch (error: any) { toast.error(error?.detail || "Could not mark product returned"); }
-    finally { setReturningPurchaseLoanId(null); }
-  }, [loadWorkspace, workspaceFilters]);
-
   const reloadAll = useCallback(async () => {
     await Promise.all([
       loadCore(),
@@ -366,6 +356,10 @@ export default function CustomerDetail() {
 
   const toMovable = useCallback((p: WorkspaceProduct): MovableItem => ({
     item_id: p.item_id, sku: p.sku, name: p.name, image: p.image, qty: p.qty, loaned_qty: p.loaned_qty,
+    loan_replenishment_for_customer_name: p.loan_replenishment_for_customer_name,
+    loan_replenishment_status: p.loan_replenishment_status,
+    loan_replenishment_promised_qty: p.loan_replenishment_promised_qty,
+    loan_replenishment_returned_qty: p.loan_replenishment_returned_qty,
     stage: p.stage as any, customer_id: p.customer_id, customer_name: p.customer_name,
     po_number: p.po_number, brand_name: p.brand_name, supplier_name: p.supplier_name,
   }), []);
@@ -895,7 +889,7 @@ export default function CustomerDetail() {
               {/* Purchase summary */}
               <View style={[styles.statsRow, !isDesktop && styles.statsRowMobile]}>
                 <StatTile onPress={() => setProductFilter("all")} label="Order Value" value={moneyShort(workspace.summary.order_value ?? workspace.summary.total_value)} icon="shopping-bag" tone="brand" sub={`${workspace.summary.total_items} products`} />
-                <StatTile onPress={() => setProductFilter("outstanding")} label="Outstanding" value={moneyShort(workspace.summary.outstanding_value)} icon="clock" tone="warning" sub={`${workspace.summary.outstanding_count} pending`} />
+                <StatTile onPress={() => setProductFilter("outstanding")} label="Outstanding" value={moneyShort(workspace.summary.outstanding_balance ?? workspace.summary.outstanding_value)} icon="clock" tone="warning" sub={`${workspace.summary.outstanding_count} pending`} />
                 <StatTile onPress={() => setOpenOrdersVisible(true)} label="Open POs" value={String(workspace.summary.open_pos)} icon="file-text" tone="brand" sub={`${purchases.length} total`} />
                 <StatTile onPress={() => setProductFilter("blocked")} label="Delayed" value={String(workspace.summary.blocked_count)} icon="alert-triangle" tone={workspace.summary.blocked_count > 0 ? "danger" : "success"} sub="Past SLA" />
               </View>
@@ -1018,12 +1012,12 @@ export default function CustomerDetail() {
                         <Text style={type.caption} numberOfLines={isDesktop ? 1 : 2}>
                           {p.sku} · {p.brand_name || "—"}{p.supplier_name ? ` · via ${p.supplier_name}` : ""} · Qty {p.qty}
                         </Text>
-                        {(p.customer_loan_history || []).map((loan) => <Text key={loan.transfer_id} style={type.caption}>We have lent {loan.qty} {loan.qty === 1 ? "unit" : "units"} to {loan.destination_customer_name || "another customer"} · {loan.status === "returned" ? "returned" : "available again when the replacement reaches In Box"}. This order remains visible.</Text>)}
-                        {!p.customer_loan_history?.length && (p.loaned_qty || 0) > 0 ? <Text style={type.caption}>We have lent {p.loaned_qty} {p.loaned_qty === 1 ? "unit" : "units"} to another customer. This order remains visible until the replacement reaches In Box.</Text> : null}
+                        {(p.customer_loan_history || []).map((loan) => <Text key={loan.transfer_id} style={type.caption}>We have lent {loan.qty} {loan.qty === 1 ? "unit" : "units"} to {loan.destination_customer_name || "another customer"} · {loan.status === "returned" ? "returned" : "available again after the replacement is returned"}. This order remains visible.</Text>)}
+                        {!p.customer_loan_history?.length && (p.loaned_qty || 0) > 0 ? <Text style={type.caption}>We have lent {p.loaned_qty} {p.loaned_qty === 1 ? "unit" : "units"} to another customer. This order remains visible until the replacement is returned.</Text> : null}
                         {p.borrowed_from_customer_name ? <Text style={type.caption}>Received from {p.borrowed_from_customer_name} · {p.loan_return_status === "returned" ? "returned" : "return when your ordered product arrives"}</Text> : null}
                       </View>
                     </Pressable>
-                    {p.loan_transfer_id && p.loan_return_due && (p.loan_return_status === "awaiting_return" || p.loan_return_status === "return_due") ? <Pressable accessibilityRole="button" accessibilityLabel={`Mark borrowed ${p.name} returned to ${p.borrowed_from_customer_name || "original customer"}`} disabled={returningPurchaseLoanId === p.loan_transfer_id} onPress={() => void markPurchaseLoanReturned(p.loan_transfer_id!)} style={[styles.itemActionBtn, { paddingHorizontal: spacing.sm }]}><Text style={type.caption}>{returningPurchaseLoanId === p.loan_transfer_id ? "Saving…" : "Mark returned"}</Text></Pressable> : null}
+
                     <View style={[styles.stagePillSm, { backgroundColor: STAGE_TONE[p.stage as keyof typeof STAGE_TONE]?.bg || colors.surfaceTertiary }]}>
                       <Text style={{ fontSize: 11, fontWeight: "600", color: STAGE_TONE[p.stage as keyof typeof STAGE_TONE]?.fg || colors.onSurfaceMuted }}>
                         {p.stage_label}
@@ -1036,7 +1030,7 @@ export default function CustomerDetail() {
                       <Pressable testID={`ws-move-${p.item_id}`} onPress={() => setMoveItem(p)} style={styles.itemActionBtn} hitSlop={6}>
                         <Feather name="arrow-right" size={12} color={colors.onSurface} />
                       </Pressable>
-                      {p.stage === "in_box" ? <Pressable testID={`ws-transfer-${p.item_id}`} accessibilityLabel={`Transfer ${p.name} to another customer`} onPress={() => setTransferItem(p)} style={styles.itemActionBtn} hitSlop={6}>
+                      {p.stage === "in_box" && !p.loan_replenishment_for_customer_name && !p.loan_transfer_id ? <Pressable testID={`ws-transfer-${p.item_id}`} accessibilityLabel={`Transfer ${p.name} to another customer`} onPress={() => setTransferItem(p)} style={styles.itemActionBtn} hitSlop={6}>
                         <Feather name="repeat" size={12} color={colors.onSurface} />
                       </Pressable> : null}
                     </View>

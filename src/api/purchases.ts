@@ -56,6 +56,8 @@ export type PurchaseItem = {
   loan_replenishment_for_customer_name?: string | null;
   loan_replenishment_status?: "awaiting_return" | "returned" | null;
   loan_replenishment_returned_qty?: number;
+  loan_replenishment_promised_qty?: number;
+  loan_replenishment_transfer_id?: string | null;
 };
 
 /** Floor-scoped customer record used by the Purchases lifecycle navigator. */

@@ -148,6 +148,10 @@ jobs:
         env:
           DELETION_TEST_MONGO_URL: mongodb://127.0.0.1:28124
         run: python -m pytest tests/integration/test_customer_deletion_mongo.py -v
+      - name: Verify sanitary stock loan transactions and returns
+        env:
+          SANITARY_LOAN_TEST_MONGO_URL: mongodb://127.0.0.1:28124/?replicaSet=deletion_qa
+        run: python -m pytest tests/integration/test_sanitary_loan_workflow_mongo.py -v
       - name: Remove run-owned customer deletion replica
         if: always()
         run: docker rm -f customer-deletion-mongo || true
@@ -263,6 +267,7 @@ jobs:
           npm run test:service-health
           npm run test:uptime-monitor
           npm run test:app-text
+          npm run test:money
           npm run test:legal-config
           npm run test:native-permissions
           npm run test:native-release-config

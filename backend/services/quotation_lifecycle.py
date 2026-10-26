@@ -24,6 +24,7 @@ from models import (
     PurchaseStatusEvent,
     UserPublic,
 )
+from services.money import format_indian_money
 from services.pricing import per_line_net_amounts
 from services.sequence import next_number
 
@@ -125,7 +126,7 @@ async def preflight_ordered_quotation_change(previous: dict, proposed: dict) -> 
             status_code=409,
             detail=(
                 f"This change would reduce the order below its completed payments "
-                f"(₹{paid:,.2f}). Record a refund/credit before reducing products."
+                f"(₹{format_indian_money(paid)}). Record a refund/credit before reducing products."
             ),
         )
 

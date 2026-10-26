@@ -156,3 +156,32 @@ def test_xml_invalid_unicode_cannot_corrupt_workbook():
     book = load_workbook(BytesIO(_book({"customer_name": "Client\ud800", "items": [_line(room="Room\uffff")]})))
     assert book["Sheet1 (3)"]["D7"].value == "Client"
     assert book["BATHROOM 1"]["A1"].value == "Room"
+
+
+def test_cover_logos_are_portable_uncropped_and_keep_their_aspect_ratios():
+    from PIL import Image
+    data = _book({'items': [_line()]})
+    with ZipFile(BytesIO(data)) as archive:
+        drawing = ET.fromstring(archive.read('xl/drawings/drawing1.xml'))
+        relationships = ET.fromstring(archive.read('xl/drawings/_rels/drawing1.xml.rels'))
+        targets = {r.get('Id'): r.get('Target') for r in relationships}
+        assert len(drawing) == 11
+        for anchor in drawing:
+            assert anchor.tag == f'{{{excel.X}}}oneCellAnchor'
+            assert anchor.find(f'.//{{{excel.A}}}srcRect') is None
+            origin = anchor.find(f'{{{excel.X}}}from')
+            assert int(origin.find(f'{{{excel.X}}}colOff').text) < 64 * 9525
+            blip = anchor.find(f'.//{{{excel.A}}}blip')
+            target = 'xl/' + targets[blip.get(f'{{{excel.R}}}embed')].removeprefix('../')
+            with Image.open(BytesIO(archive.read(target))) as image:
+                extent = anchor.find(f'{{{excel.X}}}ext')
+                assert int(extent.get('cx')) / int(extent.get('cy')) == pytest.approx(image.width / image.height, rel=.00001)
+        assert len(load_workbook(BytesIO(data)).worksheets[0]._images) == 11
+
+
+def test_excel_currency_uses_indian_locale_and_grouping_without_changing_values():
+    book = load_workbook(BytesIO(_book({'items': [_line(unit_price=12345678.9, mrp=12345678.9, qty=1)]})), data_only=True)
+    for sheet, cell in [('Sheet1 (3)', 'K22'), ('BATHROOM 1', 'E3'), ('BATHROOM 1', 'K3')]:
+        assert book[sheet][cell].value == 12345678.9
+        assert '[$₹-en-IN]' in book[sheet][cell].number_format
+        assert '#,##,##0' in book[sheet][cell].number_format

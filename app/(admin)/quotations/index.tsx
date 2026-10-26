@@ -28,12 +28,10 @@ type Quotation = {
   status: string; grand_total: number; created_at: string; items: any[];
 };
 
-type Filter = "all" | "draft" | "pending_approval" | "sent" | "approved" | "ordered" | "won";
+type Filter = "all" | "draft" | "approved" | "ordered" | "won";
 const PENDING_FILTERS: { key: Filter; label: string }[] = [
   { key: "all",              label: "All" },
   { key: "draft",            label: "Draft" },
-  { key: "pending_approval", label: "Pending" },
-  { key: "sent",             label: "Sent" },
 ];
 const COMPLETED_FILTERS: { key: Filter; label: string }[] = [
   { key: "all",      label: "All" },
@@ -98,27 +96,27 @@ export default function QuotationsList() {
 
   const counts = useMemo(() => {
     const map: Record<string, number> = { all: items?.length || 0 };
-    (items || []).forEach((it) => { map[it.status] = (map[it.status] || 0) + 1; });
+    (items || []).forEach((it) => { const status = ["pending_approval", "sent"].includes(it.status) ? "draft" : it.status; map[status] = (map[status] || 0) + 1; });
     return map;
   }, [items]);
 
   const filters = outcome ? [{ key: "all" as const, label: "All" }] : completed ? COMPLETED_FILTERS : PENDING_FILTERS;
 
   const filtered = useMemo(() => (items || []).filter((it) => {
-    if (!matchesFilter(it.status, statusFilter)) return false;
+    if (!matchesFilter(!completed && ["pending_approval", "sent"].includes(it.status) ? "draft" : it.status, statusFilter)) return false;
     if (q && !`${it.number} ${it.customer_name}`.toLowerCase().includes(q.toLowerCase())) return false;
     return true;
-  }), [items, q, statusFilter]);
+  }), [items, q, statusFilter, completed]);
 
   const totalValue = filtered.reduce((s, it) => s + (it.grand_total || 0), 0);
 
   const pageTitle = outcome ? `${outcome === "won" ? "Won Customer" : "Lost Customer"} · Quotations` : completed ? "Approved & ordered quotations" : "Quotations";
-  const pageSubtitle = loadError ? "Pipeline unavailable" : items ? `${items.length} ${outcome ? `${outcome} quotations` : completed ? "approved or ordered" : "pending"} · ${money(totalValue)} filtered` : "Loading pipeline…";
+  const pageSubtitle = loadError ? "Pipeline unavailable" : items ? `${items.length} ${outcome ? `${outcome} quotations` : completed ? "approved or ordered" : "drafts"} · ${money(totalValue)} filtered` : "Loading pipeline…";
   const headerActions = (
         <View style={styles.headerActions}>
-          <Pressable accessibilityRole="button" accessibilityLabel={completed ? "View pending quotations" : "View completed quotations"}
+          <Pressable accessibilityRole="button" accessibilityLabel={completed ? "View draft quotations" : "View completed quotations"}
             testID="quotations-lifecycle-toggle" onPress={() => router.push(`/(admin)/quotations?view=${completed ? "pending" : "completed"}` as any)} style={styles.lifecycleLink}>
-            <Text style={styles.lifecycleText}>{completed ? "Pending" : "Completed"}</Text>
+            <Text style={styles.lifecycleText}>{completed ? "Drafts" : "Completed"}</Text>
           </Pressable>
           {!completed && !outcome ? <Pressable
             accessibilityRole="button"
@@ -221,7 +219,7 @@ function QuotationRow({ q, onPress, canDelete, onDelete }: { q: Quotation; onPre
   const { isPhone, isDesktop } = useBp();
   const created = new Date(q.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
   const count = q.items?.length || 0;
-  const status = q.purchase_completion_status === "completed" ? <Text style={[styles.meta, { color: ds.ok }]}>100% completed</Text> : <StatusBadge status={q.customer_outcome || q.status} />;
+  const status = q.purchase_completion_status === "completed" ? <Text style={[styles.meta, { color: ds.ok }]}>100% completed</Text> : <StatusBadge status={q.customer_outcome || (["pending_approval", "sent"].includes(q.status) ? "draft" : q.status)} />;
   return <View style={[styles.record, isPhone && styles.recordPhone]}>
     <Pressable accessibilityRole="button"
       accessibilityLabel={`Open quotation ${q.number} for ${q.customer_name || "unnamed customer"}`}

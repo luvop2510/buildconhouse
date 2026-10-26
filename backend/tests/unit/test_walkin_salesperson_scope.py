@@ -133,3 +133,78 @@ def test_delegated_worker_intake_creates_regular_walkin_with_chosen_floor_and_at
     assert created.salesperson_name == "Delegated Worker"
     assert created.interested_products == ["Tiles", "Bathroom fittings"]
     assert len(events) == 1
+
+
+@pytest.mark.parametrize("assignments,expected", [
+    ([{"floor_id": "first-floor", "user_id": "worker", "user_name": "Assigned Worker"}], ("worker", "Assigned Worker")),
+    ([{"floor_id": "ground-floor", "user_id": "other", "user_name": "Other Worker"}], (None, None)),
+    ([], (None, None)),
+])
+def test_sanitary_attribution_uses_floor_team_instead_of_owner_creator(assignments, expected):
+    doc = {"floor_id": "first-floor", "salesperson_id": "owner", "salesperson_name": "Owner", "created_by": "owner", "assignments": assignments}
+    result = walkin_routes._walkin_attribution(doc)
+    assert (result["salesperson_id"], result["salesperson_name"]) == expected
+    assert doc["salesperson_id"] == "owner"  # Read normalization does not rewrite audit history.
+
+
+def test_sanitary_owner_is_not_an_assignable_salesperson(monkeypatch):
+    _set_users(monkeypatch, [{"id": "owner", "full_name": "Owner", "role": "owner", "active": True}])
+    with pytest.raises(HTTPException, match="owners delegate"):
+        asyncio.run(walkin_routes._salesperson_for_floor("owner", "first-floor"))
+
+
+def test_owner_intake_requires_explicit_worker_before_customer_writes(monkeypatch):
+    from types import SimpleNamespace
+    from models import UserPublic
+    from models_walkins import WalkInCreate
+    class Floors:
+        async def find_one(self, *_args): return {"id": "first-floor"}
+    monkeypatch.setattr(walkin_routes, "db", SimpleNamespace(floors=Floors()))
+    owner = UserPublic(id="owner", email="owner@example.com", full_name="Owner", role="owner", active_floor_id="first-floor")
+    with pytest.raises(HTTPException, match="Select a salesperson"):
+        asyncio.run(walkin_routes.create_walkin(WalkInCreate(customer_name="Visitor", customer_phone="9876543210", floor_id="first-floor"), owner))
+
+
+def test_scope_edit_synchronizes_stored_salesperson_with_assigned_worker(monkeypatch):
+    from types import SimpleNamespace
+    doc = {"id": "walkin", "floor_id": "first-floor", "customer_id": "customer", "customer_name": "Visitor", "salesperson_id": "owner"}
+    patches = []
+    row = {"id": "lead", "lead_group_id": "group", "interested_floor_ids": ["first-floor"],
+           "assignments": [{"floor_id": "first-floor", "user_id": "worker", "user_name": "Worker"}]}
+    class Followups:
+        async def find_one(self, *_args): return row
+    class Walkins:
+        async def update_one(self, query, patch): patches.append(patch["$set"])
+    async def update(*_args, **_kwargs): return row
+    monkeypatch.setattr(walkin_routes, "db", SimpleNamespace(followups=Followups(), walkins=Walkins()))
+    monkeypatch.setattr(walkin_routes.lead_scope, "update_interests", update)
+    asyncio.run(walkin_routes._walkin_scope(doc, object(), floors=["first-floor"], assignments=row["assignments"]))
+    assert patches[0]["salesperson_id"] == "worker"
+    assert patches[0]["salesperson_name"] == "Worker"
+
+
+def test_legacy_owner_salesperson_is_masked_with_one_bounded_lookup(monkeypatch):
+    from types import SimpleNamespace
+    queries = []
+    class Cursor:
+        async def to_list(self, count):
+            assert count == 2
+            return [{"id": "owner"}]
+    class Users:
+        def find(self, query, projection):
+            queries.append(query)
+            assert set(query["id"]["$in"]) == {"owner", "worker"}
+            assert query["role"] == "owner"
+            return Cursor()
+    monkeypatch.setattr(walkin_routes, "db", SimpleNamespace(users=Users()))
+    rows = [
+        {"floor_id": "first-floor", "salesperson_id": "owner", "salesperson_name": "Owner"},
+        {"floor_id": "first-floor", "salesperson_id": "owner", "salesperson_name": "Owner"},
+        {"floor_id": "first-floor", "salesperson_id": "worker", "salesperson_name": "Worker"},
+        {"floor_id": "ground-floor", "salesperson_id": "owner", "salesperson_name": "Owner"},
+    ]
+    result = asyncio.run(walkin_routes._walkin_attributions(rows))
+    assert len(queries) == 1
+    assert result[0]["salesperson_id"] is result[1]["salesperson_name"] is None
+    assert result[2]["salesperson_name"] == "Worker"
+    assert result[3]["salesperson_name"] == "Owner"

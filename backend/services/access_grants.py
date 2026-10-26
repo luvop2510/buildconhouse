@@ -138,6 +138,7 @@ POST_UPDATE_ROUTE_PATTERNS = (
     r"/api/purchases/items/[^/]+/cancel",
     r"/api/purchases/items/bulk-move",
     r"/api/purchases/items/[^/]+/transfer",
+    r"/api/purchases/items/[^/]+/return-loans",
     r"/api/purchases/legacy/items/[^/]+/transfer",
     r"/api/purchases/transfers/[^/]+/return",
     r"/api/purchases/settings",

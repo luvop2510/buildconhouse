@@ -127,16 +127,16 @@ test('critical walk-in notes are read-only until marking the customer lost', asy
   await page.goto('/walkins/lost-client');
   await expect(page.getByText('Previous visit note', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Save Notes', exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Mark Contacted', exact: true }).click();
-  await expect.poll(() => writes.length).toBe(1);
-  expect(writes[0]).toEqual({ status: 'contacted' });
+  await expect(page.getByRole('button', { name: 'Mark Contacted', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Mark Converted', exact: true })).toHaveCount(0);
+  expect(writes).toEqual([]);
   await page.getByTestId('walkin-mark-lost').click();
   const dialog = page.getByRole('dialog', { name: 'Mark as lost', exact: true });
   await expect(page.getByTestId('walkin-confirm-lost')).toBeDisabled();
   await page.getByTestId('walkin-lost-reason').fill('Cannot afford the service');
   await page.getByTestId('walkin-confirm-lost').click();
   await expect(dialog).toHaveCount(0);
-  expect(writes[1]).toEqual({ status: 'lost', notes: 'Cannot afford the service' });
+  expect(writes[0]).toEqual({ status: 'lost', notes: 'Cannot afford the service' });
 });
 
 test('critical Won orders shows orders attributed to the current team member', async ({ page }) => {

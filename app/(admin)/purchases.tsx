@@ -191,6 +191,8 @@ export default function PurchasesScreen() {
     item_id: r.item_id, sku: r.sku, name: r.name, image: r.image, qty: r.qty, loaned_qty: r.loaned_qty,
     loan_replenishment_for_customer_name: r.loan_replenishment_for_customer_name,
     loan_replenishment_status: r.loan_replenishment_status,
+    loan_replenishment_promised_qty: r.loan_replenishment_promised_qty,
+    loan_replenishment_returned_qty: r.loan_replenishment_returned_qty,
     stage: r.stage, customer_id: r.customer_id, customer_name: r.customer_name,
     po_number: r.po_number, brand_name: r.brand_name, supplier_name: r.supplier_name,
   }), []);
@@ -1394,12 +1396,12 @@ function PurchaseLoanStatus({ item, compact = false }: { item: Item; compact?: b
   const history = item.customer_loan_history || [];
   const text = item.borrowed_from_customer_name
     ? `BORROWED from ${item.borrowed_from_customer_name}${item.borrowed_at ? ` · ${fmtDate(item.borrowed_at)}` : ""}${item.borrowing_note ? ` · ${item.borrowing_note}` : ""}`
-    : item.loan_replenishment_for_customer_name
-      ? `RETURN RESERVED for ${item.loan_replenishment_for_customer_name} · automatically returned on In Box arrival, or move to godown stock`
+    : item.loan_replenishment_for_customer_name && item.loan_replenishment_status !== "returned"
+      ? `RETURN RESERVED for ${item.loan_replenishment_for_customer_name} · move to In Box, then return to the original customer`
     : history.length
-    ? `We have lent ${history.map((loan) => `${loan.qty} ${loan.qty === 1 ? "unit" : "units"} to ${loan.destination_customer_name || "another customer"}${loan.status === "returned" ? " (returned)" : ""}`).join(", ")} · available again when the replacement reaches In Box`
+    ? `We have lent ${history.map((loan) => `${loan.qty} ${loan.qty === 1 ? "unit" : "units"} to ${loan.destination_customer_name || "another customer"}${loan.status === "returned" ? " (returned)" : ""}`).join(", ")} · available again after the replacement is returned`
     : (item.loaned_qty || 0) > 0
-      ? `We have lent ${item.loaned_qty} ${item.loaned_qty === 1 ? "unit" : "units"} to another customer · available again when the replacement reaches In Box`
+      ? `We have lent ${item.loaned_qty} ${item.loaned_qty === 1 ? "unit" : "units"} to another customer · available again after the replacement is returned`
       : null;
   return text ? <Text style={[styles.godownStatus, styles.loanNotice, compact && styles.godownStatusCompact]} numberOfLines={compact ? 3 : undefined}>{text}</Text> : null;
 }

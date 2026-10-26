@@ -54,7 +54,7 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
   ],
   'redesign-mobile-summary.spec.ts': [
     'critical Walk-in summary opens every matching metric and hidden filters retain selections',
-    'critical Follow-up expiring summary clears unrelated filters and opens its exact records',
+    'critical Ground Follow-up expiring summary clears unrelated filters and opens its exact records',
   ],
 
   'responsive-shared-floor-navigation.spec.ts': [
@@ -70,6 +70,9 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
     'critical payment overview collapses without losing a payment draft on rotation',
     'critical payment form keeps paise, validates overpayment, scrolls and retries with the same key',
     'critical successful payment removes the settled order and shows the next customer',
+  ],
+  'redesign-sanitary-followups.spec.ts': [
+    'critical sanitary follow-ups keeps draft source and salesperson without summary or priority clutter',
   ],
   'redesign-followup-notes.spec.ts': [
     'critical Won orders shows orders attributed to the current team member',

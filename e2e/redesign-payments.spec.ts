@@ -261,3 +261,27 @@ test('critical returning from the canonical quotation refreshes the selected bal
   await page.getByTestId('open-record-payment').click();
   await expect(page.getByTestId('pay-amount')).toHaveValue('2500.00');
 });
+
+
+test('critical payment histories show Indian payment amounts without a bank method label', async ({ page }) => {
+  await mockSession(page, '/payments', false);
+  await page.route('**/api/payments/orders', r => r.fulfill({ json: [order] }));
+  await page.route('**/api/payments/orders/payment-order', r => r.fulfill({ json: { ...detail(), payments: [{
+    id: 'bank-receipt', amount: 123456.78, mode: 'bank', entry_type: 'payment', status: 'completed',
+    paid_at: '2026-10-27T10:00:00Z', recorded_by_name: 'Worker',
+  }] } }));
+  await page.route('**/api/payments/history?**', r => r.fulfill({ json: { total: 1, items: [{
+    id: 'bank-receipt', customer_id: order.customer_id, customer_name: order.customer_name,
+    invoice_number: order.number, floor_id: 'first-floor', business_unit: 'Sanitary', amount: 123456.78,
+    mode: 'bank', entry_type: 'payment', status: 'completed', paid_at: '2026-10-27T10:00:00Z',
+  }] } }));
+  await page.goto('/payments');
+  const orderDetail = page.getByTestId('payments-order-detail');
+  await expect(orderDetail).toContainText('₹1,23,456.78');
+  await expect(orderDetail).not.toContainText('Bank Transfer');
+  await page.getByTestId('payments-tabs-history').click();
+  const history = page.getByTestId('payment-history-table');
+  await expect(history).toContainText('₹1,23,456.78');
+  await expect(history).not.toContainText('Bank Transfer');
+  await expect(history.getByText('METHOD', { exact: true })).toHaveCount(0);
+});

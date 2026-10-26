@@ -215,14 +215,13 @@ test('critical team assign floor filters and pagination retain aggregate worker 
 });
 
 
-test('critical owner filter stays within the panel and scrolls to the last employee', async ({ page }) => {
+test('critical sanitary salesperson filter stays within the panel and scrolls to the last employee', async ({ page }) => {
   await mockLeads(page);
   const owners = Array.from({ length: 30 }, (_, index) => ({ id: `owner-filter-${index}`, full_name: `Employee ${index + 1}`, role: 'worker' }));
   await page.route('**/api/followups/config/assignees', r => r.fulfill({ json: owners }));
   await page.goto('/followups');
-  const collapsedFilters = page.getByTestId('followups-filters-toggle');
-  if (await collapsedFilters.isVisible() && await collapsedFilters.getAttribute('aria-expanded') === 'false') await collapsedFilters.click();
-  const first = page.getByTestId('followups-owner-all');
+  await expect(page.getByTestId('followups-filters-toggle')).toHaveCount(0);
+  const first = page.getByTestId('followups-salesperson-all');
   await expect(first).toBeVisible();
   const scroller = first.locator('..').locator('..');
   const dimensions = await scroller.evaluate(element => ({ width: element.clientWidth, content: element.scrollWidth, left: element.getBoundingClientRect().left, right: element.getBoundingClientRect().right, viewport: window.innerWidth }));
@@ -231,7 +230,7 @@ test('critical owner filter stays within the panel and scrolls to the last emplo
   expect(dimensions.right).toBeLessThanOrEqual(dimensions.viewport);
   await scroller.evaluate(element => { element.scrollLeft = element.scrollWidth; });
   await expect.poll(() => scroller.evaluate(element => element.scrollLeft)).toBeGreaterThan(0);
-  const last = page.getByTestId('followups-owner-owner-filter-29');
+  const last = page.getByTestId('followups-salesperson-owner-filter-29');
   await last.click();
   await expect(last).toHaveAttribute('aria-checked', 'true');
   await expect(page.getByRole('checkbox', { name: 'Sales', exact: true })).toHaveCount(0);

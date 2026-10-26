@@ -295,6 +295,7 @@ function FollowupsWorkspace() {
   const { isPhone, isDesktop } = useBp();
   const insets = useSafeAreaInsets();
   const pagePad = isPhone ? spacing.md : spacing.xl;
+  const isSanitary = selectedFloorId === "first-floor";
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -459,7 +460,7 @@ function FollowupsWorkspace() {
   }, [categoryFilter, followupView, kpiFilter, ownerFilter, priorityFilter, searchQuery, selectedFloorId, staff?.id, tierFilter, workspace]);
 
   const refreshStatsQuiet = useCallback(async () => {
-    if (!selectedFloorId || !mounted.current) return;
+    if (!selectedFloorId || !mounted.current || isSanitary) return;
     try {
       const [s, m] = await Promise.all([
         api.get<Stats>("/followups/stats", { floorId: selectedFloorId }),
@@ -467,7 +468,7 @@ function FollowupsWorkspace() {
       ]);
       if (mounted.current) { setStats(s); setMission(m); }
     } catch { /* best-effort */ }
-  }, [selectedFloorId]);
+  }, [selectedFloorId, isSanitary]);
 
   const bootstrap = useCallback(async () => {
     if (!selectedFloorId || !mounted.current) return [];
@@ -899,14 +900,14 @@ function FollowupsWorkspace() {
   const applySavedView = useCallback((v: SavedView) => {
     const flt = v.filters || {};
     setQ(flt.q || "");
-    setKpiFilter(flt.kpiFilter || "all");
+    setKpiFilter(isSanitary ? "all" : flt.kpiFilter || "all");
     setFollowupView(flt.followupView || "active");
-    setPriorityFilter(flt.priorityFilter || "all");
-    setCategoryFilter(filterValues(flt.categoryFilter || "all").filter(value => value !== "sales").join(",") || "all");
+    setPriorityFilter(isSanitary ? "all" : flt.priorityFilter || "all");
+    setCategoryFilter(isSanitary ? "all" : filterValues(flt.categoryFilter || "all").filter(value => value !== "sales").join(",") || "all");
     setOwnerFilter(flt.ownerFilter || "all");
     setSavedViewsSheet(false);
     toast.success(`Applied "${v.name}"`);
-  }, []);
+  }, [isSanitary]);
 
   const saveCurrentView = useCallback(async (name: string) => {
     const filters = { q, kpiFilter, followupView, priorityFilter, categoryFilter, tierFilter, ownerFilter };
@@ -1039,12 +1040,12 @@ function FollowupsWorkspace() {
         />
       )}
 
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+      {!isSanitary ? <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
         <Chip label={`Today${stats ? ` · ${stats.today_tasks}` : ""}`} active={filterValues(kpiFilter).includes("today")} onPress={() => toggleKpi("today")} />
         <Chip label={`Overdue${stats ? ` · ${stats.overdue}` : ""}`} active={filterValues(kpiFilter).includes("overdue")} onPress={() => toggleKpi("overdue")} />
         <Chip label="Summary" active={summaryOpen} onPress={toggleSummary} />
-      </View>
-      {summaryOpen ? <View style={{ gap: spacing.md }}>
+      </View> : null}
+      {!isSanitary && summaryOpen ? <View style={{ gap: spacing.md }}>
       <ScrollView keyboardShouldPersistTaps="handled" horizontal={isPhone} showsHorizontalScrollIndicator={isPhone} contentContainerStyle={{ gap: spacing.md, paddingRight: isPhone ? spacing.md : 0 }} style={isPhone ? { marginHorizontal: -pagePad, paddingHorizontal: pagePad } : undefined}>
         <View style={{ flexDirection: "row", gap: spacing.md, flexWrap: isPhone ? "nowrap" : "wrap" }}>
           <StatTile label="Today's Tasks" value={stats ? stats.today_tasks : "—"} icon="sun" tone="brand"
@@ -1084,6 +1085,10 @@ function FollowupsWorkspace() {
             {!isPhone ? <IconButton icon="help-circle" onPress={() => setShortcutHelp(true)} tone="surface" accessibilityLabel="Keyboard shortcuts" size={40} /> : null}
           </View>
           {q.trim() ? <Text style={type.caption}>{filtered.length} customer{filtered.length === 1 ? "" : "s"} found</Text> : null}
+          {isSanitary ? <FilterBar testID="followups-salesperson" multiSelect label="SALESPERSON" value={ownerFilter} onChange={setOwnerFilter} options={[
+            { label: "All salespeople", value: "all" }, { label: "Mine", value: "mine" },
+            ...assignees.map(a => ({ label: a.full_name, value: a.id })),
+          ]} /> : <>
           <MobileFilterSection testID="followups-filters">
           <FilterBar multiSelect label="PRIORITY" value={priorityFilter} onChange={setPriorityFilter as any} options={[
             { value: "all", label: "All priorities" }, { value: "critical", label: "Critical", count: priorityCounts.critical || undefined },
@@ -1098,6 +1103,8 @@ function FollowupsWorkspace() {
               ]} />
             </View>
           </MobileFilterSection>
+          </>}
+
           {kpiFilter !== "all" || activeFilterCount > 0 ? <Chip label="Clear filters ✕" active onPress={() => { setKpiFilter("all"); setFollowupView("active"); setPriorityFilter("all"); setCategoryFilter("all"); setOwnerFilter("all"); }} /> : null}
         </View>
       </Panel>
@@ -1151,7 +1158,7 @@ function FollowupsWorkspace() {
       renderSectionFooter={({ section }) =>
         section.bucket === visibleSections[visibleSections.length - 1]?.bucket ? paginationFooter : null
       }
-      renderItem={({ item: f }) => <View style={{ paddingHorizontal: horizontalPadding, marginBottom: spacing.sm }}><MemoFollowupCard f={f} floorNames={floors} active={f.id === selectedId} assignees={assignees} rank={rankMap.get(f.id)} checked={selectedIds.has(f.id)} onToggleSelect={toggleSelect} onPress={selectCard} onCall={contact} onWhatsApp={contact} onEmail={contact} onComplete={completeFollowup} onSnooze={snoozeFollowup} onCustomSnooze={setCustomSnoozeFor} onPushDays={pushDue} onAssign={assignFollowup} onMarkLost={(item) => { setLossActionFor(item); setCallOutcomeFor(item); }} onDismiss={dismissFollowup} canDelete={canDeleteFollowups} onDelete={setDeleteTarget} onOpenDoc={openRelatedDocument} /></View>}
+      renderItem={({ item: f }) => <View style={{ paddingHorizontal: horizontalPadding, marginBottom: spacing.sm }}><MemoFollowupCard f={f} floorNames={floors} active={f.id === selectedId} assignees={assignees} rank={isSanitary ? undefined : rankMap.get(f.id)} checked={selectedIds.has(f.id)} onToggleSelect={toggleSelect} onPress={selectCard} onCall={contact} onWhatsApp={contact} onEmail={contact} onComplete={completeFollowup} onSnooze={snoozeFollowup} onCustomSnooze={setCustomSnoozeFor} onPushDays={pushDue} onAssign={assignFollowup} onMarkLost={(item) => { setLossActionFor(item); setCallOutcomeFor(item); }} onDismiss={dismissFollowup} canDelete={canDeleteFollowups} onDelete={setDeleteTarget} onOpenDoc={openRelatedDocument} /></View>}
     />
     );
   };
@@ -1213,7 +1220,7 @@ function FollowupsWorkspace() {
       {renderFollowupList(isPhone, !isPhone)}
 
       {/* Mobile: floating quick-contact for the #1 priority item */}
-      {!isDesktop && !isPhone && topPriorityOpen ? (
+      {!isSanitary && !isDesktop && !isPhone && topPriorityOpen ? (
         <View style={styles.fabWrap} pointerEvents="box-none">
           <Pressable
             testID="fab-whatsapp"
@@ -1550,6 +1557,7 @@ function FollowupCard({
   onAssign: (f: Followup, userId: string) => void; onMarkLost: (f: Followup) => void; onDismiss: (f: Followup) => void; canDelete: boolean; onDelete: (f: Followup) => void; onOpenDoc?: (f: Followup) => void;
 }) {
   const { isPhone } = useBp();
+  const isSanitary = f.floor_id === "first-floor";
   const level = f.manual_priority_override || f.priority_level;
   const tone = PRIORITY_TONE[level];
   const isResolved = f.status === "done" || f.status === "dismissed";
@@ -1564,7 +1572,7 @@ function FollowupCard({
       borderColor: active ? colors.brand : colors.border,
       backgroundColor: active ? colors.brandTint : colors.surfaceSecondary,
       borderLeftWidth: 4,
-      borderLeftColor: isResolved ? colors.border : tone.fg,
+      borderLeftColor: isResolved || isSanitary ? colors.border : tone.fg,
       ...(active ? elevation.medium : {}),
     }}>
       <View style={{ gap: spacing.sm }}>
@@ -1590,7 +1598,7 @@ function FollowupCard({
               {[f.project_name, f.quotation_number || f.purchase_number].filter(Boolean).join(" · ") || "General follow-up"}
             </Text>
           </View>
-          {!isResolved ? <ScoreBadge score={f.priority_score} level={level} /> : (
+          {!isResolved ? (isSanitary ? null : <ScoreBadge score={f.priority_score} level={level} />) : (
             <Badge label={f.completed_outcome === "lost" ? "Lost" : isWonOrderFollowup(f) ? "Won order" : f.status === "dismissed" ? "Dismissed" : (f.completed_outcome || "Done")} tone={f.completed_outcome === "lost" || f.status === "dismissed" ? "neutral" : "success"} size="sm" />
           )}
         </View>
@@ -1641,7 +1649,7 @@ function FollowupCard({
           <Text style={type.caption} numberOfLines={1}>{timeAgo(f.last_contacted_at)}</Text>
         </View>
         {f.assigned_to_name ? (
-          <Text style={type.caption}>Assigned to {f.assigned_to_name}</Text>
+          <Text style={type.caption}>{isSanitary ? "Salesperson:" : "Assigned to"} {f.assigned_to_name}</Text>
         ) : null}
 
         {/* Actions — Call/WhatsApp/Snooze/Assign/Complete are 1-click; the
@@ -2024,7 +2032,7 @@ function NewFollowupSheet({ visible, onClose, customers, assignees, defaultAssig
   };
 
   return (
-    <Sheet visible={visible} onClose={onClose} variant={isPhone ? "bottom" : "drawer"} title="New Follow-up" subtitle="Manually add a reminder — the workspace will rank it alongside automated cards."
+    <Sheet visible={visible} onClose={onClose} variant={isPhone ? "bottom" : "drawer"} title="New Follow-up" subtitle={selectedFloorId === "first-floor" ? "Add a customer reminder and assign a salesperson." : "Manually add a reminder — the workspace will rank it alongside automated cards."}
       footer={<>
         <Button label="Cancel" variant="secondary" onPress={onClose} size="md" />
         <View style={{ flex: 1 }} />
@@ -2065,13 +2073,13 @@ function NewFollowupSheet({ visible, onClose, customers, assignees, defaultAssig
           </FormField>
         </>}
 
-        <FormField label="Type">
+        {selectedFloorId !== "first-floor" ? <FormField label="Type">
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
             {NEW_CATEGORIES.map((c) => (
               <Chip key={c} label={c.charAt(0).toUpperCase() + c.slice(1)} active={category === c} onPress={() => setCategory(c)} />
             ))}
           </View>
-        </FormField>
+        </FormField> : null}
 
         <FormField label="Preferred channel">
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>

@@ -102,6 +102,7 @@ async def test_update_grant_cannot_borrow_view_grant_on_other_floor(monkeypatch)
     ("/api/purchase-orders/po-1/status", "purchases"),
     ("/api/tile-orders/dispatches/dispatch-1/delivered", "orders"),
     ("/api/purchases/transfers/transfer-1/return", "purchases"),
+    ("/api/purchases/items/item-1/return-loans", "purchases"),
 ])
 @pytest.mark.parametrize("actions,allowed", [(["create"], False), (["update"], True)])
 async def test_post_business_mutations_require_update_instead_of_create(monkeypatch, path, resource, actions, allowed):

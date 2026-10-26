@@ -71,6 +71,7 @@ from services.purchase_images import hydrate_purchase_images
 from services.customer_completion import completed_customer_ids, completed_customer_pipeline, confirmed_customer_ids, dispatched_customer_pipeline
 from services.purchase_stages import active_quantity, active_quantity_expression, delivery_timestamp, delivery_timestamp_expression, dispatched_chalan_quantity, normalized_stage, stage_expression
 from services.sequence import next_number
+from services.money import format_indian_money
 from services.transfer_workflow import execute_transfer, mark_loans_due_for_replenishment, settle_loan_transfer, transfer_history
 
 router = APIRouter(prefix="/purchases", tags=["purchases"])
@@ -233,6 +234,8 @@ def _flatten_item(po: dict, it: dict, sla_days: int) -> dict:
         "loan_replenishment_for_customer_name": it.get("loan_replenishment_for_customer_name"),
         "loan_replenishment_status": it.get("loan_replenishment_status"),
         "loan_replenishment_returned_qty": float(it.get("loan_replenishment_returned_qty") or 0),
+        "loan_replenishment_promised_qty": float(it.get("loan_replenishment_promised_qty") or 0),
+        "loan_replenishment_transfer_id": it.get("loan_replenishment_transfer_id"),
         "return_due_on_replenishment": bool(it.get("return_due_on_replenishment")),
         # Sanitary godown provenance is a snapshot on the purchase item so
         # both the stock tracker and the client workspace can explain where a
@@ -450,6 +453,8 @@ def _items_page_pipeline(
             "loan_replenishment_for_customer_name": "$items.loan_replenishment_for_customer_name",
             "loan_replenishment_status": "$items.loan_replenishment_status",
             "loan_replenishment_returned_qty": "$items.loan_replenishment_returned_qty",
+            "loan_replenishment_promised_qty": "$items.loan_replenishment_promised_qty",
+            "loan_replenishment_transfer_id": "$items.loan_replenishment_transfer_id",
             "return_due_on_replenishment": "$items.return_due_on_replenishment",
             "godown_transferred_qty": "$items.godown_transferred_qty",
             "godown_transfer_history": "$items.godown_transfer_history",
@@ -989,8 +994,10 @@ async def _cancel_item(
         raise HTTPException(status_code=404, detail="Item not found")
     if item.get("cancelled"):
         raise HTTPException(status_code=409, detail="Item is already cancelled")
+    if float(item.get("loaned_qty") or 0) > 0:
+        raise HTTPException(status_code=409, detail="Return the lent units before cancelling this purchase line")
     if item.get("loan_replenishment_for_customer_name"):
-        raise HTTPException(status_code=409, detail="This ordered product is reserved to return a customer loan; move it to godown stock instead")
+        raise HTTPException(status_code=409, detail="Return the reserved products to the lending customer before cancelling this purchase line")
     if normalized_stage(item, po) == "dispatched":
         raise HTTPException(status_code=400, detail="Delivered items cannot be cancelled")
     if dispatched_chalan_quantity(po, item) > 0:
@@ -1005,6 +1012,7 @@ async def _cancel_item(
     result = await db.purchase_orders.update_one(
         {"id": po["id"], "chalans": po.get("chalans"), "items": {"$elemMatch": {
             "id": item_id, "cancelled": {"$ne": True}, "stage": {"$nin": ["dispatched", "in_transit", "delivered"]},
+            **{field: item.get(field) for field in ("loaned_qty", "loan_replenishment_promised_qty", "loan_replenishment_for_customer_name")},
         }}},
         {"$set": {
             "items.$.cancelled": True,
@@ -1201,23 +1209,27 @@ async def _attempt_stage_change(
         raise HTTPException(status_code=404, detail="Item not found")
     if it.get("cancelled"):
         raise HTTPException(status_code=409, detail="Cancelled items cannot be moved")
-    if float(it.get("loan_replenishment_promised_qty") or 0) > 0 and to_stage in {"dispatched", "in_transit", "delivered"}:
-        raise HTTPException(status_code=409, detail="This ordered product is promised back to the lending customer")
     from_stage = it.get("stage") or "order_in_company"
     full_qty = float(it.get("qty") or 0)
     available_qty = active_quantity(it)
     chalan_delivered = dispatched_chalan_quantity(po, it)
     if math.isfinite(chalan_delivered):
         available_qty = max(0.0, available_qty - max(0.0, chalan_delivered))
-    move_qty = float(qty) if qty is not None else available_qty
+    promised_qty = max(0.0, float(it.get("loan_replenishment_promised_qty") or 0) - float(it.get("loan_replenishment_returned_qty") or 0))
+    movable_qty = max(0.0, available_qty - float(it.get("loaned_qty") or 0))
+    if to_stage in {"dispatched", "in_transit", "delivered"}:
+        movable_qty = max(0.0, movable_qty - promised_qty)
+    move_qty = float(qty) if qty is not None else movable_qty
     if not all(math.isfinite(value) for value in (full_qty, available_qty, move_qty)):
         raise HTTPException(status_code=400, detail="Move quantities must be finite numbers")
     if move_qty <= 0:
         raise HTTPException(status_code=400, detail="Move quantity must be greater than 0")
     if move_qty > available_qty + 1e-6:
         raise HTTPException(status_code=400, detail=f"Only {available_qty} available to move")
-    if float(it.get("loan_replenishment_promised_qty") or 0) > 0 and move_qty < full_qty - 1e-6:
-        raise HTTPException(status_code=409, detail="A promised replacement cannot be split")
+    if promised_qty > 0 and to_stage in {"dispatched", "in_transit", "delivered"} and move_qty > movable_qty + 1e-6:
+        raise HTTPException(status_code=409, detail=f"{promised_qty:g} units are reserved to return to the lending customer")
+    if promised_qty > 0 and move_qty < full_qty - 1e-6 and move_qty > available_qty - promised_qty + 1e-6:
+        raise HTTPException(status_code=409, detail="Move the unreserved quantity separately from the customer return")
 
     loaned_qty = float(it.get("loaned_qty") or 0)
     if loaned_qty > 0 and (to_stage != from_stage or move_qty < full_qty - 1e-6) and move_qty > available_qty - loaned_qty + 1e-6:
@@ -1279,6 +1291,11 @@ async def _attempt_stage_change(
         # unloaned piece must not inherit its reservation or transfer journal.
         new_item["loaned_qty"] = 0
         new_item["customer_loan_history"] = []
+        new_item["loan_replenishment_promised_qty"] = 0
+        new_item["loan_replenishment_reserved_qty"] = 0
+        new_item["loan_replenishment_for_customer_name"] = None
+        new_item["loan_replenishment_status"] = None
+        new_item["loan_replenishment_transfer_id"] = None
         new_item["dispatched_at"] = now if to_stage == "dispatched" else None
         new_item["delivered_at"] = now if to_stage == "dispatched" else None
         new_item["stage"] = to_stage
@@ -1633,11 +1650,28 @@ async def eligible_purchase_recipients(item_id: str, user: UserPublic = Depends(
         "status": {"$ne": "cancelled"},
         "items": {"$elemMatch": {"product_id": item.get("product_id"),
                                   "cancelled": {"$ne": True},
-                                  "stage": {"$nin": ["dispatched", "in_transit", "delivered"]}}},
+                                  "stage": "po_final", "loan_replenishment_for_customer_name": {"$in": [None, ""]},
+                                  "loan_transfer_id": {"$in": [None, ""]}}},
     }), {"_id": 0, "customer_id": 1, "customer_name": 1}).to_list(500)
     recipients = {po["customer_id"]: {"id": po["customer_id"], "name": po.get("customer_name") or "Customer"}
                   for po in matches if po.get("customer_id")}
     return sorted(recipients.values(), key=lambda row: row["name"].lower())
+
+
+@router.post("/items/{item_id}/return-loans")
+async def return_replacement_loans(item_id: str, user: UserPublic = Depends(require_min_role("warehouse"))):
+    """Return only the quantity reserved on this customer's replacement line."""
+    await mark_loans_due_for_replenishment(item_id=item_id, user=user)
+    loans = await db.purchase_transfers.find(floor_query(user, {
+        "type": "loan", "status": {"$in": ["return_due", "returned"]},
+        "replenishment_item_id": item_id,
+    }), {"_id": 0}).to_list(201)
+    if len(loans) > 200:
+        raise HTTPException(status_code=409, detail="Too many loans on this replacement; review the transfer history before returning stock")
+    if not loans:
+        raise HTTPException(status_code=409, detail="No replacement is ready to return on this line")
+    results = [await settle_loan_transfer(transfer_id=loan["id"], user=user) for loan in loans]
+    return {"item_id": item_id, "returned": results}
 
 
 @router.post("/transfers/{transfer_id}/return")
@@ -1812,7 +1846,7 @@ async def transfer_item(
         entity_type="quotation", entity_id=auto_quotation.id, actor=user,
         customer_id=body.new_customer_id, quotation_id=auto_quotation.id,
         summary=(
-            f"Order {auto_quotation.number} auto-created — ₹{auto_quotation.grand_total:,.0f} due "
+            f"Order {auto_quotation.number} auto-created — ₹{format_indian_money(auto_quotation.grand_total, 0)} due "
             f"from a {body.qty:g}-unit transfer"
         ),
         payload={
@@ -2279,13 +2313,17 @@ async def generate_chalan(
         # validated against the pre-loop read) so two lines in the SAME
         # request against the same po_item_id can't both pass against the
         # same stale "available" figure and jointly over-release it.
-        available = remaining.get(entry.po_item_id, 0.0)
+        reserved_qty = (float(source.get("godown_transferred_qty") or 0)
+                        + float(source.get("loan_replenishment_returned_qty") or 0)
+                        + float(source.get("loaned_qty") or 0)
+                        + max(0.0, float(source.get("loan_replenishment_promised_qty") or 0) - float(source.get("loan_replenishment_returned_qty") or 0)))
+        available = max(0.0, remaining.get(entry.po_item_id, 0.0) - reserved_qty)
         if entry.qty > available + 1e-6:
             raise HTTPException(
                 status_code=400,
                 detail=f"Only {available:g} of '{source.get('name')}' remains to release",
             )
-        remaining[entry.po_item_id] = available - entry.qty
+        remaining[entry.po_item_id] = remaining.get(entry.po_item_id, 0.0) - entry.qty
         chalan_items.append(ChalanLineItem(
             po_item_id=entry.po_item_id,
             name=source.get("name", ""),

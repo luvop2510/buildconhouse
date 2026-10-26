@@ -72,7 +72,7 @@ def install_transfer(monkeypatch):
               "customer_id": "lead-1", "customer_name": "Lead", "customer_phone": "9876543210",
               "status": "new", "is_deleted": False, "salesperson_id": "sales-1", "salesperson_name": "Sales"}
     walkins, followups = Store([source]), Store()
-    monkeypatch.setattr(walkin_routes, "db", SimpleNamespace(walkins=walkins, followups=followups))
+    monkeypatch.setattr(walkin_routes, "db", SimpleNamespace(walkins=walkins, followups=followups, users=Store()))
     events = []
     async def log(**event): events.append(event)
     monkeypatch.setattr(walkin_routes, "log_event", log)

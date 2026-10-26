@@ -163,7 +163,7 @@ export default function WalkInDetail() {
           subtitle="Salesperson"
           leading={<Avatar name={w.salesperson_name || "?"} size={36} />}
           right={<Text style={[type.captionStrong, { color: colors.brandHover }]}>{canUpdate ? "Reassign" : "Assigned"}</Text>}
-          onPress={canUpdate ? () => setReassignOpen(true) : undefined}
+          onPress={canUpdate ? () => w.floor_id === "first-floor" ? setScopeOpen(true) : setReassignOpen(true) : undefined}
           isFirst
           testID="walkin-reassign-row"
         />
@@ -172,10 +172,10 @@ export default function WalkInDetail() {
           <Button label="Call" icon="phone" variant="secondary" size="sm" onPress={() => w.customer_phone && openUrl(`tel:${w.customer_phone}`)} />
           {canUpdate && !w.showroom_followup_id && !w.showroom_transferred_at && w.status !== "lost" ? <Button label={w.showroom_followup_id ? "View Visit Showroom" : "Visit Showroom"} icon="home" size="sm" loading={busy} onPress={visitShowroom} testID="walkin-visit-showroom" /> : null}
           {canUpdate ? <Button label="WhatsApp" icon="message-circle" variant="secondary" size="sm" onPress={whatsApp} /> : null}
-          {(canUpdate ? NEXT_STATUS[w.status] || [] : []).map((s) => (
+          {(w.floor_id !== "first-floor" && canUpdate ? NEXT_STATUS[w.status] || [] : []).map(s => (
             <Button key={s.value} label={s.label} variant="secondary" size="sm" loading={busy} onPress={() => updateStatus(s.value)} />
           ))}
-          {canUpdate && w.status !== "converted" && w.status !== "lost" ? (
+          {w.floor_id !== "first-floor" && canUpdate && w.status !== "converted" && w.status !== "lost" ? (
             <Button label="Mark Converted" size="sm" loading={busy} onPress={() => updateStatus("converted")} testID="walkin-mark-converted" />
           ) : null}
           {canUpdate && w.status !== "converted" && w.status !== "lost" ? (

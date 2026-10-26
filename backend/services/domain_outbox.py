@@ -17,6 +17,7 @@ from auth import floor_inherit
 from db import client, db
 from models import ActivityEvent, Followup, Notification, Payment, PurchaseOrder, PurchaseOrderItem, PurchaseStageEvent, PurchaseStatusEvent, UserPublic
 from models_tile_orders import TileCustomerOrder, TileCustomerOrderBrand, TileCustomerOrderDashboardSummary
+from services.money import format_indian_money
 from services.notifications import notify
 from services.pricing import per_line_net_amounts
 from services.sequence import next_number
@@ -544,7 +545,7 @@ async def _handle_order_placed(event: dict, session: Any) -> dict:
         "post_commit_notification": {
             "user_id": quotation.get("created_by"),
             "title": f"Order confirmed · {quotation.get('number')}",
-            "body": f"{len(created_po_ids)} purchase order(s) created for {quotation.get('customer_name')} — outstanding ₹{payment_amount:,.0f}",
+            "body": f"{len(created_po_ids)} purchase order(s) created for {quotation.get('customer_name')} — outstanding ₹{format_indian_money(payment_amount, decimals=0)}",
             "kind": "success",
             "link": f"/quotations/{quotation_id}",
             "floor_id": floor_inherit(quotation),

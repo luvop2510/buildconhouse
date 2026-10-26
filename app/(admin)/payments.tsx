@@ -152,7 +152,7 @@ function paymentHistoryCopy(payment: PaymentEntry): { title: string; subtitle: s
     };
   }
   return {
-  title: `${payment.status === "pending" ? "Pending · " : ""}${MODE_LABELS[payment.mode as PayMode] || "Adjustment"} · ${money(payment.amount)}`,
+  title: `${payment.status === "pending" ? "Pending · " : ""}${money(payment.amount)}`,
     subtitle: (payment.reference || payment.note)
       ? `${payment.reference || ""}${payment.reference && payment.note ? " · " : ""}${payment.note || ""}`
       : `Recorded by ${payment.recorded_by_name || "—"}`,
@@ -1135,10 +1135,6 @@ function PaymentHistoryTab(props: {
     {
       key: "amount", label: "AMOUNT", width: 130, align: "right",
       render: (r) => <CellNumber value={money(r.amount)} />,
-    },
-    {
-      key: "method", label: "METHOD", width: 128,
-      render: (r) => <CellText muted>{r.entry_type === "additional_cost" ? "Additional cost" : r.entry_type === "godown_stock_credit" ? "Stock credit" : MODE_LABELS[r.mode as PayMode] || r.mode}</CellText>,
     },
     {
       key: "reference", label: "REFERENCE", width: 140,
