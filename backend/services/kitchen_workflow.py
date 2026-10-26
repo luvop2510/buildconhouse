@@ -88,7 +88,7 @@ def validate_design_dates(project, row, *, presentation_date, shared_date, respo
         reject("Sharing date cannot precede presentation")
     if response != "Pending" and not shared_date:
         reject("Record the sharing date before the customer response")
-    known_approval = approval_date or design_approval_day(project, row) or (recorded_day(now) if approving else None)
+    known_approval = (approval_date or design_approval_day(project, row) or (recorded_day(now) if approving else None)) if response == "Approved" else None
     if approval_date and response != "Approved":
         reject("An approval date requires customer approval")
     if known_approval and shared_date and known_approval < shared_date:

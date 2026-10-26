@@ -205,3 +205,15 @@ def test_order_selection_rejects_invalid_commercial_basis_without_changes(setup,
     with pytest.raises(HTTPException):
         apply(project, "order_confirm", {"quotation_version_id": "foreign" if invalid == "foreign" else "q1", "order_date": "2026-10-25"}, owner)
     assert project == original
+
+
+def test_owner_clears_current_approval_and_handoff_without_rewriting_history(setup):
+    _, _, owner = setup
+    project = aggregate("design")
+    project["approvals"].append({"id": "earlier-approval", "scope": "customer_design", "subject_id": "d1", "decision": "Approved", "at": "2026-10-22T05:00:00+00:00"})
+    apply(project, "design_update", {"version_id": "d1", "presentation_date": "2026-10-20", "shared_date": "2026-10-24", "response": "Pending", "approval_date": None, "handoff_date": None, "reason": "Review customer approval"}, owner)
+    assert project["design_versions"][0]["response"] == "Pending"
+    assert project["design_versions"][0]["approval_date"] is None
+    assert project["design_versions"][0]["handoff_date"] is None
+    assert project["approvals"][0]["decision"] == "Approved"
+    assert project["design_versions"][1]["response"] == "Approved"

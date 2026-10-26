@@ -111,6 +111,14 @@ assert.deepEqual(calls.pop(), ['order_status', { status: 'On Hold', reason: 'Awa
 assert.equal(view.nodes.some(node => node.type === 'document'), false, 'Order confirmation never requests a new document');
 const design2 = { ...design, id: 'design-two', number: 2, requirements: 'Version two requirements', notes: 'Version two internal notes' };
 const quote2 = { ...quotation, id: 'quotation-two', number: 7, design_version_id: design2.id, notes: 'Revision seven notes' };
+view = render('design', { design_versions: [{ ...design, approval_date: '2026-10-20' }] }, { 'design.design.edit.expanded': true });
+view.control('kitchen-design-edit-response').props.onChange('Pending');
+view = view.refresh();
+assert.equal(view.control('kitchen-design-edit-handoff'), undefined, 'Changing approval clears the current handoff');
+assert.equal(view.control('kitchen-design-edit-save').props.disabled, false, 'A pending approval does not trap the form');
+await view.control('kitchen-design-edit-save').props.onPress();
+assert.deepEqual([calls.at(-1)[1].approval_date, calls.at(-1)[1].handoff_date], [null, null]);
+calls.length = 0;
 view = render('design', { design_versions: [design, design2], quotation_versions: [quotation, quote2] });
 assert.match(view.text, /Version two requirements/);
 view.control('kitchen-design-version').props.onChange(design.id);
