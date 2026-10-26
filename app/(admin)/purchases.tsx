@@ -61,7 +61,7 @@ type Shortage = {
 
 type ViewMode = "today" | "stock" | "customers" | "dispatch_record";
 
-const VIEW_ORDER: ViewMode[] = ["today", "stock", "customers", "dispatch_record"];
+const VIEW_ORDER: ViewMode[] = ["today", "stock", "customers"];
 const VIEW_META: Record<ViewMode, { label: string; icon: keyof typeof Feather.glyphMap; sub: string }> = {
   today:            { label: "Today",           icon: "sun",       sub: "Attention today" },
   stock:            { label: "Stock",           icon: "package",   sub: "All stock items" },
@@ -220,12 +220,12 @@ export default function PurchasesScreen() {
     setLoadingCustomers(true);
     setCustomersError(null);
     try {
-      const loadedCustomers = await getPurchaseCustomers(undefined, view === "stock", selectedFloorId);
+      const loadedCustomers = await getPurchaseCustomers(undefined, false, selectedFloorId);
       if (mounted.current && activeFloor.current === selectedFloorId && sequence === customerRequestSequence.current) { setCustomers(loadedCustomers); setCustomersError(null); }
     }
     catch (e: any) { if (mounted.current && activeFloor.current === selectedFloorId && sequence === customerRequestSequence.current) setCustomersError(e?.detail || "Could not load customers"); }
     finally { if (mounted.current && activeFloor.current === selectedFloorId && sequence === customerRequestSequence.current) setLoadingCustomers(false); }
-  }, [selectedFloorId, view]);
+  }, [selectedFloorId]);
 
   const loadItems = useCallback(async ({ throwOnError = false, append = false, quiet = false }: { throwOnError?: boolean; append?: boolean; quiet?: boolean } = {}) => {
     if (!selectedFloorId || activeFloor.current !== selectedFloorId || !mounted.current) return;
@@ -482,6 +482,7 @@ export default function PurchasesScreen() {
                   <Feather name="more-vertical" size={20} color={colors.onSurface} />
                 </Pressable>
               </View>
+              <Pressable accessibilityRole="button" accessibilityLabel="Open 100 percent complete customers" testID="purchases-completed-entry" onPress={() => router.push("/(admin)/purchases-completed" as never)} style={styles.completedLink}><Feather name="check-circle" size={16} color={colors.success} /><Text style={styles.completedLinkText}>100% Customers</Text><Feather name="arrow-right" size={16} color={colors.success} /></Pressable>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mobileChips}>
                 {VIEW_ORDER.map((mode) => (
                   <Pressable key={mode} accessibilityRole="tab" accessibilityState={{ selected: view === mode }} testID={`view-${mode}`} onPress={() => { setView(mode); setStage(""); }} style={[styles.mobileChip, view === mode && styles.mobileChipActive]}>
@@ -520,7 +521,7 @@ export default function PurchasesScreen() {
               {loading ? <View style={styles.loadingCard}><ActivityIndicator /><Text style={type.caption}>Loading purchases…</Text></View> : null}
               {view !== "customers" && itemsError ? <ErrorState title="Purchases unavailable" subtitle={itemsError} onRetry={() => void loadItems()} /> : null}
               {view === "customers" && customersError ? <ErrorState title="Customers unavailable" subtitle={customersError} onRetry={() => void loadCustomers()} /> : null}
-              {view === "customers" && !customersError ? <View style={{ gap: spacing.md }}><Pressable accessibilityRole="button" accessibilityLabel="Open 100 percent complete customers" onPress={() => router.push("/(admin)/purchases-completed" as never)} style={styles.completedLink}><Text style={styles.completedLinkText}>100% Customers</Text><Feather name="arrow-right" size={16} color={colors.success} /></Pressable><CustomerNavigator loading={loadingCustomers} customers={visibleCustomers} onOpen={setCustomerWorkspaceId} /></View> : null}
+              {view === "customers" && !customersError ? <View style={{ gap: spacing.md }}><CustomerNavigator loading={loadingCustomers} customers={visibleCustomers} onOpen={setCustomerWorkspaceId} /></View> : null}
               {!loading && !itemsError && view !== "customers" && items.length === 0 ? <View style={styles.mobileEmpty}><Feather name="package" size={28} color={colors.onSurfaceMuted} /><Text style={styles.actionTitle}>No purchases found</Text><Text style={type.bodyMuted}>Clear filters or try a different search.</Text></View> : null}
             </View>
           )}
@@ -532,7 +533,7 @@ export default function PurchasesScreen() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
         />
-        <MobileFiltersSheet visible={showMobileFilters} brands={brands} stages={stages} brand={brand} stage={stage} customers={view === "stock" ? customers : []} customer={customerFilter} onCustomer={setCustomerFilter} onBrand={setBrand} onStage={setStage} onClose={() => setShowMobileFilters(false)} />
+        <MobileFiltersSheet visible={showMobileFilters} brands={brands} stages={stages.filter(entry => entry.key !== "dispatched")} brand={brand} stage={stage} customers={view === "stock" ? customers : []} customer={customerFilter} onCustomer={setCustomerFilter} onBrand={setBrand} onStage={setStage} onClose={() => setShowMobileFilters(false)} />
         <MobileActionsSheet visible={showMobileActions} shortages={shortages.length} exportLabel={`Export ${VIEW_META[view].label} Excel`} onClose={() => setShowMobileActions(false)} onExport={() => { setShowMobileActions(false); doExport(); }} onShortages={() => { setShowMobileActions(false); setShowShortages(true); }} onSettings={() => { setShowMobileActions(false); setShowSettings(true); }} />
         <MoveMenu visible={showMoveMenu} stages={stages} onClose={() => setShowMoveMenu(false)} onPick={(s) => bulkMove(s)} title={`Move ${selected.size} item${selected.size === 1 ? "" : "s"}`} busy={bulkBusy} />
         <MoveStageSheet visible={!!rowMoveTarget} item={rowMoveTarget ? toMovable(rowMoveTarget) : null} onClose={() => setRowMoveTarget(null)} onMoved={async () => { await Promise.all([loadItems({ quiet: true, throwOnError: true }), loadFacets(), loadCustomers()]); }} />
@@ -575,6 +576,7 @@ export default function PurchasesScreen() {
             </Text>
           </View>
           <View style={styles.topActions}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Open 100 percent complete customers" testID="purchases-completed-entry" onPress={() => router.push("/(admin)/purchases-completed" as never)} style={styles.completedLink}><Feather name="check-circle" size={16} color={colors.success} /><Text style={styles.completedLinkText}>100% Customers</Text><Feather name="arrow-right" size={16} color={colors.success} /></Pressable>
             <View style={styles.search}>
               <Feather name="search" size={14} color={colors.onSurfaceMuted} />
               <TextInput
@@ -757,7 +759,7 @@ export default function PurchasesScreen() {
                   <Text style={[styles.brandLabel, stage === "" && { color: colors.brand, fontWeight: "700" }]}>All stages</Text>
                   <Text style={styles.brandCount}>{activeStageCount}</Text>
                 </Pressable>
-                {stages.map((s) => (
+                {stages.filter(entry => entry.key !== "dispatched").map((s) => (
                   <Pressable
                     key={s.key}
                     onPress={() => setStage(current => toggleFilterValue(current, s.key, ""))}
@@ -809,7 +811,6 @@ export default function PurchasesScreen() {
               />
             ) : view === "customers" ? (
               <View style={{ gap: spacing.md }}>
-                <Pressable accessibilityRole="button" accessibilityLabel="Open 100 percent complete customers" onPress={() => router.push("/(admin)/purchases-completed" as any)} style={styles.completedLink}><Feather name="check-circle" size={16} color={colors.success} /><Text style={styles.completedLinkText}>100% Customers</Text><Feather name="arrow-right" size={16} color={colors.success} /></Pressable>
                 <CustomerNavigator loading={loadingCustomers} customers={visibleCustomers} onOpen={setCustomerWorkspaceId} />
               </View>
             ) : (
@@ -1056,7 +1057,7 @@ function StockWorkspace({ loading, rows, shortages, stages, isDesktop, selected,
 }) {
   const pending = rows.filter((r) => ["po_final", "order_in_company", "company_billing", "in_box"].includes(r.stage));
   const receiving = rows.filter((r) => ["company_billing", "in_box"].includes(r.stage));
-  const ready = rows.filter((r) => r.stage === "dispatched");
+  const ready = rows.filter((r) => r.stage === "in_box");
   if (loading) return <View style={styles.loadingCard}><ActivityIndicator /><Text style={type.caption}>Loading inventory movement…</Text></View>;
   return (
     <View style={{ gap: spacing.lg }}>
@@ -1348,7 +1349,7 @@ export function CustomerPurchasePanel({ visible, loading, workspace, onClose, on
             <CustomerMetric label="Material value" value={rupees(workspace.summary.outstanding_value)} />
           </View>
           <View style={styles.workspaceCard}>
-            <Text style={styles.workspaceTitle}>{readOnly ? "Delivered products · 100% completed" : "Purchase products"}</Text>
+            <Text style={styles.workspaceTitle}>{readOnly ? "Delivered products" : "Purchase products"}</Text>
             {(products || workspace.products).length === 0 ? <Text style={type.bodyMuted}>No active purchase items.</Text> : (products || workspace.products).map((item, index) => (
               <View key={item.item_id} style={[styles.customerPanelItem, index > 0 && styles.customerNavDivider]}>
                 <ProductImage source={item.image} style={styles.customerPanelImage} contentFit="contain" frameInset={0} frameBackground="transparent" fallbackLabel={item.sku} borderRadius={8} />

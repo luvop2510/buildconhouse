@@ -51,6 +51,7 @@ from auth import (
     get_floor_scoped_or_404, require_min_role,
 )
 from services.purchase_workspace import get_purchase_workspace_user as get_current_user
+from services.purchase_workspace import delivered_tracker_quantity_expression, pending_tracker_quantity_expression
 from db import client, db
 from models import (
     Chalan, ChalanLineItem, PurchaseCancellationEvent, PurchaseOrder, PurchaseOrderItem, PurchaseShortage, PurchaseStageEvent, PurchaseStatusEvent,
@@ -67,8 +68,8 @@ from services.domain_outbox import (
 )
 from services.followup_engine import reconcile_followups
 from services.purchase_images import hydrate_purchase_images
-from services.customer_completion import completed_customer_ids, completed_customer_pipeline, confirmed_customer_ids
-from services.purchase_stages import active_quantity, active_quantity_expression, delivery_timestamp, delivery_timestamp_expression, normalized_stage, stage_expression
+from services.customer_completion import completed_customer_ids, completed_customer_pipeline, confirmed_customer_ids, dispatched_customer_pipeline
+from services.purchase_stages import active_quantity, active_quantity_expression, delivery_timestamp, delivery_timestamp_expression, dispatched_chalan_quantity, normalized_stage, stage_expression
 from services.sequence import next_number
 from services.transfer_workflow import execute_transfer, mark_loans_due_for_replenishment, settle_loan_transfer, transfer_history
 
@@ -208,7 +209,7 @@ def _flatten_item(po: dict, it: dict, sla_days: int) -> dict:
         "stage": stage,
         "stage_label": STAGE_LABELS.get(stage, stage),
         "stage_tone": STAGE_TONES.get(stage, {"bg": "#F4F4F5", "fg": "#3F3F46"}),
-        "qty": max(0.0, float(it.get("qty") or 0) - float(it.get("godown_transferred_qty") or 0) - float(it.get("loan_replenishment_returned_qty") or 0)),
+        "qty": float(it["_tracker_qty"]) if "_tracker_qty" in it else active_quantity(it),
         "unit_cost": float(it.get("unit_cost") or 0),
         "room": it.get("room"),
         "expected_delivery_at": po.get("expected_delivery_at"),
@@ -301,12 +302,17 @@ async def _iter_items(
         }},
     ]
 
-    pipeline.append({"$set": {"items.stage": stage_expression()}})
+    delivered_view = view in {"completed", "dispatch_record"}
+    pipeline.append({"$set": {
+        "items._tracker_qty": delivered_tracker_quantity_expression() if delivered_view else pending_tracker_quantity_expression(),
+        "items.stage": "dispatched" if delivered_view else stage_expression(),
+    }})
+    pipeline.append({"$match": {"items._tracker_qty": {"$gt": 0}}})
     if customer:
         pipeline.append({"$match": {"$expr": {"$in": [{"$ifNull": ["$items.customer_id", "$customer_id"]}, filter_values(customer)]}}})
     if product_id:
         pipeline.append({"$match": {"items.product_id": product_id}})
-    if view == "dispatch_record":
+    if delivered_view:
         pipeline.append({"$match": {"items.stage": {"$in": list(DISPATCH_STAGES)}}})
     if stage:
         if any(value not in PURCHASE_STAGES for value in filter_values(stage)):
@@ -330,7 +336,6 @@ async def _iter_items(
 
     if view == "today":
         # Blocked/aging early-stage items first, newest activity next.
-        rows = [r for r in rows if r["stage"] not in DISPATCH_STAGES or r["stage"] == "dispatched"]
         rows.sort(key=lambda r: (not r["blocked"], -(r.get("age_days") or 0)))
     elif view == "stock":
         rows.sort(key=lambda r: (r["stage"] == "dispatched", -(r.get("age_days") or 0)))
@@ -384,11 +389,14 @@ def _items_page_pipeline(
             {"sku": term}, {"name": term}, {"customer_name": term},
             {"po_number": term}, {"brand_name": term},
         ]
-    if view == "dispatch_record":
+    if view in {"completed", "dispatch_record"}:
         selected_stages = filter_values(stage)
         item_match["stage"] = {"$in": [value for value in DISPATCH_STAGES if not selected_stages or value in selected_stages]}
-    elif view == "today":
-        item_match.setdefault("stage", {"$in": [*EARLY_STAGES, "dispatched"]})
+    else:
+        selected_stages = filter_values(stage)
+        if not selected_stages or "dispatched" in selected_stages:
+            item_match["stage"] = {"$in": [value for value in PURCHASE_STAGES if value != "dispatched" and (not selected_stages or value in selected_stages)]}
+    item_match["qty"] = {"$gt": 0}
 
     cutoff = datetime.now(timezone.utc).timestamp() - (sla_days * 86400)
     cutoff_iso = datetime.fromtimestamp(cutoff, timezone.utc).isoformat()
@@ -419,10 +427,10 @@ def _items_page_pipeline(
             "brand_id": {"$ifNull": ["$items.brand_id", "$brand_id"]},
             "brand_name": {"$ifNull": ["$items.brand_name", "$brand_name"]},
             "supplier_id": 1, "supplier_name": 1,
-            "stage": stage_expression(),
+            "stage": {"$literal": "dispatched"} if view in {"completed", "dispatch_record"} else stage_expression(),
             "dispatched_at": delivery_timestamp_expression(),
             "delivered_at": delivery_timestamp_expression(),
-            "qty": {"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$add": [{"$ifNull": ["$items.godown_transferred_qty", 0]}, {"$ifNull": ["$items.loan_replenishment_returned_qty", 0]}]}]},
+            "qty": delivered_tracker_quantity_expression() if view in {"completed", "dispatch_record"} else pending_tracker_quantity_expression(),
             "unit_cost": {"$ifNull": ["$items.unit_cost", 0]},
             "room": "$items.room", "expected_delivery_at": 1,
             "last_moved_at": {"$ifNull": ["$items.last_moved_at", "$created_at"]},
@@ -491,7 +499,7 @@ def _hydrate_page_item(row: dict, sla_days: int) -> dict:
 # =============================================================================
 @router.get("/stages")
 async def stage_catalog(user: UserPublic = Depends(get_current_user)):
-    """Stage list with counts across ALL non-cancelled items on the caller's floor(s)."""
+    """Movement destinations with counts of pending items on this floor."""
     match: dict = {"status": {"$ne": "cancelled"}}
     floor_ids = floor_scope_ids(user)
     if floor_ids is not None:
@@ -501,6 +509,7 @@ async def stage_catalog(user: UserPublic = Depends(get_current_user)):
         {"$unwind": "$items"},
         {"$match": {"items.cancelled": {"$ne": True}}},
         {"$match": {"$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$add": [{"$ifNull": ["$items.godown_transferred_qty", 0]}, {"$ifNull": ["$items.loan_replenishment_returned_qty", 0]}]}]}, 0]}}},
+        {"$match": {"$expr": {"$gt": [pending_tracker_quantity_expression(), 0]}}},
         {"$group": {"_id": stage_expression(), "count": {"$sum": 1}}},
     ]
     rows = await db.purchase_orders.aggregate(pipeline).to_list(20)
@@ -523,6 +532,7 @@ async def brand_facets(user: UserPublic = Depends(get_current_user)):
         {"$unwind": "$items"},
         {"$match": {"items.cancelled": {"$ne": True}}},
         {"$match": {"$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$add": [{"$ifNull": ["$items.godown_transferred_qty", 0]}, {"$ifNull": ["$items.loan_replenishment_returned_qty", 0]}]}]}, 0]}}},
+        {"$match": {"$expr": {"$gt": [pending_tracker_quantity_expression(), 0]}}},
         {"$group": {
             "_id": {"id": "$brand_id", "name": "$brand_name"},
             "count": {"$sum": 1},
@@ -550,6 +560,7 @@ async def customer_facets(user: UserPublic = Depends(get_current_user)):
         {"$unwind": "$items"},
         {"$match": {"items.cancelled": {"$ne": True}}},
         {"$match": {"$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$add": [{"$ifNull": ["$items.godown_transferred_qty", 0]}, {"$ifNull": ["$items.loan_replenishment_returned_qty", 0]}]}]}, 0]}}},
+        {"$match": {"$expr": {"$gt": [pending_tracker_quantity_expression(), 0]}}},
         {"$group": {
             "_id": {"id": {"$ifNull": ["$items.customer_id", "$customer_id"]}, "name": {"$ifNull": ["$items.customer_name", "$customer_name"]}},
             "count": {"$sum": 1},
@@ -601,13 +612,15 @@ async def completed_customer_facets(
     skip: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=100),
     user: UserPublic = Depends(get_current_user),
 ):
-    """Only customers with every positive, active line dispatched (delivered).
+    """Customers with delivered products, including partial customer dispatches.
 
     Aggregation examines every PO before paging, so an older pending line,
     partial split or customer rename cannot falsely produce 100% completion.
     """
-    rows = await db.purchase_orders.aggregate(_completed_customer_pipeline(user, skip, limit)).to_list(limit)
-    return [{"id": r["_id"], "name": r.get("name"), "count": r["item_count"],
+    rows = await db.purchase_orders.aggregate(dispatched_customer_pipeline(user) + [
+        {"$sort": {"last_delivered_at": -1, "_id": 1}}, {"$skip": skip}, {"$limit": limit},
+    ]).to_list(limit)
+    return [{"id": r["_id"], "name": r.get("name"), "count": r["item_count"], "fully_completed": r.get("pending_quantity", 0) == 0,
              "quantity": r.get("quantity", 0), "completed_at": r.get("last_delivered_at")}
             for r in rows]
 
@@ -618,6 +631,7 @@ async def customer_workspace(
     q: Optional[str] = None,
     brand: Optional[str] = None,
     stage: Optional[str] = None,
+    view: str = "active",
     user: UserPublic = Depends(get_current_user),
 ):
     """One-call aggregate powering the Customer Purchase Workspace: summary,
@@ -629,6 +643,8 @@ async def customer_workspace(
     blocked counts, delivered counts) are scoped to that filtered item set.
     `order_value` is the customer's full confirmed commercial order value.
     """
+    if view not in {"active", "completed"}:
+        raise HTTPException(status_code=400, detail="Unknown purchase workspace view")
     customer, settings = await asyncio.gather(
         db.customers.find_one(floor_query(user, {"id": customer_id}), {"_id": 0}),
         _load_settings(),
@@ -638,7 +654,7 @@ async def customer_workspace(
 
     async def load_workspace_rows() -> list[dict]:
         items = await _iter_items(
-            "stock", brand, customer_id, stage, q, settings.sla_days, limit=2000,
+            "completed" if view == "completed" else "stock", brand, customer_id, stage, q, settings.sla_days, limit=2000,
             floor_ids=floor_scope_ids(user),
         )
         await _hydrate_workspace_images(items)
@@ -791,7 +807,7 @@ async def customer_workspace(
 
 @router.get("/items")
 async def list_items(
-    view: str = Query("stock", pattern="^(today|stock|customers|dispatch_record)$"),
+    view: str = Query("stock", pattern="^(today|stock|customers|dispatch_record|completed)$"),
     brand: Optional[str] = None,
     customer: Optional[str] = None,
     stage: Optional[str] = None,
@@ -819,7 +835,7 @@ async def list_items(
 
 @router.get("/items/page")
 async def list_items_page(
-    view: str = Query("stock", pattern="^(today|stock|customers|dispatch_record)$"),
+    view: str = Query("stock", pattern="^(today|stock|customers|dispatch_record|completed)$"),
     brand: Optional[str] = None,
     customer: Optional[str] = None,
     stage: Optional[str] = None,
@@ -977,6 +993,8 @@ async def _cancel_item(
         raise HTTPException(status_code=409, detail="This ordered product is reserved to return a customer loan; move it to godown stock instead")
     if normalized_stage(item, po) == "dispatched":
         raise HTTPException(status_code=400, detail="Delivered items cannot be cancelled")
+    if dispatched_chalan_quantity(po, item) > 0:
+        raise HTTPException(status_code=409, detail="This product has dispatched quantities. Move the remaining quantity to a separate line before removing it; delivered quantities must be retained.")
 
     now = now_iso()
     cancellation = PurchaseCancellationEvent(
@@ -1188,6 +1206,9 @@ async def _attempt_stage_change(
     from_stage = it.get("stage") or "order_in_company"
     full_qty = float(it.get("qty") or 0)
     available_qty = active_quantity(it)
+    chalan_delivered = dispatched_chalan_quantity(po, it)
+    if math.isfinite(chalan_delivered):
+        available_qty = max(0.0, available_qty - max(0.0, chalan_delivered))
     move_qty = float(qty) if qty is not None else available_qty
     if not all(math.isfinite(value) for value in (full_qty, available_qty, move_qty)):
         raise HTTPException(status_code=400, detail="Move quantities must be finite numbers")
@@ -2711,7 +2732,7 @@ async def order_detail(po_id: str, user: UserPublic = Depends(get_current_user))
 # =============================================================================
 @router.get("/export.xlsx")
 async def export_xlsx(
-    view: str = Query("stock", pattern="^(today|stock|customers|dispatch_record)$"),
+    view: str = Query("stock", pattern="^(today|stock|customers|dispatch_record|completed)$"),
     brand: Optional[str] = None,
     customer: Optional[str] = None,
     stage: Optional[str] = None,

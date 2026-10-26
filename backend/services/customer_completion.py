@@ -9,6 +9,7 @@ import asyncio
 
 from auth import floor_query
 from services.purchase_stages import active_quantity_expression, delivery_timestamp_expression, stage_expression
+from services.purchase_workspace import delivered_tracker_quantity_expression, pending_tracker_quantity_expression
 
 
 def active_purchase_customer_pipeline(user, *, customer_ids: list[str] | None = None) -> list[dict]:
@@ -42,6 +43,21 @@ async def completed_customer_ids(database, user, customer_ids: list[str] | None 
         completed_customer_pipeline(user, customer_ids=customer_ids) + [{"$project": {"_id": 1}}],
     ).to_list(None)
     return {row["_id"] for row in rows}
+
+
+def dispatched_customer_pipeline(user) -> list[dict]:
+    """Delivered products remain discoverable before the whole buyer completes."""
+    return active_purchase_customer_pipeline(user) + [
+        {"$group": {
+            "_id": {"$ifNull": ["$items.customer_id", "$customer_id"]},
+            "name": {"$last": {"$ifNull": ["$items.customer_name", "$customer_name"]}},
+            "item_count": {"$sum": {"$cond": [{"$gt": [delivered_tracker_quantity_expression(), 0]}, 1, 0]}},
+            "quantity": {"$sum": delivered_tracker_quantity_expression()},
+            "pending_quantity": {"$sum": pending_tracker_quantity_expression()},
+            "last_delivered_at": {"$max": {"$cond": [{"$gt": [delivered_tracker_quantity_expression(), 0]}, delivery_timestamp_expression(), None]}},
+        }},
+        {"$match": {"_id": {"$nin": [None, ""]}, "item_count": {"$gt": 0}}},
+    ]
 
 
 async def purchase_customer_ids(database, user) -> set[str]:

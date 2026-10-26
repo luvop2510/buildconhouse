@@ -93,9 +93,11 @@ def test_chalan_dispatch_quantities_and_covering_delivery_timestamp(mongo_url):
             await db.purchase_orders.update_one({"id": "p"}, {"$push": {"chalans": {"id": "ch2", "stage": "dispatched", "dispatched_at": "2026-10-10", "items": [{"po_item_id": "i", "qty": 2}]}}})
             rows = await db.purchase_orders.aggregate(tracker._completed_customer_pipeline(user())).to_list(None)
             assert rows[0]["_id"] == "partial" and rows[0]["last_delivered_at"] == "2026-10-10"
-            pipeline = tracker._items_page_pipeline(view="stock", brand=None, customer="partial", stage=None, q=None, product_id=None, floor_ids=["first-floor"], sla_days=7, skip=0, limit=30)
+            pipeline = tracker._items_page_pipeline(view="completed", brand=None, customer="partial", stage=None, q=None, product_id=None, floor_ids=["first-floor"], sla_days=7, skip=0, limit=30)
             facet = (await db.purchase_orders.aggregate(pipeline).to_list(1))[0]
             assert facet["items"][0]["stage"] == "dispatched" and facet["stages"] == [{"_id": "dispatched", "count": 1}]
+            pipeline = tracker._items_page_pipeline(view="stock", brand=None, customer="partial", stage=None, q=None, product_id=None, floor_ids=["first-floor"], sla_days=7, skip=0, limit=30)
+            assert (await db.purchase_orders.aggregate(pipeline).to_list(1))[0]["items"] == []
         finally:
             client.close()
     asyncio.run(run())

@@ -66,15 +66,15 @@ test('stock customer filter composes with stages and displays scoped stage count
 test('100 percent customers open Purchases workspace with delivery time and product details', async ({ page }, info) => {
   await mockSession(page, '/purchases-completed', false);
   const delivered = { ...item, stage: 'dispatched', stage_label: 'Dispatched', dispatched_at: '2026-10-09T10:00:00Z', delivered_at: '2026-10-09T10:00:00Z' };
-  await page.route('**/api/purchases/customers/completed?**', route => route.fulfill({ json: [{ id: 'client1', name: 'Mira Shah', count: 1, quantity: 2, completed_at: delivered.delivered_at }] }));
-  await page.route('**/api/purchases/customers/client1/workspace', route => route.fulfill({ json: {
+  await page.route('**/api/purchases/customers/completed?**', route => route.fulfill({ json: [{ id: 'client1', name: 'Mira Shah', count: 1, quantity: 2, fully_completed: true, completed_at: delivered.delivered_at }] }));
+  await page.route('**/api/purchases/customers/client1/workspace?view=completed', route => route.fulfill({ json: {
     customer: { id: 'client1', name: 'Mira Shah', phone: '9909906652', company: 'RDCL' },
     summary: { total_items: 1, delivered_count: 1, outstanding_balance: 0, outstanding_count: 0, open_pos: 0, blocked_count: 0, outstanding_value: 0 }, products: [delivered],
   } }));
   await page.route('**/api/purchases/items/page?**', route => route.fulfill({ json: { items: [delivered], total: 1, next_skip: null, summaries: { blocked_count: 0, sla_days: 7, stage_counts: { dispatched: 1 } } } }));
   await page.goto('/purchases-completed');
   await page.getByTestId('customer-workspace-client1').click();
-  await expect(page.getByText('Delivered products · 100% completed', { exact: true })).toBeVisible();
+  await expect(page.getByText('Delivered products', { exact: true })).toBeVisible();
   await expect(page.getByText('Furniture chair', { exact: true })).toBeVisible();
   await expect(page.getByText(/PO-1 · Example Company/)).toBeVisible();
   await expect(page.getByText(/Delivered 9 Oct/)).toBeVisible();

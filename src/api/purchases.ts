@@ -95,7 +95,7 @@ export type PurchasesPage = {
 };
 
 export type PurchasesPageQuery = {
-  view: "today" | "stock" | "customers" | "dispatch_record";
+  view: "today" | "stock" | "customers" | "dispatch_record" | "completed";
   brand?: string;
   customer?: string;
   stage?: string;
@@ -126,8 +126,8 @@ export function getPurchaseCustomers(signal?: AbortSignal, includeCompleted = fa
   return api.get<PurchaseCustomer[]>(`/purchases/customer-workspaces?include_completed=${includeCompleted}`, { signal, floorId });
 }
 
-export function getPurchaseCustomerWorkspace(customerId: string, signal?: AbortSignal, floorId?: string) {
-  return api.get<PurchaseCustomerWorkspace>(`/purchases/customers/${customerId}/workspace`, { signal, floorId });
+export function getPurchaseCustomerWorkspace(customerId: string, signal?: AbortSignal, floorId?: string, view: "active" | "completed" = "active") {
+  return api.get<PurchaseCustomerWorkspace>(`/purchases/customers/${customerId}/workspace${view === "completed" ? "?view=completed" : ""}`, { signal, floorId });
 }
 
 export function cancelPurchaseItem(itemId: string, reason?: string) {
