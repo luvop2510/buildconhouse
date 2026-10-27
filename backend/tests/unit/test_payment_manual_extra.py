@@ -2,9 +2,15 @@
 from __future__ import annotations
 
 import asyncio
+import copy
+import json
+
+from bson import ObjectId
+from fastapi.encoders import jsonable_encoder
 
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 
 import routes.payment_routes as payment_routes
 from models import PaymentOrderExtraUpdate, UserPublic
@@ -36,7 +42,8 @@ class _Payments:
         if "idempotency_key" in doc and any("idempotency_key" in prior and prior["idempotency_key"] == doc["idempotency_key"] for prior in self.inserted):
             from pymongo.errors import DuplicateKeyError
             raise DuplicateKeyError("duplicate payment idempotency key")
-        self.inserted.append(doc)
+        doc.setdefault("_id", ObjectId())
+        self.inserted.append(copy.deepcopy(doc))
 
 
 class _Session:
@@ -116,7 +123,9 @@ def test_additional_cost_is_appended_and_added_to_collection_total(monkeypatch):
     assert fake_db.quotations.update[1]["$push"]["payment_extra_history"] == result["additional_cost"]
     assert fake_db.quotations.update[1]["$inc"]["payment_extra_amount"] == 250.12
     assert fake_db.quotations.update[1]["$set"]["payment_extra_name"] == "Labour cost"
-    assert fake_db.payments.inserted == [result["ledger_entry"]]
+    assert [{k: v for k, v in row.items() if k != "_id"} for row in fake_db.payments.inserted] == [result["ledger_entry"]]
+    assert "_id" not in result["ledger_entry"]
+    assert json.loads(json.dumps(jsonable_encoder(result)))["grand_total"] == 1250.12
     ledger_entry = fake_db.payments.inserted[0]
     assert "idempotency_key" not in ledger_entry, "A null key collides with the unique sparse index on the second added cost"
     assert ledger_entry["entry_type"] == "additional_cost"
@@ -147,7 +156,7 @@ def test_ledger_enrichment_shows_cost_name_actor_timestamp_and_debit_balance(mon
         "created_at": "2026-09-20T10:00:00+00:00",
     }
     quotation = {
-        "id": "q-1", "number": "FQ-1", "grand_total": 1000,
+        "id": "q-1", "number": "FQ-1", "floor_id": "ground-floor", "grand_total": 1000,
         "payment_extra_history": [{"id": "cost-1", "amount": 250}],
     }
     monkeypatch.setattr(payment_routes, "db", _HistoryDb(quotation, [payment, cost]))
@@ -178,7 +187,7 @@ def test_additional_cost_retry_is_idempotent_and_preserves_prior_totals(monkeypa
 
     class Payments(_Payments):
         async def find_one(self, query, *_args, **_kwargs):
-            return next((doc for doc in self.inserted if doc['id'] == query['id']), None)
+            return next(({k: v for k, v in doc.items() if k != "_id"} for doc in self.inserted if doc['id'] == query['id']), None)
 
     fake_db = _Db({})
     fake_db.quotations = Quotations({
@@ -192,8 +201,15 @@ def test_additional_cost_retry_is_idempotent_and_preserves_prior_totals(monkeypa
     monkeypatch.setattr(payment_routes, 'cache', _Cache())
     monkeypatch.setattr(payment_routes, 'client', _Client())
     body = PaymentOrderExtraUpdate(amount=250, name='Labour', idempotency_key='extra-attempt-1')
-    first = asyncio.run(payment_routes.update_ground_floor_manual_extra('q-1', body, user=_user()))
-    replay = asyncio.run(payment_routes.update_ground_floor_manual_extra('q-1', body, user=_user()))
+    app = FastAPI()
+    app.include_router(payment_routes.router)
+    app.dependency_overrides[payment_routes.get_current_user] = _user
+    with TestClient(app) as client:
+        first_response = client.patch('/payments/orders/q-1/manual-extra', json=body.model_dump())
+        replay_response = client.patch('/payments/orders/q-1/manual-extra', json=body.model_dump())
+    assert first_response.status_code == replay_response.status_code == 200
+    first, replay = first_response.json(), replay_response.json()
+    assert jsonable_encoder(first) == jsonable_encoder(replay)
     assert first['manual_extra_amount'] == 350
     assert first['grand_total'] == 1350
     assert replay['grand_total'] == 1350

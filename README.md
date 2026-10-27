@@ -39,7 +39,7 @@ Backend unit tests must use an isolated database configuration, as in `.github/w
 - Purchases: stock, customer orders, stage changes, transfers and dispatch records.
 - Tiles: selections, quotations, brand/customer orders, stock releases and dispatches.
 - Quotation Builder: sanitary catalog, rooms, discounts, autosave and order confirmation.
-- Sales Data: confirmed revenue, date comparisons, collections, trends and business-unit/product/customer analysis. Missing data is explicitly reported.
+- Sales Data: three views for product/brand sales, architect/interior references, and customers/follow-ups/unpaid balances. Sales periods and current balances are labelled separately; unsupported source coverage is explicit.
 - Staff administration: customers, walk-ins, follow-ups, permissions, settings and sessions.
 
 ## Deployment

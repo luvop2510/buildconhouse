@@ -29,7 +29,6 @@ import {
   type DispatchListRow,
   type GodownInventoryRow,
   type MaterialMovementRow,
-  type IdNameRef,
 } from "@/src/api/tileOrders";
 import { api } from "@/src/api/client";
 import { toast } from "@/src/components/Toast";
@@ -48,6 +47,7 @@ import {
 import { Sheet } from "@/src/components/ui";
 import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
 import { useAuth } from "@/src/state/auth";
+import { useBreakpoint } from "@/src/hooks/use-breakpoint";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
 
 type TabKey = "customer" | "brands" | "history" | "inventory" | "dispatch-list" | "material-register";
@@ -112,49 +112,31 @@ function quantityLabel(value: number | string, unit?: "Box" | "Pieces") {
   return `${value} ${unit === "Pieces" ? "pieces" : "boxes"}`;
 }
 
-function TileOrdersNavigator({ value, onChange, counts }: {
+function TileOrdersNavigator({ value, onChange }: {
   value: TabKey;
   onChange: (key: TabKey) => void;
-  counts: Partial<Record<TabKey, number>>;
 }) {
-  const renderGroup = (label: string, items: { key: TabKey; label: string; description: string; icon: keyof typeof Feather.glyphMap }[]) => (
-    <View style={styles.navigatorGroup}>
-      <Text style={styles.navigatorLabel}>{label}</Text>
-      <View role="tablist" style={styles.navigatorCards}>
-        {items.map((item) => {
-          const active = value === item.key;
-          const count = counts[item.key];
-          return (
-            <Pressable
-              key={item.key}
-              testID={`tile-orders-tab-${item.key}`}
-              role="tab"
-              aria-selected={active}
-              accessibilityLabel={`${item.label}. ${item.description}`}
-              accessibilityState={{ selected: active }}
-              onPress={() => onChange(item.key)}
-              style={({ hovered, pressed }: any) => [
-                styles.navigatorCard,
-                active ? styles.navigatorCardActive : null,
-                (hovered || pressed) && !active ? styles.navigatorCardHovered : null,
-              ]}
-            >
-              <View style={[styles.navigatorIcon, active ? styles.navigatorIconActive : null]}>
-                <Feather name={item.icon} size={18} color={active ? colors.onBrand : colors.brand} />
-              </View>
-              <View style={styles.navigatorCopy}>
-                <Text style={[styles.navigatorTitle, active ? styles.navigatorTitleActive : null]} numberOfLines={1}>{item.label}</Text>
-                <Text style={[styles.navigatorDescription, active ? styles.navigatorDescriptionActive : null]} numberOfLines={2}>{item.description}</Text>
-              </View>
-              {typeof count === "number" ? <Text style={[styles.navigatorCount, active ? styles.navigatorCountActive : null]}>{count}</Text> : null}
-            </Pressable>
-          );
-        })}
-      </View>
+  const { isPhone } = useBreakpoint();
+  return (
+    <View role="tablist" accessibilityLabel="Tile order views" style={styles.navigator}>
+      {[...WORK_QUEUES, ...RECORDS].map((item) => {
+        const active = value === item.key;
+        return <Pressable
+          key={item.key}
+          testID={`tile-orders-tab-${item.key}`}
+          role="tab"
+          aria-selected={active}
+          accessibilityLabel={item.label}
+          accessibilityState={{ selected: active }}
+          onPress={() => onChange(item.key)}
+          style={({ hovered, pressed }: any) => [styles.navigatorTab, isPhone && styles.navigatorTabPhone, active && styles.navigatorTabActive, (hovered || pressed) && !active && styles.navigatorTabHovered]}
+        >
+          <Feather name={item.icon} size={16} color={active ? colors.onBrand : colors.onSurfaceMuted} />
+          <Text numberOfLines={isPhone ? 2 : undefined} style={[styles.navigatorTitle, isPhone && { flex: 1, minWidth: 0 }, active && styles.navigatorTitleActive]}>{item.label}</Text>
+        </Pressable>;
+      })}
     </View>
   );
-
-  return <View style={styles.navigator}>{renderGroup("WORK QUEUES", WORK_QUEUES)}{renderGroup("RECORDS & AUDIT", RECORDS)}</View>;
 }
 
 export default function TileOrdersScreen() {
@@ -162,6 +144,7 @@ export default function TileOrdersScreen() {
   const { staff } = useAuth();
   const readOnlyDeliveryLookup = staff?.access_profile === "ground_tile_quotations_followups";
   const router = useRouter();
+  const { isPhone } = useBreakpoint();
   // Deep-link params let the Customer workspace jump straight here with the
   // right tab already selected and pre-filtered to that order — "View
   // Register"/"View Dispatches" on a customer order are navigations INTO
@@ -186,8 +169,6 @@ export default function TileOrdersScreen() {
   const [inventory, setInventory] = useState<GodownInventoryRow[]>([]);
   const [historySearch, setHistorySearch] = useState(params.search ?? "");
   const [historySearchDraft, setHistorySearchDraft] = useState(params.search ?? "");
-  const [historyCustomer, setHistoryCustomer] = useState("All");
-  const [historyBrand, setHistoryBrand] = useState("All");
   const [historyDateRange, setHistoryDateRange] = useState<"All" | "30d" | "year">("All");
   const [inventorySearch, setInventorySearch] = useState(params.search ?? "");
   const [inventorySearchDraft, setInventorySearchDraft] = useState(params.search ?? "");
@@ -201,10 +182,10 @@ export default function TileOrdersScreen() {
   const [dispatchStatus, setDispatchStatus] = useState<string>("All");
   const [openDispatchId, setOpenDispatchId] = useState<string | null>(null);
   const [creatingDispatch, setCreatingDispatch] = useState(false);
-  const [historyFacets, setHistoryFacets] = useState<{ customers: IdNameRef[]; brands: IdNameRef[] }>({ customers: [], brands: [] });
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const requestId = useRef(0);
+  const requestController = useRef<AbortController | null>(null);
 
   // Searching should not depend on spotting the phone keyboard's Submit key.
   // A small delay prevents a request per keystroke while still making the
@@ -241,6 +222,9 @@ export default function TileOrdersScreen() {
     loadingMoreRef.current = pageNavigation;
     setLoadingMore(pageNavigation);
     const currentRequest = ++requestId.current;
+    requestController.current?.abort();
+    const controller = new AbortController();
+    requestController.current = controller;
     if (!pageNavigation) setLoading(true);
     setLoadError(null);
     try {
@@ -249,24 +233,23 @@ export default function TileOrdersScreen() {
           page: nextPage, page_size: 30, customer_id: params.customer_id,
           search: customerSearch || undefined,
           status: customerStatus === "All" ? undefined : customerStatus,
-        });
+        }, controller.signal);
         if (currentRequest !== requestId.current) return;
         setCustomerOrders(result.orders);
         setHasMore(result.has_more);
       } else if (tab === "brands") {
-        const result = await tileOrdersApi.listBrands({ page: nextPage, page_size: 30, search: brandSearch || undefined });
+        const result = await tileOrdersApi.listBrands({ page: nextPage, page_size: 30, search: brandSearch || undefined }, controller.signal);
         if (currentRequest !== requestId.current) return;
         setBrands(result.brands);
         setHasMore(result.has_more);
       } else if (tab === "history") {
         const dateFrom = historyDateRange === "year" ? `${new Date().getFullYear()}-01-01` : historyDateRange === "30d" ? new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10) : undefined;
-        const result = await tileOrdersApi.listHistory({ search: historySearch || undefined, customer_id: historyCustomer !== "All" ? historyCustomer : undefined, brand_id: historyBrand !== "All" ? historyBrand : undefined, date_from: dateFrom, page: nextPage, page_size: 30 });
+        const result = await tileOrdersApi.listHistory({ search: historySearch || undefined, date_from: dateFrom, page: nextPage, page_size: 30 }, controller.signal);
         if (currentRequest !== requestId.current) return;
         setHistory(result.rows);
-        setHistoryFacets(result.facets);
         setHasMore(result.has_more);
       } else if (tab === "inventory") {
-        const result = await tileOrdersApi.listInventory({ search: inventorySearch || undefined, page: nextPage, page_size: 30 });
+        const result = await tileOrdersApi.listInventory({ search: inventorySearch || undefined, page: nextPage, page_size: 30 }, controller.signal);
         if (currentRequest !== requestId.current) return;
         setInventory(result.rows);
         setHasMore(result.has_more);
@@ -275,7 +258,7 @@ export default function TileOrdersScreen() {
           search: dispatchSearch || undefined,
           status: dispatchStatus === "All" ? undefined : dispatchStatus,
           page: nextPage, page_size: 30,
-        });
+        }, controller.signal);
         if (currentRequest !== requestId.current) return;
         setDispatchRows(result.rows);
         setHasMore(result.has_more);
@@ -283,7 +266,7 @@ export default function TileOrdersScreen() {
         const result = await tileOrdersApi.listMovements({
           search: movementSearch || undefined,
           page: nextPage, page_size: 30,
-        });
+        }, controller.signal);
         if (currentRequest !== requestId.current) return;
         setMovements(result.rows);
         setHasMore(result.has_more);
@@ -301,14 +284,14 @@ export default function TileOrdersScreen() {
         loadingMoreRef.current = false;
       }
     }
-  }, [tab, movementSearch, dispatchSearch, dispatchStatus, historySearch, historyCustomer, historyBrand, historyDateRange, inventorySearch, customerSearch, customerStatus, brandSearch, params.customer_id]);
+  }, [tab, movementSearch, dispatchSearch, dispatchStatus, historySearch, historyDateRange, inventorySearch, customerSearch, customerStatus, brandSearch, params.customer_id]);
 
   // The customer-order screen can mutate go-down stock while this tab stays
   // mounted in the navigation stack. Re-fetch whenever the screen becomes
   // visible so returning to Go-down Inventory cannot show a stale snapshot.
   useFocusEffect(useCallback(() => {
     void load(1);
-    return () => { requestId.current += 1; };
+    return () => { requestId.current += 1; requestController.current?.abort(); };
   }, [load]));
 
   const openCustomerOrder = (id: string) => router.push(`/(admin)/tiles/orders/${id}` as any);
@@ -320,6 +303,7 @@ export default function TileOrdersScreen() {
   const changeTab = (nextTab: TabKey) => {
     if (nextTab === tab) return;
     requestId.current += 1;
+    requestController.current?.abort();
     setLoading(true);
     setTab(nextTab);
   };
@@ -337,13 +321,13 @@ export default function TileOrdersScreen() {
   const customerColumns = useMemo<Column<CustomerOrderCard>[]>(() => [
     {
       key: "customer", label: "CUSTOMER", grow: 2, minWidth: 200, mobile: "primary",
-      render: (order) => <CellTitle>{order.customer_name}</CellTitle>,
+      render: (order) => isPhone ? <View style={{ gap: spacing.xs }}><CellStack title={order.customer_name} subtitle={order.number} /><Text numberOfLines={2} style={type.bodyMuted}>{order.brands.map(brand => brand.brand_name).join(", ") || "Brand not recorded"}</Text></View> : <CellTitle>{order.customer_name}</CellTitle>,
     },
     {
       // An order number is an identifier an operator reads aloud and types
       // into a search box — it gets the width to render in full
       // ("TORD-2026-0003"), where a customer name may ellipsize.
-      key: "number", label: "ORDER NO.", width: 164,
+      key: "number", label: "ORDER NO.", width: 164, mobile: "hidden",
       render: (order) => <CellMono>{order.number}</CellMono>,
     },
     {
@@ -380,7 +364,7 @@ export default function TileOrdersScreen() {
       key: "action", label: "", width: 56, align: "right", mobile: "hidden",
       render: () => <CellChevron />,
     },
-  ], []);
+  ], [isPhone]);
 
   const brandColumns = useMemo<Column<BrandLandingCard>[]>(() => [
     {
@@ -646,8 +630,6 @@ export default function TileOrdersScreen() {
     try {
       const qs = new URLSearchParams({ format });
       if (historySearch) qs.set("search", historySearch);
-      if (historyCustomer !== "All") qs.set("customer_id", historyCustomer);
-      if (historyBrand !== "All") qs.set("brand_id", historyBrand);
       if (historyDateRange !== "All") qs.set("date_from", historyDateRange === "year" ? `${new Date().getFullYear()}-01-01` : new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10));
       const url = await api.authenticatedUrl(`/tile-orders/history/export?${qs.toString()}`);
       if (Platform.OS === "web") window.open(url, "_blank"); else await Linking.openURL(url);
@@ -661,7 +643,7 @@ export default function TileOrdersScreen() {
         <PageHeader
           eyebrow="GROUND FLOOR · TILES"
           title="Tile Orders"
-          subtitle="Operations queue — release, dispatch and audit in one workspace."
+          subtitle={[...WORK_QUEUES, ...RECORDS].find(view => view.key === tab)?.description}
         />
 
         {/* No WorkflowRail here. On a detail screen the rail answers "where is
@@ -675,18 +657,11 @@ export default function TileOrdersScreen() {
           <TileOrdersNavigator
             value={tab}
             onChange={changeTab}
-            counts={{
-              customer: customerOrders.length || undefined,
-              brands: brands.length || undefined,
-              "dispatch-list": dispatchRows.length || undefined,
-              inventory: inventory.length || undefined,
-              history: history.length || undefined,
-              "material-register": movements.length || undefined,
-            }}
           />
         </Section>
 
         <Section testID="tile-orders-body">
+          {isPhone ? <Text accessibilityRole="header" aria-level={2} style={type.titleMd}>{[...WORK_QUEUES, ...RECORDS].find(view => view.key === tab)?.label}</Text> : null}
           {tab === "customer" ? (
             <Toolbar
               search={<SearchField testID="tile-orders-customer-search" value={customerSearchDraft} onChangeText={setCustomerSearchDraft} onSubmit={() => setCustomerSearch(customerSearchDraft.trim())} placeholder="Search customer, phone or order number…" accessibilityLabel="Search active tile orders" />}
@@ -757,10 +732,6 @@ export default function TileOrdersScreen() {
             <Toolbar
               search={<SearchField testID="tile-orders-history-search" value={historySearchDraft} onChangeText={setHistorySearchDraft} onSubmit={() => setHistorySearch(historySearchDraft.trim())} placeholder="Search customer, order or brand…" />}
               filters={[
-                <FilterChip key="customer-All" label="All customers" active={historyCustomer === "All"} onPress={() => setHistoryCustomer("All")} />,
-                ...historyFacets.customers.map((value) => <FilterChip key={`customer-${value.id}`} label={`Customer: ${value.name}`} active={value.id === "All" ? historyCustomer === "All" : filterValues(historyCustomer, "All").includes(value.id)} onPress={() => setHistoryCustomer(current => toggleFilterValue(current, value.id, "All"))} />),
-                <FilterChip key="brand-All" label="All brands" active={historyBrand === "All"} onPress={() => setHistoryBrand("All")} />,
-                ...historyFacets.brands.map((value) => <FilterChip key={`brand-${value.id}`} label={`Brand: ${value.name}`} active={value.id === "All" ? historyBrand === "All" : filterValues(historyBrand, "All").includes(value.id)} onPress={() => setHistoryBrand(current => toggleFilterValue(current, value.id, "All"))} />),
                 ...(["All", "30d", "year"] as const).map((value) => <FilterChip key={`date-${value}`} label={value === "All" ? "All dates" : value === "30d" ? "Last 30 days" : "This year"} active={historyDateRange === value} onPress={() => setHistoryDateRange(value)} />),
               ]}
               actions={<Button label="Export" variant="primary" onPress={() => void exportHistory("xlsx")} testID="tile-orders-history-export" />}
@@ -805,6 +776,7 @@ export default function TileOrdersScreen() {
           with a link to each thing that row touched: the Chalan PDF, the
           Dispatch record, and the customer order/timeline it belongs to. */}
       <Sheet
+        scroll
         visible={selectedMovement !== null}
         onClose={() => setSelectedMovement(null)}
         title={selectedMovement ? MOVEMENT_LABEL[selectedMovement.movement_type] || selectedMovement.movement_type : "Movement"}
@@ -875,6 +847,7 @@ export default function TileOrdersScreen() {
       </Sheet>
 
       <Sheet
+        scroll
         visible={selectedHistory !== null}
         onClose={() => setSelectedHistory(null)}
         title={selectedHistory ? `${selectedHistory.customer} · ${selectedHistory.order_number}` : "Completed delivery"}
@@ -913,28 +886,19 @@ function SheetFact({ label, value }: { label: string; value: string }) {
 }
 
 const styles = StyleSheet.create({
-  navigator: { gap: spacing.s16 },
-  navigatorGroup: { gap: spacing.s8 },
-  navigatorLabel: { ...type.overline, color: colors.onSurfaceMuted, letterSpacing: 1 },
-  navigatorCards: { flexDirection: "row", flexWrap: "wrap", gap: spacing.s12 },
-  navigatorCard: {
-    flexBasis: 220, flexGrow: 1, minWidth: 0, minHeight: 104, padding: spacing.lg,
-    borderWidth: 1, borderColor: colors.border, borderRadius: radius.md,
-    backgroundColor: colors.surfaceSecondary, flexDirection: "row", alignItems: "flex-start", gap: spacing.s12,
+  navigator: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  navigatorTab: {
+    minHeight: 44, paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm,
+    backgroundColor: colors.surface, flexDirection: "row", alignItems: "center", gap: spacing.sm,
   },
-  navigatorCardActive: { backgroundColor: colors.brand, borderColor: colors.brand },
-  navigatorCardHovered: { backgroundColor: colors.surfaceTertiary, borderColor: colors.brandBorder },
-  navigatorIcon: { width: 38, height: 38, borderRadius: radius.sm, backgroundColor: colors.brandTint, alignItems: "center", justifyContent: "center", flexShrink: 0 },
-  navigatorIconActive: { backgroundColor: "rgba(255,255,255,0.18)" },
-  navigatorCopy: { flex: 1, minWidth: 0, gap: 3 },
-  navigatorTitle: { ...type.titleSm, color: colors.onSurface },
+  navigatorTabActive: { backgroundColor: colors.brand, borderColor: colors.brand },
+  navigatorTabPhone: { flexBasis: "47%", flexGrow: 1, minWidth: 0, minHeight: 56 },
+  navigatorTabHovered: { backgroundColor: colors.surfaceTertiary, borderColor: colors.brandBorder },
+  navigatorTitle: { ...type.bodyStrong, color: colors.onSurface },
   navigatorTitleActive: { color: colors.onBrand },
-  navigatorDescription: { ...type.caption, color: colors.onSurfaceMuted },
-  navigatorDescriptionActive: { color: "rgba(255,255,255,0.82)" },
-  navigatorCount: { ...type.titleMd, color: colors.onSurfaceMuted, fontVariant: ["tabular-nums"], paddingLeft: spacing.s4 },
-  navigatorCountActive: { color: colors.onBrand },
   stateBlock: { paddingVertical: spacing.s48, alignItems: "center", gap: spacing.lg },
-  loadMore: { paddingTop: spacing.lg, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: spacing.md },
+  loadMore: { paddingTop: spacing.lg, alignItems: "center", flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: spacing.md },
   pageLabel: { ...type.body, color: colors.onSurfaceMuted },
   // The Dispatch List's status is a free-text backend string rather than one
   // of the StatusPill ladder values, so it gets a neutral chip of the same

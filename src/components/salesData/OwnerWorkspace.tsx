@@ -17,13 +17,15 @@ import { colors, layout, spacing, type } from "@/src/theme/tokens";
 import { downloadSectionExcel } from "@/src/utils/sectionExcel";
 import { toast } from "@/src/components/Toast";
 
+import { ReferrerDirectory } from "./ReferrerDirectory";
+
 const LABELS: Record<WorkspaceName, { title: string; subtitle: string; rows: "brands" | "products" | "customers" | "relationships" | "floors" }> = {
   revenue: { title: "Revenue", subtitle: "Confirmed sales, dated by order confirmation", rows: "brands" },
   collections: { title: "Collections", subtitle: "What has been collected and what remains due", rows: "customers" },
   forecasting: { title: "Forecasting", subtitle: "Conservative forecast from completed sales history", rows: "floors" },
   customers: { title: "Customers", subtitle: "Customers ranked by confirmed revenue", rows: "customers" },
   architects: { title: "Architects", subtitle: "Architects with attributed confirmed revenue", rows: "relationships" },
-  "interior-designers": { title: "Interior Designers", subtitle: "Interior designers with attributed confirmed revenue", rows: "relationships" },
+  "interior-designers": { title: "Interior Designers", subtitle: "Interior designers, acquired customers and attributed confirmed revenue", rows: "relationships" },
   relationships: { title: "Relationships", subtitle: "Referred customer relationships and generated revenue", rows: "relationships" },
   products: { title: "Products", subtitle: "Products ranked by net confirmed revenue", rows: "products" },
   brands: { title: "Brands", subtitle: "Brand contribution to confirmed revenue", rows: "brands" },
@@ -51,6 +53,7 @@ export function OwnerWorkspace({ workspace }: { workspace: WorkspaceName }) {
   if (staff && !canViewSales) return <Redirect href="/(admin)/sales-data" />;
   const meta = LABELS[workspace]; const cardStyle = isPhone ? { width: "100%" as const } : isTablet ? { width: "48%" as const } : { flex: 1, minWidth: 180 };
   return <AdminPage title={meta.title} subtitle={data ? `${meta.subtitle} · ${data.period}` : meta.subtitle}>
+    {workspace === "architects" || workspace === "interior-designers" ? <ReferrerDirectory kind={workspace === "architects" ? "architect" : "interior_designer"} /> : null}
     {period ? <SalesFilters floors={floors} floorId={floorId} onFloorChange={setFloorId} period={period} onPeriodChange={choose} /> : null}
     {error ? <ErrorState subtitle={error} onRetry={load} /> : null}
     {!error && !data ? <LoadingState label={`Loading ${meta.title.toLowerCase()}…`} /> : null}
@@ -77,12 +80,12 @@ function WorkspaceTable({ kind, data, floorId, phone, onOpen }: { kind: "brands"
   const exportRows = () => {
     const headers = kind === "products" ? ["Product", "Brand", "Revenue", "Units", "Orders", "Customers"]
       : kind === "customers" ? ["Customer", "Revenue", "Orders", "Average order", "Last order"]
-      : kind === "relationships" ? ["Name", "Type", "Revenue", "Orders", "Customers", "Last referral"]
+      : kind === "relationships" ? ["Name", "Interior / studio", "Type", "Revenue", "Orders", "Customers", "Customers acquired", "Last referral"]
       : kind === "brands" ? ["Brand", "Revenue", "Units", "Orders"]
       : ["Business unit", "Revenue", "Orders"];
     const values = rows.map((r) => kind === "products" ? [r.name, r.brand_name, r.revenue, r.quantity, r.orders, r.customers]
       : kind === "customers" ? [r.name, r.revenue, r.orders, r.aov, r.last_order_at]
-      : kind === "relationships" ? [r.name, r.type, r.revenue, r.orders, r.customers, r.last_order_at]
+      : kind === "relationships" ? [r.name, r.company, r.type, r.revenue, r.orders, r.customers, r.customers_acquired ?? r.customers, r.last_order_at]
       : kind === "brands" ? [r.name, r.revenue, r.quantity, r.orders]
       : [r.floor_id, r.revenue, r.orders]);
     void downloadSectionExcel({ resource: "sales_data", page: `Sales Data / ${data.workspace}`, section: title, filename: `sales-${data.workspace}-${kind}.xlsx`, floorId: floorId === "all" ? undefined : floorId, rows: [headers, ...values] }).catch((error: unknown) => toast.show(error instanceof Error ? error.message : "Could not export this section"));
@@ -90,8 +93,8 @@ function WorkspaceTable({ kind, data, floorId, phone, onOpen }: { kind: "brands"
   const phoneRow = (r: any) => {
     const key = r.id || r.brand_id || r.product_id || r.customer_id || r.floor_id;
     const detail = `${fmtMoneyCompact(r.revenue)} · ${r.orders ?? r.quantity ?? 0} ${r.orders !== undefined ? "orders" : "units"}`;
-    const body = <View style={{ minHeight: 56, paddingVertical: spacing.xs, borderBottomWidth: 1, borderBottomColor: colors.border, justifyContent: "center" }}><Text style={type.bodyStrong} numberOfLines={2}>{r.name || r.floor_id}</Text><Text style={[type.caption, { color: colors.onSurfaceMuted }]}>{detail}</Text></View>;
-    return r.customer_id ? <Pressable key={key} accessibilityRole="button" accessibilityLabel={`Open customer ${r.name}`} onPress={() => onOpen(`/(admin)/customers/${r.customer_id}`)}>{body}</Pressable> : <View key={key}>{body}</View>;
+    const body = <View style={{ minHeight: 56, paddingVertical: spacing.xs, borderBottomWidth: 1, borderBottomColor: colors.border, justifyContent: "center" }}><Text style={type.bodyStrong} numberOfLines={2}>{[r.name, r.company].filter(Boolean).join(" · ") || r.floor_id}</Text><Text style={[type.caption, { color: colors.onSurfaceMuted }]}>{detail}</Text>{kind === "relationships" ? <Text style={type.caption}>Through this {r.type === "interior_designer" ? "interior" : "architect"}, {r.customers_acquired ?? r.customers ?? 0} customers were acquired.</Text> : null}</View>;
+    return kind === "relationships" ? <Pressable key={key} accessibilityRole="button" accessibilityLabel={`Open reference ${r.name}`} onPress={() => onOpen(`/(admin)/sales-data/referrer/${r.id}?floorId=${encodeURIComponent(floorId)}&preset=all_time`)}>{body}</Pressable> : r.customer_id ? <Pressable key={key} accessibilityRole="button" accessibilityLabel={`Open customer ${r.name}`} onPress={() => onOpen(`/(admin)/customers/${r.customer_id}`)}>{body}</Pressable> : <View key={key}>{body}</View>;
   };
-  return <Card variant="flat" padding={phone ? layout.cardPadding.base : spacing.lg}><View style={{ gap: spacing.md }}><View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: spacing.sm }}><Text style={type.titleSm}>{title}</Text><Button testID={`sales-workspace-${kind}-export-xlsx`} label="Export Excel" icon="download" variant="secondary" onPress={exportRows} /></View>{phone ? <View style={{ gap: spacing.xs }}>{rows.slice(0, visibleCount).map(phoneRow)}</View> : <Table><TableHeader columns={[{ label: "Name", flex: 2 }, { label: "Revenue", align: "right" }, { label: kind === "products" ? "Units" : "Orders", align: "right" }]} />{rows.slice(0, visibleCount).map((r, i) => <TableRow key={r.id || r.brand_id || r.product_id || r.customer_id || r.floor_id} isLast={i === Math.min(rows.length, visibleCount) - 1} onPress={r.customer_id ? () => onOpen(`/(admin)/customers/${r.customer_id}`) : undefined}><TableCell flex={2}>{r.name || r.floor_id}</TableCell><TableCell align="right">{fmtMoneyCompact(r.revenue)}</TableCell><TableCell align="right">{String(kind === "products" ? r.quantity ?? 0 : r.orders ?? 0)}</TableCell></TableRow>)}</Table>}{rows.length > visibleCount ? <Button label={`Show more (${visibleCount} of ${rows.length})`} variant="secondary" onPress={() => setVisibleCount(n => n + 25)} /> : null}</View></Card>;
+  return <Card variant="flat" padding={phone ? layout.cardPadding.base : spacing.lg}><View style={{ gap: spacing.md }}><View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: spacing.sm }}><Text style={type.titleSm}>{title}</Text><Button testID={`sales-workspace-${kind}-export-xlsx`} label="Export Excel" icon="download" variant="secondary" onPress={exportRows} /></View>{phone ? <View style={{ gap: spacing.xs }}>{rows.slice(0, visibleCount).map(phoneRow)}</View> : <Table><TableHeader columns={[{ label: "Name", flex: 2 }, { label: "Revenue", align: "right" }, { label: kind === "products" ? "Units" : "Orders", align: "right" }]} />{rows.slice(0, visibleCount).map((r, i) => <TableRow key={r.id || r.brand_id || r.product_id || r.customer_id || r.floor_id} isLast={i === Math.min(rows.length, visibleCount) - 1} onPress={kind === "relationships" ? () => onOpen(`/(admin)/sales-data/referrer/${r.id}?floorId=${encodeURIComponent(floorId)}&preset=all_time`) : r.customer_id ? () => onOpen(`/(admin)/customers/${r.customer_id}`) : undefined}><TableCell flex={2}>{kind === "relationships" ? `${[r.name, r.company].filter(Boolean).join(" · ")} · Through this ${r.type === "interior_designer" ? "interior" : "architect"}, ${r.customers_acquired ?? r.customers ?? 0} customers were acquired.` : r.name || r.floor_id}</TableCell><TableCell align="right">{fmtMoneyCompact(r.revenue)}</TableCell><TableCell align="right">{String(kind === "products" ? r.quantity ?? 0 : r.orders ?? 0)}</TableCell></TableRow>)}</Table>}{rows.length > visibleCount ? <Button label={`Show more (${visibleCount} of ${rows.length})`} variant="secondary" onPress={() => setVisibleCount(n => n + 25)} /> : null}</View></Card>;
 }

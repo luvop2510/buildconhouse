@@ -22,7 +22,7 @@ async function loadAccess() {
   if (cache) return cache;
   if (!inflight) {
     const generation = accessGeneration;
-    inflight = api.get<FloorAccess>("/settings/floor-access").then((value) => {
+    inflight = api.get<FloorAccess>("/settings/floor-access", { floorId: "" }).then((value) => {
       // A previous user's request can resolve after sign-out/sign-in. Do not
       // repopulate the shared cache with that user's floor assignments.
       if (generation === accessGeneration) {
@@ -85,7 +85,7 @@ export function setSelectedFloorId(id: string) {
   return selectedFloorPersistence;
 }
 
-export function useFloorAccess() {
+export function useFloorAccess(enabled = true) {
   const [access, setAccess] = useState<FloorAccess | null>(cache);
   const [selectedFloorId, setSelectedFloorIdState] = useState(selectedFloorCache || "");
   const [error, setError] = useState<string | null>(null);
@@ -108,6 +108,7 @@ export function useFloorAccess() {
   }, []);
 
   useEffect(() => {
+    if (!enabled) return;
     let alive = true;
     const onSelectedFloorChange = (floorId: string) => {
       if (alive) setSelectedFloorIdState(floorId);
@@ -137,7 +138,7 @@ export function useFloorAccess() {
       alive = false;
       selectedFloorListeners.delete(onSelectedFloorChange);
     };
-  }, []);
+  }, [enabled]);
 
   const selectFloor = useCallback((id: string) => {
     // Only a real, accessible floor can become active — never "" (see the
@@ -160,8 +161,8 @@ export function useFloorAccess() {
  * sidebar link that switches floors, so the sticky selection could still
  * point at another business unit while its records were being written
  * (that is how tile documents ended up stamped `first-floor`). */
-export function useRequireFloorAccess(floorId: string) {
-  const { access, selectedFloorId, selectFloor } = useFloorAccess();
+export function useRequireFloorAccessState(floorId: string) {
+  const { access, selectedFloorId, selectFloor, loading, error, retry } = useFloorAccess();
   const router = useRouter();
   const synchronizedFloorRef = useRef<string | null>(null);
   useEffect(() => {
@@ -182,5 +183,10 @@ export function useRequireFloorAccess(floorId: string) {
       if (selectedFloorId !== floorId) void selectFloor(floorId);
     }
   }, [access, floorId, router, selectedFloorId, selectFloor]);
-  return Boolean(access && (access.all_floors || access.floor_ids.includes(floorId)) && selectedFloorId === floorId);
+  const ready = Boolean(access && (access.all_floors || access.floor_ids.includes(floorId)) && selectedFloorId === floorId);
+  return { ready, loading, error, retry };
+}
+
+export function useRequireFloorAccess(floorId: string) {
+  return useRequireFloorAccessState(floorId).ready;
 }

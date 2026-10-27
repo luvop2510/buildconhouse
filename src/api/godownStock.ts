@@ -1,8 +1,12 @@
 import { api } from "./client";
+import { appendImageUpload, type UploadImage } from "@/src/utils/appendImageUpload";
 
 export type GodownLot = {
+  idempotent?: boolean;
+  updated_at?: string | null;
+  quantity_counts?: { id: string; qty: number; unit: string; counted_on: string; reason: string; actor_name: string; recorded_at: string }[];
   id: string; product_id: string | null; sku: string; name: string; image?: string | null; finish?: string | null;
-  size?: string | null; feature?: string | null; category?: string | null;
+  size?: string | null; feature?: string | null; category?: string | null; quantity_missing?: boolean; archived?: boolean;
   brand_id?: string | null; brand_name?: string | null; qty_received: number; available_qty: number;
   loaned_out_qty?: number; transferable_qty?: number;
   source_customer_id?: string | null; source_customer_name?: string | null; source_purchased_at?: string | null;
@@ -12,6 +16,7 @@ export type GodownLot = {
   mrp?: number | null; unit_price?: number | null; stock_value?: number | null; price_variants?: { label: string; price: number }[];
   allocations?: { id: string; quotation_id?: string | null; quotation_number?: string | null; customer_name?: string | null; qty: number; allocated_at: string; allocated_by_name?: string | null }[];
   customer_transfers?: CustomerStockTransfer[];
+  history_loaded?: boolean;
 };
 export type CustomerStockTransfer = {
   id: string; stock_id: string; product_id?: string | null; sku: string; name: string; qty: number;
@@ -28,13 +33,16 @@ export type PoFinalMatch = {
   customer_name: string; ordered_qty: number; remaining_qty: number;
   product_id?: string | null; name: string; sku: string;
 };
-export type GodownStockResponse = { lots: GodownLot[]; brands: { id?: string | null; name: string; lot_count: number; available_qty: number }[]; total_available_qty: number; total_stock_value: number; unpriced_lot_count: number };
+export type GodownStockResponse = { lots: GodownLot[]; brands: { id?: string | null; name: string; lot_count: number; available_qty: number }[]; total_available_qty: number; total_stock_value: number; unpriced_lot_count: number; total_lots?: number; available_lot_count?: number; unknown_quantity_count?: number; zero_lot_count?: number; next_offset?: number | null };
 export const getGodownStock = (params = "", floorId?: string) => api.get<GodownStockResponse>(`/godown-stock${params}`, { floorId });
+export type GodownHistory = { allocations: NonNullable<GodownLot["allocations"]>; customer_transfers: CustomerStockTransfer[]; next_offset: number | null };
+export const getGodownHistory = (id: string, offset: number, signal?: AbortSignal, floorId?: string) => api.get<GodownHistory>(`/godown-stock/${encodeURIComponent(id)}/history?offset=${offset}&limit=60`, { signal, floorId, cacheMs: 0 });
+export const getGodownLot = (id: string, signal?: AbortSignal, floorId?: string) => api.get<GodownLot>(`/godown-stock/${encodeURIComponent(id)}`, { signal, floorId, cacheMs: 0 });
 export type SkuSuggestion = { id: string; sku: string; name: string; brand_name?: string | null; image?: string | null; size?: string | null; category_id?: string | null };
 export const getSkuSuggestions = (prefix: string) => api.get<SkuSuggestion[]>(`/godown-stock/sku-suggestions?prefix=${encodeURIComponent(prefix)}`);
-export type DirectIntake = { qty: number; reason?: string; product_id?: string; sku?: string; name?: string; brand?: string; image?: string; size?: string; feature?: string; category?: string; unit_price?: number; price_variants?: { label: string; price: number }[] };
-export const addDirectGodownStock = (body: DirectIntake) => api.post<GodownLot>("/godown-stock/direct-intakes", body);
-export const getPoFinalMatches = (stockId: string) => api.get<{ matches: PoFinalMatch[]; total_ordered_qty: number; transferable_qty: number }>(`/godown-stock/${encodeURIComponent(stockId)}/po-final-matches`);
+export type DirectIntake = { idempotency_key?: string; qty: number; reason?: string; product_id?: string; sku?: string; name?: string; brand?: string; image?: string; size?: string; feature?: string; category?: string; unit_price?: number; price_variants?: { label: string; price: number }[] };
+export const addDirectGodownStock = (body: DirectIntake, floorId?: string) => api.post<GodownLot>("/godown-stock/direct-intakes", body, { floorId });
+export const getPoFinalMatches = (stockId: string, floorId?: string) => api.get<{ matches: PoFinalMatch[]; total_ordered_qty: number; transferable_qty: number }>(`/godown-stock/${encodeURIComponent(stockId)}/po-final-matches`, { floorId });
 export const getCustomerStockTransfers = (customerId: string) => api.get<{ transfers: CustomerStockTransfer[] }>(`/godown-stock/customer-transfers?customer_id=${encodeURIComponent(customerId)}`);
 export const returnCustomerStockTransfer = (transferId: string) => api.post<CustomerStockTransfer>(`/godown-stock/customer-transfers/${encodeURIComponent(transferId)}/return`, {});
 export type CustomerTransferInput = {
@@ -42,6 +50,14 @@ export type CustomerTransferInput = {
   recipient_purchase_item_id?: string; reason?: string; idempotency_key: string;
   unit_price?: number; discount_pct?: number;
 };
-export const transferGodownStockToCustomer = (stockId: string, body: CustomerTransferInput) =>
-  api.post<CustomerStockTransfer>(`/godown-stock/${encodeURIComponent(stockId)}/customer-transfers`, body);
-export const updateGodownPricing = (id: string, body: { unit_price: number; price_variants: { label: string; price: number }[] }) => api.patch<GodownLot>(`/godown-stock/${encodeURIComponent(id)}/pricing`, body);
+export const transferGodownStockToCustomer = (stockId: string, body: CustomerTransferInput, floorId?: string) =>
+  api.post<CustomerStockTransfer>(`/godown-stock/${encodeURIComponent(stockId)}/customer-transfers`, body, { floorId });
+export const updateGodownPricing = (id: string, body: { unit_price: number | null; price_variants: { label: string; price: number }[] }, signal?: AbortSignal) => api.patch<GodownLot>(`/godown-stock/${encodeURIComponent(id)}/pricing`, body, { signal });
+export const updateGodownDetails = (id: string, body: { unit_price?: number | null; image?: string | null; price_variants?: { label: string; price: number }[] }, signal?: AbortSignal, floorId?: string) => api.patch<GodownLot>(`/godown-stock/${encodeURIComponent(id)}/details`, body, { signal, floorId });
+export const recordGodownQuantity = (id: string, body: { qty: number; counted_on: string; reason: string; expected_updated_at: string | null; idempotency_key: string }, signal?: AbortSignal, floorId?: string) => api.post<GodownLot>(`/godown-stock/${encodeURIComponent(id)}/quantity-count`, body, { signal, floorId });
+export async function uploadGodownImage(id: string, image: UploadImage, signal?: AbortSignal, floorId?: string): Promise<GodownLot> {
+  const form = new FormData();
+  await appendImageUpload(form, image);
+  if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
+  return api.upload<GodownLot>(`/godown-stock/${encodeURIComponent(id)}/image`, form, { signal, floorId });
+}

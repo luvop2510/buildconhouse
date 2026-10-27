@@ -131,3 +131,31 @@ def test_active_tracker_pipelines_exclude_cancelled_line_items():
         floor_ids=["first-floor"], sla_days=7, skip=0, limit=10,
     )
     assert {"$match": {"items.cancelled": {"$ne": True}}} in paged
+
+
+def test_lent_source_cannot_be_cancelled_before_physical_return(monkeypatch):
+    item = {**_item('source', 'in_box'), 'loaned_qty': 1}
+    monkeypatch.setattr(tracker, 'db', _Db(_po(item)))
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(tracker._cancel_item('source', 'Cancel', _user()))
+    assert error.value.status_code == 409
+    assert not item.get('cancelled')
+
+
+def test_cancellation_cas_cannot_cancel_a_loan_created_after_the_read(monkeypatch):
+    po = _po(_item('source', 'in_box'))
+    class Race(_Orders):
+        async def update_one(self, query, update):
+            item = self.po['items'][0]
+            item['loaned_qty'] = 1
+            elem = query.get('items', {}).get('$elemMatch', {})
+            if 'loaned_qty' in elem and elem['loaned_qty'] != item['loaned_qty']:
+                return _Result(0)
+            return await super().update_one(query, update)
+    db = _Db(po)
+    db.purchase_orders = Race(po)
+    monkeypatch.setattr(tracker, 'db', db)
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(tracker._cancel_item('source', 'Cancel', _user()))
+    assert error.value.status_code == 409
+    assert not po['items'][0].get('cancelled')

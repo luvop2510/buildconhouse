@@ -28,6 +28,7 @@ import { TileOrderProductCell } from "@/src/components/tiles/TileOrderProductCel
 import { tileIdentityMeta } from "@/src/components/tiles/tilePresentation";
 import { CellNumber, DataTable, type Column } from "@/src/components/tiles/TileTable";
 import { Sheet } from "@/src/components/ui";
+import { Dropdown } from "@/src/components/ds";
 import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
 import { useAuth } from "@/src/state/auth";
 import { useBreakpoint } from "@/src/hooks/use-breakpoint";
@@ -35,21 +36,16 @@ import { colors, spacing, type } from "@/src/theme/tokens";
 
 type ActiveSheet = { kind: "godown" | "dispatch-released" | "dispatch-godown"; poId: string; item: CustomerOrderItem } | null;
 
-// Every action stays on screen for every line, disabled with the reason it
-// is unavailable rather than removed. Previously an item with nothing
-// released rendered the words "Awaiting brand release" and no controls at
-// all, so most rows of a real order showed zero buttons and the page read
-// as a report rather than a workspace.
+// Keep all movement options discoverable without repeating three wide buttons
+// per product. Unavailable movements stay disabled with the current stock hint.
 function ItemActions({
   item, poId, onOpen, readOnly = false,
 }: { item: CustomerOrderItem; poId: string; onOpen: (sheet: ActiveSheet) => void; readOnly?: boolean }) {
-  const { isPhone, bp } = useBreakpoint();
-  const fullWidth = isPhone || bp === "tabletPortrait";
   if (readOnly) return <Text style={styles.hint}>Read-only delivery lookup</Text>;
-  const actions: { key: string; label: string; kind: NonNullable<ActiveSheet>["kind"]; enabled: boolean; primary?: boolean }[] = [
+  const actions: { key: string; label: string; kind: NonNullable<ActiveSheet>["kind"]; enabled: boolean }[] = [
     { key: "move-godown", label: "Move to Godown", kind: "godown", enabled: item.boxes_ready > 0 },
-    { key: "dispatch-released", label: "Dispatch from Released", kind: "dispatch-released", enabled: item.boxes_ready > 0, primary: true },
-    { key: "dispatch-godown", label: "Dispatch from Godown", kind: "dispatch-godown", enabled: item.boxes_godown > 0, primary: true },
+    { key: "dispatch-released", label: "Dispatch from Released", kind: "dispatch-released", enabled: item.boxes_ready > 0 },
+    { key: "dispatch-godown", label: "Dispatch from Godown", kind: "dispatch-godown", enabled: item.boxes_godown > 0 },
   ];
   const hint = item.boxes_ready <= 0 && item.boxes_godown <= 0
     ? (item.boxes_pending > 0 ? `Awaiting brand release · ${item.boxes_pending} ${item.quantity_unit === "Pieces" ? "pieces" : "boxes"} still owed` : "Fully dispatched")
@@ -57,20 +53,12 @@ function ItemActions({
 
   return (
     <View style={styles.actionCell}>
-      <ButtonGroup>
-        {actions.map((action) => (
-          <Button
-            key={action.key}
-            label={action.label}
-            size="sm"
-            variant={action.primary ? "primary" : "secondary"}
-            disabled={!action.enabled}
-            fullWidth={fullWidth}
-            testID={`tile-order-${action.key}-${item.po_item_id}`}
-            onPress={() => onOpen({ kind: action.kind, poId, item })}
-          />
-        ))}
-      </ButtonGroup>
+      <Dropdown label="Move / Dispatch" testID={`tile-order-actions-${item.po_item_id}`} items={actions.map(action => ({
+        label: action.label,
+        disabled: !action.enabled,
+        testID: `tile-order-${action.key}-${item.po_item_id}`,
+        onPress: () => onOpen({ kind: action.kind, poId, item }),
+      }))} />
       {hint ? <Text style={styles.hint}>{hint}</Text> : null}
     </View>
   );
@@ -79,6 +67,7 @@ function ItemActions({
 export default function CustomerOrderDetailScreen() {
   useRequireFloorAccess("ground-floor");
   const { staff } = useAuth();
+  const { isPhone } = useBreakpoint();
   const readOnlyDeliveryLookup = staff?.access_profile === "ground_tile_quotations_followups";
   const { id, timeline: timelineParam } = useLocalSearchParams<{ id: string; timeline?: string }>();
   const router = useRouter();
@@ -151,7 +140,7 @@ export default function CustomerOrderDetailScreen() {
   // same figure straight down the column; the product name absorbs the rest.
   const columns = useMemo<Column<CustomerOrderItem & { __poId: string }>[]>(() => [
     {
-      key: "product", label: "TILE NAME", grow: 3, minWidth: 240, mobile: "primary",
+      key: "product", label: "TILE NAME", grow: 3, minWidth: 320, mobile: "primary",
       render: (item) => (
         <TileOrderProductCell
           name={item.tile_name}
@@ -161,18 +150,17 @@ export default function CustomerOrderDetailScreen() {
       ),
     },
     { key: "ordered", label: "ORDERED", width: 120, align: "right", render: (i) => <CellNumber value={`${i.boxes_ordered} ${i.quantity_unit === "Pieces" ? "pieces" : "boxes"}`} /> },
-    { key: "released", label: "RELEASED", width: 124, align: "right", mobile: "hidden", render: (i) => <CellNumber value={`${i.boxes_ready} ${i.quantity_unit === "Pieces" ? "pieces" : "boxes"}`} /> },
-    { key: "godown", label: "GODOWN", width: 120, align: "right", mobile: "hidden", render: (i) => <CellNumber value={`${i.boxes_godown} ${i.quantity_unit === "Pieces" ? "pieces" : "boxes"}`} /> },
-    { key: "dispatched", label: "DISPATCHED", width: 136, align: "right", mobile: "hidden", render: (i) => <CellNumber value={`${i.boxes_dispatched} ${i.quantity_unit === "Pieces" ? "pieces" : "boxes"}`} /> },
+    { key: "released", label: "RELEASED", width: 124, align: "right", render: (i) => <CellNumber value={`${i.boxes_ready} ${i.quantity_unit === "Pieces" ? "pieces" : "boxes"}`} /> },
+    { key: "godown", label: "GODOWN", width: 120, align: "right", render: (i) => <CellNumber value={`${i.boxes_godown} ${i.quantity_unit === "Pieces" ? "pieces" : "boxes"}`} /> },
+    { key: "dispatched", label: "DISPATCHED", width: 136, align: "right", render: (i) => <CellNumber value={`${i.boxes_dispatched} ${i.quantity_unit === "Pieces" ? "pieces" : "boxes"}`} /> },
     {
-      key: "delivered", label: "DELIVERED", width: 118, align: "right", mobile: "hidden",
+      key: "delivered", label: "DELIVERED", width: 118, align: "right",
       render: (i) => <CellNumber value={i.current_location === "Delivered" ? `${i.boxes_dispatched} ${i.quantity_unit === "Pieces" ? "pieces" : "boxes"}` : "—"} dim={i.current_location !== "Delivered"} />,
     },
     { key: "remaining", label: "REMAINING", width: 130, align: "right", render: (i) => <CellNumber value={`${i.boxes_pending} ${i.quantity_unit === "Pieces" ? "pieces" : "boxes"}`} dim={i.boxes_pending === 0} /> },
     {
-      // Pinned: the three movement verbs are the reason this screen exists, so
-      // they stay on screen even when the counters scroll under them.
-      key: "actions", label: "ACTIONS", width: 524, sticky: true, mobile: "action",
+      // Keep the movement menu visible while reading the fulfilment counters.
+      key: "actions", label: "ACTIONS", width: 260, sticky: true, mobile: "action",
       render: (item) => <ItemActions item={item} poId={item.__poId} onOpen={setSheet} readOnly={readOnlyDeliveryLookup} />,
     },
   ], [readOnlyDeliveryLookup]);
@@ -190,7 +178,7 @@ export default function CustomerOrderDetailScreen() {
       <CenteredState>
         <Text style={type.titleMd}>{loadError || "Order not found"}</Text>
         <Button label="Retry" variant="primary" testID="tile-order-retry" onPress={() => load()} />
-        <BackLink label="Back to Tile Orders" testID="tile-order-back" onPress={() => router.back()} />
+        <BackLink label="Back to Tile Orders" testID="tile-order-back" onPress={() => { if (router.canGoBack()) router.back(); else router.replace("/(admin)/tiles/orders" as any); }} />
       </CenteredState>
     );
   }
@@ -200,7 +188,7 @@ export default function CustomerOrderDetailScreen() {
   return (
     <>
       <PageShell testID="tile-order-detail-screen">
-        <BackLink label="Back to Tile Orders" testID="tile-order-back" onPress={() => router.back()} />
+        <BackLink label="Back to Tile Orders" testID="tile-order-back" onPress={() => { if (router.canGoBack()) router.back(); else router.replace("/(admin)/tiles/orders" as any); }} />
 
         <PageHeader
           eyebrow={summary.number}
@@ -214,16 +202,19 @@ export default function CustomerOrderDetailScreen() {
             <ButtonGroup>
               <Button
                 label={timelineLoading ? "Loading timeline…" : "View Timeline"}
+                fullWidth={isPhone}
                 testID="tile-order-view-timeline"
                 onPress={openTimeline}
               />
               <Button
                 label="View Register"
+                fullWidth={isPhone}
                 testID="tile-order-view-register"
                 onPress={() => router.push(`/(admin)/tiles/orders?tab=material-register&search=${encodeURIComponent(summary.customer_name)}` as any)}
               />
               <Button
                 label="View Dispatches"
+                fullWidth={isPhone}
                 testID="tile-order-view-dispatches"
                 onPress={() => router.push(`/(admin)/tiles/orders?tab=dispatch-list&search=${encodeURIComponent(summary.customer_name)}` as any)}
               />
@@ -237,7 +228,7 @@ export default function CustomerOrderDetailScreen() {
               <StatusPill status={summary.overall_status} />
               <AgeingBadge days={summary.waiting_days} band={summary.ageing_band} />
             </View>
-            <View style={styles.summaryStats}>
+            <View style={[styles.summaryStats, isPhone ? styles.summaryStatsPhone : null]}>
               <Stat label="Products" value={summary.total_products} />
               <Stat label="Units ordered" value={summary.total_boxes} />
               <Stat label="Complete" value={`${summary.completion_percentage}%`} tone="brand" />
@@ -296,7 +287,7 @@ export default function CustomerOrderDetailScreen() {
             actually returns — activity_events documents, whose human text is
             `summary` and whose kind is `event_type` (services/activity_log.py).
             Reading `title`/`type` made every row render "Workflow event". */}
-        <ScrollView contentContainerStyle={styles.timelineList}>
+        <ScrollView style={{ flex: 1, minHeight: 0 }} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.timelineList}>
           {timeline?.length ? timeline.map((event, index) => {
             const target = timelineTarget(event);
             return (
@@ -358,6 +349,7 @@ export default function CustomerOrderDetailScreen() {
 const styles = StyleSheet.create({
   summaryBadges: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.s12, marginBottom: spacing.s20 },
   summaryStats: { flexDirection: "row", flexWrap: "wrap", columnGap: spacing.s40, rowGap: spacing.s24 },
+  summaryStatsPhone: { columnGap: spacing.lg, rowGap: spacing.lg },
   actionCell: { gap: spacing.s8, width: "100%" },
   hint: { ...type.caption, color: colors.onSurfaceMuted },
   note: { ...type.caption, color: colors.onSurfaceMuted, marginTop: spacing.s12 },

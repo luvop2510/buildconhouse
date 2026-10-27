@@ -36,6 +36,8 @@ def _user(role: str) -> UserPublic:
         purchases_tracker.move_item,
         purchases_tracker.bulk_move,
         purchases_tracker.transfer_item_command,
+        purchases_tracker.return_replacement_loans,
+        purchases_tracker.return_purchase_transfer,
         purchases_tracker.transfer_item,
     ],
 )
@@ -54,6 +56,8 @@ def test_warehouse_role_is_allowed_to_move_and_transfer_items(route_func):
         purchases_tracker.move_item,
         purchases_tracker.bulk_move,
         purchases_tracker.transfer_item_command,
+        purchases_tracker.return_replacement_loans,
+        purchases_tracker.return_purchase_transfer,
         purchases_tracker.transfer_item,
     ],
 )

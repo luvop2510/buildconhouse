@@ -5,19 +5,17 @@
 // Uses FlatList w/ numColumns for grid layout. Search + sort + filters live
 // in the sticky header.
 import Feather from "@expo/vector-icons/Feather";
-import { Image } from "expo-image";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, FlatList, LayoutChangeEvent, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 
-import { EmptyState, ErrorState } from "@/src/components/ui";
+import { Button, EmptyState, ErrorState } from "@/src/components/ui";
 import { ProductImage } from "@/src/components/ProductImage";
 import { colors, money, PRODUCT_IMAGE_ASPECT_RATIO, radius, spacing } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";
-import { supplierLogoFor } from "@/src/design/BrandLogo";
-import { api } from "@/src/api/client";
 import { storage } from "@/src/utils/storage";
 import { useBuilder } from "../context/BuilderContext";
+import { ProductFilterSheet } from "../sheets/ProductFilterSheet";
 import { VariantSwatchStrip } from "../shared/VariantChip";
 import { QuickAddButton } from "../shared/QuickAddButton";
 import { resolveVariantImages } from "../helpers/media";
@@ -27,6 +25,7 @@ import type { Product, ProductVariant } from "../helpers/types";
 import { catalogPriceUnknown } from "../helpers/catalogSource";
 import { catalogProductQuantity, roomProductQuantities } from "../helpers/catalogMetrics";
 import { isNearScrollEnd } from "@/src/utils/scrollEnd";
+import { catalogGridRows, catalogReferences, catalogItemKey } from "@/src/services/catalogService";
 
 const RECENT_SEARCHES_KEY = "forge.builder.recentSearches.v1";
 const MAX_RECENT_SEARCHES = 8;
@@ -45,7 +44,7 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
   const b = useBuilder();
   const [paneWidth, setPaneWidth] = useState(0);
   const [facets, setFacets] = useState<Record<string, { value: string }[]>>({});
-  useEffect(() => { let active = true; void api.get<Record<string, { value: string }[]>>("/catalog/facets").then(value => { if (active) setFacets(value); }).catch(() => {}); return () => { active = false; }; }, [b.brands]);
+  useEffect(() => { let active = true; if (!b.activeFloorId) return; setFacets({}); void catalogReferences.facets<Record<string, { value: string }[]>>({ floorId: b.activeFloorId }).then(value => { if (active) setFacets(value); }).catch(() => {}); return () => { active = false; }; }, [b.activeFloorId]);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const numCols = quotationGridColumns(paneWidth, !showCompactFilters);
   // Cap compact imagery so tablets show multiple complete rows, even when a
@@ -63,6 +62,13 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
     if (!b.selectedCategoryIds.length) return null;
     return b.categories.filter(c => b.selectedCategoryIds.includes(c.id)).map(c => c.name).join(", ") || null;
   }, [b.categories, b.selectedCategoryIds]);
+  const hasFilters = !!(b.q.trim() || b.selectedBrandIds.length || b.selectedCategoryIds.length || b.selectedSizes.length);
+  const clearFilters = () => {
+    b.setQ("");
+    b.setSelectedBrandId(null);
+    b.setSelectedCategoryId(null);
+    b.setSelectedSizes([]);
+  };
 
   // ---- Recent searches (phone catalog experience parity) ----------------
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
@@ -91,11 +97,6 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
     storage.setItem(RECENT_SEARCHES_KEY, JSON.stringify([]));
   }, []);
 
-  const totalBrandProducts = useMemo(
-    () => b.brands.reduce((s, br) => s + (br.product_count || 0), 0),
-    [b.brands],
-  );
-
   return (
     <View
       style={styles.panel}
@@ -116,7 +117,7 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
           {!b.productLoading && !b.productError ? <Text testID="explorer-product-count" style={styles.crumbCount}>· {b.productTotal} products</Text> : null}
         </View>
 
-        <View style={styles.searchWrap}>
+        <View {...(Platform.OS === "web" ? { dataSet: { fieldShell: "true" } } : {})} style={styles.searchWrap}>
           <Feather name="search" size={14} color={colors.onSurfaceMuted} />
           <TextInput
             ref={b.searchRef}
@@ -141,72 +142,16 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
           <Pressable accessibilityRole="button" accessibilityState={{ expanded: filtersOpen }}
             accessibilityLabel="Filters and sort" testID="explorer-filter-toggle" onPress={() => setFiltersOpen(v => !v)} style={styles.filterTrigger}>
             <Feather name="sliders" size={15} color={colors.onSurface} />
-            <Text style={styles.filterTriggerLabel}>Filters & sort{b.selectedBrandId || b.selectedCategoryId ? " · Active" : ""}</Text>
+            <Text style={styles.filterTriggerLabel}>Filters & sort{b.selectedBrandId || b.selectedCategoryId || b.selectedSizes.length ? " · Active" : ""}</Text>
             <Feather name={filtersOpen ? "chevron-up" : "chevron-down"} size={13} color={colors.onSurface} />
           </Pressable>
-          {b.selectedBrandId || b.selectedCategoryId || b.q ? <Pressable accessibilityRole="button" accessibilityLabel="Clear all product filters" onPress={() => { b.setSelectedBrandId(null); b.setSelectedCategoryId(null); b.setSelectedFinishes([]); b.setSelectedColours([]); b.setSelectedSizes([]); b.setQ(""); }} style={styles.filterTrigger}>
-            <Text style={styles.filterTriggerLabel}>Clear</Text>
-          </Pressable> : <Text style={styles.filterHint}>{SORT_OPTIONS.find(o => o.k === b.sortKey)?.label}</Text>}
+          <Pressable accessibilityRole="button" accessibilityLabel="Add custom product" testID="explorer-custom-product"
+            onPress={() => { b.setPickerSheetOpen(false); b.setCustomProductSheetOpen(true); }} style={[styles.filterTrigger, styles.customTrigger]}>
+            <Feather name="plus" size={16} color={colors.onSurface} /><Text style={styles.filterTriggerLabel}>Custom product</Text>
+          </Pressable>
         </View> : null}
-        {!showCompactFilters || filtersOpen ? <ScrollView style={showCompactFilters ? { maxHeight: 220 } : undefined} contentContainerStyle={{ gap: 8 }} keyboardShouldPersistTaps="handled">
-        {/* Mobile-only: brand + category selectors (tablet/desktop already show
-            these permanently in BrandRail alongside the grid, so this block is
-            redundant there and intentionally hidden). Keeps the phone catalog
-            experience at full parity with desktop browsing. */}
-        {showCompactFilters ? (
-          <>
-            <ScrollView
-              horizontal showsHorizontalScrollIndicator
-              contentContainerStyle={{ gap: 6, paddingVertical: 2 }}
-              testID="mobile-brand-selector"
-            >
-              <FilterPill
-                label="All brands"
-                count={b.referenceLoading || b.referenceError ? undefined : totalBrandProducts}
-                active={!b.selectedBrandIds.length}
-                onPress={() => b.setSelectedBrandId(null)}
-                testID="mobile-brand-all"
-              />
-              {b.brands.map((br) => (
-                <FilterPill
-                  key={br.id}
-                  label={br.name}
-                  logo={supplierLogoFor(br.name)}
-                  count={br.product_count}
-                  active={b.selectedBrandIds.includes(br.id)}
-                  onPress={() => b.setSelectedBrandId(br.id)}
-                  testID={`mobile-brand-${br.name}`}
-                />
-              ))}
-            </ScrollView>
-            {b.categoriesForRail.length > 0 ? (
-              <ScrollView
-                horizontal showsHorizontalScrollIndicator
-                contentContainerStyle={{ gap: 6, paddingVertical: 2 }}
-                testID="mobile-category-selector"
-              >
-                <FilterPill
-                  label={`All ${brandName}`}
-                  active={!b.selectedCategoryIds.length}
-                  onPress={() => b.setSelectedCategoryId(null)}
-                  testID="mobile-category-all"
-                />
-                {b.categoriesForRail.map((c) => (
-                  <FilterPill
-                    key={c.id}
-                    label={c.name}
-                    count={c.product_count}
-                    active={b.selectedCategoryIds.includes(c.id)}
-                    onPress={() => b.setSelectedCategoryId(c.id)}
-                    testID={`mobile-category-${c.name}`}
-                  />
-                ))}
-              </ScrollView>
-            ) : null}
-          </>
-        ) : null}
-
-        {([["finishes", "Finish", b.selectedFinishes, b.setSelectedFinishes], ["colours", "Color", b.selectedColours, b.setSelectedColours], ["sizes", "Size", b.selectedSizes, b.setSelectedSizes]] as const).map(([field, label, selected, update]) => facets[field]?.length ? <View key={field} style={{ gap: 4 }}>
+        {!showCompactFilters ? <ScrollView contentContainerStyle={{ gap: 8 }} keyboardShouldPersistTaps="handled">
+        {([["sizes", "Size", b.selectedSizes, b.setSelectedSizes]] as const).map(([field, label, selected, update]) => facets[field]?.length ? <View key={field} style={{ gap: 4 }}>
           <Text style={styles.filterHint}>{label} · select multiple</Text>
           <ScrollView horizontal contentContainerStyle={{ gap: 6 }}>
             <FilterPill label="All" active={!selected.length} onPress={() => update([])} />
@@ -228,6 +173,7 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
               return (
                 <Pressable
                   key={opt.k}
+                  accessibilityRole="button" accessibilityState={{ selected: on }}
                   onPress={() => b.setSortKey(opt.k)}
                   style={[styles.sortChip, on && styles.sortChipActive]}
                   testID={`sort-${opt.k}`}
@@ -245,6 +191,7 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
               return (
                 <Pressable
                   key={opt.k}
+                  accessibilityRole="button" accessibilityState={{ selected: on }}
                   onPress={() => b.setSortKey(opt.k)}
                   style={[styles.sortChip, on && styles.sortChipActive]}
                   testID={`sort-${opt.k}`}
@@ -281,13 +228,18 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
         </ScrollView> : null}
       </View>
 
+      <ProductFilterSheet open={showCompactFilters && filtersOpen} onClose={() => setFiltersOpen(false)} facets={facets} />
+
       <FlatList
-        data={b.products}
+        // A query keeps the previous page in memory until it settles. Never
+        // offer those cards as matches for the new search/filter, including
+        // the timeout path where the old page can still be present.
+        data={b.productLoading || b.productError ? [] : b.products}
         key={`grid-${numCols}`}
         numColumns={numCols}
         style={{ flex: 1, minHeight: 0 }}
         columnWrapperStyle={numCols > 1 ? { gap: 12 } : undefined}
-        keyExtractor={(p) => p.id}
+        keyExtractor={catalogItemKey}
         contentContainerStyle={{ padding: showCompactFilters ? 12 : 16, gap: 12, paddingBottom: 24 }}
         keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => (
@@ -303,19 +255,17 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
           />
         )}
         removeClippedSubviews={Platform.OS !== "web"}
-        // Keep a full 10–20-card working set ready on compact screens. The
-        // focused mobile workspace removes its non-product chrome, so these
-        // cards are immediately visible/reachable instead of arriving one
-        // short batch at a time.
-        initialNumToRender={showCompactFilters ? 20 : 16}
-        maxToRenderPerBatch={8}
-        windowSize={7}
+        // FlatList counts multi-column rows; keep the initial working set in
+        // cards so wider grids do not multiply image decoding/render work.
+        initialNumToRender={catalogGridRows(numCols, showCompactFilters ? 20 : 16)}
+        maxToRenderPerBatch={catalogGridRows(numCols, 12)}
+        windowSize={5}
         onEndReached={() => b.loadMoreProducts()}
         onEndReachedThreshold={0.5}
         onScroll={(e) => { if (isNearScrollEnd(e.nativeEvent, 0.5)) b.loadMoreProducts(); }}
         scrollEventThrottle={50}
         ListFooterComponent={
-          b.productLoadingMore ? (
+          b.productLoading || b.productError ? null : b.productLoadingMore ? (
             <View style={{ paddingVertical: 20, alignItems: "center" }}>
               <ActivityIndicator size="small" color={ds.brass} />
             </View>
@@ -327,7 +277,7 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
         }
         ListEmptyComponent={
           b.productLoading ? (
-            <View style={[styles.skeletonGrid, { flexDirection: numCols > 1 ? "row" : "column", flexWrap: "wrap" }]}>
+            <View testID="explorer-products-loading" accessibilityLabel="Loading products" accessibilityRole="progressbar" style={[styles.skeletonGrid, { flexDirection: numCols > 1 ? "row" : "column", flexWrap: "wrap" }]}>
               {Array.from({ length: numCols > 1 ? 12 : 6 }).map((_, i) => (
                 <View key={i} style={[styles.skeletonCard, { width: numCols > 1 ? `${100 / numCols}%` : "100%" }]}>
                   <View style={styles.skeletonMedia} />
@@ -342,7 +292,10 @@ export function ProductExplorer({ showCompactFilters = true }: { showCompactFilt
           ) : b.productError || b.referenceError ? (
             <ErrorState title="Products unavailable" subtitle={b.productError || b.referenceError || undefined} onRetry={() => { b.retryProducts(); b.retryReferenceData(); }} />
           ) : (
-            <EmptyState icon="package" title="No products match" subtitle="Try clearing filters or a different search term." />
+            <EmptyState icon="package" title={hasFilters ? "No products match" : "No products available"}
+              subtitle={hasFilters ? "Clear the search and filters to browse all products." : "Add a custom product or retry the catalog."}
+              action={hasFilters ? <Button label="Clear search and filters" testID="explorer-clear-filters" variant="secondary" onPress={clearFilters} /> :
+                <Button label="Retry catalog" variant="secondary" onPress={b.retryProducts} />} />
           )
         }
       />
@@ -421,7 +374,7 @@ function ProductGridCardImpl({ product, compact, width, favourite, addedQty, onT
       </View>
 
       <View style={[styles.cardBody, compact && styles.cardBodyCompact]}>
-        <Pressable accessibilityRole="button" accessibilityLabel={`Details for ${product.name}`} onPress={() => onOpenModal(product)}><Text style={[styles.cardName, compact && styles.cardNameCompact]} numberOfLines={2}>{product.name}</Text></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Details for ${product.name}`} onPress={() => onOpenModal(product)} style={styles.cardNameTarget}><Text style={[styles.cardName, compact && styles.cardNameCompact]} numberOfLines={2}>{product.name}</Text></Pressable>
         <Text style={styles.cardSku} numberOfLines={1}>
           {selectedSku}{product.brand_name ? ` · ${product.brand_name}` : ""}
         </Text>
@@ -457,33 +410,12 @@ function ProductGridCardImpl({ product, compact, width, favourite, addedQty, onT
 const ProductGridCard = memo(ProductGridCardImpl);
 
 // -----------------------------------------------------------------------------
-// FilterPill — compact brand/category selector chip used in the phone-only
-// browsing row. Mirrors the standalone Catalog screen's BrandPill so the
-// mobile builder picker matches the same browsing language.
-// -----------------------------------------------------------------------------
-function FilterPill({
-  label, logo, count, active, onPress, testID,
-}: {
-  label: string; logo?: any; count?: number;
-  active?: boolean; onPress?: () => void; testID?: string;
-}) {
-  return (
-    <Pressable accessibilityRole="button" accessibilityState={{ selected: !!active }} onPress={onPress} testID={testID} style={[styles.filterPill, active && styles.filterPillActive]}>
-      {logo ? (
-        <View style={styles.filterPillLogoWrap}>
-          <Image source={logo} style={{ width: "100%", height: "100%" }} contentFit="cover" />
-        </View>
-      ) : null}
-      <Text style={[styles.filterPillLabel, active && styles.filterPillLabelActive]} numberOfLines={1}>
-        {label}
-      </Text>
-      {count != null ? (
-        <Text style={[styles.filterPillCount, active && styles.filterPillCountActive]} numberOfLines={1}>
-          {count}
-        </Text>
-      ) : null}
-    </Pressable>
-  );
+// Size choices remain inline beside the desktop brand rail.
+function FilterPill({ label, active, onPress }: { label: string; active?: boolean; onPress?: () => void }) {
+  return <Pressable accessibilityRole="button" accessibilityState={{ selected: !!active }} aria-pressed={!!active} onPress={onPress}
+    style={[styles.filterPill, active && styles.filterPillActive]}>
+    <Text style={[styles.filterPillLabel, active && styles.filterPillLabelActive]}>{label}</Text>
+  </Pressable>;
 }
 
 const styles = StyleSheet.create({
@@ -493,15 +425,17 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
     backgroundColor: colors.surfaceSecondary, gap: spacing.sm,
   },
-  headCompact: { paddingHorizontal: 12, paddingVertical: 8, gap: 6 },
+  headCompact: { paddingHorizontal: 16, paddingVertical: 8, gap: 6 },
+  cardNameTarget: { minHeight: 44, justifyContent: "center" },
   filterToolbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
   filterTrigger: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 8 },
-  filterTriggerLabel: { fontSize: 12, fontWeight: "600", color: colors.onSurface },
+  customTrigger: { borderWidth: 1, borderColor: colors.border, borderRadius: 10, backgroundColor: colors.surface },
+  filterTriggerLabel: { fontSize: 13, fontWeight: "600", color: colors.onSurface },
   filterHint: { fontSize: 11, color: colors.onSurfaceSecondary },
   cardAdd: { minHeight: 44, alignItems: "center", justifyContent: "center", marginTop: 4 },
-  addedLabel: { fontSize: 11, color: ds.brassDeep, fontWeight: "600" },
+  addedLabel: { fontSize: 12, color: ds.brassDeep, fontWeight: "600" },
   chooseFinish: { minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 4 },
-  finishLabel: { flex: 1, fontSize: 11, color: colors.onSurfaceSecondary },
+  finishLabel: { flex: 1, fontSize: 12, color: colors.onSurfaceSecondary },
   crumbs: { flexDirection: "row", alignItems: "center", gap: 6 },
   crumb: { flexShrink: 1, fontSize: 13, fontWeight: "600", color: colors.onSurfaceSecondary },
   crumbActive: { color: colors.onSurface },
@@ -575,10 +509,10 @@ const styles = StyleSheet.create({
   // its row height even when a product has no variants — this is what
   // keeps every card in the grid the same height regardless of content.
   cardBody: { padding: 10, gap: 6 },
-  cardBodyCompact: { padding: 8, gap: 3 },
-  cardName: { fontSize: 13, fontWeight: "600", color: colors.onSurface, lineHeight: 17, minHeight: 34 },
-  cardNameCompact: { fontSize: 13, lineHeight: 17, minHeight: 34 },
-  cardSku: { fontSize: 11, color: colors.onSurfaceMuted, fontVariant: ["tabular-nums"] },
+  cardBodyCompact: { padding: 10, gap: 5 },
+  cardName: { fontSize: 14, fontWeight: "600", color: colors.onSurface, lineHeight: 19, minHeight: 38 },
+  cardNameCompact: { fontSize: 14, lineHeight: 19, minHeight: 38 },
+  cardSku: { fontSize: 12, color: colors.onSurfaceMuted, fontVariant: ["tabular-nums"] },
   priceRow: { flexDirection: "row", alignItems: "center", gap: 6, minHeight: 32 },
   priceCol: { flex: 1, minWidth: 0 },
   price: { fontSize: 14, fontWeight: "600", color: colors.onSurface, fontVariant: ["tabular-nums"], letterSpacing: -0.1 },

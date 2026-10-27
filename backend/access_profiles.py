@@ -20,7 +20,7 @@ PROFILE_MODULES = {
 # business records are exposed by these endpoints.
 _COMMON = {
     ("GET", "/api/auth/me"),
-    ("POST", "/api/auth/logout"), ("GET", "/api/auth/sessions"),
+    ("POST", "/api/auth/logout"), ("POST", "/api/auth/change-password"), ("GET", "/api/auth/sessions"),
     ("POST", "/api/auth/sessions/logout-all"),
     ("GET", "/api/settings/floor-access"), ("GET", "/api/settings/floors"),
     ("GET", "/api/settings/permission-matrix"), ("GET", "/api/roles"),
@@ -41,7 +41,7 @@ def _customer_for_quotation(method: str, path: str) -> bool:
     if path == "/api/customers":
         return method in {"GET", "POST"}
     return bool((fullmatch(r"/api/customers/[^/]+", path) and method in {"GET", "PATCH"})
-                or (method == "GET" and fullmatch(r"/api/customers/[^/]+/po-final(?:/pdf)?", path)))
+                or (method == "GET" and fullmatch(r"/api/customers/[^/]+/po-final(?:/pdf|/xlsx)?", path)))
 
 
 def _dispatch_surface(method: str, path: str) -> bool:
@@ -88,7 +88,7 @@ def profile_allows_request(profile: str | None, method: str, path: str) -> bool:
                 or _customer_for_quotation(method, path) or _catalog_read(method, path)
                 or (profile == GROUND_TILE_QUOTATIONS_FOLLOWUPS and _tile_customer_tracking(method, path))
                 or (method in {"GET", "POST"} and path == "/api/referrers")
-                or (method == "POST" and path == "/api/products/custom")
+                or (method == "POST" and path in {"/api/products/custom", "/api/products/custom-with-media"})
                 or (profile == SANITARY_QUOTATIONS_FOLLOWUPS and method == "PATCH"
                     and fullmatch(r"/api/products/[^/]+/concealed-part", path) is not None)
                 or (method == "POST" and path == "/api/downloads/token"))

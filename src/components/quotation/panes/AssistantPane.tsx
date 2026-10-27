@@ -14,7 +14,6 @@
 //   * Stock availability
 //   * Alternates (loaded on demand, ranked closest-first)
 //   * Complete-the-Set (same family_key, other categories)
-//   * Quotation notes (line-level, only when a Line is focused)
 // -----------------------------------------------------------------------------
 import Feather from "@expo/vector-icons/Feather";
 import * as Haptics from "expo-haptics";
@@ -394,23 +393,6 @@ export function AssistantPane({ onClose }: { onClose?: () => void }) {
           </View>
         ) : null}
 
-        {/* --- Line notes --- */}
-        {focusedLine ? (
-          <View style={{ gap: 6 }}>
-            <Text style={type.overline}>Line notes</Text>
-            <View style={styles.notes}>
-              <TextInput
-                testID="assist-line-notes"
-                value={focusedLine.description || ""}
-                onChangeText={(v) => b.updateLine(focusedLine.id, { description: v }, "desc")}
-                multiline
-                placeholder="Add a note (printed on the PDF)…"
-                placeholderTextColor={colors.onSurfaceMuted}
-                style={styles.notesInput}
-              />
-            </View>
-          </View>
-        ) : null}
       </ScrollView>
     </View>
   );

@@ -1,3 +1,4 @@
+import { MobileFilterSection } from "@/src/components/MobileFilterSection";
 import Feather from "@expo/vector-icons/Feather";
 import { Button as SharedButton } from "@/src/design/controls";
 import { NavigationTabs } from "@/src/design/NavigationTabs";
@@ -20,6 +21,7 @@ import { Text, TextInput } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useBreakpoint } from "@/src/hooks/use-breakpoint";
+import { useInputActive } from "@/src/hooks/use-input-active";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
 
 const webCursor = Platform.OS === "web" ? ({ cursor: "pointer" } as any) : null;
@@ -44,6 +46,7 @@ export function PageShell({
       testID={testID}
     >
       <ScrollView
+        keyboardShouldPersistTaps="handled"
         style={styles.pageScroll}
         contentContainerStyle={[
           styles.pageContent,
@@ -134,7 +137,7 @@ export function ButtonGroup({ children, align = "left" }: { children: ReactNode;
   const { isPhone, bp } = useBreakpoint();
   const compact = isPhone || bp === "tabletPortrait";
   return (
-    <View style={[styles.buttonGroup, align === "right" ? styles.buttonGroupRight : null, compact ? styles.buttonGroupCompact : null]}>
+    <View style={[styles.buttonGroup, align === "right" ? styles.buttonGroupRight : null, compact ? styles.buttonGroupCompact : null, isPhone ? styles.buttonGroupPhone : null]}>
       {children}
     </View>
   );
@@ -153,7 +156,7 @@ export function SearchField({
 }) {
   const { isPhone } = useBreakpoint();
   return (
-    <View style={[styles.searchWrap, isPhone ? styles.searchWrapPhone : null]}>
+    <View {...(Platform.OS === "web" ? { dataSet: { fieldShell: "true" } } : {})} style={[styles.searchWrap, isPhone ? styles.searchWrapPhone : null]}>
       <Feather name="search" size={18} color={colors.onSurfaceMuted} />
       <TextInput
         testID={testID}
@@ -205,8 +208,7 @@ export function TabBar<K extends string>({
 }
 
 /**
- * Toolbar above a table: search on the left, filters and the create action on
- * the right, wrapping as coherent groups instead of a ragged button soup.
+ * Search and filters share one disclosure; create actions stay available.
  */
 export function Toolbar({ search, filters, actions }: { search?: ReactNode; filters?: ReactNode; actions?: ReactNode }) {
   const { isPhone, bp } = useBreakpoint();
@@ -214,23 +216,26 @@ export function Toolbar({ search, filters, actions }: { search?: ReactNode; filt
   const compact = isPhone || (availableWidth > 0 ? availableWidth < 900 : bp === "tabletPortrait");
   return (
     <View onLayout={(event) => setAvailableWidth(event.nativeEvent.layout.width)} style={[styles.toolbar, compact ? styles.toolbarPhone : null]}>
-      {search ? <View style={[styles.toolbarSearch, compact ? styles.toolbarSearchCompact : null]}>{search}</View> : null}
-      <View style={[styles.toolbarTrailing, compact ? styles.toolbarTrailingPhone : null]}>
-        {filters ? (compact ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.toolbarFilterScroller} contentContainerStyle={[styles.toolbarFilters, styles.toolbarFiltersCompact]}>
-            {filters}
-          </ScrollView>
-        ) : <View style={styles.toolbarFilters}>{filters}</View>) : null}
-        {actions ? <View style={styles.toolbarActions}>{actions}</View> : null}
-      </View>
+      {search || filters ? <MobileFilterSection testID="tile-table-filters" style={{ flex: 1, minWidth: 0, width: compact ? "100%" : undefined }}>
+        <View style={[styles.toolbarTrailing, compact ? styles.toolbarTrailingPhone : null]}>
+          {search ? <View style={[styles.toolbarSearch, compact ? styles.toolbarSearchCompact : null]}>{search}</View> : null}
+          {filters ? compact ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.toolbarFilterScroller} contentContainerStyle={[styles.toolbarFilters, styles.toolbarFiltersCompact]}>
+              {filters}
+            </ScrollView>
+          ) : <View style={styles.toolbarFilters}>{filters}</View> : null}
+        </View>
+      </MobileFilterSection> : null}
+      {actions ? <View style={styles.toolbarActions}>{actions}</View> : null}
     </View>
   );
 }
 
 /** One figure and its label. Metrics read as a row of these, never as cards. */
 export function Stat({ label, value, tone }: { label: string; value: ReactNode; tone?: "default" | "brand" | "warn" }) {
+  const { isPhone } = useBreakpoint();
   return (
-    <View style={styles.stat}>
+    <View style={[styles.stat, isPhone ? styles.statPhone : null]}>
       <Text
         style={[
           styles.statValue,
@@ -245,13 +250,16 @@ export function Stat({ label, value, tone }: { label: string; value: ReactNode; 
 }
 
 export function StatRow({ children, testID }: { children: ReactNode; testID?: string }) {
-  return <View style={styles.statRow} testID={testID}>{children}</View>;
+  const { isPhone } = useBreakpoint();
+  return <View style={[styles.statRow, isPhone ? styles.statRowPhone : null]} testID={testID}>{children}</View>;
 }
 
 /** Sticky bottom action bar — batch operations live here, never in the scroll. */
 export function ActionBar({ children, testID }: { children: ReactNode; testID?: string }) {
   const gutter = usePageGutter();
   const { isPhone } = useBreakpoint();
+  const inputActive = useInputActive();
+  if (isPhone && inputActive) return null;
   return (
     <View style={[styles.actionBar, { paddingHorizontal: gutter }]} testID={testID}>
       <View style={[styles.actionBarInner, isPhone ? styles.actionBarInnerPhone : null]}>{children}</View>
@@ -342,6 +350,7 @@ const styles = StyleSheet.create({
   buttonGroup: { flexDirection: "row", alignItems: "center", gap: spacing.s12, flexWrap: "wrap" },
   buttonGroupRight: { justifyContent: "flex-end" },
   buttonGroupCompact: { alignItems: "stretch" },
+  buttonGroupPhone: { flexDirection: "column", flexWrap: "nowrap", width: "100%", flexGrow: 1, flexShrink: 1 },
 
   searchWrap: {
     flexDirection: "row",
@@ -429,6 +438,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.s24,
   },
   stat: { minWidth: 104, gap: spacing.s4 },
+  statPhone: { minWidth: 0, flexBasis: "44%", flexGrow: 1 },
+  statRowPhone: { columnGap: spacing.lg, rowGap: spacing.lg, padding: spacing.lg },
   statValue: {
     fontFamily: type.displayMd.fontFamily,
     fontSize: 22,

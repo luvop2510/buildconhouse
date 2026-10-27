@@ -1,3 +1,6 @@
+import { LeadScopeFields } from "@/src/components/leads/LeadScopeFields";
+import type { LeadScope } from "@/src/api/leads";
+import { referrerLabel } from "@/src/utils/referrer";
 import { filterValues, toggleFilterValue } from "@/src/utils/filters";
 import { Disclosure } from "@/src/design/Disclosure";
 import { NavigationTabs } from "@/src/design/NavigationTabs";
@@ -17,19 +20,17 @@ import {
   Avatar, Badge, Button, Card, Chip, EmptyState, FormField, PageHeader,
  Sheet, StatTile, StatusBadge, TextField,
 } from "@/src/components/ui";
-import { ConfirmDialog } from "@/src/components/ds";
+import { MobileFilterSection } from "@/src/components/ds";
 import { api } from "@/src/api/client";
-import { returnPurchaseLoan } from "@/src/api/purchases";
 import { getCustomerStockTransfers, returnCustomerStockTransfer, type CustomerStockTransfer } from "@/src/api/godownStock";
 import { ProductImage } from "@/src/components/ProductImage";
 import { PoFinal } from "@/src/components/customers/PoFinal";
 import { tilesStageLabel } from "@/src/components/tiles/tilesStage";
-import { TILES_FLOOR_ID } from "@/src/constants/floors";
+import { SANITARY_FLOOR_ID } from "@/src/constants/floors";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { toast } from "@/src/components/Toast";
 import { useAuth } from "@/src/state/auth";
 import { useActionAccess } from "@/src/hooks/use-permissions";
-import { canManageDestructiveData } from "@/src/constants/roles";
 import { colors, icon as iconSize, money, moneyShort, PRODUCT_IMAGE_ASPECT_RATIO, radius, spacing, type } from "@/src/theme/tokens";
 import { downloadSectionExcel } from "@/src/utils/sectionExcel";
 import {
@@ -41,6 +42,8 @@ type Customer = {
   phone?: string | null; city?: string | null; purchase_completion_status?: "active" | "completed";
   address?: string | null;
   property_name?: string | null;
+  referrer_id?: string | null; referrer_name?: string | null; referrer_type?: string | null;
+  referrer_company?: string | null; referrer_customers_acquired?: number | null;
 };
 type Quotation = { id: string; number: string; status: string; doc_type?: string; grand_total: number; created_at: string; items: any[] };
 type PO = { id: string; number: string; brand_name?: string | null; status: string; grand_total: number; created_at: string };
@@ -49,6 +52,8 @@ type WorkspaceProduct = {
   item_id: string; po_id: string; po_number: string; sku: string; name: string; image?: string | null;
   brand_name?: string | null; supplier_name?: string | null; stage: string; stage_label: string;
   qty: number; unit_cost: number; blocked: boolean; age_days: number; customer_id: string; customer_name: string;
+  loan_replenishment_for_customer_name?: string | null; loan_replenishment_status?: string | null;
+  loan_replenishment_promised_qty?: number; loan_replenishment_returned_qty?: number;
   loaned_qty?: number; loan_transfer_id?: string | null; lent_to_customer_name?: string | null;
   customer_loan_history?: { transfer_id: string; qty: number; destination_customer_id?: string | null; destination_customer_name?: string | null; created_at?: string | null; status?: string | null }[];
   borrowed_from_customer_id?: string | null; borrowed_from_customer_name?: string | null;
@@ -62,7 +67,7 @@ type WorkspaceShortage = {
 type Workspace = {
   customer: Customer;
   summary: {
-    total_items: number; total_value: number; order_value?: number; outstanding_value: number; outstanding_count: number;
+    total_items: number; total_value: number; order_value?: number; outstanding_balance?: number; outstanding_value: number; outstanding_count: number;
     open_pos: number; blocked_count: number; delivered_count: number; shortage_count: number; refund_due?: number;
   };
   shortages: WorkspaceShortage[];
@@ -87,20 +92,23 @@ const WALK_IN_DAY_OPTIONS = [2, 4, 7, 14];
 function WalkInFollowupSheet({ visible, onClose, customer, onCreate }: {
   visible: boolean; onClose: () => void; customer: Customer; onCreate: (payload: any) => Promise<void>;
 }) {
+  const { selectedFloorId } = useFloorAccess();
+  const [scope, setScope] = useState<LeadScope>({ interested_floor_ids: [], assignments: [] });
   const [reason, setReason] = useState("Walk-in visit — no quotation yet.");
   const [days, setDays] = useState(4);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (visible) { setReason("Walk-in visit — no quotation yet."); setDays(4); }
-  }, [visible]);
+    if (visible) { setReason("Walk-in visit — no quotation yet."); setDays(4); setScope({ interested_floor_ids: selectedFloorId ? [selectedFloorId] : [], assignments: [] }); }
+  }, [visible, selectedFloorId]);
 
   const submit = async () => {
     if (!reason.trim()) { toast.error("Add a reason"); return; }
+    if (!scope.interested_floor_ids.length || scope.interested_floor_ids.some(floor => !scope.assignments.some(a => a.floor_id === floor && a.user_id))) { toast.error("Select a team member for each interested floor"); return; }
     setSaving(true);
     try {
       const dueIso = new Date(Date.now() + days * 86400000).toISOString();
-      await onCreate({ customer_id: customer.id, category: "sales", channel: "call", reason: reason.trim(), due_at: dueIso });
+      await onCreate({ customer_id: customer.id, category: "walk_in", channel: "call", reason: reason.trim(), due_at: dueIso, ...scope });
     } finally { setSaving(false); }
   };
 
@@ -112,7 +120,7 @@ function WalkInFollowupSheet({ visible, onClose, customer, onCreate }: {
         <Button label="Add Reminder" variant="primary" icon="plus" loading={saving} onPress={submit} size="md" testID="walkin-followup-save" />
       </>}
     >
-      <View style={{ padding: spacing.xl, gap: spacing.lg }}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: spacing.xl, gap: spacing.lg }}>
         <FormField label="Reason" required helper="What should the salesperson do and why?">
           <TextField value={reason} onChangeText={setReason} placeholder="e.g. Browsed tile samples, wants a quote next week" testID="walkin-followup-reason" />
         </FormField>
@@ -123,7 +131,8 @@ function WalkInFollowupSheet({ visible, onClose, customer, onCreate }: {
             ))}
           </View>
         </FormField>
-      </View>
+        <LeadScopeFields assignmentsRequired reference={false} customerId={customer.id} value={scope} onChange={setScope} />
+      </ScrollView>
     </Sheet>
   );
 }
@@ -137,10 +146,10 @@ export default function CustomerDetail() {
   }>();
   const router = useRouter();
   const { staff } = useAuth();
-  const canDeleteCustomers = useActionAccess("customers", "delete", canManageDestructiveData(staff?.role));
+  const canDeleteCustomers = useActionAccess("customers", "delete", staff?.role === "owner") && staff?.role === "owner";
   const { isDesktop, isPhone } = useBp();
   const { selectedFloorId } = useFloorAccess();
-  const isTilesFloor = selectedFloorId === TILES_FLOOR_ID;
+  const isSanitaryFloor = selectedFloorId === SANITARY_FLOOR_ID;
   const id = firstParam(rawId) || "";
   const routeSearch = firstParam(rawQ) || "";
   const routeBrand = firstParam(rawBrand);
@@ -154,7 +163,6 @@ export default function CustomerDetail() {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [stockTransfers, setStockTransfers] = useState<CustomerStockTransfer[]>([]);
   const [returningTransferId, setReturningTransferId] = useState<string | null>(null);
-  const [returningPurchaseLoanId, setReturningPurchaseLoanId] = useState<string | null>(null);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [relatedErrors, setRelatedErrors] = useState(false);
   const [relatedLoading, setRelatedLoading] = useState(true);
@@ -162,6 +170,11 @@ export default function CustomerDetail() {
   const [availableBrands, setAvailableBrands] = useState<Workspace["brands"]>([]);
   const [availableStages, setAvailableStages] = useState<Workspace["stages"]>([]);
   const [tab, setTab] = useState<Tab>("overview");
+  useEffect(() => {
+    if (!isSanitaryFloor) setTab(current => current === "po_final" || current === "purchases" ? "overview" : current);
+  }, [isSanitaryFloor]);
+  const [revenueOnly, setRevenueOnly] = useState(false);
+  const [openOrdersVisible, setOpenOrdersVisible] = useState(false);
   const [productFilter, setProductFilter] = useState<string>("all");
   const [productSearch, setProductSearch] = useState(routeSearch);
   const [brandFilter, setBrandFilter] = useState<string | null>(routeBrand || null);
@@ -170,8 +183,6 @@ export default function CustomerDetail() {
   const [transferItem, setTransferItem] = useState<WorkspaceProduct | null>(null);
   const [historyItemId, setHistoryItemId] = useState<string | null>(null);
   const [walkInSheet, setWalkInSheet] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   const workspaceRequestIdRef = useRef(0);
   const scheduledWorkspaceRequestIdRef = useRef<number | null>(null);
   const coreRequestRef = useRef(0);
@@ -209,21 +220,21 @@ export default function CustomerDetail() {
       .catch(() => { if (isCurrent()) setRelatedErrors(true); });
     const history = Promise.all([
       related<Quotation[]>(`/quotations?customer_id=${customerId}`, setQuotations),
-      related<PO[]>(`/purchase-orders?customer_id=${customerId}`, setPurchases),
+      isSanitaryFloor && related<PO[]>(`/purchase-orders?customer_id=${customerId}`, setPurchases),
       related<TimelineEvent[]>(`/activity/customer/${customerId}`, setTimeline),
     ]).finally(() => { if (isCurrent()) setRelatedLoading(false); });
     await Promise.all([primary, history]);
-  }, [id, selectedFloorId, coreContext]);
+  }, [id, selectedFloorId, coreContext, isSanitaryFloor]);
 
   const loadStockTransfers = useCallback(async () => {
-    if (!id || isTilesFloor) { setStockTransfers([]); return; }
+    if (!id || !isSanitaryFloor) { setStockTransfers([]); return; }
     try {
       const result = await getCustomerStockTransfers(id);
       setStockTransfers((result.transfers || []).filter((transfer) =>
         transfer.recipient_customer_id === id || (transfer.transfer_type !== "godown_stock" && transfer.status !== "completed")
       ));
     } catch { setStockTransfers([]); }
-  }, [id, isTilesFloor]);
+  }, [id, isSanitaryFloor]);
 
   const markLegacyStockReturned = useCallback(async (transferId: string) => {
     setReturningTransferId(transferId);
@@ -281,10 +292,9 @@ export default function CustomerDetail() {
 
   const loadWorkspace = useCallback(async (filters: WorkspaceServerFilters, requestId = invalidateWorkspace()) => {
     if (!id) return;
-    // Ground Floor has its own Tile Orders movement system.  Do not load the
-    // Sanitary Bathroom purchase tracker here; its stage catalog is a
-    // different workflow and was leaking into this customer screen.
-    if (isTilesFloor) {
+    // Purchasing is exclusive to Sanitary Bathroom. Ground Floor uses its
+    // independent Tile Orders workflow; the other floors have no tracker.
+    if (!isSanitaryFloor) {
       setWorkspace(null);
       setWorkspaceLoading(false);
       return;
@@ -297,6 +307,7 @@ export default function CustomerDetail() {
       const query = params.toString();
       const nextWorkspace = await api.get<Workspace>(
         `/purchases/customers/${id}/workspace${query ? `?${query}` : ""}`,
+        { floorId: SANITARY_FLOOR_ID },
       );
       if (requestId !== workspaceRequestIdRef.current) return;
       setWorkspace(nextWorkspace);
@@ -309,17 +320,7 @@ export default function CustomerDetail() {
     } finally {
       if (requestId === workspaceRequestIdRef.current) setWorkspaceLoading(false);
     }
-  }, [id, invalidateWorkspace, isTilesFloor]);
-
-  const markPurchaseLoanReturned = useCallback(async (transferId: string) => {
-    setReturningPurchaseLoanId(transferId);
-    try {
-      await returnPurchaseLoan(transferId);
-      toast.success("Borrowed product marked returned");
-      await loadWorkspace(workspaceFilters);
-    } catch (error: any) { toast.error(error?.detail || "Could not mark product returned"); }
-    finally { setReturningPurchaseLoanId(null); }
-  }, [loadWorkspace, workspaceFilters]);
+  }, [id, invalidateWorkspace, isSanitaryFloor]);
 
   const reloadAll = useCallback(async () => {
     await Promise.all([
@@ -354,22 +355,13 @@ export default function CustomerDetail() {
     }
   }, []);
 
-  const deleteCustomer = useCallback(async () => {
-    if (!id) return;
-    setDeleting(true);
-    try {
-      await api.delete(`/customers/${id}`);
-      toast.success("Customer deleted");
-      router.replace("/(admin)/customers" as any);
-    } catch (e: any) {
-      toast.error(e?.detail || "Could not delete customer");
-    } finally {
-      setDeleting(false);
-    }
-  }, [id, router]);
 
   const toMovable = useCallback((p: WorkspaceProduct): MovableItem => ({
     item_id: p.item_id, sku: p.sku, name: p.name, image: p.image, qty: p.qty, loaned_qty: p.loaned_qty,
+    loan_replenishment_for_customer_name: p.loan_replenishment_for_customer_name,
+    loan_replenishment_status: p.loan_replenishment_status,
+    loan_replenishment_promised_qty: p.loan_replenishment_promised_qty,
+    loan_replenishment_returned_qty: p.loan_replenishment_returned_qty,
     stage: p.stage as any, customer_id: p.customer_id, customer_name: p.customer_name,
     po_number: p.po_number, brand_name: p.brand_name, supplier_name: p.supplier_name,
   }), []);
@@ -449,6 +441,8 @@ export default function CustomerDetail() {
     [quotations],
   );
 
+  const visibleQuotations = quotations.filter(q => !revenueOnly || q.status === "won" || q.status === "ordered");
+
   const tilesHistory = useMemo(
     () => quotations.filter((q) => q.doc_type === "tiles_selection" || q.doc_type === "tiles_quotation"),
     [quotations],
@@ -494,6 +488,7 @@ export default function CustomerDetail() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
+      <ScrollView contentContainerStyle={{ padding: isPhone ? spacing.md : spacing.xl, gap: spacing.lg, paddingBottom: spacing.xxxl }}>
       <PageHeader
         title={customer.company || customer.name}
         subtitle={`${customer.email}${customer.city ? ` · ${customer.city}` : ""}`}
@@ -518,11 +513,11 @@ export default function CustomerDetail() {
             />
             {canDeleteCustomers ? (
               <Button
-                icon="trash-2"
-                label="Delete"
-                variant="danger"
+                icon="settings"
+                label="Manage customer data"
+                variant="secondary"
                 size="md"
-                onPress={() => setDeleteOpen(true)}
+                onPress={() => router.push("/(admin)/customers" as any)}
                 testID="delete-customer-detail"
               />
             ) : null}
@@ -530,7 +525,6 @@ export default function CustomerDetail() {
         }
       />
 
-      <ScrollView contentContainerStyle={{ padding: isPhone ? spacing.md : spacing.xl, gap: spacing.lg, paddingBottom: spacing.xxxl }}>
         {/* Identity row */}
         <Card>
           <View style={{ flexDirection: "row", gap: spacing.lg, alignItems: "center", flexWrap: "wrap" }}>
@@ -555,24 +549,25 @@ export default function CustomerDetail() {
         <Disclosure title="Customer summary">
         {/* Stats */}
         <View style={[styles.statsRow, !isDesktop && styles.statsRowMobile]}>
-          <StatTile label="Lifetime Revenue" value={relatedLoading ? "Loading…" : relatedErrors ? "Unavailable" : moneyShort(totalRevenue)} icon="trending-up" tone="success" sub="Won + ordered" />
-          <StatTile label="Quotations" value={relatedLoading || relatedErrors ? "—" : String(quotations.length)} icon="file-text" tone="brand" sub="All statuses" />
-          <StatTile label="Purchase Orders" value={relatedLoading || relatedErrors ? "—" : String(purchases.length)} icon="shopping-cart" tone="brand" sub="Across brands" />
-          <StatTile label="Activity" value={relatedLoading || relatedErrors ? "—" : String(timeline.length)} icon="activity" tone="neutral" sub="Events logged" />
+          <StatTile onPress={() => { setRevenueOnly(true); setTab("quotations"); }} label="Lifetime Revenue" value={relatedLoading ? "Loading…" : relatedErrors ? "Unavailable" : moneyShort(totalRevenue)} icon="trending-up" tone="success" sub="Won + ordered" />
+          <StatTile onPress={() => { setRevenueOnly(false); setTab("quotations"); }} label="Quotations" value={relatedLoading || relatedErrors ? "—" : String(quotations.length)} icon="file-text" tone="brand" sub="All statuses" />
+          {isSanitaryFloor ? <StatTile onPress={() => setTab("purchases")} label="Purchase Orders" value={relatedLoading || relatedErrors ? "—" : String(purchases.length)} icon="shopping-cart" tone="brand" sub="Across brands" /> : null}
+          <StatTile onPress={() => setTab("timeline")} label="Activity" value={relatedLoading || relatedErrors ? "—" : String(timeline.length)} icon="activity" tone="neutral" sub="Events logged" />
         </View>
 
         </Disclosure>
         {/* Tabs */}
-        <NavigationTabs value={tab} onChange={setTab} testID="customer-tab" options={[
+        <NavigationTabs<Tab> value={tab} onChange={value => { setRevenueOnly(false); setTab(value); }} testID="customer-tab" options={[
           { value: "overview", label: "Overview" }, { value: "quotations", label: "Quotations" },
-          { value: "po_final", label: "PO Final" }, { value: "purchases", label: "Purchases" }, { value: "timeline", label: "Timeline" },
+          ...(isSanitaryFloor ? [{ value: "po_final" as const, label: "PO Final" }] : []), ...(isSanitaryFloor ? [{ value: "purchases" as const, label: "Purchases" }] : []), { value: "timeline", label: "Timeline" },
         ]} />
         {tab === "quotations" || tab === "purchases" || tab === "timeline" ? <View style={styles.exportActions}>
           {tab === "quotations" ? <Button label="Export quotations .xlsx" icon="download" variant="secondary" size="sm" disabled={!quotations.length} onPress={() => void exportDetail("quotations")} testID="customer-export-quotations" /> : null}
-          {tab === "purchases" && !isTilesFloor ? <><Button label="Export products .xlsx" icon="download" variant="secondary" size="sm" disabled={!visibleProducts.length} onPress={() => void exportDetail("products")} testID="customer-export-products" /><Button label="Export orders .xlsx" icon="download" variant="secondary" size="sm" disabled={!workspace?.purchase_orders.length} onPress={() => void exportDetail("orders")} testID="customer-export-orders" /></> : null}
+          {tab === "purchases" && isSanitaryFloor ? <><Button label="Export products .xlsx" icon="download" variant="secondary" size="sm" disabled={!visibleProducts.length} onPress={() => void exportDetail("products")} testID="customer-export-products" /><Button label="Export orders .xlsx" icon="download" variant="secondary" size="sm" disabled={!workspace?.purchase_orders.length} onPress={() => void exportDetail("orders")} testID="customer-export-orders" /></> : null}
           {tab === "timeline" ? <Button label="Export activity .xlsx" icon="download" variant="secondary" size="sm" disabled={!timeline.length} onPress={() => void exportDetail("timeline")} testID="customer-export-activity" /> : null}
         </View> : null}
 
+        {tab === "quotations" && revenueOnly ? <Chip label="Won + ordered · Show all quotations" active onPress={() => setRevenueOnly(false)} /> : null}
         {/* Body */}
         {tab === "overview" ? (
           <>
@@ -584,6 +579,12 @@ export default function CustomerDetail() {
                 {customer.address ? <Button label="View on map" icon="map-pin" variant="secondary" size="sm" onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(customer.address || "")}`)} /> : null}
               </View>
             </Card>
+            {customer.referrer_id || customer.referrer_name ? <Card testID="customer-referrer-detail">
+              <Text style={[type.overline, { marginBottom: spacing.md }]}>Architect / interior designer</Text>
+              <Text style={type.bodyStrong}>{referrerLabel(customer)}</Text>
+              {customer.referrer_company ? <Text style={type.body}>{customer.referrer_company}</Text> : null}
+              {customer.referrer_customers_acquired != null ? <Text style={type.caption}>{customer.referrer_customers_acquired} customers brought to this floor</Text> : null}
+            </Card> : null}
             <Card>
               <Text style={[type.overline, { marginBottom: spacing.md }]}>Latest activity</Text>
               <ActivityTimeline events={timeline.slice(0, 8)} dense emptyLabel={relatedLoading ? "Loading activity…" : "No activity yet"} />
@@ -616,13 +617,13 @@ export default function CustomerDetail() {
             ) : null}
           </>
         ) : tab === "quotations" ? (
-          quotations.length === 0 ? (
+          visibleQuotations.length === 0 ? (
             <Card>
               <EmptyState icon="file-text" title={relatedLoading ? "Loading quotations…" : relatedErrors ? "Quotation records unavailable" : "No quotations yet"} subtitle={relatedLoading ? "Fetching this customer's quotations." : relatedErrors ? "Retry related records to see this customer’s quotations." : "This customer hasn't received a quotation."} />
             </Card>
           ) : (
             <Card padding={0}>
-              {quotations.map((q, i) => (
+              {visibleQuotations.map((q, i) => (
                 <View
                   key={q.id}
                   style={[
@@ -635,50 +636,64 @@ export default function CustomerDetail() {
                     accessibilityRole="button"
                     accessibilityLabel={`Open quotation ${q.number}`}
                     onPress={() => openQuotation(q)}
-                    style={({ pressed, hovered }: any) => [styles.quotationOpen, {
+                    style={({ pressed, hovered }: any) => [styles.quotationOpen, isPhone && styles.quotationOpenPhone, {
                       backgroundColor: pressed ? colors.surfaceTertiary : hovered ? colors.surfaceSubtle : "transparent",
                     }]}
                     testID={`customer-quotation-${q.id}`}
                   >
-                    <Text style={[type.mono, { width: isDesktop ? 120 : undefined, flexShrink: 1 }]} numberOfLines={1}>{q.number}</Text>
-                    <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-                      <Text style={type.titleSm} numberOfLines={1}>{q.items.length} items</Text>
-                      <Text style={type.caption}>{fmtDate(q.created_at)}</Text>
-                    </View>
-                    <Text style={[type.mono, { width: isDesktop ? 110 : undefined, textAlign: isDesktop ? "right" : "left", fontWeight: "700" }]} numberOfLines={1}>
-                      {money(q.grand_total)}
-                    </Text>
-                    <StatusBadge status={q.status} />
+                    {isPhone ? (
+                      <>
+                        <View style={styles.mobileQuotationHeading}>
+                          <Text style={[type.mono, { flex: 1, minWidth: 0 }]} numberOfLines={1}>{q.number}</Text>
+                          <StatusBadge status={q.status} />
+                        </View>
+                        <View style={styles.mobileQuotationMeta}>
+                          <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                            <Text style={type.titleSm} numberOfLines={1}>{q.items.length} items</Text>
+                            <Text style={type.caption}>{fmtDate(q.created_at)}</Text>
+                          </View>
+                          <Text style={[type.mono, styles.mobileQuotationTotal]} numberOfLines={1}>
+                            {money(q.grand_total)}
+                          </Text>
+                        </View>
+                      </>
+                    ) : (
+                      <>
+                        <Text style={[type.mono, { width: 120, flexShrink: 1 }]} numberOfLines={1}>{q.number}</Text>
+                        <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                          <Text style={type.titleSm} numberOfLines={1}>{q.items.length} items</Text>
+                          <Text style={type.caption}>{fmtDate(q.created_at)}</Text>
+                        </View>
+                        <Text style={[type.mono, { width: 110, textAlign: "right", fontWeight: "700" }]} numberOfLines={1}>
+                          {money(q.grand_total)}
+                        </Text>
+                        <StatusBadge status={q.status} />
+                      </>
+                    )}
                   </Pressable>
-                  <Button
-                    label={isPhone ? "Manage" : "Manage products"}
-                    icon="edit-3"
-                    variant="secondary"
-                    size="sm"
-                    onPress={() => manageQuotation(q)}
-                    testID={`manage-quotation-products-${q.id}`}
-                  />
+                  <View style={isPhone ? styles.mobileQuotationActions : undefined}>
+                    <Button
+                      label={isPhone ? "Manage" : "Manage products"}
+                      icon="edit-3"
+                      variant="secondary"
+                      size="sm"
+                      onPress={() => manageQuotation(q)}
+                      testID={`manage-quotation-products-${q.id}`}
+                    />
+                  </View>
                 </View>
               ))}
             </Card>
           )
-        ) : tab === "po_final" ? (
-          <PoFinal customerId={id} />
-        ) : tab === "purchases" ? (
+        ) : tab === "po_final" && isSanitaryFloor ? (
+          <PoFinal key={`${selectedFloorId}:${id}`} customerId={id} />
+        ) : tab === "purchases" && isSanitaryFloor ? (
           <View style={{ gap: spacing.lg }}>
-            {isTilesFloor ? (
-              <Card>
-                <EmptyState
-                  icon="grid"
-                  title="Ground Floor tile movement"
-                  subtitle="Tile orders use Released, Godown, Dispatch, and Delivered. Open Tile Orders to move this customer's products through the correct workflow."
-                  action={<Button label="Open Tile Orders" icon="grid" onPress={() => router.push("/(admin)/tiles/orders" as any)} testID="customer-ground-floor-tile-orders" />}
-                />
-              </Card>
-            ) : <>
+
             <Card>
               <View style={{ gap: spacing.md }}>
                 <Text style={type.overline}>Purchase filters</Text>
+                <MobileFilterSection testID="customer-purchase-filters">
                 <TextField
                   value={productSearch}
                   onChangeText={setProductSearchFilter}
@@ -758,6 +773,7 @@ export default function CustomerDetail() {
                     />
                   </View>
                 ) : null}
+                </MobileFilterSection>
               </View>
             </Card>
 
@@ -865,10 +881,10 @@ export default function CustomerDetail() {
 
               {/* Purchase summary */}
               <View style={[styles.statsRow, !isDesktop && styles.statsRowMobile]}>
-                <StatTile label="Order Value" value={moneyShort(workspace.summary.order_value ?? workspace.summary.total_value)} icon="shopping-bag" tone="brand" sub={`${workspace.summary.total_items} products`} />
-                <StatTile label="Outstanding" value={moneyShort(workspace.summary.outstanding_value)} icon="clock" tone="warning" sub={`${workspace.summary.outstanding_count} pending`} />
-                <StatTile label="Open POs" value={String(workspace.summary.open_pos)} icon="file-text" tone="brand" sub={`${purchases.length} total`} />
-                <StatTile label="Delayed" value={String(workspace.summary.blocked_count)} icon="alert-triangle" tone={workspace.summary.blocked_count > 0 ? "danger" : "success"} sub="Past SLA" />
+                <StatTile onPress={() => setProductFilter("all")} label="Order Value" value={moneyShort(workspace.summary.order_value ?? workspace.summary.total_value)} icon="shopping-bag" tone="brand" sub={`${workspace.summary.total_items} products`} />
+                <StatTile onPress={() => setProductFilter("outstanding")} label="Outstanding" value={moneyShort(workspace.summary.outstanding_balance ?? workspace.summary.outstanding_value)} icon="clock" tone="warning" sub={`${workspace.summary.outstanding_count} pending`} />
+                <StatTile onPress={() => setOpenOrdersVisible(true)} label="Open POs" value={String(workspace.summary.open_pos)} icon="file-text" tone="brand" sub={`${purchases.length} total`} />
+                <StatTile onPress={() => setProductFilter("blocked")} label="Delayed" value={String(workspace.summary.blocked_count)} icon="alert-triangle" tone={workspace.summary.blocked_count > 0 ? "danger" : "success"} sub="Past SLA" />
               </View>
               {(workspace.summary.refund_due || 0) > 0 ? <Card style={{ backgroundColor: colors.errorBg, borderColor: colors.errorBorder }}>
                 <Text style={type.bodyStrong}>Refund due · {money(workspace.summary.refund_due || 0)}</Text>
@@ -989,12 +1005,12 @@ export default function CustomerDetail() {
                         <Text style={type.caption} numberOfLines={isDesktop ? 1 : 2}>
                           {p.sku} · {p.brand_name || "—"}{p.supplier_name ? ` · via ${p.supplier_name}` : ""} · Qty {p.qty}
                         </Text>
-                        {(p.customer_loan_history || []).map((loan) => <Text key={loan.transfer_id} style={type.caption}>We have lent {loan.qty} {loan.qty === 1 ? "unit" : "units"} to {loan.destination_customer_name || "another customer"} · {loan.status === "returned" ? "returned" : "available again when the replacement reaches In Box"}. This order remains visible.</Text>)}
-                        {!p.customer_loan_history?.length && (p.loaned_qty || 0) > 0 ? <Text style={type.caption}>We have lent {p.loaned_qty} {p.loaned_qty === 1 ? "unit" : "units"} to another customer. This order remains visible until the replacement reaches In Box.</Text> : null}
+                        {(p.customer_loan_history || []).map((loan) => <Text key={loan.transfer_id} style={type.caption}>We have lent {loan.qty} {loan.qty === 1 ? "unit" : "units"} to {loan.destination_customer_name || "another customer"} · {loan.status === "returned" ? "returned" : "available again after the replacement is returned"}. This order remains visible.</Text>)}
+                        {!p.customer_loan_history?.length && (p.loaned_qty || 0) > 0 ? <Text style={type.caption}>We have lent {p.loaned_qty} {p.loaned_qty === 1 ? "unit" : "units"} to another customer. This order remains visible until the replacement is returned.</Text> : null}
                         {p.borrowed_from_customer_name ? <Text style={type.caption}>Received from {p.borrowed_from_customer_name} · {p.loan_return_status === "returned" ? "returned" : "return when your ordered product arrives"}</Text> : null}
                       </View>
                     </Pressable>
-                    {p.loan_transfer_id && p.loan_return_due && (p.loan_return_status === "awaiting_return" || p.loan_return_status === "return_due") ? <Pressable accessibilityRole="button" accessibilityLabel={`Mark borrowed ${p.name} returned to ${p.borrowed_from_customer_name || "original customer"}`} disabled={returningPurchaseLoanId === p.loan_transfer_id} onPress={() => void markPurchaseLoanReturned(p.loan_transfer_id!)} style={[styles.itemActionBtn, { paddingHorizontal: spacing.sm }]}><Text style={type.caption}>{returningPurchaseLoanId === p.loan_transfer_id ? "Saving…" : "Mark returned"}</Text></Pressable> : null}
+
                     <View style={[styles.stagePillSm, { backgroundColor: STAGE_TONE[p.stage as keyof typeof STAGE_TONE]?.bg || colors.surfaceTertiary }]}>
                       <Text style={{ fontSize: 11, fontWeight: "600", color: STAGE_TONE[p.stage as keyof typeof STAGE_TONE]?.fg || colors.onSurfaceMuted }}>
                         {p.stage_label}
@@ -1007,7 +1023,7 @@ export default function CustomerDetail() {
                       <Pressable testID={`ws-move-${p.item_id}`} onPress={() => setMoveItem(p)} style={styles.itemActionBtn} hitSlop={6}>
                         <Feather name="arrow-right" size={12} color={colors.onSurface} />
                       </Pressable>
-                      {p.stage === "in_box" ? <Pressable testID={`ws-transfer-${p.item_id}`} accessibilityLabel={`Transfer ${p.name} to another customer`} onPress={() => setTransferItem(p)} style={styles.itemActionBtn} hitSlop={6}>
+                      {p.stage === "in_box" && !p.loan_replenishment_for_customer_name && !p.loan_transfer_id ? <Pressable testID={`ws-transfer-${p.item_id}`} accessibilityLabel={`Transfer ${p.name} to another customer`} onPress={() => setTransferItem(p)} style={styles.itemActionBtn} hitSlop={6}>
                         <Feather name="repeat" size={12} color={colors.onSurface} />
                       </Pressable> : null}
                     </View>
@@ -1054,7 +1070,7 @@ export default function CustomerDetail() {
               </Card>
               </>
             )}
-            </>}
+
           </View>
         ) : (
           <Card>
@@ -1063,6 +1079,14 @@ export default function CustomerDetail() {
         )}
       </ScrollView>
 
+      <Sheet scroll visible={openOrdersVisible} onClose={() => setOpenOrdersVisible(false)} title="Open purchase orders">
+        <View style={{ gap: spacing.sm }}>
+          {(workspace?.purchase_orders || []).filter(order => order.status !== "cancelled").map(order => (
+            <Button key={order.id} label={`${order.number} · ${money(order.current_order_value ?? order.grand_total)}`} variant="secondary" onPress={() => { setOpenOrdersVisible(false); router.push(`/(admin)/purchase-orders/${order.id}` as any); }} />
+          ))}
+          {!workspace?.purchase_orders.some(order => order.status !== "cancelled") ? <Text style={type.caption}>No open purchase orders.</Text> : null}
+        </View>
+      </Sheet>
       <MoveStageSheet
         visible={!!moveItem}
         item={moveItem ? toMovable(moveItem) : null}
@@ -1086,17 +1110,7 @@ export default function CustomerDetail() {
         customer={customer}
         onCreate={createWalkInFollowup}
       />
-      <ConfirmDialog
-        visible={deleteOpen}
-        onClose={() => { if (!deleting) setDeleteOpen(false); }}
-        onConfirm={deleteCustomer}
-        title="Delete customer?"
-        description="This removes the customer and disposable sales-workflow records. Purchase orders and completed payments protect the customer from deletion."
-        confirmLabel="Delete"
-        tone="danger"
-        loading={deleting}
-        testID="confirm-delete-customer-detail"
-      />
+
     </SafeAreaView>
   );
 }
@@ -1155,6 +1169,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   quotationOpen: { flex: 1, minWidth: 0, minHeight: 44, flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.sm },
+  quotationOpenPhone: { width: "100%", flexBasis: "100%", flexGrow: 1, flexDirection: "column", alignItems: "stretch", justifyContent: "center" },
+  mobileQuotationHeading: { width: "100%", minWidth: 0, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm },
+  mobileQuotationMeta: { width: "100%", minWidth: 0, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.md },
+  mobileQuotationTotal: { maxWidth: "48%", textAlign: "right", fontWeight: "700" },
+  mobileQuotationActions: { width: "100%", alignItems: "flex-end" },
   deliveryIcon: {
     width: 34, height: 34, borderRadius: 17, backgroundColor: "#F3DFA3",
     alignItems: "center", justifyContent: "center",

@@ -17,6 +17,7 @@ from models import UserPublic, now_iso
 from services.customer_data_reset import customer_reset_maintenance
 from services.login_identity import normalize_login_id
 from services.password_policy import validate_new_password
+from services.team_credentials import encrypt_password
 
 REQUEST_ID = "team-reset-20261010"
 RECEIPT_ID = "team_data_reset:" + REQUEST_ID
@@ -107,7 +108,7 @@ async def reset_team_data(database, client, *, request_id: str,
         owner.pop("active_floor_id", None)
         owner.pop("session_id", None)
         await database.users.insert_one({**owner, "login_id_key": normalize_login_id(OWNER_LOGIN),
-            "password_hash": password_hash}, session=session)
+            "password_hash": password_hash, "password_encrypted": encrypt_password(owner_password, OWNER_ID)}, session=session)
         receipt = {"request_id": request_id, "completed_at": now_iso(), "deleted": deleted,
             "portal_accounts_disabled": preview["portal_accounts_disabled"],
             "customer_credential_rows_scrubbed": disabled.modified_count, "owner_id": OWNER_ID,

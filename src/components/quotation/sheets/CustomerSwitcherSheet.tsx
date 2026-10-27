@@ -3,8 +3,8 @@
 // item / room / discount already in the builder; only customer_id (and its
 // denormalised name snapshot) changes.
 import Feather from "@expo/vector-icons/Feather";
-import { useEffect, useMemo, useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Platform, Pressable, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 
 import { BottomSheet } from "@/src/components/BottomSheet";
@@ -20,6 +20,11 @@ import { hasGrantAccess } from "@/src/team-delegation";
 
 import { useBuilder } from "../context/BuilderContext";
 
+type GroundSource = {
+  customer: { id: string; name: string; company?: string | null; phone?: string | null };
+  latest_quotation?: { number?: string; project_name?: string | null } | null;
+};
+
 export function CustomerSwitcherSheet() {
   const b = useBuilder();
   const { staff } = useAuth();
@@ -34,16 +39,32 @@ export function CustomerSwitcherSheet() {
   const [project, setProject] = useState("");
   const [address, setAddress] = useState("");
   const [saving, setSaving] = useState(false);
-  const [groundSources, setGroundSources] = useState<{ customer: { id: string; name: string; company?: string | null; phone?: string | null }; latest_quotation?: { number?: string; project_name?: string | null } | null }[]>([]);
   const [showGroundSources, setShowGroundSources] = useState(false);
-  const [loadingGround, setLoadingGround] = useState(false);
+  const [groundAttempt, setGroundAttempt] = useState(0);
+  const [groundResult, setGroundResult] = useState<{ generation: number; status: "loading" | "loaded" | "error"; rows: GroundSource[] } | null>(null);
+  const groundOpen = Boolean(b.customerSwitcherOpen && showGroundSources && !creating && canImportGroundCustomer && b.activeFloorId && staff?.id);
+  const groundContext = JSON.stringify([staff?.id, b.activeFloorId, groundOpen, groundAttempt]);
+  const groundContextRef = useRef({ key: groundContext, generation: 0 });
+  if (groundContextRef.current.key !== groundContext) {
+    groundContextRef.current = { key: groundContext, generation: groundContextRef.current.generation + 1 };
+  }
+  const groundGeneration = groundContextRef.current.generation;
+  const currentGroundResult = groundResult?.generation === groundGeneration ? groundResult : null;
+  const groundSources = currentGroundResult?.status === "loaded" ? currentGroundResult.rows : [];
+  const loadingGround = !currentGroundResult || currentGroundResult.status === "loading";
+  const groundError = currentGroundResult?.status === "error";
 
   useEffect(() => {
-    if (!showGroundSources || groundSources.length || loadingGround) return;
-    setLoadingGround(true);
-    api.get<typeof groundSources>("/customers/import-sources/ground-floor")
-      .then(setGroundSources).catch(() => setGroundSources([])).finally(() => setLoadingGround(false));
-  }, [showGroundSources, groundSources.length, loadingGround]);
+    if (!groundOpen || groundContextRef.current.generation !== groundGeneration) return;
+    const controller = new AbortController();
+    let active = true;
+    const current = () => active && !controller.signal.aborted && groundContextRef.current.generation === groundGeneration;
+    setGroundResult({ generation: groundGeneration, status: "loading", rows: [] });
+    api.get<GroundSource[]>("/customers/import-sources/ground-floor", { floorId: b.activeFloorId, signal: controller.signal })
+      .then(rows => { if (current()) setGroundResult({ generation: groundGeneration, status: "loaded", rows }); })
+      .catch(() => { if (current()) setGroundResult({ generation: groundGeneration, status: "error", rows: [] }); });
+    return () => { active = false; controller.abort(); };
+  }, [groundOpen, groundGeneration, b.activeFloorId]);
 
   const close = () => {
     b.setCustomerSwitcherOpen(false);
@@ -147,7 +168,7 @@ export function CustomerSwitcherSheet() {
         </View>
       ) : (
         <View style={{ gap: spacing.md }}>
-          <View style={styles.searchWrap}>
+          <View {...(Platform.OS === "web" ? { dataSet: { fieldShell: "true" } } : {})} style={styles.searchWrap}>
             <Feather name="search" size={14} color={colors.onSurfaceMuted} />
             <TextInput
               testID="customer-switcher-search"
@@ -178,9 +199,14 @@ export function CustomerSwitcherSheet() {
             <Feather name={showGroundSources ? "chevron-up" : "chevron-down"} size={16} color={colors.onSurfaceMuted} />
           </Pressable> : null}
 
-          {showGroundSources ? (
+          {groundOpen ? (
             <View style={styles.groundList}>
-              {loadingGround ? <Text style={type.caption}>Loading Ground Floor customers…</Text> : groundSources.length === 0 ? <Text style={type.caption}>No Ground Floor customer profiles available.</Text> : groundSources.map((source) => (
+              {loadingGround ? <Text style={type.caption}>Loading Ground Floor customers…</Text> : groundError ? (
+                <View style={{ gap: spacing.sm }}>
+                  <Text accessibilityRole="alert" style={type.caption}>Could not load Ground Floor customers. Try again.</Text>
+                  <Button testID="retry-ground-floor-customers" label="Retry" variant="secondary" onPress={() => setGroundAttempt(attempt => attempt + 1)} />
+                </View>
+              ) : groundSources.length === 0 ? <Text style={type.caption}>No Ground Floor customer profiles available.</Text> : groundSources.map((source) => (
                 <Pressable key={source.customer.id} onPress={() => importGroundCustomer(source.customer.id)} style={styles.custRow}>
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={styles.custName} numberOfLines={1}>{source.customer.company || source.customer.name}</Text>

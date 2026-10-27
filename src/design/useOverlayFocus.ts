@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react';
 import { Platform, View } from 'react-native';
 
 // The topmost portal remains interactive even if an underlying dialog previously
@@ -6,6 +6,11 @@ import { Platform, View } from 'react-native';
 const portals: HTMLElement[] = [];
 const panels = new Map<HTMLElement, HTMLElement>();
 const isolated = new Map<HTMLElement, { inert: boolean; hidden: string | null }>();
+// Unlike the opening active element, an explicit trigger can be replaced by
+// responsive rendering while the overlay is mounted.
+function liveTrigger(ref?: RefObject<View | null>) {
+  return ref?.current as unknown as HTMLElement | null;
+}
 function isolate(element: HTMLElement) {
   if (isolated.has(element)) return;
   isolated.set(element, { inert: element.inert, hidden: element.getAttribute('aria-hidden') });
@@ -29,7 +34,7 @@ function syncIsolation() {
 }
 
 /** Focus containment, background isolation and restoration for every web overlay. */
-export function useOverlayFocus(open: boolean, onClose: () => void, dismissable = true) {
+export function useOverlayFocus(open: boolean, onClose: () => void, dismissable = true, returnFocusRef?: RefObject<View | null>) {
   const ref = useRef<View>(null);
   const closeRef = useRef(onClose);
   const dismissableRef = useRef(dismissable);
@@ -41,7 +46,9 @@ export function useOverlayFocus(open: boolean, onClose: () => void, dismissable 
   }, [onClose, dismissable]);
   useEffect(() => {
     if (!open || Platform.OS !== 'web') return;
-    const previous = document.activeElement as HTMLElement | null;
+    // Explicit triggers survive an autoFocus child moving focus before this
+    // effect. Other overlays retain their current active-element behavior.
+    const previous = (returnFocusRef?.current || document.activeElement) as HTMLElement | null;
     let panel: HTMLElement | null = null;
     let activePortal: HTMLElement | null = null;
     const focusables = () => Array.from(panel?.querySelectorAll<HTMLElement>(
@@ -57,7 +64,9 @@ export function useOverlayFocus(open: boolean, onClose: () => void, dismissable 
         panels.set(portal, panel);
         syncIsolation();
       }
-      (focusables()[0] || panel)?.focus();
+      // A user or autoFocus child may already be editing before this deferred
+      // setup runs. Keep that focus instead of moving it to the Close button.
+      if (!panel?.contains(document.activeElement)) (focusables()[0] || panel)?.focus();
     }, 0);
     const handleKey = (event: KeyboardEvent) => {
       // Only the topmost modal should receive keyboard events.
@@ -95,16 +104,35 @@ export function useOverlayFocus(open: boolean, onClose: () => void, dismissable 
       // React Native Web also restores focus while unmounting its Modal.
       // Run after that cleanup so it cannot leave focus on the backdrop of
       // the underlying dialog, where Escape and Tab cannot reach our panel.
-      requestAnimationFrame(() => {
+      let closingFrames = 0;
+      const restoreFocus = () => {
         if (portals[portals.length - 1] !== restoredPortal) return;
+        // RNW's portal survives its first dismissal frame. Focusing its
+        // trigger while that portal still traps focus immediately sends
+        // focus back into the closing form. Wait for its actual removal.
+        if (panel?.isConnected && closingFrames++ < 60) {
+          requestAnimationFrame(restoreFocus);
+          return;
+        }
         const restoredPanel = restoredPortal ? panels.get(restoredPortal) : undefined;
-        if (previous?.isConnected && (!restoredPanel || restoredPanel.contains(previous))) previous.focus();
+        // A responsive header may replace the trigger while its sheet is open.
+        // Read the live explicit ref after dismissal, not only the opening node.
+        const explicit = liveTrigger(returnFocusRef);
+        const target = explicit?.isConnected ? explicit : previous;
+        // Closing portals can outlive dismissal by several frames. A user may
+        // already be editing the next field when restoration finally runs.
+        // Keep that live destination, including a field in the underlying dialog.
+        const focused = document.activeElement as HTMLElement | null;
+        if (focused?.isConnected && focused !== document.body && !panel?.contains(focused)
+          && (!restoredPanel || restoredPanel.contains(focused))) return;
+        if (target?.isConnected && (!restoredPanel || restoredPanel.contains(target))) target.focus();
         else if (restoredPanel?.isConnected) {
           const target = restoredPanel.querySelector<HTMLElement>('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),select:not(:disabled),a[href],[tabindex="0"]');
           (target || restoredPanel).focus();
         }
-      });
+      };
+      requestAnimationFrame(restoreFocus);
     };
-  }, [open]);
+  }, [open, returnFocusRef]);
   return ref;
 }

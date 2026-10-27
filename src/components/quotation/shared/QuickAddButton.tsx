@@ -28,6 +28,7 @@ type Props = {
 };
 
 const FLASH_MS = 900;
+const DUPLICATE_TAP_MS = 200;
 
 export function QuickAddButton({
   onAdd, toastText, idleLabel = "Add", addedLabel = "Added",
@@ -36,27 +37,32 @@ export function QuickAddButton({
   const [justAdded, setJustAdded] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mounted = useRef(true);
+  const unlockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const addLocked = useRef(false);
 
-  useEffect(() => () => {
-    mounted.current = false;
-    if (timer.current) clearTimeout(timer.current);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      if (timer.current) clearTimeout(timer.current);
+      if (unlockTimer.current) clearTimeout(unlockTimer.current);
+    };
   }, []);
 
   const handlePress = (event?: { stopPropagation?: () => void }) => {
     // Picker rows are also pressable. Stop the nested control from becoming
-    // a second add on web, then briefly lock it while the success state is
-    // visible so an impatient double-tap cannot add two line items.
+    // a second add on web. Debounce duplicate taps independently of the
+    // success flash, so that feedback never blocks a deliberate quantity add.
     event?.stopPropagation?.();
-    if (justAdded || addLocked.current) return;
+    if (addLocked.current) return;
     addLocked.current = true;
+    unlockTimer.current = setTimeout(() => { addLocked.current = false; }, DUPLICATE_TAP_MS);
     onAdd();
     Haptics.selectionAsync();
     if (toastText) toast.success(toastText);
     setJustAdded(true);
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => {
-      addLocked.current = false;
       if (mounted.current) setJustAdded(false);
     }, FLASH_MS);
   };

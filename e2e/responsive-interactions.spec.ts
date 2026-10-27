@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { mockSession } from './audit-fixtures';
+import { mockSalesSummary } from './sales-fixtures';
 
 async function targetSize(control: Locator) {
   await expect(control).toBeVisible();
@@ -11,19 +12,7 @@ async function targetSize(control: Locator) {
 }
 
 async function salesFixture(page: Page) {
-  await mockSession(page, '/sales-data');
-  await page.route('**/api/analytics/**', route => {
-    const path = new URL(route.request().url()).pathname;
-    return route.fulfill({ json: path.endsWith('/default-period') ? {
-      preset: 'this_month', date_from: null, date_to: null, label: 'This month', fallback_applied: false, latest_order_at: null,
-    } : path.endsWith('/overview') ? {
-      kpis: { revenue: 240000, orders: 12, aov: 20000, customers: 8,
-        outstanding: { ordered: 240000, collected: 180000, outstanding: 60000 },
-        comparison: { delta_pct: 20, direction: 'up', history_state: 'ok' }, previous_label: 'Previous month', previous_revenue: 200000 },
-      revenue_by_floor: [], attention: [], attention_total: 0, opportunities: [], opportunities_total: 0,
-      period: { start: '2026-10-01T00:00:00+00:00', end: '2026-10-08T00:00:00+00:00', label: 'This month' },
-    } : { rows: [], points: [], total: 0 } });
-  });
+  await mockSalesSummary(page, { path: '/sales-data/customers' });
 }
 
 test.beforeEach(async ({ context }) => {
@@ -34,14 +23,16 @@ test.beforeEach(async ({ context }) => {
 for (const key of ['Enter', 'Space']) {
   test(`actionable KPI has button semantics and opens payments with ${key}`, async ({ page }) => {
     await salesFixture(page);
-    await page.goto('/sales-data');
-    const card = page.getByRole('button', { name: 'Outstanding Payments: 60.0K', exact: true });
+    await page.goto('/sales-data/customers');
+    const card = page.getByTestId('sales-kpi-outstanding');
     await expect(card).toHaveAttribute('data-testid', 'sales-kpi-outstanding');
     await card.focus();
     await expect(card).toBeFocused();
     await page.keyboard.press(key);
-    await expect(page).toHaveURL(/\/payments$/);
-    await expect(page.getByRole('heading', { name: 'Payments', exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\/payments(?:\?|$)/);
+    // Desktop/tablet payments includes a second nested overview header with
+    // the same title; the workspace's primary heading is the first match.
+    await expect(page.getByRole('heading', { name: 'Payments', exact: true }).first()).toBeVisible();
   });
 }
 
@@ -95,6 +86,11 @@ test('workspace menu and shell controls retain 44px targets and keyboard focus',
 test('quotation room controls retain native target sizes on web and open the editor', async ({ page }, info) => {
   await mockSession(page, '/quotations/new');
   await page.goto('/quotations/new');
+  await expect(page.getByTestId('quotation-workspace')).toBeVisible();
+  const expand = page.getByTestId('expand-quotation-workspace');
+  if (await expand.isVisible()) await expand.click();
+  const quotationTab = page.getByTestId('builder-tab-quotation');
+  if (await quotationTab.isVisible()) await quotationTab.click();
   const panel = page.getByTestId('builder-quotation-panel-toggle');
   if (await panel.isVisible()) {
     await targetSize(panel);
@@ -195,6 +191,7 @@ test('quotation product failures do not report zero products and a successful em
   await expect(count).toHaveCount(0);
   failed = false;
   await page.getByRole('button', { name: 'Try again', exact: true }).click();
-  await expect(page.getByText('No products match', { exact: true })).toBeVisible();
+  await expect(page.getByText('No products available', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Retry catalog', exact: true })).toBeVisible();
   await expect(count).toHaveText('· 0 products');
 });

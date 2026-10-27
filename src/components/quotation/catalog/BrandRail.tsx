@@ -10,10 +10,10 @@
 import Feather from "@expo/vector-icons/Feather";
 import { Image } from "expo-image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Platform, ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 
-import { api } from "@/src/api/client";
+import { catalogReferences } from "@/src/services/catalogService";
 import { storage } from "@/src/utils/storage";
 import { colors, radius, spacing } from "@/src/theme/tokens";
 import { color as ds } from "@/src/design/tokens";
@@ -29,6 +29,9 @@ export function BrandRail({ collapsed = false, onToggleCollapsed, compact = fals
   const [catCache, setCatCache] = useState<Record<string, Category[]>>({});
   const [catOrder, setCatOrder] = useState<Record<string, string[]>>({});
   const [draggingCategory, setDraggingCategory] = useState<string | null>(null);
+  const [categoryError, setCategoryError] = useState<string | null>(null);
+  const categoryGeneration = useRef(0);
+  const categoryControllers = useRef<Set<AbortController>>(new Set());
   const [loadingBrandId, setLoadingBrandId] = useState<string | null>(null);
   const fetchedRef = useRef<Set<string>>(new Set());
 
@@ -40,6 +43,23 @@ export function BrandRail({ collapsed = false, onToggleCollapsed, compact = fals
     });
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    const controllers = categoryControllers.current;
+    categoryGeneration.current += 1;
+    for (const controller of controllers) controller.abort();
+    controllers.clear();
+    fetchedRef.current.clear();
+    setCatCache({});
+    setExpanded(null);
+    setLoadingBrandId(null);
+    setCategoryError(null);
+    return () => {
+      categoryGeneration.current += 1;
+      for (const controller of controllers) controller.abort();
+      controllers.clear();
+    };
+  }, [b.activeFloorId]);
 
   const reorderCategories = (brandId: string, sourceId: string, targetId: string, placement: "before" | "after" = "before") => {
     const source = catCache[brandId] || [];
@@ -66,15 +86,23 @@ export function BrandRail({ collapsed = false, onToggleCollapsed, compact = fals
     if (fetchedRef.current.has(brandId)) return;
     fetchedRef.current.add(brandId);
     setLoadingBrandId(brandId);
+    setCategoryError(null);
+    const generation = categoryGeneration.current;
+    const controller = new AbortController();
+    categoryControllers.current.add(controller);
     try {
-      const cats = await api.get<Category[]>(`/categories?brand_id=${brandId}`);
-      setCatCache((cur) => ({ ...cur, [brandId]: cats }));
-    } catch {
-      fetchedRef.current.delete(brandId); // allow a retry on next tap
+      const cats = await catalogReferences.categories<Category[]>(brandId, { floorId: b.activeFloorId, signal: controller.signal });
+      if (generation === categoryGeneration.current) setCatCache((cur) => ({ ...cur, [brandId]: cats }));
+    } catch (error: any) {
+      if (generation === categoryGeneration.current) {
+        fetchedRef.current.delete(brandId); // allow a retry on next tap
+        if (error?.name !== "AbortError") setCategoryError(brandId);
+      }
     } finally {
-      setLoadingBrandId((cur) => (cur === brandId ? null : cur));
+      categoryControllers.current.delete(controller);
+      if (generation === categoryGeneration.current) setLoadingBrandId((cur) => (cur === brandId ? null : cur));
     }
-  }, []);
+  }, [b.activeFloorId]);
 
   const onTapBrand = useCallback((brandId: string) => {
     b.setSelectedBrandId(brandId);
@@ -116,7 +144,7 @@ export function BrandRail({ collapsed = false, onToggleCollapsed, compact = fals
           {!collapsed ? <Text style={styles.collapseLabel}>Brands</Text> : null}
         </Pressable>
         {!collapsed ? (
-          <View style={styles.searchWrap}>
+          <View {...(Platform.OS === "web" ? { dataSet: { fieldShell: "true" } } : {})} style={styles.searchWrap}>
             <Feather name="search" size={13} color={colors.onSurfaceMuted} />
             <TextInput
               value={q}
@@ -141,6 +169,9 @@ export function BrandRail({ collapsed = false, onToggleCollapsed, compact = fals
         showsVerticalScrollIndicator={false}
       >
         <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ selected: !b.selectedBrandId }}
+          aria-pressed={!b.selectedBrandId}
           onPress={onTapAll}
           style={[styles.item, collapsed && styles.itemCollapsed, !b.selectedBrandIds.length && styles.itemActive]}
           testID="rail-brand-all"
@@ -169,6 +200,9 @@ export function BrandRail({ collapsed = false, onToggleCollapsed, compact = fals
           return (
             <View key={br.id}>
               <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ selected: on }}
+                aria-pressed={on}
                 onPress={() => onTapBrand(br.id)}
                 style={[styles.item, collapsed && styles.itemCollapsed, on && styles.itemActive]}
                 testID={`rail-brand-${br.name}`}
@@ -203,7 +237,12 @@ export function BrandRail({ collapsed = false, onToggleCollapsed, compact = fals
                   </View>
                 ) : (
                   <View style={styles.catGroup} testID={`rail-cats-${br.name}`}>
+                    {categoryError === br.id ? <Pressable accessibilityRole="button" accessibilityLabel={`Retry ${br.name} categories`} testID={`rail-categories-retry-${br.id}`} onPress={() => ensureCategories(br.id)} style={styles.catItem}><Text style={styles.catLabel}>Could not load categories · Retry</Text></Pressable> : null}
                     <Pressable
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: on && !b.selectedCategoryId }}
+                      aria-pressed={on && !b.selectedCategoryId}
+                      testID={`rail-cat-all-${br.name}`}
                       onPress={() => onTapCategory(br.id, null)}
                       style={[styles.catItem, on && !b.selectedCategoryIds.length && styles.catItemActive]}
                     >
@@ -221,7 +260,7 @@ export function BrandRail({ collapsed = false, onToggleCollapsed, compact = fals
                           testID={`rail-cat-${c.name}`}
                           {...({ draggable: true, onDragStart: (event: any) => { event.dataTransfer?.setData("text/plain", c.id); setDraggingCategory(c.id); }, onDragOver: (event: any) => event.preventDefault(), onDrop: (event: any) => { event.preventDefault(); reorderCategories(br.id, event.dataTransfer?.getData("text/plain") || draggingCategory || "", c.id); setDraggingCategory(null); }, onDragEnd: () => setDraggingCategory(null) } as any)}
                         >
-                          <Pressable accessibilityRole="button" accessibilityLabel={`${c.name}, ${c.product_count || 0} products`} onPress={() => onTapCategory(br.id, c.id)} style={styles.catSelect}><View style={[styles.catDot, catOn && { backgroundColor: ds.brass }]} /><Text style={[styles.catLabel, catOn && styles.catLabelActive]} numberOfLines={1}>{c.name}</Text><Text style={styles.catCount}>{c.product_count || 0}</Text></Pressable>
+                          <Pressable accessibilityRole="button" accessibilityState={{ selected: catOn }} aria-pressed={catOn} testID={`rail-category-select-${c.id}`} accessibilityLabel={`${c.name}, ${c.product_count || 0} products`} onPress={() => onTapCategory(br.id, c.id)} style={styles.catSelect}><View style={[styles.catDot, catOn && { backgroundColor: ds.brass }]} /><Text style={[styles.catLabel, catOn && styles.catLabelActive]} numberOfLines={1}>{c.name}</Text><Text style={styles.catCount}>{c.product_count || 0}</Text></Pressable>
                           <Pressable accessibilityRole="button" accessibilityLabel={`Move ${c.name} to top`} disabled={index === 0} onPress={() => reorderCategories(br.id, c.id, cats[0].id)} style={styles.catMove}><Feather name="chevrons-up" size={12} color={colors.onSurfaceMuted} /></Pressable>
                           <Pressable accessibilityRole="button" accessibilityLabel={`Move ${c.name} up`} disabled={index === 0} onPress={() => reorderCategories(br.id, c.id, cats[index - 1].id)} style={styles.catMove}><Feather name="arrow-up" size={12} color={colors.onSurfaceMuted} /></Pressable>
                           <Pressable accessibilityRole="button" accessibilityLabel={`Move ${c.name} down`} disabled={index === cats.length - 1} onPress={() => reorderCategories(br.id, c.id, cats[index + 1].id, "after")} style={styles.catMove}><Feather name="arrow-down" size={12} color={colors.onSurfaceMuted} /></Pressable>

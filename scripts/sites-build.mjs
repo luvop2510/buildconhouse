@@ -1,5 +1,10 @@
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
+import { standaloneWorkerSource } from './build-web-worker.mjs';
+import { isolateWebModuleGraph } from './isolate-web-module-graph.mjs';
+import { assertProductionBuildBranch } from './verify-release-ancestry.mjs';
+
+assertProductionBuildBranch();
 
 // Sites packages the Expo web export as a Cloudflare-compatible worker.
 
@@ -39,10 +44,12 @@ expo.on('exit', async (code, signal) => {
       if (entry.isDirectory()) await injectRecovery(path);
       else if (entry.name.endsWith('.html')) {
         const originalHtml = await readFile(path, 'utf8');
-        // Expo emits a tiny inline hydration flag. Externalize that exact
-        // bootstrap so the production script-src 'self' policy can execute
-        // it without permitting arbitrary inline scripts.
-        const html = originalHtml.replace(/<script\b(?![^>]*\bsrc=)[^>]*>\s*globalThis\.__EXPO_ROUTER_HYDRATE__=true;\s*<\/script>/g, '<script src="/expo-hydrate.js"></script>');
+        // The recovery bootstrap sets Expo's hydration flag before any deferred
+        // runtime executes. Remove its redundant HEAD request, including tags
+        // left by an earlier postprocess pass, without loosening script-src.
+        const html = originalHtml
+          .replace(/<script\b(?![^>]*\bsrc=)[^>]*>\s*globalThis\.__EXPO_ROUTER_HYDRATE__=true;\s*<\/script>/g, '')
+          .replace(/<script\b(?=[^>]*\bsrc=["']\/expo-hydrate\.js["'])[^>]*>\s*<\/script>/g, '');
         if (!html.includes('src="/release-recovery.js"')) {
           const bootstrap = '<script src="/release-recovery.js"></script>';
           const firstExpoScript = /<script\b(?=[^>]*\bsrc=["']\/_expo\/static\/js\/web\/)[^>]*>/i;
@@ -55,6 +62,7 @@ expo.on('exit', async (code, signal) => {
     }
   };
   await injectRecovery('dist/client');
+  await isolateWebModuleGraph('dist/client');
 
   await mkdir('dist', { recursive: true });
   await mkdir('dist/server', { recursive: true });
@@ -66,7 +74,7 @@ expo.on('exit', async (code, signal) => {
   // backend's short-lived login response for an HttpOnly cookie, injects that
   // cookie only on same-origin API proxy calls, and enforces double-submit
   // CSRF on every unsafe cookie-authenticated request.
-  const workerSource = await readFile(new URL('./web-worker.mjs', import.meta.url), 'utf8');
+  const workerSource = await standaloneWorkerSource();
   await writeFile('dist/server/index.js', workerSource + '\nexport default createWorker(' + JSON.stringify(backendUrl) + ');\n');
   // Cloudflare Pages advanced mode loads its request handler from _worker.js.
   // Keep the same proxy/auth boundary in the Pages upload so browser API

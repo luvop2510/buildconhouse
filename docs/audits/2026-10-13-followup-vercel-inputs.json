@@ -1,0 +1,7 @@
+{
+  "fileCount": 701,
+  "totalSize": 24606032,
+  "forbiddenInputs": [],
+  "passed": true,
+  "previousIssue": "Local .env public backend URL included; explicitly excluded before deployment. The template remains intentionally allowed. Private .env.local was already excluded."
+}

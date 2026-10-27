@@ -48,6 +48,9 @@ type PoItem = {
   finish?: string | null;
   stage?: string;
   loaned_qty?: number;
+  loan_replenishment_for_customer_name?: string | null;
+  loan_replenishment_status?: string | null;
+  loan_replenishment_promised_qty?: number;
   godown_transferred_qty?: number;
   loan_replenishment_returned_qty?: number;
 };
@@ -252,6 +255,10 @@ export default function PurchaseOrderDetail() {
     item_id: it.id, sku: it.sku, name: it.name, image: it.image,
     qty: Math.max(0, it.qty - (it.godown_transferred_qty || 0) - (it.loan_replenishment_returned_qty || 0)),
     loaned_qty: it.loaned_qty,
+    loan_replenishment_for_customer_name: it.loan_replenishment_for_customer_name,
+    loan_replenishment_status: it.loan_replenishment_status,
+    loan_replenishment_promised_qty: it.loan_replenishment_promised_qty,
+    loan_replenishment_returned_qty: it.loan_replenishment_returned_qty,
     stage: (it.stage as any) || "po_final",
     customer_id: po?.customer_id, customer_name: po?.customer_name,
     po_number: po?.number, brand_name: po?.brand_name, supplier_name: po?.supplier_name,

@@ -93,9 +93,9 @@ async def find_customer_matches(
     if email_norm:
         medium_or.append({"email": email_norm})
     if name_norm and city_norm:
-        medium_or.append({"name": {"$regex": f"^{name_norm}$", "$options": "i"}, "city": {"$regex": f"^{city_norm}$", "$options": "i"}})
+        medium_or.append({"name": {"$regex": f"^{re.escape(name_norm)}$", "$options": "i"}, "city": {"$regex": f"^{re.escape(city_norm)}$", "$options": "i"}})
     if name_norm and address_norm:
-        medium_or.append({"name": {"$regex": f"^{name_norm}$", "$options": "i"}, "address": {"$regex": address_norm[:40], "$options": "i"}})
+        medium_or.append({"name": {"$regex": f"^{re.escape(name_norm)}$", "$options": "i"}, "address": {"$regex": re.escape(address_norm[:40]), "$options": "i"}})
     if medium_or:
         candidates = await db.customers.find(scoped({"$or": medium_or}), _PROJECTION).to_list(_MAX_PER_TIER + len(seen_ids))
         medium = [c for c in candidates if c["id"] not in seen_ids][:_MAX_PER_TIER]
@@ -104,7 +104,7 @@ async def find_customer_matches(
     low: list[dict] = []
     if name_norm and len(name_norm) >= 3:
         candidates = await db.customers.find(
-            scoped({"name": {"$regex": name_norm[:30], "$options": "i"}}), _PROJECTION,
+            scoped({"name": {"$regex": re.escape(name_norm[:30]), "$options": "i"}}), _PROJECTION,
         ).to_list(_MAX_PER_TIER + len(seen_ids))
         low = [c for c in candidates if c["id"] not in seen_ids][:_MAX_PER_TIER]
 

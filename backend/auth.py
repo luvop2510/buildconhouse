@@ -14,7 +14,7 @@ from db import db
 from models import Role, UserPublic, CustomerPublic
 from settings import settings
 from access_profiles import profile_allows_request
-from services.access_grants import action_for_api_request, granted_floor_ids, grants_for_user, is_common_access_request, request_resource
+from services.access_grants import action_for_api_request, granted_floor_ids, grants_for_user, is_common_access_request, is_global_followup_admin_request, request_resource
 
 JWT_SECRET = settings.jwt_secret
 JWT_ALG = settings.jwt_algorithm
@@ -29,6 +29,8 @@ JWT_EXP_MIN = settings.jwt_exp_minutes
 _PRINCIPAL_CACHE_TTL_SECONDS = 10.0
 _PRINCIPAL_CACHE_MAX_ENTRIES = 2048
 _principal_cache: dict[tuple[str, str, str], tuple[float, dict]] = {}
+_principal_cache_generation = 0
+_principal_inflight: dict[tuple[str, str, str, str, int], asyncio.Task] = {}
 
 
 def _cached_principal(kind: str, subject: str, session_id: str | None) -> dict | None:
@@ -59,6 +61,11 @@ def _cache_principal(kind: str, subject: str, session_id: str | None, doc: dict)
 
 def invalidate_principal_cache(kind: str, subject: str, session_id: str | None = None) -> None:
     """Invalidate one session or every cached session for a principal."""
+    # A read already in flight may have captured pre-revocation state. A
+    # single bounded generation prevents it from putting that state back
+    # after invalidation, without retaining per-user tombstones forever.
+    global _principal_cache_generation
+    _principal_cache_generation += 1
     if session_id is not None:
         _principal_cache.pop((kind, subject, session_id), None)
         return
@@ -121,6 +128,29 @@ async def _load_active_principal(payload: dict, *, kind: str, collection: str) -
     if not session_id:
         raise HTTPException(status_code=401, detail="Session expired or was signed out. Please sign in again.")
 
+    generation = _principal_cache_generation
+    key = (kind, subject, session_id, collection, generation)
+    task = _principal_inflight.get(key)
+    if task is None:
+        # At capacity, validate normally without retaining another shared task.
+        if len(_principal_inflight) >= _PRINCIPAL_CACHE_MAX_ENTRIES:
+            return (await _read_active_principal(subject, session_id, kind, collection, generation)).copy()
+        task = asyncio.create_task(_read_active_principal(subject, session_id, kind, collection, generation))
+        _principal_inflight[key] = task
+
+        def finished(done):
+            if _principal_inflight.get(key) is done:
+                _principal_inflight.pop(key, None)
+            # A canceled caller must not leave an unobserved shared failure.
+            if not done.cancelled():
+                done.exception()
+
+        task.add_done_callback(finished)
+    # One caller leaving must not cancel another request's authentication.
+    return (await asyncio.shield(task)).copy()
+
+
+async def _read_active_principal(subject: str, session_id: str, kind: str, collection: str, generation: int) -> dict:
     session_filter = {
         "id": session_id,
         "user_type": kind,
@@ -129,7 +159,7 @@ async def _load_active_principal(payload: dict, *, kind: str, collection: str) -
     }
     session_doc, principal = await asyncio.gather(
         db.user_sessions.find_one(session_filter, {"_id": 0, "id": 1, "mfa_verified": 1, "mfa_version": 1}),
-        db[collection].find_one({"id": subject}, {"_id": 0, "password_hash": 0,
+        db[collection].find_one({"id": subject}, {"_id": 0, "password_hash": 0, "password_encrypted": 0,
             "mfa_secret_encrypted": 0, "mfa_pending": 0, "mfa_recovery_hashes": 0}),
     )
     if not session_doc:
@@ -149,7 +179,8 @@ async def _load_active_principal(payload: dict, *, kind: str, collection: str) -
         or session_doc.get("mfa_version") != principal.get("mfa_version", 0)
     ):
         raise HTTPException(status_code=401, detail="Second-factor verification is required. Please sign in again.")
-    _cache_principal(kind, subject, session_id, principal)
+    if generation == _principal_cache_generation:
+        _cache_principal(kind, subject, session_id, principal)
     return principal
 
 
@@ -187,6 +218,14 @@ async def authorize_staff_request(user: UserPublic, request: Request | None) -> 
     Request-local floor constraints are private model metadata: response and
     persisted user fields retain the account's normal assignments.
     """
+    if request is not None:
+        path = request.url.path
+        if any(path == prefix or path.startswith(f"{prefix}/") for prefix in ("/api/purchases", "/api/purchase-orders", "/api/suppliers")):
+            # Purchases is a Sanitary module, including for owners who may
+            # switch floors. A stale URL must not open it on another floor.
+            if floor_scope_ids(user) != ["first-floor"]:
+                raise HTTPException(status_code=404, detail="Purchases is available only on The Sanitary Bathroom floor")
+            object.__setattr__(user, "_module_floor_ids", ["first-floor"])
     if user.role == "owner":
         return user
     if request is None:
@@ -196,6 +235,8 @@ async def authorize_staff_request(user: UserPublic, request: Request | None) -> 
     path = request.url.path
     if not profile_allows_request(user.access_profile, request.method, path):
         raise HTTPException(status_code=403, detail="This account is not permitted to use this function")
+    if user.custom_access and is_global_followup_admin_request(request.method, path):
+        raise HTTPException(status_code=403, detail="Global follow-up automation requires full manager access")
     if user.custom_access and not is_common_access_request(request.method, path):
         action = action_for_api_request(request.method, path, request.query_params)
         cached_grants = getattr(request.state, "staff_access_grants", None)
@@ -204,7 +245,16 @@ async def authorize_staff_request(user: UserPublic, request: Request | None) -> 
         else:
             grants = await grants_for_user(db, user.id)
             request.state.staff_access_grants = (user.id, grants)
-        resource = await request_resource(db, path, request.query_params)
+        # The shared inbox can manage legacy notebook rows too. Its explicit
+        # grant covers the full follow-up surface; narrow notebook-only
+        # grants still use their stored-stage resolver below.
+        shared_followups = (path == "/api/followups" or path.startswith("/api/followups/")) and not path.startswith("/api/followups/notebook/")
+        shared_floors = granted_floor_ids(grants, user_id=user.id, path=path, action=action, resource="followups", method=request.method) if shared_followups and action else []
+        has_shared_grant = shared_followups and (
+            shared_floors is None or user.active_floor_id in shared_floors
+            or (not user.active_floor_id and bool(shared_floors))
+        )
+        resource = "followups" if has_shared_grant else await request_resource(db, path, request.query_params)
         if resource in {"notebook_walkins", "notebook_quotations"} and (path.count("/") > 4 or path.endswith("/contact")):
             object.__setattr__(user, "_custom_notebook_converted", resource == "notebook_quotations")
         floors = granted_floor_ids(grants, user_id=user.id, path=path, action=action, resource=resource, method=request.method) if action else []
@@ -376,10 +426,15 @@ async def get_current_session(authorization: Optional[str] = Header(None)) -> tu
 async def revoke_all_sessions(kind: str, subject: str) -> int:
     """Invalidate every session after an administrator resets credentials."""
     invalidate_principal_cache(kind, subject)
-    result = await db.user_sessions.update_many(
-        {"user_type": kind, "user_id": subject, "revoked": {"$ne": True}},
-        {"$set": {"revoked": True}},
-    )
+    try:
+        result = await db.user_sessions.update_many(
+            {"user_type": kind, "user_id": subject, "revoked": {"$ne": True}},
+            {"$set": {"revoked": True}},
+        )
+    finally:
+        # Clear entries created while the write was pending, even when its
+        # acknowledgement fails: the server may already have committed it.
+        invalidate_principal_cache(kind, subject)
     return result.modified_count
 
 
@@ -526,11 +581,11 @@ def apply_effective_floor_ids(user: UserPublic) -> UserPublic:
 
 def accessible_floor_ids(user: UserPublic) -> list[str] | None:
     """None means all active floors; otherwise return explicit assignments."""
-    if user.role == "owner":
-        return None
     profile = getattr(user, "access_profile", None)
     profile_floors = profile_floor_ids(profile)
-    if profile_floors is not None:
+    if user.role == "owner":
+        allowed = None
+    elif profile_floors is not None:
         allowed = profile_floors
     # A malformed legacy profile is fail-closed, rather than becoming a
     # normal staff account through an accidental typo or partial migration.
@@ -538,7 +593,10 @@ def accessible_floor_ids(user: UserPublic) -> list[str] | None:
         allowed = []
     else:
         allowed = None if has_all_floor_access(user) else list(user.floor_ids or [])
-    granted = getattr(user, "_custom_grant_floor_ids", None)
+    module_floors = getattr(user, "_module_floor_ids", None)
+    if module_floors is not None:
+        allowed = list(module_floors) if allowed is None else [floor for floor in allowed if floor in module_floors]
+    granted = None if user.role == "owner" else getattr(user, "_custom_grant_floor_ids", None)
     if granted is not None:
         return list(granted) if allowed is None else [floor for floor in allowed if floor in granted]
     return allowed

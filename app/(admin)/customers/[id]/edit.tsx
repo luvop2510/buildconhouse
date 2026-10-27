@@ -5,7 +5,7 @@
 // backend enforces this too; the UI just mirrors it so buttons are visibly
 // disabled instead of erroring after a tap.
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, Switch, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -14,14 +14,13 @@ import { api } from "@/src/api/client";
 import {
   Button, Card, PageHeader, TextField, ErrorState,
 } from "@/src/components/ui";
-import { ConfirmDialog } from "@/src/components/ds";
 import { TempPasswordDialog, TempPasswordResult } from "@/src/components/TempPasswordDialog";
 import { toast } from "@/src/components/Toast";
 import { ReferrerField } from "@/src/components/customer/ReferrerField";
 import { useBp } from "@/src/design/responsive";
 import { useAuth } from "@/src/state/auth";
+import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { useActionAccess } from "@/src/hooks/use-permissions";
-import { canManageDestructiveData } from "@/src/constants/roles";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
 
 type Tier = "retail" | "trade" | "vip";
@@ -39,7 +38,17 @@ export default function EditCustomer() {
   const router = useRouter();
   const { isPhone, gutter } = useBp();
   const { staff } = useAuth();
-  const canDeleteCustomers = useActionAccess("customers", "delete", canManageDestructiveData(staff?.role));
+  const { selectedFloorId } = useFloorAccess();
+  const contextKey = JSON.stringify([staff?.id, selectedFloorId, id]);
+  const contextRef = useRef({ key: contextKey });
+  // A → B → A must invalidate A's first request and retained callbacks too.
+  if (contextRef.current.key !== contextKey) contextRef.current = { key: contextKey };
+  const context = contextRef.current;
+  const activeRef = useRef(false);
+  const loadedContextRef = useRef<typeof context | null>(null);
+  const loadAbortRef = useRef<AbortController | null>(null);
+  const isCurrent = useCallback(() => activeRef.current && contextRef.current === context, [context]);
+  const canDeleteCustomers = useActionAccess("customers", "delete", staff?.role === "owner") && staff?.role === "owner";
 
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -62,49 +71,54 @@ export default function EditCustomer() {
   const [resetting, setResetting] = useState(false);
   const [tempResult, setTempResult] = useState<TempPasswordResult | null>(null);
   const [tempDialogOpen, setTempDialogOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    activeRef.current = true;
+    return () => { activeRef.current = false; loadAbortRef.current?.abort(); };
+  }, []);
 
   const load = useCallback(async () => {
+    if (!isCurrent() || !id || !selectedFloorId || !staff?.id) return;
+    loadAbortRef.current?.abort();
+    const controller = new AbortController();
+    loadAbortRef.current = controller;
+    const current = () => isCurrent() && !controller.signal.aborted;
+    loadedContextRef.current = null;
     setLoadError(false);
     setLoaded(false);
+    setError(null);
+    setSaving(false); setInviting(false); setResetting(false);
+    setTempDialogOpen(false); setTempResult(null);
     try {
-    const c = await api.get<Customer>(`/customers/${id}`);
-    setName(c.name || "");
-    setCompany(c.company || "");
-    setEmail(c.email || "");
-    setPhone(c.phone || "");
-    setCity(c.city || "");
-    setAddress(c.address || "");
-    setPropertyName(c.property_name || "");
-    setStateField(c.state || "");
-    setPincode(c.pincode || "");
-    setGstin(c.gstin || "");
-    setReferrer(c.referrer_id && c.referrer_name && c.referrer_type ? { id: c.referrer_id, name: c.referrer_name, type: c.referrer_type } : null);
-    setNotes(c.notes || "");
-    setPortalEnabled(!!c.portal_enabled);
-    setLoaded(true);
-    } catch { setLoadError(true); }
-  }, [id]);
-  useEffect(() => { load(); }, [load]);
+      const c = await api.get<Customer>(`/customers/${id}`, { floorId: selectedFloorId, signal: controller.signal });
+      if (!current()) return;
+      setName(c.name || "");
+      setCompany(c.company || "");
+      setEmail(c.email || "");
+      setPhone(c.phone || "");
+      setCity(c.city || "");
+      setAddress(c.address || "");
+      setPropertyName(c.property_name || "");
+      setStateField(c.state || "");
+      setPincode(c.pincode || "");
+      setGstin(c.gstin || "");
+      setReferrer(c.referrer_id && c.referrer_name && c.referrer_type ? { id: c.referrer_id, name: c.referrer_name, type: c.referrer_type } : null);
+      setNotes(c.notes || "");
+      setPortalEnabled(!!c.portal_enabled);
+      loadedContextRef.current = context;
+      setLoaded(true);
+    } catch { if (current()) setLoadError(true); }
+  }, [id, selectedFloorId, staff?.id, context, isCurrent]);
+  useEffect(() => {
+    void load();
+    return () => { loadAbortRef.current?.abort(); };
+  }, [load]);
 
-  const deleteCustomer = useCallback(async () => {
-    if (!id) return;
-    setDeleting(true);
-    try {
-      await api.delete(`/customers/${id}`);
-      toast.success("Customer deleted");
-      router.replace("/(admin)/customers" as any);
-    } catch (e: any) {
-      toast.error(e?.detail || "Could not delete customer");
-    } finally {
-      setDeleting(false);
-    }
-  }, [id, router]);
 
   const canUsePortalActions = portalEnabled && !!email.trim();
 
   const save = async (silent = false) => {
+    if (!isCurrent() || loadedContextRef.current !== context || !loaded) return false;
     if (!name.trim()) { setError("Name is required"); if (!silent) toast.error("Enter a customer name"); return false; }
     if (portalEnabled && !email.trim()) { setError("Add an email to enable portal access"); toast.error("Email required for portal access"); return false; }
     setSaving(true);
@@ -123,15 +137,17 @@ export default function EditCustomer() {
         referrer_id: referrer?.id || null,
         notes: notes.trim() || null,
         portal_enabled: portalEnabled,
-      });
+      }, { floorId: selectedFloorId });
+      if (!isCurrent()) return false;
       if (!silent) toast.success("Customer updated");
       return true;
     } catch (e: any) {
+      if (!isCurrent()) return false;
       if (!silent) toast.error(e?.detail || "Could not save customer");
       setError(typeof e?.detail === "string" ? e.detail : "Could not save customer changes. Your details are retained; try again.");
       return false;
     } finally {
-      setSaving(false);
+      if (isCurrent()) setSaving(false);
     }
   };
 
@@ -139,62 +155,66 @@ export default function EditCustomer() {
     // Persist any pending edits (e.g. they just typed the email + flipped
     // the toggle) before asking the backend to issue credentials.
     const ok = await save(true);
-    if (!ok) return;
+    if (!ok || !isCurrent()) return;
     setInviting(true);
     try {
-      const res = await api.post<TempPasswordResult>(`/customers/${id}/send-invite`);
+      const res = await api.post<TempPasswordResult>(`/customers/${id}/send-invite`, undefined, { floorId: selectedFloorId });
+      if (!isCurrent()) return;
       setTempResult(res);
       setTempDialogOpen(true);
     } catch (e: any) {
-      toast.error(e?.detail || "Could not send invite");
+      if (isCurrent()) toast.error(e?.detail || "Could not send invite");
     } finally {
-      setInviting(false);
+      if (isCurrent()) setInviting(false);
     }
   };
 
   const resetPassword = async () => {
+    if (!isCurrent() || loadedContextRef.current !== context || !loaded) return;
     setResetting(true);
     try {
-      const res = await api.post<TempPasswordResult>(`/customers/${id}/reset-password`);
+      const res = await api.post<TempPasswordResult>(`/customers/${id}/reset-password`, undefined, { floorId: selectedFloorId });
+      if (!isCurrent()) return;
       setTempResult(res);
       setTempDialogOpen(true);
     } catch (e: any) {
-      toast.error(e?.detail || "Could not reset password");
+      if (isCurrent()) toast.error(e?.detail || "Could not reset password");
     } finally {
-      setResetting(false);
+      if (isCurrent()) setResetting(false);
     }
   };
 
-  if (!loaded) return <View style={{ flex: 1, padding: gutter, backgroundColor: colors.surface }}>
+  if (!loaded || loadedContextRef.current !== context) return <View style={{ flex: 1, padding: gutter, backgroundColor: colors.surface }}>
     {loadError ? <ErrorState title="Couldn't load customer" subtitle="Check your connection and try again." onRetry={load} /> : <Text accessibilityLiveRegion="polite">Loading customer…</Text>}
   </View>;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
+      <KeyboardAvoidingView
+        enabled={Platform.OS !== "web"}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+      >
+        <ScrollView
+          contentContainerStyle={{ width: "100%", maxWidth: 720, alignSelf: "center", paddingHorizontal: gutter, paddingTop: isPhone ? 0 : spacing.xl, gap: spacing.lg, paddingBottom: spacing.xxxl }}
+          keyboardShouldPersistTaps="handled"
+        >
       <PageHeader
         title="Edit Customer"
         overline="CRM"
         back={() => router.back()}
         actions={canDeleteCustomers ? (
           <Button
-            label="Delete"
-            icon="trash-2"
-            variant="danger"
+            label="Manage customer data"
+            icon="settings"
+            variant="secondary"
             size="sm"
-            onPress={() => setDeleteOpen(true)}
+            onPress={() => router.push("/(admin)/customers" as any)}
             testID="delete-customer-edit"
           />
         ) : undefined}
       />
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
-      >
-        <ScrollView
-          contentContainerStyle={{ width: "100%", maxWidth: 720, alignSelf: "center", paddingHorizontal: gutter, paddingTop: isPhone ? spacing.lg : spacing.xl, gap: spacing.lg, paddingBottom: spacing.xxxl }}
-          keyboardShouldPersistTaps="handled"
-        >
           <TextField
             label="Name *"
             value={name}
@@ -277,17 +297,7 @@ export default function EditCustomer() {
         title="Customer Portal credential"
         result={tempResult}
       />
-      <ConfirmDialog
-        visible={deleteOpen}
-        onClose={() => { if (!deleting) setDeleteOpen(false); }}
-        onConfirm={deleteCustomer}
-        title="Delete customer?"
-        description="This removes the customer and disposable sales-workflow records. Purchase orders and completed payments protect the customer from deletion."
-        confirmLabel="Delete"
-        tone="danger"
-        loading={deleting}
-        testID="confirm-delete-customer-edit"
-      />
+
     </SafeAreaView>
   );
 }

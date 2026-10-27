@@ -9,13 +9,13 @@ type ConcealedPart = {
 };
 
 type ProductLike = {
-  id: string; sku: string; name: string; price: number; mrp: number;
+  id: string; sku: string; name: string; price: number; mrp: number; description?: string | null;
   category_id: string; finish?: string | null; colour?: string | null; dimensions?: string | null;
   family_key?: string | null; images?: string[]; concealed_part?: ConcealedPart | null; specs?: Record<string, unknown> | null;
 };
 
 type VariantLike = {
-  id?: string | null; sku: string; price: number; mrp: number;
+  id?: string | null; sku: string; price: number; mrp: number; description?: string | null;
   finish?: string | null; colour?: string | null; color?: string | null;
   size?: string | null; image?: string | null; dimensions?: string | null; exclude_dimension?: boolean; concealed_part?: ConcealedPart | null; specs?: Record<string, unknown> | null;
 };
@@ -127,6 +127,7 @@ export function addProductAndConcealedPart<T extends LineLike>(
     image: variant?.image || primaryImage, category_id: product.category_id, room,
     qty: quantity, unit_price: variant?.price ?? product.price, mrp: variant?.mrp ?? product.mrp,
     discount_pct: null, finish, family_key: product.family_key || null,
+    description: variant?.description ?? product.description ?? null,
     exclude_dimension: !!variant?.exclude_dimension,
     ...(notes?.trim() ? { notes: notes.trim() } : {}),
   } as T);

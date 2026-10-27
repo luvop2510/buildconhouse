@@ -13,6 +13,7 @@ class Element extends EventTarget {
   focus() { this.focused = true; }
   get childElementCount() { return this.children.length; }
   setAttribute(name, value) { this.attributes[name] = value; }
+  getAttribute(name) { return this.attributes[name] ?? null; }
   appendChild(child) { child.parent = this; this.children.push(child); return child; }
   querySelector() { return this.interactive ? {} : null; }
   remove() { this.parent.children = this.parent.children.filter(child => child !== this); }
@@ -21,7 +22,7 @@ function harness({ storage = new Map(), storageFails = false, initial = '', inte
   const root = new Element('div'); root.id = 'root'; root.innerHTML = initial; root.interactive = interactive;
   if (initial) root.appendChild(new Element('div'));
   const body = new Element('body'); body.appendChild(root);
-  const window = new EventTarget(); const document = new EventTarget();
+  const window = new EventTarget(); window.__FORGE_APP_MOUNTED__ = false; const document = new EventTarget();
   const timers = []; let reloads = 0; let observerCallback;
   Object.assign(document, { readyState, body,
     getElementById(id) { return [root, ...body.children].find(element => element.id === id) || null; },
@@ -29,19 +30,35 @@ function harness({ storage = new Map(), storageFails = false, initial = '', inte
     querySelectorAll() { return entry ? [{ src: entry }] : []; },
   });
   const location = { origin: base, href: `${base}${pathname}`, pathname, reload() { reloads++; } };
-  vm.runInNewContext(source, { window, document, location, URL, setTimeout(callback) { timers.push(callback); },
+  const environment = { window, document, location, URL, setTimeout(callback, delay = 0) { timers.push({ callback, delay }); },
     sessionStorage: { getItem(key) { if (storageFails) throw Error('blocked'); return storage.get(key); }, setItem(key, value) { if (storageFails) throw Error('blocked'); storage.set(key, value); }, removeItem(key) { if (storageFails) throw Error('blocked'); storage.delete(key); } },
     MutationObserver: class { constructor(callback) { observerCallback = callback; } observe() {} disconnect() {} },
-  });
+  };
+  vm.runInNewContext(source, environment);
   function event(values, type = 'error') {
     const actual = new Event(type);
     for (const [key, value] of Object.entries(values)) Object.defineProperty(actual, key, { value });
     window.dispatchEvent(actual);
   }
-  return { root, body, document, storage, initialRoute: window.__FORGE_INITIAL_ROUTE__, get reloads() { return reloads; }, panel() { return body.children.find(element => element.id === 'release-startup-recovery'); }, flush() { while (timers.length) timers.shift()(); }, event,
-    script(url = asset) { event({ target: { tagName: 'SCRIPT', src: url } }); }, mutate() { root.innerHTML = '<div>Live app</div>'; root.children = [new Element('div')]; observerCallback?.(); },
+  return { root, body, document, storage, window, hydrated: environment.__EXPO_ROUTER_HYDRATE__, initialRoute: window.__FORGE_INITIAL_ROUTE__, isReleaseError: window.__FORGE_IS_RELEASE_ERROR__, get reloads() { return reloads; }, panel() { return body.children.find(element => element.id === 'release-startup-recovery'); }, flush(maxDelay = 0) { let index; while ((index = timers.findIndex(timer => timer.delay <= maxDelay)) >= 0) timers.splice(index, 1)[0].callback(); }, event,
+    markMounted() { window.__FORGE_APP_MOUNTED__ = true; window.dispatchEvent(new Event('forge:app-mounted')); },
+    script(url = asset) { event({ target: { tagName: 'SCRIPT', src: url } }); }, clearRoot() { root.innerHTML = ''; root.children = []; root.interactive = false; }, mutate() { root.innerHTML = '<div>Live app</div>'; root.children = [new Element('div')]; observerCallback?.(); },
   };
 }
+const stalled = harness({ readyState: 'loading', initial: '<div>Loading</div>' });
+assert.equal(stalled.hydrated, true, 'The recovery bootstrap must set hydration before the following Expo entry executes');
+stalled.flush(); assert.equal(stalled.panel(), undefined);
+stalled.flush(20000); assert.ok(stalled.panel(), 'Slow startup must provide visible nonfatal feedback');
+assert.equal(stalled.panel().attributes.role, 'status');
+assert.equal(stalled.panel().children[0].textContent, 'The app is still starting');
+assert.match(stalled.panel().children[1].textContent, /continue automatically/);
+assert.doesNotMatch(stalled.panel().children[1].textContent, /latest app files/);
+assert.equal(stalled.reloads, 0); stalled.markMounted(); assert.equal(stalled.panel(), undefined, 'A late client mount clears the slow-start status');
+const unchangedSSR = harness({ initial: '<div class="splash">Waiting for backend server</div>' });
+unchangedSSR.markMounted(); unchangedSSR.flush(20000);
+assert.equal(unchangedSSR.panel(), undefined, 'A mounted app must not be covered even when hydration leaves SSR markup unchanged');
+const liveWatchdog = harness(); liveWatchdog.mutate(); liveWatchdog.flush(20000);
+assert.equal(liveWatchdog.panel(), undefined); assert.equal(liveWatchdog.reloads, 0);
 const routeStorage = new Map();
 assert.equal(harness({ storage: routeStorage, pathname: '/quotations/new?productId=basin' }).initialRoute, '/quotations/new?productId=basin');
 assert.equal(harness({ storage: routeStorage, pathname: '/access' }).initialRoute, '/quotations/new?productId=basin');
@@ -49,14 +66,34 @@ harness({ storage: routeStorage, pathname: '/login' });
 assert.equal(routeStorage.has('forge.pending-initial-route'), false);
 assert.equal(harness({ storage: new Map([['forge.pending-initial-route', '//untrusted.test']]), pathname: '/access' }).initialRoute, '/access');
 
+const detector = harness();
+assert.equal(detector.isReleaseError({ message: 'Loading chunk 27 failed', stack: `Error\n at load (${asset}:1:2)` }), true);
+assert.equal(detector.isReleaseError({ message: 'Requiring unknown module "669".', stack: `Error\n at p (${base}/_expo/static/js/web/__expo-metro-runtime-hash.js:2:3)` }), true);
+assert.equal(detector.isReleaseError({ message: 'TypeError: name is undefined', stack: `Error\n at render (${asset}:1:2)` }), false);
+assert.equal(detector.isReleaseError({ message: 'Loading chunk 27 failed', stack: 'Error\n at load (https://third.example.test/script.js:1:2)' }), false);
+assert.equal(detector.isReleaseError(null), false);
+assert.equal(detector.isReleaseError({ name: 'AsyncRequireError', message: `Loading module ${base}/_expo/static/js/web/QuotationBuilder-old.js failed.\n(error: ${base}/_expo/static/js/web/QuotationBuilder-old.js)`, request: `${base}/_expo/static/js/web/QuotationBuilder-old.js` }), true);
+assert.equal(detector.isReleaseError({ name: 'AsyncRequireError', message: 'Loading module https://third.example.test/module.js failed.', request: 'https://third.example.test/module.js' }), false);
+detector.mutate(); detector.isReleaseError({ message: 'Loading chunk 27 failed', stack: `Error\n at load (${asset}:1:2)` }); detector.flush();
+assert.equal(detector.reloads, 0, 'Classification must not reload mounted UI or discard form state');
 const first = harness(); first.script(); first.script(); first.flush(); assert.equal(first.reloads, 1);
 const retry = harness({ storage: first.storage }); retry.script(); retry.flush(); assert.equal(retry.reloads, 0);
+retry.flush(20000);
+assert.equal(retry.panel().attributes.role, 'alert', 'The slow-start watchdog must not downgrade a confirmed failure');
+assert.equal(retry.panel().children[0].textContent, 'The app could not start');
 assert.equal(retry.panel().attributes.role, 'alert'); assert.match(retry.panel().style.cssText, /position:fixed;inset:0/); assert.equal(retry.panel().children[2].focused, true); assert.equal(retry.panel().children[2].textContent, 'Reload app');
+assert.equal(retry.panel().children[0].textContent, 'The app could not start');
+assert.match(retry.panel().children[1].textContent, /latest app files/);
 retry.script(); retry.flush(); assert.equal(retry.body.children.length, 2);
 retry.panel().children[2].dispatchEvent(new Event('click')); assert.equal(retry.reloads, 1);
 const changedEntry = harness({ storage: first.storage, entry: `${base}/_expo/static/js/web/entry-a2.js` }); changedEntry.script(); changedEntry.flush(); assert.equal(changedEntry.reloads, 1);
 const blocked = harness({ storageFails: true }); blocked.script(); blocked.flush(); assert.equal(blocked.reloads, 0); assert.ok(blocked.panel()); blocked.mutate(); assert.equal(blocked.panel(), undefined);
-const mounted = harness(); mounted.mutate(); mounted.script(); mounted.flush(); assert.equal(mounted.reloads, 0); assert.equal(mounted.panel(), undefined);
+const mounted = harness({ initial: '<div><button>Save</button></div>', interactive: true }); mounted.markMounted(); mounted.script(); mounted.flush(); assert.equal(mounted.reloads, 0); assert.equal(mounted.panel(), undefined);
+const mountedLayoutFailure = harness(); mountedLayoutFailure.markMounted(); mountedLayoutFailure.clearRoot(); mountedLayoutFailure.script(); mountedLayoutFailure.flush();
+assert.equal(mountedLayoutFailure.reloads, 1, 'an actual empty root after client mount should still get one bounded recovery');
+const mountedLayoutRetry = harness({ storage: mountedLayoutFailure.storage }); mountedLayoutRetry.markMounted(); mountedLayoutRetry.clearRoot(); mountedLayoutRetry.script(); mountedLayoutRetry.flush();
+assert.equal(mountedLayoutRetry.reloads, 0, 'a repeated layout failure should stop after the bounded recovery');
+assert.equal(mountedLayoutRetry.panel().attributes.role, 'alert');
 const shell = harness({ initial: '<div class="splash">Loading</div>' }); shell.script(); shell.flush(); assert.equal(shell.reloads, 1);
 const ssrUI = harness({ initial: '<div><button>Save</button></div>', interactive: true }); ssrUI.script(); ssrUI.flush(); assert.equal(ssrUI.reloads, 0); assert.equal(ssrUI.panel(), undefined);
 const altered = harness({ initial: '<div>Loading</div>' }); altered.root.innerHTML = '<div>New screen</div>'; altered.script(); altered.flush(); assert.equal(altered.reloads, 0);
@@ -74,26 +111,35 @@ const noFingerprint = harness({ entry: null }); noFingerprint.script(); noFinger
 // Execute the actual builder injection block against nested temporary HTML,
 // without invoking Expo or touching release build output.
 const builder = await readFile(new URL('./sites-build.mjs', import.meta.url), 'utf8');
-const injection = builder.slice(builder.indexOf('  const recoverySource ='), builder.indexOf("  await mkdir('dist',"));
+const injection = builder.slice(builder.indexOf('  const recoverySource ='), builder.indexOf("  await isolateWebModuleGraph("));
 assert.ok(injection.includes("await injectRecovery('dist/client')"));
+assert.match(builder, /await injectRecovery\('dist\/client'\);\s*await isolateWebModuleGraph\('dist\/client'\)/);
 const directory = await mkdtemp(join(tmpdir(), 'forge-recovery-'));
 const cwd = process.cwd();
 try {
   await mkdir(join(directory, 'dist/client/quotations'), { recursive: true });
-  const html = '<html><head><script type="module">/* preloads */</script></head><body><div id="root"><div>Loading</div></div><script src="/_expo/static/js/web/entry-a1.js" defer></script></body></html>';
+  const html = '<html><head><script type="module">/* preloads */</script><script>globalThis.__EXPO_ROUTER_HYDRATE__=true;</script></head><body><div id="root"><div>Loading</div></div><script src="/_expo/static/js/web/entry-a1.js" defer></script></body></html>';
   await writeFile(join(directory, 'dist/client/index.html'), html);
   await writeFile(join(directory, 'dist/client/quotations/detail.html'), html);
+  await writeFile(join(directory, 'dist/client/legacy.html'), html.replace('<script>globalThis.__EXPO_ROUTER_HYDRATE__=true;</script>', '<script src="/expo-hydrate.js"></script>'));
   process.chdir(directory);
   const script = `(async () => { ${injection.replace("new URL('./release-recovery.js', import.meta.url)", JSON.stringify(fileURLToPath(new URL('./release-recovery.js', import.meta.url))))} })()`;
   await vm.runInNewContext(script, { readFile, readdir, writeFile });
   await vm.runInNewContext(script, { readFile, readdir, writeFile });
-  for (const path of ['index.html', 'quotations/detail.html']) {
+  for (const path of ['index.html', 'quotations/detail.html', 'legacy.html']) {
     const injected = await readFile(join(directory, 'dist/client', path), 'utf8');
     assert.equal((injected.match(/src="\/release-recovery.js"/g) || []).length, 1);
     assert.ok(injected.indexOf('id="root"') < injected.indexOf('src="/release-recovery.js"'));
     assert.ok(injected.includes('<script src="/release-recovery.js"></script><script src="/_expo/static/js/web/entry-a1.js" defer>'));
     assert.doesNotMatch(injected, /src="\/release-recovery.js"[^>]*(?:async|defer)/);
+    assert.doesNotMatch(injected, /src=["']\/expo-hydrate\.js["']|<script[^>]*>\s*globalThis\.__EXPO_ROUTER_HYDRATE__/);
+    // Simulate the emitted blocking bootstrap followed by the actual deferred
+    // entry order. A relocated flag must exist when entry first reads it.
+    const externalScripts = [...injected.matchAll(/<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/g)].map(match => match[1]);
+    assert.deepEqual(externalScripts, ['/release-recovery.js', '/_expo/static/js/web/entry-a1.js']);
+    assert.equal(harness().hydrated, true);
   }
   assert.equal(await readFile(join(directory, 'dist/client/release-recovery.js'), 'utf8'), source);
+  assert.equal(await readFile(join(directory, 'dist/client/expo-hydrate.js'), 'utf8'), 'globalThis.__EXPO_ROUTER_HYDRATE__=true;\n', 'Older HTML must retain its hydration bootstrap asset');
 } finally { process.chdir(cwd); await rm(directory, { recursive: true, force: true }); }
 console.log('Startup recovery: resource/parse/chunk errors, one retry, SSR/root guards, API/cross-origin isolation, storage failure, manual fallback and real builder placement passed.');

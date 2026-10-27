@@ -1,3 +1,4 @@
+import { referrerLabel } from "@/src/utils/referrer";
 import Feather from "@expo/vector-icons/Feather";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -20,6 +21,8 @@ type Line = { id: string; sku: string; name: string; qty: number; unit_price: nu
 type Quotation = {
   id: string; number: string; customer_name: string; status: string; floor_id?: string;
   purchase_completion_status?: "active" | "completed";
+  customer_outcome?: "won" | "lost" | null;
+  customer_id?: string; referrer_id?: string | null; referrer_name?: string | null; referrer_type?: string | null;
   items: Line[]; rooms: string[]; subtotal: number; discount_total: number;
   grand_total: number; created_at: string; notes?: string;
   created_by_name: string;
@@ -58,7 +61,7 @@ export default function QuotationDetail() {
     if (!q || preparingWhatsApp) return;
     setPreparingWhatsApp(true); setActionError(null);
     try { setWhatsappDraft(await prepareQuotationWhatsAppDraft(q.id, q.floor_id || "first-floor")); }
-    catch (error: any) { setActionError(error?.detail || "Could not prepare the WhatsApp quotation draft."); }
+    catch (error: any) { setActionError(error?.detail || "Could not prepare the PDF for sharing."); }
     finally { setPreparingWhatsApp(false); }
   };
   const [deleting, setDeleting] = useState(false);
@@ -166,7 +169,11 @@ export default function QuotationDetail() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
-      <PageHeader title={q.number} overline="Quotation" back={() => router.back()} actions={
+      <ScrollView contentContainerStyle={[
+        styles.content,
+        { paddingHorizontal: isPhone ? spacing.lg : spacing.xl, paddingTop: isPhone ? spacing.md : spacing.xl },
+      ]}>
+      <PageHeader title={q.number} overline="Quotation" back={() => router.back()} actions={isPhone ? undefined : (
         <View style={{ flexDirection: "row", gap: isPhone ? 4 : 8, alignItems: "center", flexShrink: 0 }}>
           {isPhone ? (
             <IconButton icon="edit-3" tone="surface" onPress={() => router.push(`/(admin)/quotations/new?quotationId=${encodeURIComponent(id)}` as any)} testID="edit-quotation" accessibilityLabel="Edit quotation" />
@@ -186,26 +193,36 @@ export default function QuotationDetail() {
             )
           ) : null}
         </View>
-      } />
+      )} />
+      {isPhone ? <View style={styles.phoneHeaderActions}>
+        <IconButton icon="edit-3" tone="surface" onPress={() => router.push(`/(admin)/quotations/new?quotationId=${encodeURIComponent(id)}` as any)} testID="edit-quotation" accessibilityLabel="Edit quotation" />
+        <IconButton icon="download" tone="surface" onPress={() => setPdfOptionsOpen(true)} testID="download-pdf" accessibilityLabel="Download PDF" />
+        <IconButton icon="trash-2" tone="danger" onPress={() => setDeleteOpen(true)} testID="delete-quotation" accessibilityLabel="Delete quotation" />
+        {NEXT_STATUS[q.status] ? <IconButton icon="check" tone="brand" disabled={advancing} onPress={advance} testID="advance-status" accessibilityLabel={`Mark ${NEXT_STATUS[q.status].replace("_", " ")}`} /> : null}
+      </View> : null}
 
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg, paddingBottom: spacing.huge }}>
         {actionError ? <Alert tone="error" title="Action not completed" description={actionError} /> : null}
         {relatedError ? <Alert tone="warning" title="Some related records are unavailable" description="Order links or activity may be incomplete. Reload to refresh them." /> : null}
         {/* Document summary */}
-        <View style={styles.hero}>
-          <StatusBadge status={q.status} />
+        <View style={styles.hero} testID="quotation-detail-summary">
+          <StatusBadge status={q.customer_outcome || q.status} />
+          {q.customer_outcome ? <Text style={[type.caption, { marginTop: spacing.sm }]} testID="quotation-customer-outcome">{q.customer_outcome === "won" ? "Won Customer" : "Lost Customer"} recorded. Create a new quotation for a new sale.</Text> : null}
           {q.purchase_completion_status === "completed" ? <Text style={[type.caption, { color: colors.success, marginTop: spacing.sm }]}>100% completed</Text> : null}
           <Text accessibilityRole="header" aria-level={2} style={[type.titleLg, { marginTop: 10 }]} numberOfLines={2}>{q.customer_name || "Unknown customer"}</Text>
           <Text style={[type.bodyMuted, { marginTop: 4 }]}>
             Prepared by {q.created_by_name} · {new Date(q.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}
           </Text>
+          {q.referrer_id || q.referrer_name ? <View style={{ marginTop: spacing.sm, gap: spacing.xs }}>
+            <Text style={type.bodyMuted}>Architect / interior designer: {referrerLabel(q)}</Text>
+            {q.customer_id ? <Button label="View reference and customers brought" variant="secondary" size="sm" onPress={() => router.push(`/(admin)/customers/${q.customer_id}` as any)} /> : null}
+          </View> : null}
           <View style={styles.heroDivider} />
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" }}>
+          <View style={[styles.heroTotalRow, isPhone && styles.heroTotalRowPhone]}>
             <View>
               <Text style={type.caption}>Grand total</Text>
               <PriceTag price={q.grand_total} size="xl" />
             </View>
-            {q.status !== "ordered" && q.items.length > 0 ? (
+            {!q.customer_outcome && q.status !== "ordered" && q.items.length > 0 ? (
               <Pressable
                 onPress={() => router.push(`/(admin)/quotations/${id}/place-order` as any)}
                 style={({ pressed }) => [styles.placeOrder, { opacity: pressed ? 0.88 : 1 }]}
@@ -216,7 +233,7 @@ export default function QuotationDetail() {
               </Pressable>
             ) : null}
           </View>
-          <View style={{ marginTop: 12, alignSelf: "flex-start" }}><Button label="WhatsApp draft" icon="message-circle" variant="secondary" size="sm" loading={preparingWhatsApp} disabled={!q.items.length || preparingWhatsApp} onPress={() => void prepareWhatsApp()} testID="quotation-whatsapp-draft" /></View>
+          <View style={{ marginTop: 12, alignSelf: "flex-start" }}><Button label="Share PDF" icon="message-circle" variant="secondary" size="sm" loading={preparingWhatsApp} disabled={!q.items.length || preparingWhatsApp} onPress={() => void prepareWhatsApp()} testID="quotation-whatsapp-draft" /></View>
           {isPhone ? <View style={{ marginTop: 12, alignSelf: "flex-start" }}><Button label="Download product PPT" icon="image" variant="secondary" size="sm" onPress={openPpt} testID="download-ppt" /></View> : null}
         </View>
 
@@ -263,7 +280,7 @@ export default function QuotationDetail() {
               const pct = br?.discount_pct ?? (it.discount_pct ?? 0);
               const lineTotal = it.qty * it.unit_price * (1 - pct / 100);
               return (
-                <View key={it.id} style={styles.mobileLineCard}>
+                <View key={it.id} style={styles.mobileLineCard} testID={`quotation-line-${it.id}`}>
                   <View style={{ flexDirection: "row", gap: spacing.sm, alignItems: "flex-start" }}>
                     <View style={styles.lineIdx}>
                       <Text style={styles.lineIdxText}>{String(i + 1).padStart(2, "0")}</Text>
@@ -299,7 +316,7 @@ export default function QuotationDetail() {
         )}
 
         {/* Totals card */}
-        <Card variant="flat">
+        <Card variant="flat" testID="quotation-detail-totals">
           <View style={{ gap: 8 }}>
             {q.project_discount_pct ? (
               <Row label="Project discount" value={`${q.project_discount_pct}%`} />
@@ -358,9 +375,7 @@ export default function QuotationDetail() {
           </View>
         </Card>
       </ScrollView>
-      <WhatsAppQuotationSheet draft={whatsappDraft} onClose={() => setWhatsappDraft(null)} onRevoke={async () => {
-        await api.delete(`/quotations/${id}/whatsapp-draft`, { floorId: q.floor_id || "first-floor" });
-      }} />
+      <WhatsAppQuotationSheet draft={whatsappDraft} onClose={() => setWhatsappDraft(null)} />
       <BottomSheet visible={pdfOptionsOpen} onClose={() => setPdfOptionsOpen(false)} title="Download quotation PDF" testID="quotation-detail-pdf-options">
         <View style={{ gap: spacing.sm, paddingBottom: spacing.lg }}>
           <Text style={type.bodyMuted}>Include Vitra dimension diagrams in this PDF?</Text>
@@ -399,6 +414,10 @@ function GodownProvenance({ item }: { item: Line }) {
 }
 
 const styles = StyleSheet.create({
+  content: { width: "100%", maxWidth: 1120, alignSelf: "center", gap: spacing.lg, paddingBottom: spacing.huge },
+  phoneHeaderActions: { flexDirection: "row", justifyContent: "flex-end", flexWrap: "wrap", gap: spacing.sm, marginTop: -spacing.sm },
+  heroTotalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", gap: spacing.md },
+  heroTotalRowPhone: { flexWrap: "wrap", alignItems: "center" },
   centered: {
     flex: 1, alignItems: "center", justifyContent: "center",
     gap: spacing.md, padding: spacing.xl, backgroundColor: colors.surface,

@@ -1,0 +1,17 @@
+Quotation individual editing: pricing precedence, flat discounts, totals consistency and bounded row pricing passed
+{
+  "kind": "pricing calculation microbenchmark, not browser render duration",
+  "dataset": "same 500 fixture lines, four rooms, category and flat room discounts",
+  "runs": 9,
+  "before": {
+    "median_ms": 28.726083000000017,
+    "min_ms": 28.358875000000012,
+    "max_ms": 28.939333000000033
+  },
+  "after": {
+    "median_ms": 0.13208299999996598,
+    "min_ms": 0.12554199999999582,
+    "max_ms": 0.21458300000006147
+  },
+  "speedup": 217.4850889214162
+}

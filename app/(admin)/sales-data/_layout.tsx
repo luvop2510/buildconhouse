@@ -2,6 +2,7 @@ import { Slot } from "expo-router";
 import { View } from "react-native";
 
 import { WorkspaceSwitcher } from "@/src/components/analytics/WorkspaceSwitcher";
+import { SalesScopeProvider } from "@/src/components/salesData/SalesScope";
 
 /**
  * Shell shared by every Sales Data workspace. The switcher lives here so a
@@ -12,11 +13,11 @@ export default function SalesDataLayout() {
     // No gap: the switcher now owns its own vertical padding and closes with
     // a hairline rule, so an extra gap here would float that rule in dead
     // space instead of seating it against the page below.
-    <View style={{ flex: 1 }}>
+    <SalesScopeProvider><View style={{ flex: 1, minHeight: 0 }}>
       <WorkspaceSwitcher />
-      <View style={{ flex: 1 }}>
+      <View style={{ flex: 1, minHeight: 0 }}>
         <Slot />
       </View>
-    </View>
+    </View></SalesScopeProvider>
   );
 }

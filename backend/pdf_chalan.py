@@ -15,6 +15,8 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import Flowable, HRFlowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from services.money import format_indian_money
+
 from pdf_generator import LANDSCAPE_A4, LOGO_PATH, _escape, brand_partners_table  # noqa: F401 — LOGO_PATH kept for parity with pdf_tiles imports
 from pdf_tiles import DEFAULT_ADDRESS, DEFAULT_EMAIL, DEFAULT_MOBILE, _logo_flowable, _rupee
 
@@ -50,7 +52,7 @@ def _quantity_unit_label(value: object) -> str:
 
 def _money(value: object) -> str:
     number = _decimal(value)
-    return f"{number:,.2f}" if number is not None else "—"
+    return format_indian_money(number) if number is not None else "—"
 
 
 def _display_date(*values: object) -> str:

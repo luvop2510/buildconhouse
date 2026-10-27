@@ -1,0 +1,74 @@
+{
+  "date": "2026-10-13",
+  "environment": "hermetic CI variables; localhost Mongo URL; placeholder storage credentials; no application startup",
+  "baseline_unit": {
+    "passed": 2248,
+    "warnings": 10,
+    "seconds": 31.93
+  },
+  "race_regression_before": {
+    "failed": 8,
+    "seconds": 0.53
+  },
+  "focused_auth_security_after": {
+    "passed": 260,
+    "seconds": 2.74,
+    "note": "Includes new portal ownership/JWT/operator-input and ambiguous-write cases"
+  },
+  "full_unit_after": {
+    "passed": 2280,
+    "warnings": 10,
+    "seconds": 27.95,
+    "note": "Includes portal/JWT/login/acknowledgement races and catalog changes through this snapshot; later catalog edge fixes still in progress"
+  },
+  "pip_audit": {
+    "dependencies": 48,
+    "vulnerabilities": 0,
+    "exit_code": 0
+  },
+  "npm_audit": {
+    "counts": {
+      "info": 0,
+      "low": 0,
+      "moderate": 5,
+      "high": 22,
+      "critical": 0,
+      "total": 27
+    },
+    "gate_exit_code": 1
+  },
+  "upstream": {
+    "braces": {
+      "installed": "3.0.3",
+      "latest": "3.0.3",
+      "patched": null
+    },
+    "node-forge": {
+      "installed": "1.4.0",
+      "latest": "1.4.0",
+      "patched": null
+    },
+    "sprintf-js": {
+      "installed": "1.0.3",
+      "latest": "1.1.3",
+      "patched": null
+    },
+    "expo55_latest": "55.0.31",
+    "react_native083_latest": "0.83.10",
+    "expo_latest": "57.0.28",
+    "expo_cli_latest": "57.0.29",
+    "expo_cli_latest_node_forge_requirement": "^1.3.3"
+  },
+  "limitations": [
+    "No live database writes or production restart/deployment",
+    "No physical device or signed native acceptance",
+    "Existing principal cache cross-worker revocation grace remains 10 seconds; same-worker stale refill repaired"
+  ],
+  "ambiguous_write_regression_before": {
+    "failed": 6,
+    "passed": 8,
+    "seconds": 0.59
+  },
+  "new_http_security_cases": 12,
+  "auth_revocation_race_cases": 14
+}

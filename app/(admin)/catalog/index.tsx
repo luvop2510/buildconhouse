@@ -10,10 +10,9 @@
 //   * Family cards: 1:1 image, series overline, family name, variant swatches,
 //     price range on one line, tap = variant PDP
 // -----------------------------------------------------------------------------
-import { api } from "@/src/api/client";
 import Feather from "@expo/vector-icons/Feather";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 
@@ -21,7 +20,7 @@ import { ProductImage } from "@/src/components/ProductImage";
 import { productImageList } from "@/src/components/quotation/helpers/media";
 import { BottomSheet } from "@/src/components/BottomSheet";
 import { Alert, Chip, EmptyState, IconButton, PriceTag, ScreenTitle, SegmentedControl, Skeleton, Button } from "@/src/components/ui";
-import { catalogReferences, fetchCatalogPage, mergeCatalogPage, type CatalogEntry } from "@/src/services/catalogService";
+import { catalogGridRows, catalogPageProgress, catalogItemKey, catalogReferences, fetchCatalogPage, mergeCatalogPage, type CatalogEntry } from "@/src/services/catalogService";
 import { useBreakpoint } from "@/src/hooks/use-breakpoint";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { colors, money, PRODUCT_IMAGE_ASPECT_RATIO, radius, spacing, type } from "@/src/theme/tokens";
@@ -154,7 +153,7 @@ export default function Catalog() {
   useEffect(() => {
     if (!selectedFloorId) return;
     let active = true;
-    void api.get<Record<string, { value: string }[]>>("/catalog/facets", { floorId: selectedFloorId }).then(value => { if (active) setFacets(value); }).catch(() => {});
+    void catalogReferences.facets<Record<string, { value: string }[]>>({ floorId: selectedFloorId }).then(value => { if (active) setFacets(value); }).catch(() => {});
     return () => { active = false; };
   }, [selectedFloorId]);
   const [mode, setMode] = useState<ViewMode>("families");
@@ -248,12 +247,19 @@ export default function Catalog() {
 
   const PAGE_SIZE = 60;
   const requestIdRef = useRef(0);
+  const nextPageOffset = useRef(0);
+  const queryScope = JSON.stringify([selectedFloorId, mode, q, searchQuery, cat, brandId, subcat, series, finishes, colours, sizes]);
+  const currentQueryScope = useRef(queryScope);
+  currentQueryScope.current = queryScope;
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   // A filter/search/mode change replaces the current query result with page 1.
   // Subsequent pages are appended exclusively by `loadMore`, never simulated.
   const load = useCallback(async () => {
-    if (!selectedFloorId || q !== searchQuery) return;
+    if (!mounted.current || queryScope !== currentQueryScope.current || !selectedFloorId || q !== searchQuery) return;
     const requestId = ++requestIdRef.current;
     setLoadError(null);
+    nextPageOffset.current = 0;
     loadingMoreRef.current = false;
     setLoadingMore(false);
     setProducts(null); setFamilies(null); setTotal(null); setHasMore(false);
@@ -262,25 +268,29 @@ export default function Catalog() {
         const res = await fetchCatalogPage<Family>({
           mode: "families", q: searchQuery, brandIds: brandId, categoryIds: cat, subcategories: subcat, seriesValues: series, finishes, colours, sizes,
         }, 0, PAGE_SIZE, { floorId: selectedFloorId });
-        if (requestId !== requestIdRef.current) return;
+        if (!mounted.current || queryScope !== currentQueryScope.current || requestId !== requestIdRef.current) return;
         const items = res.items || [];
-        setFamilies(items); setTotal(res.total); setHasMore(items.length < res.total);
+        const progress = catalogPageProgress(0, items.length, res.total);
+        nextPageOffset.current = progress.nextSkip;
+        setFamilies(items); setTotal(res.total); setHasMore(progress.hasMore);
       } else {
         const res = await fetchCatalogPage<Product>({
           mode: "products", q: searchQuery, brandIds: brandId, categoryIds: cat, subcategories: subcat, seriesValues: series, finishes, colours, sizes, sort: "popular",
         }, 0, PAGE_SIZE, { floorId: selectedFloorId });
-        if (requestId !== requestIdRef.current) return;
+        if (!mounted.current || queryScope !== currentQueryScope.current || requestId !== requestIdRef.current) return;
         const items = res.items || [];
-        setProducts(items); setTotal(res.total); setHasMore(items.length < res.total);
+        const progress = catalogPageProgress(0, items.length, res.total);
+        nextPageOffset.current = progress.nextSkip;
+        setProducts(items); setTotal(res.total); setHasMore(progress.hasMore);
       }
       setLoadError(null);
     } catch {
-      if (requestId !== requestIdRef.current) return;
+      if (!mounted.current || queryScope !== currentQueryScope.current || requestId !== requestIdRef.current) return;
       if (mode === "families") setFamilies([]); else setProducts([]);
       setTotal(0); setHasMore(false);
       setLoadError("Catalog products could not be loaded. Refresh and sign in again if this persists.");
     }
-  }, [q, searchQuery, cat, brandId, subcat, series, finishes, colours, sizes, mode, selectedFloorId]);
+  }, [q, searchQuery, cat, brandId, subcat, series, finishes, colours, sizes, mode, selectedFloorId, queryScope]);
 
   useEffect(() => {
     // Only typing waits for a debounce. Startup, floor changes and categorical
@@ -301,40 +311,44 @@ export default function Catalog() {
   }, [load]);
 
   const loadMore = useCallback(async () => {
-    if (!selectedFloorId || q !== searchQuery || loadingMoreRef.current || total === null || !hasMore) return;
+    if (!mounted.current || queryScope !== currentQueryScope.current || !selectedFloorId || q !== searchQuery || loadingMoreRef.current || total === null || !hasMore) return;
     loadingMoreRef.current = true;
     setLoadingMore(true);
     const requestId = requestIdRef.current;
-    const currentLength = mode === "families" ? (families || []).length : (products || []).length;
+    const currentLength = nextPageOffset.current;
     try {
       if (mode === "families") {
         const currentFamilies = families || [];
         const res = await fetchCatalogPage<Family>({
           mode: "families", q: searchQuery, brandIds: brandId, categoryIds: cat, subcategories: subcat, seriesValues: series, finishes, colours, sizes,
         }, currentLength, PAGE_SIZE, { floorId: selectedFloorId || undefined });
-        if (requestId !== requestIdRef.current) return;
+        if (!mounted.current || queryScope !== currentQueryScope.current || requestId !== requestIdRef.current) return;
         const incoming = res.items || [];
         const merged = mergeCatalogPage(currentFamilies, incoming);
-        setFamilies(merged); setTotal(res.total); setHasMore(merged.length < res.total && incoming.length > 0);
+        const progress = catalogPageProgress(currentLength, incoming.length, res.total);
+        nextPageOffset.current = progress.nextSkip;
+        setFamilies(merged); setTotal(res.total); setHasMore(progress.hasMore);
       } else {
         const currentProducts = products || [];
         const res = await fetchCatalogPage<Product>({
           mode: "products", q: searchQuery, brandIds: brandId, categoryIds: cat, subcategories: subcat, seriesValues: series, finishes, colours, sizes, sort: "popular",
         }, currentLength, PAGE_SIZE, { floorId: selectedFloorId || undefined });
-        if (requestId !== requestIdRef.current) return;
+        if (!mounted.current || queryScope !== currentQueryScope.current || requestId !== requestIdRef.current) return;
         const incoming = res.items || [];
         const merged = mergeCatalogPage(currentProducts, incoming);
-        setProducts(merged); setTotal(res.total); setHasMore(merged.length < res.total && incoming.length > 0);
+        const progress = catalogPageProgress(currentLength, incoming.length, res.total);
+        nextPageOffset.current = progress.nextSkip;
+        setProducts(merged); setTotal(res.total); setHasMore(progress.hasMore);
       }
     } catch {
       // Preserve the loaded page and leave the user able to retry by scrolling.
     } finally {
-      if (requestId === requestIdRef.current) {
+      if (mounted.current && queryScope === currentQueryScope.current && requestId === requestIdRef.current) {
         loadingMoreRef.current = false;
         setLoadingMore(false);
       }
     }
-  }, [q, searchQuery, cat, brandId, subcat, series, finishes, colours, sizes, families, hasMore, mode, products, selectedFloorId, total]);
+  }, [q, searchQuery, cat, brandId, subcat, series, finishes, colours, sizes, families, hasMore, mode, products, selectedFloorId, total, queryScope]);
 
   const brandById: Record<string, string> = useMemo(
     () => Object.fromEntries(brands.map((b) => [b.id, b.name])), [brands],
@@ -376,28 +390,19 @@ export default function Catalog() {
   const showSkeleton = gridItems === null;
   const showEmpty = !showSkeleton && catalogItems.length === 0;
 
-  const renderCatalogItem = ({ item }: { item: Family | Product }) => (
-    <View style={{ width: `${100 / productCols}%`, paddingHorizontal: gap / 2, paddingBottom: gap }}>
-      {mode === "families" ? (
-        <FamilyCard
-          family={item as Family}
-          brandName={brandById[(item as Family).brand_id] || ""}
-          onPress={() => router.push(`/(admin)/catalog/${(item as Family).sample_product_id || (item as Family).variants[0]?.id}${item.listing_id ? `?catalogEntryId=${encodeURIComponent(item.listing_id)}` : ""}` as any)}
-        />
-      ) : (
-        <ProductCard
-          product={item as Product}
-          brandName={brandById[(item as Product).brand_id] || ""}
-          onPress={() => router.push(`/(admin)/catalog/${(item as Product).id}${item.listing_id ? `?catalogEntryId=${encodeURIComponent(item.listing_id)}` : ""}` as any)}
-        />
-      )}
-    </View>
-  );
+  const openCatalogItem = useCallback((item: Family | Product, viewMode: ViewMode) => {
+    const id = viewMode === "families" ? (item as Family).sample_product_id || (item as Family).variants[0]?.id : (item as Product).id;
+    router.push(`/(admin)/catalog/${id}${item.listing_id ? `?catalogEntryId=${encodeURIComponent(item.listing_id)}` : ""}` as any);
+  }, [router]);
+  const renderCatalogItem = useCallback(({ item }: { item: Family | Product }) => (
+    <CatalogGridCell item={item} mode={mode} columns={productCols} gap={gap}
+      brandName={brandById[item.brand_id] || ""} onOpen={openCatalogItem} />
+  ), [brandById, mode, productCols, gap, openCatalogItem]);
 
   const catalogHeader = (
     <View style={{ paddingTop: spacing.md, paddingBottom: spacing.md, gap: spacing.md }}>
       <View style={{ flexDirection: "row", gap: 8 }}>
-        <View style={styles.searchWrap}>
+        <View {...(Platform.OS === "web" ? { dataSet: { fieldShell: "true" } } : {})} style={styles.searchWrap}>
           <Feather name="search" size={16} color={colors.onSurfaceMuted} />
           <TextInput
             ref={searchRef}
@@ -525,7 +530,7 @@ export default function Catalog() {
         key={`catalog-${mode}-${productCols}`}
         data={catalogItems}
         numColumns={productCols}
-        keyExtractor={(item) => item.listing_id || (mode === "families" ? ((item as Family).family_key || (item as Family).sample_product_id) : (item as Product).id)}
+        keyExtractor={(item: Family | Product) => catalogItemKey(item)}
         renderItem={renderCatalogItem}
         style={{ flex: 1, minHeight: 0 }}
         ListHeaderComponent={catalogHeader}
@@ -535,9 +540,9 @@ export default function Catalog() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         removeClippedSubviews={Platform.OS !== "web"}
-        initialNumToRender={isPhone ? 12 : Platform.OS === "web" ? 40 : 24}
-        maxToRenderPerBatch={isPhone ? 12 : Platform.OS === "web" ? 30 : 24}
-        windowSize={isPhone ? 7 : 11}
+        initialNumToRender={catalogGridRows(productCols, isPhone ? 12 : 24)}
+        maxToRenderPerBatch={catalogGridRows(productCols, 12)}
+        windowSize={5}
         onEndReached={loadMore}
         onEndReachedThreshold={0.45}
         onScroll={(e) => { if (isNearScrollEnd(e.nativeEvent)) loadMore(); }}
@@ -597,6 +602,18 @@ export default function Catalog() {
     </View>
   );
 }
+
+// Keep loaded card/image trees stable while typing or opening filters.
+const CatalogGridCell = memo(function CatalogGridCell({ item, mode, columns, gap, brandName, onOpen }: {
+  item: Family | Product; mode: ViewMode; columns: number; gap: number; brandName: string;
+  onOpen: (item: Family | Product, mode: ViewMode) => void;
+}) {
+  const onPress = useCallback(() => onOpen(item, mode), [item, mode, onOpen]);
+  return <View style={{ width: `${100 / columns}%`, paddingHorizontal: gap / 2, paddingBottom: gap }}>
+    {mode === "families" ? <FamilyCard family={item as Family} brandName={brandName} onPress={onPress} />
+      : <ProductCard product={item as Product} brandName={brandName} onPress={onPress} />}
+  </View>;
+});
 
 // ---------- Brand pill (logo + label + count) ----------
 function BrandPill({

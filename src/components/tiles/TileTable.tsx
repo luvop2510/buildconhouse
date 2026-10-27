@@ -23,6 +23,7 @@
 import { type ReactNode, useRef, useState } from "react";
 import { FlatList, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from "react-native";
 import { Text } from "@/src/components/AppText";
+import { handleTableScrollKey } from "@/src/components/tableLayout";
 
 import { useBreakpoint } from "@/src/hooks/use-breakpoint";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
@@ -220,7 +221,7 @@ export function DataTable<T>({
   // not let `fillViewport` silently introduce a second vertical responder
   // when such a table is rendered inside PageShell (especially on tablets).
   const innerScroll = Boolean(fillViewport) && bodyMaxHeight != null && scrollOwner === "self";
-  const pinEnabled = stickyWidth > 0
+  const pinEnabled = !isPhone && stickyWidth > 0
     && !innerScroll
     && availableWidth > 0
     && availableWidth - stickyWidth >= MIN_UNPINNED_WIDTH;
@@ -252,10 +253,11 @@ export function DataTable<T>({
         </View>
       );
       if (!onRowPress) {
-        return <View testID={rowTestID?.(item, index)} style={[styles.mobileCard, selected ? styles.bodyRowSelected : null]}>{content}</View>;
+        return <View key={keyExtractor(item, index)} testID={rowTestID?.(item, index)} style={[styles.mobileCard, selected ? styles.bodyRowSelected : null]}>{content}</View>;
       }
       return (
         <Pressable
+          key={keyExtractor(item, index)}
           testID={rowTestID?.(item, index)}
           onPress={() => onRowPress(item, index)}
           accessibilityRole="button"
@@ -325,6 +327,11 @@ export function DataTable<T>({
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator
+        testID={testID ? `${testID}-scroll` : undefined}
+        accessibilityLabel="Tile orders table. Scroll horizontally for more columns."
+        tabIndex={Platform.OS === "web" ? 0 : undefined}
+        keyboardShouldPersistTaps="handled"
+        {...(Platform.OS === "web" ? { onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => handleTableScrollKey(event) } : {})}
         contentContainerStyle={styles.hScrollContent}
       >
         {/* Width is stated explicitly rather than left at "100%".
@@ -349,7 +356,7 @@ export function DataTable<T>({
           ]}
         >
           <ScrollableBody enabled={innerScroll} maxHeight={bodyMaxHeight ?? 0}>
-          <View role="row" style={[styles.headerRow, innerScroll ? stickyHeader : null]}>
+          <View role="row" style={[styles.headerRow, innerScroll && !isPhone ? stickyHeader : null]}>
             {columns.map((column) => (
               <View
                 key={column.key}
@@ -462,10 +469,11 @@ export function CellTitle({ children }: { children: ReactNode }) {
 
 /** Title over a dimmer supporting line (series · finish · size, brand · product). */
 export function CellStack({ title, subtitle }: { title: ReactNode; subtitle?: ReactNode }) {
+  const { isPhone } = useBreakpoint();
   return (
     <View style={styles.stack}>
-      <Text numberOfLines={1} style={styles.cellTitle}>{title}</Text>
-      {subtitle ? <Text numberOfLines={1} style={styles.cellSub}>{subtitle}</Text> : null}
+      <Text numberOfLines={isPhone ? 2 : 1} style={styles.cellTitle}>{title}</Text>
+      {subtitle ? <Text numberOfLines={isPhone ? 2 : 1} style={styles.cellSub}>{subtitle}</Text> : null}
     </View>
   );
 }
@@ -480,7 +488,8 @@ export function CellText({ children, muted }: { children: ReactNode; muted?: boo
 
 /** Counters and quantities — tabular figures so digits line up column-wise. */
 export function CellNumber({ value, dim }: { value: ReactNode; dim?: boolean }) {
-  return <Text style={[styles.cellNumber, dim ? styles.cellNumberDim : null]}>{value}</Text>;
+  const { isPhone } = useBreakpoint();
+  return <Text style={[styles.cellNumber, isPhone ? { textAlign: "left" } : null, dim ? styles.cellNumberDim : null]}>{value}</Text>;
 }
 
 /** Order numbers, chalan numbers, timestamps — monospaced, never truncated mid-run. */
@@ -512,16 +521,16 @@ export function ProgressCell({ percent }: { percent: number }) {
 
 const styles = StyleSheet.create({
   mobileListShell: { width: "100%", minHeight: 120 },
-  mobileListContent: { gap: spacing.s12, paddingBottom: spacing.s24 },
+  mobileListContent: { gap: spacing.lg, paddingBottom: spacing.s24 },
   mobileCard: {
     minHeight: 88,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,
     backgroundColor: colors.surfaceSecondary,
-    padding: spacing.lg,
+    padding: spacing.s20,
   },
-  mobileCardContent: { gap: spacing.s12 },
+  mobileCardContent: { gap: spacing.lg },
   mobilePrimary: { minWidth: 0 },
   mobileFields: { flexDirection: "row", flexWrap: "wrap", gap: spacing.s12 },
   mobileField: { gap: spacing.s4, minWidth: 0, width: "47%", flexGrow: 1 },
@@ -574,11 +583,11 @@ const styles = StyleSheet.create({
   // 16px per side is the table-cell padding the whole module shares; no
   // inter-cell `gap` is used, because a gap has to be replicated identically
   // on the header to keep labels over their data.
-  cell: { paddingHorizontal: spacing.lg, paddingVertical: spacing.s8 },
+  cell: { paddingHorizontal: spacing.lg, paddingVertical: spacing.lg },
 
   emptyRow: { paddingVertical: spacing.s40, paddingHorizontal: spacing.lg, alignItems: "center" },
 
-  stack: { gap: 2, width: "100%" },
+  stack: { gap: spacing.s4, width: "100%" },
   cellTitle: { ...type.bodyStrong, width: "100%" },
   cellSub: { ...type.caption, width: "100%" },
   cellText: { ...type.body, width: "100%" },

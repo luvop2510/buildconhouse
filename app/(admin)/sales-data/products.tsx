@@ -1,2 +1,2 @@
-import { OwnerWorkspace } from "@/src/components/salesData/OwnerWorkspace";
-export default function ProductsWorkspace() { return <OwnerWorkspace workspace="products" />; }
+import { Redirect } from "expo-router";
+export default function LegacyRanking() { return <Redirect href={{ pathname: "/(admin)/sales-data", params: { view: "products" } }} />; }

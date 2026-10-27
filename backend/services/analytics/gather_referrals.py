@@ -19,6 +19,7 @@ from services.analytics.filters import AnalyticsFilter, build_match
 from services.analytics.gather import collected_by_quotation
 from services.analytics.metrics import line_revenue_pipeline, revenue_pipeline
 from services.analytics.periods import buckets
+from services.analytics.kitchen_referrals import kitchen_referral_pipeline
 
 _MAX_ROWS = 5000
 
@@ -40,7 +41,8 @@ def _directory_match(
     new architect or interior designer should appear with zeroes until their
     first attributed quotation is created.
     """
-    return build_match(
+    from services.referrer_identity import referrer_query
+    query = build_match(
         AnalyticsFilter(
             floor_id=f.floor_id,
             status="any",
@@ -49,6 +51,9 @@ def _directory_match(
         accessible_floors,
         (None, None),
     ) | ({"id": f.referrer_id} if f.referrer_id else {})
+    if "referrer_type" in query:
+        query["type"] = query.pop("referrer_type")
+    return referrer_query(query)
 
 
 def _zero_referrer_row(referrer: dict) -> dict:
@@ -82,6 +87,7 @@ async def _repeat_customers_by_referrer(db, match: dict) -> dict[str, int]:
     """
     pipeline = [
         {"$match": match},
+        {"$unionWith": {"coll": "kitchen_projects", "pipeline": [*kitchen_referral_pipeline(match, include_leads=True), {"$match": {"status": {"$ne": "lead"}}}]}},
         {"$group": {
             "_id": {"referrer_id": "$referrer_id", "customer_id": "$customer_id"},
             "count": {"$sum": 1},
@@ -110,8 +116,6 @@ async def _pending_payments_by_referrer(
     orders = await db.quotations.find(
         match, {"_id": 0, "id": 1, "referrer_id": 1, "grand_total": 1},
     ).to_list(_MAX_ROWS)
-    if not orders:
-        return {}
     collected = await collected_by_quotation(db, [o.get("id") for o in orders])
     pending: dict[str, float] = {}
     for o in orders:
@@ -121,6 +125,15 @@ async def _pending_payments_by_referrer(
         outstanding = float(o.get("grand_total") or 0) - collected.get(o.get("id"), 0.0)
         if outstanding > 0:
             pending[rid] = pending.get(rid, 0.0) + outstanding
+    kitchen_rows = await db.quotations.aggregate([
+        {"$match": {"id": {"$in": []}}},
+        {"$unionWith": {"coll": "kitchen_projects", "pipeline": kitchen_referral_pipeline(match)}},
+        {"$group": {"_id": "$referrer_id", "kitchen_outstanding": {"$sum": {"$max": [0, {"$subtract": ["$grand_total", "$_kitchen_paid"]}]}}}},
+    ]).to_list(None)
+    for row in kitchen_rows:
+        rid = row.get("_id")
+        if rid:
+            pending[rid] = pending.get(rid, 0.0) + float(row.get("kitchen_outstanding", 0))
     return {rid: round(v, 2) for rid, v in pending.items()}
 
 
@@ -147,12 +160,13 @@ async def gather_referrer_raw(
 
     pipeline = [
         {"$match": match},
+        {"$unionWith": {"coll": "kitchen_projects", "pipeline": kitchen_referral_pipeline(match, include_leads=True)}},
         {"$group": {
             "_id": "$referrer_id",
             "name": {"$first": "$referrer_name"},
             "type": {"$first": "$referrer_type"},
             "customers": {"$addToSet": "$customer_id"},
-            "quotations_total": {"$sum": 1},
+            "quotations_total": {"$sum": {"$cond": [{"$eq": ["$status", "lead"]}, 0, 1]}},
             "quotations_approved": {"$sum": {"$cond": [{"$eq": ["$status", "approved"]}, 1, 0]}},
             "quotations_confirmed": {"$sum": {"$cond": [{"$eq": ["$status", "ordered"]}, 1, 0]}},
             "revenue": {"$sum": {"$cond": [{"$eq": ["$status", "ordered"]}, "$grand_total", 0]}},
@@ -229,7 +243,9 @@ async def _referrer_monthly_trend(
             AnalyticsFilter(floor_id=f.floor_id, status="ordered", referrer_id=referrer_id),
             accessible_floors, (period.start, period.end),
         )
-        rows = await db.quotations.aggregate(revenue_pipeline(match)).to_list(None)
+        pipeline = revenue_pipeline(match)
+        pipeline.insert(1, {"$unionWith": {"coll": "kitchen_projects", "pipeline": kitchen_referral_pipeline(match)}})
+        rows = await db.quotations.aggregate(pipeline).to_list(None)
         result.append({"bucket": period.label, "revenue": rows[0]["revenue"] if rows else 0.0})
     return result
 
@@ -309,6 +325,7 @@ async def _referrer_floor_split(db, f: AnalyticsFilter, accessible_floors, refer
     )
     pipeline = [
         {"$match": match},
+        {"$unionWith": {"coll": "kitchen_projects", "pipeline": kitchen_referral_pipeline(match)}},
         {"$group": {"_id": "$floor_id", "revenue": {"$sum": "$grand_total"}}},
     ]
     rows = await db.quotations.aggregate(pipeline).to_list(None)

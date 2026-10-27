@@ -1,0 +1,219 @@
+name: Performance
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: performance-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+# Each job retains the existing 20-minute bound. Browser phases consume the
+# same exact export prepared once in this workflow run; none rebuilds it.
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      export_id: ${{ steps.export.outputs.artifact-id }}
+      export_digest: ${{ steps.export.outputs.artifact-digest }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install backend performance dependencies
+        run: pip install -r backend/requirements-prod.txt pytest pytest-asyncio
+      - run: npm ci
+      - name: Verify audit orchestration and stability guards
+        run: |
+          node scripts/test-performance-audit-runner.mjs
+          node --experimental-strip-types --no-warnings scripts/test-release-stability.mjs
+      - name: Build current export and run all backend, budget and loading contracts
+        env:
+          BACKEND_URL: https://forge20-production-a8b0.up.railway.app
+        run: node scripts/run-performance-audit.mjs --ci-phase=prepare
+      - name: Preserve immutable current-run export
+        id: export
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-export-${{ github.run_id }}-${{ github.run_attempt }}
+          # Expo emits _expo/.routes.json; preserve it in the exact export.
+          include-hidden-files: true
+          path: |
+            dist/client
+            output/playwright/bundle-budget.json
+            output/performance-ci/export.json
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 6
+
+  stability:
+    needs: prepare
+    runs-on: ubuntu-latest
+    # Match @playwright/test exactly; avoid OS mirror downloads inside the audit deadline.
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+      options: --ipc=host
+    timeout-minutes: 20
+    outputs:
+      evidence_id: ${{ steps.evidence.outputs.artifact-id }}
+    env:
+      PERFORMANCE_EXPORT_ARTIFACT_ID: ${{ needs.prepare.outputs.export_id }}
+      PERFORMANCE_EXPORT_ARTIFACT_DIGEST: ${{ needs.prepare.outputs.export_digest }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - name: Verify pinned Playwright browsers
+        run: |
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const { accessSync, constants } = require('node:fs');
+          const { version } = require('@playwright/test/package.json');
+          assert.equal(version, '1.63.0', 'Update the pinned browser image with @playwright/test');
+          const { chromium, webkit } = require('@playwright/test');
+          for (const browser of [chromium, webkit]) accessSync(browser.executablePath(), constants.X_OK);
+          console.log('Pinned Playwright version and Chromium/WebKit executables verified');
+          NODE
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          artifact-ids: ${{ needs.prepare.outputs.export_id }}
+          path: .
+      - name: All routes and populated runtime stability on four profiles
+        run: node scripts/run-performance-audit.mjs --ci-phase=stability
+      - name: Preserve required stability evidence
+        id: evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-stability-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            output/playwright/stability-results.json
+            output/playwright/stability-summary.json
+            output/playwright/stability
+            output/performance-ci/stability.json
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 9
+
+  timing:
+    needs: prepare
+    runs-on: ubuntu-latest
+    # Match @playwright/test exactly; avoid OS mirror downloads inside the audit deadline.
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+      options: --ipc=host
+    timeout-minutes: 20
+    outputs:
+      evidence_id: ${{ steps.evidence.outputs.artifact-id }}
+    env:
+      PERFORMANCE_EXPORT_ARTIFACT_ID: ${{ needs.prepare.outputs.export_id }}
+      PERFORMANCE_EXPORT_ARTIFACT_DIGEST: ${{ needs.prepare.outputs.export_digest }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - name: Verify pinned Playwright browsers
+        run: |
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const { accessSync, constants } = require('node:fs');
+          const { version } = require('@playwright/test/package.json');
+          assert.equal(version, '1.63.0', 'Update the pinned browser image with @playwright/test');
+          const { chromium, webkit } = require('@playwright/test');
+          for (const browser of [chromium, webkit]) accessSync(browser.executablePath(), constants.X_OK);
+          console.log('Pinned Playwright version and Chromium/WebKit executables verified');
+          NODE
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          artifact-ids: ${{ needs.prepare.outputs.export_id }}
+          path: .
+      - name: All 60 timing scenarios and unchanged budgets on four profiles
+        run: node scripts/run-performance-audit.mjs --ci-phase=timing
+      - name: Preserve required timing evidence
+        id: evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-timing-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            output/playwright/performance-results.json
+            output/playwright/performance-summary.json
+            output/playwright/performance
+            output/performance-ci/timing.json
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 9
+
+  # Preserve the branch-protected check name; skipped/cancelled/failed phases,
+  # missing artifacts or inconsistent reports must make this check fail.
+  performance:
+    if: always()
+    needs: [prepare, stability, timing]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PERFORMANCE_EXPORT_ARTIFACT_ID: ${{ needs.prepare.outputs.export_id }}
+      PERFORMANCE_EXPORT_ARTIFACT_DIGEST: ${{ needs.prepare.outputs.export_digest }}
+      PERFORMANCE_PREPARE_RESULT: ${{ needs.prepare.result }}
+      PERFORMANCE_STABILITY_RESULT: ${{ needs.stability.result }}
+      PERFORMANCE_TIMING_RESULT: ${{ needs.timing.result }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          artifact-ids: ${{ needs.prepare.outputs.export_id }}
+          path: .
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          artifact-ids: ${{ needs.stability.outputs.evidence_id }}
+          path: output
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          artifact-ids: ${{ needs.timing.outputs.evidence_id }}
+          path: output
+      - name: Require every phase and verify source, artifact and complete evidence
+        run: node scripts/run-performance-audit.mjs --ci-phase=aggregate
+      - name: Preserve combined performance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-audit-${{ github.run_id }}-${{ github.run_attempt }}
+          path: output
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 9

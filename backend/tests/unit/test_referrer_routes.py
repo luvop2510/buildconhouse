@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from models import ReferrerCreate, UserPublic
+from models import ReferrerCreate, ReferrerUpdate, UserPublic
 from routes import referrer_routes
 
 
@@ -31,13 +31,17 @@ class _Collection:
 
     def find(self, query, *_a, **_kw):
         def matches(doc):
-            for key, value in query.items():
-                if isinstance(value, dict) and "$in" in value:
-                    if doc.get(key) not in value["$in"]:
-                        return False
-                elif doc.get(key) != value:
-                    return False
-            return True
+            def matches_query(doc, clauses):
+                for key, value in clauses.items():
+                    if key == '$or':
+                        if not any(matches_query(doc, clause) for clause in value): return False
+                    elif key == '$and':
+                        if not all(matches_query(doc, clause) for clause in value): return False
+                    elif isinstance(value, dict) and '$in' in value:
+                        if doc.get(key) not in value['$in']: return False
+                    elif doc.get(key) != value: return False
+                return True
+            return matches_query(doc, query)
         matched = [d for d in self._docs if matches(d)]
         return _Cursor(matched)
 
@@ -46,12 +50,14 @@ class _Collection:
 
     async def update_one(self, selector, _update):
         self.updated_selector = selector
+        from types import SimpleNamespace
+        doc = await self.find_one(selector)
+        if doc: doc.update(_update.get('$set', {}))
+        return SimpleNamespace(matched_count=int(doc is not None))
 
     async def find_one(self, selector, *_a, **_kw):
-        for doc in self._docs:
-            if all(doc.get(key) == value for key, value in selector.items()):
-                return doc
-        return None
+        docs = await self.find(selector).to_list(1)
+        return docs[0] if docs else None
 
 
 class _FakeDb:
@@ -153,3 +159,61 @@ def test_archive_referrer_write_stays_on_the_authorized_floor(monkeypatch):
     asyncio.run(referrer_routes.archive_referrer("r1", active=False, user=_user()))
 
     assert fake_db.referrers.updated_selector == {"id": "r1", "floor_id": "first-floor"}
+
+
+def test_shared_reference_is_reused_across_floors_without_exposing_private_entries(monkeypatch):
+    shared = {'id': 'shared', 'name': 'One studio', 'type': 'architect', 'floor_id': 'second-floor', 'normalized_name': 'one studio', 'shared_across_floors': True, 'created_by': 'u'}
+    private = {**shared, 'id': 'private', 'name': 'Private studio', 'shared_across_floors': False}
+    fake_db = _FakeDb([shared, private])
+    monkeypatch.setattr(referrer_routes, 'db', fake_db)
+    result = asyncio.run(referrer_routes.list_referrers(type='architect', include_inactive=False, user=_user()))
+    assert [row.id for row in result] == ['shared']
+    existing = asyncio.run(referrer_routes.create_referrer(ReferrerCreate(name='ONE STUDIO', type='architect'), user=_user()))
+    assert existing.id == 'shared'
+    assert fake_db.referrers.inserted is None
+
+
+def test_new_reference_is_shared_with_contact_details(monkeypatch):
+    fake_db = _FakeDb([])
+    monkeypatch.setattr(referrer_routes, 'db', fake_db)
+    result = asyncio.run(referrer_routes.create_referrer(ReferrerCreate(name='Studio', type='architect', company='Company', phone='123', email='studio@example.com', address='Address'), user=_user()))
+    assert result.shared_across_floors is True
+    assert result.company == 'Company' and result.email == 'studio@example.com'
+    assert result.floor_id == 'first-floor'
+
+
+def test_owner_edits_and_shares_existing_identity_with_concurrency_guard(monkeypatch):
+    import pytest
+    from fastapi import HTTPException
+    doc = {'id': 'r1', 'name': 'Studio', 'type': 'architect', 'floor_id': 'first-floor', 'normalized_name': 'studio', 'updated_at': 'old', 'created_by': 'u'}
+    fake_db = _FakeDb([doc])
+    monkeypatch.setattr(referrer_routes, 'db', fake_db)
+    body = ReferrerUpdate(name='Studio updated', type='architect', company='Company', updated_at='old')
+    result = asyncio.run(referrer_routes.update_referrer('r1', body, user=_user('owner')))
+    assert result.id == 'r1' and result.shared_across_floors is True
+    assert result.floor_id == 'first-floor' and result.name == 'Studio updated'
+    with pytest.raises(HTTPException) as stale:
+        asyncio.run(referrer_routes.update_referrer('r1', body, user=_user('owner')))
+    assert stale.value.status_code == 409
+    with pytest.raises(HTTPException) as forbidden:
+        asyncio.run(referrer_routes.update_referrer('r1', body, user=_user()))
+    assert forbidden.value.status_code == 403
+
+
+def test_shared_directory_requires_floor_access_and_owner_archive(monkeypatch):
+    import pytest
+    from fastapi import HTTPException
+    doc = {'id': 'r1', 'name': 'Shared', 'type': 'architect', 'floor_id': 'first-floor', 'normalized_name': 'shared', 'shared_across_floors': True, 'created_by': 'u'}
+    fake_db = _FakeDb([doc])
+    monkeypatch.setattr(referrer_routes, 'db', fake_db)
+    denied = _user()
+    denied.floor_ids = []
+    with pytest.raises(HTTPException) as no_floor:
+        asyncio.run(referrer_routes.list_referrers(type=None, include_inactive=False, user=denied))
+    assert no_floor.value.status_code == 403
+    async def scoped(*_args, **_kwargs): return doc
+    monkeypatch.setattr(referrer_routes, 'get_floor_scoped_or_404', scoped)
+    with pytest.raises(HTTPException) as no_owner:
+        asyncio.run(referrer_routes.archive_referrer('r1', active=False, user=_user()))
+    assert no_owner.value.status_code == 403
+    assert fake_db.referrers.updated_selector is None

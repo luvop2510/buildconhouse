@@ -13,6 +13,7 @@
 // Presentation components remain stateless and pluggable.
 // -----------------------------------------------------------------------------
 import * as Haptics from "expo-haptics";
+import { useFocusEffect } from "expo-router";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Platform } from "react-native";
 import { TextInput } from "@/src/components/AppText";
@@ -28,14 +29,17 @@ import { draftNeedsCopy, type BuilderDraft } from "../helpers/draftRecovery";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import type { HistoryApi } from "@/src/hooks/useHistory";
 import { playAddProductSound } from "@/src/services/soundService";
-import { catalogReferences, CATALOG_PAGE_SIZE, clearCatalogCache, fetchCatalogPage } from "@/src/services/catalogService";
+import { catalogPageProgress, catalogReferences, CATALOG_PAGE_SIZE, clearCatalogCache, fetchCatalogPage, mergeCatalogPage } from "@/src/services/catalogService";
 import { downloadApiFile } from "@/src/utils/downloadFile";
 
 import { computeTotals, computeLineBreakdown, type LineBreakdown } from "../helpers/pricing";
 import { enqueueQuotationPersist } from "../helpers/autosave";
 import { productImageList } from "../helpers/media";
 import { applyQuotationRowOrder, moveQuotationLine } from "../helpers/reorder";
+import { restoreSingleCatalogChoice } from "../helpers/catalogFilters";
 import { suggestedProductArea } from "../helpers/areas";
+import { godownQuotationPrice } from "../helpers/godown";
+import type { GodownLot } from "@/src/api/godownStock";
 import { addProductAndConcealedPart, syncDefaultIncludedParts } from "../helpers/concealedParts";
 import {
   Brand, BuilderRow, BuilderState, Category, Customer, DEFAULT_ROOMS, DescSheetState, DiscountSheetState,
@@ -118,6 +122,9 @@ export type BuilderApi = {
   // Reference data
   customers: Customer[];
   referrers: Referrer[];
+  referrersLoading: boolean;
+  referrersError: string | null;
+  retryReferrers: () => void;
   categories: Category[];
   categoryById: Record<string, string>;
   referenceLoading: boolean;
@@ -143,15 +150,15 @@ export type BuilderApi = {
   searchRef: React.MutableRefObject<TextInput | null>;
 
   // V4 rail + explorer state
+  activeFloorId: string;
   brands: Brand[];
+  categoriesLoading: boolean;
+  categoriesError: string | null;
+  retryCategories: () => void;
   categoriesForRail: Category[];       // filtered by selectedBrandId if set
   selectedBrandIds: string[];
   selectedCategoryIds: string[];
-  selectedFinishes: string[];
-  selectedColours: string[];
   selectedSizes: string[];
-  setSelectedFinishes: (values: string[]) => void;
-  setSelectedColours: (values: string[]) => void;
   setSelectedSizes: (values: string[]) => void;
   selectedBrandId: string | null;
   setSelectedBrandId: (id: string | null) => void;
@@ -203,6 +210,7 @@ export type BuilderApi = {
   quotationId: string | null;
   quotationNumber: string | null;
   customerCompleted: boolean;
+  customerOutcome: "won" | "lost" | null;
   saveState: SaveState;
   savedAt: Date | null;
   saveLabel: string;
@@ -210,6 +218,7 @@ export type BuilderApi = {
   finalize: () => Promise<void>;
   workflowBusy: boolean;
   generateOfficialQuotation: (includeDimensions?: boolean) => Promise<void>;
+  generateQuotationExcel: () => Promise<void>;
   generateProductPpt: () => Promise<void>;
   placeOrder: () => Promise<void>;
 
@@ -220,11 +229,10 @@ export type BuilderApi = {
   customerSwitcherOpen: boolean; setCustomerSwitcherOpen: (v: boolean) => void;
   setReferrer: (type: "architect" | "interior_designer", id: string, name: string) => void;
   clearReferrer: () => void;
-  createReferrer: (data: { name: string; type: "architect" | "interior_designer" }) => Promise<string | null>;
+  createReferrer: (data: { name: string; type: "architect" | "interior_designer"; company?: string }) => Promise<string | null>;
   referrerSwitcherOpen: boolean; setReferrerSwitcherOpen: (v: boolean) => void;
   addFromProduct: (p: Product, variant?: ProductVariant, quantity?: number, notes?: string) => void;
   updateLine: (id: string, patch: Partial<Line>, coalesceKey?: string) => void;
-  assignAreaToLines: (ids: string[], area: string | null) => void;
   removeLine: (id: string) => void;
   /** Cancel a product with an auditable order-line adjustment when saved. */
   cancelLine: (id: string) => Promise<boolean>;
@@ -349,15 +357,17 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
 
   // V4 rail + explorer
   const [brands, setBrands] = useState<Brand[]>([]);
-  const [selectedBrandIds, setSelectedBrandIds] = useState<string[]>([]);
-  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
-  const [selectedFinishes, setSelectedFinishes] = useState<string[]>([]);
-  const [selectedColours, setSelectedColours] = useState<string[]>([]);
+  const [selectedBrandId, selectBrandId] = useState<string | null>(null);
+  const [selectedCategoryId, selectCategoryId] = useState<string | null>(null);
+  const selectedBrandIds = useMemo(() => selectedBrandId ? [selectedBrandId] : [], [selectedBrandId]);
+  const selectedCategoryIds = useMemo(() => selectedCategoryId ? [selectedCategoryId] : [], [selectedCategoryId]);
   const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
-  const selectedBrandId = selectedBrandIds[0] || null;
-  const selectedCategoryId = selectedCategoryIds[0] || null;
   const [sortKey, setSortKey] = useState<SortKey>("popular");
   const [categoriesForRail, setCategoriesForRail] = useState<Category[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(false);
+  const [categoriesError, setCategoriesError] = useState<string | null>(null);
+  const [categoriesRetry, setCategoriesRetry] = useState(0);
+  const retryCategories = useCallback(() => setCategoriesRetry(value => value + 1), []);
   const [favouriteIds, setFavouriteIds] = useState<string[]>([]);
   const [recentQuotations, setRecentQuotations] = useState<RecentQuotation[]>([]);
   const [productModal, setProductModal] = useState<Product | null>(null);
@@ -383,6 +393,8 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   const [quotationId, setQuotationId] = useState<string | null>(null);
   const [quotationNumber, setQuotationNumber] = useState<string | null>(null);
   const [completionSnapshot, setCompletionSnapshot] = useState<{ id: string; customerId: string; floorId: string; completed: boolean } | null>(null);
+  const [outcomeSnapshot, setOutcomeSnapshot] = useState<{ id: string; floorId: string; outcome: "won" | "lost" } | null>(null);
+  const customerOutcome = outcomeSnapshot?.id === quotationId && outcomeSnapshot?.floorId === activeFloorId ? outcomeSnapshot.outcome : null;
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [workflowBusy, setWorkflowBusy] = useState(false);
@@ -420,14 +432,20 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
 
   // Referrer reference data + switcher sheet
   const [referrers, setReferrers] = useState<Referrer[]>([]);
+  const [referrersLoading, setReferrersLoading] = useState(false);
+  const [referrersError, setReferrersError] = useState<string | null>(null);
+  const [referrersRetry, setReferrersRetry] = useState(0);
+  const retryReferrers = useCallback(() => setReferrersRetry(value => value + 1), []);
+  const referrerCreatePending = useRef(false);
   const [referrerSwitcherOpen, setReferrerSwitcherOpen] = useState(false);
   const [referenceLoading, setReferenceLoading] = useState(true);
   const [referenceError, setReferenceError] = useState<string | null>(null);
   const [referenceRetry, setReferenceRetry] = useState(0);
   const retryReferenceData = useCallback(() => setReferenceRetry((value) => value + 1), []);
 
+// Refresh customers after returning from customer/quotation deletion.
 // ---------- Load reference data ----------
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     const controller = new AbortController();
     let current = true;
     setReferenceLoading(true);
@@ -440,7 +458,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
         // Everything else is fetched only when its corresponding panel is used,
         // keeping the first mobile screen from competing with seven requests.
         const [cs, cats, brs] = await Promise.all([
-          api.get<Customer[]>("/customers", request),
+          api.get<Customer[]>("/customers", { ...request, cacheMs: 0 }),
           catalogReferences.categories<Category[]>(null, request),
           catalogReferences.brands<Brand[]>(request),
         ]);
@@ -479,7 +497,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     // history is intentionally not a dependency: reference retries must not
     // restart just because the undoable quotation document changed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [referenceRetry, activeFloorId]);
+  }, [referenceRetry, activeFloorId]));
 
   // Product shortcuts are useful but non-essential. Fetch them on first use
   // rather than making every builder launch pay for both endpoints.
@@ -502,18 +520,19 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   // The recent-quotation rail is intentionally deferred until the first frame
   // has painted. It remains available immediately afterwards, without
   // delaying the builder's primary controls on a slow mobile connection.
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     const controller = new AbortController();
+    setRecentQuotations([]);
     const timer = setTimeout(() => {
       if (!activeFloorId) return;
       api.get<RecentQuotation[]>("/quotations/recent?limit=10", {
-        floorId: activeFloorId, signal: controller.signal, cacheMs: 30_000,
+        floorId: activeFloorId, signal: controller.signal, cacheMs: 0,
       }).then(setRecentQuotations).catch((error: any) => {
         if (error?.name !== "AbortError") console.warn("Failed to load recent quotations", error);
       });
     }, 250);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [referenceRetry, activeFloorId]);
+  }, [activeFloorId]));
 
   // Referrers are only needed when their sheet opens, so defer their list
   // until that user intent instead of including it in builder bootstrap.
@@ -521,32 +540,45 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     if (!referrerSwitcherOpen) return;
     const controller = new AbortController();
     if (!activeFloorId) return;
-    api.get<Referrer[]>("/referrers", { floorId: activeFloorId, signal: controller.signal, cacheMs: 5 * 60_000 })
-      .then(setReferrers)
+    setReferrers([]); setReferrersLoading(true); setReferrersError(null);
+    api.get<Referrer[]>("/referrers?include_counts=true", { floorId: activeFloorId, signal: controller.signal })
+      .then(result => { if (!controller.signal.aborted) setReferrers(result); })
       .catch((error: any) => {
-        if (error?.name !== "AbortError") console.warn("Failed to load referrers", error);
-      });
+        if (!controller.signal.aborted) setReferrersError(typeof error?.detail === "string" ? error.detail : "Could not load references. Retry to choose an existing contact.");
+      }).finally(() => { if (!controller.signal.aborted) setReferrersLoading(false); });
     return () => controller.abort();
-  }, [referrerSwitcherOpen, activeFloorId]);
+  }, [referrerSwitcherOpen, activeFloorId, referrersRetry]);
 
-  // Category facets combine every selected brand; an empty selection means all.
+  // A brand is a single navigation scope. Clear its previous category before
+  // loading the next one so a category from another supplier cannot hide items.
   useEffect(() => {
-    if (!selectedBrandIds.length) { setCategoriesForRail(categories); return; }
+    setCategoriesError(null);
+    if (!selectedBrandId) { setCategoriesForRail(categories); setCategoriesLoading(false); return; }
     const controller = new AbortController();
     let current = true;
-    void Promise.all(selectedBrandIds.map(id => catalogReferences.categories<Category[]>(id,
-      { floorId: activeFloorId, signal: controller.signal }))).then(groups => {
-        if (current) setCategoriesForRail([...new Map(groups.flat().map(category => [category.id, category])).values()]);
-      }).catch(error => { if (current && error?.name !== "AbortError") console.warn("Failed to load brand categories", error); });
+    setCategoriesForRail([]);
+    setCategoriesLoading(true);
+    void catalogReferences.categories<Category[]>(selectedBrandId,
+      { floorId: activeFloorId, signal: controller.signal }).then(group => {
+        if (current) {
+          setCategoriesForRail(group);
+          // Old multi-brand quotations may have saved a category belonging only
+          // to another supplier. Never retain an invisible incompatible choice.
+          selectCategoryId(selected => group.some(category => category.id === selected) ? selected : null);
+        }
+      }).catch(error => {
+        if (current && error?.name !== "AbortError") setCategoriesError("Could not load categories. Please retry.");
+      }).finally(() => { if (current) setCategoriesLoading(false); });
     return () => { current = false; controller.abort(); };
-  }, [selectedBrandIds, categories, activeFloorId]);
+  }, [selectedBrandId, categories, activeFloorId, categoriesRetry]);
 
   const setSelectedBrandId = useCallback((id: string | null) => {
-    setSelectedBrandIds(current => id === null ? [] : current.includes(id) ? current.filter(value => value !== id) : [...current, id]);
-    if (id === null) setSelectedCategoryIds([]);
-  }, []);
+    selectBrandId(id);
+    selectCategoryId(null);
+    if (categoriesError && id === selectedBrandId) retryCategories();
+  }, [categoriesError, selectedBrandId, retryCategories]);
   const setSelectedCategoryId = useCallback((id: string | null) => {
-    setSelectedCategoryIds(current => id === null ? [] : current.includes(id) ? current.filter(value => value !== id) : [...current, id]);
+    selectCategoryId(id);
   }, []);
   const setPickerTab = useCallback((tab: PickerTab) => setPickerTabState(tab), []);
 
@@ -562,13 +594,23 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
 
   // ---------- Product explorer fetch (page 1 on filter/search/sort change) ----------
   const productRequestGeneration = useRef(0);
+  const nextProductOffset = useRef(0);
+  const productQueryScope = JSON.stringify([activeFloorId, q, selectedBrandIds, selectedCategoryIds, selectedSizes, sortKey, productRetry]);
+  const currentProductScope = useRef(productQueryScope);
+  currentProductScope.current = productQueryScope;
+  const productMounted = useRef(true);
+  useEffect(() => { productMounted.current = true; return () => { productMounted.current = false; }; }, []);
   const loadMoreController = useRef<AbortController | null>(null);
+  const loadingMoreRef = useRef(false);
   useEffect(() => {
     if (!activeFloorId) {
       setProducts([]); setProductTotal(0); setProductHasMore(false);
       return;
     }
     const generation = ++productRequestGeneration.current;
+    nextProductOffset.current = 0;
+    loadingMoreRef.current = false;
+    setProductLoadingMore(false);
     const controller = new AbortController();
     let cancelled = false;
     setProductLoading(true);
@@ -576,24 +618,26 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     const t = setTimeout(async () => {
       // Safety net — never let the grid spin forever even if something
       // upstream (network, backend) genuinely stalls. 12s is generous.
-      const safety = setTimeout(() => { if (!cancelled) { setProductLoading(false); setProductError("Product search is taking longer than expected. Please retry."); controller.abort(); } }, 12000);
+      const safety = setTimeout(() => { if (!cancelled && productMounted.current && productQueryScope === currentProductScope.current) { setProductLoading(false); setProductError("Product search is taking longer than expected. Please retry."); controller.abort(); } }, 12000);
       try {
         const res = await fetchCatalogPage<CatalogFamily>({
-          mode: "families", q, brandIds: selectedBrandIds, categoryIds: selectedCategoryIds, finishes: selectedFinishes, colours: selectedColours, sizes: selectedSizes, sort: sortKey,
+          mode: "families", q, brandIds: selectedBrandIds, categoryIds: selectedCategoryIds, sizes: selectedSizes, sort: sortKey,
         }, 0, CATALOG_PAGE_SIZE, { floorId: activeFloorId, signal: controller.signal });
-        if (cancelled || generation !== productRequestGeneration.current) return;
+        if (cancelled || !productMounted.current || productQueryScope !== currentProductScope.current || generation !== productRequestGeneration.current) return;
         const items = (res.items || []).map(familyCardToProduct).filter((item): item is Product => item !== null);
         setProducts(items);
         setProductTotal(res.total || 0);
-        setProductHasMore(items.length < (res.total || 0));
+        const progress = catalogPageProgress(0, (res.items || []).length, res.total || 0);
+        nextProductOffset.current = progress.nextSkip;
+        setProductHasMore(progress.hasMore);
       } catch (e) {
-        if (!cancelled && generation === productRequestGeneration.current && (e as any)?.name !== "AbortError") {
+        if (!cancelled && productMounted.current && productQueryScope === currentProductScope.current && generation === productRequestGeneration.current && (e as any)?.name !== "AbortError") {
           setProductError((e as any)?.detail || "Could not load products. Check your connection and retry.");
           setProducts([]); setProductTotal(0); setProductHasMore(false);
         }
       } finally {
         clearTimeout(safety);
-        if (!cancelled) setProductLoading(false);
+        if (!cancelled && productMounted.current && productQueryScope === currentProductScope.current) setProductLoading(false);
       }
     }, q.trim() ? 300 : 0);
     return () => {
@@ -602,15 +646,14 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
       loadMoreController.current?.abort();
       clearTimeout(t);
     };
-  }, [q, selectedBrandIds, selectedCategoryIds, selectedFinishes, selectedColours, selectedSizes, sortKey, activeFloorId, productRetry]);
+  }, [q, selectedBrandIds, selectedCategoryIds, selectedSizes, sortKey, activeFloorId, productRetry, productQueryScope]);
 
   // ---------- Infinite scroll — fetch the next page and append ----------
-  const loadingMoreRef = useRef(false);
   const loadMoreProducts = useCallback(() => {
-    if (loadingMoreRef.current || productLoading || !productHasMore) return;
+    if (!productMounted.current || productQueryScope !== currentProductScope.current || loadingMoreRef.current || productLoading || !productHasMore) return;
     loadingMoreRef.current = true;
     setProductLoadingMore(true);
-    const skipAt = products.length;
+    const skipAt = nextProductOffset.current;
     const generation = productRequestGeneration.current;
     const controller = new AbortController();
     loadMoreController.current?.abort();
@@ -618,27 +661,26 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     (async () => {
       try {
         const res = await fetchCatalogPage<CatalogFamily>({
-          mode: "families", q, brandIds: selectedBrandIds, categoryIds: selectedCategoryIds, finishes: selectedFinishes, colours: selectedColours, sizes: selectedSizes, sort: sortKey,
+          mode: "families", q, brandIds: selectedBrandIds, categoryIds: selectedCategoryIds, sizes: selectedSizes, sort: sortKey,
         }, skipAt, CATALOG_PAGE_SIZE, { floorId: activeFloorId, signal: controller.signal });
-        if (controller.signal.aborted || generation !== productRequestGeneration.current) return;
+        if (controller.signal.aborted || !productMounted.current || productQueryScope !== currentProductScope.current || generation !== productRequestGeneration.current) return;
         const items = (res.items || []).map(familyCardToProduct).filter((item): item is Product => item !== null);
-        setProducts((cur) => {
-          const seen = new Set(cur.map((p) => p.id));
-          return [...cur, ...items.filter((p) => !seen.has(p.id))];
-        });
+        setProducts((cur) => mergeCatalogPage(cur, items));
         setProductTotal(res.total || 0);
-        setProductHasMore(skipAt + items.length < (res.total || 0));
+        const progress = catalogPageProgress(skipAt, (res.items || []).length, res.total || 0);
+        nextProductOffset.current = progress.nextSkip;
+        setProductHasMore(progress.hasMore);
       } catch (e) {
-        if ((e as any)?.name !== "AbortError") console.warn("Load more products failed", e);
+        if (productMounted.current && productQueryScope === currentProductScope.current && (e as any)?.name !== "AbortError") console.warn("Load more products failed", e);
       } finally {
         if (loadMoreController.current === controller) {
           loadMoreController.current = null;
           loadingMoreRef.current = false;
-          setProductLoadingMore(false);
+          if (productMounted.current && productQueryScope === currentProductScope.current) setProductLoadingMore(false);
         }
       }
     })();
-  }, [productLoading, productHasMore, products.length, q, selectedBrandIds, selectedCategoryIds, selectedFinishes, selectedColours, selectedSizes, sortKey, activeFloorId]);
+  }, [productLoading, productHasMore, q, selectedBrandIds, selectedCategoryIds, selectedSizes, sortKey, activeFloorId, productQueryScope]);
 
   // ---------- Autosave ----------
   const persist = useCallback(async (): Promise<string | null> => {
@@ -660,7 +702,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
         ui_state: {
           activeRoom: s.activeRoom,
           collapsedRooms: s.collapsedRooms,
-          selectedBrandId, selectedCategoryId, selectedBrandIds, selectedCategoryIds, selectedFinishes, selectedColours, selectedSizes, sortKey,
+          selectedBrandId, selectedCategoryId, selectedBrandIds, selectedCategoryIds, selectedSizes, sortKey,
         },
         project_discount_pct: s.projectDiscount,
         category_discounts: s.categoryDiscounts,
@@ -701,7 +743,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
       }
     };
     return enqueueQuotationPersist(persistQueue, run);
-  }, [s, quotationId, selectedBrandId, selectedCategoryId, selectedBrandIds, selectedCategoryIds, selectedFinishes, selectedColours, selectedSizes, sortKey, activeFloorId, accountId, canCreateQuotation, canUpdateQuotation, onFinalize]);
+  }, [s, quotationId, selectedBrandId, selectedCategoryId, selectedBrandIds, selectedCategoryIds, selectedSizes, sortKey, activeFloorId, accountId, canCreateQuotation, canUpdateQuotation, onFinalize]);
 
   useEffect(() => {
     if (lastSavedStateRef.current === s) return;
@@ -758,10 +800,12 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     setRecoveryBusy(true);
     try {
       let copy = false;
+      let recoveredOutcome: "won" | "lost" | null = null;
       if (draft.quotationId) {
         try {
-          const server = await api.get<{ updated_at?: string; status?: string }>(`/quotations/${draft.quotationId}`, { floorId: activeFloorId });
+          const server = await api.get<{ updated_at?: string; status?: string; customer_outcome?: "won" | "lost" | null }>(`/quotations/${draft.quotationId}`, { floorId: activeFloorId });
           copy = draftNeedsCopy(draft, server);
+          recoveredOutcome = server.customer_outcome || null;
         } catch (error: any) {
           // An unavailable/deleted source cannot authorize overwriting it.
           // Restore locally as a separate draft, preserving every entered line.
@@ -778,6 +822,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
       serverSavedAtRef.current = copy ? null : draft.serverSavedAt;
       setQuotationId(copy ? null : draft.quotationId);
       setQuotationNumber(copy ? null : draft.quotationNumber);
+      setOutcomeSnapshot(!copy && draft.quotationId && recoveredOutcome ? { id: draft.quotationId, floorId: activeFloorId, outcome: recoveredOutcome } : null);
       history.replace(draft.state);
       setSaveState("idle");
       setSavedAt(null);
@@ -804,6 +849,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     try {
       const doc = await api.get<any>(`/quotations/${id}?with_completion=true`, { floorId: activeFloorId });
       if (request !== restoreRequest.current) return;
+      setOutcomeSnapshot(doc.customer_outcome === "won" || doc.customer_outcome === "lost" ? { id: doc.id, floorId: activeFloorId, outcome: doc.customer_outcome } : null);
       documentGeneration.current += 1;
       if (saveTimer.current) clearTimeout(saveTimer.current);
       const collapsed: Record<string, boolean> = {};
@@ -857,10 +903,8 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
       setSaveState("saved");
       setSavedAt(new Date(doc.updated_at || Date.now()));
       // Restore UI filter state too
-      setSelectedBrandIds(Array.isArray(ui.selectedBrandIds) ? ui.selectedBrandIds.filter((id: unknown): id is string => typeof id === "string") : ui.selectedBrandId ? [ui.selectedBrandId] : []);
-      setSelectedCategoryIds(Array.isArray(ui.selectedCategoryIds) ? ui.selectedCategoryIds.filter((id: unknown): id is string => typeof id === "string") : ui.selectedCategoryId ? [ui.selectedCategoryId] : []);
-      setSelectedFinishes(Array.isArray(ui.selectedFinishes) ? ui.selectedFinishes : []);
-      setSelectedColours(Array.isArray(ui.selectedColours) ? ui.selectedColours : []);
+      selectBrandId(restoreSingleCatalogChoice(ui.selectedBrandIds, ui.selectedBrandId));
+      selectCategoryId(restoreSingleCatalogChoice(ui.selectedCategoryIds, ui.selectedCategoryId));
       setSelectedSizes(Array.isArray(ui.selectedSizes) ? ui.selectedSizes : []);
       if (ui.sortKey) setSortKey(ui.sortKey);
       if (announce) toast.success(`Restored ${doc.number}`);
@@ -916,7 +960,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     setQuotationNumber(null);
     setSaveState("idle");
     setSavedAt(null);
-    setSelectedBrandIds([]); setSelectedCategoryIds([]); setSelectedFinishes([]); setSelectedColours([]); setSelectedSizes([]);
+    selectBrandId(null); selectCategoryId(null); setSelectedSizes([]);
     setQ("");
   }, [history, accountId, activeFloorId, canCreateQuotation]);
 
@@ -1081,19 +1125,24 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     }
   }, [history, quotationId, activeFloorId]);
 
-  const createReferrer = useCallback(async (data: { name: string; type: "architect" | "interior_designer" }) => {
+  const createReferrer = useCallback(async (data: { name: string; type: "architect" | "interior_designer"; company?: string }) => {
+    if (referrerCreatePending.current) return null;
+    referrerCreatePending.current = true;
+    const generation = documentGeneration.current;
     try {
       const created = await api.post<Referrer>("/referrers", data, { floorId: activeFloorId });
-      setReferrers((cur) => [...cur, created].sort((a, b) => a.name.localeCompare(b.name)));
+      if (generation !== documentGeneration.current) return null;
+      setReferrers((cur) => [...cur.filter(item => item.id !== created.id), created].sort((a, b) => a.name.localeCompare(b.name)));
       setReferrer(created.type, created.id, created.name);
       toast.success(`${created.name} added`);
       return created.id;
     } catch (e: any) {
       toast.error(e?.detail || "Could not create referrer");
       return null;
-    }
+    } finally { referrerCreatePending.current = false; }
   }, [setReferrer, activeFloorId]);
 
+  const applyHistory = history.apply;
   const addFromProduct = useCallback((p: Product, variant?: ProductVariant, quantity = 1, notes?: string) => {
     if (catalogPriceUnknown(p, variant)) {
       setProductModal(variant ? { ...p, ...variant, id: variant.id || p.id, name: variant.name || p.name, price_unknown: true } : p);
@@ -1102,7 +1151,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     }
     Haptics.selectionAsync();
     playAddProductSound();
-    history.apply((cur) => {
+    applyHistory((cur) => {
       const existingIds = new Set(cur.lines.map((line) => line.id));
       return {
         ...cur,
@@ -1119,7 +1168,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
         }),
       };
     });
-  }, [history, categoryById]);
+  }, [applyHistory, categoryById]);
 
   // ---------- Seed from Catalog's "Add to quotation" CTA ----------
   const appliedInitialProductRef = useRef(false);
@@ -1141,32 +1190,36 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     })();
   }, [initialProductId, initialCatalogEntryId, addFromProduct, activeFloorId]);
 
-  const appliedInitialGodownRef = useRef(false);
+  const appliedInitialGodownRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!initialGodownStockId || !activeFloorId || appliedInitialGodownRef.current) return;
-    appliedInitialGodownRef.current = true;
+    const seedKey = `${activeFloorId}:${initialGodownStockId}:${initialGodownVariant ?? "base"}`;
+    if (!initialGodownStockId || !activeFloorId || appliedInitialGodownRef.current === seedKey) return;
+    const controller = new AbortController();
+    const generation = documentGeneration.current;
     (async () => {
       try {
-        const lot = await api.get<any>(`/godown-stock/${initialGodownStockId}`, { floorId: activeFloorId });
-        if (!(Number(lot.transferable_qty ?? lot.available_qty) > 0)) throw new Error("This lot is no longer available");
-        const variantIndex = initialGodownVariant === null || initialGodownVariant === undefined ? -1 : Number(initialGodownVariant);
-        const variant = Number.isInteger(variantIndex) && variantIndex >= 0 ? lot.price_variants?.[variantIndex] : null;
-        const selectedPrice = Number(variant?.price ?? lot.unit_price ?? 0);
-        history.apply(cur => ({ ...cur, lines: [...cur.lines, {
-          id: `godown-${lot.id}-${Date.now()}`, product_id: lot.product_id, sku: lot.sku, name: lot.name,
+        const lot = await api.get<GodownLot & { category_id?: string | null }>(`/godown-stock/${encodeURIComponent(initialGodownStockId)}`, { floorId: activeFloorId, signal: controller.signal });
+        if (controller.signal.aborted || generation !== documentGeneration.current) return;
+        const selected = godownQuotationPrice(lot, initialGodownVariant);
+        appliedInitialGodownRef.current = seedKey;
+        applyHistory(cur => ({ ...cur, lines: [...cur.lines, {
+          id: `godown-${lot.id}-${Date.now()}`, product_id: lot.product_id!, sku: lot.sku, name: lot.name,
           image: lot.image || null, category_id: lot.category_id || null, room: cur.activeRoom,
-          area: suggestedProductArea(lot.name, categoryById[lot.category_id || ""]), qty: 1, unit_price: selectedPrice,
+          area: suggestedProductArea(lot.name, categoryById[lot.category_id || ""]), qty: 1, unit_price: selected.price,
           mrp: null, discount_pct: null, finish: lot.finish || null,
-          description: variant?.label ? `Price variant: ${variant.label}` : null,
+          description: selected.label ? `Price variant: ${selected.label}` : null,
           godown_stock_id: lot.id,
           godown_source_customer_name: lot.source_customer_name || null,
           godown_source_purchased_at: lot.source_purchased_at || null,
           godown_transferred_at: lot.transferred_at || null,
         }] }));
         toast.success(`${lot.name} added from godown stock — select a customer to reserve it`);
-      } catch (e: any) { toast.error(e?.detail || "That godown lot is no longer available"); }
+      } catch (e: any) {
+        if (!controller.signal.aborted && generation === documentGeneration.current) toast.error(e?.detail || e?.message || "That godown lot is no longer available");
+      }
     })();
-  }, [initialGodownStockId, initialGodownVariant, activeFloorId, history, categoryById]);
+    return () => controller.abort();
+  }, [initialGodownStockId, initialGodownVariant, activeFloorId, applyHistory, categoryById]);
 
   const updateLine = useCallback((id: string, patch: Partial<Line>, coalesceKey?: string) =>
     history.apply(
@@ -1178,8 +1231,14 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
           ...cur,
           lines: cur.lines.map((line) => {
             if (line.id === id) return nextParent;
-            if (line.included_for_line_id === id && patch.qty != null) {
-              return { ...line, qty: nextParent.qty * (line.included_qty_per_parent || 1) };
+            if (line.included_for_line_id === id) {
+              return {
+                ...line,
+                ...(patch.qty != null ? { qty: nextParent.qty * (line.included_qty_per_parent || 1) } : {}),
+                // Included parts follow their parent in presentation exports,
+                // including when staff edit its area individually.
+                ...("area" in patch ? { area: nextParent.area } : {}),
+              };
             }
             return line;
           }),
@@ -1188,17 +1247,6 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
       { coalesceKey: coalesceKey ? `${coalesceKey}:${id}` : undefined },
     ),
   [history]);
-
-  const assignAreaToLines = useCallback((ids: string[], area: string | null) => {
-    const selected = new Set(ids);
-    if (!selected.size) return;
-    const value = area?.trim() || null;
-    history.apply((cur) => ({
-      ...cur,
-      lines: cur.lines.map((line) => selected.has(line.id) || (line.included_for_line_id && selected.has(line.included_for_line_id))
-        ? { ...line, area: value } : line),
-    }));
-  }, [history]);
 
   const removeLine = useCallback((id: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1486,6 +1534,19 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     }
   }, [persist, customers, s.customerId, activeFloorId]);
 
+  const generateQuotationExcel = useCallback(async () => {
+    setWorkflowBusy(true);
+    try {
+      const persistedId = await persist();
+      if (!persistedId) return;
+      const customer = customers.find((item) => item.id === s.customerId);
+      const name = (customer?.name || "Customer").replace(/[\\/:*?"<>|]/g, "").trim() || "Customer";
+      await downloadApiFile(`/quotations/${persistedId}/xlsx`, `${name} Quotation.xlsx`, "quotation Excel", activeFloorId);
+    } catch (error: any) {
+      toast.error(error?.detail || "Could not download quotation Excel");
+    } finally { setWorkflowBusy(false); }
+  }, [persist, customers, s.customerId, activeFloorId]);
+
   const generateProductPpt = useCallback(async () => {
     setWorkflowBusy(true);
     try {
@@ -1526,6 +1587,10 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   }, [s.header.projectName, refreshRecentQuotations, onFinalize, activeFloorId]);
 
   const placeOrder = useCallback(async () => {
+    if (customerOutcome) {
+      toast.error("This quotation has a recorded customer outcome. Create a new quotation for a new sale.");
+      return;
+    }
     if (workflowBusy) return;
     const persistedId = await persist();
     if (!persistedId) return;
@@ -1540,7 +1605,7 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     } catch (error: any) {
       toast.error(typeof error?.detail === "string" ? error.detail : "Could not review order prices");
     } finally { setWorkflowBusy(false); }
-  }, [persist, workflowBusy, activeFloorId, confirmOrder]);
+  }, [persist, workflowBusy, activeFloorId, confirmOrder, customerOutcome]);
 
   // Web-only: cmd/ctrl+K focuses search
   useEffect(() => {
@@ -1573,22 +1638,22 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
   const customerCompleted = Boolean(completionSnapshot?.completed && completionSnapshot.id === quotationId && completionSnapshot.customerId === s.customerId && completionSnapshot.floorId === activeFloorId);
   const value: BuilderApi = useMemo(() => ({
     history, s,
-    customers, referrers, categories, categoryById, referenceLoading, referenceError, retryReferenceData,
+    customers, referrers, referrersLoading, referrersError, retryReferrers, categories, categoryById, referenceLoading, referenceError, retryReferenceData,
     q, setQ, pickerTab, setPickerTab, pickerList, products, productTotal, productLoading, productError, retryProducts,
     productHasMore, productLoadingMore, loadMoreProducts, recent, frequent, searchRef,
-    selectedBrandIds, selectedCategoryIds, selectedFinishes, selectedColours, selectedSizes, setSelectedFinishes, setSelectedColours, setSelectedSizes,
-    brands, categoriesForRail, selectedBrandId, setSelectedBrandId, selectedCategoryId, setSelectedCategoryId,
+    selectedBrandIds, selectedCategoryIds, selectedSizes, setSelectedSizes,
+    activeFloorId, brands, categoriesForRail, categoriesLoading, categoriesError, retryCategories, selectedBrandId, setSelectedBrandId, selectedCategoryId, setSelectedCategoryId,
     sortKey, setSortKey, favouriteIds, toggleFavourite,
     setProjectName, setPhone, setAddress, setReferenceSource,
     productModal, openProductModal, closeProductModal, patchProduct,
     customProductSheetOpen, setCustomProductSheetOpen,
     recentQuotations, refreshRecentQuotations, restoreQuotation, deleteQuotation, startNewQuotation,
     totals, usedCategoryIds, flatRows, lineBreakdownById, recoveryDraft, recoveryBusy, recoveryError, restoreLocalDraft, dismissRecovery,
-    quotationId, quotationNumber, customerCompleted, saveState, savedAt, saveLabel, persist, finalize,
-    workflowBusy, generateOfficialQuotation, generateProductPpt, placeOrder,
+    quotationId, quotationNumber, customerCompleted, customerOutcome, saveState, savedAt, saveLabel, persist, finalize,
+    workflowBusy, generateOfficialQuotation, generateQuotationExcel, generateProductPpt, placeOrder,
     setCustomer, createCustomer, importCustomerFromGround, customerSwitcherOpen, setCustomerSwitcherOpen,
     setReferrer, clearReferrer, createReferrer, referrerSwitcherOpen, setReferrerSwitcherOpen,
-    addFromProduct, updateLine, assignAreaToLines, removeLine, cancelLine, duplicateLine, moveLineToNextRoom, moveLine, moveRoom,
+    addFromProduct, updateLine, removeLine, cancelLine, duplicateLine, moveLineToNextRoom, moveLine, moveRoom,
     addRoom, renameRoom, duplicateRoom, deleteRoom, toggleCollapse, setActiveRoom, onRoomDragEnd, onLinesDragEnd,
     setProjectDiscount, setCategoryDiscount, setRoomDiscount, setNotes,
     swapItems, swapLoading, openSwap, commitSwap, closeSwap,
@@ -1602,22 +1667,22 @@ export function BuilderProvider({ onFinalize, initialProductId, initialCatalogEn
     assistantFocus, setAssistantFocus, assistantOpenMobile, setAssistantOpenMobile,
   }), [
     history, s,
-    customers, referrers, categories, categoryById, referenceLoading, referenceError, retryReferenceData,
+    customers, referrers, referrersLoading, referrersError, retryReferrers, categories, categoryById, referenceLoading, referenceError, retryReferenceData,
     q, setQ, pickerTab, setPickerTab, pickerList, products, productTotal, productLoading, productError, retryProducts,
     productHasMore, productLoadingMore, loadMoreProducts, recent, frequent, searchRef,
-    selectedBrandIds, selectedCategoryIds, selectedFinishes, selectedColours, selectedSizes, setSelectedFinishes, setSelectedColours, setSelectedSizes,
-    brands, categoriesForRail, selectedBrandId, setSelectedBrandId, selectedCategoryId, setSelectedCategoryId,
+    selectedBrandIds, selectedCategoryIds, selectedSizes, setSelectedSizes,
+    activeFloorId, brands, categoriesForRail, categoriesLoading, categoriesError, retryCategories, selectedBrandId, setSelectedBrandId, selectedCategoryId, setSelectedCategoryId,
     sortKey, setSortKey, favouriteIds, toggleFavourite,
     setProjectName, setPhone, setAddress, setReferenceSource,
     productModal, openProductModal, closeProductModal, patchProduct,
     customProductSheetOpen, setCustomProductSheetOpen,
     recentQuotations, refreshRecentQuotations, restoreQuotation, deleteQuotation, startNewQuotation,
     totals, usedCategoryIds, flatRows, lineBreakdownById, recoveryDraft, recoveryBusy, recoveryError, restoreLocalDraft, dismissRecovery,
-    quotationId, quotationNumber, customerCompleted, saveState, savedAt, saveLabel, persist, finalize,
-    workflowBusy, generateOfficialQuotation, generateProductPpt, placeOrder,
+    quotationId, quotationNumber, customerCompleted, customerOutcome, saveState, savedAt, saveLabel, persist, finalize,
+    workflowBusy, generateOfficialQuotation, generateQuotationExcel, generateProductPpt, placeOrder,
     setCustomer, createCustomer, importCustomerFromGround, customerSwitcherOpen, setCustomerSwitcherOpen,
     setReferrer, clearReferrer, createReferrer, referrerSwitcherOpen, setReferrerSwitcherOpen,
-    addFromProduct, updateLine, assignAreaToLines, removeLine, cancelLine, duplicateLine, moveLineToNextRoom, moveLine, moveRoom,
+    addFromProduct, updateLine, removeLine, cancelLine, duplicateLine, moveLineToNextRoom, moveLine, moveRoom,
     addRoom, renameRoom, duplicateRoom, deleteRoom, toggleCollapse, setActiveRoom, onRoomDragEnd, onLinesDragEnd,
     setProjectDiscount, setCategoryDiscount, setRoomDiscount, setNotes,
     swapItems, swapLoading, openSwap, commitSwap, closeSwap,

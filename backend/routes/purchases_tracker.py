@@ -23,6 +23,7 @@ Endpoints:
 The tracker does NOT concern itself with taxes — Forge uses final prices only.
 """
 from __future__ import annotations
+from services.followup_engine import reconcile_followups_admitted
 from services.multi_filters import filter_values, filter_condition
 
 from services.export import spreadsheet_cell
@@ -47,8 +48,10 @@ from starlette.concurrency import run_in_threadpool
 
 from auth import (
     TILES_FLOOR_ID, floor_inherit, floor_query, floor_scope_ids,
-    get_current_user, get_floor_scoped_or_404, require_min_role,
+    get_floor_scoped_or_404, require_min_role,
 )
+from services.purchase_workspace import get_purchase_workspace_user as get_current_user
+from services.purchase_workspace import delivered_tracker_quantity_expression, pending_tracker_quantity_expression
 from db import client, db
 from models import (
     Chalan, ChalanLineItem, PurchaseCancellationEvent, PurchaseOrder, PurchaseOrderItem, PurchaseShortage, PurchaseStageEvent, PurchaseStatusEvent,
@@ -65,9 +68,10 @@ from services.domain_outbox import (
 )
 from services.followup_engine import reconcile_followups
 from services.purchase_images import hydrate_purchase_images
-from services.customer_completion import completed_customer_ids, completed_customer_pipeline
-from services.purchase_stages import active_quantity, active_quantity_expression, delivery_timestamp, delivery_timestamp_expression, normalized_stage, stage_expression
+from services.customer_completion import completed_customer_ids, completed_customer_pipeline, confirmed_customer_ids, dispatched_customer_pipeline
+from services.purchase_stages import active_quantity, active_quantity_expression, delivery_timestamp, delivery_timestamp_expression, dispatched_chalan_quantity, normalized_stage, stage_expression
 from services.sequence import next_number
+from services.money import format_indian_money
 from services.transfer_workflow import execute_transfer, mark_loans_due_for_replenishment, settle_loan_transfer, transfer_history
 
 router = APIRouter(prefix="/purchases", tags=["purchases"])
@@ -206,7 +210,7 @@ def _flatten_item(po: dict, it: dict, sla_days: int) -> dict:
         "stage": stage,
         "stage_label": STAGE_LABELS.get(stage, stage),
         "stage_tone": STAGE_TONES.get(stage, {"bg": "#F4F4F5", "fg": "#3F3F46"}),
-        "qty": max(0.0, float(it.get("qty") or 0) - float(it.get("godown_transferred_qty") or 0) - float(it.get("loan_replenishment_returned_qty") or 0)),
+        "qty": float(it["_tracker_qty"]) if "_tracker_qty" in it else active_quantity(it),
         "unit_cost": float(it.get("unit_cost") or 0),
         "room": it.get("room"),
         "expected_delivery_at": po.get("expected_delivery_at"),
@@ -230,6 +234,8 @@ def _flatten_item(po: dict, it: dict, sla_days: int) -> dict:
         "loan_replenishment_for_customer_name": it.get("loan_replenishment_for_customer_name"),
         "loan_replenishment_status": it.get("loan_replenishment_status"),
         "loan_replenishment_returned_qty": float(it.get("loan_replenishment_returned_qty") or 0),
+        "loan_replenishment_promised_qty": float(it.get("loan_replenishment_promised_qty") or 0),
+        "loan_replenishment_transfer_id": it.get("loan_replenishment_transfer_id"),
         "return_due_on_replenishment": bool(it.get("return_due_on_replenishment")),
         # Sanitary godown provenance is a snapshot on the purchase item so
         # both the stock tracker and the client workspace can explain where a
@@ -299,12 +305,17 @@ async def _iter_items(
         }},
     ]
 
-    pipeline.append({"$set": {"items.stage": stage_expression()}})
+    delivered_view = view in {"completed", "dispatch_record"}
+    pipeline.append({"$set": {
+        "items._tracker_qty": delivered_tracker_quantity_expression() if delivered_view else pending_tracker_quantity_expression(),
+        "items.stage": "dispatched" if delivered_view else stage_expression(),
+    }})
+    pipeline.append({"$match": {"items._tracker_qty": {"$gt": 0}}})
     if customer:
         pipeline.append({"$match": {"$expr": {"$in": [{"$ifNull": ["$items.customer_id", "$customer_id"]}, filter_values(customer)]}}})
     if product_id:
         pipeline.append({"$match": {"items.product_id": product_id}})
-    if view == "dispatch_record":
+    if delivered_view:
         pipeline.append({"$match": {"items.stage": {"$in": list(DISPATCH_STAGES)}}})
     if stage:
         if any(value not in PURCHASE_STAGES for value in filter_values(stage)):
@@ -328,7 +339,6 @@ async def _iter_items(
 
     if view == "today":
         # Blocked/aging early-stage items first, newest activity next.
-        rows = [r for r in rows if r["stage"] not in DISPATCH_STAGES or r["stage"] == "dispatched"]
         rows.sort(key=lambda r: (not r["blocked"], -(r.get("age_days") or 0)))
     elif view == "stock":
         rows.sort(key=lambda r: (r["stage"] == "dispatched", -(r.get("age_days") or 0)))
@@ -382,11 +392,14 @@ def _items_page_pipeline(
             {"sku": term}, {"name": term}, {"customer_name": term},
             {"po_number": term}, {"brand_name": term},
         ]
-    if view == "dispatch_record":
+    if view in {"completed", "dispatch_record"}:
         selected_stages = filter_values(stage)
         item_match["stage"] = {"$in": [value for value in DISPATCH_STAGES if not selected_stages or value in selected_stages]}
-    elif view == "today":
-        item_match.setdefault("stage", {"$in": [*EARLY_STAGES, "dispatched"]})
+    else:
+        selected_stages = filter_values(stage)
+        if not selected_stages or "dispatched" in selected_stages:
+            item_match["stage"] = {"$in": [value for value in PURCHASE_STAGES if value != "dispatched" and (not selected_stages or value in selected_stages)]}
+    item_match["qty"] = {"$gt": 0}
 
     cutoff = datetime.now(timezone.utc).timestamp() - (sla_days * 86400)
     cutoff_iso = datetime.fromtimestamp(cutoff, timezone.utc).isoformat()
@@ -417,10 +430,10 @@ def _items_page_pipeline(
             "brand_id": {"$ifNull": ["$items.brand_id", "$brand_id"]},
             "brand_name": {"$ifNull": ["$items.brand_name", "$brand_name"]},
             "supplier_id": 1, "supplier_name": 1,
-            "stage": stage_expression(),
+            "stage": {"$literal": "dispatched"} if view in {"completed", "dispatch_record"} else stage_expression(),
             "dispatched_at": delivery_timestamp_expression(),
             "delivered_at": delivery_timestamp_expression(),
-            "qty": {"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$add": [{"$ifNull": ["$items.godown_transferred_qty", 0]}, {"$ifNull": ["$items.loan_replenishment_returned_qty", 0]}]}]},
+            "qty": delivered_tracker_quantity_expression() if view in {"completed", "dispatch_record"} else pending_tracker_quantity_expression(),
             "unit_cost": {"$ifNull": ["$items.unit_cost", 0]},
             "room": "$items.room", "expected_delivery_at": 1,
             "last_moved_at": {"$ifNull": ["$items.last_moved_at", "$created_at"]},
@@ -440,6 +453,8 @@ def _items_page_pipeline(
             "loan_replenishment_for_customer_name": "$items.loan_replenishment_for_customer_name",
             "loan_replenishment_status": "$items.loan_replenishment_status",
             "loan_replenishment_returned_qty": "$items.loan_replenishment_returned_qty",
+            "loan_replenishment_promised_qty": "$items.loan_replenishment_promised_qty",
+            "loan_replenishment_transfer_id": "$items.loan_replenishment_transfer_id",
             "return_due_on_replenishment": "$items.return_due_on_replenishment",
             "godown_transferred_qty": "$items.godown_transferred_qty",
             "godown_transfer_history": "$items.godown_transfer_history",
@@ -489,7 +504,7 @@ def _hydrate_page_item(row: dict, sla_days: int) -> dict:
 # =============================================================================
 @router.get("/stages")
 async def stage_catalog(user: UserPublic = Depends(get_current_user)):
-    """Stage list with counts across ALL non-cancelled items on the caller's floor(s)."""
+    """Movement destinations with counts of pending items on this floor."""
     match: dict = {"status": {"$ne": "cancelled"}}
     floor_ids = floor_scope_ids(user)
     if floor_ids is not None:
@@ -499,6 +514,7 @@ async def stage_catalog(user: UserPublic = Depends(get_current_user)):
         {"$unwind": "$items"},
         {"$match": {"items.cancelled": {"$ne": True}}},
         {"$match": {"$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$add": [{"$ifNull": ["$items.godown_transferred_qty", 0]}, {"$ifNull": ["$items.loan_replenishment_returned_qty", 0]}]}]}, 0]}}},
+        {"$match": {"$expr": {"$gt": [pending_tracker_quantity_expression(), 0]}}},
         {"$group": {"_id": stage_expression(), "count": {"$sum": 1}}},
     ]
     rows = await db.purchase_orders.aggregate(pipeline).to_list(20)
@@ -521,6 +537,7 @@ async def brand_facets(user: UserPublic = Depends(get_current_user)):
         {"$unwind": "$items"},
         {"$match": {"items.cancelled": {"$ne": True}}},
         {"$match": {"$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$add": [{"$ifNull": ["$items.godown_transferred_qty", 0]}, {"$ifNull": ["$items.loan_replenishment_returned_qty", 0]}]}]}, 0]}}},
+        {"$match": {"$expr": {"$gt": [pending_tracker_quantity_expression(), 0]}}},
         {"$group": {
             "_id": {"id": "$brand_id", "name": "$brand_name"},
             "count": {"$sum": 1},
@@ -548,6 +565,7 @@ async def customer_facets(user: UserPublic = Depends(get_current_user)):
         {"$unwind": "$items"},
         {"$match": {"items.cancelled": {"$ne": True}}},
         {"$match": {"$expr": {"$gt": [{"$subtract": [{"$ifNull": ["$items.qty", 0]}, {"$add": [{"$ifNull": ["$items.godown_transferred_qty", 0]}, {"$ifNull": ["$items.loan_replenishment_returned_qty", 0]}]}]}, 0]}}},
+        {"$match": {"$expr": {"$gt": [pending_tracker_quantity_expression(), 0]}}},
         {"$group": {
             "_id": {"id": {"$ifNull": ["$items.customer_id", "$customer_id"]}, "name": {"$ifNull": ["$items.customer_name", "$customer_name"]}},
             "count": {"$sum": 1},
@@ -577,13 +595,17 @@ def _completed_customer_pipeline(user: UserPublic, skip: int = 0, limit: int = 1
 async def active_customer_workspaces(
     include_completed: bool = Query(False), user: UserPublic = Depends(get_current_user),
 ):
-    """CRM layout stays available for new customers; completed buyers move out.
+    """Confirmed buyers on this floor; completed buyers move to their register.
 
-    Lookup evaluates every active item on this floor, including older orders.
+    Walk-in prospects stay in Walk-ins until they have an actual order. Derive
+    eligibility from orders, preserving legacy buyers and transferred owners.
     """
-    complete_ids = await completed_customer_ids(db, user) if not include_completed else set()
+    eligible_ids, complete_ids = await asyncio.gather(
+        confirmed_customer_ids(db, user),
+        completed_customer_ids(db, user) if not include_completed else asyncio.sleep(0, result=set()),
+    )
     rows = await db.customers.aggregate([
-        {"$match": floor_query(user, {"id": {"$nin": sorted(complete_ids)}})},
+        {"$match": floor_query(user, {"id": {"$in": sorted(eligible_ids - complete_ids)}})},
         {"$sort": {"name": 1, "id": 1}},
         {"$project": {"_id": 0, "id": 1, "name": 1, "company": 1, "email": 1, "phone": 1, "city": 1, "tier": 1}},
     ]).to_list(None)
@@ -595,13 +617,15 @@ async def completed_customer_facets(
     skip: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=100),
     user: UserPublic = Depends(get_current_user),
 ):
-    """Only customers with every positive, active line dispatched (delivered).
+    """Customers with delivered products, including partial customer dispatches.
 
     Aggregation examines every PO before paging, so an older pending line,
     partial split or customer rename cannot falsely produce 100% completion.
     """
-    rows = await db.purchase_orders.aggregate(_completed_customer_pipeline(user, skip, limit)).to_list(limit)
-    return [{"id": r["_id"], "name": r.get("name"), "count": r["item_count"],
+    rows = await db.purchase_orders.aggregate(dispatched_customer_pipeline(user) + [
+        {"$sort": {"last_delivered_at": -1, "_id": 1}}, {"$skip": skip}, {"$limit": limit},
+    ]).to_list(limit)
+    return [{"id": r["_id"], "name": r.get("name"), "count": r["item_count"], "fully_completed": r.get("pending_quantity", 0) == 0,
              "quantity": r.get("quantity", 0), "completed_at": r.get("last_delivered_at")}
             for r in rows]
 
@@ -612,6 +636,7 @@ async def customer_workspace(
     q: Optional[str] = None,
     brand: Optional[str] = None,
     stage: Optional[str] = None,
+    view: str = "active",
     user: UserPublic = Depends(get_current_user),
 ):
     """One-call aggregate powering the Customer Purchase Workspace: summary,
@@ -623,6 +648,8 @@ async def customer_workspace(
     blocked counts, delivered counts) are scoped to that filtered item set.
     `order_value` is the customer's full confirmed commercial order value.
     """
+    if view not in {"active", "completed"}:
+        raise HTTPException(status_code=400, detail="Unknown purchase workspace view")
     customer, settings = await asyncio.gather(
         db.customers.find_one(floor_query(user, {"id": customer_id}), {"_id": 0}),
         _load_settings(),
@@ -632,7 +659,7 @@ async def customer_workspace(
 
     async def load_workspace_rows() -> list[dict]:
         items = await _iter_items(
-            "stock", brand, customer_id, stage, q, settings.sla_days, limit=2000,
+            "completed" if view == "completed" else "stock", brand, customer_id, stage, q, settings.sla_days, limit=2000,
             floor_ids=floor_scope_ids(user),
         )
         await _hydrate_workspace_images(items)
@@ -648,7 +675,7 @@ async def customer_workspace(
             floor_query(user, {"customer_id": customer_id, "status": "awaiting_reorder"}), {"_id": 0},
         ).sort("created_at", -1).to_list(100),
         db.quotations.find(
-            floor_query(user, {"customer_id": customer_id, "status": {"$in": ["ordered", "won"]}}),
+            floor_query(user, {"customer_id": customer_id, "floor_id": customer["floor_id"], "status": {"$in": ["ordered", "won"]}}),
             {"_id": 0, "id": 1, "grand_total": 1, "payment_extra_amount": 1, "payment_extra_history": 1},
         ).to_list(500),
         db.payments.find(floor_query(user, {"customer_id": customer_id}), {"_id": 0}).sort("created_at", -1).to_list(100),
@@ -669,7 +696,7 @@ async def customer_workspace(
     # The PO list above is capped for the UI.  Use a server-side group over
     # every quote-linked PO so older godown intakes still affect the ledger.
     godown_by_quote = await _godown_value_by_quotation(
-        list(order_quote_ids), floor_ids=floor_scope_ids(user), purchase_orders=db.purchase_orders,
+        list(order_quote_ids), floor_id=customer["floor_id"], purchase_orders=db.purchase_orders,
     )
     godown_value = sum(godown_by_quote.values())
     order_value = round(max(0.0, sum(_collection_total(quote) for quote in order_quotes) - godown_value), 2)
@@ -694,8 +721,10 @@ async def customer_workspace(
     # Customer IDs can exist on more than one business floor.  Keep the
     # activity stream in the same floor scope as the products and POs above;
     # otherwise Sanitary Bathroom movement events leak into Ground Floor.
-    paid_map = await _paid_by_quotation([quote["id"] for quote in order_quotes])
-    cash_map = await _paid_by_quotation([quote["id"] for quote in order_quotes], cash_only=True)
+    paid_map, cash_map = await asyncio.gather(
+        _paid_by_quotation([quote["id"] for quote in order_quotes], floor_id=customer["floor_id"]),
+        _paid_by_quotation([quote["id"] for quote in order_quotes], floor_id=customer["floor_id"], cash_only=True),
+    )
     outstanding_balance = round(sum(
         max(0.0, _collection_total(quote) - paid_map.get(quote["id"], 0.0))
         for quote in order_quotes
@@ -785,7 +814,7 @@ async def customer_workspace(
 
 @router.get("/items")
 async def list_items(
-    view: str = Query("stock", pattern="^(today|stock|customers|dispatch_record)$"),
+    view: str = Query("stock", pattern="^(today|stock|customers|dispatch_record|completed)$"),
     brand: Optional[str] = None,
     customer: Optional[str] = None,
     stage: Optional[str] = None,
@@ -813,7 +842,7 @@ async def list_items(
 
 @router.get("/items/page")
 async def list_items_page(
-    view: str = Query("stock", pattern="^(today|stock|customers|dispatch_record)$"),
+    view: str = Query("stock", pattern="^(today|stock|customers|dispatch_record|completed)$"),
     brand: Optional[str] = None,
     customer: Optional[str] = None,
     stage: Optional[str] = None,
@@ -901,6 +930,7 @@ async def get_item(item_id: str, user: UserPublic = Depends(get_current_user)):
 # Mutations — move, bulk move, transfer
 # =============================================================================
 class MoveBody(BaseModel):
+    idempotency_key: Optional[str] = Field(default=None, min_length=8, max_length=160)
     stage: PurchaseStage
     note: Optional[str] = None
     qty: Optional[float] = Field(default=None, gt=0, allow_inf_nan=False)  # partial move — e.g. "3 of 20"
@@ -966,10 +996,14 @@ async def _cancel_item(
         raise HTTPException(status_code=404, detail="Item not found")
     if item.get("cancelled"):
         raise HTTPException(status_code=409, detail="Item is already cancelled")
+    if float(item.get("loaned_qty") or 0) > 0:
+        raise HTTPException(status_code=409, detail="Return the lent units before cancelling this purchase line")
     if item.get("loan_replenishment_for_customer_name"):
-        raise HTTPException(status_code=409, detail="This ordered product is reserved to return a customer loan; move it to godown stock instead")
+        raise HTTPException(status_code=409, detail="Return the reserved products to the lending customer before cancelling this purchase line")
     if normalized_stage(item, po) == "dispatched":
         raise HTTPException(status_code=400, detail="Delivered items cannot be cancelled")
+    if dispatched_chalan_quantity(po, item) > 0:
+        raise HTTPException(status_code=409, detail="This product has dispatched quantities. Move the remaining quantity to a separate line before removing it; delivered quantities must be retained.")
 
     now = now_iso()
     cancellation = PurchaseCancellationEvent(
@@ -980,6 +1014,7 @@ async def _cancel_item(
     result = await db.purchase_orders.update_one(
         {"id": po["id"], "chalans": po.get("chalans"), "items": {"$elemMatch": {
             "id": item_id, "cancelled": {"$ne": True}, "stage": {"$nin": ["dispatched", "in_transit", "delivered"]},
+            **{field: item.get(field) for field in ("loaned_qty", "loan_replenishment_promised_qty", "loan_replenishment_for_customer_name")},
         }}},
         {"$set": {
             "items.$.cancelled": True,
@@ -1108,17 +1143,17 @@ async def _sync_po_status_with_stages(po_id: str, user: UserPublic) -> Optional[
 
 async def _apply_stage_change(
     item_id: str, to_stage: str, user: UserPublic, note: Optional[str],
-    qty: Optional[float] = None, *, max_attempts: int = 3,
+    qty: Optional[float] = None, *, max_attempts: int = 3, idempotency_key: Optional[str] = None,
 ) -> dict:
-    """Retry wrapper around `_attempt_stage_change`. Each attempt re-reads the
-    item fresh, so a lost optimistic-concurrency race (another move landed
-    first) is resolved transparently by recomputing against the new state —
-    this is what makes an accidental double-click/near-simultaneous request
-    "just work" instead of surfacing an error in the common case. Only after
-    `max_attempts` genuine conflicts in a row do we give up and tell the
-    caller, with enough state to refresh intelligently."""
+    """Retry optimistic-concurrency conflicts against fresh item state.
+
+    Keyed commands resolve their atomic receipt before recomputing quantities:
+    a repeated partial move must never split the remaining source a second
+    time. Legacy unkeyed callers retain their prior behavior. Exhausted CAS
+    conflicts return enough current state for the caller to refresh.
+    """
     for _ in range(max_attempts):
-        result = await _attempt_stage_change(item_id, to_stage, user, note, qty)
+        result = await _attempt_stage_change(item_id, to_stage, user, note, qty, **({"idempotency_key": idempotency_key} if idempotency_key else {}))
         if not result.get("conflict"):
             if to_stage == "in_box":
                 arrived_item_id = result.get("new_item_id") or result.get("item_id") or item_id
@@ -1140,7 +1175,7 @@ async def _apply_stage_change(
 
 async def _attempt_stage_change(
     item_id: str, to_stage: str, user: UserPublic, note: Optional[str],
-    qty: Optional[float] = None,
+    qty: Optional[float] = None, *, idempotency_key: Optional[str] = None,
 ) -> dict:
     """One attempt at an atomic update of a single item's stage — writes a
     stage_history entry. Returns `{"conflict": True, "expected_qty": ...}`
@@ -1158,25 +1193,45 @@ async def _attempt_stage_change(
     po = await db.purchase_orders.find_one(floor_query(user, {"items.id": item_id}), {"_id": 0})
     if not po:
         raise HTTPException(status_code=404, detail="Item not found")
+    command_key = None
+    payload_hash = None
+    if idempotency_key:
+        command_key = hashlib.sha256(json.dumps([user.id, item_id, idempotency_key]).encode()).hexdigest()
+        payload_hash = hashlib.sha256(json.dumps([to_stage, note, qty], allow_nan=False).encode()).hexdigest()
+        receipt = (po.get("movement_receipts") or {}).get(command_key)
+        if receipt:
+            if receipt.get("payload_sha256") != payload_hash:
+                raise HTTPException(409, "This movement was already recorded with different details. Review the item before moving more stock.")
+            # The quantity change already committed. Repair optional post-write
+            # status synchronization without moving or splitting again.
+            status = await _sync_po_status_with_stages(po["id"], user)
+            return {**receipt["result"], "idempotent": True, "po_status_synced_to": status}
     it = next((i for i in po.get("items", []) if i.get("id") == item_id), None)
     if not it:
         raise HTTPException(status_code=404, detail="Item not found")
     if it.get("cancelled"):
         raise HTTPException(status_code=409, detail="Cancelled items cannot be moved")
-    if float(it.get("loan_replenishment_promised_qty") or 0) > 0 and to_stage in {"dispatched", "in_transit", "delivered"}:
-        raise HTTPException(status_code=409, detail="This ordered product is promised back to the lending customer")
     from_stage = it.get("stage") or "order_in_company"
     full_qty = float(it.get("qty") or 0)
     available_qty = active_quantity(it)
-    move_qty = float(qty) if qty is not None else available_qty
+    chalan_delivered = dispatched_chalan_quantity(po, it)
+    if math.isfinite(chalan_delivered):
+        available_qty = max(0.0, available_qty - max(0.0, chalan_delivered))
+    promised_qty = max(0.0, float(it.get("loan_replenishment_promised_qty") or 0) - float(it.get("loan_replenishment_returned_qty") or 0))
+    movable_qty = max(0.0, available_qty - float(it.get("loaned_qty") or 0))
+    if to_stage in {"dispatched", "in_transit", "delivered"}:
+        movable_qty = max(0.0, movable_qty - promised_qty)
+    move_qty = float(qty) if qty is not None else movable_qty
     if not all(math.isfinite(value) for value in (full_qty, available_qty, move_qty)):
         raise HTTPException(status_code=400, detail="Move quantities must be finite numbers")
     if move_qty <= 0:
         raise HTTPException(status_code=400, detail="Move quantity must be greater than 0")
     if move_qty > available_qty + 1e-6:
         raise HTTPException(status_code=400, detail=f"Only {available_qty} available to move")
-    if float(it.get("loan_replenishment_promised_qty") or 0) > 0 and move_qty < full_qty - 1e-6:
-        raise HTTPException(status_code=409, detail="A promised replacement cannot be split")
+    if promised_qty > 0 and to_stage in {"dispatched", "in_transit", "delivered"} and move_qty > movable_qty + 1e-6:
+        raise HTTPException(status_code=409, detail=f"{promised_qty:g} units are reserved to return to the lending customer")
+    if promised_qty > 0 and move_qty < full_qty - 1e-6 and move_qty > available_qty - promised_qty + 1e-6:
+        raise HTTPException(status_code=409, detail="Move the unreserved quantity separately from the customer return")
 
     loaned_qty = float(it.get("loaned_qty") or 0)
     if loaned_qty > 0 and (to_stage != from_stage or move_qty < full_qty - 1e-6) and move_qty > available_qty - loaned_qty + 1e-6:
@@ -1184,7 +1239,7 @@ async def _attempt_stage_change(
 
     is_partial = move_qty < full_qty - 1e-6
 
-    if not is_partial and from_stage == to_stage:
+    if not is_partial and from_stage == to_stage and not command_key:
         return {"po_id": po["id"], "item_id": item_id, "no_change": True}
 
     now = now_iso()
@@ -1201,6 +1256,16 @@ async def _attempt_stage_change(
         "id": po["id"], "floor_id": po.get("floor_id"), "status": {"$ne": "cancelled"},
         "items": {"$elemMatch": item_guard}, "chalans": po.get("chalans"),
     }
+    if command_key:
+        mutation_guard[f"movement_receipts.{command_key}"] = {"$exists": False}
+
+    def receipt_fields(result):
+        return {f"movement_receipts.{command_key}": {"payload_sha256": payload_hash, "result": result}} if command_key else {}
+
+    if not is_partial and from_stage == to_stage:
+        result = {"po_id": po["id"], "item_id": item_id, "no_change": True}
+        saved = await db.purchase_orders.update_one(mutation_guard, {"$set": receipt_fields(result)})
+        return result if saved.matched_count else {"conflict": True, "expected_qty": full_qty}
 
     # -------------------------------------------------------------------
     # PARTIAL MOVE — split the line into two tracked pieces.
@@ -1228,6 +1293,11 @@ async def _attempt_stage_change(
         # unloaned piece must not inherit its reservation or transfer journal.
         new_item["loaned_qty"] = 0
         new_item["customer_loan_history"] = []
+        new_item["loan_replenishment_promised_qty"] = 0
+        new_item["loan_replenishment_reserved_qty"] = 0
+        new_item["loan_replenishment_for_customer_name"] = None
+        new_item["loan_replenishment_status"] = None
+        new_item["loan_replenishment_transfer_id"] = None
         new_item["dispatched_at"] = now if to_stage == "dispatched" else None
         new_item["delivered_at"] = now if to_stage == "dispatched" else None
         new_item["stage"] = to_stage
@@ -1255,6 +1325,11 @@ async def _attempt_stage_change(
             "last_moved_at": now, "last_moved_by": user.id,
             "last_moved_by_name": user.full_name,
         }
+        result = {
+            "po_id": po["id"], "item_id": item_id, "split": True,
+            "new_item_id": new_item_id, "from_stage": from_stage, "to_stage": to_stage,
+            "qty_moved": move_qty, "qty_remaining": remaining,
+        }
         cas_result = await db.purchase_orders.update_one(
             mutation_guard,
             [{"$set": {
@@ -1270,6 +1345,7 @@ async def _attempt_stage_change(
                     {"$literal": [new_item]},
                 ]},
                 "updated_at": now,
+                **{key: {"$literal": value} for key, value in receipt_fields(result).items()},
             }}],
         )
         if cas_result.matched_count == 0:
@@ -1293,15 +1369,9 @@ async def _attempt_stage_change(
 
         new_status = await _sync_po_status_with_stages(po["id"], user)
         if to_stage in ("dispatched", "in_transit", "delivered") or new_status:
-            asyncio.create_task(reconcile_followups())
+            asyncio.create_task(reconcile_followups_admitted())
 
-        return {
-            "po_id": po["id"], "item_id": item_id, "split": True,
-            "new_item_id": new_item_id,
-            "from_stage": from_stage, "to_stage": to_stage,
-            "qty_moved": move_qty, "qty_remaining": remaining,
-            "po_status_synced_to": new_status,
-        }
+        return {**result, "po_status_synced_to": new_status}
 
     # -------------------------------------------------------------------
     # FULL MOVE — existing behaviour, whole line advances together.
@@ -1316,6 +1386,7 @@ async def _attempt_stage_change(
     # instead of `qty` — lower severity here (a lost update just means a
     # last-write-wins stage instead of corrupted quantities), but the same
     # primitive is essentially free and keeps both branches consistent.
+    result = {"po_id": po["id"], "item_id": item_id, "from_stage": from_stage, "to_stage": to_stage}
     cas_result = await db.purchase_orders.update_one(
         mutation_guard,
         {
@@ -1327,6 +1398,7 @@ async def _attempt_stage_change(
                 "items.$.last_moved_by": user.id,
                 "items.$.last_moved_by_name": user.full_name,
                 "updated_at": now,
+                **receipt_fields(result),
             },
             "$push": {"items.$.stage_history": ev},
         },
@@ -1358,12 +1430,8 @@ async def _attempt_stage_change(
     if to_stage in ("dispatched", "in_transit", "delivered") or new_status:
         # Dispatch/delivery reminders derive from item stage/PO status —
         # event-triggered refresh right here, not a cron job.
-        asyncio.create_task(reconcile_followups())
-    return {
-        "po_id": po["id"], "item_id": item_id,
-        "from_stage": from_stage, "to_stage": to_stage,
-        "po_status_synced_to": new_status,
-    }
+        asyncio.create_task(reconcile_followups_admitted())
+    return {**result, "po_status_synced_to": new_status}
 
 
 @router.post("/items/{item_id}/move")
@@ -1374,7 +1442,7 @@ async def move_item(
 ):
     if body.stage not in PURCHASE_STAGES:
         raise HTTPException(status_code=400, detail=f"Unknown stage '{body.stage}'")
-    return await _apply_stage_change(item_id, body.stage, user, body.note, body.qty)
+    return await _apply_stage_change(item_id, body.stage, user, body.note, body.qty, **({"idempotency_key": body.idempotency_key} if body.idempotency_key else {}))
 
 
 @router.post("/items/{item_id}/cancel")
@@ -1584,11 +1652,28 @@ async def eligible_purchase_recipients(item_id: str, user: UserPublic = Depends(
         "status": {"$ne": "cancelled"},
         "items": {"$elemMatch": {"product_id": item.get("product_id"),
                                   "cancelled": {"$ne": True},
-                                  "stage": {"$nin": ["dispatched", "in_transit", "delivered"]}}},
+                                  "stage": "po_final", "loan_replenishment_for_customer_name": {"$in": [None, ""]},
+                                  "loan_transfer_id": {"$in": [None, ""]}}},
     }), {"_id": 0, "customer_id": 1, "customer_name": 1}).to_list(500)
     recipients = {po["customer_id"]: {"id": po["customer_id"], "name": po.get("customer_name") or "Customer"}
                   for po in matches if po.get("customer_id")}
     return sorted(recipients.values(), key=lambda row: row["name"].lower())
+
+
+@router.post("/items/{item_id}/return-loans")
+async def return_replacement_loans(item_id: str, user: UserPublic = Depends(require_min_role("warehouse"))):
+    """Return only the quantity reserved on this customer's replacement line."""
+    await mark_loans_due_for_replenishment(item_id=item_id, user=user)
+    loans = await db.purchase_transfers.find(floor_query(user, {
+        "type": "loan", "status": {"$in": ["return_due", "returned"]},
+        "replenishment_item_id": item_id,
+    }), {"_id": 0}).to_list(201)
+    if len(loans) > 200:
+        raise HTTPException(status_code=409, detail="Too many loans on this replacement; review the transfer history before returning stock")
+    if not loans:
+        raise HTTPException(status_code=409, detail="No replacement is ready to return on this line")
+    results = [await settle_loan_transfer(transfer_id=loan["id"], user=user) for loan in loans]
+    return {"item_id": item_id, "returned": results}
 
 
 @router.post("/transfers/{transfer_id}/return")
@@ -1763,7 +1848,7 @@ async def transfer_item(
         entity_type="quotation", entity_id=auto_quotation.id, actor=user,
         customer_id=body.new_customer_id, quotation_id=auto_quotation.id,
         summary=(
-            f"Order {auto_quotation.number} auto-created — ₹{auto_quotation.grand_total:,.0f} due "
+            f"Order {auto_quotation.number} auto-created — ₹{format_indian_money(auto_quotation.grand_total, 0)} due "
             f"from a {body.qty:g}-unit transfer"
         ),
         payload={
@@ -1861,7 +1946,7 @@ async def transfer_item(
     # Payment/Follow-up automation must reflect this transfer immediately —
     # the new order needs its own reminder timeline, and a shortage (if any)
     # needs to surface as a "recommend reorder" card. Event-triggered, no cron.
-    asyncio.create_task(reconcile_followups())
+    asyncio.create_task(reconcile_followups_admitted())
 
     return {
         "source": {
@@ -1977,7 +2062,7 @@ async def create_po_for_shortage(
         summary=f"Reorder PO {new_po.number} created for {s['shortage_qty']:g} × {s['name']}",
         payload={"shortage_id": shortage_id, "po_id": new_po.id, "po_number": new_po.number},
     )
-    asyncio.create_task(reconcile_followups())
+    asyncio.create_task(reconcile_followups_admitted())
     return {"po_id": new_po.id, "po_number": new_po.number, "shortage_id": shortage_id}
 
 
@@ -1999,7 +2084,7 @@ async def dismiss_shortage(
             "reason": body.note or s.get("reason"), "updated_at": now,
         }},
     )
-    asyncio.create_task(reconcile_followups())
+    asyncio.create_task(reconcile_followups_admitted())
     return {"ok": True}
 
 
@@ -2230,13 +2315,17 @@ async def generate_chalan(
         # validated against the pre-loop read) so two lines in the SAME
         # request against the same po_item_id can't both pass against the
         # same stale "available" figure and jointly over-release it.
-        available = remaining.get(entry.po_item_id, 0.0)
+        reserved_qty = (float(source.get("godown_transferred_qty") or 0)
+                        + float(source.get("loan_replenishment_returned_qty") or 0)
+                        + float(source.get("loaned_qty") or 0)
+                        + max(0.0, float(source.get("loan_replenishment_promised_qty") or 0) - float(source.get("loan_replenishment_returned_qty") or 0)))
+        available = max(0.0, remaining.get(entry.po_item_id, 0.0) - reserved_qty)
         if entry.qty > available + 1e-6:
             raise HTTPException(
                 status_code=400,
                 detail=f"Only {available:g} of '{source.get('name')}' remains to release",
             )
-        remaining[entry.po_item_id] = available - entry.qty
+        remaining[entry.po_item_id] = remaining.get(entry.po_item_id, 0.0) - entry.qty
         chalan_items.append(ChalanLineItem(
             po_item_id=entry.po_item_id,
             name=source.get("name", ""),
@@ -2683,7 +2772,7 @@ async def order_detail(po_id: str, user: UserPublic = Depends(get_current_user))
 # =============================================================================
 @router.get("/export.xlsx")
 async def export_xlsx(
-    view: str = Query("stock", pattern="^(today|stock|customers|dispatch_record)$"),
+    view: str = Query("stock", pattern="^(today|stock|customers|dispatch_record|completed)$"),
     brand: Optional[str] = None,
     customer: Optional[str] = None,
     stage: Optional[str] = None,

@@ -15,6 +15,7 @@ from starlette.middleware.gzip import GZipMiddleware
 
 from middleware import SecurityHeadersMiddleware
 from services.request_limits import RequestBodyLimitMiddleware
+from services.runtime_identity import source_revision
 
 from bootstrap import LEGACY_DEMO_PASSWORD, _check_demo_accounts, run_bootstrap
 from settings import settings
@@ -55,6 +56,7 @@ from routes.executive_overview_routes import router as executive_overview_router
 from routes.sales_performance_routes import router as sales_performance_router  # noqa: E402
 from routes.referral_analytics_routes import router as referral_analytics_router  # noqa: E402
 from routes.sales_breakdown_routes import router as sales_breakdown_router  # noqa: E402
+from routes.sales_summary_routes import router as sales_summary_router  # noqa: E402
 from routes.sales_workspace_routes import router as sales_workspace_router  # noqa: E402
 from routes.tile_orders import router as tile_orders_router  # noqa: E402
 from routes.walkin_routes import router as walkin_router  # noqa: E402
@@ -67,11 +69,12 @@ from services.transfer_workflow import ensure_transfer_indexes  # noqa: E402
 from services.download_tokens import ensure_download_token_indexes  # noqa: E402
 from services.tile_order_indexes import ensure_tile_order_indexes  # noqa: E402
 from migrations.runner import pending_migrations, run_migrations  # noqa: E402
-from services.followup_engine import reconcile_followups  # noqa: E402
+from services.followup_engine import followup_worker  # noqa: E402
 from services.floor_scope import ensure_floor_scope  # noqa: E402
 from services.customer_data_reset import customer_reset_maintenance, reset_customer_data, cleanup_reset_files  # noqa: E402
 from services.quotation_shares import ensure_quotation_share_indexes  # noqa: E402
 from routes.furniture_quotation_routes import router as furniture_quotation_router  # noqa: E402
+from routes.kitchen_routes import router as kitchen_router  # noqa: E402
 from routes.whatsapp_routes import router as whatsapp_router  # noqa: E402
 
 
@@ -183,13 +186,14 @@ async def _startup(app: FastAPI) -> None:
     await dispatch_pending()
     app.state.outbox_worker = asyncio.create_task(outbox_worker())
     snapshot = await catalog_service.refresh_catalog_snapshot()
+    logger.info("Catalog startup diagnostics: %s", json.dumps(catalog_service.catalog_diagnostics(), sort_keys=True))
     if getattr(snapshot, "database_backed", False):
-        logger.info("Catalog read model ready: bounded database paging (catalog exceeds warm-cache budget).")
+        logger.warning("Catalog read model ready: bounded database paging (catalog exceeds warm-cache budget); check catalog performance before promotion.")
     else:
         logger.info("Catalog read model ready: %d products.", len(snapshot.products))
     app.state.optional_startup_tasks = [
         asyncio.create_task(_run_optional_startup_task("automation-rule seed", _seed_automation_rules)),
-        asyncio.create_task(_run_optional_startup_task("follow-up reconciliation", reconcile_followups)),
+        asyncio.create_task(followup_worker()),
     ]
     logger.info("Forge API ready; infrastructure preflight passed.")
     logger.info("Monitoring status: sentry=%s", _monitoring_status["sentry"])
@@ -211,6 +215,7 @@ async def _shutdown_resources(app: FastAPI) -> None:
             await task
         except asyncio.CancelledError:
             pass
+    await catalog_service.stop_catalog_refresh()
     storage = get_media_storage()
     close_storage = getattr(storage, "close", None)
     if close_storage:
@@ -357,7 +362,7 @@ async def health():
     if demo_accounts:
         logger.critical("Production demo credentials detected for %d account(s)", len(demo_accounts))
         return JSONResponse(status_code=503, content={"status": "degraded", "reasons": ["unsafe demo credentials detected"]})
-    return {"status": "ok", "pdf_renderer_revision": PDF_RENDERER_REVISION}
+    return {"status": "ok", "pdf_renderer_revision": PDF_RENDERER_REVISION, **({"source_revision": source_revision()} if source_revision() else {})}
 
 
 @api.get("/health/ready", include_in_schema=False)
@@ -376,11 +381,17 @@ async def readiness():
         return JSONResponse(status_code=503, content={"status": "error", "detail": "pending migrations", "migrations": pending})
     try:
         await db.command("ping")
-        from media_storage.supabase_driver import supabase_ready
-        await supabase_ready()
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Readiness dependency unavailable: database (%s)", type(exc).__name__)
         return JSONResponse(status_code=503, content={"status": "error", "detail": "database unavailable"})
-    return {"status": "ok", "pdf_renderer_revision": PDF_RENDERER_REVISION}
+    try:
+        from media_storage.factory import storage_ready
+        await storage_ready()
+    except Exception as exc:  # noqa: BLE001
+        # Provider exception text can contain credentials, URLs or bodies.
+        logger.warning("Readiness dependency unavailable: storage (%s)", type(exc).__name__)
+        return JSONResponse(status_code=503, content={"status": "error", "detail": "storage unavailable"})
+    return {"status": "ok", "pdf_renderer_revision": PDF_RENDERER_REVISION, **({"source_revision": source_revision()} if source_revision() else {})}
 
 
 # Feature routers
@@ -392,6 +403,7 @@ api.include_router(customer_router)
 api.include_router(po_final_router)
 api.include_router(quotation_router)
 api.include_router(furniture_quotation_router)
+api.include_router(kitchen_router)
 api.include_router(whatsapp_router)
 api.include_router(misc_router)
 api.include_router(media_router)
@@ -414,6 +426,7 @@ api.include_router(sales_performance_router)
 api.include_router(referral_analytics_router)
 api.include_router(sales_breakdown_router)
 api.include_router(sales_workspace_router)
+api.include_router(sales_summary_router)
 api.include_router(tile_orders_router)
 api.include_router(walkin_router)
 api.include_router(godown_stock_router)
@@ -439,6 +452,8 @@ async def trigger_error():
 # Security headers (defense-in-depth, no behavior change for existing
 # clients) — registered before CORSMiddleware so CORS stays the outermost
 # middleware, unchanged from its current behavior.
+from services.mutation_admission import MutationAdmissionMiddleware
+app.add_middleware(MutationAdmissionMiddleware)
 app.add_middleware(RequestBodyLimitMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 # Mobile clients and the hosted web app receive several JSON-heavy responses.

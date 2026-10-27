@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import { optionalContact, validateTeamContacts, teamErrorMessage } from '../src/team-contacts.ts';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
+import ts from 'typescript';
+import { optionalContact, teamPhone, teamPhonePatch, validateTeamContacts, teamErrorMessage } from '../src/team-contacts.ts';
 
 assert.equal(optionalContact('  '), null);
 assert.equal(optionalContact(null), null);
@@ -23,3 +26,83 @@ assert.equal(teamErrorMessage({ detail: JSON.stringify(validation) }, 'fallback'
 assert.equal(teamErrorMessage({ detail: 'Conflict' }, 'fallback'), 'Conflict');
 for (const detail of [null, {}, [], [{ msg: 42 }], 22]) assert.equal(teamErrorMessage({ detail }, 'fallback'), 'fallback');
 console.log('Team contacts: optional fields, valid/invalid numbers, sign-in identity and structured validation errors passed');
+
+// Run the actual edit-sheet hooks with separate layout and passive phases. This
+// models the frame in which a user can clear contacts, before passive network
+// effects run; the saved values must already be present and must not return.
+const teamSource = readFileSync(new URL('../app/(admin)/team.tsx', import.meta.url), 'utf8');
+const observationPoint = '  if (!staff) return null;';
+assert.ok(teamSource.includes(observationPoint));
+const observedSource = teamSource.replace(observationPoint, '  return { phone, email, username, setPhone, setEmail };') + '\nexport { EditStaffSheet as ObserveEditStaffSheet };';
+const compiled = ts.transpileModule(observedSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
+const hooks = [], layoutEffects = [], passiveEffects = [];
+let cursor = 0, dirty = false;
+const sameDeps = (a, b) => a && b && a.length === b.length && a.every((value, index) => Object.is(value, b[index]));
+const schedule = queue => (callback, deps) => {
+  const slot = cursor++;
+  if (!sameDeps(hooks[slot]?.deps, deps)) {
+    const previous = hooks[slot];
+    hooks[slot] = { deps };
+    queue.push(() => { previous?.cleanup?.(); hooks[slot].cleanup = callback(); });
+  }
+};
+const react = {
+  useState(initial) {
+    const slot = cursor++;
+    hooks[slot] ||= { value: typeof initial === 'function' ? initial() : initial };
+    return [hooks[slot].value, value => {
+      const next = typeof value === 'function' ? value(hooks[slot].value) : value;
+      if (!Object.is(next, hooks[slot].value)) { hooks[slot].value = next; dirty = true; }
+    }];
+  },
+  useRef(initial) { return hooks[cursor++] ||= { current: initial }; },
+  useLayoutEffect: schedule(layoutEffects),
+  useEffect: schedule(passiveEffects),
+};
+const exports = {};
+const never = new Promise(() => {});
+vm.runInNewContext(compiled, { exports, require: name => {
+  if (name === 'react') return react;
+  if (name === 'react-native') return { StyleSheet: { create: value => value } };
+  if (name === '@/src/theme/tokens') return { colors: {}, spacing: {}, radius: {}, type: {} };
+  if (name === '@/src/team-contacts') return { optionalContact, teamPhone };
+  if (name === '@/src/team-delegation') return {};
+  if (name === '@/src/api/client') return { api: { get: () => never } };
+  return {};
+} });
+let staff = { id: 'saved-worker', full_name: 'Saved worker', role: 'worker', active: true, login_id: 'SAVED', phone: '+91 (079) 2345-6789', mobile: '+91 98765 43210', email: 'saved@example.test' };
+let observed;
+const editOptions = { catalog: { resources: [] } };
+function commit() {
+  do {
+    dirty = false; cursor = 0;
+    observed = exports.ObserveEditStaffSheet({ staff, options: editOptions });
+    while (layoutEffects.length) layoutEffects.shift()();
+  } while (dirty);
+  return observed;
+}
+commit();
+assert.equal(observed.phone, staff.phone, 'Saved phone is initialized before interaction');
+assert.equal(observed.email, staff.email);
+observed.setPhone(''); observed.setEmail('');
+commit();
+while (passiveEffects.length) passiveEffects.shift()();
+commit();
+assert.equal(observed.phone, '', 'Passive effects cannot restore a contact cleared immediately after opening');
+assert.equal(observed.email, '');
+staff = { ...staff, id: 'another-worker', phone: '9876543210', mobile: null, email: null };
+commit();
+assert.equal(observed.phone, staff.phone, 'A changed staff document is initialized before the next interactive frame');
+assert.equal(observed.email, '');
+console.log('Team edit initialization: saved contacts are ready before interaction and immediate clears survive passive effects');
+
+assert.equal(teamPhone({ phone: null, mobile: '9876543210' }), '9876543210');
+assert.equal(teamPhone({ phone: '1234567890', mobile: '9876543210' }), '1234567890');
+assert.deepEqual(teamPhonePatch({ phone: null, mobile: '9876543210' }, '9876543210'), {});
+assert.deepEqual(teamPhonePatch({ phone: null, mobile: '9876543210' }, ''), { phone: null, mobile: null });
+assert.deepEqual(teamPhonePatch({ phone: '1234567890', mobile: '9876543210' }, '1112223333'), { phone: '1112223333', mobile: null });
+assert.deepEqual(teamPhonePatch({ phone: '1234567890', mobile: '9876543210' }, '1234567890'), {});
+staff = { ...staff, id: 'mobile-only-worker', phone: null, mobile: '9876543210' };
+commit();
+assert.equal(observed.phone, staff.mobile, 'Mobile-only historical contacts remain editable in Phone');
+console.log('Unified Phone field: historical aliases hydrate safely and explicit contact changes clear the alias');

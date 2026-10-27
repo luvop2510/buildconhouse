@@ -1,13 +1,26 @@
 import type { BuilderRow, BuilderState, Line } from "./types";
 
-/** The selected product and its automatically included parts move together. */
+/** Move a product with its included parts, or a complete visible room section. */
 export function moveQuotationRows(rows: BuilderRow[], id: string, targetIndex: number): BuilderRow[] {
   const source = rows.find(row => row.id === id);
-  if (!source || source.kind !== "line" || source.line.included_for_line_id) return rows;
-  const moving = rows.filter(row => row.id === id || (row.kind === "line" && row.line.included_for_line_id === id));
-  const rest = rows.filter(row => !moving.includes(row));
+  if (!source || (source.kind === "line" && source.line.included_for_line_id)) return rows;
+  let moving: BuilderRow[];
+  if (source.kind === "room-header") {
+    const start = rows.indexOf(source);
+    const following = rows.findIndex((row, index) => index > start && row.kind === "room-header");
+    moving = rows.slice(start, following < 0 ? rows.length : following);
+  } else {
+    moving = rows.filter(row => row.id === id || (row.kind === "line" && row.line.included_for_line_id === id));
+  }
+  const movingIds = new Set(moving.map(row => row.id));
+  const rest = rows.filter(row => !movingIds.has(row.id));
   // A product must always remain below a room heading.
-  const index = Math.max(1, Math.min(rest.length, targetIndex));
+  let index = Math.max(source.kind === "line" ? 1 : 0, Math.min(rest.length, targetIndex));
+  // Sections can only be inserted before another heading or after the last
+  // section, never through the middle of that section's products.
+  if (source.kind === "room-header") {
+    while (index < rest.length && rest[index].kind !== "room-header") index += 1;
+  }
   const next = [...rest.slice(0, index), ...moving, ...rest.slice(index)];
   return next.every((row, i) => row.id === rows[i]?.id) ? rows : next;
 }

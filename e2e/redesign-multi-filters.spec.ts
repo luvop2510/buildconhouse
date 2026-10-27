@@ -18,9 +18,14 @@ test('critical payment history combines units and methods and clears every choic
   await expect.poll(() => latest.get('business_unit')).toBe('first-floor,second-floor');
   await expect.poll(() => latest.get('mode')).toBe('cash,upi');
   await page.getByTestId('history-unit-filter-all').click();
+  await expect(page.getByTestId('history-unit-filter-all')).toHaveAttribute('aria-checked', 'true');
   await page.getByTestId('history-mode-filter-all').click();
-  await expect.poll(() => latest.get('business_unit')).toBeNull();
-  await expect.poll(() => latest.get('mode')).toBeNull();
+  await expect(page.getByTestId('history-mode-filter-all')).toHaveAttribute('aria-checked', 'true');
+  for (const id of ['history-unit-filter-first-floor', 'history-unit-filter-second-floor', 'history-mode-filter-cash', 'history-mode-filter-upi']) {
+    await expect(page.getByTestId(id)).toHaveAttribute('aria-checked', 'false');
+  }
+  // Clearing can reuse the initial unfiltered response within its short TTL.
+  await expect(page.getByText('No completed payments yet', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 });
 

@@ -1,9 +1,10 @@
 """Official BuildCon House quotation PDF — faithful A4 print template."""
 from __future__ import annotations
+from services.referrer_identity import referrer_label
 
 from collections import defaultdict
 from datetime import datetime
-from decimal import Decimal, InvalidOperation
+from services.money import format_indian_money
 import functools
 from io import BytesIO
 import logging
@@ -177,23 +178,6 @@ def _item_row_height_mm(item_count: int) -> float:
         return COMPACT_SPARSE_ITEM_ROW_MM
     return max(ITEM_ROW_MM, usable / item_count)
 
-
-def format_indian_money(value: object) -> str:
-    """Format a numeric value using Indian digit grouping, without currency."""
-    try:
-        amount = Decimal(str(value if value is not None else 0)).quantize(Decimal("0.01"))
-    except (InvalidOperation, TypeError, ValueError):
-        amount = Decimal("0.00")
-    sign = "-" if amount < 0 else ""
-    whole, fraction = f"{abs(amount):.2f}".split(".")
-    if len(whole) > 3:
-        tail, head = whole[-3:], whole[:-3]
-        groups: list[str] = []
-        while head:
-            groups.append(head[-2:])
-            head = head[:-2]
-        whole = ",".join(reversed(groups)) + "," + tail
-    return f"{sign}{whole}.{fraction}"
 
 
 def _currency_symbol() -> str:
@@ -539,7 +523,10 @@ def _draw_footer(cv, doc, branding: dict | None = None) -> None:
 # Use each page's actual diagonal, including the shorter sanitary cover. The
 # inset accommodates printer margins while retaining the whole original mark.
 WATERMARK_PAGE_INSET = 4 * mm
-WATERMARK_INK_STRENGTH = 0.28
+# Blend the mark more fully into white stock so product tables remain the
+# strongest content on every page while the watermark still prints reliably.
+WATERMARK_INK_STRENGTH = 0.18
+HEADER_LOGO_INK_STRENGTH = 0.76
 
 
 def watermark_angle(page_width: float, page_height: float) -> float:
@@ -579,6 +566,39 @@ def _print_watermark_image(path: str, modified_ns: int) -> ImageReader:
     return ImageReader(printable)
 
 
+@functools.lru_cache(maxsize=4)
+def _print_header_logo_image(path: str, modified_ns: int) -> ImageReader:
+    """Return a lighter header wordmark while preserving its transparent edge."""
+    from PIL import Image as PILImage
+
+    with PILImage.open(path) as source:
+        rgba = source.convert("RGBA")
+    rgb = rgba.convert("RGB")
+    white = PILImage.new("RGB", rgb.size, "white")
+    lightened = PILImage.blend(white, rgb, HEADER_LOGO_INK_STRENGTH).convert("RGBA")
+    lightened.putalpha(rgba.getchannel("A"))
+    payload = BytesIO()
+    lightened.save(payload, format="PNG")
+    payload.seek(0)
+    return ImageReader(payload)
+
+
+class _HeaderLogo(Flowable):
+    """Draw the cached lightened RGBA wordmark in the quotation header."""
+
+    def __init__(self, image: ImageReader, width: float, height: float):
+        super().__init__()
+        self.image = image
+        self.width = width
+        self.height = height
+
+    def wrap(self, avail_width: float, avail_height: float) -> tuple[float, float]:
+        return min(self.width, avail_width), self.height
+
+    def draw(self) -> None:
+        self.canv.drawImage(self.image, 0, 0, width=self.width, height=self.height, mask="auto")
+
+
 def _draw_room_watermark(cv, doc, branding: dict | None = None) -> None:
     b = branding or {}
     if not b.get("show_watermark", True):
@@ -607,7 +627,11 @@ def _brand_header(right_title: str, styles: dict, style_key: str = "titleRight")
     logo: Flowable
     if LOGO_PATH.exists():
         logo_width = 43 * mm
-        logo = Image(str(LOGO_PATH), width=logo_width, height=logo_width / LOGO_RATIO, kind="proportional")
+        logo = _HeaderLogo(
+            _print_header_logo_image(str(LOGO_PATH), LOGO_PATH.stat().st_mtime_ns),
+            width=logo_width,
+            height=logo_width / LOGO_RATIO,
+        )
     else:
         logo = Paragraph("<b>BUILDCON HOUSE</b><br/><font size='8'>Let You Live Better</font>", styles["brandFallback"])
     table = Table([[logo, Paragraph(right_title, styles[style_key])]], colWidths=[_pw(165) * mm, _pw(102) * mm])
@@ -841,130 +865,127 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
             room_order.append(room)
     room_order = [r for r in room_order if grouped.get(r)]  # never render a room with 0 items
 
-    if quotation.get("_po_final") is not None:
-        story.extend(_po_final_cover(quotation, customer, styles))
+    # --- PAGE 1: supplied BuildCon House quotation cover ---------------------
+    # Keep this cover deliberately close to the approved quotation's first
+    # page: the broad header, two four-field information bands, clear price
+    # summary and roomy contractual block are the visual system.  Product
+    # images belong on the itemised pages, where up to 17 real selections can
+    # be read without turning the cover into a cramped catalogue.
+    story.append(_brand_header("PRODUCT QUOTATION<br/><font name='Helvetica' size='8'>Tiles &amp; Sanitaryware Solutions</font>", styles))
+    story.extend([Spacer(1, 3 * mm), HRFlowable(width="100%", thickness=1.25, color=BLUE), Spacer(1, 2.5 * mm)])
+    meta = [
+        [Paragraph("CUSTOMER NAME", styles["label"]), Paragraph("CONTACT NO.", styles["label"]), Paragraph("SELECTION / QUOTATION DATE", styles["label"]), Paragraph("QUOTATION NO.", styles["label"])],
+        [Paragraph(_escape(customer.get("company") or customer.get("name") or quotation.get("customer_name")), styles["body"]), Paragraph(_escape(quotation.get("phone_snapshot") or customer.get("phone") or ""), styles["body"]), Paragraph(created, styles["body"]), Paragraph(_escape(quotation.get("number")), styles["body"])],
+        [Paragraph("REFERENCE", styles["label"]), Paragraph("ATTENDED BY", styles["label"]), Paragraph("PREPARED BY", styles["label"]), Paragraph("ADDRESS", styles["label"])],
+        [Paragraph(_escape(" · ".join(filter(None, [quotation.get("reference_source"), referrer_label(quotation)]))), styles["body"]), Paragraph(_escape(quotation.get("referrer_name") or ""), styles["body"]), Paragraph(_escape(b.get("footer_company_name") or "Buildcon House"), styles["body"]), Paragraph(_escape(quotation.get("address_snapshot") or customer.get("address") or ""), styles["body"])],
+    ]
+    meta_row_heights = [5 * mm, 5 * mm, 5 * mm, None if referrer_label(quotation) else 6 * mm]
+    meta_style = [
+        ("LINEBELOW", (0, 1), (-1, 1), 0.4, LINE),
+        ("LINEBELOW", (0, 3), (-1, 3), 0.4, LINE),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING", (0, 0), (-1, -1), 1), ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+    ]
+    meta_table = Table(meta, colWidths=[_pw(66.75) * mm] * 4, rowHeights=meta_row_heights)
+    meta_table.setStyle(TableStyle(meta_style))
+    story.extend([meta_table, Spacer(1, 2 * mm)])
+    story.append(Paragraph("Dear Sir/Madam, thank you for your interest in our products. We are pleased to offer our most competitive rates for premium tiles and sanitaryware, prepared as per your selection.", styles["body"]))
+    story.extend([Spacer(1, 3 * mm), Paragraph("PRICE SUMMARY", styles["section"]), Spacer(1, 1.5 * mm)])
+
+    # ---- Dynamic Quotation Summary: exactly one row per room, no filler ----
+    n_rooms = len(room_order)
+    if has_discount:
+        summary_header = ["SL. NO.", "BATHROOM / AREA", "MRP (Rs.)", "OFFER TOTAL (Rs.)"]
+        summary_col_widths = [_pw(v) * mm for v in (20, 120, 63, 64)]
     else:
-        # --- PAGE 1: supplied BuildCon House quotation cover ---------------------
-        # Keep this cover deliberately close to the approved quotation's first
-        # page: the broad header, two four-field information bands, clear price
-        # summary and roomy contractual block are the visual system.  Product
-        # images belong on the itemised pages, where up to 17 real selections can
-        # be read without turning the cover into a cramped catalogue.
-        story.append(_brand_header("PRODUCT QUOTATION<br/><font name='Helvetica' size='8'>Tiles &amp; Sanitaryware Solutions</font>", styles))
-        story.extend([Spacer(1, 3 * mm), HRFlowable(width="100%", thickness=1.25, color=BLUE), Spacer(1, 2.5 * mm)])
-        meta = [
-            [Paragraph("CUSTOMER NAME", styles["label"]), Paragraph("CONTACT NO.", styles["label"]), Paragraph("SELECTION / QUOTATION DATE", styles["label"]), Paragraph("QUOTATION NO.", styles["label"])],
-            [Paragraph(_escape(customer.get("company") or customer.get("name") or quotation.get("customer_name")), styles["body"]), Paragraph(_escape(quotation.get("phone_snapshot") or customer.get("phone") or ""), styles["body"]), Paragraph(created, styles["body"]), Paragraph(_escape(quotation.get("number")), styles["body"])],
-            [Paragraph("REFERENCE", styles["label"]), Paragraph("ATTENDED BY", styles["label"]), Paragraph("PREPARED BY", styles["label"]), Paragraph("ADDRESS", styles["label"])],
-            [Paragraph(_escape(quotation.get("reference_source") or ""), styles["body"]), Paragraph(_escape(quotation.get("referrer_name") or ""), styles["body"]), Paragraph(_escape(b.get("footer_company_name") or "Buildcon House"), styles["body"]), Paragraph(_escape(quotation.get("address_snapshot") or customer.get("address") or ""), styles["body"])],
-        ]
-        meta_row_heights = [5 * mm, 5 * mm, 5 * mm, 6 * mm]
-        meta_style = [
-            ("LINEBELOW", (0, 1), (-1, 1), 0.4, LINE),
-            ("LINEBELOW", (0, 3), (-1, 3), 0.4, LINE),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-            ("TOPPADDING", (0, 0), (-1, -1), 1), ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
-        ]
-        meta_table = Table(meta, colWidths=[_pw(66.75) * mm] * 4, rowHeights=meta_row_heights)
-        meta_table.setStyle(TableStyle(meta_style))
-        story.extend([meta_table, Spacer(1, 2 * mm)])
-        story.append(Paragraph("Dear Sir/Madam, thank you for your interest in our products. We are pleased to offer our most competitive rates for premium tiles and sanitaryware, prepared as per your selection.", styles["body"]))
-        story.extend([Spacer(1, 3 * mm), Paragraph("PRICE SUMMARY", styles["section"]), Spacer(1, 1.5 * mm)])
-
-        # ---- Dynamic Quotation Summary: exactly one row per room, no filler ----
-        n_rooms = len(room_order)
+        summary_header = ["SL. NO.", "BATHROOM / AREA", "TOTAL (Rs.)"]
+        summary_col_widths = [_pw(v) * mm for v in (20, 135, 112)]
+    summary_rows: list[list[object]] = [[Paragraph(h, styles["tableHead"]) for h in summary_header]]
+    for index, room in enumerate(room_order):
+        gross, _, net = _room_totals(grouped.get(room, []))
         if has_discount:
-            summary_header = ["SL. NO.", "BATHROOM / AREA", "MRP (Rs.)", "OFFER TOTAL (Rs.)"]
-            summary_col_widths = [_pw(v) * mm for v in (20, 120, 63, 64)]
-        else:
-            summary_header = ["SL. NO.", "BATHROOM / AREA", "TOTAL (Rs.)"]
-            summary_col_widths = [_pw(v) * mm for v in (20, 135, 112)]
-        summary_rows: list[list[object]] = [[Paragraph(h, styles["tableHead"]) for h in summary_header]]
-        for index, room in enumerate(room_order):
-            gross, _, net = _room_totals(grouped.get(room, []))
-            if has_discount:
-                summary_rows.append([
-                    Paragraph(str(index + 1), styles["cellCenter"]), Paragraph(_ellipsize(room, 180), styles["cell"]),
-                    _SingleLineParagraph(_standard_money(gross), styles["cellCenter"]), _SingleLineParagraph(_standard_money(net), styles["cellCenter"]),
-                ])
-            else:
-                summary_rows.append([
-                    Paragraph(str(index + 1), styles["cellCenter"]), Paragraph(_ellipsize(room, 180), styles["cell"]),
-                    _SingleLineParagraph(_standard_money(net), styles["cellCenter"]),
-                ])
-        if has_discount:
-            summary_rows.extend([
-                ["", Paragraph("<b>TOTAL</b>", styles["cellCenter"]), Paragraph(f"<b>{_standard_money(quotation.get('subtotal', 0))}</b>", styles["cellCenter"]), Paragraph(f"<b>{_standard_money(quotation.get('grand_total', 0))}</b>", styles["cellCenter"])],
-                ["", Paragraph("<b>SPECIAL OFFER TOTAL</b>", styles["cellCenter"]), "", Paragraph(f"<b>{_standard_money(quotation.get('grand_total', 0))}</b>", styles["cellCenter"])],
+            summary_rows.append([
+                Paragraph(str(index + 1), styles["cellCenter"]), Paragraph(_ellipsize(room, 180), styles["cell"]),
+                _SingleLineParagraph(_standard_money(gross), styles["cellCenter"]), _SingleLineParagraph(_standard_money(net), styles["cellCenter"]),
             ])
         else:
-            summary_rows.extend([
-                ["", Paragraph("<b>TOTAL</b>", styles["cellCenter"]), Paragraph(f"<b>{_standard_money(quotation.get('subtotal', 0))}</b>", styles["cellCenter"])],
-                ["", Paragraph("<b>GRAND TOTAL</b>", styles["cellCenter"]), Paragraph(f"<b>{_standard_money(quotation.get('grand_total', 0))}</b>", styles["cellCenter"])],
+            summary_rows.append([
+                Paragraph(str(index + 1), styles["cellCenter"]), Paragraph(_ellipsize(room, 180), styles["cell"]),
+                _SingleLineParagraph(_standard_money(net), styles["cellCenter"]),
             ])
-        summary_row_heights = [SUMMARY_HEADER_ROW_MM * mm] + [SUMMARY_ROW_MM * mm] * n_rooms + [SUMMARY_TOTAL_ROW_MM * mm] * 2
-        summary_style_cmds = [
-            ("GRID", (0, 0), (-1, -1), 0.35, GRID), ("BACKGROUND", (0, 0), (-1, 0), HEADER_GREY),
-            ("BACKGROUND", (0, -2), (-1, -1), HEADER_GREY), ("ALIGN", (0, 0), (0, -1), "CENTER"),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-        ]
-        for r in range(2, n_rooms + 1, 2):  # zebra every 2nd room row (1-indexed data rows)
-            # Retain the alternating serial-number cue without painting over
-            # the diagonal background across the complete room row.
-            summary_style_cmds.append(("BACKGROUND", (0, r), (0, r), ZEBRA))
-        summary = Table(summary_rows, colWidths=summary_col_widths, rowHeights=summary_row_heights, repeatRows=1)
-        summary.setStyle(TableStyle(summary_style_cmds))
-        story.extend([summary, Spacer(1, 2 * mm), Paragraph("OUR BRAND PARTNERS", styles["section"]), Spacer(1, 0.8 * mm)])
-        story.extend([brand_partners_table(styles["cell"]), Spacer(1, 1.2 * mm)])
-
-        terms = [
-            "1. Prices quoted are based on the current NET prices at the time of selection.",
-            "2. Prices are subject to revision by any brand without prior notice.",
-            "3. 100% advance payment is required to confirm orders.",
-            "4. Freight and unloading charges will be applicable as per actuals.",
-            "5. Delivery timelines are subject to the manufacturer's schedule.",
-            "6. Rates are valid for 5 days, unless stated otherwise in writing.",
-            "7. Above rates are inclusive of GST @18%, unless stated otherwise.",
-            "8. All orders and deliveries are subject to material availability.",
-            "9. Prices are subject to change in case of changes in government levy.",
-            "10. Cheques should be written in favour of Buildcon House.",
-            "11. On confirmation of purchase order, material will be delivered within 15 days.",
-            "12. Labour cost is extra and not included in this quotation.",
-        ]
-        if b.get("terms_text"):
-            terms.append(f"Additional terms: {_escape(b['terms_text'])}")
-        # Use the full landscape width for contractual copy. The earlier narrow
-        # left panel forced terms into cramped lines while the adjacent customer
-        # care panel left a conspicuous amount of unused space.
-        terms_rows = []
-        for index in range(0, len(terms), 2):
-            terms_rows.append([
-                Paragraph(terms[index], styles["terms"]),
-                Paragraph(terms[index + 1], styles["terms"]) if index + 1 < len(terms) else "",
-            ])
-        terms_table = Table(terms_rows, colWidths=[_pw(133.5) * mm, _pw(133.5) * mm])
-        terms_table.setStyle(TableStyle([
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 2), ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-            # Keep the contractual block together on page one even when an
-            # address/reference adds metadata rows. The previous 12 mm of table
-            # padding forced only the signature into an otherwise blank page two.
-            ("TOPPADDING", (0, 0), (-1, -1), 0.4), ("BOTTOMPADDING", (0, 0), (-1, -1), 0.4),
-        ]))
-        enquiries = Paragraph(
-            f"For general enquiries: M: {_escape(b.get('footer_phone') or '+91 99099 06652')}  |  Email: {_escape(b.get('footer_email') or 'buildconhouse10@gmail.com')}",
-            styles["small"],
-        )
-        signature = Table([[Paragraph("I/We have reviewed and agree to the terms and conditions mentioned in this quotation.", styles["small"]), Paragraph("CUSTOMER SIGNATURE &amp; DATE", styles["signature"])]], colWidths=[_pw(160) * mm, _pw(107) * mm], rowHeights=[8 * mm])
-        signature.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 0.45, GRID), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4), ("TOPPADDING", (0, 0), (-1, -1), 1.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5)]))
-        story.extend([
-            Paragraph("TERMS &amp; CONDITIONS", styles["section"]), Spacer(1, 0.8 * mm), terms_table,
-            Spacer(1, 1.5 * mm), enquiries, Spacer(1, 1.5 * mm), signature,
+    if has_discount:
+        summary_rows.extend([
+            ["", Paragraph("<b>TOTAL</b>", styles["cellCenter"]), Paragraph(f"<b>{_standard_money(quotation.get('subtotal', 0))}</b>", styles["cellCenter"]), Paragraph(f"<b>{_standard_money(quotation.get('grand_total', 0))}</b>", styles["cellCenter"])],
+            ["", Paragraph("<b>SPECIAL OFFER TOTAL</b>", styles["cellCenter"]), "", Paragraph(f"<b>{_standard_money(quotation.get('grand_total', 0))}</b>", styles["cellCenter"])],
         ])
-        if b.get("signature_name"):
-            sig_line = _escape(b["signature_name"]) + (f", {_escape(b['signature_title'])}" if b.get("signature_title") else "")
-            story.append(Paragraph(f"For {_escape(b.get('footer_company_name') or 'Buildcon House')} — {sig_line}", ParagraphStyle("sigLine", parent=styles["small"], alignment=2, spaceBefore=2)))
+    else:
+        summary_rows.extend([
+            ["", Paragraph("<b>TOTAL</b>", styles["cellCenter"]), Paragraph(f"<b>{_standard_money(quotation.get('subtotal', 0))}</b>", styles["cellCenter"])],
+            ["", Paragraph("<b>GRAND TOTAL</b>", styles["cellCenter"]), Paragraph(f"<b>{_standard_money(quotation.get('grand_total', 0))}</b>", styles["cellCenter"])],
+        ])
+    summary_row_heights = [SUMMARY_HEADER_ROW_MM * mm] + [SUMMARY_ROW_MM * mm] * n_rooms + [SUMMARY_TOTAL_ROW_MM * mm] * 2
+    summary_style_cmds = [
+        ("GRID", (0, 0), (-1, -1), 0.35, GRID), ("BACKGROUND", (0, 0), (-1, 0), HEADER_GREY),
+        ("BACKGROUND", (0, -2), (-1, -1), HEADER_GREY), ("ALIGN", (0, 0), (0, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+    ]
+    for r in range(2, n_rooms + 1, 2):  # zebra every 2nd room row (1-indexed data rows)
+        # Retain the alternating serial-number cue without painting over
+        # the diagonal background across the complete room row.
+        summary_style_cmds.append(("BACKGROUND", (0, r), (0, r), ZEBRA))
+    summary = Table(summary_rows, colWidths=summary_col_widths, rowHeights=summary_row_heights, repeatRows=1)
+    summary.setStyle(TableStyle(summary_style_cmds))
+    story.extend([summary, Spacer(1, 2 * mm), Paragraph("OUR BRAND PARTNERS", styles["section"]), Spacer(1, 0.8 * mm)])
+    story.extend([brand_partners_table(styles["cell"]), Spacer(1, 1.2 * mm)])
+
+    terms = [
+        "1. Prices quoted are based on the current NET prices at the time of selection.",
+        "2. Prices are subject to revision by any brand without prior notice.",
+        "3. 100% advance payment is required to confirm orders.",
+        "4. Freight and unloading charges will be applicable as per actuals.",
+        "5. Delivery timelines are subject to the manufacturer's schedule.",
+        "6. Rates are valid for 5 days, unless stated otherwise in writing.",
+        "7. Above rates are inclusive of GST @18%, unless stated otherwise.",
+        "8. All orders and deliveries are subject to material availability.",
+        "9. Prices are subject to change in case of changes in government levy.",
+        "10. Cheques should be written in favour of Buildcon House.",
+        "11. On confirmation of purchase order, material will be delivered within 15 days.",
+        "12. Labour cost is extra and not included in this quotation.",
+    ]
+    if b.get("terms_text"):
+        terms.append(f"Additional terms: {_escape(b['terms_text'])}")
+    # Use the full landscape width for contractual copy. The earlier narrow
+    # left panel forced terms into cramped lines while the adjacent customer
+    # care panel left a conspicuous amount of unused space.
+    terms_rows = []
+    for index in range(0, len(terms), 2):
+        terms_rows.append([
+            Paragraph(terms[index], styles["terms"]),
+            Paragraph(terms[index + 1], styles["terms"]) if index + 1 < len(terms) else "",
+        ])
+    terms_table = Table(terms_rows, colWidths=[_pw(133.5) * mm, _pw(133.5) * mm])
+    terms_table.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2), ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        # Keep the contractual block together on page one even when an
+        # address/reference adds metadata rows. The previous 12 mm of table
+        # padding forced only the signature into an otherwise blank page two.
+        ("TOPPADDING", (0, 0), (-1, -1), 0.4), ("BOTTOMPADDING", (0, 0), (-1, -1), 0.4),
+    ]))
+    enquiries = Paragraph(
+        f"For general enquiries: M: {_escape(b.get('footer_phone') or '+91 99099 06652')}  |  Email: {_escape(b.get('footer_email') or 'buildconhouse10@gmail.com')}",
+        styles["small"],
+    )
+    signature = Table([[Paragraph("I/We have reviewed and agree to the terms and conditions mentioned in this quotation.", styles["small"]), Paragraph("CUSTOMER SIGNATURE &amp; DATE", styles["signature"])]], colWidths=[_pw(160) * mm, _pw(107) * mm], rowHeights=[8 * mm])
+    signature.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 0.45, GRID), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4), ("TOPPADDING", (0, 0), (-1, -1), 1.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5)]))
+    story.extend([
+        Paragraph("TERMS &amp; CONDITIONS", styles["section"]), Spacer(1, 0.8 * mm), terms_table,
+        Spacer(1, 1.5 * mm), enquiries, Spacer(1, 1.5 * mm), signature,
+    ])
+    if b.get("signature_name"):
+        sig_line = _escape(b["signature_name"]) + (f", {_escape(b['signature_title'])}" if b.get("signature_title") else "")
+        story.append(Paragraph(f"For {_escape(b.get('footer_company_name') or 'Buildcon House')} — {sig_line}", ParagraphStyle("sigLine", parent=styles["small"], alignment=2, spaceBefore=2)))
 
     # --- PAGES 2+: dynamic item rows per area page -----------------------------
     # Every room renders only its real item rows, paginated at
@@ -1002,6 +1023,9 @@ def build_quotation_pdf(quotation: dict, customer: dict, branding: dict | None =
         item_widths = [_pw(v) * mm for v in widths]
     max_rows = _max_item_rows_per_page()
     story.append(NextPageTemplate("details"))
+    if quotation.get("_po_final") is not None:
+        story.append(PageBreak())
+        story.extend(_po_final_cover(quotation, customer, styles))
     for area_index, room in enumerate(room_order, 1):
         room_items = grouped.get(room, [])
         # Stacked photos and diagrams need more vertical space than ordinary

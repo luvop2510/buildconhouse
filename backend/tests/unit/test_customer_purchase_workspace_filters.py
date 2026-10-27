@@ -171,7 +171,7 @@ class _Db:
         pos: list[dict] | None = None,
         purchase_orders=None,
     ):
-        self.customers = _Collection([{"id": "cust-1", "name": "Aarav Residency"}], calls, "customers")
+        self.customers = _Collection([{"id": "cust-1", "name": "Aarav Residency", "floor_id": "first-floor"}], calls, "customers")
         self.purchase_orders = purchase_orders or _Collection(pos or [
             {"id": "po-1", "number": "PO-1", "status": "open", "brand_name": "Grohe", "supplier_name": "Supplier A", "grand_total": 3500, "created_at": "2026-08-01T10:00:00+00:00", "expected_delivery_at": "2026-08-07T10:00:00+00:00", "items": [{}, {}]},
             {"id": "po-2", "number": "PO-2", "status": "open", "brand_name": "Vitra", "supplier_name": "Supplier B", "grand_total": 10600, "created_at": "2026-08-02T10:00:00+00:00", "expected_delivery_at": "2026-08-08T10:00:00+00:00", "items": [{}, {}]},
@@ -272,6 +272,19 @@ def test_workspace_without_filters_preserves_existing_shape(monkeypatch):
     assert calls["iter_items.args"]["stage"] is None
     assert calls["iter_items.args"]["q"] is None
     assert calls["iter_items.args"]["floor_ids"] == ["first-floor"]
+
+
+def test_workspace_ledger_aggregates_use_exact_customer_floor(monkeypatch):
+    calls = {}
+    _set_common_patches(monkeypatch, _workspace_rows(), calls)
+    payment_scopes = []
+    async def paid(_ids, **kwargs):
+        payment_scopes.append(kwargs)
+        return {}
+    monkeypatch.setattr(payment_routes, "_paid_by_quotation", paid)
+    asyncio.run(tracker.customer_workspace("cust-1", user=_user()))
+    assert payment_scopes == [{"floor_id": "first-floor"}, {"floor_id": "first-floor", "cash_only": True}]
+    assert tracker.db.purchase_orders.last_query["floor_id"] == "first-floor"
 
 
 def test_order_value_keeps_loan_replacement_and_subtracts_godown_once(monkeypatch):
@@ -521,3 +534,17 @@ def test_workspace_large_history_avoids_per_item_queries(monkeypatch):
     assert purchase_orders.last_pipeline[2] == {"$match": {"items.cancelled": {"$ne": True}}}
     assert "$expr" in purchase_orders.last_pipeline[3]["$match"]
     assert purchase_orders.last_pipeline[4]["$project"]["items"] == 1
+
+
+@pytest.mark.parametrize('received', [0, 39000])
+def test_unpaid_order_balance_uses_the_same_commercial_value_as_order_tile(monkeypatch, received):
+    calls = {}
+    rows = [{**row, 'qty': 1, 'unit_cost': 743000} for row in _workspace_rows()[:1]]
+    _set_common_patches(monkeypatch, rows, calls)
+    tracker.db.quotations = _Collection([{'id': 'quote-vitra', 'grand_total': 782000}], calls, 'quotations')
+    monkeypatch.setattr(payment_routes, '_paid_by_quotation', lambda ids, **kwargs: asyncio.sleep(
+        0, result={quote_id: received for quote_id in ids}))
+    workspace = asyncio.run(tracker.customer_workspace('cust-1', user=_user()))
+    assert workspace['summary']['order_value'] == 782000
+    assert workspace['summary']['outstanding_balance'] == 782000 - received
+    assert workspace['summary']['outstanding_value'] == 743000  # physical goods, not money due

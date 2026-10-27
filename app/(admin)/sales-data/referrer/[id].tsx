@@ -1,5 +1,9 @@
+import { NavigationLink } from "@/src/design/NavigationLink";
+import { STAGE_LABELS, type KitchenStage } from "@/src/api/kitchenProjects";
+import { referrerCode } from "@/src/utils/referrer";
+import { MobileFilterSection } from "@/src/components/MobileFilterSection";
 import { useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 import { Text } from "@/src/components/AppText";
 
@@ -8,47 +12,49 @@ import { api } from "@/src/api/client";
 import {
   Button, EmptyState, ErrorState, LoadingState, PillTabs, Table, TableCell, TableHeader, TableRow,
 } from "@/src/components/ui";
-import { fmtMoney } from "@/src/design/tokens";
 import { useBp } from "@/src/design/responsive";
 import { colors, spacing, type } from "@/src/theme/tokens";
 import { TrendChart } from "@/src/components/salesData/TrendChart";
 import { downloadSectionExcel } from "@/src/utils/sectionExcel";
 import { toast } from "@/src/components/Toast";
-import {
-  DATE_PRESET_LABEL, DatePreset, Granularity, presetToRange,
-} from "@/src/components/salesData/salesDataApi";
+import { useAnalyticsDetailPeriod } from "@/src/components/salesData/useAnalyticsDetailPeriod";
+import type { Granularity } from "@/src/components/salesData/salesDataApi";
+
+const fmtMoney = (value: number) => value.toLocaleString("en-IN", { maximumFractionDigits: 2 });
 
 type ReferrerDetailResponse = {
   referrer: { id: string; name: string; type: string; phone?: string | null; company?: string | null };
+  kitchen_projects?: { id: string; number: string; customer_name: string; kitchen_stage: KitchenStage; status: string; grand_total: number }[];
   total_revenue: number;
+  total_revenue_rnb?: number;
+  furniture_quotations_total?: number;
+  furniture_quotations?: { id: string; customer_name: string; total_payable_rmb: string; total_received_rmb: string; balance_rmb: string; finalized_at: string }[];
   trend: { bucket: string; revenue: number }[];
   quotations: { id: string; number: string; customer_name: string; grand_total: number; updated_at: string | null }[];
 };
 
 export default function ReferrerDetail() {
-  const { id, preset: presetParam, floorId } = useLocalSearchParams<{ id: string; preset?: string; floorId?: string }>();
-  const preset: DatePreset = presetParam && presetParam in DATE_PRESET_LABEL ? (presetParam as DatePreset) : "this_month";
+  const { id, floorId } = useLocalSearchParams<{ id: string; floorId?: string }>();
+  const { query: periodQuery, label: periodLabel } = useAnalyticsDetailPeriod();
+  const generation = useRef(0);
+  const controller = useRef<AbortController | null>(null);
   const [granularity, setGranularity] = useState<Granularity>("month");
   const [data, setData] = useState<ReferrerDetailResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const { isPhone } = useBp();
-
-  const { date_from, date_to } = useMemo(() => presetToRange(preset), [preset]);
+  const { isPhone, isTabletPortrait } = useBp();
+  const compact = isPhone || isTabletPortrait;
 
   const load = useCallback(() => {
-    setError(null);
-    setData(null);
-    const params = new URLSearchParams();
-    params.set("granularity", granularity);
-    if (floorId && floorId !== "both") params.set("floor_id", floorId);
-    if (date_from) params.set("date_from", date_from);
-    if (date_to) params.set("date_to", date_to);
-    api.get<ReferrerDetailResponse>(`/sales-data/referrers/${id}?${params.toString()}`)
-      .then(setData)
-      .catch((e: any) => setError(e?.detail || "Could not load referrer"));
-  }, [id, granularity, date_from, date_to, floorId]);
-
-  useEffect(() => { load(); }, [load]);
+    if (!id || !periodQuery) return;
+    const version = ++generation.current;
+    controller.current?.abort();
+    const request = new AbortController(); controller.current = request;
+    setError(null); setData(null);
+    api.get<ReferrerDetailResponse>(`/sales-data/referrers/${encodeURIComponent(id)}?${periodQuery}&granularity=${granularity}`, { signal: request.signal })
+      .then(value => { if (version === generation.current) setData(value); })
+      .catch((cause: unknown) => { if (version === generation.current && !request.signal.aborted) setError(typeof (cause as { detail?: unknown })?.detail === "string" ? (cause as { detail: string }).detail : "Could not load reference"); });
+  }, [id, granularity, periodQuery]);
+  useEffect(() => { load(); return () => { generation.current += 1; controller.current?.abort(); }; }, [load]);
 
   const exportData = (section: string, rows: (string | number | null)[][]) => {
     if (!data) return;
@@ -58,8 +64,9 @@ export default function ReferrerDetail() {
   return (
     <AdminPage
       title={data?.referrer.name || "Referrer"}
-      subtitle={data ? `₹${fmtMoney(data.total_revenue)} total revenue · ${DATE_PRESET_LABEL[preset]}` : undefined}
+      subtitle={data ? `${floorId === "third-floor" ? "" : `₹${fmtMoney(data.total_revenue)} sales · `}${data.total_revenue_rnb || floorId === "third-floor" ? `RNB ${fmtMoney(data.total_revenue_rnb || 0)} Furniture sales · ` : ""}${periodLabel}` : undefined}
     >
+      <MobileFilterSection testID="referrer-filters">
       <PillTabs
         testID="referrer-detail-granularity"
         value={granularity}
@@ -69,18 +76,36 @@ export default function ReferrerDetail() {
           { value: "quarter", label: "Quarter" }, { value: "year", label: "Year" },
         ]}
       />
+      </MobileFilterSection>
       {error ? <ErrorState subtitle={error} onRetry={load} /> : null}
       {!error && !data ? <LoadingState label="Loading…" /> : null}
       {data ? (
         <View style={{ gap: spacing.lg }}>
+          <Text style={type.body}>{[data.referrer.company, referrerCode(data.referrer.id, data.referrer.type)].filter(Boolean).join(" · ")}</Text>
+          {data.furniture_quotations?.length ? <View style={{ gap: spacing.s12 }}>
+            <Text accessibilityRole="header" aria-level={2} style={type.titleSm}>Furniture final ledgers</Text>
+            <Text style={type.bodySm}>{data.furniture_quotations_total || data.furniture_quotations.length} final ledgers · RNB {fmtMoney(data.total_revenue_rnb || 0)} sales</Text>
+            <Button label="Export Furniture ledgers" variant="secondary" icon="download" onPress={() => exportData("Furniture final ledgers", [["Ledger ID", "Customer", "Sales (RNB)", "Received (RNB)", "Balance (RNB)", "Finalized"], ...data.furniture_quotations!.map(row => [row.id, row.customer_name, row.total_payable_rmb, row.total_received_rmb, row.balance_rmb, row.finalized_at])])} />
+            {data.furniture_quotations.map(row => <View key={row.id} testID={`referrer-furniture-row-${row.id}`} style={{ gap: spacing.s8, paddingVertical: spacing.s12, borderTopWidth: 1, borderTopColor: colors.border }}>
+              <Text style={type.bodyStrong}>{row.customer_name}</Text>
+              <Text style={type.bodySm}>Finalized {new Date(row.finalized_at).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" })}</Text>
+              <View style={{ flexDirection: compact ? "column" : "row", flexWrap: "wrap", gap: spacing.s12 }}>
+                <Text style={[type.body, { fontVariant: ["tabular-nums"] }]}>Sales RNB {row.total_payable_rmb}</Text>
+                <Text style={[type.body, { fontVariant: ["tabular-nums"] }]}>Received RNB {row.total_received_rmb}</Text>
+                <Text style={[type.body, { fontVariant: ["tabular-nums"] }]}>Balance RNB {row.balance_rmb}</Text>
+              </View>
+            </View>)}
+            {(data.furniture_quotations_total || 0) > data.furniture_quotations.length ? <Text style={type.bodySm}>Showing the latest {data.furniture_quotations.length} ledgers. Narrow the reporting period to see earlier records.</Text> : null}
+          </View> : null}
+          {data.kitchen_projects?.length ? <View style={{ gap: spacing.md }}><Text style={type.titleSm}>Kitchen leads and projects</Text>{data.kitchen_projects.map(project => <NavigationLink key={project.id} href={`/kitchen/${project.id}/stages/${project.kitchen_stage}` as any} accessibilityLabel={`Open ${project.number}`} style={{ minHeight: 56, padding: spacing.md, borderWidth: 1, borderColor: colors.border, borderRadius: 8 }}><Text style={type.bodyStrong}>{project.customer_name} · {project.number}</Text><Text style={type.body}>{STAGE_LABELS[project.kitchen_stage]}{project.status === "ordered" ? ` · Confirmed sale ₹${fmtMoney(project.grand_total)}` : ""}</Text></NavigationLink>)}</View> : null}
           {data.trend.length ? <Button testID="referrer-detail-trend-export-xlsx" label="Export revenue trend" icon="download" variant="secondary" onPress={() => exportData("Revenue trend", [["Period", "Revenue"], ...data.trend.map(point => [point.bucket, point.revenue])])} /> : null}
-          <TrendChart points={data.trend} />
+          {floorId !== "third-floor" ? <TrendChart points={data.trend} /> : null}
           {data.quotations.length === 0 ? (
-            <EmptyState title="No won quotations in this range" />
+            data.furniture_quotations?.length ? null : <EmptyState title="No confirmed sales in this range" />
           ) : (
             <View style={{ gap: spacing.sm }}>
             <Button testID="referrer-detail-orders-export-xlsx" label="Export orders" icon="download" variant="secondary" onPress={() => exportData("Confirmed orders", [["Order", "Customer", "Value", "Confirmed at"], ...data.quotations.map(quote => [quote.number, quote.customer_name, quote.grand_total, quote.updated_at])])} />
-            {isPhone ? (
+            {compact ? (
               <View style={{ gap: spacing.xs }}>
                 {data.quotations.map((q) => (
                   <View key={q.id} testID={`referrer-quote-row-${q.id}`} style={{ minHeight: 56, paddingVertical: spacing.xs, borderBottomWidth: 1, borderBottomColor: colors.border, flexDirection: "row", alignItems: "center", gap: spacing.md }}>

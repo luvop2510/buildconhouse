@@ -35,10 +35,10 @@ class Collection:
         idem = query.get("idempotency_key") or next((part["idempotency_key"] for part in query.get("$and", []) if "idempotency_key" in part), None)
         if idem:
             return next((row for row in self.rows if row.get("idempotency_key") == idem), None)
-        wanted = query.get("id") or next((part["id"] for part in query.get("$and", []) if "id" in part), None)
+        wanted = query.get("id") or query.get("_id") or next((part.get("id") or part.get("_id") for part in query.get("$and", []) if "id" in part or "_id" in part), None)
         if not wanted and query.get("items.id"):
             return next((row for row in self.rows if any(item.get("id") == query["items.id"] for item in row.get("items", []))), None)
-        return next((row for row in self.rows if row.get("id") == wanted), None)
+        return next((row for row in self.rows if row.get("id") == wanted or row.get("_id") == wanted), None)
     def find(self, query=None, *_args, **_kwargs):
         if query and "transfer_group_key" in query:
             return Cursor([row for row in self.rows if matches(row, query)])
@@ -53,6 +53,10 @@ class Collection:
         for key, val in update.get("$inc", {}).items(): row[key] = row.get(key, 0) + val
         row.update(update.get("$set", {}))
         return SimpleNamespace(modified_count=1)
+
+
+def stock_database(**collections):
+    return SimpleNamespace(settings=Collection([]), **collections)
 
 
 def matches(row, query):
@@ -77,8 +81,46 @@ def user():
     return UserPublic(id="u-1", email="staff@example.com", full_name="Staff", role="warehouse", floor_ids=["first-floor"], active_floor_id="first-floor")
 
 
+@pytest.mark.parametrize("field", ["qty", "unit_price", "discount_pct"])
+@pytest.mark.parametrize("value", [float("nan"), float("inf")])
+def test_transfer_rejects_nonfinite_numbers_before_any_write(field, value):
+    values = {"qty": 1, "recipient_customer_id": "recipient", "unit_price": 100, "idempotency_key": "numeric-command", field: value}
+    with pytest.raises(ValueError):
+        route.CustomerTransfer(**values)
+
+
+def test_new_transfer_customer_validates_before_transaction():
+    with pytest.raises(ValueError):
+        route.NewTransferCustomer(name="Customer", email="invalid-email")
+    with pytest.raises(ValueError):
+        route.NewTransferCustomer(name="   ")
+    assert route.NewTransferCustomer(name=" Customer ", email=" ").model_dump()["email"] is None
+    assert route.NewTransferCustomer(name=" Customer ").name == "Customer"
+
+
+def test_transfer_receipt_binds_complete_new_customer_payload_and_actor():
+    body = route.CustomerTransfer(qty=2, new_customer=route.NewTransferCustomer(name="Reviewed recipient", email="recipient@example.com"), unit_price=100, reason="Reviewed", idempotency_key="request-full-payload")
+    receipt = {"id": "transfer", "stock_id": "stock-1", "qty": 2, "recipient_customer_id": "new-recipient", "recipient_purchase_item_id": None, "unit_price": 100, "discount_pct": 0,
+               "request_sha256": route._transfer_request_hash("stock-1", body, user())}
+    replay = route._replayed_transfer(receipt, "stock-1", body, user())
+    assert replay["idempotent"] is True and "request_sha256" not in replay
+    changed_name = body.model_copy(update={"new_customer": route.NewTransferCustomer(name="Different recipient", email="recipient@example.com")})
+    changed_email = body.model_copy(update={"new_customer": route.NewTransferCustomer(name="Reviewed recipient", email="different@example.com")})
+    for changed in [changed_name, changed_email, body.model_copy(update={"reason": "Different reason"})]:
+        with pytest.raises(HTTPException) as error:
+            route._replayed_transfer(receipt, "stock-1", changed, user())
+        assert error.value.status_code == 409
+        assert error.value.detail["code"] == "godown_transfer_already_recorded"
+        assert error.value.detail["transfer"]["id"] == "transfer"
+        assert "request_sha256" not in error.value.detail["transfer"]
+    with pytest.raises(HTTPException) as error:
+        route._replayed_transfer(receipt, "stock-1", body, user().model_copy(update={"id": "other-actor"}))
+    assert error.value.status_code == 409
+    assert "request_sha256" not in route._transfer_view(receipt)
+
+
 def lot():
-    return {"id": "stock-1", "floor_id": "first-floor", "product_id": "product-1", "sku": "ABC", "name": "Mixer", "available_qty": 5, "qty_received": 5, "loaned_out_qty": 0, "source_customer_id": "source-1", "source_customer_name": "Source"}
+    return {"id": "stock-1", "floor_id": "first-floor", "product_id": "product-1", "sku": "ABC", "name": "Mixer", "unit_price": 100, "mrp": 100, "available_qty": 5, "qty_received": 5, "loaned_out_qty": 0, "source_customer_id": "source-1", "source_customer_name": "Source"}
 
 
 def po():
@@ -86,7 +128,7 @@ def po():
 
 
 def test_matching_po_final_reports_ordered_and_transferable_quantities(monkeypatch):
-    monkeypatch.setattr(route, "db", SimpleNamespace(purchase_orders=Collection([po()])))
+    monkeypatch.setattr(route, "db", stock_database(purchase_orders=Collection([po()])))
     result = asyncio.run(route._po_final_matches(lot()))
     assert result["total_ordered_qty"] == 3
     assert result["transferable_qty"] == 3
@@ -96,7 +138,7 @@ def test_matching_po_final_reports_ordered_and_transferable_quantities(monkeypat
 def test_customer_transfer_consumes_stock_replaces_po_final_and_is_idempotent(monkeypatch):
     stock = Collection([lot()]); transfers = Collection([])
     purchases = Collection([po()]); customers = Collection([{"id": "recipient-1", "floor_id": "first-floor", "name": "Recipient"}])
-    fake_db = SimpleNamespace(godown_stock=stock, godown_customer_transfers=transfers, purchase_orders=purchases, customers=customers, payments=Collection([]), quotations=Collection([]))
+    fake_db = stock_database(godown_stock=stock, godown_customer_transfers=transfers, purchase_orders=purchases, customers=customers, payments=Collection([]), quotations=Collection([]))
     monkeypatch.setattr(route, "db", fake_db)
     monkeypatch.setattr(route, "client", Client())
     monkeypatch.setattr(route, "log_event", lambda **_kwargs: asyncio.sleep(0))
@@ -104,6 +146,8 @@ def test_customer_transfer_consumes_stock_replaces_po_final_and_is_idempotent(mo
     monkeypatch.setattr(route, "next_number", number)
     body = route.CustomerTransfer(qty=2, recipient_customer_id="recipient-1", recipient_purchase_item_id="item-1", unit_price=100, discount_pct=10, idempotency_key="request-123")
     result = asyncio.run(route.transfer_stock_to_customer("stock-1", body, user()))
+    assert transfers.rows[0]["request_sha256"] == route._transfer_request_hash("stock-1", body, user())
+    assert "request_sha256" not in result
     assert result["recipient_inbox_stage"] == "in_box"
     assert result["status"] == "completed"
     assert result["transfer_type"] == "godown_stock"
@@ -138,7 +182,7 @@ def test_customer_transfer_consumes_stock_replaces_po_final_and_is_idempotent(mo
 def test_customer_transfer_rejects_non_matching_po_item(monkeypatch):
     wrong_po = po(); wrong_po["items"][0]["stage"] = "in_box"
     stock = Collection([lot()]); transfers = Collection([])
-    monkeypatch.setattr(route, "db", SimpleNamespace(godown_stock=stock, godown_customer_transfers=transfers, purchase_orders=Collection([wrong_po]), customers=Collection([{"id": "recipient-1", "floor_id": "first-floor", "name": "Recipient"}])))
+    monkeypatch.setattr(route, "db", stock_database(godown_stock=stock, godown_customer_transfers=transfers, purchase_orders=Collection([wrong_po]), customers=Collection([{"id": "recipient-1", "floor_id": "first-floor", "name": "Recipient"}])))
     monkeypatch.setattr(route, "client", Client())
     body = route.CustomerTransfer(qty=1, recipient_customer_id="recipient-1", recipient_purchase_item_id="item-1", idempotency_key="request-456")
     with pytest.raises(HTTPException) as exc:
@@ -152,7 +196,7 @@ def test_customer_transfer_rejects_cancelled_purchase_order(monkeypatch):
     cancelled_po["status"] = "cancelled"
     stock = Collection([lot()])
     purchases = Collection([cancelled_po])
-    monkeypatch.setattr(route, "db", SimpleNamespace(
+    monkeypatch.setattr(route, "db", stock_database(
         godown_stock=stock, godown_customer_transfers=Collection([]),
         purchase_orders=purchases,
         customers=Collection([{"id": "recipient-1", "floor_id": "first-floor", "name": "Recipient"}]),
@@ -172,7 +216,7 @@ def test_customer_transfer_rejects_cancelled_purchase_order(monkeypatch):
 def test_matching_po_with_existing_order_does_not_duplicate_amount_due(monkeypatch):
     existing_po = po(); existing_po["quotation_id"] = "quote-1"
     quotations = Collection([])
-    monkeypatch.setattr(route, "db", SimpleNamespace(
+    monkeypatch.setattr(route, "db", stock_database(
         godown_stock=Collection([lot()]), godown_customer_transfers=Collection([]),
         purchase_orders=Collection([existing_po]),
         customers=Collection([{"id": "recipient-1", "floor_id": "first-floor", "name": "Recipient"}]),
@@ -189,7 +233,7 @@ def test_matching_po_with_existing_order_does_not_duplicate_amount_due(monkeypat
 
 def test_direct_customer_transfer_creates_order_payment_due_and_inbox_item(monkeypatch):
     stock = Collection([lot()]); transfers = Collection([]); purchases = Collection([po()]); quotations = Collection([])
-    fake_db = SimpleNamespace(
+    fake_db = stock_database(
         godown_stock=stock, godown_customer_transfers=transfers, purchase_orders=purchases,
         customers=Collection([{"id": "recipient-1", "floor_id": "first-floor", "name": "Recipient"}]),
         quotations=quotations,
@@ -223,7 +267,7 @@ def test_direct_customer_transfer_creates_order_payment_due_and_inbox_item(monke
 def test_new_customer_transfer_creates_customer_order_and_inbox_item(monkeypatch):
     stock = Collection([lot()]); transfers = Collection([]); purchases = Collection([])
     customers = Collection([]); quotations = Collection([])
-    monkeypatch.setattr(route, "db", SimpleNamespace(
+    monkeypatch.setattr(route, "db", stock_database(
         godown_stock=stock, godown_customer_transfers=transfers, purchase_orders=purchases,
         customers=customers, quotations=quotations,
     ))
@@ -242,7 +286,7 @@ def test_new_customer_transfer_creates_customer_order_and_inbox_item(monkeypatch
 
 def test_transfer_rejects_quantity_above_remaining_stock(monkeypatch):
     stock = Collection([lot()])
-    monkeypatch.setattr(route, "db", SimpleNamespace(godown_stock=stock, godown_customer_transfers=Collection([])))
+    monkeypatch.setattr(route, "db", stock_database(godown_stock=stock, godown_customer_transfers=Collection([])))
     monkeypatch.setattr(route, "client", Client())
     body = route.CustomerTransfer(qty=6, recipient_customer_id="recipient-1", idempotency_key="too-many-123")
     with pytest.raises(HTTPException) as exc:
@@ -260,7 +304,7 @@ def test_replacement_keeps_unrelated_lines_and_drops_fulfilled_final_line():
 
 
 def setup_transfers(monkeypatch, quotes=None):
-    database = SimpleNamespace(
+    database = stock_database(
         godown_stock=Collection([lot()]), godown_customer_transfers=Collection([]),
         purchase_orders=Collection([]), quotations=Collection(quotes or []),
         customers=Collection([{"id": "recipient-1", "floor_id": "first-floor", "name": "Recipient"}]),
@@ -311,9 +355,11 @@ def test_new_goods_reopen_the_same_fully_paid_transfer_quote(monkeypatch):
     database = setup_transfers(monkeypatch)
     first = asyncio.run(route.transfer_stock_to_customer("stock-1", transfer_request("paid-first"), user()))
     monkeypatch.setattr(payments, "db", database)
-    async def paid(_ids, **_kwargs): return {first["recipient_quotation_id"]: 100}
+    async def paid(_ids, **kwargs):
+        keys = kwargs.get("order_keys")
+        return {key: 100 for key in keys} if keys is not None else {first["recipient_quotation_id"]: 100}
     monkeypatch.setattr(payments, "_paid_by_quotation", paid)
-    monkeypatch.setattr(payments, "_godown_value_by_quotation", lambda _ids: asyncio.sleep(0, result={}))
+    monkeypatch.setattr(payments, "_godown_value_by_quotation", lambda _ids, **_kwargs: asyncio.sleep(0, result={}))
     def queue():
         return asyncio.run(payments.list_orders(status_filter=None, overdue_period=None,
             custom_min_days=None, custom_max_days=None, limit=200, user=user()))
@@ -381,3 +427,23 @@ def test_first_transfer_with_fractional_quantity_uses_shared_rounding(monkeypatc
     assert quote["subtotal"] == 15.02
     assert quote["discount_total"] == 1.50
     assert quote["grand_total"] == result["total"] == 13.51
+
+
+def test_transfer_requires_explicit_price_for_unpriced_stock(monkeypatch):
+    unpriced = lot(); unpriced["unit_price"] = None
+    monkeypatch.setattr(route, "db", stock_database(godown_stock=Collection([unpriced]), godown_customer_transfers=Collection([])))
+    monkeypatch.setattr(route, "client", Client())
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(route.transfer_stock_to_customer("stock-1", route.CustomerTransfer(qty=1, recipient_customer_id="recipient-1", idempotency_key="unpriced-stock-123"), user()))
+    assert exc.value.status_code == 422
+    assert "price" in exc.value.detail
+
+
+@pytest.mark.parametrize("flag", ["quantity_missing", "archived"])
+def test_transfer_rejects_unknown_quantity_or_archived_stock(monkeypatch, flag):
+    unavailable = {**lot(), flag: True}
+    monkeypatch.setattr(route, "db", stock_database(godown_stock=Collection([unavailable]), godown_customer_transfers=Collection([])))
+    monkeypatch.setattr(route, "client", Client())
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(route.transfer_stock_to_customer("stock-1", route.CustomerTransfer(qty=1, recipient_customer_id="recipient-1", unit_price=100, idempotency_key="unavailable-stock-123"), user()))
+    assert exc.value.status_code == 409

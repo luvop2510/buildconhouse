@@ -21,7 +21,7 @@ async function loadAccess() {
   if (cache) return cache;
   if (!inflight) {
     const generation = accessGeneration;
-    inflight = api.get<FloorAccess>("/settings/floor-access").then((value) => {
+    inflight = api.get<FloorAccess>("/settings/floor-access", { floorId: "" }).then((value) => {
       // Do not let a request made under the previous staff session restore
       // that session's assignments after logout/login.
       if (generation === accessGeneration) {
@@ -76,7 +76,7 @@ export function setSelectedFloorId(id: string) {
   return selectedFloorPersistence;
 }
 
-export function useFloorAccess() {
+export function useFloorAccess(enabled = true) {
   const [access, setAccess] = useState<FloorAccess | null>(cache);
   const [selectedFloorId, setSelectedFloorIdState] = useState(selectedFloorCache || "");
   const [error, setError] = useState<string | null>(null);
@@ -97,6 +97,7 @@ export function useFloorAccess() {
     }
   }, []);
   useEffect(() => {
+    if (!enabled) return;
     let alive = true;
     const onSelectedFloorChange = (floorId: string) => { if (alive) setSelectedFloorIdState(floorId); };
     selectedFloorListeners.add(onSelectedFloorChange);
@@ -116,7 +117,7 @@ export function useFloorAccess() {
       setError(cause?.detail || "We couldn't load your workspace access.");
     });
     return () => { alive = false; selectedFloorListeners.delete(onSelectedFloorChange); };
-  }, []);
+  }, [enabled]);
   const selectFloor = useCallback((id: string) => {
     const canSelect = Boolean(access && access.floors.some((floor) => floor.id === id) &&
       (access.all_floors || access.floor_ids.includes(id)));
@@ -125,8 +126,8 @@ export function useFloorAccess() {
   return { access, floors: access?.floors || [], selectedFloorId, selectFloor, loading: !access && !error, error, retry };
 }
 
-export function useRequireFloorAccess(floorId: string) {
-  const { access, selectedFloorId, selectFloor } = useFloorAccess();
+export function useRequireFloorAccessState(floorId: string) {
+  const { access, selectedFloorId, selectFloor, loading, error, retry } = useFloorAccess();
   const router = useRouter();
   const synchronizedFloorRef = useRef<string | null>(null);
   useEffect(() => {
@@ -143,5 +144,10 @@ export function useRequireFloorAccess(floorId: string) {
       if (selectedFloorId !== floorId) void selectFloor(floorId);
     }
   }, [access, floorId, router, selectedFloorId, selectFloor]);
-  return Boolean(access && (access.all_floors || access.floor_ids.includes(floorId)) && selectedFloorId === floorId);
+  const ready = Boolean(access && (access.all_floors || access.floor_ids.includes(floorId)) && selectedFloorId === floorId);
+  return { ready, loading, error, retry };
+}
+
+export function useRequireFloorAccess(floorId: string) {
+  return useRequireFloorAccessState(floorId).ready;
 }

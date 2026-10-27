@@ -23,6 +23,56 @@ async function collections(page: Page) {
   await page.getByTestId('open-record-payment').click();
 }
 
+test('critical payment overview collapses without losing a payment draft on rotation', async ({ page }, info) => {
+  await collections(page);
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  const toggle = page.getByTestId('payments-page-details-toggle');
+  const overview = page.getByTestId('payments-page-details');
+  const phone = (page.viewportSize()?.width || 0) < 768;
+  await expect(toggle).toHaveAttribute('aria-expanded', String(!phone));
+  if (phone) await toggle.click();
+  await expect(overview).toBeVisible();
+  await expect(page.getByTestId('fully-paid-orders-link')).toBeVisible();
+  const expandedTabsTop = (await page.getByTestId('payments-tabs').boundingBox())!.y;
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(overview).toBeHidden();
+  await expect(page.getByRole('heading', { name: 'Payments', exact: true })).toBeVisible();
+  const collapsedTabsTop = (await page.getByTestId('payments-tabs').boundingBox())!.y;
+  expect(expandedTabsTop - collapsedTabsTop).toBeGreaterThan(60);
+  // Essential navigation and selected-order identity stay available in compact view.
+  await expect(page.getByTestId('payments-tabs-collections')).toBeVisible();
+  await expect(page.getByTestId('payments-order-detail')).toContainText('Payment Client');
+  await page.getByTestId('payment-edit-quotation').scrollIntoViewIfNeeded();
+  await expect(page.getByTestId('payment-edit-quotation')).toBeInViewport();
+  await page.getByTestId('open-record-payment').scrollIntoViewIfNeeded();
+  await expect(page.getByTestId('open-record-payment')).toBeInViewport();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
+  await page.screenshot({ path: info.outputPath('payments-compact-overview.png') });
+  await page.getByTestId('open-record-payment').click();
+  await page.getByTestId('pay-amount').fill('600.25');
+  await page.getByTestId('pay-mode-upi').click();
+  await page.getByTestId('pay-reference').fill('Draft preserved on rotation');
+  const viewport = page.viewportSize()!;
+  await page.setViewportSize({ width: viewport.height, height: viewport.width });
+  await expect(page.getByTestId('pay-amount')).toHaveValue('600.25');
+  await expect(page.getByTestId('pay-reference')).toHaveValue('Draft preserved on rotation');
+  await expect(page.getByTestId('save-payment')).toBeInViewport();
+  await page.screenshot({ path: info.outputPath('payments-draft-rotated.png') });
+  await page.setViewportSize(viewport);
+  const writes: any[] = [];
+  await page.route('**/api/payments', route => {
+    writes.push({ payload: route.request().postDataJSON(), floor: route.request().headers()['x-floor-id'] });
+    return route.fulfill({ status: 503, json: { detail: 'Keep this draft for retry' } });
+  });
+  await page.getByTestId('save-payment').click();
+  await expect(page.getByTestId('record-payment-sheet').getByRole('alert')).toContainText('Keep this draft for retry');
+  expect(writes).toHaveLength(1);
+  expect(writes[0]).toMatchObject({ payload: { quotation_id: order.id, amount: 600.25, mode: 'upi', reference: 'Draft preserved on rotation' }, floor: 'first-floor' });
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+});
+
 test('critical payment form keeps paise, validates overpayment, scrolls and retries with the same key', async ({ page }) => {
   await collections(page);
   await expect(page.getByTestId('pay-amount')).toHaveValue('1200.50');
@@ -206,8 +256,54 @@ test('critical returning from the canonical quotation refreshes the selected bal
   await expect(page).toHaveURL(/\/quotations\/payment-order$/);
   await expect(page.getByTestId('edit-quotation')).toBeVisible();
   revised = true;
-  await page.goBack();
-  await page.getByTestId('open-record-payment').scrollIntoViewIfNeeded();
-  await page.getByTestId('open-record-payment').click();
-  await expect(page.getByTestId('pay-amount')).toHaveValue('2500.00');
+  let releaseStats!: () => void;
+  const heldStats = new Promise<void>(resolve => { releaseStats = resolve; });
+  await page.route('**/api/payments/stats', async route => {
+    await heldStats;
+    return route.fulfill({ json: { total_outstanding: row().outstanding } });
+  });
+  try {
+    await page.goBack();
+    await page.getByTestId('open-record-payment').scrollIntoViewIfNeeded();
+    await page.getByTestId('open-record-payment').click();
+    await expect(page.getByTestId('pay-amount')).toHaveValue('2500.00');
+  } finally { releaseStats(); }
+});
+
+
+test('critical payment histories show Indian payment amounts without a bank method label', async ({ page }) => {
+  await mockSession(page, '/payments', false);
+  await page.route('**/api/payments/orders', r => r.fulfill({ json: [order] }));
+  await page.route('**/api/payments/orders/payment-order', r => r.fulfill({ json: { ...detail(), payments: [{
+    id: 'bank-receipt', amount: 123456.78, mode: 'bank', entry_type: 'payment', status: 'completed',
+    paid_at: '2026-10-27T10:00:00Z', recorded_by_name: 'Worker',
+  }] } }));
+  await page.route('**/api/payments/history?**', r => r.fulfill({ json: { total: 1, items: [{
+    id: 'bank-receipt', customer_id: order.customer_id, customer_name: order.customer_name,
+    invoice_number: order.number, floor_id: 'first-floor', business_unit: 'Sanitary', amount: 123456.78,
+    mode: 'bank', entry_type: 'payment', status: 'completed', paid_at: '2026-10-27T10:00:00Z',
+  }] } }));
+  await page.goto('/payments');
+  const orderDetail = page.getByTestId('payments-order-detail');
+  await expect(orderDetail).toContainText('₹1,23,456.78');
+  await expect(orderDetail).not.toContainText('Bank Transfer');
+  await page.getByTestId('payments-tabs-history').click();
+  const history = page.getByTestId('payment-history-table');
+  await expect(history).toContainText('₹1,23,456.78');
+  await expect(history).not.toContainText('Bank Transfer');
+  await expect(history.getByText('METHOD', { exact: true })).toHaveCount(0);
+});
+
+
+test('critical Ground Floor dispatch labor history identifies the editor', async ({ page }) => {
+  await mockSession(page, '/payments', false, { floorId: 'ground-floor' });
+  await page.route('**/api/payments/orders', route => route.fulfill({ json: [order] }));
+  await page.route('**/api/payments/stats', route => route.fulfill({ json: {} }));
+  await page.route('**/api/payments/orders/payment-order', route => route.fulfill({ json: {
+    ...detail(), floor_id: 'ground-floor', payments: [{ id: 'dispatch-labor', label: 'labor cost', amount: 500,
+      status: 'pending', mode: 'bank', recorded_by_name: 'Dispatch Worker', created_at: '2026-10-27T09:00:00Z',
+      note: '₹500 labor cost added via dispatch DSP-1' }],
+  } }));
+  await page.goto('/payments');
+  await expect(page.getByTestId('payments-order-detail')).toContainText('Labor cost has been added · ₹500 by Dispatch Worker');
 });

@@ -8,6 +8,9 @@ There are NO taxes anywhere in Forge — the quotation's grand_total is the
 final price the customer pays, and payments accumulate against it directly.
 """
 from __future__ import annotations
+from services.money import format_indian_money
+from services.followup_engine import reconcile_followups_admitted
+import re
 from services.multi_filters import filter_values, filter_condition
 import asyncio
 import logging
@@ -67,7 +70,20 @@ MODE_LABELS = {
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-async def _paid_by_quotation(quotation_ids: list[str], *, floor_id: str | None = None, cash_only: bool = False) -> dict[str, float]:
+def _order_pair_query(order_keys: list[tuple[str, str | None]]) -> dict:
+    by_floor: dict[str | None, set[str]] = {}
+    for quotation_id, floor_id in order_keys:
+        by_floor.setdefault(floor_id, set()).add(quotation_id)
+    return {"$or": [{"floor_id": floor_id, "quotation_id": {"$in": sorted(ids)}}
+                    for floor_id, ids in by_floor.items()]} if by_floor else {"quotation_id": {"$in": []}}
+
+
+def _aggregate_order_key(value):
+    return (value["quotation_id"], value.get("floor_id")) if isinstance(value, dict) else value
+
+
+async def _paid_by_quotation(quotation_ids: list[str], *, floor_id: str | None = None, cash_only: bool = False,
+                             order_keys: list[tuple[str, str | None]] | None = None) -> dict:
     """Sum completed payment amounts per quotation.
 
     A quotation context panel is anchored to one business unit.  Accepting
@@ -81,12 +97,14 @@ async def _paid_by_quotation(quotation_ids: list[str], *, floor_id: str | None =
         match["entry_type"] = {"$ne": "godown_stock_credit"}
     if floor_id is not None:
         match["floor_id"] = floor_id
+    if order_keys is not None:
+        match.update(_order_pair_query(order_keys))
     pipeline = [
         {"$match": match},
-        {"$group": {"_id": "$quotation_id", "total": {"$sum": "$amount"}}},
+        {"$group": {"_id": {"quotation_id": "$quotation_id", "floor_id": "$floor_id"} if order_keys is not None else "$quotation_id", "total": {"$sum": "$amount"}}},
     ]
     rows = await db.payments.aggregate(pipeline).to_list(len(quotation_ids) + 5)
-    return {r["_id"]: float(r.get("total", 0)) for r in rows}
+    return {_aggregate_order_key(r["_id"]): float(r.get("total", 0)) for r in rows}
 
 
 async def _mrp_for_quotation(quotation: dict) -> float:
@@ -136,7 +154,8 @@ def _collection_total(quotation: dict) -> float:
 async def _godown_value_by_quotation(
     quotation_ids: list[str], *, floor_id: str | None = None,
     floor_ids: list[str] | None = None, purchase_orders=None,
-) -> dict[str, float]:
+    order_keys: list[tuple[str, str | None]] | None = None,
+) -> dict:
     """Sold value removed from confirmed orders by permanent godown intakes.
 
     The payment credit is capped at the unpaid balance.  A fully paid order
@@ -150,12 +169,14 @@ async def _godown_value_by_quotation(
         query["floor_id"] = floor_id
     elif floor_ids is not None:
         query["floor_id"] = {"$in": floor_ids}
+    if order_keys is not None:
+        query.update(_order_pair_query(order_keys))
     query["items.godown_transferred_qty"] = {"$gt": 0}
     pipeline = [
         {"$match": query},
         {"$unwind": "$items"},
         {"$match": {"items.cancelled": {"$ne": True}, "items.godown_transferred_qty": {"$gt": 0}}},
-        {"$group": {"_id": "$quotation_id", "total": {"$sum": {"$add": [
+        {"$group": {"_id": {"quotation_id": "$quotation_id", "floor_id": "$floor_id"} if order_keys is not None else "$quotation_id", "total": {"$sum": {"$add": [
             {"$ifNull": ["$items.godown_transferred_value", 0]},
             {"$multiply": [
                 {"$max": [0, {"$subtract": [
@@ -168,7 +189,18 @@ async def _godown_value_by_quotation(
     ]
     collection = purchase_orders if purchase_orders is not None else db.purchase_orders
     rows = await collection.aggregate(pipeline).to_list(len(quotation_ids) + 5)
-    return {row["_id"]: round(float(row.get("total") or 0), 2) for row in rows if row.get("_id")}
+    return {_aggregate_order_key(row["_id"]): round(float(row.get("total") or 0), 2) for row in rows if row.get("_id")}
+
+
+async def _order_balances(orders: list[dict]) -> tuple[dict, dict, dict]:
+    # Source rows are already authorized; retain each exact floor through the joins.
+    keys = [(order["id"], order.get("floor_id")) for order in orders]
+    ids = [key[0] for key in keys]
+    return tuple(await asyncio.gather(
+        _paid_by_quotation(ids, order_keys=keys),
+        _paid_by_quotation(ids, cash_only=True, order_keys=keys),
+        _godown_value_by_quotation(ids, order_keys=keys),
+    ))
 
 
 def _fully_paid_order_ids(orders: list[dict], paid_by_order: dict[str, float]) -> list[str]:
@@ -186,9 +218,7 @@ def _short_amount(amount: float) -> str:
         return f"₹{amount / 1_00_00_000:.1f}Cr"
     if amount >= 1_00_000:
         return f"₹{amount / 1_00_000:.1f}L"
-    if amount >= 1_000:
-        return f"₹{amount / 1_000:.1f}k"
-    return f"₹{int(amount)}"
+    return f"₹{format_indian_money(amount, decimals=0)}"
 
 
 def _iso_month(iso_ts: str) -> str:
@@ -241,14 +271,9 @@ async def payment_stats(user: UserPublic = Depends(get_current_user)):
     """Four KPIs: Total Outstanding · Collected This Month · Active Orders · Fully Paid."""
     orders = await db.quotations.find(
         _payment_scope_query(user, {"status": {"$in": list(ORDER_STATUSES)}}),
-        {"_id": 0, "id": 1, "grand_total": 1, "payment_extra_amount": 1, "payment_extra_history": 1},
+        {"_id": 0, "id": 1, "floor_id": 1, "grand_total": 1, "payment_extra_amount": 1, "payment_extra_history": 1},
     ).to_list(2000)
-    ids = [o["id"] for o in orders]
-    paid_map, cash_map, godown_map = await asyncio.gather(
-        _paid_by_quotation(ids),
-        _paid_by_quotation(ids, cash_only=True),
-        _godown_value_by_quotation(ids),
-    )
+    paid_map, cash_map, godown_map = await _order_balances(orders)
 
     total_outstanding = 0.0
     active_total = 0.0
@@ -260,10 +285,10 @@ async def payment_stats(user: UserPublic = Depends(get_current_user)):
     fully_paid = 0
     for o in orders:
         grand = _collection_total(o)
-        paid = paid_map.get(o["id"], 0.0)
-        cash = max(0.0, cash_map.get(o["id"], 0.0))
+        paid = paid_map.get((o["id"], o.get("floor_id")), 0.0)
+        cash = max(0.0, cash_map.get((o["id"], o.get("floor_id")), 0.0))
         credit = max(0.0, paid - cash)
-        effective_total = max(0.0, grand - godown_map.get(o["id"], 0.0))
+        effective_total = max(0.0, grand - godown_map.get((o["id"], o.get("floor_id")), 0.0))
         earned_total += min(cash, effective_total)
         refund_due_total += max(0.0, cash - effective_total)
         settlement_credits += credit
@@ -329,28 +354,24 @@ async def list_orders(
     aging_ranges = [_aging_range(value, custom_min_days, custom_max_days) for value in filter_values(overdue_period)]
     query: dict = {"status": {"$in": list(ORDER_STATUSES)}}
     if q:
-        term = {"$regex": q, "$options": "i"}
+        term = {"$regex": re.escape(q), "$options": "i"}
         query["$or"] = [
             {"number": term}, {"customer_name": term},
         ]
 
     docs = await db.quotations.find(
-        _payment_scope_query(user, query), {"_id": 0, "id": 1, "number": 1, "customer_id": 1, "customer_name": 1,
+        _payment_scope_query(user, query), {"_id": 0, "id": 1, "floor_id": 1, "number": 1, "customer_id": 1, "customer_name": 1,
                 "grand_total": 1, "payment_extra_amount": 1, "payment_extra_history": 1, "status": 1, "ordered_at": 1, "created_at": 1, "notes": 1},
     ).sort("updated_at", -1).to_list(limit * 2)
 
-    ids = [d["id"] for d in docs]
-    paid_map, cash_map, godown_map = await asyncio.gather(
-        _paid_by_quotation(ids), _paid_by_quotation(ids, cash_only=True),
-        _godown_value_by_quotation(ids),
-    )
+    paid_map, cash_map, godown_map = await _order_balances(docs)
 
     out = []
     for d in docs:
         grand = _collection_total(d)
-        paid = paid_map.get(d["id"], 0.0)
-        effective_total = max(0.0, grand - godown_map.get(d["id"], 0.0))
-        cash_received = max(0.0, cash_map.get(d["id"], 0.0))
+        paid = paid_map.get((d["id"], d.get("floor_id")), 0.0)
+        effective_total = max(0.0, grand - godown_map.get((d["id"], d.get("floor_id")), 0.0))
+        cash_received = max(0.0, cash_map.get((d["id"], d.get("floor_id")), 0.0))
         outstanding = max(0.0, grand - paid)
         pay_status = _payment_status(paid, grand)
         pct = 0 if grand <= 0 else min(100, int(round(paid / grand * 100)))
@@ -362,7 +383,7 @@ async def list_orders(
             "customer_name": d.get("customer_name"),
             "grand_total": grand,
             "effective_order_total": round(effective_total, 2),
-            "godown_transferred_value": round(godown_map.get(d["id"], 0.0), 2),
+            "godown_transferred_value": round(godown_map.get((d["id"], d.get("floor_id")), 0.0), 2),
             "cash_received": round(cash_received, 2),
             "refund_due": round(max(0.0, cash_received - effective_total), 2),
             "paid": round(paid, 2),
@@ -406,11 +427,22 @@ async def order_detail(order_id: str, user: UserPublic = Depends(get_current_use
         raise HTTPException(status_code=400, detail="Quotation is not a confirmed order yet")
 
     floor_id = doc.get("floor_id")
-    paid_map = await _paid_by_quotation([order_id], floor_id=floor_id)
-    cash_map, godown_map = await asyncio.gather(
+    # Only the quotation lookup is a dependency; overlap independent Atlas reads.
+    paid_map, cash_map, godown_map, mrp, customer, payments = await asyncio.gather(
+        _paid_by_quotation([order_id], floor_id=floor_id),
         _paid_by_quotation([order_id], floor_id=floor_id, cash_only=True),
         _godown_value_by_quotation([order_id], floor_id=floor_id),
+        _mrp_for_quotation(doc),
+        db.customers.find_one(
+            {"id": doc["customer_id"], "floor_id": floor_id}, {"_id": 0, "password_hash": 0},
+        ),
+        db.payments.find(
+            {"quotation_id": order_id, "floor_id": floor_id,
+             "$nor": [{"status": "pending", "automation_key": {"$exists": True},
+                       "label": {"$ne": "labor cost"}}]}, {"_id": 0},
+        ).sort("paid_at", -1).to_list(500),
     )
+    customer = customer or {}
     paid = paid_map.get(order_id, 0.0)
     quotation_total = float(doc.get("grand_total") or 0)
     extra_history = doc.get("payment_extra_history") if isinstance(doc.get("payment_extra_history"), list) else []
@@ -419,17 +451,8 @@ async def order_detail(order_id: str, user: UserPublic = Depends(get_current_use
     grand = _collection_total(doc)
     effective_total = max(0.0, grand - godown_map.get(order_id, 0.0))
     cash_received = max(0.0, cash_map.get(order_id, 0.0))
-    mrp = await _mrp_for_quotation(doc)
     outstanding = max(0.0, grand - paid)
 
-    customer = await db.customers.find_one(
-        {"id": doc["customer_id"], "floor_id": floor_id}, {"_id": 0, "password_hash": 0},
-    ) or {}
-
-    payments = await db.payments.find(
-        {"quotation_id": order_id, "floor_id": floor_id,
-         "$nor": [{"status": "pending", "automation_key": {"$exists": True}}]}, {"_id": 0},
-    ).sort("paid_at", -1).to_list(500)
     # Ensure legacy payments (without paid_at) still sort sensibly
     payments.sort(key=lambda p: (p.get("paid_at") or p.get("created_at") or ""), reverse=True)
 
@@ -553,7 +576,8 @@ async def update_ground_floor_manual_extra(
              "$set": {"payment_extra_name": name, "updated_at": now}},
             session=session,
         )
-        await db.payments.insert_one(ledger_entry, session=session)
+        # Mongo mutates the inserted mapping with an ObjectId; keep it out of the response.
+        await db.payments.insert_one(dict(ledger_entry), session=session)
         return result_for(current, entry, ledger_entry, added=True)
 
     # Keep the quotation audit trail and ledger debit atomic on Atlas.  Local
@@ -682,8 +706,8 @@ async def create_payment(
         outstanding_before = round(grand - already_paid, 2)
         if payment.amount > outstanding_before + 1e-6:
             raise HTTPException(status_code=400, detail=(
-                f"Payment of ₹{body.amount:,.2f} exceeds the outstanding balance of "
-                f"₹{max(outstanding_before, 0):,.2f} on {quot.get('number')}"
+                f"Payment of ₹{format_indian_money(body.amount)} exceeds the outstanding balance of "
+                f"₹{format_indian_money(max(outstanding_before, 0))} on {quot.get('number')}"
             ))
         payment_doc = payment.model_dump()
         if not idempotency_key:
@@ -745,7 +769,7 @@ async def create_payment(
     fully_paid = total_paid + 1e-6 >= grand
 
     try:
-        await log_event(
+        await asyncio.wait_for(log_event(
             event_type="payment.recorded",
             entity_type="payment",
             entity_id=payment.id,
@@ -754,7 +778,7 @@ async def create_payment(
             quotation_id=body.quotation_id,
             summary=(
                 f"{MODE_LABELS.get(body.mode, body.mode).title()} · "
-                f"₹{payment.amount:,.0f} received on {quot.get('number')}"
+                f"₹{format_indian_money(payment.amount, decimals=0)} received on {quot.get('number')}"
             ),
             payload={
                 "amount": payment.amount,
@@ -762,7 +786,7 @@ async def create_payment(
                 "reference": body.reference,
                 "fully_paid": fully_paid,
             },
-        )
+        ), timeout=1.0)
     except Exception:
         logger.exception("activity log failed after committed payment %s", payment.id)
     try:
@@ -771,16 +795,19 @@ async def create_payment(
         logger.exception("cache bump failed for payments after payment %s", payment.id)
     # A payment landing is exactly when payment_overdue/payment_partial
     # reminders should refresh or auto-close — event-triggered, not a cron job.
-    asyncio.create_task(reconcile_followups())
-    asyncio.create_task(notify(
-        quot.get("created_by"),
-        f"Payment received · {quot.get('number')}",
-        body=f"₹{payment.amount:,.0f} ({MODE_LABELS.get(body.mode, body.mode).title()}) from {quot.get('customer_name')}"
-        + (" — fully paid" if fully_paid else f" — ₹{max(grand - total_paid, 0):,.0f} outstanding"),
-        kind="success",
-        link=f"/quotations/{body.quotation_id}",
-        floor_id=floor_inherit(quot),
-    ))
+    asyncio.create_task(reconcile_followups_admitted())
+    try:
+        await asyncio.wait_for(notify(
+            quot.get("created_by"),
+            f"Payment received · {quot.get('number')}",
+            body=f"₹{format_indian_money(payment.amount, decimals=0)} ({MODE_LABELS.get(body.mode, body.mode).title()}) from {quot.get('customer_name')}"
+            + (" — fully paid" if fully_paid else f" — ₹{format_indian_money(max(grand - total_paid, 0), decimals=0)} outstanding"),
+            kind="success",
+            link=f"/quotations/{body.quotation_id}",
+            floor_id=floor_inherit(quot),
+        ), timeout=1.0)
+    except Exception:
+        logger.exception("notification failed after committed payment %s", payment.id)
     return payment
 
 
@@ -819,13 +846,17 @@ async def completed_payment_list(
     order_query: dict = {"status": {"$in": list(ORDER_STATUSES)}}
     if floor_ids is not None:
         order_query["floor_id"] = {"$in": floor_ids}
-    orders = await db.quotations.find(order_query, {"_id": 0, "id": 1, "grand_total": 1, "payment_extra_amount": 1, "payment_extra_history": 1}).to_list(5000)
-    paid_by_order = await _paid_by_quotation([order["id"] for order in orders])
-    fully_paid_ids = _fully_paid_order_ids(orders, paid_by_order)
+    orders = await db.quotations.find(order_query, {"_id": 0, "id": 1, "floor_id": 1, "grand_total": 1, "payment_extra_amount": 1, "payment_extra_history": 1}).to_list(5000)
+    order_keys = [(order["id"], order.get("floor_id")) for order in orders]
+    paid_by_order = await _paid_by_quotation([key[0] for key in order_keys], order_keys=order_keys)
+    fully_paid_keys = [key for order, key in zip(orders, order_keys)
+                       if _collection_total(order) > 0 and paid_by_order.get(key, 0.0) + 1e-6 >= _collection_total(order)]
     query = _history_filter(floor_ids, q, date_from, date_to, None, mode, "completed")
-    query["quotation_id"] = {"$in": fully_paid_ids}
-    total = await db.payments.count_documents(query)
-    docs = await db.payments.find(query, {"_id": 0}).sort(_SORT_MAP[sort]).skip(skip).limit(limit).to_list(limit)
+    query.update(_order_pair_query(fully_paid_keys))
+    total, docs = await asyncio.gather(
+        db.payments.count_documents(query),
+        db.payments.find(query, {"_id": 0}).sort(_SORT_MAP[sort]).skip(skip).limit(limit).to_list(limit),
+    )
     response.headers["X-Total-Count"] = str(total)
     return {"total": total, "items": await _enrich_history_rows(docs)}
 
@@ -845,7 +876,7 @@ async def fully_paid_orders(
     if floor_ids is not None:
         query["floor_id"] = {"$in": floor_ids}
     if q:
-        term = {"$regex": q.strip(), "$options": "i"}
+        term = {"$regex": re.escape(q.strip()), "$options": "i"}
         query["$or"] = [{"number": term}, {"customer_name": term}]
     orders = await db.quotations.find(
         query,
@@ -853,26 +884,22 @@ async def fully_paid_orders(
          "floor_id": 1, "grand_total": 1, "payment_extra_amount": 1,
          "payment_extra_history": 1, "ordered_at": 1, "created_at": 1},
     ).to_list(5000)
-    paid_map = await _paid_by_quotation([order["id"] for order in orders])
-    cash_map, godown_map = await asyncio.gather(
-        _paid_by_quotation([order["id"] for order in orders], cash_only=True),
-        _godown_value_by_quotation([order["id"] for order in orders]),
-    )
+    paid_map, cash_map, godown_map = await _order_balances(orders)
     settled = []
     for order in orders:
         total = _collection_total(order)
-        paid = paid_map.get(order["id"], 0.0)
+        paid = paid_map.get((order["id"], order.get("floor_id")), 0.0)
         if total <= 0 or paid + 1e-6 < total:
             continue
-        effective_total = max(0.0, total - godown_map.get(order["id"], 0.0))
-        cash_received = max(0.0, cash_map.get(order["id"], 0.0))
+        effective_total = max(0.0, total - godown_map.get((order["id"], order.get("floor_id")), 0.0))
+        cash_received = max(0.0, cash_map.get((order["id"], order.get("floor_id")), 0.0))
         settled.append({
             "id": order["id"], "number": order.get("number"),
             "customer_id": order.get("customer_id"), "customer_name": order.get("customer_name"),
             "floor_id": order.get("floor_id"), "grand_total": total,
             "received": round(paid, 2), "outstanding": 0.0,
             "effective_order_total": round(effective_total, 2),
-            "godown_transferred_value": round(godown_map.get(order["id"], 0.0), 2),
+            "godown_transferred_value": round(godown_map.get((order["id"], order.get("floor_id")), 0.0), 2),
             "cash_received": round(cash_received, 2),
             "refund_due": round(max(0.0, cash_received - effective_total), 2),
             "confirmed_at": order.get("ordered_at") or order.get("created_at"),
@@ -937,7 +964,7 @@ def _history_filter(
         # indexed, so filtering on it keeps this fast and gap-free.
         query["created_at"] = date_range
     if q:
-        rx = {"$regex": q.strip(), "$options": "i"}
+        rx = {"$regex": re.escape(q.strip()), "$options": "i"}
         or_clause = [
             {"customer_name": rx}, {"quotation_number": rx}, {"reference": rx},
             {"note": rx}, {"cost_name": rx},
@@ -957,32 +984,37 @@ _SORT_MAP = {
 async def _enrich_history_rows(docs: list[dict]) -> list[dict]:
     """Attach invoice number, business unit label, and outstanding
     before/after — all derived, nothing stored twice."""
-    qids = list({d["quotation_id"] for d in docs if d.get("quotation_id")})
-    quotations = await db.quotations.find(
-        {"id": {"$in": qids}}, {
-            "_id": 0, "id": 1, "number": 1, "doc_number": 1, "grand_total": 1,
-            "payment_extra_amount": 1, "payment_extra_history": 1,
-        },
-    ).to_list(len(qids) + 5) if qids else []
-    quot_by_id = {qq["id"]: qq for qq in quotations}
-
-    # Running balance needs every cash credit and added-cost debit on each
-    # touched quotation (not just the rows matching this page's filters),
-    # otherwise a search/date filter would silently produce a wrong balance.
-    all_pmts = await db.payments.find(
-        {"quotation_id": {"$in": qids}, "status": {"$in": ["completed", "adjustment"]}},
-        {
-            "_id": 0, "id": 1, "quotation_id": 1, "amount": 1, "paid_at": 1,
-            "created_at": 1, "entry_type": 1, "additional_cost_id": 1,
-        },
-    ).to_list(5000) if qids else []
-    by_qid: dict[str, list[dict]] = {}
+    # A reused/malformed quotation id on another floor must not affect this ledger.
+    order_keys = {(d["quotation_id"], d.get("floor_id")) for d in docs if d.get("quotation_id")}
+    if not docs:
+        return []
+    # Page count/data are independent, as are these three enrichment reads.
+    quotations, all_pmts, floor_names = await asyncio.gather(
+        db.quotations.find(
+            {"$or": [{"id": qid, "floor_id": floor_id} for qid, floor_id in order_keys]}, {
+                "_id": 0, "id": 1, "number": 1, "doc_number": 1, "grand_total": 1,
+                "payment_extra_amount": 1, "payment_extra_history": 1, "floor_id": 1,
+            },
+        ).to_list(len(order_keys) + 5) if order_keys else asyncio.sleep(0, result=[]),
+        # Include the whole ledger for each touched order, regardless of page filters.
+        db.payments.find(
+            {"$or": [{"quotation_id": qid, "floor_id": floor_id} for qid, floor_id in order_keys],
+             "status": {"$in": ["completed", "adjustment"]}},
+            {
+                "_id": 0, "id": 1, "quotation_id": 1, "amount": 1, "paid_at": 1,
+                "created_at": 1, "entry_type": 1, "additional_cost_id": 1, "floor_id": 1,
+            },
+        ).to_list(5000) if order_keys else asyncio.sleep(0, result=[]),
+        _floor_names(),
+    )
+    quot_by_key = {(qq["id"], qq.get("floor_id")): qq for qq in quotations}
+    by_order: dict[tuple[str, str | None], list[dict]] = {}
     for p in all_pmts:
-        by_qid.setdefault(p["quotation_id"], []).append(p)
-    outstanding_by_payment_id: dict[str, tuple[float, float]] = {}
-    for qid, pmts in by_qid.items():
+        by_order.setdefault((p["quotation_id"], p.get("floor_id")), []).append(p)
+    outstanding_by_payment_id: dict[tuple[str, str | None], tuple[float, float]] = {}
+    for order_key, pmts in by_order.items():
         pmts.sort(key=lambda p: (p.get("paid_at") or p.get("created_at") or "", p.get("id") or ""))
-        quotation = quot_by_id.get(qid) or {}
+        quotation = quot_by_key.get(order_key) or {}
         # Costs recorded before this ledger feature have no matching debit
         # document. Treat only those historical costs as opening receivables;
         # new costs are added exactly once by their ledger event below.
@@ -1003,19 +1035,20 @@ async def _enrich_history_rows(docs: list[dict]) -> list[dict]:
             else:
                 running -= float(p.get("amount") or 0)
             after = round(running, 2)
-            outstanding_by_payment_id[p["id"]] = (before, after)
+            outstanding_by_payment_id[(p["id"], p.get("floor_id"))] = (before, after)
 
-    floor_names = await _floor_names()
     out = []
     for d in docs:
-        qq = quot_by_id.get(d.get("quotation_id"), {})
-        before_after = outstanding_by_payment_id.get(d["id"])
+        qq = quot_by_key.get((d.get("quotation_id"), d.get("floor_id")), {})
+        before_after = outstanding_by_payment_id.get((d["id"], d.get("floor_id")))
         # Keep non-cash ledger credits legible in both the payment-history
         # table and the order detail timeline.  The persisted entry_type is
         # the source of truth; this label avoids relying on a free-text note.
         label = d.get("label")
         if d.get("entry_type") == "godown_stock_credit":
             label = "Moved to go-down stock"
+        elif d.get("label") == "labor cost":
+            label = f"Labor cost has been added · ₹{format_indian_money(d.get('amount') or 0)} by {d.get('recorded_by_name') or 'Unknown staff'}"
         elif d.get("entry_type") == "additional_cost":
             label = f"Additional cost · {d.get('cost_name') or 'Unnamed cost'}"
         out.append({
@@ -1047,8 +1080,10 @@ async def payment_history(
 ):
     floor_ids = _resolve_history_floor_ids(user, business_unit)
     query = _history_filter(floor_ids, q, date_from, date_to, customer_id, mode, status)
-    total = await db.payments.count_documents(query)
-    docs = await db.payments.find(query, {"_id": 0}).sort(_SORT_MAP[sort]).skip(skip).limit(limit).to_list(limit)
+    total, docs = await asyncio.gather(
+        db.payments.count_documents(query),
+        db.payments.find(query, {"_id": 0}).sort(_SORT_MAP[sort]).skip(skip).limit(limit).to_list(limit),
+    )
     response.headers["X-Total-Count"] = str(total)
     return {"total": total, "items": await _enrich_history_rows(docs)}
 
@@ -1096,17 +1131,7 @@ async def export_payment_history(
 # ---------------------------------------------------------------------------
 def _format_amount(v: float) -> str:
     """Indian-style comma formatting: 12,34,567."""
-    s = f"{int(round(v))}"
-    if len(s) <= 3:
-        return s
-    last3, rest = s[-3:], s[:-3]
-    parts = []
-    while len(rest) > 2:
-        parts.append(rest[-2:])
-        rest = rest[:-2]
-    if rest:
-        parts.append(rest)
-    return ",".join(reversed(parts)) + "," + last3
+    return format_indian_money(v, decimals=0)
 
 
 def _clean_phone(phone: Optional[str]) -> Optional[str]:

@@ -233,3 +233,32 @@ def test_tiles_quotation_does_not_repeat_detail_columns_before_an_overflow_total
     final_page = pages[-1].extract_text() or ""
     assert "TOTAL" in final_page
     assert "PRODUCT IMAGE" not in final_page
+
+
+def test_both_tile_documents_paginate_many_products_on_a4_without_stretching(monkeypatch):
+    from reportlab.lib.pagesizes import landscape, A4
+    monkeypatch.setattr(pdf_tiles, "prefetch_product_images", lambda _items: None)
+    for builder in (pdf_tiles.build_tiles_selection_pdf, pdf_tiles.build_tiles_quotation_pdf):
+        document = {"customer_name": "Pagination Customer", "address_snapshot": "Site address",
+                    "items": [{"name": f"Tile {index}", "qty": 1, "unit_price": 100} for index in range(1, 41)]}
+        pages = PdfReader(BytesIO(builder(document, {"name": "Pagination Customer"}))).pages
+        assert len(pages) > 3
+        for page in pages:
+            assert abs(float(page.mediabox.width) - landscape(A4)[0]) < 0.01
+            assert abs(float(page.mediabox.height) - landscape(A4)[1]) < 0.01
+        text = " ".join(page.extract_text() or "" for page in pages)
+        assert "Tile 1" in text and "Tile 40" in text
+
+
+def test_tile_customer_and_reference_cells_grow_to_fit_wrapped_values():
+    from reportlab.lib.units import mm
+    styles = pdf_tiles._tiles_styles()
+    short = pdf_tiles._meta_grid({"customer_name": "Name"}, {}, styles)
+    long = pdf_tiles._meta_grid({"customer_name": "Long customer name " * 12,
+                                 "address_snapshot": "Long site address " * 12,
+                                 "reference_source": "Architect and interior studio reference " * 12}, {}, styles)
+    short.wrap(281 * mm, 300 * mm)
+    long.wrap(281 * mm, 300 * mm)
+    assert long._rowHeights[1] > short._rowHeights[1]
+    assert long._rowHeights[3] > short._rowHeights[3]
+    assert all(height >= 7 * mm for height in (long._rowHeights[1], long._rowHeights[3]))

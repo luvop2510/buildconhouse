@@ -19,8 +19,37 @@ const BASE = __DEV__ ? configuredBase : "";
 const usesDirectDevApi = __DEV__ && Boolean(BASE);
 const TOKEN_KIND_KEY = "forge.jwt.kind";
 const REQUEST_TIMEOUT_MS = 30_000;
-const inflightGets = new Map<string, Promise<unknown>>();
+type SharedGet = { key: string; promise: Promise<unknown>; controller: AbortController; consumers: number; settled: boolean };
+const inflightGets = new Map<string, SharedGet>();
 const responseCache = new Map<string, { expiresAt: number; value: unknown }>();
+const MAX_RESPONSE_CACHE_ENTRIES = 64;
+
+// Brief navigation reuse; mutations, floor changes and logout invalidate all entries.
+// Editable details and authorization reads stay fresh. Callers can force cacheMs: 0.
+function navigationCacheMs(path: string, floorId: string | null | undefined): number {
+  if (!floorId) return 0;
+  const route = path.split("?")[0];
+  if (["/walkins", "/customers", "/followups", "/followups/page", "/followups/inbox",
+    "/payments/orders", "/payments/history"].includes(route)) return 2000;
+  return floorId === "ground-floor" && ["/tile-orders/customer-orders", "/tile-orders/brands",
+    "/tile-orders/history", "/tile-orders/dispatch-list", "/tile-orders/inventory",
+    "/tile-orders/material-movements"].includes(route) ? 2000 : 0;
+}
+
+function cacheResponse(key: string, value: unknown, ttlMs: number) {
+  const now = Date.now();
+  // Distinct searches/pages must not retain expired catalog payloads for the
+  // whole session. The bounded scan also keeps cleanup independent of URL reuse.
+  for (const [cachedKey, entry] of responseCache) {
+    if (entry.expiresAt <= now) responseCache.delete(cachedKey);
+  }
+  responseCache.delete(key);
+  while (responseCache.size >= MAX_RESPONSE_CACHE_ENTRIES) {
+    responseCache.delete(responseCache.keys().next().value!);
+  }
+  responseCache.set(key, { expiresAt: now + ttlMs, value });
+}
+
 const activeRequests = new Map<AbortController, boolean>();
 let tokenCache: string | null | undefined;
 let tokenKindCache: TokenKind | null | undefined;
@@ -35,14 +64,28 @@ export class ApiError extends Error {
 }
 type RequestOptions = { floorId?: string; signal?: AbortSignal; cacheMs?: number };
 
-/** A shared GET owns its transport; each browser view only owns its own wait. */
-function abortForConsumer<T>(pending: Promise<T>, signal?: AbortSignal): Promise<T> {
-  if (!signal) return pending;
-  if (signal.aborted) return Promise.reject(new DOMException("Request cancelled by this view.", "AbortError"));
+/** Keep shared reads alive only while at least one consumer still needs them. */
+function abortForConsumer<T>(pending: SharedGet, signal?: AbortSignal): Promise<T> {
+  pending.consumers += 1;
   return new Promise<T>((resolve, reject) => {
-    const abort = () => reject(new DOMException("Request cancelled by this view.", "AbortError"));
-    signal.addEventListener("abort", abort, { once: true });
-    pending.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+    let finished = false;
+    const release = () => {
+      if (finished) return;
+      finished = true;
+      signal?.removeEventListener("abort", abort);
+      pending.consumers -= 1;
+      if (!pending.settled && pending.consumers === 0) {
+        if (inflightGets.get(pending.key) === pending) inflightGets.delete(pending.key);
+        pending.controller.abort();
+      }
+    };
+    const abort = () => {
+      release();
+      reject(new DOMException("Request cancelled by this view.", "AbortError"));
+    };
+    if (signal?.aborted) abort();
+    else signal?.addEventListener("abort", abort, { once: true });
+    pending.promise.then(value => { release(); resolve(value as T); }, error => { release(); reject(error); });
   });
 }
 
@@ -118,7 +161,7 @@ export function csrfHeaders(): Record<string, string> {
   // throw before fetch and prevent even logout or a fresh credential login.
   return csrf ? { "X-CSRF-Token": csrf } : {};
 }
-async function getRequestFloorId() {
+export async function getRequestFloorId() {
   if (floorCache === undefined) {
     const stored = (await browserStorage.getItem<string>(SELECTED_FLOOR_KEY, "")) || "";
     if (floorCache === undefined) floorCache = stored;
@@ -132,12 +175,14 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: R
   const controller = new AbortController();
   activeRequests.set(controller, identityRead);
   const token = await getToken();
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const multipart = typeof FormData !== "undefined" && body instanceof FormData;
+  const headers: Record<string, string> = multipart ? {} : { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
   if (!/^(GET|HEAD|OPTIONS)$/i.test(method)) {
     Object.assign(headers, csrfHeaders());
   }
-  const floorId = opts?.floorId ?? await getRequestFloorId();
+  // Account restoration must not inherit a stale or newly revoked workspace.
+  const floorId = identityRead ? "" : opts?.floorId ?? await getRequestFloorId();
   if (floorId) headers["X-Floor-Id"] = floorId;
   if (identityRead ? identityVersion !== identityContextVersion : contextVersion !== requestContextVersion) {
     activeRequests.delete(controller);
@@ -151,10 +196,26 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: R
     else opts.signal.addEventListener("abort", abortFromCaller, { once: true });
   }
   try {
-    const response = await fetch(`${BASE}/api${path}`, {
-      method, headers, body: body ? JSON.stringify(body) : undefined, signal: controller.signal, credentials: "same-origin",
-    });
-    const text = await response.text();
+    const readTransport = async (retry: boolean): Promise<{ response: Response; text: string }> => {
+      try {
+        const response = await fetch(`${BASE}/api${path}`, {
+          method, headers, body: multipart ? body as FormData : body ? JSON.stringify(body) : undefined,
+          signal: controller.signal, credentials: "same-origin",
+        });
+        return { response, text: await response.text() };
+      } catch (error) {
+        if (!retry || !(error instanceof TypeError) || controller.signal.aborted) throw error;
+        // Recover one dropped Kitchen read within its original deadline. Writes
+        // retain their explicit idempotency-key retry instead of being replayed.
+        await new Promise<void>((resolve, reject) => {
+          const abort = () => { clearTimeout(timer); reject(new DOMException("Request cancelled.", "AbortError")); };
+          const timer = setTimeout(() => { controller.signal.removeEventListener("abort", abort); resolve(); }, 150);
+          controller.signal.addEventListener("abort", abort, { once: true });
+        });
+        return readTransport(false);
+      }
+    };
+    const { response, text } = await readTransport(method === "GET" && path.startsWith("/kitchen-projects"));
     let data: unknown = null;
     if (text) {
       try {
@@ -175,6 +236,7 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: R
     return data as T;
   } catch (error) {
     if (timedOut) throw new ApiError(408, "Request timed out. Please try again.");
+    if (controller.signal.aborted) throw new DOMException("Request cancelled because the signed-in account, workspace or screen changed.", "AbortError");
     if (error instanceof TypeError) throw new ApiError(503, "Cannot reach the backend. Check the configured secure backend URL and try again.");
     throw error;
   } finally {
@@ -192,26 +254,39 @@ async function mutate<T>(method: string, path: string, body?: unknown, opts?: Re
 
 export const api = {
   get: <T>(path: string, opts?: RequestOptions) => {
-    if (opts?.signal?.aborted) return abortForConsumer(Promise.resolve(undefined as T), opts.signal);
+    if (opts?.signal?.aborted) return Promise.reject(new DOMException("Request cancelled by this view.", "AbortError"));
     const key = `${opts?.floorId ?? floorCache ?? "auto"}:${path}`;
+    const cacheMs = opts?.cacheMs ?? navigationCacheMs(path, opts?.floorId ?? floorCache);
     const cacheVersion = readCacheVersion;
     const cached = responseCache.get(key);
-    if (opts?.cacheMs !== 0 && cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.value as T);
+    if (opts?.cacheMs !== 0 && cached && cached.expiresAt > Date.now()) {
+      // Touch the entry so recently visited categories survive eviction.
+      responseCache.delete(key);
+      responseCache.set(key, cached);
+      return Promise.resolve(cached.value as T);
+    }
     if (cached) responseCache.delete(key);
     const existing = inflightGets.get(key);
-    if (existing) return abortForConsumer(existing as Promise<T>, opts?.signal);
-    // Consumer cancellation must not terminate a request shared by another view.
-    const pending = request<T>("GET", path, undefined, { ...opts, signal: undefined }).then((value) => {
-      if (cacheVersion === readCacheVersion && opts?.cacheMs && opts.cacheMs > 0) responseCache.set(key, { expiresAt: Date.now() + opts.cacheMs, value });
-      return value;
-    }).finally(() => { if (inflightGets.get(key) === pending) inflightGets.delete(key); });
-    inflightGets.set(key, pending);
-    return abortForConsumer(pending, opts?.signal);
+    if (existing) return abortForConsumer<T>(existing, opts?.signal);
+    const controller = new AbortController();
+    const shared: SharedGet = { key, promise: Promise.resolve(), controller, consumers: 0, settled: false };
+    shared.promise = request<T>("GET", path, undefined, { ...opts, signal: controller.signal })
+      .then((value) => {
+        if (!controller.signal.aborted && cacheVersion === readCacheVersion && cacheMs > 0) cacheResponse(key, value, cacheMs);
+        return value;
+      })
+      .finally(() => {
+        shared.settled = true;
+        if (inflightGets.get(key) === shared) inflightGets.delete(key);
+      });
+    inflightGets.set(key, shared);
+    return abortForConsumer<T>(shared, opts?.signal);
   },
   post: <T>(path: string, body?: unknown, opts?: RequestOptions) => { return mutate<T>("POST", path, body, opts); },
   put: <T>(path: string, body?: unknown, opts?: RequestOptions) => { return mutate<T>("PUT", path, body, opts); },
   patch: <T>(path: string, body?: unknown, opts?: RequestOptions) => { return mutate<T>("PATCH", path, body, opts); },
   delete: <T>(path: string, opts?: RequestOptions) => { return mutate<T>("DELETE", path, undefined, opts); },
+  upload: <T>(p: string, form: FormData, opts?: RequestOptions) => mutate<T>("POST", p, form, opts),
   authenticatedUrl: async (path: string, floorId?: string) => {
     const { token } = await request<{ token: string }>("POST", "/downloads/token", { target: `/api${path}` }, { floorId });
     return `${BASE}/api${path}${path.includes("?") ? "&" : "?"}dl=${encodeURIComponent(token)}`;

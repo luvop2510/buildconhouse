@@ -4,6 +4,7 @@ the TileCustomerOrder itself) lives in services/domain_outbox.py, not here
 — see that file's _handle_order_placed.
 """
 from __future__ import annotations
+from services.money import format_indian_money
 from services.multi_filters import filter_values, filter_condition
 
 from datetime import datetime, timezone
@@ -553,7 +554,7 @@ async def _apply_dispatch_labor_cost(po: dict, dispatch: dict, labor_cost: float
         quotation_id=po["quotation_id"], quotation_number=po.get("quotation_number"),
         customer_id=po["customer_id"], customer_name=po.get("customer_name"),
         amount=round(float(labor_cost), 2), mode="bank", status="pending",
-        note=f"₹{labor_cost:,.0f} labor cost added via dispatch {dispatch.get('dispatch_number', '')}".strip(),
+        note=f"₹{format_indian_money(labor_cost, decimals=0)} labor cost added via dispatch {dispatch.get('dispatch_number', '')}".strip(),
         recorded_by=dispatch.get("created_by"), recorded_by_name=dispatch.get("created_by_name"),
         floor_id=po.get("floor_id", TILES_FLOOR_ID),
     ).model_dump()

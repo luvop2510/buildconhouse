@@ -93,7 +93,7 @@ def test_team_create_rejects_an_unassigned_non_manager_before_writing(monkeypatc
         asyncio.run(misc_routes.create_team_member(body, admin))
 
 
-def test_clearing_a_profile_preserves_valid_floor_access_and_revokes_sessions(monkeypatch):
+def test_clearing_a_profile_preserves_valid_floor_access_and_sessions(monkeypatch):
     before = {
         "id": "staff-1", "email": "staff@example.com", "full_name": "Staff", "role": "sales",
         "floor_ids": ["ground-floor"], "access_profile": "ground_tile_quotations_followups", "active": True,
@@ -129,5 +129,5 @@ def test_clearing_a_profile_preserves_valid_floor_access_and_revokes_sessions(mo
 
     assert result["access_profile"] is None
     assert result["floor_ids"] == ["ground-floor"]
-    assert revoked == ["staff-1"]
+    assert revoked == []
     assert events == ["user.access_profile_changed"]

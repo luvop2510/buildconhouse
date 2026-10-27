@@ -1,0 +1,25 @@
+{
+  "firstRun": {
+    "passed": 27,
+    "failed": 1,
+    "failure": "Android repeated-session test initial Customers expectation",
+    "timeoutMs": 30000
+  },
+  "trace": {
+    "initialExpectationStartMs": 15713.706,
+    "initialExpectationEndMs": 419511.322,
+    "elapsedMs": 403797.616,
+    "lastCustomerFixtureFulfillEndMs": 16655.932
+  },
+  "hostPowerEvidence": {
+    "timezone": "Asia/Kolkata",
+    "sleepAt": "2026-10-13 04:09:04 +0530",
+    "wakeAt": "2026-10-13 04:15:47 +0530",
+    "durationSeconds": 403,
+    "reason": "Idle Sleep"
+  },
+  "interpretation": "Runner suspended with the host after HTTP200 customer fixture completed; no pageerror/crash recorded, and failure screenshot shows completed empty state after wake. Full unchanged suite rerun using temporary process-scoped caffeinate -i. Original failure remains retained.",
+  "codeChangesForRerun": false,
+  "deadlineChanges": false,
+  "retries": 0
+}

@@ -10,6 +10,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import DuplicateKeyError
 
 from auth import verify_password
+from services.team_credentials import decrypt_password
 from services.team_data_reset import (
     OWNER_ID, OWNER_LOGIN, RECEIPT_ID, REQUEST_ID, reset_team_data, team_reset_preview,
 )
@@ -82,6 +83,7 @@ def test_reset_atomic_preview_preservation_replay_and_username_index(disposable_
             assert await database.users.count_documents({}) == 1
             assert owner["login_id"] == owner["full_name"] == OWNER_LOGIN
             assert owner["role"] == "owner" and verify_password(TEST_PASSWORD, owner["password_hash"])
+            assert decrypt_password(owner["password_encrypted"], OWNER_ID) == TEST_PASSWORD
             assert TEST_PASSWORD not in str(receipt) and TEST_PASSWORD not in str(owner)
             assert receipt["portal_accounts_disabled"] == 1
             assert receipt["customer_credential_rows_scrubbed"] == 2

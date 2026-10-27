@@ -22,7 +22,7 @@ RUN pip install -r requirements-prod.txt
 
 # Allowlist runtime code and assets.  Do not copy the build context wholesale:
 # local environments, reports and credentials must never enter an image layer.
-COPY access_profiles.py auth.py bootstrap.py catalog_policy.py db.py middleware.py models.py models_tile_orders.py models_walkins.py pdf_chalan.py pdf_generator.py pdf_tiles.py seed.py server.py settings.py ./
+COPY access_profiles.py auth.py bootstrap.py catalog_policy.py db.py middleware.py models.py models_kitchen.py models_tile_orders.py models_walkins.py pdf_chalan.py pdf_generator.py pdf_tiles.py seed.py server.py settings.py ./
 COPY buildcon_logo.png buildcon_cover_logo.png ./
 COPY brand_logos ./brand_logos
 COPY migrations ./migrations

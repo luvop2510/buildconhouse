@@ -33,6 +33,7 @@ MODULES: list[dict[str, str]] = [
     {"key": "quotations", "label": "Quotations"},
     {"key": "catalog", "label": "Catalog"},
     {"key": "customers", "label": "Customers"},
+    {"key": "kitchen-projects", "label": "Kitchen · Overview, Projects, Workflow and Completed"},
     {"key": "purchases", "label": "Purchases"},
     {"key": "payments", "label": "Payments"},
     {"key": "followups", "label": "Follow-ups"},

@@ -146,7 +146,7 @@ def test_cleanup_retains_failed_object_metadata_for_retry(monkeypatch):
 
 
 def test_draft_endpoint_uses_current_contact_and_never_marks_sent(monkeypatch):
-    doc = {"id": "q1", "customer_id": "c1", "floor_id": "ground-floor", "status": "draft", "phone_snapshot": "9000000000"}
+    doc = {"id": "q1", "customer_id": "c1", "floor_id": "ground-floor", "status": "draft", "phone_snapshot": "9000000000", "updated_at": "2026-10-17T09:00:00Z"}
     lookup = AsyncMock(return_value=doc)
     customers = SimpleNamespace(find_one=AsyncMock(return_value={"name": "Customer", "phone": "9909906652"}))
     monkeypatch.setattr(quotation_routes, "get_floor_scoped_or_404", lookup)
@@ -160,12 +160,16 @@ def test_draft_endpoint_uses_current_contact_and_never_marks_sent(monkeypatch):
     assert result["phone"] == "919909906652"
     assert doc["status"] == "draft"
     customers.find_one.assert_awaited_once_with({"id": "c1", "floor_id": "ground-floor"}, {"_id": 0, "password_hash": 0})
-    renderer.assert_awaited_once_with(doc, {"name": "Customer", "phone": "9909906652"}, True)
-    create.assert_awaited_once_with(doc, b"%PDF", "Customer.pdf", "u1")
+    assert result["filename"] == "Customer.pdf"
+    assert result["expected_updated_at"] == doc["updated_at"]
+    assert result["include_dimensions"] is True
+    assert "pdf_path" not in result
+    renderer.assert_not_awaited()
+    create.assert_not_awaited()
     assert lookup.call_args.args[2] is user
 
 
-@pytest.mark.parametrize("customer,status", [(None, 404), ({"name": "No contact"}, 422), ({"phone": "123"}, 422)])
+@pytest.mark.parametrize("customer,status", [(None, 404)])
 def test_draft_contact_errors_do_not_render_or_store_pdf(monkeypatch, customer, status):
     monkeypatch.setattr(quotation_routes, "get_floor_scoped_or_404", AsyncMock(return_value={"id": "q1", "customer_id": "c1", "floor_id": "first-floor"}))
     monkeypatch.setattr(quotation_routes, "db", SimpleNamespace(customers=SimpleNamespace(find_one=AsyncMock(return_value=customer)), quotations=object()))
@@ -208,9 +212,9 @@ def test_draft_endpoint_does_not_use_stale_contact_snapshot(monkeypatch):
     )))
     render = AsyncMock()
     monkeypatch.setattr(quotation_routes, "_build_quotation_file", render)
-    with pytest.raises(HTTPException) as error:
-        asyncio.run(quotation_routes.quotation_whatsapp_draft("q1", user=SimpleNamespace(id="u1")))
-    assert error.value.status_code == 422
+    result = asyncio.run(quotation_routes.quotation_whatsapp_draft("q1", user=SimpleNamespace(id="u1")))
+    assert result["phone"] is None
+    assert "pdf_path" not in result
     render.assert_not_awaited()
 
 @pytest.mark.parametrize("method", ["GET", "HEAD"])
@@ -247,3 +251,66 @@ def test_public_pdf_exemption_does_not_broaden_staff_auth_bypass(monkeypatch, me
     response = asyncio.run(server.enforce_access_profile(request, AsyncMock(return_value=Response(status_code=200))))
     assert response.status_code == 401
     authenticate.assert_awaited_once()
+
+
+@pytest.mark.parametrize("phone", [None, "123"])
+def test_pdf_file_sharing_remains_available_without_valid_phone(monkeypatch, phone):
+    doc = {"id": "q1", "customer_id": "c1", "floor_id": "second-floor", "customer_name": "Customer"}
+    monkeypatch.setattr(quotation_routes, "get_floor_scoped_or_404", AsyncMock(return_value=doc))
+    monkeypatch.setattr(quotation_routes, "db", SimpleNamespace(customers=SimpleNamespace(
+        find_one=AsyncMock(return_value={"name": "Customer", "phone": phone})), quotations=object()))
+    result = asyncio.run(quotation_routes.quotation_whatsapp_draft("q1", user=SimpleNamespace(id="u1")))
+    assert result["phone"] is None
+    assert result["floor_id"] == "second-floor"
+    assert result["filename"] == "Customer.pdf"
+    assert "pdf_path" not in result
+
+
+@pytest.mark.parametrize("floor_id,doc_type", [
+    ("ground-floor", "tiles_selection"), ("ground-floor", "tiles_quotation"),
+    ("first-floor", "standard"), ("second-floor", "standard"), ("third-floor", "standard"),
+])
+def test_direct_send_delivers_pdf_bytes_for_document_floor(monkeypatch, floor_id, doc_type):
+    from services import whatsapp_delivery
+    doc = {"id": "q1", "customer_id": "c1", "floor_id": floor_id,
+           "doc_type": doc_type, "updated_at": "2026-10-17T09:00:00Z", "status": "draft"}
+    customer = {"name": "Customer", "phone": "9909906652"}
+    lookup = AsyncMock(return_value=doc)
+    monkeypatch.setattr(quotation_routes, "get_floor_scoped_or_404", lookup)
+    monkeypatch.setattr(quotation_routes, "db", SimpleNamespace(customers=SimpleNamespace(
+        find_one=AsyncMock(return_value=customer)), quotations=object()))
+    renderer = AsyncMock(return_value=(b"%PDF-private", "Customer.pdf"))
+    send = AsyncMock(return_value={"status": "accepted"})
+    create = AsyncMock()
+    monkeypatch.setattr(quotation_routes, "_build_quotation_file", renderer)
+    monkeypatch.setattr(whatsapp_delivery, "send_document", send)
+    monkeypatch.setattr(shares, "create_share", create)
+    body = quotation_routes.QuotationWhatsAppSendInput(message="Please review", expected_updated_at=doc["updated_at"],
+        idempotency_key="quotation_request_123", include_dimensions=True)
+    user = SimpleNamespace(id="u1")
+    assert asyncio.run(quotation_routes.send_quotation_whatsapp("q1", body, user)) == {"status": "accepted"}
+    renderer.assert_awaited_once_with(doc, customer, True)
+    send.assert_awaited_once_with(pdf_bytes=b"%PDF-private", filename="Customer.pdf", recipient_phone="919909906652",
+        message="Please review", idempotency_key="quotation_request_123", floor_id=floor_id, source_id="q1", actor_id="u1")
+    create.assert_not_awaited()
+    assert doc["status"] == "draft"
+    assert lookup.call_args.args[2] is user
+
+
+@pytest.mark.parametrize("phone,expected_version,status", [("9909906652", "stale", 409), ("invalid", "current", 422)])
+def test_direct_send_rejects_stale_document_or_invalid_phone_before_render(monkeypatch, phone, expected_version, status):
+    from services import whatsapp_delivery
+    monkeypatch.setattr(quotation_routes, "get_floor_scoped_or_404", AsyncMock(return_value={
+        "id": "q1", "customer_id": "c1", "floor_id": "first-floor", "updated_at": "current"}))
+    monkeypatch.setattr(quotation_routes, "db", SimpleNamespace(customers=SimpleNamespace(
+        find_one=AsyncMock(return_value={"phone": phone})), quotations=object()))
+    render, send = AsyncMock(), AsyncMock()
+    monkeypatch.setattr(quotation_routes, "_build_quotation_file", render)
+    monkeypatch.setattr(whatsapp_delivery, "send_document", send)
+    body = quotation_routes.QuotationWhatsAppSendInput(message="Please review", expected_updated_at=expected_version,
+        idempotency_key="quotation_request_123")
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(quotation_routes.send_quotation_whatsapp("q1", body, SimpleNamespace(id="u1")))
+    assert error.value.status_code == status
+    render.assert_not_awaited()
+    send.assert_not_awaited()

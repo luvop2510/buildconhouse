@@ -32,6 +32,7 @@ import {
 import { useBp } from "@/src/design/responsive";
 import { useReducedMotion } from "@/src/hooks/use-reduced-motion";
 import { filterValues, toggleFilterValue } from "@/src/utils/filters";
+export { MobileFilterSection } from "@/src/components/MobileFilterSection";
 
 // Re-export every existing primitive from ui.tsx.
 // Screens should import from "@/src/components/ds" going forward.
@@ -41,7 +42,7 @@ export {
   LoadingState, PageHeader, PillTabs, PriceTag, ProgressBar,
   ScreenTitle, SearchField, SectionHeader, SegmentedControl, Sheet, Skeleton,
   SkeletonCard, SkeletonGrid, SkeletonList, SkeletonRow, StatTile, StatusBadge,
-  Table, TableCell, TableHeader, TableRow, Tabs, TextField, Toolbar,
+  Table, TableCell, TableHeader, TableRow, tableMinWidth, Tabs, TextField, Toolbar,
 } from "@/src/components/ui";
 
 type FeatherName = keyof typeof Feather.glyphMap;
@@ -210,10 +211,13 @@ export function FilterBar<T extends string>({
 }) {
   const { isPhone } = useBp();
   return (
-    <View style={{ gap: spacing.sm }}>
+    <View style={{ gap: spacing.sm, minWidth: 0, maxWidth: "100%" }}>
       {label ? <Text style={type.overline}>{label}</Text> : null}
       <ScrollView
         horizontal
+        style={{ minWidth: 0, maxWidth: "100%" }}
+        nestedScrollEnabled
+        keyboardShouldPersistTaps="handled"
         // Filter choices may legitimately extend beyond a phone width. Keep
         // the native indicator visible so that clipped chips read as a
         // scrollable control, not missing options.
@@ -741,7 +745,7 @@ export function ActivityRow({
 // ───────────────────────────────────────────────────────────────────────────
 export function Dropdown({ label, icon, items, testID, variant = "secondary" }: {
   label: string; icon?: FeatherName;
-  items: { label: string; icon?: FeatherName; onPress: () => void; tone?: "default" | "danger" }[];
+  items: { label: string; icon?: FeatherName; onPress: () => void; tone?: "default" | "danger"; disabled?: boolean; testID?: string }[];
   testID?: string; variant?: "primary" | "secondary" | "ghost";
 }) {
   const foreground = variant === "primary" ? colors.onBrand : colors.onSurface;

@@ -56,6 +56,8 @@ export type PurchaseItem = {
   loan_replenishment_for_customer_name?: string | null;
   loan_replenishment_status?: "awaiting_return" | "returned" | null;
   loan_replenishment_returned_qty?: number;
+  loan_replenishment_promised_qty?: number;
+  loan_replenishment_transfer_id?: string | null;
 };
 
 /** Floor-scoped customer record used by the Purchases lifecycle navigator. */
@@ -95,7 +97,7 @@ export type PurchasesPage = {
 };
 
 export type PurchasesPageQuery = {
-  view: "today" | "stock" | "customers" | "dispatch_record";
+  view: "today" | "stock" | "customers" | "dispatch_record" | "completed";
   brand?: string;
   customer?: string;
   stage?: string;
@@ -117,17 +119,17 @@ export function purchasesPagePath(query: PurchasesPageQuery): string {
   return `/purchases/items/page?${params.toString()}`;
 }
 
-export function getPurchasesPage(query: PurchasesPageQuery, signal?: AbortSignal) {
-  return api.get<PurchasesPage>(purchasesPagePath(query), { signal });
+export function getPurchasesPage(query: PurchasesPageQuery, signal?: AbortSignal, floorId?: string) {
+  return api.get<PurchasesPage>(purchasesPagePath(query), { signal, floorId });
 }
 
-/** CRM workspaces on this floor, with fully delivered customers moved out. */
-export function getPurchaseCustomers(signal?: AbortSignal, includeCompleted = false) {
-  return api.get<PurchaseCustomer[]>(`/purchases/customer-workspaces?include_completed=${includeCompleted}`, { signal });
+/** Confirmed buyers on this floor, with fully delivered customers moved out. */
+export function getPurchaseCustomers(signal?: AbortSignal, includeCompleted = false, floorId?: string) {
+  return api.get<PurchaseCustomer[]>(`/purchases/customer-workspaces?include_completed=${includeCompleted}`, { signal, floorId });
 }
 
-export function getPurchaseCustomerWorkspace(customerId: string, signal?: AbortSignal) {
-  return api.get<PurchaseCustomerWorkspace>(`/purchases/customers/${customerId}/workspace`, { signal });
+export function getPurchaseCustomerWorkspace(customerId: string, signal?: AbortSignal, floorId?: string, view: "active" | "completed" = "active") {
+  return api.get<PurchaseCustomerWorkspace>(`/purchases/customers/${customerId}/workspace${view === "completed" ? "?view=completed" : ""}`, { signal, floorId });
 }
 
 export function cancelPurchaseItem(itemId: string, reason?: string) {

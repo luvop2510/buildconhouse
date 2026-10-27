@@ -13,6 +13,8 @@ Reuses (no duplicate logic):
   - services/sequence.py           — next_number()
 """
 from __future__ import annotations
+from services.followup_engine import reconcile_followups_admitted
+import re
 
 import asyncio
 from datetime import datetime, timezone
@@ -28,6 +30,7 @@ from models import Followup, UserPublic, now_iso
 from models_walkins import WalkIn, WalkInCreate, WalkInUpdate, ReassignWalkInBody, WALKIN_OPEN_STATUSES
 from services.access_grants import grants_for_user, grant_allows
 from services.activity_log import log_event, timeline_for
+from services import lead_scope
 from services.followup_engine import parse_iso, reconcile_followups
 from services.multi_filters import predicate, scoped_query, values
 from services.sequence import next_number as _next_number_seq
@@ -48,7 +51,7 @@ async def _can_own_walkin(staff: dict, floor_id: str) -> bool:
     if not staff.get("active", True):
         return False
     if staff.get("role") == "owner":
-        return True
+        return floor_id not in {"first-floor", "ground-floor"}
     profile_floors = profile_floor_ids(staff.get("access_profile"))
     assigned_floors = profile_floors if profile_floors is not None else staff.get("floor_ids") or []
     if staff.get("custom_access"):
@@ -61,6 +64,26 @@ async def _can_own_walkin(staff: dict, floor_id: str) -> bool:
         staff.get("role") == "manager" or floor_id in assigned_floors)
 
 
+def _walkin_attribution(doc: dict) -> dict:
+    # Floor team assignments are canonical; the creator is not the salesperson.
+    if doc.get("floor_id") in {"first-floor", "ground-floor"} and doc.get("assignments") is not None:
+        local = [a.model_dump() if hasattr(a, "model_dump") else a for a in doc["assignments"]]
+        local = [a for a in local if a["floor_id"] == doc["floor_id"]]
+        return {**doc, "salesperson_id": local[0]["user_id"] if local else None,
+                "salesperson_name": local[0].get("user_name") if local else None}
+    return doc
+
+
+async def _walkin_attributions(docs: list[dict]) -> list[dict]:
+    docs = [_walkin_attribution(doc) for doc in docs]
+    ids = list({doc["salesperson_id"] for doc in docs if doc.get("floor_id") in {"first-floor", "ground-floor"} and doc.get("salesperson_id")})
+    if not ids:
+        return docs
+    owners = await db.users.find({"id": {"$in": ids}, "role": "owner"}, {"_id": 0, "id": 1}).to_list(len(ids))
+    owner_ids = {row["id"] for row in owners}
+    return [{**doc, "salesperson_id": None, "salesperson_name": None} if doc.get("floor_id") in {"first-floor", "ground-floor"} and doc.get("salesperson_id") in owner_ids else doc for doc in docs]
+
+
 async def _salesperson_for_floor(salesperson_id: str, floor_id: str) -> dict:
     staff = await db.users.find_one(
         {"id": salesperson_id},
@@ -68,6 +91,8 @@ async def _salesperson_for_floor(salesperson_id: str, floor_id: str) -> dict:
     )
     if not staff:
         raise HTTPException(status_code=404, detail="Salesperson not found")
+    if floor_id in {"first-floor", "ground-floor"} and staff.get("role") == "owner":
+        raise HTTPException(status_code=422, detail="Select a worker as salesperson; owners delegate this work")
     if not await _can_own_walkin(staff, floor_id):
         if not staff.get("custom_access") and (not staff.get("active", True) or staff.get("role") not in {"owner", "admin", "manager", "sales"}):
             raise HTTPException(status_code=400, detail="Selected staff member cannot own sales follow-ups")
@@ -138,9 +163,31 @@ async def check_duplicate(
     )
 
 
+async def _walkin_scope(doc, user, *, floors, assignments=None, metadata=None, dry_run=False):
+    identity = {"id": doc.get("scope_followup_id") or f"walkin-lead:{doc['id']}", "floor_id": doc['floor_id']}
+    source = await db.followups.find_one(identity, {"_id": 0})
+    if not source:
+        source = Followup(**identity, walkin_id=doc['id'], origin="walkin", category="walk_in", customer_id=doc['customer_id'], customer_name=doc['customer_name'], customer_phone=doc.get('customer_phone'), reason="Customer interested — follow up before order", due_at=doc.get('next_followup_at') or now_iso(), assigned_to=doc.get('salesperson_id'), assigned_to_name=doc.get('salesperson_name'), is_automated=False).model_dump()
+        # Validate all destinations before storing the source row.
+        await lead_scope.validate_scope(db, user, floors, [], source_floor=doc['floor_id'])
+        await lead_scope.update_interests(db, user=user, source=source, floor_ids=floors, assignments=assignments, metadata=metadata, dry_run=True)
+        if dry_run:
+            return source
+        await db.followups.update_one(identity, {"$setOnInsert": source}, upsert=True)
+    elif dry_run:
+        return await lead_scope.update_interests(db, user=user, source=source, floor_ids=floors, assignments=assignments, metadata=metadata, dry_run=True)
+    row = await lead_scope.update_interests(db, user=user, source=source, floor_ids=floors, assignments=assignments, metadata=metadata)
+    attribution = _walkin_attribution({**doc, 'assignments': row['assignments']})
+    salesperson = {key: attribution.get(key) for key in ('salesperson_id', 'salesperson_name')} if doc['floor_id'] in {'first-floor', 'ground-floor'} else {}
+    await db.walkins.update_one({'id': doc['id'], 'floor_id': doc['floor_id']}, {'$set': {'scope_followup_id': row['id'], 'lead_group_id': row['lead_group_id'], 'interested_floor_ids': row['interested_floor_ids'], 'assignments': row['assignments'], **salesperson, **(metadata or {})}})
+    return row
+
+
 # ---------- Create ----------
 @router.post("", response_model=WalkIn)
 async def create_walkin(body: WalkInCreate, user: UserPublic = Depends(require_min_role("sales"))):
+    if body.notes is not None:
+        raise HTTPException(status_code=422, detail="Notes can only be written when marking a client as lost")
     if not await db.floors.find_one({"id": body.floor_id}, {"_id": 0, "id": 1}):
         raise HTTPException(status_code=404, detail="Department (floor) not found")
     # `body.floor_id` was only checked for EXISTENCE above — a caller could
@@ -152,8 +199,21 @@ async def create_walkin(body: WalkInCreate, user: UserPublic = Depends(require_m
     # the other unit's customer PII back in the response body.
     require_floor_access(body.floor_id, user)
 
-    salesperson_id = body.salesperson_id or user.id
-    salesperson_doc = await _salesperson_for_floor(salesperson_id, body.floor_id)
+    if body.interested_floor_ids or body.assignments is not None:
+        await lead_scope.validate_scope(db, user, body.interested_floor_ids or [body.floor_id], [], source_floor=body.floor_id)
+    referrer = await lead_scope.referrer_fields(db, body.referrer_id, body.floor_id, user) if body.referrer_id else {}
+    if body.floor_id in {"first-floor", "ground-floor"} and body.assignments is not None:
+        normalized = await lead_scope.validate_assignments(db, body.interested_floor_ids or [body.floor_id], body.assignments)
+        local = [a for a in normalized if a["floor_id"] == body.floor_id]
+        if not local:
+            raise HTTPException(status_code=422, detail="Select a salesperson for the walk-in floor")
+        salesperson_id = local[0]["user_id"]
+        salesperson_doc = {"full_name": local[0]["user_name"]}
+    else:
+        salesperson_id = body.salesperson_id or (user.id if user.role != "owner" or body.floor_id not in {"first-floor", "ground-floor"} else None)
+        if not salesperson_id:
+            raise HTTPException(status_code=422, detail="Select a salesperson for the walk-in floor")
+        salesperson_doc = await _salesperson_for_floor(salesperson_id, body.floor_id)
 
     if body.use_existing_customer_id:
         # Floor-checked against `body.floor_id`, which by this point has
@@ -201,20 +261,31 @@ async def create_walkin(body: WalkInCreate, user: UserPublic = Depends(require_m
         visited_at=body.visited_at or now_iso(),
         salesperson_id=salesperson_id,
         salesperson_name=salesperson_doc["full_name"],
-        source=body.source, reference_contact=body.reference_contact, architect=body.architect, builder=body.builder,
+        source=body.reference_source or body.source, reference_source=body.reference_source or body.source,
+        interested_floor_ids=body.interested_floor_ids, assignments=body.assignments, **referrer,
+        reference_contact=body.reference_contact, architect=body.architect, builder=body.builder,
         floor_id=body.floor_id, interested_products=body.interested_products,
-        budget=body.budget, notes=body.notes, manual_priority_override=body.priority,
+        budget=body.budget, manual_priority_override=body.priority,
         next_followup_at=body.next_followup_at,
         created_by=user.id, created_by_name=user.full_name,
     )
-    await db.walkins.insert_one(walkin.dict())
+    if body.interested_floor_ids or body.assignments is not None:
+        await _walkin_scope(walkin.model_dump(), user, floors=body.interested_floor_ids or [body.floor_id], assignments=body.assignments, metadata={'reference_source': body.reference_source or body.source, **referrer}, dry_run=True)
+    await db.walkins.insert_one(walkin.model_dump())
+    if referrer:
+        await db.customers.update_one({'id': customer['id'], 'floor_id': body.floor_id}, {'$set': referrer})
+    if body.interested_floor_ids or body.assignments is not None:
+        scoped = await _walkin_scope(walkin.model_dump(), user, floors=body.interested_floor_ids or [body.floor_id], assignments=body.assignments, metadata={'reference_source': body.reference_source or body.source, **referrer})
+        walkin.scope_followup_id = scoped['id']
+        walkin.interested_floor_ids = scoped['interested_floor_ids']
+        walkin.assignments = scoped['assignments']
     await log_event(
         event_type="walkin.created", entity_type="walkin", entity_id=walkin.id,
         customer_id=customer["id"], actor=user,
         summary=f"{walkin.number} · {customer.get('name')} · {body.source}",
     )
-    asyncio.create_task(reconcile_followups())
-    return walkin
+    asyncio.create_task(reconcile_followups_admitted())
+    return WalkIn(**_walkin_attribution(walkin.model_dump()))
 
 
 # ---------- List ----------
@@ -225,7 +296,7 @@ async def list_walkins(
     date_from: Optional[str] = None, date_to: Optional[str] = None, search: Optional[str] = None,
     user: UserPublic = Depends(get_current_user),
 ):
-    filters: dict = {"is_deleted": False}
+    filters: dict = {"is_deleted": False, "showroom_followup_id": None, "showroom_transferred_at": None}
     if status:
         filters["status"] = predicate(status)
     if salesperson_id:
@@ -242,22 +313,22 @@ async def list_walkins(
         filters["visited_at"] = rng
     if search:
         filters["$or"] = [
-            {"customer_name": {"$regex": search, "$options": "i"}},
-            {"customer_phone": {"$regex": search, "$options": "i"}},
-            {"salesperson_name": {"$regex": search, "$options": "i"}},
-            {"source": {"$regex": search, "$options": "i"}},
-            {"notes": {"$regex": search, "$options": "i"}},
+            {"customer_name": {"$regex": re.escape(search), "$options": "i"}},
+            {"customer_phone": {"$regex": re.escape(search), "$options": "i"}},
+            {"salesperson_name": {"$regex": re.escape(search), "$options": "i"}},
+            {"source": {"$regex": re.escape(search), "$options": "i"}},
+            {"notes": {"$regex": re.escape(search), "$options": "i"}},
         ]
     docs = await db.walkins.find(scoped_query(user, filters, floor_ids or floor_id), {"_id": 0}).sort("visited_at", -1).to_list(2000)
     if priority:
         docs = [d for d in docs if (d.get("manual_priority_override") or "medium") in values(priority)]
-    return [WalkIn(**d) for d in docs]
+    return [WalkIn(**d) for d in await _walkin_attributions(docs)]
 
 
 # ---------- Dashboard KPIs ----------
 @router.get("/dashboard")
 async def walkins_dashboard(floor_ids: Optional[str] = None, user: UserPublic = Depends(get_current_user)):
-    docs = await db.walkins.find(scoped_query(user, {"is_deleted": False}, floor_ids), {"_id": 0}).to_list(5000)
+    docs = await db.walkins.find(scoped_query(user, {"is_deleted": False, "showroom_followup_id": None, "showroom_transferred_at": None}, floor_ids), {"_id": 0}).to_list(5000)
     now = datetime.now(timezone.utc)
     today = now.date()
     week_start = today.fromordinal(today.toordinal() - today.weekday())
@@ -295,7 +366,7 @@ async def walkins_dashboard(floor_ids: Optional[str] = None, user: UserPublic = 
 # ---------- Analytics funnel ----------
 @router.get("/analytics")
 async def walkins_analytics(user: UserPublic = Depends(get_current_user)):
-    walkins = await db.walkins.find(floor_query(user, {"is_deleted": False}), {"_id": 0}).to_list(5000)
+    walkins = await db.walkins.find(floor_query(user, {"is_deleted": False, "showroom_followup_id": None, "showroom_transferred_at": None}), {"_id": 0}).to_list(5000)
     customer_ids = list({w["customer_id"] for w in walkins})
     quotations = await db.quotations.find(
         floor_query(user, {"customer_id": {"$in": customer_ids}}), {"_id": 0},
@@ -308,7 +379,7 @@ async def walkins_analytics(user: UserPublic = Depends(get_current_user)):
     revenue_lost = sum(float(w.get("budget") or 0) for w in lost)
 
     by_salesperson: dict[str, dict] = {}
-    for w in walkins:
+    for w in await _walkin_attributions(walkins):
         key = w.get("salesperson_name") or "Unassigned"
         row = by_salesperson.setdefault(key, {"salesperson": key, "walkins": 0, "converted": 0, "lost": 0})
         row["walkins"] += 1
@@ -331,7 +402,7 @@ async def get_walkin(walkin_id: str, user: UserPublic = Depends(get_current_user
     doc = await db.walkins.find_one(floor_query(user, {"id": walkin_id}), {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Walk-in not found")
-    return WalkIn(**doc)
+    return WalkIn(**(await _walkin_attributions([doc]))[0])
 
 
 @router.get("/{walkin_id}/timeline")
@@ -354,10 +425,14 @@ async def visit_showroom(walkin_id: str, user: UserPublic = Depends(require_min_
     walkin = await db.walkins.find_one(query, {"_id": 0})
     if not walkin:
         raise HTTPException(status_code=404, detail="Walk-in not found")
+    walkin = (await _walkin_attributions([walkin]))[0]
     if walkin.get("status") == "lost":
         raise HTTPException(status_code=409, detail="Reopen this lost walk-in before transferring to follow-ups")
+    customer_id = walkin.get("customer_id")
+    if not isinstance(customer_id, str) or not customer_id.strip():
+        raise HTTPException(status_code=409, detail="This walk-in has no confirmed customer identity. Review it before transferring.")
     now = now_iso()
-    followup_id = f"showroom:{walkin_id}"
+    followup_id = walkin.get("scope_followup_id") or f"showroom:{walkin_id}"
     followup = Followup(
         id=followup_id, floor_id=walkin["floor_id"], source_key=f"visit_showroom:{walkin_id}",
         walkin_id=walkin_id, origin="visit_showroom", rule_type="manual", category="walk_in",
@@ -366,7 +441,9 @@ async def visit_showroom(walkin_id: str, user: UserPublic = Depends(require_min_
         next_action="Arrange showroom visit", next_action_reason="Transferred from the walk-in register",
         suggested_channel="visit", due_at=now, is_automated=False,
         assigned_to=walkin.get("salesperson_id"), assigned_to_name=walkin.get("salesperson_name"),
-        notes=walkin.get("notes"), tags=["WALK_IN", "VISIT_SHOWROOM"],
+        tags=["WALK_IN", "VISIT_SHOWROOM"],
+        interested_floor_ids=walkin.get("interested_floor_ids") or [walkin["floor_id"]], assignments=walkin.get("assignments") or [],
+        reference_source=walkin.get("reference_source") or walkin.get("source"), referrer_id=walkin.get("referrer_id"), referrer_name=walkin.get("referrer_name"), referrer_type=walkin.get("referrer_type"),
     ).model_dump()
     identity = {"id": followup_id, "floor_id": walkin["floor_id"]}
     try:
@@ -376,6 +453,31 @@ async def visit_showroom(walkin_id: str, user: UserPublic = Depends(require_min_
         # Acknowledge only our exact, authorized follow-up identity.
         if not await db.followups.find_one(identity, {"_id": 0, "id": 1}):
             raise
+    # Assigned/multi-floor intake already created this canonical lead with
+    # origin="walkin". An insert-only upsert cannot move that existing row
+    # into the showroom inbox; promote its routing metadata while retaining
+    # its assignments, contact history, shared group and completion state.
+    # This also repairs a previously interrupted transfer on an explicit retry.
+    confirmed_identity = {**identity, "customer_id": customer_id,
+                          "walkin_id": walkin_id, "rule_type": "manual"}
+    if not await db.followups.find_one(
+        {**confirmed_identity, "origin": {"$in": ["walkin", "visit_showroom"]}}, {"_id": 0, "id": 1},
+    ):
+        raise HTTPException(status_code=409, detail="The linked follow-up does not match this walk-in. Review its customer and source before transferring.")
+    promoted = await db.followups.update_one(
+        {**confirmed_identity, "origin": "walkin"},
+        {"$set": {
+            "origin": "visit_showroom", "walkin_id": walkin_id,
+            "reason": "Visit Showroom", "next_action": "Arrange showroom visit",
+            "next_action_reason": "Transferred from the walk-in register",
+            "suggested_channel": "visit", "is_automated": False,
+            "updated_at": now,
+        }},
+    )
+    if not promoted.modified_count and not await db.followups.find_one(
+        {**confirmed_identity, "origin": "visit_showroom"}, {"_id": 0, "id": 1},
+    ):
+        raise HTTPException(status_code=409, detail="The linked follow-up changed. Reload this walk-in before transferring.")
     result = await db.walkins.update_one(
         {**{"id": walkin_id, "floor_id": walkin["floor_id"]}, "showroom_followup_id": {"$ne": followup_id}},
         {"$set": {"showroom_followup_id": followup_id, "showroom_transferred_at": now, "updated_at": now}},
@@ -400,14 +502,28 @@ async def update_walkin(walkin_id: str, body: WalkInUpdate, user: UserPublic = D
     if not doc:
         raise HTTPException(status_code=404, detail="Walk-in not found")
     patch = body.model_dump(exclude_unset=True)
+    if doc["floor_id"] in {"first-floor", "ground-floor"} and "salesperson_id" in patch:
+        raise HTTPException(status_code=422, detail="Use salesperson reassignment or edit the assigned floor team")
+    if doc.get("showroom_followup_id") or doc.get("showroom_transferred_at"):
+        raise HTTPException(status_code=409, detail="This walk-in is now in Visit Showroom follow-ups")
+    if patch.get("status") != "lost" and ("notes" in patch or "lost_reason" in patch):
+        raise HTTPException(status_code=422, detail="Notes can only be written when marking a client as lost")
     if patch.get("status") == "lost":
-        resulting_notes = patch.get("notes", doc.get("notes"))
+        resulting_notes = patch.get("notes") or patch.get("lost_reason")
         if not str(resulting_notes or "").strip():
             raise HTTPException(status_code=422, detail="A note is required before marking this client as lost")
         # Keep the note available in the legacy lost_reason field for existing
         # reports and audit consumers, while notes remains the user-facing
         # source of truth.
-        patch["lost_reason"] = str(patch.get("lost_reason") or resulting_notes).strip()
+        patch["notes"] = str(resulting_notes).strip()
+        patch["lost_reason"] = patch["notes"]
+    scope_keys = {"interested_floor_ids", "assignments", "reference_source", "referrer_id"}
+    scope_patch = {k: patch.pop(k) for k in list(patch) if k in scope_keys}
+    if scope_patch:
+        metadata = {k: v for k,v in scope_patch.items() if k == "reference_source"}
+        if "referrer_id" in scope_patch:
+            metadata.update(await lead_scope.referrer_fields(db, scope_patch['referrer_id'], doc['floor_id'], user))
+        await _walkin_scope(doc, user, floors=scope_patch.get('interested_floor_ids') or doc.get('interested_floor_ids') or [doc['floor_id']], assignments=scope_patch.get('assignments'), metadata=metadata)
     patch["updated_at"] = now_iso()
     if patch.get("status") == "converted":
         patch["converted_at"] = now_iso()
@@ -418,9 +534,9 @@ async def update_walkin(walkin_id: str, body: WalkInUpdate, user: UserPublic = D
             customer_id=doc["customer_id"], actor=user,
             summary=f"Walk-in {doc.get('number')} → {patch['status']}",
         )
-        asyncio.create_task(reconcile_followups())
+        asyncio.create_task(reconcile_followups_admitted())
     fresh = await db.walkins.find_one({"id": walkin_id}, {"_id": 0})
-    return WalkIn(**fresh)
+    return WalkIn(**(await _walkin_attributions([fresh]))[0])
 
 
 @router.patch("/{walkin_id}/reassign", response_model=WalkIn)
@@ -433,7 +549,11 @@ async def reassign_walkin(walkin_id: str, body: ReassignWalkInBody, user: UserPu
     if not doc:
         raise HTTPException(status_code=404, detail="Walk-in not found")
     new_sp = await _salesperson_for_floor(body.salesperson_id, doc["floor_id"])
-    old_name = doc.get("salesperson_name") or "Unassigned"
+    old_name = _walkin_attribution(doc).get("salesperson_name") or "Unassigned"
+    if doc["floor_id"] in {"first-floor", "ground-floor"} and doc.get("assignments") is not None:
+        assignments = [a for a in doc["assignments"] if a["floor_id"] != doc["floor_id"]]
+        assignments.append({"floor_id": doc["floor_id"], "user_id": body.salesperson_id, "user_name": new_sp["full_name"]})
+        await _walkin_scope(doc, user, floors=doc.get("interested_floor_ids") or [doc["floor_id"]], assignments=assignments)
     await db.walkins.update_one(
         {"id": walkin_id},
         {"$set": {"salesperson_id": body.salesperson_id, "salesperson_name": new_sp["full_name"], "updated_at": now_iso()}},
@@ -448,7 +568,7 @@ async def reassign_walkin(walkin_id: str, body: ReassignWalkInBody, user: UserPu
         summary=f"Walk-in {doc.get('number')} reassigned from {old_name} to {new_sp['full_name']}",
     )
     fresh = await db.walkins.find_one({"id": walkin_id}, {"_id": 0})
-    return WalkIn(**fresh)
+    return WalkIn(**(await _walkin_attributions([fresh]))[0])
 
 
 @router.post("/{walkin_id}/contact")
@@ -459,6 +579,7 @@ async def contact_walkin(walkin_id: str, channel: str = Query(..., pattern="^(wh
     doc = await db.walkins.find_one(floor_query(user, {"id": walkin_id}), {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Walk-in not found")
+    doc = (await _walkin_attributions([doc]))[0]
     ctx = {"customer_name": (doc.get("customer_name") or "there").split()[0], "salesperson_name": doc.get("salesperson_name") or ""}
     now = now_iso()
     await db.walkins.update_one({"id": walkin_id}, {"$set": {"updated_at": now}})

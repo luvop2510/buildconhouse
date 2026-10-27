@@ -1,6 +1,45 @@
 import { expect, test } from '@playwright/test';
 import { floors, mockSession } from './audit-fixtures';
 
+test('critical static sign-in waits for hydration before accepting credentials', async ({ page }) => {
+  await mockSession(page, '/login', false, { signedIn: false });
+  await page.route('**/api/auth/login', route => {
+    expect(route.request().postDataJSON()).toEqual({ email: 'JK PATEL', password: 'OwnerAssigned!2026' });
+    return route.fulfill({ json: { access_token: 'fixture-only-staff', user: {
+      id: 'hydrated-owner', full_name: 'Hydrated Owner', role: 'owner', active: true, floor_ids: [],
+    } } });
+  });
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/_expo/static/js/web/entry-*.js', async route => {
+    await pending;
+    await route.continue();
+  });
+  try {
+    await page.goto('/login', { waitUntil: 'commit' });
+    const username = page.getByTestId('login-email');
+    const password = page.getByTestId('login-password');
+    // The current export deliberately paints its static readiness indicator;
+    // it must not expose a form before fonts and handlers have initialized.
+    await expect(page.getByTestId('app-font-loading')).toBeVisible();
+    await expect(page.getByTestId('backend-server-status')).toContainText('Preparing the sign-in screen.');
+    await expect(username).toHaveCount(0);
+    await expect(password).toHaveCount(0);
+    await expect(page.getByTestId('login-submit')).toHaveCount(0);
+    release();
+    await username.fill('JK PATEL');
+    await password.fill('OwnerAssigned!2026');
+    await expect(username).toHaveValue('JK PATEL');
+    await expect(password).toHaveValue('OwnerAssigned!2026');
+    await expect(page.getByTestId('login-submit')).toBeEnabled();
+    await page.getByTestId('login-submit').click();
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(page.getByRole('heading', { name: /^Good (morning|afternoon|evening), Hydrated\.$/ })).toBeVisible();
+  } finally {
+    release();
+  }
+});
+
 for (const kind of ['staff', 'customer'] as const) {
   test(`critical a newer ${kind} sign-in survives delayed startup identity hydration`, async ({ page }) => {
     await mockSession(page, '/login', false);
@@ -86,7 +125,7 @@ test('critical customer invite still requires its separate first-sign-in passwor
   await page.getByTestId('force-change-confirm').fill('123456');
   await page.getByTestId('force-change-submit').click();
   await expect(page).toHaveURL(/home$/);
-  expect(payload).toEqual({ current_password: 'CustomerInvite!2026', new_password: '123456' });
+  expect(payload).toEqual({ current_password: 'CustomerInvite!2026', new_password: '123456', confirm_password: '123456' });
 });
 
 
@@ -97,7 +136,8 @@ test('critical transient startup identity failure preserves the saved session an
     ? { status: 503, json: { detail: 'Temporary identity transport failure' } }
     : { json: { id: 'recovered-owner', email: 'owner@example.test', full_name: 'Recovered Owner', role: 'owner', active: true, floor_ids: [] } }));
   await page.goto('/dashboard');
-  await expect(page.getByTestId('login-submit')).toBeVisible();
+  await expect(page.getByTestId('session-recovery')).toBeVisible();
+  await expect(page.getByTestId('login-submit')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: /^Good (morning|afternoon|evening), Recovered\.$/ })).toHaveCount(0);
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('forge.jwt.kind') || 'null'))).toBe('staff');
   unavailable = false;

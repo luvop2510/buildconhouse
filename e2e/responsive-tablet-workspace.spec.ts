@@ -34,7 +34,11 @@ test('tablet and desktop left pane shows workspace and account names and persist
   await expect(nav.getByTestId('nav-tiles')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   await targetSize(toggle);
   await toggle.focus();
-  await page.keyboard.press('Space');
+  // Keep Space held across the palette's initial deferred focus callbacks.
+  await page.keyboard.down('Space');
+  await page.evaluate(() => new Promise<void>(resolve => setTimeout(resolve, 200)));
+  await expect(toggle).toBeFocused();
+  await page.keyboard.up('Space');
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await expect(nav.getByText('Audit Owner', { exact: true })).toHaveCount(0);
   await targetSize(toggle);
@@ -106,6 +110,7 @@ test('tile order detail keeps movement actions and tablet fulfilment counters re
   } }));
   await page.goto('/tiles/orders/tablet-order');
   const group = page.getByTestId('tile-order-brand-tablet-po');
+  await page.getByTestId('tile-order-actions-tablet-line').click();
   for (const key of ['move-godown', 'dispatch-released', 'dispatch-godown']) {
     await targetSize(page.getByTestId(`tile-order-${key}-tablet-line`));
   }

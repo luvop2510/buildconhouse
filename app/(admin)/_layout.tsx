@@ -6,9 +6,9 @@ import { PRIMARY, SECONDARY, TILES_ITEMS, type NavItem } from "@/src/design/navi
 // One brass bar marks where you are. The command palette lives here (⌘K).
 // ─────────────────────────────────────────────────────────────────────────────
 import Feather from "@expo/vector-icons/Feather";
-import { Slot, useRouter, useSegments, useLocalSearchParams } from "expo-router";
+import { Slot, useRouter, useSegments, useLocalSearchParams, usePathname } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Platform, Pressable, ScrollView, StyleSheet, View, type ViewStyle } from "react-native";
 import { Text } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -17,6 +17,8 @@ import {
 } from "@/src/design/components";
 import { PaletteProvider } from "@/src/design/CommandPalette";
 import { useBp } from "@/src/design/responsive";
+import { StartupScreen } from "@/src/components/StartupScreen";
+import { BackendServerStatus } from "@/src/components/BackendServerStatus";
 import { color, font, layout, radius, space } from "@/src/design/tokens";
 import { NavigationLink } from "@/src/design/NavigationLink";
 import { BuildConLogo } from "@/src/design/BrandLogo";
@@ -24,16 +26,20 @@ import { useInitialAccountRoute } from "@/src/state/initial-account-route";
 import { useAuth } from "@/src/state/auth";
 import { useModuleAccess, usePermissionMatrix } from "@/src/hooks/use-permissions";
 import { staffLandingPath } from "@/src/access-profiles";
-import { hasRouteDestination, isPersonalAccountRoute, moduleForRoute, resolveFloorRouteSegments } from "@/src/team-delegation";
+import { hasRouteDestination, isCustomerEditorRoute, isPersonalAccountRoute, moduleForRoute, resolveFloorRouteSegments } from "@/src/team-delegation";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { AppScaffold } from "@/src/components/mobile/AppScaffold";
+import { useInputActive } from "@/src/hooks/use-input-active";
+import { WorkspacePageBoundary } from "@/src/components/PageErrorBoundary";
 import { storage } from "@/src/utils/storage";
 import { FURNITURE_FLOOR_ID, KITCHEN_FLOOR_ID, SANITARY_FLOOR_ID, TILES_FLOOR_ID, floorDisplayLabel, floorLandingPath } from "@/src/constants/floors";
 
 function useResolvedFloorSegments(): string[] {
   const segments = useSegments() as string[];
-  const { floor } = useLocalSearchParams<{ floor?: string }>();
-  return resolveFloorRouteSegments(segments, floor);
+  const { floor, stage } = useLocalSearchParams<{ floor?: string; stage?: string }>();
+  const pathname = usePathname();
+  const activeStage = pathname.match(/^\/kitchen\/(?:[^/]+\/)?stages\/([^/]+)$/)?.[1] || stage;
+  return resolveFloorRouteSegments(segments, floor).map(part => part === "[stage]" && activeStage ? activeStage : part);
 }
 
 // A web link needs an actual href for native Enter activation. Keep the
@@ -48,6 +54,12 @@ function WorkspaceLink({ href, onPress, ...props }: Omit<React.ComponentProps<ty
 }
 
 function isNavActive(item: NavItem, segments: string[]): boolean {
+  if (segments.includes("sales-data")) return item.match === "sales-data";
+  if (item.match.startsWith("kitchen-") && segments.includes("kitchen") && !segments.includes("notebook")) {
+    const stageIndex = segments.indexOf("stages");
+    if (item.match === "kitchen-dashboard") return stageIndex < 0;
+    return stageIndex >= 0 && item.match === `kitchen-${segments[stageIndex + 1]}`;
+  }
   if (item.match === "tiles") return segments.includes("tiles") && !segments.includes("orders");
   if (item.match === "purchases") return segments.includes("purchases") || segments.includes("purchases-completed");
   // The root notebook route is Walk-ins. It must not remain highlighted when
@@ -88,6 +100,7 @@ function SideItem({ item, active, onPress, compact = false }: { item: NavItem; a
       accessibilityLabel={item.label}
         {...(Platform.OS === "web" ? { title: item.label } : {})}
       accessibilityState={{ selected: active }}
+      aria-current={active ? "page" : undefined}
       style={({ pressed, hovered }: any) => [
         styles.sideItem,
         compact && styles.sideItemCompact,
@@ -133,8 +146,8 @@ function SearchTrigger() {
 }
 
 function FloorSwitcher({ compact = false }: { compact?: boolean }) {
-  const { access, floors, selectedFloorId, selectFloor } = useFloorAccess();
   const { staff } = useAuth();
+  const { access, floors, selectedFloorId, selectFloor } = useFloorAccess(!!staff);
   const router = useRouter();
   const segments = useResolvedFloorSegments();
   const selected = floors.find((floor) => floor.id === selectedFloorId);
@@ -191,19 +204,25 @@ function FloorSwitcher({ compact = false }: { compact?: boolean }) {
 }
 
 const FLOOR_ROUTE_SEGMENTS: Record<string, string[]> = {
-  [SANITARY_FLOOR_ID]: ["quotations", "godown-stock"],
+  [SANITARY_FLOOR_ID]: ["quotations", "godown-stock", "purchases", "purchases-completed", "purchase-orders"],
   [TILES_FLOOR_ID]: ["tiles", "orders"],
   [KITCHEN_FLOOR_ID]: ["kitchen"],
   [FURNITURE_FLOOR_ID]: ["furniture", "furniture-quotations"],
 };
 
-const SHARED_FLOOR_ROUTES = ["catalog", "customers", "purchases", "purchases-completed", "payments", "payments-list", "walkins", "followups", "settings", "team", "notifications", "sales-data"];
+const SHARED_FLOOR_ROUTES = ["catalog", "customers", "payments", "payments-list", "walkins", "followups", "settings", "team", "notifications", "sales-data"];
 
 function isSharedFloorRoute(segments: string[]) {
   return SHARED_FLOOR_ROUTES.some(segment => segments.includes(segment));
 }
 
+function isKitchenReportingRoute(segments: string[]) {
+  return segments.includes("sales-data") || segments.includes("followups");
+}
+
 function isRouteCompatibleWithFloor(segments: string[], floorId: string) {
+  if (floorId === KITCHEN_FLOOR_ID && !segments.includes("kitchen") && !isKitchenReportingRoute(segments) && !isPersonalAccountRoute(segments) && !isCustomerEditorRoute(segments)) return false;
+  if (segments.includes("catalog") && ![SANITARY_FLOOR_ID, TILES_FLOOR_ID].includes(floorId)) return false;
   return !Object.entries(FLOOR_ROUTE_SEGMENTS).some(([restrictedFloor, roots]) => (
     restrictedFloor !== floorId && roots.some((root) => segments.includes(root))
   ));
@@ -218,7 +237,7 @@ function useTilesNav() {
   const router = useRouter();
   const { staff } = useAuth();
   const hasAccess = useModuleAccess();
-  const { access, selectedFloorId, selectFloor } = useFloorAccess();
+  const { access, selectedFloorId, selectFloor } = useFloorAccess(!!staff);
   const groundAccessible = Boolean(access && (access.all_floors || access.floor_ids.includes(TILES_FLOOR_ID)));
   // Ground Floor's Tiles module is not merely *reachable* from Ground
   // Floor — it must be invisible from every other business unit. Showing
@@ -249,16 +268,19 @@ function useTilesNav() {
 function useVisibleNav() {
   const hasAccess = useModuleAccess();
   const { staff } = useAuth();
-  const { access, selectedFloorId } = useFloorAccess();
+  const { access, selectedFloorId } = useFloorAccess(!!staff);
   return (items: NavItem[]) => items.filter((item) => {
-    if (staff?.custom_access) return (!item.floors || item.floors.includes(selectedFloorId)) && hasAccess(item.match);
+    if (selectedFloorId === KITCHEN_FLOOR_ID && !item.match.startsWith("kitchen-") && !isKitchenReportingRoute([item.match])) return false;
+    const permission = item.match.startsWith("kitchen-") ? "kitchen-projects" : item.match;
+    if (item.floors && selectedFloorId && !item.floors.includes(selectedFloorId)) return false;
+    if (staff?.custom_access) return hasAccess(permission);
+    if (item.roles && (!staff?.role || !item.roles.includes(staff.role))) return false;
     // These units share floor-scoped business pages alongside their notebooks.
     if (selectedFloorId === KITCHEN_FLOOR_ID || selectedFloorId === FURNITURE_FLOOR_ID) {
       const shared = SHARED_FLOOR_ROUTES.includes(item.match);
-      return (shared || Boolean(item.floors?.includes(selectedFloorId))) && hasAccess(item.match);
+      return (shared || Boolean(item.floors?.includes(selectedFloorId))) && hasAccess(permission);
     }
-    if (item.roles && (!staff?.role || !item.roles.includes(staff.role))) return false;
-    if (!hasAccess(item.match)) return false;
+    if (!hasAccess(permission)) return false;
     if (!item.floors) return true;
     // While the floor is still resolving, keep the item — hiding it first and
     // showing it a frame later reads as the nav flickering on every load.
@@ -303,9 +325,11 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
         ) : <SearchTrigger />}
       </View>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: space.x3, gap: 1, alignItems: collapsed ? "center" : "stretch" }} showsVerticalScrollIndicator={false}>
-        {(["Daily work", "Records & operations", "Management"] as const).map(group => {
+        {(["Kitchen", "Daily work", "Records & operations", "Management"] as const).map(group => {
           const destinations = group === "Management" ? visible(SECONDARY)
             : [...visible(PRIMARY), ...tilesNav.items].filter(n => {
+              if (group === "Kitchen") return n.match.startsWith("kitchen-");
+              if (n.match.startsWith("kitchen-")) return false;
               const daily = ["dashboard", "walkins", "followups", "catalog", "quotations", "tiles", "kitchen", "furniture", "quotation-follow-up"].includes(n.match);
               return group === "Daily work" ? daily : !daily;
             });
@@ -322,7 +346,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
         <Menu
           triggerLabel="Account menu"
           align="left"
-          items={[{
+          items={[{ label: "My account", icon: "user", onPress: () => router.push("/(admin)/settings") }, {
             label: "Sign out", icon: "log-out", tone: "risk",
             onPress: async () => { await logout(); router.replace("/(auth)/login"); },
           }]}
@@ -353,14 +377,19 @@ function PhoneBar() {
   const visible = useVisibleNav();
   const palette = usePalette();
   const tilesNav = useTilesNav();
-  const { access, selectedFloorId, loading: floorLoading } = useFloorAccess();
+  const { access, selectedFloorId, loading: floorLoading } = useFloorAccess(!!staff);
   const { loading: permissionsLoading } = usePermissionMatrix();
   const [moreOpen, setMoreOpen] = useState(false);
-  const shellReady = Boolean(staff && access && selectedFloorId && !floorLoading && !permissionsLoading);
+  // Owners and delegated members derive visibility from their identity/grants,
+  // not the legacy role matrix. A slow matrix must not strand those accounts
+  // behind inert phone navigation after their authorized workspace has loaded.
+  const permissionsReady = staff?.role === "owner" || staff?.custom_access || !permissionsLoading;
+  const shellReady = Boolean(staff && access && selectedFloorId && !floorLoading && permissionsReady);
   if (!shellReady) return <PhoneBarSkeleton />;
   const all = [...visible(PRIMARY), ...tilesNav.items, ...visible(SECONDARY)];
   const notebook = selectedFloorId === KITCHEN_FLOOR_ID || selectedFloorId === FURNITURE_FLOOR_ID;
-  const priorities = notebook ? all.filter(item => item.match === 'walkins' || item.href.includes('/notebook/'))
+  const priorities = selectedFloorId === KITCHEN_FLOOR_ID ? all.filter(item => item.match.startsWith('kitchen-')).slice(0, 3)
+    : notebook ? all.filter(item => item.match === 'walkins' || item.match === 'followups' || item.href.includes('/notebook/'))
     : ['dashboard', 'catalog', selectedFloorId === TILES_FLOOR_ID ? 'tiles' : 'quotations', 'followups']
       .flatMap(match => all.filter(item => item.match === match));
   const more = all.filter(item => !priorities.some(tab => tab.href === item.href));
@@ -371,6 +400,7 @@ function PhoneBar() {
     <View role="navigation" accessibilityLabel="Primary" style={styles.phoneBar}>
       {priorities.map(item => <WorkspaceLink href={item.href} key={item.href} testID={`bottom-nav-${item.match}`}
         accessibilityRole="link" accessibilityLabel={item.label} accessibilityState={{ selected: isActive(item) }}
+        aria-current={isActive(item) ? "page" : undefined}
         onPress={() => router.push(item.href as any)} style={styles.tab}>
         <View style={[styles.tabIconWrap, isActive(item) && styles.tabIconWrapActive]}>
           <Feather name={item.icon} size={20} color={isActive(item) ? color.action : color.inkMid} />
@@ -380,14 +410,14 @@ function PhoneBar() {
         </Text>
       </WorkspaceLink>)}
       <Pressable testID={notebook ? "bottom-nav-notebook-workspace" : "bottom-nav-more"}
-        accessibilityRole="button" accessibilityLabel="More" accessibilityState={{ expanded: moreOpen, selected: moreActive }}
+        accessibilityRole="button" accessibilityLabel={selectedFloorId === KITCHEN_FLOOR_ID ? "All stages" : "More"} accessibilityState={{ expanded: moreOpen, selected: moreActive }}
         aria-expanded={moreOpen}
         onPress={() => setMoreOpen(true)} style={styles.tab}>
         <View style={[styles.tabIconWrap, moreActive && styles.tabIconWrapActive]}><Feather name="menu" size={20} color={moreActive ? color.action : color.inkMid} /></View>
-        <Text style={[styles.tabLabel, moreActive && styles.tabLabelActive]}>More</Text>
+        <Text style={[styles.tabLabel, moreActive && styles.tabLabelActive]}>{selectedFloorId === KITCHEN_FLOOR_ID ? "All stages" : "More"}</Text>
       </Pressable>
     </View>
-    <Sheet open={moreOpen} onClose={() => setMoreOpen(false)} title="Workspace">
+    <Sheet open={moreOpen} onClose={() => setMoreOpen(false)} title={selectedFloorId === KITCHEN_FLOOR_ID ? "Kitchen stages" : "Workspace"}>
       {!notebook ? <Pressable accessibilityRole="button" accessibilityLabel="Search everything"
         onPress={() => { setMoreOpen(false); setTimeout(palette.open, 200); }} style={styles.moreRow}>
         <Feather name="search" size={18} color={color.inkMid} /><Text style={styles.moreLabel}>Search everything</Text>
@@ -401,6 +431,10 @@ function PhoneBar() {
       <View style={[styles.moreRow, { height: 'auto', minHeight: 56 }]}><Avatar name={staff?.full_name} />
         <View style={{ flex: 1 }}><Text style={styles.moreLabel}>{staff?.full_name}</Text><Text style={{ color: color.inkMid }}>{roleLabel[staff?.role || '']}</Text></View>
       </View>
+      <Pressable accessibilityRole="button" accessibilityLabel="My account" style={styles.moreRow}
+        onPress={() => { setMoreOpen(false); router.push('/(admin)/settings'); }}>
+        <Feather name="user" size={18} color={color.inkMid} /><Text style={styles.moreLabel}>My account</Text>
+      </Pressable>
       <Pressable accessibilityRole="button" accessibilityLabel="Sign out" style={styles.moreRow}
         onPress={async () => { setMoreOpen(false); await logout(); router.replace('/(auth)/login'); }}>
         <Feather name="log-out" size={18} color={color.risk} /><Text style={[styles.moreLabel, { color: color.risk }]}>Sign out</Text>
@@ -424,8 +458,8 @@ function PhoneBarSkeleton() {
 
 // ── Layout root ─────────────────────────────────────────────────────────────
 function FloorAccessGate({ children }: { children: React.ReactNode }) {
-  const { access, floors, selectedFloorId, loading, error, retry } = useFloorAccess();
   const { staff, loading: authLoading, logout } = useAuth();
+  const { access, floors, selectedFloorId, loading, error, retry } = useFloorAccess(!authLoading && !!staff);
   const segments = useResolvedFloorSegments();
   const router = useRouter();
 
@@ -457,6 +491,15 @@ function FloorAccessGate({ children }: { children: React.ReactNode }) {
     router.replace(`/(admin)${floorLandingPath(selectedFloorId)}` as any);
   }, [authLoading, staff, access, selectedFloorId, destinationReady, segments, router]);
 
+  const retiredWorkspaceRoute = Boolean(selectedFloorId && (
+    (selectedFloorId === KITCHEN_FLOOR_ID && destinationReady && !segments.includes("kitchen") && !isKitchenReportingRoute(segments) && !isPersonalAccountRoute(segments) && !isCustomerEditorRoute(segments)) ||
+    (["purchases", "purchases-completed", "purchase-orders"].some(part => segments.includes(part)) && selectedFloorId !== SANITARY_FLOOR_ID) ||
+    (segments.includes("catalog") && ![SANITARY_FLOOR_ID, TILES_FLOOR_ID].includes(selectedFloorId))
+  ));
+  useEffect(() => {
+    if (retiredWorkspaceRoute) router.replace(`/(admin)${floorLandingPath(selectedFloorId)}` as any);
+  }, [retiredWorkspaceRoute, router, selectedFloorId]);
+
   // Password, MFA and session management belong to the authenticated account,
   // even when every business floor has been switched off. Business routes
   // still require a concrete server-authorized floor below.
@@ -466,11 +509,12 @@ function FloorAccessGate({ children }: { children: React.ReactNode }) {
   // is known. Besides making loading/error states explicit, this closes the
   // brief window where an inherited local-storage selection could be sent as
   // an X-Floor-Id for a different staff account.
+  // AuthGate owns the initial web waiting/retry message. This subtree stays
+  // mounted behind it, but has no account whose floor access can load yet.
+  if (Platform.OS === "web" && loading && !staff) return null;
   if (loading) {
     return <View testID="floor-access-loading" accessibilityLiveRegion="polite" style={styles.floorAccessState}>
-      <ActivityIndicator color={color.brass} />
-      <Text style={styles.floorAccessTitle}>Loading your workspace…</Text>
-      <Text style={styles.floorAccessCopy}>Checking the floors assigned to your account.</Text>
+      <BackendServerStatus detail="Checking the floors assigned to your account." />
     </View>;
   }
   if (error) {
@@ -493,6 +537,7 @@ function FloorAccessGate({ children }: { children: React.ReactNode }) {
       </Pressable>
     </View>;
   }
+  if (retiredWorkspaceRoute) return null;
   return <>{children}</>;
 }
 
@@ -501,7 +546,7 @@ function CustomAccessRouteGate({ children }: { children: React.ReactNode }) {
   const hasAccess = useModuleAccess();
   const segments = useResolvedFloorSegments();
   const router = useRouter();
-  const { selectedFloorId } = useFloorAccess();
+  const { selectedFloorId } = useFloorAccess(!!staff);
   const destinationReady = hasRouteDestination(segments);
   const module = moduleForRoute(segments);
 
@@ -518,8 +563,16 @@ function CustomAccessRouteGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// The navigator must stay mounted when its page fails. Wrapping Slot itself
+// removes the active route and lets Expo redirect to the default child.
+// Slot forwards this React Navigation option to useNavigationBuilder; Expo's
+// narrower Slot type currently omits it.
+const pageScreenLayout = ({ children }: { children: React.ReactNode }) => <StartupScreen><WorkspacePageBoundary>{children}</WorkspacePageBoundary></StartupScreen>;
+
 export default function AdminLayout() {
   const { isPhone } = useBp();
+  const inputActive = useInputActive();
+  const hidePhoneHeader = inputActive && Platform.OS !== "web";
   const builderSegments = useResolvedFloorSegments();
   const focusedQuotation = builderSegments.includes("quotations") && builderSegments.includes("new");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -538,33 +591,42 @@ export default function AdminLayout() {
     });
   };
 
-  if (isPhone) {
-    return (
-      <PaletteProvider>
-        <AppScaffold
-          testID="admin-mobile-shell"
-          style={{ backgroundColor: color.canvas }}
-          bottomNavigation={focusedQuotation ? null : <PhoneBar />}
-        >
-          <ConnectionStatus /><FloorAccessGate><CustomAccessRouteGate>{isPhone && !focusedQuotation ? <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 }}><FloorSwitcher /></View> : null}<Slot /></CustomAccessRouteGate></FloorAccessGate>
-        </AppScaffold>
-      </PaletteProvider>
-    );
-  }
-
+  // Keep the route's ancestor types and key stable when a phone rotates past
+  // the sidebar breakpoint. Replacing this tree used to unmount every form,
+  // including its selected photo, before the user could save it.
   return (
     <PaletteProvider>
       <View style={{ flex: 1, flexDirection: "row", backgroundColor: color.canvas }}>
-        <View role="navigation" accessibilityLabel="Primary" style={{
+        {!isPhone ? <View key="sidebar" role="navigation" accessibilityLabel="Primary" style={{
           width: sidebarCollapsed ? layout.rail : layout.sidebar,
           borderRightWidth: layout.hairline, borderRightColor: color.line,
           ...(Platform.OS === "web" ? ({ transition: "width 200ms cubic-bezier(0.2, 0, 0, 1)" } as any) : {}),
         }}>
           <Sidebar collapsed={sidebarCollapsed} onToggle={toggleSidebar} />
-        </View>
-        <View role="main" accessibilityLabel="Workspace content" style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
-          <ConnectionStatus /><FloorAccessGate><CustomAccessRouteGate>{isPhone && !focusedQuotation ? <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 }}><FloorSwitcher /></View> : null}<Slot /></CustomAccessRouteGate></FloorAccessGate>
-        </View>
+        </View> : null}
+        <AppScaffold
+          key="workspace"
+          testID={isPhone ? "admin-mobile-shell" : "admin-desktop-shell"}
+          phoneSafeArea={isPhone}
+          style={{ backgroundColor: color.canvas, minHeight: 0 }}
+          bottomNavigation={isPhone && !focusedQuotation ? <PhoneBar /> : null}
+          bottomNavigationHidden={inputActive}
+        >
+          <ConnectionStatus />
+          <FloorAccessGate><CustomAccessRouteGate>
+            {isPhone && !focusedQuotation ? <View
+              testID="mobile-workspace-header"
+              pointerEvents={hidePhoneHeader ? "none" : "auto"}
+              accessibilityElementsHidden={hidePhoneHeader}
+              importantForAccessibility={hidePhoneHeader ? "no-hide-descendants" : "auto"}
+              aria-hidden={hidePhoneHeader}
+              style={{ flexShrink: 0, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4,
+                ...(hidePhoneHeader ? { opacity: 0 } : {}),
+              } as ViewStyle}
+            ><FloorSwitcher /></View> : null}
+            <Slot {...({ screenLayout: pageScreenLayout } as React.ComponentProps<typeof Slot>)} />
+          </CustomAccessRouteGate></FloorAccessGate>
+        </AppScaffold>
       </View>
     </PaletteProvider>
   );

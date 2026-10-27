@@ -93,9 +93,11 @@ def test_chalan_dispatch_quantities_and_covering_delivery_timestamp(mongo_url):
             await db.purchase_orders.update_one({"id": "p"}, {"$push": {"chalans": {"id": "ch2", "stage": "dispatched", "dispatched_at": "2026-10-10", "items": [{"po_item_id": "i", "qty": 2}]}}})
             rows = await db.purchase_orders.aggregate(tracker._completed_customer_pipeline(user())).to_list(None)
             assert rows[0]["_id"] == "partial" and rows[0]["last_delivered_at"] == "2026-10-10"
-            pipeline = tracker._items_page_pipeline(view="stock", brand=None, customer="partial", stage=None, q=None, product_id=None, floor_ids=["first-floor"], sla_days=7, skip=0, limit=30)
+            pipeline = tracker._items_page_pipeline(view="completed", brand=None, customer="partial", stage=None, q=None, product_id=None, floor_ids=["first-floor"], sla_days=7, skip=0, limit=30)
             facet = (await db.purchase_orders.aggregate(pipeline).to_list(1))[0]
             assert facet["items"][0]["stage"] == "dispatched" and facet["stages"] == [{"_id": "dispatched", "count": 1}]
+            pipeline = tracker._items_page_pipeline(view="stock", brand=None, customer="partial", stage=None, q=None, product_id=None, floor_ids=["first-floor"], sla_days=7, skip=0, limit=30)
+            assert (await db.purchase_orders.aggregate(pipeline).to_list(1))[0]["items"] == []
         finally:
             client.close()
     asyncio.run(run())
@@ -134,8 +136,60 @@ def test_active_crm_workspace_moves_completed_customers_but_stock_keeps_them(mon
             await db.purchase_orders.insert_many([po("done", "complete"), po("open", "open", [item(stage="in_box")])])
             active = await tracker.active_customer_workspaces(include_completed=False, user=user())
             all_customers = await tracker.active_customer_workspaces(include_completed=True, user=user())
-            assert {c["id"] for c in active} == {"open", "new"}
-            assert {c["id"] for c in all_customers} == {"complete", "open", "new"}
+            assert {c["id"] for c in active} == {"open"}
+            assert {c["id"] for c in all_customers} == {"complete", "open"}
+        finally:
+            client.close()
+    asyncio.run(run())
+
+
+def test_walkin_prospects_stay_out_of_customer_and_purchase_directories_until_ordered(mongo_url, monkeypatch):
+    from fastapi import Response
+    from routes import customer_routes
+
+    async def run():
+        client = AsyncIOMotorClient(mongo_url)
+        db = client.completion
+        monkeypatch.setattr(tracker, "db", db)
+        monkeypatch.setattr(customer_routes, "db", db)
+        try:
+            identities = ["walkin", "draft", "cancelled", "converted", "legacy", "tile", "transferred", "foreign", "complete"]
+            await db.customers.insert_many([
+                {"id": c, "name": c, "floor_id": "first-floor", "lifecycle": "prospect"}
+                for c in identities
+            ])
+            await db.walkins.insert_many([
+                {"id": f"wi-{c}", "customer_id": c, "floor_id": "first-floor", "status": "new", "is_deleted": False}
+                for c in ["walkin", "draft", "converted"]
+            ])
+            await db.quotations.insert_many([
+                {"id": f"q-{c}", "customer_id": c, "floor_id": "first-floor", "status": status}
+                for c, status in [("draft", "draft"), ("converted", "ordered"), ("cancelled", "cancelled")]
+            ] + [{"id": "q-foreign", "customer_id": "foreign", "floor_id": "ground-floor", "status": "ordered"}])
+            await db.customer_orders.insert_many([
+                {"id": "tile", "customer_id": "tile", "floor_id": "first-floor", "is_deleted": False},
+                {"id": "deleted", "customer_id": "cancelled", "floor_id": "first-floor", "is_deleted": True},
+            ])
+            await db.purchase_orders.insert_many([
+                po("legacy", "legacy", [item(stage="in_box")]),
+                po("transfer", "cancelled", [item(stage="in_box", customer_id="transferred", customer_name="Transferred")]),
+                po("cancelled", "cancelled", status="cancelled"),
+                po("complete", "complete"),
+                po("foreign", "foreign", [item(stage="in_box")], floor_id="ground-floor"),
+            ])
+            confirmed = {"converted", "legacy", "tile", "transferred", "complete"}
+            active = confirmed - {"complete"}
+            assert {c["id"] for c in await tracker.active_customer_workspaces(False, user())} == active
+            assert {c["id"] for c in await tracker.active_customer_workspaces(True, user())} == confirmed
+            directory = await customer_routes.list_customers(Response(), skip=0, limit=500, confirmed_only=True, user=user())
+            assert {c.id for c in directory} == confirmed
+            internal = await customer_routes.list_customers(Response(), skip=0, limit=500, confirmed_only=False, user=user())
+            assert {c.id for c in internal} == set(identities)
+            # Hiding a prospect never removes its register row or identity.
+            assert await db.walkins.count_documents({}) == 3
+            assert await db.customers.count_documents({}) == len(identities)
+            await db.quotations.update_one({"id": "q-draft"}, {"$set": {"status": "won"}})
+            assert {c["id"] for c in await tracker.active_customer_workspaces(False, user())} == active | {"draft"}
         finally:
             client.close()
     asyncio.run(run())
@@ -335,6 +389,95 @@ def test_record_floor_completion_and_tile_list_ignore_owner_ambient_workspace(mo
                 with pytest.raises(HTTPException) as error:
                     await handler(identity, with_completion=True, user=unauthorized)
                 assert error.value.status_code == 404
+        finally:
+            client.close()
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("qty", [3, 10])
+def test_movement_command_commits_once_under_concurrent_and_later_replay(mongo_url, monkeypatch, qty):
+    from unittest.mock import AsyncMock
+    from fastapi import HTTPException
+    async def run():
+        client = AsyncIOMotorClient(mongo_url)
+        database = client.movement_commands
+        monkeypatch.setattr(tracker, "db", database)
+        monkeypatch.setattr(tracker, "log_event", AsyncMock())
+        monkeypatch.setattr(tracker, "_sync_po_status_with_stages", AsyncMock(return_value=None))
+        monkeypatch.setattr(tracker, "mark_loans_due_for_replenishment", AsyncMock(return_value={"return_due_transfer_ids": []}))
+        try:
+            await database.purchase_orders.insert_one(po("command-po", items=[item(stage="order_in_company", qty=10)]))
+            actor = user().model_copy(update={"id": "operator"})
+            async def move(amount=qty):
+                return await tracker.move_item("i", tracker.MoveBody(stage="in_box", note="$literal note", qty=amount, idempotency_key="move-command-one"), actor)
+            first, second = await asyncio.gather(move(), move())
+            saved = await database.purchase_orders.find_one({"id": "command-po"})
+            assert len(saved["items"]) == (2 if qty == 3 else 1)
+            assert sum(row["qty"] for row in saved["items"]) == 10
+            assert len(saved["movement_receipts"]) == 1
+            assert first.get("new_item_id") == second.get("new_item_id")
+            assert sum(result.get("idempotent", False) for result in [first, second]) == 1
+            assert len(saved["items"][0]["stage_history"]) == 1
+            third = await move()
+            assert third["idempotent"] is True
+            assert (await database.purchase_orders.find_one({"id": "command-po"}))["items"] == saved["items"]
+            with pytest.raises(HTTPException) as error:
+                await move(2)
+            assert error.value.status_code == 409
+            foreign = actor.model_copy(update={"active_floor_id": "ground-floor"})
+            with pytest.raises(HTTPException) as error:
+                await tracker._apply_stage_change("i", "in_box", foreign, "$literal note", qty, idempotency_key="move-command-one")
+            assert error.value.status_code == 404
+        finally:
+            client.close()
+    asyncio.run(run())
+
+
+def test_committed_movement_recovers_after_status_sync_failure(mongo_url, monkeypatch):
+    from unittest.mock import AsyncMock
+    async def run():
+        client = AsyncIOMotorClient(mongo_url)
+        database = client.movement_recovery
+        monkeypatch.setattr(tracker, "db", database)
+        monkeypatch.setattr(tracker, "log_event", AsyncMock())
+        sync = AsyncMock(side_effect=[RuntimeError("post-write status read failed"), None])
+        monkeypatch.setattr(tracker, "_sync_po_status_with_stages", sync)
+        monkeypatch.setattr(tracker, "mark_loans_due_for_replenishment", AsyncMock(return_value={"return_due_transfer_ids": []}))
+        try:
+            await database.purchase_orders.insert_one(po("lost-response", items=[item(stage="order_in_company", qty=10)]))
+            actor = user()
+            async def move():
+                return await tracker._apply_stage_change("i", "in_box", actor, None, 3, idempotency_key="lost-response-key")
+            with pytest.raises(RuntimeError): await move()
+            recovered = await move()
+            assert recovered["idempotent"] is True
+            assert recovered["qty_remaining"] == 7
+            saved = await database.purchase_orders.find_one({"id": "lost-response"})
+            assert sorted(row["qty"] for row in saved["items"]) == [3, 7]
+            assert sync.await_count == 2
+        finally:
+            client.close()
+    asyncio.run(run())
+
+
+def test_no_change_receipt_does_not_move_a_later_changed_item_back(mongo_url, monkeypatch):
+    from unittest.mock import AsyncMock
+    async def run():
+        client = AsyncIOMotorClient(mongo_url)
+        database = client.movement_no_change
+        monkeypatch.setattr(tracker, "db", database)
+        monkeypatch.setattr(tracker, "log_event", AsyncMock())
+        monkeypatch.setattr(tracker, "_sync_po_status_with_stages", AsyncMock(return_value=None))
+        monkeypatch.setattr(tracker, "mark_loans_due_for_replenishment", AsyncMock(return_value={"return_due_transfer_ids": []}))
+        try:
+            await database.purchase_orders.insert_one(po("same-stage", items=[item(stage="in_box", qty=10)]))
+            actor = user()
+            first = await tracker._apply_stage_change("i", "in_box", actor, None, 10, idempotency_key="no-change-command")
+            assert first["no_change"] is True
+            await database.purchase_orders.update_one({"id": "same-stage"}, {"$set": {"items.0.stage": "dispatched"}})
+            replay = await tracker._apply_stage_change("i", "in_box", actor, None, 10, idempotency_key="no-change-command")
+            assert replay["no_change"] is True and replay["idempotent"] is True
+            assert (await database.purchase_orders.find_one({"id": "same-stage"}))["items"][0]["stage"] == "dispatched"
         finally:
             client.close()
     asyncio.run(run())

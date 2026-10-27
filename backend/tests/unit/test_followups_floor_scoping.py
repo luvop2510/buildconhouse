@@ -3,6 +3,7 @@ caller's active floor. It previously ran four raw, unscoped queries, so the
 insights panel always showed global (in practice, 100% first-floor) numbers
 regardless of which floor was selected."""
 from __future__ import annotations
+from unittest.mock import AsyncMock
 
 import asyncio
 
@@ -69,11 +70,12 @@ def test_insights_scopes_every_query_to_the_active_floor(monkeypatch):
     fake_db = _FakeDb()
     monkeypatch.setattr(followups, "db", fake_db)
 
-    asyncio.run(followups.insights(user=_user("ground-floor")))
+    result = asyncio.run(followups.insights(user=_user("ground-floor")))
 
     expected = {"$in": ["ground-floor"]}
     assert _floor_id_constraint(fake_db.activity_events.last_count_filter) == expected
-    assert _floor_id_constraint(fake_db.payments.last_find_filter) == expected
+    assert fake_db.payments.last_find_filter is None
+    assert result['payments_collected'] == 0
     assert _floor_id_constraint(fake_db.quotations.last_count_filter) == expected
     # followups.count_documents is called twice (completed_today, still_open) —
     # last_count_filter only captures the final call, which is enough to prove
@@ -101,16 +103,19 @@ def test_log_call_reschedule_inherits_source_followup_floor(monkeypatch):
 
     fake_followups = _FakeFollowups({
         "id": "f-1", "customer_id": "cust-1", "customer_name": "Test Customer",
+        "assigned_to": "selected-worker",
         "floor_id": "ground-floor",
     })
 
     class _Db:
         followups = fake_followups
+        users = type("Users", (), {"find_one": AsyncMock(return_value=None)})()
 
     monkeypatch.setattr(followups, "db", _Db())
 
+    monkeypatch.setattr(followups.lead_scope, "validate_assignments", AsyncMock(return_value=[{"floor_id": "ground-floor", "user_id": "selected-worker", "user_name": "Selected worker"}]))
     asyncio.run(followups.log_call(
-        "f-1", FollowupCallOutcomePayload(outcome="call_back", notes="Customer requested a callback tomorrow"), user=_user("ground-floor"),
+        "f-1", FollowupCallOutcomePayload(outcome="call_back"), user=_user("ground-floor"),
     ))
 
     assert fake_followups.inserted[0]["floor_id"] == "ground-floor"
@@ -260,8 +265,12 @@ def test_followup_detail_scopes_every_related_record_to_followups_floor(monkeypa
     detail = asyncio.run(followups.get_detail("f-ground", user=_user("ground-floor")))
 
     assert detail["customer"]["floor_id"] == "ground-floor"
-    for collection in (fake_db.customers, fake_db.quotations, fake_db.payments, fake_db.purchase_orders):
+    for collection in (fake_db.customers, fake_db.quotations):
         assert collection.queries[-1]["floor_id"] == "ground-floor"
+    assert fake_db.quotations.queries[-1]["status"] == {"$in": ["draft", "sent", "pending_approval", "approved", "selection"]}
+    assert fake_db.payments.queries == fake_db.purchase_orders.queries == []
+    assert detail['payments'] == detail['purchases'] == []
+    assert captured_timeline['entity_type'] == 'followup' and captured_timeline['entity_id'] == 'f-ground'
     assert captured_timeline["floor_ids"] == ["ground-floor"]
 
 

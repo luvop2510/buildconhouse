@@ -19,12 +19,16 @@ async function historyAction(page: Page, name: 'Undo last change' | 'Redo change
     if (compact) {
       await page.keyboard.press('Escape');
       await expect(page.getByTestId('quotation-actions-sheet')).toBeHidden();
+      await expect(page.getByTestId('builder-actions')).toBeFocused();
     }
     return;
   }
   await expect(button).toBeEnabled();
   await button.click();
-  if (compact) await expect(page.getByTestId('quotation-actions-sheet')).toBeHidden();
+  if (compact) {
+    await expect(page.getByTestId('quotation-actions-sheet')).toBeHidden();
+    await expect(page.getByTestId('builder-actions')).toBeFocused();
+  }
 }
 
 test('critical quotation history restores fields and clears redo after a new branch', async ({ page }) => {
@@ -35,20 +39,35 @@ test('critical quotation history restores fields and clears redo after a new bra
   await page.route('**/api/quotations/recent?**', route => route.fulfill({ json: [] }));
   await page.route('**/api/products/families?**', route => route.fulfill({ json: { total: 0, items: [] } }));
   await page.goto('/quotations/new');
+  await expect(page.getByTestId('quotation-workspace')).toBeVisible();
+  const exit = page.getByTestId('expand-quotation-workspace');
+  if (await exit.isVisible()) await exit.click();
   await page.getByTestId('quotation-details-toggle').click();
   const project = page.getByTestId('compact-hdr-project');
   const phone = page.getByTestId('compact-hdr-phone');
   await expect(project).toHaveValue('');
   await historyAction(page, 'Undo last change', true);
+  await project.click();
+  await expect(project).toBeFocused();
   await project.fill('History fixture project');
+  await expect(project).toHaveValue('History fixture project');
+  await phone.click();
+  await expect(phone).toBeFocused();
   await phone.fill('9000000001');
+  await expect(phone).toHaveValue('9000000001');
   await historyAction(page, 'Undo last change');
   await expect(phone).toHaveValue('');
   await expect(project).toHaveValue('History fixture project');
   await historyAction(page, 'Redo change');
   await expect(phone).toHaveValue('9000000001');
   await historyAction(page, 'Undo last change');
+  await expect(phone).toHaveValue('');
+  // A real click waits until the dismissed modal no longer intercepts input.
+  // fill() alone can run before RNW finishes its focus restoration in WebKit.
+  await phone.click();
+  await expect(phone).toBeFocused();
   await phone.fill('9000000002');
+  await expect(phone).toHaveValue('9000000002');
   await historyAction(page, 'Redo change', true);
   await expect(phone).toHaveValue('9000000002');
   await historyAction(page, 'Undo last change');

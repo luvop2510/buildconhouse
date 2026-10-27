@@ -5,10 +5,11 @@
 // In both cases a line is inserted into the current room.
 // -----------------------------------------------------------------------------
 import Feather from "@expo/vector-icons/Feather";
-import { useEffect, useState } from "react";
-import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import * as ImagePicker from "expo-image-picker";
+import { useEffect, useRef, useState } from "react";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { Overlay } from "@/src/design/Overlay";
 
 import { api } from "@/src/api/client";
 import { toast } from "@/src/components/Toast";
@@ -16,12 +17,18 @@ import { colors, radius, shadow, spacing } from "@/src/theme/tokens";
 import { useBp } from "@/src/design/responsive";
 import { useBuilder } from "../context/BuilderContext";
 import type { Product } from "../helpers/types";
+import { ProductImage } from "@/src/components/ProductImage";
+import { appendImageUpload, type UploadImage } from "@/src/utils/appendImageUpload";
 
 export function CustomProductSheet() {
   const b = useBuilder();
   const open = b.customProductSheetOpen;
   const { isPhone } = useBp();
 
+  const initialized = useRef(false);
+  const committing = useRef(false);
+  const request = useRef<{ fingerprint: string; id: string } | null>(null);
+  const lifecycle = useRef<AbortController | null>(null);
   const [name, setName] = useState("");
   const [sku, setSku] = useState("");
   const [brandId, setBrandId] = useState<string | null>(null);
@@ -32,80 +39,105 @@ export function CustomProductSheet() {
   const [description, setDescription] = useState("");
   const [saveToCatalog, setSaveToCatalog] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [photo, setPhoto] = useState<UploadImage | null>(null);
 
   useEffect(() => {
-    if (!open) return;
+    const controller = new AbortController();
+    lifecycle.current = controller;
+    initialized.current = false;
+    setBusy(false);
+    return () => controller.abort();
+  }, [open, b.activeFloorId]);
+
+  useEffect(() => {
+    if (!open) { initialized.current = false; return; }
+    if (initialized.current) return;
+    initialized.current = true;
     setName(""); setSku(""); setPrice(""); setMrp(""); setFinish(""); setDescription("");
     setBrandId(b.selectedBrandId ?? b.brands[0]?.id ?? null);
     setCategoryId(b.selectedCategoryId ?? b.categories[0]?.id ?? null);
     setSaveToCatalog(true);
-  }, [open, b.selectedBrandId, b.selectedCategoryId, b.brands, b.categories]);
+    setPhoto(null);
+    request.current = null;
+  }, [open, b.activeFloorId, b.selectedBrandId, b.selectedCategoryId, b.brands, b.categories]);
+
+  const pickPhoto = async () => {
+    const controller = lifecycle.current;
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 1, allowsEditing: false });
+      if (controller?.signal.aborted || result.canceled || !result.assets?.[0]) return;
+      setPhoto(result.assets[0]);
+    } catch (error: any) { toast.error(error?.message || "Could not choose the product photo"); }
+  };
 
   const commit = async () => {
+    if (committing.current) return;
     if (!name.trim()) { toast.error("Name is required"); return; }
-    if (!brandId || !categoryId) { toast.error("Pick a brand and category"); return; }
-    const p = Number(price) || 0;
-    if (p <= 0) { toast.error("Enter a valid price"); return; }
+    if (saveToCatalog && (!brandId || !categoryId)) { toast.error("Pick a brand and category, or turn off Keep in catalogue for a one-off item"); return; }
+    const p = Number(price);
+    if (!Number.isFinite(p) || p <= 0) { toast.error("Enter a valid price"); return; }
+    const catalogueMrp = mrp.trim() ? Number(mrp) : p;
+    if (!Number.isFinite(catalogueMrp) || catalogueMrp < 0) { toast.error("Enter a valid MRP (zero or more)"); return; }
 
+    committing.current = true;
     setBusy(true);
+    const controller = lifecycle.current;
     try {
-      if (saveToCatalog) {
+      const payload = {
+        name: name.trim(), sku: sku.trim(), brand_id: brandId || "", category_id: categoryId || "",
+        price: p, mrp: catalogueMrp, finish: finish.trim() || null, description: description.trim() || null, is_custom: true,
+      };
+      const fingerprint = JSON.stringify({ payload, saveToCatalog, photo: photo?.uri });
+      if (request.current?.fingerprint !== fingerprint) {
+        request.current = { fingerprint, id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}` };
+      }
+      if (photo) {
+        const form = new FormData();
+        form.append("product", JSON.stringify(payload));
+        form.append("request_id", request.current.id);
+        form.append("keep_in_catalog", String(saveToCatalog));
+        await appendImageUpload(form, photo);
+        if (controller?.signal.aborted) return;
+        const prod = await api.upload<Product>("/products/custom-with-media", form, { floorId: b.activeFloorId, signal: controller?.signal });
+        if (controller?.signal.aborted) return;
+        b.addFromProduct(prod);
+        toast.success(saveToCatalog ? `Added · ${prod.sku}` : "Added to quotation with photo");
+      } else {
         // Persist to catalog with is_custom=true so it's searchable in future.
         const prod = await api.post<Product>("/products/custom", {
-          name: name.trim(),
-          sku: sku.trim() || `CUSTOM-${Date.now().toString(36).toUpperCase()}`,
-          brand_id: brandId, category_id: categoryId,
-          price: p, mrp: Number(mrp) || p,
-          finish: finish.trim() || null, description: description.trim() || null,
-          is_custom: true,
-        });
+          ...payload, request_id: request.current.id, keep_in_catalog: saveToCatalog,
+        }, { floorId: b.activeFloorId, signal: controller?.signal });
+        if (controller?.signal.aborted) return;
         b.addFromProduct(prod);
-        toast.success(`Added · ${prod.sku}`);
-      } else {
-        // In-quotation only. Fabricate a synthetic "product" object.
-        const localId = `custom-${Date.now()}`;
-        const prod: Product = {
-          id: localId,
-          name: name.trim(),
-          sku: sku.trim() || `INLINE-${Date.now().toString(36).toUpperCase()}`,
-          brand_id: brandId, category_id: categoryId,
-          price: p, mrp: Number(mrp) || p,
-          finish: finish.trim() || null,
-          images: [], variants: [],
-        } as Product;
-        b.addFromProduct(prod);
-        toast.success("Added inline");
+        toast.success(saveToCatalog ? `Added · ${prod.sku}` : "Added to quotation");
       }
       b.setCustomProductSheetOpen(false);
     } catch (e: any) {
-      toast.error(e?.detail || "Could not add product");
+      if (!controller?.signal.aborted && e?.name !== "AbortError") toast.error(e?.detail || e?.message || "Could not add product. Your photo is kept here; please retry.");
     } finally {
-      setBusy(false);
+      committing.current = false;
+      if (!controller?.signal.aborted) setBusy(false);
     }
   };
 
   return (
-    <Modal visible={open} transparent animationType="fade" onRequestClose={() => b.setCustomProductSheetOpen(false)}>
-      <Pressable style={[styles.backdrop, isPhone && styles.phoneBackdrop]} onPress={() => b.setCustomProductSheetOpen(false)}>
-        <Pressable style={[styles.sheet, isPhone && styles.phoneSheet]} onPress={(e) => e.stopPropagation()} accessibilityViewIsModal>
-          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.keyboard}>
-          <SafeAreaView edges={["bottom"]} style={styles.safeArea}>
-          <View style={styles.head}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.title}>Custom product</Text>
-              <Text style={styles.subtitle}>Add a one-off item — optionally save it to the catalog.</Text>
-            </View>
-            <Pressable onPress={() => b.setCustomProductSheetOpen(false)} style={styles.close} accessibilityRole="button" accessibilityLabel="Close custom product sheet">
-              <Feather name="x" size={16} color={colors.onSurface} />
-            </Pressable>
-          </View>
-
+    <Overlay open={open} onClose={() => { if (!busy) b.setCustomProductSheetOpen(false); }} title="Custom product"
+      subtitle="Add a one-off item and choose whether to keep it in the catalog." testID="custom-product-sheet" scroll={false} dismissable={!busy}
+      width={640} presentation={isPhone ? "fullscreen" : "dialog"} footer={<>
+        <Pressable onPress={() => b.setCustomProductSheetOpen(false)} disabled={busy} style={styles.secondary} accessibilityRole="button">
+          <Text style={styles.secondaryLabel}>Cancel</Text>
+        </Pressable>
+        <Pressable onPress={commit} style={[styles.primary, busy && { opacity: 0.6 }]} disabled={busy} testID="cp-commit" accessibilityRole="button">
+          <Feather name="plus" size={16} color={colors.onBrand} />
+          <Text style={styles.primaryLabel}>{busy ? "Adding…" : saveToCatalog ? "Add & keep" : "Add to quotation"}</Text>
+        </Pressable>
+      </>}>
           <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: 12 }} keyboardShouldPersistTaps="handled">
             <Field label="Product name *">
-              <TextInput value={name} onChangeText={setName} placeholder="e.g. Custom stone-cladding sink" style={styles.input} testID="cp-name" />
+              <TextInput value={name} onChangeText={setName} placeholder="e.g. Custom stone-cladding sink" style={styles.input} testID="cp-name" accessibilityLabel="Custom product name" />
             </Field>
             <Field label="SKU (optional — auto if blank)">
-              <TextInput value={sku} onChangeText={setSku} placeholder="e.g. CUSTOM-STONE-SINK" style={styles.input} autoCapitalize="characters" />
+              <TextInput value={sku} onChangeText={setSku} placeholder="e.g. CUSTOM-STONE-SINK" style={styles.input} autoCapitalize="characters" accessibilityLabel="Custom product SKU" />
             </Field>
 
             <View style={[styles.grid, isPhone && styles.phoneGrid]}>
@@ -115,7 +147,7 @@ export function CustomProductSheet() {
                   {b.brands.map((br) => {
                     const on = brandId === br.id;
                     return (
-                      <Pressable key={br.id} onPress={() => setBrandId(br.id)} style={[styles.pill, on && styles.pillActive]}>
+                      <Pressable key={br.id} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => setBrandId(br.id)} style={[styles.pill, on && styles.pillActive]}>
                         <Text style={[styles.pillLabel, on && styles.pillLabelActive]}>{br.name}</Text>
                       </Pressable>
                     );
@@ -130,7 +162,7 @@ export function CustomProductSheet() {
                 {b.categories.map((c) => {
                   const on = categoryId === c.id;
                   return (
-                    <Pressable key={c.id} onPress={() => setCategoryId(c.id)} style={[styles.pill, on && styles.pillActive]}>
+                    <Pressable key={c.id} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => setCategoryId(c.id)} style={[styles.pill, on && styles.pillActive]}>
                       <Text style={[styles.pillLabel, on && styles.pillLabelActive]}>{c.name}</Text>
                     </Pressable>
                   );
@@ -140,25 +172,38 @@ export function CustomProductSheet() {
 
             <View style={[styles.grid, isPhone && styles.phoneGrid]}>
               <Field label="Price *" flex={1}>
-                <TextInput value={price} onChangeText={setPrice} placeholder="0" keyboardType="numeric" style={styles.input} testID="cp-price" />
+                <TextInput value={price} onChangeText={setPrice} placeholder="0" keyboardType="numeric" style={styles.input} testID="cp-price" accessibilityLabel="Custom product price" />
               </Field>
               <Field label="MRP" flex={1}>
-                <TextInput value={mrp} onChangeText={setMrp} placeholder="0" keyboardType="numeric" style={styles.input} />
+                <TextInput accessibilityLabel="Custom product MRP" value={mrp} onChangeText={setMrp} placeholder="0" keyboardType="numeric" style={styles.input} />
               </Field>
               <Field label="Finish" flex={1.2}>
-                <TextInput value={finish} onChangeText={setFinish} placeholder="Chrome, Matt Black …" style={styles.input} />
+                <TextInput accessibilityLabel="Custom product finish" value={finish} onChangeText={setFinish} placeholder="Chrome, Matt Black …" style={styles.input} />
               </Field>
             </View>
 
             <Field label="Description">
               <TextInput
-                value={description} onChangeText={setDescription}
+                accessibilityLabel="Custom product description" value={description} onChangeText={setDescription}
                 placeholder="Optional — shown on quotation & PDF"
                 multiline style={[styles.input, { minHeight: 60 }]}
               />
             </Field>
 
-            <Pressable onPress={() => setSaveToCatalog((v) => !v)} style={styles.checkbox} testID="cp-save">
+            <Field label="Product photo">
+              {photo ? <View style={{ gap: 8 }}>
+                <ProductImage source={photo.uri} style={{ width: "100%", height: 160 }} contentFit="contain" fallbackLabel={name} testID="cp-photo-preview" />
+                <Pressable disabled={busy} onPress={() => setPhoto(null)} accessibilityRole="button" accessibilityLabel="Remove product photo" testID="cp-photo-remove" style={styles.secondary}>
+                  <Text style={styles.secondaryLabel}>Remove photo</Text>
+                </Pressable>
+              </View> : null}
+              <Pressable disabled={busy} onPress={pickPhoto} accessibilityRole="button" accessibilityLabel={photo ? "Choose another photo" : "Add product photo"} testID="cp-photo" style={styles.secondary}>
+                <Text style={styles.secondaryLabel}>{photo ? "Choose another photo" : "Add product photo"}</Text>
+              </Pressable>
+              <Text style={styles.checkboxHint}>The photo is uploaded when you add the product and stays with the saved quotation.</Text>
+            </Field>
+
+            <Pressable accessibilityRole="checkbox" accessibilityLabel="Keep in catalogue" accessibilityState={{ checked: saveToCatalog }} onPress={() => setSaveToCatalog((v) => !v)} style={styles.checkbox} testID="cp-save">
               <View style={[styles.checkboxBox, saveToCatalog && styles.checkboxBoxOn]}>
                 {saveToCatalog ? <Feather name="check" size={11} color={colors.onBrand} /> : null}
               </View>
@@ -173,20 +218,7 @@ export function CustomProductSheet() {
             </Pressable>
           </ScrollView>
 
-          <View style={[styles.footer, isPhone && styles.phoneFooter]}>
-            <Pressable onPress={() => b.setCustomProductSheetOpen(false)} style={styles.secondary} accessibilityRole="button">
-              <Text style={styles.secondaryLabel}>Cancel</Text>
-            </Pressable>
-            <Pressable onPress={commit} style={[styles.primary, busy && { opacity: 0.6 }]} disabled={busy} testID="cp-commit" accessibilityRole="button">
-              <Feather name="plus" size={13} color={colors.onBrand} />
-              <Text style={styles.primaryLabel}>{saveToCatalog ? "Add & keep" : "Add inline"}</Text>
-            </Pressable>
-          </View>
-          </SafeAreaView>
-          </KeyboardAvoidingView>
-        </Pressable>
-      </Pressable>
-    </Modal>
+    </Overlay>
   );
 }
 
@@ -215,7 +247,7 @@ const styles = StyleSheet.create({
   label: { fontSize: 11, fontWeight: "700", color: colors.onSurfaceMuted, letterSpacing: 1.1, textTransform: "uppercase", marginBottom: 4 },
   input: {
     borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.md,
-    paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, color: colors.onSurface, backgroundColor: colors.surface,
+    paddingHorizontal: 10, paddingVertical: 8, minHeight: 48, fontSize: 16, color: colors.onSurface, backgroundColor: colors.surface,
   },
 
   grid: { flexDirection: "row", gap: 10 },
@@ -236,6 +268,6 @@ const styles = StyleSheet.create({
   phoneFooter: { padding: spacing.md },
   secondary: { minHeight: 44, justifyContent: "center", paddingHorizontal: 14, paddingVertical: 9, borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
   secondaryLabel: { fontSize: 12, fontWeight: "700", color: colors.onSurface },
-  primary: { flexDirection: "row", alignItems: "center", justifyContent: "center", minHeight: 44, gap: 6, paddingHorizontal: 16, paddingVertical: 10, borderRadius: radius.md, backgroundColor: colors.brand },
+  primary: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", minHeight: 44, gap: 6, paddingHorizontal: 16, paddingVertical: 10, borderRadius: radius.md, backgroundColor: colors.brand },
   primaryLabel: { fontSize: 12, fontWeight: "700", color: colors.onBrand, letterSpacing: 0.2 },
 });

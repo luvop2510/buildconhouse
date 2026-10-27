@@ -289,7 +289,6 @@ export const moneyShort = (v: number, currency = "₹") => {
   const n = Number(v || 0);
   if (Math.abs(n) >= 10000000) return `${currency}${(n / 10000000).toFixed(2)} Cr`;
   if (Math.abs(n) >= 100000) return `${currency}${(n / 100000).toFixed(2)} L`;
-  if (Math.abs(n) >= 1000) return `${currency}${(n / 1000).toFixed(1)}K`;
   return `${currency}${n.toLocaleString("en-IN")}`;
 };
 

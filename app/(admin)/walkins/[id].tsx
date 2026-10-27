@@ -8,6 +8,7 @@ import { Linking, Platform, ScrollView, View } from "react-native";
 import { Text } from "@/src/components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { LeadScopeSheet } from "@/src/components/leads/LeadScopeSheet";
 import { walkinsApi, type WalkIn } from "@/src/api/walkins";
 import { setSelectedFloorId } from "@/src/hooks/use-floor-access";
 import { toast } from "@/src/components/Toast";
@@ -44,23 +45,34 @@ export default function WalkInDetail() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [w, setW] = useState<WalkIn | null>(null);
   const [timeline, setTimeline] = useState<Record<string, any>[]>([]);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [timelineError, setTimelineError] = useState(false);
   const [notes, setNotes] = useState("");
+  const [lostOpen, setLostOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [assignees, setAssignees] = useState<{ id: string; full_name: string; role: string }[]>([]);
+  const [scopeOpen, setScopeOpen] = useState(false);
   const [reassignOpen, setReassignOpen] = useState(false);
   const [spSearch, setSpSearch] = useState("");
 
   const load = useCallback(async () => {
     const request = ++requestId.current;
     setLoadError(null);
+    setTimeline([]); setTimelineLoading(true); setTimelineError(false);
+    // History is optional; it must not hold the customer record behind its request.
+    const history = walkinsApi.timeline(id, floor_id ? { floorId: floor_id } : undefined)
+      .then(value => { if (request === requestId.current) setTimeline(value); })
+      .catch(() => { if (request === requestId.current) setTimelineError(true); })
+      .finally(() => { if (request === requestId.current) setTimelineLoading(false); });
     try {
-      const [detail, tl] = await Promise.all([walkinsApi.get(id, floor_id ? { floorId: floor_id } : undefined), walkinsApi.timeline(id, floor_id ? { floorId: floor_id } : undefined)]);
+      const detail = await walkinsApi.get(id, floor_id ? { floorId: floor_id } : undefined);
       if (request !== requestId.current) return;
-      setW(detail); setNotes(detail.notes || ""); setTimeline(tl);
+      setW(detail);
     } catch (e: any) {
       if (request !== requestId.current) return;
       setLoadError(e?.detail || "Could not load walk-in. Please retry.");
     }
+    await history;
   }, [id, floor_id]);
 
   useEffect(() => { setW(null); void load(); return () => { requestId.current += 1; }; }, [load]);
@@ -78,6 +90,7 @@ export default function WalkInDetail() {
     setBusy(true);
     try {
       await walkinsApi.update(id, { status: status as any, ...(status === "lost" ? { notes: notes.trim() } : {}) }, requestOptions);
+      setLostOpen(false);
       toast.success("Walk-in updated");
       load();
     } catch (e: any) {
@@ -90,25 +103,14 @@ export default function WalkInDetail() {
   const visitShowroom = async () => {
     setBusy(true);
     try {
-      await walkinsApi.visitShowroom(id, requestOptions);
+      const targetFloor = w?.floor_id || floor_id;
+      const transfer = await walkinsApi.visitShowroom(id, targetFloor ? { floorId: targetFloor } : requestOptions);
       toast.success("Transferred to Visit Showroom follow-ups");
       if (!hasModuleAccess("followups")) { void load(); return; }
-      if (floor_id) await setSelectedFloorId(floor_id);
-      router.push("/(admin)/followups?workspace=visit_showroom" as any);
+      if (targetFloor) void setSelectedFloorId(targetFloor).catch(() => {});
+      router.push(`/(admin)/followups?workspace=visit_showroom&showroom_followup=${encodeURIComponent(transfer.followup_id)}` as any);
     } catch (e: any) { toast.error(e?.detail || "Could not transfer to follow-ups"); }
     finally { setBusy(false); }
-  };
-
-  const saveNotes = async () => {
-    setBusy(true);
-    try {
-      await walkinsApi.update(id, { notes }, requestOptions);
-      toast.success("Notes saved");
-    } catch (e: any) {
-      toast.error(e?.detail || "Could not save notes");
-    } finally {
-      setBusy(false);
-    }
   };
 
   const whatsApp = async () => {
@@ -134,7 +136,7 @@ export default function WalkInDetail() {
     }
   };
 
-  const canUpdate = !staff?.custom_access || hasGrantAccess(staff.access_grants, w?.floor_id || floor_id || "", "walkins", "update");
+  const canUpdate = !w?.showroom_followup_id && !w?.showroom_transferred_at && (!staff?.custom_access || hasGrantAccess(staff.access_grants, w?.floor_id || floor_id || "", "walkins", "update"));
 
   const filteredAssignees = assignees.filter((a) => a.full_name.toLowerCase().includes(spSearch.trim().toLowerCase()));
 
@@ -149,10 +151,12 @@ export default function WalkInDetail() {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={isPhone ? [] : ["top"]}>
-      <PageHeader title={w.customer_name} overline={w.number} back={() => router.back()} />
       <ScrollView contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, paddingBottom: isPhone ? 132 : spacing.xxl, gap: spacing.md }}>
-        <Card variant="outlined" style={{ gap: 4 }}>
+        <PageHeader title={w.customer_name} overline={w.number} back={() => router.back()} embedded />
+        <Card variant="outlined" padding={spacing.lg} style={{ gap: spacing.sm }}>
           <Text style={type.bodyStrong}>{w.customer_phone} {w.alternate_phone ? `· Alt: ${w.alternate_phone}` : ""}</Text>
+          {canUpdate ? <Button label="Interested floors · Assign team" icon="layers" variant="secondary" onPress={() => setScopeOpen(true)} testID="walkin-edit-interests" /> : null}
+          {w.referrer_name ? <Text style={type.bodySm}>Interior / architect: {w.referrer_name}</Text> : null}
           <Text style={type.bodyMuted}>{w.source} · {(w.interested_products || []).join(", ") || "No products noted"}</Text>
           {w.budget ? <Text style={type.bodySm}>Budget: ₹{w.budget.toLocaleString("en-IN")}</Text> : null}
           {(w.reference_contact || w.architect || w.builder) ? (
@@ -168,35 +172,35 @@ export default function WalkInDetail() {
           subtitle="Salesperson"
           leading={<Avatar name={w.salesperson_name || "?"} size={36} />}
           right={<Text style={[type.captionStrong, { color: colors.brandHover }]}>{canUpdate ? "Reassign" : "Assigned"}</Text>}
-          onPress={canUpdate ? () => setReassignOpen(true) : undefined}
+          onPress={canUpdate ? () => w.floor_id === "first-floor" || w.floor_id === "ground-floor" ? setScopeOpen(true) : setReassignOpen(true) : undefined}
           isFirst
           testID="walkin-reassign-row"
         />
 
         <View style={{ flexDirection: "row", gap: spacing.sm, flexWrap: "wrap" }}>
           <Button label="Call" icon="phone" variant="secondary" size="sm" onPress={() => w.customer_phone && openUrl(`tel:${w.customer_phone}`)} />
-          {canUpdate && w.status !== "lost" ? <Button label={w.showroom_followup_id ? "View Visit Showroom" : "Visit Showroom"} icon="home" size="sm" loading={busy} onPress={visitShowroom} testID="walkin-visit-showroom" /> : null}
+          {canUpdate && !w.showroom_followup_id && !w.showroom_transferred_at && w.status !== "lost" ? <Button label={w.showroom_followup_id ? "View Visit Showroom" : "Visit Showroom"} icon="home" size="sm" loading={busy} onPress={visitShowroom} testID="walkin-visit-showroom" /> : null}
           {canUpdate ? <Button label="WhatsApp" icon="message-circle" variant="secondary" size="sm" onPress={whatsApp} /> : null}
-          {(canUpdate ? NEXT_STATUS[w.status] || [] : []).map((s) => (
+          {w.floor_id === "ground-floor" && canUpdate && w.status !== "converted" && w.status !== "lost" ? <Button label="Schedule Selection" icon="calendar" variant="secondary" size="sm" loading={busy} onPress={() => updateStatus("selection_scheduled")} testID="walkin-schedule-selection" /> : null}
+          {(!["first-floor", "ground-floor"].includes(w.floor_id) && canUpdate ? NEXT_STATUS[w.status] || [] : []).map(s => (
             <Button key={s.value} label={s.label} variant="secondary" size="sm" loading={busy} onPress={() => updateStatus(s.value)} />
           ))}
-          {canUpdate && w.status !== "converted" && w.status !== "lost" ? (
+          {!["first-floor", "ground-floor"].includes(w.floor_id) && canUpdate && w.status !== "converted" && w.status !== "lost" ? (
             <Button label="Mark Converted" size="sm" loading={busy} onPress={() => updateStatus("converted")} testID="walkin-mark-converted" />
           ) : null}
           {canUpdate && w.status !== "converted" && w.status !== "lost" ? (
-            <Button label="Mark Lost" variant="danger" size="sm" loading={busy} onPress={() => updateStatus("lost")} testID="walkin-mark-lost" />
+            <Button label="Mark Lost" variant="danger" size="sm" loading={busy} onPress={() => { setNotes(""); setLostOpen(true); }} testID="walkin-mark-lost" />
           ) : null}
         </View>
 
-        <TextField label="Notes" value={notes} onChangeText={setNotes} multiline numberOfLines={3} />
-        <Button label="Save Notes" disabled={!canUpdate} variant="secondary" size="sm" onPress={saveNotes} loading={busy} />
+        {w.notes ? <Card variant="outlined"><Text style={type.label}>{w.status === "lost" ? "Lost reason" : "Previous note"}</Text><Text style={type.bodySm}>{w.notes}</Text></Card> : null}
 
         <Text style={type.bodyStrong}>Customer Timeline</Text>
-        {timeline.length === 0 ? (
+        {timelineLoading ? <Text style={type.bodyMuted}>Loading activity…</Text> : timelineError ? <ErrorState title="Activity unavailable" subtitle="The walk-in remains available. Retry to load its history." onRetry={() => void load()} /> : timeline.length === 0 ? (
           <Text style={type.bodyMuted}>No activity yet.</Text>
         ) : (
           timeline.map((ev, i) => (
-            <Card key={ev.id || i} variant="outlined" style={{ gap: 2 }}>
+            <Card key={ev.id || i} variant="outlined" style={{ gap: spacing.sm }}>
               <Text style={type.bodySm}>{ev.summary || ev.event_type}</Text>
               <Text style={type.caption}>{(ev.created_at || "").toString().slice(0, 16).replace("T", " ")}</Text>
             </Card>
@@ -204,6 +208,13 @@ export default function WalkInDetail() {
         )}
       </ScrollView>
 
+      <LeadScopeSheet lead={scopeOpen ? w : null} floorId={w.floor_id} onClose={() => setScopeOpen(false)} onSaved={() => void load()} saveScope={value => walkinsApi.update(id, value, requestOptions)} />
+      <Sheet visible={lostOpen} onClose={() => setLostOpen(false)} title="Mark as lost" variant="bottom">
+        <View style={{ padding: spacing.lg, gap: spacing.md }}>
+          <TextField label="Lost reason" value={notes} onChangeText={setNotes} multiline numberOfLines={3} placeholder="Cannot afford the service, or we cannot work with this customer" testID="walkin-lost-reason" />
+          <Button label="Mark as lost" variant="danger" disabled={!notes.trim()} onPress={() => void updateStatus("lost")} loading={busy} testID="walkin-confirm-lost" />
+        </View>
+      </Sheet>
       <Sheet visible={reassignOpen} onClose={() => setReassignOpen(false)} title="Reassign Salesperson" variant="bottom">
         <View style={{ padding: spacing.lg, gap: spacing.md, flex: 1 }}>
           <SearchField placeholder="Search staff…" value={spSearch} onChangeText={setSpSearch} onClear={() => setSpSearch("")} />

@@ -7,8 +7,8 @@ import { useReducedMotion } from "@/src/hooks/use-reduced-motion";
 // typography allowed anywhere else. Feels closer to Linear / Stripe / Notion.
 
 import Feather from "@expo/vector-icons/Feather";
-import { isValidElement, useEffect, useRef, useId } from "react";
-import { ActivityIndicator, Animated, Platform, Pressable, StyleSheet, TextInputProps, View, ViewStyle } from "react-native";
+import { Children, cloneElement, isValidElement, useEffect, useRef, useId } from "react";
+import { ActivityIndicator, Animated, Platform, Pressable, ScrollView, StyleSheet, TextInputProps, View, ViewStyle } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 
 import {
@@ -26,6 +26,9 @@ import { color as ds, statusTone, toneColor } from "@/src/design/tokens";
 // which carries no `bp` — reading layout.bp there yields undefined and every
 // comparison against it silently returns false.
 import { useBp } from "@/src/design/responsive";
+
+import { handleTableScrollKey, tableColumnLayout, tableMinWidth, type TableColumn } from "./tableLayout";
+export { tableMinWidth } from "./tableLayout";
 
 type FeatherName = keyof typeof Feather.glyphMap;
 
@@ -454,7 +457,7 @@ export function TextField({
   return (
     <View style={[{ gap: 6 }, containerStyle]}>
       {label ? <Text style={type.label}>{label}</Text> : null}
-      <View style={{
+      <View {...(Platform.OS === "web" ? { dataSet: { fieldShell: "true" } } : {})} style={{
         flexDirection: "row", alignItems: "center",
         backgroundColor: colors.surfaceSecondary,
         borderWidth: 1,
@@ -470,7 +473,7 @@ export function TextField({
           accessibilityHint={rest.accessibilityHint || (showError ? error || undefined : helper)}
           aria-invalid={showError || undefined}
           aria-describedby={helper || error ? descriptionId : undefined}
-          placeholderTextColor={colors.onSurfaceSubtle}
+          placeholderTextColor={rest.placeholderTextColor || colors.onSurfaceSubtle}
           style={[{
             flex: 1,
             paddingVertical: Platform.OS === "ios" ? 12 : 8,
@@ -498,7 +501,7 @@ export function TextField({
 export function SearchField({ onClear, ...props }: TextInputProps & { onClear?: () => void }) {
   const hasValue = typeof props.value === "string" && props.value.length > 0;
   return (
-    <View style={{
+    <View {...(Platform.OS === "web" ? { dataSet: { fieldShell: "true" } } : {})} style={{
       flexDirection: "row", alignItems: "center",
       backgroundColor: colors.surfaceTertiary,
         borderRadius: radius.xl,
@@ -926,9 +929,9 @@ export function Icon({
 // Chrome (header + body scroll area + footer) identical for every screen.
 // ──────────────────────────────────────────────────────────────────────────
 type SheetVariant = "drawer" | "modal" | "bottom";
-export function Sheet({ visible, variant = "drawer", ...props }: Omit<React.ComponentProps<typeof Overlay>, "open" | "presentation"> & {
+export function Sheet({ visible, variant = "drawer", scroll = false, ...props }: Omit<React.ComponentProps<typeof Overlay>, "open" | "presentation"> & {
   visible: boolean; variant?: SheetVariant;
-}) { return <Overlay {...props} open={visible} scroll={false} presentation={variant === "modal" ? "dialog" : variant} />; }
+}) { return <Overlay {...props} open={visible} scroll={scroll} presentation={variant === "modal" ? "dialog" : variant} />; }
 
 // ──────────────────────────────────────────────────────────────────────────
 // PageHeader — every screen top. Always identical chrome.
@@ -1014,6 +1017,8 @@ export function StatTile({
   return (
     <Container
       onPress={onPress}
+      accessibilityRole={onPress ? "button" : undefined}
+      accessibilityLabel={onPress ? `${label}: ${value}` : undefined}
       style={[{
         flex: 1,
         minWidth: 150,
@@ -1068,21 +1073,27 @@ export function StatTile({
 // DataTable — Table / TableHeader / TableRow / TableCell primitives.
 // Every table in the app shares row height, header height, hover, and typography.
 // ──────────────────────────────────────────────────────────────────────────
-export function Table({ children, style }: { children: React.ReactNode; style?: ViewStyle }) {
+export function Table({ children, style, accessibilityLabel = "Data table", testID }: {
+  children: React.ReactNode; style?: ViewStyle; accessibilityLabel?: string; testID?: string;
+}) {
+  const header = Children.toArray(children).find(child => isValidElement(child) && child.type === TableHeader);
+  const columns = isValidElement<{ columns: TableColumn[] }>(header) ? header.props.columns : [];
+  const minimumWidth = tableMinWidth(columns, spacing.md, layout.table.cellPaddingX) + StyleSheet.hairlineWidth * 2;
   return (
-    <View role="table" style={[{
-      backgroundColor: colors.surfaceSecondary,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-      borderRadius: radius.md,
-      overflow: "hidden",
-    }, style]}>
-      {children}
-    </View>
+    <ScrollView horizontal testID={testID} accessibilityLabel={`${accessibilityLabel}. Scroll horizontally for more columns.`}
+      {...(Platform.OS === "web" ? { onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => handleTableScrollKey(event) } : {})}
+      tabIndex={Platform.OS === "web" ? 0 : undefined} showsHorizontalScrollIndicator
+      keyboardShouldPersistTaps="handled" style={{ minWidth: 0, maxWidth: "100%" }}
+      contentContainerStyle={{ flexGrow: 1 }}>
+      <View role="table" accessibilityLabel={accessibilityLabel} style={[{
+        flexGrow: 1, minWidth: minimumWidth, backgroundColor: colors.surfaceSecondary,
+        borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.md,
+      }, style]}>{children}</View>
+    </ScrollView>
   );
 }
 
-export function TableHeader({ columns }: { columns: { label: string; flex?: number; width?: number; align?: "left" | "right" | "center" }[] }) {
+export function TableHeader({ columns }: { columns: TableColumn[] }) {
   return (
     <View role="row" style={{
       flexDirection: "row",
@@ -1098,13 +1109,12 @@ export function TableHeader({ columns }: { columns: { label: string; flex?: numb
         <Text
           key={i}
           role="columnheader"
-          numberOfLines={1}
           style={[
             type.overline,
             {
-              flex: c.width ? undefined : (c.flex ?? 1),
-              minWidth: 0,
-              width: c.width,
+              ...tableColumnLayout(c),
+              paddingVertical: spacing.sm,
+              ...(Platform.OS === "web" ? { overflowWrap: "anywhere" } as any : {}),
               textAlign: c.align || "left",
             },
           ]}
@@ -1166,25 +1176,27 @@ export function TableCell({
       testID={testID}
       role="cell"
       style={{
-        flex: width ? undefined : (flex ?? 1),
-        minWidth: 0,
-        width,
+        ...tableColumnLayout({ width, flex }),
+        maxWidth: width !== undefined ? width : "100%",
+        paddingVertical: spacing.sm,
         flexDirection: align === "right" ? "row-reverse" : "row",
         justifyContent: align === "center" ? "center" : "flex-start",
         alignItems: "center",
         gap: spacing.sm,
       }}
     >
-      {/* Callers pass plain text (a name, or a "₹{amount}" template that JSX
-          splits into a ["₹", amount] children array) far more often than a
-          real element — wrap anything that isn't an element in one `Text`
-          so it can truncate/shrink instead of forcing the row wider than
-          its column. */}
-      {isValidElement(children) || (Array.isArray(children) && children.some((c) => isValidElement(c))) ? (
-        children
-      ) : (
-        <Text numberOfLines={1} style={[type.bodySm, { flexShrink: 1 }]}>{children}</Text>
-      )}
+      <View style={{ width: "100%", minWidth: 0, maxWidth: "100%", flexShrink: 1 }}>
+        {isValidElement(children) || (Array.isArray(children) && children.some(child => isValidElement(child)))
+          ? Children.map(children, child => {
+            if (!isValidElement<{ style?: any }>(child)) return child;
+            const original = child.props.style;
+            const bounds = { minWidth: 0, maxWidth: "100%", flexShrink: 1, ...(Platform.OS === "web" ? { overflowWrap: "anywhere" } : {}) };
+            return cloneElement(child, { style: typeof original === "function"
+              ? (state: unknown) => [original(state), bounds]
+              : [original, bounds, child.type === Text ? { textAlign: align } : null] });
+          })
+          : <Text style={[type.bodySm, { minWidth: 0, maxWidth: "100%", flexShrink: 1, textAlign: align }, Platform.OS === "web" ? { overflowWrap: "anywhere" } as any : null]}>{children}</Text>}
+      </View>
     </View>
   );
 }

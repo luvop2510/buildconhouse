@@ -2,84 +2,100 @@ import { expect, test } from '@playwright/test';
 import { mockSession } from './audit-fixtures';
 
 const draft = {
-  phone: '919909906652', customer_name: 'Mira Shah', pdf_path: `/api/quotations/shared-pdf/${'a'.repeat(43)}`,
-  filename: 'Mira Shah.pdf', expires_at: '2099-10-11T00:00:00Z', expires_in: 86400,
+  id: 'wa-quotation', floor_id: 'first-floor', phone: '919909906652', customer_name: 'Mira Shah',
+  filename: 'Mira Shah.pdf', expected_updated_at: '2026-10-01T10:00:00Z',
+  include_dimensions: false, direct_send_configured: true,
 };
 
-test('quotation WhatsApp draft uses current contact and editable message without marking sent', async ({ page }) => {
-  await mockSession(page, '/quotations/wa-quotation', false);
+async function installFileSharing(page: import('@playwright/test').Page) {
   await page.addInitScript(() => {
-    const original = HTMLAnchorElement.prototype.click;
-    HTMLAnchorElement.prototype.click = function () {
-      if (this.href.startsWith('https://wa.me/')) {
-        (window as unknown as { whatsappDraftUrl: string }).whatsappDraftUrl = this.href;
-      } else original.call(this);
-    };
-  });
-  let quotationMutations = 0;
-  await page.route(/\/api\/quotations\/wa-quotation(?:\?.*)?$/, async route => {
-    if (route.request().method() !== 'GET') quotationMutations++;
-    await route.fulfill({ json: {
-      id: 'wa-quotation', number: 'Q-WA', customer_name: 'Mira Shah', status: 'draft', floor_id: 'first-floor',
-      items: [{ id: 'line', sku: 'B-1', name: 'Basin', qty: 1, unit_price: 200, discount_pct: 0, room: 'Bathroom' }], rooms: ['Bathroom'],
-      subtotal: 200, discount_total: 0, grand_total: 200, created_at: '2026-10-01T10:00:00Z', created_by_name: 'Audit Owner',
+    Object.defineProperty(navigator, 'canShare', { configurable: true, value: () => true });
+    Object.defineProperty(navigator, 'share', { configurable: true, value: async (payload: ShareData) => {
+      const file = payload.files?.[0];
+      (window as unknown as { sharedPdf: unknown }).sharedPdf = {
+        filename: file?.name, type: file?.type, content: await file?.text(), url: payload.url,
+      };
     } });
   });
-  await page.route('**/api/quotations/wa-quotation/breakdown', route => route.fulfill({ json: { lines: [], totals: { subtotal: 200, discount_total: 0, grand_total: 200 }, project_discount_pct: 0, category_discounts: {} } }));
-  await page.route('**/api/activity/quotation/wa-quotation', route => route.fulfill({ json: [] }));
-  await page.route('**/api/purchase-orders?quotation_id=wa-quotation', route => route.fulfill({ json: [] }));
-  let prepared = 0;
-  let revoked = 0;
+}
+
+async function mockQuotationDetail(page: import('@playwright/test').Page, id: string) {
+  await page.route(new RegExp(`/api/quotations/${id}(?:\\?.*)?$`), route => route.fulfill({ json: {
+    id, number: 'Q-WA', customer_name: 'Mira Shah', status: 'draft', floor_id: 'first-floor',
+    items: [{ id: 'line', sku: 'B-1', name: 'Basin', qty: 1, unit_price: 200, discount_pct: 0, room: 'Bathroom' }], rooms: ['Bathroom'],
+    subtotal: 200, discount_total: 0, grand_total: 200, created_at: '2026-10-01T10:00:00Z', created_by_name: 'Audit Owner',
+  } }));
+  await page.route(`**/api/quotations/${id}/breakdown`, route => route.fulfill({ json: { lines: [], totals: { subtotal: 200, discount_total: 0, grand_total: 200 }, project_discount_pct: 0, category_discounts: {} } }));
+  await page.route(`**/api/activity/quotation/${id}`, route => route.fulfill({ json: [] }));
+  await page.route(`**/api/purchase-orders?quotation_id=${id}`, route => route.fulfill({ json: [] }));
+}
+
+test('quotation sends PDF directly with current contact and editable message without exposing a link', async ({ page }) => {
+  await mockSession(page, '/quotations/wa-quotation', false);
+  await mockQuotationDetail(page, 'wa-quotation');
+  let prepared = 0, sends = 0;
   await page.route('**/api/quotations/wa-quotation/whatsapp-draft**', route => {
     expect(route.request().headers()['x-floor-id']).toBe('first-floor');
-    if (route.request().method() === 'DELETE') { revoked++; return route.fulfill({ json: { revoked: true } }); }
     expect(route.request().method()).toBe('POST'); prepared++;
     return route.fulfill({ json: draft });
   });
+  await page.route('**/api/quotations/wa-quotation/whatsapp-send', route => {
+    sends++;
+    const body = route.request().postDataJSON();
+    expect(route.request().headers()['x-floor-id']).toBe('first-floor');
+    expect(body.message).toBe('Hey Mira, please review Basin & Shower #2.');
+    expect(body.expected_updated_at).toBe(draft.expected_updated_at);
+    expect(body.idempotency_key).toMatch(/^quotation_/);
+    expect(body).not.toHaveProperty('url');
+    return route.fulfill({ json: { status: 'accepted' } });
+  });
+  await page.route('**/api/whatsapp/deliveries/wa-quotation/**', route => route.fulfill({ json: { status: 'delivered' } }));
   await page.goto('/quotations/wa-quotation');
-  await expect(page.getByRole('button', { name: /mark.*sent/i })).toHaveCount(0);
   await page.getByTestId('quotation-whatsapp-draft').click();
   await expect(page.getByTestId('quotation-whatsapp-sheet')).toBeVisible();
   await expect(page.getByTestId('quotation-whatsapp-message')).toHaveValue('Hey Mira Shah, here is your quotation.');
   await expect(page.getByText('Mira Shah · +919909906652')).toBeVisible();
+  await expect(page.getByRole('button', { name: /link|draft/i })).toHaveCount(0);
   await page.getByTestId('quotation-whatsapp-message').fill('Hey Mira, please review Basin & Shower #2.');
-  await page.getByTestId('open-quotation-whatsapp').click();
-  const opened = new URL(await page.evaluate(() => (window as unknown as { whatsappDraftUrl: string }).whatsappDraftUrl));
-  expect(opened.pathname).toBe('/919909906652');
-  expect(opened.searchParams.get('text')).toContain('Hey Mira, please review Basin & Shower #2.\n\n');
-  expect(opened.searchParams.get('text')).toContain(draft.pdf_path);
-  expect(quotationMutations).toBe(0);
-  expect(prepared).toBe(1);
-  await page.getByTestId('revoke-quotation-whatsapp').click();
-  await expect(page.getByTestId('quotation-whatsapp-sheet')).not.toBeVisible();
-  expect(revoked).toBe(1);
+  await page.getByTestId('send-quotation-pdf-whatsapp').click();
+  await expect(page.getByText('PDF submitted to WhatsApp')).toBeVisible();
+  await expect(page.getByTestId('send-quotation-pdf-whatsapp')).toBeDisabled();
+  await page.getByTestId('refresh-quotation-pdf-status').click();
+  await expect(page.getByText('PDF delivery: delivered')).toBeVisible();
+  expect(prepared).toBe(1); expect(sends).toBe(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 });
 
-test('quotation WhatsApp draft reports missing contact without opening a chat or claiming sent', async ({ page }) => {
+test('PDF attachment sharing stays available without WhatsApp provider or customer phone', async ({ page }) => {
   await mockSession(page, '/quotations/no-phone', false);
-  await page.route(/\/api\/quotations\/no-phone(?:\?.*)?$/, route => route.fulfill({ json: {
-    id: 'no-phone', number: 'Q-NO-PHONE', customer_name: 'No contact', status: 'draft', floor_id: 'first-floor',
-    items: [{ id: 'line', sku: 'B-1', name: 'Basin', qty: 1, unit_price: 200, discount_pct: 0 }], rooms: [],
-    subtotal: 200, discount_total: 0, grand_total: 200, created_at: '2026-10-01T10:00:00Z', created_by_name: 'Audit Owner',
+  await installFileSharing(page);
+  await mockQuotationDetail(page, 'no-phone');
+  await page.route('**/api/quotations/no-phone/whatsapp-draft**', route => route.fulfill({ json: {
+    ...draft, id: 'no-phone', phone: null, direct_send_configured: false,
   } }));
-  await page.route('**/api/quotations/no-phone/breakdown', route => route.fulfill({ json: { lines: [], project_discount_pct: 0, category_discounts: {} } }));
-  await page.route('**/api/activity/quotation/no-phone', route => route.fulfill({ json: [] }));
-  await page.route('**/api/purchase-orders?quotation_id=no-phone', route => route.fulfill({ json: [] }));
-  await page.route('**/api/quotations/no-phone/whatsapp-draft**', route => route.fulfill({ status: 422, json: { detail: "Add a valid WhatsApp phone number to the customer's contact details first" } }));
+  await page.route('**/api/quotations/no-phone/pdf?**', route => {
+    expect(route.request().headers()['x-floor-id']).toBe('first-floor');
+    return route.fulfill({ contentType: 'application/pdf', body: '%PDF-1.4 actual attachment' });
+  });
   await page.goto('/quotations/no-phone');
   await page.getByTestId('quotation-whatsapp-draft').click();
-  await expect(page.getByText("Add a valid WhatsApp phone number to the customer's contact details first")).toBeVisible();
-  await expect(page.getByTestId('quotation-whatsapp-sheet')).not.toBeVisible();
-  await expect(page.getByRole('button', { name: /mark.*sent/i })).toHaveCount(0);
+  await expect(page.getByTestId('send-quotation-pdf-whatsapp')).toHaveCount(0);
+  await page.getByTestId('share-quotation-pdf-file').click();
+  await expect(page.getByTestId('mobile-file-save')).toBeVisible();
+  await page.getByRole('button', { name: 'Save or share', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { sharedPdf: unknown }).sharedPdf)).toEqual({
+    filename: 'Mira Shah.pdf', type: 'application/pdf', content: '%PDF-1.4 actual attachment',
+  });
+  await expect(page.getByTestId('mobile-file-save')).not.toBeVisible();
 });
 
 for (const kind of ['sanitary', 'tiles_selection', 'tiles_quotation'] as const) {
-  test(`${kind} quotation builder prepares WhatsApp draft with document floor on every viewport`, async ({ page }) => {
+  test(`${kind} quotation builder shares the PDF attachment with document floor on every viewport`, async ({ page }) => {
     const tiles = kind !== 'sanitary';
     const path = tiles ? `/tiles/${kind === 'tiles_selection' ? 'selection' : 'quotation'}` : '/quotations/new';
     const floorId = tiles ? 'ground-floor' : 'first-floor';
     await mockSession(page, path, false);
+    await installFileSharing(page);
     const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect width="200" height="200" fill="#8b7253"/></svg>')}`;
     const savedDocument = {
       id: 'builder-wa', number: 'Q-BUILDER-WA', doc_type: tiles ? kind : 'standard', floor_id: floorId,
@@ -102,15 +118,28 @@ for (const kind of ['sanitary', 'tiles_selection', 'tiles_quotation'] as const) 
     await page.route('**/api/quotations/builder-wa/whatsapp-draft**', route => {
       expect(route.request().method()).toBe('POST');
       expect(route.request().headers()['x-floor-id']).toBe(floorId);
-      return route.fulfill({ json: draft });
+      return route.fulfill({ json: { ...draft, id: 'builder-wa', floor_id: floorId, direct_send_configured: false } });
+    });
+    await page.route('**/api/quotations/builder-wa/pdf?**', route => {
+      expect(route.request().headers()['x-floor-id']).toBe(floorId);
+      return route.fulfill({ contentType: 'application/pdf', body: '%PDF-1.4 builder attachment' });
     });
     await page.goto(`${path}?quotationId=builder-wa`);
-    const action = page.getByRole('button', { name: tiles ? 'WhatsApp draft' : 'WhatsApp quotation draft', exact: true });
+    if (!tiles) {
+      await expect(page.getByTestId('quotation-workspace')).toBeVisible();
+      const expand = page.getByTestId('expand-quotation-workspace');
+      if (await expand.isVisible()) await expand.click();
+    }
+    const action = page.getByRole('button', { name: tiles ? 'Share PDF' : 'Share quotation PDF', exact: true });
     await expect(action).toBeEnabled({ timeout: 20_000 });
     await action.click();
     await expect(page.getByTestId('quotation-whatsapp-sheet')).toBeVisible();
-    await expect(page.getByTestId('quotation-whatsapp-message')).toHaveValue('Hey Mira Shah, here is your quotation.');
-    await expect(page.getByTestId('open-quotation-whatsapp')).toBeVisible();
+    await expect(page.getByTestId('send-quotation-pdf-whatsapp')).toHaveCount(0);
+    await page.getByTestId('share-quotation-pdf-file').click();
+    await page.getByRole('button', { name: 'Save or share', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => (window as unknown as { sharedPdf: unknown }).sharedPdf)).toEqual({
+      filename: 'Mira Shah.pdf', type: 'application/pdf', content: '%PDF-1.4 builder attachment',
+    });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   });
 }

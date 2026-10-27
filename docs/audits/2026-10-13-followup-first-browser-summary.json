@@ -1,0 +1,12 @@
+{
+  "stats": {
+    "startTime": "2026-10-12T23:17:26.811Z",
+    "duration": 51645.491,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 24,
+    "flaky": 0
+  },
+  "errors": [],
+  "explanation": "First focused suite: fixture locators included Add room and both mounted explorers. Corrected by scoping active picker and explicit supplier-SKU add controls. No retries or deadline changes."
+}

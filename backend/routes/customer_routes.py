@@ -1,18 +1,22 @@
 """Customer CRUD (admin) + customer-portal self-serve endpoints."""
 import asyncio
+from uuid import UUID, NAMESPACE_URL, uuid5
+from pymongo.errors import DuplicateKeyError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
+from services.referrer_identity import resolve_referrer, referrer_query
 from auth import (
-    TILES_FLOOR_ID, floor_for_write, floor_inherit, floor_query, get_current_customer, get_current_user,
+    TILES_FLOOR_ID, accessible_floor_ids, floor_for_write, floor_inherit, floor_query, get_current_customer, get_current_user,
     get_floor_scoped_or_404, hash_password, invalidate_principal_cache, require_floor_access, require_min_role, revoke_all_sessions,
 )
 from db import db
 from models import (
     CustomerCreate, CustomerPublic, CustomerUpdatePayload, UserPublic, now_iso,
 )
-from services.customer_completion import completed_customer_ids, purchase_customer_ids
+from services.customer_completion import completed_customer_ids, confirmed_customer_ids
 from services.activity_log import log_event
 from services.invite_service import generate_temp_password, get_invite_service, temp_password_expiry_iso
 
@@ -23,9 +27,7 @@ async def _referrer_fields(referrer_id: str | None, user: UserPublic) -> dict:
     """Resolve referral attribution server-side; never trust a display name."""
     if not referrer_id:
         return {"referrer_id": None, "referrer_name": None, "referrer_type": None}
-    referrer = await get_floor_scoped_or_404(
-        db.referrers, referrer_id, user, not_found="Referrer not found", projection={"_id": 0},
-    )
+    referrer = await resolve_referrer(db, referrer_id, user)
     if referrer.get("active") is False:
         raise HTTPException(status_code=400, detail="This referrer is archived")
     return {
@@ -57,20 +59,13 @@ async def list_customers(
     user: UserPublic = Depends(get_current_user),
 ):
     query = floor_query(user)
+    eligible_ids, complete_ids = await asyncio.gather(
+        confirmed_customer_ids(db, user) if confirmed_only else asyncio.sleep(0, result=None),
+        completed_customer_ids(db, user) if completion in ("active", "completed") else asyncio.sleep(0, result=None),
+    )
     if confirmed_only:
-        # Derive eligibility from actual confirmed orders, including legacy
-        # customers without lifecycle metadata. Draft quotations never qualify.
-        customer_ids = await db.quotations.distinct(
-            "customer_id", floor_query(user, {"status": {"$in": ["ordered", "won"]}}),
-        )
-        tile_customer_ids = await db.customer_orders.distinct(
-            "customer_id", floor_query(user, {"is_deleted": {"$ne": True}}),
-        )
-        purchase_ids = await purchase_customer_ids(db, user)
-        query = floor_query(user, {"id": {"$in": sorted(value for value in set(customer_ids + tile_customer_ids) | purchase_ids if isinstance(value, str) and value)}})
-    complete_ids = None
-    if completion in ("active", "completed"):
-        complete_ids = await completed_customer_ids(db, user)
+        query = floor_query(user, {"id": {"$in": sorted(eligible_ids)}})
+    if complete_ids is not None:
         query = {"$and": [query, {"id": {"$in" if completion == "completed" else "$nin": sorted(complete_ids)}}]}
     docs = await db.customers.find(
         query, {"_id": 0, "password_hash": 0},
@@ -79,16 +74,39 @@ async def list_customers(
     return [CustomerPublic(**{**d, **({"purchase_completion_status": "completed" if d["id"] in complete_ids else "active"} if complete_ids is not None else {})}) for d in docs[:limit]]
 
 
+async def _replay_tile_customer(receipt_id: str) -> CustomerPublic | None:
+    receipt = await db.settings.find_one({"_id": receipt_id}, {"_id": 0})
+    if not receipt:
+        return None
+    existing = await db.customers.find_one({"id": receipt["customer_id"], "floor_id": TILES_FLOOR_ID},
+                                            {"_id": 0, "password_hash": 0})
+    if not existing:
+        raise HTTPException(status_code=410, detail="This draft customer was deleted. Start a new quotation or selection.")
+    return CustomerPublic(**existing)
+
+
 @router.post("/customers", response_model=CustomerPublic)
 async def create_customer(
     body: CustomerCreate,
     user: UserPublic = Depends(require_min_role("sales")),
 ):
+    draft_receipt_id = None
+    if body.client_draft_id:
+        if floor_for_write(user) != TILES_FLOOR_ID:
+            raise HTTPException(status_code=422, detail="Tile draft recovery requires Ground Floor")
+        try:
+            draft_key = str(UUID(body.client_draft_id))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Invalid tile draft recovery key") from exc
+        draft_receipt_id = "tile-customer-draft:" + str(uuid5(NAMESPACE_URL, f"{user.id}:{TILES_FLOOR_ID}:{draft_key}"))
+        replay = await _replay_tile_customer(draft_receipt_id)
+        if replay:
+            return replay
     if body.email and await db.customers.find_one({"email": body.email.lower()}):
         raise HTTPException(status_code=409, detail="Customer email already exists")
     if not body.name or not body.name.strip():
         raise HTTPException(status_code=400, detail="Customer name is required")
-    data = body.dict()
+    data = body.model_dump(exclude={"client_draft_id"})
     data["floor_id"] = floor_for_write(user)
     data.update(await _referrer_fields(body.referrer_id, user))
     if data.get("email"):
@@ -98,16 +116,35 @@ async def create_customer(
     password = data.pop("password", None)
     from models import CustomerPublic as CP
     cust = CP(**data)
-    to_store = cust.dict()
+    if draft_receipt_id:
+        cust.id = str(uuid5(NAMESPACE_URL, draft_receipt_id))
+    to_store = cust.model_dump()
     if password:
-        to_store["password_hash"] = hash_password(password)
+        to_store["password_hash"] = await run_in_threadpool(hash_password, password)
     # customers_email_unique is sparse, but sparse only skips ABSENT fields —
     # an explicit null still gets indexed, so the second no-email customer
     # ever created crashed with a duplicate-key error on {email: null}.
     # Store no key at all when there is no email.
     if to_store.get("email") is None:
         to_store.pop("email", None)
-    await db.customers.insert_one(to_store)
+    if draft_receipt_id:
+        from db import client
+        async def insert_draft_customer(session):
+            await db.settings.insert_one({"_id": draft_receipt_id, "id": draft_receipt_id,
+                "kind": "tile_customer_draft_receipt", "customer_id": cust.id,
+                "floor_id": TILES_FLOOR_ID, "created_by": user.id}, session=session)
+            # Use a fresh mapping if the transaction callback is retried.
+            await db.customers.insert_one(dict(to_store), session=session)
+        try:
+            async with await client.start_session() as session:
+                await session.with_transaction(insert_draft_customer)
+        except DuplicateKeyError:
+            replay = await _replay_tile_customer(draft_receipt_id)
+            if replay:
+                return replay
+            raise
+    else:
+        await db.customers.insert_one(to_store)
     await log_event(
         event_type="customer.created", entity_type="customer", entity_id=cust.id,
         customer_id=cust.id, actor=user, summary="Customer Created",
@@ -211,7 +248,7 @@ async def import_customer_from_floor(
     # and avoid an index conflict; a later per-floor email migration can add
     # this field back without changing the import contract.
     target_customer = CustomerPublic(floor_id=body.target_floor_id, **copied)
-    await db.customers.insert_one(target_customer.dict(exclude={"email"}))
+    await db.customers.insert_one({**target_customer.dict(exclude={"email"}), "imported_from_customer_id": source["id"]})
     await log_event(
         event_type="customer.imported", entity_type="customer", entity_id=target_customer.id,
         customer_id=target_customer.id, actor=user, floor_id=body.target_floor_id,
@@ -230,6 +267,37 @@ async def get_customer(customer_id: str, with_completion: bool = False, user: Us
     doc = await get_floor_scoped_or_404(
         db.customers, customer_id, user, not_found="Customer not found", projection={"_id": 0, "password_hash": 0},
     )
+    from services.referrer_identity import acquired_counts, legacy_referrer_name
+    if not doc.get("referrer_name"):
+        doc = {**doc, "referrer_name": legacy_referrer_name(doc)}
+    if not doc.get("referrer_id") and not doc.get("referrer_name"):
+        # Notebook/walk-in legacy names were never part of CustomerPublic. Keep
+        # the original spelling and only inspect this customer's actual floor.
+        for collection in (db.followups, db.walkins):
+            legacy = await collection.find_one({
+                "customer_id": customer_id, "floor_id": doc["floor_id"], "is_deleted": {"$ne": True},
+                "$or": [{key: {"$exists": True, "$nin": [None, ""]}} for key in
+                        ("referrer_id", "referrer_name", "architect_name", "interior_designer_name", "architect_interior_designer", "architect")],
+            }, {"_id": 0}, sort=[("updated_at", -1)])
+            if legacy:
+                doc = {**doc, "referrer_id": legacy.get("referrer_id"),
+                       "referrer_name": legacy.get("referrer_name") or legacy_referrer_name(legacy),
+                       "referrer_type": legacy.get("referrer_type")}
+                break
+    if doc.get("referrer_id"):
+        # Attribution can originate on another interested floor. Restrict its
+        # directory lookup to the caller's permitted floors, not the ambient one.
+        selector = {"id": doc["referrer_id"]}
+        floors = accessible_floor_ids(user)
+        if floors is not None:
+            selector["floor_id"] = {"$in": floors}
+        partner = await db.referrers.find_one(referrer_query(selector), {"_id": 0})
+        if partner:
+            doc = {**doc, "referrer_name": partner.get("name") or doc.get("referrer_name"),
+                   "referrer_type": partner.get("type") or doc.get("referrer_type"),
+                   "referrer_company": partner.get("company")}
+        counts = await acquired_counts(db, [doc["referrer_id"]], [doc["floor_id"]])
+        doc["referrer_customers_acquired"] = counts.get(doc["referrer_id"], 0)
     if with_completion:
         completion_user = user.model_copy(update={"active_floor_id": doc["floor_id"]})
         complete_ids = await completed_customer_ids(db, completion_user, [customer_id])
@@ -292,99 +360,41 @@ async def update_customer(
     return CustomerPublic(**doc)
 
 
+def _customer_deletion_owner(user: UserPublic = Depends(get_current_user)) -> UserPublic:
+    # Cross-floor removal of paid financial data is deliberately not delegated
+    # through page grants or the manager role.
+    if user.role != "owner":
+        raise HTTPException(403, "Only the owner can delete all customer data")
+    return user
+
+
+@router.get("/customers/{customer_id}/deletion-preview")
+async def preview_customer_deletion(
+    customer_id: str, furniture_ids: str = "", user: UserPublic = Depends(_customer_deletion_owner),
+):
+    _customer_deletion_owner(user)
+    await get_floor_scoped_or_404(db.customers, customer_id, user, not_found="Customer not found")
+    from services.customer_deletion import plan_deletion, public_plan
+    return public_plan(await plan_deletion(db, customer_id=customer_id, furniture_ids=tuple(filter(None, furniture_ids.split(",")))), user.id)
+
+
 @router.delete("/customers/{customer_id}")
 async def delete_customer(
-    customer_id: str,
-    user: UserPublic = Depends(require_min_role("manager")),
+    customer_id: str, confirmation: str = "", furniture_ids: str = "",
+    user: UserPublic = Depends(_customer_deletion_owner),
 ):
-    """Delete an unused customer and disposable sales-workflow records.
-
-    Purchase orders and completed payments are immutable business records, so
-    either kind of reference blocks the operation.
-    """
-    try:
-        existing = await get_floor_scoped_or_404(
-            db.customers, customer_id, user, not_found="Customer not found", projection={"_id": 0},
-        )
-    except HTTPException as error:
-        # A repeated cleanup request is safe after the first successful
-        # deletion. Keep the response shape stable without exposing records
-        # outside the caller's floor scope.
-        if error.status_code == 404:
-            return {
-                "ok": True,
-                "customer_id": customer_id,
-                "deleted": {
-                    "customers": 0, "quotations": 0, "followups": 0,
-                    "walkins": 0, "pending_payments": 0, "activity_events": 0,
-                    "legacy_gender_fields": 0,
-                },
-                "protected": {"purchase_orders": 0, "completed_payments": 0},
-            }
-        raise
-    quotation_docs = await db.quotations.find(
-        {"customer_id": customer_id, "floor_id": existing.get("floor_id")}, {"_id": 0, "id": 1},
-    ).to_list(5000)
-    quotation_ids = [doc["id"] for doc in quotation_docs if doc.get("id")]
-    quotation_ref = {"$in": quotation_ids} if quotation_ids else {"$in": ["__none__"]}
-    po_count, completed_payment_count = await asyncio.gather(
-        db.purchase_orders.count_documents({
-            "floor_id": existing.get("floor_id"),
-            "$or": [{"customer_id": customer_id}, {"quotation_id": quotation_ref}],
-        }),
-        db.payments.count_documents({
-            "floor_id": existing.get("floor_id"),
-            "$or": [
-                {"customer_id": customer_id, "status": "completed"},
-                {"quotation_id": quotation_ref, "status": "completed"},
-            ],
-        }),
-    )
-    if po_count or completed_payment_count:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f"Cannot delete — {po_count} purchase order(s) and {completed_payment_count} completed payment(s) "
-                "reference this customer or its quotations. Preserve the customer for financial reconciliation."
-            ),
-        )
-
-    legacy_results = await asyncio.gather(
-        db.walkins.update_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}, {"$unset": {"gender": ""}}),
-        db.followups.update_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}, {"$unset": {"gender": ""}}),
-        db.quotations.update_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}, {"$unset": {"gender": ""}}),
-    )
-    followups_result, walkins_result, pending_payments_result, quotations_result, activity_result = await asyncio.gather(
-        db.followups.delete_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}),
-        db.walkins.delete_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}),
-        db.payments.delete_many({
-            "floor_id": existing.get("floor_id"),
-            "$or": [
-                {"customer_id": customer_id, "status": {"$ne": "completed"}},
-                {"quotation_id": quotation_ref, "status": {"$ne": "completed"}},
-            ],
-        }),
-        db.quotations.delete_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}),
-        db.activity_events.delete_many({"customer_id": customer_id, "floor_id": existing.get("floor_id")}),
-    )
-    customer_result = await db.customers.delete_one({"id": customer_id, "floor_id": existing.get("floor_id")})
-    if customer_result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Customer not found")
-    return {
-        "ok": True,
-        "customer_id": customer_id,
-        "deleted": {
-            "customers": customer_result.deleted_count,
-            "quotations": quotations_result.deleted_count,
-            "followups": followups_result.deleted_count,
-            "walkins": walkins_result.deleted_count,
-            "pending_payments": pending_payments_result.deleted_count,
-            "activity_events": activity_result.deleted_count,
-            "legacy_gender_fields": sum(getattr(result, "modified_count", 0) for result in legacy_results),
-        },
-        "protected": {"purchase_orders": 0, "completed_payments": 0},
-        "customer_name": existing.get("name"),
-    }
+    """Remove exactly the owner's reviewed customer graph, including orders."""
+    _customer_deletion_owner(user)
+    if not confirmation:
+        raise HTTPException(409, "Review the customer deletion summary before confirming.")
+    from services.customer_deletion import delete_customer_graph
+    if not await db.settings.find_one({"id": "customer-deletion:" + customer_id}):
+        await get_floor_scoped_or_404(db.customers, customer_id, user, not_found="Customer not found")
+    result = await delete_customer_graph(db, db.client, customer_id, user.id, confirmation, tuple(filter(None, furniture_ids.split(","))))
+    # Invalidate current-process principal reads immediately. Other processes
+    # reload the now-missing identity under their normal short cache expiry.
+    invalidate_principal_cache("customer", customer_id)
+    return result
 
 
 async def _issue_temp_password(customer_id: str, *, kind: str, user: UserPublic):
@@ -404,7 +414,7 @@ async def _issue_temp_password(customer_id: str, *, kind: str, user: UserPublic)
     await db.customers.update_one(
         floor_query(user, {"id": customer_id}),
         {"$set": {
-            "password_hash": hash_password(temp_pw),
+            "password_hash": await run_in_threadpool(hash_password, temp_pw),
             "must_change_password": True,
             "temp_password_expires_at": expires_at,
             "updated_at": now_iso(),

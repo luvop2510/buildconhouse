@@ -28,12 +28,24 @@ export default function Root({ children }: PropsWithChildren) {
                 outline: 3px solid #0066CC !important;
                 outline-offset: 3px !important;
               }
+              /* Composite controls paint focus on their rounded outer shell. */
+              [data-field-shell="true"]:focus-within { box-shadow: 0 0 0 2px #0066CC; }
+              [data-field-shell="true"] :is(input, textarea):focus { outline: none !important; box-shadow: none !important; }
+              :is(input, textarea, select):focus-visible { outline: none !important; box-shadow: 0 0 0 2px #0066CC; }
+              @media (forced-colors: active) {
+                [data-field-shell="true"]:focus-within, :is(input, textarea, select):focus-visible { outline: 2px solid Highlight !important; outline-offset: 2px; }
+              }
+              .kitchen-date-input::-webkit-calendar-picker-indicator { display: none; }
               :is(input, textarea)::placeholder { opacity: 1; }
               :is(button, [role="button"], [role="tab"]) { touch-action: manipulation; }
               @media (prefers-reduced-motion: reduce) {
                 *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
               }
-              body > div:first-child { position: fixed !important; top: 0; left: 0; right: 0; bottom: 0; }
+              #root { position: fixed !important; top: var(--forge-visible-top, 0px); left: 0; right: 0; bottom: auto !important; height: var(--forge-visible-height, 100%) !important; }
+              /* React Native Web portals sit outside the application root.
+                 Resize only their outer modal, leaving inner dialog panels alone. */
+              [aria-modal="true"]:not([aria-modal="true"] [aria-modal="true"]) { top: var(--forge-visible-top, 0px) !important; bottom: auto !important; height: var(--forge-visible-height, 100%) !important; }
+              input, textarea { scroll-margin-block: 12px; }
               [role="tablist"] [role="tab"] * { overflow: visible !important; }
               [role="heading"], [role="heading"] * { overflow: visible !important; }
             `,

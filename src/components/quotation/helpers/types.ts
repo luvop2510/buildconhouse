@@ -83,11 +83,12 @@ export type Category = { id: string; name: string; product_count?: number };
 
 export type Customer = {
   id: string; name: string; company?: string | null; email?: string | null; phone?: string | null; address?: string | null;
-  referrer_id?: string | null; referrer_name?: string | null;
+  referrer_id?: string | null; referrer_name?: string | null; referrer_company?: string | null;
   referrer_type?: "architect" | "interior_designer" | null;
 };
 
 export type Referrer = {
+  customers_acquired?: number | null;
   id: string; name: string; type: "architect" | "interior_designer";
   phone?: string | null; company?: string | null;
 };
@@ -105,6 +106,7 @@ export type QuotationHeader = {
 };
 
 export type RecentQuotation = {
+  customer_outcome?: "won" | "lost" | null;
   id: string; number: string;
   customer_id?: string | null; customer_name?: string | null;
   project_name?: string | null; phone?: string | null;

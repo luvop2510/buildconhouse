@@ -7,6 +7,7 @@ routes call `log_event` to record them.
 Events are best-effort: a logging failure MUST NOT block the business op.
 """
 from __future__ import annotations
+import asyncio
 import logging
 from typing import Optional
 
@@ -14,6 +15,7 @@ from db import db
 from models import ActivityEvent, ActivityEntity, UserPublic
 
 logger = logging.getLogger("forge.activity")
+_INSERT_TIMEOUT_SECONDS = 1.0
 
 
 # Canonical event type registry. Kept as strings (not an enum) so tests and
@@ -92,10 +94,11 @@ async def log_event(
             summary=summary,
             floor_id=floor_id or (actor.active_floor_id if actor else None),
         )
-        await db.activity_events.insert_one(ev.model_dump())
+        # Timeline delivery is best-effort; a stalled insert cannot hold a saved edit.
+        await asyncio.wait_for(db.activity_events.insert_one(ev.model_dump()), _INSERT_TIMEOUT_SECONDS)
         return ev
     except Exception as e:  # noqa: BLE001
-        logger.warning("activity log failed (%s / %s): %s", event_type, entity_id, e)
+        logger.warning("activity log failed (%s): %s", event_type, type(e).__name__)
         return None
 
 

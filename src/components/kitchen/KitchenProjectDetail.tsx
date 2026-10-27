@@ -1,0 +1,307 @@
+import { useEffect, useRef, useState } from "react";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { Linking, Pressable, ScrollView, View } from "react-native";
+import Feather from "@expo/vector-icons/Feather";
+import { Text } from "@/src/components/AppText";
+import { Alert, ErrorState, LoadingState, Sheet } from "@/src/components/ds";
+import { Menu } from "@/src/design/navigationControls";
+import { NavigationLink } from "@/src/design/NavigationLink";
+import { useActionAccess } from "@/src/hooks/use-permissions";
+import { KITCHEN_STAGES, STAGE_LABELS, type KitchenCad, type KitchenLead, type KitchenProject, type KitchenStage, type KitchenVisit } from "@/src/api/kitchenProjects";
+import { Choice, displayDate, ErrorNotice, KitchenFloor, KitchenPage, KitchenPanel, rupees } from "./shared";
+import { KitchenDateField } from "./KitchenFilters";
+import { kitchenToday } from "./KitchenDates";
+import { LeadFields } from "./KitchenLeadFields";
+import { spacing } from "@/src/theme/tokens";
+import { KitchenButton as Button, KitchenTextField as TextField, kitchenColors as colors, kitchenType as type } from "./KitchenPrimitives";
+import { KitchenAssignment } from "./KitchenAssignment";
+import { CommercialStages } from "./CommercialStages";
+import { KitchenDocuments } from "./KitchenDocuments";
+import { kitchenProjectPath, kitchenStage, useKitchenDraft, useKitchenProject } from "./KitchenProjectState";
+import { useKitchenAutosave } from "./KitchenAutosave";
+
+type ProjectPage = "overview" | "stage" | "documents" | "history" | "assignments" | "exceptions";
+
+export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage }) {
+  const canEditCustomer = useActionAccess("customers", "update", false);
+  const state = useKitchenProject();
+  const { project, loading, failure, policy, policyError, reload, updateProject, submission, command, returnTo, retainedDraft } = state;
+  const { stage: parameter, details } = useLocalSearchParams<{ stage?: string; details?: string }>();
+  const router = useRouter();
+  const [panel, setPanel] = useState<ProjectPage | "workflow" | "assignee" | "advance" | "visits" | null>(["documents", "history", "assignments", "exceptions"].includes(page) ? page : null);
+  const [detailsExpanded, setDetailsExpanded] = useState(details === "1");
+  const lastStage = useRef(project?.stage);
+  useEffect(() => { if (lastStage.current && project?.stage !== lastStage.current) setPanel(null); lastStage.current = project?.stage; }, [project?.stage]);
+  const selected = kitchenStage(parameter) || project?.stage || "lead";
+  useEffect(() => { setDetailsExpanded(details === "1"); }, [selected, details]);
+  const future = Boolean(project && KITCHEN_STAGES.indexOf(selected) > KITCHEN_STAGES.indexOf(project.stage));
+  const path = (suffix = "") => kitchenProjectPath(state.id, suffix, returnTo);
+  const canUpdate = project?.permissions?.can_update === true;
+  const held = project?.lifecycle_status === "On Hold" || project?.lifecycle_status === "Cancelled";
+  const back = () => { if (router.canGoBack()) router.back(); else router.replace(returnTo as any); };
+  const actionLabel = project ? currentTaskLabel(project) : "Open current task";
+  const disabled = !canUpdate || submission.busy && !state.backgroundSaving || loading || Boolean(failure);
+  const savedAt = project?.updated_at ? new Date(project.updated_at) : null;
+  const savedLabel = savedAt && Number.isFinite(savedAt.getTime())
+    ? `Saved · ${savedAt.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })} IST`
+    : "Saved";
+  const projectActions = project ? <Menu triggerLabel="Project actions" triggerTestID="kitchen-project-actions" items={[
+      { label: "Stage history", icon: "list", onPress: () => setPanel("workflow") },
+      ...(canEditCustomer ? [{ label: "Edit customer", icon: "edit-2" as const, onPress: () => router.push(`/customers/${project.customer_id}/edit` as any) }] : []),
+      { label: "Documents", icon: "paperclip", onPress: () => setPanel("documents") },
+      { label: "History", icon: "clock", onPress: () => setPanel("history") },
+      ...(selected === "order" ? [{ label: "Advance details", icon: "credit-card" as const, onPress: () => setPanel("advance") }] : []),
+      ...(selected === "installation" ? [{ label: "Site visits", icon: "map-pin" as const, onPress: () => setPanel("visits") }] : []),
+      { label: "Assigned to", icon: "user", onPress: () => setPanel("assignee") },
+      { label: "Completion date", icon: "calendar", onPress: () => setPanel("assignments") },
+      { label: "Reload saved project", icon: "refresh-cw", onPress: reload },
+      ...(project.permissions?.can_approve_exceptions ? [{ label: "Hold, cancel or revise project", icon: "settings" as const, onPress: () => setPanel("exceptions") }] : []),
+    ]}><View style={{ minHeight: 44, minWidth: 44, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 8 }}><Text style={type.body}>Actions</Text><Feather name="more-horizontal" size={20} color={colors.onSurfaceSecondary} /></View></Menu> : undefined;
+  if (parameter && !kitchenStage(parameter)) return <KitchenFloor><KitchenPage title="Kitchen" back={back}><ErrorState title="Stage unavailable" subtitle="Choose one of the nine Kitchen stages." /></KitchenPage></KitchenFloor>;
+  return <KitchenFloor><KitchenPage title={STAGE_LABELS[selected]} back={back}
+    compactHeader right={project ? <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>{projectActions}<Pressable accessibilityRole="button" accessibilityLabel="Project details" accessibilityState={{ expanded: detailsExpanded }} aria-expanded={detailsExpanded} testID="kitchen-project-details-toggle" onPress={() => setDetailsExpanded(value => !value)} style={{ minHeight: 44, minWidth: 44, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 8 }}><Text style={type.body}>Details</Text><Feather name={detailsExpanded ? "chevron-up" : "chevron-down"} size={16} color={colors.onSurfaceSecondary} /></Pressable></View> : undefined}
+    contentStyle={{ width: "100%", maxWidth: 1000, alignSelf: "center" }}>
+    {failure ? <ErrorState title="Project unavailable" subtitle={failure} onRetry={reload} /> : null}
+    {loading && !project ? <LoadingState label="Loading project…" /> : null}
+    {project ? <View style={{ gap: spacing.lg }} testID="kitchen-project-detail">
+      <View testID={!loading && !failure ? "kitchen-project-ready" : "kitchen-project-loading"} style={{ position: "absolute", width: 0, height: 0 }} />
+      {detailsExpanded ? <View testID="kitchen-project-details" style={{ gap: spacing.sm }}>
+        <Text style={type.overline}>{project.project_reference || project.reference}{project.is_legacy ? " · Legacy project" : ""}</Text>
+        <Text style={type.bodyStrong}>{[project.customer.name, project.customer.phone].filter(Boolean).join(" · ")}</Text>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          <Button label="All stage records" icon="list" variant="secondary" onPress={() => setPanel("workflow")} testID="kitchen-customer-stage-records" />
+          <Button label="Complete history" icon="clock" variant="secondary" onPress={() => setPanel("history")} testID="kitchen-customer-history" />
+          <NavigationLink href={"/kitchen" as any} style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 8 }}><Text style={[type.bodyStrong, { color: colors.brand }]}>Dashboard</Text></NavigationLink>
+        </View>
+      </View> : null}
+      <ScrollView horizontal keyboardShouldPersistTaps="handled" showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={{ gap: spacing.sm }} testID="kitchen-project-stages" accessibilityLabel="Kitchen stages">
+        {KITCHEN_STAGES.map((stage, index) => <NavigationLink key={stage} href={path(`/stages/${stage}`) as any} testID={`kitchen-project-stage-${stage}`} accessibilityState={{ selected: selected === stage }} aria-current={selected === stage ? "page" : undefined} style={{ flexShrink: 0, minHeight: 44, justifyContent: "center", paddingHorizontal: spacing.md, borderWidth: 1, borderColor: selected === stage ? colors.brand : colors.border, borderRadius: 8, backgroundColor: selected === stage ? colors.brandTint : colors.surfaceSecondary }}><Text numberOfLines={1} style={type.body}>{index + 1}. {STAGE_LABELS[stage]}</Text></NavigationLink>)}
+      </ScrollView>
+      {selected === project.stage && canUpdate ? <StageNavigation project={project} disabled={disabled} /> : null}
+      {loading ? <Text style={type.caption}>Refreshing saved project…</Text> : null}
+      <View testID="kitchen-save-status" style={{ minHeight: 19 }}>
+        <Text accessibilityLiveRegion="polite" numberOfLines={1} style={[type.caption, { minHeight: 19 }]} testID={state.dirty ? "kitchen-unsaved-notice" : undefined}>{submission.busy ? "Saving…" : submission.error ? "Save failed · review and retry." : state.dirty ? "Unsaved changes · check the form below." : savedLabel}</Text>
+      </View>
+      {retainedDraft ? <Alert tone="info" title="Drafts retained" description="The latest saved record is loaded. Your unsaved entries are kept for review." /> : null}
+      <ErrorNotice error={submission.error} stale={submission.stale} onReload={reload} />
+      {held ? <Alert tone="warning" title={`Project ${project.lifecycle_status}`} description="The owner must resume the project before routine work can continue." /> : null}
+      <View testID="kitchen-current-task-region" style={{ gap: spacing.lg, width: "100%", minWidth: 0 }}>
+        {selected !== project.stage ? <Alert tone="info" title="Stage records" description={future ? `Preview of ${STAGE_LABELS[selected]}. Open the current stage to move this project.` : `This project is now in ${STAGE_LABELS[project.stage]}. Earlier records are read only.`} action={<Button label={actionLabel} variant="secondary" onPress={() => router.replace(path(`/stages/${project.stage}`) as any)} testID="kitchen-open-current-stage" />} /> : null}
+        {!canUpdate ? <View testID="kitchen-read-only-notice"><Alert tone="info" title="View only" description="Changes and uploads require permission for this project's current stage." /></View> : null}
+        {project.commercial_basis_invalidated ? <Alert tone="warning" title="Fresh commercial approvals required" description="Create and approve a new design version, then renew the quotation and order approvals. Earlier records remain in History." /> : null}
+        {selected === "lead" ? <DuplicateReview project={project} disabled={disabled || Boolean(held)} /> : null}
+        <EarlyStage project={project} stage={selected} disabled={disabled || Boolean(held)} />
+        <CommercialStages project={project} stage={selected} disabled={disabled || Boolean(held)} command={command} />
+      </View>
+      <Sheet scroll visible={panel === "advance"} onClose={() => setPanel(null)} title="Advance details" testID="kitchen-advance-sheet"><CommercialStages project={project} stage={selected} disabled={disabled || submission.busy || Boolean(held)} command={command} mode="advance" /></Sheet>
+      <Sheet scroll visible={panel === "visits"} onClose={() => setPanel(null)} title="Site visits" testID="kitchen-site-visits-sheet"><CommercialStages project={project} stage={selected} disabled={disabled || submission.busy || Boolean(held)} command={command} mode="visits" /></Sheet>
+      <Sheet scroll visible={panel === "documents"} onClose={() => setPanel(null)} title="Project documents" testID="kitchen-documents-sheet">{policyError ? <Alert tone="warning" title="Upload settings unavailable" action={<Button label="Reload" variant="secondary" onPress={reload} />} /> : null}<KitchenDocuments project={project} policy={policy} disabled={disabled || Boolean(held)} onUpdated={updateProject} onReload={reload} /></Sheet>
+      <Sheet scroll visible={panel === "history"} onClose={() => setPanel(null)} title="Project history" testID="kitchen-history-sheet"><ProjectHistory project={project} /></Sheet>
+      <Sheet scroll visible={panel === "assignee"} onClose={() => setPanel(null)} title="Stage assignment" testID="kitchen-assignee-sheet"><KitchenAssignment project={project} stage={selected} disabled={disabled || Boolean(held) || selected !== project.stage} /></Sheet>
+      <Sheet scroll visible={panel === "assignments"} onClose={() => setPanel(null)} title="Target completion" testID="kitchen-assignment-sheet"><ProjectPlan project={project} disabled={disabled || Boolean(held)} /></Sheet>
+      <Sheet scroll visible={panel === "exceptions"} onClose={() => setPanel(null)} title="Project changes" testID="kitchen-exceptions-sheet"><ProjectExceptions project={project} disabled={disabled} /></Sheet>
+      <Sheet scroll visible={panel === "workflow"} onClose={() => setPanel(null)} title="Project stages" testID="kitchen-workflow-sheet"><WorkflowRows project={project} path={path} onNavigate={() => { setPanel(null); setDetailsExpanded(false); }} /></Sheet>
+    </View> : null}
+  </KitchenPage></KitchenFloor>;
+}
+
+function StageNavigation({ project, disabled }: { project: KitchenProject; disabled: boolean }) {
+  const { command, submission } = useKitchenProject();
+  disabled = disabled || submission.busy;
+  const index = KITCHEN_STAGES.indexOf(project.stage);
+  const previous = KITCHEN_STAGES[index - 1];
+  const next = KITCHEN_STAGES[index + 1];
+  return <View testID="kitchen-stage-navigation">
+    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.md }}>
+      {previous ? <Button label="Previous" icon="arrow-left" variant="secondary" disabled={disabled} onPress={() => command("move_stage", { target_stage: previous })} testID="kitchen-previous-stage" /> : null}
+      {next ? <Button label={`Next: ${STAGE_LABELS[next]}`} iconRight="arrow-right" disabled={disabled} onPress={() => command("move_stage", { target_stage: next })} testID={project.stage === "lead" ? "kitchen-convert" : `kitchen-advance-${next}`} /> : null}
+    </View>
+  </View>;
+}
+
+function RouteRow({ title, subtitle, href, testID, trailing, onNavigate }: { title: string; subtitle?: string; href: string; testID?: string; trailing?: string; onNavigate?: () => void }) {
+  return <NavigationLink href={href as any} accessibilityRole="link" onPress={onNavigate} testID={testID} style={({ pressed, hovered }: any) => ({ minHeight: 64, flexDirection: "row", alignItems: "center", gap: spacing.md, paddingVertical: spacing.md, paddingHorizontal: spacing.sm, borderBottomWidth: 1, borderColor: colors.border, backgroundColor: pressed || hovered ? colors.surfaceTertiary : "transparent" })}>
+    <View style={{ flex: 1, gap: spacing.xs }}><Text style={type.bodyStrong}>{title}</Text>{subtitle ? <Text style={type.caption}>{subtitle}</Text> : null}</View>
+    {trailing ? <Text style={type.caption}>{trailing}</Text> : null}<Feather name="chevron-right" size={18} color={colors.onSurfaceMuted} />
+  </NavigationLink>;
+}
+
+function currentTaskLabel(project: KitchenProject) {
+  if (project.duplicate_review?.status === "pending" && project.permissions?.can_review_duplicate) return "Review duplicate";
+  if (project.stage === "completed") return "Review completed project";
+  if (project.stage === "installation" && project.installation?.status === "Completed") return "Review closure";
+  return ({ lead: "Review lead", visit: "Record showroom visit", cad: "Update CAD progress", design: "Review design", quotation: "Review quotation", order: "Review order", production: "Update production", installation: "Update installation", completed: "Review completed project" })[project.stage];
+}
+
+function WorkflowRows({ project, path, onNavigate }: { project: KitchenProject; path: (suffix?: string) => string; onNavigate?: () => void }) {
+  const current = KITCHEN_STAGES.indexOf(project.stage);
+  return <View>{KITCHEN_STAGES.map((stage, index) => <RouteRow key={stage} title={`${index + 1}. ${STAGE_LABELS[stage]}`} subtitle={index > current ? "Preview upcoming stage" : stage === project.stage ? "Current stage" : "Review earlier records"} href={path(`/stages/${stage}`)} trailing={stage === project.stage ? project.status : undefined} testID={`kitchen-stage-${stage}`} onNavigate={onNavigate} />)}</View>;
+}
+
+function DuplicateReview({ project, disabled }: { project: KitchenProject; disabled: boolean }) {
+  const { command } = useKitchenProject();
+  const [reason, setReason] = useKitchenDraft("duplicate.reason", "");
+  if (project.duplicate_review?.status !== "pending") return null;
+  return <KitchenPanel title="Review possible duplicate">
+    <Text style={type.bodyMuted}>Confirm this is a separate project before converting. Records are preserved; nothing is merged.</Text>
+    {project.duplicate_candidates?.length ? <Text style={type.caption}>Possible matches: {project.duplicate_candidates.map(row => row.reference).join(", ")}</Text> : null}
+    {project.permissions?.can_review_duplicate ? <><TextField label="Review reason" value={reason} onChangeText={setReason} editable={!disabled} multiline testID="kitchen-duplicate-reason" />
+      <Button label="Confirm distinct project" disabled={disabled || !reason.trim()} onPress={() => command("review_duplicate", { decision: "distinct_project", reason })} testID="kitchen-duplicate-distinct" />
+      <Button label="Mark duplicate lead Lost" variant="secondary" disabled={disabled || !reason.trim()} onPress={() => command("review_duplicate", { decision: "duplicate", reason })} testID="kitchen-duplicate-confirm" />
+    </> : <Text style={type.bodyMuted}>The owner must review this lead.</Text>}
+  </KitchenPanel>;
+}
+
+function EarlyStage({ project, stage, disabled }: { project: KitchenProject; stage: KitchenStage; disabled: boolean }) {
+  const { command, submission, isDraftStale, resetDraftValue } = useKitchenProject();
+  const [lead, setLead] = useKitchenDraft<KitchenLead>("lead.value", project.lead);
+  const today = kitchenToday();
+  const [visit, setVisit] = useKitchenDraft<KitchenVisit>("visit.value", { ...project.visit, ...(!project.visit.visit_date && stage === "visit" && project.stage === "visit" && !project.is_legacy ? { visit_date: today } : {}) });
+  const [cad, setCad] = useKitchenDraft<KitchenCad>("cad.value", project.cad);
+  const [progress, setProgress] = useKitchenDraft("cad.progress", String(project.cad.progress));
+  const active = stage === project.stage;
+  const cadStatus = Number(progress) === 0 ? "Not Started" : Number(progress) === 100 ? "Completed" : "In Progress";
+  const locked = disabled || !active;
+  const leadDecision = (value: KitchenLead) => [value.status, value.lost_reason || "", value.referrer_id || "", value.referrer_type || ""];
+  const leadDecisionsUnchanged = JSON.stringify(leadDecision(lead)) === JSON.stringify(leadDecision(project.lead));
+  const visitDecisionUnchanged = visit.status === project.visit.status;
+  const cadDecisionsUnchanged = cad.received === project.cad.received && progress === String(project.cad.progress);
+  const draftKey = stage === "lead" ? "lead.value" : stage === "visit" ? "visit.value" : "cad.value";
+  const value = stage === "lead" ? lead : stage === "visit" ? visit : { ...cad, progress: Number(progress), status: cadStatus };
+  const stale = isDraftStale(draftKey) || stage === "cad" && isDraftStale("cad.progress");
+  const autosave = useKitchenAutosave({ draftKey, value, saved: project[stage === "lead" ? "lead" : stage === "visit" ? "visit" : "cad"],
+    enabled: !locked && !stale && (stage === "lead" ? leadDecisionsUnchanged && Boolean(lead.site_location?.trim()) : stage === "visit" ? visitDecisionUnchanged : stage === "cad" && cadDecisionsUnchanged),
+    save: () => command(stage === "lead" ? "edit_lead" : stage === "visit" ? "save_visit" : "save_cad", stage === "visit" ? { status: visit.status, visit_date: visit.visit_date, display_model: visit.display_model, notes: visit.notes } : value, true),
+  });
+  if (!["lead", "visit", "cad"].includes(stage)) return null;
+  return <>
+    <KitchenPanel>
+      {stale ? <View style={{ gap: spacing.sm }}><Text style={type.bodyMuted}>The saved details changed while you were editing. Your entries are kept for review; automatic saving is stopped.</Text><Button label="Replace draft with latest saved details" variant="secondary" onPress={() => { resetDraftValue(draftKey); if (stage === "cad") resetDraftValue("cad.progress"); }} testID={`kitchen-${stage}-draft-reload`} /></View> : null}
+      {stage === "lead" ? <><LeadFields value={lead} onChange={setLead} disabled={locked} />{active && project.permissions?.can_update ? <Button label="Save lead" disabled={locked || stale} loading={submission.busy} onPress={() => command("edit_lead", lead)} testID="kitchen-lead-save" /> : null}</> : stage === "visit" ? <>
+        <Text style={type.bodyMuted}>Record the showroom visit and preferred display model. The date starts at today in India and can be changed.</Text>
+        <KitchenDateField label="Visit date" value={visit.visit_date || ""} onChange={visit_date => setVisit({ ...visit, visit_date: visit_date || null })} disabled={locked} testID="kitchen-visit-date" />
+        <Choice label="Showroom visit status" value={visit.status} values={["Scheduled", "Visited", "Follow-up Required"]} onChange={status => setVisit({ ...visit, status })} disabled={locked} testID="kitchen-visit-status" />
+        <Choice label="Display / model interested in" value={visit.display_model || ""} values={["GI", "SS", "Other", "Wardrobe"]} onChange={display_model => setVisit({ ...visit, display_model })} disabled={locked} testID="kitchen-visit-display" />
+        {visit.display_model && !["GI", "SS", "Other", "Wardrobe"].includes(visit.display_model) ? <Text style={type.caption}>Previously recorded: {visit.display_model}</Text> : null}
+        <TextField label="Visit notes" value={visit.notes || ""} onChangeText={notes => setVisit({ ...visit, notes })} editable={!locked} multiline testID="kitchen-visit-notes" />
+        {active && project.permissions?.can_update ? <Button label="Save showroom visit" disabled={locked || stale} loading={submission.busy} onPress={() => command("save_visit", { status: visit.status, visit_date: visit.visit_date, display_model: visit.display_model, notes: visit.notes })} testID="kitchen-visit-save" /> : null}
+      </> : <>
+        <Choice label="CAD file received" value={cad.received ? "Yes" : "No"} values={["Yes", "No"]} onChange={value => setCad({ ...cad, received: value === "Yes" })} disabled={locked} testID="kitchen-cad-received" />
+        <TextField label="Design progress (%)" value={progress} onChangeText={setProgress} editable={!locked} keyboardType="numeric" testID="kitchen-cad-progress" />
+        <Text style={type.body} testID="kitchen-cad-status">Design status: {cadStatus}</Text>
+        <Text style={type.bodyMuted} testID="kitchen-cad-readiness">Ready for presentation: {cad.received && Number(progress) === 100 ? "Yes" : "No"}</Text>
+        <TextField label="CAD notes" value={cad.notes || ""} onChangeText={notes => setCad({ ...cad, notes })} editable={!locked} multiline testID="kitchen-cad-notes" />
+        {active && project.permissions?.can_update ? <Button label="Save CAD progress" disabled={locked || stale} loading={submission.busy} testID="kitchen-cad-save" onPress={() => { if (!/^\d{1,3}$/.test(progress) || Number(progress) > 100) { submission.setError("Design progress must be a whole number from 0 to 100."); return; } void command("save_cad", { ...cad, progress: Number(progress), status: cadStatus }); }} /> : null}
+      </>}
+      {active ? <View style={{ gap: spacing.sm }}>
+        <Text accessibilityLiveRegion="polite" testID={`kitchen-${stage}-autosave`} style={[type.caption, { minHeight: 20 }]}>{autosave.status === "saving" ? "Saving details…" : autosave.status === "failed" ? "Details could not be saved. Your entries are kept." : autosave.status === "pending" ? "Unsaved details · routine fields save automatically; use Save for status, reference or progress changes." : "Details saved"}</Text>
+        {autosave.status === "failed" ? <Button label="Retry saving details" variant="secondary" onPress={autosave.retry} testID={`kitchen-${stage}-autosave-retry`} /> : null}
+      </View> : null}
+    </KitchenPanel>
+
+  </>;
+}
+
+function ProjectPlan({ project, disabled }: { project: KitchenProject; disabled: boolean }) {
+  const { command, isDraftStale, resetDraftValue } = useKitchenProject();
+  const [targetDate, setTargetDate] = useKitchenDraft("plan.target", project.target_completion_date || "");
+  const stale = isDraftStale("plan.target");
+  const autosave = useKitchenAutosave({ draftKey: "plan.target", value: targetDate, saved: project.target_completion_date || "", enabled: !disabled && !stale, save: () => command("metadata", { target_completion_date: targetDate || null }, true) });
+  return <KitchenPanel title="Target completion">
+    <Text style={type.bodyMuted}>Keep one expected completion date for the whole project. Actual installation completion is recorded in Installation.</Text>
+    {stale ? <><Text style={type.bodyMuted}>The saved completion date changed. Review your draft before replacing it with the latest date.</Text><Button label="Use latest saved completion date" variant="secondary" onPress={() => resetDraftValue("plan.target")} /></> : null}
+    <KitchenDateField label="Target completion date" value={targetDate} onChange={setTargetDate} disabled={disabled} testID="kitchen-target-date" />
+    {project.permissions?.can_update ? <><Text accessibilityLiveRegion="polite" style={type.caption}>{autosave.status === "saved" ? "Completion date saved" : autosave.status === "saving" ? "Saving completion date…" : autosave.status === "failed" ? "Completion date could not be saved. Your entry is kept." : "Completion date waiting to save…"}</Text>{autosave.status === "failed" ? <Button label="Retry saving completion date" disabled={disabled} onPress={autosave.retry} testID="kitchen-metadata-save" /> : null}</> : <Text style={type.bodyMuted}>Current stage permission is required to change this date.</Text>}
+  </KitchenPanel>;
+}
+
+function ProjectExceptions({ project, disabled }: { project: KitchenProject; disabled: boolean }) {
+  const { command } = useKitchenProject();
+  const [reason, setReason] = useKitchenDraft("exception.reason", "");
+  const [status, setStatus] = useKitchenDraft("exception.status", "On Hold");
+  if (!project.permissions?.can_approve_exceptions) return <ErrorState title="Owner access required" subtitle="Only the owner can record exceptional project or commercial changes." />;
+  const act = (name: "order_status" | "exception", payload: Record<string, unknown>) => { void command(name, payload).then(saved => { if (saved) setReason(""); }); };
+  return <View style={{ gap: spacing.lg, width: "100%", maxWidth: 780, alignSelf: "center" }}>
+    <Alert tone="warning" title="Owner actions" description="These changes affect the project workflow. Every change requires a reason and remains in its history." />
+    <KitchenPanel title="Change project status">
+      <TextField label="Reason for change" value={reason} onChangeText={setReason} editable={!disabled} multiline testID="kitchen-exception-reason" />
+      {project.stage !== "completed" ? <><Choice label="Project status" value={status} values={["On Hold", "Cancelled", "Confirmed"]} onChange={setStatus} disabled={disabled} testID="kitchen-exception-status" /><Text style={type.caption}>Confirmed resumes a held or cancelled project. It does not confirm a customer order.</Text><Button label="Record status change" variant="danger" disabled={disabled || !reason.trim()} onPress={() => act("order_status", { status, reason })} testID="kitchen-order-status-save" /></> : <Button label="Reopen installation" variant="danger" disabled={disabled || !reason.trim()} onPress={() => act("exception", { action: "reopen", reason })} testID="kitchen-exception-save" />}
+      {["design", "quotation", "order", "production", "installation", "completed"].includes(project.stage) ? <Button label="Return to Design for fresh approval" variant="danger" disabled={disabled || !reason.trim()} onPress={() => act("exception", { action: "return_to_design", reason })} testID="kitchen-return-design" /> : null}
+      <Text style={type.caption}>Returning to Design preserves earlier records and requires new design, quotation, order and manager approvals.</Text>
+    </KitchenPanel>
+    <CommercialStages project={project} stage={project.stage} disabled={disabled || Boolean(project.lifecycle_status)} command={command} mode="amendment" />
+  </View>;
+}
+
+const historyCategories = { activity: "Activity", designs: "Design versions", quotations: "Quotation versions", revisions: "Customer revisions", orders: "Orders", visits: "Site visits", approvals: "Approvals", work: "Earlier work cycles", exceptions: "Owner changes & review" };
+function ProjectHistory({ project }: { project: KitchenProject }) {
+  const params = useLocalSearchParams<{ category?: string }>();
+  const { policy } = useKitchenProject();
+  const [category, setCategory] = useState<keyof typeof historyCategories>(params.category && Object.prototype.hasOwnProperty.call(historyCategories, params.category) ? params.category as keyof typeof historyCategories : "activity");
+  const [limit, setLimit] = useState(30);
+  const actor = (id?: string) => !id ? "Not recorded" : [...(project.activity || [])].reverse().find(event => event.actor_id === id && event.actor_name)?.actor_name || `Staff member ${id}`;
+  const documentName = (id?: string | null) => id ? project.attachments?.find(file => file.id === id)?.filename || "Saved project attachment" : "Not attached";
+  const versionName = (id: string) => { const design = project.design_versions?.find(row => row.id === id); const quote = project.quotation_versions?.find(row => row.id === id); return design ? `Design version ${design.number}` : quote ? `Quotation ${quote.number}` : null; };
+  let entries: { id: string; title: string; lines: string[]; url?: string }[] = [];
+  if (category === "activity") entries = (project.activity || []).slice(-limit).reverse().map(event => {
+    const payload = event.payload || {};
+    const stageNames = (stage: unknown) => KITCHEN_STAGES.includes(stage as KitchenStage) ? STAGE_LABELS[stage as KitchenStage] : String(stage);
+    const subject = typeof payload.subject_id === "string" ? versionName(payload.subject_id) : null;
+    return { id: event.id, title: event.type.replaceAll("_", " "), lines: [`${event.actor_name || actor(event.actor_id)} · ${displayDate(event.at)}${event.at ? ` · ${new Date(event.at).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })}` : ""}`,
+      ...(payload.from_stage && payload.to_stage && payload.from_stage !== payload.to_stage ? [`${stageNames(payload.from_stage)} → ${stageNames(payload.to_stage)}`] : []), ...(subject ? [subject] : []), ...(typeof payload.reason === "string" ? [payload.reason] : []), ...auditChangeLines(payload.changes, actor)] };
+  });
+  if (category === "designs" || category === "quotations") entries = [...(category === "designs" ? project.design_versions || [] : project.quotation_versions || [])].reverse().map(version => ({ id: version.id, title: `${category === "designs" ? "Design v" : "Quotation "}${version.number} · ${version.response}`, lines: [
+    `${displayDate(version.presentation_date || version.received_date)}${version.amount ? ` · ${rupees(version.amount)}` : ""}`,
+    `Recorded by ${actor(version.actor_id)}`,
+    ...(category === "quotations" ? [`Quotation received: ${version.received_status || (version.received_date ? "Yes" : "Not recorded")}`, `Sent to customer: ${version.sent_status || (version.shared_date ? "Yes" : "Not recorded")}`] : []),
+    `Shared ${displayDate(version.shared_date)}${version.shared_by ? ` · ${actor(version.shared_by)}` : ""}`,
+    ...(category === "designs" ? [`Sent to company ${displayDate(version.handoff_date)}${version.handoff_by ? ` · ${actor(version.handoff_by)}` : ""}`] : version.design_version_id ? [`Based on ${versionName(version.design_version_id) || "recorded design"}`] : []),
+    ...(category === "designs" && version.requirements ? [`Requirements: ${version.requirements}`] : []), ...(category === "designs" && version.budget_discussion ? [`Budget discussion: ${version.budget_discussion}`] : []),
+    ...(version.approval_date ? [`Customer approval date: ${displayDate(version.approval_date)}`] : []),
+    ...(version.attachment_id ? [`Document: ${documentName(version.attachment_id)}`] : []), ...(version.notes ? [version.notes] : []), ...(version.response_notes ? [`Historical internal response notes: ${version.response_notes}`] : []),
+  ], url: version.url || undefined }));
+  if (category === "revisions") entries = [...(project.revision_events || [])].reverse().map(event => ({ id: event.id, title: "Customer revision request", lines: [event.reason, `Design version ${project.design_versions?.find(version => version.id === event.version_id)?.number || "not recorded"}`] }));
+  if (category === "visits") entries = [...(project.site_visits || [])].reverse().map(event => ({ id: event.id, title: event.actual ? "Actual site visit" : "Scheduled site visit", lines: [displayDate(event.date), ...(event.notes ? [event.notes] : [])] }));
+  if (category === "orders") entries = [...(project.orders || [])].reverse().map(order => ({ id: order.id, title: `${order.authorization_invalidated ? "Historical order" : "Order"} · ${order.status}`, lines: [`${displayDate(order.order_date)} · Original ${rupees(order.original_amount)} · Final ${rupees(order.final_amount)}`, `Advance ${rupees(order.advance?.amount)} · ${displayDate(order.advance?.date)}`, `Confirmation document: ${documentName(order.confirmation_document_id)}`, versionName(order.quotation_version_id) || "Recorded quotation", ...(order.notes ? [order.notes] : []), ...order.amendments.map(row => `${displayDate(row.date)} · ${rupees(row.amount)} · ${row.reason}`)] }));
+  if (category === "approvals") entries = [...(project.approvals || [])].reverse().map(event => {
+    const version = versionName(event.subject_id);
+    const order = project.orders?.find(row => row.id === event.subject_id || row.approval_identity === event.subject_id || row.amendments.some(amendment => amendment.id === event.subject_id));
+    const association = version || (order ? `Order confirmed ${displayDate(order.order_date)}` : event.scope === "closure" ? "Installation closure" : event.scope.replaceAll("_", " "));
+    const current = project.approval_subjects?.[event.scope] === event.subject_id && event.policy_version === policy?.version;
+    return { id: event.id, title: `${event.scope.replaceAll("_", " ")} · ${event.decision}`, lines: [`${actor(event.actor_id)} · ${displayDate(event.at)}`, association,
+      ...(event.policy_version ? [`${current ? "Current approval" : "Earlier approval"} · Operating rules version ${event.policy_version}`] : []), ...(event.reason || event.notes ? [event.reason || event.notes || ""] : [])] };
+  });
+  if (category === "work") entries = [...(project.work_history || [])].reverse().map((cycle, index) => ({ id: cycle.id || String(index), title: `Earlier work cycle ${cycle.workflow_cycle ?? index + 1}`, lines: [cycle.reason || "", displayDate(cycle.at), `Production: ${cycle.production?.status || "Not recorded"} · ${displayDate(cycle.production?.start_date)} – ${displayDate(cycle.production?.completion_date)}`, `Installation: ${cycle.installation?.status || "Not recorded"} · ${displayDate(cycle.installation?.start_date)} – ${displayDate(cycle.installation?.completion_date)}`, cycle.production?.notes || "", cycle.installation?.notes || ""].filter(Boolean) }));
+  if (category === "exceptions") {
+    entries = [...(project.exceptions || [])].reverse().map(event => ({ id: event.id, title: `${event.action.replaceAll("_", " ")}${event.status ? ` · ${event.status}` : ""}`, lines: [event.reason, `${actor(event.actor_id)} · ${displayDate(event.at)}`] }));
+    if (project.duplicate_review?.reason) entries.push({ id: "duplicate-review", title: `Duplicate review · ${project.duplicate_review.status}`, lines: [project.duplicate_review.reason, `${actor(project.duplicate_review.reviewed_by)} · ${displayDate(project.duplicate_review.reviewed_at)}`] });
+  }
+  const recordCount = category === "activity" ? project.activity?.length || 0 : entries.length;
+  return <View style={{ gap: spacing.lg, width: "100%", maxWidth: 860, alignSelf: "center" }}>
+    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: spacing.md }}>
+      <Menu triggerLabel="Choose history category" triggerTestID="kitchen-history-category" align="left" items={Object.entries(historyCategories).map(([key, label]) => ({ label, onPress: () => { setLimit(30); setCategory(key as keyof typeof historyCategories); } }))}><Text style={type.titleMd}>{historyCategories[category]} ▾</Text></Menu><Text style={type.caption}>{recordCount} records</Text>
+    </View>
+    <KitchenPanel>{!entries.length ? <Text style={type.bodyMuted}>No {historyCategories[category].toLowerCase()} recorded.</Text> : entries.slice(0, limit).map(entry => <View key={entry.id} style={{ gap: spacing.sm, paddingVertical: spacing.md, borderBottomWidth: 1, borderColor: colors.border }}>
+      <Text style={type.bodyStrong}>{entry.title}</Text>{entry.lines.map((line, index) => <Text key={index} style={type.bodyMuted}>{line}</Text>)}
+      {entry.url ? <Button label="Open reference" variant="secondary" onPress={() => void Linking.openURL(entry.url!)} /> : null}
+    </View>)}</KitchenPanel>
+    {recordCount > limit ? <Button label="Show earlier records" variant="secondary" onPress={() => setLimit(value => value + 30)} /> : null}
+  </View>;
+}
+function auditChangeLines(changes: unknown, actor: (id?: string) => string) {
+  if (!changes || typeof changes !== "object") return [];
+  const lines: string[] = [];
+  const label = (value: string) => value.replaceAll("_", " ");
+  const text = (value: unknown, key: string): string => value == null || value === "" ? "Not recorded" : typeof value === "boolean" ? value ? "Yes" : "No" : key === "assignments" && typeof value === "string" ? actor(value) : typeof value === "object" ? "Updated" : String(value);
+  for (const [key, entry] of Object.entries(changes)) {
+    if (!entry || typeof entry !== "object") continue;
+    const { before, after } = entry as { before?: unknown; after?: unknown };
+    if (before && after && typeof before === "object" && typeof after === "object" && !Array.isArray(before) && !Array.isArray(after)) {
+      for (const field of new Set([...Object.keys(before), ...Object.keys(after)])) {
+        const old = (before as Record<string, unknown>)[field], next = (after as Record<string, unknown>)[field];
+        if (JSON.stringify(old) !== JSON.stringify(next)) lines.push(`${label(key)} · ${label(field)}: ${text(old, key)} → ${text(next, key)}`);
+      }
+    } else lines.push(`${label(key)}: ${text(before, key)} → ${text(after, key)}`);
+  }
+  return lines;
+}

@@ -1,5 +1,57 @@
 import { expect, test } from '@playwright/test';
 
+test('critical startup paints and hydrates without requesting the legacy head bootstrap', async ({ page }) => {
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  let releaseFonts!: () => void;
+  const fontsHeld = new Promise<void>(resolve => { releaseFonts = resolve; });
+  let legacyRequests = 0;
+  await page.route('**/expo-hydrate.js', async route => {
+    legacyRequests += 1;
+    await held;
+    await route.continue();
+  });
+  await page.route(/\.(?:woff2|ttf)(?:\?|$)/, async route => { await fontsHeld; await route.continue(); });
+  try {
+    await page.goto('/login', { waitUntil: 'commit' });
+    await expect(page.getByTestId('app-font-loading')).toBeVisible({ timeout: 5000 });
+    releaseFonts();
+    await expect(page.getByTestId('login-email')).toBeEditable({ timeout: 5000 });
+    expect(legacyRequests).toBe(0);
+    expect(await page.evaluate(() => (globalThis as any).__EXPO_ROUTER_HYDRATE__)).toBe(true);
+  } finally { release(); releaseFonts(); }
+});
+
+test('critical mounted app avoids the release watchdog but reports the font readiness timeout', async ({ page }) => {
+  await page.clock.install();
+  let releaseFonts!: () => void;
+  const fontsHeld = new Promise<void>(resolve => { releaseFonts = resolve; });
+  await page.route(/\.(?:woff2|ttf)(?:\?|$)/, async route => { await fontsHeld; await route.continue(); });
+  try {
+    await page.goto('/login', { waitUntil: 'commit' });
+    await expect(page.getByTestId('app-font-loading')).toBeVisible();
+    await expect.poll(() => page.evaluate(() => (globalThis as any).__FORGE_APP_MOUNTED__)).toBe(true);
+    await page.clock.fastForward(20_000);
+    await expect(page.locator('#release-startup-recovery')).toHaveCount(0);
+    await expect(page.getByTestId('app-font-error')).toBeVisible();
+  } finally { releaseFonts(); }
+  await expect(page.getByTestId('app-font-error')).toBeVisible();
+  expect(await page.evaluate(() => (globalThis as any).__FORGE_APP_MOUNTED__)).toBe(true);
+});
+
+test('critical startup paints its static loading indicator while recovery is pending then hydrates', async ({ page }) => {
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/release-recovery.js', async route => { await held; await route.continue(); });
+  try {
+    await page.goto('/login', { waitUntil: 'commit' });
+    await expect(page.getByTestId('app-font-loading')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByTestId('login-email')).toHaveCount(0);
+  } finally { release(); }
+  await expect(page.getByTestId('login-email')).toBeEditable({ timeout: 5000 });
+  expect(await page.evaluate(() => (globalThis as any).__EXPO_ROUTER_HYDRATE__)).toBe(true);
+});
+
 test('critical failed startup asset reloads once and reaches usable login', async ({ page }) => {
   await page.route('**/api/**', route => route.fulfill({ status: 401, json: { detail: 'No active session' } }));
   let navigations = 0;

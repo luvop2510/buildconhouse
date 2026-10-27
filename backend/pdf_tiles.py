@@ -16,6 +16,7 @@ Both reuse the shared image fetch/placeholder/escaping/footer helpers from
 pdf_generator so there is exactly one implementation of those in the codebase.
 """
 from __future__ import annotations
+from services.referrer_identity import referrer_label
 
 import functools
 from datetime import datetime
@@ -246,7 +247,7 @@ def _meta_grid(quotation: dict, customer: dict, styles: dict) -> Table:
     ]
     row2_labels = ["REFERENCE", "ATTENDED BY", "PREPARED BY", "ADDRESS"]
     row2_values = [
-        quotation.get("reference_source") or "",
+        " · ".join(filter(None, [quotation.get("reference_source"), referrer_label(quotation)])),
         quotation.get("attended_by") or "",
         quotation.get("prepared_by") or "",
         quotation.get("address_snapshot") or "",
@@ -257,7 +258,7 @@ def _meta_grid(quotation: dict, customer: dict, styles: dict) -> Table:
         [Paragraph(label, styles["metaLabel"]) for label in row2_labels],
         [Paragraph(_escape(value) or "&nbsp;", styles["metaValue"]) for value in row2_values],
     ]
-    table = Table(data, colWidths=[PAGE_W_MM / 4 * mm] * 4, rowHeights=[5 * mm, 7 * mm, 5 * mm, 7 * mm])
+    table = Table(data, colWidths=[PAGE_W_MM / 4 * mm] * 4, minRowHeights=[5 * mm, 7 * mm, 5 * mm, 7 * mm])
     table.setStyle(TableStyle([
         # A single explicit grid avoids the disconnected, partial form rules
         # seen in printed selections. ReportLab draws continuous straight

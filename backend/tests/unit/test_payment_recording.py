@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import asyncio
+from time import monotonic
 from types import SimpleNamespace
 
+import httpx
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
 from models import PaymentCreate, UserPublic
 import routes.payment_routes as routes
 
@@ -151,6 +153,54 @@ def test_post_commit_activity_failure_does_not_report_payment_failed(context, mo
     monkeypatch.setattr(routes, 'log_event', failed_log)
     assert record(context, amount=100).amount == 100
     assert len(context[2].docs) == 1
+
+
+def test_hung_post_commit_effects_return_http_success_and_replay_without_another_payment(context, monkeypatch):
+    """Use real timeout clocks: neither ancillary store may hold a committed receipt."""
+    effects = {"started": [], "cancelled": []}
+
+    async def hang(name):
+        effects["started"].append(name)
+        try:
+            await asyncio.Event().wait()
+        finally:
+            effects["cancelled"].append(name)
+
+    async def activity(**_kwargs):
+        await hang("activity")
+
+    async def notification(*_args, **_kwargs):
+        await hang("notification")
+
+    async def reconcile():
+        return {}
+
+    monkeypatch.setattr(routes, "log_event", activity)
+    monkeypatch.setattr(routes, "notify", notification)
+    monkeypatch.setattr(routes, "reconcile_followups_admitted", reconcile)
+    app = FastAPI()
+    app.include_router(routes.router)
+    app.dependency_overrides[routes.get_current_user] = lambda: context[0]
+    payload = {"quotation_id": "q-one", "amount": 100, "mode": "cash", "idempotency_key": "hung-effects-receipt"}
+
+    async def run():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            started = monotonic()
+            response = await asyncio.wait_for(client.post("/payments", json=payload), timeout=2.8)
+            elapsed = monotonic() - started
+            replay = await asyncio.wait_for(client.post("/payments", json=payload), timeout=0.3)
+        assert response.status_code == replay.status_code == 200
+        assert response.json() == replay.json()
+        assert response.json()["amount"] == 100
+        assert response.json()["status"] == "completed"
+        assert 1.8 <= elapsed < 2.8
+
+    asyncio.run(run())
+    assert effects == {"started": ["activity", "notification"], "cancelled": ["activity", "notification"]}
+    assert len(context[2].docs) == 1
+    assert context[2].docs[0]["amount"] == 100
+    assert context[3].calls == 1
 
 
 def test_equivalent_iso_dates_replay_same_receipt(context):

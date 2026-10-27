@@ -11,6 +11,11 @@ import routes.payment_routes as payments
 from models import UserPublic
 
 
+def _paid_totals(values, kwargs):
+    keys = kwargs.get("order_keys")
+    return {key: values.get(key[0], 0) for key in keys} if keys is not None else values
+
+
 def _user() -> UserPublic:
     return UserPublic(email="accounts@forge.app", full_name="Accounts", role="accounts", floor_ids=["first-floor"], active_floor_id="first-floor")
 
@@ -47,15 +52,19 @@ class PurchaseOrders:
     def aggregate(self, pipeline):
         if "quotation_id" in pipeline[0]["$match"]:
             qids = set(pipeline[0]["$match"]["quotation_id"]["$in"])
-            totals: dict[str, float] = {}
+            totals = {}
             for po in self.rows:
                 qid = po.get("quotation_id")
-                if qid in qids:
-                    totals[qid] = totals.get(qid, 0.0) + sum(
+                if qid in qids and ("$or" not in pipeline[0]["$match"] or any(
+                    po.get("floor_id") == scope["floor_id"] and qid in scope["quotation_id"]["$in"]
+                    for scope in pipeline[0]["$match"]["$or"]
+                )):
+                    key = (qid, po.get("floor_id")) if isinstance(pipeline[-1]["$group"]["_id"], dict) else qid
+                    totals[key] = totals.get(key, 0.0) + sum(
                         float(item.get("godown_transferred_qty") or 0) * float(item.get("unit_cost") or 0)
                         for item in po.get("items") or [] if not item.get("cancelled")
                     )
-            return Cursor([{"_id": qid, "total": total} for qid, total in totals.items()])
+            return Cursor([{"_id": {"quotation_id": key[0], "floor_id": key[1]} if isinstance(key, tuple) else key, "total": total} for key, total in totals.items()])
         assert pipeline[0]["$match"]
         return Cursor([{"total": 1200}])
 
@@ -88,8 +97,8 @@ def test_fully_paid_order_leaves_active_target(monkeypatch):
     ]
     monkeypatch.setattr(payments, "db", Db(rows))
 
-    async def paid_map(_ids, **_kwargs):
-        return {"settled": 5000, "open": 20000}
+    async def paid_map(_ids, **kwargs):
+        return _paid_totals({"settled": 5000, "open": 20000}, kwargs)
 
     monkeypatch.setattr(payments, "_paid_by_quotation", paid_map)
     result = asyncio.run(payments.payment_stats(user=_user()))
@@ -106,7 +115,7 @@ def test_godown_credit_reduces_balance_without_counting_as_cash(monkeypatch):
     monkeypatch.setattr(payments, "db", Db([{"id": "open", "grand_total": 5000, "status": "ordered"}]))
 
     async def paid_map(_ids, **kwargs):
-        return {"open": 1000 if kwargs.get("cash_only") else 1500}
+        return _paid_totals({"open": 1000 if kwargs.get("cash_only") else 1500}, kwargs)
 
     monkeypatch.setattr(payments, "_paid_by_quotation", paid_map)
     result = asyncio.run(payments.payment_stats(user=_user()))
@@ -126,7 +135,7 @@ def test_age_presets_and_custom_bounds(monkeypatch):
     ]
     monkeypatch.setattr(payments, "db", Db(rows))
 
-    async def paid_map(_ids, **_kwargs):
+    async def paid_map(_ids, **kwargs):
         return {}
 
     monkeypatch.setattr(payments, "_paid_by_quotation", paid_map)
@@ -149,15 +158,15 @@ def test_invalid_custom_age_is_rejected():
 def test_fully_paid_godown_intake_reports_refund_due_without_false_payment(monkeypatch):
     quote = {"id": "q1", "number": "Q-1", "customer_id": "c1", "floor_id": "first-floor",
              "grand_total": 1000, "status": "ordered", "created_at": "2026-09-01"}
-    po = {"quotation_id": "q1", "items": [
+    po = {"quotation_id": "q1", "floor_id": "first-floor", "items": [
         {"qty": 1, "unit_cost": 200, "godown_transferred_qty": 1},
         {"qty": 1, "unit_cost": 800},
     ]}
     monkeypatch.setattr(payments, "db", Db([quote], [po]))
 
-    async def paid_map(_ids, **_kwargs):
+    async def paid_map(_ids, **kwargs):
         # Fully paid before stock moved: no godown credit is posted.
-        return {"q1": 1000}
+        return _paid_totals({"q1": 1000}, kwargs)
 
     monkeypatch.setattr(payments, "_paid_by_quotation", paid_map)
     monkeypatch.setattr(payments, "_mrp_for_quotation", lambda _quote: asyncio.sleep(0, result=1000))
@@ -195,9 +204,9 @@ def test_fully_paid_orders_returns_one_row_per_order(monkeypatch):
     ]
     monkeypatch.setattr(payments, "db", Db(rows))
 
-    async def paid_map(_ids, **_kwargs):
+    async def paid_map(_ids, **kwargs):
         # Q-1 may have several completed payment records, but is one order.
-        return {"settled": 5000, "open": 0}
+        return _paid_totals({"settled": 5000, "open": 0}, kwargs)
 
     monkeypatch.setattr(payments, "_paid_by_quotation", paid_map)
     result = asyncio.run(payments.fully_paid_orders(q=None, business_unit=None, sort="date_desc", skip=0, limit=50, user=_user()))
@@ -211,7 +220,7 @@ def test_zero_value_confirmed_order_is_not_a_collection_action(monkeypatch):
         {"id": "free", "grand_total": 0, "status": "ordered"},
         {"id": "open", "grand_total": 100, "status": "ordered"},
     ]))
-    async def paid_map(_ids, **_kwargs): return {}
+    async def paid_map(_ids, **kwargs): return {}
     monkeypatch.setattr(payments, "_paid_by_quotation", paid_map)
     queue = asyncio.run(payments.list_orders(status_filter=None, overdue_period=None,
         custom_min_days=None, custom_max_days=None, limit=200, user=_user()))
@@ -234,14 +243,14 @@ def test_detail_keeps_confirmation_date_and_hides_pending_automation_balances(mo
             return Cursor([])
     database.payments = Ledger()
     monkeypatch.setattr(payments, "db", database)
-    async def paid_map(_ids, **_kwargs): return {}
+    async def paid_map(_ids, **kwargs): return {}
     monkeypatch.setattr(payments, "_paid_by_quotation", paid_map)
     monkeypatch.setattr(payments, "_mrp_for_quotation", lambda _quote: asyncio.sleep(0, result=1000))
     detail = asyncio.run(payments.order_detail("q1", user=_user()))
     assert detail["confirmed_at"] == "2026-08-05"
     assert detail["project_name"] == "Bath"
     assert detail["doc_type"] == "standard"
-    assert requested[0]["$nor"] == [{"status": "pending", "automation_key": {"$exists": True}}]
+    assert requested[0]["$nor"] == [{"status": "pending", "automation_key": {"$exists": True}, "label": {"$ne": "labor cost"}}]
 
 
 def test_fully_paid_history_honors_multiple_authorized_floors_over_active_workspace(monkeypatch):

@@ -1,0 +1,20 @@
+[
+  {
+    "client": "../src/api/client.ts",
+    "pages": 1000,
+    "pageSize": 60,
+    "retainedEntries": 64,
+    "retainedPayloadBytes": 4171136,
+    "entriesAfterExpiry": 1,
+    "populationMs": 82.10254200000003
+  },
+  {
+    "client": "../src/api/client.web.ts",
+    "pages": 1000,
+    "pageSize": 60,
+    "retainedEntries": 64,
+    "retainedPayloadBytes": 4171136,
+    "entriesAfterExpiry": 1,
+    "populationMs": 54.21033299999999
+  }
+]

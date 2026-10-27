@@ -96,7 +96,7 @@ assert.match(tilesStageSource, /if \(docType === "tiles_selection"\) return fals
 const builderSource = readFileSync(new URL("../src/components/quotation/context/BuilderContext.tsx", import.meta.url), "utf8");
 const concealedPartSource = readFileSync(new URL("../src/components/quotation/helpers/concealedParts.ts", import.meta.url), "utf8");
 const catalogServiceSource = readFileSync(new URL("../src/services/catalogService.ts", import.meta.url), "utf8");
-assert.ok(builderSource.includes('api.get<Customer[]>("/customers", request)'), "missing essential customer bootstrap request");
+assert.ok(builderSource.includes('api.get<Customer[]>("/customers", { ...request, cacheMs: 0 })'), "customer bootstrap must bypass the cache after deletion");
 assert.match(builderSource, /catalogReferences\.categories<Category\[\]>\(null, request\)/);
 assert.match(builderSource, /catalogReferences\.brands<Brand\[\]>\(request\)/);
 for (const endpoint of ["/products/recent", "/products/frequent", "/quotations/recent?limit=10", "/referrers"]) {

@@ -155,7 +155,7 @@ export default function BrandOrderDetailScreen() {
       // the two of them split the surplus and push the row 50px past the
       // viewport, which put RELEASE QTY — the page's entire purpose — off
       // screen. One grow column keeps the total predictable.
-      key: "product", label: "TILE NAME", grow: 1, minWidth: 200, mobile: "primary",
+      key: "product", label: "TILE NAME", grow: 1, minWidth: 320, mobile: "primary",
       render: (item) => (
         <TileOrderProductCell name={item.name} subtitle={tileIdentityMeta([item.series, item.size], item.sku)}
           image={item.image} sku={item.sku} testID={`tile-supplier-product-image-${item.id}`} />
@@ -243,7 +243,7 @@ export default function BrandOrderDetailScreen() {
       <CenteredState>
         <Text style={type.titleMd}>{loadError || "Order not found"}</Text>
         <Button label="Retry" variant="primary" onPress={() => load()} />
-        <BackLink label="Back" testID="tile-brand-release-back" onPress={() => router.back()} />
+        <BackLink label="Back" testID="tile-brand-release-back" onPress={() => { if (router.canGoBack()) router.back(); else router.replace("/(admin)/tiles/orders?tab=brands" as any); }} />
       </CenteredState>
     );
   }
@@ -328,7 +328,7 @@ export default function BrandOrderDetailScreen() {
       <BackLink
         label={`Back to ${order.brand_name || "Brand"}`}
         testID="tile-brand-release-back"
-        onPress={() => router.back()}
+        onPress={() => { if (router.canGoBack()) router.back(); else router.replace("/(admin)/tiles/orders?tab=brands" as any); }}
       />
 
       <PageHeader

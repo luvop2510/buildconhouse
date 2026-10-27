@@ -156,3 +156,49 @@ def test_same_supplier_key_does_not_merge_family_cards_across_floor_brand_or_cat
         limit=10, skip=0,
     ))
     assert result["total"] == 4
+
+
+def test_family_list_and_search_use_the_same_primary_image_as_product_detail(monkeypatch):
+    product = _product("a")
+    internal = _media("a")
+    internal.update(id="internal-gallery", source_type="internal", role="gallery", is_primary=False,
+                    public_url="https://cdn.test/internal-gallery.jpg", quality="poor", sha1="gallery")
+    official = _media("a")
+    official.update(id="official-primary", source_type="manufacturer")
+    snapshot = _build_snapshot([product], [internal, official], [], [], [])
+
+    async def fake_snapshot():
+        return snapshot
+
+    monkeypatch.setattr(catalog_service, "get_catalog_snapshot", fake_snapshot)
+    detail = hydrate_product(product, snapshot)
+    listed = asyncio.run(list_family_groups(
+        brand_id=None, category_id=None, subcategory=None, series=None, q=None,
+        limit=10, skip=0,
+    ))["items"][0]
+    searched = asyncio.run(catalog_service.search_catalog(
+        q="Basin", brand_id=None, category_id=None, subcategory=None, series=None,
+        limit=10, group=True,
+    ))["items"][0]
+    assert listed["sample_image"] == detail["hero_image_url"] == official["public_url"]
+    assert listed["sample_image_quality"] == detail["image_quality"] == "good"
+    assert searched["hero_image_url"] == detail["hero_image_url"]
+    assert searched["image_quality"] == detail["image_quality"]
+
+
+def test_family_list_keeps_legacy_product_photo_before_seat_cover_fallback(monkeypatch):
+    product = _product("a")
+    product.update(images=["https://cdn.test/legacy.jpg"], image_quality="good")
+    cover = _media("a")
+    cover.update(role="seat-cover", is_primary=False)
+    snapshot = _build_snapshot([product], [cover], [], [], [])
+
+    async def fake_snapshot():
+        return snapshot
+
+    monkeypatch.setattr(catalog_service, "get_catalog_snapshot", fake_snapshot)
+    listed = asyncio.run(list_family_groups(
+        brand_id=None, category_id=None, subcategory=None, series=None, q=None,
+        limit=10, skip=0,
+    ))["items"][0]
+    assert listed["sample_image"] == hydrate_product(product, snapshot)["hero_image_url"]

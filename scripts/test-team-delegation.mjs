@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { toggleFloor, togglePage, toggleAction, loadDelegation, hasGrantAccess, moduleForRoute, resolveFloorRouteSegments, hasRouteDestination, isPersonalAccountRoute, personalAccountPath, isDelegationCatalog } from '../src/team-delegation.ts';
+import { toggleFloor, togglePage, toggleAction, loadDelegation, hasGrantAccess, moduleForRoute, resolveFloorRouteSegments, hasRouteDestination, isPersonalAccountRoute, personalAccountPath, isDelegationCatalog, delegationPagesForFloor, isResourceAssignable } from '../src/team-delegation.ts';
 import { staffLandingPath } from '../src/access-profiles.ts';
 
 const floors = ['ground-floor', 'first-floor', 'second-floor', 'third-floor'];
@@ -11,7 +11,7 @@ for (let mask = 0; mask < 16; mask++) {
   let state = { floorIds: [], grants: [] };
   for (let index = 0; index < floors.length; index++) state = toggleFloor(state, floors[index], Boolean(mask & (1 << index)));
   for (const floor of floors) state = togglePage(state, floor, payments, true);
-  assert.equal(state.floorIds.length, state.grants.length);
+  assert.equal(state.floorIds.filter(floor => floor !== "second-floor").length, state.grants.length);
   for (const grant of state.grants) assert.deepEqual(grant.actions, ['view']);
   for (const floor of floors) {
     const original = state;
@@ -56,16 +56,17 @@ assert.deepEqual(loadDelegation(['ground-floor', 'first-floor'], [
   { resource: 'payments', floor_id: 'ground-floor', actions: ['view', 'create'] },
   { resource: 'payments', floor_id: 'first-floor', actions: ['view', 'create', 'export'] },
 ]);
-for (const floor of floors) assert.equal(staffLandingPath(null, [{ resource: 'walkins', floor_id: floor, actions: ['view'] }], floor), '/(admin)/walkins', 'the same regular walk-in route is delegated on every floor');
+for (const floor of floors) assert.equal(staffLandingPath(null, [{ resource: 'walkins', floor_id: floor, actions: ['view'] }], floor), floor === 'second-floor' ? '/(admin)/access' : '/(admin)/walkins', 'Kitchen only admits the connected Kitchen workflow; other floors retain Walk-ins');
+assert.equal(staffLandingPath(null, [{ resource: 'kitchen_projects', floor_id: 'second-floor', actions: ['view'] }], 'second-floor'), '/(admin)/kitchen');
 assert.equal(staffLandingPath(null, []), '/(admin)/access');
 assert.equal(staffLandingPath(null, [{ resource: 'payments', actions: ['view'], floor_id: 'ground-floor' }], 'first-floor'), '/(admin)/access');
 assert.equal(staffLandingPath(null, [{ resource: 'payments', actions: ['view'], floor_id: 'ground-floor' }], 'ground-floor'), '/(admin)/payments');
-assert.equal(staffLandingPath(null, [{ resource: 'notebook_walkins', actions: ['view'], floor_id: 'third-floor' }]), '/(admin)/notebook/furniture');
-assert.equal(staffLandingPath(null, [{ resource: 'notebook_quotations', actions: ['view'], floor_id: 'second-floor' }]), '/(admin)/notebook/kitchen/quotation-follow-up');
+assert.equal(staffLandingPath(null, [{ resource: 'notebook_walkins', actions: ['view'], floor_id: 'third-floor' }]), '/(admin)/access');
+assert.equal(staffLandingPath(null, [{ resource: 'notebook_quotations', actions: ['view'], floor_id: 'second-floor' }]), '/(admin)/access');
 assert.equal(staffLandingPath(null, [{ resource: 'furniture_quotations', actions: ['view'], floor_id: 'third-floor' }]), '/(admin)/notebook/furniture-quotations');
 assert.equal(staffLandingPath('sanitary_purchases'), '/(admin)/purchases', 'existing profile landing preserved');
-assert.equal(moduleForRoute(['(admin)', 'notebook', 'furniture', 'quotation-follow-up']), 'quotation-follow-up');
-assert.equal(moduleForRoute(['(admin)', 'notebook', 'furniture']), 'furniture');
+assert.equal(moduleForRoute(['(admin)', 'notebook', 'furniture', 'quotation-follow-up']), 'followups');
+assert.equal(moduleForRoute(['(admin)', 'notebook', 'furniture']), 'walkins');
 assert.equal(moduleForRoute(['(admin)', 'tiles', 'quotation']), 'tiles');
 assert.equal(moduleForRoute(['(admin)', 'tiles', 'orders']), 'orders');
 assert.equal(moduleForRoute(['(admin)', 'team']), 'restricted');
@@ -102,9 +103,33 @@ console.log(`Team delegation: ${cases} floor revocation combinations plus page/a
 
 for (const floor of ["kitchen", "furniture"]) {
   const resolved = resolveFloorRouteSegments(["(admin)", "notebook", "[floor]"], floor);
-  assert.equal(moduleForRoute(resolved), floor);
+  assert.equal(moduleForRoute(resolved), "walkins");
   assert.equal(resolved.includes(floor), true, "floor-switch compatibility needs the resolved floor");
-  assert.equal(moduleForRoute(resolveFloorRouteSegments(["(admin)", "notebook", "[floor]", "quotation-follow-up"], floor)), "quotation-follow-up");
+  assert.equal(moduleForRoute(resolveFloorRouteSegments(["(admin)", "notebook", "[floor]", "quotation-follow-up"], floor)), "followups");
 }
 assert.equal(moduleForRoute(resolveFloorRouteSegments(["(admin)", "notebook", "[floor]"], "unknown")), "restricted");
 assert.deepEqual(resolveFloorRouteSegments(["(admin)", "catalog", "[id]"], "kitchen"), ["(admin)", "catalog", "[id]"]);
+
+const legacyNotebook = { key: 'notebook_walkins', label: 'Legacy notebook', floor_ids: ['third-floor'], actions: ['view', 'create', 'update'], retired: true };
+const historical = { floorIds: ['third-floor'], grants: [{ resource: 'notebook_walkins', floor_id: 'third-floor', actions: ['view', 'update'] }] };
+assert.deepEqual(togglePage({ floorIds: ['third-floor'], grants: [] }, 'third-floor', legacyNotebook, true).grants, []);
+assert.deepEqual(loadDelegation(historical.floorIds, historical.grants, [legacyNotebook]), historical);
+assert.deepEqual(toggleAction(historical, 'third-floor', legacyNotebook, 'create', true), historical);
+assert.deepEqual(togglePage(historical, 'third-floor', legacyNotebook, false).grants, []);
+
+assert.equal(staffLandingPath(null, [{ resource: 'notebook_walkins', actions: ['view'], floor_id: 'third-floor' }, { resource: 'followups', actions: ['view'], floor_id: 'third-floor' }], 'third-floor'), '/(admin)/followups');
+assert.equal(staffLandingPath(null, [{ resource: 'purchases', actions: ['view'], floor_id: 'ground-floor' }], 'ground-floor'), '/(admin)/access');
+
+const currentKitchen = { key: 'kitchen_projects', label: 'Kitchen workspace', actions: ['view', 'create', 'update', 'export'], floor_ids: ['second-floor'], assignable_floor_ids: ['second-floor'] };
+const compatibilityPayments = { ...payments, assignable_floor_ids: ['ground-floor', 'first-floor', 'third-floor'] };
+assert.deepEqual(delegationPagesForFloor([compatibilityPayments, currentKitchen], [], 'second-floor'), [currentKitchen]);
+const historicGrant = { resource: 'payments', actions: ['view', 'update'], floor_id: 'second-floor' };
+const historicState = loadDelegation(['second-floor'], [historicGrant], [compatibilityPayments, currentKitchen]);
+assert.deepEqual(historicState.grants, [historicGrant], 'catalog presentation must round-trip old grants');
+assert.deepEqual(delegationPagesForFloor([compatibilityPayments, currentKitchen], historicState.grants, 'second-floor'), [compatibilityPayments, currentKitchen]);
+assert.equal(isResourceAssignable(compatibilityPayments, 'second-floor'), false);
+assert.deepEqual(togglePage(historicState, 'second-floor', compatibilityPayments, false).grants, []);
+assert.deepEqual(togglePage({ floorIds: ['second-floor'], grants: [] }, 'second-floor', compatibilityPayments, true).grants, []);
+assert.equal(isDelegationCatalog({ resources: [{ ...currentKitchen, assignable_floor_ids: ['first-floor'] }], action_descriptions: {view:'Read',create:'Add',update:'Edit',export:'Download'} }, floors.map(id => ({id,name:id}))), false);
+await import('./test-kitchen-workspace-pages.mjs');
+console.log('Kitchen catalog preserves existing access and rejects obsolete new assignments');

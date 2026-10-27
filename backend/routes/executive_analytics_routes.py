@@ -20,6 +20,7 @@ from fastapi.responses import StreamingResponse
 from auth import accessible_floor_ids, require_roles
 from db import db
 from models import UserPublic
+from services.referrer_identity import referrer_query
 
 router = APIRouter(prefix="/executive-analytics", tags=["executive-analytics"])
 Granularity = Literal["day", "week", "month", "quarter", "year"]
@@ -80,8 +81,8 @@ async def filters(
 ):
     allowed = accessible_floor_ids(user)
     # Validate the requested floor and reuse the exact scope for every
-    # floor-owned filter collection.  Returning referrers from another floor
-    # exposes contact information even before a report is opened.
+    # floor-owned filter collection. Only explicitly shared reference contacts
+    # cross that scope; quotations and private contacts remain floor-filtered.
     match_scope = await _match(user, floor_id, "all", None, None, None, None, None)
     entity_scope = {"floor_id": match_scope["floor_id"]} if "floor_id" in match_scope else {}
     floor_query = {"id": {"$in": allowed}} if allowed is not None else {}
@@ -98,7 +99,7 @@ async def filters(
         db.floors.find({**floor_query, "active": True}, {"_id": 0, "id": 1, "name": 1}).sort("name", 1).to_list(200),
         db.brands.find(brand_scope, {"_id": 0, "id": 1, "name": 1, "floor_id": 1}).sort("name", 1).to_list(5000),
         db.users.find({"active": True}, {"_id": 0, "id": 1, "full_name": 1, "role": 1}).sort("full_name", 1).to_list(500),
-        db.referrers.find(entity_scope, {"_id": 0, "id": 1, "name": 1, "type": 1}).sort("name", 1).to_list(5000),
+        db.referrers.find(referrer_query(entity_scope), {"_id": 0, "id": 1, "name": 1, "type": 1}).sort("name", 1).to_list(5000),
     )
     return {"floors": floors, "brands": brands, "salespeople": people, "referrers": refs}
 
@@ -238,7 +239,7 @@ async def referrer_detail(
 ):
     match = await _match(user, floor_id, "all", None, None, None, None, None, referrer_id=referrer_id)
     floor_scope = {"floor_id": match["floor_id"]} if "floor_id" in match else {}
-    referrer = await db.referrers.find_one({"id": referrer_id, **floor_scope}, {"_id": 0})
+    referrer = await db.referrers.find_one(referrer_query(floor_scope, {"id": referrer_id}), {"_id": 0})
     if not referrer:
         raise HTTPException(status_code=404, detail="Referrer not found")
     analytics = await dashboard(floor_id=floor_id, preset=preset, referrer_id=referrer_id, user=user)

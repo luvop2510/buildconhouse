@@ -16,6 +16,7 @@ MAX_CONTEXT_MEDIA = 20000
 MAX_REFERENCE_ROWS = 5000
 MAX_RESPONSE_BYTES = 48 * 1024 * 1024
 MAX_QUERY_MS = 30000
+CATALOG_BATCH_SIZE = 512
 
 
 def floor_query(floor_ids):
@@ -25,23 +26,32 @@ def floor_query(floor_ids):
 async def bounded(cursor, maximum, description):
     from bson import BSON
     rows = []; size = 0
-    async for row in cursor:
-        size += len(BSON.encode(row))
-        if len(rows) >= maximum or size > MAX_RESPONSE_BYTES:
-            raise HTTPException(status_code=413, detail=f"{description} is too large for one response; narrow the floor, brand, category or search filters")
-        rows.append(row)
+    cursor = cursor.batch_size(CATALOG_BATCH_SIZE)
+    try:
+        async for row in cursor:
+            size += len(BSON.encode(row))
+            if len(rows) >= maximum or size > MAX_RESPONSE_BYTES:
+                raise HTTPException(status_code=413, detail=f"{description} is too large for one response; narrow the floor, brand, category or search filters")
+            rows.append(row)
+    finally:
+        await cursor.close()
     return rows
 
 
 def aggregate(pipeline):
-    return db.products.aggregate(pipeline, allowDiskUse=True, maxTimeMS=MAX_QUERY_MS, batchSize=32)
+    return db.products.aggregate(pipeline, allowDiskUse=True, maxTimeMS=MAX_QUERY_MS, batchSize=CATALOG_BATCH_SIZE)
 
 
-def listing_pipeline(filters=None, *, floor_ids=None, q=None, per_category=False):
+def listing_pipeline(filters=None, *, floor_ids=None, q=None, per_category=False, per_placement=False, deduplicate=True):
     """Match floor before joins; expand source placements before user filters."""
     from services import catalog_service as catalog
     query = {"active": True, **floor_query(floor_ids)}
     filters = {key: {"$in": value} if isinstance(value, (list, tuple)) else value for key, value in (filters or {}).items() if value is not None}
+    for field, label in catalog._HIERARCHY_FALLBACK_LABELS.items():
+        value = filters.get(field)
+        values = value.get("$in", []) if isinstance(value, dict) else [value]
+        if label in values:
+            filters[field] = {"$in": [*values, None, ""]}
     # These fields are invariant across source occurrences and can use indexes.
     for key in ("brand_id", "family_key", "finish", "colour", "series"):
         if key in filters:
@@ -94,9 +104,21 @@ def listing_pipeline(filters=None, *, floor_ids=None, q=None, per_category=False
         **{f"_placement.{field}": 1 for field in ("source_catalog", "source_order")},
         **{f"catalog_entry.{field}": 1 for field in ("entry_id", "source_catalog", "sheet_name", "sheet_order", "row_number", "source_order", "serial_number", "category_id", "category_name", "source_sku", "subcategory", "mrp", "price_status", "name", "description", "source_status_note")},
     }})
+    # Facet buckets deduplicate their own (field value, SKU) identities. Keep
+    # source occurrence metadata and price extrema until those aggregations.
+    if not deduplicate:
+        return pipeline
+    identity = {"id": "$id", "category": "$category_id"} if per_category else "$id"
+    if per_placement:
+        identity = {"id": "$id"}
+        for field in ("category_id", "subcategory", "series", "family_key", "family_name"):
+            identity[field] = {"$cond": [
+                {"$in": [{"$ifNull": [f"${field}", None]}, [None, ""]]},
+                catalog._HIERARCHY_FALLBACK_LABELS[field], f"${field}",
+            ]} if field in catalog._HIERARCHY_FALLBACK_LABELS else f"${field}"
     pipeline += [
         {"$sort": {"_source_rank": 1, "_brand_order": 1, "_placement.source_catalog": 1, "_placement.source_order": 1, "name": 1, "listing_id": 1, "id": 1}},
-        {"$group": {"_id": {"id": "$id", "category": "$category_id"} if per_category else "$id", "document": {"$first": "$$ROOT"}}},
+        {"$group": {"_id": identity, "document": {"$first": "$$ROOT"}}},
         {"$replaceRoot": {"newRoot": "$document"}},
     ]
     return pipeline
@@ -268,7 +290,7 @@ async def facets(arguments):
     fields = {"brands": "brand_id", "categories": "category_id", "subcategories": "subcategory", "series": "series", "finishes": "finish", "sizes": "size", "colours": "colour", "materials": "material"}
     buckets = {name: [{"$match": {field: {"$nin": [None, ""]}}}, {"$group": {"_id": {"value": f"${field}", "id": "$id"}}}, {"$group": {"_id": "$_id.value", "count": {"$sum": 1}}}, {"$sort": {"count": -1, "_id": 1}}, {"$limit": 100}, {"$project": {"_id": 0, "value": "$_id", "count": 1}}] for name, field in fields.items()}
     buckets["price"] = [{"$match": {"price_status": {"$ne": "unspecified"}}}, {"$group": {"_id": None, "min": {"$min": "$price"}, "max": {"$max": "$price"}}}, {"$project": {"_id": 0}}]
-    result = await aggregate(listing_pipeline(filters, floor_ids=arguments.get("floor_ids"), per_category=True) + [{"$facet": buckets}]).to_list(1)
+    result = await aggregate(listing_pipeline(filters, floor_ids=arguments.get("floor_ids"), deduplicate=False) + [{"$facet": buckets}]).to_list(1)
     result = result[0] if result else {key: [] for key in fields}; result["price"] = result.get("price", [{}])[0] if result.get("price") else {"min": 0, "max": 0}
     return result
 
@@ -295,9 +317,18 @@ async def search(arguments):
 
 
 async def hierarchy(arguments):
-    base = listing_pipeline(floor_ids=arguments.get("floor_ids"), per_category=True)
+    base = listing_pipeline(floor_ids=arguments.get("floor_ids"), per_placement=True)
     grouped = await bounded(aggregate(base + [{"$group": {"_id": {key: f"${key}" for key in ("brand_id", "category_id", "subcategory", "series", "family_key", "family_name")}, "product_count": {"$sum": 1}, "min_price": {"$min": "$price"}, "sample_image": {"$first": {"$arrayElemAt": ["$images", 0]}}, "image_quality": {"$first": "$image_quality"}}}]), MAX_REFERENCE_ROWS, "Catalog hierarchy")
-    brands, categories = await asyncio.gather(reference_counts("list_brands_with_counts", arguments), bounded(db.categories.find(floor_query(arguments.get("floor_ids")), {"_id": 0}), MAX_REFERENCE_ROWS, "Catalog categories"))
+    brands, categories, category_totals = await asyncio.gather(
+        reference_counts("list_brands_with_counts", arguments),
+        bounded(db.categories.find(floor_query(arguments.get("floor_ids")), {"_id": 0}), MAX_REFERENCE_ROWS, "Catalog categories"),
+        bounded(aggregate(listing_pipeline(floor_ids=arguments.get("floor_ids"), per_category=True) + [
+            {"$group": {"_id": {"brand_id": "$brand_id", "category_id": "$category_id"}, "count": {"$sum": 1}}},
+        ]), MAX_REFERENCE_ROWS, "Catalog category counts"),
+    )
+    by_category = {(r["_id"]["brand_id"], r["_id"]["category_id"]): r["count"] for r in category_totals}
+    for row in grouped:
+        row["category_product_count"] = by_category.get((row["_id"]["brand_id"], row["_id"]["category_id"]), 0)
     return grouped, {row["id"]: row for row in brands}, {row["id"]: row for row in categories}
 
 

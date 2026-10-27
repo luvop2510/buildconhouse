@@ -30,7 +30,9 @@ for (const path of [...sourceFiles('app'), ...sourceFiles('src')]) {
 }
 assert.ok(featherImports > 0, 'canonical app still renders Feather icons');
 const loader = readFileSync('src/hooks/use-app-fonts.ts', 'utf8');
-assert.match(loader, /const ICON_FAMILIES: Record<string, string> = \{ feather: "Feather" \};/);
+assert.match(loader, /import Feather from "@expo\/vector-icons\/Feather"/);
+assert.match(loader, /\.\.\.Feather\.font/);
+assert.doesNotMatch(loader, /https?:|cdnIconUrl|ICON_VECTOR_VERSION/);
 assert.match(loader, /import \{ INTER_FAMILY \} from "\.\/app-font-assets"/);
 for (const path of ['src/hooks/app-font-assets.ts', 'src/hooks/app-font-assets.web.ts']) {
   const assets = readFileSync(path, 'utf8');
@@ -40,5 +42,7 @@ assert.doesNotMatch(loader, /Fraunces|FRAUNCES/, 'the app loads only Inter text 
 for (const path of ['src/design/tokens.ts', 'src/components/TempPasswordDialog.tsx', 'src/components/tiles/TilesDocBuilder.tsx']) {
   assert.doesNotMatch(readFileSync(path, 'utf8'), /"(?:Fraunces[^" ]*|Menlo|monospace|Times New Roman)"|Georgia,/, `${path} uses a second text family`);
 }
-assert.match(loader, /ExecutionEnvironment\.StoreClient\s*\? iconFontMap\(\)/);
-console.log(`Icon/font contract passed: ${featherImports} public Feather imports, one Expo Go icon font, Inter only.`);
+const webLoader = readFileSync("src/hooks/use-app-fonts.web.ts", "utf8");
+assert.match(webLoader, /document\.fonts\.load/);
+assert.match(webLoader, /\.\.\.Feather\.font/);
+console.log(`Icon/font contract passed: ${featherImports} public Feather imports, one bundled preloaded icon font, Inter only.`);

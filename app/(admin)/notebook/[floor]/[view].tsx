@@ -1,8 +1,7 @@
 import { Redirect, useLocalSearchParams } from "expo-router";
 
-/** Legacy notebook URLs remain valid without creating extra workspaces. */
+/** Retired notebook bookmarks use the shared, active-floor sales pages. */
 export default function LegacyNotebookView() {
-  const { floor, view } = useLocalSearchParams<{ floor?: string; view?: string }>();
-  const base = `/(admin)/notebook/${floor === "furniture" ? "furniture" : "kitchen"}`;
-  return <Redirect href={(view === "quotation" ? `${base}/quotation-follow-up` : base) as any} />;
+  const { view } = useLocalSearchParams<{ view?: string }>();
+  return <Redirect href={view === "quotation" ? "/(admin)/followups" : "/(admin)/walkins"} />;
 }

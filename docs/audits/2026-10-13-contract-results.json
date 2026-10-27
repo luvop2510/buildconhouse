@@ -1,0 +1,212 @@
+[
+  {
+    "command": "npm run test:supplier-catalog",
+    "exitCode": 0,
+    "seconds": 0.256
+  },
+  {
+    "command": "npm run test:catalog-pagination",
+    "exitCode": 0,
+    "seconds": 0.472
+  },
+  {
+    "command": "npm run test:quotation-media",
+    "exitCode": 0,
+    "seconds": 0.245
+  },
+  {
+    "command": "npm run test:downloads",
+    "exitCode": 0,
+    "seconds": 0.56
+  },
+  {
+    "command": "npm run test:quotation-contract",
+    "exitCode": 0,
+    "seconds": 0.227
+  },
+  {
+    "command": "npm run test:quotation-reorder",
+    "exitCode": 0,
+    "seconds": 0.291
+  },
+  {
+    "command": "npm run test:quotation-individual",
+    "exitCode": 0,
+    "seconds": 0.447
+  },
+  {
+    "command": "npm run test:multi-filters",
+    "exitCode": 0,
+    "seconds": 0.25
+  },
+  {
+    "command": "npm run test:section-excel",
+    "exitCode": 0,
+    "seconds": 0.458
+  },
+  {
+    "command": "npm run test:quotation-concealed-parts",
+    "exitCode": 0,
+    "seconds": 0.243
+  },
+  {
+    "command": "npm run test:purchases-contract",
+    "exitCode": 0,
+    "seconds": 0.223
+  },
+  {
+    "command": "npm run test:notebook",
+    "exitCode": 0,
+    "seconds": 0.345
+  },
+  {
+    "command": "npm run test:notebook-lifecycle",
+    "exitCode": 0,
+    "seconds": 0.636
+  },
+  {
+    "command": "npm run test:mobile-ux",
+    "exitCode": 0,
+    "seconds": 0.289
+  },
+  {
+    "command": "npm run test:api-client",
+    "exitCode": 0,
+    "seconds": 1.426
+  },
+  {
+    "command": "npm run test:auth-provider-races",
+    "exitCode": 0,
+    "seconds": 0.691
+  },
+  {
+    "command": "npm run test:team-contacts",
+    "exitCode": 0,
+    "seconds": 0.247
+  },
+  {
+    "command": "npm run test:customer-draft-reset",
+    "exitCode": 0,
+    "seconds": 0.476
+  },
+  {
+    "command": "npm run test:quotation-whatsapp",
+    "exitCode": 0,
+    "seconds": 0.249
+  },
+  {
+    "command": "npm run test:furniture-rmb",
+    "exitCode": 0,
+    "seconds": 0.245
+  },
+  {
+    "command": "npm run test:api-proxy",
+    "exitCode": 0,
+    "seconds": 0.232
+  },
+  {
+    "command": "npm run test:web-worker",
+    "exitCode": 0,
+    "seconds": 0.222
+  },
+  {
+    "command": "npm run test:sales-periods",
+    "exitCode": 0,
+    "seconds": 0.266
+  },
+  {
+    "command": "npm run test:monitoring-contract",
+    "exitCode": 0,
+    "seconds": 0.453
+  },
+  {
+    "command": "npm run test:frontend-performance",
+    "exitCode": 0,
+    "seconds": 0.245
+  },
+  {
+    "command": "npm run test:page-loading-performance",
+    "exitCode": 0,
+    "seconds": 1.084
+  },
+  {
+    "command": "npm run test:icon-fonts",
+    "exitCode": 0,
+    "seconds": 0.229
+  },
+  {
+    "command": "npm run test:font-assets",
+    "exitCode": 0,
+    "seconds": 0.212
+  },
+  {
+    "command": "npm run test:release-recovery",
+    "exitCode": 0,
+    "seconds": 0.231
+  },
+  {
+    "command": "npm run test:npm-audit",
+    "exitCode": 0,
+    "seconds": 1.859
+  },
+  {
+    "command": "npm run test:shell-quote-security",
+    "exitCode": 0,
+    "seconds": 0.232
+  },
+  {
+    "command": "npm run test:uri-decoder-security",
+    "exitCode": 0,
+    "seconds": 0.29
+  },
+  {
+    "command": "npm run test:service-health",
+    "exitCode": 0,
+    "seconds": 0.214
+  },
+  {
+    "command": "npm run test:uptime-monitor",
+    "exitCode": 0,
+    "seconds": 0.256
+  },
+  {
+    "command": "npm run test:app-text",
+    "exitCode": 0,
+    "seconds": 0.215
+  },
+  {
+    "command": "npm run test:legal-config",
+    "exitCode": 0,
+    "seconds": 0.232
+  },
+  {
+    "command": "npm run test:native-permissions",
+    "exitCode": 0,
+    "seconds": 1.008
+  },
+  {
+    "command": "npm run test:native-release-config",
+    "exitCode": 0,
+    "seconds": 0.427
+  },
+  {
+    "command": "npm run test:stock-floor-races",
+    "exitCode": 0,
+    "seconds": 0.545
+  },
+  {
+    "command": "npm run test:history-lifecycle",
+    "exitCode": 0,
+    "seconds": 0.527
+  },
+  {
+    "command": "node --experimental-strip-types --no-warnings scripts/test-team-delegation.mjs",
+    "exitCode": 0,
+    "seconds": 0.104
+  },
+  {
+    "command": "node scripts/verify-tile-orders-contract.mjs",
+    "exitCode": 0,
+    "seconds": 0.05
+  }
+]

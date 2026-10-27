@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { floors, mockSession } from './audit-fixtures';
 import { readFileSync } from 'node:fs';
 
-for (const [path, destination] of [['/reports', '/dashboard'], ['/purchase-orders', '/purchases'], ['/notebook/kitchen/followups', '/notebook/kitchen'], ['/notebook/furniture/quotation', '/notebook/furniture/quotation-follow-up']]) {
+for (const [path, destination] of [['/reports', '/dashboard'], ['/purchase-orders', '/purchases'], ['/notebook/kitchen/followups', '/walkins'], ['/notebook/furniture/quotation', '/followups']]) {
   test(`critical compatibility URL ${path} reaches its existing workspace`, async ({ page }) => {
     await mockSession(page, path);
     await page.goto(path);
@@ -11,7 +11,7 @@ for (const [path, destination] of [['/reports', '/dashboard'], ['/purchase-order
   });
 }
 
-test('critical legacy furniture URL waits for authorized floors before opening quotation follow-up', async ({ page }) => {
+test('critical legacy furniture URL waits for access then opens shared follow-ups on the active floor', async ({ page }) => {
   await mockSession(page, '/notebook/furniture/quotation');
   let releaseFloorAccess!: () => void;
   const pendingFloorAccess = new Promise<void>(resolve => { releaseFloorAccess = resolve; });
@@ -28,9 +28,9 @@ test('critical legacy furniture URL waits for authorized floors before opening q
   await expect(page.getByTestId('floor-access-loading')).toBeVisible();
   expect(notebookReads).toBe(0);
   releaseFloorAccess();
-  await expect(page).toHaveURL(/\/notebook\/furniture\/quotation-follow-up$/);
-  await expect(page.getByRole('heading', { name: 'Furniture Floor Quotation follow-ups', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Switch workspace\. Current workspace: Furniture/ })).toBeVisible();
+  await expect(page).toHaveURL(/\/followups$/);
+  await expect(page.getByRole('heading', { name: 'Follow-ups', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Switch workspace\. Current workspace: The Sanitary Bathroom/ })).toBeVisible();
 });
 
 test('critical cold quotation reload retains its query while authorized floors are delayed', async ({ page }) => {
@@ -56,7 +56,7 @@ test('critical cold quotation reload retains its query while authorized floors a
   expect(businessReads).toBe(0);
   release();
   await expect(page).toHaveURL(/\/quotations\/new\?catalogEntryId=retained-entry$/);
-  await expect(page.getByTestId('quotation-details-toggle')).toBeVisible();
+  await expect(page.getByTestId('quotation-workspace')).toBeVisible();
   await expect.poll(() => businessReads).toBeGreaterThan(0);
   await expect.poll(() => page.evaluate(() => sessionStorage.getItem('forge.pending-initial-route'))).toBeNull();
 });
@@ -211,7 +211,7 @@ test('critical owner with a legacy password flag reaches the workspace and chang
   await page.getByTestId('save-password-btn').click();
   await expect(page).toHaveURL(/settings$/);
   await expect(page.getByTestId('save-password-btn')).toHaveCount(0);
-  expect(payload).toEqual({ current_password: 'OwnerInitial!2026', new_password: 'OwnerReplacement!2026' });
+  expect(payload).toEqual({ current_password: 'OwnerInitial!2026', new_password: 'OwnerReplacement!2026', confirm_password: 'OwnerReplacement!2026' });
 });
 
 test('critical owner password changes entered through Settings return to the account page', async ({ page }) => {
@@ -231,7 +231,7 @@ test('critical owner password changes entered through Settings return to the acc
   await expect(page).toHaveURL(/settings$/);
   await expect(page.getByTestId('settings-nav-password')).toBeVisible();
   await expect(page.getByTestId('save-password-btn')).toHaveCount(0);
-  expect(payload).toEqual({ current_password: 'OwnerInitial!2026', new_password: 'OwnerReplacement!2026' });
+  expect(payload).toEqual({ current_password: 'OwnerInitial!2026', new_password: 'OwnerReplacement!2026', confirm_password: 'OwnerReplacement!2026' });
 });
 
 test('critical expired sessions return to sign-in without rendering protected data', async ({ page }) => {

@@ -66,7 +66,7 @@ def test_login_uses_explicit_username_or_email_and_normalized_throttle(monkeypat
     request = Request({"type": "http", "method": "POST", "path": "/api/auth/login", "headers": []})
     response = asyncio.run(auth_routes.staff_login(LoginPayload(email=identifier, password="test-correct-password"), request))
     assert response.user.login_id == "JK PATEL"
-    assert calls == [query]
+    assert calls == [query, {"id": "owner", "password_hash": "test-hash"}]
     assert reservations == [normalize_login_id(identifier)]
     with pytest.raises(HTTPException, match="Invalid email or password"):
         asyncio.run(auth_routes.staff_login(LoginPayload(email=identifier, password="wrong"), request))
@@ -90,3 +90,52 @@ def test_login_index_conflicts_require_actual_unique_partial_index(correct):
     else:
         with pytest.raises(OperationFailure):
             asyncio.run(migration.up(database))
+
+
+@pytest.mark.asyncio
+async def test_controlled_reset_provisions_encrypted_owner_credentials_without_receipt_leak(monkeypatch):
+    from services import team_data_reset
+    from services.team_credentials import decrypt_password
+    owner_password = "RememberOwner!2026"
+    stored = []
+    class Collection:
+        async def find_one(self, *args, **kwargs):
+            return None
+        async def count_documents(self, *args, **kwargs):
+            return 1
+        def find(self, *args, **kwargs):
+            async def rows():
+                yield {"id": "old-owner"}
+            return rows()
+        async def delete_many(self, *args, **kwargs):
+            return SimpleNamespace(deleted_count=1)
+        async def update_many(self, *args, **kwargs):
+            return SimpleNamespace(modified_count=0)
+        async def insert_one(self, doc, **kwargs):
+            stored.append(doc)
+    class Database:
+        users = settings = customers = Collection()
+        def __getitem__(self, name):
+            return self.users
+    class Session:
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *args):
+            pass
+        async def with_transaction(self, operation, **kwargs):
+            return await operation(self)
+    class Client:
+        async def start_session(self):
+            return Session()
+    async def preview(*args, **kwargs):
+        return {"portal_accounts_disabled": 0, "deleted": {"users": 1}}
+    monkeypatch.setenv("FORGE_CUSTOMER_RESET_MAINTENANCE", "true")
+    monkeypatch.setattr(team_data_reset, "team_reset_preview", preview)
+    monkeypatch.setattr(team_data_reset, "hash_password", lambda password: "independent-login-hash")
+    receipt = await reset_team_data(Database(), Client(), request_id=REQUEST_ID,
+                                    owner_password=owner_password, expected_user_count=1)
+    owner = next(doc for doc in stored if doc.get("role") == "owner")
+    assert owner["password_hash"] == "independent-login-hash"
+    assert decrypt_password(owner["password_encrypted"], owner["id"]) == owner_password
+    assert owner_password not in repr(stored)
+    assert owner_password not in repr(receipt)

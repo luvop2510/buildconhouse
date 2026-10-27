@@ -210,3 +210,16 @@ def test_explicit_zero_received_quantity_cannot_be_moved_to_stock(monkeypatch):
     assert exc.value.status_code == 409
     assert "Only 0 units" in exc.value.detail
     assert fake_db.purchase_orders.queries == []
+
+
+def test_replacement_reserved_for_customer_return_cannot_move_to_godown(monkeypatch):
+    from unittest.mock import AsyncMock
+    import pytest
+    from fastapi import HTTPException
+    po = _po()
+    po['items'][0]['loan_replenishment_promised_qty'] = 4
+    monkeypatch.setattr(godown, 'get_floor_scoped_or_404', AsyncMock(return_value=po))
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(godown.intake_stock(godown.Intake(purchase_order_id='po-1', purchase_item_id='item-1', qty=1, reason='Return stock'), _user()))
+    assert error.value.status_code == 409
+    assert 'Only 0 units' in error.value.detail

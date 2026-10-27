@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from services.money import format_indian_money
 from services.pricing import per_line_net_amounts
 from services.godown_valuation import transferred_sold_value
 
@@ -46,7 +47,7 @@ def _line_changes(previous: dict, current: dict, at: str, revision_id: str) -> l
     old_total, new_total = _money(previous.get("grand_total")), _money(current.get("grand_total"))
     if old_total != new_total:
         changes.append({"id": f"{revision_id}:total", "at": at, "type": "amount_adjusted",
-                        "description": f"Quotation total changed from ₹{old_total:,.2f} to ₹{new_total:,.2f}",
+                        "description": f"Quotation total changed from ₹{format_indian_money(old_total)} to ₹{format_indian_money(new_total)}",
                         "qty": None, "amount": round(new_total - old_total, 2), "quotation_id": None})
     return changes
 

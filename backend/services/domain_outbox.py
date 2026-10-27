@@ -8,6 +8,7 @@ retry is safe after a process/network failure.
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
 from uuid import uuid4
@@ -16,6 +17,7 @@ from auth import floor_inherit
 from db import client, db
 from models import ActivityEvent, Followup, Notification, Payment, PurchaseOrder, PurchaseOrderItem, PurchaseStageEvent, PurchaseStatusEvent, UserPublic
 from models_tile_orders import TileCustomerOrder, TileCustomerOrderBrand, TileCustomerOrderDashboardSummary
+from services.money import format_indian_money
 from services.notifications import notify
 from services.pricing import per_line_net_amounts
 from services.sequence import next_number
@@ -224,6 +226,9 @@ async def _handle_purchase_chalan_lifecycle(event: dict, session: Any) -> dict:
 
 
 async def _upsert_followup(*, key: str, quotation: dict, reason: str, category: str, session: Any) -> None:
+    from services.lead_scope import POST_ORDER_CATEGORIES
+    if category in POST_ORDER_CATEGORIES or quotation.get("status") == "ordered" or quotation.get("customer_outcome") in {"won", "lost"}:
+        return
     customer = await db.customers.find_one({"id": quotation["customer_id"]}, {"_id": 0}, session=session) or {}
     followup = Followup(
         source_key=key,
@@ -531,7 +536,6 @@ async def _handle_order_placed(event: dict, session: Any) -> dict:
         summary=f"Order placed — {len(created_po_ids)} purchase order(s) created",
         payload={"event": EVENT_ORDER_PLACED, "purchase_order_ids": created_po_ids, "outstanding": payment_amount}, session=session,
     )
-    await _upsert_followup(key=f"{key}:followup", quotation=quotation, reason=f"Order {quotation.get('number')} placed — confirm payment and delivery plan.", category="payment", session=session)
     return {
         "quotation_id": quotation_id,
         "purchase_order_ids": created_po_ids,
@@ -541,7 +545,7 @@ async def _handle_order_placed(event: dict, session: Any) -> dict:
         "post_commit_notification": {
             "user_id": quotation.get("created_by"),
             "title": f"Order confirmed · {quotation.get('number')}",
-            "body": f"{len(created_po_ids)} purchase order(s) created for {quotation.get('customer_name')} — outstanding ₹{payment_amount:,.0f}",
+            "body": f"{len(created_po_ids)} purchase order(s) created for {quotation.get('customer_name')} — outstanding ₹{format_indian_money(payment_amount, decimals=0)}",
             "kind": "success",
             "link": f"/quotations/{quotation_id}",
             "floor_id": floor_inherit(quotation),
@@ -588,31 +592,37 @@ async def dispatch_event(event_id: str, *, claim_id: str | None = None) -> dict:
                 return current.get("result") or {"already_processed": True}
             return {"already_processing": True}
         claim_id = event.get("claim_id")
-    result: dict
-    notification: dict | None = None
+    async def apply_claimed_event(session):
+        # Mongo labels first-prefix counter seeding and concurrent writes as
+        # transient transaction conflicts. Retry the whole transactional unit,
+        # preserving this exact claim and sending notifications only on commit.
+        current = await db.event_outbox.find_one({"id": event_id, "status": "processing", "claim_id": claim_id}, {"_id": 0}, session=session)
+        if not current or current.get("status") == "completed":
+            return (current or {}).get("result") or {"already_processed": True}, None, None
+        if current["event_type"] == EVENT_QUOTATION_GENERATED:
+            result = await _handle_quotation_generated(current, session)
+        elif current["event_type"] == EVENT_ORDER_PLACED:
+            result = await _handle_order_placed(current, session)
+        elif current["event_type"] == EVENT_PURCHASE_TRANSFERRED:
+            from services.transfer_workflow import handle_purchase_transferred
+            result = await handle_purchase_transferred(current, session)
+        elif current["event_type"] == EVENT_PURCHASE_CHALAN_LIFECYCLE:
+            result = await _handle_purchase_chalan_lifecycle(current, session)
+        else:
+            raise RuntimeError(f"Unsupported outbox event type {current['event_type']}")
+        notification = result.pop("post_commit_notification", None)
+        await db.event_outbox.update_one({"id": event_id, "claim_id": claim_id}, {"$set": {"status": "completed", "result": result, "processed_at": now_iso(), "updated_at": now_iso()}, "$inc": {"attempts": 1}}, session=session)
+        return result, notification, current["event_type"]
+
     async with await client.start_session() as session:
-        async with session.start_transaction():
-            current = await db.event_outbox.find_one({"id": event_id, "status": "processing", "claim_id": claim_id}, {"_id": 0}, session=session)
-            if not current or current.get("status") == "completed":
-                return (current or {}).get("result") or {"already_processed": True}
-            if current["event_type"] == EVENT_QUOTATION_GENERATED:
-                result = await _handle_quotation_generated(current, session)
-            elif current["event_type"] == EVENT_ORDER_PLACED:
-                result = await _handle_order_placed(current, session)
-            elif current["event_type"] == EVENT_PURCHASE_TRANSFERRED:
-                from services.transfer_workflow import handle_purchase_transferred
-                result = await handle_purchase_transferred(current, session)
-            elif current["event_type"] == EVENT_PURCHASE_CHALAN_LIFECYCLE:
-                result = await _handle_purchase_chalan_lifecycle(current, session)
-            else:
-                raise RuntimeError(f"Unsupported outbox event type {current['event_type']}")
-            notification = result.pop("post_commit_notification", None)
-            await db.event_outbox.update_one({"id": event_id, "claim_id": claim_id}, {"$set": {"status": "completed", "result": result, "processed_at": now_iso(), "updated_at": now_iso()}, "$inc": {"attempts": 1}}, session=session)
+        result, notification, event_type = await session.with_transaction(apply_claimed_event)
+    if event_type is None:
+        return result
     # Analytics cache invalidation, after the commit for the same reason the
     # notification is: the surfaces must never be able to read a version bump
     # for a write that then rolled back. Bumping a version invalidates every
     # cached metric declaring that collection — there is no delete to forget.
-    await _bump_analytics_versions(current["event_type"])
+    await _bump_analytics_versions(event_type)
 
     if notification and notification.get("user_id"):
         try:
@@ -669,19 +679,28 @@ async def dispatch_pending(limit: int = 100) -> list[dict]:
     ).sort("created_at", 1).to_list(limit)
     results = []
     for event in events:
+        claimed = None
         try:
             claimed = await _claim_event(event["id"])
             if not claimed:
                 continue
             results.append(await dispatch_event(event["id"], claim_id=claimed["claim_id"]))
         except Exception as exc:  # Persist failure safely; retry remains possible.
-            exhausted = int(event.get("attempts") or 0) + 1 >= MAX_DISPATCH_ATTEMPTS
+            if not claimed:
+                # A failed/ambiguous claim does not establish ownership. Let
+                # its lease expire without mutating another worker's event.
+                logging.getLogger("forge.outbox").warning("Outbox claim failed (%s)", type(exc).__name__)
+                continue
+            exhausted = int(claimed.get("attempts") or 0) + 1 >= MAX_DISPATCH_ATTEMPTS
             patch: dict = {"last_error": str(exc), "updated_at": now_iso()}
             if exhausted:
                 # Dead-letter: stop retrying, keep the event for operator review
                 # via GET /api/ops/outbox. Nothing is deleted.
                 patch["status"] = "dead_letter"
-            await db.event_outbox.update_one({"id": event["id"], "status": "processing"}, {"$set": patch, "$inc": {"attempts": 1}})
+            await db.event_outbox.update_one(
+                {"id": event["id"], "status": "processing", "claim_id": claimed["claim_id"]},
+                {"$set": patch, "$inc": {"attempts": 1}},
+            )
     return results
 
 
@@ -694,10 +713,15 @@ async def outbox_worker() -> None:
     next_share_cleanup = 0.0
     while True:
         try:
-            await dispatch_pending()
+            from services.mutation_admission import admission
+            async with admission(db):
+                await dispatch_pending()
             now = datetime.now(timezone.utc).timestamp()
             if not customer_reset_maintenance() and now >= next_share_cleanup:
                 await cleanup_expired_shares()
+                from services.customer_deletion import cleanup_deleted_customer_files
+                from media_storage import get_media_storage
+                await cleanup_deleted_customer_files(db, get_media_storage())
                 next_share_cleanup = now + 3600
         except asyncio.CancelledError:
             raise

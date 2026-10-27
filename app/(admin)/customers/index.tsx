@@ -12,13 +12,13 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "@/src/api/client";
 import { useBp } from "@/src/design/responsive";
 import {
-  Avatar, Badge, Button, Chip, ConfirmDialog, EmptyState, IconButton, PageHeader,
-  SearchField, Skeleton, StatTile,
+  Avatar, Badge, Button, Chip, EmptyState, IconButton, PageHeader,
+  SearchField, Skeleton, StatTile, MobileFilterSection,
 } from "@/src/components/ds";
 import { colors, icon as iconSize, radius, spacing, type } from "@/src/theme/tokens";
 import { useAuth } from "@/src/state/auth";
 import { useActionAccess } from "@/src/hooks/use-permissions";
-import { canManageDestructiveData } from "@/src/constants/roles";
+import { CustomerDataDeletionDialog } from "@/src/components/customer/CustomerDataDeletionDialog";
 import { toast } from "@/src/components/Toast";
 import { ErrorState } from "@/src/components/ui";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
@@ -42,7 +42,7 @@ export default function Customers() {
   const completed = view === "completed";
   const { isDesktop, isPhone } = useBp();
   const { staff } = useAuth();
-  const canDeleteCustomers = useActionAccess("customers", "delete", canManageDestructiveData(staff?.role));
+  const canDeleteCustomers = useActionAccess("customers", "delete", staff?.role === "owner") && staff?.role === "owner";
   const { selectedFloorId } = useFloorAccess();
   const isTileDeliveryLookup = staff?.access_profile === "ground_tile_quotations_followups";
 
@@ -50,7 +50,6 @@ export default function Customers() {
   const [q, setQ] = useState("");
   const [visibleCount, setVisibleCount] = useState(CUSTOMER_RENDER_BATCH);
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
-  const [deleting, setDeleting] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const requestId = useRef(0);
 
@@ -65,22 +64,6 @@ export default function Customers() {
     );
   }, [selectedFloorId, completed]);
   useFocusEffect(useCallback(() => { load(); return () => { requestId.current += 1; }; }, [load]));
-
-  const deleteCustomer = async () => {
-    if (!deleteTarget) return;
-    setDeleting(true);
-    try {
-      await api.delete(`/customers/${deleteTarget.id}`);
-      setItems((current) => (current || []).filter((item) => item.id !== deleteTarget.id));
-      setDeleteTarget(null);
-    } catch (e: any) {
-      // The backend explains protected payments/orders and floor failures.
-      // Keep the dialog open so the manager can read the error from the toast.
-      toast.error(e?.detail || "Could not delete customer");
-    } finally {
-      setDeleting(false);
-    }
-  };
 
   const filtered = useMemo(() => (items || []).filter((c) => {
     if (!q) return true;
@@ -107,25 +90,20 @@ export default function Customers() {
       });
     } catch (error: any) { toast.error(error?.message || "Could not export customers"); }
   };
+  const pageHeader = <PageHeader
+    title={isTileDeliveryLookup ? "Customer delivery lookup" : completed ? "100% Customers" : "Customers"}
+    subtitle={loadError ? "Customer data is unavailable" : items ? (isTileDeliveryLookup ? "Choose a customer to view their Ground Floor tile order and dispatch status." : `${items.length} ${completed ? "100% completed" : "active confirmed-order"} customers`) : "Loading customers…"}
+    overline={isTileDeliveryLookup ? "GROUND FLOOR · READ ONLY" : "CRM"}
+    actions={!isTileDeliveryLookup ? <Button icon="plus" label="Add Customer" variant="primary" size="md"
+      onPress={() => router.push("/(admin)/customers/new" as any)} /> : undefined}
+    embedded={isPhone}
+  />;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
-      <PageHeader
-        title={isTileDeliveryLookup ? "Customer delivery lookup" : completed ? "100% Customers" : "Customers"}
-        subtitle={loadError ? "Customer data is unavailable" : items ? (isTileDeliveryLookup ? "Choose a customer to view their Ground Floor tile order and dispatch status." : `${items.length} ${completed ? "100% completed" : "active confirmed-order"} customers`) : "Loading customers…"}
-        overline={isTileDeliveryLookup ? "GROUND FLOOR · READ ONLY" : "CRM"}
-        actions={!isTileDeliveryLookup ? (
-          <Button
-            icon="plus"
-            label="Add Customer"
-            variant="primary"
-            size="md"
-            onPress={() => router.push("/(admin)/customers/new" as any)}
-          />
-        ) : undefined}
-      />
-
+      {!isPhone ? pageHeader : null}
       <ScrollView contentContainerStyle={[styles.content, isPhone && styles.contentPhone]}>
+        {isPhone ? pageHeader : null}
         <Disclosure title="Customer summary" summary="Customer totals">
         {/* Stats */}
         <View style={[styles.statsRow, !isDesktop && styles.statsRowMobile]}>
@@ -135,6 +113,7 @@ export default function Customers() {
             icon="users"
             tone="brand"
             sub={completed ? "100% completed orders" : "Active confirmed orders"}
+            onPress={() => { setQ(""); setVisibleCount(CUSTOMER_RENDER_BATCH); }}
             dense={isPhone}
             style={isPhone ? styles.statPhone : undefined}
           />
@@ -144,6 +123,7 @@ export default function Customers() {
 
         {/* Toolbar */}
         <View style={{ gap: spacing.md }}>
+          <MobileFilterSection testID="customers-filters">
           <SearchField
             value={q}
             onChangeText={setQ}
@@ -155,6 +135,7 @@ export default function Customers() {
             <Chip label="Active customers" active={!completed} testID="customers-active-tab" onPress={() => router.push("/(admin)/customers" as any)} />
             <Chip label="100% Customers" active={completed} testID="customers-completed-tab" onPress={() => router.push("/(admin)/customers?view=completed" as any)} />
           </View>
+          </MobileFilterSection>
           {!isTileDeliveryLookup ? <Pressable accessibilityRole="button" accessibilityLabel="Export filtered customer accounts to Excel" testID="customers-export-excel" disabled={!filtered.length} onPress={() => void exportCustomers()} style={[styles.exportButton, !filtered.length && { opacity: .45 }]}><Feather name="download" size={16} color={colors.brand} /><Text style={styles.exportText}>Export customer accounts .xlsx</Text></Pressable> : null}
         </View>
 
@@ -261,16 +242,13 @@ export default function Customers() {
           </View>
         )}
       </ScrollView>
-      <ConfirmDialog
-        visible={!!deleteTarget}
-        onClose={() => { if (!deleting) setDeleteTarget(null); }}
-        onConfirm={deleteCustomer}
-        title="Delete customer?"
-        description={deleteTarget ? `${deleteTarget.company || deleteTarget.name} and disposable quotations, follow-ups, walk-ins, and unpaid payments will be removed. Customers with purchase orders or completed payments cannot be deleted.` : undefined}
-        confirmLabel="Delete"
-        tone="danger"
-        loading={deleting}
-        testID="confirm-delete-customer-list"
+      <CustomerDataDeletionDialog customer={deleteTarget} onClose={() => setDeleteTarget(null)}
+        onDeleted={(id) => {
+          setItems((current) => (current || []).filter((item) => item.id !== id));
+          setDeleteTarget(null);
+          toast.success("Customer data deleted");
+          load();
+        }}
       />
     </SafeAreaView>
   );

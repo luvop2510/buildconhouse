@@ -268,3 +268,73 @@ def test_redis_versions_are_read_concurrently_and_burst_loader_is_shared(monkeyp
         assert await cache.cached(*args) == {"value": 10}
         assert calls == 1
     asyncio.run(go())
+
+
+def test_failed_redis_invalidation_bypasses_old_cache_until_repaired(monkeypatch):
+    class Redis:
+        def __init__(self):
+            self.values = {}
+            self.fail_incr = False
+
+        async def get(self, key):
+            return self.values.get(key)
+
+        async def set(self, key, value, **_kwargs):
+            self.values[key] = value
+
+        async def incr(self, key):
+            if self.fail_incr:
+                await asyncio.Event().wait()
+            self.values[key] = int(self.values.get(key, 0)) + 1
+            return self.values[key]
+
+    async def go():
+        redis = Redis()
+        monkeypatch.setattr(cache, "_redis", lambda: redis)
+        monkeypatch.setattr(cache, "_REDIS_TIMEOUT_SECONDS", 0.01)
+        value = 10
+        calls = 0
+        async def loader():
+            nonlocal calls
+            calls += 1
+            return {"balance": value}
+        args = ("balance", ["payments"], "", ["ground-floor"], loader)
+        assert await cache.cached(*args) == {"balance": 10}
+        value = 20  # Committed payment, followed by an unavailable Redis INCR.
+        redis.fail_incr = True
+        with pytest.raises(TimeoutError):
+            await cache.bump("payments")
+        assert await cache.cached(*args) == {"balance": 20}
+        assert cache._pending_invalidations == {"payments": 1}
+        redis.fail_incr = False
+        assert await cache.cached(*args) == {"balance": 20}
+        assert cache._pending_invalidations == {}
+        assert await cache.cached(*args) == {"balance": 20}
+        assert calls == 3  # Old fill, uncached outage read, repaired-version fill.
+    asyncio.run(go())
+
+
+def test_older_success_does_not_clear_a_newer_failed_invalidation(monkeypatch):
+    async def go():
+        started = asyncio.Event()
+        release = asyncio.Event()
+        class Redis:
+            calls = 0
+            async def incr(self, _key):
+                self.calls += 1
+                if self.calls == 1:
+                    # Redis executed the older increment before the next write.
+                    started.set()
+                    await release.wait()
+                    return 1
+                raise ConnectionError("newer increment unavailable")
+        redis = Redis()
+        monkeypatch.setattr(cache, "_redis", lambda: redis)
+        older = asyncio.create_task(cache.bump("payments"))
+        await started.wait()
+        with pytest.raises(ConnectionError):
+            await cache.bump("payments")
+        release.set()
+        await older
+        assert cache._pending_invalidations == {"payments": 2}
+    asyncio.run(go())

@@ -18,7 +18,7 @@ assert.match(monitoring, /"cls"/);
 assert.match(monitoring, /"inp_ms"/);
 assert.match(monitoring, /"long_task_ms"/);
 assert.doesNotMatch(monitoring, /tracesSampleRate: 0,/);
-assert.match(webLayout, /initSentry\(\); initPerformanceSignals\(\);/);
+assert.match(webLayout, /initSentry\(\);\s*initPerformanceSignals\(\);/);
 assert.match(privacyPolicy, /sampled technical performance/);
 assert.match(privacyPolicy, /request\n\s*bodies, query strings/);
 
@@ -83,3 +83,28 @@ assert.equal(metric.extra.value,42);
 assert.equal(metric.tags.route,'/customers/:id');
 assert.ok(!JSON.stringify(metric).includes(confidential));
 console.log('Telemetry allowlist preserves numeric metrics and removes credential-bearing event fields.');
+
+// A route boundary reports errors React has already caught. Optional telemetry
+// failures must not create a second, now-unhandled application failure.
+const captureModule = { exports: {} };
+const captures = [];
+const captureUnhandled = [];
+const onCaptureUnhandled = error => captureUnhandled.push(error);
+process.on('unhandledRejection', onCaptureUnhandled);
+try {
+  vm.runInNewContext(ts.transpileModule(monitoring, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText, {
+    module: captureModule, exports: captureModule.exports,
+    process: { env: { EXPO_PUBLIC_SENTRY_DSN: 'https://public@example.test/1' } }, console,
+    require: () => ({ init() {}, captureException(error) { captures.push(error); throw new Error('Capture transport failed'); } }),
+  });
+  const renderError = new Error('Private customer render fixture');
+  captureModule.exports.captureRuntimeError(renderError);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(captures[0], renderError, 'React-caught errors reach the configured privacy-filtered SDK');
+  assert.deepEqual(captureUnhandled, [], 'telemetry cannot turn a contained failure into a crash');
+} finally {
+  process.removeListener('unhandledRejection', onCaptureUnhandled);
+}
+console.log('React-caught runtime reporting cannot fail the application.');

@@ -20,6 +20,11 @@ test_reports/
 .superpowers/
 memory/
 
+# Production configuration comes from the linked Vercel project's variables.
+.env
+.env.*
+!.env.example
+
 # Large business assets belong in MongoDB/Supabase, never in a frontend upload.
 *.pdf
 *.pptx

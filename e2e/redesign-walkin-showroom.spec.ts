@@ -24,22 +24,24 @@ async function walkinReads(page: Page) {
   } }));
 }
 
-test('switching to Kitchen Floor opens the regular walk-in workspace', async ({ page }) => {
+test('switching to Kitchen Floor opens its dedicated Kitchen hub', async ({ page }) => {
   await mockSession(page, '/dashboard');
   await page.goto('/dashboard');
   await page.getByTestId('floor-switcher').click();
   await page.getByRole('menuitem', { name: 'Kitchen Floor', exact: true }).click();
-  await expect(page).toHaveURL(/\/walkins$/);
+  await expect(page).toHaveURL(/\/kitchen$/);
   await expect(page.getByTestId('floor-switcher')).toHaveAccessibleName('Switch workspace. Current workspace: Kitchen Floor');
-  await expect(page.getByRole('heading', { name: 'Walk-ins', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Kitchen dashboard', exact: true })).toBeVisible();
+  await expect(page.getByTestId('kitchen-universal-search')).toBeVisible();
 });
 
-test('a saved Kitchen Floor workspace opens the regular walk-in page', async ({ page }) => {
+test('a saved Kitchen Floor workspace opens its dedicated Kitchen hub', async ({ page }) => {
   await mockSession(page, '/dashboard');
   await page.addInitScript(() => localStorage.setItem('forge.active-floor', JSON.stringify('second-floor')));
   await page.goto('/dashboard');
-  await expect(page).toHaveURL(/\/walkins$/);
-  await expect(page.getByRole('heading', { name: 'Walk-ins', exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/kitchen$/);
+  await expect(page.getByRole('heading', { name: 'Kitchen dashboard', exact: true })).toBeVisible();
+  await expect(page.getByTestId('floor-switcher')).toHaveAccessibleName('Switch workspace. Current workspace: Kitchen Floor');
 });
 
 test('critical walk-ins combines multiple floors and lead sources in the same backend request', async ({ page }) => {
@@ -54,10 +56,10 @@ test('critical walk-ins combines multiple floors and lead sources in the same ba
   await expect(page.getByTestId('floor-switcher')).toBeVisible();
   await expect(page.getByTestId('walkins-floor-first-floor')).toHaveAttribute('aria-pressed', 'true');
   await expect.poll(() => filters.at(-1)?.get('floor_ids')).toBe('first-floor');
-  await page.getByTestId('walkins-floor-second-floor').click();
+  await page.getByTestId('walkins-floor-ground-floor').click();
   await page.getByTestId('walkins-source-filters-Reference').click();
   await page.getByTestId('walkins-source-filters-Instagram').click();
-  await expect.poll(() => filters.at(-1)?.get('floor_ids')).toBe('first-floor,second-floor');
+  await expect.poll(() => filters.at(-1)?.get('floor_ids')).toBe('first-floor,ground-floor');
   await expect.poll(() => filters.at(-1)?.get('source')).toBe('Reference,Instagram');
   await expect(page.getByTestId('walkins-source-filters-Reference')).toHaveAttribute('aria-checked', 'true');
   await expect(page.getByTestId('walkins-source-filters-Instagram')).toHaveAttribute('aria-checked', 'true');
@@ -67,11 +69,13 @@ test('critical walk-ins combines multiple floors and lead sources in the same ba
 test('critical Visit Showroom retries a failed transfer and opens only showroom-origin follow-ups', async ({ page }) => {
   await mockSession(page, '/walkins');
   await walkinReads(page);
-  await page.route('**/api/walkins?**', route => route.fulfill({ json: [{ ...walkin, floor_id: 'second-floor' }] }));
+  let transferred = false;
+  await page.route('**/api/walkins?**', route => route.fulfill({ json: transferred ? [] : [{ ...walkin, floor_id: 'ground-floor' }] }));
   let attempts = 0;
   await page.route('**/api/walkins/walkin-showroom/visit-showroom', route => {
-    expect(route.request().headers()['x-floor-id']).toBe('second-floor');
+    expect(route.request().headers()['x-floor-id']).toBe('ground-floor');
     attempts += 1;
+    if (attempts > 1) transferred = true;
     return attempts === 1 ? route.fulfill({ status: 503, json: { detail: 'Transfer unavailable; retry' } })
       : route.fulfill({ json: { walkin_id: walkin.id, followup_id: 'showroom:walkin-showroom' } });
   });
@@ -88,18 +92,34 @@ test('critical Visit Showroom retries a failed transfer and opens only showroom-
   await expect(page.getByText('Transfer unavailable; retry', { exact: true })).toBeVisible();
   await expect(page).toHaveURL(/\/walkins$/);
   await page.getByTestId('walkin-visit-showroom-walkin-showroom').click();
-  await expect(page).toHaveURL(/\/followups\?workspace=visit_showroom$/);
+  await expect(page).toHaveURL(current => current.pathname === '/followups' && current.searchParams.get('workspace') === 'visit_showroom' && current.searchParams.get('showroom_followup') === 'showroom:walkin-showroom');
   await expect.poll(() => requestedOrigins.at(-1)).toBe('visit_showroom');
   await expect(page.getByText('Transferred showroom visitor', { exact: true })).toBeVisible();
   await expect(page.getByText('Unrelated follow-up', { exact: true })).toHaveCount(0);
   expect(attempts).toBe(2);
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('forge.active-floor') || 'null'))).toBe('second-floor');
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('forge.active-floor') || 'null'))).toBe('ground-floor');
+  await page.goto('/walkins');
+  await expect(page.getByTestId('walkin-card-walkin-showroom')).toHaveCount(0);
+  await expect(page.getByTestId('walkin-visit-showroom-walkin-showroom')).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByTestId('walkin-card-walkin-showroom')).toHaveCount(0);
+  expect(attempts).toBe(2);
+});
+
+test('critical sanitary walk-in cards never offer Ground Floor selection scheduling', async ({ page }) => {
+  await mockSession(page, '/walkins');
+  await walkinReads(page);
+  await page.route('**/api/walkins?**', route => route.fulfill({ json: [walkin] }));
+  await page.goto('/walkins');
+  await expect(page.getByTestId('walkin-card-walkin-showroom')).toBeVisible();
+  await expect(page.getByTestId('walkin-schedule-walkin-showroom')).toHaveCount(0);
+  await expect(page.getByTestId('walkin-visit-showroom-walkin-showroom')).toBeVisible();
 });
 
 test('critical multi-floor walk-in actions use the selected records floor', async ({ page }) => {
   await mockSession(page, '/walkins');
   await walkinReads(page);
-  const crossFloor = { ...walkin, floor_id: 'second-floor' };
+  const crossFloor = { ...walkin, floor_id: 'ground-floor' };
   await page.route('**/api/walkins?**', route => route.fulfill({ json: [crossFloor] }));
   let requestedFloor: string | undefined;
   await page.route('**/api/walkins/walkin-showroom', route => {
@@ -108,8 +128,9 @@ test('critical multi-floor walk-in actions use the selected records floor', asyn
     return route.fulfill({ json: { ...crossFloor, status: 'selection_scheduled' } });
   });
   await page.goto('/walkins');
+  await page.getByTestId('walkins-floor-ground-floor').click();
   await page.getByTestId('walkin-schedule-walkin-showroom').click();
-  await expect.poll(() => requestedFloor).toBe('second-floor');
+  await expect.poll(() => requestedFloor).toBe('ground-floor');
   await expect(page.getByText('Marked as Selection Scheduled', { exact: true })).toBeVisible();
 });
 
@@ -127,4 +148,51 @@ test('critical Customers requests confirmed orders while prospective contacts st
   await expect(page.getByText('Unconfirmed prospect', { exact: true })).toHaveCount(0);
   expect(confirmedQueries.length).toBeGreaterThan(0);
   expect(confirmedQueries.every(value => value === 'true')).toBe(true);
+});
+
+
+test('critical Follow-ups workspace tabs publish durable showroom and quotation routes', async ({ page }) => {
+  await mockSession(page, '/followups', false);
+  await page.addInitScript(() => localStorage.setItem('forge.active-floor', JSON.stringify('ground-floor')));
+  await page.route('**/api/followups/config/**', route => route.fulfill({ json: [] }));
+  await page.route('**/api/followups/saved-views', route => route.fulfill({ json: [] }));
+  await page.route('**/api/followups/page?**', route => {
+    const origin = new URL(route.request().url()).searchParams.get('origin');
+    return route.fulfill({ json: { items: origin ? [followup('showroom:durable', 'Durable showroom visitor', 'visit_showroom')] : [], page: 1, page_size: 100, has_more: false } });
+  });
+  await page.goto('/followups');
+  await page.getByTestId('followups-workspace-tabs-visit_showroom').click();
+  await expect(page).toHaveURL(url => url.searchParams.get('workspace') === 'visit_showroom');
+  await expect(page.getByText('Durable showroom visitor', { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByText('Durable showroom visitor', { exact: true })).toBeVisible();
+  await page.getByTestId('followups-workspace-tabs-quotation_tiles').click();
+  await expect(page).toHaveURL(url => url.searchParams.get('workspace') === 'quotation_tiles');
+  const request = page.waitForRequest(request => new URL(request.url()).pathname === '/api/followups/page' && new URL(request.url()).searchParams.get('rule_type') === 'quotation_tiles_waiting');
+  await page.reload(); await request;
+  await expect(page.getByTestId('followups-workspace-tabs-quotation_tiles')).toHaveAttribute('aria-selected', 'true');
+});
+
+test('critical walk-in detail transfer opens showroom follow-ups on the actual record floor', async ({ page }) => {
+  await mockSession(page, '/walkins/walkin-showroom', false);
+  const crossFloor = { ...walkin, floor_id: 'ground-floor' };
+  await page.route('**/api/walkins/walkin-showroom', route => route.fulfill({ json: crossFloor }));
+  await page.route('**/api/walkins/walkin-showroom/timeline', route => route.fulfill({ json: [] }));
+  await page.route('**/api/walkins/assignees', route => route.fulfill({ json: [] }));
+  await page.route('**/api/walkins/walkin-showroom/visit-showroom', route => {
+    expect(route.request().headers()['x-floor-id']).toBe('ground-floor');
+    return route.fulfill({ json: { walkin_id: walkin.id, followup_id: 'showroom:detail-transfer' } });
+  });
+  await page.route('**/api/followups/config/**', route => route.fulfill({ json: [] }));
+  await page.route('**/api/followups/saved-views', route => route.fulfill({ json: [] }));
+  await page.route('**/api/followups/page?**', route => {
+    expect(route.request().headers()['x-floor-id']).toBe('ground-floor');
+    expect(new URL(route.request().url()).searchParams.get('origin')).toBe('visit_showroom');
+    return route.fulfill({ json: { items: [{ ...followup('showroom:detail-transfer', 'Detail showroom visitor', 'visit_showroom'), floor_id: 'ground-floor' }], page: 1, page_size: 100, has_more: false } });
+  });
+  await page.goto('/walkins/walkin-showroom');
+  await page.getByTestId('walkin-visit-showroom').click();
+  await expect(page).toHaveURL(url => url.pathname === '/followups' && url.searchParams.get('showroom_followup') === 'showroom:detail-transfer');
+  await expect(page.getByText('Detail showroom visitor', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('floor-switcher')).toHaveAccessibleName('Switch workspace. Current workspace: Ground Floor');
 });

@@ -1,20 +1,26 @@
-import { readFile, stat } from "node:fs/promises";
+import { readFile, stat, readdir, mkdir, writeFile } from "node:fs/promises";
 import { gzipSync } from "node:zlib";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(SCRIPT_DIR, "..", "dist", "client");
-// These are the staff routes that carry the largest independently-loaded
-// workflow code. Keep each initial payload within the same release envelope;
-// checking only login/dashboard previously let Follow-ups and Purchases grow
-// without a CI signal.
-const ROUTES = [
-  "login.html", "dashboard.html", "followups.html", "purchases.html",
-  "tiles/quotation.html", "tiles/orders/index.html", "quotations/new.html",
-  "sales-data/index.html",
-  "team.html", "catalog/index.html", "notebook/furniture-quotations.html",
-];
+// Discover every exported page so newly added routes inherit the release
+// constraint automatically. Cache shared asset sizes rather than recompressing
+// the same shell for each page.
+async function exportedPages(directory, relative = "") {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const pages = await Promise.all(entries.map(entry => {
+    const name = path.join(relative, entry.name);
+    return entry.isDirectory() ? exportedPages(path.join(directory, entry.name), name)
+      : entry.isFile() && entry.name.endsWith(".html") ? [name] : [];
+  }));
+  return pages.flat().sort();
+}
+const ROUTES = await exportedPages(ROOT);
+if (!ROUTES.length) throw new Error("No exported pages found. Run npm run build first.");
+const assetCache = new Map();
+const report = [];
 // Expo Router + React Native Web form the unavoidable shell shared by every
 // route (about 490 KiB gzip in the production export). The profiled largest
 // route is 519 KiB, so retain at least 10% (57 KiB) of release headroom while
@@ -32,9 +38,11 @@ for (const route of ROUTES) {
   let rawBytes = 0;
   const assetStats = [];
   for (const asset of assets) {
-    const bytes = await readFile(path.join(ROOT, asset));
-    const raw = (await stat(path.join(ROOT, asset))).size;
-    const gzip = gzipSync(bytes, { level: 9 }).length;
+    if (!assetCache.has(asset)) {
+      const bytes = await readFile(path.join(ROOT, asset));
+      assetCache.set(asset, { raw: (await stat(path.join(ROOT, asset))).size, gzip: gzipSync(bytes, { level: 9 }).length });
+    }
+    const { raw, gzip } = assetCache.get(asset);
     rawBytes += raw;
     gzipBytes += gzip;
     assetStats.push({ asset, raw, gzip });
@@ -50,9 +58,14 @@ for (const route of ROUTES) {
       .slice(0, 5)
       .map(({ asset, gzip }) => ({ asset, gzipKb: Math.round(gzip / 1024) })),
   };
-  console.log(JSON.stringify(result));
+  report.push(result);
+  if (!assets.length) throw new Error(`No initial JavaScript found for ${route}; the budget must not silently skip a page.`);
   if (gzipBytes > MAX_INITIAL_JS_GZIP) failed = true;
 }
+
+await mkdir(path.resolve(SCRIPT_DIR, "..", "output", "playwright"), { recursive: true });
+await writeFile(path.resolve(SCRIPT_DIR, "..", "output", "playwright", "bundle-budget.json"), JSON.stringify({ budgetBytes: MAX_INITIAL_JS_GZIP, pages: report }, null, 2));
+console.log(JSON.stringify({ pagesChecked: report.length, largestPages: report.sort((a, b) => b.gzipKb - a.gzipKb).slice(0, 12), failed }));
 
 if (failed) {
   console.error("Initial JavaScript exceeds the 576 KB gzip release budget.");

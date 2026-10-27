@@ -123,3 +123,39 @@ def test_full_move_raises_structured_409_after_exhausting_retries(monkeypatch):
     assert detail["current_qty"] == 5
     assert detail["current_stage"] == "order_in_company"
     assert fake_pos.update_calls == 3
+
+
+@pytest.mark.parametrize('reservation', ['loaned_qty', 'loan_replenishment_promised_qty'])
+def test_default_dispatch_splits_eighty_free_units_from_four_reserved(monkeypatch, reservation):
+    doc = _po_doc('item-1', qty=84, stage='in_box')
+    doc['items'][0][reservation] = 4
+    if reservation == 'loan_replenishment_promised_qty':
+        doc['items'][0]['loan_replenishment_for_customer_name'] = 'Lender'
+    class Capture(_FakePurchaseOrders):
+        async def update_one(self, query, update):
+            self.guard, self.update = query, update
+            return _UpdateResult(matched_count=1)
+    pos = Capture(doc)
+    monkeypatch.setattr(tracker, 'db', _FakeDb(pos))
+    async def no_reconcile():
+        pass
+    monkeypatch.setattr(tracker, 'reconcile_followups_admitted', no_reconcile)
+    result = asyncio.run(tracker._apply_stage_change('item-1', 'dispatched', _user(), None))
+    assert result['qty_moved'] == 80
+    assert result['qty_remaining'] == 4
+    child = pos.update[0]['$set']['items']['$concatArrays'][1]['$literal'][0]
+    assert child['qty'] == 80
+    assert child['loaned_qty'] == 0
+    assert child['loan_replenishment_promised_qty'] == 0
+    assert child['loan_replenishment_for_customer_name'] is None
+    assert child['customer_loan_history'] == []
+    assert pos.guard['items']['$elemMatch'][reservation] == 4
+
+
+def test_reserved_four_units_cannot_be_dispatched(monkeypatch):
+    doc = _po_doc('item-1', qty=4, stage='in_box')
+    doc['items'][0]['loan_replenishment_promised_qty'] = 4
+    monkeypatch.setattr(tracker, 'db', _FakeDb(_FakePurchaseOrders(doc)))
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(tracker._apply_stage_change('item-1', 'dispatched', _user(), None, qty=4))
+    assert error.value.status_code == 409

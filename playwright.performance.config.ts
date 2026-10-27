@@ -1,25 +1,28 @@
 import { defineConfig, devices } from '@playwright/test';
+const baseURL = `http://127.0.0.1:${process.env.FORGE_PERFORMANCE_PORT || '8098'}`;
 
 // Serve the release export without any API proxy. The performance fixtures
 // model API latency; no account, business data or external host is contacted.
 export default defineConfig({
   testDir: './e2e',
-  testMatch: 'performance-startup.spec.ts',
+  testMatch: ['performance-startup.spec.ts', 'performance-kitchen.spec.ts'],
   timeout: 30_000,
   workers: 1,
   retries: 0,
+  forbidOnly: !!process.env.CI,
+  failOnFlakyTests: true,
   reporter: [['list'], ['json', { outputFile: process.env.PERFORMANCE_REPORT || 'output/playwright/performance-results.json' }]],
   outputDir: 'output/playwright/performance',
   use: {
-    baseURL: 'http://127.0.0.1:8098',
+    baseURL,
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
     serviceWorkers: 'block',
   },
   webServer: {
-    command: 'AUDIT_PORT=8098 node scripts/serve-audit.mjs',
-    url: 'http://127.0.0.1:8098/login',
-    reuseExistingServer: !process.env.CI,
+    command: 'node scripts/serve-performance.mjs',
+    url: `${baseURL}/login`,
+    reuseExistingServer: false,
   },
   projects: [
     { name: 'android-chrome', use: { ...devices['Pixel 7'], browserName: 'chromium' } },

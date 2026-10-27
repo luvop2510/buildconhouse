@@ -1,4 +1,5 @@
 import pytest
+from unittest.mock import AsyncMock
 from types import SimpleNamespace
 
 from services.followup_notebook import (
@@ -236,12 +237,14 @@ async def test_create_notebook_reuses_the_same_floor_customer_row(monkeypatch):
 
     monkeypatch.setattr(followup_routes, "db", db)
     monkeypatch.setattr(followup_routes, "log_event", _log_event)
-    # The explicit second-floor URL remains valid even if the user's shell
-    # still carries a stale first-floor selection.
-    user = SimpleNamespace(active_floor_id="first-floor", floor_ids=["first-floor", "second-floor"], role="sales")
+    # Notebook retries stay inside the currently selected floor.
+    user = SimpleNamespace(active_floor_id="second-floor", floor_ids=["first-floor", "second-floor"], role="sales")
     body = NotebookFollowupCreatePayload(
         customer_name="A", customer_phone="9909906652", kitchen_type="GI",
+        assignments=[{"floor_id": "second-floor", "user_id": "worker"}],
     )
+    monkeypatch.setattr(followup_routes.lead_scope, "validate_scope", AsyncMock())
+    monkeypatch.setattr(followup_routes.lead_scope, "update_interests", AsyncMock(side_effect=lambda *_args, **kwargs: kwargs["source"]))
 
     first = await followup_routes.create_notebook_row("second-floor", body, user)
     second = await followup_routes.create_notebook_row("second-floor", body, user)
@@ -272,9 +275,10 @@ async def test_patch_notebook_row_updates_only_one_field_and_revision(monkeypatc
     }])
     row = await patch_notebook_row(
         db, user=object(), floor_id="second-floor", row_id="f1",
-        patch={"notes": "Call tomorrow"}, expected_updated_at="v1",
+        patch={"address": "New address"}, expected_updated_at="v1",
     )
-    assert row["notes"] == "Call tomorrow"
+    assert row["address"] == "New address"
+    assert row["notes"] == ""
     assert db.followups.rows[0]["customer_name"] == "A"
     assert db.followups.rows[0]["updated_at"] != "v1"
 
@@ -315,7 +319,7 @@ async def test_furniture_customer_edit_emits_the_customer_updated_audit_event(mo
     user = SimpleNamespace(active_floor_id="third-floor", floor_ids=["third-floor"], role="sales")
     await followup_routes.patch_notebook(
         "third-floor", "furniture-1",
-        NotebookCellPatchPayload(field="customer_name", value="After", updated_at="v1", notes="Corrected customer spelling"), user,
+        NotebookCellPatchPayload(field="customer_name", value="After", updated_at="v1"), user,
     )
     assert events[0]["event_type"] == "project_followup.customer_updated"
     assert events[0]["floor_id"] == "third-floor"
@@ -407,7 +411,7 @@ async def test_lost_outcome_requires_reason_and_closes_shared_followup():
 
 
 @pytest.mark.asyncio
-async def test_won_outcome_persists_action_note_in_same_update():
+async def test_won_outcome_preserves_historical_note():
     db = _Db(followups=[{
         "id": "f1", "floor_id": "third-floor", "notebook_key": "third-floor:c1",
         "customer_id": "c1", "quotation_id": "q1",
@@ -416,11 +420,11 @@ async def test_won_outcome_persists_action_note_in_same_update():
     }], quotations=[{"id": "q1", "floor_id": "third-floor", "customer_id": "c1", "status": "ordered"}])
     row = await complete_notebook_row(
         db, user=object(), floor_id="third-floor", row_id="f1", outcome="won",
-        lost_reason=None, expected_updated_at="v1", notes="Customer accepted quotation and paid advance",
+        lost_reason=None, expected_updated_at="v1",
     )
     assert row["status"] == "won"
-    assert row["notes"] == "Customer accepted quotation and paid advance"
-    assert db.followups.rows[0]["resolution_note"] == row["notes"]
+    assert row["notes"] == ""
+    assert db.followups.rows[0]["resolution_note"] == "Client won"
 
 
 @pytest.mark.asyncio
@@ -449,7 +453,7 @@ async def test_notebook_partner_assignment_updates_the_lead_and_customer(monkeyp
     monkeypatch.setattr(followup_routes, "log_event", _log_event)
     user = SimpleNamespace(active_floor_id="third-floor", floor_ids=["third-floor"], role="sales")
     row = await followup_routes.assign_notebook_referrer(
-        "third-floor", "f1", NotebookReferrerPayload(referrer_id="r1", updated_at="v1", notes="Client referred by Aster Architects"), user,
+        "third-floor", "f1", NotebookReferrerPayload(referrer_id="r1", updated_at="v1"), user,
     )
 
     assert row["referrer_name"] == "Aster Architects"

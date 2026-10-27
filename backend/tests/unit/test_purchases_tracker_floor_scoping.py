@@ -132,7 +132,7 @@ def test_customer_workspace_scopes_every_query_to_the_active_floor(monkeypatch):
             return []
 
     class _Db:
-        customers = _Recorder(find_one_result={"id": "cust-1", "name": "Test"})
+        customers = _Recorder(find_one_result={"id": "cust-1", "name": "Test", "floor_id": "ground-floor"})
         purchase_orders = _Recorder()
         purchase_shortages = _Recorder()
         quotations = _Recorder()

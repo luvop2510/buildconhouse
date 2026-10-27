@@ -13,7 +13,7 @@ let addProductPlayer: AudioPlayer | null = null;
 export function playAddProductSound(): void {
   try {
     if (!addProductPlayer) addProductPlayer = createAudioPlayer(addProductSoundAsset);
-    addProductPlayer.seekTo(0);
+    void addProductPlayer.seekTo(0).catch(() => {});
     addProductPlayer.play();
   } catch {
     // Non-essential feedback — ignore.

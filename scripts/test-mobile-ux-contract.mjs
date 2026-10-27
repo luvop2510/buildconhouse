@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 
 const scaffold = read("../src/components/mobile/AppScaffold.tsx");
-assert.match(scaffold, /edges=\{\["top", "left", "right"\]\}/);
+assert.match(scaffold, /edges=\{phoneSafeArea \? \["top", "left", "right"\] : \[\]\}/);
 assert.match(scaffold, /edges=\{\["bottom"\]\}/);
 
 const adminShell = read("../app/(admin)/_layout.tsx");
@@ -13,7 +13,18 @@ const adminShell = read("../app/(admin)/_layout.tsx");
 const navigation = read("../src/design/navigation.ts");
 assert.match(adminShell, /import \{ PRIMARY, SECONDARY, TILES_ITEMS, type NavItem \} from "@\/src\/design\/navigation"/);
 assert.match(adminShell, /const all = \[\.\.\.visible\(PRIMARY\), \.\.\.tilesNav\.items, \.\.\.visible\(SECONDARY\)\]/);
-assert.match(adminShell, /const priorities = notebook \? all\.filter/);
+// Exercise the actual priority expression rather than pinning its source spelling.
+const priorityExpression = adminShell.match(/const priorities = ([\s\S]*?);\n\s*const more/);
+assert.ok(priorityExpression, "Phone navigation must define its visible priority destinations");
+const prioritiesFor = new Function("all", "notebook", "selectedFloorId", "KITCHEN_FLOOR_ID", "FURNITURE_FLOOR_ID", "TILES_FLOOR_ID", `return (${priorityExpression[1]});`);
+const destination = (match, href = `/${match}`) => ({ match, href });
+const kitchenDestinations = ["kitchen-lead", "kitchen-visit", "kitchen-cad", "kitchen-design", "kitchen-quotation", "kitchen-order", "kitchen-production", "kitchen-installation", "kitchen-completed"].map(key => destination(key));
+const sharedDestinations = [destination("walkins"), destination("followups"), destination("customers"), destination("settings")];
+const priorityMatches = (all, floor) => prioritiesFor(all, ["second-floor", "third-floor"].includes(floor), floor, "second-floor", "third-floor", "ground-floor").map(item => item.match);
+assert.deepEqual(priorityMatches([...kitchenDestinations, ...sharedDestinations], "second-floor"), ["kitchen-lead", "kitchen-visit", "kitchen-cad"]);
+assert.deepEqual(priorityMatches([kitchenDestinations[1], ...sharedDestinations], "second-floor"), ["kitchen-visit"], "A hidden Kitchen destination must not be reintroduced into the phone bar");
+assert.deepEqual(priorityMatches([...sharedDestinations, destination("furniture-quotations", "/notebook/furniture-quotations")], "third-floor"), ["walkins", "followups", "furniture-quotations"]);
+assert.deepEqual(priorityMatches(["dashboard", "catalog", "quotations", "followups", "payments"].map(key => destination(key)), "first-floor"), ["dashboard", "catalog", "quotations", "followups"]);
 assert.match(adminShell, /selectedFloorId === KITCHEN_FLOOR_ID \|\| selectedFloorId === FURNITURE_FLOOR_ID/);
 assert.match(adminShell, /hasAccess\(item\.match\)/);
 assert.match(adminShell, /bottom-nav-notebook-workspace/);
@@ -23,9 +34,9 @@ assert.doesNotMatch(adminShell, /bottom-fab-new-quotation/);
 // must not mount a second copy that can race a route transition.
 assert.doesNotMatch(adminShell, /<Sheet open=\{moreOpen\}[\s\S]*?title="Workspace">\s*<FloorSwitcher/);
 assert.match(navigation, /match: "quotations", floors: \[SANITARY_FLOOR_ID\]/);
-assert.match(navigation, /match: "purchases", floors: \[SANITARY_FLOOR_ID, TILES_FLOOR_ID, KITCHEN_FLOOR_ID, FURNITURE_FLOOR_ID\]/);
-assert.match(navigation, /notebook\/kitchen\/quotation-follow-up/);
-assert.match(navigation, /notebook\/furniture\/quotation-follow-up/);
+assert.match(navigation, /match: "purchases", floors: \[SANITARY_FLOOR_ID\]/);
+assert.doesNotMatch(navigation, /quotation-follow-up|Kitchen lead notebook|Furniture lead notebook/);
+assert.match(navigation, /match: "catalog", floors: \[SANITARY_FLOOR_ID, TILES_FLOOR_ID\]/);
 
 const permissions = read("../src/hooks/use-permissions.ts");
 assert.match(permissions, /tiles:\s*"tiles"/);
@@ -129,19 +140,19 @@ assert.match(customerDetail, /const manageQuotation = \(quotation: Quotation\)/)
 assert.match(customerDetail, /\/\(admin\)\/tiles\/\$\{quotation\.doc_type === "tiles_selection" \? "selection" : "quotation"\}\?id=\$\{quotation\.id\}/);
 
 const quotationList = read("../app/(admin)/quotations/index.tsx");
-// Delivery completion is a separate customer view; approval stays independent.
-assert.match(quotationList, /doc_type=standard&completion=\$\{fulfilled \? "completed" : "active"\}/);
-assert.match(quotationList, /fulfilled \? "" : `&view=\$\{completed \? "completed" : "pending"\}/);
-assert.match(quotationList, /quotations-fulfilled-toggle/);
+// Completed is the sole quotation lifecycle list and retains delivered orders.
+assert.doesNotMatch(quotationList, /quotations-fulfilled-toggle/);
+assert.match(quotationList, /doc_type=standard&view=\$\{completed \? "completed" : "pending"\}/);
 assert.match(quotationList, /purchase_completion_status === "completed"/);
 assert.match(quotationList, /100% completed/);
 assert.match(quotationList, /quotations-lifecycle-toggle/);
 
 const tileList = read("../app/(admin)/tiles/index.tsx");
-assert.match(tileList, /doc_type=tiles_selection&completion=\$\{fulfilled \? "completed" : "active"\}/);
-assert.match(tileList, /doc_type=tiles_quotation&completion=\$\{fulfilled \? "completed" : "active"\}/);
-assert.match(tileList, /fulfilled \? "" : `&view=\$\{completed \? "completed" : "pending"\}/);
-assert.match(tileList, /tiles-fulfilled-toggle/);
+assert.doesNotMatch(tileList, /tiles-fulfilled-toggle/);
+assert.match(tileList, /doc_type=\$\{docType\}&view=\$\{completed \? "completed" : "pending"\}/);
+assert.match(tileList, /loadType\("tiles_selection"\), loadType\("tiles_quotation"\)/);
+assert.match(tileList, /floorId: "ground-floor"/);
+assert.match(tileList, /if \(!floor.ready \|\| scopeRef.current !== scope\) return/);
 assert.match(tileList, /purchase_completion_status === "completed"/);
 assert.match(tileList, /tiles-lifecycle-toggle/);
 
@@ -151,7 +162,7 @@ const explorer = read("../src/components/quotation/catalog/ProductExplorer.tsx")
 assert.match(builderShell, /mobileWorkspaceCollapsed/);
 assert.match(quotationPane, /collapse-quotation-workspace/);
 assert.match(quotationPane, /expand-quotation-workspace/);
-assert.match(explorer, /initialNumToRender=\{showCompactFilters \? 20 : 16\}/);
+assert.match(explorer, /initialNumToRender=\{catalogGridRows\(numCols, showCompactFilters \? 20 : 16\)\}/);
 
 const placeOrder = read("../app/(admin)/quotations/[id]/place-order.tsx");
 assert.match(placeOrder, /confirmBarPhone: \{ flexDirection: "column", alignItems: "stretch" \}/);

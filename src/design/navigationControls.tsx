@@ -24,7 +24,7 @@ export function KeyCap({ label }: { label: string }) {
 export function Tabs<T extends string>({ items, value, onChange }: {
   items: { key: T; label: string; count?: number }[]; value: T; onChange: (key: T) => void;
 }) { return <NavigationTabs value={value} options={items.map(item => ({ ...item, value: item.key }))} onChange={onChange} />; }
-export type MenuItem = { label: string; icon?: FeatherName; tone?: "ink" | "risk"; onPress: () => void };
+export type MenuItem = { label: string; icon?: FeatherName; tone?: "ink" | "risk"; onPress: () => void; disabled?: boolean; testID?: string };
 
 export function Menu({
   items, children, align = "right", triggerLabel, triggerTestID,
@@ -44,7 +44,7 @@ export function Menu({
     });
   }, [anim, reducedMotion]);
 
-  const MENU_W = 216;
+  const MENU_W = Math.min(216, winW - 24);
   const left = pos ? Math.max(12, Math.min(align === "right" ? pos.x + pos.w - MENU_W : pos.x, winW - MENU_W - 12)) : 0;
   const top = pos ? Math.max(12, Math.min(pos.y, winH - Math.min(items.length * 44 + 12, winH - 24) - 12)) : 0;
 
@@ -78,10 +78,13 @@ export function Menu({
               ...shadow.overlay,
             }]}
           >
-            <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: winH - 48 }}>
+            <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: Math.max(0, winH - top - 26) }}>
             {items.map((it, i) => (
               <Pressable
                 key={i}
+                testID={it.testID}
+                disabled={it.disabled}
+                accessibilityState={{ disabled: !!it.disabled }}
                 accessibilityRole="menuitem" accessibilityLabel={it.label}
                 {...(Platform.OS === "web" ? { onKeyDown: (event: React.KeyboardEvent) => {
                   const el = event.currentTarget as HTMLElement;
@@ -89,21 +92,22 @@ export function Menu({
                   const next = event.key === "ArrowDown" ? (i + 1) % siblings.length : event.key === "ArrowUp" ? (i + siblings.length - 1) % siblings.length : event.key === "Home" ? 0 : event.key === "End" ? siblings.length - 1 : -1;
                   if (next >= 0) { event.preventDefault(); siblings[next]?.focus(); }
                 }} : {})}
-                onPress={() => { setPos(null); it.onPress(); }}
+                onPress={() => { if (it.disabled) return; setPos(null); it.onPress(); }}
                 style={({ pressed, hovered }: any) => [
                   {
                     flexDirection: "row", alignItems: "center", gap: 10,
                     paddingHorizontal: 14, minHeight: 44,
+                    opacity: it.disabled ? 0.45 : 1,
                     backgroundColor: pressed || hovered ? color.hoverWash : "transparent",
                   },
-                  webCursor,
+                  it.disabled ? undefined : webCursor,
                 ]}
               >
                 {it.icon ? (
                   <Feather name={it.icon} size={15} color={it.tone === "risk" ? color.risk : color.inkMid} />
                 ) : null}
                 <Text style={{
-                  fontFamily: font.medium, fontWeight: "500", fontSize: 14,
+                  fontFamily: font.medium, fontWeight: "500", fontSize: 14, flex: 1, minWidth: 0,
                   color: it.tone === "risk" ? color.risk : color.ink,
                 }}>
                   {it.label}

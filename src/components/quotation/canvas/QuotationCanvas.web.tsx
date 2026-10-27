@@ -14,7 +14,12 @@ import type { BuilderRow } from "../helpers/types";
 import { LineRow } from "./LineRow";
 import { RoomHeaderRow } from "./RoomHeaderRow";
 
-type Drag = { id: string; pointerId: number; y: number; grabOffset: number; capture: HTMLElement; scroll: HTMLElement | null; changed: boolean };
+type Drag = {
+  id: string; kind: BuilderRow["kind"]; movingIds: Set<string>;
+  pointerId: number; y: number; grabOffset: number;
+  capture: HTMLElement; scroll: HTMLElement | null; changed: boolean;
+  lastY: number | null; lastScrollTop: number | null;
+};
 
 export function QuotationCanvas({ compact = false }: { compact?: boolean }) {
   const b = useBuilder();
@@ -30,9 +35,53 @@ export function QuotationCanvas({ compact = false }: { compact?: boolean }) {
   const rows = preview || b.flatRows;
   const getRows = () => Array.from(root.current?.querySelectorAll<HTMLElement>("[data-quotation-row]") || []);
 
+  // Also run at release: a quick gesture can begin and finish between frames.
+  const updateDrag = () => {
+    const current = drag.current;
+    const container = root.current;
+    if (!current || !container) return;
+    const elements = getRows();
+    const byId = new Map(elements.map(element => [element.dataset.quotationRow!, element]));
+    const active = byId.get(current.id);
+    if (!active) return;
+    const top = container.getBoundingClientRect().top;
+    const currentRows = previewRef.current || [];
+    const rowsById = new Map(currentRows.map(row => [row.id, row]));
+    // React may not have reconciled the latest preview yet. Read candidate
+    // order and geometry together from the same rendered DOM snapshot.
+    const candidates = elements.flatMap(element => {
+      const row = rowsById.get(element.dataset.quotationRow!);
+      return row && !current.movingIds.has(row.id) ? [row] : [];
+    });
+    const scrollTop = current.scroll?.scrollTop || 0;
+    const moved = current.lastY !== current.y || current.lastScrollTop !== scrollTop;
+    current.lastY = current.y;
+    current.lastScrollTop = scrollTop;
+    let target = candidates.length;
+    for (let i = 0; i < candidates.length; i += 1) {
+      const row = candidates[i];
+      if (current.kind === "room-header" && row.kind !== "room-header") continue;
+      const element = byId.get(row.id);
+      if (element && current.y < top + element.offsetTop + element.offsetHeight / 2) { target = i; break; }
+    }
+    const next = moved ? moveQuotationRows(currentRows, current.id, target) : currentRows;
+    if (next !== previewRef.current) {
+      previousPositions.current = new Map(elements.map(element => [element.dataset.quotationRow!, element.offsetTop]));
+      previewRef.current = next;
+      current.changed = true;
+      setPreview(next);
+    }
+    const displacement = current.y - current.grabOffset - top - active.offsetTop;
+    for (const id of current.movingIds) {
+      const element = byId.get(id);
+      if (element) element.style.transform = `translateY(${displacement}px)`;
+    }
+  };
+
   const finish = (cancel = false) => {
     const current = drag.current;
     if (!current) return;
+    if (!cancel) updateDrag();
     drag.current = null;
     if (current.capture.hasPointerCapture(current.pointerId)) current.capture.releasePointerCapture(current.pointerId);
     getRows().forEach(element => { element.style.transform = ""; });
@@ -51,7 +100,7 @@ export function QuotationCanvas({ compact = false }: { compact?: boolean }) {
     for (const element of getRows()) {
       const id = element.dataset.quotationRow!;
       const previous = previousPositions.current.get(id);
-      if (current && id !== current.id && previous !== undefined && previous !== element.offsetTop && !reducedMotion) {
+      if (current && !current.movingIds.has(id) && previous !== undefined && previous !== element.offsetTop && !reducedMotion) {
         animations.current.get(id)?.cancel();
         const animation = element.animate([
           { transform: `translateY(${previous - element.offsetTop}px)` }, { transform: "translateY(0)" },
@@ -64,37 +113,28 @@ export function QuotationCanvas({ compact = false }: { compact?: boolean }) {
   useEffect(() => {
     if (!draggingId) return;
     let frame = 0;
-    const tick = () => {
+    let previousTime = performance.now();
+    const tick = (now: number) => {
+      const elapsed = Math.min(64, Math.max(0, now - previousTime));
+      previousTime = now;
       const current = drag.current;
       const container = root.current;
       if (!current || !container) return;
-      const elements = getRows();
-      const active = elements.find(element => element.dataset.quotationRow === current.id);
-      if (!active) { finish(true); return; }
+      if (!getRows().some(element => element.dataset.quotationRow === current.id)) { finish(true); return; }
       if (current.scroll) {
-        const rect = current.scroll.getBoundingClientRect();
-        const upper = Math.max(0, rect.top);
-        const lower = Math.min(window.innerHeight, rect.bottom);
-        const edge = 64;
-        const distance = current.y < upper + edge ? -Math.min(18, (upper + edge - current.y) / 4)
-          : current.y > lower - edge ? Math.min(18, (current.y - lower + edge) / 4) : 0;
-        if (distance) current.scroll.scrollTop += distance;
+        const viewport = window.visualViewport;
+        const viewportTop = viewport?.offsetTop || 0;
+        const viewportBottom = viewportTop + (viewport?.height || window.innerHeight);
+        const documentScroll = current.scroll === document.scrollingElement;
+        const rect = documentScroll ? { top: viewportTop, bottom: viewportBottom } : current.scroll.getBoundingClientRect();
+        const upper = Math.max(viewportTop, rect.top);
+        const lower = Math.min(viewportBottom, rect.bottom);
+        const edge = Math.min(64, (lower - upper) / 4);
+        const distance = current.y < upper + edge ? -Math.min(24, (upper + edge - current.y) / 2)
+          : current.y > lower - edge ? Math.min(24, (current.y - lower + edge) / 2) : 0;
+        if (distance) current.scroll.scrollTop += distance * elapsed / (1000 / 60);
       }
-      const top = container.getBoundingClientRect().top;
-      const candidates = (previewRef.current || []).filter(row => row.id !== current.id && !(row.kind === "line" && row.line.included_for_line_id === current.id));
-      let target = candidates.length;
-      for (let i = 0; i < candidates.length; i += 1) {
-        const element = elements.find(element => element.dataset.quotationRow === candidates[i].id);
-        if (element && current.y < top + element.offsetTop + element.offsetHeight / 2) { target = i; break; }
-      }
-      const next = moveQuotationRows(previewRef.current || [], current.id, target);
-      if (next !== previewRef.current) {
-        previousPositions.current = new Map(elements.map(element => [element.dataset.quotationRow!, element.offsetTop]));
-        previewRef.current = next;
-        current.changed = true;
-        setPreview(next);
-      }
-      active.style.transform = `translateY(${current.y - current.grabOffset - top - active.offsetTop}px) scale(1.01)`;
+      updateDrag();
       frame = requestAnimationFrame(tick);
     };
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); finish(true); } };
@@ -119,19 +159,25 @@ export function QuotationCanvas({ compact = false }: { compact?: boolean }) {
 
   const start = (event: PointerEvent<HTMLDivElement>) => {
     if (drag.current || event.button !== 0 || !event.isPrimary) return;
-    const handle = (event.target as Element).closest<HTMLElement>('[data-testid^="line-drag-"]');
+    const handle = (event.target as Element).closest<HTMLElement>('[data-testid^="line-drag-"], [data-testid^="room-drag-"]');
     const rowElement = handle?.closest<HTMLElement>("[data-quotation-row]");
     const row = b.flatRows.find(row => row.id === rowElement?.dataset.quotationRow);
-    if (!row || row.kind !== "line" || row.line.included_for_line_id || !rowElement) return;
+    if (!row || (row.kind === "line" && row.line.included_for_line_id) || !rowElement) return;
     event.preventDefault();
     event.stopPropagation();
     let scroll = root.current?.parentElement || null;
-    while (scroll && !/(auto|scroll)/.test(getComputedStyle(scroll).overflowY)) scroll = scroll.parentElement;
+    while (scroll && (!/(auto|scroll)/.test(getComputedStyle(scroll).overflowY) || scroll.scrollHeight <= scroll.clientHeight)) scroll = scroll.parentElement;
+    scroll ||= document.scrollingElement as HTMLElement | null;
+    const sourceIndex = b.flatRows.indexOf(row);
+    const nextHeader = b.flatRows.findIndex((item, index) => index > sourceIndex && item.kind === "room-header");
+    const movingRows = row.kind === "room-header"
+      ? b.flatRows.slice(sourceIndex, nextHeader < 0 ? b.flatRows.length : nextHeader)
+      : b.flatRows.filter(item => item.id === row.id || (item.kind === "line" && item.line.included_for_line_id === row.id));
     event.currentTarget.setPointerCapture(event.pointerId);
     drag.current = {
-      id: row.id, pointerId: event.pointerId, y: event.clientY,
+      id: row.id, kind: row.kind, movingIds: new Set(movingRows.map(item => item.id)), pointerId: event.pointerId, y: event.clientY,
       grabOffset: event.clientY - rowElement.getBoundingClientRect().top,
-      capture: event.currentTarget, scroll, changed: false,
+      capture: event.currentTarget, scroll, changed: false, lastY: event.clientY, lastScrollTop: scroll?.scrollTop || 0,
     };
     previewRef.current = b.flatRows;
     previousPositions.current = new Map(getRows().map(element => [element.dataset.quotationRow!, element.offsetTop]));
@@ -146,15 +192,31 @@ export function QuotationCanvas({ compact = false }: { compact?: boolean }) {
     <div ref={root} style={{ position: "relative", padding: spacing.md, paddingBottom: 32, display: "flex", flexDirection: "column", gap: 6 }}
       onPointerDown={start}
       onPointerMove={event => { if (drag.current?.pointerId === event.pointerId) { event.preventDefault(); drag.current.y = event.clientY; } }}
-      onPointerUp={event => { if (drag.current?.pointerId === event.pointerId) finish(); }}
+      onPointerUp={event => { if (drag.current?.pointerId === event.pointerId) { drag.current.y = event.clientY; finish(); } }}
       onPointerCancel={() => finish(true)}
       onLostPointerCapture={() => finish(true)}
+      onClickCapture={event => {
+        if ((event.target as Element).closest('[data-testid^="line-drag-"], [data-testid^="room-drag-"]')) {
+          event.preventDefault(); event.stopPropagation();
+        }
+      }}
+      onKeyDown={event => {
+        if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+        const handle = (event.target as Element).closest('[data-testid^="line-drag-"], [data-testid^="room-drag-"]');
+        const id = handle?.closest<HTMLElement>("[data-quotation-row]")?.dataset.quotationRow;
+        const row = b.flatRows.find(item => item.id === id);
+        if (!row) return;
+        event.preventDefault(); event.stopPropagation();
+        const direction = event.key === "ArrowUp" ? -1 : 1;
+        if (row.kind === "line") b.moveLine(row.id, direction);
+        else b.moveRoom(row.roomName, direction);
+      }}
     >
-      {rows.map(item => <div key={item.id} data-quotation-row={item.id} data-dragging={draggingId === item.id || undefined}
-        style={{ position: "relative", zIndex: draggingId === item.id ? 2 : 0, ...(draggingId === item.id ? { cursor: "grabbing", boxShadow: "0 10px 24px rgba(0,0,0,0.18)", borderRadius: radius.md, pointerEvents: "none" } : {}) }}>
+      {rows.map(item => <div key={item.id} data-quotation-row={item.id} data-dragging={!!drag.current?.movingIds.has(item.id) || undefined}
+        style={{ position: "relative", zIndex: !!drag.current?.movingIds.has(item.id) ? 2 : 0, ...(!!drag.current?.movingIds.has(item.id) ? { cursor: "grabbing", boxShadow: "0 10px 24px rgba(0,0,0,0.18)", borderRadius: radius.md, pointerEvents: "none" } : {}) }}>
         {item.kind === "room-header"
-          ? <RoomHeaderRow roomName={item.roomName} itemCount={item.itemCount} subtotal={item.subtotal} collapsed={item.collapsed} drag={() => {}} isActive={false} roomDiscount={item.roomDiscount} />
-          : <LineRow line={item.line} drag={() => {}} isActive={draggingId === item.id} catDiscs={b.s.categoryDiscounts} projDisc={b.s.projectDiscount} roomDiscs={b.s.roomDiscounts} compact={compact} />}
+          ? <RoomHeaderRow roomName={item.roomName} itemCount={item.itemCount} subtotal={item.subtotal} collapsed={item.collapsed} drag={() => {}} isActive={!!drag.current?.movingIds.has(item.id)} roomDiscount={item.roomDiscount} />
+          : <LineRow line={item.line} drag={() => {}} isActive={!!drag.current?.movingIds.has(item.id)} catDiscs={b.s.categoryDiscounts} projDisc={b.s.projectDiscount} roomDiscs={b.s.roomDiscounts} compact={compact} />}
       </div>)}
     </div>
   </ScrollView>;

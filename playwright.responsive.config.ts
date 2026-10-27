@@ -24,6 +24,7 @@ export default defineConfig({
   },
   projects: [
     { name: 'mobile-320', use: { viewport: { width: 320, height: 740 } } },
+    { name: 'mobile-360', use: { viewport: { width: 360, height: 800 } } },
     { name: 'mobile-390', use: { viewport: { width: 390, height: 844 } } },
     { name: 'tablet-portrait', use: { viewport: { width: 768, height: 1024 } } },
     { name: 'tablet-landscape', use: { viewport: { width: 1024, height: 768 } } },

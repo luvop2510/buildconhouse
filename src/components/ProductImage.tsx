@@ -44,6 +44,9 @@ export type ProductImageProps = {
   borderRadius?: number;
   // Optional label to display in the fallback state (usually SKU).
   fallbackLabel?: string | null;
+  // Operational lists can explain missing/failed photos without presenting
+  // the SKU alone as an empty image box. Other consumers keep their layout.
+  statusMessages?: { missing: string; loading: string; failed: string };
   // Lets document cells render media with no shaded image-card background.
   frameBackground?: string;
   // A hero/zoom image should begin with the full source. Compact list cells
@@ -89,6 +92,7 @@ export function ProductImage({
   disableSkeleton = false,
   borderRadius,
   fallbackLabel,
+  statusMessages,
   frameBackground = colors.surfaceTertiary,
   preferOriginal = false,
   transition = 0,
@@ -154,7 +158,7 @@ export function ProductImage({
         style={[styles.inner, { margin: Math.max(0, frameInset), borderRadius: Math.max(0, finalRadius - frameInset), backgroundColor: frameBackground }]}
       >
         {failed || !current ? (
-          <FallbackGlyph label={fallbackLabel} />
+          <FallbackGlyph label={fallbackLabel} message={candidates.length ? statusMessages?.failed : statusMessages?.missing} />
         ) : (
           <>
             {!loaded && !disableSkeleton ? <Skeleton /> : null}
@@ -182,6 +186,9 @@ export function ProductImage({
                 }
               }}
             />
+            {!loaded && statusMessages ? <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.loadingMessage]}>
+              <Text style={styles.statusMessage}>{statusMessages.loading}</Text>
+            </View> : null}
           </>
         )}
       </View>
@@ -218,10 +225,11 @@ function Skeleton() {
 // FallbackGlyph — displayed when the product has no image at all, or every
 // candidate failed. Deliberately understated so it doesn't scream "broken".
 // -----------------------------------------------------------------------------
-function FallbackGlyph({ label }: { label?: string | null }) {
+function FallbackGlyph({ label, message }: { label?: string | null; message?: string }) {
   return (
     <View style={styles.fallback}>
       <Feather name="image" size={18} color={colors.onSurfaceMuted} />
+      {message ? <Text style={styles.statusMessage}>{message}</Text> : null}
       {label ? (
         <View style={styles.fallbackLabelWrap}>
           <FallbackLabel label={label} />
@@ -274,5 +282,18 @@ const styles = StyleSheet.create({
   fallbackLabelWrap: {
     paddingHorizontal: 4,
     maxWidth: "90%",
+  },
+  loadingMessage: {
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surfaceTertiary,
+    paddingHorizontal: 4,
+  },
+  statusMessage: {
+    fontSize: 12,
+    lineHeight: 14,
+    color: colors.onSurfaceSecondary,
+    textAlign: "center",
+    paddingHorizontal: 3,
   },
 });

@@ -1,0 +1,1031 @@
+{
+  "sourceCommit": "f06017d363c69fd09e9b039df503e57217e04ce9",
+  "vercel": {
+    "id": "dpl_Hs5yLbZbgPZe1rXciuho3WhDotdp",
+    "status": "READY",
+    "regions": [
+      "bom1"
+    ],
+    "url": "https://buildcon-house-6i5cibbzk-yug19.vercel.app",
+    "aliases": [
+      "https://buildconhouse.in",
+      "https://www.buildconhouse.in"
+    ],
+    "providerSourceCommitVerified": true
+  },
+  "railway": {
+    "id": "0fbd1855-ceed-4e95-9e78-ba65e17b2792",
+    "status": "SUCCESS",
+    "region": "asia-southeast1-eqsg3a",
+    "replicas": 1,
+    "sleepApplication": false,
+    "url": "https://forge20-production-a8b0.up.railway.app",
+    "catalogMode": "memory",
+    "sourceBytes": 19688845,
+    "budgetBytes": 33554432,
+    "products": 6565,
+    "mediaRows": 8489,
+    "verifiedMinimalDockerInputFiles": 293,
+    "sshFileVerification": "unavailable; no pre-existing SSH keys; no new keys created"
+  },
+  "localAcceptance": {
+    "backendTests": 2305,
+    "performanceBrowserTests": 40,
+    "routeBrowserTests": 434,
+    "disposableMongoTests": 8,
+    "exportedBundlePages": 157,
+    "maxInitialJsKiB": 449
+  },
+  "hostedRelease": {
+    "base": "https://buildconhouse.in",
+    "checkedAt": "2026-10-13T09:47:07.199Z",
+    "evidence": [
+      {
+        "path": "/login",
+        "status": 200,
+        "contentType": "text/html; charset=utf-8",
+        "cacheControl": "no-store",
+        "serverTiming": null
+      },
+      {
+        "path": "/privacy",
+        "status": 200,
+        "contentType": "text/html; charset=utf-8",
+        "cacheControl": "no-store",
+        "serverTiming": null
+      },
+      {
+        "path": "/terms",
+        "status": 200,
+        "contentType": "text/html; charset=utf-8",
+        "cacheControl": "no-store",
+        "serverTiming": null
+      },
+      {
+        "path": "/notebook/kitchen/quotation-follow-up",
+        "status": 200,
+        "contentType": "text/html; charset=utf-8",
+        "cacheControl": "no-store",
+        "serverTiming": null
+      },
+      {
+        "path": "/quotations/q-release-probe",
+        "status": 200,
+        "contentType": "text/html; charset=utf-8",
+        "cacheControl": "no-store",
+        "serverTiming": null
+      },
+      {
+        "path": "/expo-hydrate.js",
+        "status": 200,
+        "contentType": "application/javascript; charset=utf-8",
+        "cacheControl": "no-store",
+        "serverTiming": null
+      },
+      {
+        "path": "/release-recovery.js",
+        "status": 200,
+        "contentType": "application/javascript; charset=utf-8",
+        "cacheControl": "no-store",
+        "serverTiming": null
+      },
+      {
+        "path": "/_expo/static/js/web/__expo-metro-runtime-1f8f5d3ca6b7f58204d51e14506d73fb.js",
+        "status": 200,
+        "contentType": "application/javascript; charset=utf-8",
+        "cacheControl": "public, max-age=31536000, immutable",
+        "serverTiming": null
+      },
+      {
+        "path": "/_expo/static/js/web/__common-697853adad18f224162650f5aa45f273.js",
+        "status": 200,
+        "contentType": "application/javascript; charset=utf-8",
+        "cacheControl": "public, max-age=31536000, immutable",
+        "serverTiming": null
+      },
+      {
+        "path": "/_expo/static/js/web/entry-0e5e91bfcc149864a13bf90170687ca2.js",
+        "status": 200,
+        "contentType": "application/javascript; charset=utf-8",
+        "cacheControl": "public, max-age=31536000, immutable",
+        "serverTiming": null
+      },
+      {
+        "path": "/_expo/static/js/web/_layout-eddf0aa4a542a93e511fd2130ec67676.js",
+        "status": 200,
+        "contentType": "application/javascript; charset=utf-8",
+        "cacheControl": "public, max-age=31536000, immutable",
+        "serverTiming": null
+      },
+      {
+        "path": "/_expo/static/js/web/index-d1f24a5b24699017679850e8432bf24e.js",
+        "status": 200,
+        "contentType": "application/javascript; charset=utf-8",
+        "cacheControl": "public, max-age=31536000, immutable",
+        "serverTiming": null
+      },
+      {
+        "path": "/_expo/static/js/web/missing-release-probe.js",
+        "status": 404,
+        "contentType": "text/plain; charset=utf-8",
+        "cacheControl": "no-store",
+        "serverTiming": null
+      },
+      {
+        "path": "/assets/missing-release-probe.ttf",
+        "status": 404,
+        "contentType": "text/plain; charset=utf-8",
+        "cacheControl": "no-store",
+        "serverTiming": null
+      },
+      {
+        "path": "/assets/security-probe.js.map",
+        "status": 404,
+        "contentType": "text/plain; charset=utf-8",
+        "cacheControl": "no-store",
+        "serverTiming": null
+      },
+      {
+        "path": "/assets/security-probe.js.MAP",
+        "status": 404,
+        "contentType": "text/plain; charset=utf-8",
+        "cacheControl": "no-store",
+        "serverTiming": null
+      },
+      {
+        "path": "/api/health",
+        "status": 200,
+        "contentType": "application/json",
+        "cacheControl": "no-store",
+        "serverTiming": "app;dur=64.3, upstream;dur=140.9"
+      },
+      {
+        "path": "/api/health/ready",
+        "status": 200,
+        "contentType": "application/json",
+        "cacheControl": "no-store",
+        "serverTiming": "app;dur=2224.5, upstream;dur=2298.8"
+      },
+      {
+        "path": "/api/quotations",
+        "status": 401,
+        "contentType": "application/json",
+        "cacheControl": "no-store",
+        "serverTiming": "app;dur=4.0, upstream;dur=67.0"
+      }
+    ]
+  },
+  "publicHealth": {
+    "vercel": {
+      "origin": "https://buildconhouse.in",
+      "checkedAt": "2026-10-13T09:42:39.889Z",
+      "probeRegion": "India-host",
+      "regionVerified": false,
+      "thresholdMs": 3000,
+      "note": "Runner label is operator supplied; first sample excluded from warm percentiles. This is a health probe, not a load test.",
+      "passed": true,
+      "probes": [
+        {
+          "path": "/api/health",
+          "expectedStatus": 200,
+          "firstSample": {
+            "elapsedMs": 669,
+            "status": 200,
+            "valid": true,
+            "appMs": 63.2
+          },
+          "samples": [
+            {
+              "elapsedMs": 669,
+              "status": 200,
+              "valid": true,
+              "appMs": 63.2
+            },
+            {
+              "elapsedMs": 238,
+              "status": 200,
+              "valid": true,
+              "appMs": 66.1
+            },
+            {
+              "elapsedMs": 230,
+              "status": 200,
+              "valid": true,
+              "appMs": 63.4
+            },
+            {
+              "elapsedMs": 217,
+              "status": 200,
+              "valid": true,
+              "appMs": 60.3
+            },
+            {
+              "elapsedMs": 184,
+              "status": 200,
+              "valid": true,
+              "appMs": 58.3
+            },
+            {
+              "elapsedMs": 183,
+              "status": 200,
+              "valid": true,
+              "appMs": 60.8
+            },
+            {
+              "elapsedMs": 177,
+              "status": 200,
+              "valid": true,
+              "appMs": 58
+            },
+            {
+              "elapsedMs": 188,
+              "status": 200,
+              "valid": true,
+              "appMs": 60.2
+            },
+            {
+              "elapsedMs": 324,
+              "status": 200,
+              "valid": true,
+              "appMs": 62.1
+            },
+            {
+              "elapsedMs": 226,
+              "status": 200,
+              "valid": true,
+              "appMs": 69.2
+            }
+          ],
+          "warmP50Ms": 217,
+          "warmP95Ms": 324,
+          "passed": true
+        },
+        {
+          "path": "/api/health/ready",
+          "expectedStatus": 200,
+          "firstSample": {
+            "elapsedMs": 572,
+            "status": 200,
+            "valid": true,
+            "appMs": 424.5
+          },
+          "samples": [
+            {
+              "elapsedMs": 572,
+              "status": 200,
+              "valid": true,
+              "appMs": 424.5
+            },
+            {
+              "elapsedMs": 459,
+              "status": 200,
+              "valid": true,
+              "appMs": 330
+            },
+            {
+              "elapsedMs": 510,
+              "status": 200,
+              "valid": true,
+              "appMs": 327.1
+            },
+            {
+              "elapsedMs": 472,
+              "status": 200,
+              "valid": true,
+              "appMs": 334.3
+            },
+            {
+              "elapsedMs": 502,
+              "status": 200,
+              "valid": true,
+              "appMs": 344.1
+            },
+            {
+              "elapsedMs": 878,
+              "status": 200,
+              "valid": true,
+              "appMs": 754.5
+            },
+            {
+              "elapsedMs": 501,
+              "status": 200,
+              "valid": true,
+              "appMs": 355.2
+            },
+            {
+              "elapsedMs": 461,
+              "status": 200,
+              "valid": true,
+              "appMs": 323.9
+            },
+            {
+              "elapsedMs": 467,
+              "status": 200,
+              "valid": true,
+              "appMs": 331
+            },
+            {
+              "elapsedMs": 469,
+              "status": 200,
+              "valid": true,
+              "appMs": 311.1
+            }
+          ],
+          "warmP50Ms": 472,
+          "warmP95Ms": 878,
+          "passed": true
+        },
+        {
+          "path": "/api/quotations",
+          "expectedStatus": 401,
+          "firstSample": {
+            "elapsedMs": 1113,
+            "status": 401,
+            "valid": true,
+            "appMs": 7.6
+          },
+          "samples": [
+            {
+              "elapsedMs": 1113,
+              "status": 401,
+              "valid": true,
+              "appMs": 7.6
+            },
+            {
+              "elapsedMs": 120,
+              "status": 401,
+              "valid": true,
+              "appMs": 2.8
+            },
+            {
+              "elapsedMs": 120,
+              "status": 401,
+              "valid": true,
+              "appMs": 2.7
+            },
+            {
+              "elapsedMs": 440,
+              "status": 401,
+              "valid": true,
+              "appMs": 163.1
+            },
+            {
+              "elapsedMs": 769,
+              "status": 401,
+              "valid": true,
+              "appMs": 435.1
+            },
+            {
+              "elapsedMs": 132,
+              "status": 401,
+              "valid": true,
+              "appMs": 5
+            },
+            {
+              "elapsedMs": 123,
+              "status": 401,
+              "valid": true,
+              "appMs": 3.2
+            },
+            {
+              "elapsedMs": 228,
+              "status": 401,
+              "valid": true,
+              "appMs": 8.6
+            },
+            {
+              "elapsedMs": 243,
+              "status": 401,
+              "valid": true,
+              "appMs": 9.7
+            },
+            {
+              "elapsedMs": 143,
+              "status": 401,
+              "valid": true,
+              "appMs": 7.6
+            }
+          ],
+          "warmP50Ms": 143,
+          "warmP95Ms": 769,
+          "passed": true
+        }
+      ]
+    },
+    "railway": {
+      "origin": "https://forge20-production-a8b0.up.railway.app",
+      "checkedAt": "2026-10-13T09:42:49.993Z",
+      "probeRegion": "India-host",
+      "regionVerified": false,
+      "thresholdMs": 3000,
+      "note": "Runner label is operator supplied; first sample excluded from warm percentiles. This is a health probe, not a load test.",
+      "passed": true,
+      "probes": [
+        {
+          "path": "/api/health",
+          "expectedStatus": 200,
+          "firstSample": {
+            "elapsedMs": 964,
+            "status": 200,
+            "valid": true,
+            "appMs": 60.8
+          },
+          "samples": [
+            {
+              "elapsedMs": 964,
+              "status": 200,
+              "valid": true,
+              "appMs": 60.8
+            },
+            {
+              "elapsedMs": 417,
+              "status": 200,
+              "valid": true,
+              "appMs": 59.4
+            },
+            {
+              "elapsedMs": 243,
+              "status": 200,
+              "valid": true,
+              "appMs": 61.9
+            },
+            {
+              "elapsedMs": 209,
+              "status": 200,
+              "valid": true,
+              "appMs": 71.1
+            },
+            {
+              "elapsedMs": 167,
+              "status": 200,
+              "valid": true,
+              "appMs": 58.2
+            },
+            {
+              "elapsedMs": 182,
+              "status": 200,
+              "valid": true,
+              "appMs": 68
+            },
+            {
+              "elapsedMs": 192,
+              "status": 200,
+              "valid": true,
+              "appMs": 81.1
+            },
+            {
+              "elapsedMs": 257,
+              "status": 200,
+              "valid": true,
+              "appMs": 60.7
+            },
+            {
+              "elapsedMs": 217,
+              "status": 200,
+              "valid": true,
+              "appMs": 61.9
+            },
+            {
+              "elapsedMs": 207,
+              "status": 200,
+              "valid": true,
+              "appMs": 65.2
+            }
+          ],
+          "warmP50Ms": 209,
+          "warmP95Ms": 417,
+          "passed": true
+        },
+        {
+          "path": "/api/health/ready",
+          "expectedStatus": 200,
+          "firstSample": {
+            "elapsedMs": 494,
+            "status": 200,
+            "valid": true,
+            "appMs": 331.3
+          },
+          "samples": [
+            {
+              "elapsedMs": 494,
+              "status": 200,
+              "valid": true,
+              "appMs": 331.3
+            },
+            {
+              "elapsedMs": 474,
+              "status": 200,
+              "valid": true,
+              "appMs": 371.9
+            },
+            {
+              "elapsedMs": 859,
+              "status": 200,
+              "valid": true,
+              "appMs": 746.2
+            },
+            {
+              "elapsedMs": 860,
+              "status": 200,
+              "valid": true,
+              "appMs": 757.3
+            },
+            {
+              "elapsedMs": 472,
+              "status": 200,
+              "valid": true,
+              "appMs": 322.3
+            },
+            {
+              "elapsedMs": 438,
+              "status": 200,
+              "valid": true,
+              "appMs": 330.4
+            },
+            {
+              "elapsedMs": 483,
+              "status": 200,
+              "valid": true,
+              "appMs": 337.7
+            },
+            {
+              "elapsedMs": 537,
+              "status": 200,
+              "valid": true,
+              "appMs": 438.3
+            },
+            {
+              "elapsedMs": 485,
+              "status": 200,
+              "valid": true,
+              "appMs": 322.6
+            },
+            {
+              "elapsedMs": 716,
+              "status": 200,
+              "valid": true,
+              "appMs": 569.1
+            }
+          ],
+          "warmP50Ms": 485,
+          "warmP95Ms": 860,
+          "passed": true
+        },
+        {
+          "path": "/api/quotations",
+          "expectedStatus": 401,
+          "firstSample": {
+            "elapsedMs": 108,
+            "status": 401,
+            "valid": true,
+            "appMs": 3.2
+          },
+          "samples": [
+            {
+              "elapsedMs": 108,
+              "status": 401,
+              "valid": true,
+              "appMs": 3.2
+            },
+            {
+              "elapsedMs": 126,
+              "status": 401,
+              "valid": true,
+              "appMs": 2
+            },
+            {
+              "elapsedMs": 126,
+              "status": 401,
+              "valid": true,
+              "appMs": 13
+            },
+            {
+              "elapsedMs": 107,
+              "status": 401,
+              "valid": true,
+              "appMs": 3.5
+            },
+            {
+              "elapsedMs": 139,
+              "status": 401,
+              "valid": true,
+              "appMs": 4.2
+            },
+            {
+              "elapsedMs": 110,
+              "status": 401,
+              "valid": true,
+              "appMs": 4.1
+            },
+            {
+              "elapsedMs": 113,
+              "status": 401,
+              "valid": true,
+              "appMs": 2.4
+            },
+            {
+              "elapsedMs": 108,
+              "status": 401,
+              "valid": true,
+              "appMs": 10.1
+            },
+            {
+              "elapsedMs": 99,
+              "status": 401,
+              "valid": true,
+              "appMs": 2.2
+            },
+            {
+              "elapsedMs": 105,
+              "status": 401,
+              "valid": true,
+              "appMs": 2.7
+            }
+          ],
+          "warmP50Ms": 110,
+          "warmP95Ms": 139,
+          "passed": true
+        }
+      ]
+    }
+  },
+  "sameClientPublicSamples": {
+    "before": [
+      {
+        "base": "https://buildconhouse.in",
+        "path": "/api/health",
+        "samples": [
+          {
+            "ms": 2911.1,
+            "status": 200,
+            "timing": "app;dur=457.6",
+            "edge": "bom1::iad1::zrk44-1791882333460-33336e945ca9",
+            "bytes": 69
+          },
+          {
+            "ms": 1518.3,
+            "status": 200,
+            "timing": "app;dur=228.3",
+            "edge": "bom1::iad1::xp6ww-1791882336425-d2ade71a5ae4",
+            "bytes": 69
+          },
+          {
+            "ms": 1425.3,
+            "status": 200,
+            "timing": "app;dur=228.2",
+            "edge": "bom1::iad1::kr5cx-1791882337676-fba9f1a7273b",
+            "bytes": 69
+          },
+          {
+            "ms": 1681.0,
+            "status": 200,
+            "timing": "app;dur=228.2",
+            "edge": "bom1::iad1::5827t-1791882339540-216ed8464f02",
+            "bytes": 69
+          },
+          {
+            "ms": 1380.1,
+            "status": 200,
+            "timing": "app;dur=228.4",
+            "edge": "bom1::iad1::dt57f-1791882340819-76d53bff9e55",
+            "bytes": 69
+          }
+        ]
+      },
+      {
+        "base": "https://buildconhouse.in",
+        "path": "/api/health/ready",
+        "samples": [
+          {
+            "ms": 5155.6,
+            "status": 200,
+            "timing": "app;dur=991.2",
+            "edge": "bom1::iad1::wxbkr-1791882342230-6f9fb7b8b676",
+            "bytes": 69
+          },
+          {
+            "ms": 1320.7,
+            "status": 200,
+            "timing": "app;dur=482.3",
+            "edge": "bom1::iad1::p52kj-1791882347147-84ad038fc563",
+            "bytes": 69
+          },
+          {
+            "ms": 1054.0,
+            "status": 200,
+            "timing": "app;dur=421.5",
+            "edge": "bom1::iad1::f4wsz-1791882348259-331bb08af6f7",
+            "bytes": 69
+          },
+          {
+            "ms": 1645.0,
+            "status": 200,
+            "timing": "app;dur=850.1",
+            "edge": "bom1::iad1::d6ld7-1791882349432-24fa09382813",
+            "bytes": 69
+          },
+          {
+            "ms": 1367.2,
+            "status": 200,
+            "timing": "app;dur=743.1",
+            "edge": "bom1::iad1::7s42g-1791882350944-09b0a308b75d",
+            "bytes": 69
+          }
+        ]
+      },
+      {
+        "base": "https://forge20-production-a8b0.up.railway.app",
+        "path": "/api/health",
+        "samples": [
+          {
+            "ms": 884.8,
+            "status": 200,
+            "timing": "app;dur=228.2",
+            "edge": null,
+            "bytes": 69
+          },
+          {
+            "ms": 1494.2,
+            "status": 200,
+            "timing": "app;dur=228.3",
+            "edge": null,
+            "bytes": 69
+          },
+          {
+            "ms": 823.6,
+            "status": 200,
+            "timing": "app;dur=230.6",
+            "edge": null,
+            "bytes": 69
+          },
+          {
+            "ms": 776.5,
+            "status": 200,
+            "timing": "app;dur=228.3",
+            "edge": null,
+            "bytes": 69
+          },
+          {
+            "ms": 892.7,
+            "status": 200,
+            "timing": "app;dur=228.3",
+            "edge": null,
+            "bytes": 69
+          }
+        ]
+      },
+      {
+        "base": "https://forge20-production-a8b0.up.railway.app",
+        "path": "/api/health/ready",
+        "samples": [
+          {
+            "ms": 1202.5,
+            "status": 200,
+            "timing": "app;dur=751.8",
+            "edge": null,
+            "bytes": 69
+          },
+          {
+            "ms": 1332.1,
+            "status": 200,
+            "timing": "app;dur=760.4",
+            "edge": null,
+            "bytes": 69
+          },
+          {
+            "ms": 1227.9,
+            "status": 200,
+            "timing": "app;dur=756.1",
+            "edge": null,
+            "bytes": 69
+          },
+          {
+            "ms": 1449.2,
+            "status": 200,
+            "timing": "app;dur=991.0",
+            "edge": null,
+            "bytes": 69
+          },
+          {
+            "ms": 958.1,
+            "status": 200,
+            "timing": "app;dur=514.9",
+            "edge": null,
+            "bytes": 69
+          }
+        ]
+      }
+    ],
+    "after": [
+      {
+        "base": "https://buildconhouse.in",
+        "path": "/api/health",
+        "samples": [
+          {
+            "ms": 498.4,
+            "status": 200,
+            "timing": "app;dur=72.0, upstream;dur=149.6",
+            "edge": "bom1::bom1::kr5cx-1791884867359-28be56287a87",
+            "bytes": 69
+          },
+          {
+            "ms": 670.4,
+            "status": 200,
+            "timing": "app;dur=57.5, upstream;dur=121.3",
+            "edge": "bom1::bom1::6pqt2-1791884868076-4e38dd06f1e3",
+            "bytes": 69
+          },
+          {
+            "ms": 581.3,
+            "status": 200,
+            "timing": "app;dur=58.3, upstream;dur=121.7",
+            "edge": "bom1::bom1::9k2x4-1791884868668-6e5a50374290",
+            "bytes": 69
+          },
+          {
+            "ms": 388.5,
+            "status": 200,
+            "timing": "app;dur=66.2, upstream;dur=139.6",
+            "edge": "bom1::bom1::rmmvn-1791884869038-c68b051038fd",
+            "bytes": 69
+          },
+          {
+            "ms": 414.5,
+            "status": 200,
+            "timing": "app;dur=62.1, upstream;dur=133.6",
+            "edge": "bom1::bom1::74b89-1791884869452-426ae9b9840e",
+            "bytes": 69
+          }
+        ]
+      },
+      {
+        "base": "https://buildconhouse.in",
+        "path": "/api/health/ready",
+        "samples": [
+          {
+            "ms": 767.7,
+            "status": 200,
+            "timing": "app;dur=365.7, upstream;dur=444.3",
+            "edge": "bom1::bom1::d6ld7-1791884869829-7abcf81bdc16",
+            "bytes": 69
+          },
+          {
+            "ms": 1629.3,
+            "status": 200,
+            "timing": "app;dur=679.4, upstream;dur=743.3",
+            "edge": "bom1::bom1::lln2c-1791884870971-3a0140a6a6d6",
+            "bytes": 69
+          },
+          {
+            "ms": 836.8,
+            "status": 200,
+            "timing": "app;dur=362.1, upstream;dur=428.3",
+            "edge": "bom1::bom1::trf4d-1791884872311-b851e70bdb04",
+            "bytes": 69
+          },
+          {
+            "ms": 1024.7,
+            "status": 200,
+            "timing": "app;dur=303.7, upstream;dur=373.5",
+            "edge": "bom1::bom1::ftzqm-1791884873359-44273205d0e4",
+            "bytes": 69
+          },
+          {
+            "ms": 906.8,
+            "status": 200,
+            "timing": "app;dur=318.3, upstream;dur=383.4",
+            "edge": "bom1::bom1::tm26b-1791884874370-3c2dacb7b1c5",
+            "bytes": 69
+          }
+        ]
+      },
+      {
+        "base": "https://forge20-production-a8b0.up.railway.app",
+        "path": "/api/health",
+        "samples": [
+          {
+            "ms": 444.9,
+            "status": 200,
+            "timing": "app;dur=62.6",
+            "edge": null,
+            "bytes": 69
+          },
+          {
+            "ms": 383.1,
+            "status": 200,
+            "timing": "app;dur=68.4",
+            "edge": null,
+            "bytes": 69
+          },
+          {
+            "ms": 383.8,
+            "status": 200,
+            "timing": "app;dur=65.9",
+            "edge": null,
+            "bytes": 69
+          },
+          {
+            "ms": 806.0,
+            "status": 200,
+            "timing": "app;dur=59.3",
+            "edge": null,
+            "bytes": 69
+          },
+          {
+            "ms": 627.5,
+            "status": 200,
+            "timing": "app;dur=59.6",
+            "edge": null,
+            "bytes": 69
+          }
+        ]
+      },
+      {
+        "base": "https://forge20-production-a8b0.up.railway.app",
+        "path": "/api/health/ready",
+        "samples": [
+          {
+            "ms": 649.7,
+            "status": 200,
+            "timing": "app;dur=311.4",
+            "edge": null,
+            "bytes": 69
+          },
+          {
+            "ms": 791.9,
+            "status": 200,
+            "timing": "app;dur=348.2",
+            "edge": null,
+            "bytes": 69
+          },
+          {
+            "ms": 1636.8,
+            "status": 200,
+            "timing": "app;dur=732.7",
+            "edge": null,
+            "bytes": 69
+          },
+          {
+            "ms": 911.3,
+            "status": 200,
+            "timing": "app;dur=569.2",
+            "edge": null,
+            "bytes": 69
+          },
+          {
+            "ms": 857.7,
+            "status": 200,
+            "timing": "app;dur=386.3",
+            "edge": null,
+            "bytes": 69
+          }
+        ]
+      }
+    ]
+  },
+  "authenticatedBrowser": {
+    "method": "Existing authorized in-app owner session; actual production API, no quotation/customer edits; automation wall time includes tool/IPC overhead, not a calibrated browser metric",
+    "bathroomCatalog": true,
+    "builderProductsRendered": true,
+    "groundQuotations": true,
+    "groundCatalog": true,
+    "consoleErrors": [],
+    "groundImages": {
+      "total": 25,
+      "loaded": 25,
+      "failed": 0
+    },
+    "catalogReloadObservedMs": 4926,
+    "groundCatalogNavigationObservedMs": 2786,
+    "builderNavigationLoadWait": "one tool navigation timeout; subsequent DOM proves rendered builder/products with zero runtime errors; no production 2.5-second certificate",
+    "originalWorkspaceRestored": true
+  },
+  "performanceWorkflow": {
+    "id": 38376812616,
+    "conclusion": "success",
+    "sourceCommit": "f06017d363c69fd09e9b039df503e57217e04ce9"
+  },
+  "mainProtection": {
+    "strict": true,
+    "contexts": [
+      "backend",
+      "frontend",
+      "frontend-security",
+      "performance"
+    ],
+    "enforceAdmins": true,
+    "reviewRequired": true
+  },
+  "protectedMainMerged": false,
+  "dependencySecurityGate": {
+    "high": 22,
+    "moderate": 5,
+    "passed": false
+  },
+  "deploymentAttempts": {
+    "railwayFirst": "upload timed out; snapshot creation failed; prior successful deployment retained",
+    "railwayMinimalInputs": "50971914-5774-4ace-b5b8-f0f17f75df7c succeeded, then provider region corrected and final Singapore deploy succeeded",
+    "vercelCliWait": "read ETIMEDOUT after build submission; provider READY and source/region verified without duplicate production deployment",
+    "railwayNestedConfig": "provider did not read nested backend/railway.json; new legacy file registration rejected as deprecated; region/no-sleep set directly on existing provider service; no IaC ownership/dependency change applied"
+  }
+}

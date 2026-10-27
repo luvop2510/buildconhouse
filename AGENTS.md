@@ -1,6 +1,560 @@
 # AGENTS.md — BuildCon House ERP (forge2.0)
 
+## Sales Data simplification — 2026-10-27
+
+Sales Data has three views: Sales, References and Customers. Keep legacy report
+bookmarks redirecting to these views and retain brand/reference drilldowns. Include
+all four departments, with Furniture RNB separate from INR. Product/brand counts
+use actual Tiles/Sanitary catalog lines; Kitchen uses the current confirmed order's
+selected quotation/design versions. Label current balances/follow-ups separately
+from period sales and identify Kitchen's recorded-advance limit. Start at This month
+unless a period was explicitly saved. Report and drilldown reads share role/floor
+access; combined views never broaden assigned floors. Kitchen allows Sales Data
+and shared Follow-ups alongside its unchanged nine-stage workspace.
+
+## Main is the release source — 2026-10-27
+
+The user explicitly requires all completed work on `origin/main`. Consolidate
+verified changes through the protected-main PR/approval/check process. Never
+publish a feature branch directly, force-push main, weaken its protections, or
+leave a completed live fix only in a local checkout. Before starting, fetch main
+and inspect the canonical production alias/source; reconcile any deployed commits
+missing from main. Preserve dirty worktrees until their changes are reviewed.
+Both promotion tools require the exact remote-main SHA and ancestry from the live
+frontend; production Vercel builds require the main Git branch. A passing preview
+is insufficient. See docs/main-release-workflow.md and the current audit ledger.
+
+Kitchen list/search queues omit the repeated nine-stage strip; the hub retains
+its nine authoritative totals and project detail retains one-line stage navigation.
+Web date controls include an explicit calendar opener. Editable blank work dates
+initialize India today in draft state, remain clearable, and retain status-based
+submission rules. Follow-up selection docks wrap within the viewport and reserve
+their measured phone height in list scrolling. Owner accounts do not appear as
+Mine in catalog-floor salesperson filters; staff Mine remains valid.
+
+## Kitchen simplification and mobile keyboard — 2026-10-27
+
+Latest user instruction supersedes the older hidden-phone-chrome/full-contact
+Details contract. Mobile web keeps its header visible while editing; hidden bottom
+navigation stays mounted outside flex flow, leaving no reserved blank band. Preserve
+pointer/click settlement, focused node/drafts, container-only minimal reveal and
+pinch zoom. Shared web field focus rings follow the outer shell radius; do not
+restore a square inner-input outline or remove high-contrast focus. Do not scroll
+the document to reveal a field. Physical keyboards
+remain a separate device check.
+
+Kitchen keeps nine stages and explicit Previous/Next, top Actions on each project
+page, compact name/phone Details, search and paging. Remove the listed expanded
+contact/current-stage fields, filters, attention summaries and Order Original terms
+and documents display. Retain all stored history, private Actions documents and
+financial/approval semantics. Kitchen response hydration completes before command
+CAS; explicit retries reuse receipts. Only one failed Kitchen GET transport may
+retry within its original deadline; never replay writes automatically.
+See docs/audits/2026-10-27-kitchen-keyboard-reliability.md for evidence/limits.
+
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
+
+## Kitchen dashboard and universal customer search — 2026-10-27
+
+Kitchen lands at `/kitchen`; its nine tiles show distinct customers and project
+subtotals, including empty stages. Customers may have several projects and appear
+in several stages. Attention drilldowns share the server's existing definitions.
+Keep stage forms compact; dashboard tiles belong on the hub only. Universal search
+crosses stage filters and opens expanded current customer details with the existing
+stage editor/history. Mutable reads remain uncached and explicitly `no-store`;
+dashboard focus/refresh revalidates counts. Preserve literal search escaping,
+pagination, obsolete-response cancellation, floor/capability checks and drafts.
+Migration 0039 adds the global Kitchen page ordering index without rewriting
+business data. Dashboard totals aggregate in Mongo rather than loading histories.
+See docs/superpowers/specs/2026-10-27-kitchen-search-dashboard.md and the release audit.
+
+## Ground Floor drafts and direct workflow — 2026-10-27
+
+Tiles selections move directly to quotations; quotations use explicit Place Order.
+Submission/approval steps and tile-editor Print are retired. Preserve legacy
+editable statuses, individual A4 PDF download/share, and Sanitary's separate
+supplier/purchasing admission. Ground order review must never call `/suppliers`.
+
+Partial tile drafts persist locally under account/type/document scopes and share
+the sanitary draft reset epoch. Named drafts save remotely without an address;
+quotation PDF and order still require it. Stable client creation keys bind actor,
+floor and source type. Keep receipts after deletion; cancelled keys cannot create
+late records. Replayed first saves must not overwrite external edits. Tile PATCH
+uses expected_updated_at; recover conflicting edits as a new draft. A saved-to-new
+route change clears document identity, while its own first-created ID preserves
+newer typing. Optional prior-price reads may not block product selection past
+500 ms. Preserve selection cancellation and duplicate-tap guards.
+
+Outbox dispatch uses the driver transaction callback to retry labelled transient
+Mongo conflicts, including first-prefix counter seeding. Keep its exact claim
+checks and all notifications/cache effects after the successful commit.
+
+See docs/audits/2026-10-27-ground-floor-final.md for causes and evidence.
+
+## First-response reliability and unified filters — 2026-10-27
+
+Payment additional-cost writes must not return the same mapping passed to Mongo
+insert_one: the driver injects an ObjectId that breaks the first HTTP response
+after commit. Keep inserted data separate from response data and test the actual
+FastAPI serialization boundary with Mongo-faithful mocks and idempotent replay.
+Kitchen analytics invalidation is secondary to a committed project command;
+log its failure without turning a durable save into a failed business response.
+Do not weaken authorization or transaction failures.
+
+Walk-in list/detail publish independently of optional summary/history reads;
+payment balance refresh does not wait for statistics. Preserve request/floor
+generations and explicit retry for optional errors. Schedule Selection belongs
+only to Ground Floor cards. Shared filter disclosures work at every width and
+contain search and related filters, retaining mounted selections/drafts when
+hidden. Keep page actions outside. Sanitary PO Final reuses the quotation cover
+and product layout, retaining final rates and supplementary payment history.
+See docs/audits/2026-10-27-shared-flow-reliability.md for evidence and limits.
+
+## Sanitary quantities, assignment and follow-ups — 2026-10-27
+
+Sanitary walk-ins use explicit floor-worker assignments as their salesperson;
+never substitute the owner creator. Legacy owner-only records display Unassigned.
+Keep only Call, Visit Showroom, WhatsApp and Mark Lost on sanitary details.
+Pre-order Pending/Sent quotations display under Draft without rewriting history.
+
+Customer lending requires matching PO Final quantity. Keep reserved replacement
+units separate from normal stock; only those units return to the lender's In Box
+through the explicit, idempotent return action. Preserve free stock dispatch,
+legacy journals, floor grants and transaction guards. Customer Outstanding is the
+unpaid financial balance, not the value of undelivered material.
+
+Sanitary draft follow-ups are due seven days after creation, including drafts
+with customer details but no items. Retire them on ordering. The sanitary inbox
+keeps contact timing and Salesperson attribution/filtering, with no mission,
+summary, priority or type controls. Other floors retain their existing summaries.
+Money uses Indian grouping/lakh/crore. Quotation Excel cover logos use portable
+PNG pixels and fixed aspect-preserving anchors; retain Indian currency formats.
+See docs/audits/2026-10-27-sanitary-workflows.md for evidence and release limits.
+
+## Kitchen compact stages, draft saves and dates — 2026-10-26
+
+The user removed repeated top summary boxes across all nine stages. Keep customer
+identity in expandable Details once, secondary project tools in its Actions menu, and one
+editable form or historical saved record per stage. This supersedes the earlier
+instruction to duplicate saved cells above editable forms. Confirmation/status
+retain compact disclosures. Advance and amendment controls
+are absent from the Order task; access them only through Details → Actions. Site
+visits are absent from the Installation task and accessible only through Actions.
+Never autosubmit payments, approval, work status or stage movement.
+
+Routine lead/visit/CAD notes, order date/notes and target date use supported
+debounced commands. Acknowledgements apply to request snapshots only; preserve
+newer typing, rebase the acknowledged source, and stop on a newer external source
+until reviewed. Saved means displayed values match the saved record. Preserve
+failure/retry and unsaved exit guards; memory drafts do not survive forced close.
+
+Keyboard reveal intersects the visual viewport with clipping ancestors. Keep
+phone chrome geometry reserved; cap oversized notes with internal caret scrolling
+while short notes grow/shrink. Do not remount forms or change pinch zoom. All
+Kitchen date-only controls select India today automatically on mount for an
+editable blank, including BOTH start and completion dates in Production and
+Installation. No focus/click is required. Clearing remains editable; reopening a
+blank can choose today again. Functional updates must preserve both sibling dates.
+Work dates are proposed defaults: submit no actual dates for Not Started and no
+completion date until Completed. Preserve explicit status selection. Existing and
+disabled historical dates remain unchanged. Date entry alone never submits a
+financial or approval operation. See
+docs/audits/2026-10-26-kitchen-workflow-stability.md for evidence and device checks.
+
+## Kitchen explicit versions and internal notes — 2026-10-26
+
+Design/quotation selectors are views; mutations name selected IDs. Orders and
+Production/Installation resolve order → quotation → design, including older valid
+versions. Never infer an order's basis from the latest design. Production-start
+history locks version changes even after manual backward navigation; use the
+owner-authorized Return to Design cycle. Confirmation is persisted tri-state,
+separate from creating financial order terms. Missing quotation amount stays null;
+final order amount must be explicit if unknown. Quotation/order document inputs
+are retired; old private files remain. Notes are internal only and multiline
+fields grow from one line. Approval date and handoff date are distinct; preserve
+and flag unknown/inconsistent history. Command admission reuses its pinned policy.
+Design uses one open form with no Presentation Date or separate share section;
+Create Design vN explicitly starts a new version. New Design dates default to
+India today and stay editable; historical blanks remain untouched until the user
+focuses a date or explicitly chooses approval/handoff. Sent to company persists
+three states. Quotation labels are Quotation N, with an always-visible New quotation
+action, Saved quotation selector and separate Related design field. Each quotation
+belongs to one design; a design can have several quotations. Quotation received/sent and
+advance statuses persist Not recorded / Yes / No independently. Use quotation_update
+for selected-ID corrections; never infer receipt from amount/notes or a draft's
+existence. New order/work dates require entry; status changes do not fill dates.
+Project detail reads reuse policy and overlap authorized independent reads.
+See docs/audits/2026-10-26-kitchen-version-workflow.md for contracts and evidence.
+
+## Always-on Railway startup and Kitchen PDF usability — 2026-10-26
+
+Kitchen saved details use separate bordered label/value cells on every stage; keep
+confirmation, workflow status and approved quotation distinct. Existing reference
+pickers default to both types and support name/studio/code search plus retry. Tiles
+reference changes are explicit; same-customer quotation snapshot refresh must preserve
+document attribution. Preserve untouched archived/legacy references and created-ID
+retry when the first explicit reference patch fails. See
+docs/audits/2026-10-26-kitchen-details-existing-references.md.
+
+Kitchen mobile save repair: reserve the phone header/footer's geometry while
+hiding their controls during editing. Unmounting them shifts the form by 119px
+and can move a blur-triggering tap target. Keep the short save-feedback line
+stable. TypeError from an aborted fetch is cancellation, not backend downtime;
+timeouts and genuine transport failures retain distinct errors. Production and
+Installation have explicit Save and go actions; save successfully before manual
+movement, using the latest version and coalescing repeated taps. Preserve
+unrestricted Next/Previous and prerequisite guidance for commercial actions.
+See docs/audits/2026-10-26-kitchen-save-mobile-repair.md.
+
+The user explicitly removed the one-minute backend-wake buffer after moving to
+Railway. Identity and floor reads start directly without an anonymous health
+prerequisite. Preserve bounded ordinary requests, session/floor generations,
+recovery, initial destinations and the mounted navigator. Hosted acceptance now
+observes the actual identity request, with unchanged root/identity/content bounds.
+Never restore a health/wake loop before login, account hydration or floor access.
+
+Kitchen queues use compact lists only. The user explicitly keeps unrestricted
+Next/Previous and excludes Next Action, Budget Discussion and Visit Requirements
+from Visit. Owner-selected Assigned To is optional at intake and per stage; never
+auto-assign an employee or make assignment grant access. CAD status is derived from percentage
+on server and form; never allow a contradictory independent status. Revision
+counts only increase from customer revision requests. Quotation entry uses private
+uploaded files and no HTTPS input. Order corrections retain before/after history,
+chronology, stale drafts and prior documents. Changed final amounts require owner
+authority and explicit customer approval, preserving the original quotation.
+Shared text fields keep focus on Enter unless the caller supplies explicit
+submission/blur behavior, avoiding keyboard/chrome layout changes during editing.
+
+Sales Data owns a reference directory. Only explicitly shared references cross
+floors; customer/sales/acquisition aggregates remain scoped. Preserve historical
+IDs and private entries. Existing ID authorization uses accessible floors rather
+than the ambient selected floor. Owner edits use optimistic concurrency.
+
+See docs/audits/2026-10-26-kitchen-pdf-usability-release.md for scope/evidence.
+Frontend-only publication may use scripts/promote-verified-frontend.mjs with an
+unchanged verified backend and current review/performance/hosted evidence.
+Backend, data, storage and Kitchen workflow releases retain the existing stronger
+gate; preserve security checks and protected-main requirements.
+
+## Web bundle consistency — 2026-10-24
+
+The reported “app could not start” failure was reproduced in the existing browser:
+stale layout chunks and Metro module IDs failed before account startup. A hard
+refresh restored the signed-in workspace. Every export now gives all Expo web
+JavaScript files one graph-wide filename suffix and rewrites HTML/preload/lazy
+references together. Preserve this physical namespace; per-file URLs alone must
+not mix cached module graphs. Keep missing chunks as explicit failures and never
+auto-reload mounted forms. The recovery bootstrap observes the web root mount
+signal; a slow, unmounted bootstrap gets a waiting status rather than a false
+release-failure claim. Font errors retain their existing deadline and retry.
+
+## PDF sharing, assigned follow-ups and references — 2026-10-17
+
+Quotation/selection sharing creates no public PDF capability. Share actual PDF
+files through the device/browser file sheet; optional configured WhatsApp
+Business delivery uploads PDF bytes and retains revision/idempotency/status
+guards. Existing expiring capability reads remain compatible. Never restore a
+wa.me document-link draft. Furniture retains its separate PDF ledger workflow.
+
+Human-created follow-ups require explicitly selected eligible workers on every
+interested floor, including legacy notebook/customer entry and callback/pending
+successors without an existing valid assignment. Validate before writes and
+retain destination stage/grant checks. Sales is retired as a new/manual type;
+historical sales records remain readable. Owner filter overflow is bounded and
+scrollable. Do not silently substitute the creator for a missing assignment.
+
+Structured architect/interior UUIDs produce stable ARC-/INT- display codes.
+Customer, quotation/PDF, furniture and follow-up views retain name/code/company
+where available; floor-scoped acquisition counts deduplicate phone identity across
+sources. Exact-ID count lookup is distinct from the analytics top-100 leaderboard.
+Legacy NTS/free-text names are recovered without guessing a directory identity.
+No migration is required; preserve existing IDs and floor isolation.
+
+See `docs/audits/2026-10-17-pdf-followup-reference-release.md` for verification
+and the direct-WhatsApp provider configuration limitation.
+
+## Quotation recovery and R2 source integration — 2026-10-16
+
+Version 1.0.4 gates both quotation builders on synchronized floor access with
+explicit retry. Ground selection/quotation lists publish independently; an empty
+primary result must not wait for optional document reads. Saved tile restoration
+must succeed before editing/save/PDF actions. Persistence captures the document
+ID before awaits and retains mount/scope/generation checks after every write,
+including A → B → A. The first autosave's own new route ID must preserve edits
+made while creation was pending. Sanitary browsing hides stale search cards,
+offers filter reset/retry and lets phone users select the destination room.
+
+R2 recovery source is now part of the reviewed changes; preserve the configured
+R2 driver, exact public/private buckets and private visibility checks. Migration
+plans bind the Mongo cluster/database and storage identities, accept only explicit
+application collections and validate every journal entry before any write. Never
+rewrite audit/import history or replay an old unbound reference plan. Password
+proof runs off-thread; issued login sessions must be followed by current hash,
+account/portal/MFA revalidation so a completed reset cannot mint an old-password
+session. Preserve exact outbox claim ownership on failures.
+
+The release investigation found unpushed commits and successful previews serving
+older production source. Verify actual deployment identities rather than equating
+a branch push, preview READY or stale Railway Git metadata with production. See
+`docs/audits/2026-10-16-quotation-recovery-release.md` and the companion CI diagnosis.
+
+## Mobile workspace controls — 2026-10-15
+
+Version 1.0.3 keeps the compact app header outside the phone content scroll;
+page titles, page actions, filters and rows scroll together on phone layouts. Do
+not render a phone `PageHeader` as a sibling above its `ScrollView`, `FlatList` or
+`SectionList`. Phone table
+headers/columns are not sticky. Editing/search focus hides navigation
+and workflow footers; restore chrome after the blur-triggering tap, including
+focus moving to a button, to avoid moving its click target. Scroll containers
+with filter actions use keyboardShouldPersistTaps="handled". Shared
+MobileFilterSection retains mounted controls/drafts while hidden. Spending and
+Completed Today summary controls were explicitly removed at the user's request;
+do not reintroduce them. Exact expiring follow-up drilldown includes open,
+undated quotation-expiring rules under existing floor/grant checks. See
+`docs/audits/2026-10-15-mobile-workspace-1.0.2.md` and release evidence.
+
+## Mobile Payments and floor workspaces — 2026-10-15
+
+Payments defaults to a compact, collapsible overview on phones; toggling or
+rotation must preserve the payment sheet and its draft. Purchases and all its
+document APIs are Sanitary-only. Catalog navigation is Ground/Sanitary only.
+Kitchen/Furniture use shared Walk-ins and Follow-ups; old notebook bookmarks
+redirect without changing the current floor. Follow-up detail/actions and
+in-flight UI callbacks retain that concrete floor. Never reintroduce the duplicate
+100% quotation view: legacy fulfilled links normalize to Completed, including
+delivered orders. Keep Won order(s) wording and current-member attribution.
+
+Migration 0035 derives limited shared Follow-ups grants for eligible existing
+department staff; preserve its stage/action/floor/expiry guards. Retired grants
+remain revocable/history, cannot be newly assigned, and must not cause a redirect
+loop for accounts without a current page. The access screen is their stable
+landing. Required stability acceptance includes payment entry/rotation and
+all-floor navigation/direct-link/switching checks. Real deployed read-only
+acceptance also uses scripts/verify-floor-mobile-release.mjs with a short-lived
+run-owned QA session; never record customer rows or tokens in release reports.
+The authenticated verifier waits for its own API reads to settle before hard
+navigation/reload and resets tracking across browser contexts. Safari reports
+canceled document reads as access-control console errors; never suppress those
+errors or weaken the runtime guard to compensate for premature probe navigation.
+
+## Runtime and session stability — 2026-10-15
+
+Web/native roots share `src/components/AuthGate.tsx`; do not fork routing again.
+Transient hydration and workspace 403 retain credentials behind recovery; only
+authoritative invalid/revoked identity clears them. Identity/assignment reads omit
+stale floors. BFF cookies persist only through JWT expiry (cap 30 days), and
+successful existing-session restoration upgrades them. Keep revocation and CSRF.
+
+Route failures use React Navigation screenLayout, retaining the navigator and
+session. A boundary around Slot itself unmounted the navigator during faults.
+Actual Expo AsyncRequireError says "Loading module" and carries request; retain
+strict same-origin module classification and explicit reload for mounted pages.
+Never auto-reload live forms. Literal search punctuation must remain escaped.
+
+Vercel API loaders reject require(ESM), even when local Node accepts it. Shared
+cookies use the canonical CommonJS helper; standalone workers inline it. Required
+API tests execute compiled CommonJS and the actual emitted worker. Deploy a
+--skip-domain candidate, verify its authenticated journeys, then use
+scripts/promote-verified-vercel.mjs to verify source/API/assets before promotion.
+That guard also requires live authenticated desktop Chrome/iPhone Safari checks
+via scripts/verify-authenticated-release.mjs and FORGE_RELEASE_SESSION_FILE.
+Use a short-lived run-owned QA session, block business writes and revoke only
+that session after acceptance. Never weaken preview protection to test a build.
+The follow-up label is Won orders; the user confirmed a wording-only correction,
+preserving its existing current-member attribution/filtering behavior.
+
+The required Performance/pre-push audit includes immutable four-device every-page
+stability, populated stock/new quotation navigation, render/module failure and
+session recovery. New route files inherit coverage. The evidence verifier rejects
+missing scenarios, retries, skips and flakes. Preserve budgets/security/main
+protection. See docs/audits/2026-10-15-runtime-session-stability.md for findings,
+verification boundaries and the unresolved intermittent hosted-network observation.
+
+## Sanitary warehouse replacement and photo editing — 2026-10-14
+
+Seven stock workbooks now back 1,015 active lots / 4,393 recorded units. Eight
+old lots are archived with purchase/allocation history intact. Keep archived and
+quantity_missing lots out of every new allocation/transfer path, including
+quotation matching; unknown quantity uses a flagged zero technical placeholder.
+Warehouse-only quotation identities require their exact backing lot and floor.
+Duravit has eleven new catalog products; unknown prices carry explicit
+price_status=unspecified and specs.price_status, while stock prices stay null.
+
+Lot price/HTTPS image overrides and multipart uploads use floor-scoped update
+permissions. godown_stock_media stores immutable lot photos separately from
+catalog product_media. Preserve original picker File, shared authenticated
+transport, cancellation and exact photo envelope limits. Stock reads exclude
+bulky private provenance, fail explicitly above 2,000 lots and render 60 cards
+initially while searching the complete bounded payload. Reviewed imports use
+source hashes, private backups, stock fingerprints, atomic archive/insert and
+durable replay receipts; never delete historical lots or silently reset edits.
+See docs/audits/2026-10-14-godown-stock-replacement.md for live evidence and
+explicit unresolved source fields.
+
+## Historical Won/Lost customers — 2026-10-14
+
+Historical workbook outcomes use `quotation.customer_outcome`, independently
+of draft/ordered status, and closed manual follow-ups grouped by customer. Do
+not convert those outcomes into new financial orders. The quotation list and
+builder use floor-scoped `view=won|lost` queries; pending, sales automation and
+PDF follow-up producers exclude outcome-marked historical records. Ordinary
+edits preserve classification; Duplicate creates a fresh draft; Place Order
+requires a fresh quotation. Import receipts include follow-up fingerprints,
+fixed outcome timestamps and explicit shared-phone identity decisions. Read
+`docs/audits/2026-10-14-customer-outcomes.md` for acceptance and publication.
+
+## Custom products, media and drag ordering — 2026-10-14
+
+Custom quotation items now always have a backend product id, including inactive
+quotation-only records. Do not restore synthetic ids: quotation create/autosave
+requires real floor-scoped products. `custom-with-media` validates and binds a
+request to member/floor/content; deterministic product/media Mongo `_id`s dedupe
+concurrent retries. Photos are Supabase objects with Mongo `product_media` metadata
+and quotation URL snapshots. Only the exact custom creation endpoints accept
+quotation-create grants; normal catalog/media edits retain their own permissions.
+
+All multipart uploads use the shared API transport and photo preparation helper.
+Web image-picker assets must retain their original `File`, including gallery
+preview state. Use that file directly: production `connect-src` blocks fetching
+picker blob URLs. Keep the production CSP unchanged; the audit server now serves
+the same headers so browser upload journeys cover this constraint.
+The browser preserves small originals and prepares larger photos below 3 MiB;
+Vercel admits 4 MiB envelopes only for photo routes, retaining ordinary 1 MiB
+bounds. Exact detail/media hydration reflects new/deleted photos before background
+catalog refresh. Do not reintroduce manual fetch uploads missing the floor header,
+CSRF, cancellation or cache invalidation.
+
+Product/room dragging preserves included parts and collapsed-room data. Recalculate
+on changed pointer/scroll using paired DOM order/geometry, apply the final drop,
+and use elapsed-time edge scrolling. Idle preview reorders previously overshot
+into another room. Keep the admin route subtree stable across viewport breakpoints:
+phone rotation previously destroyed custom form/photo state. Read
+`docs/audits/2026-10-14-custom-products-ordering.md` for exact verification and
+publication evidence. Physical devices/signing and existing npm security findings
+remain separate from browser/unsigned-export acceptance.
+
+## iPad forms and multi-floor pre-order leads — 2026-10-13
+
+Follow-ups cover pre-order sales only. Operational/payment/purchase/dispatch/
+delivery reminders are retired; committed orders consolidate related floor leads
+while retaining historical worker assignments and quotation-creator attribution.
+Multi-floor interested/assignment edits preserve floor-local records and require
+the actual destination notebook stage's view/update grants. Typed-phone intake
+resolves existing destination stages too. Manual creation retries use a member/
+floor-bound request key and persisted fingerprint. Call outcomes consume only
+their own pending attempt. Team assign is owner-only with full aggregate counts,
+paged details and explicit activity truncation. Interior reporting counts acquired
+people before an order and deduplicates their phone identity across floors.
+
+Web roots and overlay portals track Safari's visual viewport; do not restore
+closing-modal focus before its portal is removed or apply keyboard resizing to
+pinch zoom. Team shows one Phone field and preserves distinct legacy contact data.
+Migration 0034 was applied through the controlled production job; the post-apply
+dry run has no pending migrations. Runtime b9a06838 is live on both Vercel and
+Railway. The user clarified a
+total HTTP response requirement under 2 ms; current hosted baseline samples fail
+it. The user subsequently accepted that measured gap and explicitly requested
+GitHub push/live migration/Vercel/Railway publication. Preserve the existing
+performance budgets and verify deployment readiness and actual source. Read docs/audits/2026-10-13-ipad-multifloor-leads.md and its
+companion verification JSON for local checks, actual deployment identities,
+post-deploy timings and retained hosted cold-load limitations. Protected main
+remains unmerged; existing dependency security findings are not suppressed.
+
+## Passwords, lost reasons and mobile workflow update — 2026-10-13
+
+Current policy supersedes the older owner-managed-only password notes below:
+staff may change their own password with current/new/confirmation; Team and role
+management remain owner-only. Owner credential reveal is explicit/audited/no-store,
+with bcrypt login and identity-bound encrypted recovery copies. Legacy hashes
+need reset before reveal. Preserve the existing MFA encryption root (JWT fallback)
+across deployments and synchronize every credential-write path, including controlled
+Team reset. Do not expose ciphertext/hash in ordinary responses or diagnostics.
+
+Routine customer/follow-up/notebook actions accept no notes; only Lost requires a
+reason. Visit Showroom permanently excludes the source walk-in from registers/counts
+and keeps one retry-safe follow-up. Interested transferred leads keep recipient
+ownership; only committed orders count won. Own orders defaults to current member,
+and actual won sales belong to the quotation creator, including unlinked same-floor
+showroom leads. Migration 0033 repairs confirmed historical attribution while
+preserving ambiguous/unrelated history. Purchases explicitly request one selected
+floor and reject stale callbacks. Phone quotation browsing defaults full screen,
+filters use a sheet, custom products and description/edit/review parity remain.
+See docs/audits/2026-10-13-team-mobile-workflows.md for evidence and release outcome.
+
+## Performance constraints — 2026-10-13 incident repair
+
+Performance is a release requirement for every feature/change. Read
+`docs/deployment/performance-policy.md` and run `npm run test:performance:audit`
+against current source before publication. The installed local pre-push hook
+and independent push/PR Performance workflow enforce this audit; do not bypass
+them, increase deadlines, suppress page errors, or reuse an old export.
+All exported routes inherit bundle budgets; extend interaction/loading fixtures
+for new heavy pages. Backend unit tests always use hermetic CI settings.
+
+Verified incident: production source BSON grew to ~19.7 MB, exceeding the old
+16 MiB snapshot cap and silently forcing catalog hierarchy/family reads through
+remote Mongo aggregation. The cache remains bounded at 32 MiB with unchanged
+row caps; diagnostics/warnings reveal fallback. Parallel source reads, shared
+refresh/failure/backoff, off-loop construction and generation invalidation retain
+safe floor/media/write behavior. Do not introduce per-page full-catalog reads.
+`backend/scripts/benchmark_catalog_performance.py` is a read-only, configured
+dataset service audit: no bootstrap/migrations/sessions/business writes; mode,
+counts and numeric timings only. Its warmed computation budgets exclude HTTP,
+authentication/browser/network. Verify live serving regions and latency after
+deployment; historical SFO/IAD evidence no longer describes the target setup.
+
+Catalog/Builder/Tiles cursors consume raw server rows even when displayed rows
+are deduplicated/dropped; empty pages terminate pagination. Guard both starting
+and publishing async work against current query/floor/mount; gate simultaneous
+scroll callbacks synchronously. Multi-column FlatList budgets count rows, not
+cards. Optional sound playback must observe asynchronous browser rejections.
+See `docs/audits/2026-10-13-performance-incident.md` for release evidence.
+
+Release verified: runtime `f06017d3`, Vercel Mumbai deployment
+`dpl_Hs5yLbZbgPZe1rXciuho3WhDotdp`, Railway Singapore deployment
+`0fbd1855-ceed-4e95-9e78-ba65e17b2792`; catalog memory mode confirmed live.
+The nested Railway JSON was ignored and its new legacy registration rejected;
+provider settings now persist one Singapore replica/no sleep. Inspect actual
+provider metadata on future releases. Full local acceptance: 2,305 backend,
+434 route/workflow browser and 40 performance browser passes. Performance CI
+passes on the runtime commit. Main now requires performance alongside the
+three functional/security checks with administrator enforcement and review.
+The 22 high/five moderate npm findings still fail the independent security gate.
+Authenticated hosted content works without captured runtime errors, but fixture
+timings are not a universal 2.5-second production/physical-device certificate.
+
+## Quotation filters and walk-in visibility — 2026-10-13 follow-up
+
+Quotation brand/category filters are now single-choice; finish/color filter rows
+and their hidden saved state are removed. Legacy mixed scopes normalize safely,
+and failed category reads offer retry in both compact picker and desktop rail.
+Vercel preserves repeated query values for other catalog screens. Purchases uses
+actual-order customer eligibility, excluding unconfirmed walk-in profiles while
+preserving legacy/transferred buyers. Eligibility/completion reads are parallel.
+Catalog hydration uses lazy candidate indexes with edit invalidation and unchanged
+scope/finish/ambiguity checks. The review also fixes Team contact initialization
+before interaction; the unchanged rapid-clear browser case and actual hook
+regression verify it. Final functional acceptance: 2,288 backend passes, 42
+frontend commands, 2,527 browser passes / 55 intentional skips / zero failures or
+flakes; all 157 generated pages fit the bundle budget. Fresh bathroom matrix:
+146 scopes, zero discrepancies. Npm remains 22 high/five moderate; protected main
+is not bypassed. Publication/deployment evidence belongs in
+`docs/audits/2026-10-13-quotation-walkins-release.md`.
+
+## Stability, quotation and catalog — 2026-10-13
+
+Response caches now release expired entries and retain 64 recent responses;
+quotation line multi-select is removed, individual workflows remain, and rows
+reuse memoized pricing. Catalog occurrence/fallback counting is repaired in warm
+and Mongo paths with 146 authoritative scopes verified. Session-cache generations
+and post-write invalidation close revocation refill races. Final local checks:
+2,283 backend passes, 42 frontend commands, 2,495 browser passes / 55 intentional
+skips / zero failures, production web export and all route budgets pass.
+Npm audit still fails (22 high / five moderate); no suppression or protected-main
+bypass. The user subsequently explicitly requested GitHub/Vercel/Railway
+publication. See `docs/audits/2026-10-13-goal-report.md` and the release ledger
+for deployment outcomes. Physical-device acceptance remains unverified.
 
 ## Performance and password minimum — 2026-10-12
 
@@ -273,3 +827,83 @@ Both were flagged during code review of Task 17/19 as real gaps of the same shap
 - **Migration idempotency:** `backend/migrations/` migrations must be forward-only and safe to run twice, but MongoDB's `create_index` throws `OperationFailure` code 85 (`IndexOptionsConflict`) if a same-key index already exists under a different name — this has happened twice already (see `migrations/0002` and `0003`'s docstrings). Always wrap `create_index` calls the way `migrations/0003`'s `_create_index_tolerant` helper does.
 - **Catalog is an in-memory snapshot, not per-request Mongo queries:** `backend/services/catalog_service.py` loads the whole product catalog into memory at startup (Atlas is ~228ms round-trip away; the full catalog is a few MB) and refreshes on writes. Don't add per-request Mongo queries to catalog read paths — thread new filters through the existing `_matches_filters`/snapshot functions instead.
 - **Floor `first-floor`'s display name is "The Sanitary Bathroom"** in the live `db.floors` collection, but its `id`/`slug` is still literally `"first-floor"` — don't rename the slug, only ever the `name` field, or every `floor_id` reference throughout the codebase breaks.
+
+## Customer graph deletion and recovery — 2026-10-24
+
+Customer-wide removal is owner-only from Customers, with exact preview/HMAC and
+transactional graph cleanup. Ordinary quotation deletion remains document-scoped.
+Preserve shared PO chalan evidence and actual dispatched quantities: raw legacy
+stage labels cannot establish a stock return. Old unlinked Furniture matches
+require explicit owner selection; new ledgers may bind a real floor-scoped ID.
+
+The mutation-admission middleware and background follow-up/outbox admission prevent
+in-flight child writes after graph deletion. Never expire writer tokens or clear
+an exclusive token while old writers may still execute. See the operational
+recovery procedure in docs/audits/2026-10-24-workspace-repair.md. No new migration.
+
+## Local uncounted-stock workflow — 2026-10-24
+
+Unpublished quantity-count work adds an exact stock-update POST route for
+previously uncounted lots. Preserve its missing/zero distinction, explicit
+date/source, original provenance, atomic count/receipt write, version/history
+guards and floor admission. A confirmed opening count is not a supplier receipt.
+Never overwrite an already-counted/moved lot through this endpoint. Count replay
+must return the current balance without restoring later-consumed stock. Internal
+command metadata stays outside public count history. Direct intake now requires
+an entered quantity rather than defaulting to one. See
+docs/audits/2026-10-24-godown-quantity-counts.md for local acceptance and limits;
+no production quantity replacement or publication is claimed.
+
+## Local stock pagination — 2026-10-24
+
+The unpublished stock screen uses server-side 60-lot pages and literal search.
+Keep whole-floor totals independent of filtered result counts and update totals
+with per-lot deltas, never sums of the loaded page. Initial pages exclude movement
+arrays; exact-floor history loads independently on demand. Same-query refresh
+retains the opened window and card drafts; obsolete floor/query responses cannot
+publish. Complete exports explicitly use the compatible no-limit endpoint and
+must fail rather than truncate above its lot/movement ceilings. This supersedes
+the older complete-payload client search description for the local implementation.
+Detail and mutation responses retain the same exact-product catalog image
+fallback as list reads. See docs/audits/2026-10-24-godown-paging.md for acceptance
+and unresolved performance failures. This is not production publication evidence.
+
+## Stock photo delivery investigation — 2026-10-25
+
+The live stock URL audit found 119 lots without URLs and 266 lots whose legacy
+Supabase URLs returned HTTP 402. Do not treat a nonempty URL as photo coverage or
+blindly replace its hostname: all 266 same-key R2 targets initially failed too.
+The supplied workbooks yield exact SHA256/SKU/brand recovery matches for 248
+stock-media records. Their bound plan, rollback journal and per-object full-byte
+receipts are private in the parent workspace review outputs. Final verification
+confirms 248 live lot-image links and matching media links restored, with every
+other field and all current stock quantities preserved. Eighteen legacy URLs and
+119 missing URLs remain. Never run the old
+stock-replacement import to recover photos; quantities and provenance must stay
+intact. Preserve the optional missing/loading/failed photo copy on stock cards.
+See docs/audits/2026-10-25-godown-image-delivery.md for current scope and limits.
+
+## Local stock customer-transfer recovery — 2026-10-25
+
+The unpublished transfer sheet binds metadata/writes to its actor/floor/lot,
+coalesces synchronous submissions, retains an uncertain body/key across mounted
+close/reopen and keeps metadata retry separate from draft initialization. New
+receipts bind the full body/actor in the existing transaction; public views strip
+that internal hash. Preserve sanitized committed-conflict review and explicit
+acknowledgement before clearing a key for a new intent. Confirmed transfers close
+before list refresh completes. Full unmount/reload persistence is still open;
+do not claim durable recovery from the mounted map. The stock hook script and
+four-device stability registry require these scenarios. See
+docs/audits/2026-10-25-godown-transfer-recovery.md for evidence and remaining gates.
+
+## Mobile Tile Orders and lost Visit acknowledgements — 2026-10-27
+
+Tile Orders phone navigation uses a two-column view grid; record identity and
+labelled quantities stay together. All fulfilment counters remain available on
+detail, actions stack at phone width and timeline/record sheets retain a bounded
+scroll owner. Cold detail/brand/release Back links have parent fallbacks. List
+consumer cancellation must not affect writes; preserve exact Ground Floor scope.
+An uncertain save_visit response may be confirmed by one bounded fresh read only
+for the same project at Visit, newer version and exact submitted Visit snapshot
+with existing server string trimming. Never replay a POST automatically or extend
+this confirmation to financial/approval commands. Preserve newer draft typing.

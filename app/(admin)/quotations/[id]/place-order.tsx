@@ -1,6 +1,6 @@
 // Place Order — Review & Confirm
 // -----------------------------------------------------------------------------
-// Renders brand-grouped preview cards for an approved quotation. Each card shows
+// Renders brand-grouped preview cards for a saved quotation. Each card shows
 // the items that will land on a single Purchase Order, with an editable
 // supplier assignment and optional internal notes.
 //
@@ -9,7 +9,7 @@
 // -----------------------------------------------------------------------------
 import Feather from "@expo/vector-icons/Feather";
 import { useLocalSearchParams, useRouter, useSegments } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "@/src/components/AppText";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -69,6 +69,8 @@ export default function PlaceOrderReview() {
   const { isPhone } = useBp();
   const insets = useSafeAreaInsets();
 
+  const requestIdRef = useRef(0);
+  const confirmInFlight = useRef<number | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplierByBrand, setSupplierByBrand] = useState<Record<string, string>>({});
@@ -89,12 +91,19 @@ export default function PlaceOrderReview() {
   const floorId = floor === TILES_FLOOR_ID || segments.includes("tiles") ? TILES_FLOOR_ID : undefined;
 
   const loadPreview = useCallback(async () => {
+    const request = ++requestIdRef.current;
     setError(null);
+    setPreview(null);
+    setBusy(false);
     try {
       const [p, s] = await Promise.all([
         api.get<Preview>(`/quotations/${id}/place-order/preview`, { floorId }),
-        api.get<Supplier[]>("/suppliers", { floorId }),
+        // Supplier management belongs to Sanitary. Tile orders resolve their
+        // Ground Floor suppliers in the order workflow itself. Calling the
+        // Sanitary endpoint here rejected an otherwise valid tile preview.
+        floorId === TILES_FLOOR_ID ? Promise.resolve([] as Supplier[]) : api.get<Supplier[]>("/suppliers", { floorId }),
       ]);
+      if (request !== requestIdRef.current) return;
       setPreview(p);
       setSuppliers(s);
       const defaults: Record<string, string> = {};
@@ -102,14 +111,23 @@ export default function PlaceOrderReview() {
         if (b.default_supplier && b.brand_id) defaults[b.brand_id] = b.default_supplier.id;
       }
       setSupplierByBrand(defaults);
-      setGodownPromptOpen((p.godown_matches || []).length > 0);
+      setGodownPromptOpen(floorId !== TILES_FLOOR_ID && (p.godown_matches || []).length > 0);
     } catch (e: any) {
-      setError(e?.detail || "Failed to load preview");
+      if (request === requestIdRef.current) setError(e?.detail || "Failed to load preview");
     }
   }, [floorId, id]);
 
   useEffect(() => {
+    setConfirmError(null);
+    setPriceReview(null);
+    setPricePromptOpen(false);
+    setGodownPromptOpen(false);
+    setNotesByBrand({});
+    setProjectName("");
+    setExpected("");
+    setExpandedBrands({});
     void loadPreview();
+    return () => { requestIdRef.current += 1; };
   }, [loadPreview]);
 
   const supplierOptionsFor = useCallback(
@@ -122,9 +140,11 @@ export default function PlaceOrderReview() {
   );
 
   const confirm = async (choice?: "keep" | "latest") => {
-    if (!preview || busy) return;
+    if (!preview || busy || confirmInFlight.current === requestIdRef.current) return;
     const review = priceReview || preview.price_review;
     if (review?.changes.length && !choice) { setPriceReview(review); setPricePromptOpen(true); return; }
+    const request = requestIdRef.current;
+    confirmInFlight.current = request;
     setConfirmError(null); setBusy(true);
     try {
       const res = await api.post<{ purchase_orders: { id: string }[]; count: number }>(
@@ -138,14 +158,17 @@ export default function PlaceOrderReview() {
           catalog_price_token: review?.token || null,
         }, { floorId },
       );
-      toast.success(`Order placed · ${res.count} Purchase Orders created`);
+      if (request !== requestIdRef.current) return;
+      toast.success(floorId === TILES_FLOOR_ID ? "Tile order placed" : `Order placed · ${res.count} Purchase Orders created`);
       const isTilesDoc = preview.doc_type === "tiles_selection" || preview.doc_type === "tiles_quotation";
       router.replace((isTilesDoc ? "/(admin)/tiles/orders" : "/(admin)/purchases") as any);
     } catch (e: any) {
+      if (request !== requestIdRef.current) return;
       if (e?.payload?.detail?.code === "catalog_price_review_required") { setPriceReview(e.payload.detail.price_review); setPricePromptOpen(true); }
-      else setConfirmError(typeof e?.detail === "string" ? e.detail : "Could not place order. Your supplier choices and notes are still here.");
+      else setConfirmError(typeof e?.detail === "string" ? e.detail : floorId === TILES_FLOOR_ID ? "Could not place order. Your quotation is saved. Try again." : "Could not place order. Your supplier choices and notes are still here.");
     } finally {
-      setBusy(false);
+      if (confirmInFlight.current === request) confirmInFlight.current = null;
+      if (request === requestIdRef.current) setBusy(false);
     }
   };
 
@@ -176,14 +199,13 @@ export default function PlaceOrderReview() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={isPhone ? [] : ["top"]}>
-      <PageHeader title="Review order" subtitle={preview.quotation_number} back={() => router.back()} />
-
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 24}
       >
         <ScrollView contentContainerStyle={{ padding: isPhone ? spacing.lg : spacing.xl, gap: spacing.lg, paddingBottom: spacing.xxxl + insets.bottom }} keyboardShouldPersistTaps="handled">
+        <PageHeader title="Review order" subtitle={preview.quotation_number} back={() => router.back()} embedded />
         {confirmError ? <Alert tone="error" title="Order not placed" description={confirmError} /> : null}
         {/* Header summary */}
         <View>
@@ -285,7 +307,7 @@ export default function PlaceOrderReview() {
                 ) : null}
               </View>
 
-              <View style={{ gap: spacing.md, marginTop: spacing.md }}>
+              {floorId !== TILES_FLOOR_ID ? <View style={{ gap: spacing.md, marginTop: spacing.md }}>
                 <View>
                   <Text style={styles.label}>Supplier</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
@@ -321,7 +343,7 @@ export default function PlaceOrderReview() {
                     testID={`notes-${brandKey}`} accessibilityLabel={`Internal notes for ${b.brand_name}`}
                   />
                 </View>
-              </View>
+              </View> : null}
             </Card>
           );
         })}
@@ -336,7 +358,7 @@ export default function PlaceOrderReview() {
           </View>
           <View style={[styles.confirmActions, isPhone && styles.confirmActionsPhone]}>
             <Button label="Cancel" variant="ghost" onPress={() => router.back()} fullWidth={isPhone} />
-            <Button label={`Generate ${preview.brands.length} PO${preview.brands.length !== 1 ? "s" : ""}`} icon="check" onPress={() => void confirm()} loading={busy} testID="confirm-place-order" fullWidth={isPhone} />
+            <Button label={floorId === TILES_FLOOR_ID ? "Place order" : `Generate ${preview.brands.length} PO${preview.brands.length !== 1 ? "s" : ""}`} icon="check" onPress={() => void confirm()} loading={busy} testID="confirm-place-order" fullWidth={isPhone} />
           </View>
         </View>
       </ScrollView>

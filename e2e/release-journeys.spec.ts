@@ -74,7 +74,7 @@ test('critical Follow-ups bulk partial failure retains failed records and retrie
   const mutations: string[] = [];
   await page.route('**/api/followups/*/complete', route => {
     const id = new URL(route.request().url()).pathname.split('/').at(-2)!;
-    expect(route.request().postDataJSON().notes).toBe('Reviewed with customer and closed the task');
+    expect(route.request().postDataJSON()).toEqual({});
     mutations.push(id);
     return id === 'two' && mutations.filter(value => value === id).length === 1
       ? route.fulfill({ status: 409, json: { detail: 'Record changed. Retry.' } })
@@ -84,13 +84,7 @@ test('critical Follow-ups bulk partial failure retains failed records and retrie
   await page.getByTestId('followup-one').getByLabel('Select', { exact: true }).click();
   await page.getByTestId('followup-two').getByLabel('Select', { exact: true }).click();
   await page.getByRole('button', { name: 'Complete', exact: true }).first().click();
-  await expect(page.getByTestId('save-followup-change')).toBeDisabled();
-  expect(mutations).toHaveLength(0);
-  await page.getByTestId('followup-change-note').fill('   ');
-  await expect(page.getByTestId('save-followup-change')).toBeDisabled();
-  expect(mutations).toHaveLength(0);
-  await page.getByTestId('followup-change-note').fill('Reviewed with customer and closed the task');
-  await page.getByTestId('save-followup-change').click();
+  await expect(page.getByTestId('followup-change-note')).toHaveCount(0);
   await expect(page.getByText('1 updated, 1 failed', { exact: true })).toBeVisible();
   expect(mutations.sort()).toEqual(['one', 'two']);
   await page.getByRole('button', { name: 'Retry failed', exact: true }).click();
