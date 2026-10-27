@@ -6,7 +6,7 @@ const kitchenLabels = ['Lead', 'Visit', 'CAD File', 'Design', 'Quotation', 'Orde
 async function kitchenReads(page: import('@playwright/test').Page) {
   await page.route('**/api/kitchen-projects**', route => {
     const path = new URL(route.request().url()).pathname;
-    return route.fulfill({ json: path.endsWith('/assignees') ? { rows: [] } : path.endsWith('/configuration') ? { version: 1, department_manager_user_ids: [], files: { max_bytes: 786432, allowed_types: [] } } : { rows: [], total: 0, page: 1, limit: 25 } });
+    return route.fulfill({ json: path.endsWith('/assignees') ? { rows: [] } : path.endsWith('/dashboard') ? { configured: true, stage_counts: Object.fromEntries(kitchenStages.map(stage => [stage, 0])), stage_customer_counts: Object.fromEntries(kitchenStages.map(stage => [stage, 0])), pending_approvals: 0, completion_overdue_projects: 0, on_hold_projects: 0 } : path.endsWith('/configuration') ? { version: 1, department_manager_user_ids: [], files: { max_bytes: 786432, allowed_types: [] } } : { rows: [], total: 0, page: 1, limit: 25 } });
   });
 }
 for (const [floor, label] of [['ground-floor', 'Ground Floor'], ['first-floor', 'The Sanitary Bathroom'], ['second-floor', 'Kitchen Floor'], ['third-floor', 'Furniture Floor']] as const) {
@@ -22,8 +22,8 @@ for (const [floor, label] of [['ground-floor', 'Ground Floor'], ['first-floor', 
     await expect(page.getByTestId('floor-switcher')).toHaveAccessibleName(`Switch workspace. Current workspace: ${label}`);
     const kitchen = floor === 'second-floor';
     if (kitchen) {
-      await expect(page).toHaveURL(/\/kitchen\/stages\/lead$/);
-      const activeStage = page.getByTestId(page.viewportSize()!.width < 768 ? 'bottom-nav-kitchen-lead' : 'nav-kitchen-lead');
+      await expect(page).toHaveURL(/\/kitchen$/);
+      const activeStage = page.getByTestId(page.viewportSize()!.width < 768 ? 'bottom-nav-kitchen-dashboard' : 'nav-kitchen-dashboard');
       await expect(activeStage).toHaveAttribute('aria-current', 'page');
     }
     const labels = new Set(await page.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('aria-label'))));
@@ -34,9 +34,12 @@ for (const [floor, label] of [['ground-floor', 'Ground Floor'], ['first-floor', 
       for (const label of await page.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('aria-label')))) labels.add(label);
     }
     if (kitchen) {
+      expect(labels.has('Kitchen dashboard'), 'Kitchen navigation includes the central dashboard').toBe(true);
+      await expect(page.getByTestId('kitchen-dashboard-stages')).toBeVisible();
       for (const [index, name] of kitchenLabels.entries()) {
         expect(labels.has(name), `Kitchen navigation includes ${name}`).toBe(true);
-        await expect(page.locator(`a[href="/kitchen/stages/${kitchenStages[index]}"]`)).toHaveCount(1);
+        await expect(page.getByTestId(`kitchen-dashboard-stage-${kitchenStages[index]}`)).toHaveCount(1);
+        await expect(page.locator(`a[href="/kitchen/stages/${kitchenStages[index]}"]`)).toHaveCount(2);
       }
       for (const retired of ['Overview', 'Projects', 'Workflow', 'Sales Data', 'Customers', 'Walk-ins', 'Follow-ups', 'Payments', 'Team', 'Settings']) expect(labels.has(retired), `${retired} is not a Kitchen page`).toBe(false);
     } else await expect(page.locator('a[href="/kitchen/stages/lead"]')).toHaveCount(0);
@@ -58,7 +61,7 @@ for (const [floor, path] of [['second-floor', '/notebook/furniture'], ['third-fl
     let retiredReads = 0;
     await page.route('**/api/followups/notebook/**', route => { retiredReads++; return route.fulfill({ json: { rows: [], next_cursor: null } }); });
     await page.goto(path);
-    await expect(page).toHaveURL(new RegExp(`${floor === 'second-floor' ? '/kitchen/stages/lead' : path.includes('/quotation') ? '/followups' : '/walkins'}$`));
+    await expect(page).toHaveURL(new RegExp(`${floor === 'second-floor' ? '/kitchen' : path.includes('/quotation') ? '/followups' : '/walkins'}$`));
     expect(await page.evaluate(() => JSON.parse(localStorage.getItem('forge.active-floor')!))).toBe(floor);
     expect(retiredReads).toBe(0);
   });
@@ -73,7 +76,7 @@ for (const floor of ['ground-floor', 'second-floor', 'third-floor']) {
       let businessReads = 0;
       await page.route(/\/api\/(purchases|products|brands|categories)(?:\/|\?|$)/, route => { businessReads++; return route.fulfill({ json: [] }); });
       await page.goto(path);
-      await expect(page).toHaveURL(new RegExp(`${floor === 'ground-floor' ? '/tiles' : floor === 'second-floor' ? '/kitchen/stages/lead' : '/walkins'}$`));
+      await expect(page).toHaveURL(new RegExp(`${floor === 'ground-floor' ? '/tiles' : floor === 'second-floor' ? '/kitchen' : '/walkins'}$`));
       expect(businessReads).toBe(0);
       expect(await page.evaluate(() => JSON.parse(localStorage.getItem('forge.active-floor')!))).toBe(floor);
     });
@@ -130,7 +133,7 @@ for (const floor of ['ground-floor', 'second-floor', 'third-floor']) {
     await page.route('**/api/activity/customer/scoped-client', route => route.fulfill({ json: [] }));
     await page.goto('/customers/scoped-client');
     if (floor === 'second-floor') {
-      await expect(page).toHaveURL(/\/kitchen\/stages\/lead$/);
+      await expect(page).toHaveURL(/\/kitchen$/);
       expect(forbidden).toEqual([]);
       return;
     }

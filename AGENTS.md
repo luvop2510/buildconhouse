@@ -2,6 +2,20 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
+## Kitchen dashboard and universal customer search — 2026-10-27
+
+Kitchen lands at `/kitchen`; its nine tiles show distinct customers and project
+subtotals, including empty stages. Customers may have several projects and appear
+in several stages. Attention drilldowns share the server's existing definitions.
+Keep stage forms compact; dashboard tiles belong on the hub only. Universal search
+crosses stage filters and opens expanded current customer details with the existing
+stage editor/history. Mutable reads remain uncached and explicitly `no-store`;
+dashboard focus/refresh revalidates counts. Preserve literal search escaping,
+pagination, obsolete-response cancellation, floor/capability checks and drafts.
+Migration 0039 adds the global Kitchen page ordering index without rewriting
+business data. Dashboard totals aggregate in Mongo rather than loading histories.
+See docs/superpowers/specs/2026-10-27-kitchen-search-dashboard.md and the release audit.
+
 ## Ground Floor drafts and direct workflow — 2026-10-27
 
 Tiles selections move directly to quotations; quotations use explicit Place Order.

@@ -109,7 +109,7 @@ test('30 meaningful URLs: every current stage, persisted pages and scoped queues
       }
     }
     for (const [path, marker, api] of [
-      ['/kitchen', 'kitchen-search', '/api/kitchen-projects'],
+      ['/kitchen', 'kitchen-dashboard-stage-lead', '/api/kitchen-projects/dashboard'],
       ['/kitchen/projects', 'kitchen-search', '/api/kitchen-projects'],
       ['/kitchen/workflow', 'kitchen-search', '/api/kitchen-projects'],
       ['/kitchen/completed', 'kitchen-search', '/api/kitchen-projects'],

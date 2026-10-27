@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { KITCHEN_WORKSPACE_PAGES, KITCHEN_WORKSPACE_LANDING, KITCHEN_WORKSPACE_RESOURCE } from '../src/kitchen-workspace-pages.ts';
+import { floorLandingPath, KITCHEN_FLOOR_ID } from '../src/constants/floors.ts';
 import { staffLandingPath } from '../src/access-profiles.ts';
 import { moduleForRoute, hasGrantAccess, delegationPageLabels } from '../src/team-delegation.ts';
 
@@ -16,6 +17,9 @@ for (const page of KITCHEN_WORKSPACE_PAGES) {
   assert.equal(hasGrantAccess([{ resource: KITCHEN_WORKSPACE_RESOURCE, floor_id: 'second-floor', actions: ['view'] }], 'second-floor', KITCHEN_WORKSPACE_RESOURCE), true);
   assert.equal(hasGrantAccess([{ resource: KITCHEN_WORKSPACE_RESOURCE, floor_id: 'second-floor', actions: ['view'] }], 'first-floor', KITCHEN_WORKSPACE_RESOURCE), false);
 }
+assert.equal(moduleForRoute(['(admin)', 'kitchen']), 'kitchen-projects');
+assert.equal(floorLandingPath(KITCHEN_FLOOR_ID), '/kitchen');
+assert.equal(KITCHEN_WORKSPACE_LANDING, '/(admin)/kitchen');
 assert.equal(staffLandingPath(null, [{ resource: KITCHEN_WORKSPACE_RESOURCE, floor_id: 'second-floor', actions: ['view'] }], 'second-floor'), KITCHEN_WORKSPACE_LANDING);
 assert.equal(staffLandingPath(null, [{ resource: 'payments', floor_id: 'second-floor', actions: ['view'] }], 'second-floor'), '/(admin)/access', 'Unrelated historical pages must not silently grant Kitchen authority');
 assert.match(read('src/design/navigation.ts'), /\.\.\.KITCHEN_WORKSPACE_PAGES\.map/);

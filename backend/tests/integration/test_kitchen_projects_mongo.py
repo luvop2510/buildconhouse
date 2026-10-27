@@ -676,6 +676,8 @@ def test_independent_q17_q19_q20_numeric_sort_full_export_filters_and_ist_bounda
                     assignments={"lead": env["ids"]["worker"]}, assigned_to=env["ids"]["worker"])
                 row["customer"]["name"] = '=HYPERLINK("https://example.test","unsafe")' if index == 0 else f"Customer {index}"
                 rows.append(row)
+            await env["db"].customers.update_one({"id": project["customer_id"], "floor_id": "second-floor"},
+                {"$set": {"name": rows[0]["customer"]["name"]}})
             for index, (stage, status, amount, deadline, target) in enumerate([
                 ("lead", "New", None, "2026-10-19T19:00:00+00:00", None),
                 ("order", "Confirmed", "10.01", None, "2026-10-19"),
@@ -2206,3 +2208,102 @@ def test_returning_to_quotation_keeps_confirmed_order_terms_and_navigation_avail
             project = await accepted(env, project, 'move_stage', {'target_stage':'order'})
             assert project['orders'] == original
     asyncio.run(scenario())
+
+
+def test_universal_search_and_distinct_customer_stage_counts_use_authorized_current_records(monkeypatch):
+    import copy
+    from models_kitchen import STAGES
+    from services import kitchen_access
+    capability_calls = []
+    original_capability = kitchen_access.capability
+
+    async def capability(database, user, action):
+        capability_calls.append(action)
+        return await original_capability(database, user, action)
+
+    monkeypatch.setattr(kitchen_access, "capability", capability)
+
+    async def run():
+        async with environment() as env:
+            migration = importlib.import_module("migrations.0039_kitchen_global_search_page")
+            await migration.up(env["db"])
+            await migration.up(env["db"])
+            await configure(env)
+            project, _ = await create_project(env)
+            template = await env["db"].kitchen_projects.find_one({"id": project["id"]})
+            await env["db"].kitchen_projects.delete_many({})
+            rows = []
+            for index, stage in enumerate([*STAGES, "lead"]):
+                row = copy.deepcopy(template)
+                row.pop("_id", None)
+                row.update(id=f"global-{index}", reference=f"GLOBAL-{index}", stage=stage)
+                row["customer"].update(email="Literal.+[search]@example.test", alternate_phone="9988776655",
+                    property_name="Synthetic Property", company="Synthetic Company", city="Vadodara")
+                rows.append(row)
+            hidden = copy.deepcopy(rows[0])
+            hidden.update(id="hidden-global", reference="HIDDEN-GLOBAL", floor_id="first-floor")
+            await env["db"].kitchen_projects.insert_many([*rows, hidden])
+            await env["db"].customers.update_one({"id": project["customer_id"], "floor_id": "second-floor"},
+                {"$set": {key: rows[0]["customer"][key] for key in ("email", "alternate_phone", "property_name", "company", "city")}})
+            for actor in ("owner", "worker"):
+                dashboard = await env["api"].get("/api/kitchen-projects/dashboard", headers=headers(env, actor))
+                assert dashboard.status_code == 200, dashboard.text
+                metrics = dashboard.json()
+                assert dashboard.headers["Cache-Control"] == "no-store"
+                assert metrics["total_projects"] == 10
+                assert metrics["total_customers"] == 1
+                assert metrics["stage_customer_counts"] == {stage: 1 for stage in STAGES}
+                assert metrics["stage_counts"] == {stage: 2 if stage == "lead" else 1 for stage in STAGES}
+                for stage in STAGES:
+                    listed = await env["api"].get("/api/kitchen-projects", params={"stage": stage}, headers=headers(env, actor))
+                    assert listed.status_code == 200, listed.text
+                    data = listed.json()
+                    assert listed.headers["Cache-Control"] == "no-store"
+                    assert data["total"] == metrics["stage_counts"][stage]
+                    assert len({row["customer_id"] for row in data["rows"]}) == metrics["stage_customer_counts"][stage]
+                for term in ("Literal.+[search]", "9988776655", "Synthetic Property", "Synthetic Company", "vadodara"):
+                    listed = await env["api"].get("/api/kitchen-projects", params={"search": term, "limit": 3}, headers=headers(env, actor))
+                    assert listed.status_code == 200, listed.text
+                    assert listed.json()["total"] == 10
+                    assert len(listed.json()["rows"]) == 3
+                    assert "hidden-global" not in [row["id"] for row in listed.json()["rows"]]
+                punctuation = await env["api"].get("/api/kitchen-projects", params={"search": ".*"}, headers=headers(env, actor))
+                assert punctuation.json()["total"] == 0
+            capability_calls.clear()
+            listed = await env["api"].get("/api/kitchen-projects", params={"limit": 100}, headers=headers(env, "worker"))
+            assert listed.status_code == 200 and len(listed.json()["rows"]) == 10
+            assert capability_calls.count("update") == 1  # One permission read for the entire page.
+            plan = await env["db"].command("explain", {"find": "kitchen_projects", "filter": {"floor_id": "second-floor"},
+                "sort": {"updated_at": -1, "id": 1}, "limit": 25})
+            assert "kitchen_projects_global_page" in json.dumps(plan["queryPlanner"]["winningPlan"])
+            assert '"stage": "SORT"' not in json.dumps(plan["queryPlanner"]["winningPlan"])
+            # Reads are authoritative: out-of-band removal cannot leave a cached count.
+            await env["db"].kitchen_projects.delete_one({"id": "global-9"})
+            current = (await env["api"].get("/api/kitchen-projects/dashboard", headers=headers(env))).json()
+            assert current["total_projects"] == 9 and current["stage_counts"]["lead"] == 1
+            # The editable customer directory is current identity; project history stays unchanged.
+            changed = await env["api"].patch(f"/api/customers/{env['ids']['customer']}", headers=headers(env),
+                json={"name": "Current Contact Name", "email": "changed.current@example.com", "notes": "Current internal customer note"})
+            assert changed.status_code == 200, changed.text
+            for field, term in (("name", "Current Contact Name"), ("email", "changed.current"), ("notes", "Current internal customer note")):
+                latest = await env["api"].get("/api/kitchen-projects", params={"search": term}, headers=headers(env, "worker"))
+                assert latest.status_code == 200, latest.text
+                assert latest.json()["total"] == 9
+                assert all(row["customer"][field].startswith(term) for row in latest.json()["rows"])
+            detail = await env["api"].get("/api/kitchen-projects/global-0", headers=headers(env, "worker"))
+            assert detail.status_code == 200, detail.text
+            assert detail.headers["Cache-Control"] == "no-store"
+            assert detail.json()["customer"]["email"] == "changed.current@example.com"
+            obsolete = await env["api"].get("/api/kitchen-projects", params={"search": "Literal.+[search]"}, headers=headers(env))
+            assert obsolete.status_code == 200 and obsolete.json()["total"] == 0
+            stored = await env["db"].kitchen_projects.find_one({"id": "global-0"})
+            assert stored["customer"]["email"] == "Literal.+[search]@example.test"
+            assert stored["version"] == template["version"] and stored["activity"] == template["activity"]
+            saved = await env["api"].post("/api/kitchen-projects/global-0/commands", headers=headers(env),
+                json={"expected_version": stored["version"], "idempotency_key": str(uuid4()), "command": "metadata",
+                      "payload": {"target_completion_date": "2027-01-01"}})
+            assert saved.status_code == 200, saved.text
+            assert saved.json()["customer"]["email"] == "changed.current@example.com"
+            denied = await env["api"].get("/api/kitchen-projects/dashboard", headers=headers(env, "denied"))
+            assert denied.status_code == 403
+    asyncio.run(run())

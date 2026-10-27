@@ -85,6 +85,7 @@ REQUIRED_INDEXES: dict[str, list[tuple[tuple[str, Any], ...]]] = {
     "furniture_quotations": [(("id", 1),), (("floor_id", 1), ("updated_at", -1), ("id", -1))],
     "kitchen_projects": [
         (("id", 1),), (("reference", 1),),
+        (("floor_id", 1), ("updated_at", -1), ("id", 1)),
         (("floor_id", 1), ("stage", 1), ("updated_at", -1), ("id", 1)),
         (("floor_id", 1), ("customer_id", 1), ("updated_at", -1), ("id", 1)),
         (("floor_id", 1), ("assigned_to", 1), ("updated_at", -1), ("id", 1)),

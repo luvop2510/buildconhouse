@@ -11,4 +11,4 @@ export const KITCHEN_WORKSPACE_PAGES = [
   { stage: "installation", label: "Installation", icon: "home" },
   { stage: "completed", label: "Completed", icon: "check-circle" },
 ] as const;
-export const KITCHEN_WORKSPACE_LANDING = `/(admin)/kitchen/stages/${KITCHEN_WORKSPACE_PAGES[0].stage}`;
+export const KITCHEN_WORKSPACE_LANDING = "/(admin)/kitchen";

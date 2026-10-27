@@ -19,6 +19,7 @@ export type NavItem = {
 export const KITCHEN_OWNER_ONLY = process.env.EXPO_PUBLIC_KITCHEN_OWNER_ONLY === "true";
 
 export const PRIMARY: NavItem[] = [
+  { href: "/(admin)/kitchen", label: "Kitchen dashboard", icon: "grid", match: "kitchen-dashboard", floors: [KITCHEN_FLOOR_ID] },
   ...KITCHEN_WORKSPACE_PAGES.map(page => ({
     href: `/(admin)/kitchen/stages/${page.stage}`, label: page.label, icon: page.icon,
     match: `kitchen-${page.stage}`, floors: [KITCHEN_FLOOR_ID],

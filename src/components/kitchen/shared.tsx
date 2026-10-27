@@ -12,12 +12,13 @@ import { spacing } from "@/src/theme/tokens";
 import { KitchenOption } from "./KitchenFilters";
 import { useAuth } from "@/src/state/auth";
 import { KITCHEN_OWNER_ONLY } from "@/src/design/navigation";
+import { KitchenCustomerSearch } from "./KitchenCustomerSearch";
 import { hasGrantAccess } from "@/src/team-delegation";
 
 /** The header and content share one scroll owner on every viewport. */
-export function KitchenPage({ title, subtitle, overline, right, back, children, contentStyle, compactHeader = false }: {
+export function KitchenPage({ title, subtitle, overline, right, back, children, contentStyle, compactHeader = false, customerSearch = true }: {
   title: string; subtitle?: string | null; overline?: string; right?: ReactNode; back?: () => void;
-  children: ReactNode; scroll?: boolean; contentStyle?: ViewStyle; headerBorder?: boolean; compactHeader?: boolean;
+  children: ReactNode; scroll?: boolean; contentStyle?: ViewStyle; headerBorder?: boolean; compactHeader?: boolean; customerSearch?: boolean;
 }) {
   const { isPhone } = useBp();
   return <View style={{ flex: 1, minHeight: 0, backgroundColor: colors.surface }}>
@@ -26,6 +27,7 @@ export function KitchenPage({ title, subtitle, overline, right, back, children, 
         {compactHeader ? <View testID="kitchen-compact-header" style={{ flexDirection: "row", alignItems: "center", gap: 8, minHeight: 44 }}>
           {back ? <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={back} testID="kitchen-page-back" style={{ minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center" }}><Feather name="arrow-left" size={20} color={colors.onSurface} /></Pressable> : null}
           <Text accessibilityRole="header" aria-level={1} style={[type.titleMd, { flex: 1, minWidth: 0 }]}>{title}</Text>
+          {customerSearch ? <KitchenCustomerSearch compact /> : null}
           {right}
         </View> : <View style={{ gap: 16, borderBottomWidth: 1, borderBottomColor: colors.divider, paddingBottom: 24 }}>
           {back ? <Button label="Back" icon="arrow-left" variant="ghost" onPress={back} testID="kitchen-page-back" /> : null}
@@ -35,7 +37,7 @@ export function KitchenPage({ title, subtitle, overline, right, back, children, 
               <Text accessibilityRole="header" aria-level={1} style={[type.titleLg, { fontSize: isPhone ? 26 : 28 }]}>{title}</Text>
               {subtitle ? <Text style={[type.bodyMuted, { maxWidth: 760 }]}>{subtitle}</Text> : null}
             </View>
-            {right ? <View style={{ maxWidth: "100%", flexShrink: 1 }}>{right}</View> : null}
+            <View style={{ maxWidth: "100%", flexShrink: 1, flexDirection: "row", flexWrap: "wrap", gap: 8 }}>{customerSearch ? <KitchenCustomerSearch /> : null}{right}</View>
           </View>
         </View>}
         {children}
@@ -46,9 +48,9 @@ export function KitchenPage({ title, subtitle, overline, right, back, children, 
 export function KitchenFloor({ children }: { children: ReactNode }) {
   const access = useRequireFloorAccessState(KITCHEN_FLOOR_ID);
   const { staff } = useAuth();
-  if (KITCHEN_OWNER_ONLY && staff && staff.role !== "owner" && (!staff.custom_access || !hasGrantAccess(staff.access_grants, KITCHEN_FLOOR_ID, "kitchen_projects"))) return <KitchenPage title="Kitchen"><ErrorState title="Owner access required" subtitle="Kitchen is currently available to the owner only." /></KitchenPage>;
-  if (access.error) return <KitchenPage title="Kitchen projects"><ErrorState title="Kitchen access unavailable" subtitle={access.error} onRetry={access.retry} /></KitchenPage>;
-  if (!access.ready) return <KitchenPage title="Kitchen projects"><LoadingState label="Checking Kitchen access…" /></KitchenPage>;
+  if (KITCHEN_OWNER_ONLY && staff && staff.role !== "owner" && (!staff.custom_access || !hasGrantAccess(staff.access_grants, KITCHEN_FLOOR_ID, "kitchen_projects"))) return <KitchenPage title="Kitchen" customerSearch={false}><ErrorState title="Owner access required" subtitle="Kitchen is currently available to the owner only." /></KitchenPage>;
+  if (access.error) return <KitchenPage title="Kitchen projects" customerSearch={false}><ErrorState title="Kitchen access unavailable" subtitle={access.error} onRetry={access.retry} /></KitchenPage>;
+  if (!access.ready) return <KitchenPage title="Kitchen projects" customerSearch={false}><LoadingState label="Checking Kitchen access…" /></KitchenPage>;
   return <>{children}</>;
 }
 export function KitchenPanel({ title, children }: { title?: string; children: ReactNode }) {

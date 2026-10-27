@@ -12,6 +12,7 @@ import { Choice, displayDate, ErrorNotice, KitchenFloor, KitchenPage, KitchenPan
 import { KitchenDateField } from "./KitchenFilters";
 import { kitchenToday } from "./KitchenDates";
 import { LeadFields } from "./KitchenLeadFields";
+import { referrerLabel } from "@/src/utils/referrer";
 import { spacing } from "@/src/theme/tokens";
 import { KitchenButton as Button, KitchenTextField as TextField, kitchenColors as colors, kitchenType as type } from "./KitchenPrimitives";
 import { KitchenAssignment } from "./KitchenAssignment";
@@ -26,14 +27,14 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
   const canEditCustomer = useActionAccess("customers", "update", false);
   const state = useKitchenProject();
   const { project, loading, failure, policy, policyError, reload, updateProject, submission, command, returnTo, retainedDraft } = state;
-  const { stage: parameter } = useLocalSearchParams<{ stage?: string }>();
+  const { stage: parameter, details } = useLocalSearchParams<{ stage?: string; details?: string }>();
   const router = useRouter();
   const [panel, setPanel] = useState<ProjectPage | "workflow" | "assignee" | "advance" | "visits" | null>(["documents", "history", "assignments", "exceptions"].includes(page) ? page : null);
-  const [detailsExpanded, setDetailsExpanded] = useState(false);
+  const [detailsExpanded, setDetailsExpanded] = useState(details === "1");
   const lastStage = useRef(project?.stage);
   useEffect(() => { if (lastStage.current && project?.stage !== lastStage.current) setPanel(null); lastStage.current = project?.stage; }, [project?.stage]);
   const selected = kitchenStage(parameter) || project?.stage || "lead";
-  useEffect(() => { setDetailsExpanded(false); }, [selected]);
+  useEffect(() => { setDetailsExpanded(details === "1"); }, [selected, details]);
   const future = Boolean(project && KITCHEN_STAGES.indexOf(selected) > KITCHEN_STAGES.indexOf(project.stage));
   const path = (suffix = "") => kitchenProjectPath(state.id, suffix, returnTo);
   const canUpdate = project?.permissions?.can_update === true;
@@ -68,6 +69,22 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
       {detailsExpanded ? <View testID="kitchen-project-details" style={{ gap: spacing.sm }}>
         <Text style={type.overline}>{project.project_reference || project.reference}{project.is_legacy ? " · Legacy project" : ""}</Text>
         <Text style={type.bodyStrong}>{[project.customer.name, project.customer.phone].filter(Boolean).join(" · ")}</Text>
+        <Text style={type.body} testID="kitchen-customer-current-stage">Current stage · {STAGE_LABELS[project.stage]}{project.status ? ` · ${project.status}` : ""}</Text>
+        <View testID="kitchen-customer-full-details" style={{ gap: 6 }}>
+          {([
+            ["Alternate phone", project.customer.alternate_phone], ["Email", project.customer.email],
+            ["Company", project.customer.company], ["Property", project.customer.property_name],
+            ["Address", project.customer.address], ["City", project.customer.city], ["State", project.customer.state],
+            ["Pincode", project.customer.pincode], ["GSTIN", project.customer.gstin], ["Customer notes", project.customer.notes],
+            ["Reference", project.customer.referrer_name || project.customer.referrer_id ? referrerLabel(project.customer) : null],
+            ["Assigned to", project.assigned_to_name], ["Target completion", project.target_completion_date ? displayDate(project.target_completion_date) : null],
+          ] as const).map(([label, value]) => <Text key={label} style={type.body}>{label}: {value || "Not recorded"}</Text>)}
+        </View>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          <Button label="All stage records" icon="list" variant="secondary" onPress={() => setPanel("workflow")} testID="kitchen-customer-stage-records" />
+          <Button label="Complete history" icon="clock" variant="secondary" onPress={() => setPanel("history")} testID="kitchen-customer-history" />
+          <NavigationLink href={"/kitchen" as any} style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 8 }}><Text style={[type.bodyStrong, { color: colors.brand }]}>Dashboard</Text></NavigationLink>
+        </View>
         {projectActions}
         {selected === project.stage && canUpdate ? <StageNavigation project={project} disabled={disabled} /> : null}
       </View> : null}
@@ -236,7 +253,7 @@ function ProjectHistory({ project }: { project: KitchenProject }) {
   const documentName = (id?: string | null) => id ? project.attachments?.find(file => file.id === id)?.filename || "Saved project attachment" : "Not attached";
   const versionName = (id: string) => { const design = project.design_versions?.find(row => row.id === id); const quote = project.quotation_versions?.find(row => row.id === id); return design ? `Design version ${design.number}` : quote ? `Quotation ${quote.number}` : null; };
   let entries: { id: string; title: string; lines: string[]; url?: string }[] = [];
-  if (category === "activity") entries = [...(project.activity || [])].reverse().map(event => {
+  if (category === "activity") entries = (project.activity || []).slice(-limit).reverse().map(event => {
     const payload = event.payload || {};
     const stageNames = (stage: unknown) => KITCHEN_STAGES.includes(stage as KitchenStage) ? STAGE_LABELS[stage as KitchenStage] : String(stage);
     const subject = typeof payload.subject_id === "string" ? versionName(payload.subject_id) : null;
@@ -269,15 +286,16 @@ function ProjectHistory({ project }: { project: KitchenProject }) {
     entries = [...(project.exceptions || [])].reverse().map(event => ({ id: event.id, title: `${event.action.replaceAll("_", " ")}${event.status ? ` · ${event.status}` : ""}`, lines: [event.reason, `${actor(event.actor_id)} · ${displayDate(event.at)}`] }));
     if (project.duplicate_review?.reason) entries.push({ id: "duplicate-review", title: `Duplicate review · ${project.duplicate_review.status}`, lines: [project.duplicate_review.reason, `${actor(project.duplicate_review.reviewed_by)} · ${displayDate(project.duplicate_review.reviewed_at)}`] });
   }
+  const recordCount = category === "activity" ? project.activity?.length || 0 : entries.length;
   return <View style={{ gap: spacing.lg, width: "100%", maxWidth: 860, alignSelf: "center" }}>
     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: spacing.md }}>
-      <Menu triggerLabel="Choose history category" triggerTestID="kitchen-history-category" align="left" items={Object.entries(historyCategories).map(([key, label]) => ({ label, onPress: () => { setLimit(30); setCategory(key as keyof typeof historyCategories); } }))}><Text style={type.titleMd}>{historyCategories[category]} ▾</Text></Menu><Text style={type.caption}>{entries.length} records</Text>
+      <Menu triggerLabel="Choose history category" triggerTestID="kitchen-history-category" align="left" items={Object.entries(historyCategories).map(([key, label]) => ({ label, onPress: () => { setLimit(30); setCategory(key as keyof typeof historyCategories); } }))}><Text style={type.titleMd}>{historyCategories[category]} ▾</Text></Menu><Text style={type.caption}>{recordCount} records</Text>
     </View>
     <KitchenPanel>{!entries.length ? <Text style={type.bodyMuted}>No {historyCategories[category].toLowerCase()} recorded.</Text> : entries.slice(0, limit).map(entry => <View key={entry.id} style={{ gap: spacing.sm, paddingVertical: spacing.md, borderBottomWidth: 1, borderColor: colors.border }}>
       <Text style={type.bodyStrong}>{entry.title}</Text>{entry.lines.map((line, index) => <Text key={index} style={type.bodyMuted}>{line}</Text>)}
       {entry.url ? <Button label="Open reference" variant="secondary" onPress={() => void Linking.openURL(entry.url!)} /> : null}
     </View>)}</KitchenPanel>
-    {entries.length > limit ? <Button label="Show earlier records" variant="secondary" onPress={() => setLimit(value => value + 30)} /> : null}
+    {recordCount > limit ? <Button label="Show earlier records" variant="secondary" onPress={() => setLimit(value => value + 30)} /> : null}
   </View>;
 }
 function auditChangeLines(changes: unknown, actor: (id?: string) => string) {
