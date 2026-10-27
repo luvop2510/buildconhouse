@@ -14,14 +14,19 @@ for (const [floor, label] of [['ground-floor', 'Ground Floor'], ['first-floor', 
     await mockSession(page, '/followups', false);
     await page.addInitScript(id => localStorage.setItem('forge.active-floor', JSON.stringify(id)), floor);
     await kitchenReads(page);
+    let followupReadFloor: string | undefined;
     await page.route('**/api/followups/page?**', route => {
-      expect(route.request().headers()['x-floor-id']).toBe(floor);
+      followupReadFloor = route.request().headers()['x-floor-id'];
+      expect(followupReadFloor).toBe(floor);
       return route.fulfill({ json: { items: [], page: 1, page_size: 100, has_more: false } });
     });
     await page.goto('/followups');
+    await expect(page).toHaveURL(/\/followups$/);
+    await expect.poll(() => followupReadFloor).toBe(floor);
     await expect(page.getByTestId('floor-switcher')).toHaveAccessibleName(`Switch workspace. Current workspace: ${label}`);
     const kitchen = floor === 'second-floor';
     if (kitchen) {
+      await page.goto('/kitchen');
       await expect(page).toHaveURL(/\/kitchen$/);
       const activeStage = page.getByTestId(page.viewportSize()!.width < 768 ? 'bottom-nav-kitchen-dashboard' : 'nav-kitchen-dashboard');
       await expect(activeStage).toHaveAttribute('aria-current', 'page');
@@ -41,10 +46,11 @@ for (const [floor, label] of [['ground-floor', 'Ground Floor'], ['first-floor', 
         await expect(page.getByTestId(`kitchen-dashboard-stage-${kitchenStages[index]}`)).toHaveCount(1);
         await expect(page.locator(`a[href="/kitchen/stages/${kitchenStages[index]}"]`)).toHaveCount(2);
       }
-      for (const retired of ['Overview', 'Projects', 'Workflow', 'Sales Data', 'Customers', 'Walk-ins', 'Follow-ups', 'Payments', 'Team', 'Settings']) expect(labels.has(retired), `${retired} is not a Kitchen page`).toBe(false);
+      for (const retired of ['Overview', 'Projects', 'Workflow', 'Customers', 'Walk-ins', 'Payments', 'Team', 'Settings']) expect(labels.has(retired), `${retired} is not a Kitchen page`).toBe(false);
     } else await expect(page.locator('a[href="/kitchen/stages/lead"]')).toHaveCount(0);
     expect(labels.has('Walk-ins')).toBe(!kitchen);
-    expect(labels.has('Follow-ups')).toBe(!kitchen);
+    expect(labels.has('Follow-ups')).toBe(true);
+    expect(labels.has('Sales Data')).toBe(true);
     expect(labels.has('Purchases')).toBe(floor === 'first-floor');
     expect(labels.has('Catalog')).toBe(['first-floor', 'ground-floor'].includes(floor));
     expect(labels.has('RNB quotations')).toBe(floor === 'third-floor');

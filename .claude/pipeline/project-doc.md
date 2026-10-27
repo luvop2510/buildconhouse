@@ -79,5 +79,5 @@ ledgers retain separate RNB totals. Actual catalog products remain Tiles/Sanitar
 only, without inventing project product attribution.
 Meaningful verification includes the real disposable-Mongo accounting test,
 unit shaping/access tests, populated five-width browser scenarios and mandatory
-four-device stability/performance gates. No architectural instruction change is
-needed in AGENTS.md. Detailed contract: docs/sales-design-contract.md.
+four-device stability/performance gates. AGENTS.md records the new three-view and
+four-department contract. Detailed contract: docs/sales-design-contract.md.

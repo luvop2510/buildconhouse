@@ -1,5 +1,17 @@
 # AGENTS.md — BuildCon House ERP (forge2.0)
 
+## Sales Data simplification — 2026-10-27
+
+Sales Data has three views: Sales, References and Customers. Keep legacy report
+bookmarks redirecting to these views and retain brand/reference drilldowns. Include
+all four departments, with Furniture RNB separate from INR. Product/brand counts
+use actual Tiles/Sanitary catalog lines; Kitchen uses the current confirmed order's
+selected quotation/design versions. Label current balances/follow-ups separately
+from period sales and identify Kitchen's recorded-advance limit. Start at This month
+unless a period was explicitly saved. Report and drilldown reads share role/floor
+access; combined views never broaden assigned floors. Kitchen allows Sales Data
+and shared Follow-ups alongside its unchanged nine-stage workspace.
+
 ## Main is the release source — 2026-10-27
 
 The user explicitly requires all completed work on `origin/main`. Consolidate
