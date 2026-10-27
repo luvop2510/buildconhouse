@@ -662,11 +662,11 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   }, [rows, header.transportationFee, docType]);
 
   const persist = useCallback(async ({ silent = true }: { silent?: boolean } = {}): Promise<string | null> => {
+    const savingRevision = editRevisionRef.current;
     const run = async (): Promise<string | null> => {
       const current = () => mountedRef.current && documentScopeRef.current === documentScope && documentGenerationRef.current === documentGeneration;
       if (loading || !localReady || restoreError || recoveryDraft || deletingScopes.current.has(documentScope) || !current() || (routeId && docId !== routeId)) return null;
       let id = persistedIdRef.current || docId;
-      const savingRevision = editRevisionRef.current;
       const name = header.customerName.trim();
       if (!name) {
         if (!silent) toast.show("Enter the customer name first");
@@ -792,7 +792,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         await writeTileDraft({ ...localSnapshotRef.current, documentId: id, serverSavedAt: serverSavedAtRef.current }, draftEpoch.current);
         if (!current()) return null;
       }
-      setSaveState(dirtyRef.current ? "local" : "saved");
+      setSaveState(editRevisionRef.current === savingRevision && !dirtyRef.current ? "saved" : "local");
       if (!deletingScopes.current.has(documentScope) && !routeId && createdDocumentRef.current?.id === id) router.setParams({ id });
       return id;
       } catch (e: any) {

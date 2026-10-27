@@ -131,6 +131,7 @@ test('first tile autosave keeps newer draft edits when the created id updates th
   create.resolve({ id: 'self-created', number: 'TQ-001' }); await fixture.settle();
   fixture.requests.find(request => request.method === 'PATCH').resolve({ updated_at: '2026-10-27T01:00:00Z' }); await fixture.settle();
   assert.equal(fixture.state.header.address, 'New address typed during save');
+  assert.ok(['idle', 'local'].includes(fixture.state.saveState), 'Acknowledging an older revision must not claim newer edits are saved');
   assert.equal(fixture.requests.filter(request => request.method === 'GET').length, 0, 'Own id transition must not restore the older server snapshot');
   fixture.fireAutosave(); await fixture.settle();
   const patch = fixture.requests.filter(request => request.method === 'PATCH').at(-1);
@@ -138,6 +139,56 @@ test('first tile autosave keeps newer draft edits when the created id updates th
   assert.equal(patch.payload.address_snapshot, 'New address typed during save');
   assert.equal(patch.options.floorId, 'ground-floor');
   patch.resolve({ subtotal: 0, grand_total: 0 }); await fixture.settle();
+  assert.equal(fixture.state.saveState, 'saved');
+  fixture.state.setHeaderField('address', 'Another unsaved address'); await fixture.settle();
+  assert.ok(['idle', 'local'].includes(fixture.state.saveState), 'Editing a saved document must immediately invalidate saved feedback');
+});
+
+test('tile PATCH only acknowledges its captured revision and a failed save can retry', async () => {
+  const fixture = builder(); fixture.render(); fixture.navigate('A');
+  fixture.requests[0].resolve(restoredDoc('A')); await fixture.settle();
+  fixture.state.setHeaderField('address', 'First revision'); await fixture.settle();
+  fixture.fireAutosave(); await fixture.settle();
+  const first = fixture.requests[1];
+  assert.equal(first.method, 'PATCH'); assert.equal(first.payload.address_snapshot, 'First revision');
+  assert.equal(fixture.state.saveState, 'saving');
+  fixture.state.setHeaderField('address', 'Newer revision'); await fixture.settle();
+  assert.ok(['idle', 'local'].includes(fixture.state.saveState), 'Newer edits must remain unsaved on the server');
+  first.resolve({ subtotal: 0, grand_total: 0 }); await fixture.settle();
+  assert.ok(['idle', 'local'].includes(fixture.state.saveState), 'Newer edits must remain unsaved on the server');
+  fixture.fireAutosave(); await fixture.settle();
+  const second = fixture.requests[2];
+  assert.equal(second.payload.address_snapshot, 'Newer revision');
+  second.reject({ detail: 'Fixture save failure' }); await fixture.settle();
+  assert.equal(fixture.state.saveState, 'error');
+  const retry = fixture.state.retrySave(); await fixture.settle();
+  assert.equal(fixture.state.saveState, 'saving');
+  assert.equal(fixture.requests[3].payload.address_snapshot, 'Newer revision');
+  fixture.requests[3].resolve({ subtotal: 0, grand_total: 0 }); await retry; await fixture.settle();
+  assert.equal(fixture.state.saveState, 'saved');
+});
+
+test('a queued tile save cannot acknowledge edits made after it was enqueued', async () => {
+  const fixture = builder(); fixture.render(); fixture.navigate('A');
+  fixture.requests[0].resolve(restoredDoc('A')); await fixture.settle();
+  fixture.state.setHeaderField('address', 'First revision'); await fixture.settle();
+  fixture.fireAutosave(); await fixture.settle();
+  const first = fixture.requests[1];
+  fixture.state.setHeaderField('address', 'Queued revision'); await fixture.settle();
+  fixture.fireAutosave(); await fixture.settle();
+  assert.equal(fixture.requests.length, 2, 'The persistence queue must retain one in-flight write');
+  fixture.state.setHeaderField('address', 'Latest revision'); await fixture.settle();
+  first.resolve({ subtotal: 0, grand_total: 0 }); await fixture.settle();
+  const queued = fixture.requests[2];
+  assert.equal(queued.method, 'PATCH'); assert.equal(queued.payload.address_snapshot, 'Queued revision');
+  queued.resolve({ subtotal: 0, grand_total: 0 }); await fixture.settle();
+  assert.equal(fixture.state.header.address, 'Latest revision');
+  assert.ok(['idle', 'local'].includes(fixture.state.saveState), 'Queued payload does not include the latest revision');
+  fixture.fireAutosave(); await fixture.settle();
+  const latest = fixture.requests[3];
+  assert.equal(latest.payload.address_snapshot, 'Latest revision');
+  latest.resolve({ subtotal: 0, grand_total: 0 }); await fixture.settle();
+  assert.equal(fixture.state.saveState, 'saved');
 });
 
 test('empty quotation result settles its own view while optional selections remain pending', async () => {

@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
+import './test-customer-edit-lifecycle.mjs';
+import './test-customer-switcher-lifecycle.mjs';
 
 // Execute the production screen hooks, holding secondary responses indefinitely.
 // A fake clock makes the initial-load/search distinction deterministic and tests
