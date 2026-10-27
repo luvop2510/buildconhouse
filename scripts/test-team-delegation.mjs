@@ -57,7 +57,7 @@ assert.deepEqual(loadDelegation(['ground-floor', 'first-floor'], [
   { resource: 'payments', floor_id: 'first-floor', actions: ['view', 'create', 'export'] },
 ]);
 for (const floor of floors) assert.equal(staffLandingPath(null, [{ resource: 'walkins', floor_id: floor, actions: ['view'] }], floor), floor === 'second-floor' ? '/(admin)/access' : '/(admin)/walkins', 'Kitchen only admits the connected Kitchen workflow; other floors retain Walk-ins');
-assert.equal(staffLandingPath(null, [{ resource: 'kitchen_projects', floor_id: 'second-floor', actions: ['view'] }], 'second-floor'), '/(admin)/kitchen/stages/lead');
+assert.equal(staffLandingPath(null, [{ resource: 'kitchen_projects', floor_id: 'second-floor', actions: ['view'] }], 'second-floor'), '/(admin)/kitchen');
 assert.equal(staffLandingPath(null, []), '/(admin)/access');
 assert.equal(staffLandingPath(null, [{ resource: 'payments', actions: ['view'], floor_id: 'ground-floor' }], 'first-floor'), '/(admin)/access');
 assert.equal(staffLandingPath(null, [{ resource: 'payments', actions: ['view'], floor_id: 'ground-floor' }], 'ground-floor'), '/(admin)/payments');

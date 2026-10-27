@@ -4,7 +4,7 @@ const origin = new URL(process.env.KITCHEN_E2E_BASE_URL || 'https://invalid.exam
 if (origin.protocol !== 'http:' || origin.hostname !== '127.0.0.1' || !origin.port) {
   throw new Error('Run scripts/test-kitchen-e2e.mjs; Kitchen persistence acceptance requires its owned loopback API.');
 }
-const workflow = ['redesign-kitchen-projects.spec.ts', 'kitchen-responsive-interactions.spec.ts', 'kitchen-release-review.spec.ts', 'kitchen-note-fields.spec.ts', 'kitchen-version-workflow.spec.ts', 'kitchen-autosave.spec.ts', 'kitchen-draft-autosave.spec.ts', 'kitchen-date-defaults.spec.ts', 'kitchen-keyboard-stability.spec.ts'];
+const workflow = ['kitchen-search-dashboard.spec.ts', 'redesign-kitchen-projects.spec.ts', 'kitchen-responsive-interactions.spec.ts', 'kitchen-release-review.spec.ts', 'kitchen-note-fields.spec.ts', 'kitchen-version-workflow.spec.ts', 'kitchen-autosave.spec.ts', 'kitchen-draft-autosave.spec.ts', 'kitchen-date-defaults.spec.ts', 'kitchen-keyboard-stability.spec.ts'];
 const matrix = 'kitchen-route-matrix.spec.ts';
 export default defineConfig({
   testDir: './e2e', testMatch: [...workflow, matrix],

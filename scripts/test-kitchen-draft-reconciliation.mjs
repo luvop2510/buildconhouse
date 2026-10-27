@@ -56,7 +56,7 @@ async function harness(providerSource = source, record = structuredClone(initial
   render();
   for (let turn = 0; turn < 12; turn++) { await Promise.resolve(); render(); }
   assert.equal(state.loading, false);
-  return { render, get state() { return state; }, writes, settle(value) { settle(value); } };
+  return { render, get state() { return state; }, writes, returnPath: output.kitchenReturnPath, settle(value) { settle(value); } };
 }
 
 async function checkOrdinary(providerSource = source) {
@@ -194,6 +194,11 @@ await assert.rejects(checkDisplayedDefault(source.replace('baselines.current[key
   /Explicitly touching an unsaved displayed default remains dirty/, 'Negative control reproduces falsely Saved UI defaults');
 
 const failure = await harness();
+assert.equal(failure.returnPath('/kitchen'), '/kitchen', 'A customer opened from universal search returns to its dashboard');
+assert.equal(failure.returnPath('/kitchen/stages/visit?search=Customer&view=list&page=2'), '/kitchen/stages/visit?search=Customer&view=list&page=2');
+for (const unsafe of ['https://example.com', '//example.com', '/kitchen-other', '/customers', '/kitchen/unknown']) {
+  assert.equal(failure.returnPath(unsafe), '/kitchen/stages/lead', 'Untrusted return paths retain their safe fallback');
+}
 failure.state.setDraftValue('lead.value', initial.lead, { site_location: 'Keep me' });
 failure.render();
 const failed = failure.state.command('edit_lead', { site_location: 'Keep me' }, true);

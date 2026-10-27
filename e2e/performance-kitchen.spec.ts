@@ -37,6 +37,8 @@ test('Kitchen bounded project page loads and searches within existing budgets', 
       metrics: { hold_is_active: false, overdue_date: 'either', confirmed_value_include_completed: false, confirmed_value_include_cancelled: false },
       files: { allowed_types: ['application/pdf'], max_bytes: 786432 }, required_fields: null, history_corrections: null } });
     if (url.pathname.endsWith('/dashboard')) return route.fulfill({ json: { configured: true, active_projects: 105,
+      stage_counts: { lead: 25, visit: 10, cad: 10, design: 10, quotation: 10, order: 10, production: 10, installation: 10, completed: 10 },
+      stage_customer_counts: { lead: 25, visit: 10, cad: 10, design: 10, quotation: 10, order: 10, production: 10, installation: 10, completed: 10 },
       pending_approvals: 0, on_hold_projects: 2, next_action_overdue_projects: 10, completion_overdue_projects: 5, active_order_value: '100000.00', overdue_projects: 10, confirmed_order_value: '100000.00' } });
     if (url.pathname === '/api/kitchen-projects') {
       const search = url.searchParams.get('search');
@@ -67,10 +69,26 @@ test('Kitchen bounded project page loads and searches within existing budgets', 
   await expect(page.getByTestId('kitchen-compact-list')).toBeVisible();
   await expect(page.getByTestId('kitchen-view-menu')).toHaveCount(0);
   await expect(page.getByTestId('kitchen-project-kitchen-performance-49')).toBeVisible();
+  if (browserName === 'chromium') await (await page.context().newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: 1 });
+  const dashboardStart = performance.now();
+  await page.goto('/kitchen', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('kitchen-dashboard-count-lead')).toHaveText('25');
+  await expect(page.getByTestId('kitchen-dashboard-stages').getByRole('link')).toHaveCount(9);
+  const dashboardReadyMs = performance.now() - dashboardStart;
+  expect(dashboardReadyMs, 'Dashboard primary content').toBeLessThan(2500);
+  if (browserName === 'chromium') await (await page.context().newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: 4 });
+  const globalSearchStart = performance.now();
+  await page.getByTestId('kitchen-universal-search').fill('customer 49');
+  await expect(page.getByTestId('kitchen-search-project-kitchen-performance-49')).toBeVisible();
+  const globalSearchMs = performance.now() - globalSearchStart;
+  expect(globalSearchMs, 'Universal customer search').toBeLessThan(1500);
+  const globalReads = reads.filter(read => read.path === '/api/kitchen-projects');
+  expect(globalReads.at(-1)?.limit).toBe('20');
+  expect(globalReads.at(-1)?.floor).toBe('second-floor');
   expect(unexpected).toEqual([]);
   await runtime.assertHealthy();
   await info.attach('Kitchen performance evidence', { contentType: 'application/json', body: JSON.stringify({ device: info.project.name,
-    fixtureLatencyMs: 200, totalProjects: 105, pageProjects: 25, readyMs, searchMs, reads }) });
+    fixtureLatencyMs: 200, totalProjects: 105, pageProjects: 25, readyMs, searchMs, dashboardReadyMs, globalSearchMs, reads }) });
 });
 
 test('Kitchen stage, long history and private document lists meet existing primary-content budgets', async ({ page, baseURL, browserName }, info) => {

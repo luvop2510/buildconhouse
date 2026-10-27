@@ -31,7 +31,7 @@ const one = (value: string | string[] | undefined) => Array.isArray(value) ? val
 const url = (path: string, values: Record<string, string | number | undefined>) => { const query = Object.entries(values).filter(([, value]) => value !== "" && value !== undefined).map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`).join("&"); return `${path}${query ? `?${query}` : ""}`; };
 export function KitchenWorkspace(props: WorkspaceProps) { return <KitchenFloor><Workspace {...props} /></KitchenFloor>; }
 
-function Workspace({ stage = "lead" }: WorkspaceProps) {
+function Workspace({ stage = "lead", page: requestedPage }: WorkspaceProps) {
   const router = useRouter();
   const params = useLocalSearchParams<Record<string, string | string[]>>();
   const { staff } = useAuth();
@@ -45,21 +45,21 @@ function Workspace({ stage = "lead" }: WorkspaceProps) {
   const [retry, setRetry] = useState(0);
   const owner = staff?.role === "owner";
   const canCreate = createAccess;
-  const page = stage === "completed" ? "completed" : "stage";
-  const path = `/kitchen/stages/${stage}`;
+  const page = requestedPage === "projects" ? "projects" : stage === "completed" ? "completed" : "stage";
+  const path = page === "projects" ? "/kitchen/projects" : `/kitchen/stages/${stage}`;
   const values = Object.fromEntries(["search", ...filterKeys, "page"].map(key => [key, one(params[key])])) as Record<string, string>;
   // Retired filter bookmarks must not hide projects after workflow controls are removed.
   if (["assignee", "next_action", "deadline"].includes(values.sort)) values.sort = "";
   if (values.date_field === "deadline") values.date_field = "";
   if (values.attention === "next_action_overdue") values.attention = "";
-  values.stage = "";
+  if (page !== "projects") values.stage = "";
   if (stage === "completed") values.status = "";
-  const returnTo = url(path, values);
+  const returnTo = url(path, { ...values, view: one(params.view) });
   const [createOpen, setCreateOpen] = useState(one(params.create) === "1");
   const [settingsOpen, setSettingsOpen] = useState(one(params.settings) === "1");
   useEffect(() => { setCreateOpen(one(params.create) === "1"); }, [params.create]);
   useEffect(() => { setSettingsOpen(one(params.settings) === "1"); }, [params.settings]);
-  const setValues = (patch: Record<string, string>) => { const next = { ...patch }; delete next.stage; router.setParams(next); };
+  const setValues = (patch: Record<string, string>) => { const next = { ...patch }; if (page !== "projects") delete next.stage; router.setParams(next); };
   const [search, setSearch] = useState(values.search);
   useEffect(() => { setSearch(values.search); }, [values.search]);
   useEffect(() => { if (search === values.search) return; const timer = setTimeout(() => router.setParams({ search, page: "1" }), 250); return () => clearTimeout(timer); }, [search, values.search, router]);
@@ -78,11 +78,12 @@ function Workspace({ stage = "lead" }: WorkspaceProps) {
   const requestCreateClose = useRef<(() => void) | null>(null);
   const closeCreate = () => { setCreateOpen(false); router.setParams({ create: "" }); };
   const closeSettings = () => { setSettingsOpen(false); router.setParams({ settings: "" }); };
-  return <KitchenPageFrame title={STAGE_LABELS[stage]} subtitle={stageDescriptions[stage]} overline={`Kitchen · Stage ${KITCHEN_STAGES.indexOf(stage) + 1} of 9`}
+  return <KitchenPageFrame title={page === "projects" ? "Customer projects" : STAGE_LABELS[stage]} subtitle={page === "projects" ? "View and filter customer projects across all nine stages." : stageDescriptions[stage]} overline={page === "projects" ? "Kitchen · All stages" : `Kitchen · Stage ${KITCHEN_STAGES.indexOf(stage) + 1} of 9`}
     right={<View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>{owner ? <Button label="Department settings" icon="settings" variant="ghost" onPress={() => setSettingsOpen(true)} testID="kitchen-settings-open" /> : null}{stage === "lead" && canCreate ? <Button label="Add lead" icon="plus" onPress={() => setCreateOpen(true)} testID="kitchen-create" /> : null}</View>}>
     <View style={{ width: "100%", minWidth: 0, gap: 28 }}>
-      <View style={{ maxWidth: 380 }}><SelectFilter label="Kitchen stage" value={stage} options={KITCHEN_STAGES.map((value, index) => ({ value, label: `${index + 1}. ${STAGE_LABELS[value]}` }))} onChange={value => router.push(`/kitchen/stages/${value}` as any)} testID="kitchen-stage-navigation" /></View>
-      <ProjectList key={stage} page={page} stage={stage} values={values} setValues={setValues} returnTo={returnTo} search={search} setSearch={setSearch} retry={retry} onRetry={() => setRetry(value => value + 1)} canExport={canExport} />
+      <NavigationLink href={"/kitchen" as any} testID="kitchen-dashboard-link" style={{ minHeight: 44, justifyContent: "center" }}><Text style={[type.bodyStrong, { color: colors.brand }]}>← Kitchen dashboard</Text></NavigationLink>
+      {page !== "projects" ? <View style={{ maxWidth: 380 }}><SelectFilter label="Kitchen stage" value={stage} options={KITCHEN_STAGES.map((value, index) => ({ value, label: `${index + 1}. ${STAGE_LABELS[value]}` }))} onChange={value => router.push(`/kitchen/stages/${value}` as any)} testID="kitchen-stage-navigation" /></View> : null}
+      <ProjectList key={page === "projects" ? page : stage} page={page} stage={stage} values={values} setValues={setValues} returnTo={returnTo} search={search} setSearch={setSearch} retry={retry} onRetry={() => setRetry(value => value + 1)} canExport={canExport} />
     </View>
     <Sheet scroll visible={createOpen && stage === "lead"} onClose={() => requestCreateClose.current ? requestCreateClose.current() : closeCreate()} title="Add lead" testID="kitchen-create-sheet">
         {!createAccess ? <ErrorState title="Lead creation access required" /> : policyError ? <ErrorState title="Kitchen setup unavailable" subtitle={policyError} onRetry={() => setRetry(value => value + 1)} /> : !policy ? <LoadingState label="Checking Kitchen setup…" /> : <CreateLead onRegisterClose={handler => { requestCreateClose.current = handler; }} onClose={closeCreate} onCreated={project => { closeCreate(); router.push(url(`/kitchen/${project.id}/stages/lead`, { returnTo: path }) as any); }} />}
@@ -107,7 +108,7 @@ function ProjectList({ page, stage, values, setValues, returnTo, search, setSear
   useEffect(() => { const controller = new AbortController(); setLoading(true); setFailure(null); setResult(null); kitchenProjectsApi.list(JSON.parse(queryKey), controller.signal).then(value => { if (!controller.signal.aborted) setResult(value); }).catch(error => { if (!controller.signal.aborted) setFailure(errorText(error)); }).finally(() => { if (!controller.signal.aborted) setLoading(false); }); return () => controller.abort(); }, [queryKey, retry]);
   const activeFilters = filterKeys.filter(key => values[key] && !["sort", "direction", "date_field"].includes(key)).length;
   const rows = result?.rows || [];
-  const projectHref = (project: KitchenProject) => url(`/kitchen/${project.id}/stages/${project.stage}`, { returnTo });
+  const projectHref = (project: KitchenProject) => url(`/kitchen/${project.id}/stages/${project.stage}`, { details: "1", returnTo });
   const clear = () => setValues(Object.fromEntries([...filterKeys, "search"].map(key => [key, ""]).concat([["page", "1"]])));
   return <View onLayout={event => setContentWidth(event.nativeEvent.layout.width)} style={{ gap: spacing.lg }}>
     {page === "review" ? <Text style={type.bodyMuted}>Confirm a distinct project or mark a duplicate lead Lost. The original record and customer stay intact.</Text> : null}
@@ -154,9 +155,10 @@ function ProjectCard({ project, href }: { project: KitchenProject; href: string 
     style={({ hovered, pressed }) => ({ gap: spacing.lg, padding: spacing.lg, borderWidth: 1, borderColor: hovered || pressed ? colors.brand : colors.border, borderRadius: radius.md, backgroundColor: hovered || pressed ? colors.surfaceTertiary : colors.surfaceSecondary })}>
     <View style={{ flexDirection: "row", gap: spacing.md, justifyContent: "space-between", alignItems: "center" }}>
       <View style={{ flex: 1, minWidth: 0, gap: spacing.xs }}><Text style={[type.caption, { color: colors.onSurfaceMuted }]}>{project.project_reference || project.reference}</Text><Text style={[type.titleMd, { flexShrink: 1 }]}>{project.customer.name}</Text></View>
-      <Feather name="arrow-up-right" size={20} color={colors.brand} />
+      <Feather name="chevron-right" size={20} color={colors.brand} />
     </View>
     <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.sm }}><Text style={type.bodyStrong}>{STAGE_LABELS[project.stage]}</Text><Text style={type.bodyMuted}>{projectStatus(project) !== STAGE_LABELS[project.stage] ? projectStatus(project) : ""}</Text></View>
+    {project.stage !== "lead" ? <Text style={type.body}>{project.customer.phone || "Phone not recorded"}{project.lead.site_location ? ` · ${project.lead.site_location}` : ""}</Text> : null}
     {project.duplicate_review?.status === "pending" ? <Text style={[type.bodyStrong, { color: colors.warning }]}>Owner duplicate review pending</Text> : null}
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.lg, borderTopWidth: 1, borderColor: colors.border, paddingTop: spacing.md }}>
       {stageColumns(project.stage).map(column => <View key={column.label} style={{ flexGrow: 1, flexBasis: 150, minWidth: 0, gap: spacing.xs }}><Text style={type.caption}>{column.label}</Text><Text style={type.body}>{column.value(project)}</Text></View>)}

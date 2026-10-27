@@ -56,6 +56,7 @@ function WorkspaceLink({ href, onPress, ...props }: Omit<React.ComponentProps<ty
 function isNavActive(item: NavItem, segments: string[]): boolean {
   if (item.match.startsWith("kitchen-") && segments.includes("kitchen") && !segments.includes("notebook")) {
     const stageIndex = segments.indexOf("stages");
+    if (item.match === "kitchen-dashboard") return stageIndex < 0;
     return stageIndex >= 0 && item.match === `kitchen-${segments[stageIndex + 1]}`;
   }
   if (item.match === "tiles") return segments.includes("tiles") && !segments.includes("orders");

@@ -1,2 +1,2 @@
-import { Redirect } from "expo-router";
-export default function KitchenLegacyPage() { return <Redirect href={"/kitchen/stages/lead" as any} />; }
+import { KitchenWorkspace } from "@/src/components/kitchen/KitchenWorkspace";
+export default function KitchenProjectsPage() { return <KitchenWorkspace page="projects" />; }

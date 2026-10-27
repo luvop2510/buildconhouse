@@ -95,7 +95,7 @@ test('Q01 Q02 Q03 Q12 Q13: real lead/visit persistence, automatic editable dates
   const customerId = process.env.KITCHEN_E2E_CUSTOMER_ID;
   expect(customerId, 'Runner provides its synthetic existing customer').toBeTruthy();
   await seedBrowser(page);
-  await page.goto('/kitchen');
+  await page.goto('/kitchen/stages/lead');
   await expect(page.getByTestId('kitchen-stage-navigation')).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('v4-department-overview.png') });
   await page.setViewportSize({ width: 360, height: 600 });
@@ -201,7 +201,7 @@ test('Q04 to Q09: all nine stages preserve versions, exact counters and late man
   } });
   expect(policy.ok(), await policy.text()).toBeTruthy();
   await seedBrowser(page);
-  await page.goto('/kitchen');
+  await page.goto('/kitchen/stages/lead');
   await page.getByTestId('kitchen-create').click();
   await page.getByTestId('kitchen-existing-customer').click();
   await page.getByTestId('kitchen-customer').fill('Kitchen acceptance customer');
@@ -798,7 +798,8 @@ test('Q02 Q18 Q19 v4: stage queues deep-link correctly and project Back restores
   const origin = `/kitchen/stages/lead?search=${encodeURIComponent(project.reference)}&sort=reference&direction=asc&view=list&page=1`;
   await page.goto(origin);
   await page.getByTestId(`kitchen-project-${project.id}`).click();
-  await expect(page).toHaveURL(new RegExp(`/kitchen/${project.id}/stages/lead\\?returnTo=`));
+  await expect(page).toHaveURL(current => current.pathname === `/kitchen/${project.id}/stages/lead` && current.searchParams.get('details') === '1' && Boolean(current.searchParams.get('returnTo')));
+  await expect(page.getByTestId('kitchen-project-details')).toBeVisible();
   await openCurrentTask(page);
   await openProjectPage(page, 'history');
   await openProjectPage(page, 'overview');
@@ -1069,7 +1070,7 @@ test('Kitchen named stages preview without writes and design details can be corr
 
 test('Kitchen lead references create a directory entry and retain complete customer details', async ({ page, context }, info) => {
   await seedBrowser(page);
-  await page.goto('/kitchen');
+  await page.goto('/kitchen/stages/lead');
   await page.getByTestId('kitchen-create').click();
   await page.getByTestId('kitchen-customer-name').fill('Reference acceptance customer');
   await page.getByTestId('kitchen-customer-phone').fill(`990${String(Date.now()).slice(-7)}`);
@@ -1116,7 +1117,7 @@ for (const referenceType of ['architect', 'interior_designer'] as const) {
     const reference = references.find(row => row.type === referenceType)!;
     const health = captureRuntimeHealth(page);
     await seedBrowser(page);
-    await page.goto('/kitchen');
+    await page.goto('/kitchen/stages/lead');
     await page.getByTestId('kitchen-create').click();
     const customerName = `Existing reference customer ${suffix}`;
     const phone = `9${String(Date.now() + Math.floor(Math.random() * 1_000_000)).slice(-9)}`;

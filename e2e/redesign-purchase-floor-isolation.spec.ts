@@ -47,11 +47,11 @@ test('critical Sanitary Purchases scopes items, customers and facets to its own 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 });
 
-for (const [floor, destination] of [['ground-floor', '/tiles'], ['second-floor', '/kitchen/stages/lead'], ['third-floor', '/walkins']] as const) {
+for (const [floor, destination] of [['ground-floor', '/tiles'], ['second-floor', '/kitchen'], ['third-floor', '/walkins']] as const) {
   test(`critical ${floor} denies direct Purchases URLs without reads or changing its floor`, async ({ page }) => {
     await mockSession(page, '/purchases', false);
     await page.addInitScript(id => localStorage.setItem('forge.active-floor', JSON.stringify(id)), floor);
-    if (floor === 'second-floor') await page.route('**/api/kitchen-projects**', route => route.fulfill({ json: new URL(route.request().url()).pathname.endsWith('/configuration') ? { version: 1, department_manager_user_ids: [] } : { rows: [], total: 0, page: 1, limit: 25 } }));
+    if (floor === 'second-floor') await page.route('**/api/kitchen-projects**', route => route.fulfill({ json: new URL(route.request().url()).pathname.endsWith('/dashboard') ? { configured: true, stage_counts: {}, stage_customer_counts: {}, pending_approvals: 0, completion_overdue_projects: 0, on_hold_projects: 0 } : new URL(route.request().url()).pathname.endsWith('/configuration') ? { version: 1, department_manager_user_ids: [] } : { rows: [], total: 0, page: 1, limit: 25 } }));
     const reads: string[] = [];
     await page.route(/\/api\/(?:purchases|purchase-orders)(?:\/|\?|$)/, route => {
       reads.push(route.request().url());
@@ -61,6 +61,7 @@ for (const [floor, destination] of [['ground-floor', '/tiles'], ['second-floor',
       await page.goto(path);
       await expect(page).toHaveURL(new RegExp(`${destination}$`));
       await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
+      if (floor === 'second-floor') await expect(page.getByTestId('kitchen-dashboard-stages')).toBeVisible();
       await expect(page.getByTestId('view-stock')).toHaveCount(0);
       await expect(page.getByRole('link', { name: 'Purchases', exact: true })).toHaveCount(0);
       expect(await page.evaluate(() => JSON.parse(localStorage.getItem('forge.active-floor') || 'null'))).toBe(floor);

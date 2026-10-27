@@ -65,7 +65,7 @@ async def configure(body: ConfigurePolicy, user: UserPublic = Depends(get_curren
 
 
 @router.get("")
-async def list_projects(search: str = Query("", max_length=250), stage: Stage | None = None,
+async def list_projects(response: Response, search: str = Query("", max_length=250), stage: Stage | None = None,
                         status: str | None = Query(None, max_length=80), assignee: str | None = Query(None, max_length=128),
                         date_from: str | None = None, date_to: str | None = None,
                         date_field: Literal["created_at", "deadline", "target_completion_date", "completion_date"] = "created_at",
@@ -82,13 +82,15 @@ async def list_projects(search: str = Query("", max_length=250), stage: Stage | 
         raise HTTPException(422, str(exc)) from exc
     if date_from and date_to and date_from > date_to:
         raise HTTPException(422, "Date range start must not follow its end")
+    response.headers["Cache-Control"] = "no-store"
     return await KitchenProjectService(db).list(user, search=search, stage=stage, status=status, assignee=assignee,
         date_from=date_from, date_to=date_to, date_field=date_field, sort=sort, direction=direction,
         page=page, limit=limit, completed=completed, duplicate_review=duplicate_review, attention=attention)
 
 
 @router.get("/dashboard")
-async def dashboard(user: UserPublic = Depends(get_current_user)):
+async def dashboard(response: Response, user: UserPublic = Depends(get_current_user)):
+    response.headers["Cache-Control"] = "no-store"
     return await KitchenProjectService(db).dashboard(user)
 
 
@@ -117,7 +119,8 @@ async def create_project(body: CreateProject, user: UserPublic = Depends(get_cur
 
 
 @router.get("/{project_id}")
-async def project_detail(project_id: str, user: UserPublic = Depends(get_current_user)):
+async def project_detail(project_id: str, response: Response, user: UserPublic = Depends(get_current_user)):
+    response.headers["Cache-Control"] = "no-store"
     return await KitchenProjectService(db).get(user, project_id)
 
 

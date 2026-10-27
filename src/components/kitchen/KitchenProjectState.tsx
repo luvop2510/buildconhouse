@@ -44,7 +44,7 @@ function persistedDraftSource(project: KitchenProject | null, key: string): unkn
 
 export function kitchenReturnPath(value?: string | string[]) {
   const path = Array.isArray(value) ? value[0] : value;
-  return path && /^\/kitchen\/(projects|completed|review|stages\/(lead|visit|cad|design|quotation|order|production|installation|completed))(\?[^#]*)?$/.test(path)
+  return path && /^\/kitchen(?:\/(projects|completed|review|stages\/(lead|visit|cad|design|quotation|order|production|installation|completed)))?(\?[^#]*)?$/.test(path)
     ? path : "/kitchen/stages/lead";
 }
 

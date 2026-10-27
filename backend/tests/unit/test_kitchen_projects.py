@@ -53,6 +53,8 @@ class Cursor:
         self.rows = copy.deepcopy(rows)
     def sort(self, *args):
         return self
+    def max_time_ms(self, _milliseconds):
+        return self
     def limit(self, limit):
         self.rows = self.rows[:limit]
         return self

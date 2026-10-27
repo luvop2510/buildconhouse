@@ -11,10 +11,10 @@ from decimal import Decimal
 from datetime import date, datetime, timedelta, timezone
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
-from bson import BSON
+from bson import BSON, Decimal128
 from fastapi import HTTPException
 from pydantic import ValidationError
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import DuplicateKeyError, ExecutionTimeout
 
 from models_kitchen import (AdvancePayload, CadFields, ConfigurePolicy,
                             LeadCustomer, LeadFields, MetadataPayload, PolicyFields, STAGES, VisitFields, AssignmentPayload)
@@ -24,12 +24,24 @@ from services.referrer_identity import referrer_query
 
 MAX_AGGREGATE_BYTES = 12 * 1024 * 1024
 POLICY_ID = "kitchen-policy"
+READ_MAX_TIME_MS = 5000
+CUSTOMER_SEARCH_FIELDS = ("name", "phone", "alternate_phone", "email", "company", "property_name",
+    "address", "city", "state", "pincode", "gstin", "notes", "referrer_name", "referrer_company")
 CUSTOMER_PROJECTION = {"_id": 0, **{field: 1 for field in ("id", "name", "phone", "address", "email", "company", "property_name", "city", "state", "pincode", "gstin", "alternate_phone", "notes", "referrer_id", "referrer_name", "referrer_type", "referrer_company")}}
 HISTORY_FIELDS = ("activity", "command_receipts", "design_versions", "quotation_versions", "orders",
                   "revision_events", "site_visits", "approvals", "attachments", "work_history")
 
 
 DECISION_CONTRACT = "2026-10-20"
+
+
+@asynccontextmanager
+async def bounded_read():
+    try:
+        async with asyncio.timeout(8):
+            yield
+    except (ExecutionTimeout, TimeoutError) as exc:
+        raise HTTPException(503, "Kitchen data is taking longer than expected; retry this read") from exc
 
 
 def order_basis_expression(expression, *, fallback_quotation=False):
@@ -329,8 +341,11 @@ class KitchenProjectService:
                 raise HTTPException(409, "Kitchen policy changed; refresh before saving") from exc
         return {k: v for k, v in updated.items() if k != "_id"}
 
-    async def public(self, project, user, policy, *, summary=False, replayed=False):
+    async def public(self, project, user, policy, *, summary=False, replayed=False, can_update=None):
         result = {k: copy.deepcopy(v) for k, v in project.items() if k not in {"_id", "command_receipts", "creation_fingerprint", "customer_phone_normalized", "customer_name_normalized"}}
+        if not summary:
+            customers = await self._current_customers([project["customer_id"]])
+            result["customer"] = customers.get(project["customer_id"], result["customer"])
         if summary:
             version_fields = {"id", "number", "response", "approval_date", "shared_date", "handoff_date", "handoff_status", "presentation_date", "received_date",
                               "received_status", "sent_status", "amount", "design_version_id", "workflow_cycle", "attachment_id", "url", "requirements", "budget_discussion"}
@@ -373,7 +388,7 @@ class KitchenProjectService:
         if "attachments" in result:
             result["attachments"] = [{k: v for k, v in attachment.items() if k not in {"storage_key", "bucket"}}
                                      for attachment in result["attachments"]]
-        result["permissions"] = {"can_update": await access.capability(self.db, user, "update"),
+        result["permissions"] = {"can_update": await access.capability(self.db, user, "update") if can_update is None else can_update,
                                  "can_assign": access.owner(user), "can_configure": access.owner(user)}
         result["permissions"]["can_review_duplicate"] = access.owner(user)
         for scope in ("production", "closure"):
@@ -391,14 +406,24 @@ class KitchenProjectService:
             result["replayed"] = True
         return result
 
+    async def _current_customers(self, customer_ids):
+        ids = list(set(customer_ids))
+        if not ids:
+            return {}
+        rows = await self.db.customers.find({"id": {"$in": ids}, "floor_id": access.KITCHEN_FLOOR},
+            CUSTOMER_PROJECTION).max_time_ms(READ_MAX_TIME_MS).to_list(len(ids))
+        return {row["id"]: {key: value for key, value in row.items() if key in CUSTOMER_PROJECTION and key != "_id"}
+                for row in rows}
+
     async def get(self, user, project_id):
-        policy, project = await asyncio.gather(self.policy(),
-            self.db.kitchen_projects.find_one({"id": project_id, "floor_id": access.KITCHEN_FLOOR}))
-        await access.require_project(self.db, user, project, policy)
-        result, duplicates = await asyncio.gather(self.public(project, user, policy),
-            self._duplicates(user, project["customer_id"], policy, exclude=project_id))
-        result["duplicate_candidates"] = duplicates
-        return result
+        async with bounded_read():
+            policy, project = await asyncio.gather(self.policy(),
+                self.db.kitchen_projects.find_one({"id": project_id, "floor_id": access.KITCHEN_FLOOR}))
+            await access.require_project(self.db, user, project, policy)
+            result, duplicates = await asyncio.gather(self.public(project, user, policy),
+                self._duplicates(user, project["customer_id"], policy, exclude=project_id))
+            result["duplicate_candidates"] = duplicates
+            return result
 
     async def duplicates(self, user, customer_id, *, exclude=None):
         await access.require_capability(self.db, user, "view")
@@ -848,42 +873,49 @@ class KitchenProjectService:
         return {"rows": await access.eligible_staff(self.db) if access.owner(user) else []}
 
     async def dashboard(self, user):
-        await access.require_capability(self.db, user, "view")
-        policy = await self.policy()
-        query = access.scope_query(user, policy)
-        expressions = attention_expressions(policy)
-        fields = {"_id": 0, "stage": 1, "assigned_to": 1, "assigned_to_name": 1,
-                  "orders": {"$slice": [{"$ifNull": ["$orders", []]}, -1]},
-                  "attention": expressions}
-        totals = {key: 0 for key in expressions}
-        stages = {stage: 0 for stage in STAGES}
-        workload = {}
-        either_overdue = value_paise = 0
-        # Mongo evaluates exactly the same expressions as list attention filters.
-        # Only the bounded current order and assignment metadata cross the wire.
-        async for row in self.db.kitchen_projects.aggregate([{"$match": query}, {"$project": fields}]):
-            flags = row["attention"]
-            for key in totals:
-                totals[key] += bool(flags.get(key))
-            stages[row["stage"]] += 1
-            either_overdue += bool(flags.get("next_action_overdue") or flags.get("completion_overdue"))
-            if flags.get("active_order"):
-                value_paise += int(Decimal(row["orders"][-1]["final_amount"]) * 100)
-            if flags.get("active"):
-                assignee_id = row.get("assigned_to")
-                if assignee_id not in workload:
-                    workload[assignee_id] = {"assignee_id": assignee_id,
-                        "assignee_name": row.get("assigned_to_name") if assignee_id else None, "project_count": 0}
-                workload[assignee_id]["project_count"] += 1
-        amount = format(Decimal(value_paise) / 100, ".2f")
-        return {"configured": True, "active_projects": totals["active"], "on_hold_projects": totals["on_hold"],
-                "next_action_overdue_projects": totals["next_action_overdue"],
-                "completion_overdue_projects": totals["completion_overdue"],
-                "active_order_value": amount, "overdue_projects": either_overdue,
-                "confirmed_order_value": amount, "pending_approvals": totals["pending_approval"],
-                "stage_counts": stages,
-                "workload": sorted(workload.values(), key=lambda item: (item["assignee_name"] or "", item["assignee_id"] or "")),
-                "definitions": policy["metrics"]}
+        async with bounded_read():
+            await access.require_capability(self.db, user, "view")
+            policy = await self.policy()
+            expressions = attention_expressions(policy)
+            totals = {key: {"$sum": {"$cond": ["$attention." + key, 1, 0]}} for key in expressions}
+            totals["value"] = {"$sum": {"$cond": ["$attention.active_order",
+                {"$convert": {"input": "$order.final_amount", "to": "decimal", "onError": 0, "onNull": 0}}, 0]}}
+            # Aggregate in Mongo; no project histories or per-customer arrays cross the wire.
+            pipeline = [{"$match": access.scope_query(user, policy)}, {"$project": {
+                "stage": 1, "customer_id": {"$ifNull": ["$customer_id", "$id"]},
+                "assigned_to": 1, "assigned_to_name": 1, "attention": expressions,
+                "order": {"$arrayElemAt": [{"$ifNull": ["$orders", []]}, -1]}}},
+                {"$facet": {
+                    "totals": [{"$group": {"_id": None, **totals, "projects": {"$sum": 1}}}],
+                    "customers": [{"$group": {"_id": "$customer_id"}}, {"$count": "count"}],
+                    "stages": [{"$group": {"_id": {"stage": "$stage", "customer": "$customer_id"}, "projects": {"$sum": 1}}},
+                        {"$group": {"_id": "$_id.stage", "projects": {"$sum": "$projects"}, "customers": {"$sum": 1}}}],
+                    "workload": [{"$match": {"attention.active": True}}, {"$group": {
+                        "_id": "$assigned_to", "assignee_name": {"$first": "$assigned_to_name"}, "project_count": {"$sum": 1}}}],
+                }}]
+            rows = await self.db.kitchen_projects.aggregate(pipeline, maxTimeMS=READ_MAX_TIME_MS).to_list(1)
+            data = rows[0]
+            values = data["totals"][0] if data["totals"] else {}
+            stages = {stage: 0 for stage in STAGES}
+            customers = dict(stages)
+            for row in data["stages"]:
+                if row["_id"] in stages:
+                    stages[row["_id"]] = row["projects"]
+                    customers[row["_id"]] = row["customers"]
+            value = values.get("value", 0)
+            amount = format(value.to_decimal() if isinstance(value, Decimal128) else Decimal(str(value)), ".2f")
+            workload = [{"assignee_id": row["_id"], "assignee_name": row.get("assignee_name"),
+                         "project_count": row["project_count"]} for row in data["workload"]]
+            return {"configured": True, "active_projects": values.get("active", 0), "on_hold_projects": values.get("on_hold", 0),
+                    "next_action_overdue_projects": values.get("next_action_overdue", 0),
+                    "completion_overdue_projects": values.get("completion_overdue", 0),
+                    "active_order_value": amount, "overdue_projects": values.get("completion_overdue", 0),
+                    "confirmed_order_value": amount, "pending_approvals": values.get("pending_approval", 0),
+                    "stage_counts": stages, "stage_customer_counts": customers,
+                    "total_projects": values.get("projects", 0),
+                    "total_customers": data["customers"][0]["count"] if data["customers"] else 0,
+                    "workload": sorted(workload, key=lambda item: (item["assignee_name"] or "", item["assignee_id"] or "")),
+                    "definitions": policy["metrics"]}
 
     async def export_completed(self, user, **filters):
         await access.require_capability(self.db, user, "export")
@@ -908,57 +940,69 @@ class KitchenProjectService:
 
     async def list(self, user, *, search="", stage=None, status=None, assignee=None, date_from=None,
                    date_to=None, date_field="created_at", sort="updated_at", direction="desc", page=1, limit=50, completed=None, duplicate_review=None, attention=None):
-        await access.require_capability(self.db, user, "view")
-        policy = await self.policy()
-        query = access.scope_query(user, policy)
-        filters = [query]
-        if attention:
-            expressions = attention_expressions(policy)
-            if attention not in expressions:
-                raise HTTPException(422, "Unsupported Kitchen attention filter")
-            filters.append({"$expr": expressions[attention]})
-        if duplicate_review:
-            filters.append({"duplicate_review.status": duplicate_review})
-        if stage:
-            filters.append({"stage": stage})
-        if completed is not None:
-            filters.append({"stage": "completed" if completed else {"$ne": "completed"}})
-        if status:
-            filters.append({"status": status})
-        if assignee:
-            filters.append({"assigned_to": None if assignee == "unassigned" else assignee})
-        if search.strip():
-            term = {"$regex": re.escape(search.strip()), "$options": "i"}
-            filters.append({"$or": [{field: term} for field in ("reference", "project_reference", "customer.name", "customer.phone", "lead.site_location")]})
-        if date_from or date_to:
-            bounds = {}
-            if date_from:
-                bounds["$gte"] = date_from if date_field.endswith("_date") else datetime.combine(date.fromisoformat(date_from), datetime.min.time(), tzinfo=timezone(timedelta(hours=5, minutes=30))).astimezone(timezone.utc).isoformat()
-            if date_to:
-                end = date.fromisoformat(date_to) + timedelta(days=1)
-                bounds["$lt"] = end.isoformat() if date_field.endswith("_date") else datetime.combine(end, datetime.min.time(), tzinfo=timezone(timedelta(hours=5, minutes=30))).astimezone(timezone.utc).isoformat()
-            filters.append({date_field: bounds})
-        compiled = {"$and": filters}
-        # Current-stage assignment is persisted as a query projection field.
-        total = await self.db.kitchen_projects.count_documents(compiled)
-        sort_field = {"customer": "customer.name", "assignee": "assigned_to_name", "order_amount": "order_amount_paise"}.get(sort, sort)
-        projection = {key: 0 for key in HISTORY_FIELDS if key not in {"design_versions", "quotation_versions", "orders"}}
-        versions = {}
-        # Stage tables need the current commercial fields, never the full
-        # version ledger. Keep the explicit order basis even when it references
-        # an older design/quotation, returning at most one row per ledger.
-        for key, variable in (("design_versions", "design"), ("quotation_versions", "quote")):
-            versions[key] = order_basis_expression({"$cond": [{"$or": [
-                {"$and": [
-                {"$ne": ["$$order", {}]}, {"$not": [{"$ifNull": ["$commercial_basis_invalidated", False]}]},
-                {"$not": [{"$ifNull": ["$$order.authorization_invalidated", False]}]}]},
-                {"$in": ["$stage", ["quotation", "order"]]}]},
-                {"$cond": [{"$ne": ["$$" + variable, {}]}, ["$$" + variable], []]},
-                {"$slice": [{"$ifNull": ["$" + key, []]}, -1]}]}, fallback_quotation=True)
-        versions["orders"] = {"$slice": [{"$ifNull": ["$orders", []]}, -1]}
-        rows = await self.db.kitchen_projects.aggregate([{"$match": compiled},
-            {"$sort": {sort_field: 1 if direction == "asc" else -1, "id": 1}},
-            {"$skip": (page - 1) * limit}, {"$limit": limit},
-            {"$set": versions}, {"$project": projection}]).to_list(limit)
-        return {"rows": [await self.public(row, user, policy, summary=True) for row in rows], "total": total, "page": page, "limit": limit}
-
+        async with bounded_read():
+            await access.require_capability(self.db, user, "view")
+            policy = await self.policy()
+            query = access.scope_query(user, policy)
+            filters = [query]
+            if attention:
+                expressions = attention_expressions(policy)
+                if attention not in expressions:
+                    raise HTTPException(422, "Unsupported Kitchen attention filter")
+                filters.append({"$expr": expressions[attention]})
+            if duplicate_review:
+                filters.append({"duplicate_review.status": duplicate_review})
+            if stage:
+                filters.append({"stage": stage})
+            if completed is not None:
+                filters.append({"stage": "completed" if completed else {"$ne": "completed"}})
+            if status:
+                filters.append({"status": status})
+            if assignee:
+                filters.append({"assigned_to": None if assignee == "unassigned" else assignee})
+            if search.strip():
+                term = {"$regex": re.escape(search.strip()), "$options": "i"}
+                matches = await self.db.customers.find({"floor_id": access.KITCHEN_FLOOR,
+                    "$or": [{field: term} for field in CUSTOMER_SEARCH_FIELDS]}, {"_id": 0, "id": 1}).limit(1001).max_time_ms(READ_MAX_TIME_MS).to_list(1001)
+                if len(matches) > 1000:
+                    raise HTTPException(413, "Search matches over 1,000 Kitchen customers; enter a more specific name or contact detail")
+                # Contact edits must stop matching stale project snapshots.
+                fields = ("reference", "project_reference", "customer_id", "lead.site_location")
+                filters.append({"$or": [{field: term} for field in fields] + [{"customer_id": {"$in": [row["id"] for row in matches]}}]})
+            if date_from or date_to:
+                bounds = {}
+                if date_from:
+                    bounds["$gte"] = date_from if date_field.endswith("_date") else datetime.combine(date.fromisoformat(date_from), datetime.min.time(), tzinfo=timezone(timedelta(hours=5, minutes=30))).astimezone(timezone.utc).isoformat()
+                if date_to:
+                    end = date.fromisoformat(date_to) + timedelta(days=1)
+                    bounds["$lt"] = end.isoformat() if date_field.endswith("_date") else datetime.combine(end, datetime.min.time(), tzinfo=timezone(timedelta(hours=5, minutes=30))).astimezone(timezone.utc).isoformat()
+                filters.append({date_field: bounds})
+            compiled = {"$and": filters}
+            # Current-stage assignment is persisted as a query projection field.
+            sort_field = {"customer": "customer.name", "assignee": "assigned_to_name", "order_amount": "order_amount_paise"}.get(sort, sort)
+            projection = {key: 0 for key in HISTORY_FIELDS if key not in {"design_versions", "quotation_versions", "orders"}}
+            versions = {}
+            # Stage tables need the current commercial fields, never the full
+            # version ledger. Keep the explicit order basis even when it references
+            # an older design/quotation, returning at most one row per ledger.
+            for key, variable in (("design_versions", "design"), ("quotation_versions", "quote")):
+                versions[key] = order_basis_expression({"$cond": [{"$or": [
+                    {"$and": [
+                    {"$ne": ["$$order", {}]}, {"$not": [{"$ifNull": ["$commercial_basis_invalidated", False]}]},
+                    {"$not": [{"$ifNull": ["$$order.authorization_invalidated", False]}]}]},
+                    {"$in": ["$stage", ["quotation", "order"]]}]},
+                    {"$cond": [{"$ne": ["$$" + variable, {}]}, ["$$" + variable], []]},
+                    {"$slice": [{"$ifNull": ["$" + key, []]}, -1]}]}, fallback_quotation=True)
+            versions["orders"] = {"$slice": [{"$ifNull": ["$orders", []]}, -1]}
+            pipeline = [{"$match": compiled},
+                {"$sort": {sort_field: 1 if direction == "asc" else -1, "id": 1}},
+                {"$skip": (page - 1) * limit}, {"$limit": limit},
+                {"$set": versions}, {"$project": projection}]
+            total, rows = await asyncio.gather(
+                self.db.kitchen_projects.count_documents(compiled, maxTimeMS=READ_MAX_TIME_MS),
+                self.db.kitchen_projects.aggregate(pipeline, maxTimeMS=READ_MAX_TIME_MS).to_list(limit))
+            can_update, customers = await asyncio.gather(access.capability(self.db, user, "update"),
+                self._current_customers([row["customer_id"] for row in rows]))
+            for row in rows:
+                row["customer"] = customers.get(row["customer_id"], row["customer"])
+            return {"rows": [await self.public(row, user, policy, summary=True, can_update=can_update) for row in rows], "total": total, "page": page, "limit": limit}

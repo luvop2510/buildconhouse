@@ -53,7 +53,7 @@ export function staffLandingPath(profile?: AccessProfile | null, grants?: Person
       customers: "/(admin)/customers", purchases: "/(admin)/purchases", followups: "/(admin)/followups",
       orders: "/(admin)/tiles/orders", walkins: "/(admin)/walkins", dashboard: "/(admin)/dashboard",
       notifications: "/(admin)/notifications", tiles: "/(admin)/tiles", godown_stock: "/(admin)/godown-stock",
-      kitchen_projects: "/(admin)/kitchen/stages/lead",
+      kitchen_projects: "/(admin)/kitchen",
       furniture_quotations: "/(admin)/notebook/furniture-quotations", sales_data: "/(admin)/sales-data",
   };
   // Legacy stage-specific notebook grants do not authorize the replacement
