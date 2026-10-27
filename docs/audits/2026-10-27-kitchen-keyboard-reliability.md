@@ -207,3 +207,8 @@ findings remain recorded. Full broad audit was intentionally interrupted for
 remaining custom-field fixes and immediate publication per the user's final
 instruction; it is not reported as green. Protected-main/security settings and
 pre-push hooks remain unchanged, and this branch has not been merged or pushed.
+
+Post-release bounded log review found no HTTP 5xx. Two provider rows labeled error
+were an INFO storage HTTP 200 and a WARNING readiness HTTP 200 at 1,507ms, rather
+than application failures. Both run-owned QA sessions were revoked individually;
+authentication subsequently returned 401 for each.
