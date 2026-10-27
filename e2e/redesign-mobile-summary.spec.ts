@@ -85,14 +85,14 @@ test('critical Walk-in register renders without waiting for the optional summary
 });
 
 for (const metric of ['expiring'] as const) {
-  test(`critical Kitchen Follow-up ${metric} summary clears unrelated filters and opens its exact records`, async ({ page }) => {
+  test(`critical Furniture Follow-up ${metric} summary clears unrelated filters and opens its exact records`, async ({ page }) => {
     const runtime = captureRuntimeHealth(page);
-    await mockSession(page, '/followups', true, { floorId: 'second-floor' });
+    await mockSession(page, '/followups', true, { floorId: 'third-floor' });
     const queries: URLSearchParams[] = [];
     const now = new Date().toISOString();
     let releaseSearch!: () => void;
     const heldSearch = new Promise<void>(resolve => { releaseSearch = resolve; });
-    const base = { customer_id: 'summary-customer', customer_tier: 'retail', customer_phone: '9876543210', floor_id: 'second-floor', category: 'quotation', reason: 'Summary record', next_action: 'Contact customer', reason_factors: [], suggested_channel: 'call', priority_score: 50, priority_level: 'medium', due_at: now, contact_attempts: 0, tags: [], created_at: now, updated_at: now };
+    const base = { customer_id: 'summary-customer', customer_tier: 'retail', customer_phone: '9876543210', floor_id: 'third-floor', category: 'quotation', reason: 'Summary record', next_action: 'Contact customer', reason_factors: [], suggested_channel: 'call', priority_score: 50, priority_level: 'medium', due_at: now, contact_attempts: 0, tags: [], created_at: now, updated_at: now };
     await page.route('**/api/followups/stats', route => route.fulfill({ json: { today_tasks: 0, overdue: 0, expiring_quotations_count: 1, waiting_for_customer: 0, completed_today: 2, completed_trend: 0, rules: [], workspace_counts: {} } }));
     await page.route('**/api/followups/mission', route => route.fulfill({ json: null }));
     await page.route('**/api/followups/page?**', async route => {
