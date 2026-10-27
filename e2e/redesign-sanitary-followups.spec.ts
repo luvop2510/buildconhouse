@@ -15,8 +15,8 @@ const draftReminder = {
   assigned_to: 'sanitary-worker', assigned_to_name: 'Assigned salesperson',
 };
 
-test('critical sanitary follow-ups keeps draft source and salesperson without summary or priority clutter', async ({ page }, info) => {
-  await mockSession(page, '/followups', false);
+for (const floorId of ['first-floor', 'ground-floor']) test(`critical ${floorId} follow-ups keeps draft source and salesperson without summary or priority clutter`, async ({ page }, info) => {
+  await mockSession(page, '/followups', false, { floorId });
   const errors: string[] = [], summaryReads: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.route('**/api/followups/config/assignees', route => route.fulfill({ json: [
@@ -26,9 +26,9 @@ test('critical sanitary follow-ups keeps draft source and salesperson without su
   await page.route('**/api/followups/saved-views', route => route.fulfill({ json: [] }));
   const filters: URLSearchParams[] = [];
   await page.route('**/api/followups/page?**', route => {
-    expect(route.request().headers()['x-floor-id']).toBe('first-floor');
+    expect(route.request().headers()['x-floor-id']).toBe(floorId);
     filters.push(new URL(route.request().url()).searchParams);
-    return route.fulfill({ json: { items: [draftReminder], page: 1, page_size: 100, has_more: false } });
+    return route.fulfill({ json: { items: [{ ...draftReminder, floor_id: floorId }], page: 1, page_size: 100, has_more: false } });
   });
   await page.route(/\/api\/followups\/(stats|mission)(\?.*)?$/, route => {
     summaryReads.push(route.request().url());
@@ -55,6 +55,8 @@ test('critical sanitary follow-ups keeps draft source and salesperson without su
   await page.getByTestId('followups-filters-toggle').click();
   await expect(page.getByTestId('followups-salesperson-sanitary-worker')).toHaveAttribute('aria-checked', 'true');
   expect(filters.length).toBe(readsBeforeHiding);
+  await page.getByTestId('new-followup-btn').click();
+  await expect(page.getByRole('dialog').getByText('Type', { exact: true })).toHaveCount(0);
   expect(summaryReads).toEqual([]);
   expect(errors).toEqual([]);
   await page.screenshot({ path: info.outputPath('sanitary-followups.png'), fullPage: true });

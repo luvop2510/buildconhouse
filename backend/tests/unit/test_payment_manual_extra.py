@@ -156,7 +156,7 @@ def test_ledger_enrichment_shows_cost_name_actor_timestamp_and_debit_balance(mon
         "created_at": "2026-09-20T10:00:00+00:00",
     }
     quotation = {
-        "id": "q-1", "number": "FQ-1", "grand_total": 1000,
+        "id": "q-1", "number": "FQ-1", "floor_id": "ground-floor", "grand_total": 1000,
         "payment_extra_history": [{"id": "cost-1", "amount": 250}],
     }
     monkeypatch.setattr(payment_routes, "db", _HistoryDb(quotation, [payment, cost]))

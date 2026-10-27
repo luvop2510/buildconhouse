@@ -40,6 +40,7 @@ import { ReferrerField, type ReferrerValue } from "@/src/components/customer/Ref
 // phone-width presentation differs. Both presentations always produce the
 // identical PDF, because they edit the identical document.
 import Feather from "@expo/vector-icons/Feather";
+import { randomUUID } from "expo-crypto";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View, type ViewStyle } from "react-native";
@@ -52,6 +53,7 @@ import { toast } from "@/src/components/Toast";
 import { ProductImage } from "@/src/components/ProductImage";
 import { productImageList } from "@/src/components/quotation/helpers/media";
 import { enqueueQuotationPersist } from "@/src/components/quotation/helpers/autosave";
+import { builderDraftEpoch } from "@/src/components/quotation/helpers/draftStorage";
 import { computeQuotationTotals } from "@/src/components/quotation/helpers/totals";
 import type { Customer, Product } from "@/src/components/quotation/helpers/types";
 import { Button, Card, ConfirmDialog, Dropdown, TextField } from "@/src/components/ds";
@@ -59,12 +61,13 @@ import { Disclosure } from "@/src/design/Disclosure";
 import { BuildConLogo } from "@/src/design/BrandLogo";
 import { useBp } from "@/src/design/responsive";
 import { colors, font, money, radius, spacing, type } from "@/src/theme/tokens";
-import { downloadApiFile, printApiFile } from "@/src/utils/downloadFile";
+import { downloadApiFile } from "@/src/utils/downloadFile";
 import { TILES_FLOOR_ID } from "@/src/constants/floors";
 
 import { TilesProductPicker } from "./TilesProductPicker";
 import { TILE_IMAGE_ASPECT_RATIO } from "./tilePresentation";
 import { canPlaceOrder, nextTilesAction, normalizeTilesStatus, tilesStage } from "./tilesStage";
+import { readTileDraft, writeTileDraft, removeTileDraft, tileDraftMatchesServer, type TileDraft } from "./tileDraftStorage";
 
 export type TilesDocType = "tiles_selection" | "tiles_quotation";
 
@@ -236,9 +239,11 @@ function restoredQuantityUnit(value: unknown): TileRow["quantityUnit"] {
 // ---------------------------------------------------------------------------
 function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, initialQuotationId?: string | null) {
   const router = useRouter();
+  const { staff } = useAuth();
+  const accountId = staff?.id || "";
   const { id, quotationId } = useLocalSearchParams<{ id?: string; quotationId?: string }>();
   const routeId = initialQuotationId || id || quotationId;
-  const documentScope = `${docType}:${routeId || "new"}`;
+  const documentScope = `${accountId}:${docType}:${routeId || "new"}`;
   const documentScopeRef = useRef(documentScope);
   const documentGenerationRef = useRef(0);
   if (documentScopeRef.current !== documentScope) documentGenerationRef.current += 1;
@@ -263,7 +268,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     attendedBy: "", preparedBy: "", address: "", docNumber: "", transportationFee: "0",
   });
   const [rows, setRows] = useState<TileRow[]>([emptyRow()]);
-  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [saveState, setSaveState] = useState<"idle" | "local" | "saving" | "saved" | "error">("idle");
   const [serverTotals, setServerTotals] = useState<{ subtotal: number; grandTotal: number; transportation: number } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [whatsappDraft, setWhatsappDraft] = useState<WhatsAppQuotationDraft | null>(null);
@@ -271,6 +276,10 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   const [loading, setLoading] = useState<boolean>(Boolean(routeId));
   const [restoreError, setRestoreError] = useState<string | null>(null);
   const [restoreAttempt, setRestoreAttempt] = useState(0);
+  const [localReady, setLocalReady] = useState(false);
+  const [recoveryDraft, setRecoveryDraft] = useState<TileDraft<TilesHeader, TileRow, ReferrerValue> | null>(null);
+  const draftEpoch = useRef(builderDraftEpoch());
+  const serverSavedAtRef = useRef<string | null>(null);
   const dirtyRef = useRef(false);
   const editRevisionRef = useRef(0);
   const persistRef = useRef<() => Promise<string | null>>(async () => null);
@@ -278,6 +287,30 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   const persistedIdRef = useRef<string | null>(null);
   const createdDocumentRef = useRef<{ id: string; docType: TilesDocType } | null>(null);
   const seededProductRef = useRef<string | null>(null);
+  const deletingScopes = useRef(new Set<string>());
+  const clientDraftIdRef = useRef<string | null>(null);
+  if (!clientDraftIdRef.current) clientDraftIdRef.current = randomUUID();
+  const localSnapshot = {
+    version: 1 as const, accountId, docType, routeId: routeId || null, at: Date.now(),
+    documentId: persistedIdRef.current || docId, number: docNumberServer, serverSavedAt: serverSavedAtRef.current,
+    customerId: customerIdRef.current || customerId, customerSnapshot, header, rows, partner, legacyPartnerLabel,
+    partnerEdited: partnerEditVersion > partnerSavedVersion.current, clientDraftId: clientDraftIdRef.current,
+  };
+  const localSnapshotRef = useRef(localSnapshot);
+  localSnapshotRef.current = localSnapshot;
+
+  const applyLocalDraft = useCallback((draft: TileDraft<TilesHeader, TileRow, ReferrerValue>, asCopy = false) => {
+    clientDraftIdRef.current = asCopy ? randomUUID() : draft.clientDraftId;
+    setHeader(draft.header); setRows(asCopy ? draft.rows.map(row => ({ ...row, lineId: null })) : draft.rows);
+    setCustomerId(draft.customerId); customerIdRef.current = draft.customerId;
+    setCustomerSnapshot(draft.customerSnapshot); setPartner(draft.partner); setLegacyPartnerLabel(draft.legacyPartnerLabel);
+    setPartnerEditVersion(draft.partnerEdited ? 1 : 0); partnerSavedVersion.current = 0;
+    serverSavedAtRef.current = asCopy ? null : draft.serverSavedAt;
+    const restoredId = asCopy ? null : draft.documentId;
+    persistedIdRef.current = restoredId; setDocId(restoredId); setDocNumberServer(asCopy ? null : draft.number);
+    dirtyRef.current = true; editRevisionRef.current += 1; setSaveState("idle");
+    if (!routeId && restoredId) { createdDocumentRef.current = { id: restoredId, docType }; router.setParams({ id: restoredId }); }
+  }, [routeId, router, docType]);
 
   useEffect(() => {
     api.get<Customer[]>("/customers", { floorId: TILES_FLOOR_ID }).then(setCustomers).catch(() => {});
@@ -285,17 +318,41 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
 
   // Restore a saved document.
   useEffect(() => {
-    if (!routeId) return;
     // First autosave adds the new id to this same route. Its current draft
     // may include edits made while POST was pending; fetching that older
     // server snapshot would erase them before the next autosave.
-    if (createdDocumentRef.current?.id === routeId && createdDocumentRef.current.docType === docType) {
+    if (createdDocumentRef.current && createdDocumentRef.current.id === routeId && createdDocumentRef.current.docType === docType) {
       createdDocumentRef.current = null;
       setLoading(false);
       return;
     }
     let alive = true;
     const controller = new AbortController();
+    setLocalReady(false); setRecoveryDraft(null); setBusy(null);
+    draftEpoch.current = builderDraftEpoch();
+    const local = accountId ? readTileDraft(accountId, docType, routeId || null) : Promise.resolve(null);
+    if (!routeId) {
+      // Reusing this route for a fresh document must not carry the previous
+      // document's customer, ID or rows into the new draft scope.
+      dirtyRef.current = false; persistedIdRef.current = null; customerIdRef.current = null;
+      serverSavedAtRef.current = null; clientDraftIdRef.current = randomUUID();
+      setDocId(null); setDocNumberServer(null); setCustomerId(null); setCustomerSnapshot({ name: "", phone: "" });
+      setHeader({ customerName: "", phone: "", reference: "", docDate: defaultDocDate(docType), attendedBy: "", preparedBy: "", address: "", docNumber: "", transportationFee: "0" });
+      setRows([emptyRow()]); setPartner(null); setLegacyPartnerLabel(""); setPartnerEditVersion(0); partnerSavedVersion.current = 0;
+      setStatus("draft"); setSaveState("idle");
+      void local.then(draft => {
+        if (!alive || documentScopeRef.current !== documentScope) return;
+        if (draft && !dirtyRef.current) {
+          // A first-save response may have acquired an ID immediately before
+          // interruption. Verify its current revision before resuming edits.
+          if (draft.documentId) {
+            setRecoveryDraft(draft);
+          } else applyLocalDraft(draft);
+        }
+        setLocalReady(true);
+      });
+      return () => { alive = false; };
+    }
     dirtyRef.current = false;
     persistedIdRef.current = null;
     setLoading(true);
@@ -304,7 +361,9 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     setPartner(null); setLegacyPartnerLabel(""); setPartnerEditVersion(0); partnerSavedVersion.current = 0;
     (async () => {
       try {
-        const doc = await api.get<any>(`/quotations/${routeId}?with_completion=true`, { floorId: TILES_FLOOR_ID, signal: controller.signal });
+        const [doc, draft] = await Promise.all([
+          api.get<any>(`/quotations/${routeId}?with_completion=true`, { floorId: TILES_FLOOR_ID, signal: controller.signal }), local,
+        ]);
         if (!alive || documentScopeRef.current !== documentScope) return;
         if (doc.doc_type !== docType) {
           const canonicalRoute = doc.doc_type === "tiles_selection" ? "selection" : doc.doc_type === "tiles_quotation" ? "quotation" : null;
@@ -313,6 +372,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
           return;
         }
         persistedIdRef.current = doc.id;
+        serverSavedAtRef.current = doc.updated_at || null;
         setDocId(doc.id);
         setDocNumberServer(doc.number || null);
         setStatus(normalizeTilesStatus(doc.status || "draft"));
@@ -361,6 +421,10 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
           totalEdited: false,
         }));
         setRows(restored.length ? restored : [emptyRow()]);
+        if (draft) {
+          if (tileDraftMatchesServer(draft, doc)) applyLocalDraft(draft);
+          else setRecoveryDraft(draft);
+        }
       } catch (e: any) {
         const message = e?.detail || "Couldn't open that document";
         if (alive && documentScopeRef.current === documentScope) {
@@ -368,16 +432,28 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
           toast.error(message);
         }
       } finally {
-        if (alive) setLoading(false);
+        if (alive) { setLoading(false); setLocalReady(true); }
       }
     })();
     return () => { alive = false; controller.abort(); };
-  }, [routeId, docType, documentScope, router, restoreAttempt]);
+  }, [routeId, docType, documentScope, router, restoreAttempt, accountId, applyLocalDraft]);
 
   const markDirty = useCallback(() => {
     dirtyRef.current = true;
     editRevisionRef.current += 1;
+    setSaveState("idle");
   }, []);
+
+  // Store every rendered edit immediately, including incomplete names,
+  // quantities and photo URLs. The network debounce never owns the only copy.
+  useEffect(() => {
+    if (!accountId || !localReady || loading || restoreError || recoveryDraft || !dirtyRef.current || deletingScopes.current.has(documentScope)) return;
+    let current = true;
+    void writeTileDraft(localSnapshotRef.current, draftEpoch.current).then(() => {
+      if (current) setSaveState(value => value === "idle" ? "local" : value);
+    }).catch(() => { if (current) setSaveState("error"); });
+    return () => { current = false; };
+  }, [accountId, localReady, loading, restoreError, recoveryDraft, header, rows, partner, partnerEditVersion, customerId, customerSnapshot, docId, routeId, documentScope]);
 
   const setHeaderField = useCallback((field: keyof TilesHeader, value: string) => {
     setHeader((cur) => ({ ...cur, [field]: value }));
@@ -508,7 +584,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   // source of truth, even if a stale productId query parameter is present.
   const initialEmptyRowKey = rows.find((row) => !row.productId)?.key || rows[0]?.key;
   useEffect(() => {
-    if (!initialProductId || routeId || !initialEmptyRowKey || seededProductRef.current === initialProductId) return;
+    if (!localReady || recoveryDraft || !initialProductId || routeId || !initialEmptyRowKey || seededProductRef.current === initialProductId) return;
     seededProductRef.current = initialProductId;
     let alive = true;
     api.get<Product>(`/products/${initialProductId}`, { floorId: TILES_FLOOR_ID })
@@ -519,7 +595,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         if (alive) toast.error(error?.detail || "Couldn't add this tile to the quotation");
       });
     return () => { alive = false; };
-  }, [applyProduct, initialEmptyRowKey, initialProductId, routeId]);
+  }, [applyProduct, initialEmptyRowKey, initialProductId, routeId, localReady, recoveryDraft]);
 
   const selectRowSize = useCallback(async (key: string, size: string) => {
     const row = rows.find((item) => item.key === key);
@@ -588,15 +664,15 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   const persist = useCallback(async ({ silent = true }: { silent?: boolean } = {}): Promise<string | null> => {
     const run = async (): Promise<string | null> => {
       const current = () => mountedRef.current && documentScopeRef.current === documentScope && documentGenerationRef.current === documentGeneration;
-      if (loading || restoreError || !current() || (routeId && docId !== routeId)) return null;
+      if (loading || !localReady || restoreError || recoveryDraft || deletingScopes.current.has(documentScope) || !current() || (routeId && docId !== routeId)) return null;
       let id = persistedIdRef.current || docId;
       const savingRevision = editRevisionRef.current;
       const name = header.customerName.trim();
       if (!name) {
-        toast.show("Enter the customer name first");
+        if (!silent) toast.show("Enter the customer name first");
         return null;
       }
-      if (docType === "tiles_quotation" && !header.address.trim()) {
+      if (!silent && docType === "tiles_quotation" && !header.address.trim()) {
         toast.show("Enter the address before saving or generating the quotation");
         return null;
       }
@@ -612,13 +688,22 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       // 1. Resolve the customer — reuse an explicit pick, else create one.
       let cid = customerIdRef.current || customerId;
       if (!cid) {
-        const created = await api.post<Customer>("/customers", { name, phone: header.phone.trim() || null }, { floorId: TILES_FLOOR_ID });
+        if (accountId) await writeTileDraft(localSnapshotRef.current, draftEpoch.current);
+        if (!current()) return null;
+        const created = await api.post<Customer>("/customers", { name, phone: header.phone.trim() || null, client_draft_id: clientDraftIdRef.current }, { floorId: TILES_FLOOR_ID });
         if (!current()) return null;
         cid = created.id;
         customerIdRef.current = created.id;
         setCustomerId(created.id);
+        // A lost first response can replay the original contact after the
+        // user corrected its name/phone. Save those corrections before the
+        // quotation takes its customer snapshot; retain the ID on failure.
+        if (created.name !== name || (created.phone || "") !== header.phone.trim()) {
+          await api.patch(`/customers/${cid}`, { name, phone: header.phone.trim() || null }, { floorId: TILES_FLOOR_ID });
+          if (!current()) return null;
+        }
         setCustomerSnapshot({ name, phone: header.phone.trim() });
-        setCustomers((cur) => [created, ...cur]);
+        setCustomers((cur) => [{ ...created, name, phone: header.phone.trim() }, ...cur]);
       } else if (name !== customerSnapshot.name || header.phone.trim() !== customerSnapshot.phone) {
         // Header edits correct the customer record (typo fixes stay in sync).
         await api.patch(`/customers/${cid}`, { name, phone: header.phone.trim() || null }, { floorId: TILES_FLOOR_ID });
@@ -643,26 +728,46 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       if (referenceEdited) { payload.referrer_id = partner?.id || ""; payload.referrer_type = partner?.type || null; }
       if (!current()) return null;
       if (!id) {
-        const created = await api.post<{ id: string; number: string }>("/quotations", { ...payload, doc_type: docType }, { floorId: TILES_FLOOR_ID });
+        // Persist the stable create identity before POST, including when the
+        // user taps an action before the next local-storage effect runs.
+        if (accountId) await writeTileDraft({ ...localSnapshotRef.current, customerId: cid, customerSnapshot: { name, phone: header.phone.trim() } }, draftEpoch.current);
         if (!current()) return null;
+        const created = await api.post<{ id: string; number: string; updated_at?: string; status?: string; doc_type?: string; create_replayed?: boolean; create_original_updated_at?: string }>("/quotations", { ...payload, doc_type: docType, client_draft_id: clientDraftIdRef.current }, { floorId: TILES_FLOOR_ID });
+        if (!current()) return null;
+        if (created.create_replayed && (!created.create_original_updated_at || created.updated_at !== created.create_original_updated_at || created.status !== "draft" || created.doc_type !== docType)) {
+          // Another session may have edited, converted or ordered this draft
+          // while its original response was lost. Never overwrite that state.
+          const recovered = { ...localSnapshotRef.current, documentId: created.id, number: created.number, serverSavedAt: created.create_original_updated_at || null };
+          if (accountId) await writeTileDraft(recovered, draftEpoch.current);
+          if (!current()) return null;
+          setRecoveryDraft(recovered); setSaveState("local");
+          toast.show("The saved document changed while the response was interrupted. Your draft is preserved for recovery.");
+          return null;
+        }
         id = created.id;
         persistedIdRef.current = created.id;
+        serverSavedAtRef.current = created.updated_at || null;
         createdDocumentRef.current = { id: created.id, docType };
         setDocId(created.id);
         setDocNumberServer(created.number);
+        // Persist the assigned ID before the optional reference patch. A
+        // reload following that secondary failure must update this same draft.
+        if (accountId) await writeTileDraft({ ...localSnapshotRef.current, documentId: created.id, number: created.number, serverSavedAt: serverSavedAtRef.current }, draftEpoch.current);
+        if (!current()) return null;
         if (docType === "tiles_quotation" && !header.docNumber.trim()) {
           setHeader((cur) => ({ ...cur, docNumber: created.number }));
         }
-        // Creation inherits the customer reference. Apply an explicit choice
-        // before declaring this new document saved; retain its id on failure
-        // so retry updates the same document rather than creating a duplicate.
-        if (referenceEdited) {
-          await api.patch(`/quotations/${id}`, { referrer_id: payload.referrer_id, referrer_type: payload.referrer_type, silent: true }, { floorId: TILES_FLOOR_ID });
+        // POST may replay a prior committed create after a lost response.
+        // Apply this captured payload before declaring either case saved.
+        {
+          const fresh = await api.patch<any>(`/quotations/${id}`, { ...payload, silent: true, expected_updated_at: created.updated_at }, { floorId: TILES_FLOOR_ID });
           if (!current()) return null;
+          serverSavedAtRef.current = fresh?.updated_at || serverSavedAtRef.current;
         }
       } else {
-        const fresh = await api.patch<any>(`/quotations/${id}`, { ...payload, silent, reason: silent ? undefined : "Saved from tiles builder" }, { floorId: TILES_FLOOR_ID });
+        const fresh = await api.patch<any>(`/quotations/${id}`, { ...payload, silent, expected_updated_at: serverSavedAtRef.current || undefined, reason: silent ? undefined : "Saved from tiles builder" }, { floorId: TILES_FLOOR_ID });
         if (!current()) return null;
+        serverSavedAtRef.current = fresh.updated_at || null;
         setServerTotals({
           subtotal: Number(fresh.subtotal || 0),
           grandTotal: Number(fresh.grand_total || 0),
@@ -670,19 +775,36 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         });
       }
       if (referenceEdited) partnerSavedVersion.current = partnerEditVersion;
-      if (!routeId && createdDocumentRef.current?.id === id) router.setParams({ id });
-      if (editRevisionRef.current === savingRevision) dirtyRef.current = false;
-      setSaveState("saved");
+      if (editRevisionRef.current === savingRevision) {
+        dirtyRef.current = false;
+        if (accountId) {
+          await removeTileDraft(accountId, docType, routeId || null);
+          if (id !== routeId) await removeTileDraft(accountId, docType, id);
+        }
+      } else if (accountId) {
+        await writeTileDraft({ ...localSnapshotRef.current, documentId: id, serverSavedAt: serverSavedAtRef.current }, draftEpoch.current);
+      }
+      if (!current()) return null;
+      // User input can advance during local cleanup, too. Re-store that newer
+      // snapshot before reporting the acknowledged revision.
+      if (editRevisionRef.current !== savingRevision && accountId) {
+        dirtyRef.current = true;
+        await writeTileDraft({ ...localSnapshotRef.current, documentId: id, serverSavedAt: serverSavedAtRef.current }, draftEpoch.current);
+        if (!current()) return null;
+      }
+      setSaveState(dirtyRef.current ? "local" : "saved");
+      if (!deletingScopes.current.has(documentScope) && !routeId && createdDocumentRef.current?.id === id) router.setParams({ id });
       return id;
       } catch (e: any) {
         if (!current()) return null;
         setSaveState("error");
-        toast.error(e?.detail || "Save failed");
+        if (e?.status === 409 && id) setRecoveryDraft({ ...localSnapshotRef.current, documentId: id, serverSavedAt: serverSavedAtRef.current });
+        if (!silent) toast.error(e?.detail || "Save failed. Your draft is kept on this device.");
         return null;
       }
     };
     return enqueueQuotationPersist(persistQueue, run);
-  }, [header, partner, partnerEditVersion, customerId, customerSnapshot, docId, docType, buildItems, router, rows, loading, restoreError, documentScope, documentGeneration, routeId]);
+  }, [header, partner, partnerEditVersion, customerId, customerSnapshot, docId, docType, buildItems, router, rows, loading, localReady, recoveryDraft, restoreError, documentScope, documentGeneration, routeId, accountId]);
   persistRef.current = () => persist({ silent: true });
 
   // Autosave: create the document on the first meaningful edit, then silently
@@ -690,10 +812,10 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   // explicit workflow/PDF action before it acquired an id, which made the
   // Save-free editor lose a first draft if the tab was closed early.
   useEffect(() => {
-    if (loading || restoreError || (routeId && docId !== routeId) || !dirtyRef.current || !header.customerName.trim()) return;
-    const timer = setTimeout(() => { void persistRef.current(); }, 900);
+    if (loading || !localReady || recoveryDraft || restoreError || (routeId && docId !== routeId) || !dirtyRef.current || !header.customerName.trim()) return;
+    const timer = setTimeout(() => { void persistRef.current(); }, 400);
     return () => clearTimeout(timer);
-  }, [header, partner, partnerEditVersion, rows, docId, loading, restoreError, routeId]);
+  }, [header, partner, partnerEditVersion, rows, docId, loading, localReady, recoveryDraft, restoreError, routeId]);
 
   const generatePdf = useCallback(async () => {
     if (rows.some((row) => row.productId && !row.image?.trim())) {
@@ -723,21 +845,6 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
     } finally { setBusy(null); }
   }, [busy, persist]);
 
-  const print = useCallback(async () => {
-    if (rows.some((row) => row.productId && !row.image?.trim())) {
-      toast.error("Every selected tile needs a product image before printing.");
-      return;
-    }
-    setBusy("print");
-    try {
-      const id = await persist({ silent: false });
-      if (!id) return;
-      await printApiFile(`/quotations/${id}/pdf`, "PDF", TILES_FLOOR_ID);
-    } finally {
-      setBusy(null);
-    }
-  }, [persist, rows]);
-
   const placeOrder = useCallback(async () => {
     if (busy) return;
     setBusy("order");
@@ -749,7 +856,7 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
       return;
     }
     if (!canPlaceOrder(docType, status)) {
-      toast.show("Confirm the quotation before placing the order");
+      toast.show("This quotation already has an order");
       return;
     }
     router.push(`/(admin)/tiles/place-order/${id}` as any);
@@ -775,13 +882,6 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
         router.replace(`/(admin)/tiles/quotation?id=${updated.id}` as any);
         return;
       }
-      const id = await persist({ silent: false });
-      if (!id) return;
-      const updated = await api.patch<{ status: string }>(`/quotations/${id}`, { status: action.nextStatus }, { floorId: TILES_FLOOR_ID });
-      const nextStatus = normalizeTilesStatus(updated.status);
-      if (nextStatus !== action.nextStatus) throw new Error("The quotation status was not updated. Please retry.");
-      setStatus(nextStatus);
-      toast.success(action.label);
     } catch (e: any) {
       const message = e?.detail || e?.message || "Couldn't update the workflow stage";
       setWorkflowError(message);
@@ -792,18 +892,57 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
   }, [busy, docType, status, persist, router]);
 
   const deleteDocument = useCallback(async () => {
-    if (!docId || busy) return false;
+    if (busy || deletingScopes.current.has(documentScope)) return false;
+    const targetId = persistedIdRef.current || docId;
+    const targetDraftId = clientDraftIdRef.current;
+    const current = () => mountedRef.current && documentScopeRef.current === documentScope && documentGenerationRef.current === documentGeneration;
+    deletingScopes.current.add(documentScope);
     setBusy("delete");
     try {
-      await api.delete(`/quotations/${docId}`, { floorId: TILES_FLOOR_ID });
+      const savedId = await persistQueue.current;
+      const id = targetId || savedId;
+      if (id) await api.delete(`/quotations/${id}`, { floorId: TILES_FLOOR_ID });
+      else await api.delete(`/quotations/client-draft/${targetDraftId}?doc_type=${docType}`, { floorId: TILES_FLOOR_ID });
+      if (accountId) {
+        await removeTileDraft(accountId, docType, routeId || null);
+        if (id && id !== routeId) await removeTileDraft(accountId, docType, id);
+      }
+      if (!current()) return true;
+      dirtyRef.current = false;
       toast.success(docType === "tiles_selection" ? "Selection deleted" : "Quotation deleted");
       router.replace("/(admin)/tiles" as any);
       return true;
     } catch (e: any) {
-      toast.error(e?.detail || "Document could not be deleted");
+      if (current()) toast.error(e?.detail || "Document could not be deleted");
       return false;
-    } finally { setBusy(null); }
-  }, [docId, docType, busy, router]);
+    } finally { deletingScopes.current.delete(documentScope); if (current()) setBusy(null); }
+  }, [docId, docType, busy, router, accountId, routeId, documentScope, documentGeneration]);
+
+  const recoverDraft = useCallback(async () => {
+    if (!recoveryDraft || busy) return;
+    setBusy("recover");
+    try {
+      let asCopy = false;
+      if (recoveryDraft.documentId) {
+        try {
+          const server = await api.get<any>(`/quotations/${recoveryDraft.documentId}`, { floorId: TILES_FLOOR_ID });
+          asCopy = !tileDraftMatchesServer(recoveryDraft, server);
+        } catch (error: any) { if (error?.status === 404) asCopy = true; else throw error; }
+      }
+      if (asCopy && routeId) {
+        const copy = { ...recoveryDraft, routeId: null, documentId: null, number: null, serverSavedAt: null, clientDraftId: randomUUID(), rows: recoveryDraft.rows.map(row => ({ ...row, lineId: null })) };
+        await writeTileDraft(copy, draftEpoch.current);
+        await removeTileDraft(accountId, docType, routeId);
+      } else applyLocalDraft(recoveryDraft, asCopy);
+      setRecoveryDraft(null);
+      if (asCopy) {
+        setStatus("draft");
+        router.replace(`/(admin)/tiles/${docType === "tiles_selection" ? "selection" : "quotation"}` as any);
+        toast.show("Recovered as a new draft because the saved document changed.");
+      }
+    } catch (error: any) { toast.error(error?.detail || "Could not check the saved document. Your draft is preserved."); }
+    finally { setBusy(null); }
+  }, [recoveryDraft, busy, applyLocalDraft, router, docType, routeId, accountId]);
 
   const pickCustomer = useCallback((customer: Customer) => {
     setCustomerId(customer.id);
@@ -817,10 +956,13 @@ function useTilesDoc(docType: TilesDocType, initialProductId?: string | null, in
 
   return {
     docId, docNumberServer, loading, restoreError, retryRestore: () => setRestoreAttempt((value) => value + 1), header, setHeaderField, rows,
+    hasDraft: Boolean(docId || header.customerName || header.address || header.phone || rows.some(row => row.productId)),
     updateRow, addRow, removeRow, applyProduct, selectRowSize, loadRowSizes,
     customers, customerId, pickCustomer, setCustomerId, partner, legacyPartnerLabel, referenceScope: documentScope,
     pickPartner: (value: ReferrerValue) => { setPartner(value); setLegacyPartnerLabel(""); setPartnerEditVersion(version => version + 1); markDirty(); },
-    saveState, retrySave: () => persist({ silent: true }), busy, generatePdf, print, placeOrder, serverTotals, previewTotals,
+    saveState, retrySave: () => persist({ silent: true }), busy, generatePdf, placeOrder, serverTotals, previewTotals,
+    recoveryDraft, recoverDraft,
+    dismissRecovery: () => { setRecoveryDraft(null); if (accountId) void removeTileDraft(accountId, docType, routeId || null); },
     whatsappDraft, closeWhatsApp: () => setWhatsappDraft(null), prepareWhatsApp,
     customerCompleted: Boolean(!loading && completionSnapshot?.completed && completionSnapshot.id === docId && completionSnapshot.customerId === customerId),
     status, stage: tilesStage(docType, status), workflowAction, runWorkflowAction, workflowError, deleteDocument,
@@ -1162,7 +1304,7 @@ function MetaGrid({ doc }: { doc: ReturnType<typeof useTilesDoc> }) {
   return (
     <View style={metaStyles.grid}>
       {!doc.partner && doc.legacyPartnerLabel ? <Text style={type.caption}>Recorded reference: {doc.legacyPartnerLabel}</Text> : null}
-      <ReferrerField key={doc.referenceScope} label="Architect / interior designer" floorId={TILES_FLOOR_ID} value={doc.partner} onChange={doc.pickPartner} />
+      <View style={{ marginBottom: 20 }}><ReferrerField key={doc.referenceScope} label="Architect / interior designer" floorId={TILES_FLOOR_ID} value={doc.partner} onChange={doc.pickPartner} /></View>
       <View style={metaStyles.row}>
         <View style={metaStyles.cell}>
           <Text style={metaStyles.label}>CUSTOMER NAME</Text>
@@ -1614,7 +1756,7 @@ const quoStyles = StyleSheet.create({
 // exact same `doc` returned by useTilesDoc() above. See the file header for
 // why this exists as a genuinely separate presentation rather than a
 // reflowed/scaled paper. Every handler called below (updateRow, addRow,
-// removeRow, applyProduct, setHeaderField, generatePdf, print,
+// removeRow, applyProduct, setHeaderField, generatePdf,
 // placeOrder, runWorkflowAction, pickCustomer) is the identical function the
 // paper views call — one document model, one autosave path, one set of
 // backend calls.
@@ -1644,12 +1786,13 @@ const MOBILE_FIELDS: Record<TilesDocType, MobileFieldDef[]> = {
   ],
 };
 
-function SaveStatusPill({ state, onRetry }: { state: "idle" | "saving" | "saved" | "error"; onRetry: () => void }) {
+function SaveStatusPill({ state, onRetry }: { state: "idle" | "local" | "saving" | "saved" | "error"; onRetry: () => void }) {
   if (state === "idle") return null;
   const meta = {
+    local: { label: "Draft saved on this device", tone: colors.onSurfaceMuted, icon: "save" as const },
     saving: { label: "Saving…", tone: colors.onSurfaceMuted, icon: "loader" as const },
     saved: { label: "All changes saved", tone: colors.success, icon: "check-circle" as const },
-    error: { label: "Changes are not saved", tone: colors.error, icon: "alert-circle" as const },
+    error: { label: "Could not sync this draft. Retry save.", tone: colors.error, icon: "alert-circle" as const },
   }[state];
   return (
     <View role={state === "error" ? "alert" : "status"} style={[mobileStyles.savePill, { flexWrap: "wrap" }]}>
@@ -1816,21 +1959,15 @@ function MobileTilesEditor({
           </Text>
           {doc.customerCompleted ? <Text testID="quotation-customer-completed" style={[type.caption, { color: colors.success }]}>100% completed</Text> : null}
         </View>
-        <Dropdown
+        {doc.hasDraft && canDelete ? <Dropdown
           testID="tiles-mobile-menu"
           label="More"
           icon="more-vertical"
           variant="ghost"
           items={[
-            ...(primaryAction
-              ? [{ label: primaryAction.label, icon: primaryAction.icon, onPress: primaryAction.onPress }]
-              : []),
-            ...(!isSelection && !doc.workflowAction && primaryAction?.label !== "Place Order"
-              ? [{ label: "Place Order", icon: "shopping-cart" as const, onPress: doc.placeOrder }]
-              : []),
-            ...(doc.docId && canDelete ? [{ label: isSelection ? "Delete selection" : "Delete quotation", icon: "trash-2" as const, onPress: onDelete }] : []),
+            { label: doc.docId ? isSelection ? "Delete selection" : "Delete quotation" : "Discard draft", icon: "trash-2" as const, onPress: onDelete },
           ]}
-        />
+        /> : null}
       </View>
 
       {doc.loading ? (
@@ -2056,7 +2193,8 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
   const { staff } = useAuth();
   const canDelete = useActionAccess("tiles", "delete", canManageDestructiveData(staff?.role));
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
-  const confirmDelete = () => { if (doc.docId && canDelete && !doc.busy) setDeleteTargetId(doc.docId); };
+  const currentDeleteId = doc.docId || "local-draft";
+  const confirmDelete = () => { if (doc.hasDraft && canDelete && !doc.busy) setDeleteTargetId(currentDeleteId); };
 
   // Device width is not the usable document width: the admin sidebar/rail
   // occupies part of the viewport. Do not mount an 820px paper unless the
@@ -2071,11 +2209,18 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
   // at width zero, permanently selecting its one-column phone geometry.
   return (
     <View style={{ flex: 1 }} onLayout={(event) => setWorkspaceWidth(event.nativeEvent.layout.width)}>
-      <ConfirmDialog visible={!!deleteTargetId && deleteTargetId === doc.docId} onClose={() => { if (doc.busy !== "delete") setDeleteTargetId(null); }}
-        onConfirm={() => { if (deleteTargetId === doc.docId && canDelete) void doc.deleteDocument().then(deleted => { if (deleted) setDeleteTargetId(null); }); }}
+      <ConfirmDialog visible={!!deleteTargetId && deleteTargetId === currentDeleteId} onClose={() => { if (doc.busy !== "delete") setDeleteTargetId(null); }}
+        onConfirm={() => { if (deleteTargetId === currentDeleteId && canDelete) void doc.deleteDocument().then(deleted => { if (deleted) setDeleteTargetId(null); }); }}
         title={`Delete this ${isSelection ? "selection" : "quotation"}?`}
-        description="Linked follow-ups and unpaid payment records will be removed. Completed payments and purchase orders are protected."
+        description={doc.docId ? "Linked follow-ups and unpaid payment records will be removed. Completed payments and purchase orders are protected." : "The draft saved on this device will be removed."}
         confirmLabel="Delete" tone="danger" loading={doc.busy === "delete"} testID="confirm-delete-tiles-document" />
+      {doc.recoveryDraft ? <View style={{ padding: spacing.md, gap: spacing.sm, backgroundColor: colors.surface }}>
+        <Text style={type.body}>Unsaved tile changes were recovered. Restore them to continue; newer saved changes will be protected.</Text>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+          <Button label="Restore draft" onPress={doc.recoverDraft} loading={doc.busy === "recover"} testID="tiles-restore-local-draft" />
+          <Button label="Discard recovered draft" onPress={doc.dismissRecovery} variant="secondary" disabled={!!doc.busy} testID="tiles-discard-local-draft" />
+        </View>
+      </View> : null}
       {doc.loading ? (
         <View accessibilityLabel="Loading tile document" style={{ flex: 1, alignItems: "center", justifyContent: "center" }}><ActivityIndicator color={colors.brand} /></View>
       ) : doc.restoreError ? (
@@ -2124,12 +2269,10 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
             loading={doc.busy === "pdf"}
             testID="tiles-generate-pdf"
           />
-          {isSelection ? (
-            <ActionBtn label="Print" icon="printer" onPress={doc.print} loading={doc.busy === "print"} testID="tiles-print" />
-          ) : (
+          {!isSelection ? (
             <ActionBtn label="Place Order" icon="shopping-cart" onPress={doc.placeOrder} loading={doc.busy === "order"} testID="tiles-place-order" />
-          )}
-          {doc.docId && canDelete ? <ActionBtn label="Delete" icon="trash-2" onPress={confirmDelete} loading={doc.busy === "delete"} testID="tiles-delete" /> : null}
+          ) : null}
+          {doc.hasDraft && canDelete ? <ActionBtn label={doc.docId ? "Delete" : "Discard draft"} icon="trash-2" onPress={confirmDelete} loading={doc.busy === "delete"} testID="tiles-delete" /> : null}
         </View>
       </View>
 
@@ -2139,6 +2282,8 @@ export function TilesDocBuilder({ docType, initialProductId, initialQuotationId 
         </View>
       ) : (
         <ScrollView contentContainerStyle={{ flexGrow: 1, paddingHorizontal: spacing.lg, paddingVertical: spacing.lg, paddingBottom: 80 }}>
+          <SaveStatusPill state={doc.saveState} onRetry={() => void doc.retrySave()} />
+          {doc.workflowError ? <Text role="alert" style={{ color: colors.error }}>{doc.workflowError}</Text> : null}
           {isSelection ? <SelectionPaper {...doc} /> : <QuotationPaper {...doc} />}
         </ScrollView>
       )}

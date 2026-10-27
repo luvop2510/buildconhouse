@@ -675,7 +675,7 @@ async def customer_workspace(
             floor_query(user, {"customer_id": customer_id, "status": "awaiting_reorder"}), {"_id": 0},
         ).sort("created_at", -1).to_list(100),
         db.quotations.find(
-            floor_query(user, {"customer_id": customer_id, "status": {"$in": ["ordered", "won"]}}),
+            floor_query(user, {"customer_id": customer_id, "floor_id": customer["floor_id"], "status": {"$in": ["ordered", "won"]}}),
             {"_id": 0, "id": 1, "grand_total": 1, "payment_extra_amount": 1, "payment_extra_history": 1},
         ).to_list(500),
         db.payments.find(floor_query(user, {"customer_id": customer_id}), {"_id": 0}).sort("created_at", -1).to_list(100),
@@ -696,7 +696,7 @@ async def customer_workspace(
     # The PO list above is capped for the UI.  Use a server-side group over
     # every quote-linked PO so older godown intakes still affect the ledger.
     godown_by_quote = await _godown_value_by_quotation(
-        list(order_quote_ids), floor_ids=floor_scope_ids(user), purchase_orders=db.purchase_orders,
+        list(order_quote_ids), floor_id=customer["floor_id"], purchase_orders=db.purchase_orders,
     )
     godown_value = sum(godown_by_quote.values())
     order_value = round(max(0.0, sum(_collection_total(quote) for quote in order_quotes) - godown_value), 2)
@@ -721,8 +721,10 @@ async def customer_workspace(
     # Customer IDs can exist on more than one business floor.  Keep the
     # activity stream in the same floor scope as the products and POs above;
     # otherwise Sanitary Bathroom movement events leak into Ground Floor.
-    paid_map = await _paid_by_quotation([quote["id"] for quote in order_quotes])
-    cash_map = await _paid_by_quotation([quote["id"] for quote in order_quotes], cash_only=True)
+    paid_map, cash_map = await asyncio.gather(
+        _paid_by_quotation([quote["id"] for quote in order_quotes], floor_id=customer["floor_id"]),
+        _paid_by_quotation([quote["id"] for quote in order_quotes], floor_id=customer["floor_id"], cash_only=True),
+    )
     outstanding_balance = round(sum(
         max(0.0, _collection_total(quote) - paid_map.get(quote["id"], 0.0))
         for quote in order_quotes

@@ -19,9 +19,8 @@ test('critical tiles quotations stay usable while selection loading fails and re
   });
   await page.goto('/tiles');
   await expect(page.getByTestId('tiles-doc-tile-recovery')).toBeVisible();
-  // The default Quotation view is unaffected by a Selection error.
-  await expect(page.getByText('Selection list temporarily unavailable', { exact: true })).toHaveCount(0);
-  await page.getByTestId('tiles-document-filter-all').click();
+  // Both document types appear by default; a failed optional list keeps the
+  // available quotation usable and exposes its own retry.
   await expect(page.getByText('Selection list temporarily unavailable', { exact: true })).toBeVisible();
   await expect(page.getByTestId('tiles-doc-tile-recovery')).toBeVisible();
   failSelection = false;

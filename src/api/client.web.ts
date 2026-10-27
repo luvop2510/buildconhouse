@@ -23,6 +23,17 @@ const inflightGets = new Map<string, Promise<unknown>>();
 const responseCache = new Map<string, { expiresAt: number; value: unknown }>();
 const MAX_RESPONSE_CACHE_ENTRIES = 64;
 
+// Brief navigation reuse; mutations, floor changes and logout invalidate all entries.
+// Editable details and authorization reads stay fresh. Callers can force cacheMs: 0.
+function navigationCacheMs(path: string, floorId: string | null | undefined): number {
+  if (floorId !== "ground-floor") return 0;
+  const route = path.split("?")[0];
+  return ["/walkins", "/customers", "/followups", "/followups/page", "/followups/inbox", "/payments/orders",
+    "/payments/history", "/tile-orders/customer-orders", "/tile-orders/brands",
+    "/tile-orders/history", "/tile-orders/dispatch-list", "/tile-orders/inventory",
+    "/tile-orders/material-movements"].includes(route) ? 2000 : 0;
+}
+
 function cacheResponse(key: string, value: unknown, ttlMs: number) {
   const now = Date.now();
   // Distinct searches/pages must not retain expired catalog payloads for the
@@ -213,6 +224,7 @@ export const api = {
   get: <T>(path: string, opts?: RequestOptions) => {
     if (opts?.signal?.aborted) return abortForConsumer(Promise.resolve(undefined as T), opts.signal);
     const key = `${opts?.floorId ?? floorCache ?? "auto"}:${path}`;
+    const cacheMs = opts?.cacheMs ?? navigationCacheMs(path, opts?.floorId ?? floorCache);
     const cacheVersion = readCacheVersion;
     const cached = responseCache.get(key);
     if (opts?.cacheMs !== 0 && cached && cached.expiresAt > Date.now()) {
@@ -226,7 +238,7 @@ export const api = {
     if (existing) return abortForConsumer(existing as Promise<T>, opts?.signal);
     // Consumer cancellation must not terminate a request shared by another view.
     const pending = request<T>("GET", path, undefined, { ...opts, signal: undefined }).then((value) => {
-      if (cacheVersion === readCacheVersion && opts?.cacheMs && opts.cacheMs > 0) cacheResponse(key, value, opts.cacheMs);
+      if (cacheVersion === readCacheVersion && cacheMs > 0) cacheResponse(key, value, cacheMs);
       return value;
     }).finally(() => { if (inflightGets.get(key) === pending) inflightGets.delete(key); });
     inflightGets.set(key, pending);

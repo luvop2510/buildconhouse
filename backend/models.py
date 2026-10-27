@@ -164,6 +164,7 @@ class CustomerBase(BaseModel):
 
 
 class CustomerCreate(CustomerBase):
+    client_draft_id: Optional[str] = Field(default=None, min_length=1, max_length=100)
     password: Optional[str] = Field(default=None, min_length=MIN_PASSWORD_LENGTH, max_length=72)  # for portal login
 
     @field_validator("password")
@@ -785,6 +786,9 @@ class ReferrerUpdate(ReferrerCreate):
 
 
 class Quotation(TimestampedModel):
+    # Response-only recovery metadata; create receipts hold the original revision.
+    create_replayed: bool = False
+    create_original_updated_at: Optional[str] = None
     purchase_completion_status: Optional[Literal["active", "completed"]] = None
     floor_id: str
     number: str                          # human-readable e.g. FQ-2026-0001
@@ -857,6 +861,8 @@ class Quotation(TimestampedModel):
 
 
 class QuotationCreate(BaseModel):
+    # Stable local tile-draft identity; replay recovers the original document.
+    client_draft_id: Optional[str] = Field(default=None, min_length=1, max_length=100)
     customer_id: str
     items: list[QuotationLineItem] = []
     rooms: list[str] = []
@@ -880,6 +886,7 @@ class QuotationCreate(BaseModel):
 
 
 class QuotationUpdate(BaseModel):
+    expected_updated_at: Optional[str] = Field(default=None, max_length=100)
     customer_id: Optional[str] = None    # change the customer on an existing quotation
     items: Optional[list[QuotationLineItem]] = None
     rooms: Optional[list[str]] = None

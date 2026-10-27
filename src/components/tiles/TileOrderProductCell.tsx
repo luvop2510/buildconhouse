@@ -23,7 +23,7 @@ export const TileOrderProductCell = memo(function TileOrderProductCell({ name, s
 });
 
 const styles = StyleSheet.create({
-  row: { flexDirection: "row", alignItems: "center", gap: spacing.sm, minWidth: 0 },
+  row: { flexDirection: "row", alignItems: "center", gap: spacing.sm, minWidth: 0, width: "100%", maxWidth: "100%", flexShrink: 1 },
   image: { width: 96, aspectRatio: PRODUCT_IMAGE_ASPECT_RATIO, flexShrink: 0 },
   identity: { flex: 1, minWidth: 0 },
 });

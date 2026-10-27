@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 export const floors = [{id:'first-floor',name:'The Sanitary Bathroom',slug:'first-floor'},{id:'ground-floor',name:'Tiles',slug:'ground-floor'},{id:'second-floor',name:'Kitchen',slug:'second-floor'},{id:'third-floor',name:'Furniture',slug:'third-floor'}];
 type SessionOptions = {
+  floorId?: string;
   signedIn?: boolean;
   seedStorageOnce?: boolean;
   staff?: Record<string, unknown>;
@@ -15,7 +16,7 @@ export async function mockSession(page: Page, path: string, failures = true, opt
     else localStorage.setItem('forge.jwt.kind', JSON.stringify(customer ? 'customer' : 'staff'));
     localStorage.setItem('forge.active-floor', JSON.stringify(floor));
     if (seedStorageOnce) sessionStorage.setItem('audit.session-seeded', 'true');
-  }, {customer, floor:path.startsWith('/tiles')?'ground-floor':'first-floor', signedIn: options.signedIn, seedStorageOnce: options.seedStorageOnce});
+  }, {customer, floor:options.floorId || (path.startsWith('/tiles')?'ground-floor':'first-floor'), signedIn: options.signedIn, seedStorageOnce: options.seedStorageOnce});
   await page.route('**/api/**', async route => {
     const p = new URL(route.request().url()).pathname;
     let body: unknown;

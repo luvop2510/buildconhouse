@@ -20,8 +20,11 @@ from typing import Awaitable, Callable, Optional, Sequence
 
 _DEFAULT_TTL = 60
 _MAX_MEMORY_ENTRIES = 256
+_REDIS_TIMEOUT_SECONDS = 0.25
 
 _memory_versions: dict[str, int] = {}
+# Failure fencing is local; multiple workers require reliable shared invalidation.
+_pending_invalidations: dict[str, int] = {}
 _memory_entries: dict[str, tuple[float, object]] = {}
 _inflight: dict[str, asyncio.Task] = {}
 
@@ -29,6 +32,7 @@ _inflight: dict[str, asyncio.Task] = {}
 def reset_memory_state() -> None:
     """Test helper — clears the in-process fallback."""
     _memory_versions.clear()
+    _pending_invalidations.clear()
     _memory_entries.clear()
     _inflight.clear()
 
@@ -45,19 +49,30 @@ def _redis():
 async def _version(collection: str) -> int:
     client = _redis()
     if client is not None:
-        raw = await client.get(f"analytics:ver:{collection}")
+        pending = _pending_invalidations.get(collection)
+        if pending is not None:
+            await _invalidate_redis(client, collection, pending)
+        raw = await asyncio.wait_for(client.get(f"analytics:ver:{collection}"), _REDIS_TIMEOUT_SECONDS)
         return int(raw) if raw else 0
     return _memory_versions.get(collection, 0)
+
+
+async def _invalidate_redis(client, collection: str, generation: int) -> None:
+    await asyncio.wait_for(client.incr(f"analytics:ver:{collection}"), _REDIS_TIMEOUT_SECONDS)
+    # A newer write may have started while this increment was in flight.
+    if _pending_invalidations.get(collection) == generation:
+        _pending_invalidations.pop(collection, None)
 
 
 async def bump(collection: str) -> None:
     """Called from a write path. Invalidates every metric reading this
     collection, without touching any cache entry."""
+    generation = _memory_versions.get(collection, 0) + 1
+    _memory_versions[collection] = generation
     client = _redis()
     if client is not None:
-        await client.incr(f"analytics:ver:{collection}")
-        return
-    _memory_versions[collection] = _memory_versions.get(collection, 0) + 1
+        _pending_invalidations[collection] = generation
+        await _invalidate_redis(client, collection, generation)
 
 
 async def cache_key(
@@ -91,11 +106,20 @@ async def cached(
     ttl: int = _DEFAULT_TTL,
 ) -> object:
     """Return the cached aggregate or compute and store it."""
-    key = await cache_key(metric_id, collections, filter_signature, floors)
+    try:
+        key = await cache_key(metric_id, collections, filter_signature, floors)
+    except Exception:
+        # Unavailable version authority means bypass caching for this read.
+        return await loader()
 
     client = _redis()
     if client is not None:
-        hit = await client.get(key)
+        try:
+            hit = await asyncio.wait_for(client.get(key), _REDIS_TIMEOUT_SECONDS)
+        except Exception:
+            return await loader()
+        if any(name in _pending_invalidations for name in collections):
+            return await loader()
         if hit is not None:
             return json.loads(hit)
     else:
@@ -106,7 +130,10 @@ async def cached(
     async def load_and_store():
         value = await loader()
         if client is not None:
-            await client.set(key, json.dumps(value, default=str), ex=ttl)
+            try:
+                await asyncio.wait_for(client.set(key, json.dumps(value, default=str), ex=ttl), _REDIS_TIMEOUT_SECONDS)
+            except Exception:
+                pass  # Cache storage is optional after an authoritative database read.
         else:
             # Version invalidation changes keys without removing old entries.
             now = time.monotonic()

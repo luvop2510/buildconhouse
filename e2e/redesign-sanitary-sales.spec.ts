@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { mockSession } from './audit-fixtures';
 
-test('critical sanitary intake uses the selected worker instead of the owner', async ({ page }) => {
-  await mockSession(page, '/walkins/new', false);
-  const worker = { id: 'sales-worker', full_name: 'Assigned Worker', role: 'worker', floor_ids: ['first-floor'] };
+for (const floorId of ['first-floor', 'ground-floor']) test(`critical ${floorId} intake uses the selected worker instead of the owner`, async ({ page }) => {
+  await mockSession(page, '/walkins/new', false, { floorId });
+  const worker = { id: 'sales-worker', full_name: 'Assigned Worker', role: 'worker', floor_ids: [floorId] };
   await page.route('**/api/walkins/config/sources', r => r.fulfill({ json: { sources: ['Walk-in'] } }));
   await page.route('**/api/walkins/config/assignees', r => r.fulfill({ json: [worker] }));
   await page.route('**/api/followups/assignees?**', r => r.fulfill({ json: [worker] }));
@@ -20,12 +20,12 @@ test('critical sanitary intake uses the selected worker instead of the owner', a
   await page.getByTestId('walkin-save-btn').click();
   await expect(page.getByTestId('walkin-submit-error')).toContainText('Salesperson is required');
   expect(writes).toEqual([]);
-  await page.getByTestId('lead-assign-first-floor-sales-worker').click();
+  await page.getByTestId(`lead-assign-${floorId}-sales-worker`).click();
   await page.getByTestId('walkin-save-btn').click();
   await expect(page.getByTestId('walkin-submit-error')).toContainText('Retry with your selected worker');
   expect(writes).toHaveLength(1);
-  expect(writes[0]).toMatchObject({ salesperson_id: worker.id, assignments: [{ floor_id: 'first-floor', user_id: worker.id }] });
-  await expect(page.getByTestId('lead-assign-first-floor-sales-worker')).toHaveAttribute('aria-pressed', 'true');
+  expect(writes[0]).toMatchObject({ salesperson_id: worker.id, assignments: [{ floor_id: floorId, user_id: worker.id }] });
+  await expect(page.getByTestId(`lead-assign-${floorId}-sales-worker`)).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('critical sanitary quotations group every unplaced quotation under Draft', async ({ page }) => {

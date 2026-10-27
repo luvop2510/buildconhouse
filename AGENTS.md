@@ -2,6 +2,29 @@
 
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
+## Ground Floor drafts and direct workflow — 2026-10-27
+
+Tiles selections move directly to quotations; quotations use explicit Place Order.
+Submission/approval steps and tile-editor Print are retired. Preserve legacy
+editable statuses, individual A4 PDF download/share, and Sanitary's separate
+supplier/purchasing admission. Ground order review must never call `/suppliers`.
+
+Partial tile drafts persist locally under account/type/document scopes and share
+the sanitary draft reset epoch. Named drafts save remotely without an address;
+quotation PDF and order still require it. Stable client creation keys bind actor,
+floor and source type. Keep receipts after deletion; cancelled keys cannot create
+late records. Replayed first saves must not overwrite external edits. Tile PATCH
+uses expected_updated_at; recover conflicting edits as a new draft. A saved-to-new
+route change clears document identity, while its own first-created ID preserves
+newer typing. Optional prior-price reads may not block product selection past
+500 ms. Preserve selection cancellation and duplicate-tap guards.
+
+Outbox dispatch uses the driver transaction callback to retry labelled transient
+Mongo conflicts, including first-prefix counter seeding. Keep its exact claim
+checks and all notifications/cache effects after the successful commit.
+
+See docs/audits/2026-10-27-ground-floor-final.md for causes and evidence.
+
 ## First-response reliability and unified filters — 2026-10-27
 
 Payment additional-cost writes must not return the same mapping passed to Mongo

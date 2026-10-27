@@ -254,6 +254,9 @@ jobs:
           npm run test:web-worker
           node scripts/test-r2-media-worker.mjs
           node scripts/test-tiles-loading.mjs
+          node scripts/test-tile-drafts.mjs
+          node scripts/test-tile-picker-history.mjs
+          node scripts/test-tile-place-order.mjs
           npm run test:sales-periods
           npm run test:monitoring-contract
           npm run test:frontend-performance

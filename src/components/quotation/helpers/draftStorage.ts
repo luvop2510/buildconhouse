@@ -19,16 +19,25 @@ export async function readBuilderDraft(accountId: string, floorId: string) {
 }
 
 export function writeBuilderDraft(draft: BuilderDraft, expectedEpoch: number) {
+  return writeRegisteredBuilderDraft(keyFor(draft.accountId, draft.floorId), draft, expectedEpoch);
+}
+
+/** Tile drafts share the registry and revocation queue with sanitary drafts. */
+export function writeRegisteredBuilderDraft(key: string, draft: unknown, expectedEpoch: number) {
   queue = queue.catch(() => {}).then(async () => {
     if (expectedEpoch !== epoch) return;
-    const key = keyFor(draft.accountId, draft.floorId);
     const raw = await storage.getItem<string>(INDEX, "[]");
     let keys: string[] = [];
     try { keys = JSON.parse(raw || "[]"); } catch { /* replace corrupt index */ }
     if (!Array.isArray(keys)) keys = [];
-    await storage.setItem(INDEX, JSON.stringify([...new Set([...keys, key])]));
-    if (expectedEpoch === epoch) await storage.setItem(key, JSON.stringify(draft));
+    if (!await storage.setItem(INDEX, JSON.stringify([...new Set([...keys, key])]))) return false;
+    if (expectedEpoch === epoch) return storage.setItem(key, JSON.stringify(draft));
   });
+  return queue;
+}
+
+export function removeRegisteredBuilderDraft(key: string) {
+  queue = queue.catch(() => {}).then(() => storage.removeItem(key));
   return queue;
 }
 

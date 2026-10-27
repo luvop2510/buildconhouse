@@ -46,7 +46,7 @@ export default function QuotationTilesList() {
   scopeRef.current = scope;
   const requestIdRef = useRef(0);
   const [search, setSearch] = useState("");
-  const [documentType, setDocumentType] = useState<string>("tiles_quotation");
+  const [documentType, setDocumentType] = useState<string>("all");
   const { isPhone, isTablet } = useBp();
   // The tablet shell reserves a 64px navigation rail. At a 768px viewport the
   // page itself is only about 704px wide, which is not enough for this title
@@ -128,10 +128,10 @@ export default function QuotationTilesList() {
         ListHeaderComponent={<View style={{ gap: spacing.md }}>
           {deleteError ? <View accessibilityRole="alert"><Text style={{ color: colors.error }}>{deleteError}</Text></View> : null}
           {loadError ? <ErrorState title="Some tile documents couldn’t load" subtitle={loadError} onRetry={() => void load()} /> : null}
-      <PageHeader title={completed ? "Approved & ordered tile documents" : "Tile quotations"} overline="Ground Floor · Tiles" embedded actions={
+      <PageHeader title={completed ? "Tile order history" : "Tile quotations"} overline="Ground Floor · Tiles" embedded actions={
         <View style={[styles.headerActions, compact && styles.headerActionsCompact]}>
           <Button
-            label={completed ? "View pending" : "View completed"}
+            label={completed ? "View drafts" : "View order history"}
             variant="secondary"
             icon={completed ? "clock" : "check-circle"}
             onPress={() => router.push(`/(admin)/tiles?view=${completed ? "pending" : "completed"}` as any)}
@@ -162,7 +162,7 @@ export default function QuotationTilesList() {
       <MobileFilterSection testID="tiles-filters">
       <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}><SearchField value={search} onChangeText={setSearch} onClear={() => setSearch("")} placeholder="Search customer or document number" /></View>
       <View style={styles.filterBar}>
-        <FilterBar multiSelect
+        <FilterBar
           value={documentType}
           onChange={setDocumentType}
           testID="tiles-document-filter"
@@ -182,7 +182,7 @@ export default function QuotationTilesList() {
           <Text style={type.bodyMuted}>Loading quotation tiles…</Text>
         </View>
       ) : !loadError && docs?.length === 0 ? (
-        <EmptyState icon="layers" title={search ? "No matching documents" : `No ${completed ? "approved or ordered " : ""}${label} yet`} subtitle={search ? "Try a different customer or document number." : completed ? "Approved and order-placed selections or quotations will appear here." : `Create a new ${label.slice(0, -1)} to get started.`} />
+        <EmptyState icon="layers" title={search ? "No matching documents" : `No ${completed ? "saved order " : ""}${label} yet`} subtitle={search ? "Try a different customer or document number." : completed ? "Ordered documents and earlier approved documents appear here." : `Create a new ${label.slice(0, -1)} to get started.`} />
       ) : null}
         renderItem={({ item }) => (
             <View style={styles.row}>

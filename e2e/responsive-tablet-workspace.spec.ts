@@ -110,6 +110,7 @@ test('tile order detail keeps movement actions and tablet fulfilment counters re
   } }));
   await page.goto('/tiles/orders/tablet-order');
   const group = page.getByTestId('tile-order-brand-tablet-po');
+  await page.getByTestId('tile-order-actions-tablet-line').click();
   for (const key of ['move-godown', 'dispatch-released', 'dispatch-godown']) {
     await targetSize(page.getByTestId(`tile-order-${key}-tablet-line`));
   }

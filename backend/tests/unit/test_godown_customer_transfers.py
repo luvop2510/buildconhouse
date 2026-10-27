@@ -355,9 +355,11 @@ def test_new_goods_reopen_the_same_fully_paid_transfer_quote(monkeypatch):
     database = setup_transfers(monkeypatch)
     first = asyncio.run(route.transfer_stock_to_customer("stock-1", transfer_request("paid-first"), user()))
     monkeypatch.setattr(payments, "db", database)
-    async def paid(_ids, **_kwargs): return {first["recipient_quotation_id"]: 100}
+    async def paid(_ids, **kwargs):
+        keys = kwargs.get("order_keys")
+        return {key: 100 for key in keys} if keys is not None else {first["recipient_quotation_id"]: 100}
     monkeypatch.setattr(payments, "_paid_by_quotation", paid)
-    monkeypatch.setattr(payments, "_godown_value_by_quotation", lambda _ids: asyncio.sleep(0, result={}))
+    monkeypatch.setattr(payments, "_godown_value_by_quotation", lambda _ids, **_kwargs: asyncio.sleep(0, result={}))
     def queue():
         return asyncio.run(payments.list_orders(status_filter=None, overdue_period=None,
             custom_min_days=None, custom_max_days=None, limit=200, user=user()))
