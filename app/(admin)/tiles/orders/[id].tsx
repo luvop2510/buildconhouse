@@ -31,6 +31,7 @@ import { Sheet } from "@/src/components/ui";
 import { Dropdown } from "@/src/components/ds";
 import { useRequireFloorAccess } from "@/src/hooks/use-floor-access";
 import { useAuth } from "@/src/state/auth";
+import { useBreakpoint } from "@/src/hooks/use-breakpoint";
 import { colors, spacing, type } from "@/src/theme/tokens";
 
 type ActiveSheet = { kind: "godown" | "dispatch-released" | "dispatch-godown"; poId: string; item: CustomerOrderItem } | null;
@@ -66,6 +67,7 @@ function ItemActions({
 export default function CustomerOrderDetailScreen() {
   useRequireFloorAccess("ground-floor");
   const { staff } = useAuth();
+  const { isPhone } = useBreakpoint();
   const readOnlyDeliveryLookup = staff?.access_profile === "ground_tile_quotations_followups";
   const { id, timeline: timelineParam } = useLocalSearchParams<{ id: string; timeline?: string }>();
   const router = useRouter();
@@ -148,11 +150,11 @@ export default function CustomerOrderDetailScreen() {
       ),
     },
     { key: "ordered", label: "ORDERED", width: 120, align: "right", render: (i) => <CellNumber value={`${i.boxes_ordered} ${i.quantity_unit === "Pieces" ? "pieces" : "boxes"}`} /> },
-    { key: "released", label: "RELEASED", width: 124, align: "right", mobile: "hidden", render: (i) => <CellNumber value={`${i.boxes_ready} ${i.quantity_unit === "Pieces" ? "pieces" : "boxes"}`} /> },
-    { key: "godown", label: "GODOWN", width: 120, align: "right", mobile: "hidden", render: (i) => <CellNumber value={`${i.boxes_godown} ${i.quantity_unit === "Pieces" ? "pieces" : "boxes"}`} /> },
-    { key: "dispatched", label: "DISPATCHED", width: 136, align: "right", mobile: "hidden", render: (i) => <CellNumber value={`${i.boxes_dispatched} ${i.quantity_unit === "Pieces" ? "pieces" : "boxes"}`} /> },
+    { key: "released", label: "RELEASED", width: 124, align: "right", render: (i) => <CellNumber value={`${i.boxes_ready} ${i.quantity_unit === "Pieces" ? "pieces" : "boxes"}`} /> },
+    { key: "godown", label: "GODOWN", width: 120, align: "right", render: (i) => <CellNumber value={`${i.boxes_godown} ${i.quantity_unit === "Pieces" ? "pieces" : "boxes"}`} /> },
+    { key: "dispatched", label: "DISPATCHED", width: 136, align: "right", render: (i) => <CellNumber value={`${i.boxes_dispatched} ${i.quantity_unit === "Pieces" ? "pieces" : "boxes"}`} /> },
     {
-      key: "delivered", label: "DELIVERED", width: 118, align: "right", mobile: "hidden",
+      key: "delivered", label: "DELIVERED", width: 118, align: "right",
       render: (i) => <CellNumber value={i.current_location === "Delivered" ? `${i.boxes_dispatched} ${i.quantity_unit === "Pieces" ? "pieces" : "boxes"}` : "—"} dim={i.current_location !== "Delivered"} />,
     },
     { key: "remaining", label: "REMAINING", width: 130, align: "right", render: (i) => <CellNumber value={`${i.boxes_pending} ${i.quantity_unit === "Pieces" ? "pieces" : "boxes"}`} dim={i.boxes_pending === 0} /> },
@@ -176,7 +178,7 @@ export default function CustomerOrderDetailScreen() {
       <CenteredState>
         <Text style={type.titleMd}>{loadError || "Order not found"}</Text>
         <Button label="Retry" variant="primary" testID="tile-order-retry" onPress={() => load()} />
-        <BackLink label="Back to Tile Orders" testID="tile-order-back" onPress={() => router.back()} />
+        <BackLink label="Back to Tile Orders" testID="tile-order-back" onPress={() => { if (router.canGoBack()) router.back(); else router.replace("/(admin)/tiles/orders" as any); }} />
       </CenteredState>
     );
   }
@@ -186,7 +188,7 @@ export default function CustomerOrderDetailScreen() {
   return (
     <>
       <PageShell testID="tile-order-detail-screen">
-        <BackLink label="Back to Tile Orders" testID="tile-order-back" onPress={() => router.back()} />
+        <BackLink label="Back to Tile Orders" testID="tile-order-back" onPress={() => { if (router.canGoBack()) router.back(); else router.replace("/(admin)/tiles/orders" as any); }} />
 
         <PageHeader
           eyebrow={summary.number}
@@ -200,16 +202,19 @@ export default function CustomerOrderDetailScreen() {
             <ButtonGroup>
               <Button
                 label={timelineLoading ? "Loading timeline…" : "View Timeline"}
+                fullWidth={isPhone}
                 testID="tile-order-view-timeline"
                 onPress={openTimeline}
               />
               <Button
                 label="View Register"
+                fullWidth={isPhone}
                 testID="tile-order-view-register"
                 onPress={() => router.push(`/(admin)/tiles/orders?tab=material-register&search=${encodeURIComponent(summary.customer_name)}` as any)}
               />
               <Button
                 label="View Dispatches"
+                fullWidth={isPhone}
                 testID="tile-order-view-dispatches"
                 onPress={() => router.push(`/(admin)/tiles/orders?tab=dispatch-list&search=${encodeURIComponent(summary.customer_name)}` as any)}
               />
@@ -223,7 +228,7 @@ export default function CustomerOrderDetailScreen() {
               <StatusPill status={summary.overall_status} />
               <AgeingBadge days={summary.waiting_days} band={summary.ageing_band} />
             </View>
-            <View style={styles.summaryStats}>
+            <View style={[styles.summaryStats, isPhone ? styles.summaryStatsPhone : null]}>
               <Stat label="Products" value={summary.total_products} />
               <Stat label="Units ordered" value={summary.total_boxes} />
               <Stat label="Complete" value={`${summary.completion_percentage}%`} tone="brand" />
@@ -282,7 +287,7 @@ export default function CustomerOrderDetailScreen() {
             actually returns — activity_events documents, whose human text is
             `summary` and whose kind is `event_type` (services/activity_log.py).
             Reading `title`/`type` made every row render "Workflow event". */}
-        <ScrollView contentContainerStyle={styles.timelineList}>
+        <ScrollView style={{ flex: 1, minHeight: 0 }} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.timelineList}>
           {timeline?.length ? timeline.map((event, index) => {
             const target = timelineTarget(event);
             return (
@@ -344,6 +349,7 @@ export default function CustomerOrderDetailScreen() {
 const styles = StyleSheet.create({
   summaryBadges: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.s12, marginBottom: spacing.s20 },
   summaryStats: { flexDirection: "row", flexWrap: "wrap", columnGap: spacing.s40, rowGap: spacing.s24 },
+  summaryStatsPhone: { columnGap: spacing.lg, rowGap: spacing.lg },
   actionCell: { gap: spacing.s8, width: "100%" },
   hint: { ...type.caption, color: colors.onSurfaceMuted },
   note: { ...type.caption, color: colors.onSurfaceMuted, marginTop: spacing.s12 },

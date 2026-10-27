@@ -13,7 +13,7 @@ from tests.unit.test_kitchen_projects import create_request, setup
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("stage", "target"), [
-    ("quotation", "order"), ("order", "production"), ("production", "installation"),
+    ("visit", "cad"), ("quotation", "order"), ("order", "production"), ("production", "installation"),
 ])
 async def test_next_response_hydration_times_out_before_commit_and_releases_admission(setup, monkeypatch, stage, target):
     database, service, owner = setup
@@ -59,3 +59,25 @@ async def test_next_response_hydration_times_out_before_commit_and_releases_admi
     assert retry.json()["version"] == replay.json()["version"] == project["version"] + 1
     assert replay.json()["replayed"]
     assert len(database.kitchen_projects.rows[0]["command_receipts"]) == len(receipts) + 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("notes", "expected"), [("   ", ""), ("  Visit after noon \n", "Visit after noon")])
+async def test_visit_response_preserves_exact_normalized_snapshot_for_confirmation(setup, monkeypatch, notes, expected):
+    database, service, owner = setup
+    project = await service.create(owner, create_request(customer_id="customer-a", idempotency_key="visit-confirm-create"))
+    database.kitchen_projects.rows[0]["stage"] = "visit"
+    monkeypatch.setattr(kitchen_routes, "db", database)
+    app = FastAPI()
+    app.include_router(kitchen_routes.router)
+    app.dependency_overrides[get_current_user] = lambda: owner
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(f"/kitchen-projects/{project['id']}/commands", json={
+            "expected_version": project["version"], "idempotency_key": "visit-confirm-save",
+            "command": "save_visit", "payload": {"status": "Visited", "visit_date": None, "display_model": " GI ", "notes": notes},
+        })
+    assert response.status_code == 200
+    assert response.json()["visit"]["notes"] == expected
+    assert response.json()["visit"]["display_model"] == "GI"
+    assert response.json()["visit"]["visit_date"] is None
+    assert database.kitchen_projects.rows[0]["visit"]["notes"] == expected

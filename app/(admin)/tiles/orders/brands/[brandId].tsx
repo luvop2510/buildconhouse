@@ -105,7 +105,7 @@ export default function BrandDashboardScreen() {
 
   return (
     <PageShell testID="tile-brand-queue-screen">
-      <BackLink label="Back to Brands" testID="tile-brand-queue-back" onPress={() => router.back()} />
+      <BackLink label="Back to Brands" testID="tile-brand-queue-back" onPress={() => { if (router.canGoBack()) router.back(); else router.replace("/(admin)/tiles/orders?tab=brands" as any); }} />
 
       {/* The brand's display name is not on this endpoint's rows
           (BrandOrderRow carries po/customer fields only), so the page keeps

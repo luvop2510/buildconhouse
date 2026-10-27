@@ -6,7 +6,7 @@ const source = await readFile(new URL('../src/components/kitchen/KitchenProjectS
 const stages = ['lead', 'visit', 'cad', 'design', 'quotation', 'order', 'production', 'installation', 'completed'];
 const initial = { id: 'project', workflow_cycle: 1, version: 7, stage: 'lead', lead: { site_location: 'Original' }, visit: { notes: 'Original' }, cad: { progress: 0 }, orders: [] };
 
-async function harness(providerSource = source, record = structuredClone(initial)) {
+async function harness(providerSource = source, record = structuredClone(initial), executeCommand) {
   const hooks = [], effects = [], writes = [];
   let index = 0, state, settle;
   const same = (first, second) => first && second && first.length === second.length && first.every((value, position) => Object.is(value, second[position]));
@@ -35,6 +35,7 @@ async function harness(providerSource = source, record = structuredClone(initial
       get: async () => record, configuration: async () => ({}),
       command: (id, version, key, command, payload) => {
         writes.push({ id, version, key, command, payload });
+        if (executeCommand) return executeCommand(id, version, key, command, payload);
         return new Promise((resolve, reject) => { settle = value => value instanceof Error ? reject(value) : resolve(value); });
       },
     } },
@@ -216,3 +217,57 @@ revision.settle({ ...initial, version: 8, design_revision_pending: true });
 await request;
 assert.equal(revision.render().dirty, true, 'A revision reason cannot acknowledge an unrelated internal-note correction');
 console.log('Kitchen provider draft reconciliation: pending typing, request baselines, own-source rebase, duplicate admission, failure and revision isolation passed');
+
+
+// Execute the actual API confirmation path through the actual mounted provider.
+const visitApiSource = await readFile(new URL('../src/api/kitchenProjects.ts', import.meta.url), 'utf8');
+assert.ok(visitApiSource.includes('["move_stage", "save_visit"]'));
+for (const confirm of [false, true]) for (const background of [false, true]) for (const newerTyping of [false, true]) {
+  const original = { ...initial, stage: 'visit', visit: { status: 'Scheduled', visit_date: '2026-10-27', display_model: null, notes: null } };
+  const submitted = { ...original.visit, notes: 'Submitted visit' };
+  let persisted = structuredClone(original), releaseRead;
+  const confirmedRead = new Promise(resolve => { releaseRead = resolve; });
+  const transport = {
+    post: async (_path, body) => {
+      if (body.expected_version !== persisted.version) throw Object.assign(Error('Stale version'), { status: 409 });
+      if (body.command === 'save_visit') {
+        persisted = { ...persisted, version: persisted.version + 1, visit: { ...persisted.visit, ...body.payload } };
+        throw Object.assign(Error('Cannot reach the backend'), { status: 503 });
+      }
+      assert.equal(body.command, 'move_stage');
+      persisted = { ...persisted, version: persisted.version + 1, stage: body.payload.target_stage };
+      return persisted;
+    },
+    get: async () => { await confirmedRead; return persisted; },
+  };
+  const apiExports = {};
+  new Function('require', 'exports', ts.transpileModule(confirm ? visitApiSource : visitApiSource.replace('["move_stage", "save_visit"]', '["move_stage"]'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText)(name => name.endsWith('client') ? { api: transport } : name.endsWith('floors') ? { KITCHEN_FLOOR_ID: 'second-floor' } : { KITCHEN_WORKSPACE_PAGES: [] }, apiExports);
+  const view = await harness(source, original, apiExports.kitchenProjectsApi.command);
+  view.state.setDraftValue('visit.value', original.visit, submitted);
+  view.render();
+  const saving = view.state.command('save_visit', submitted, background);
+  await Promise.resolve(); await Promise.resolve();
+  if (newerTyping) view.state.setDraftValue('visit.value', original.visit, { ...submitted, notes: 'Typed while confirming' });
+  releaseRead();
+  if (!confirm) {
+    assert.equal(await saving, false, 'Negative control reproduces the lost Visit acknowledgement');
+    assert.equal(await view.state.command('move_stage', { target_stage: 'cad' }), false, 'Negative control reproduces Next CAD failing on the stale version');
+    assert.equal(view.writes[1].version, original.version);
+    assert.equal(view.render().project.stage, 'visit');
+    assert.equal(persisted.version, original.version + 1);
+    assert.equal(view.state.dirty, true);
+    continue;
+  }
+  assert.equal(await saving, true, 'A lost committed Visit response is confirmed without another save');
+  assert.equal(view.render().project.version, original.version + 1);
+  assert.equal(view.state.drafts['visit.value'].notes, newerTyping ? 'Typed while confirming' : 'Submitted visit');
+  assert.equal(view.state.dirty, newerTyping, 'Confirmation acknowledges only the submitted snapshot');
+  assert.equal(view.state.isDraftStale('visit.value'), false);
+  assert.equal(await view.state.command('move_stage', { target_stage: 'cad' }), true);
+  assert.equal(view.writes.length, 2, 'Visit confirmation must never repeat its POST');
+  assert.equal(view.writes[1].version, original.version + 1, 'Next CAD uses the confirmed saved version');
+  assert.equal(view.render().project.stage, 'cad');
+}
+console.log('Actual Kitchen provider and API: manual/autosave lost Visit acknowledgements confirm once, retain newer typing and let Next CAD use the current version.');

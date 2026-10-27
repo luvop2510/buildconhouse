@@ -176,16 +176,16 @@ const GROUND_FLOOR = { floorId: TILES_FLOOR_ID } as const;
 
 export const tileOrdersApi = {
   // ---- Customer tab ----
-  listCustomerOrders: (params?: { page?: number; page_size?: number; sort?: string; status?: string; search?: string; customer_id?: string }) =>
+  listCustomerOrders: (params?: { page?: number; page_size?: number; sort?: string; status?: string; search?: string; customer_id?: string }, signal?: AbortSignal) =>
     api.get<{ orders: CustomerOrderCard[] } & PageMeta>(
-      `/tile-orders/customer-orders${toQuery(params)}`, GROUND_FLOOR,
+      `/tile-orders/customer-orders${toQuery(params)}`, { ...GROUND_FLOOR, signal },
     ),
   customerOrderDetail: (id: string) => api.get<CustomerOrderDetail>(`/tile-orders/customer-orders/${id}`, GROUND_FLOOR),
   customerOrderTimeline: (id: string) => api.get<{ events: Record<string, any>[] }>(`/tile-orders/customer-orders/${id}/timeline`, GROUND_FLOOR),
 
   // ---- Brands tab ----
-  listBrands: (params?: { page?: number; page_size?: number; search?: string }) =>
-    api.get<{ brands: BrandLandingCard[] } & PageMeta>(`/tile-orders/brands${toQuery(params)}`, GROUND_FLOOR),
+  listBrands: (params?: { page?: number; page_size?: number; search?: string }, signal?: AbortSignal) =>
+    api.get<{ brands: BrandLandingCard[] } & PageMeta>(`/tile-orders/brands${toQuery(params)}`, { ...GROUND_FLOOR, signal }),
   brandOrders: (brandId: string, params?: { page?: number; page_size?: number; sort?: string; status?: string; search?: string }) =>
     api.get<{ kpi: BrandOrdersKpi; orders: BrandOrderRow[] } & PageMeta>(
       `/tile-orders/brands/${brandId}/orders${toQuery(params)}`, GROUND_FLOOR,
@@ -231,13 +231,13 @@ export const tileOrdersApi = {
   listMovements: (params?: {
     customer_id?: string; brand_id?: string; movement_type?: string; date_from?: string; date_to?: string;
     chalan_number?: string; dispatch_number?: string; search?: string; page?: number; page_size?: number;
-  }) => api.get<{ rows: MaterialMovementRow[] } & PageMeta>(
-    `/tile-orders/movements${toQuery(params)}`, GROUND_FLOOR,
+  }, signal?: AbortSignal) => api.get<{ rows: MaterialMovementRow[] } & PageMeta>(
+    `/tile-orders/movements${toQuery(params)}`, { ...GROUND_FLOOR, signal },
   ),
-  listHistory: (params?: { search?: string; customer_id?: string; brand_id?: string; date_from?: string; date_to?: string; page?: number; page_size?: number }) =>
-    api.get<{ rows: CompletedTileOrder[]; facets: { customers: IdNameRef[]; brands: IdNameRef[] } } & PageMeta>(`/tile-orders/history${toQuery(params)}`, GROUND_FLOOR),
-  listInventory: (params?: { search?: string; page?: number; page_size?: number }) =>
-    api.get<{ rows: GodownInventoryRow[] } & PageMeta>(`/tile-orders/inventory${toQuery(params)}`, GROUND_FLOOR),
+  listHistory: (params?: { search?: string; customer_id?: string; brand_id?: string; date_from?: string; date_to?: string; page?: number; page_size?: number }, signal?: AbortSignal) =>
+    api.get<{ rows: CompletedTileOrder[]; facets: { customers: IdNameRef[]; brands: IdNameRef[] } } & PageMeta>(`/tile-orders/history${toQuery(params)}`, { ...GROUND_FLOOR, signal }),
+  listInventory: (params?: { search?: string; page?: number; page_size?: number }, signal?: AbortSignal) =>
+    api.get<{ rows: GodownInventoryRow[] } & PageMeta>(`/tile-orders/inventory${toQuery(params)}`, { ...GROUND_FLOOR, signal }),
 
   itemHistory: (itemId: string) => api.get<{ item_id: string; events: Record<string, any>[] }>(`/tile-orders/items/${itemId}/history`, GROUND_FLOOR),
   dashboard: () => api.get<TileOrdersDashboard>("/tile-orders/dashboard", GROUND_FLOOR),
@@ -247,8 +247,8 @@ export const tileOrdersApi = {
     customer_id?: string; brand_id?: string; product?: string; dispatch_number?: string;
     chalan_number?: string; status?: string; date_from?: string; date_to?: string;
     search?: string; page?: number; page_size?: number;
-  }) => api.get<{ rows: DispatchListRow[] } & PageMeta>(
-    `/tile-orders/dispatches${toQuery(params)}`, GROUND_FLOOR,
+  }, signal?: AbortSignal) => api.get<{ rows: DispatchListRow[] } & PageMeta>(
+    `/tile-orders/dispatches${toQuery(params)}`, { ...GROUND_FLOOR, signal },
   ),
 };
 

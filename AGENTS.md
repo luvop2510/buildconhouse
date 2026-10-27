@@ -883,3 +883,15 @@ before list refresh completes. Full unmount/reload persistence is still open;
 do not claim durable recovery from the mounted map. The stock hook script and
 four-device stability registry require these scenarios. See
 docs/audits/2026-10-25-godown-transfer-recovery.md for evidence and remaining gates.
+
+## Mobile Tile Orders and lost Visit acknowledgements — 2026-10-27
+
+Tile Orders phone navigation uses a two-column view grid; record identity and
+labelled quantities stay together. All fulfilment counters remain available on
+detail, actions stack at phone width and timeline/record sheets retain a bounded
+scroll owner. Cold detail/brand/release Back links have parent fallbacks. List
+consumer cancellation must not affect writes; preserve exact Ground Floor scope.
+An uncertain save_visit response may be confirmed by one bounded fresh read only
+for the same project at Visit, newer version and exact submitted Visit snapshot
+with existing server string trimming. Never replay a POST automatically or extend
+this confirmation to financial/approval commands. Preserve newer draft typing.

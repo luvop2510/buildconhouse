@@ -40,7 +40,7 @@
     "test:sound-feedback": "node scripts/test-sound-feedback.mjs",
     "test:performance:audit": "node scripts/run-performance-audit.mjs",
     "test:e2e:performance": "playwright test --config playwright.performance.config.ts",
-    "test:page-loading-performance": "node scripts/test-page-loading-performance.mjs",
+    "test:page-loading-performance": "node scripts/test-page-loading-performance.mjs && node scripts/test-tile-list-cancellation.mjs",
     "test:icon-fonts": "node scripts/test-icon-font-contract.mjs",
     "test:web-module-graph": "node scripts/test-web-module-graph-isolation.mjs",
     "test:release-recovery": "node scripts/test-release-recovery.mjs && node scripts/test-page-error-boundary.mjs",

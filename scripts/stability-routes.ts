@@ -26,6 +26,16 @@ export function stabilityRouteTitle(path: string): string {
 export const stabilityProjects = ['android-chrome', 'iphone-safari', 'ipad-safari', 'desktop-chrome'];
 
 export const requiredStabilityScenarios: Record<string, string[]> = {
+  'redesign-tile-mobile-orders.spec.ts': [
+    'critical Tile Orders phone views form a readable grid and records retain identity with paired quantities',
+    'critical switching Tile Orders views cancels the abandoned request and keeps the selected view usable',
+    ...['/tiles/orders/missing', '/tiles/orders/brands/brand', '/tiles/orders/po/missing'].map(path => `critical Tile Orders Back works from a cold ${path} link`),
+  ],
+  'redesign-tile-mobile-details.spec.ts': [
+    'critical tile order timeline scrolls through its final event and closes without moving the order page',
+    'critical tile order phone metrics and product quantities stay grouped and the last product scrolls into view',
+  ],
+  'redesign-kitchen-visit-recovery.spec.ts': ['autosave', 'manual'].map(mode => `critical Kitchen Visit ${mode} confirms a lost saved response before Next CAD`),
   'redesign-followup-menu-overflow.spec.ts': [
     ...['ground-floor', 'first-floor', 'third-floor'].map(floor => `critical ${floor} selected follow-up actions fit the viewport and menus stay separate from customer details`),
     ...['owner', 'sales'].map(role => `critical ${role} follow-up salesperson filter offers Mine only to staff`),
@@ -47,7 +57,7 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
     ...['text', 'textarea', 'search', 'kitchen', 'purchases', 'catalog'].map(kind => `focused ${kind} indicator follows its outer field shape`),
   ],
   'redesign-kitchen-request-recovery.spec.ts': [
-    ...[true,false].flatMap(confirmed => ['quotation', 'order', 'production'].map(stage => `Kitchen ${stage} opens after a dropped read and Next ${confirmed?'confirms a saved stage':'reuses its receipt'} after a lost response`)),
+    ...[true,false].flatMap(confirmed => ['visit', 'quotation', 'order', 'production'].map(stage => `Kitchen ${stage} opens after a dropped read and Next ${confirmed?'confirms a saved stage':'reuses its receipt'} after a lost response`)),
   ],
   'redesign-keyboard-scroll.spec.ts': [
     'critical keyboard scroll: lower customer address retains focus and saves once without document pan',

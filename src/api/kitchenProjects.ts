@@ -107,15 +107,25 @@ export const kitchenProjectsApi = {
     try {
       return await api.post<KitchenProject>(`/kitchen-projects/${encodeURIComponent(id)}/commands`, { expected_version: expectedVersion, idempotency_key: key, command, payload }, options);
     } catch (error) {
-      // A lost Next response is uncertain, not proof the stage failed to save.
-      // Confirm only its requested state; never replay a business write here.
+      // Lost responses can follow a committed save. Confirm its exact state
+      // before the next command uses an obsolete version; never replay a write.
       const status = (error as { status?: number })?.status;
-      if (command !== "move_stage" || ![408, 502, 503, 504].includes(status || 0)) throw error;
+      if (!["move_stage", "save_visit"].includes(command) || ![408, 502, 503, 504].includes(status || 0)) throw error;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 3000);
       try {
         const saved = await api.get<KitchenProject>(`/kitchen-projects/${encodeURIComponent(id)}`, { ...options, signal: controller.signal });
-        if (saved.id === id && saved.version > expectedVersion && saved.stage === payload.target_stage) return saved;
+        if (saved.id === id && saved.version > expectedVersion) {
+          if (command === "move_stage" && saved.stage === payload.target_stage) return saved;
+          const visitFields = ["status", "visit_date", "display_model", "notes"] as const;
+          if (command === "save_visit" && saved.stage === "visit" && saved.visit
+            && Object.keys(payload).every(field => visitFields.some(allowed => allowed === field))
+            && visitFields.every(field => {
+              const expected = payload[field];
+              const normalized = typeof expected === "string" && (field === "notes" || field === "display_model") ? expected.trim() : expected ?? null;
+              return (saved.visit[field] ?? null) === normalized;
+            })) return saved;
+        }
       } catch {
         // Keep the original failure and receipt for an explicit safe retry.
       } finally { clearTimeout(timer); }

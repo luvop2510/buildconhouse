@@ -243,7 +243,7 @@ export default function BrandOrderDetailScreen() {
       <CenteredState>
         <Text style={type.titleMd}>{loadError || "Order not found"}</Text>
         <Button label="Retry" variant="primary" onPress={() => load()} />
-        <BackLink label="Back" testID="tile-brand-release-back" onPress={() => router.back()} />
+        <BackLink label="Back" testID="tile-brand-release-back" onPress={() => { if (router.canGoBack()) router.back(); else router.replace("/(admin)/tiles/orders?tab=brands" as any); }} />
       </CenteredState>
     );
   }
@@ -328,7 +328,7 @@ export default function BrandOrderDetailScreen() {
       <BackLink
         label={`Back to ${order.brand_name || "Brand"}`}
         testID="tile-brand-release-back"
-        onPress={() => router.back()}
+        onPress={() => { if (router.canGoBack()) router.back(); else router.replace("/(admin)/tiles/orders?tab=brands" as any); }}
       />
 
       <PageHeader

@@ -253,10 +253,11 @@ export function DataTable<T>({
         </View>
       );
       if (!onRowPress) {
-        return <View testID={rowTestID?.(item, index)} style={[styles.mobileCard, selected ? styles.bodyRowSelected : null]}>{content}</View>;
+        return <View key={keyExtractor(item, index)} testID={rowTestID?.(item, index)} style={[styles.mobileCard, selected ? styles.bodyRowSelected : null]}>{content}</View>;
       }
       return (
         <Pressable
+          key={keyExtractor(item, index)}
           testID={rowTestID?.(item, index)}
           onPress={() => onRowPress(item, index)}
           accessibilityRole="button"
@@ -468,10 +469,11 @@ export function CellTitle({ children }: { children: ReactNode }) {
 
 /** Title over a dimmer supporting line (series · finish · size, brand · product). */
 export function CellStack({ title, subtitle }: { title: ReactNode; subtitle?: ReactNode }) {
+  const { isPhone } = useBreakpoint();
   return (
     <View style={styles.stack}>
-      <Text numberOfLines={1} style={styles.cellTitle}>{title}</Text>
-      {subtitle ? <Text numberOfLines={1} style={styles.cellSub}>{subtitle}</Text> : null}
+      <Text numberOfLines={isPhone ? 2 : 1} style={styles.cellTitle}>{title}</Text>
+      {subtitle ? <Text numberOfLines={isPhone ? 2 : 1} style={styles.cellSub}>{subtitle}</Text> : null}
     </View>
   );
 }
@@ -486,7 +488,8 @@ export function CellText({ children, muted }: { children: ReactNode; muted?: boo
 
 /** Counters and quantities — tabular figures so digits line up column-wise. */
 export function CellNumber({ value, dim }: { value: ReactNode; dim?: boolean }) {
-  return <Text style={[styles.cellNumber, dim ? styles.cellNumberDim : null]}>{value}</Text>;
+  const { isPhone } = useBreakpoint();
+  return <Text style={[styles.cellNumber, isPhone ? { textAlign: "left" } : null, dim ? styles.cellNumberDim : null]}>{value}</Text>;
 }
 
 /** Order numbers, chalan numbers, timestamps — monospaced, never truncated mid-run. */

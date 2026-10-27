@@ -46,6 +46,7 @@ export function PageShell({
       testID={testID}
     >
       <ScrollView
+        keyboardShouldPersistTaps="handled"
         style={styles.pageScroll}
         contentContainerStyle={[
           styles.pageContent,
@@ -136,7 +137,7 @@ export function ButtonGroup({ children, align = "left" }: { children: ReactNode;
   const { isPhone, bp } = useBreakpoint();
   const compact = isPhone || bp === "tabletPortrait";
   return (
-    <View style={[styles.buttonGroup, align === "right" ? styles.buttonGroupRight : null, compact ? styles.buttonGroupCompact : null]}>
+    <View style={[styles.buttonGroup, align === "right" ? styles.buttonGroupRight : null, compact ? styles.buttonGroupCompact : null, isPhone ? styles.buttonGroupPhone : null]}>
       {children}
     </View>
   );
@@ -232,8 +233,9 @@ export function Toolbar({ search, filters, actions }: { search?: ReactNode; filt
 
 /** One figure and its label. Metrics read as a row of these, never as cards. */
 export function Stat({ label, value, tone }: { label: string; value: ReactNode; tone?: "default" | "brand" | "warn" }) {
+  const { isPhone } = useBreakpoint();
   return (
-    <View style={styles.stat}>
+    <View style={[styles.stat, isPhone ? styles.statPhone : null]}>
       <Text
         style={[
           styles.statValue,
@@ -248,7 +250,8 @@ export function Stat({ label, value, tone }: { label: string; value: ReactNode; 
 }
 
 export function StatRow({ children, testID }: { children: ReactNode; testID?: string }) {
-  return <View style={styles.statRow} testID={testID}>{children}</View>;
+  const { isPhone } = useBreakpoint();
+  return <View style={[styles.statRow, isPhone ? styles.statRowPhone : null]} testID={testID}>{children}</View>;
 }
 
 /** Sticky bottom action bar — batch operations live here, never in the scroll. */
@@ -347,6 +350,7 @@ const styles = StyleSheet.create({
   buttonGroup: { flexDirection: "row", alignItems: "center", gap: spacing.s12, flexWrap: "wrap" },
   buttonGroupRight: { justifyContent: "flex-end" },
   buttonGroupCompact: { alignItems: "stretch" },
+  buttonGroupPhone: { flexDirection: "column", flexWrap: "nowrap", width: "100%", flexGrow: 1, flexShrink: 1 },
 
   searchWrap: {
     flexDirection: "row",
@@ -434,6 +438,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.s24,
   },
   stat: { minWidth: 104, gap: spacing.s4 },
+  statPhone: { minWidth: 0, flexBasis: "44%", flexGrow: 1 },
+  statRowPhone: { columnGap: spacing.lg, rowGap: spacing.lg, padding: spacing.lg },
   statValue: {
     fontFamily: type.displayMd.fontFamily,
     fontSize: 22,

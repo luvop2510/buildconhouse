@@ -92,3 +92,34 @@ current route/scenario registry directly, including new follow-up overflow tests
 This prevents a newly added route or a renamed regression from silently invalidating
 the release contract. The current runner discovers 848 cases; no number alone
 is accepted as evidence that the required cases passed.
+
+## Mobile Tile Orders and Visit → CAD follow-up
+
+The user expanded scope to the entire mobile Tile Orders workspace. Its view
+navigation is now a consistent two-column phone grid, followed by the selected
+view's purpose and filters. Customer identity includes the order number/brand;
+quantity labels sit with left-aligned phone values. Detail exposes all fulfilment
+buckets, grouped summary figures, readable product names, and vertically stacked
+Timeline/Register/Dispatch actions. Timeline has an explicit bounded scroll area;
+record sheets scroll. Existing 30-event timeline baseline already scrolled, so no
+claim is made that its original failure was reproduced. Cold Back links now have
+an explicit parent fallback when there is no router history. Each of six list
+reads accepts a consumer abort signal; switching view/search/focus releases the
+obsolete read without canceling mutations or weakening floor isolation.
+
+A committed Visit save with a lost response was reproduced. Without repair the
+local version stays old and Next CAD then fails its concurrency check. The client
+now performs one bounded fresh read after an uncertain Visit save, accepting only
+a newer version of the same project at Visit with all submitted Visit fields
+matching server normalization. It never repeats a write or accepts mismatched
+state. Existing provider snapshot handling preserves newer typing. Bounded live
+Vercel/Railway samples contained only successful commands; the original network
+interruption cause remains unproven. Financial and approval writes are excluded.
+
+New API/provider positive and negative controls pass, including lost autosave and
+manual-save responses, stale/mismatched/offline/auth cases, whitespace/empty
+normalization and Next using the acknowledged version. Six actual-ASGI backend
+response tests pass. TypeScript and changed-file lint pass. The first combined
+browser run passed 49/52; its three phone action-width assertions identified an
+additional flex-wrap issue, now corrected for final verification. No production
+publication or completed main merge is claimed by this record.

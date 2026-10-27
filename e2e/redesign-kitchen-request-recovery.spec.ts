@@ -1,7 +1,7 @@
 import {expect,test} from '@playwright/test';
 import {mockSession} from './audit-fixtures';
 
-for(const confirmed of [true,false]) for(const [stage,target] of [['quotation','order'],['order','production'],['production','installation']] as const) {
+for(const confirmed of [true,false]) for(const [stage,target] of [['visit','cad'],['quotation','order'],['order','production'],['production','installation']] as const) {
  test(`Kitchen ${stage} opens after a dropped read and Next ${confirmed?'confirms a saved stage':'reuses its receipt'} after a lost response`,async({page})=>{
   await mockSession(page,`/kitchen/network-project/stages/${stage}`,false,{floorId:'second-floor'});
   let project:any={id:'network-project',reference:'KIT-NETWORK',project_reference:'KIT-NETWORK',customer_id:'customer',customer:{id:'customer',name:'Synthetic connection customer',phone:'9000000001'},version:1,workflow_cycle:1,stage,status:'Pending',lifecycle_status:'Active',lead:{status:'Qualified',site_location:'Synthetic site'},visit:{status:'Visited'},cad:{received:true,progress:100,ready:true,status:'Completed'},production:{status:'Not Started',start_date:null,completion_date:null,notes:null},installation:{status:'Not Started',start_date:null,completion_date:null,notes:null},design_versions:[],quotation_versions:[],orders:[],approvals:[],assignments:{},exceptions:[],activity:[],attachments:[],blocked_transitions:[],permissions:{can_update:true,can_assign:true,can_approve_exceptions:true}};
