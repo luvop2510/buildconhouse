@@ -24,11 +24,15 @@ export function KitchenPage({ title, subtitle, overline, right, back, children, 
   return <View style={{ flex: 1, minHeight: 0, backgroundColor: colors.surface }}>
     <ScrollView testID="kitchen-page-scroll" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator contentContainerStyle={{ flexGrow: 1, paddingHorizontal: isPhone ? 16 : 32, paddingTop: compactHeader ? 8 : isPhone ? 20 : 32, paddingBottom: isPhone ? 32 : 48 }}>
       <View style={[{ width: "100%", maxWidth: 1560, alignSelf: "center", gap: compactHeader ? 12 : isPhone ? 24 : 32 }, contentStyle]}>
-        {compactHeader ? <View testID="kitchen-compact-header" style={{ flexDirection: "row", alignItems: "center", gap: 8, minHeight: 44 }}>
-          {back ? <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={back} testID="kitchen-page-back" style={{ minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center" }}><Feather name="arrow-left" size={20} color={colors.onSurface} /></Pressable> : null}
-          <Text accessibilityRole="header" aria-level={1} style={[type.titleMd, { flex: 1, minWidth: 0 }]}>{title}</Text>
-          {customerSearch ? <KitchenCustomerSearch compact /> : null}
-          {right}
+        {compactHeader ? <View testID="kitchen-compact-header" style={{ flexDirection: isPhone ? "column" : "row", alignItems: isPhone ? "stretch" : "center", gap: 8, minHeight: 44 }}>
+          <View style={{ flex: isPhone ? undefined : 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 8 }}>
+            {back ? <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={back} testID="kitchen-page-back" style={{ minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center" }}><Feather name="arrow-left" size={20} color={colors.onSurface} /></Pressable> : null}
+            <Text accessibilityRole="header" aria-level={1} numberOfLines={1} style={[type.titleMd, { flex: 1, minWidth: 0 }]}>{title}</Text>
+          </View>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
+            {customerSearch ? <KitchenCustomerSearch compact /> : null}
+            {right}
+          </View>
         </View> : <View style={{ gap: 16, borderBottomWidth: 1, borderBottomColor: colors.divider, paddingBottom: 24 }}>
           {back ? <Button label="Back" icon="arrow-left" variant="ghost" onPress={back} testID="kitchen-page-back" /> : null}
           <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 20 }}>

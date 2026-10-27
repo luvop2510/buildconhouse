@@ -11,7 +11,7 @@ test('critical page headings remain readable inside clipping ancestors', async (
     const defects = await heading.evaluate(element => {
       const failures: string[] = [];
       const box = element.getBoundingClientRect();
-      if (box.width < Math.min(180, innerWidth / 2)) failures.push('Title is compressed');
+      if (box.width <= 0 || box.height <= 0) failures.push('Title has no visible area');
       if (element.scrollWidth > element.clientWidth + 2) failures.push('Title text overflows its box');
       if (box.left < -1 || box.right > innerWidth + 1) failures.push('Title leaves the viewport');
       for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {

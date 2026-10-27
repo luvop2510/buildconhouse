@@ -394,10 +394,19 @@ for (const stage of ['order','installation']) {
 for(const stage of ['production','installation']) {
   for(const status of ['Not Started',stage==='production'?'In Production':'In Progress','Completed']) {
     const commands=[];
-    const task=render(stage,{}, { [stage]: {status} }, async (...args)=>{commands.push(args);return true;});
+    let task=render(stage,{}, { [stage]: {status} }, async (...args)=>{commands.push(args);return true;});
+    // Date fields initialize independently after mount; both functional updates must survive.
+    task.control(`kitchen-${stage}-start`).props.onChange('2026-10-26');
+    task.control(`kitchen-${stage}-complete`).props.onChange('2026-10-26');
+    task = task.refresh();
     assert.equal(task.control(`kitchen-${stage}-start`).props.value,'2026-10-26');
     assert.equal(task.control(`kitchen-${stage}-complete`).props.value,'2026-10-26');
     await task.control(`kitchen-${stage}-save`).props.onPress();
     assert.deepEqual(commands,[[`${stage}_update`,{status,start_date:status==='Not Started'?null:'2026-10-26',completion_date:status==='Completed'?'2026-10-26':null,notes:null}]],'Proposed dates never change the selected status or violate the work API');
+    task.control(`kitchen-${stage}-start`).props.onChange('');
+    task.control(`kitchen-${stage}-complete`).props.onChange('');
+    task = task.refresh();
+    assert.equal(task.control(`kitchen-${stage}-start`).props.value,'', 'Clearing remains visible until the date is reopened');
+    assert.equal(task.control(`kitchen-${stage}-complete`).props.value,'');
   }
 }

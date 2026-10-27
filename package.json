@@ -28,7 +28,8 @@
     "test:frontend-drift": "node scripts/test-frontend-drift.mjs",
     "test:frontend-drift:browser": "playwright test --config playwright.forge-drift.config.ts --project=desktop --project=phone --workers=2",
     "test:mobile-budget": "node scripts/check-web-budget.mjs",
-    "test:api-proxy": "node --no-warnings scripts/test-api-proxy.mjs && node scripts/test-verified-promotion.mjs && node scripts/test-kitchen-trial-safety.mjs && node --experimental-strip-types --no-warnings scripts/test-kitchen-production-readonly.mjs && node scripts/test-frontend-promotion.mjs && node scripts/test-release-startup-observer.mjs",
+    "test:api-proxy": "node --no-warnings scripts/test-api-proxy.mjs && node scripts/test-verified-promotion.mjs && node scripts/test-kitchen-trial-safety.mjs && node --experimental-strip-types --no-warnings scripts/test-kitchen-production-readonly.mjs && node scripts/test-frontend-promotion.mjs && node scripts/test-release-ancestry.mjs && node scripts/test-release-startup-observer.mjs",
+    "test:expo-schema-compat": "node scripts/test-expo-schema-compat.mjs",
     "test:api-client": "node scripts/test-api-client-contract.mjs",
     "test:e2e:profiles": "playwright test --config playwright.config.ts",
     "test:web-worker": "node scripts/test-web-worker.mjs",
@@ -130,6 +131,10 @@
     "uuid": "11.1.1"
   },
   "overrides": {
+    "@expo/cli": {
+      "zod": "4.6.7"
+    },
+    "node-forge": "1.4.1",
     "decode-uri-component": "0.5.0",
     "postcss": "8.5.28",
     "xcode": {

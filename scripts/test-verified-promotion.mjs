@@ -17,6 +17,10 @@ const trial = { passed: true, productionPromoted: false, candidate: 'https://iso
   finishedAt: '2026-10-21T00:00:00Z', runtimeBinding: binding('isolated', 'isolated.vercel.app', 'dpl_isolated', 'a'),
   checks: ['runtime-binding-measured', 'private-25mb-bounded-upload-download', 'actual-hosted-lifecycle-private-bytes-idempotent-visits-export-and-denials', 'CSRF-rejection'].map(check => ({ check, passed: true })) };
 const base = { id: 'dpl_fixture', url: 'candidate.vercel.app', projectId: 'prj_RuZWSvov1AkP2UDmWaea6925wWlU', readyState: 'READY', meta: { releaseSha: sha } };
+const liveAlias = { alias: 'buildconhouse.in', projectId: base.projectId, deletedAt: null, deploymentId: 'dpl_previous', updatedAt: 1234 };
+const liveDeployment = { ...base, id: 'dpl_previous', meta: { releaseSha: 'c'.repeat(40) } };
+const providerOutput = (command, args, candidate = base) => command === 'git' ? args[0] === 'ls-remote' ? `${sha}\trefs/heads/main\n` : '' : args[0] === 'api'
+  ? JSON.stringify(args[1].startsWith('/v4/aliases/') ? liveAlias : args[1].includes('dpl_previous') ? liveDeployment : candidate) : '';
 function fixture({ changePlan = () => {}, changeTrial = () => {}, changeBinding = () => {} } = {}) {
   const trialValue = structuredClone(trial), bindingValue = structuredClone(productionBinding);
   changeTrial(trialValue); changeBinding(bindingValue);
@@ -31,23 +35,31 @@ function fixture({ changePlan = () => {}, changeTrial = () => {}, changeBinding 
   return { plan, files, read: path => { assert(files.has(path), 'Fixture file missing'); return Buffer.from(files.get(path)); } };
 }
 function exercise({ metadata = base, fail = -1, candidate = 'https://candidate.vercel.app', report, kitchenManifest = '/private/manifest.json', ...options } = {}) {
-  const calls = [], input = fixture(options); let error;
+  const calls = [], input = fixture(options); let error, promoted = false, mainReads = 0;
   try {
     promoteVerified({ candidate, sha, report, kitchenManifest, read: input.read, cli: 'fixture-vercel', run(command, args) {
       const stage = calls.length; calls.push({ command, args });
-      return { status: stage === fail ? 1 : 0, stdout: stage === 0 ? JSON.stringify(metadata) : '' };
+      if (args[0] === 'promote' && stage !== fail) promoted = true;
+      let stdout = providerOutput(command, args, metadata);
+      if (command === 'git' && args[0] === 'ls-remote' && ++mainReads > 1 && options.mainAdvanced) stdout = `${'e'.repeat(40)}\trefs/heads/main\n`;
+      if (args[0] === 'api' && args[1].startsWith('/v4/aliases/') && promoted) stdout = JSON.stringify({ ...liveAlias, deploymentId: options.wrongPublishedAlias ? 'dpl_other' : base.id });
+      return { status: stage === fail ? 1 : 0, stdout };
     } });
   } catch (failure) { error = failure; }
   return { calls, error };
 }
 const good = exercise();
-assert.equal(good.error, undefined); assert.equal(good.calls.length, 6);
-assert.ok(good.calls[4].args[2].endsWith('verify-kitchen-production-readonly.mjs'));
+assert.equal(good.error, undefined); assert.equal(good.calls.length, 14);
+assert.ok(good.calls[8].args[2].endsWith('verify-kitchen-production-readonly.mjs'));
 assert(!good.calls.some(call => call.args.some(arg => String(arg).endsWith('verify-kitchen-hosted-release.mjs'))), 'Promotion must never run the write-bearing isolated trial');
-assert.deepEqual(good.calls[5].args.slice(0, 2), ['promote', 'dpl_fixture']);
-for (const [fail, expected] of [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6]]) {
+assert.deepEqual(good.calls[12].args.slice(0, 2), ['promote', 'dpl_fixture']);
+for (const [fail, expected] of Array.from({ length: 14 }, (_, index) => [index, index + 1])) {
   const result = exercise({ fail }); assert.ok(result.error); assert.equal(result.calls.length, expected);
 }
+const advancedMain = exercise({ mainAdvanced: true });
+assert.match(advancedMain.error?.message || '', /current remote main/);
+assert.equal(advancedMain.calls.some(call => call.args[0] === 'promote'), false);
+assert.match(exercise({ wrongPublishedAlias: true }).error?.message || '', /Post-promotion canonical identity/);
 for (const metadata of [{ ...base, readyState: 'ERROR' }, { ...base, projectId: 'other-project' }, { ...base, meta: { releaseSha: 'b'.repeat(40) } }, { ...base, id: 'dpl_other' }, { ...base, url: 'immutable-other.vercel.app' }]) {
   const result = exercise({ metadata }); assert.ok(result.error); assert.equal(result.calls.length, 1);
 }
@@ -75,7 +87,7 @@ for (const options of [
 }
 for (const report of ['output/release.json', 'output/release']) {
   const result = exercise({ report }); assert.equal(result.error, undefined);
-  assert.equal(result.calls[4].args[4], report.replace(/\.json$/, '') + '-kitchen-readonly.json');
+  assert.equal(result.calls[8].args[4], report.replace(/\.json$/, '') + '-kitchen-readonly.json');
 }
 const loaded = fixture();
 assert.equal(loadKitchenPromotionPackage({ manifestPath: '/private/manifest.json', candidate: 'https://candidate.vercel.app', sha, read: loaded.read }).trialSha256, loaded.plan.isolated_trial.sha256);
@@ -109,13 +121,17 @@ function existingFixture({ changePlan = () => {}, changeRuntime = () => {}, chan
   return input;
 }
 function existingExercise(options = {}) {
-  const input = existingFixture(options), calls = []; let error;
+  const input = existingFixture(options), calls = []; let error, promoted = false;
   try { promoteVerified({ candidate: input.plan.candidate_url, sha, kitchenManifest: '/private/manifest.json', read: input.read, run(command, args) {
-    calls.push({ command, args }); return { status: 0, stdout: calls.length === 1 ? JSON.stringify(base) : '' };
+    calls.push({ command, args });
+    if (args[0] === 'promote') promoted = true;
+    const stdout = promoted && args[0] === 'api' && args[1].startsWith('/v4/aliases/')
+      ? JSON.stringify({ ...liveAlias, deploymentId: base.id }) : providerOutput(command, args);
+    return { status: 0, stdout };
   } }); } catch (value) { error = value; }
   return { input, calls, error };
 }
-const existing = existingExercise(); assert.equal(existing.error, undefined); assert.equal(existing.calls.length, 6);
+const existing = existingExercise(); assert.equal(existing.error, undefined); assert.equal(existing.calls.length, 14);
 const loadedExisting = loadKitchenPromotionPackage({ manifestPath: '/private/manifest.json', candidate: existing.input.plan.candidate_url, sha, read: existing.input.read });
 assert.equal(loadedExisting.trial, null); assert.equal(loadedExisting.trialSha256, null);
 assert(!existing.calls.some(call => call.args.some(arg => String(arg).endsWith('verify-kitchen-hosted-release.mjs'))));
@@ -169,7 +185,7 @@ function exceptionPlan(plan) {
 }
 const exceptionOptions = { changePlan: exceptionPlan, changeRuntime: value => { value.kitchen_owner_only = true; } };
 const allowedException = existingExercise(exceptionOptions);
-assert.equal(allowedException.error, undefined); assert.equal(allowedException.calls.length, 6);
+assert.equal(allowedException.error, undefined); assert.equal(allowedException.calls.length, 14);
 for (const mutate of [
   p => { delete p.release_exception.authority; }, p => { p.release_exception.source_sha = 'f'.repeat(40); },
   p => { p.release_exception.candidate_deployment_id = 'dpl_other'; }, p => { p.release_exception.candidate_url = 'https://another.vercel.app'; },

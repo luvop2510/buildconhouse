@@ -330,6 +330,7 @@ function FollowupsWorkspace() {
   const [collapsed, setCollapsed] = useState<Set<Bucket>>(new Set(["completed", "snoozed"]));
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [bulkDockHeight, setBulkDockHeight] = useState(0);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const lastListLoadFailed = useRef(false);
@@ -909,10 +910,12 @@ function FollowupsWorkspace() {
     setFollowupView(flt.followupView || "active");
     setPriorityFilter(isSanitary ? "all" : flt.priorityFilter || "all");
     setCategoryFilter(isSanitary ? "all" : filterValues(flt.categoryFilter || "all").filter(value => value !== "sales").join(",") || "all");
-    setOwnerFilter(flt.ownerFilter || "all");
+    setOwnerFilter(filterValues(flt.ownerFilter || "all")
+      .filter(value => !(isSanitary && staff?.role === "owner" && (value === "mine" || value === staff.id)))
+      .join(",") || "all");
     setSavedViewsSheet(false);
     toast.success(`Applied "${v.name}"`);
-  }, [isSanitary]);
+  }, [isSanitary, staff?.role, staff?.id]);
 
   const saveCurrentView = useCallback(async (name: string) => {
     const filters = { q, kpiFilter, followupView, priorityFilter, categoryFilter, tierFilter, ownerFilter };
@@ -1091,7 +1094,8 @@ function FollowupsWorkspace() {
           </View>
           {q.trim() ? <Text style={type.caption}>{filtered.length} customer{filtered.length === 1 ? "" : "s"} found</Text> : null}
           {isSanitary ? <FilterBar testID="followups-salesperson" multiSelect label="SALESPERSON" value={ownerFilter} onChange={setOwnerFilter} options={[
-            { label: "All salespeople", value: "all" }, { label: "Mine", value: "mine" },
+            { label: "All salespeople", value: "all" },
+            ...(staff?.role !== "owner" ? [{ label: "Mine", value: "mine" }] : []),
             ...assignees.map(a => ({ label: a.full_name, value: a.id })),
           ]} /> : <>
           <FilterBar multiSelect label="PRIORITY" value={priorityFilter} onChange={setPriorityFilter as any} options={[
@@ -1136,7 +1140,7 @@ function FollowupsWorkspace() {
       keyboardShouldPersistTaps="handled"
       style={ownsScroll ? { flex: 1 } : undefined}
       refreshControl={ownsScroll ? <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand} /> : undefined}
-      contentContainerStyle={phone ? { paddingBottom: spacing.xl } : ownsScroll ? { paddingBottom: spacing.xxxl } : { gap: spacing.sm, paddingBottom: spacing.sm }}
+      contentContainerStyle={phone ? { paddingBottom: spacing.xl + (selectedIds.size > 0 ? bulkDockHeight : 0) } : ownsScroll ? { paddingBottom: spacing.xxxl } : { gap: spacing.sm, paddingBottom: spacing.sm }}
       ListHeaderComponent={ownsScroll ? <View style={{ padding: pagePad, gap: spacing.md }}>{workspaceAndFilters}</View> : undefined}
       ListEmptyComponent={loading ? (
         <View style={{ paddingHorizontal: horizontalPadding, gap: spacing.md }}><Skeleton w="30%" h={16} radius={radius.sm} /><SkeletonList rows={4} /></View>
@@ -1245,7 +1249,7 @@ function FollowupsWorkspace() {
       {/* Selection should remain actionable while moving through a long phone
           queue; keeping it in the list header stranded it above the cards. */}
       {isPhone && selectedIds.size > 0 ? (
-        <View style={[styles.mobileBulkDock, { paddingBottom: Math.max(spacing.sm, insets.bottom + spacing.xs) }]} pointerEvents="box-none">
+        <View onLayout={({ nativeEvent }) => setBulkDockHeight(nativeEvent.layout.height)} style={[styles.mobileBulkDock, { paddingBottom: Math.max(spacing.sm, insets.bottom + spacing.xs) }]} pointerEvents="box-none">
           <BulkActionBar
             busy={bulkSaving}
             count={selectedIds.size}
@@ -1332,11 +1336,11 @@ function BulkActionBar({ count, assignees, onClear, onSnooze, onComplete, onAssi
     <View style={[styles.bulkBar, elevation.medium]} accessibilityState={{ busy }}>
       {busy ? <Text accessibilityLiveRegion="polite" style={type.bodySm}>Updating selected follow-ups…</Text> : <>
 
-      <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, flex: 1 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
         <Badge label={String(count)} tone="brand" size="sm" />
         <Text style={{ fontSize: 13, fontWeight: "700", color: colors.onSurface }}>selected</Text>
       </View>
-      <View style={{ flexDirection: "row", gap: spacing.sm, alignItems: "center", flexWrap: "wrap" }}>
+      <View style={{ flexDirection: "row", gap: spacing.sm, alignItems: "center", flexWrap: "wrap", flexShrink: 1, minWidth: 0 }}>
         <Dropdown
           label="Snooze" icon="clock" variant="secondary"
           items={[
@@ -2173,7 +2177,7 @@ const styles = StyleSheet.create({
   },
   rankChipText: { fontSize: 10, fontWeight: "800", color: colors.onSurfaceInverse },
   bulkBar: {
-    flexDirection: "row", alignItems: "center", gap: spacing.md,
+    flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.sm,
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
     borderWidth: StyleSheet.hairlineWidth, borderColor: colors.brandBorder,
     padding: spacing.md,

@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { assertReleaseAncestry } from './verify-release-ancestry.mjs';
 
 const team = 'team_TNMtYYjniBWtCj1l58NEFSPG';
 const project = 'prj_RuZWSvov1AkP2UDmWaea6925wWlU';
@@ -201,6 +202,25 @@ export function promoteVerified({ candidate, sha, report, kitchenManifest = proc
   assert.equal(deployment.url, url.hostname, 'Mutable aliases cannot identify the tested production artifact');
   assert.equal(deployment.id, prepared.plan.candidate_deployment_id);
   assert.equal(deployment.meta?.releaseSha, sha, 'Candidate source differs from reviewed source');
+  const readAlias = () => {
+    const result = run(cli, ['api', `/v4/aliases/${EXISTING_SITE_DOMAIN}?teamId=${team}`, '--method', 'GET'], { encoding: 'utf8' });
+    assert.equal(result.status, 0, 'Cannot resolve current production alias');
+    const alias = JSON.parse(result.stdout);
+    assert.equal(alias.alias, EXISTING_SITE_DOMAIN);
+    assert.equal(alias.projectId, project);
+    assert.equal(alias.deletedAt, null);
+    assert.ok(Number.isFinite(alias.updatedAt), 'Production alias timestamp missing');
+    return alias;
+  };
+  const liveAlias = readAlias();
+  assert.equal(liveAlias.deploymentId, prepared.plan.authorization.rollback_deployment_id,
+    'Production no longer matches the reviewed rollback deployment');
+  const liveResult = run(cli, ['api', `/v13/deployments/${encodeURIComponent(liveAlias.deploymentId)}?teamId=${team}`, '--method', 'GET'], { encoding: 'utf8' });
+  assert.equal(liveResult.status, 0, 'Cannot inspect current production source');
+  const liveDeployment = JSON.parse(liveResult.stdout);
+  assert.equal(liveDeployment.id, liveAlias.deploymentId);
+  assert.equal(liveDeployment.projectId, project);
+  assertReleaseAncestry(sha, liveDeployment, run);
   const verification = run(process.execPath, [fileURLToPath(new URL('./verify-production-release.mjs', import.meta.url)), url.origin, ...(report ? [report] : [])], { stdio: 'inherit' });
   assert.equal(verification.status, 0, 'Candidate runtime/API/security verification failed; production promotion stopped');
   const browserVerification = run(process.execPath, [fileURLToPath(new URL('./verify-authenticated-release.mjs', import.meta.url)), url.origin, sha, ...(report ? [report.replace(/\.json$/, '') + '-authenticated.json'] : [])], { stdio: 'inherit' });
@@ -210,8 +230,14 @@ export function promoteVerified({ candidate, sha, report, kitchenManifest = proc
   const kitchenVerification = run(process.execPath, ['--experimental-strip-types', '--no-warnings', fileURLToPath(new URL('./verify-kitchen-production-readonly.mjs', import.meta.url)), kitchenManifest,
     report ? report.replace(/\.json$/, '') + '-kitchen-readonly.json' : 'output/hosted-kitchen-production-readonly.json', url.origin, sha, deployment.id, prepared.manifestSha256], { stdio: 'inherit' });
   assert.equal(kitchenVerification.status, 0, 'Production Kitchen read-only binding/auth verification failed; promotion stopped');
+  const currentAlias = readAlias();
+  assert.equal(currentAlias.deploymentId, liveAlias.deploymentId, 'Production changed during verification; refresh release evidence');
+  assert.equal(currentAlias.updatedAt, liveAlias.updatedAt, 'Production alias changed during verification; refresh release evidence');
+  assertReleaseAncestry(sha, liveDeployment, run);
   const promotion = run(cli, ['promote', deployment.id, '--yes', '--scope', team], { stdio: 'inherit' });
   assert.equal(promotion.status, 0, 'Vercel promotion did not complete');
+  const publishedAlias = readAlias();
+  assert.equal(publishedAlias.deploymentId, deployment.id, 'Post-promotion canonical identity does not match the verified candidate');
   return { id: deployment.id, sourceSha: sha, isolatedTrialSha256: prepared.trialSha256 };
 }
 

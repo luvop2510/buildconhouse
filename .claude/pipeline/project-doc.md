@@ -52,3 +52,13 @@ Kitchen now keeps nine-stage navigation, explicit adjacent commands, compact
 Details and top Actions, with search/paging and no filter/attention UI. Mobile
 web focus retains the header and reclaims hidden navigation space. Shared field
 wrappers draw rounded focus rings, including a forced-colors fallback.
+
+## Main consolidation and UI repair — 27 October 2026
+
+Native fallback delta scan: no framework or architecture change. Main becomes
+the only release source at the user's explicit request; forward-source checks
+and production build admission enforce this in the existing tooling. Follow-up
+docks/menus, owner salesperson filters, Kitchen queue stages/date affordances,
+brief list reuse and Payments initial loading are corrected. A clean install
+uses two scoped dependency overrides with actual-consumer compatibility coverage.
+Current verification ledger: docs/audits/2026-10-27-followup-release-regressions.md.

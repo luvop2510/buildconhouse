@@ -3,11 +3,11 @@ import { retiredNotebookRedirect } from './retired-notebook-fixtures';
 import { mockSession } from './audit-fixtures';
 
 for (const floor of [{ slug: 'kitchen', id: 'second-floor' }, { slug: 'furniture', id: 'third-floor' }]) {
-  test(`critical ${floor.slug} quotation notebook redirects to active-floor shared follow-ups without a manual Won action`, async ({ page }) => {
+  test(`critical ${floor.slug} quotation notebook redirects through its active floor without a manual Won action`, async ({ page }) => {
     await retiredNotebookRedirect(page, `/notebook/${floor.slug}/quotation-follow-up`, 'followups', floor.id);
     await expect(page.getByRole('button', { name: /mark.*won/i })).toHaveCount(0);
     await expect(page.getByTestId('notebook-list')).toHaveCount(0);
-    if (floor.id === 'second-floor') await expect(page.getByTestId('kitchen-search')).toBeVisible();
+    if (floor.id === 'second-floor') await expect(page.getByTestId('kitchen-universal-search')).toBeVisible();
     else await expect(page.getByTestId('interested-retained-customer')).toBeVisible();
   });
 }

@@ -23,10 +23,10 @@ test('critical mobile tile editor retains document details and explicitly retrie
   await expect(page.getByTestId('mobile-reference')).toHaveValue('Architect discussion');
 });
 
-test('critical retired kitchen conversion bookmark uses active-floor shared Walk-ins', async ({ page }) => {
+test('critical retired kitchen conversion bookmark opens its active-floor Kitchen hub', async ({ page }) => {
   await retiredNotebookRedirect(page, '/notebook/kitchen', 'walkins', 'second-floor');
   await expect(page.getByRole('button', { name: 'Move to quotation', exact: true })).toHaveCount(0);
-  await expect(page.getByTestId('kitchen-create')).toBeVisible();
+  await expect(page.getByTestId('kitchen-dashboard-stage-lead')).toBeVisible();
 });
 
 test('critical tile release keeps selected split quantities until the server accepts them', async ({ page }) => {

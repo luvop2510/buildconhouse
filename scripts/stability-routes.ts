@@ -26,6 +26,10 @@ export function stabilityRouteTitle(path: string): string {
 export const stabilityProjects = ['android-chrome', 'iphone-safari', 'ipad-safari', 'desktop-chrome'];
 
 export const requiredStabilityScenarios: Record<string, string[]> = {
+  'redesign-followup-menu-overflow.spec.ts': [
+    ...['ground-floor', 'first-floor', 'third-floor'].map(floor => `critical ${floor} selected follow-up actions fit the viewport and menus stay separate from customer details`),
+    ...['owner', 'sales'].map(role => `critical ${role} follow-up salesperson filter offers Mine only to staff`),
+  ],
   'redesign-quotation-workspace.spec.ts': [
     'critical quotation workspace keeps title and actions in the padded scrolling frame',
   ],

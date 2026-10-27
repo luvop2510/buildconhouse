@@ -22,6 +22,7 @@ export function KitchenSelect({ label, value, options, onChange, testID }: { lab
 export function KitchenDateField({ label, value, onChange, disabled, testID, min, max, kind = "date", defaultToToday = true }: { defaultToToday?: boolean; label: string; value: string; onChange: (value: string) => void; disabled?: boolean; testID?: string; min?: string; max?: string; kind?: "date" | "datetime" }) {
   const id = useId();
   const initialized = useRef(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     if (disabled || kind !== "date" || !defaultToToday || initialized.current) return;
     initialized.current = true;
@@ -35,10 +36,15 @@ export function KitchenDateField({ label, value, onChange, disabled, testID, min
   };
   const update = (next: string) => onChange(kind === "datetime" && next ? `${next.length === 16 ? `${next}:00` : next}+05:30` : next);
   if (Platform.OS !== "web") return kind === "datetime" ? <View style={{ gap: spacing.sm }}><TextField label={`${label} — date (India time)`} value={inputValue.split("T")[0] || ""} onChangeText={date => update(`${date}T${inputValue.split("T")[1] || "00:00"}`)} editable={!disabled} placeholder="YYYY-MM-DD" testID={testID} /><TextField label={`${label} — time (24-hour)`} value={inputValue.split("T")[1] || ""} onChangeText={time => update(`${inputValue.split("T")[0] || ""}T${time}`)} editable={!disabled} placeholder="HH:mm" testID={testID ? `${testID}-time` : undefined} /></View> : <TextField label={label} value={value} onFocus={focus} onChangeText={onChange} editable={!disabled} placeholder="YYYY-MM-DD" accessibilityHint="Date in year, month, day order. Dates use India time." testID={testID} />;
-  return <View style={{ gap: 8, minWidth: 0 }}>{createElement("label", { htmlFor: id, style: { ...type.label, lineHeight: `${type.label.lineHeight}px`, color: colors.onSurface } }, label)}{createElement("input", { id, type: kind === "datetime" ? "datetime-local" : "date", value: inputValue,
+  return <View style={{ gap: 8, minWidth: 0 }}>{createElement("label", { htmlFor: id, style: { ...type.label, lineHeight: `${type.label.lineHeight}px`, color: colors.onSurface } }, label)}<View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>{createElement("input", { id, className: "kitchen-date-input", type: kind === "datetime" ? "datetime-local" : "date", value: inputValue,
     // WebKit date inputs can emit focus without focusin, which React's onFocus needs.
-    ref: (input: HTMLInputElement | null) => { if (input) input.onfocus = focus; }, onClick: focus,
-    disabled, min, max, "data-testid": testID, onChange: (event: { target: { value: string } }) => update(event.target.value), style: { boxSizing: "border-box", minHeight: 44, width: "100%", maxWidth: "100%", minWidth: 0, padding: "10px 8px", border: `1px solid ${colors.controlBorder}`, borderRadius: radius.sm, background: colors.surfaceSecondary, ...type.body, lineHeight: `${type.body.lineHeight}px`, color: colors.onSurface } })}</View>;
+    ref: (input: HTMLInputElement | null) => { inputRef.current = input; if (input) input.onfocus = focus; }, onClick: focus,
+    disabled, min, max, "data-testid": testID, onChange: (event: { target: { value: string } }) => update(event.target.value), style: { boxSizing: "border-box", minHeight: 44, flex: 1, width: 0, maxWidth: "100%", minWidth: 0, padding: "10px 8px", border: `1px solid ${colors.controlBorder}`, borderRadius: radius.sm, background: colors.surfaceSecondary, ...type.body, lineHeight: `${type.body.lineHeight}px`, color: colors.onSurface } })}<Pressable accessibilityRole="button" accessibilityLabel={`Open ${label.toLowerCase()} calendar`} disabled={disabled} accessibilityState={{ disabled: Boolean(disabled) }} testID={testID ? `${testID}-calendar` : undefined} onPress={() => {
+      const input = inputRef.current;
+      if (!input || disabled) return;
+      input.focus();
+      try { input.showPicker?.(); } catch { /* Browsers without script-open calendars still support direct date entry. */ }
+    }} style={{ minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: colors.controlBorder, borderRadius: radius.sm, opacity: disabled ? 0.5 : 1 }}><Feather accessible={false} name="calendar" size={20} color={colors.onSurface} /></Pressable></View></View>;
 }
 
 function indiaDateTime(value: string) {

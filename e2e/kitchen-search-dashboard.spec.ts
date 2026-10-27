@@ -64,6 +64,9 @@ test('Dashboard shows all nine authoritative stage totals and opens the matching
   for (const [index, stage] of stages.entries()) {
     await page.getByTestId(`kitchen-dashboard-stage-${stage}`).click();
     await expect(page).toHaveURL(new RegExp(`/kitchen/stages/${stage}(?:\\?.*)?$`));
+    await expect(page.getByTestId('kitchen-stage-navigation')).toHaveCount(0);
+    await expect(page.locator('[data-testid^="kitchen-queue-stage-"]')).toHaveCount(0);
+    await expect(page.getByTestId('kitchen-search')).toBeVisible();
     await expect(page.getByTestId(`kitchen-project-${projects[index].id}`)).toBeVisible();
     const result = await context.request.get(`/api/kitchen-projects?stage=${stage}&limit=25`, { headers });
     const listed = await result.json();

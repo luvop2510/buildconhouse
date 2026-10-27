@@ -37,7 +37,7 @@ for (const [path, rowPrefix, kind] of [['/quotations', 'quotation', 'standard'],
     });
     await page.goto(`${path}?view=completed`);
     await expect(page.getByTestId(`${rowPrefix}-done-${kind}`)).toBeVisible();
-    await expect(page.getByText('100% completed', { exact: true })).toBeVisible();
+    await expect(page.getByTestId(`${rowPrefix}-done-${kind}`).getByText('100% completed', { exact: true })).toBeVisible();
     await expect(page.getByTestId(path === '/tiles' ? 'tiles-fulfilled-toggle' : 'quotations-fulfilled-toggle')).toHaveCount(0);
     expect(requests.some(url => url.searchParams.get('view') === 'completed' && !url.searchParams.has('completion'))).toBe(true);
     await page.goto(`${path}?view=fulfilled`);

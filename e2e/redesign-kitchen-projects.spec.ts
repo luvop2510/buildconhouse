@@ -96,7 +96,7 @@ test('Q01 Q02 Q03 Q12 Q13: real lead/visit persistence, automatic editable dates
   expect(customerId, 'Runner provides its synthetic existing customer').toBeTruthy();
   await seedBrowser(page);
   await page.goto('/kitchen/stages/lead');
-  await expect(page.getByTestId('kitchen-stage-navigation')).toBeVisible();
+  await expect(page.getByTestId('kitchen-stage-navigation')).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('v4-department-overview.png') });
   await page.setViewportSize({ width: 360, height: 600 });
   await page.getByTestId('kitchen-create').click();
@@ -782,7 +782,7 @@ test('Q02 Q18 Q19 v4: stage queues deep-link correctly and project Back restores
   await seedBrowser(page);
   const stageRead = page.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === '/api/kitchen-projects' && new URL(response.url()).searchParams.get('stage') === 'lead');
   await page.goto('/kitchen/stages/lead');
-  await expect(page.getByTestId('kitchen-stage-navigation')).toBeVisible();
+  await expect(page.getByTestId('kitchen-stage-navigation')).toHaveCount(0);
   const queue = await stageRead;
   expect(queue.ok(), await queue.text()).toBeTruthy();
   expect((await queue.json()).rows.every((row: { stage: string }) => row.stage === 'lead')).toBe(true);

@@ -48,3 +48,36 @@ test('other floor workspaces retain existing filters and optional summary', () =
   assert.ok(tree.some(node => node.label === 'TYPE'));
   assert.ok(tree.some(node => node.component === 'MissionHero'));
 });
+
+test('salesperson choices omit the owner account and retain Mine for staff', () => {
+  for (const role of ['owner', 'sales']) {
+    scope.staff = { role };
+    const filter = flatten(exports.render(true)).find(node => node.testID === 'followups-salesperson');
+    assert.equal(filter.options.some(option => option.value === 'mine'), role !== 'owner');
+    assert.ok(filter.options.some(option => option.value === 'worker-1'));
+  }
+});
+
+test('saved salesperson views cannot restore a hidden owner selection', () => {
+  const start = source.indexOf('  const applySavedView = useCallback(');
+  const end = source.indexOf('  const saveCurrentView =', start);
+  assert.ok(start > 0 && end > start);
+  const callback = ts.transpileModule(`export function apply(staff, isSanitary, ownerFilter) {
+    let selected;
+    const setOwnerFilter = value => { selected = value; };
+    ${source.slice(start, end)}
+    applySavedView({ name: 'Saved view', filters: { ownerFilter } });
+    return selected;
+  }`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const context = {
+    ...scope, exports: {}, useCallback: callback => callback,
+    filterValues: value => value.split(',').filter(value => value && value !== 'all'),
+    setKpiFilter: noop, setSavedViewsSheet: noop, toast: { success: noop },
+  };
+  vm.runInNewContext(callback, context);
+  const owner = { id: 'owner-id', role: 'owner' };
+  assert.equal(context.exports.apply(owner, true, 'mine'), 'all');
+  assert.equal(context.exports.apply(owner, true, 'mine,owner-id,worker-1'), 'worker-1');
+  assert.equal(context.exports.apply(owner, false, 'mine'), 'mine');
+  assert.equal(context.exports.apply({ id: 'worker-1', role: 'sales' }, true, 'mine'), 'mine');
+});

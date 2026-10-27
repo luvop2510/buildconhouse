@@ -27,10 +27,11 @@ const MAX_RESPONSE_CACHE_ENTRIES = 64;
 // Brief navigation reuse; mutations, floor changes and logout invalidate all entries.
 // Editable details and authorization reads stay fresh. Callers can force cacheMs: 0.
 function navigationCacheMs(path: string, floorId: string | null | undefined): number {
-  if (floorId !== "ground-floor") return 0;
+  if (!floorId) return 0;
   const route = path.split("?")[0];
-  return ["/walkins", "/customers", "/followups", "/followups/page", "/followups/inbox", "/payments/orders",
-    "/payments/history", "/tile-orders/customer-orders", "/tile-orders/brands",
+  if (["/walkins", "/customers", "/followups", "/followups/page", "/followups/inbox",
+    "/payments/orders", "/payments/history"].includes(route)) return 2000;
+  return floorId === "ground-floor" && ["/tile-orders/customer-orders", "/tile-orders/brands",
     "/tile-orders/history", "/tile-orders/dispatch-list", "/tile-orders/inventory",
     "/tile-orders/material-movements"].includes(route) ? 2000 : 0;
 }

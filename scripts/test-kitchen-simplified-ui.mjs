@@ -64,7 +64,8 @@ assert.equal(nodes(render(detail.KitchenProjectDetail, {})).some(node => node.ty
 const workspace = load('KitchenWorkspace', '\nexports.Workspace = Workspace; exports.ProjectList = ProjectList;');
 params = { search: 'Customer QA', page: '2', assignee: 'old-worker', status: 'Lost', attention: 'on_hold', stage: 'order', date_from: '2020-01-01' };
 const queues = render(workspace.Workspace, { page: 'projects' });
-for (const stage of stages) assert.ok(find(queues, `kitchen-queue-stage-${stage}`));
+assert.equal(find(queues, "kitchen-stage-navigation"), undefined, "Search queues do not repeat the nine-stage strip");
+for (const stage of stages) assert.equal(find(queues, `kitchen-queue-stage-${stage}`), undefined);
 const list = nodes(queues).find(node => node.type === workspace.ProjectList);
 assert.deepEqual(list.props.values, { search: 'Customer QA', page: '2' }, 'Old filter bookmarks cannot hide projects');
 const listTree = render(workspace.ProjectList, list.props);

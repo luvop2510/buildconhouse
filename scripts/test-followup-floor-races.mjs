@@ -8,12 +8,16 @@ const source = readFileSync(new URL('../app/(admin)/followups.tsx', import.meta.
 assert.match(source, /<FollowupsWorkspace key=\{selectedFloorId\}/);
 const marker = '  // ── Filtering (100% client-side';
 const instrumented = source.replace('function FollowupsWorkspace()', 'export function FollowupsWorkspace()')
-  .replace(marker, '  return { loadList, loadDetail, refreshStatsQuiet, contact, rawItems, detail, stats, workspace, setWorkspace, q, setQ, followupView, setFollowupView, priorityFilter, setPriorityFilter };\n' + marker);
+  .replace(marker, '  return { loadList, loadDetail, refreshStatsQuiet, contact, rawItems, detail, stats, workspace, setWorkspace, q, setQ, followupView, setFollowupView, priorityFilter, setPriorityFilter, ownerFilter, setOwnerFilter };\n' + marker);
 assert.notEqual(instrumented, source);
 const compiled = ts.transpileModule(instrumented, { compilerOptions: {
   module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX,
 } }).outputText;
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
+const filters = {};
+vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../src/utils/filters.ts', import.meta.url), 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText, { exports: filters });
 function fixture(floor = 'first-floor') {
   const hooks = [], effects = [], requests = [], links = [], notices = [];
   let index = 0, dirty = false, state;
@@ -41,6 +45,7 @@ function fixture(floor = 'first-floor') {
     './followup-assignments': { MANAGER_ROLES: ['owner'] },
     '@/src/theme/tokens': { colors: {}, spacing: {}, type: new Proxy({}, { get: () => ({}) }), radius: {}, elevation: {} },
     '@/src/api/client': { api: { get: request, post: request } },
+    '@/src/utils/filters': filters,
     '@/src/components/Toast': { toast: { success: text => notices.push(text), error: text => notices.push(text) } },
   };
   const exports = {};
@@ -68,6 +73,27 @@ test('an abandoned floor cannot publish a late list, detail or summary into the 
   assert.equal(current.state.rawItems.length, 0);
   assert.ok(current.requests.every(request => request.options.floorId === 'third-floor'));
   current.unmount();
+});
+
+test('a floor-keyed owner inbox discards Furniture Mine before Ground or Sanitary salesperson reads', async () => {
+  for (const floor of ['ground-floor', 'first-floor']) {
+    const previous = fixture('third-floor');
+    previous.state.setOwnerFilter('mine');
+    await previous.settle();
+    assert.equal(previous.state.ownerFilter, 'mine');
+    const mineRead = previous.requests.filter(request => request.path.includes('/followups/page?')).at(-1);
+    assert.equal(new URLSearchParams(mineRead.path.split('?')[1]).get('assigned_to'), 'owner');
+    // FollowupsScreen keys this hook instance by selectedFloorId.
+    previous.unmount();
+    const current = fixture(floor);
+    await current.settle();
+    assert.equal(current.state.ownerFilter, 'all');
+    for (const request of current.requests.filter(request => request.path.includes('/followups/page?'))) {
+      assert.equal(request.options.floorId, floor);
+      assert.equal(new URLSearchParams(request.path.split('?')[1]).has('assigned_to'), false);
+    }
+    current.unmount();
+  }
 });
 
 test('a pending old-floor contact cannot open another app after switching workspaces', async () => {

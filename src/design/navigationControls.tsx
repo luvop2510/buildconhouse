@@ -44,7 +44,7 @@ export function Menu({
     });
   }, [anim, reducedMotion]);
 
-  const MENU_W = 216;
+  const MENU_W = Math.min(216, winW - 24);
   const left = pos ? Math.max(12, Math.min(align === "right" ? pos.x + pos.w - MENU_W : pos.x, winW - MENU_W - 12)) : 0;
   const top = pos ? Math.max(12, Math.min(pos.y, winH - Math.min(items.length * 44 + 12, winH - 24) - 12)) : 0;
 
@@ -78,7 +78,7 @@ export function Menu({
               ...shadow.overlay,
             }]}
           >
-            <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: winH - 48 }}>
+            <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: Math.max(0, winH - top - 26) }}>
             {items.map((it, i) => (
               <Pressable
                 key={i}
@@ -107,7 +107,7 @@ export function Menu({
                   <Feather name={it.icon} size={15} color={it.tone === "risk" ? color.risk : color.inkMid} />
                 ) : null}
                 <Text style={{
-                  fontFamily: font.medium, fontWeight: "500", fontSize: 14,
+                  fontFamily: font.medium, fontWeight: "500", fontSize: 14, flex: 1, minWidth: 0,
                   color: it.tone === "risk" ? color.risk : color.ink,
                 }}>
                   {it.label}

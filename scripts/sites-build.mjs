@@ -2,6 +2,9 @@ import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { standaloneWorkerSource } from './build-web-worker.mjs';
 import { isolateWebModuleGraph } from './isolate-web-module-graph.mjs';
+import { assertProductionBuildBranch } from './verify-release-ancestry.mjs';
+
+assertProductionBuildBranch();
 
 // Sites packages the Expo web export as a Cloudflare-compatible worker.
 

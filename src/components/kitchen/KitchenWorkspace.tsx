@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Alert as NativeAlert, Platform, ScrollView, View } from "react-native";
+import { Alert as NativeAlert, Platform, View } from "react-native";
 import Feather from "@expo/vector-icons/Feather";
 import { Text } from "@/src/components/AppText";
 import { Alert, EmptyState, ErrorState, LoadingState, SearchField, Sheet } from "@/src/components/ds";
@@ -76,9 +76,6 @@ function Workspace({ stage = "lead", page: requestedPage }: WorkspaceProps) {
     right={<View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>{owner ? <Button label="Department settings" icon="settings" variant="ghost" onPress={() => setSettingsOpen(true)} testID="kitchen-settings-open" /> : null}{stage === "lead" && canCreate ? <Button label="Add lead" icon="plus" onPress={() => setCreateOpen(true)} testID="kitchen-create" /> : null}</View>}>
     <View style={{ width: "100%", minWidth: 0, gap: 28 }}>
       <NavigationLink href={"/kitchen" as any} testID="kitchen-dashboard-link" style={{ minHeight: 44, justifyContent: "center" }}><Text style={[type.bodyStrong, { color: colors.brand }]}>← Kitchen dashboard</Text></NavigationLink>
-      <ScrollView horizontal keyboardShouldPersistTaps="handled" showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={{ gap: spacing.sm }} testID="kitchen-stage-navigation" accessibilityLabel="Kitchen stages">
-        {KITCHEN_STAGES.map((value, index) => <NavigationLink key={value} href={`/kitchen/stages/${value}` as any} testID={`kitchen-queue-stage-${value}`} aria-current={page !== "projects" && value === stage ? "page" : undefined} style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: spacing.md, borderWidth: 1, borderColor: page !== "projects" && value === stage ? colors.brand : colors.border, borderRadius: 8, backgroundColor: page !== "projects" && value === stage ? colors.brandTint : colors.surfaceSecondary }}><Text style={type.body}>{index + 1}. {STAGE_LABELS[value]}</Text></NavigationLink>)}
-      </ScrollView>
       <ProjectList key={page === "projects" ? page : stage} page={page} stage={stage} values={values} setValues={setValues} returnTo={returnTo} search={search} setSearch={setSearch} retry={retry} onRetry={() => setRetry(value => value + 1)} canExport={canExport} />
     </View>
     <Sheet scroll visible={createOpen && stage === "lead"} onClose={() => requestCreateClose.current ? requestCreateClose.current() : closeCreate()} title="Add lead" testID="kitchen-create-sheet">

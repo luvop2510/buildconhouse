@@ -4,6 +4,7 @@ import { Buffer } from 'node:buffer';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { FRONTEND_CANONICAL_DOMAIN, FRONTEND_PROJECT_ID, FRONTEND_TEAM_ID, loadFrontendPromotionPackage, promoteVerifiedFrontend } from './promote-verified-frontend.mjs';
+import { requiredStabilityScenarios, stabilityRoutes, stabilityRouteTitle } from './stability-routes.ts';
 
 const frontendSha = 'a'.repeat(40), backendSha = 'b'.repeat(40), previousSha = 'c'.repeat(40);
 const digest = value => createHash('sha256').update(value).digest('hex');
@@ -36,13 +37,19 @@ function fixture({ mutatePlan = () => {}, mutateReview = () => {}, mutatePerform
     }))), suites: [] }],
     stats: { expected: each * profiles.length, unexpected: 0, flaky: 0, skipped: 0 },
   });
-  const stabilityReport = browserReport('stability', 169), performanceReport = browserReport('timing', 15);
+  const stabilityReport = browserReport('stability', 0), performanceReport = browserReport('timing', 15);
+  stabilityReport.suites[0].specs = profiles.flatMap(projectName => [
+    ...stabilityRoutes().map(route => ['app-audit.spec.ts', stabilityRouteTitle(route)]),
+    ...Object.entries(requiredStabilityScenarios).flatMap(([file, titles]) => titles.map(title => [file, title])),
+  ].map(([file, title]) => ({ file, title, ok: true, tests: [{ projectName, expectedStatus: 'passed', status: 'expected', timeout: 30000,
+    results: [{ status: 'passed', retry: 0, errors: [] }] }] })));
+  stabilityReport.stats.expected = stabilityReport.suites[0].specs.length;
   const bundleBudget = { budgetBytes: 576 * 1024, pages: [{ gzipKb: 440 }, { gzipKb: 510 }] };
   const artifacts = {
     stability_report: attach('stability-results.json', stabilityReport),
     performance_report: attach('performance-results.json', performanceReport),
     bundle_budget: attach('bundle-budget.json', bundleBudget),
-    stability_summary: attach('stability-summary.json', { passed: 676, failures: 0, flaky: 0, skipped: 0 }),
+    stability_summary: attach('stability-summary.json', { passed: stabilityReport.stats.expected, failures: 0, flaky: 0, skipped: 0 }),
     performance_summary: attach('performance-summary.json', { stats: performanceReport.stats, bundlePages: 2, largestInitialJsKb: 510 }),
   };
   const performanceFile = { schema: 'frontend-performance-evidence/v1', source_sha: frontendSha, command: 'npm run test:performance:audit',
@@ -86,9 +93,15 @@ async function exercise(options = {}) {
   const { candidate = candidateUrl, failPublic = false, failAuthenticated = false, backendRevision = backendSha, backendRevisions, changed = changedPaths, fixtureOptions = {}, candidateReleaseSha = frontendSha, candidateReady = 'READY', envValueOverride = envValue, packageChange = 'allowed' } = options;
   const input = fixture({ ...fixtureOptions, paths: changed }), calls = [], promotions = [];
   let canonicalId = previousId, aliasUpdatedAt = canonicalAliasUpdatedAt;
+  let aliasReads = 0;
+  let mainReads = 0;
   const run = (command, args) => {
     calls.push({ command, args });
-    if (command === 'git' && args[0] === 'merge-base') return { status: 0, stdout: '' };
+    if (command === 'git' && args[0] === 'ls-remote') {
+      mainReads += 1;
+      return { status: 0, stdout: `${options.notOnMain || options.mainAdvanced && mainReads > 1 ? previousSha : frontendSha}\trefs/heads/main\n` };
+    }
+    if (command === 'git' && args[0] === 'merge-base') return { status: options.staleFrontend && args[2] === previousSha ? 1 : 0, stdout: '' };
     if (command === 'git' && args[0] === 'rev-parse') return { status: 0, stdout: `${options.headSha || frontendSha}\n` };
     if (command === 'git' && args[0] === 'status') return { status: 0, stdout: options.dirty ? ' M src/App.tsx\n' : '' };
     if (command === 'git' && args[0] === 'diff') return { status: 0, stdout: changed.join('\n') };
@@ -102,8 +115,9 @@ async function exercise(options = {}) {
     if (command === 'git' && args[0] === 'diff' && args.includes('--quiet')) return { status: 0, stdout: '' };
     if (command === 'vercel' && args[0] === 'api') {
       if (args[1].startsWith('/v4/aliases/')) {
+        aliasReads += 1;
         const domain = decodeURIComponent(args[1].split('?')[0].split('/').at(-1));
-        const id = options.canonicalAliasDeploymentId || canonicalId;
+        const id = options.productionChanged && aliasReads === 2 ? 'dpl_concurrent' : options.canonicalAliasDeploymentId || canonicalId;
         const name = options.canonicalAliasName || domain;
         const value = { alias: name, projectId: options.canonicalAliasProjectId || FRONTEND_PROJECT_ID,
           deletedAt: options.canonicalAliasDeletedAt ?? null, deploymentId: id,
@@ -131,7 +145,9 @@ async function exercise(options = {}) {
           const value = metadata(id, 'immutable-candidate.vercel.app', frontendSha);
           return { status: 0, stdout: JSON.stringify(value) };
         }
-        return { status: 0, stdout: JSON.stringify(metadata(id, id === candidateId ? 'immutable-candidate.vercel.app' : 'previous.vercel.app', id === candidateId ? frontendSha : previousSha)) };
+        const value = metadata(id, id === candidateId ? 'immutable-candidate.vercel.app' : 'previous.vercel.app', id === candidateId ? frontendSha : previousSha);
+        if (options.unknownLiveSource) value.meta = {};
+        return { status: 0, stdout: JSON.stringify(value) };
       }
     }
     if (command.endsWith('node') && args.some(value => String(value).endsWith('verify-production-release.mjs'))) return { status: failPublic ? 1 : 0, stdout: '' };
@@ -182,6 +198,11 @@ assert.equal(promoted.calls.some(call => call.command === 'vercel' && call.args[
   'Canonical domains must never be resolved through deployment-by-domain metadata');
 
 for (const options of [
+  { staleFrontend: true },
+  { notOnMain: true },
+  { mainAdvanced: true },
+  { unknownLiveSource: true },
+  { productionChanged: true },
   { candidate: 'https://other.vercel.app' },
   { candidateReleaseSha: 'd'.repeat(40) },
   { candidateReady: 'BUILDING' },

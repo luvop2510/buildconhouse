@@ -18,8 +18,11 @@ async function todayDefault(page: Page, id: string) {
   const field = page.getByTestId(id);
   const today = await page.evaluate(() => new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10));
   await expect(field).toHaveValue(today); // No focus, click or keyboard input is needed.
+  await expect(field).toHaveAttribute('type', 'date');
+  await expect(page.getByTestId(`${id}-calendar`)).toBeVisible();
   // Empty an editable field and explicitly reopen it, including already-focused calendars.
   await field.fill('');
+  await expect(field).toHaveValue('');
   await field.blur();
   await field.focus();
   await expect(field).toHaveValue(today);

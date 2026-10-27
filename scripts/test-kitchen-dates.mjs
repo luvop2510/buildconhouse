@@ -17,11 +17,12 @@ console.log('Kitchen date defaults: India midnight, year boundary and leap day p
 const fieldSource = await readFile(new URL('../src/components/kitchen/KitchenFilters.tsx', import.meta.url), 'utf8');
 const fields = {};
 let platform = 'web';
-let currentRef;
+let currentRefs;
+let refCursor = 0;
 let effects = [];
 const element = (type, props, ...children) => ({ type, props: { ...props, children } });
 const modules = {
-  react: { createElement: element, useId: () => 'date-field', useRef: initial => currentRef || (currentRef = { current: initial }), useEffect: effect => effects.push(effect), useState: initial => [initial, () => {}] },
+  react: { createElement: element, useId: () => 'date-field', useRef: initial => currentRefs[refCursor++] || (currentRefs[refCursor - 1] = { current: initial }), useEffect: effect => effects.push(effect), useState: initial => [initial, () => {}] },
   'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
   'react-native': { Platform: { get OS() { return platform; } }, View: 'view', Pressable: 'button' },
   '@expo/vector-icons/Feather': 'icon', '@/src/components/AppText': { Text: 'text' },
@@ -37,9 +38,12 @@ function inputs(tree) {
   if (Array.isArray(tree)) return tree.flatMap(inputs);
   let props = tree.props;
   if (tree.type === 'input') {
-    const node = { value: props.value, onfocus: null };
+    const node = { value: props.value, onfocus: null, focused: 0, opened: 0,
+      focus() { this.focused++; this.onfocus({ currentTarget: this }); },
+      showPicker() { this.opened++; },
+    };
     props.ref(node);
-    props = { ...props, onFocus: () => node.onfocus({ currentTarget: node }) };
+    props = { ...props, node, onFocus: () => node.onfocus({ currentTarget: node }) };
   }
   return [...(['input', 'native-input'].includes(tree.type) ? [props] : []), ...inputs(tree.props.children)];
 }
@@ -47,10 +51,12 @@ function controlled(os, initial = '', options = {}) {
   platform = os;
   let value = initial;
   const changes = [];
-  const reference = { current: false };
+  const references = [];
+  let tree;
+  const buttons = node => !node || typeof node !== "object" ? [] : Array.isArray(node) ? node.flatMap(buttons) : [...(node.props?.accessibilityRole === "button" ? [node.props] : []), ...buttons(node.props?.children)];
   return {
-    changes, value: () => value,
-    render: () => { currentRef = reference; effects = []; const result = inputs(fields.KitchenDateField({ label: 'Date', value, onChange: next => { value = next; changes.push(next); }, ...options })); effects.forEach(effect => effect()); return result; },
+    changes, value: () => value, calendar: () => buttons(tree).find(button => button.accessibilityLabel === "Open date calendar"),
+    render: () => { currentRefs = references; refCursor = 0; effects = []; tree = fields.KitchenDateField({ label: 'Date', value, onChange: next => { value = next; changes.push(next); }, ...options }); const result = inputs(tree); effects.forEach(effect => effect()); return result; },
   };
 }
 for (const os of ['web', 'ios', 'android']) {
@@ -87,3 +93,21 @@ assert.equal(timestamp.render()[0].value, '2026-10-23T01:30', 'Existing timestam
 timestamp.render()[0].onFocus();
 assert.deepEqual(timestamp.changes, [], 'Opening an existing timestamp preserves its stored instant');
 console.log('Kitchen date controls: automatic mount defaults and explicit-open recovery, preserved history/disabled values, editable choices and web/native handlers passed');
+
+const calendarView = controlled('web');
+let [calendarInput] = calendarView.render();
+assert.equal(calendarInput.className, 'kitchen-date-input');
+const htmlSource = await readFile(new URL('../app/+html.tsx', import.meta.url), 'utf8');
+assert.match(htmlSource, /\.kitchen-date-input::\-webkit-calendar-picker-indicator\s*\{ display: none; \}/, 'Only Kitchen native indicators are hidden behind the visible accessible opener');
+calendarView.calendar().onPress();
+assert.equal(calendarInput.node.focused, 1);
+assert.equal(calendarInput.node.opened, 1, 'Visible calendar button opens its own native picker');
+calendarInput.node.showPicker = () => { throw new Error('showPicker unavailable in this browser'); };
+assert.doesNotThrow(() => calendarView.calendar().onPress(), 'Unsupported script-open calendars retain focused direct date entry');
+const disabledCalendar = controlled('web', '', { disabled: true });
+[calendarInput] = disabledCalendar.render();
+assert.equal(disabledCalendar.calendar().disabled, true);
+disabledCalendar.calendar().onPress();
+assert.equal(calendarInput.node.focused, 0, 'Disabled historical calendars cannot be opened');
+assert.equal(calendarInput.node.opened, 0);
+console.log('Kitchen visible calendar opener: native picker, unsupported-browser direct entry, disabled history passed');

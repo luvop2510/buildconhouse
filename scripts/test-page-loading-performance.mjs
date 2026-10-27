@@ -13,6 +13,7 @@ vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../src/services/cata
 }).outputText, { exports: catalogExports, require: () => ({}), URLSearchParams });
 
 const specs = {
+  payments: ['../app/(admin)/payments.tsx', '  const customerCollections =', 'orders, stats, loadingList, q, setQ'],
   walkin: ['../app/(admin)/walkins/[id].tsx', '  const updateStatus =', 'w, timeline, timelineLoading, timelineError, loadError, load'],
   tiles: ['../src/components/tiles/TilesProductPicker.tsx', '  return (\n    <Overlay', 'query, setQuery, results, total, loading, loadingMore, hasMore, loadMore'],
   customer: ['../app/(admin)/customers/[id].tsx', '  const createWalkInFollowup =', 'customer, quotations, purchases, timeline, loadError, relatedErrors, relatedLoading, loadCore'],
@@ -55,6 +56,7 @@ function screen(kind, width = 'desktop') {
       }];
     },
     useRef(initial) { return hooks[cursor++] ||= { current: initial }; },
+    useId() { return `test-${cursor++}`; },
     useMemo(callback, deps) {
       const slot = cursor++;
       if (!same(hooks[slot]?.deps, deps)) hooks[slot] = { value: callback(), deps };
@@ -80,6 +82,8 @@ function screen(kind, width = 'desktop') {
     './tilePresentation': { tilesPickerColumns: () => 1 },
     'expo-router': { useRouter: () => ({}), useLocalSearchParams: () => ({ id: routeId }) },
     '@/src/api/client': { api: { get } },
+    '@/src/hooks/use-reduced-motion': { useReducedMotion: () => false },
+    '@/src/utils/filters': { filterValues: value => !value || value === 'all' ? [] : value.split(',') },
     '@/src/api/walkins': { walkinsApi: { get: (id, options) => get(`/walkins/${id}`, options), timeline: (id, options) => get(`/walkins/${id}/timeline`, options), listAssignees: async () => [] } },
     '@/src/api/godownStock': { getCustomerStockTransfers: async () => ({ transfers: [] }) },
     '@/src/hooks/use-floor-access': { useFloorAccess: () => ({ selectedFloorId: floor }), useRequireFloorAccess: () => ready },
@@ -392,4 +396,36 @@ test('walk-in timeline and primary responses cannot overwrite another route', as
   assert.equal(fixture.state.w.id, 'current');
   assert.equal(fixture.state.timeline[0].id, 'current-event');
   assert.equal(fixture.state.loadError, null);
+});
+
+for (const width of ['phone', 'tablet', 'desktop']) {
+  test(`payments starts its list immediately while optional stats wait on ${width}`, async () => {
+    const fixture = screen('payments', width); fixture.render(); await fixture.settle();
+    const list = fixture.requests.find(request => request.path === '/payments/orders');
+    assert.ok(list, 'Initial list must start without a search debounce');
+    list.resolve([{ id: 'order-1', outstanding: 10 }]); await fixture.settle();
+    assert.equal(fixture.state.orders[0].id, 'order-1');
+    assert.equal(fixture.state.loadingList, false);
+    assert.equal(fixture.state.stats, null, 'Statistics remain independent');
+  });
+}
+
+test('payments keeps typed search debounced and clearing/floor changes immediate', async () => {
+  const fixture = screen('payments'); fixture.render(); await fixture.settle();
+  const old = fixture.requests.find(request => request.path === '/payments/orders');
+  fixture.state.setQ('new'); fixture.render(); await fixture.settle();
+  assert.equal(fixture.requests.filter(request => request.path.startsWith('/payments/orders')).length, 1);
+  fixture.runTimers(220); await fixture.settle();
+  const search = fixture.requests.at(-1);
+  assert.equal(search.path, '/payments/orders?q=new');
+  fixture.state.setQ(''); fixture.render(); await fixture.settle();
+  const cleared = fixture.requests.at(-1);
+  assert.equal(cleared.path, '/payments/orders');
+  fixture.changeFloor('ground-floor'); await fixture.settle();
+  const current = fixture.requests.at(-1);
+  assert.equal(current.path, '/payments/orders');
+  current.resolve([{ id: 'current-floor', outstanding: 10 }]); await fixture.settle();
+  for (const request of [old, search, cleared]) request.resolve([{ id: 'obsolete', outstanding: 20 }]);
+  await fixture.settle();
+  assert.equal(fixture.state.orders[0].id, 'current-floor');
 });

@@ -141,7 +141,9 @@ test('Kitchen has no filters and navigation stays within the nine queues', async
   await expect(page.getByTestId('kitchen-status-filter')).toHaveCount(0);
   await expect(page.getByTestId('kitchen-date-from')).toHaveCount(0);
   const queueRead = page.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === '/api/kitchen-projects' && new URL(response.url()).searchParams.get('stage') === 'design');
-  await page.getByTestId('kitchen-queue-stage-design').click();
+  await expect(page.getByTestId('kitchen-stage-navigation')).toHaveCount(0);
+  await page.getByTestId('kitchen-dashboard-link').click();
+  await page.getByTestId('kitchen-dashboard-stage-design').click();
   await expect(page).toHaveURL(/\/kitchen\/stages\/design$/);
   const response = await queueRead;
   expect(response.ok()).toBeTruthy();

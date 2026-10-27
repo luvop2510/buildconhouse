@@ -85,5 +85,5 @@ export function KitchenTextField({ label, error, helper, containerStyle, style, 
 
 export function KitchenFieldRow({ children }: { children: ReactNode }) {
   const { isPhone } = useBp();
-  return <View style={{ width: "100%", minWidth: 0, flexDirection: isPhone ? "column" : "row", flexWrap: "wrap", gap: isPhone ? 16 : 20 }}>{children}</View>;
+  return <View style={{ width: "100%", minWidth: 0, flexDirection: isPhone ? "column" : "row", flexWrap: isPhone ? "nowrap" : "wrap", gap: isPhone ? 16 : 20 }}>{children}</View>;
 }

@@ -47,6 +47,7 @@ async function clickCommand(page: Page, id: string, command: string) {
 test('All nine stages open with a compact header and the task visible before expandable project details', async ({ page, context }, info) => {
   let project = await projectAt(context.request, 'lead');
   await seed(page);
+  if (page.viewportSize()!.width < 768) await page.setViewportSize({ width: 320, height: 720 });
   for (const stage of ['lead', 'visit', 'cad', 'design', 'quotation', 'order', 'production', 'installation', 'completed']) {
     if (stage !== 'lead') {
       const moved = await context.request.post(`/api/kitchen-projects/${project.id}/commands`, { headers, data: {
@@ -60,11 +61,25 @@ test('All nine stages open with a compact header and the task visible before exp
     const details = page.getByTestId('kitchen-project-details-toggle');
     await expect(details).toHaveAttribute('aria-expanded', 'false');
     await expect(page.getByTestId('kitchen-project-details')).toHaveCount(0);
-    await expect(page.getByTestId('kitchen-stage-navigation')).toBeVisible();
+    await expect(page.getByTestId('kitchen-stage-navigation')).toHaveCount(1);
     await expect(page.getByTestId('kitchen-project-stages').getByRole('link')).toHaveCount(9);
     await expect(page.getByTestId('kitchen-project-actions')).toBeVisible();
     const header = await page.getByTestId('kitchen-compact-header').boundingBox();
-    expect(header!.height).toBeLessThanOrEqual(52);
+    expect(header!.height).toBeLessThanOrEqual(page.viewportSize()!.width < 768 ? 100 : 52);
+    const heading = page.getByTestId('kitchen-compact-header').getByRole('heading');
+    await expect(heading).toHaveText(stage === 'cad' ? 'CAD File' : stage[0].toUpperCase() + stage.slice(1));
+    const titleFits = await heading.evaluate(element => {
+      const range = document.createRange(); range.selectNodeContents(element);
+      return range.getBoundingClientRect().width <= element.getBoundingClientRect().width + 1 && element.getBoundingClientRect().height <= parseFloat(getComputedStyle(element).lineHeight) + 1;
+    });
+    expect(titleFits, `${stage}: full title fits on one line`).toBe(true);
+    for (const tab of await page.getByTestId('kitchen-project-stages').getByRole('link').all()) {
+      expect(await tab.evaluate(element => {
+        const text = element.firstElementChild!;
+        const range = document.createRange(); range.selectNodeContents(text);
+        return range.getBoundingClientRect().width <= text.getBoundingClientRect().width + 1 && text.getBoundingClientRect().height <= parseFloat(getComputedStyle(text).lineHeight) + 1;
+      }), `${stage}: every stage label fits on one line`).toBe(true);
+    }
     const task = await page.getByTestId('kitchen-current-task-region').boundingBox();
     expect(task!.y, `${stage}: the task follows compact stage navigation within the first viewport`).toBeLessThan(page.viewportSize()!.height);
     await page.screenshot({ path: info.outputPath(`compact-${stage}.png`) });

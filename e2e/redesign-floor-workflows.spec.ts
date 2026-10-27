@@ -192,10 +192,11 @@ test('critical a delayed stock transfer cannot reload its old floor after switch
   const transferStarted = page.waitForRequest('**/api/godown-stock/delayed-lot/customer-transfers');
   await page.getByTestId('godown-customer-transfer-submit').click();
   await transferStarted;
-  // Closing the sheet does not cancel the submitted mutation. Its eventual
-  // completion must not start a reload under the abandoned stock floor.
-  await page.getByRole('dialog', { name: 'Transfer stock to customer' }).getByRole('button', { name: 'Close', exact: true }).click();
-  await switchToGroundFloor(page);
+  // Submitted transfers cannot be dismissed. A full browser navigation can
+  // still abandon the workspace and must not reload its old floor afterward.
+  await expect(page.getByRole('dialog', { name: 'Transfer stock to customer' }).getByRole('button', { name: 'Close', exact: true })).toHaveCount(0);
+  await page.evaluate(() => localStorage.setItem('forge.active-floor', JSON.stringify('ground-floor')));
+  await page.goto('/tiles');
   const requestsBeforeCompletion = requestedFloors.length;
   finishTransfer();
   // The API client cancels transport when the workspace changes. The hook

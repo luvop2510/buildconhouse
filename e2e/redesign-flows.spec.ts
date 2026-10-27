@@ -49,7 +49,7 @@ test('critical fully paid orders distinguish service failure from an empty ledge
   await expect(page.getByRole('button', { name: 'Previous', exact: true })).toBeDisabled();
 });
 
-test('critical retired kitchen bookmark retains the current department in shared Walk-ins', async ({ page }) => {
+test('critical retired kitchen bookmark retains the current department on its Kitchen hub', async ({ page }) => {
   await retiredNotebookRedirect(page, '/notebook/kitchen', 'walkins', 'second-floor');
   await expect(page.getByTestId('floor-switcher').filter({ visible: true }).first()).toContainText('Kitchen');
 });

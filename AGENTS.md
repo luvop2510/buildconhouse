@@ -1,5 +1,25 @@
 # AGENTS.md — BuildCon House ERP (forge2.0)
 
+## Main is the release source — 2026-10-27
+
+The user explicitly requires all completed work on `origin/main`. Consolidate
+verified changes through the protected-main PR/approval/check process. Never
+publish a feature branch directly, force-push main, weaken its protections, or
+leave a completed live fix only in a local checkout. Before starting, fetch main
+and inspect the canonical production alias/source; reconcile any deployed commits
+missing from main. Preserve dirty worktrees until their changes are reviewed.
+Both promotion tools require the exact remote-main SHA and ancestry from the live
+frontend; production Vercel builds require the main Git branch. A passing preview
+is insufficient. See docs/main-release-workflow.md and the current audit ledger.
+
+Kitchen list/search queues omit the repeated nine-stage strip; the hub retains
+its nine authoritative totals and project detail retains one-line stage navigation.
+Web date controls include an explicit calendar opener. Editable blank work dates
+initialize India today in draft state, remain clearable, and retain status-based
+submission rules. Follow-up selection docks wrap within the viewport and reserve
+their measured phone height in list scrolling. Owner accounts do not appear as
+Mine in catalog-floor salesperson filters; staff Mine remains valid.
+
 ## Kitchen simplification and mobile keyboard — 2026-10-27
 
 Latest user instruction supersedes the older hidden-phone-chrome/full-contact

@@ -33,13 +33,21 @@ export async function retiredNotebookRedirect(page: Page, path: string, destinat
     return route.fulfill({ json: destination === 'followups' ? { items: [row], page: 1, page_size: 100, has_more: false } : [{ ...row, status: 'new' }] });
   });
   if (floorId === 'second-floor') await page.route('**/api/kitchen-projects**', route => {
+    expect(route.request().headers()['x-floor-id']).toBe(floorId);
     const pathname = new URL(route.request().url()).pathname;
+    if (pathname.endsWith('/dashboard')) return route.fulfill({ json: {
+      stage_counts: { lead: 0, visit: 0, cad: 0, design: 0, quotation: 0, order: 0, production: 0, installation: 0, completed: 0 },
+      stage_customer_counts: { lead: 0, visit: 0, cad: 0, design: 0, quotation: 0, order: 0, production: 0, installation: 0, completed: 0 }, total_customers: 0, total_projects: 0,
+      configured: true, active_projects: 0, pending_approvals: 0, overdue_projects: 0, confirmed_order_value: null,
+    } });
     return route.fulfill({ json: pathname.endsWith('/configuration') ? { version: 1, department_manager_user_ids: [], files: { max_bytes: 25000000, allowed_types: ['application/pdf'] } } : pathname.endsWith('/assignees') ? { rows: [] } : { rows: [], total: 0, limit: 25, page: 1 } });
   });
   await page.goto(path);
   if (floorId === 'second-floor') {
-    await expect(page).toHaveURL(/\/kitchen\/stages\/lead$/);
-    await expect(page.getByTestId('kitchen-search')).toBeVisible();
+    await expect(page).toHaveURL(/\/kitchen$/);
+    await expect(page.getByTestId('kitchen-universal-search')).toBeVisible();
+    await expect(page.getByTestId('kitchen-dashboard-stage-lead')).toBeVisible();
+    await expect(page.getByTestId('floor-switcher').filter({ visible: true }).first()).toHaveAccessibleName('Switch workspace. Current workspace: Kitchen Floor');
     await expect(page.getByTestId('walkin-new-btn')).toHaveCount(0);
     await expect(page.getByTestId('new-followup-btn')).toHaveCount(0);
     expect(retiredReads).toBe(0);

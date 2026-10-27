@@ -5,6 +5,8 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { verifyBrowserEvidence } from './run-performance-audit.mjs';
+import { assertReleaseAncestry } from './verify-release-ancestry.mjs';
+import { verifyStabilityReport } from './verify-release-stability.mjs';
 
 export const FRONTEND_TEAM_ID = 'team_TNMtYYjniBWtCj1l58NEFSPG';
 export const FRONTEND_PROJECT_ID = 'prj_RuZWSvov1AkP2UDmWaea6925wWlU';
@@ -60,8 +62,8 @@ function validatePerformanceArtifacts(manifestPath, performance, read) {
   }
   const values = Object.fromEntries(Object.entries(artifacts).map(([name, descriptor]) => [name,
     readPerformanceEvidence(manifestPath, descriptor, read)]));
-  assert.equal(verifyBrowserEvidence(values.stability_report, 'stability'), 676,
-    'All 676 current stability scenarios must be present');
+  const stability = verifyStabilityReport(values.stability_report);
+  assert.equal(verifyBrowserEvidence(values.stability_report, 'stability'), stability.passed);
   assert.equal(verifyBrowserEvidence(values.performance_report, 'timing'), 60,
     'All 60 current timing scenarios must be present');
   const pages = values.bundle_budget.pages;
@@ -77,7 +79,7 @@ function validatePerformanceArtifacts(manifestPath, performance, read) {
   assert.equal(values.performance_summary.stats?.skipped, 0);
   assert.equal(values.performance_summary.bundlePages, pages.length);
   assert.equal(values.performance_summary.largestInitialJsKb, Math.max(...pages.map(page => page.gzipKb)));
-  assert.equal(values.stability_summary.passed, 676);
+  assert.equal(values.stability_summary.passed, stability.passed);
   assert.equal(values.stability_summary.failures, 0);
   assert.equal(values.stability_summary.flaky, 0);
   assert.equal(values.stability_summary.skipped, 0);
@@ -137,6 +139,7 @@ function validateChangedPaths({ frontendSha, backendSha, run }) {
     path === 'scripts/stability-routes.ts' ||
     path === 'scripts/web-worker.mjs' ||
     path === 'scripts/sites-build.mjs' ||
+    path === 'scripts/verify-release-ancestry.mjs' ||
     path === 'scripts/isolate-web-module-graph.mjs' ||
     path === 'scripts/release-recovery.js' ||
     path === 'scripts/verify-authenticated-release.mjs' ||
@@ -327,6 +330,7 @@ export async function promoteVerifiedFrontend({
   assert.equal(canonicalBefore.id, prepared.plan.rollback_deployment_id, 'Canonical domain rollback target changed after review');
   assert.equal(canonicalBefore.canonicalAlias.updatedAt, prepared.plan.canonical_alias.updated_at, 'Canonical alias changed after rollback review');
   assert.notEqual(canonicalBefore.id, candidateDeployment.id, 'Candidate is already promoted');
+  assertReleaseAncestry(frontendSha, canonicalBefore, run);
 
   const environment = productionBackendUrlEnvironment(run);
   assert.equal(environment.id, prepared.environment.environment_id, 'Production BACKEND_URL setting identity changed');
@@ -357,6 +361,11 @@ export async function promoteVerifiedFrontend({
   validateAuthenticatedReport(authenticatedReport, prepared.candidateUrl.origin, frontendSha, now());
 
   assertReleaseCheckout(frontendSha, run);
+  const canonicalImmediatelyBefore = canonicalAliasMetadata(run);
+  assert.equal(canonicalImmediatelyBefore.id, canonicalBefore.id, 'Production changed during verification; rebuild release evidence');
+  assert.equal(canonicalImmediatelyBefore.canonicalAlias.updatedAt, canonicalBefore.canonicalAlias.updatedAt,
+    'Production alias changed during verification; rebuild release evidence');
+  assertReleaseAncestry(frontendSha, canonicalImmediatelyBefore, run);
   const promoter = process.env.FORGE_VERCEL_CLI || 'vercel';
   const result = run(promoter, ['promote', candidateDeployment.id, '--yes', '--scope', FRONTEND_TEAM_ID], { stdio: 'inherit' });
   assert.equal(result.status, 0, 'Vercel canonical-domain promotion failed');

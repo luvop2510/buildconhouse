@@ -390,6 +390,7 @@ export default function PaymentsScreen() {
     loadStats();
   }, [selectedFloorId, loadStats]);
   useEffect(() => {
+    if (!q) { void loadOrders(""); return; }
     const t = setTimeout(() => { loadOrders(q); }, 220);
     return () => clearTimeout(t);
   }, [q, loadOrders, selectedFloorId]);

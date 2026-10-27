@@ -24,23 +24,24 @@ async function walkinReads(page: Page) {
   } }));
 }
 
-test('switching to Kitchen Floor opens its dedicated Lead stage workspace', async ({ page }) => {
+test('switching to Kitchen Floor opens its dedicated Kitchen hub', async ({ page }) => {
   await mockSession(page, '/dashboard');
   await page.goto('/dashboard');
   await page.getByTestId('floor-switcher').click();
   await page.getByRole('menuitem', { name: 'Kitchen Floor', exact: true }).click();
-  await expect(page).toHaveURL(/\/kitchen\/stages\/lead$/);
+  await expect(page).toHaveURL(/\/kitchen$/);
   await expect(page.getByTestId('floor-switcher')).toHaveAccessibleName('Switch workspace. Current workspace: Kitchen Floor');
-  await expect(page.getByRole('heading', { name: 'Lead', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: /add lead/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Kitchen dashboard', exact: true })).toBeVisible();
+  await expect(page.getByTestId('kitchen-universal-search')).toBeVisible();
 });
 
-test('a saved Kitchen Floor workspace opens its dedicated Lead stage workspace', async ({ page }) => {
+test('a saved Kitchen Floor workspace opens its dedicated Kitchen hub', async ({ page }) => {
   await mockSession(page, '/dashboard');
   await page.addInitScript(() => localStorage.setItem('forge.active-floor', JSON.stringify('second-floor')));
   await page.goto('/dashboard');
-  await expect(page).toHaveURL(/\/kitchen\/stages\/lead$/);
-  await expect(page.getByRole('heading', { name: 'Lead', exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/kitchen$/);
+  await expect(page.getByRole('heading', { name: 'Kitchen dashboard', exact: true })).toBeVisible();
+  await expect(page.getByTestId('floor-switcher')).toHaveAccessibleName('Switch workspace. Current workspace: Kitchen Floor');
 });
 
 test('critical walk-ins combines multiple floors and lead sources in the same backend request', async ({ page }) => {

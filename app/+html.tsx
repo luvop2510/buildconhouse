@@ -35,6 +35,7 @@ export default function Root({ children }: PropsWithChildren) {
               @media (forced-colors: active) {
                 [data-field-shell="true"]:focus-within, :is(input, textarea, select):focus-visible { outline: 2px solid Highlight !important; outline-offset: 2px; }
               }
+              .kitchen-date-input::-webkit-calendar-picker-indicator { display: none; }
               :is(input, textarea)::placeholder { opacity: 1; }
               :is(button, [role="button"], [role="tab"]) { touch-action: manipulation; }
               @media (prefers-reduced-motion: reduce) {

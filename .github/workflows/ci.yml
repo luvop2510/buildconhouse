@@ -251,6 +251,7 @@ jobs:
           npm run test:quotation-whatsapp
           npm run test:furniture-rmb
           npm run test:api-proxy
+          npm run test:expo-schema-compat
           npm run test:web-worker
           node scripts/test-r2-media-worker.mjs
           node scripts/test-tiles-loading.mjs
