@@ -24,7 +24,7 @@ export function KeyCap({ label }: { label: string }) {
 export function Tabs<T extends string>({ items, value, onChange }: {
   items: { key: T; label: string; count?: number }[]; value: T; onChange: (key: T) => void;
 }) { return <NavigationTabs value={value} options={items.map(item => ({ ...item, value: item.key }))} onChange={onChange} />; }
-export type MenuItem = { label: string; icon?: FeatherName; tone?: "ink" | "risk"; onPress: () => void };
+export type MenuItem = { label: string; icon?: FeatherName; tone?: "ink" | "risk"; onPress: () => void; disabled?: boolean; testID?: string };
 
 export function Menu({
   items, children, align = "right", triggerLabel, triggerTestID,
@@ -82,6 +82,9 @@ export function Menu({
             {items.map((it, i) => (
               <Pressable
                 key={i}
+                testID={it.testID}
+                disabled={it.disabled}
+                accessibilityState={{ disabled: !!it.disabled }}
                 accessibilityRole="menuitem" accessibilityLabel={it.label}
                 {...(Platform.OS === "web" ? { onKeyDown: (event: React.KeyboardEvent) => {
                   const el = event.currentTarget as HTMLElement;
@@ -89,14 +92,15 @@ export function Menu({
                   const next = event.key === "ArrowDown" ? (i + 1) % siblings.length : event.key === "ArrowUp" ? (i + siblings.length - 1) % siblings.length : event.key === "Home" ? 0 : event.key === "End" ? siblings.length - 1 : -1;
                   if (next >= 0) { event.preventDefault(); siblings[next]?.focus(); }
                 }} : {})}
-                onPress={() => { setPos(null); it.onPress(); }}
+                onPress={() => { if (it.disabled) return; setPos(null); it.onPress(); }}
                 style={({ pressed, hovered }: any) => [
                   {
                     flexDirection: "row", alignItems: "center", gap: 10,
                     paddingHorizontal: 14, minHeight: 44,
+                    opacity: it.disabled ? 0.45 : 1,
                     backgroundColor: pressed || hovered ? color.hoverWash : "transparent",
                   },
-                  webCursor,
+                  it.disabled ? undefined : webCursor,
                 ]}
               >
                 {it.icon ? (

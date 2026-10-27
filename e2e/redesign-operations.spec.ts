@@ -15,7 +15,7 @@ test('critical mobile tile editor retains document details and explicitly retrie
   await page.getByTestId('mobile-reference').fill('Architect discussion');
   await details.click();
   await page.getByLabel('Customer name', { exact: true }).fill('Tile customer');
-  await expect(page.getByRole('alert').filter({ hasText: 'Changes are not saved' })).toBeVisible();
+  await expect(page.getByRole('alert').filter({ hasText: 'Could not sync this draft. Retry save.' })).toBeVisible();
   await page.getByRole('button', { name: 'Retry save', exact: true }).click();
   await expect.poll(() => writes.length).toBe(2);
   expect(writes[1]).toMatchObject({ customer_id: 'tile-customer', doc_type: 'tiles_selection', reference_source: 'Architect discussion' });
@@ -77,6 +77,7 @@ test('critical tile movement validates availability and dispatch failure retains
     return r.fulfill({ status: 503, json: { detail: 'Dispatch unavailable' } });
   });
   await page.goto('/tiles/orders/order-one');
+  await page.getByTestId('tile-order-actions-tile-one').click();
   await page.getByTestId('tile-order-move-godown-tile-one').click();
   const move = page.getByRole('dialog', { name: 'Move to Godown', exact: true });
   const qty = move.getByLabel('Enter quantity for Wall tile', { exact: true });
@@ -88,6 +89,7 @@ test('critical tile movement validates availability and dispatch failure retains
   await move.getByRole('button', { name: 'Confirm Move', exact: true }).click();
   await expect(move).toHaveCount(0);
   expect(movements).toEqual([{ items: [{ po_item_id: 'tile-one', qty: 2 }] }]);
+  await page.getByTestId('tile-order-actions-tile-one').click();
   await page.getByTestId('tile-order-dispatch-released-tile-one').click();
   const dispatch = page.getByRole('dialog', { name: 'Dispatch from Released', exact: true });
   await expect(dispatch.getByLabel('Enter quantity for Wall tile', { exact: true })).toHaveValue('4');

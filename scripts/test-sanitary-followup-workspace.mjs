@@ -34,10 +34,10 @@ function flatten(node, result = []) {
   return result;
 }
 
-test('sanitary workspace shows salesperson filtering without summary, mission, priority or type', () => {
+test('compact catalog-floor workspace shows salesperson filtering without summary, mission, priority or type', () => {
   const tree = flatten(exports.render(true));
   assert.ok(tree.some(node => node.testID === 'followups-salesperson' && node.label === 'SALESPERSON'));
-  assert.ok(!tree.some(node => node.testID === 'followups-filters'));
+  assert.ok(tree.some(node => node.testID === 'followups-filters'), 'retain shared filter disclosure');
   assert.ok(!tree.some(node => ['PRIORITY', 'TYPE', 'OWNER', "Today's Tasks", 'Overdue Tasks', 'Expiring Soon', 'Waiting For Customer', 'Summary'].includes(node.label)));
   assert.ok(!tree.some(node => node.component === 'MissionHero'));
 });

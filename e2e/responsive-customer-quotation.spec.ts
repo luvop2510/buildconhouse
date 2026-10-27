@@ -80,3 +80,23 @@ test('critical customer quotation rows and sanitary quotation detail stay aligne
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 
 });
+
+
+for (const floorId of ['first-floor', 'ground-floor']) test(`critical ${floorId} customer only offers its supported document stages`, async ({ page }) => {
+  await mockSession(page, '/customers/stage-customer', false, { floorId });
+  await page.route('**/api/customers/stage-customer**', route => route.fulfill({ json: {
+    id: 'stage-customer', name: 'Stage Customer', phone: '9000000000', purchase_completion_status: 'active',
+  } }));
+  await page.route('**/api/quotations?customer_id=stage-customer', route => route.fulfill({ json: [] }));
+  await page.route('**/api/activity/customer/stage-customer', route => route.fulfill({ json: [] }));
+  await page.route('**/api/purchase-orders?customer_id=stage-customer', route => route.fulfill({ json: [] }));
+  await page.route('**/api/godown-stock/customer-transfers?customer_id=stage-customer', route => route.fulfill({ json: { transfers: [] } }));
+  await page.goto('/customers/stage-customer');
+  await expect(page.getByRole('heading', { name: 'Stage Customer', exact: true })).toBeVisible();
+  await expect(page.getByTestId('customer-tab-po_final')).toHaveCount(floorId === 'first-floor' ? 1 : 0);
+  if (floorId === 'ground-floor') {
+    await expect(page.getByTestId('customer-tab-purchases')).toHaveCount(0);
+    await expect(page.getByTestId('customer-ground-floor-tile-orders')).toHaveCount(0);
+    await expect(page.getByRole('tab')).toHaveCount(3);
+  }
+});

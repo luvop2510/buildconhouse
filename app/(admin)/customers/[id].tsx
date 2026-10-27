@@ -26,7 +26,7 @@ import { getCustomerStockTransfers, returnCustomerStockTransfer, type CustomerSt
 import { ProductImage } from "@/src/components/ProductImage";
 import { PoFinal } from "@/src/components/customers/PoFinal";
 import { tilesStageLabel } from "@/src/components/tiles/tilesStage";
-import { SANITARY_FLOOR_ID, TILES_FLOOR_ID } from "@/src/constants/floors";
+import { SANITARY_FLOOR_ID } from "@/src/constants/floors";
 import { useFloorAccess } from "@/src/hooks/use-floor-access";
 import { toast } from "@/src/components/Toast";
 import { useAuth } from "@/src/state/auth";
@@ -149,7 +149,6 @@ export default function CustomerDetail() {
   const canDeleteCustomers = useActionAccess("customers", "delete", staff?.role === "owner") && staff?.role === "owner";
   const { isDesktop, isPhone } = useBp();
   const { selectedFloorId } = useFloorAccess();
-  const isTilesFloor = selectedFloorId === TILES_FLOOR_ID;
   const isSanitaryFloor = selectedFloorId === SANITARY_FLOOR_ID;
   const id = firstParam(rawId) || "";
   const routeSearch = firstParam(rawQ) || "";
@@ -171,6 +170,9 @@ export default function CustomerDetail() {
   const [availableBrands, setAvailableBrands] = useState<Workspace["brands"]>([]);
   const [availableStages, setAvailableStages] = useState<Workspace["stages"]>([]);
   const [tab, setTab] = useState<Tab>("overview");
+  useEffect(() => {
+    if (!isSanitaryFloor) setTab(current => current === "po_final" || current === "purchases" ? "overview" : current);
+  }, [isSanitaryFloor]);
   const [revenueOnly, setRevenueOnly] = useState(false);
   const [openOrdersVisible, setOpenOrdersVisible] = useState(false);
   const [productFilter, setProductFilter] = useState<string>("all");
@@ -557,7 +559,7 @@ export default function CustomerDetail() {
         {/* Tabs */}
         <NavigationTabs<Tab> value={tab} onChange={value => { setRevenueOnly(false); setTab(value); }} testID="customer-tab" options={[
           { value: "overview", label: "Overview" }, { value: "quotations", label: "Quotations" },
-          { value: "po_final", label: "PO Final" }, ...((isSanitaryFloor || isTilesFloor) ? [{ value: "purchases" as const, label: isTilesFloor ? "Tile Orders" : "Purchases" }] : []), { value: "timeline", label: "Timeline" },
+          ...(isSanitaryFloor ? [{ value: "po_final" as const, label: "PO Final" }] : []), ...(isSanitaryFloor ? [{ value: "purchases" as const, label: "Purchases" }] : []), { value: "timeline", label: "Timeline" },
         ]} />
         {tab === "quotations" || tab === "purchases" || tab === "timeline" ? <View style={styles.exportActions}>
           {tab === "quotations" ? <Button label="Export quotations .xlsx" icon="download" variant="secondary" size="sm" disabled={!quotations.length} onPress={() => void exportDetail("quotations")} testID="customer-export-quotations" /> : null}
@@ -683,20 +685,11 @@ export default function CustomerDetail() {
               ))}
             </Card>
           )
-        ) : tab === "po_final" ? (
+        ) : tab === "po_final" && isSanitaryFloor ? (
           <PoFinal key={`${selectedFloorId}:${id}`} customerId={id} />
-        ) : tab === "purchases" ? (
+        ) : tab === "purchases" && isSanitaryFloor ? (
           <View style={{ gap: spacing.lg }}>
-            {isTilesFloor ? (
-              <Card>
-                <EmptyState
-                  icon="grid"
-                  title="Ground Floor tile movement"
-                  subtitle="Tile orders use Released, Godown, Dispatch, and Delivered. Open Tile Orders to move this customer's products through the correct workflow."
-                  action={<Button label="Open Tile Orders" icon="grid" onPress={() => router.push("/(admin)/tiles/orders" as any)} testID="customer-ground-floor-tile-orders" />}
-                />
-              </Card>
-            ) : <>
+
             <Card>
               <View style={{ gap: spacing.md }}>
                 <Text style={type.overline}>Purchase filters</Text>
@@ -1077,7 +1070,7 @@ export default function CustomerDetail() {
               </Card>
               </>
             )}
-            </>}
+
           </View>
         ) : (
           <Card>

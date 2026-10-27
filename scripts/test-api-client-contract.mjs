@@ -1,3 +1,4 @@
+import './test-ground-navigation-cache.mjs';
 import './test-product-media-lifecycle.mjs';
 import './test-image-upload.mjs';
 import './test-api-cache-retention.mjs';

@@ -115,6 +115,12 @@ function money(n: number): string {
 }
 
 function paymentHistoryCopy(payment: PaymentEntry): { title: string; subtitle: string } {
+  if (payment.label === "labor cost" || /labor cost added via dispatch/i.test(payment.note || "")) {
+    return {
+      title: `Labor cost has been added · ${money(payment.amount)} by ${payment.recorded_by_name || "Unknown staff"}`,
+      subtitle: payment.note || "Dispatch labor charge",
+    };
+  }
   if (payment.entry_type === "additional_cost") {
     return {
       title: `Additional cost · ${payment.cost_name || "Unnamed cost"} · ${money(payment.amount)}`,

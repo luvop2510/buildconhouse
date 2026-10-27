@@ -55,9 +55,12 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
   'redesign-mobile-summary.spec.ts': [
     'critical Walk-in summary opens every matching metric and hidden filters retain selections',
     'critical Walk-in register renders without waiting for the optional summary',
-    'critical Ground Follow-up expiring summary clears unrelated filters and opens its exact records',
+    'critical Kitchen Follow-up expiring summary clears unrelated filters and opens its exact records',
   ],
 
+  'responsive-customer-quotation.spec.ts': [
+    ...['first-floor', 'ground-floor'].map(floor => `critical ${floor} customer only offers its supported document stages`),
+  ],
   'responsive-shared-floor-navigation.spec.ts': [
     ...['ground-floor', 'second-floor', 'third-floor'].map(floor => `critical ${floor} customer profile avoids sanitary purchasing requests`),
     'critical Ground dashboard avoids sanitary purchasing requests',
@@ -68,12 +71,20 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
     ...['ground-floor', 'second-floor', 'third-floor'].flatMap(floor => ['/purchases', '/purchases-completed', ...(floor === 'ground-floor' ? [] : ['/catalog'])].map(path => `critical ${floor} blocks a direct ${path} URL before business reads`)),
   ],
   'redesign-payments.spec.ts': [
+    'critical Ground Floor dispatch labor history identifies the editor',
     'critical payment overview collapses without losing a payment draft on rotation',
     'critical payment form keeps paise, validates overpayment, scrolls and retries with the same key',
     'critical successful payment removes the settled order and shows the next customer',
   ],
+  'redesign-tile-purchase-images.spec.ts': [
+    ...['customer', 'supplier'].map(kind => `critical tile ${kind} purchases preserve current product photos and operational controls`),
+  ],
+  'redesign-sanitary-sales.spec.ts': [
+    ...['first-floor', 'ground-floor'].map(floor => `critical ${floor} intake uses the selected worker instead of the owner`),
+    'critical sanitary quotations group every unplaced quotation under Draft',
+  ],
   'redesign-sanitary-followups.spec.ts': [
-    'critical sanitary follow-ups keeps draft source and salesperson without summary or priority clutter',
+    ...['first-floor', 'ground-floor'].map(floor => `critical ${floor} follow-ups keeps draft source and salesperson without summary or priority clutter`),
   ],
   'redesign-followup-notes.spec.ts': [
     'critical Won orders shows orders attributed to the current team member',

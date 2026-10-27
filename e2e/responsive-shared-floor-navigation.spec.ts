@@ -138,8 +138,8 @@ for (const floor of ['ground-floor', 'second-floor', 'third-floor']) {
     await page.getByRole('tab', { name: 'Timeline', exact: true }).click();
     await expect(page.getByText('Some related records could not be loaded. Counts may be incomplete.', { exact: true })).toHaveCount(0);
     if (floor === 'ground-floor') {
-      await page.getByRole('tab', { name: 'Tile Orders', exact: true }).click();
-      await expect(page.getByTestId('customer-ground-floor-tile-orders')).toBeVisible();
+      await expect(page.getByRole('tab', { name: 'Tile Orders', exact: true })).toHaveCount(0);
+      await expect(page.getByRole('tab', { name: 'PO Final', exact: true })).toHaveCount(0);
     } else await expect(page.getByRole('tab', { name: 'Purchases', exact: true })).toHaveCount(0);
     expect(forbidden).toEqual([]);
   });

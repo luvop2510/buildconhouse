@@ -55,14 +55,21 @@ def test_a_failing_bump_never_fails_the_committed_command(monkeypatch):
 
 
 def test_the_bump_happens_after_the_transaction_not_inside_it():
-    """The 22 Jul fix moved post-commit work strictly after the commit; a bump
-    inside the transaction could publish a version for a write that rolls back."""
+    """Driver retries must finish before cache versions expose committed effects."""
+    import ast
     import inspect
-    source = inspect.getsource(domain_outbox._process_claimed_event) if hasattr(
-        domain_outbox, "_process_claimed_event") else inspect.getsource(domain_outbox)
-    bump_at = source.index("_bump_analytics_versions(current[")
-    commit_block_at = source.index("async with session.start_transaction():")
-    assert bump_at > commit_block_at
-    # and outside the `async with` body: the bump line is not indented under it
-    line = next(line for line in source.splitlines() if "_bump_analytics_versions(current[" in line)
-    assert len(line) - len(line.lstrip()) == 4, "bump must sit at function level, not inside the transaction"
+    tree = ast.parse(inspect.getsource(domain_outbox))
+    transaction_calls = [n for n in ast.walk(tree) if isinstance(n, ast.Await)
+                         and isinstance(n.value, ast.Call)
+                         and getattr(n.value.func, "attr", "") == "with_transaction"]
+    assert transaction_calls
+    for commit in transaction_calls:
+        function = next(n for n in tree.body if isinstance(n, ast.AsyncFunctionDef)
+                        and n.lineno <= commit.lineno <= n.end_lineno)
+        bumps = [n for n in ast.walk(function) if isinstance(n, ast.Await)
+                 and isinstance(n.value, ast.Call)
+                 and getattr(n.value.func, "id", "") == "_bump_analytics_versions"]
+        assert len(bumps) == 1
+        assert bumps[0].lineno > commit.lineno
+        # A direct function statement is outside both session and transaction callbacks.
+        assert any(isinstance(n, ast.Expr) and n.value is bumps[0] for n in function.body)

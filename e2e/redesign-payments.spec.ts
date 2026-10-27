@@ -293,3 +293,17 @@ test('critical payment histories show Indian payment amounts without a bank meth
   await expect(history).not.toContainText('Bank Transfer');
   await expect(history.getByText('METHOD', { exact: true })).toHaveCount(0);
 });
+
+
+test('critical Ground Floor dispatch labor history identifies the editor', async ({ page }) => {
+  await mockSession(page, '/payments', false, { floorId: 'ground-floor' });
+  await page.route('**/api/payments/orders', route => route.fulfill({ json: [order] }));
+  await page.route('**/api/payments/stats', route => route.fulfill({ json: {} }));
+  await page.route('**/api/payments/orders/payment-order', route => route.fulfill({ json: {
+    ...detail(), floor_id: 'ground-floor', payments: [{ id: 'dispatch-labor', label: 'labor cost', amount: 500,
+      status: 'pending', mode: 'bank', recorded_by_name: 'Dispatch Worker', created_at: '2026-10-27T09:00:00Z',
+      note: '₹500 labor cost added via dispatch DSP-1' }],
+  } }));
+  await page.goto('/payments');
+  await expect(page.getByTestId('payments-order-detail')).toContainText('Labor cost has been added · ₹500 by Dispatch Worker');
+});

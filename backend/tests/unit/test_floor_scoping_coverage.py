@@ -41,6 +41,7 @@ SCOPING_HELPERS = {
     "floor_inherit",
     "accessible_floor_ids",
     "_payment_scope_query",
+    "_tile_draft_receipt_id",  # requires Ground Floor access and binds actor/floor into the receipt key
 }
 
 

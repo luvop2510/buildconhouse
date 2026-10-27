@@ -295,7 +295,7 @@ function FollowupsWorkspace() {
   const { isPhone, isDesktop } = useBp();
   const insets = useSafeAreaInsets();
   const pagePad = isPhone ? spacing.md : spacing.xl;
-  const isSanitary = selectedFloorId === "first-floor";
+  const isSanitary = ["first-floor", "ground-floor"].includes(selectedFloorId || "");
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -322,6 +322,11 @@ function FollowupsWorkspace() {
   const tierFilter = "all";
   const [ownerFilter, setOwnerFilter] = useState<"all" | "mine" | string>("all");
   const [followupView, setFollowupView] = useState<FollowupView>("active");
+  useEffect(() => {
+    if (!isSanitary) return;
+    setKpiFilter("all"); setPriorityFilter("all"); setCategoryFilter("all"); setSummaryOpen(false);
+  }, [isSanitary, selectedFloorId]);
+
   const [collapsed, setCollapsed] = useState<Set<Bucket>>(new Set(["completed", "snoozed"]));
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -1555,7 +1560,7 @@ function FollowupCard({
   onAssign: (f: Followup, userId: string) => void; onMarkLost: (f: Followup) => void; onDismiss: (f: Followup) => void; canDelete: boolean; onDelete: (f: Followup) => void; onOpenDoc?: (f: Followup) => void;
 }) {
   const { isPhone } = useBp();
-  const isSanitary = f.floor_id === "first-floor";
+  const isSanitary = ["first-floor", "ground-floor"].includes(f.floor_id || "");
   const level = f.manual_priority_override || f.priority_level;
   const tone = PRIORITY_TONE[level];
   const isResolved = f.status === "done" || f.status === "dismissed";
@@ -1978,6 +1983,7 @@ function NewFollowupSheet({ visible, onClose, customers, assignees, defaultAssig
   const [channel, setChannel] = useState<Channel>("call");
   const [reason, setReason] = useState("");
   const { selectedFloorId } = useFloorAccess();
+  const simpleInbox = ["first-floor", "ground-floor"].includes(selectedFloorId || "");
   const [scope, setScope] = useState<LeadScope>({ interested_floor_ids: [], assignments: [] });
   const [partner, setPartner] = useState<LeadPartner>(null);
   const [saving, setSaving] = useState(false);
@@ -2030,7 +2036,7 @@ function NewFollowupSheet({ visible, onClose, customers, assignees, defaultAssig
   };
 
   return (
-    <Sheet visible={visible} onClose={onClose} variant={isPhone ? "bottom" : "drawer"} title="New Follow-up" subtitle={selectedFloorId === "first-floor" ? "Add a customer reminder and assign a salesperson." : "Manually add a reminder — the workspace will rank it alongside automated cards."}
+    <Sheet visible={visible} onClose={onClose} variant={isPhone ? "bottom" : "drawer"} title="New Follow-up" subtitle={simpleInbox ? "Add a customer reminder and assign a salesperson." : "Manually add a reminder — the workspace will rank it alongside automated cards."}
       footer={<>
         <Button label="Cancel" variant="secondary" onPress={onClose} size="md" />
         <View style={{ flex: 1 }} />
@@ -2071,7 +2077,7 @@ function NewFollowupSheet({ visible, onClose, customers, assignees, defaultAssig
           </FormField>
         </>}
 
-        {selectedFloorId !== "first-floor" ? <FormField label="Type">
+        {!simpleInbox ? <FormField label="Type">
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
             {NEW_CATEGORIES.map((c) => (
               <Chip key={c} label={c.charAt(0).toUpperCase() + c.slice(1)} active={category === c} onPress={() => setCategory(c)} />

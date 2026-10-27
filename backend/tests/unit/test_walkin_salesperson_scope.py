@@ -207,4 +207,12 @@ def test_legacy_owner_salesperson_is_masked_with_one_bounded_lookup(monkeypatch)
     assert len(queries) == 1
     assert result[0]["salesperson_id"] is result[1]["salesperson_name"] is None
     assert result[2]["salesperson_name"] == "Worker"
-    assert result[3]["salesperson_name"] == "Owner"
+    assert result[3]["salesperson_name"] is None
+
+
+@pytest.mark.parametrize("floor", ["ground-floor", "first-floor"])
+def test_owner_is_never_a_catalog_floor_salesperson(monkeypatch, floor):
+    _set_users(monkeypatch, [{"id": "owner", "full_name": "Owner", "role": "owner", "active": True}])
+    with pytest.raises(HTTPException, match="owners delegate"):
+        asyncio.run(walkin_routes._salesperson_for_floor("owner", floor))
+    assert asyncio.run(walkin_routes._can_own_walkin({"role": "owner"}, floor)) is False

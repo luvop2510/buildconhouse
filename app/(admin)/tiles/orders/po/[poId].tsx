@@ -155,7 +155,7 @@ export default function BrandOrderDetailScreen() {
       // the two of them split the surplus and push the row 50px past the
       // viewport, which put RELEASE QTY — the page's entire purpose — off
       // screen. One grow column keeps the total predictable.
-      key: "product", label: "TILE NAME", grow: 1, minWidth: 200, mobile: "primary",
+      key: "product", label: "TILE NAME", grow: 1, minWidth: 320, mobile: "primary",
       render: (item) => (
         <TileOrderProductCell name={item.name} subtitle={tileIdentityMeta([item.series, item.size], item.sku)}
           image={item.image} sku={item.sku} testID={`tile-supplier-product-image-${item.id}`} />

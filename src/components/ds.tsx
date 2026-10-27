@@ -745,7 +745,7 @@ export function ActivityRow({
 // ───────────────────────────────────────────────────────────────────────────
 export function Dropdown({ label, icon, items, testID, variant = "secondary" }: {
   label: string; icon?: FeatherName;
-  items: { label: string; icon?: FeatherName; onPress: () => void; tone?: "default" | "danger" }[];
+  items: { label: string; icon?: FeatherName; onPress: () => void; tone?: "default" | "danger"; disabled?: boolean; testID?: string }[];
   testID?: string; variant?: "primary" | "secondary" | "ghost";
 }) {
   const foreground = variant === "primary" ? colors.onBrand : colors.onSurface;

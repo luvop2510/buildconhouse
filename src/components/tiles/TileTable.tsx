@@ -518,16 +518,16 @@ export function ProgressCell({ percent }: { percent: number }) {
 
 const styles = StyleSheet.create({
   mobileListShell: { width: "100%", minHeight: 120 },
-  mobileListContent: { gap: spacing.s12, paddingBottom: spacing.s24 },
+  mobileListContent: { gap: spacing.lg, paddingBottom: spacing.s24 },
   mobileCard: {
     minHeight: 88,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,
     backgroundColor: colors.surfaceSecondary,
-    padding: spacing.lg,
+    padding: spacing.s20,
   },
-  mobileCardContent: { gap: spacing.s12 },
+  mobileCardContent: { gap: spacing.lg },
   mobilePrimary: { minWidth: 0 },
   mobileFields: { flexDirection: "row", flexWrap: "wrap", gap: spacing.s12 },
   mobileField: { gap: spacing.s4, minWidth: 0, width: "47%", flexGrow: 1 },
@@ -580,11 +580,11 @@ const styles = StyleSheet.create({
   // 16px per side is the table-cell padding the whole module shares; no
   // inter-cell `gap` is used, because a gap has to be replicated identically
   // on the header to keep labels over their data.
-  cell: { paddingHorizontal: spacing.lg, paddingVertical: spacing.s8 },
+  cell: { paddingHorizontal: spacing.lg, paddingVertical: spacing.lg },
 
   emptyRow: { paddingVertical: spacing.s40, paddingHorizontal: spacing.lg, alignItems: "center" },
 
-  stack: { gap: 2, width: "100%" },
+  stack: { gap: spacing.s4, width: "100%" },
   cellTitle: { ...type.bodyStrong, width: "100%" },
   cellSub: { ...type.caption, width: "100%" },
   cellText: { ...type.body, width: "100%" },
