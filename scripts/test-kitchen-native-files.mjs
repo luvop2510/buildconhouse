@@ -35,7 +35,7 @@ const modules = {
   'expo-crypto': { CryptoDigestAlgorithm: { SHA256: 'SHA-256' }, digest: (algorithm, bytes) => webcrypto.subtle.digest(algorithm, bytes) },
   'expo-sharing': { isAvailableAsync: async () => sharingAvailable, shareAsync: async (uri, options) => { assert(files.has(uri)); shares.push({ uri, options, bytes: Buffer.from(files.get(uri)) }); } },
   '@/src/components/Toast': { toast: { show: value => errors.push(value) } },
-  '@/src/api/client': { api: { base: 'https://native.invalid' }, getToken: async () => 'synthetic-token' },
+  '@/src/api/client': { api: { base: 'https://native.invalid' }, getToken: async () => 'synthetic-token', getRequestFloorId: async () => 'second-floor' },
 };
 function load(path) {
   const module = { exports: {} };

@@ -1,3 +1,4 @@
+import { TILES_FLOOR_ID } from "@/src/constants/floors";
 // frontend/src/components/tiles/TileMovementSheets.tsx
 // Bottom-sheet forms for every Tile Orders movement action, split by page
 // ownership (Tile Orders workflow redesign, 2026-08):
@@ -228,7 +229,7 @@ async function submitDispatch(
   onDone();
   setBusy(false);
   try {
-    const downloaded = await downloadApiFile(`/tile-orders/chalans/${result.chalan.id}/pdf`, `Chalan-${result.chalan.id}.pdf`, "Chalan PDF");
+    const downloaded = await downloadApiFile(`/tile-orders/chalans/${result.chalan.id}/pdf`, `Chalan-${result.chalan.id}.pdf`, "Chalan PDF", TILES_FLOOR_ID);
     if (!downloaded) toast.error("Dispatch saved. Open the Chalan PDF from the Dispatch List tab.");
   } catch {
     toast.error("Dispatch saved. Open the Chalan PDF from the Dispatch List tab.");

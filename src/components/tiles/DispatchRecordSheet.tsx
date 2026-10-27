@@ -1,3 +1,4 @@
+import { TILES_FLOOR_ID } from "@/src/constants/floors";
 // frontend/src/components/tiles/DispatchRecordSheet.tsx
 // The operational record behind one Dispatch — everything a warehouse
 // operator needs to finish the job after the truck is loaded, in one place:
@@ -25,8 +26,8 @@ import { downloadApiFile, printApiFile } from "@/src/utils/downloadFile";
 export async function openChalanPdf(chalanId: string, mode: "view" | "print" = "view") {
   try {
     const path = `/tile-orders/chalans/${chalanId}/pdf`;
-    if (mode === "print") await printApiFile(path, "Chalan PDF");
-    else await downloadApiFile(path, `Chalan-${chalanId}.pdf`, "Chalan PDF");
+    if (mode === "print") await printApiFile(path, "Chalan PDF", TILES_FLOOR_ID);
+    else await downloadApiFile(path, `Chalan-${chalanId}.pdf`, "Chalan PDF", TILES_FLOOR_ID);
   } catch (e: any) {
     toast.error(e?.detail || e?.message || `Could not open Chalan ${mode === "print" ? "for printing" : "PDF"}`);
   }

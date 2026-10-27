@@ -270,3 +270,81 @@ def test_workspace_hydration_reads_once_without_bootstrap_writes_and_keeps_acces
     if route == "get_floor_access":
         assert result["all_floors"] is (role == "owner")
         assert result["floor_ids"] == [floor["id"] for floor in visible]
+
+
+def test_unchanged_refresh_reuses_complete_catalog_objects_without_revalidation(clean_catalog, monkeypatch):
+    async def run():
+        sources = Sources()
+        sources.release.set()
+        monkeypatch.setattr(catalog, "db", sources)
+        first = await catalog.get_catalog_snapshot()
+        assert first.source_signatures
+        # Rebuilding even the same source doubles decoded catalog/model memory.
+        def unexpected_rebuild(*_args):
+            raise AssertionError("unchanged source must retain its existing models")
+        monkeypatch.setattr(catalog, "_build_snapshot", unexpected_rebuild)
+        refreshed = await catalog.refresh_catalog_snapshot()
+        assert refreshed is not first
+        assert refreshed.products is first.products
+        assert refreshed.product_by_id is first.product_by_id
+        assert refreshed.source_signatures == first.source_signatures
+        assert refreshed.loaded_at >= first.loaded_at
+        assert refreshed.product_by_id["p1"]["name"] == "Before"
+        assert sources.started == sources.closed == 10
+    asyncio.run(run())
+
+
+def test_changed_source_refresh_rebuilds_and_retains_new_fields(clean_catalog, monkeypatch):
+    async def run():
+        sources = Sources()
+        sources.release.set()
+        monkeypatch.setattr(catalog, "db", sources)
+        first = await catalog.get_catalog_snapshot()
+        sources.product["name"] = "Changed outside this process"
+        sources.product["price"] = 1234
+        refreshed = await catalog.refresh_catalog_snapshot()
+        assert refreshed.product_by_id["p1"]["name"] == "Changed outside this process"
+        assert refreshed.product_by_id["p1"]["price"] == 1234
+        assert first.product_by_id["p1"]["name"] == "Before"
+        assert refreshed.source_signatures != first.source_signatures
+        assert sources.started == sources.closed == 15
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("constraint", ["rows", "bytes"])
+def test_warm_signature_scan_keeps_budget_and_falls_back_without_partial_results(clean_catalog, monkeypatch, constraint):
+    async def run():
+        sources = Sources()
+        sources.release.set()
+        monkeypatch.setattr(catalog, "db", sources)
+        await catalog.get_catalog_snapshot()
+        sources.products = [{"id": "p1", "active": True}, {"id": "p2", "active": True}]
+        if constraint == "rows":
+            monkeypatch.setattr(catalog, "_SNAPSHOT_ROW_LIMITS", {**catalog._SNAPSHOT_ROW_LIMITS, "products": 1})
+        else:
+            monkeypatch.setattr(catalog, "_SNAPSHOT_MAX_BYTES", 1)
+        refreshed = await catalog.refresh_catalog_snapshot()
+        assert refreshed.database_backed
+        assert refreshed.products == ()
+        assert refreshed.product_by_id == {}
+        assert sources.started == sources.closed == 15
+    asyncio.run(run())
+
+
+def test_write_during_warm_signature_scan_cannot_refresh_stale_state(clean_catalog, monkeypatch):
+    async def run():
+        sources = Sources()
+        sources.release.set()
+        monkeypatch.setattr(catalog, "db", sources)
+        await catalog.get_catalog_snapshot()
+        sources.release.clear()
+        sources.all_started = asyncio.Event()
+        refresh = asyncio.create_task(catalog.refresh_catalog_snapshot())
+        await asyncio.wait_for(sources.all_started.wait(), 1)
+        sources.product["name"] = "Write during comparison"
+        catalog._refresh_generation += 1
+        sources.release.set()
+        refreshed = await refresh
+        assert refreshed.product_by_id["p1"]["name"] == "Write during comparison"
+        assert sources.started == sources.closed
+    asyncio.run(run())

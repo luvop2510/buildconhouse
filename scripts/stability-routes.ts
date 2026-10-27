@@ -10,9 +10,9 @@ function files(directory: string): string[] {
 // route automatically makes its successful execution mandatory on every device.
 export function stabilityRoutes(root = process.cwd()): string[] {
   const app = join(root, 'app');
-  return [...new Set(files(app)
-    .filter(file => /\.[jt]sx?$/.test(file) && !/\/_|\/\+/.test(file) && !/\.(?:ios|android|native)\.[jt]sx?$/.test(file))
-    .map(file => '/' + relative(app, file).replace(/\([^/]+\)\//g, '').replace(/(?:\.web)?\.[jt]sx?$/, '')
+  return [...new Set(files(app).map(file => relative(app, file))
+    .filter(file => /\.[jt]sx?$/.test(file) && !/(?:^|\/)[_+]/.test(file) && !/\.(?:ios|android|native)\.[jt]sx?$/.test(file))
+    .map(file => '/' + file.replace(/\([^/]+\)\//g, '').replace(/(?:\.web)?\.[jt]sx?$/, '')
       .replace(/(^|\/)index$/, '').replace(/\/$/, '').replace('[floor]', 'kitchen')
       .replace('[view]', 'followups').replace('[kind]', 'salespeople').replace(/\[[^\]]+\]/g, 'audit-record'))
     .filter(path => path !== '/' && path !== '/set-new-password' && path !== '/login'))].sort();
@@ -26,6 +26,16 @@ export function stabilityRouteTitle(path: string): string {
 export const stabilityProjects = ['android-chrome', 'iphone-safari', 'ipad-safari', 'desktop-chrome'];
 
 export const requiredStabilityScenarios: Record<string, string[]> = {
+  'redesign-mobile-startup.spec.ts': [
+    'critical owner navigation works after login while unrelated role permissions are pending',
+    'critical delegated navigation works after login while unrelated role permissions are pending',
+    'critical legacy navigation retains its applicable role matrix restrictions',
+  ],
+  'redesign-font-readiness.spec.ts': [
+    'cold sign-in waits for decoded text and icon fonts before the first form paint',
+    'failed font assets show recovery and a retry reload reaches the complete sign-in form',
+    'a stalled font request reaches bounded recovery and late completion cannot reveal the form',
+  ],
   'redesign-mobile-workspace.spec.ts': [
     'critical mobile shell stays fixed while the customer page header scrolls with content',
     'critical navigation stays hidden throughout mobile search and returns on blur',
@@ -79,6 +89,8 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
     'critical customer quotation deep link recovers from an unavailable document after reload',
   ],
   'redesign-release-recovery.spec.ts': [
+    'critical startup paints and hydrates without requesting the legacy head bootstrap',
+    'critical startup paints its static loading indicator while recovery is pending then hydrates',
     'critical failed startup asset reloads once and reaches usable login',
     'critical repeated startup asset failure stops retrying and exposes a visible reload action',
   ],

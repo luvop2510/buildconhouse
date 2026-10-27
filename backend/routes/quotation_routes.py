@@ -597,8 +597,8 @@ async def create_quotation(
         await on_selection_created(customer["id"], quot.id, quot.number)
     # Every quotation family enters the same idempotent follow-up engine at
     # creation time. Tile Selections additionally update the walk-in lifecycle
-    # above, but Sanitary quotations must not wait for a later status change or
-    # cron pass before their quotation-stage follow-up becomes visible.
+    # above. Reconcile now without waiting for another status change; the
+    # configured age threshold still determines when a reminder becomes due.
     asyncio.create_task(reconcile_followups())
     return quot
 

@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { View } from "react-native";
 import { Text } from "@/src/components/AppText";
-import { Alert, Button } from "@/src/components/ds";
+import { Alert } from "@/src/components/ds";
 import { KITCHEN_DECISION_CONTRACT, kitchenProjectsApi, type KitchenAssignee, type KitchenPolicy as Policy } from "@/src/api/kitchenProjects";
 import { ErrorNotice, KitchenPanel, useKitchenSubmission } from "./shared";
-import { spacing, type } from "@/src/theme/tokens";
+import { spacing } from "@/src/theme/tokens";
+import { KitchenButton as Button, kitchenType as type } from "./KitchenPrimitives";
 import { KitchenOption } from "./KitchenFilters";
 import { useAuth } from "@/src/state/auth";
 
@@ -32,7 +33,7 @@ export function KitchenPolicyEditor({ policy, workers, workerError, onSaved, onR
       <Text style={type.caption}>Neither choice saves settings. Review the selection, then save deliberately.</Text>
     </KitchenPanel> : null}
     <KitchenPanel title="Department managers">
-      <Text style={type.body}>Select the existing active staff who act as department managers. The owner and selected managers may assign staff and view department projects. Other employees see only assigned projects under their existing Kitchen access.</Text>
+      <Text style={type.body}>Select the existing active staff who act as department managers. The owner and selected managers can review department projects. Staff retain their existing Kitchen access permissions.</Text>
       <Text style={type.caption}>Selected managers approve Production entry and closure. Being the owner or holding a manager role alone does not grant these approvals. Select the owner explicitly if they also serve as a department manager.</Text>
       {workerError ? <Alert tone="error" title="Eligible staff could not be loaded" description="Retry before changing the department managers." action={<Button label="Retry staff list" variant="secondary" onPress={onReload} />} /> : null}
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>{choices.map(worker => <KitchenOption key={worker.id} label={worker.full_name} active={ids.includes(worker.id)} disabled={selectionLocked} onPress={() => { if (!submission.busy) setIds(ids.includes(worker.id) ? ids.filter(id => id !== worker.id) : [...ids, worker.id]); }} testID={`kitchen-policy-manager-${worker.id}`} />)}</View>
@@ -54,7 +55,7 @@ export function KitchenPolicyEditor({ policy, workers, workerError, onSaved, onR
       <Text style={type.body}>Only the owner may hold, cancel, reconfirm, reopen or return downstream work to Design. A reason is required. Returning to Design preserves versions, orders, approvals and visits, and requires a fresh design, quotation, order confirmation and manager approvals.</Text>
     </KitchenPanel>
     <KitchenPanel title="Dashboard definitions">
-      <Text style={type.body}>Active excludes Completed, Lost, Cancelled and On Hold. On Hold appears separately. Next action overdue and completion overdue are separate counts; missing deadlines are never overdue. Dates use India time.</Text>
+      <Text style={type.body}>Active excludes Completed, Lost, Cancelled and On Hold. On Hold appears separately. Completion overdue uses the target completion date; projects without a target date are never overdue. Dates use India time.</Text>
       <Text style={type.body}>Active order value includes each current, matching confirmed order once on active projects. Drafts, invalidated commercial terms and inactive projects are excluded.</Text>
     </KitchenPanel>
     <KitchenPanel title="Private documents and retention">

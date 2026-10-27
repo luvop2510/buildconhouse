@@ -1,29 +1,8 @@
-// App-wide font loader: Inter (text) + Feather icons (CDN fallback under Expo Go).
-// Inter is loaded from local /assets/fonts. Icon fonts fall back to CDN under Expo Go.
-import Constants, { ExecutionEnvironment } from "expo-constants";
+import Feather from "@expo/vector-icons/Feather";
 import { useFonts } from "expo-font";
 import { INTER_FAMILY } from "./app-font-assets";
 
-const ICON_VECTOR_VERSION = "15.1.1";
-
-// Feather is the only icon family used by the canonical app. Loading every
-// Expo icon font here delayed Expo Go startup with 18 unnecessary downloads.
-const ICON_FAMILIES: Record<string, string> = { feather: "Feather" };
-
-const cdnIconUrl = (file: string): string =>
-  `https://cdn.jsdelivr.net/npm/@expo/vector-icons@${ICON_VECTOR_VERSION}/build/vendor/react-native-vector-icons/Fonts/${file}.ttf`;
-
-const iconFontMap = (): Record<string, string> =>
-  Object.fromEntries(
-    Object.entries(ICON_FAMILIES).map(([key, file]) => [key, cdnIconUrl(file)]),
-  );
-
+// Preload the same bundled font used by the icon component on every platform.
+// Rendering icons must not initiate a second, potentially remote font request.
 export const useAppFonts = (): readonly [boolean, Error | null] =>
-  useFonts({
-    // Keep the same typographic voice on web and native. The local files are
-    // bundled with the app, so the shell never depends on a font CDN.
-    ...INTER_FAMILY,
-    ...(Constants.executionEnvironment === ExecutionEnvironment.StoreClient
-      ? iconFontMap()
-      : {}),
-  });
+  useFonts({ ...INTER_FAMILY, ...Feather.font });

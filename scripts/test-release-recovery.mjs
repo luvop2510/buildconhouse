@@ -29,20 +29,22 @@ function harness({ storage = new Map(), storageFails = false, initial = '', inte
     querySelectorAll() { return entry ? [{ src: entry }] : []; },
   });
   const location = { origin: base, href: `${base}${pathname}`, pathname, reload() { reloads++; } };
-  vm.runInNewContext(source, { window, document, location, URL, setTimeout(callback, delay = 0) { timers.push({ callback, delay }); },
+  const environment = { window, document, location, URL, setTimeout(callback, delay = 0) { timers.push({ callback, delay }); },
     sessionStorage: { getItem(key) { if (storageFails) throw Error('blocked'); return storage.get(key); }, setItem(key, value) { if (storageFails) throw Error('blocked'); storage.set(key, value); }, removeItem(key) { if (storageFails) throw Error('blocked'); storage.delete(key); } },
     MutationObserver: class { constructor(callback) { observerCallback = callback; } observe() {} disconnect() {} },
-  });
+  };
+  vm.runInNewContext(source, environment);
   function event(values, type = 'error') {
     const actual = new Event(type);
     for (const [key, value] of Object.entries(values)) Object.defineProperty(actual, key, { value });
     window.dispatchEvent(actual);
   }
-  return { root, body, document, storage, initialRoute: window.__FORGE_INITIAL_ROUTE__, isReleaseError: window.__FORGE_IS_RELEASE_ERROR__, get reloads() { return reloads; }, panel() { return body.children.find(element => element.id === 'release-startup-recovery'); }, flush(maxDelay = 0) { let index; while ((index = timers.findIndex(timer => timer.delay <= maxDelay)) >= 0) timers.splice(index, 1)[0].callback(); }, event,
+  return { root, body, document, storage, hydrated: environment.__EXPO_ROUTER_HYDRATE__, initialRoute: window.__FORGE_INITIAL_ROUTE__, isReleaseError: window.__FORGE_IS_RELEASE_ERROR__, get reloads() { return reloads; }, panel() { return body.children.find(element => element.id === 'release-startup-recovery'); }, flush(maxDelay = 0) { let index; while ((index = timers.findIndex(timer => timer.delay <= maxDelay)) >= 0) timers.splice(index, 1)[0].callback(); }, event,
     script(url = asset) { event({ target: { tagName: 'SCRIPT', src: url } }); }, mutate() { root.innerHTML = '<div>Live app</div>'; root.children = [new Element('div')]; observerCallback?.(); },
   };
 }
 const stalled = harness({ readyState: 'loading', initial: '<div>Loading</div>' });
+assert.equal(stalled.hydrated, true, 'The recovery bootstrap must set hydration before the following Expo entry executes');
 stalled.flush(); assert.equal(stalled.panel(), undefined);
 stalled.flush(20000); assert.ok(stalled.panel(), 'Stalled startup must provide a visible manual recovery action');
 assert.equal(stalled.reloads, 0); stalled.mutate(); assert.equal(stalled.panel(), undefined);
@@ -96,20 +98,28 @@ const directory = await mkdtemp(join(tmpdir(), 'forge-recovery-'));
 const cwd = process.cwd();
 try {
   await mkdir(join(directory, 'dist/client/quotations'), { recursive: true });
-  const html = '<html><head><script type="module">/* preloads */</script></head><body><div id="root"><div>Loading</div></div><script src="/_expo/static/js/web/entry-a1.js" defer></script></body></html>';
+  const html = '<html><head><script type="module">/* preloads */</script><script>globalThis.__EXPO_ROUTER_HYDRATE__=true;</script></head><body><div id="root"><div>Loading</div></div><script src="/_expo/static/js/web/entry-a1.js" defer></script></body></html>';
   await writeFile(join(directory, 'dist/client/index.html'), html);
   await writeFile(join(directory, 'dist/client/quotations/detail.html'), html);
+  await writeFile(join(directory, 'dist/client/legacy.html'), html.replace('<script>globalThis.__EXPO_ROUTER_HYDRATE__=true;</script>', '<script src="/expo-hydrate.js"></script>'));
   process.chdir(directory);
   const script = `(async () => { ${injection.replace("new URL('./release-recovery.js', import.meta.url)", JSON.stringify(fileURLToPath(new URL('./release-recovery.js', import.meta.url))))} })()`;
   await vm.runInNewContext(script, { readFile, readdir, writeFile });
   await vm.runInNewContext(script, { readFile, readdir, writeFile });
-  for (const path of ['index.html', 'quotations/detail.html']) {
+  for (const path of ['index.html', 'quotations/detail.html', 'legacy.html']) {
     const injected = await readFile(join(directory, 'dist/client', path), 'utf8');
     assert.equal((injected.match(/src="\/release-recovery.js"/g) || []).length, 1);
     assert.ok(injected.indexOf('id="root"') < injected.indexOf('src="/release-recovery.js"'));
     assert.ok(injected.includes('<script src="/release-recovery.js"></script><script src="/_expo/static/js/web/entry-a1.js" defer>'));
     assert.doesNotMatch(injected, /src="\/release-recovery.js"[^>]*(?:async|defer)/);
+    assert.doesNotMatch(injected, /src=["']\/expo-hydrate\.js["']|<script[^>]*>\s*globalThis\.__EXPO_ROUTER_HYDRATE__/);
+    // Simulate the emitted blocking bootstrap followed by the actual deferred
+    // entry order. A relocated flag must exist when entry first reads it.
+    const externalScripts = [...injected.matchAll(/<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/g)].map(match => match[1]);
+    assert.deepEqual(externalScripts, ['/release-recovery.js', '/_expo/static/js/web/entry-a1.js']);
+    assert.equal(harness().hydrated, true);
   }
   assert.equal(await readFile(join(directory, 'dist/client/release-recovery.js'), 'utf8'), source);
+  assert.equal(await readFile(join(directory, 'dist/client/expo-hydrate.js'), 'utf8'), 'globalThis.__EXPO_ROUTER_HYDRATE__=true;\n', 'Older HTML must retain its hydration bootstrap asset');
 } finally { process.chdir(cwd); await rm(directory, { recursive: true, force: true }); }
 console.log('Startup recovery: resource/parse/chunk errors, one retry, SSR/root guards, API/cross-origin isolation, storage failure, manual fallback and real builder placement passed.');

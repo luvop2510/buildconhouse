@@ -1,13 +1,15 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { Linking, Pressable, View } from "react-native";
 import { Text } from "@/src/components/AppText";
-import { Alert, Button, TextField } from "@/src/components/ds";
+import { Alert } from "@/src/components/ds";
 import { STAGE_LABELS, type KitchenCommand, type KitchenProject, type KitchenStage, type KitchenWork } from "@/src/api/kitchenProjects";
 import { Choice, displayDate, KitchenPanel, historicalCount, rupees } from "./shared";
 import { KitchenDateField } from "./KitchenFilters";
+import { kitchenToday } from "./KitchenDates";
 import { DocumentChoice } from "./KitchenDocuments";
 import { useKitchenDraft } from "./KitchenProjectState";
-import { colors, radius, spacing, type } from "@/src/theme/tokens";
+import { radius, spacing } from "@/src/theme/tokens";
+import { KitchenButton as Button, KitchenTextField as TextField, KitchenFieldRow, kitchenColors as colors, kitchenType as type } from "./KitchenPrimitives";
 
 export type StageCommand = (command: KitchenCommand, payload: Record<string, unknown>) => Promise<boolean>;
 export function CommercialStages({ project, stage, disabled, command, hasUnsavedChanges = false, mode = "task" }: { project: KitchenProject; stage: KitchenStage; disabled: boolean; command: StageCommand; hasUnsavedChanges?: boolean; mode?: "task" | "amendment" }) {
@@ -45,7 +47,8 @@ export function CommercialStages({ project, stage, disabled, command, hasUnsaved
   const [amendApproved, setAmendApproved] = useKitchenDraft(`${draftCycle}.order.amendApproved`, "Not recorded");
   const [production, setProduction] = useKitchenDraft<KitchenWork>(`${draftCycle}.production`, project.production || { status: "Not Started" });
   const [installation, setInstallation] = useKitchenDraft<KitchenWork>(`${draftCycle}.installation`, project.installation || { status: "Not Started" });
-  const [siteDate, setSiteDate] = useKitchenDraft(`${draftCycle}.site.date`, "");
+  const today = kitchenToday();
+  const [siteDate, setSiteDate] = useKitchenDraft(`${draftCycle}.site.date`, today);
   const [siteActual, setSiteActual] = useKitchenDraft(`${draftCycle}.site.actual`, "Not recorded");
   const [siteNotes, setSiteNotes] = useKitchenDraft(`${draftCycle}.site.notes`, "");
   const [approvalReason, setApprovalReason] = useKitchenDraft(`${draftCycle}.${stage}.approvalReason`, "");
@@ -201,7 +204,7 @@ export function CommercialStages({ project, stage, disabled, command, hasUnsaved
         {active ? <Disclosure draftKey={`${draftCycle}.site.newVisit`} label="Record a site visit" testID="kitchen-disclose-site-visit">        {dateField("Site visit date", siteDate, setSiteDate, "kitchen-site-date")}
         <Choice label="Visit actually took place" value={siteActual} values={["Not recorded", "Yes — actual visit", "No — scheduled only"]} onChange={setSiteActual} disabled={locked} testID="kitchen-site-actual" />
         <TextField label="Site visit notes" value={siteNotes} onChangeText={setSiteNotes} editable={!locked} multiline />
-        <Button label="Record site visit" disabled={locked || siteActual === "Not recorded" || !siteDate} onPress={() => { void command("site_visit", { date: siteDate, actual: siteActual === "Yes — actual visit", notes: siteNotes || null }).then(saved => { if (saved) { setSiteDate(""); setSiteActual("Not recorded"); setSiteNotes(""); } }); }} testID="kitchen-site-save" />
+        <Button label="Record site visit" disabled={locked || siteActual === "Not recorded" || !siteDate} onPress={() => { void command("site_visit", { date: siteDate, actual: siteActual === "Yes — actual visit", notes: siteNotes || null }).then(saved => { if (saved) { setSiteDate(kitchenToday()); setSiteActual("Not recorded"); setSiteNotes(""); } }); }} testID="kitchen-site-save" />
         <Text style={type.caption}>Scheduled visits do not increase the actual counter. Record each distinct real visit once.</Text>
 </Disclosure> : null}
       </KitchenPanel>{active && project.installation?.status === "Completed" ? approval("closure") : null}</> : null}
@@ -233,8 +236,8 @@ function Disclosure({ draftKey, label, testID, children }: { draftKey: string; l
 function WorkForm({ value, onChange, production, disabled }: { value: KitchenWork; onChange: (value: KitchenWork) => void; production: boolean; disabled: boolean }) {
   return <View style={{ gap: spacing.md }}>
     <Choice label={production ? "Production status" : "Installation status"} value={value.status} values={production ? ["Not Started", "In Production", "Completed"] : ["Not Started", "In Progress", "Completed"]} onChange={status => onChange({ ...value, status })} disabled={disabled} testID={`kitchen-${production ? "production" : "installation"}-status`} />
-    <KitchenDateField label="Start date" value={value.start_date || ""} onChange={start_date => onChange({ ...value, start_date: start_date || null })} disabled={disabled} testID={`kitchen-${production ? "production" : "installation"}-start`} />
-    <KitchenDateField label="Completion date" value={value.completion_date || ""} onChange={completion_date => onChange({ ...value, completion_date: completion_date || null })} disabled={disabled} testID={`kitchen-${production ? "production" : "installation"}-complete`} />
+    <KitchenFieldRow><View style={{ flex: 1, minWidth: 180 }}><KitchenDateField label="Start date" value={value.start_date || ""} onChange={start_date => onChange({ ...value, start_date: start_date || null })} disabled={disabled} testID={`kitchen-${production ? "production" : "installation"}-start`} /></View>
+    <View style={{ flex: 1, minWidth: 180 }}><KitchenDateField label="Completion date" value={value.completion_date || ""} onChange={completion_date => onChange({ ...value, completion_date: completion_date || null })} min={value.start_date || undefined} disabled={disabled} testID={`kitchen-${production ? "production" : "installation"}-complete`} /></View></KitchenFieldRow>
     <TextField label={production ? "Production notes" : "Installation notes"} value={value.notes || ""} onChangeText={notes => onChange({ ...value, notes })} editable={!disabled} multiline />
   </View>;
 }

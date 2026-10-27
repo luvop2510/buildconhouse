@@ -235,3 +235,19 @@ test('overlay restoration preserves destination focus after its trigger is remov
   h.flushFrames();
   assert.equal(h.document.activeElement, destination);
 });
+
+test('closing an overlay cannot steal focus from the next form field before text insertion', () => {
+  const h = overlayFixture();
+  h.render(h.old, true, true, true); h.commit(); h.setPanelConnected(true);
+  h.render(h.old, true, false, true); h.commit(); h.flushFrames();
+  // The native portal releases its trap, then focus reaches a background field
+  // before the pending restoration frame. Browser fill/paste inserts text next.
+  h.setPanelConnected(false);
+  const destination = { isConnected: true, value: '', focus() { h.document.activeElement = this; } };
+  destination.focus();
+  h.flushFrames();
+  assert.equal(h.document.activeElement, destination, 'restoration must preserve the newly focused field');
+  h.document.activeElement.value = 'Showroom cabinets and worktop';
+  assert.equal(destination.value, 'Showroom cabinets and worktop');
+  h.unmount();
+});

@@ -77,12 +77,10 @@ async function readyForDocuments(context: APIRequestContext, initial: any) {
   return project;
 }
 
-test('Q01 Q02 Q03 Q12 Q13: real lead/visit persistence, manual assignment and rejected CAD gate', async ({ page, context, browser, baseURL }, testInfo) => {
+test('Q01 Q02 Q03 Q12 Q13: real lead/visit persistence, automatic editable dates and rejected CAD gate', async ({ page, context, browser, baseURL }, testInfo) => {
   const health = captureRuntimeHealth(page);
   const customerId = process.env.KITCHEN_E2E_CUSTOMER_ID;
-  const workerId = process.env.KITCHEN_E2E_WORKER_ID;
   expect(customerId, 'Runner provides its synthetic existing customer').toBeTruthy();
-  expect(workerId, 'Runner provides its synthetic eligible employee').toBeTruthy();
   await seedBrowser(page);
   await page.goto('/kitchen');
   await expect(page.getByTestId('kitchen-stage-navigation')).toBeVisible();
@@ -131,11 +129,14 @@ test('Q01 Q02 Q03 Q12 Q13: real lead/visit persistence, manual assignment and re
   await reviewDistinctIfNeeded(page);
   await page.getByTestId('kitchen-convert').click();
   await expect(page.getByTestId('kitchen-visit-save')).toBeVisible();
+  const indiaToday = new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
+  await expect(page.getByTestId('kitchen-visit-date')).toHaveValue(indiaToday);
+  await expect(page.getByTestId('kitchen-project-detail')).not.toContainText('Assigned to');
+  await expect(page.getByTestId('kitchen-visit-next-action')).toHaveCount(0);
   await openProjectPage(page, 'assignments');
-  await page.getByTestId(`kitchen-assign-${workerId}`).click();
-  const assignmentResponse = page.waitForResponse(response => response.url().endsWith(`/api/kitchen-projects/${project.id}/commands`) && response.request().postDataJSON()?.command === 'assign');
-  await page.getByTestId('kitchen-assign-save').click();
-  expect((await assignmentResponse).ok()).toBeTruthy();
+  await expect(page.getByTestId('kitchen-assign-save')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-next-action')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-target-date')).toBeVisible();
   await openProjectPage(page, 'stage');
   await page.getByTestId('kitchen-visit-requirements').fill('Showroom cabinets and worktop');
   await page.getByTestId('kitchen-visit-save').click();
@@ -152,9 +153,9 @@ test('Q01 Q02 Q03 Q12 Q13: real lead/visit persistence, manual assignment and re
   const savedVisit = page.waitForResponse(response => response.url().endsWith(`/api/kitchen-projects/${project.id}/commands`) && response.request().postDataJSON()?.command === 'save_visit');
   await page.getByTestId('kitchen-visit-save').click();
   expect((await savedVisit).ok()).toBeTruthy();
-  // Both list modes read the saved Visit record and the selected worker.
+  // Both list modes read the same saved Visit record.
   await page.goto(`/kitchen/stages/visit?search=${encodeURIComponent(project.reference)}&view=list`);
-  await expect(page.getByTestId(`kitchen-project-${project.id}`)).toContainText('Kitchen acceptance worker');
+  await expect(page.getByTestId(`kitchen-project-${project.id}`)).toContainText('Visited');
   await page.getByTestId('kitchen-view-menu').click();
   await page.getByRole('menuitem', { name: 'Table', exact: true }).click();
   await expect(page.getByRole('row').filter({ has: page.getByTestId(`kitchen-project-${project.id}`) })).toContainText('Visited');
@@ -321,10 +322,12 @@ test('Q04 to Q09: all nine stages preserve versions, exact counters and late man
   await click('kitchen-advance-installation', 'advance_stage');
   await blocked('kitchen-advance-completed');
   await openDisclosure(page, 'site-visit');
+  await expect(page.getByTestId('kitchen-site-date')).toHaveValue(new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10));
   await page.getByTestId('kitchen-site-date').fill('2026-10-20');
   await page.getByTestId('kitchen-site-actual-no-—-scheduled-only').click();
   const scheduled = await click('kitchen-site-save', 'site_visit');
   expect(scheduled.site_visit_count).toBe(0);
+  await expect(page.getByTestId('kitchen-site-date')).toHaveValue(new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10));
   for (let visit = 1; visit <= 2; visit++) {
     await page.getByTestId('kitchen-site-date').fill('2026-10-20');
     await page.getByTestId('kitchen-site-actual-yes-—-actual-visit').click();
@@ -397,7 +400,7 @@ test('Q11 Q18: a stale save preserves the draft and reload allows a deliberate r
   await notes.fill('Keep my unsaved draft after the conflict');
   const changed = await context.request.post(`${baseURL}/api/kitchen-projects/${project.id}/commands`, { headers, data: {
     expected_version: project.version, idempotency_key: `browser-other-${Date.now()}`,
-    command: 'metadata', payload: { next_action: 'Saved by another session' },
+    command: 'metadata', payload: { target_completion_date: '2026-12-31' },
   } });
   expect(changed.ok(), await changed.text()).toBeTruthy();
   const stale = page.waitForResponse(response => response.url().endsWith(`/api/kitchen-projects/${project.id}/commands`) && response.request().postDataJSON()?.command === 'edit_lead');
@@ -418,7 +421,7 @@ test('Q11 Q18: a stale save preserves the draft and reload allows a deliberate r
   expect(saved.ok(), await saved.text()).toBeTruthy();
   const result = await saved.json();
   expect(result.lead.notes).toBe('Keep my unsaved draft after the conflict');
-  expect(result.next_action).toBe('Saved by another session');
+  expect(result.target_completion_date).toBe('2026-12-31');
   await page.reload();
   await expect(notes).toHaveValue('Keep my unsaved draft after the conflict');
   await health.assertHealthy();
@@ -590,8 +593,7 @@ test('D09: legacy completed records show unavailable counts and blank historical
   expect(legacy.installation.start_date).toBeNull();
   expect(legacy.installation.completion_date).toBeNull();
   await page.screenshot({ path: testInfo.outputPath('legacy-unknown-counts.png') });
-  // Any assigned stage preserves authorized history reads; unrelated projects
-  // stay absent for the ordinary employee under the same actual session path.
+  // Kitchen grants preserve authorized history reads without stage assignments.
   await context.addCookies([{ name: 'kitchen_acceptance_session', value: 'worker', url: baseURL! }]);
   await page.reload();
   await expect(page.getByTestId('kitchen-project-detail')).toBeVisible();
@@ -688,7 +690,8 @@ test('Q18 v4: project pages separate work from files and history while preservin
   await openProjectPage(page, 'documents');
   await openProjectPage(page, 'history');
   await openProjectPage(page, 'assignments');
-  await expect(page.getByTestId('kitchen-assign-save')).toBeVisible();
+  await expect(page.getByTestId('kitchen-target-date')).toBeVisible();
+  await expect(page.getByTestId('kitchen-assign-save')).toHaveCount(0);
   await expect(page.getByTestId('kitchen-assignment-sheet')).toBeVisible();
   await openProjectPage(page, 'stage');
   await expect(page.getByTestId('kitchen-design-date')).toHaveValue('2026-10-20');

@@ -23,6 +23,7 @@
 import { type ReactNode, useRef, useState } from "react";
 import { FlatList, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from "react-native";
 import { Text } from "@/src/components/AppText";
+import { handleTableScrollKey } from "@/src/components/tableLayout";
 
 import { useBreakpoint } from "@/src/hooks/use-breakpoint";
 import { colors, radius, spacing, type } from "@/src/theme/tokens";
@@ -325,6 +326,11 @@ export function DataTable<T>({
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator
+        testID={testID ? `${testID}-scroll` : undefined}
+        accessibilityLabel="Tile orders table. Scroll horizontally for more columns."
+        tabIndex={Platform.OS === "web" ? 0 : undefined}
+        keyboardShouldPersistTaps="handled"
+        {...(Platform.OS === "web" ? { onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => handleTableScrollKey(event) } : {})}
         contentContainerStyle={styles.hScrollContent}
       >
         {/* Width is stated explicitly rather than left at "100%".

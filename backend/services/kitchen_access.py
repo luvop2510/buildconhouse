@@ -38,36 +38,20 @@ async def require_capability(database, user, action):
 
 
 def scope_query(user, policy):
-    if owner(user) or department_manager(user, policy):
-        return {"floor_id": KITCHEN_FLOOR}
-    assigned = [{f"assignments.{stage}": user.id} for stage in
-                ("lead", "visit", "cad", "design", "quotation", "order", "production", "installation", "completed")]
-    return {"floor_id": KITCHEN_FLOOR, "$or": assigned}
+    # Kitchen capabilities grant the workspace; historical staff assignments do not.
+    return {"floor_id": KITCHEN_FLOOR}
 
 
 def project_visible(project, user, policy):
-    if project.get("floor_id") != KITCHEN_FLOOR:
-        return False
-    return owner(user) or department_manager(user, policy) or user.id in project.get("assignments", {}).values()
+    return project.get("floor_id") == KITCHEN_FLOOR
 
 
 def department_manager(user, policy):
     return policy.get("decision_contract") == "2026-10-20" and user.id in policy.get("department_manager_user_ids", [])
 
 
-def can_assign(user, policy):
-    return owner(user) or department_manager(user, policy)
-
-
-def current_task_assigned(project, user, policy):
-    """History visibility does not delegate another employee's current task."""
-    return owner(user) or department_manager(user, policy) or project.get("assignments", {}).get(project["stage"]) == user.id
-
-
 async def require_current_task(database, user, project, policy):
-    await require_capability(database, user, "update")
-    if not current_task_assigned(project, user, policy):
-        raise HTTPException(403, "Only the employee assigned to the current stage may update this task")
+    await require_project(database, user, project, policy, "update")
 
 
 async def require_project(database, user, project, policy, action="view"):
@@ -92,13 +76,4 @@ async def eligible_staff(database):
         if await capability(database, staff, "view") and await capability(database, staff, "update"):
             result.append({"id": staff.id, "full_name": staff.full_name, "role": staff.role})
     return result
-
-
-async def validate_assignee(database, user_id):
-    if user_id is None:
-        return None
-    selected = next((row for row in await eligible_staff(database) if row["id"] == user_id), None)
-    if not selected:
-        raise HTTPException(422, "Assignee must be active and have Kitchen project view/update access")
-    return selected
 
