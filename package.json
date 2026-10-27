@@ -68,6 +68,7 @@
     "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@sentry/react-native": "~7.11.0",
+    "@vercel/speed-insights": "2.0.0",
     "date-fns": "4.1.0",
     "dayjs": "1.11.13",
     "expo": "~55.0.32",

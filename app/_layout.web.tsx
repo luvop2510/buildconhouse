@@ -1,6 +1,7 @@
 import { Stack } from "expo-router";
 import { useEffect } from "react";
 import { View } from "react-native";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 
 import { InitialAccountRouteProvider } from "@/src/state/initial-account-route";
 import { AuthProvider } from "@/src/state/auth";
@@ -36,6 +37,7 @@ export default function RootLayout() {
           <ToastHost />
         </AuthProvider>
       </InitialAccountRouteProvider>
+      <SpeedInsights />
     </View>
   );
 }
