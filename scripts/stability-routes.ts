@@ -43,7 +43,7 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
     ...['text', 'textarea', 'search', 'kitchen'].map(kind => `focused ${kind} indicator follows its outer field shape`),
   ],
   'redesign-kitchen-request-recovery.spec.ts': [
-    ...['quotation', 'order', 'production'].map(stage => `Kitchen ${stage} opens after a dropped read and Next reuses its receipt after a lost response`),
+    ...[true,false].flatMap(confirmed => ['quotation', 'order', 'production'].map(stage => `Kitchen ${stage} opens after a dropped read and Next ${confirmed?'confirms a saved stage':'reuses its receipt'} after a lost response`)),
   ],
   'redesign-keyboard-scroll.spec.ts': [
     'critical keyboard scroll: lower customer address retains focus and saves once without document pan',

@@ -103,8 +103,25 @@ export const kitchenProjectsApi = {
   list: (values: KitchenQuery, signal?: AbortSignal) => api.get<KitchenPage<KitchenProject>>(`/kitchen-projects${query(values)}`, { ...options, signal }),
   get: (id: string, signal?: AbortSignal) => api.get<KitchenProject>(`/kitchen-projects/${encodeURIComponent(id)}`, { ...options, signal }),
   create: (body: KitchenCreate) => api.post<KitchenProject>("/kitchen-projects", body, options),
-  command: (id: string, expectedVersion: number, key: string, command: KitchenCommand, payload: Record<string, unknown>) =>
-    api.post<KitchenProject>(`/kitchen-projects/${encodeURIComponent(id)}/commands`, { expected_version: expectedVersion, idempotency_key: key, command, payload }, options),
+  command: async (id: string, expectedVersion: number, key: string, command: KitchenCommand, payload: Record<string, unknown>) => {
+    try {
+      return await api.post<KitchenProject>(`/kitchen-projects/${encodeURIComponent(id)}/commands`, { expected_version: expectedVersion, idempotency_key: key, command, payload }, options);
+    } catch (error) {
+      // A lost Next response is uncertain, not proof the stage failed to save.
+      // Confirm only its requested state; never replay a business write here.
+      const status = (error as { status?: number })?.status;
+      if (command !== "move_stage" || ![408, 502, 503, 504].includes(status || 0)) throw error;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 3000);
+      try {
+        const saved = await api.get<KitchenProject>(`/kitchen-projects/${encodeURIComponent(id)}`, { ...options, signal: controller.signal });
+        if (saved.id === id && saved.version > expectedVersion && saved.stage === payload.target_stage) return saved;
+      } catch {
+        // Keep the original failure and receipt for an explicit safe retry.
+      } finally { clearTimeout(timer); }
+      throw error;
+    }
+  },
   customers: (search: string, page = 1, signal?: AbortSignal) => api.get<KitchenPage<KitchenCustomer>>(`/kitchen-projects/customers${query({ search, page, limit: 20 })}`, { ...options, signal }),
   assignees: (signal?: AbortSignal) => api.get<{ rows: KitchenAssignee[] }>("/kitchen-projects/assignees", { ...options, signal }),
 };

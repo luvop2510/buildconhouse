@@ -1,3 +1,4 @@
+import './test-kitchen-stage-reconciliation.mjs';
 import './test-kitchen-read-recovery.mjs';
 import './test-api-consumer-cancellation.mjs';
 import './test-ground-navigation-cache.mjs';

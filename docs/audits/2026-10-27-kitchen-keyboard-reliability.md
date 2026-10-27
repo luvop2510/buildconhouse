@@ -136,3 +136,22 @@ output directories; the two blur cases now wait for actual navigation restoratio
 rather than the header, which intentionally remains visible throughout editing.
 The six dropped-read/lost-response browser cases and six long-field/modal/keyboard
 cases also passed. The complete final audit is recorded separately once finished.
+
+## Final stage-response reconciliation
+
+For an uncertain move_stage response (408/502/503/504), the client makes one
+fresh floor-scoped authoritative read, bounded to three seconds. An exact project
+with a newer version at the requested stage may continue without another POST.
+Otherwise the original error and receipt remain for explicit retry. Payments,
+approval commands and authorization failures never enter this recovery path.
+This confirms current state, not which actor performed the move. Backend review
+accepted the provider pending/version guards and unchanged write semantics.
+Unit scenarios cover all eligible statuses, stale/wrong project/stage, stalled or
+failed reads, authorization failure and excluded financial/approval commands.
+The browser matrix now covers both automatic confirmation and explicit identical
+receipt retry for Quotation, Order and Production on each browser profile.
+
+Candidate 4200ca0f (`dpl_3enH12oaNY83yS9nuAgDT6CF3wDr`) settled READY despite
+a CLI observation read ETIMEDOUT. It is unpromoted and predates this reconciliation
+follow-up. Its CLI error was not a deployment failure. A new candidate is required
+for the final source. Production remains unchanged by this run.
