@@ -1,5 +1,25 @@
 # AGENTS.md — BuildCon House ERP (forge2.0)
 
+## Kitchen simplification and mobile keyboard — 2026-10-27
+
+Latest user instruction supersedes the older hidden-phone-chrome/full-contact
+Details contract. Mobile web keeps its header visible while editing; hidden bottom
+navigation stays mounted outside flex flow, leaving no reserved blank band. Preserve
+pointer/click settlement, focused node/drafts, container-only minimal reveal and
+pinch zoom. Shared web field focus rings follow the outer shell radius; do not
+restore a square inner-input outline or remove high-contrast focus. Do not scroll
+the document to reveal a field. Physical keyboards
+remain a separate device check.
+
+Kitchen keeps nine stages and explicit Previous/Next, top Actions on each project
+page, compact name/phone Details, search and paging. Remove the listed expanded
+contact/current-stage fields, filters, attention summaries and Order Original terms
+and documents display. Retain all stored history, private Actions documents and
+financial/approval semantics. Kitchen response hydration completes before command
+CAS; explicit retries reuse receipts. Only one failed Kitchen GET transport may
+retry within its original deadline; never replay writes automatically.
+See docs/audits/2026-10-27-kitchen-keyboard-reliability.md for evidence/limits.
+
 Guidance for any AI agent (Emergent, Claude Code, or otherwise) picking up work in this repo. Read this before re-deriving context from scratch — it's meant to save tokens, not replace judgment.
 
 ## Kitchen dashboard and universal customer search — 2026-10-27

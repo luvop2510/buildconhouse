@@ -38,3 +38,17 @@ Tile Orders spacing; Payments history, read concurrency and actor attribution;
 Ground navigation caching; Redis outage/invalidation recovery; additive read
 indexes and corresponding regression tests. Detailed findings and acceptance:
 docs/audits/2026-10-27-ground-floor-refinement.md.
+
+## Performance delta — 27 October 2026
+
+Shared auth reads now coalesce within revocation generations. Native/web GETs
+release transports once every consumer has canceled; surviving consumers remain
+independent. Best-effort timeline insertion has a one-second budget. Transactional
+financial audit paths are unchanged. No framework, dependency or architecture
+change. The latest user contract is recorded in AGENTS.md. Evidence:
+docs/audits/2026-10-27-kitchen-keyboard-reliability.md.
+
+Kitchen now keeps nine-stage navigation, explicit adjacent commands, compact
+Details and top Actions, with search/paging and no filter/attention UI. Mobile
+web focus retains the header and reclaims hidden navigation space. Shared field
+wrappers draw rounded focus rings, including a forced-colors fallback.
