@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Linking, Pressable, View } from "react-native";
+import { Linking, Pressable, ScrollView, View } from "react-native";
 import Feather from "@expo/vector-icons/Feather";
 import { Text } from "@/src/components/AppText";
 import { Alert, ErrorState, LoadingState, Sheet } from "@/src/components/ds";
@@ -12,7 +12,6 @@ import { Choice, displayDate, ErrorNotice, KitchenFloor, KitchenPage, KitchenPan
 import { KitchenDateField } from "./KitchenFilters";
 import { kitchenToday } from "./KitchenDates";
 import { LeadFields } from "./KitchenLeadFields";
-import { referrerLabel } from "@/src/utils/referrer";
 import { spacing } from "@/src/theme/tokens";
 import { KitchenButton as Button, KitchenTextField as TextField, kitchenColors as colors, kitchenType as type } from "./KitchenPrimitives";
 import { KitchenAssignment } from "./KitchenAssignment";
@@ -60,7 +59,7 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
     ]}><View style={{ minHeight: 44, minWidth: 44, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 8 }}><Text style={type.body}>Actions</Text><Feather name="more-horizontal" size={20} color={colors.onSurfaceSecondary} /></View></Menu> : undefined;
   if (parameter && !kitchenStage(parameter)) return <KitchenFloor><KitchenPage title="Kitchen" back={back}><ErrorState title="Stage unavailable" subtitle="Choose one of the nine Kitchen stages." /></KitchenPage></KitchenFloor>;
   return <KitchenFloor><KitchenPage title={STAGE_LABELS[selected]} back={back}
-    compactHeader right={project ? <Pressable accessibilityRole="button" accessibilityLabel="Project details" accessibilityState={{ expanded: detailsExpanded }} aria-expanded={detailsExpanded} testID="kitchen-project-details-toggle" onPress={() => setDetailsExpanded(value => !value)} style={{ minHeight: 44, minWidth: 44, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 8 }}><Text style={type.body}>Details</Text><Feather name={detailsExpanded ? "chevron-up" : "chevron-down"} size={16} color={colors.onSurfaceSecondary} /></Pressable> : undefined}
+    compactHeader right={project ? <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>{projectActions}<Pressable accessibilityRole="button" accessibilityLabel="Project details" accessibilityState={{ expanded: detailsExpanded }} aria-expanded={detailsExpanded} testID="kitchen-project-details-toggle" onPress={() => setDetailsExpanded(value => !value)} style={{ minHeight: 44, minWidth: 44, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 8 }}><Text style={type.body}>Details</Text><Feather name={detailsExpanded ? "chevron-up" : "chevron-down"} size={16} color={colors.onSurfaceSecondary} /></Pressable></View> : undefined}
     contentStyle={{ width: "100%", maxWidth: 1000, alignSelf: "center" }}>
     {failure ? <ErrorState title="Project unavailable" subtitle={failure} onRetry={reload} /> : null}
     {loading && !project ? <LoadingState label="Loading project…" /> : null}
@@ -69,25 +68,16 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
       {detailsExpanded ? <View testID="kitchen-project-details" style={{ gap: spacing.sm }}>
         <Text style={type.overline}>{project.project_reference || project.reference}{project.is_legacy ? " · Legacy project" : ""}</Text>
         <Text style={type.bodyStrong}>{[project.customer.name, project.customer.phone].filter(Boolean).join(" · ")}</Text>
-        <Text style={type.body} testID="kitchen-customer-current-stage">Current stage · {STAGE_LABELS[project.stage]}{project.status ? ` · ${project.status}` : ""}</Text>
-        <View testID="kitchen-customer-full-details" style={{ gap: 6 }}>
-          {([
-            ["Alternate phone", project.customer.alternate_phone], ["Email", project.customer.email],
-            ["Company", project.customer.company], ["Property", project.customer.property_name],
-            ["Address", project.customer.address], ["City", project.customer.city], ["State", project.customer.state],
-            ["Pincode", project.customer.pincode], ["GSTIN", project.customer.gstin], ["Customer notes", project.customer.notes],
-            ["Reference", project.customer.referrer_name || project.customer.referrer_id ? referrerLabel(project.customer) : null],
-            ["Assigned to", project.assigned_to_name], ["Target completion", project.target_completion_date ? displayDate(project.target_completion_date) : null],
-          ] as const).map(([label, value]) => <Text key={label} style={type.body}>{label}: {value || "Not recorded"}</Text>)}
-        </View>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
           <Button label="All stage records" icon="list" variant="secondary" onPress={() => setPanel("workflow")} testID="kitchen-customer-stage-records" />
           <Button label="Complete history" icon="clock" variant="secondary" onPress={() => setPanel("history")} testID="kitchen-customer-history" />
           <NavigationLink href={"/kitchen" as any} style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 8 }}><Text style={[type.bodyStrong, { color: colors.brand }]}>Dashboard</Text></NavigationLink>
         </View>
-        {projectActions}
-        {selected === project.stage && canUpdate ? <StageNavigation project={project} disabled={disabled} /> : null}
       </View> : null}
+      <ScrollView horizontal keyboardShouldPersistTaps="handled" showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={{ gap: spacing.sm }} testID="kitchen-project-stages" accessibilityLabel="Kitchen stages">
+        {KITCHEN_STAGES.map((stage, index) => <NavigationLink key={stage} href={path(`/stages/${stage}`) as any} testID={`kitchen-project-stage-${stage}`} accessibilityState={{ selected: selected === stage }} aria-current={selected === stage ? "page" : undefined} style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: spacing.md, borderWidth: 1, borderColor: selected === stage ? colors.brand : colors.border, borderRadius: 8, backgroundColor: selected === stage ? colors.brandTint : colors.surfaceSecondary }}><Text style={type.body}>{index + 1}. {STAGE_LABELS[stage]}</Text></NavigationLink>)}
+      </ScrollView>
+      {selected === project.stage && canUpdate ? <StageNavigation project={project} disabled={disabled} /> : null}
       {loading ? <Text style={type.caption}>Refreshing saved project…</Text> : null}
       <View testID="kitchen-save-status" style={{ minHeight: 19 }}>
         <Text accessibilityLiveRegion="polite" numberOfLines={1} style={[type.caption, { minHeight: 19 }]} testID={state.dirty ? "kitchen-unsaved-notice" : undefined}>{submission.busy ? "Saving…" : submission.error ? "Save failed · review and retry." : state.dirty ? "Unsaved changes · check the form below." : savedLabel}</Text>
@@ -96,7 +86,7 @@ export function KitchenProjectDetail({ page = "stage" }: { page?: ProjectPage })
       <ErrorNotice error={submission.error} stale={submission.stale} onReload={reload} />
       {held ? <Alert tone="warning" title={`Project ${project.lifecycle_status}`} description="The owner must resume the project before routine work can continue." /> : null}
       <View testID="kitchen-current-task-region" style={{ gap: spacing.lg, width: "100%", minWidth: 0 }}>
-        {selected !== project.stage ? <Alert tone="info" title="Stage records" description={future ? `Preview of ${STAGE_LABELS[selected]}. Open Details on the current stage to move this project.` : `This project is now in ${STAGE_LABELS[project.stage]}. Earlier records are read only.`} action={<Button label={actionLabel} variant="secondary" onPress={() => router.replace(path(`/stages/${project.stage}`) as any)} testID="kitchen-open-current-stage" />} /> : null}
+        {selected !== project.stage ? <Alert tone="info" title="Stage records" description={future ? `Preview of ${STAGE_LABELS[selected]}. Open the current stage to move this project.` : `This project is now in ${STAGE_LABELS[project.stage]}. Earlier records are read only.`} action={<Button label={actionLabel} variant="secondary" onPress={() => router.replace(path(`/stages/${project.stage}`) as any)} testID="kitchen-open-current-stage" />} /> : null}
         {!canUpdate ? <View testID="kitchen-read-only-notice"><Alert tone="info" title="View only" description="Changes and uploads require permission for this project's current stage." /></View> : null}
         {project.commercial_basis_invalidated ? <Alert tone="warning" title="Fresh commercial approvals required" description="Create and approve a new design version, then renew the quotation and order approvals. Earlier records remain in History." /> : null}
         {selected === "lead" ? <DuplicateReview project={project} disabled={disabled || Boolean(held)} /> : null}

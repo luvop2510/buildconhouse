@@ -6,7 +6,6 @@ import { KitchenTextField as TextField, kitchenColors as colors, kitchenType as 
 import { Menu } from "@/src/design/navigationControls";
 import { radius, spacing } from "@/src/theme/tokens";
 import { kitchenToday } from "./KitchenDates";
-import type { KitchenStage } from "@/src/api/kitchenProjects";
 
 /** A real disabled control; pointer, keyboard and accessibility state agree. */
 export function KitchenOption({ label, accessibilityLabel, active, disabled, onPress, testID }: { label: string; accessibilityLabel?: string; active?: boolean; disabled?: boolean; onPress: () => void; testID?: string }) {
@@ -49,8 +48,3 @@ function indiaDateTime(value: string) {
   if (!Number.isFinite(timestamp.getTime())) return "";
   return new Date(timestamp.getTime() + 330 * 60_000).toISOString().slice(0, 16);
 }
-
-export const KITCHEN_STAGE_STATUSES: Record<KitchenStage, string[]> = {
-  lead: ["New", "Contacted", "Qualified", "Lost"], visit: ["Scheduled", "Visited", "Follow-up Required"], cad: ["Not Started", "In Progress", "Completed"], design: ["Pending", "Approved", "Changes Required"], quotation: ["Pending", "Approved", "Changes Required", "Rejected"], order: ["Pending", "Confirmed", "On Hold", "Cancelled"], production: ["Not Started", "In Production", "Completed"], installation: ["Not Started", "In Progress", "Completed"], completed: ["Completed"],
-};
-export const KITCHEN_ATTENTION_LABELS: Record<string, string> = { active: "Active projects", on_hold: "On Hold", pending_approval: "Pending manager approvals", completion_overdue: "Completion overdue", active_order: "Active confirmed orders" };

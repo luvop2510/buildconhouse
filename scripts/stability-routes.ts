@@ -39,6 +39,25 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
     'failed font assets show recovery and a retry reload reaches the complete sign-in form',
     'a stalled font request reaches bounded recovery and late completion cannot reveal the form',
   ],
+  'redesign-input-focus-shape.spec.ts': [
+    ...['text', 'textarea', 'search', 'kitchen'].map(kind => `focused ${kind} indicator follows its outer field shape`),
+  ],
+  'redesign-kitchen-request-recovery.spec.ts': [
+    ...['quotation', 'order', 'production'].map(stage => `Kitchen ${stage} opens after a dropped read and Next reuses its receipt after a lost response`),
+  ],
+  'redesign-keyboard-scroll.spec.ts': [
+    'critical keyboard scroll: lower customer address retains focus and saves once without document pan',
+    'critical keyboard scroll: nested staff sheet keeps lower input mounted through resize and dismissal',
+    'critical keyboard scroll: oversized Kitchen notes scroll internally while the form stays anchored',
+  ],
+  'redesign-keyboard-no-gaps.spec.ts': [
+    ...[0, 40].map(pan => `critical keyboard has no hidden chrome gaps with viewport pan ${pan}`),
+  ],
+  'redesign-keyboard-viewport.spec.ts': [
+    'critical keyboard viewport: customer entries and save remain visible through keyboard and rotation',
+    'critical keyboard viewport: staff drawer scrolls focused lower fields and preserves Phone-only input',
+    'critical keyboard viewport: command search panel fits above the keyboard',
+  ],
   'redesign-mobile-workspace.spec.ts': [
     'critical mobile shell stays fixed while the customer page header scrolls with content',
     'critical navigation stays hidden throughout mobile search and returns on blur',

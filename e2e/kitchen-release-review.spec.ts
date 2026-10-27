@@ -60,12 +60,13 @@ test('All nine stages open with a compact header and the task visible before exp
     const details = page.getByTestId('kitchen-project-details-toggle');
     await expect(details).toHaveAttribute('aria-expanded', 'false');
     await expect(page.getByTestId('kitchen-project-details')).toHaveCount(0);
-    await expect(page.getByTestId('kitchen-stage-navigation')).toHaveCount(0);
-    await expect(page.getByTestId('kitchen-project-actions')).toHaveCount(0);
+    await expect(page.getByTestId('kitchen-stage-navigation')).toBeVisible();
+    await expect(page.getByTestId('kitchen-project-stages').getByRole('link')).toHaveCount(9);
+    await expect(page.getByTestId('kitchen-project-actions')).toBeVisible();
     const header = await page.getByTestId('kitchen-compact-header').boundingBox();
     expect(header!.height).toBeLessThanOrEqual(52);
     const task = await page.getByTestId('kitchen-current-task-region').boundingBox();
-    expect(task!.y, `${stage}: work begins within the first 200px`).toBeLessThan(200);
+    expect(task!.y, `${stage}: the task follows compact stage navigation within the first viewport`).toBeLessThan(page.viewportSize()!.height);
     await page.screenshot({ path: info.outputPath(`compact-${stage}.png`) });
     await details.click();
     await expect(page.getByTestId('kitchen-project-details')).toContainText(project.customer.name);
@@ -217,7 +218,7 @@ test('Retired Kitchen filters cannot hide a project and controls stay removed', 
   const read = await response;
   expect(read.ok(), await read.text()).toBe(true);
   const query = new URL(read.url()).searchParams;
-  expect(query.get('assignee')).toBe('unassigned');
+  expect(query.has('assignee')).toBe(false);
   expect(query.get('attention')).not.toBe('next_action_overdue');
   expect(query.get('sort')).not.toBe('next_action');
   expect(query.get('date_field')).not.toBe('deadline');
@@ -226,14 +227,8 @@ test('Retired Kitchen filters cannot hide a project and controls stay removed', 
   await expect(page.getByTestId(`kitchen-project-${project.id}`)).not.toContainText('next action');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   await page.screenshot({ path: info.outputPath('kitchen-queue-review.png'), fullPage: true });
-  await page.getByTestId('kitchen-filters-open').click();
-  await expect(page.getByText('Assigned person', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('Next action deadline', { exact: true })).toHaveCount(0);
-  // Date calendars now default to today. This case checks retired filters,
-  // so deliberately remove the independent date restriction for its undated fixture.
-  await page.getByTestId('kitchen-date-from').fill('');
-  await page.getByTestId('kitchen-date-to').fill('');
-  await page.getByTestId('kitchen-filters-apply').click();
+  await expect(page.getByTestId('kitchen-filters-open')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-filters')).toHaveCount(0);
   await page.getByTestId(`kitchen-project-${project.id}`).click();
   await expect(page.getByTestId('kitchen-current-task-region')).toBeVisible();
   await expect(page.getByTestId('kitchen-assign-save')).toHaveCount(0);

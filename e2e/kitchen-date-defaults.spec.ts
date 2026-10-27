@@ -92,9 +92,9 @@ test('Every Kitchen date entry point chooses India today when blank and preserve
   expect(project.production).toBeUndefined();
   expect(project.installation).toBeUndefined();
   await page.goto('/kitchen/stages/lead');
-  await page.getByTestId('kitchen-filters-open').click();
-  await todayDefault(page, 'kitchen-date-from');
-  await todayDefault(page, 'kitchen-date-to');
+  await expect(page.getByTestId('kitchen-filters-open')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-date-from')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-date-to')).toHaveCount(0);
 });
 
 test('Production and Installation select both dates on load without interaction and keep removed sections off the task', async ({ page, context }) => {

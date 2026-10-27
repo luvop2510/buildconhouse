@@ -142,8 +142,8 @@ test('Design and quotation selectors preserve version history, blank price and o
   await clickCommand(page, 'kitchen-order-status-save', 'order_status');
   await expect(page.getByTestId('kitchen-disclose-order-status')).toContainText('Status: Confirmed');
   const beforeView = writes.length;
-  await page.getByTestId('kitchen-disclose-order-details').click();
-  await select(page, 'kitchen-order-quotation-revision', 'Quotation 3 · Design v2 · Pending');
+  await expect(page.getByTestId('kitchen-disclose-order-details')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-order-quotation-revision')).toHaveCount(0);
   await expect(page.getByText('Order quotation: Quotation 1 · Design v1', { exact: true })).toBeVisible();
   expect(writes).toHaveLength(beforeView);
   await clickCommand(page, 'kitchen-advance-production', 'move_stage');

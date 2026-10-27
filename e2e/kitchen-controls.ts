@@ -7,8 +7,6 @@ export async function expandProjectDetails(page: Page) {
   if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
 }
 export async function projectControl(page: Page, id: string) {
-  if (id === 'kitchen-project-actions' || id === 'kitchen-convert' || id === 'kitchen-previous-stage'
-    || /^kitchen-advance-(visit|cad|design|quotation|order|production|installation|completed)$/.test(id)) await expandProjectDetails(page);
   return page.getByTestId(id);
 }
 

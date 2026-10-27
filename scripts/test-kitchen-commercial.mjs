@@ -217,11 +217,10 @@ view = view.refresh();
 await view.control('kitchen-order-confirm').props.onPress();
 assert.equal(calls.pop()[1].quotation_version_id, quotation.id, 'An older valid quotation can be explicitly selected for the order');
 view = render('order', { design_versions: [design, design2], quotation_versions: [quotation, quote2], orders: [order] }, { 'order.details.expanded': true });
-view.control('kitchen-order-quotation-revision').props.onChange(quote2.id);
-view = view.refresh();
+assert.equal(view.control('kitchen-disclose-order-details'), undefined, 'Order no longer displays Original terms and documents');
+assert.equal(view.control('kitchen-order-quotation-revision'), undefined, 'Recorded order has no redundant original-quotation selector');
 assert.match(view.text, /Order quotation: Quotation 1 · Design v1/);
-assert.match(view.text, /Selected quotation: Quotation 7 · Design v2/);
-assert.equal(calls.length, 0, 'Historical quote viewing never changes the saved order');
+assert.equal(calls.length, 0, 'Removing display details does not change the saved order');
 for (const stage of ['production', 'installation']) {
   view = render(stage, { design_versions: [design, design2], quotation_versions: [quotation, quote2], orders: [order] });
   assert.match(view.text, /Quotation 1 · Design v1/, 'Downstream context follows the saved order IDs, not the latest design');

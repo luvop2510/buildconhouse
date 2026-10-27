@@ -162,7 +162,7 @@ for (const metric of ['expiring'] as const) {
       await expect.poll(() => queries.at(-1)?.get('q')).toBe('Held press search');
       await page.getByRole('button', { name: 'Summary', exact: true }).click();
       await search.focus();
-      await expect(chrome).toBeHidden();
+      await expect(chrome).toBeVisible();
       const expiring = page.getByRole('button', { name: /^Expiring Soon:/ });
       await expiring.scrollIntoViewIfNeeded();
       const beforePress = await expiring.boundingBox();
@@ -172,7 +172,7 @@ for (const metric of ['expiring'] as const) {
       try {
         // Intentional gesture duration, beyond the existing 150ms blur delay.
         await page.waitForTimeout(250);
-        await expect(chrome).toBeHidden();
+        await expect(chrome).toBeVisible();
         const duringPress = await expiring.boundingBox();
         expect(duringPress?.y).toBeCloseTo(beforePress!.y, 0);
       } finally {

@@ -32,14 +32,7 @@ test('Kitchen panels keep padded fields and every stage reachable in a short vie
   expect(submit!.y + submit!.height).toBeLessThanOrEqual(leadPanel!.y + leadPanel!.height);
   await page.screenshot({ path: info.outputPath('add-lead-panel.png') });
   await page.getByTestId('kitchen-create-sheet-close').click();
-  await page.getByTestId('kitchen-filters-open').click();
-  const filters = page.getByTestId('kitchen-filters');
-  await page.getByTestId('kitchen-filters-apply').scrollIntoViewIfNeeded();
-  const panel = await filters.boundingBox();
-  const apply = await page.getByTestId('kitchen-filters-apply').boundingBox();
-  expect(apply!.x - panel!.x, 'Filter controls have an inner gutter').toBeGreaterThanOrEqual(16);
-  expect(apply!.y + apply!.height, 'Apply remains within the visible panel').toBeLessThanOrEqual(panel!.y + panel!.height);
-  await page.getByTestId('kitchen-filters-apply').click();
+  await expect(page.getByTestId('kitchen-filters-open')).toHaveCount(0);
   const created = await context.request.post('/api/kitchen-projects', { headers, data: { customer_id: process.env.KITCHEN_E2E_CUSTOMER_ID, idempotency_key: `panel-scroll-${Date.now()}-${Math.random()}`, lead: { site_location: 'Panel reachability check' } } });
   expect(created.ok()).toBe(true);
   const project = await created.json();
@@ -134,7 +127,7 @@ test('retired view bookmarks use the compact list through width changes', async 
   await health.assertHealthy();
 });
 
-test('stage filters use status choices and calendar inputs; navigation stays within the nine queues', async ({ page }, testInfo) => {
+test('Kitchen has no filters and navigation stays within the nine queues', async ({ page }, testInfo) => {
   const health = captureRuntimeHealth(page);
   const pending = new Set<import('@playwright/test').Request>();
   let activity = Date.now();
@@ -144,29 +137,11 @@ test('stage filters use status choices and calendar inputs; navigation stays wit
   const settle = () => expect.poll(() => pending.size === 0 && Date.now() - activity >= 150, { timeout: 10000 }).toBe(true);
   await seedBrowser(page);
   await page.goto('/kitchen/stages/visit');
-  await page.getByTestId('kitchen-filters-open').click();
-  await page.getByTestId('kitchen-status-filter').click();
-  await expect(page.getByRole('menuitem', { name: 'Visited', exact: true })).toBeVisible();
-  await expect(page.getByRole('menuitem', { name: 'Qualified', exact: true })).toHaveCount(0);
-  await page.getByRole('menuitem', { name: 'Visited', exact: true }).click();
-  await expect(page.getByTestId('kitchen-date-from')).toHaveAttribute('type', 'date');
-  await expect(page.getByTestId('kitchen-date-to')).toHaveAttribute('type', 'date');
-  for (const id of ['kitchen-date-from', 'kitchen-date-to']) {
-    const size = await page.getByTestId(id).boundingBox();
-    expect(size?.height, 'Calendar hit target is comfortable').toBeGreaterThanOrEqual(44);
-    expect(size?.height, 'Calendar line height uses CSS pixels, not a unitless multiplier').toBeLessThan(64);
-  }
-  await page.getByTestId('kitchen-date-from').fill('2026-10-21');
-  await page.getByTestId('kitchen-date-to').fill('2026-10-20');
-  await expect(page.getByTestId('kitchen-filters-apply')).toBeDisabled();
-  await page.getByTestId('kitchen-date-to').fill('2026-10-22');
-  await page.screenshot({ path: testInfo.outputPath('stage-aware-filters.png') });
-  await page.getByTestId('kitchen-filters-apply').click();
-  await expect(page).toHaveURL(current => current.searchParams.get('status') === 'Visited' && current.searchParams.get('date_from') === '2026-10-21');
-  await settle();
+  await expect(page.getByTestId('kitchen-filters-open')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-status-filter')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-date-from')).toHaveCount(0);
   const queueRead = page.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === '/api/kitchen-projects' && new URL(response.url()).searchParams.get('stage') === 'design');
-  await page.getByTestId('kitchen-stage-navigation').click();
-  await page.getByRole('menuitem', { name: '4. Design', exact: true }).click();
+  await page.getByTestId('kitchen-queue-stage-design').click();
   await expect(page).toHaveURL(/\/kitchen\/stages\/design$/);
   const response = await queueRead;
   expect(response.ok()).toBeTruthy();
@@ -325,21 +300,24 @@ test('Kitchen mobile input and blur taps preserve the form viewport and select t
   const before = await scroll.boundingBox();
   const restingField = await field.boundingBox();
   await field.fill('Entered value remains in place');
-  await expect(page.getByTestId('mobile-workspace-header')).toBeHidden();
+  await expect(page.getByTestId('mobile-workspace-header')).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Primary', exact: true })).toBeHidden();
-  expect(await scroll.boundingBox(), 'Focusing an input must not resize or move its scroll viewport').toEqual(before);
+  const editingViewport = await scroll.boundingBox();
+  expect(editingViewport!.y, 'Focusing keeps the form top anchored').toBe(before!.y);
+  expect(editingViewport!.height, 'Hidden navigation gives its space to the form').toBeGreaterThan(before!.height);
   const inputBeforeBlur = await field.boundingBox();
   expect(Math.abs(inputBeforeBlur!.y - restingField!.y), 'Typing the first dirty value must not move the field').toBeLessThan(2);
   await page.getByText('Site location (required)', { exact: true }).click();
   await expect(page.getByTestId('mobile-workspace-header')).toBeVisible();
-  expect(await scroll.boundingBox(), 'Restoring navigation must not resize or move the form').toEqual(before);
+  await expect(page.getByRole('navigation', { name: 'Primary', exact: true })).toBeVisible();
+  await expect.poll(() => scroll.boundingBox(), { message: 'Dismissal restores the resting viewport after the tap settles' }).toEqual(before);
   expect(Math.abs((await field.boundingBox())!.y - inputBeforeBlur!.y), 'A tap outside the input keeps its vertical position').toBeLessThan(2);
   await expect(field).toHaveValue('Entered value remains in place');
   // Model the reduced usable browser height while a phone keyboard is open.
   await page.setViewportSize({ width: 390, height: 550 });
   await field.focus();
   await field.scrollIntoViewIfNeeded();
-  await expect(page.getByTestId('mobile-workspace-header')).toBeHidden();
+  await expect(page.getByTestId('mobile-workspace-header')).toBeVisible();
   expect((await scroll.boundingBox())!.height, 'The keyboard viewport retains a usable form area').toBeGreaterThan(300);
   await page.screenshot({ path: info.outputPath('mobile-form-short-editing-viewport.png') });
   await field.blur();

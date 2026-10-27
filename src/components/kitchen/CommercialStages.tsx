@@ -130,15 +130,7 @@ function StageForms({ project, stage, disabled, command }: CommercialProps) {
           <Button label="Save order status" disabled={statusLocked || !orderStatusReason.trim()} onPress={() => command("order_status", { status: orderStatus, reason: orderStatusReason })} testID="kitchen-order-status-save" />
         </Disclosure> : order ? <Text style={type.caption}>Status: {order.status}</Text> : null}
         {active && order ? <OrderEditor project={project} order={order} disabled={disabled || !active} command={command} /> : null}
-        {order ? <Disclosure draftKey={`${draftCycle}.order.details`} label="Original terms and documents" testID="kitchen-disclose-order-details">
-          {project.quotation_versions?.length ? <KitchenSelect label="View quotation" value={quote?.id || ""} options={project.quotation_versions.map(row => ({ value: row.id, label: `Quotation ${row.number} · Design v${project.design_versions?.find(design => design.id === row.design_version_id)?.number ?? "unavailable"} · ${row.response}` }))} onChange={setQuoteView} testID="kitchen-order-quotation-revision" /> : null}
-          <Text style={type.caption}>Selected quotation: {quote ? `Quotation ${quote.number} · Design v${quoteDesign?.number ?? "unavailable"} · ${rupees(quote.amount)} · ${quote.response}` : "Not yet recorded"}</Text>
-          <KitchenDetails items={[
-            { label: "Original quotation amount", value: rupees(order.original_amount) },
-            ...(order.confirmation_document_id ? [{ label: "Confirmation document", value: project.attachments?.find(file => file.id === order.confirmation_document_id)?.filename || "Saved project attachment" }] : []),
-            ...(!active ? [{ label: "Order date", value: displayDate(order.order_date) }, ...(order.notes ? [{ label: "Internal notes", value: order.notes }] : [])] : []),
-          ]} />
-        </Disclosure> : null}
+
 
       </KitchenPanel>
       {preview || active && order?.advance.received ? approval("production") : null}

@@ -47,7 +47,7 @@ test('critical navigation stays hidden throughout mobile search and returns on b
   await expect(page.getByTestId('customer-mobile-2')).toBeVisible();
   if (phone) {
     await expect(navigation).toBeHidden();
-    await expect(workspace).toBeHidden();
+    await expect(workspace).toBeVisible();
     await input.press('Backspace');
     await expect(navigation).toBeHidden();
     const viewport = page.viewportSize()!;

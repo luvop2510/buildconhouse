@@ -567,6 +567,7 @@ const pageScreenLayout = ({ children }: { children: React.ReactNode }) => <Start
 export default function AdminLayout() {
   const { isPhone } = useBp();
   const inputActive = useInputActive();
+  const hidePhoneHeader = inputActive && Platform.OS !== "web";
   const builderSegments = useResolvedFloorSegments();
   const focusedQuotation = builderSegments.includes("quotations") && builderSegments.includes("new");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -610,12 +611,12 @@ export default function AdminLayout() {
           <FloorAccessGate><CustomAccessRouteGate>
             {isPhone && !focusedQuotation ? <View
               testID="mobile-workspace-header"
-              pointerEvents={inputActive ? "none" : "auto"}
-              accessibilityElementsHidden={inputActive}
-              importantForAccessibility={inputActive ? "no-hide-descendants" : "auto"}
-              aria-hidden={inputActive}
+              pointerEvents={hidePhoneHeader ? "none" : "auto"}
+              accessibilityElementsHidden={hidePhoneHeader}
+              importantForAccessibility={hidePhoneHeader ? "no-hide-descendants" : "auto"}
+              aria-hidden={hidePhoneHeader}
               style={{ flexShrink: 0, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4,
-                ...(inputActive ? { opacity: 0, ...(Platform.OS === "web" ? { visibility: "hidden" } : {}) } : {}),
+                ...(hidePhoneHeader ? { opacity: 0 } : {}),
               } as ViewStyle}
             ><FloorSwitcher /></View> : null}
             <Slot {...({ screenLayout: pageScreenLayout } as React.ComponentProps<typeof Slot>)} />

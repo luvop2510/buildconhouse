@@ -1,11 +1,12 @@
 import { defineConfig, devices } from '@playwright/test';
+const baseURL = `http://127.0.0.1:${process.env.FORGE_STABILITY_PORT || '8099'}`;
 
 // The push gate covers every discovered page, populated-data crash regressions,
 // update recovery and session navigation on real browser engines.
 export default defineConfig({
   testDir: './e2e',
   // Transfer timeout recovery is a required populated stock workflow.
-  testMatch: ['redesign-tile-purchase-images.spec.ts', 'redesign-sanitary-sales.spec.ts', 'redesign-godown-transfer-retry.spec.ts', 'redesign-backend-startup.spec.ts', 'redesign-quotation-workspace.spec.ts', 'redesign-font-readiness.spec.ts', 'redesign-mobile-startup.spec.ts', 'redesign-mobile-workspace.spec.ts', 'redesign-mobile-filters.spec.ts', 'redesign-mobile-payments.spec.ts', 'redesign-mobile-summary.spec.ts', 'app-audit.spec.ts', 'redesign-runtime-stability.spec.ts', 'redesign-followup-notes.spec.ts', 'redesign-sanitary-followups.spec.ts', 'redesign-payments.spec.ts', 'responsive-shared-floor-navigation.spec.ts', 'responsive-customer-quotation.spec.ts', 'redesign-session-recovery.spec.ts', 'runtime-health-guard.spec.ts', 'responsive-navigation-recovery.spec.ts', 'redesign-release-recovery.spec.ts'],
+  testMatch: ['redesign-input-focus-shape.spec.ts', 'redesign-kitchen-request-recovery.spec.ts', 'redesign-keyboard-scroll.spec.ts', 'redesign-keyboard-no-gaps.spec.ts', 'redesign-keyboard-viewport.spec.ts', 'redesign-tile-purchase-images.spec.ts', 'redesign-sanitary-sales.spec.ts', 'redesign-godown-transfer-retry.spec.ts', 'redesign-backend-startup.spec.ts', 'redesign-quotation-workspace.spec.ts', 'redesign-font-readiness.spec.ts', 'redesign-mobile-startup.spec.ts', 'redesign-mobile-workspace.spec.ts', 'redesign-mobile-filters.spec.ts', 'redesign-mobile-payments.spec.ts', 'redesign-mobile-summary.spec.ts', 'app-audit.spec.ts', 'redesign-runtime-stability.spec.ts', 'redesign-followup-notes.spec.ts', 'redesign-sanitary-followups.spec.ts', 'redesign-payments.spec.ts', 'responsive-shared-floor-navigation.spec.ts', 'responsive-customer-quotation.spec.ts', 'redesign-session-recovery.spec.ts', 'runtime-health-guard.spec.ts', 'responsive-navigation-recovery.spec.ts', 'redesign-release-recovery.spec.ts'],
   timeout: 30_000,
   workers: 2,
   retries: 0,
@@ -14,12 +15,12 @@ export default defineConfig({
   reporter: [['list'], ['json', { outputFile: 'output/playwright/stability-results.json' }]],
   outputDir: 'output/playwright/stability',
   use: {
-    baseURL: 'http://127.0.0.1:8099',
+    baseURL,
     screenshot: 'only-on-failure', trace: 'retain-on-failure', serviceWorkers: 'block',
   },
   webServer: {
     command: 'node scripts/serve-stability.mjs',
-    url: 'http://127.0.0.1:8099/login', reuseExistingServer: false,
+    url: `${baseURL}/login`, reuseExistingServer: false,
   },
   projects: [
     { name: 'android-chrome', use: { ...devices['Pixel 7'], browserName: 'chromium' } },

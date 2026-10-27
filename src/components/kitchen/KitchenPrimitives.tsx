@@ -58,7 +58,7 @@ export function KitchenTextField({ label, error, helper, containerStyle, style, 
   useLayoutEffect(resizeWeb, [resizeWeb, props.value, props.defaultValue]);
   return <View style={[{ gap: 8, minWidth: 0 }, containerStyle]}>
     {label ? <Text nativeID={`${id}-label`} style={kitchenType.label}>{label}</Text> : null}
-    <View style={{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, borderWidth: 1, borderColor: error ? kitchenColors.error : focused ? kitchenColors.focusRing : kitchenColors.controlBorder, borderRadius: 8, backgroundColor: props.editable === false ? kitchenColors.surface : kitchenColors.surfaceSecondary }}>
+    <View {...(Platform.OS === "web" ? { dataSet: { fieldShell: "true" } } : {})} style={{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, borderWidth: 1, borderColor: error ? kitchenColors.error : focused ? kitchenColors.focusRing : kitchenColors.controlBorder, borderRadius: 8, backgroundColor: props.editable === false ? kitchenColors.surface : kitchenColors.surfaceSecondary }}>
       {leftIcon ? <Feather accessible={false} name={leftIcon} size={18} color={kitchenColors.onSurfaceMuted} /> : null}
       <TextInput {...props} ref={input} numberOfLines={props.multiline ? 1 : props.numberOfLines} scrollEnabled={props.multiline ? true : props.scrollEnabled}
         accessibilityLabel={props.accessibilityLabel || label || props.placeholder} aria-labelledby={label ? `${id}-label` : undefined}

@@ -26,7 +26,8 @@ if (!__DEV__ && BASE && !BASE.startsWith("https://")) {
 const TOKEN_KEY = "forge.jwt";
 const TOKEN_KIND_KEY = "forge.jwt.kind"; // "staff" | "customer"
 const REQUEST_TIMEOUT_MS = 30_000;
-const inflightGets = new Map<string, Promise<unknown>>();
+type SharedGet = { key: string; promise: Promise<unknown>; controller: AbortController; consumers: number; settled: boolean };
+const inflightGets = new Map<string, SharedGet>();
 const responseCache = new Map<string, { expiresAt: number; value: unknown }>();
 const MAX_RESPONSE_CACHE_ENTRIES = 64;
 
@@ -147,14 +148,28 @@ export class ApiError extends Error {
 
 type RequestOptions = { floorId?: string; signal?: AbortSignal; cacheMs?: number };
 
-/** A shared GET owns its transport; each screen only owns its own wait. */
-function abortForConsumer<T>(pending: Promise<T>, signal?: AbortSignal): Promise<T> {
-  if (!signal) return pending;
-  if (signal.aborted) return Promise.reject(new DOMException("Request cancelled by this screen.", "AbortError"));
+/** Keep shared reads alive only while at least one consumer still needs them. */
+function abortForConsumer<T>(pending: SharedGet, signal?: AbortSignal): Promise<T> {
+  pending.consumers += 1;
   return new Promise<T>((resolve, reject) => {
-    const abort = () => reject(new DOMException("Request cancelled by this screen.", "AbortError"));
-    signal.addEventListener("abort", abort, { once: true });
-    pending.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+    let finished = false;
+    const release = () => {
+      if (finished) return;
+      finished = true;
+      signal?.removeEventListener("abort", abort);
+      pending.consumers -= 1;
+      if (!pending.settled && pending.consumers === 0) {
+        if (inflightGets.get(pending.key) === pending) inflightGets.delete(pending.key);
+        pending.controller.abort();
+      }
+    };
+    const abort = () => {
+      release();
+      reject(new DOMException("Request cancelled by this view.", "AbortError"));
+    };
+    if (signal?.aborted) abort();
+    else signal?.addEventListener("abort", abort, { once: true });
+    pending.promise.then(value => { release(); resolve(value as T); }, error => { release(); reject(error); });
   });
 }
 
@@ -188,14 +203,26 @@ async function request<T>(method: string, path: string, body?: any, opts?: Reque
   }
 
   try {
-    const res = await fetch(`${BASE}/api${path}`, {
-      method,
-      headers,
-      body: multipart ? body as FormData : body ? JSON.stringify(body) : undefined,
-      signal: controller.signal,
-    });
-
-    const text = await res.text();
+    const readTransport = async (retry: boolean): Promise<{ response: Response; text: string }> => {
+      try {
+        const response = await fetch(`${BASE}/api${path}`, {
+          method, headers, body: multipart ? body as FormData : body ? JSON.stringify(body) : undefined,
+          signal: controller.signal,
+        });
+        return { response, text: await response.text() };
+      } catch (error) {
+        if (!retry || !(error instanceof TypeError) || controller.signal.aborted) throw error;
+        // Recover one dropped Kitchen read within its original deadline. Writes
+        // retain their explicit idempotency-key retry instead of being replayed.
+        await new Promise<void>((resolve, reject) => {
+          const abort = () => { clearTimeout(timer); reject(new DOMException("Request cancelled.", "AbortError")); };
+          const timer = setTimeout(() => { controller.signal.removeEventListener("abort", abort); resolve(); }, 150);
+          controller.signal.addEventListener("abort", abort, { once: true });
+        });
+        return readTransport(false);
+      }
+    };
+    const { response: res, text } = await readTransport(method === "GET" && path.startsWith("/kitchen-projects"));
     let data: unknown = null;
     if (text) {
       try {
@@ -244,7 +271,7 @@ async function mutate<T>(method: string, path: string, body?: unknown, opts?: Re
 
 export const api = {
   get: <T>(p: string, opts?: RequestOptions) => {
-    if (opts?.signal?.aborted) return abortForConsumer(Promise.resolve(undefined as T), opts.signal);
+    if (opts?.signal?.aborted) return Promise.reject(new DOMException("Request cancelled by this view.", "AbortError"));
     // Coalesce overlapping reads. Ground list navigation also has a brief,
     // mutation-invalidated reuse window; editable details stay fresh.
     const key = `${opts?.floorId ?? floorCache ?? "auto"}:${p}`;
@@ -259,17 +286,20 @@ export const api = {
     }
     if (cached) responseCache.delete(key);
     const existing = inflightGets.get(key);
-    if (existing) return abortForConsumer(existing as Promise<T>, opts?.signal);
-    // Do not pass a consumer's signal to the shared transport. Otherwise one
-    // unmount cancels every component waiting for this resource.
-    const pending = request<T>("GET", p, undefined, { ...opts, signal: undefined })
+    if (existing) return abortForConsumer<T>(existing, opts?.signal);
+    const controller = new AbortController();
+    const shared: SharedGet = { key, promise: Promise.resolve(), controller, consumers: 0, settled: false };
+    shared.promise = request<T>("GET", p, undefined, { ...opts, signal: controller.signal })
       .then((value) => {
-        if (cacheVersion === readCacheVersion && cacheMs > 0) cacheResponse(key, value, cacheMs);
+        if (!controller.signal.aborted && cacheVersion === readCacheVersion && cacheMs > 0) cacheResponse(key, value, cacheMs);
         return value;
       })
-      .finally(() => { if (inflightGets.get(key) === pending) inflightGets.delete(key); });
-    inflightGets.set(key, pending);
-    return abortForConsumer(pending, opts?.signal);
+      .finally(() => {
+        shared.settled = true;
+        if (inflightGets.get(key) === shared) inflightGets.delete(key);
+      });
+    inflightGets.set(key, shared);
+    return abortForConsumer<T>(shared, opts?.signal);
   },
   post: <T>(p: string, b?: any, opts?: RequestOptions) => { return mutate<T>("POST", p, b, opts); },
   put: <T>(p: string, b?: any, opts?: RequestOptions) => { return mutate<T>("PUT", p, b, opts); },

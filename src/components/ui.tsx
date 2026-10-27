@@ -457,7 +457,7 @@ export function TextField({
   return (
     <View style={[{ gap: 6 }, containerStyle]}>
       {label ? <Text style={type.label}>{label}</Text> : null}
-      <View style={{
+      <View {...(Platform.OS === "web" ? { dataSet: { fieldShell: "true" } } : {})} style={{
         flexDirection: "row", alignItems: "center",
         backgroundColor: colors.surfaceSecondary,
         borderWidth: 1,
@@ -501,7 +501,7 @@ export function TextField({
 export function SearchField({ onClear, ...props }: TextInputProps & { onClear?: () => void }) {
   const hasValue = typeof props.value === "string" && props.value.length > 0;
   return (
-    <View style={{
+    <View {...(Platform.OS === "web" ? { dataSet: { fieldShell: "true" } } : {})} style={{
       flexDirection: "row", alignItems: "center",
       backgroundColor: colors.surfaceTertiary,
         borderRadius: radius.xl,

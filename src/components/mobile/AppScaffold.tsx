@@ -37,8 +37,8 @@ export function AppScaffold({
         accessibilityElementsHidden={bottomNavigationHidden}
         importantForAccessibility={bottomNavigationHidden ? "no-hide-descendants" : "auto"}
         aria-hidden={bottomNavigationHidden}
-        // Retain its space while editing so blur never moves the form or its tap target.
-        style={[{ backgroundColor: color.canvas, borderTopWidth: layout.hairline, borderTopColor: color.line }, bottomNavigationHidden ? { opacity: 0, ...(Platform.OS === "web" ? { visibility: "hidden" } : {}) } as ViewStyle : null]}
+        // Keep its DOM mounted, but let web forms use the space above the keyboard.
+        style={[{ backgroundColor: color.canvas, borderTopWidth: layout.hairline, borderTopColor: color.line }, bottomNavigationHidden ? { opacity: 0, ...(Platform.OS === "web" ? { visibility: "hidden", position: "absolute", top: "100%", left: 0, right: 0 } : {}) } as ViewStyle : null]}
       >
         {bottomNavigation}
       </SafeAreaView> : null}

@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+const baseURL = `http://127.0.0.1:${process.env.FORGE_PERFORMANCE_PORT || '8098'}`;
 
 // Serve the release export without any API proxy. The performance fixtures
 // model API latency; no account, business data or external host is contacted.
@@ -13,14 +14,14 @@ export default defineConfig({
   reporter: [['list'], ['json', { outputFile: process.env.PERFORMANCE_REPORT || 'output/playwright/performance-results.json' }]],
   outputDir: 'output/playwright/performance',
   use: {
-    baseURL: 'http://127.0.0.1:8098',
+    baseURL,
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
     serviceWorkers: 'block',
   },
   webServer: {
     command: 'node scripts/serve-performance.mjs',
-    url: 'http://127.0.0.1:8098/login',
+    url: `${baseURL}/login`,
     reuseExistingServer: false,
   },
   projects: [

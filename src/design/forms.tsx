@@ -27,6 +27,7 @@ export const Input = React.forwardRef<TextInput, React.ComponentProps<typeof Tex
   invalid = invalid || field.invalid;
   return (
     <View
+      {...(Platform.OS === "web" ? { dataSet: { fieldShell: "true" } } : {})}
       style={[
         {
           flexDirection: "row", alignItems: "center", gap: 10,

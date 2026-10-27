@@ -83,23 +83,8 @@ test('Dashboard shows all nine authoritative stage totals and opens the matching
   await page.getByTestId('kitchen-dashboard-refresh').click();
   await expect(page.getByTestId('kitchen-dashboard-count-lead')).toHaveText(String((snapshot.stage_customer_counts || snapshot.stage_counts).lead - 1));
   await expect(page.getByTestId('kitchen-dashboard-count-visit')).toHaveText(String((snapshot.stage_customer_counts || snapshot.stage_counts).visit + 1));
-  projects[1] = await command(context.request, projects[1], 'metadata', { target_completion_date: '2000-01-01' });
-  projects[2] = await command(context.request, projects[2], 'order_status', { status: 'On Hold', reason: 'Synthetic scheduling hold' });
-  await dashboard(page);
-  const attention = await (await context.request.get('/api/kitchen-projects/dashboard', { headers })).json();
-  for (const [filter, field, project] of [
-    ['completion_overdue', 'completion_overdue_projects', projects[1]],
-    ['on_hold', 'on_hold_projects', projects[2]],
-  ] as const) {
-    const tile = page.getByTestId(`kitchen-dashboard-attention-${filter}`);
-    await expect(tile).toHaveAccessibleName(new RegExp(`: ${attention[field]} projects$`));
-    await tile.click();
-    await expect(page).toHaveURL(new RegExp(`/kitchen/projects\\?attention=${filter}`));
-    await expect(page.getByTestId(`kitchen-project-${project.id}`)).toBeVisible();
-    const listed = await (await context.request.get(`/api/kitchen-projects?attention=${filter}`, { headers })).json();
-    expect(listed.total).toBe(attention[field]);
-    await dashboard(page);
-  }
+  await expect(page.getByText('Needs attention', { exact: true })).toHaveCount(0);
+  await expect(page.locator('[data-testid^="kitchen-dashboard-attention-"]')).toHaveCount(0);
   await health.assertHealthy();
 });
 
@@ -119,7 +104,8 @@ test('Mobile stage hub and customer fields remain usable at narrow widths, rotat
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     await page.getByTestId('kitchen-dashboard-stage-lead').click();
     await page.getByTestId(`kitchen-project-${project.id}`).click();
-    await expect(page.getByTestId('kitchen-project-details')).toContainText(project.customer.email);
+    await expect(page.getByTestId('kitchen-project-details')).toContainText(project.customer.name);
+    await expect(page.getByTestId('kitchen-project-details')).not.toContainText(project.customer.email);
     await expect(page.getByTestId('kitchen-lead-site_location')).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   }
@@ -135,7 +121,7 @@ test('Mobile stage hub and customer fields remain usable at narrow widths, rotat
   await health.assertHealthy();
 });
 
-test('Universal search crosses stage queues, opens complete customer details and saves the selected record', async ({ page, context }, info) => {
+test('Universal search crosses stage queues, opens compact customer identity and saves the selected record', async ({ page, context }, info) => {
   const marker = randomUUID();
   let project = await create(context.request, `Literal [customer] ${marker}`, true);
   project = await command(context.request, project, 'move_stage', { target_stage: 'visit' });
@@ -157,9 +143,11 @@ test('Universal search crosses stage queues, opens complete customer details and
   await expect(page).toHaveURL(new RegExp(`/kitchen/${project.id}/stages/visit\\?`));
   const details = page.getByTestId('kitchen-project-details');
   await expect(details).toBeVisible();
-  for (const field of ['name', 'phone', 'email', 'address', 'company', 'property_name', 'city', 'state', 'pincode', 'alternate_phone', 'notes']) {
-    await expect(details).toContainText(project.customer[field]);
-  }
+  for (const field of ['name', 'phone']) await expect(details).toContainText(project.customer[field]);
+  for (const field of ['email', 'address', 'company', 'property_name', 'city', 'state', 'pincode', 'alternate_phone', 'notes']) await expect(details).not.toContainText(project.customer[field]);
+  await expect(page.getByTestId('kitchen-customer-current-stage')).toHaveCount(0);
+  await expect(page.getByTestId('kitchen-project-actions')).toBeVisible();
+  await expect(page.getByTestId('kitchen-project-stages').getByRole('link')).toHaveCount(9);
   await page.getByTestId('kitchen-visit-notes').fill(`Changed from global search ${marker}`);
   await page.getByTestId('kitchen-visit-save').click();
   await expect.poll(async () => {
@@ -183,7 +171,7 @@ test('Universal search crosses stage queues, opens complete customer details and
   await page.getByTestId('kitchen-universal-search').fill(updated.email);
   await expect(page.getByTestId(`kitchen-search-project-${project.id}`)).toContainText(updated.name);
   await page.getByTestId(`kitchen-search-project-${project.id}`).click();
-  for (const value of Object.values(updated)) await expect(page.getByTestId('kitchen-project-details')).toContainText(value);
+  for (const value of [updated.name, updated.phone]) await expect(page.getByTestId('kitchen-project-details')).toContainText(value);
   await expect(page.getByTestId('kitchen-visit-notes')).toHaveValue(`Changed from global search ${marker}`);
   await page.getByTestId('kitchen-page-back').click();
   await expect(page).toHaveURL(/\/kitchen$/);

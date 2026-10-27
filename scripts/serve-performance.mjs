@@ -8,5 +8,5 @@ const root = resolve('output/performance-export');
 await rm(root, { recursive: true, force: true });
 await cp(resolve('dist/client'), root, { recursive: true, errorOnExist: true });
 process.env.AUDIT_ROOT = root;
-process.env.AUDIT_PORT = '8098';
+process.env.AUDIT_PORT = process.env.FORGE_PERFORMANCE_PORT || '8098';
 await import('./serve-audit.mjs');

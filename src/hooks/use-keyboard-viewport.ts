@@ -22,17 +22,28 @@ export function useKeyboardViewport() {
       if (!(input instanceof HTMLElement) || !input.matches('input,textarea,[contenteditable="true"]')) return;
       // Browser focus scrolling happens before the keyboard has finished
       // resizing. Repeat only when a visible-area change clips the input.
-      const box = input.getBoundingClientRect();
-      let top = viewport.offsetTop + 8;
-      let bottom = viewport.offsetTop + viewport.height - 8;
-      // Reserved phone chrome and nested panels can clip inside the visual viewport.
+      const clips: HTMLElement[] = [];
       for (let parent = input.parentElement; parent; parent = parent.parentElement) {
-        if (!/auto|scroll|hidden|clip/.test(window.getComputedStyle(parent).overflowY)) continue;
-        const bounds = parent.getBoundingClientRect();
-        top = Math.max(top, bounds.top + parent.clientTop + 8);
-        bottom = Math.min(bottom, bounds.top + parent.clientTop + parent.clientHeight - 8);
+        if (/auto|scroll|hidden|clip/.test(window.getComputedStyle(parent).overflowY)) clips.push(parent);
       }
-      if (box.top < top || box.bottom > bottom) input.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      // Scroll the form, never the document: scrollIntoView can pan Safari's
+      // entire fixed application. A second pass handles a previously clipped inner panel.
+      for (let pass = 0; pass < 2; pass++) for (const parent of clips) {
+        if (parent === document.body || parent === document.documentElement || parent.id === 'root'
+          || !/auto|scroll/.test(window.getComputedStyle(parent).overflowY)
+          || parent.scrollHeight <= parent.clientHeight) continue;
+        let top = viewport.offsetTop + 8;
+        let bottom = viewport.offsetTop + viewport.height - 8;
+        for (const clip of clips) {
+          const bounds = clip.getBoundingClientRect();
+          top = Math.max(top, bounds.top + clip.clientTop + 8);
+          bottom = Math.min(bottom, bounds.top + clip.clientTop + clip.clientHeight - 8);
+        }
+        if (bottom <= top) continue;
+        const box = input.getBoundingClientRect();
+        const delta = box.height > bottom - top || box.top < top ? box.top - top : Math.max(0, box.bottom - bottom);
+        parent.scrollTop += Math.max(-parent.scrollTop, Math.min(delta, parent.scrollHeight - parent.clientHeight - parent.scrollTop));
+      }
     };
     const update = () => {
       frame = 0;
