@@ -86,7 +86,7 @@ text contrast on white / canvas is 17.75/16.70 primary, 7.69/7.23 secondary and
 ## Four-department verification before the protected push
 
 - Current backend unit suite plus three disposable real-Mongo accounting cases:
-  3,439 passed, six third-party deprecation warnings. Mongo databases are generated
+  3,451 passed, six third-party deprecation warnings. Mongo databases are generated
   per test and dropped in finally blocks; no application data is used.
 - Focused browser matrix: 75/75 passed, zero retries/skips/flakes, across 320, 390,
   768, 1024 and 1440px. This found and fixed Kitchen's redirects away from Sales
@@ -110,6 +110,11 @@ text contrast on white / canvas is 17.75/16.70 primary, 7.69/7.23 secondary and
   Interrupted runs do not count as full acceptance. Main merge, independent
   approval, required CI and hosted acceptance remain pending at this checkpoint.
   Physical devices and signed native builds remain unverified.
+- Final independent review aligned reference/brand drilldowns with report access:
+  managers can open details, combined views retain assigned floors, and explicit
+  forbidden floors fail before reads. Twelve actual FastAPI boundary regressions
+  cover role admission, financial source scope and private directory metadata.
+  The seven-width Enter/Space customer-account drilldown check also passed 14/14.
 
 ## App-screen critique
 

@@ -1,5 +1,6 @@
-"""Sales Data dashboard (owner/admin only) — revenue by floor, by
-architect/interior-designer referrer, and by brand. Revenue comes from the
+"""Legacy Sales Data overview and scoped reference/brand drilldowns.
+Overview admits owner/admin; report drilldowns also admit managers.
+Revenue comes from the
 current `ordered` workflow state, plus legacy `won` records that pre-date
 that state. Aggregation happens in Python over an in-memory list —
 matches the existing dashboard_routes.py convention — rather than a Mongo
@@ -20,7 +21,7 @@ from db import db
 from models import ReferrerType, UserPublic
 from services.pricing import per_line_net_amounts
 from services.analytics.kitchen_referrals import kitchen_referral_records
-from services.analytics.filters import AnalyticsFilter
+from services.analytics.filters import AnalyticsFilter, FloorAccessError, build_match
 from services.analytics.furniture import gather_furniture_reference_records
 
 router = APIRouter(prefix="/sales-data", tags=["sales-data"])
@@ -79,6 +80,15 @@ def _revenue_timestamp(quotation: dict) -> Optional[str]:
     if quotation.get("status") == "ordered":
         return quotation.get("ordered_at")
     return quotation.get("updated_at") or quotation.get("created_at")
+
+
+def _report_floor_ids(user: UserPublic, floor_id: Optional[str]) -> Optional[list[str]]:
+    """Drilldowns retain the new reports' granted floors in combined views."""
+    try:
+        scope = build_match(AnalyticsFilter(floor_id=floor_id if floor_id != "both" else "all", status="any"), accessible_floor_ids(user), (None, None))
+    except FloorAccessError as exc:
+        raise HTTPException(403, "You do not have access to this floor") from exc
+    return scope.get("floor_id", {}).get("$in")
 
 
 async def _confirmed_quotations(
@@ -165,9 +175,9 @@ async def referrer_detail(
     date_to: Optional[str] = Query(None),
     granularity: Granularity = Query("month"),
     preset: Optional[str] = None,
-    user: UserPublic = Depends(require_roles("owner", "admin")),
+    user: UserPublic = Depends(require_roles("owner", "admin", "manager")),
 ):
-    floor_ids = _resolve_floor_ids(user, floor_id)
+    floor_ids = _report_floor_ids(user, floor_id)
     furniture_end = date_to
     if preset:
         from services.analytics.periods import resolve
@@ -295,16 +305,16 @@ async def brand_detail(
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
     granularity: Granularity = Query("month"),
-    user: UserPublic = Depends(require_roles("owner", "admin")),
+    user: UserPublic = Depends(require_roles("owner", "admin", "manager")),
 ):
-    floor_ids = _resolve_floor_ids(user, floor_id)
+    floor_ids = _report_floor_ids(user, floor_id)
     quotations = await _confirmed_quotations(floor_ids, date_from, date_to)
 
     product_ids = {it["product_id"] for q in quotations for it in q.get("items", [])}
     product_brand = await _product_brand_map(product_ids)
     ids_for_brand = {pid for pid, bid in product_brand.items() if bid == brand_id}
 
-    brand = await db.brands.find_one({"id": brand_id}, {"_id": 0})
+    brand = await db.brands.find_one({"id": brand_id, **({"floor_id": {"$in": floor_ids}} if floor_ids is not None else {})}, {"_id": 0})
     if not brand:
         if not ids_for_brand:
             raise HTTPException(status_code=404, detail="Brand not found")

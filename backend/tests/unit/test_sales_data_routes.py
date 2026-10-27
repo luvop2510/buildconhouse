@@ -396,3 +396,98 @@ def test_brands_ranked_excludes_items_with_unknown_product(monkeypatch):
     result = asyncio.run(sd.brands_ranked(date_from=None, date_to=None, user=_owner()))
 
     assert result["brands"] == []
+
+
+@pytest.mark.parametrize("path", ["/sales-data/referrers/reference", "/sales-data/brands/brand"])
+@pytest.mark.parametrize("role,expected_status", [("manager", 200), ("sales", 403)])
+def test_report_drilldown_actual_route_role_dependency(monkeypatch, path, role, expected_status):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from auth import get_current_user
+    from types import SimpleNamespace
+
+    user = UserPublic(id="route-user", email="route@example.test", full_name="Route User", role=role)
+    async def identity(): return user
+    async def confirmed(*args): return []
+    async def kitchen(*args): return []
+    async def furniture(*args): return [], 0.0, 0
+    async def products(*args): return {}
+    async def directory(*args): return {"id": "reference", "name": "Reference", "type": "architect"}
+    async def brand(*args): return {"id": "brand", "name": "Brand"}
+    monkeypatch.setattr(sd, "_confirmed_quotations", confirmed)
+    monkeypatch.setattr(sd, "kitchen_referral_records", kitchen)
+    monkeypatch.setattr(sd, "gather_furniture_reference_records", furniture)
+    monkeypatch.setattr(sd, "_product_brand_map", products)
+    monkeypatch.setattr(sd, "db", SimpleNamespace(referrers=SimpleNamespace(find_one=directory), brands=SimpleNamespace(find_one=brand)))
+    app = FastAPI()
+    app.include_router(sd.router)
+    app.dependency_overrides[get_current_user] = identity
+    with TestClient(app) as client:
+        response = client.get(path, params={"preset": "all"})
+    assert response.status_code == expected_status, response.text
+
+
+@pytest.mark.parametrize("path", ["/sales-data/referrers/reference", "/sales-data/brands/brand"])
+@pytest.mark.parametrize("floor", [None, "all", "both"])
+def test_report_drilldown_combined_admin_keeps_source_and_directory_scope(monkeypatch, path, floor):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from auth import get_current_user
+    from types import SimpleNamespace
+
+    calls = []
+    async def identity(): return _admin_ground_only()
+    async def confirmed(floors, *_args):
+        calls.append("orders")
+        assert floors == ["ground-floor"]
+        return []
+    async def kitchen(_db, query):
+        calls.append("kitchen")
+        assert query["floor_id"] == {"$in": ["ground-floor"]}
+        return []
+    async def furniture(*args):
+        raise AssertionError("Ground-only admin must not read Furniture ledgers")
+    async def products(*args): return {}
+    async def directory(query, *_args):
+        calls.append("directory")
+        assert query == {"id": "reference", "$or": [{"floor_id": {"$in": ["ground-floor"]}}, {"shared_across_floors": True}]}
+        return {"id": "reference", "name": "Shared reference", "type": "architect"}
+    async def brand(query, *_args):
+        calls.append("brand")
+        assert query == {"id": "brand", "floor_id": {"$in": ["ground-floor"]}}
+        return {"id": "brand", "name": "Brand"}
+    monkeypatch.setattr(sd, "_confirmed_quotations", confirmed)
+    monkeypatch.setattr(sd, "kitchen_referral_records", kitchen)
+    monkeypatch.setattr(sd, "gather_furniture_reference_records", furniture)
+    monkeypatch.setattr(sd, "_product_brand_map", products)
+    monkeypatch.setattr(sd, "db", SimpleNamespace(referrers=SimpleNamespace(find_one=directory), brands=SimpleNamespace(find_one=brand)))
+    app = FastAPI()
+    app.include_router(sd.router)
+    app.dependency_overrides[get_current_user] = identity
+    params = {} if floor is None else {"floor_id": floor}
+    with TestClient(app) as client:
+        response = client.get(path, params=params)
+    assert response.status_code == 200, response.text
+    assert "orders" in calls and ("directory" if "referrers" in path else "brand") in calls
+
+
+@pytest.mark.parametrize("path", ["/sales-data/referrers/reference", "/sales-data/brands/brand"])
+def test_report_drilldown_rejects_explicit_forbidden_floor_before_reads(monkeypatch, path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from auth import get_current_user
+    from types import SimpleNamespace
+
+    async def identity(): return _admin_ground_only()
+    async def forbidden(*args): raise AssertionError("Unauthorized floor must fail before reads")
+    monkeypatch.setattr(sd, "_confirmed_quotations", forbidden)
+    monkeypatch.setattr(sd, "kitchen_referral_records", forbidden)
+    monkeypatch.setattr(sd, "gather_furniture_reference_records", forbidden)
+    monkeypatch.setattr(sd, "_product_brand_map", forbidden)
+    monkeypatch.setattr(sd, "db", SimpleNamespace(referrers=SimpleNamespace(find_one=forbidden), brands=SimpleNamespace(find_one=forbidden)))
+    app = FastAPI()
+    app.include_router(sd.router)
+    app.dependency_overrides[get_current_user] = identity
+    with TestClient(app) as client:
+        response = client.get(path, params={"floor_id": "first-floor"})
+    assert response.status_code == 403 and "access" in response.json()["detail"]

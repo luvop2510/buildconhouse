@@ -1,7 +1,5 @@
-"""Every Sales Data endpoint depends on require_roles("owner", "admin") —
-this is the actual dependency FastAPI wires into each route in
-sales_data_routes.py, not a separate policy, so testing it here covers all
-four endpoints at once."""
+"""Legacy overview role policy; drilldown route wiring is tested separately
+in test_sales_data_routes.py because the new reports also admit managers."""
 from __future__ import annotations
 
 import asyncio
