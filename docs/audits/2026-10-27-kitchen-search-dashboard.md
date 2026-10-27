@@ -115,3 +115,20 @@ Kitchen dashboard and queue links preserve legacy query parameters for Back.
 Tests verify the actual path/parameters, expanded details and exact list restoration;
 external/unrelated return paths still use the safe fallback. That interrupted run
 and failures after stopping its owned API are superseded, not passing evidence.
+
+## CI history performance correction
+
+CI run 40438032506 passed 59 timing scenarios but measured iPhone history
+expansion at 1,566 ms against the unchanged 1,500 ms limit. The trace shows
+1,434 ms waiting for the action target to become stable while a background
+project response rerendered history. Activity construction formatted every one
+of 500 dates before selecting the 30 displayed rows.
+
+Activity now selects the visible window before formatting. The count and load
+more control still use the full activity length, so all records remain reachable.
+The browser regression also counts date-format operations, preventing eager
+formatting of all 500 entries from returning even on a faster runner.
+All eight focused Kitchen performance cases passed on the corrected export;
+local expansion measured 95–200 ms across four profiles. TypeScript and lint
+passed. The full audit must qualify the corrected source before its push; the
+previous source's CI failure is not treated as successful release evidence.

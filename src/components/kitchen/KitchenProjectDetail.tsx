@@ -253,7 +253,7 @@ function ProjectHistory({ project }: { project: KitchenProject }) {
   const documentName = (id?: string | null) => id ? project.attachments?.find(file => file.id === id)?.filename || "Saved project attachment" : "Not attached";
   const versionName = (id: string) => { const design = project.design_versions?.find(row => row.id === id); const quote = project.quotation_versions?.find(row => row.id === id); return design ? `Design version ${design.number}` : quote ? `Quotation ${quote.number}` : null; };
   let entries: { id: string; title: string; lines: string[]; url?: string }[] = [];
-  if (category === "activity") entries = [...(project.activity || [])].reverse().map(event => {
+  if (category === "activity") entries = (project.activity || []).slice(-limit).reverse().map(event => {
     const payload = event.payload || {};
     const stageNames = (stage: unknown) => KITCHEN_STAGES.includes(stage as KitchenStage) ? STAGE_LABELS[stage as KitchenStage] : String(stage);
     const subject = typeof payload.subject_id === "string" ? versionName(payload.subject_id) : null;
@@ -286,15 +286,16 @@ function ProjectHistory({ project }: { project: KitchenProject }) {
     entries = [...(project.exceptions || [])].reverse().map(event => ({ id: event.id, title: `${event.action.replaceAll("_", " ")}${event.status ? ` · ${event.status}` : ""}`, lines: [event.reason, `${actor(event.actor_id)} · ${displayDate(event.at)}`] }));
     if (project.duplicate_review?.reason) entries.push({ id: "duplicate-review", title: `Duplicate review · ${project.duplicate_review.status}`, lines: [project.duplicate_review.reason, `${actor(project.duplicate_review.reviewed_by)} · ${displayDate(project.duplicate_review.reviewed_at)}`] });
   }
+  const recordCount = category === "activity" ? project.activity?.length || 0 : entries.length;
   return <View style={{ gap: spacing.lg, width: "100%", maxWidth: 860, alignSelf: "center" }}>
     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: spacing.md }}>
-      <Menu triggerLabel="Choose history category" triggerTestID="kitchen-history-category" align="left" items={Object.entries(historyCategories).map(([key, label]) => ({ label, onPress: () => { setLimit(30); setCategory(key as keyof typeof historyCategories); } }))}><Text style={type.titleMd}>{historyCategories[category]} ▾</Text></Menu><Text style={type.caption}>{entries.length} records</Text>
+      <Menu triggerLabel="Choose history category" triggerTestID="kitchen-history-category" align="left" items={Object.entries(historyCategories).map(([key, label]) => ({ label, onPress: () => { setLimit(30); setCategory(key as keyof typeof historyCategories); } }))}><Text style={type.titleMd}>{historyCategories[category]} ▾</Text></Menu><Text style={type.caption}>{recordCount} records</Text>
     </View>
     <KitchenPanel>{!entries.length ? <Text style={type.bodyMuted}>No {historyCategories[category].toLowerCase()} recorded.</Text> : entries.slice(0, limit).map(entry => <View key={entry.id} style={{ gap: spacing.sm, paddingVertical: spacing.md, borderBottomWidth: 1, borderColor: colors.border }}>
       <Text style={type.bodyStrong}>{entry.title}</Text>{entry.lines.map((line, index) => <Text key={index} style={type.bodyMuted}>{line}</Text>)}
       {entry.url ? <Button label="Open reference" variant="secondary" onPress={() => void Linking.openURL(entry.url!)} /> : null}
     </View>)}</KitchenPanel>
-    {entries.length > limit ? <Button label="Show earlier records" variant="secondary" onPress={() => setLimit(value => value + 30)} /> : null}
+    {recordCount > limit ? <Button label="Show earlier records" variant="secondary" onPress={() => setLimit(value => value + 30)} /> : null}
   </View>;
 }
 function auditChangeLines(changes: unknown, actor: (id?: string) => string) {
