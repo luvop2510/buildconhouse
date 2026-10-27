@@ -845,6 +845,10 @@ class KitchenProjectService:
         updated["command_receipts"].append({"actor_id": user.id, "key": body.idempotency_key, "fingerprint": digest,
                                               "version": updated["version"], "command": command})
         bounded(updated)
+        # Resolve authoritative response reads before committing; an outage must
+        # not turn a durable stage move into an apparently failed Next action.
+        async with bounded_read():
+            response = await self.public(updated, user, policy)
         result = await self.db.kitchen_projects.replace_one(
             {"id": project_id, "floor_id": access.KITCHEN_FLOOR, "version": body.expected_version}, updated)
         if not result.matched_count:
@@ -855,7 +859,7 @@ class KitchenProjectService:
                 return await self.public(latest, user, policy, replayed=True)
             await access.require_current_task(self.db, user, latest, policy)
             raise HTTPException(409, "Kitchen project changed; reload before saving")
-        return await self.public(updated, user, policy)
+        return response
 
     async def customers(self, user, *, search="", page=1, limit=50):
         await access.require_capability(self.db, user, "create")

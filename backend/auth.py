@@ -30,6 +30,7 @@ _PRINCIPAL_CACHE_TTL_SECONDS = 10.0
 _PRINCIPAL_CACHE_MAX_ENTRIES = 2048
 _principal_cache: dict[tuple[str, str, str], tuple[float, dict]] = {}
 _principal_cache_generation = 0
+_principal_inflight: dict[tuple[str, str, str, str, int], asyncio.Task] = {}
 
 
 def _cached_principal(kind: str, subject: str, session_id: str | None) -> dict | None:
@@ -128,6 +129,28 @@ async def _load_active_principal(payload: dict, *, kind: str, collection: str) -
         raise HTTPException(status_code=401, detail="Session expired or was signed out. Please sign in again.")
 
     generation = _principal_cache_generation
+    key = (kind, subject, session_id, collection, generation)
+    task = _principal_inflight.get(key)
+    if task is None:
+        # At capacity, validate normally without retaining another shared task.
+        if len(_principal_inflight) >= _PRINCIPAL_CACHE_MAX_ENTRIES:
+            return (await _read_active_principal(subject, session_id, kind, collection, generation)).copy()
+        task = asyncio.create_task(_read_active_principal(subject, session_id, kind, collection, generation))
+        _principal_inflight[key] = task
+
+        def finished(done):
+            if _principal_inflight.get(key) is done:
+                _principal_inflight.pop(key, None)
+            # A canceled caller must not leave an unobserved shared failure.
+            if not done.cancelled():
+                done.exception()
+
+        task.add_done_callback(finished)
+    # One caller leaving must not cancel another request's authentication.
+    return (await asyncio.shield(task)).copy()
+
+
+async def _read_active_principal(subject: str, session_id: str, kind: str, collection: str, generation: int) -> dict:
     session_filter = {
         "id": session_id,
         "user_type": kind,
