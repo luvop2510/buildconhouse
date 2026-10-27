@@ -11,6 +11,13 @@ assertProductionBuildBranch({ VERCEL_ENV: 'production', VERCEL_GIT_COMMIT_REF: '
 for (const branch of [undefined, '', 'feature']) {
   assert.throws(() => assertProductionBuildBranch({ VERCEL_ENV: 'production', VERCEL_GIT_COMMIT_REF: branch }), /must come from Git main/);
 }
+const releaseSha = 'a'.repeat(40);
+const branchBuild = { VERCEL_ENV: 'production', VERCEL_GIT_COMMIT_REF: 'feature', VERCEL_GIT_COMMIT_SHA: releaseSha };
+assertProductionBuildBranch({ ...branchBuild, BUILDCON_AUTHORIZED_RELEASE_SHA: releaseSha });
+for (const authorization of ['', 'true', 'b'.repeat(40), 'a'.repeat(39)]) {
+  assert.throws(() => assertProductionBuildBranch({ ...branchBuild, BUILDCON_AUTHORIZED_RELEASE_SHA: authorization }), /must come from Git main/);
+}
+assert.throws(() => assertProductionBuildBranch({ VERCEL_ENV: 'production', VERCEL_GIT_COMMIT_REF: 'feature', BUILDCON_AUTHORIZED_RELEASE_SHA: releaseSha }), /must come from Git main/);
 
 // Exercise real Git ancestry, including a divergent release and missing history.
 const root = mkdtempSync(join(tmpdir(), 'buildcon-release-source-'));

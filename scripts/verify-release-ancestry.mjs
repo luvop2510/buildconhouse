@@ -3,6 +3,13 @@ import { spawnSync } from 'node:child_process';
 
 export function assertProductionBuildBranch(env = process.env) {
   if (env.VERCEL_ENV === 'production') {
+    // A human may authorize one specific release before the protected merge.
+    // This is a per-build exception, never a project-wide environment setting.
+    const authorizedSha = env.BUILDCON_AUTHORIZED_RELEASE_SHA;
+    if (authorizedSha && /^[a-f0-9]{40}$/.test(authorizedSha) && authorizedSha === env.VERCEL_GIT_COMMIT_SHA) {
+      console.warn(`Explicitly authorized branch release: ${authorizedSha} (${env.VERCEL_GIT_COMMIT_REF || 'unknown branch'}); protected-main merge remains pending.`);
+      return;
+    }
     assert.equal(env.VERCEL_GIT_COMMIT_REF, 'main', 'Production builds must come from Git main; merge and deploy main');
   }
 }

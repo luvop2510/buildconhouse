@@ -4,6 +4,18 @@ All completed application changes belong on `origin/main` in
 `luvop2510/buildconhouse`. Main is the production source for Vercel. A worktree
 or PR branch may isolate implementation and checks, but it is not a release source.
 
+Explicit user exception, 27 October 2026: after being informed of the failing
+browser checks and required review, the user instructed “deploy it nonetheless”
+and “make it live by any means.” For this release only, a production build may
+receive `BUILDCON_AUTHORIZED_RELEASE_SHA` equal to its actual full
+`VERCEL_GIT_COMMIT_SHA`. Keep the real branch and commit metadata; never spoof
+main. Do not persist this variable in project settings. The normal branch guard
+continues to reject missing, malformed or mismatched authorizations. GitHub
+protections, pending reviews and failed checks remain unchanged. Verify the
+candidate contains the live source, production backend binding and live domain,
+and retain the prior deployment for rollback. The protected-main reconciliation
+remains outstanding after this explicitly authorized publication.
+
 1. Fetch main and resolve `buildconhouse.in` through Vercel's alias API. Read the
    deployment by that exact ID, recording its source SHA. Never infer the live
    source from a project preview or a branch name. Start from main after ensuring
