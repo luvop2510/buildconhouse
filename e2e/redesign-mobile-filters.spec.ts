@@ -1,49 +1,40 @@
 import { expect, test } from '@playwright/test';
-import { floors, mockSession } from './audit-fixtures';
+import { mockSession } from './audit-fixtures';
+import { emptySalesSummary, mockSalesSummary } from './sales-fixtures';
 
 test('critical mobile sales filters retain selected business units and unfinished date ranges while hidden', async ({ page }) => {
-  const phone = page.viewportSize()!.width < 768;
-  await mockSession(page, '/sales-data/sales', false);
-  await page.route('**/api/settings/floors', route => route.fulfill({ json: floors }));
-  await page.route('**/api/analytics/default-period?**', route => route.fulfill({ json: {
-    preset: 'this_month', date_from: null, date_to: null, label: 'This month', fallback_applied: false, latest_order_at: null,
-  } }));
   let latest = new URLSearchParams();
   let requests = 0;
-  await page.route('**/api/analytics/workspaces/revenue?**', route => {
+  await mockSalesSummary(page, { onSummary: route => {
     latest = new URL(route.request().url()).searchParams;
     requests += 1;
-    return route.fulfill({ json: {
-      workspace: 'revenue', period: 'This month', kpis: { revenue: 0, orders: 0, outstanding: 0, hansgrohe_revenue: 0 },
-      brands: [], products: [], customers: [], floors: [],
-    } });
-  });
+    return route.fulfill({ json: emptySalesSummary() });
+  } });
   await page.goto('/sales-data/sales');
   const filters = page.getByTestId('sales-data-filters');
   const toggle = page.getByTestId('sales-data-filters-toggle');
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-  await page.getByTestId('sales-data-floor-all').click();
-  await page.getByTestId('sales-data-floor-ground-floor').click();
+  if (await toggle.getAttribute('aria-expanded') === 'false') await toggle.click();
+  await page.getByTestId('sales-data-floor-picker').click();
+  await page.getByRole('dialog', { name: 'Business unit', exact: true }).getByRole('button', { name: 'Tiles', exact: true }).click();
   await expect.poll(() => latest.get('floor_id')).toBe('ground-floor');
-  if (phone) await filters.getByRole('button', { name: 'Custom', exact: true }).click();
-  else await page.getByTestId('sales-data-preset-custom').click();
+  await page.getByTestId('sales-data-period-picker').click();
+  await page.getByRole('dialog', { name: 'Reporting period', exact: true }).getByRole('button', { name: 'Custom range', exact: true }).click();
   await filters.getByLabel('From', { exact: true }).fill('2026-09-03');
   await filters.getByLabel('To', { exact: true }).fill('2026-09-17');
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await expect(page.getByTestId('sales-data-filters-content')).toBeHidden();
-  await expect(page.getByText('No confirmed sales in this period', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('sales-kpi-products')).toContainText('0');
   const beforeRestore = requests;
   await toggle.click();
   await expect(filters.getByLabel('From', { exact: true })).toHaveValue('2026-09-03');
   await expect(filters.getByLabel('To', { exact: true })).toHaveValue('2026-09-17');
-  await expect(page.getByTestId('sales-data-floor-ground-floor')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByTestId('sales-data-floor-picker')).toContainText('Tiles');
   expect(requests).toBe(beforeRestore);
   await filters.getByRole('button', { name: 'Apply range', exact: true }).click();
   await expect.poll(() => latest.get('preset')).toBe('custom');
   expect(latest.get('date_from')).toBe('2026-09-03T00:00:00+00:00');
   expect(latest.get('date_to')).toBe('2026-09-18T00:00:00+00:00');
-  if (phone) await page.setViewportSize({ width: 1440, height: 1000 });
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
   await expect(page.getByTestId('sales-data-filters-content')).toBeVisible();
 });

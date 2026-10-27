@@ -53,6 +53,26 @@ export const requiredStabilityScenarios: Record<string, string[]> = {
     'failed font assets show recovery and a retry reload reaches the complete sign-in form',
     'a stalled font request reaches bounded recovery and late completion cannot reveal the form',
   ],
+  'redesign-sales-simplification.spec.ts': [
+    'critical streamlined sales presents real product and brand evidence with three usable destinations',
+    'critical sales navigation works with keyboard and exposes customers follow-ups and unpaid balances',
+    'critical summary failures retry and genuine zeros retain an honest empty state',
+    'critical reporting range validates dates and remains selected across tabs and reload',
+    'critical late previous-floor reads cannot relabel the selected floor',
+    'critical project departments keep financial reporting when product attribution is unavailable',
+    'critical all four departments preserve separate INR and RNB totals and customer identities',
+    ...['Sanitary', 'Tiles', 'Kitchen', 'Furniture'].map(label => `critical ${label} reporting opens its own follow-ups and account workspace`),
+    'critical all-department accounts asks for a business unit before opening its own ledger',
+    'critical reference search keeps pre-order clients and the chosen reporting period in its detail link',
+    'critical export sends the exact displayed brand data and reporting scope',
+    'critical customer balances retain paise and select only Sales Data in the desktop sidebar',
+  ],
+  'redesign-sales-reference-directory.spec.ts': [
+    'critical sales reference directory creates, edits and reuses one identity across floors',
+  ],
+  'redesign-interior-acquisition.spec.ts': [
+    'critical Interior section displays acquired customers before an order is placed',
+  ],
   'redesign-input-focus-shape.spec.ts': [
     ...['text', 'textarea', 'search', 'kitchen', 'purchases', 'catalog'].map(kind => `focused ${kind} indicator follows its outer field shape`),
   ],

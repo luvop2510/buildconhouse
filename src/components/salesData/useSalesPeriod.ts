@@ -85,7 +85,7 @@ function periodOf(server: DefaultPeriod): SelectedPeriod {
  * data. That is what keeps "never open onto an empty dashboard" true without
  * making a deliberate selection unstick itself.
  */
-export function useSalesPeriod(floorId: string) {
+export function useSalesPeriod(floorId: string, catalogFallback = true) {
   const [period, setPeriod] = useState<SelectedPeriod | null>(null);
   const [origin, setOrigin] = useState<PeriodOrigin>("loading");
   const [serverDefault, setServerDefault] = useState<DefaultPeriod | null>(null);
@@ -102,7 +102,9 @@ export function useSalesPeriod(floorId: string) {
     (async () => {
       const [saved, server] = await Promise.all([
         readSaved(),
-        salesDataApi.defaultPeriod(floorId, { signal: controller.signal }).catch(() => null),
+        // The legacy probe only knows catalog orders. Multi-source reports use
+        // the calendar month, so an older tile order cannot hide new project sales.
+        catalogFallback ? salesDataApi.defaultPeriod(floorId, { signal: controller.signal }).catch(() => null) : Promise.resolve(null),
       ]);
       if (!alive) return;
 
@@ -126,7 +128,7 @@ export function useSalesPeriod(floorId: string) {
     })();
 
     return () => { alive = false; controller.abort(); };
-  }, [floorId]);
+  }, [floorId, catalogFallback]);
 
   const choose = useCallback((next: { preset: string; dateFrom?: string | null; dateTo?: string | null }) => {
     selectionVersion.current += 1;

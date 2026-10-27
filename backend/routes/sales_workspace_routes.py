@@ -19,9 +19,10 @@ from services.analytics.filters import AnalyticsFilter, FloorAccessError
 from services.analytics.gather_breakdowns import gather_order_collections, gather_product_brands, gather_product_line_revenue
 from services.analytics.breakdowns import brand_rows, order_rows, product_rows
 from services.analytics.gather_breakdowns import _ordered_match
-from services.analytics.workspaces import ORDER_FIELDS, gather_workspace, gather_workspace_labels
+from services.analytics.workspaces import ORDER_FIELDS, gather_workspace, gather_workspace_labels, merge_reference_currencies
+from services.analytics.furniture import gather_furniture_reference_rows
 from services.analytics.periods import resolve
-from services.analytics.lead_referrals import gather_acquired_customers, merge_acquisitions
+from services.analytics.lead_referrals import gather_acquired_customers
 
 router = APIRouter(prefix="/analytics/workspaces", tags=["analytics"])
 
@@ -110,17 +111,22 @@ async def workspace(
     workspace: Workspace,
     floor_id: str | None = None, preset: str | None = None, date_from: str | None = None, date_to: str | None = None,
     brand_id: str | None = None, customer_id: str | None = None, salesperson_id: str | None = None, referrer_id: str | None = None,
-    user: UserPublic = Depends(require_roles("owner")),
+    user: UserPublic = Depends(require_roles("owner", "admin", "manager")),
 ):
     f = _filter(floor_id, preset, date_from, date_to, brand_id, customer_id, salesperson_id, referrer_id)
     floors = accessible_floor_ids(user)
     period = resolve(f.preset, f.date_from, f.date_to)
     kind = "architect" if workspace == "architects" else "interior_designer" if workspace == "interior-designers" else None
+    references = workspace in ("architects", "interior-designers", "relationships")
+    if not references:
+        await require_roles("owner")(user)
+    reference_limit = 2000
     try:
         match = await _ordered_match(db, f, floors, (period.start, period.end))
-        reads = [gather_workspace(db, match, kind, include_kitchen=workspace in ("architects", "interior-designers", "relationships")), gather_product_line_revenue(db, f, floors, (period.start, period.end), limit=None)]
-        if workspace in ("architects", "interior-designers", "relationships"):
-            reads.append(gather_acquired_customers(db, f, floors, (period.start, period.end), kind, match))
+        reads = [gather_workspace(db, match, kind, include_kitchen=references, reference_limit=reference_limit + 1 if references else 100), gather_product_line_revenue(db, f, floors, (period.start, period.end), limit=None)]
+        if references:
+            reads.extend([gather_acquired_customers(db, f, floors, (period.start, period.end), kind, match, limit=reference_limit + 1),
+                          gather_furniture_reference_rows(db, f, floors, (period.start, period.end), kind, limit=reference_limit + 1)])
         results = await asyncio.gather(*reads)
         summary, line = results[:2]
     except FloorAccessError as exc:
@@ -138,8 +144,10 @@ async def workspace(
         "brands": brands[:100], "products": products[:100], "customers": summary["customers"],
         "floors": summary["floors"],
     }
-    if workspace in ("architects", "interior-designers", "relationships"):
-        payload["relationships"] = merge_acquisitions(summary["relationships"], results[2])
+    if references:
+        relationships = merge_reference_currencies(summary["relationships"], results[2], results[3])
+        payload["relationships"] = relationships[:reference_limit]
+        payload["relationships_truncated"] = len(relationships) > reference_limit
     if workspace == "forecasting":
         payload["forecast"] = await _forecast(f, floors)
     return payload

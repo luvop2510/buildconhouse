@@ -20,6 +20,8 @@ from db import db
 from models import ReferrerType, UserPublic
 from services.pricing import per_line_net_amounts
 from services.analytics.kitchen_referrals import kitchen_referral_records
+from services.analytics.filters import AnalyticsFilter
+from services.analytics.furniture import gather_furniture_reference_records
 
 router = APIRouter(prefix="/sales-data", tags=["sales-data"])
 
@@ -162,16 +164,35 @@ async def referrer_detail(
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
     granularity: Granularity = Query("month"),
+    preset: Optional[str] = None,
     user: UserPublic = Depends(require_roles("owner", "admin")),
 ):
     floor_ids = _resolve_floor_ids(user, floor_id)
+    furniture_end = date_to
+    if preset:
+        from services.analytics.periods import resolve
+        from datetime import timedelta
+        period = resolve(preset, date_from, date_to)
+        furniture_end = period.end
+        date_from = period.start
+        # This legacy API uses an inclusive upper bound; the report uses [start,end).
+        date_to = (datetime.fromisoformat(period.end.replace("Z", "+00:00")) - timedelta(microseconds=1)).isoformat() if period.end else None
+    elif furniture_end:
+        from datetime import timedelta
+        furniture_end = (datetime.fromisoformat(furniture_end.replace("Z", "+00:00")) + timedelta(microseconds=1)).isoformat()
     quotations = await _confirmed_quotations(floor_ids, date_from, date_to)
-    quotations = [q for q in quotations if q.get("referrer_id") == referrer_id]
+    quotations = [q for q in quotations if q.get("referrer_id") == referrer_id and q.get("floor_id") in {"ground-floor", "first-floor"}]
     kitchen_scope = {"referrer_id": referrer_id, **({"floor_id": {"$in": floor_ids}} if floor_ids is not None else {})}
     bounds = {key: value for key, value in (("$gte", date_from), ("$lte", date_to)) if value}
     kitchen_projects = await kitchen_referral_records(db, {**kitchen_scope, **({"created_at": bounds} if bounds else {})})
     kitchen_orders = await kitchen_referral_records(db, {**kitchen_scope, "status": "ordered", **({"ordered_at": bounds} if bounds else {})})
     quotations.extend(kitchen_orders)
+    furniture_rows, furniture_revenue, furniture_count = [], 0.0, 0
+    if floor_ids is None or "third-floor" in floor_ids:
+        furniture_rows, furniture_revenue, furniture_count = await gather_furniture_reference_records(
+            db, AnalyticsFilter(floor_id=floor_id or "all", referrer_id=referrer_id),
+            accessible_floor_ids(user), (date_from, furniture_end),
+        )
 
     referrer_query = {"id": referrer_id}
     if floor_ids is not None:
@@ -179,13 +200,13 @@ async def referrer_detail(
     from services.referrer_identity import referrer_query as directory_query
     referrer = await db.referrers.find_one(directory_query(referrer_query), {"_id": 0})
     if not referrer:
-        if not quotations:
+        if not quotations and not furniture_rows:
             raise HTTPException(status_code=404, detail="Referrer not found")
         # The referrer record was renamed/deleted after being credited on a
         # won quotation — a real revenue history shouldn't dead-end into a
         # 404 just because the lookup doc is gone; fall back to whatever
         # was already denormalized onto the quotation at the time.
-        sample = quotations[0]
+        sample = quotations[0] if quotations else furniture_rows[0]
         referrer = {
             "id": referrer_id, "name": sample.get("referrer_name") or "Unknown",
             "type": sample.get("referrer_type"), "phone": None, "company": None,
@@ -215,6 +236,9 @@ async def referrer_detail(
         "trend": trend,
         "quotations": quotes,
         "kitchen_projects": kitchen_projects,
+        "furniture_quotations": furniture_rows,
+        "furniture_quotations_total": furniture_count,
+        "total_revenue_rnb": furniture_revenue,
     }
 
 

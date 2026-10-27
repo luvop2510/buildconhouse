@@ -1,2 +1,2 @@
-import { OwnerWorkspace } from "@/src/components/salesData/OwnerWorkspace";
-export default function CustomersWorkspace() { return <OwnerWorkspace workspace="customers" />; }
+import { CustomersWorkspace } from "@/src/components/salesData/CustomersWorkspace";
+export default CustomersWorkspace;

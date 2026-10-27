@@ -62,3 +62,22 @@ docks/menus, owner salesperson filters, Kitchen queue stages/date affordances,
 brief list reuse and Payments initial loading are corrected. A clean install
 uses two scoped dependency overrides with actual-consumer compatibility coverage.
 Current verification ledger: docs/audits/2026-10-27-followup-release-regressions.md.
+
+
+## Sales simplification — 27 October 2026
+
+Native fallback delta scan: the existing Expo/FastAPI/Mongo architecture,
+transport and session boundaries remain. No dependencies or migrations added.
+Sales Data now exposes Sales, References and Customers; old report bookmarks
+redirect. `SalesScope` keeps report choices; `sales-summary` aggregates confirmed
+quotation sales, current per-order balances and live follow-up counts. Reference
+contacts load independently of ranked performance. Work remains floor-scoped;
+operational drill-downs require a concrete unit. Financial reads and live
+follow-ups are uncached, including Furniture deposits not analytics-versioned.
+Confirmed Kitchen orders contribute to INR financial totals; finalized Furniture
+ledgers retain separate RNB totals. Actual catalog products remain Tiles/Sanitary
+only, without inventing project product attribution.
+Meaningful verification includes the real disposable-Mongo accounting test,
+unit shaping/access tests, populated five-width browser scenarios and mandatory
+four-device stability/performance gates. No architectural instruction change is
+needed in AGENTS.md. Detailed contract: docs/sales-design-contract.md.

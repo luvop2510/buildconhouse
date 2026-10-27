@@ -1,56 +1,56 @@
 {
  "version": 1,
  "kind": "app",
- "at": "2026-10-23T19:49:41.733Z",
- "seed": 713640828,
+ "at": "2026-10-27T12:25:55.347Z",
+ "seed": 1455220230,
  "input": {
-  "kind": "smb-admin",
-  "brief": "BuildCon House showroom quotation ledger with room selections and warehouse stock",
-  "theme": null,
+  "kind": "analytics",
+  "brief": "BuildCon House showroom: product and brand sales, architect and interior designer references, customer follow-ups and unpaid balances",
+  "theme": "light",
   "screens": [
+   "analytics",
    "list",
-   "builder"
+   "detail"
   ],
   "keep": [
    "palette",
    "type"
   ],
-  "style": "framed-sheet"
+  "style": "achromatic-ledger"
  },
  "style": {
-  "id": "framed-sheet",
-  "name": "Framed sheet",
+  "id": "achromatic-ledger",
+  "name": "Achromatic ledger",
   "theme": "light",
-  "basis": "6 screens: a developer platform overview, an analytics overview, an events analytics tab, a list detail, a reports dashboard, a flow builder",
+  "basis": "4 screens: a seller home, a per-agent insights page, a generated report, a settings page with usage numbers",
   "suits": [
-   "analytics",
-   "devtools",
-   "builder",
-   "smb-admin",
-   "support",
+   "finance",
    "commerce",
-   "report"
+   "devtools",
+   "support",
+   "report",
+   "workspace",
+   "builder"
   ],
-  "idea": "The app chrome is one tinted L-shaped frame; the work sits on a white sheet with a hairline edge and soft corners, so depth comes from a single tone step and no shadow.",
-  "colourBudget": "under 3%; the brand shrinks to the logo and a 2px tab underline, the data carries the chroma",
+  "idea": "The chrome holds no colour at all; money and counts are set in ink, the one chart hue marks the screen's main data element, and the only other hue is a small signal where a figure changed.",
+  "colourBudget": "under 1% coloured pixels; the chrome is ink, the one chart hue goes on the main data element, and the only other hue is a small change signal",
   "tokens": {
-   "ground": "#f9fbfc",
+   "ground": "#f8f8f8",
    "surface": "#ffffff",
-   "raised": "#f4f6f8",
-   "active": "#ebedee",
-   "border": "#e8eaec",
-   "rule": "#f0f1f2",
-   "control": "#cdced1",
-   "text": "#131416",
-   "muted": "#5d5f60",
-   "accent": "#1b6c80",
-   "positive": "#1e7b4f",
+   "raised": "#eeeeee",
+   "border": "#e6e6e6",
+   "rule": "#f0f0f0",
+   "control": "#d4d4d4",
+   "text": "#0a0a0a",
+   "muted": "#6b6b6b",
+   "accent": "#141414",
+   "positive": "#2e7d32",
    "negative": "#c4242a",
    "warning": "#92400e",
    "chart": [
-    "#1b6c80",
-    "#2f70bb",
-    "#a86f0c"
+    "#141414",
+    "#8a8a8a",
+    "#1d5fbf"
    ],
    "pills": {
     "positive": [
@@ -66,104 +66,120 @@
      "#92400e"
     ],
     "neutral": [
-     "#ebedee",
-     "#353736"
+     "#eeeeee",
+     "#3d3d3d"
     ]
    },
    "radius": {
     "card": 8,
-    "control": 6,
-    "sheet": 16
+    "control": 6
    },
-   "sheetInset": 8,
    "font": {
-    "family": "IBM Plex Sans",
-    "second": "IBM Plex Mono, for IDs and keys only",
+    "family": "Geist",
+    "second": "Geist Mono, for IDs and keys only",
     "fallback": "Inter, system-ui, sans-serif",
     "sizes": {
-     "title": 22,
+     "title": 24,
      "section": 16,
-     "kpi": 28,
+     "kpi": 30,
      "body": 14,
      "small": 12
     },
     "weights": [
      400,
      500,
-     600
+     700
     ],
-    "note": "KPI values at 400; the semibold goes on the label and the active tab."
+    "note": "700 is for money figures only; every other number is 400-500."
    },
-   "density": "medium",
-   "rowHeight": 48,
-   "sidebarWidth": 228,
-   "gap": 24,
+   "density": "sparse",
+   "rowHeight": 44,
+   "sidebarWidth": 256,
+   "gap": 12,
    "pad": 24,
-   "controlHeight": 32
+   "controlHeight": 36
   },
-  "shell": "framed-sheet",
-  "shellAlternatives": [],
-  "signature": "One tinted frame holds the sidebar and the 48px top bar with no rule between them; the page is a white sheet inset 8px from the window's right and bottom edges, with a 1px edge, 16px corners and no shadow. The active tab is a 2px underline in ink or the accent; everything else in the chrome is grey.",
+  "shell": "open-plane",
+  "shellAlternatives": [
+   "icon-rail",
+   "no-sidebar"
+  ],
+  "signature": "No brand colour anywhere in the chrome: the one primary action is near-black (a grey pill, #e5e5e5, is the secondary), the main data element (today's series, the booked bars, the current period) takes the one chart hue, #1d5fbf, and everything else is drawn in ink with the comparison or the part after the cursor in grey, zero balances are set in grey, and the only hue on the screen is a small triangle or a short coloured number where a figure changed.",
   "identity": [
-   "The frame tinted from the product's colour in place of #f9fbfc: one low-chroma step of its hue (a green-grey for a climate or farm tool, a blue-grey for an observability tool, a stone for a print shop). The sheet stays white.",
-   "The brand's own hue from the brief as --chart-1 in place of the dealt teal, on the main series and the one selected state, at 3:1 or more on white, never violet or indigo.",
-   "IBM Plex Mono for IDs, keys and the figures in tables (one job): its figures have their own drawing, and a developer reads them as the product's."
+   "A ground from the product's world in place of #f8f8f8, one level off white and low in chroma: a stone (#f4f3f1) for a bakery or a shop, a sage (#f2f5f2) for a garden or a greenhouse, a blue-grey (#f2f4f7) for a ledger or a meter. Cards stay white; a warm tint stays under the cream check (saturation under about 15%).",
+   "The one chart hue (#1d5fbf, or the brand's own hue at 3:1 or more on white) on the screen's main data element: today's line, the booked bars, the current period's column, the margin that breaks. The chrome stays ink and the hue stays under 1% of the screen.",
+   "Every figure in Geist Mono, as the style's decision, so money and counts read as a ledger's columns while the text stays Geist. Lint and the inspector flag mono; give the reason in the report."
   ],
   "avoid": [
-   "a border between the sidebar and the top bar",
-   "a shadow under the sheet",
-   "cards whose border is heavier than the sheet's (#cdcfcf on cards read as heavy in the study)",
-   "a fourth nesting level: frame, sheet and card are enough",
-   "different gutters for the KPI row and the chart row (20 against 24 was flagged)"
+   "a brand-coloured primary button",
+   "tinted cards or tinted KPI tiles",
+   "a coloured chart where one series in ink says it",
+   "bold on anything but money",
+   "a chart with no y-scale (the study's one example of this look hid magnitude behind hover and was flagged)",
+   "a grey pill as the only button for the screen's main job: in testing an Approve repeated in grey on every row left the screen without a primary"
   ],
-  "notes": "The study's second data hue in this style was an orange (#e88e46) that falls inside the house terracotta range; the third chart colour here is an amber moved out of that range and darkened to 3:1 on white."
+  "notes": "The studied screens of this kind used 11-12px card radii, which §9.4 counts among the rare middle values; the library sets the tight pair (8 and 6) so the style lands on the bimodal rule. After testing, the chart hue moved from an unused third series colour onto the main data element: a screen whose only hue was a delta read as a kit."
  },
  "shell": {
-  "id": "framed-sheet",
-  "name": "Tinted frame, white sheet",
-  "basis": "8 of 23 screens, in three variants",
+  "id": "open-plane",
+  "name": "Open plane",
+  "basis": "5 of 23 screens",
   "suits": [
-   "analytics",
-   "devtools",
-   "builder",
-   "smb-admin",
-   "support"
+   "finance",
+   "wallet",
+   "workspace",
+   "creator",
+   "analytics"
   ],
   "numbers": {
-   "chrome": "#f6f6f6-#f9fbfc (a warm #f7f6f2 once)",
-   "sheetInset": "8px from the window's right and bottom edges (12 and 16 once each)",
-   "sheetRadius": "10-16, median 16",
-   "sheetEdge": "1px #eaeaea-#ededed, no shadow",
-   "sidebarWidth": "220-263 (228 on two screens)",
-   "topBar": "48px on the chrome ground with no rule; search 548x32 centred on the window with a shortcut hint",
-   "contentPadding": 24,
-   "floatingVariant": "both panels inset 12px with a 12px gutter, radius 10"
+   "sidebarWidth": "230-256 (230, 240, 256 in the study; 280 and 292 with a built-in icon rail)",
+   "separation": "none, or one 1px hairline; the sidebar sits on the page ground or within 1-2% of it",
+   "navPitch": 34,
+   "navRowHeight": 32,
+   "navIcon": "16px outline, about 1.5px stroke",
+   "navLabel": "14px, 400, grey or ink",
+   "activeItem": "neutral grey pill, radius 6-12, inset 8-12px from the sidebar edges (#e9e9e9-#ededed)",
+   "topBar": "none",
+   "canvas": "fluid with a 24-64px gutter, or a centred 1100px column"
   },
-  "blueprint": "Sidebar and top bar share one tinted ground with no rule between them, forming an L; the page lives on a white sheet. Variant one: the sheet butts against the sidebar and the top bar and is inset 8px from the right and bottom edges, 16px radius, 1px edge. Variant two: a flush L-frame with no inset, the frame marked by one rule. Variant three: sidebar and content are two floating panels inset 12px from every edge with a 12px gutter. The top bar, when present, is 48px and holds a centred search, the account button and a help or AI icon. Inside the sheet the content has 24px padding and starts with the breadcrumb or title row.",
-  "phone": "The frame disappears: the sheet becomes the screen, with a 48px top bar (menu button, title, one action) on the chrome tint. The search moves into the menu sheet or behind an icon."
+  "blueprint": "The labelled sidebar sits on the page ground with nothing or one hairline between it and the canvas; there is no top bar, and the page header and cards sit straight on the ground about 32-36px from the top. Workspace or account switcher at the top of the sidebar, primary nav on a 34px pitch, groups under 12-13px sentence-case grey labels with 22-56px of air above, utilities and the user row pushed to the bottom. Cards are white on the off-white ground (or the sidebar is white with a 1px border on a #f9fafb canvas). The canvas is fluid with one gutter value, or a centred column for personal homes.",
+  "phone": "The sidebar folds into a 48px top bar holding the screen's name, a menu button that opens a full-screen sheet with the nav and the switcher, and at most one action. Content takes the full width with 16px margins."
  },
  "screens": [
   {
-   "name": "list",
+   "name": "analytics",
    "pattern": {
-    "id": "table-filter-bar",
-    "name": "Table with tabs and a filter bar",
-    "screen": "list",
+    "id": "report-card-legend-table",
+    "name": "Report card with a legend table",
+    "screen": "analytics",
     "kinds": [
-     "community",
-     "devtools",
-     "commerce",
-     "support",
+     "analytics",
      "smb-admin"
     ],
-    "basis": "an events back office, a tracks studio, a sessions overview",
-    "blueprint": "Title row: an 18-24px title on the left, at most an outlined secondary and the one primary (36px) on the right. Underline tabs for the list's states on a full-width 1px rule with a 2px indicator as wide as the label; 22-32px below, the toolbar: a search of about 252-316 x 32-36 on the left, the count ('7 events') and the sort on the right. The table sits on the panel or page ground with no card around it: a header of 12-13px grey sentence-case labels with no fill and no rule, rows on a 48-56px pitch for one line or 72-92px with a thumbnail (media height plus 24-32px), 1px rules 3-7% darker than the ground or no rules at all, the identity column given the most width, numbers right-aligned in tabular figures with the unit muted ('5 /10'), one status mark per row and one kebab at the far right. Drop a column that is empty in every row (a blank co-host column left a 300px dead band). On an overview, cap the rows and link to the full list; on the full list, state the total and load more at the end.",
-    "phone": "Rows become two-line items: identity and the key number on line 1, the secondary fields in 13px grey on line 2, the kebab at the right. Tabs scroll in their own row; the search becomes a full-width field."
+    "basis": "a campaign overview",
+    "blueprint": "A report card (20/600 title, a kebab top right, a 32px select for the scope) whose body splits into a 390px left block and the chart. Left: the hero number at 24/400 with its label under it and one change pill with its window ('vs. previous period'), then the legend as a mini table of 2-4 metric rows on a 57px pitch: dot, name at 15/600, a benchmark pill, the value right-aligned, the change right-aligned. Right: the line chart with 4 gridlines at round values, a 2px baseline with ticks, y labels on the right and axis text no larger than the data (12-14px; 16px ticks were flagged as louder than the numbers). Under it, a detail table whose rate cells stack the count over a 12px grey percentage on one right edge. Use the same colour for a series in the legend dot and in the line.",
+    "phone": "The legend table goes above the chart; the detail table becomes two-line rows."
    }
   },
   {
-   "name": "builder",
+   "name": "list",
    "pattern": null
+  },
+  {
+   "name": "detail",
+   "pattern": {
+    "id": "object-detail-header-grid",
+    "name": "Object header and a six-column grid",
+    "screen": "detail",
+    "kinds": [
+     "community",
+     "commerce",
+     "analytics"
+    ],
+    "basis": "an event's analytics tab",
+    "blueprint": "The page header is the object itself: one card (88px, 14px padding) holding a 50x62 cover, the 18/600 name with 28px icon buttons beside it (open, copy, share), a 13px grey meta line (date, time, place) and outlined 36px actions on the right. Under it, underline tabs on a full-width 1px rule, then a 36px row with a segmented time range on the left and a refresh button on the right. The body is one 6-column grid with one gutter (14px) in both directions whose spans change by row while every edge lands on the same lines: 3 KPI tiles of 2 columns, the main chart in 4 columns beside a side chart in 2, two progress cards of 3, a full-width trend of 6. Give the widest card to the screen's question, and do not give 824px to one ring and one legend row (flagged).",
+    "phone": "The header card keeps cover, name and meta, with actions in a kebab; every grid item takes the full width in the same order."
+   }
   }
  ]
 }

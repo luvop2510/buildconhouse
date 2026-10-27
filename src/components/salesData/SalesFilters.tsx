@@ -1,149 +1,76 @@
-import { FilterBar, MobileFilterSection } from "@/src/components/ds";
 import { useEffect, useState } from "react";
 import { Pressable, View } from "react-native";
 import { Text } from "@/src/components/AppText";
-
-import { Button, PillTabs, TextField } from "@/src/components/ui";
-import { Sheet } from "@/src/design/components";
+import { MobileFilterSection } from "@/src/components/ds";
+import { Button, TextField } from "@/src/components/ui";
 import { useBp } from "@/src/design/responsive";
+import { Sheet } from "@/src/design/components";
 import { colors, spacing, type } from "@/src/theme/tokens";
-
 import { customDateRange, inclusiveEndDay } from "./periodDates";
 import { PERIOD_PRESETS, type SelectedPeriod } from "./useSalesPeriod";
 
 export type FloorOption = { id: string; name: string };
-
-/** Business-unit names the owner actually uses, rather than the floor slugs
- *  the database stores. Matches the mapping the Executive workspace already
- *  renders, so the two screens never label the same unit differently. */
 export const FLOOR_LABEL: Record<string, string> = {
-  "first-floor": "Sanitary",
-  "ground-floor": "Tiles",
+  "first-floor": "Sanitary", "ground-floor": "Tiles", "second-floor": "Kitchen", "third-floor": "Furniture",
 };
 
-/**
- * Floor filter, date filter, and the custom range — requirements 10 and 11.
- *
- * Both filters are plain wrapping pill rows in the page body rather than in
- * the header's `right` slot: that slot's flex row does not wrap, and a
- * multi-option row pushed the page wider than a 375px viewport the last time
- * an analytics screen tried it.
- */
-export function SalesFilters({
-  floors, floorId, onFloorChange, period, onPeriodChange,
-}: {
-  floors: FloorOption[];
-  floorId: string;
-  onFloorChange: (id: string) => void;
+/** The same two compact choices on every report and at every width. */
+export function SalesFilters({ floors, floorId, onFloorChange, period, onPeriodChange }: {
+  floors: FloorOption[]; floorId: string; onFloorChange: (id: string) => void;
   period: SelectedPeriod;
   onPeriodChange: (next: { preset: string; dateFrom?: string | null; dateTo?: string | null }) => void;
 }) {
   const { isPhone } = useBp();
   const [picker, setPicker] = useState<"floor" | "period" | null>(null);
-  const isCustom = period.preset === "custom";
-  // Starts collapsed even when the active period IS custom: the smart default
-  // resolves to a custom range whenever it falls back to the last month with
-  // orders, and popping the date-entry form open on first load would present
-  // a form the owner never asked for. The Custom pill still reads as
-  // selected, with the resolved range named underneath it.
   const [showCustom, setShowCustom] = useState(false);
   const [from, setFrom] = useState((period.dateFrom || "").slice(0, 10));
   const [to, setTo] = useState(inclusiveEndDay(period.dateTo));
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setFrom((period.dateFrom || "").slice(0, 10));
-    setTo(inclusiveEndDay(period.dateTo));
-  }, [period.dateFrom, period.dateTo]);
-
+  useEffect(() => { setFrom((period.dateFrom || "").slice(0, 10)); setTo(inclusiveEndDay(period.dateTo)); }, [period.dateFrom, period.dateTo]);
+  const floorOptions = [{ value: "all", label: "All units" }, ...floors.map(f => ({ value: f.id, label: FLOOR_LABEL[f.id] || f.name }))];
+  const floorLabel = floorOptions.find(f => f.value === floorId)?.label || "Choose unit";
   const applyCustom = () => {
     const range = customDateRange(from.trim(), to.trim());
-    if (!range) {
-      setError("Enter valid dates as YYYY-MM-DD, with the end on or after the start.");
-      return;
-    }
-    setError(null);
-    setShowCustom(false);
-    onPeriodChange({ preset: "custom", ...range });
+    if (!range) { setError("Enter valid dates as YYYY-MM-DD, with the end on or after the start."); return; }
+    setError(null); setShowCustom(false); onPeriodChange({ preset: "custom", ...range });
   };
-
-  return (
-    <MobileFilterSection style={{ gap: isPhone ? spacing.md : spacing.lg, paddingBottom: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border }} testID="sales-data-filters">
-      <Sheet open={!!picker} onClose={() => setPicker(null)} title={picker === "floor" ? "Business unit" : "Reporting period"}>
-        <View style={{ gap: spacing.xs }}>
-          {(picker === "floor" ? [{ value: "all", label: "All units" }, ...floors.map(f => ({ value: f.id, label: FLOOR_LABEL[f.id] || f.name }))] : [...PERIOD_PRESETS, { value: "custom", label: "Custom range" }]).map(option => <Pressable key={option.value} accessibilityRole="button" accessibilityState={{ selected: option.value === (picker === "floor" ? floorId : period.preset) }} onPress={() => {
+  return <MobileFilterSection initiallyExpanded={!isPhone} testID="sales-data-filters" style={{ gap: spacing.s8 }}>
+    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.s8, alignItems: "flex-end" }}>
+      <View style={{ gap: spacing.s4, flexGrow: 1, flexBasis: 120, minWidth: 0 }}>
+        <Text style={type.caption}>Business unit</Text>
+        <Button testID="sales-data-floor-picker" label={floorLabel} iconRight="chevron-down" variant="secondary" fullWidth onPress={() => setPicker("floor")} />
+      </View>
+      <View testID="sales-data-preset" style={{ gap: spacing.s4, flexGrow: 1, flexBasis: 140, minWidth: 0 }}>
+        <Text style={type.caption}>Sales period · UTC</Text>
+        <Button testID="sales-data-period-picker" label={period.label} iconRight="chevron-down" variant="secondary" fullWidth onPress={() => setPicker("period")} />
+      </View>
+    </View>
+    <Sheet open={picker !== null} onClose={() => setPicker(null)} title={picker === "floor" ? "Business unit" : "Reporting period"}>
+      <View style={{ gap: spacing.s4 }}>
+        {(picker === "floor" ? floorOptions : [...PERIOD_PRESETS, { value: "custom", label: "Custom range" }]).map(option => <Pressable
+          key={option.value} testID={`sales-data-${picker}-${option.value}`}
+          accessibilityRole="button" accessibilityLabel={option.label}
+          accessibilityState={{ checked: option.value === (picker === "floor" ? floorId : period.preset) }}
+          onPress={() => {
             if (picker === "floor") onFloorChange(option.value);
             else if (option.value === "custom") setShowCustom(true);
             else { setShowCustom(false); setError(null); onPeriodChange({ preset: option.value }); }
             setPicker(null);
-          }} style={{ minHeight: 48, paddingHorizontal: spacing.md, justifyContent: "center", borderBottomWidth: 1, borderBottomColor: colors.border }}><Text style={type.bodyStrong}>{option.label}</Text></Pressable>)}
-        </View>
-      </Sheet>
-      <View style={{ gap: spacing.sm }}>
-        <Text style={type.overline}>Business unit</Text>
-        <FilterBar multiSelect testID="sales-data-floor" value={floorId || "all"} onChange={onFloorChange} options={[{ value: "all", label: "All units" }, ...floors.map(f => ({ value: f.id, label: FLOOR_LABEL[f.id] || f.name }))]} />
-      </View>
-
-      <View style={{ gap: spacing.sm }}>
-        <Text style={type.overline}>Period · UTC</Text>
-        {isPhone ? <View testID="sales-data-preset" style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-          <Button label={period.label} icon="chevron-down" variant="secondary" onPress={() => setPicker("period")} />
-          <Button label="Custom" variant="ghost" onPress={() => setShowCustom(true)} />
-        </View> : <PillTabs
-          testID="sales-data-preset"
-          value={showCustom || isCustom ? "custom" : period.preset}
-          onChange={(value) => {
-            if (value === "custom") {
-              setShowCustom(true);
-              return;
-            }
-            setShowCustom(false);
-            setError(null);
-            onPeriodChange({ preset: value });
           }}
-          options={[
-            ...PERIOD_PRESETS.map((p) => ({ value: p.value as string, label: p.label })),
-            { value: "custom", label: "Custom" },
-          ]}
-        />}
-        {isCustom && !showCustom ? (
-          <Text style={[type.caption, { color: colors.onSurfaceMuted }]}>
-            Showing {period.label}
-          </Text>
-        ) : null}
+          style={({ pressed }) => ({ minHeight: 48, paddingHorizontal: spacing.s12, paddingVertical: spacing.s12, justifyContent: "center", backgroundColor: pressed || option.value === (picker === "floor" ? floorId : period.preset) ? colors.surfaceTertiary : "transparent" })}
+        ><Text style={type.body}>{option.label}</Text></Pressable>)}
       </View>
-
-      {showCustom ? (
-        <View style={{ gap: spacing.sm }} testID="sales-data-custom-range">
-          <View style={{ flexDirection: "row", gap: spacing.sm, flexWrap: "wrap" }}>
-            <TextField
-              label="From"
-              value={from}
-              onChangeText={setFrom}
-              placeholder="2026-07-01"
-              autoCapitalize="none"
-              containerStyle={{ flex: 1, minWidth: 150 }}
-            />
-            <TextField
-              label="To"
-              value={to}
-              onChangeText={setTo}
-              placeholder="2026-07-31"
-              autoCapitalize="none"
-              containerStyle={{ flex: 1, minWidth: 150 }}
-            />
-          </View>
-          {error ? <Text accessibilityRole="alert" style={[type.caption, { color: colors.error }]}>{error}</Text> : null}
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <Button label="Apply range" icon="calendar" onPress={applyCustom} />
-            <Button
-              label="Cancel"
-              variant="secondary"
-              onPress={() => { setShowCustom(false); setError(null); }}
-            />
-          </View>
-        </View>
-      ) : null}
-    </MobileFilterSection>
-  );
+    </Sheet>
+    {showCustom ? <View testID="sales-data-custom-range" style={{ gap: spacing.s12 }}>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.s12 }}>
+        <TextField placeholderTextColor={colors.onSurfaceMuted} label="From" value={from} onChangeText={setFrom} placeholder="YYYY-MM-DD" autoCapitalize="none" containerStyle={{ flex: 1, minWidth: 120 }} />
+        <TextField placeholderTextColor={colors.onSurfaceMuted} label="To" value={to} onChangeText={setTo} placeholder="YYYY-MM-DD" autoCapitalize="none" containerStyle={{ flex: 1, minWidth: 120 }} />
+      </View>
+      {error ? <Text accessibilityRole="alert" style={[type.bodySm, { color: colors.error }]}>{error}</Text> : null}
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.s8 }}>
+        <Button label="Apply range" onPress={applyCustom} />
+        <Button label="Cancel" variant="secondary" onPress={() => { setShowCustom(false); setError(null); }} />
+      </View>
+    </View> : null}
+  </MobileFilterSection>;
 }

@@ -1,2 +1,2 @@
-import { OwnerWorkspace } from "@/src/components/salesData/OwnerWorkspace";
-export default function InteriorDesignersWorkspace() { return <OwnerWorkspace workspace="interior-designers" />; }
+import { Redirect } from "expo-router";
+export default function LegacyReferences() { return <Redirect href={{ pathname: "/(admin)/sales-data/relationships", params: { kind: "interior_designer" } }} />; }

@@ -9,7 +9,7 @@ from dataclasses import replace
 from services.analytics.filters import AnalyticsFilter, build_match
 
 
-def acquisition_pipeline(f: AnalyticsFilter, floors, window, kind=None, order_match=None):
+def acquisition_pipeline(f: AnalyticsFilter, floors, window, kind=None, order_match=None, *, limit=100):
     def source(collection):
         match = build_match(replace(f, status="any", referrer_type=kind), floors, window)
         if collection == "customers" and "customer_id" in match:
@@ -57,7 +57,7 @@ def acquisition_pipeline(f: AnalyticsFilter, floors, window, kind=None, order_ma
         {"$group": {"_id": {"referrer": "$referrer_id", "person": "$person"},
                     "name": {"$max": "$referrer_name"}, "type": {"$max": "$referrer_type"}}},
         {"$group": {"_id": "$_id.referrer", "name": {"$max": "$name"}, "type": {"$max": "$type"}, "customers_acquired": {"$sum": 1}}},
-        {"$sort": {"customers_acquired": -1, "_id": 1}}, {"$limit": 100},
+        {"$sort": {"customers_acquired": -1, "_id": 1}}, {"$limit": limit},
         {"$project": {"_id": 0, "id": "$_id", "name": 1, "type": 1, "customers_acquired": 1}},
         {"$lookup": {"from": "referrers", "localField": "id", "foreignField": "id", "as": "_directory", "pipeline": [
             *([{"$match": {"floor_id": {"$in": list(floors)}}}] if floors is not None else []),
@@ -70,9 +70,9 @@ def acquisition_pipeline(f: AnalyticsFilter, floors, window, kind=None, order_ma
     return first, pipeline
 
 
-async def gather_acquired_customers(db, f, floors, window, kind=None, order_match=None):
-    collection, pipeline = acquisition_pipeline(f, floors, window, kind, order_match)
-    return await db[collection].aggregate(pipeline).to_list(100)
+async def gather_acquired_customers(db, f, floors, window, kind=None, order_match=None, *, limit=100):
+    collection, pipeline = acquisition_pipeline(f, floors, window, kind, order_match, limit=limit)
+    return await db[collection].aggregate(pipeline).to_list(limit)
 
 
 def merge_acquisitions(relationships, acquired):

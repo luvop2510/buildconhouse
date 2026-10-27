@@ -56,6 +56,7 @@ from routes.executive_overview_routes import router as executive_overview_router
 from routes.sales_performance_routes import router as sales_performance_router  # noqa: E402
 from routes.referral_analytics_routes import router as referral_analytics_router  # noqa: E402
 from routes.sales_breakdown_routes import router as sales_breakdown_router  # noqa: E402
+from routes.sales_summary_routes import router as sales_summary_router  # noqa: E402
 from routes.sales_workspace_routes import router as sales_workspace_router  # noqa: E402
 from routes.tile_orders import router as tile_orders_router  # noqa: E402
 from routes.walkin_routes import router as walkin_router  # noqa: E402
@@ -425,6 +426,7 @@ api.include_router(sales_performance_router)
 api.include_router(referral_analytics_router)
 api.include_router(sales_breakdown_router)
 api.include_router(sales_workspace_router)
+api.include_router(sales_summary_router)
 api.include_router(tile_orders_router)
 api.include_router(walkin_router)
 api.include_router(godown_stock_router)

@@ -238,6 +238,7 @@ class _FakeDbWithReferrer:
         self.quotations = _Collection(quotation_docs)
         self.referrers = _CollectionWithFindOne([], referrer_doc)
         self.kitchen_projects = type("EmptyKitchen", (), {"aggregate": lambda self, pipeline: _Cursor([])})()
+        self.furniture_quotations = type("EmptyFurniture", (), {"aggregate": lambda self, pipeline: _Cursor([])})()
 
 
 def test_referrer_detail_returns_trend_and_quotations(monkeypatch):

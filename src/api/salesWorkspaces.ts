@@ -9,7 +9,8 @@ export type WorkspaceData = {
   products: { product_id: string; name: string; revenue: number; quantity: number; orders: number; customers: number; brand_name: string | null }[];
   customers: { customer_id: string; name: string; revenue: number; orders: number; aov: number; last_order_at: string | null }[];
   floors: { floor_id: string; revenue: number; orders: number }[];
-  relationships?: { id: string; name: string; company?: string | null; type: string; revenue: number; orders: number; customers: number; customers_acquired?: number; last_order_at: string | null }[];
+  relationships?: { id: string; name: string; company?: string | null; type: string; revenue: number; revenue_rnb?: number; orders: number; orders_rnb?: number; customers: number; customers_acquired?: number; last_order_at: string | null }[];
+  relationships_truncated?: boolean;
   forecast?: { months_used: number; history_state: string; monthly_history: number[]; forecast: number | null };
 };
 
@@ -22,6 +23,6 @@ function query(filter: WorkspaceFilter) {
 }
 
 export const salesWorkspaceApi = {
-  get(workspace: WorkspaceName, filter: WorkspaceFilter) { return api.get<WorkspaceData>(`/analytics/workspaces/${workspace}?${query(filter)}`); },
+  get(workspace: WorkspaceName, filter: WorkspaceFilter, options?: { signal?: AbortSignal }) { return api.get<WorkspaceData>(`/analytics/workspaces/${workspace}?${query(filter)}`, options); },
   records(filter: WorkspaceFilter, offset = 0) { return api.get<{ rows: any[]; total: number }>(`/analytics/workspaces/sales-records?${query(filter)}&offset=${offset}&limit=25`); },
 };

@@ -473,7 +473,7 @@ export function TextField({
           accessibilityHint={rest.accessibilityHint || (showError ? error || undefined : helper)}
           aria-invalid={showError || undefined}
           aria-describedby={helper || error ? descriptionId : undefined}
-          placeholderTextColor={colors.onSurfaceSubtle}
+          placeholderTextColor={rest.placeholderTextColor || colors.onSurfaceSubtle}
           style={[{
             flex: 1,
             paddingVertical: Platform.OS === "ios" ? 12 : 8,

@@ -20,18 +20,18 @@ test('critical sales reference directory creates, edits and reuses one identity 
     }
     return route.fulfill({ json: reference ? [reference] : [] });
   });
-  await page.route('**/api/analytics/workspaces/architects?**', route => route.fulfill({ json: { workspace: 'architects', period: 'This month', kpis: { revenue: 0, orders: 0, outstanding: 0 }, brands: [], products: [], customers: [], floors: [], relationships: [] } }));
+  await page.route('**/api/analytics/workspaces/relationships?**', route => route.fulfill({ json: { workspace: 'architects', period: 'This month', kpis: { revenue: 0, orders: 0, outstanding: 0 }, brands: [], products: [], customers: [], floors: [], relationships: [] } }));
   await page.goto('/sales-data/referrals/architects');
   const directory = page.getByTestId('sales-reference-directory');
   await directory.getByRole('button', { name: 'Add reference', exact: true }).click();
   await page.getByTestId('reference-name').fill('Shared Architect');
   await page.getByTestId('reference-company').fill('One Studio');
   await page.getByTestId('reference-phone').fill('9876543210');
-  await directory.getByRole('button', { name: 'Save reference', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Save reference', exact: true }).click();
   await expect(directory).toContainText('Shared Architect · One Studio');
   await directory.getByRole('button', { name: 'Edit Shared Architect', exact: true }).click();
   await page.getByTestId('reference-company').fill('Updated Studio');
-  await directory.getByRole('button', { name: 'Save reference', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Save reference', exact: true }).click();
   await expect(directory).toContainText('Shared Architect · Updated Studio');
   await page.evaluate(() => localStorage.setItem('forge.active-floor', JSON.stringify('ground-floor')));
   await page.reload();
