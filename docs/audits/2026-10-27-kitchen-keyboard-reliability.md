@@ -170,3 +170,40 @@ purchase/catalog searches, quotation fields/quantities and tile searches. Native
 behavior, shapes and values are unchanged. Changed-file lint and TypeScript pass.
 Final publication uses focused current-source build/browser checks and preserves
 the incomplete broad-audit status rather than manufacturing a green result.
+
+## Observed live release — 27 October 2026
+
+Published source `66ca3a3d84e16f4c1a5aee0a3c37835551cede81` to buildconhouse.in:
+Vercel `dpl_DHdjbnMrvBq2JLJTdNoYvoytPSdg` is READY and the public alias points
+to it; Railway `4f72bbac-d2ea-4aed-88dc-d68407b8def7` is SUCCESS. A fresh
+running-container probe matched all 308 reviewed runtime files, pinged Mongo,
+verified private storage access and found no pending migrations. The backend
+runtime is unchanged from the fully tested backend patch; no data migration ran.
+
+The initial Railway archive upload timed out and its snapshot failed before any
+build. A minimal Docker-input package (same 308 runtime hashes and required assets)
+excluded tracked temp/tests and succeeded. Vercel CLI observation timed out, but
+exact provider inspection established READY before explicit promotion.
+
+Current-source final build, TypeScript and changed-file zero-warning lint passed.
+12 focus-shape cases (including custom purchases/catalog) and 12 stage-response
+recovery cases passed with Chromium/WebKit and no retries. Hosted candidate and
+public-site checks passed all 18 public route/asset/header/health checks and both
+authenticated browser profiles: nine stages, top Actions, removed details/filters,
+zero reserved bottom gap and rounded outer focus; zero business writes/page errors.
+All 32 sampled post-release Kitchen reads were 200. Public-site five-sample
+configuration/dashboard/list medians were 314/315/449ms, maxima 704/384/666ms.
+These network samples do not demonstrate a latency reduction against the earlier
+221/285/436ms baseline. The reproducible improvements are bounded stalled save
+work, fewer concurrent identity reads, canceled abandoned requests, safe recovery
+of dropped reads/lost stage responses, and removal of 119px hidden-chrome gaps.
+The user's precise earlier timeout was not reproduced; universal elimination of
+network failures and physical Android/iPhone keyboard acceptance are not claimed.
+
+Rollback remains source `4152caef`, Vercel `dpl_4LJjcrZ79S3XWtoDi6EdLkqBUbT2`,
+Railway `fcd498b6-7b0f-448e-8ece-44a0b674ca91`; an exact Git archive was preserved
+and all 308 baseline runtime hashes verified. Six existing high dependency
+findings remain recorded. Full broad audit was intentionally interrupted for
+remaining custom-field fixes and immediate publication per the user's final
+instruction; it is not reported as green. Protected-main/security settings and
+pre-push hooks remain unchanged, and this branch has not been merged or pushed.
